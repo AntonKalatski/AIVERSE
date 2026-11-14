@@ -6,6 +6,7 @@
 //   RtsCombat.cpp    targeting, weapons, projectiles, abilities, buffs, heroes, squads, death
 //   RtsWorld.cpp     vision (with heights), creep, control points, regions, waves, neutrals, victory
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -29,6 +30,7 @@
 #include "RtsPrompt.h"
 #include "RtsRoutes.h"
 #include "RtsArsenal.h"
+#include "RtsTraffic.h"
 #include <memory>
 
 namespace aiverse::game {
@@ -606,6 +608,7 @@ public:
     Career* career() const { return career_.get(); }           // career ladders and perks (RtsCareer.h); null before setup
     Commerce* commerce() const { return commerce_.get(); }     // premises, businesses, the bank (RtsCommerce.h); null before setup
     Arsenal* arsenal() const { return arsenal_.get(); }        // the hero's weapons, ammo, crates, money (RtsArsenal.h); null before setup
+    Traffic* traffic() const { return traffic_.get(); }        // city traffic: AI cars, signals, pedestrians (RtsTraffic.h); null before setup
     Driving* driving() const { return driving_.get(); }        // vehicles the hero drives (RtsDriving.h); null before setup
     TopDown* topDown() const { return topDown_.get(); }        // top-down heroes (RtsTopDown.h); null before setup
     Progression* progression() const { return progression_.get(); }   // in-match progression (RtsProgression.h); inactive without rules "progression"
@@ -637,11 +640,23 @@ public:
     bool routesAuthored() const { return !routeDefs_.empty(); }
     bool canSend(Simulation& sim, Entity from, Entity to) const;
     Fixed routeLength(Simulation& sim, Entity from, Entity to) const;
+    Fixed routeAiLength(Simulation& sim, Entity from, Entity to) const;   // BW Route.GetAILength (slowdown zones); -1: none
+    // Flying sends (BW PointsFlyingUnits): a garrison with a `flying` status sends along a straight flying route (made on
+    // first use, BW FindFlyingRoute) even without a ground route, one flying group at a time, rows flyRowSpacing apart.
+    bool sendsFlying(Simulation& sim, Entity from) const;
+    // BW Spline.GetTowerCoverageDistance: route length within `range` of tower point `tower` (map towersCoverage), 0 when
+    // the map has none; and the AI estimates built on it (TowerModule.GetUnitsDamageForSpline / GetDamageBySpline).
+    Fixed towerCoverage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range) const;
+    int towerUnitsDamage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, int count, Fixed rowDistance, Fixed unitSpeed) const;
+    int towerDamageBySpline(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, Fixed waveLength, Fixed unitSpeed) const;
+    // Alpha of a route walker at the route ends (BW SubSpline.GetAlpha; 1 elsewhere / for other units): the view fades it.
+    Fixed routeAlpha(Simulation& sim, Entity unit) const;
     const std::vector<RouteDef>& routeDefs() const { return routeDefs_; }
     // Multiscreen (map "screen", BW MultiscreenModule): the current screen and whether a point is on it (always true
     // without a screen). Garrisons off the screen do not grow. setScreenCenter clamps to the screen bounds.
     const ScreenDef& screen() const { return screen_; }
-    bool onScreen(Simulation& sim, Vec3 p) const;
+    bool onScreen(Simulation& sim, Vec3 p) const;            // map "screen", else the env map scroller screen
+    bool screenView(Simulation& sim, Vec3& center, Vec2& size) const;   // current screen (either source); false: none
     Vec3 screenCenter(Simulation& sim) const;
     void setScreenCenter(Simulation& sim, Vec3 c);
     Fixed stat(Simulation& sim, Entity e, Stat s) const;          // effective stat with techs/levels/buffs
@@ -649,6 +664,9 @@ public:
     Fixed bwTypeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, int moraleDelta) const;
     // agent-bw-ai: Bunker Wars bot settings (rules ai.bw + map "ai"), null unless rules ai.controller is "bw"
     const std::shared_ptr<const struct BwAIConfig>& bwAI() const { return bwAI_; }
+    // agent-bw-ai: slots played by BW bots in this process (not sim state: the bots' action detector ignores them)
+    void bwRegisterBot(uint8_t slot) const { if (std::find(bwBots_.begin(), bwBots_.end(), slot) == bwBots_.end()) bwBots_.push_back(slot); }
+    const std::vector<uint8_t>& bwBots() const { return bwBots_; }
     Fixed typeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, Fixed base) const;
     int membersAlive(Simulation& sim, Entity e) const;
     int levelAt(Simulation& sim, Vec3 p) const;
@@ -857,6 +875,9 @@ private:
     int coreNeutralMax(Simulation& sim, Entity e, const UnitType& t) const;
     friend bool ioModesState(RtsModule& m, Simulation& sim, Archive& a);
     std::shared_ptr<const struct BwAIConfig> bwAI_;   // agent-bw-ai
+    mutable std::vector<uint8_t> bwBots_;             // agent-bw-ai: bot slots of this process (presentation-like, never read by the sim)
+    void bwNoteProduced(Simulation& sim, Entity e, int n);   // RtsBwAISim.cpp: per point produced units
+    bool hypnotisedFlagSend(Simulation& sim, const Command& cmd);  // RtsBwAISim.cpp: kCmdSend out of a hypnotised garrison
     Json generated_;                 // generated map (see generatedMap())
     void setupMap(Simulation& sim, const Json& map);
     // ---- planets (RtsPlanets.cpp)
@@ -982,6 +1003,11 @@ private:
     std::vector<Vec3> routeAnchors_;                  // 2 per route: the end positions (first / last control point)
     std::vector<std::vector<Entity>> routeBlockers_;  // per route: entities that close it while alive
     ScreenDef screen_;                                // map "screen"
+    std::vector<std::vector<std::pair<Entity, std::array<Fixed, 21>>>> routeCoverage_;   // per route: tower -> covered length per range step
+    std::vector<int> routeLanes(Simulation& sim, Entity from, Entity to, bool flying) const;   // ground lanes of an open route / flying lanes
+    std::vector<int> flyingLanes(Simulation& sim, Entity from, Entity to);                   // made on first use
+    int routeIndex(Simulation& sim, Entity a, Entity b) const;
+    void startRouteWalk(Simulation& sim, Entity unit, int lane);
     bool attackSlot(Simulation& sim, Entity e, Entity target, Fixed range, Vec3& out); // melee surround
     void moveToVia(Simulation& sim, Entity e, Vec3 goal, Fixed radius, bool aroundAllies);
 
@@ -1025,6 +1051,7 @@ private:
     std::unique_ptr<Career> career_;       // rules "careers" (state: CareerStore resource)
     std::unique_ptr<Commerce> commerce_;   // rules "commerce" (state: CommerceStore resource)
     std::unique_ptr<Arsenal> arsenal_;     // rules "arsenal" (state: ArsenalStore resource)
+    std::unique_ptr<Traffic> traffic_;     // rules "traffic" (state: TrafficStore resource)
     std::unique_ptr<Driving> driving_;     // rules "driving" (state: DrivingStore resource)
     std::unique_ptr<TopDown> topDown_;     // rules "topDown" (state: TopDownStore resource)
     std::unique_ptr<Progression> progression_;   // rules "progression" (state: ProgressionStore resource)

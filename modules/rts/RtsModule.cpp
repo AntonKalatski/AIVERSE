@@ -57,6 +57,8 @@ void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
     driving_->loadMap(sim, mapIn);         // bridges and tunnels as second levels (map "decks")
     arsenal_ = std::make_unique<Arsenal>();   // the hero's weapon slots, ammo, crates and money (rules "arsenal"); nothing without the block
     arsenal_->setup(sim, *this, rulesJson);
+    traffic_ = std::make_unique<Traffic>();   // city traffic (rules "traffic"); nothing without the block
+    traffic_->setup(sim, *this, rulesJson, mapIn);
     // Lua: the engine's standard library (rule-level mechanics, modules/rts/lua) + the game's scripts
     script_ = std::make_unique<ScriptEngine>(*this);
     script_->load(sim, rulesJson, mapIn);
@@ -94,8 +96,8 @@ void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
     sim.addSystem("creep", [this](Simulation& s) { sysCreep(s); });
     if (fields_->active()) sim.addSystem("gridfields", [this](Simulation& s) { fields_->tick(s); });   // RtsGridFields.cpp
     sim.addSystem("vision", [this](Simulation& s) { sysVision(s); });
-    if (rules_.core.any) sim.addSystem("battlecore", [this](Simulation& s) { sysCore(s); });   // RtsCore.cpp: energy / morale of the deaths
     if (env_->active() && env_->hasFog()) sim.addSystem("environment3", [this](Simulation& s) { env_->fogTick(s); });   // BW fog (RtsEnv.cpp)
+    if (rules_.core.any) sim.addSystem("battlecore", [this](Simulation& s) { sysCore(s); });   // RtsCore.cpp: energy / morale of the deaths
     if (modes_.any) sim.addSystem("modes", [this](Simulation& s) { sysModes(s); });   // RtsModes.cpp: match modes decide before victory
     sim.addSystem("victory", [this](Simulation& s) { script_->callStd(s, StdFn::Victory); });   // lua/victory.lua
     sim.addSystem("triggers", [this](Simulation& s) {   // last: sees every event of the tick (lua/triggers.lua)
@@ -103,6 +105,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
     });
     if (script_->hasUserScripts()) sim.addSystem("scripts", [this](Simulation& s) { script_->tick(s); }); // after triggers: same events
     if (modes_.any && modes_.stats) sim.addSystem("matchstats", [this](Simulation& s) { sysMatchStats(s); });   // last: every event of the tick
+    if (traffic_->active()) sim.addSystem("traffic", [this](Simulation& s) { traffic_->collect(s); });   // last: keeps the tick's shots / hits / deaths (scripts' too) for its next tick
     sim.world().setResource<MatchOutcome>();
     sim.addSystem("outcome", [this](Simulation& s) { freezeOutcome(s); });   // last: the result of the whole tick
     // Gameplay time scale (Bunker Wars SetGameplayTimescale: tutorial windows freeze the battle): with the trigger
@@ -1065,6 +1068,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
     if (cmd.type == kCmdScript) { script_->runCommand(sim, cmd); return; }   // rules "commands" (RtsScriptCommands.cpp)
     if (cmd.type == kCmdAutoBuild) { script_->callStd(sim, StdFn::AutoBuild, {cmd.player, cmd.param}); return; }   // lua/commands.lua
 
+    if (cmd.type == kCmdSend && hypnotisedFlagSend(sim, cmd)) return;   // agent-bw-ai: BW PointsHypnosis
     std::vector<Entity> sel;
     if (cmd.type == kCmdSend && rules_.advancedEffects && hypnoticSend(sim, cmd)) return;   // a hypnotised garrison (RtsSkillObjects.cpp)
     for (Entity e : cmd.units) {
@@ -1607,6 +1611,7 @@ void RtsModule::hashState(Simulation& sim, Hasher& h) {
     if (career_ && career_->active()) career_->hash(sim, h);         // games with rules "careers" only
     if (prompts_ && prompts_->active()) prompts_->hash(sim, h);      // games with rules "prompts" only
     if (arsenal_ && arsenal_->active()) arsenal_->hash(sim, h);   // games with rules "arsenal" only
+    if (traffic_ && traffic_->active()) traffic_->hash(sim, h);   // games with rules "traffic" only
 }
 
 } // namespace aiverse::game

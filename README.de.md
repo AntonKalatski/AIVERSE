@@ -187,7 +187,7 @@ Jede Vorlage ist ein vollständig spielbares Spiel mit Bots. Im Editor öffnen u
 
 **Grafik und Audio**
 - Eigenes RHI: Metal, GLES3 / WebGL2, GL 3.3
-- PBR, glTF/OBJ, Skelett- und prozedurale Animation
+- PBR, glTF/OBJ, Skelett- und prozedurale Animation, prozedurale Kabel, Rendering hierarchischer Entitäten
 - Schatten, dynamische Lichter, Nacht, Post-Effekte, Shader Graph
 - Partikel mit den Modulen von Unitys ParticleSystem und Importer aus Unity
 - 2D: Sprites, Tilemaps mit Autotiling
@@ -286,11 +286,13 @@ Die Referenzdokumente sind auf Englisch. Die Übersicht, der Spiel-Assistent, de
 | [Partikel](docs/particles.md) · [Modelle](docs/models.md) · [Shader Graph](docs/shader-graph.md) | Grafik |
 | [Meta-Spiel](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [Plugins](docs/plugins.md) | Monetarisierung und Stores |
 | [FPS](docs/fps.md) · [Große Welten](docs/large-worlds.md) | FPS-Modul |
+| [Top-down-Helden](docs/topdown.md) · [Fahren](docs/driving.md) · [Stadtverkehr](docs/traffic.md) | Stadtspiele: Autos, Ampeln, Fußgänger, Dienste, Einwohner mit Arbeit |
 | [AGENTS.md](AGENTS.md) | Regeln für Agenten, die die Engine selbst ändern |
 | [Umstieg von Unity](docs/de/engine-import.md) | Szenen, Prefabs und Assets importieren, Logik mit einem Agenten portieren |
 
 ## Lizenz
 
-[MIT](LICENSE). Drittanbieter-Bibliotheken liegen mit ihren eigenen Lizenzen in `third_party/` (nur MIT,
-BSD, zlib, OFL, CC0 und CC-BY). Originale Assets kommerzieller Spiele sind nicht enthalten: Die Importer
+[MIT](LICENSE). Drittanbieter-Bibliotheken liegen mit ihren eigenen Lizenzen in `third_party/` (unter anderem MIT, MIT-0, BSD, ISC, zlib, OFL, CC0 und CC-BY). Originale Assets kommerzieller Spiele sind nicht enthalten: Die Importer
 lesen sie aus Ihrer eigenen Kopie.
+
+Spiel-Builds enthalten automatisch `THIRD_PARTY_NOTICES.txt`; Hinweise für externe SDKs muss das Projekt bereitstellen (siehe [Details](docs/third-party-notices.md)).

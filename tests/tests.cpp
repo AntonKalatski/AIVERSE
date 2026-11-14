@@ -12253,6 +12253,36 @@ TEST(view_ground_shadow_option) {
 }
 
 
+TEST(view_entity_parent_frames) {
+    using namespace game;using namespace render;
+    EntityHierarchy h;
+    CHECK(h.set(2,{1,{2,0,0},0}));CHECK(h.set(3,{2,{0,1,0},0}));
+    CHECK(!h.set(1,{3,{},0}));CHECK(!h.set(2,{2,{},0}));
+    std::map<uint64_t,mat4> bases{{1,mat4::translate({10,2,4})*mat4::rotateY(1.570796326f)},{2,mat4::translate({999,0,0})},{3,mat4::identity()}};
+    auto frames=h.resolve(bases,{});CHECK(frames.size()==3);
+    auto child=frames.at(2).transformPoint({0,0,0});auto nested=frames.at(3).transformPoint({0,0,0});
+    CHECK(std::fabs(child.x-10)<1e-5f&&std::fabs(child.z-2)<1e-5f&&std::fabs(nested.y-3)<1e-5f);
+    for(int i=0;i<120;++i){bases[1]=mat4::translate({float(i)*.01f,0,0})*mat4::rotateZ(float(i)*.001f);auto f=h.resolve(bases,{});auto expected=bases[1]*mat4::translate({2,0,0})*mat4::translate({0,1,0});CHECK(length(f.at(3).transformPoint({0,0,0})-expected.transformPoint({0,0,0}))<1e-5f);}
+    bases.erase(1);CHECK(h.resolve(bases,{}).empty());
+    h.parents.erase(2);CHECK(h.resolve(bases,{}).count(3)==1);
+}
+
+TEST(view_entity_parent_api) {
+    auto rules=Json::parseFile(kSkirmish+"/rules.json"),map=Json::parseFile(kSkirmish+"/maps/valley.json");
+    rules.set("viewScripts",Json::parse("[\"parent.lua\"]"));Json sources=Json::object();
+    sources.set("parent.lua",Json::string(R"LUA(
+local hs=game.units{player=1}
+view.entity_parent(hs[2],hs[1],{x=1,y=.5,z=0,yaw=90})
+view.entity_parent(hs[3],hs[2],{x=.2})
+assert(not pcall(view.entity_parent,hs[1],hs[3]))
+assert(not pcall(view.entity_parent,hs[2],hs[2]))
+assert(not pcall(view.entity_parent,hs[2],hs[1],{x=0/0}))
+view.entity_parent(hs[3],nil)
+)LUA"));rules.set("$scriptSources",sources);
+    Simulation sim({},std::make_unique<game::RtsModule>());sim.setup(rules,map);auto hash=sim.checksum();
+    game::ViewScripts view;CHECK(view.load(sim,rules,map,1));CHECK(view.log().empty());CHECK(view.entityFx()->hierarchy.parents.size()==1);CHECK(sim.checksum()==hash);
+}
+
 TEST(view_entity_fx_script_api) {
     // view.entity_fx: per-entity scale / opacity / colour overrides of the view (EntityFx.h): set, read back, ease
     // over frame time, clear, validate (a failed call changes nothing), dropped some seconds after the entity is gone;
@@ -12981,7 +13011,9 @@ TEST(models_gltf_lod_metadata) {
 #include "tests_modes.inc"   // match modes (agent-bw-modes)
 #include "tests_routes.inc"   // Bunker Wars routes, groups, multiscreen
 #include "animation/view.inc"
+#ifdef AIVERSE_TESTS_EDITOR_CORE
 #include "animation/editor.inc"
+#endif
 #include "geometry/runtime.inc"
 #include "tests_services.inc"   // analytics / privacy services (agent-sdk-plugins)
 #include "tests_services_build.inc"   // aiversebuild iOS plugin step (agent-sdk-plugins)
@@ -13008,6 +13040,66 @@ TEST(models_skinned_autolod_inherits_palette) {
     doc.member("meshes").at(1).member("primitives").at(0).member("attributes").erase("WEIGHTS_0");
     bool rejected=false;try{loadGltf("bad.gltf",doc.dump(),mapReader({}),nullptr);}catch(const std::exception&){rejected=true;}
     CHECK(rejected);
+}
+
+#include "engine/render/ModelMerge.h"
+
+TEST(model_shadow_batches_preserve_visible_geometry) {
+    using namespace aiverse::render;
+    auto make = [] {
+        Model m; m.materials.resize(4);
+        MeshDef mesh;
+        for (int k = 0; k < 4; ++k) {
+            Primitive p; p.material = k; p.firstIndex = uint32_t(m.indices.size()); p.indexCount = 3;
+            for (int j = 0; j < 3; ++j) {
+                ModelVertex v; v.pos = {float(k*2 + (j == 1)), 0, float(j == 2)};
+                m.indices.push_back(uint32_t(m.vertices.size())); m.vertices.push_back(v);
+            }
+            mesh.primitives.push_back(p);
+        }
+        m.meshes.push_back(mesh); Node node; node.mesh = 0; m.nodes.push_back(node); m.finalize(); return m;
+    };
+    Model m = make(); const auto original = m.indices;
+    CHECK(prepareShadowBatches(m) == 4);
+    CHECK(m.indices == original && m.vertices.size() == 12 && m.nodes.size() == 1);
+    CHECK(m.meshes[0].primitives.size() == 4 && m.meshes[0].shadowBatch.indexCount == 12);
+    CHECK(m.meshes[0].shadowBatch.boundsMax.x == 7);
+    for (int i = 0; i < 4; ++i) {
+        CHECK(m.meshes[0].primitives[i].firstIndex == uint32_t(i*3));
+        CHECK(m.meshes[0].primitives[i].material == i && m.meshes[0].primitives[i].shadowBatched);
+    }
+    CHECK(prepareShadowBatches(m) == 0 && m.indices == original);
+    // A masked gap must not leak into the opaque batch; visible index ranges stay intact.
+    m = make(); m.materials[1].alpha = AlphaMode::Mask; m.materials[3].doubleSided = true;
+    CHECK(prepareShadowBatches(m) == 2);
+    CHECK(m.indices.size() == 18 && std::equal(original.begin(), original.end(), m.indices.begin()));
+    CHECK(std::vector<uint32_t>(m.indices.begin()+12,m.indices.end()) == std::vector<uint32_t>({0,1,2,6,7,8}));
+    CHECK(!m.meshes[0].primitives[1].shadowBatched && !m.meshes[0].primitives[3].shadowBatched);
+    // Choose the larger culling group, never mix one- and two-sided casters.
+    m = make(); for (int i=1;i<4;++i) m.materials[i].doubleSided = true;
+    CHECK(prepareShadowBatches(m) == 3 && !m.meshes[0].primitives[0].shadowBatched);
+    m = make(); m.materials[0].transparent = true; m.materials[1].castShadow = false; m.materials[2].alpha = AlphaMode::Blend;
+    CHECK(prepareShadowBatches(m) == 0);
+    m = make(); m.meshes[0].primitives[0].morphTargets = 1; CHECK(prepareShadowBatches(m) == 0);
+    m = make(); m.skins.resize(1); CHECK(prepareShadowBatches(m) == 0);
+    m = make(); m.meshes.push_back(m.meshes[0]); m.meshes[0].lods.push_back({1, 10}); CHECK(prepareShadowBatches(m) == 8);
+    m = make(); m.meshes[0].deformable = true; CHECK(prepareShadowBatches(m) == 0);
+    m = make(); m.meshes[0].primitives[0].variantMaterial = {1}; CHECK(prepareShadowBatches(m) == 0);
+}
+
+TEST(model_shadow_batches_material_overrides) {
+    using namespace aiverse::render;
+    MeshDef mesh; Primitive p; p.shadowBatched = true; p.indexCount = 3;
+    mesh.primitives = {p, p}; mesh.primitives[1].material = 1; mesh.shadowBatch.indexCount = 6;
+    std::vector<Material> mats(2);
+    CHECK(shadowBatchCompatible(mesh, mats));
+    mats[1].baseColor = {0, 1, 0, 1}; CHECK(shadowBatchCompatible(mesh, mats));
+    mats[1].alpha = AlphaMode::Mask; CHECK(!shadowBatchCompatible(mesh, mats));
+    mats[1] = Material{}; mats[1].doubleSided = true; CHECK(!shadowBatchCompatible(mesh, mats));
+    mats[0].doubleSided = true; CHECK(shadowBatchCompatible(mesh, mats));
+    mats[1].castShadow = false; CHECK(!shadowBatchCompatible(mesh, mats));
+    mats[1] = Material{}; mats[1].transparent = true; CHECK(!shadowBatchCompatible(mesh, mats));
+    CHECK(!shadowBatchCompatible(mesh, {}));
 }
 
 int main(int argc, char** argv) {
@@ -14133,7 +14225,6 @@ TEST(bw_player_mods_by_count_table) {
 }
 #include "tests_driving.inc"   // vehicles the hero drives (agent-gta2)
 #include "tests_arsenal.inc"   // the hero's weapons, ammo, crates and money (agent-gta2)
-#include "tests_city.inc"      // city planner (agent-gta2)
 #include "tests_commerce.inc"  // premises, businesses, the bank (agent-gta2)
 #include "tests_career.inc"    // career ladders and perks (agent-gta2)
 
@@ -14186,3 +14277,6 @@ TEST(model_merge_static_primitives) {
     Model big = make();ModelMergeOptions small;small.maxExtent = 1;
     CHECK(!mergeStaticPrimitives(big, small).merged);
 }
+#include "tests_traffic.inc"   // city traffic: AI cars, signals, pedestrians (agent-traffic)
+#include "tests_city.inc"      // city planner (agent-gta2)
+#include "tests_city_net.inc"  // the city server (agent-gta2)

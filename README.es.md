@@ -187,7 +187,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 
 **Gráficos y audio**
 - RHI propio: Metal, GLES3 / WebGL2, GL 3.3
-- PBR, glTF/OBJ, animación esquelética y procedural
+- PBR, glTF/OBJ, animación esquelética y procedural, cables procedurales, renderizado de entidades con jerarquía
 - Sombras, luces dinámicas, noche, posprocesado, Shader Graph
 - Partículas con los módulos de Unity ParticleSystem e importador desde Unity
 - 2D: sprites, mapas de tiles con autotiling
@@ -286,11 +286,13 @@ Los documentos de referencia están en inglés. La visión completa, el asistent
 | [Partículas](docs/particles.md) · [Modelos](docs/models.md) · [Shader Graph](docs/shader-graph.md) | apartado visual |
 | [Meta](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [Plugins](docs/plugins.md) | monetización y tiendas |
 | [FPS](docs/fps.md) · [Mundos grandes](docs/large-worlds.md) | módulo FPS |
+| [Héroes con vista cenital](docs/topdown.md) · [Conducción](docs/driving.md) · [Tráfico urbano](docs/traffic.md) | juegos de ciudad: coches, semáforos, peatones, servicios, habitantes con trabajo |
 | [AGENTS.md](AGENTS.md) | reglas para agentes que modifican el propio motor |
 | [Migrar desde Unity](docs/es/engine-import.md) | importar escenas, prefabs y recursos, y portar la lógica con un agente |
 
 ## Licencia
 
-[MIT](LICENSE). Las bibliotecas de terceros están en `third_party/` con sus propias licencias (solo MIT,
-BSD, zlib, OFL, CC0 y CC-BY). No se incluyen recursos originales de juegos comerciales: los importadores
+[MIT](LICENSE). Las bibliotecas de terceros están en `third_party/` con sus propias licencias (entre otras, MIT, MIT-0, BSD, ISC, zlib, OFL, CC0 y CC-BY). No se incluyen recursos originales de juegos comerciales: los importadores
 los leen desde tu propia copia.
+
+Las compilaciones incluyen automáticamente `THIRD_PARTY_NOTICES.txt`; el proyecto debe aportar los avisos de los SDK externos (ver [detalles](docs/third-party-notices.md)).

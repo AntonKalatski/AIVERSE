@@ -64,9 +64,11 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         base = mat4::translate(p) * mat4::rotateY(st.yaw) * tilt * mat4::rotateY(-st.yaw) * mat4::translate(-p) * base;
     }
     if (hasFx) base = base * mat4::scale({fx.scale(0), fx.scale(1), fx.scale(2)});
+    if (o.parented && !placement) base = o.parentFrame * mat4::scale({k, k * (t.structure ? grow : 1.f), k});
     if (placement) base = *placement * base;   // flat maps: untouched (bit-identical)
     ModelDraw d;
     d.model = show->model;
+    if (!tintOverride && (t.id.starts_with("city_interior_") || t.id == "shop_roof")) d.flags |= kDrawActorReveal;
     d.geometry = show->geometry;
     d.world = base * st.objXf * show->fix;
     d.materials = &show->materials;
@@ -115,8 +117,10 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         d.dissolve = std::max(d.dissolve, std::clamp((st.deathAge - (L.corpse - 1.2f)) / 1.1f, 0.0f, 1.0f));
         d.tint.w = 1;
     }
+    if (o.fade < 0.999f) { d.tint.w *= std::max(0.0f, o.fade); d.flags |= kDrawFadeDepth; }   // route end fade
     if (hasFx) {
         using V = EntityFxValues;
+        if (fx.v[V::kKeepShadow] > .5f) d.flags |= kDrawKeepShadow;
         d.tint = {d.tint.x * fx.v[V::kTint], d.tint.y * fx.v[V::kTint + 1], d.tint.z * fx.v[V::kTint + 2], d.tint.w * fx.opacity()};
         const float m = fx.v[V::kTeamMix + 3];
         if (m > 0) {   // team colour towards rgb in display space (Unity's Color.Lerp of _BaseColor), then linear like pc
@@ -133,7 +137,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         const float3 c = o.selected ? (o.owner == 0 ? float3{0.9f, 0.9f, 0.35f} : float3{0.25f, 0.95f, 0.3f}) : float3{0.8f, 0.8f, 0.8f};
         d.outline = {c.x, c.y, c.z, 0.03f * std::max(1.0f, k)};
     }
-    if (d.tint.w <= 0.0f) return;   // fully transparent (view.entity_fx opacity 0): nothing to draw, no anchors
+    if (d.tint.w <= 0.0f && !(d.flags & kDrawKeepShadow)) return;   // fully transparent (view.entity_fx opacity 0): nothing to draw, no anchors
     // immobile, finished, plain placement: scenery the light baker captures / lightmaps (agent-lightbake)
     if ((t.structure || t.speed <= Fixed{}) && !L.air && !st.dead && o.build >= 1 && !hasFx && !tintOverride && !placement) d.flags |= kDrawStatic;
     r.drawModel(d);
@@ -143,6 +147,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         const bool moving = !st.dead && (o.moving || st.speed > 0.15f);
         const uint32_t state = stateBits(st, o, moving);
         for (const auto& at : ch.attach) {
+            if(!at.weapon.empty()&&(st.dead||at.weapon!=o.heldWeapon))continue;
             if (at.when && !(state & at.when)) continue;
             if (at.carry != -2 && !(o.carry > 0 && (at.carry == -1 || at.carry == o.carryRes))) continue;
             ModelDraw ad = d;
@@ -215,6 +220,7 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
 
 void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const MapGrid& grid, double time) {
     if (type >= looks_.size()) return;
+    loadType(type);
     static EntityAnim ghost;
     ghost.type = type;
     ghost.choice = 0;
@@ -237,6 +243,7 @@ void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const
 
 void RtsView::drawPreview(Renderer3D& r, uint16_t type, uint8_t owner, double time, float yaw) {
     if (type >= looks_.size()) return;
+    loadType(type);
     const uint64_t key = (1ull << 62) | (uint64_t(owner) << 16) | type;
     SceneObject o;
     o.type = type;

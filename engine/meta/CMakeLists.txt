@@ -22,7 +22,7 @@ add_library(AIVERSE::meta_client ALIAS aiverse_meta_client)
 # Bunker Wars backend adapter (docs/meta-bunkerwars.md): MessagePack, wire formats, HTTP API client,
 # meta::Backend over it, matchmaking handoff session. Pure host code: no sockets, no threads.
 add_library(aiverse_meta_bw STATIC EXCLUDE_FROM_ALL MsgPack.cpp Encoding.cpp bw/BwWire.cpp bw/BwApi.cpp bw/BwRoutes.cpp
-    bw/BwBackend.cpp bw/BwMatch.cpp)
+    bw/BwBackend.cpp bw/BwMatch.cpp bw/BwTutorials.cpp)
 target_link_libraries(aiverse_meta_bw PUBLIC aiverse_meta_client)
 set_target_properties(aiverse_meta_bw PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(NOT MSVC)
@@ -59,6 +59,8 @@ aiverse_meta_component(live_core LiveOps.cpp)
 target_link_libraries(aiverse_meta_live_core PUBLIC aiverse_meta_economy)
 aiverse_meta_component(server Service.cpp)
 target_link_libraries(aiverse_meta_server PUBLIC aiverse_meta_economy aiverse_meta_live_core)
+aiverse_meta_component(world ServiceWorld.cpp)   # persistent-world accounts (docs/city-server.md); hosts opt in
+target_link_libraries(aiverse_meta_world PUBLIC aiverse_meta_economy)
 set(AIVERSE_META_POLICIES economy progression social clans items backend tournaments)
 aiverse_meta_component(loot PolicyLoot.cpp)
 target_link_libraries(aiverse_meta_loot PUBLIC aiverse_meta_live_core)

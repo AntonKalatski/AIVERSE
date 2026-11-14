@@ -185,7 +185,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **Картинка и звук**
 - Свой RHI: Metal, GLES3 / WebGL2, GL 3.3
-- PBR, glTF/OBJ, скелетная и процедурная анимация
+- PBR, glTF/OBJ, скелетная и процедурная анимация, процедурные провода, отрисовка вложенных объектов
 - Тени, динамический свет, ночь, постэффекты, Shader Graph
 - Частицы с модулями Unity ParticleSystem и импорт из Unity
 - 2D: спрайты, тайловые карты с автотайлингом
@@ -282,11 +282,14 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 | [Частицы](docs/particles.md) · [Модели](docs/models.md) · [Shader Graph](docs/shader-graph.md) | картинка |
 | [Мета-игра](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [Плагины](docs/plugins.md) | монетизация и сторы |
 | [FPS](docs/fps.md) · [Большие миры](docs/large-worlds.md) | FPS-модуль |
+| [Герои с видом сверху](docs/topdown.md) · [Вождение](docs/driving.md) · [Городской трафик](docs/traffic.md) | городские игры: машины, светофоры, пешеходы, службы, жители с работой |
 | [AGENTS.md](AGENTS.md) | правила для агентов, которые меняют сам движок |
 | [Переход с Unity](docs/ru/engine-import.md) | импорт сцен, префабов и ассетов, перенос логики агентом |
 
 ## Лицензия
 
-[MIT](LICENSE). Сторонние библиотеки лежат в `third_party/` со своими лицензиями (только MIT, BSD, zlib,
+[MIT](LICENSE). Сторонние библиотеки лежат в `third_party/` со своими лицензиями (в том числе MIT, MIT-0, BSD, ISC, zlib,
 OFL, CC0, CC-BY). Оригинальные ресурсы коммерческих игр в репозиторий не входят: импортёры читают
 их из вашей собственной копии.
+
+Сборки игр автоматически включают `THIRD_PARTY_NOTICES.txt`; уведомления внешних SDK предоставляет проект (см. [подробности](docs/third-party-notices.md)).

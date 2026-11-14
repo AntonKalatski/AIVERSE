@@ -180,7 +180,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **画面与音频**
 - 自研 RHI：Metal、GLES3 / WebGL2、GL 3.3
-- PBR、glTF/OBJ、骨骼与程序化动画
+- PBR、glTF/OBJ、骨骼与程序化动画、程序化线缆、父子实体渲染
 - 阴影、动态光源、夜晚、后处理、Shader Graph
 - 支持 Unity ParticleSystem 模块的粒子系统及 Unity 导入器
 - 2D：精灵、带自动拼接的瓦片地图
@@ -278,10 +278,13 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 | [粒子](docs/particles.md) · [模型](docs/models.md) · [Shader Graph](docs/shader-graph.md) | 画面 |
 | [元游戏](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [插件](docs/plugins.md) | 变现与商店 |
 | [FPS](docs/fps.md) · [大世界](docs/large-worlds.md) | FPS 模块 |
+| [俯视角英雄](docs/topdown.md) · [驾驶](docs/driving.md) · [城市交通](docs/traffic.md) | 城市游戏：汽车、红绿灯、行人、公共服务、有工作的居民 |
 | [AGENTS.md](AGENTS.md) | 修改引擎本身的智能体须遵守的规则 |
 | [从 Unity 迁移](docs/zh-CN/engine-import.md) | 导入场景、预制体和资源，再由智能体迁移逻辑 |
 
 ## 许可证
 
-[MIT](LICENSE)。第三方库位于 `third_party/`，各自附带许可证（仅限 MIT、BSD、zlib、OFL、CC0 和 CC-BY）。
+[MIT](LICENSE)。第三方库位于 `third_party/`，各自附带许可证（包括 MIT、MIT-0、BSD、ISC、zlib、OFL、CC0 和 CC-BY）。
 仓库不包含商业游戏的原始资源：导入器从你自己的副本中读取它们。
+
+游戏构建会自动包含 `THIRD_PARTY_NOTICES.txt`；外部 SDK 的许可声明须由项目提供（见[详情](docs/third-party-notices.md)）。
