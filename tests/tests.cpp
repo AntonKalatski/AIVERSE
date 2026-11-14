@@ -13743,6 +13743,48 @@ TEST(mapdoc_validate_scripted_players_without_start) {
     rulesJson.set("scripts", scripts);
     CHECK(startIssue(rulesJson, &error) && !error);
 }
+
+// One real player: rejected for a plain duel map, accepted when the map plays against it (raid, creeps owner 255,
+// a monsters / waves side, scripts); the message comes from the editor string table (key editor.map.need_players).
+TEST(mapdoc_validate_single_player_maps) {
+    Json rulesJson = Json::parseFile(kSkirmish + "/rules.json");
+    const game::Rules rules = game::loadRules(rulesJson);
+    const std::string unit = rules.types[0].id;
+    auto needPlayers = [&](const std::string& mapText, const Json& rj, std::string* text = nullptr) {
+        editor::MapDoc doc;
+        std::string err;
+        CHECK(doc.loadJson(Json::parse(mapText), &err));
+        for (auto& i : doc.validate(rules, rj))
+            if (i.key == "editor.map.need_players") { if (text) *text = i.text; return true; }
+        return false;
+    };
+    const std::string solo = R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": []})";
+    std::string text;
+    editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang", "en");
+    CHECK(needPlayers(solo, rulesJson, &text));
+    CHECK(text.find("At least 2 players") == 0);
+    editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang", "ru");
+    CHECK(needPlayers(solo, rulesJson, &text) && text.find("Нужно минимум 2") == 0);
+    // creeps (owner 255, also -1) play against the hero
+    CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": [{"type": ")" + unit +
+                       R"(", "pos": [10, 10], "owner": 255}]})", rulesJson));
+    editor::MapDoc creeps;
+    std::string err;
+    CHECK(creeps.loadJson(Json::parse(R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": [{"type": ")" + unit +
+                                      R"(", "pos": [10, 10], "owner": 255}]})"), &err));
+    for (auto& i : creeps.validate(rules, rulesJson)) CHECK(i.text.find("владелец") == std::string::npos);   // 255 is a valid owner
+    // a raid (map or rules block), a monsters side, scripts
+    CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": [], "raid": {"duration": 60}})", rulesJson));
+    Json rj = rulesJson;
+    Json scripts = Json::array();
+    scripts.push(Json::string("scripts/game.lua"));
+    rj.set("scripts", scripts);
+    CHECK(!needPlayers(solo, rj));
+    // two players stay fine, an empty player list does not
+    CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1}, {"team": 2}], "entities": []})", rulesJson));
+    CHECK(needPlayers(R"({"name": "t", "size": [16, 16], "players": [], "entities": []})", rj));
+    editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang");
+}
 #endif
 
 // ---------------------------------------------------------------- game.json "window" (desktop window settings)

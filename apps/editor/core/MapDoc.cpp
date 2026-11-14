@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <set>
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsModule.h"
@@ -23,7 +24,53 @@ bool owned(const std::string& k) {
     return false;
 }
 float jf(const Json& j, float def = 0) { return j.isNumber() ? float(j.toDouble()) : def; }
+bool hostileOwner(int owner) { return owner == -1 || owner == int(game::kHostileNeutral); }   // creeps: -1 or 255
+
+struct EditorStrings {
+    std::mutex mu;
+    i18n::Localization loc;
+    bool loaded = false;
+};
+EditorStrings& editorStrings() { static EditorStrings s; return s; }
 } // namespace
+
+void setEditorLanguage(const std::string& langDir, const std::string& language) {
+    auto& es = editorStrings();
+    std::lock_guard<std::mutex> lock(es.mu);
+    es.loc.clear();
+    es.loaded = false;
+    try {
+        es.loc.load([&langDir](const std::string& name, std::string& out) {
+            std::ifstream f(langDir + "/" + name, std::ios::binary);
+            if (!f) return false;
+            out.assign(std::istreambuf_iterator<char>(f), {});
+            return true;
+        }, language, {"."});
+        es.loaded = true;
+    } catch (const std::exception&) {   // a broken table: fallback texts
+        es.loc.clear();
+    }
+}
+
+std::string editorText(const char* key, const std::string& fallback, const i18n::Args& args) {
+    auto& es = editorStrings();
+    std::lock_guard<std::mutex> lock(es.mu);
+    if (!es.loaded || !es.loc.has(key)) return i18n::format(fallback, args);
+    return es.loc.tr(key, args);
+}
+
+bool singlePlayerPlayable(const MapData& d, const Json& rulesJson) {
+    auto nonEmpty = [](const Json& j) { return (j.isArray() || j.isObject()) && j.size() > 0; };
+    if (rulesJson.has("raid") || d.extra.has("raid")) return true;
+    for (auto& p : d.players)
+        if (p.waves || p.extra.getBool("monsters", false)) return true;
+    for (auto& e : d.entities)
+        if (hostileOwner(e.owner)) return true;
+    if (nonEmpty(rulesJson["scripts"]) || nonEmpty(rulesJson["encounters"])) return true;
+    for (const char* k : {"waves", "triggers", "encounters", "scripts"})
+        if (nonEmpty(d.extra[k])) return true;
+    return false;
+}
 
 void MapDoc::ensureLayers() {
     const size_t n = size_t(data.w * data.h);
@@ -632,7 +679,7 @@ std::string MapDoc::ascii(int maxW) const {
         const auto& e = d.entities[k];
         int x = int(e.x) / step, y = int(e.z) / step;
         if (y >= 0 && y < int(rows.size()) && x >= 0 && x < int(rows[size_t(y)].size()))
-            rows[size_t(y)][size_t(x)] = e.owner > 0 && e.owner <= 26 ? char('A' + (e.owner - 1)) : e.owner < 0 ? 'x' : 'n';
+            rows[size_t(y)][size_t(x)] = hostileOwner(e.owner) ? 'x' : e.owner > 0 && e.owner <= 26 ? char('A' + (e.owner - 1)) : e.owner < 0 ? 'x' : 'n';
     }
     std::string out = "legend: . ground ~ water # blocked , no-build = shallow / ramp R rock 1-9 cliff level $ resource field; "
                       "A/B/C.. objects of player 1/2/3.., n neutral, x hostile creeps; scale 1:" + std::to_string(step) + "\n";
@@ -646,7 +693,10 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
     if (d.planet()) validateWorld(rules, out);
     int real = 0;
     for (auto& p : d.players) if (!p.waves) ++real;
-    if (real < 1 || d.players.size() < 2) out.push_back({true, "Нужно минимум 2 игрока"});
+    // one real player is fine when the map plays against it (raid, creeps, monsters / waves sides, scripts)
+    if (real < 1 || (d.players.size() < 2 && !singlePlayerPlayable(d, rulesJson)))
+        out.push_back({true, editorText("editor.map.need_players", "Нужно минимум 2 игрока (или одиночная карта: рейд, враждебные существа, "
+                                                                   "волны, монстры или скрипты)"), -1, "editor.map.need_players"});
     std::set<std::string> ids;
     for (size_t i = 0; i < d.entities.size(); ++i) {
         const auto& e = d.entities[i];
@@ -654,7 +704,7 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
         std::string nm = e.id.empty() ? e.type : e.id;
         if (ti < 0) { out.push_back({true, nm + ": неизвестный тип", int(i)}); continue; }
         if (!e.id.empty() && !ids.insert(e.id).second) out.push_back({true, "Повторяющийся id: " + e.id, int(i)});
-        if (e.owner < -1 || e.owner > int(d.players.size())) out.push_back({true, nm + ": владелец вне диапазона", int(i)});
+        if ((e.owner < -1 || e.owner > int(d.players.size())) && !hostileOwner(e.owner)) out.push_back({true, nm + ": владелец вне диапазона", int(i)});
         if (d.planet()) continue;   // positions checked by validateWorld, terrain by the loader below
         if (e.x < 0 || e.z < 0 || e.x > d.w || e.z > d.h) out.push_back({true, nm + ": за пределами карты", int(i)});
         const auto& t = rules.types[size_t(ti)];

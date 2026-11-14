@@ -710,6 +710,7 @@ if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
     apps/editor/core/ToolchainOps.cpp apps/editor/core/WorldInspect.cpp)   # scenario_run, rules_lint, rules_schema keys
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_game)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_postfx_data)   # postfx_* ops (postfx agent)
+    target_link_libraries(aiverse_editor_core PUBLIC aiverse_i18n)   # editor messages (editorText)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PostFxOps.cpp)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightBakeOps.cpp)   # lightbake_* ops (agent-lightbake)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_bake)

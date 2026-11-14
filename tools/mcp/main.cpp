@@ -233,6 +233,7 @@ int main(int argc, char** argv) {
 
     Workspace local;                      // used when no editor is reachable
     local.engineDir = opt.engine;
+    aiverse::editor::setEditorLanguage(opt.engine + "/engine/assets/lang");
     local.buildTool = findTool(self, "aiversebuild");
     for (fs::path c : {fs::path(self) / "AiverseGame", fs::path(self) / "AiverseGame.exe", fs::path(self) / "AiverseGame.app/Contents/MacOS/AiverseGame",
                        fs::path(self) / "Release/AiverseGame.exe"}) {   // ui_preview renders screens with the client
