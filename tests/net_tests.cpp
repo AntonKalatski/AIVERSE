@@ -703,6 +703,79 @@ TEST(net_texts_are_localization_keys) {
     }
 }
 
+// ---- game speed of match modes in network play (Msg::ClockRate / ClockRateSet)
+// A copy of the mushrooms game with a time limit that doubles the game speed after 10 game seconds.
+static std::string speedGameDir() {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::path(kReplayDir) / "speedgame";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::copy(kMushrooms, dir, fs::copy_options::recursive, ec);
+    std::ifstream in(dir / "rules.json"); std::stringstream ss; ss << in.rdbuf(); in.close();
+    std::string rules = ss.str();
+    const size_t at = rules.find("\"victory\"");
+    rules.insert(at, "\"modes\": {\"timeLimit\": {\"seconds\": 60, \"speed\": [{\"remaining\": 50, \"speed\": 2}]}},\n  ");
+    std::ofstream(dir / "rules.json") << rules;
+    return dir.string();
+}
+
+TEST(net_match_clock_follows_the_game_speed) {
+    const std::string dir = speedGameDir();
+    net::ServerConfig cfg = testServerConfig();
+    cfg.gameDirs[gameIdOf(dir)] = dir;
+    cfg.arbiter = netgame::makeArbiter(cfg.gameDirs);
+    net::Server srv(cfg);
+    NetPlayer a{"Fast A", dir}, b{"Fast B", dir};
+    connectPlayer(srv, a, {30, 10, 31}, 601);
+    connectPlayer(srv, b, {40, 10, 32}, 602);
+    uint64_t now = 1000;
+    CHECK(startRoomMatch(srv, a, b, now));
+    auto step = [&](int ms) { for (int i = 0; i < ms; i += 5, now += 5) { srv.update(now); pump(a, now, .005); pump(b, now, .005); } };
+    step(5000);                                        // 5 s in: still the nominal speed
+    CHECK(a.net->session() && a.net->session()->clockRate() == 1.0 && b.net->session()->clockRate() == 1.0);
+    const uint32_t t5 = a.sim->tick();
+    CHECK(t5 > 80 && t5 < 115);
+    step(7000);                                        // game second 10 passed: both simulations ask for speed 2
+    CHECK(a.net->session()->clockRate() == 2.0 && b.net->session()->clockRate() == 2.0);
+    const uint32_t t12 = a.sim->tick(), u12 = b.sim->tick();
+    step(5000);                                        // 5 real seconds = 10 game seconds = 200 ticks
+    CHECK(a.sim->tick() - t12 > 185 && a.sim->tick() - t12 < 215);
+    CHECK(b.sim->tick() - u12 > 185 && b.sim->tick() - u12 < 215);
+    CHECK(a.net->session()->stats().stallUpdates < 50);
+    runUntilEnd(srv, {&a, &b}, now, 120000);
+    CHECK(a.ended && b.ended && !a.desync && !b.desync && a.endResult == b.endResult);
+    // time up after 60 game seconds: 10 at speed 1 + 50 at speed 2 = 35 real seconds (not 60)
+    CHECK(now - 1000 < 50000);
+    CHECK(a.net->session() && verifyLatestReplay(a.net->session()->resultHash()));
+}
+
+TEST(net_clock_rate_messages_are_optional) {
+    // encode / decode, bounds, and a session without a server answer keeps the nominal rate
+    net::ClockRateMsg m; m.tick = 77; m.rate = net::kClockRateOne * 3 / 2;
+    for (bool fromServer : {false, true}) {
+        net::Bytes b = net::encode(m, fromServer);
+        ByteReader r(b.data(), b.size());
+        CHECK(net::Msg(r.u8()) == (fromServer ? net::Msg::ClockRateSet : net::Msg::ClockRate));
+        net::ClockRateMsg d;
+        CHECK(net::decode(r, d) && d.tick == 77 && d.rate == m.rate);
+    }
+    m.rate = net::kClockRateMax + 1;
+    net::Bytes bad = net::encode(m, false);
+    ByteReader r(bad.data(), bad.size()); r.u8();
+    net::ClockRateMsg d;
+    CHECK(!net::decode(r, d));
+    CHECK(uint8_t(net::Msg::ClockRate) == 21 && uint8_t(net::Msg::ClockRateSet) == 78);   // appended: older peers skip them
+    const std::string sdir = speedGameDir();
+    auto sim = makeSim(sdir, net::describeGameMaps(sdir)[0].file, 5);
+    int sent = 0;
+    net::RollbackSession ses(*sim, {}, {1}, [](uint32_t, const std::vector<Command>&) {}, [](uint32_t, uint64_t) {});
+    ses.setClockRateSender([&](uint32_t, uint32_t) { ++sent; });
+    ses.confirm(0, 400, {});
+    uint64_t now = 0;
+    for (int i = 0; i < 2600; ++i, now += 5) ses.update(0.005, now);   // 13 s, no server clock: speed 2 asked, rate stays 1
+    CHECK(sent == 1 && ses.clockRate() == 1.0 && sim->tick() > 250 && sim->tick() < 270);
+}
+
 int main(int argc, char** argv) {
     for (auto& [name, fn] : registry()) {
         if (argc > 1 && std::string(name).find(argv[1]) == std::string::npos) continue; // ./aiverse_net_tests <name filter>

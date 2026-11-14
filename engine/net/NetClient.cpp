@@ -127,6 +127,7 @@ void NetClient::handle(const Bytes& b) {
         session_.reset();
         sim_ = nullptr;
         early_.clear();
+        haveEarlyRate_ = false;
         resultSent_ = false;
         match_ = std::move(m);
         pendingMatch_ = true;
@@ -182,6 +183,13 @@ void NetClient::handle(const Bytes& b) {
         if (decode(r, m)) event(NetEvent::Kind::Chat, NetText("net.chat_line").str("name", m.name).str("text", m.text), int32_t(m.from));
         break;
     }
+    case Msg::ClockRateSet: {   // the match clock changed speed (match modes): pace with it
+        ClockRateMsg m;
+        if (!decode(r, m)) break;
+        if (session_) session_->clockRate(m.tick, m.rate, conn_ ? conn_->rttMs() : 0, now_);
+        else { earlyRate_ = m; haveEarlyRate_ = true; }   // before the session exists (resume / late spectator)
+        break;
+    }
     case Msg::Pong: break;
     default: break;
     }
@@ -230,11 +238,13 @@ void NetClient::attach(Simulation& sim) {
         sim, cfg, match_->localSlot ? match_->controlled : std::vector<uint8_t>{},
         [this](uint32_t tick, const std::vector<Command>& cmds) { InputFrameMsg f; f.tick = tick; f.commands = cmds; send(encode(f)); },
         [this](uint32_t tick, uint64_t hash) { ChecksumMsg c; c.tick = tick; c.hash = hash; send(encode(c)); });
+    session_->setClockRateSender([this](uint32_t tick, uint32_t rate) { ClockRateMsg c; c.tick = tick; c.rate = rate; send(encode(c, false)); });
     for (auto& m : early_) {
         session_->confirm(m.first, m.count, m.commands);
         session_->serverTime(m.serverTick, conn_ ? conn_->rttMs() : 0, now_);
     }
     early_.clear();
+    if (haveEarlyRate_) { session_->clockRate(earlyRate_.tick, earlyRate_.rate, conn_ ? conn_->rttMs() : 0, now_); haveEarlyRate_ = false; }
     pendingMatch_ = false;
 }
 

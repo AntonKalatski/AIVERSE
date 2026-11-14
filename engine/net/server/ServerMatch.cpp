@@ -25,6 +25,7 @@ void Server::Impl::startMatch(Room& r) {
     auto m = std::make_unique<Match>();
     m->seed = r.hosted && r.hosted->alloc.seed ? r.hosted->alloc.seed : rng() >> 1;
     m->startMs = now;
+    m->clockMs = now;
     Member* host = nullptr;
     for (size_t i = 0; i < r.slots.size(); ++i) {
         const SlotEntry& s = r.slots[i];
@@ -61,12 +62,13 @@ void Server::Impl::sendMatchStart(Room& r, Member& m, bool resumed) {
     s.roomId = r.id; s.seed = r.match->seed; s.settings = r.settings; s.map = r.map; s.gameId = r.gameId;
     s.players = r.match->players; s.localSlot = m.slot; s.controlled = m.slots; s.resumed = resumed;
     send(*c, encode(s));
+    if (r.match->clockRate != kClockRateOne) {   // joining a match whose clock already runs at another speed
+        ClockRateMsg cr; cr.tick = r.match->nominal(now, r.settings.tickRate); cr.rate = r.match->clockRate;
+        send(*c, encode(cr, true));
+    }
     m.sent = 0;
 }
 
-static uint32_t nominalTick(uint64_t now, uint64_t start, uint32_t tickRate) {
-    return now > start ? uint32_t((now - start) * tickRate / 1000) : 0;
-}
 
 void Server::Impl::confirmNextTick(Match& M) {
     const uint32_t T = M.confirmedNext;
@@ -90,7 +92,22 @@ void Server::Impl::matchUpdate(Room& r) {
     Match& M = *r.match;
     if (M.concluding) return;
     const RoomSettings& s = r.settings;
-    const uint32_t nominal = nominalTick(now, M.startMs, s.tickRate);
+    // game speed: once every playing member asks for the same new rate, re-base the clock (continuous in ticks)
+    {
+        uint32_t want = 0; bool agree = true, any = false;
+        for (auto& m : M.members) {
+            if (!m.slot || !m.connected || m.left || !m.synced || m.slots.empty()) continue;
+            if (!any) { want = m.clockRate; any = true; } else if (m.clockRate != want) agree = false;
+        }
+        if (any && agree && want != M.clockRate) {
+            M.clockTick = M.nominal(now, s.tickRate); M.clockMs = now; M.clockRate = want;
+            ClockRateMsg cr; cr.tick = M.clockTick; cr.rate = want;
+            const Bytes out = encode(cr, true);
+            for (auto& m : M.members)
+                if (Client* c = client(m.clientId); c && c->conn && !m.left && c->roomId == r.id) send(*c, out);
+        }
+    }
+    const uint32_t nominal = M.nominal(now, s.tickRate);
     const uint32_t horizon = nominal + s.inputDelay + s.rollbackWindow + 2; // nobody can legitimately be further ahead
 
     // ---- confirm ticks
@@ -99,7 +116,7 @@ void Server::Impl::matchUpdate(Room& r) {
         bool all = true;
         for (auto& m : M.members)
             if (m.slot && m.connected && !m.left && m.synced && !m.slots.empty() && m.nextFrame <= T) all = false;
-        const uint64_t deadline = M.startMs + uint64_t(T + 1) * 1000 / s.tickRate + s.lagToleranceMs;
+        const uint64_t deadline = M.deadlineMs(T, s.tickRate) + s.lagToleranceMs;
         if (!all && now < deadline) break;
         confirmNextTick(M);
     }

@@ -1143,8 +1143,10 @@ player per team, BW COOP = teams; the KotH score is shared by the team).
 Clocks: BW scales the delta time of gameplay modules while zones, sudden death and time slots count unscaled
 ticks. Here a tick stays one tick: `RtsModule::speedScale()` (= time limit speed x preview speed) makes
 `Simulation::advance` run that many ticks per real tick; game timers (hold, KotH, time limit) use game time,
-zones / sudden death / `timedRules` use `ModesState::realTime` (sum of dt / speed). Network play steps ticks
-through the net session and does not apply the speed yet.
+zones / sudden death / `timedRules` use `ModesState::realTime` (sum of dt / speed). Network play: each client
+reports the speed of its simulation (`Msg::ClockRate`); when every player asks for the same rate the server re-bases
+the match clock and answers `Msg::ClockRateSet`, and the sessions pace with it (older peers ignore both messages
+and play at the nominal speed).
 
 `timedRules` (BW `CustomRulesInfo` rules + `TimeSlots`): every player has `status` (a player status: its `mods`,
 `incomeMult`, `flags`) while one of its `when` slots holds (no slots: always). A slot: `from` / `to` (real seconds,
@@ -1196,8 +1198,7 @@ More keys (stage 2):
   `{"id": "timer", "when": {"var": "mode_time_left", ">": 0}, "anchor": {"type": "screen", "at": [640, 24]},
   "shape": "text", "text": "{var:mode_time_left}"}`.
 
-Not covered yet: network play does not apply the game speed (the net session paces to the server clock, which
-needs a speed epoch from the relay), custom rule kinds that are not stat mods (MoveUnits, AllowedTypes, Clouds,
+Not covered yet: custom rule kinds that are not stat mods (MoveUnits, AllowedTypes, Clouds,
 UseSkill, RandomUpgrade, CatchLevelDecreaseTo ...: use trigger actions `disableType`, `castAbility`, effects on a
 timer), `GameplayConditions` (HUD attack hints: overlay `var` conditions / trigger conditions).
 

@@ -141,6 +141,7 @@ private:
     std::optional<MatchStartMsg> match_;
     bool pendingMatch_ = false;
     std::vector<TickBatchMsg> early_;               // confirmed input that arrived before attach()
+    ClockRateMsg earlyRate_; bool haveEarlyRate_ = false;   // Msg::ClockRateSet before attach()
     Simulation* sim_ = nullptr;
     std::unique_ptr<RollbackSession> session_;
     bool resultSent_ = false;
