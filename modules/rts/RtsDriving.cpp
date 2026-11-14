@@ -3,6 +3,7 @@
 // vehicle-controllers step and this module's part of the contract: the sweep of the body over the map grid and other
 // units, collision response, crash and run-over damage. Fixed maths only; every loop runs in entity-index order.
 #include "RtsDriving.h"
+#include "RtsRoadNet.h"
 #include "RtsInternal.h"
 #include "../../engine/core/Archive.h"
 #include "../../engine/core/FixedMath.h"
@@ -232,13 +233,23 @@ void Driving::io(Simulation& sim, Archive& a) {
 
 // ================================================================= levels
 
-void Driving::loadMap(Simulation& sim, const Json& map) {
+void Driving::loadMap(Simulation& sim, const Json& map, const Json& roadTypes) {
     auto* st = store(sim);
     if (!st) return;
     st->decks.clear();
-    const Json& list = map["decks"];
+    Json list = map["decks"];
+    if (!list.isNull() && !list.isArray()) throw std::runtime_error("map decks: expected a list");
+    // spline roads: their bridge and tunnel spans are decks too (heights over the ground, RtsRoadNet roadDecks)
+    if (map["roadNetwork"].isObject()) {
+        const std::vector<RoadTypeDef> types = loadRoadTypes(roadTypes);
+        const RoadNetwork roads = parseRoadNetwork(map["roadNetwork"], types);
+        const Json more = roadDecks(roads, types, buildRoadGeometry(roads, types));
+        if (more.size() > 0) {
+            if (list.isNull()) list = Json::array();
+            for (auto& d : more.items()) list.push(d);
+        }
+    }
     if (list.isNull()) return;
-    if (!list.isArray()) throw std::runtime_error("map decks: expected a list");
     for (auto& dj : list.items()) {
         DrivingDeck d;
         d.id = dj.getStr("id");

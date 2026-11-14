@@ -74,8 +74,8 @@ private:
     std::unique_ptr<render::Model> ghostModel_;
     render::SpriteBatch decalBatch_;             // road paint as decals
     render::TextureCache paintTex_;
-    render::TextureRef paint_;
-    render::SpriteMesh decalMesh_;
+    render::TextureRef paint_, verge_;
+    render::SpriteMesh decalMesh_, vergeMesh_;
 };
 
 } // namespace aiverse::game

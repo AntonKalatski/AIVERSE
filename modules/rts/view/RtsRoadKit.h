@@ -20,9 +20,18 @@ struct Tri { int mat; render::float3 a, b, c; };
 // The carriageway texture of a road type with its markings painted in: u runs across the whole carriageway (type
 // frame: 0 at the left edge of the backward lanes, 1 at the right edge of the forward lanes, the median included),
 // v along the road, one period of the dash pattern (kRoadPaintPeriod metres) per texture height.
-// variant bits: 1 = no right edge line, 2 = no left edge line (a branch or a bus stop bay opens that side).
+// variant bits: 1 = no right edge line, 2 = no left edge line (a branch or a bus stop bay opens that side). 4 = no lines at all (tracks and grime only).
 inline constexpr float kRoadPaintPeriod = 12.0f;
 render::Image roadSurface(const RoadTypeDef& t, int variant);
+// the texture reaches this far (cells) past each carriageway edge (plain asphalt: bus stop bays, tapers)
+float paintMargin(const RoadTypeDef& t);
+// Verges of roads without a curb: one strip texture per surface (gravel, grass, dirt side by side, 256 x 256 each),
+// u across (0: over the asphalt edge, ragged; 1: faded into the ground), v along (tiles every kVergePeriod metres).
+inline constexpr float kVergePeriod = 6.0f;
+inline constexpr int kVergeSlots = 5;        // gravel, grass, dirt verges; asphalt wearing into dirt; a wheel track
+inline constexpr int kVergeWearSlot = 3, kVergeTrackSlot = 4;
+std::vector<uint32_t> vergeAtlas(int cell);
+inline int vergeSlot(RoadSurface s) { return s == RoadSurface::Grass ? 1 : s == RoadSurface::Dirt ? 2 : 0; }
 bool roadSurfacePainted(const RoadTypeDef& t);   // the type has lines worth a texture of its own
 
 // Road paint decals: one atlas of white marks (tinted per quad) in a 4 x 4 grid. Arrows and text point to v = 0.

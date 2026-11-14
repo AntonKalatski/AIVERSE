@@ -2,6 +2,7 @@
 // the bot driver of each traffic car, and the pedestrians. Fixed maths only; every loop runs in entity-index order,
 // randomness only from sim.rng().
 #include "RtsTraffic.h"
+#include "RtsTrafficRoads.h"
 #include "kingston/FireResponseRoute.h"
 #include "RtsInternal.h"
 #include "kingston/TrafficPriorityPolicy.h"
@@ -121,7 +122,9 @@ TrafficRules Traffic::parse(const Json& j, const std::vector<std::string>& ids, 
 
     const Json& roads = j["roads"];
     r.roadTiles = roads.getStr("tiles");
-    if (r.roadTiles.empty()) throw std::runtime_error("traffic.roads.tiles: the map tile characters of road cells");
+    r.roadNetwork = roads.getBool("network", false);
+    if (r.roadTiles.empty() && !r.roadNetwork)
+        throw std::runtime_error("traffic.roads.tiles: the map tile characters of road cells (or \"network\": true: the map's spline roads)");
     r.net.laneWidth = number(roads, "laneWidth", r.net.laneWidth, "traffic.roads", true);
     r.net.parkingLanes = integer(roads, "parkingLanes", 0, 0, 8, "traffic.roads");
     r.net.maxRoadWidth = integer(roads, "maxWidth", 6, 1, 64, "traffic.roads");
@@ -257,20 +260,31 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
     }
     if (drv && drv->active()) mpc_ = drv->rules().metersPerCell;
 
-    // masks from the map's tile characters
     const MapGrid& g = m.state(sim).grid;
     const int w = g.w, h = g.h;
-    const Json& rows = map["tiles"]["rows"];
-    if (!rows.isArray()) throw std::runtime_error("traffic: the map needs a tiles layer (tiles.rows) to find its roads");
     std::vector<uint8_t> road(size_t(w) * size_t(h), 0), side(road.size(), 0);
-    for (int z = 0; z < h && size_t(z) < rows.size(); ++z) {
-        const std::string row = rows[size_t(z)].str();
-        for (int x = 0; x < w && size_t(x) < row.size(); ++x) {
-            if (rules_.roadTiles.find(row[size_t(x)]) != std::string::npos) road[size_t(z * w + x)] = 1;
-            else if (!rules_.walkTiles.empty() && rules_.walkTiles.find(row[size_t(x)]) != std::string::npos) side[size_t(z * w + x)] = 1;
+    const Json& rn = map["roadNetwork"];
+    const bool splines = rn.isObject() && rn["edges"].size() > 0 && (rules_.roadNetwork || rules_.roadTiles.empty());
+    if (splines) {   // spline roads (RtsTrafficRoads.cpp): curved pieces, junctions at the nodes
+        const std::vector<RoadTypeDef> types = loadRoadTypes(rulesJson["roadTypes"]);
+        const RoadNetwork roads = parseRoadNetwork(rn, types);
+        const RoadGeometry geom = buildRoadGeometry(roads, types);
+        net_ = buildTrafficNetFromRoads(w, h, roads, types, geom, rules_.net, side);
+        for (size_t i = 0; i < road.size(); ++i) road[i] = net_.pieceAt[i] >= 0 || net_.junctionAt[i] >= 0;
+    } else {
+        // masks from the map's tile characters
+        if (rules_.roadTiles.empty()) throw std::runtime_error("traffic: roads.network is on but the map has no roadNetwork");
+        const Json& rows = map["tiles"]["rows"];
+        if (!rows.isArray()) throw std::runtime_error("traffic: the map needs a tiles layer (tiles.rows) to find its roads");
+        for (int z = 0; z < h && size_t(z) < rows.size(); ++z) {
+            const std::string row = rows[size_t(z)].str();
+            for (int x = 0; x < w && size_t(x) < row.size(); ++x) {
+                if (rules_.roadTiles.find(row[size_t(x)]) != std::string::npos) road[size_t(z * w + x)] = 1;
+                else if (!rules_.walkTiles.empty() && rules_.walkTiles.find(row[size_t(x)]) != std::string::npos) side[size_t(z * w + x)] = 1;
+            }
         }
+        net_ = tl::buildTrafficNet(w, h, road, rules_.net);
     }
-    net_ = tl::buildTrafficNet(w, h, road, rules_.net);
     if (!rules_.signals) for (auto& j : net_.junctions) j.signal = false;
     // signal offsets: deterministic from the junction position (no RNG draw at setup)
     offset_.assign(net_.junctions.size(), 0);
@@ -286,6 +300,7 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
     strips_.clear();
     for (size_t pi = 0; pi < net_.pieces.size(); ++pi) {
         const auto& p = net_.pieces[pi];
+        if (p.curved()) continue;   // spline roads: no crossing strips yet (people keep to their sidewalks)
         for (int end = 0; end < 2; ++end) {
             if (p.junction[size_t(end)] < 0 || p.length() < 2) continue;
             const int a = end == 0 ? p.along0 : p.along1;
@@ -309,7 +324,7 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
     }
     // junctions with an island in the middle (a monument, a roundabout): traffic goes round it
     ring_.assign(net_.junctions.size(), {});
-    for (size_t i = 0; i < net_.junctions.size(); ++i) {
+    for (size_t i = 0; i < net_.junctions.size() && !splines; ++i) {   // spline junctions have no box of cells to look into
         const auto& jn = net_.junctions[i];
         int ix0 = INT32_MAX, iz0 = INT32_MAX, ix1 = -1, iz1 = -1;
         for (int z = jn.z0; z <= jn.z1; ++z)
@@ -432,6 +447,7 @@ int Traffic::junctionAt(Fixed x, Fixed z) const {
 }
 
 bool Traffic::stripAtEnd(const tl::TrafficPiece& p, int end) const {
+    if (p.curved()) return false;   // spline roads: no crossing strips yet
     const int a = end == 0 ? p.along0 : p.along1;
     const int cell = p.axis == tl::TrafficAxis::X ? p.across0 * net_.w + a : a * net_.w + p.across0;
     return stripAt(cell) >= 0;
@@ -661,7 +677,8 @@ void Traffic::placeLightsAt(Simulation& sim, TrafficStore& st, int junction) {
             const int pi = jn.piece[size_t(sd)];
             if (pi < 0 || net_.pieces[size_t(pi)].lanes <= 0) continue;
             const auto& p = net_.pieces[size_t(pi)];
-            const int out = tl::trafficExitDir(sd), in = -out;            // traffic of this arm drives `in` into the box
+            const int out = tl::trafficExitDirAt(net_, int(ji), sd), in = -out;   // traffic of this arm drives `in` into the box
+            if (tl::trafficLanes(p, in) <= 0) continue;                    // a one-way arm leaving the box
             const Fixed edge = tl::trafficPieceEnd(p, in);                 // stop line
             // the curb on the right of the incoming traffic, just outside the band, a little before the stop line
             const Fixed laneOuter = tl::trafficLaneAcross(net_, p, in, 0) - p.centre();
@@ -672,9 +689,9 @@ void Traffic::placeLightsAt(Simulation& sim, TrafficStore& st, int junction) {
             const Vec2 pos = tl::trafficDetail::at(p, along, across);
             const Entity e = m_->spawn(sim, rules_.light[0], 0, v3(pos));
             if (!e.valid()) continue;
-            const Vec2 face = tl::trafficDetail::axisDir(p.axis, out);    // looks at the incoming traffic
+            const Vec2 face = tl::trafficDir(p, along, out);              // looks at the incoming traffic
             sim.world().get<Unit>(e).facing = v3(face);
-            st.lights.push_back({e, int32_t(ji), uint8_t(p.axis), 255});
+            st.lights.push_back({e, int32_t(ji), uint8_t(tl::trafficApproachAxis(p, in > 0 ? 1 : 0)), 255});
         }
     }
 }
@@ -705,13 +722,14 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
             const int k2 = std::min(k, std::max(P.lanes - 1, 0));
             const Fixed back = Fixed::fromInt(std::min(2, P.length()));
             const Vec2 X = tl::trafficLanePoint(net_, P, s2, k2, tl::trafficPieceEnd(P, s) - Fixed::fromInt(s) * back);
-            const Vec2 C = (E + X) * kHalf + tl::trafficDetail::axisDir(P.axis, s) * Fixed::fromRatio(1, 2);
+            const Vec2 C = (E + X) * kHalf + tl::trafficDir(P, tl::trafficPieceEnd(P, s), s) * Fixed::fromRatio(1, 2);
             tl::trafficCurve(E, C, X, 5, pts);
             for (auto& q : pts) c.route.push_back({q, -1, 0, 1});
             c.tailDir = int8_t(s2); c.tailLane = uint8_t(k2);
             const auto& PP = net_.pieces[size_t(Q)];
             const int jEnd = PP.junction[s2 > 0 ? 1 : 0];
-            c.route.push_back({tl::trafficLanePoint(net_, PP, s2, k2, tl::trafficPieceEnd(PP, s2)), int32_t(jEnd), uint8_t(PP.axis), 0});
+            for (const Vec2& q : tl::trafficLaneCurve(net_, PP, s2, k2, tl::trafficPieceEnd(P, s) - Fixed::fromInt(s) * back)) c.route.push_back({q, -1, 0, 0});
+            c.route.push_back({tl::trafficLanePoint(net_, PP, s2, k2, tl::trafficPieceEnd(PP, s2)), int32_t(jEnd), uint8_t(tl::trafficApproachAxis(PP, s2 > 0 ? 1 : 0)), 0});
             continue;
         }
         const auto& jn = net_.junctions[size_t(J)];
@@ -720,8 +738,9 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
         for (int sd = 0; sd < 4; ++sd) {
             const int q = jn.piece[size_t(sd)];
             if (sd == inSide || q < 0 || net_.pieces[size_t(q)].lanes <= 0) continue;
+            if (tl::trafficLanes(net_.pieces[size_t(q)], tl::trafficExitDirAt(net_, J, sd)) <= 0) continue;   // one-way, the other way
             cand[sd] = q;
-            wgt[sd] = net_.pieces[size_t(q)].axis == P.axis ? rules_.straight : rules_.turn;
+            wgt[sd] = (sd ^ 1) == inSide ? rules_.straight : rules_.turn;   // the opposite side: straight on
             total += wgt[sd];
         }
         int exitSide = inSide;
@@ -737,8 +756,8 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
         }
         Q = exitSide == inSide ? c.tailPiece : cand[exitSide];
         const auto& QP = net_.pieces[size_t(Q)];
-        s2 = tl::trafficExitDir(exitSide);
-        const int k2 = std::min(k, QP.lanes - 1);
+        s2 = tl::trafficExitDirAt(net_, J, exitSide);
+        const int k2 = std::max(0, std::min(k, tl::trafficLanes(QP, s2) - 1));
         const Vec2 X = tl::trafficLanePoint(net_, QP, s2, k2, tl::trafficPieceStart(QP, s2));
         if (const Ring& rg = ring_[size_t(J)]; rg.on) {   // round the island, keeping it on the driver's side
             // corners in driving order (right-hand traffic: SE, NE, NW, SW on a map with z down the screen)
@@ -754,18 +773,29 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
             pts.push_back(X);
         } else if (Q == c.tailPiece) {   // nowhere else to go: U-turn inside the box
             const Fixed depth = Fixed::fromInt(P.axis == tl::TrafficAxis::X ? jn.x1 - jn.x0 + 1 : jn.z1 - jn.z0 + 1);
-            const Vec2 C = (E + X) * kHalf + tl::trafficDetail::axisDir(P.axis, s) * (depth * Fixed::fromRatio(3, 4));
+            const Vec2 C = (E + X) * kHalf + tl::trafficDir(P, tl::trafficPieceEnd(P, s), s) * (depth * Fixed::fromRatio(3, 4));
             tl::trafficCurve(E, C, X, 6, pts);
-        } else if (QP.axis == P.axis) {
+        } else if (!P.curved() && !QP.curved() && QP.axis == P.axis) {
             pts.push_back(X);
-        } else {
+        } else if (!P.curved() && !QP.curved()) {
             const Vec2 C = P.axis == tl::TrafficAxis::X ? Vec2{X.x, E.y} : Vec2{E.x, X.y};
             tl::trafficCurve(E, C, X, 4, pts);
+        } else {   // spline roads: the curve through the point where the way in and the way out meet
+            const Vec2 din = tl::trafficDir(P, tl::trafficPieceEnd(P, s), s), dout = tl::trafficDir(QP, tl::trafficPieceStart(QP, s2), s2);
+            const Fixed den = tl::trafficDetail::cross(din, dout);
+            Vec2 C = (E + X) * kHalf;
+            if (fxAbs(den) > Fixed::fromRatio(1, 20)) {
+                const Fixed u = tl::trafficDetail::cross(X - E, dout) / den;
+                if (u > Fixed{} && u < (X - E).length() * 2) C = E + din * u;
+            }
+            tl::trafficCurve(E, C, X, 6, pts);
         }
-        const uint8_t turning = QP.axis == P.axis && Q != c.tailPiece && !ring_[size_t(J)].on ? 0 : 1;
+        const bool through = P.curved() || QP.curved() ? (exitSide ^ 1) == inSide : QP.axis == P.axis;
+        const uint8_t turning = through && Q != c.tailPiece && !ring_[size_t(J)].on ? 0 : 1;
         for (auto& q : pts) c.route.push_back({q, -1, 0, turning});
         const int jEnd = QP.junction[s2 > 0 ? 1 : 0];
-        c.route.push_back({tl::trafficLanePoint(net_, QP, s2, k2, tl::trafficPieceEnd(QP, s2)), int32_t(jEnd), uint8_t(QP.axis), 0});
+        for (const Vec2& q : tl::trafficLaneCurve(net_, QP, s2, k2, tl::trafficPieceStart(QP, s2))) c.route.push_back({q, -1, 0, 0});
+        c.route.push_back({tl::trafficLanePoint(net_, QP, s2, k2, tl::trafficPieceEnd(QP, s2)), int32_t(jEnd), uint8_t(tl::trafficApproachAxis(QP, s2 > 0 ? 1 : 0)), 0});
         c.tailPiece = int32_t(Q); c.tailDir = int8_t(s2); c.tailLane = uint8_t(k2);
     }
 }
@@ -793,31 +823,37 @@ bool Traffic::reroute(Simulation& sim, TrafficCar& c, Vec2 pos, Vec2 fwd) {
         for (int sd = 0; sd < 4; ++sd) {
             const int q = jn.piece[size_t(sd)];
             if (q < 0 || net_.pieces[size_t(q)].lanes <= 0) continue;
-            const Fixed d = tl::trafficDetail::axisDir(net_.pieces[size_t(q)].axis, tl::trafficExitDir(sd)).dot(fwd);
+            const int od = tl::trafficExitDirAt(net_, junction, sd);
+            if (tl::trafficLanes(net_.pieces[size_t(q)], od) <= 0) continue;
+            const Fixed d = tl::trafficDir(net_.pieces[size_t(q)], tl::trafficPieceStart(net_.pieces[size_t(q)], od), od).dot(fwd);
             if (bestSide < 0 || d > best) { best = d; bestSide = sd; }
         }
         if (bestSide < 0) return false;
         piece = jn.piece[size_t(bestSide)];
         const auto& P = net_.pieces[size_t(piece)];
-        const int s = tl::trafficExitDir(bestSide);
+        const int s = tl::trafficExitDirAt(net_, junction, bestSide);
         c.route.push_back({tl::trafficLanePoint(net_, P, s, 0, tl::trafficPieceStart(P, s)), -1, 0, 1});
         c.tailPiece = int32_t(piece); c.tailDir = int8_t(s); c.tailLane = 0;
-        c.route.push_back({tl::trafficLanePoint(net_, P, s, 0, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(P.axis), 0});
+        for (const Vec2& q : tl::trafficLaneCurve(net_, P, s, 0, tl::trafficPieceStart(P, s))) c.route.push_back({q, -1, 0, 0});
+        c.route.push_back({tl::trafficLanePoint(net_, P, s, 0, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(tl::trafficApproachAxis(P, s > 0 ? 1 : 0)), 0});
         return true;
     }
     if (piece < 0) return false;
     const auto& P = net_.pieces[size_t(piece)];
-    const int s = tl::trafficDetail::axisDir(P.axis, 1).dot(fwd).raw >= 0 ? 1 : -1;
+    int s = tl::trafficDir(P, tl::trafficAlongOf(P, pos), 1).dot(fwd).raw >= 0 ? 1 : -1;
+    if (tl::trafficLanes(P, s) <= 0) s = -s;   // a one-way road: its own way
+    if (tl::trafficLanes(P, s) <= 0) return false;
     int lane = 0; Fixed bd{};
-    for (int k = 0; k < P.lanes; ++k) {
+    for (int k = 0; k < tl::trafficLanes(P, s); ++k) {
         const Fixed d = fxAbs(tl::trafficLaneAcross(net_, P, s, k) - tl::trafficAcrossOf(P, pos));
         if (k == 0 || d < bd) { bd = d; lane = k; }
     }
     // rejoin a little ahead of where the car is
-    const Fixed along = fxClamp(tl::trafficAlongOf(P, pos) + Fixed::fromInt(s) * Fixed::fromRatio(3, 2), Fixed::fromInt(P.along0), Fixed::fromInt(P.along1 + 1));
+    const Fixed along = fxClamp(tl::trafficAlongOf(P, pos) + Fixed::fromInt(s) * Fixed::fromRatio(3, 2), tl::trafficPieceStart(P, 1), tl::trafficPieceEnd(P, 1));
     c.route.push_back({tl::trafficLanePoint(net_, P, s, lane, along), -1, 0, 0});
     c.tailPiece = int32_t(piece); c.tailDir = int8_t(s); c.tailLane = uint8_t(lane);
-    c.route.push_back({tl::trafficLanePoint(net_, P, s, lane, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(P.axis), 0});
+    for (const Vec2& q : tl::trafficLaneCurve(net_, P, s, lane, along)) c.route.push_back({q, -1, 0, 0});
+    c.route.push_back({tl::trafficLanePoint(net_, P, s, lane, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(tl::trafficApproachAxis(P, s > 0 ? 1 : 0)), 0});
     return true;
 }
 
@@ -854,26 +890,35 @@ bool Traffic::spawnCar(Simulation& sim, TrafficStore& st, const std::vector<Vec2
             const auto& LP = net_.pieces[size_t(onLine->piece)];
             if (LP.length() < 3) continue;
             const int a = sim.rng().range(LP.along0 + 1, LP.along1 - 1);
-            cx = LP.axis == tl::TrafficAxis::X ? a : LP.across0;
-            cz = LP.axis == tl::TrafficAxis::X ? LP.across0 : a;
+            if (LP.curved()) {
+                const Vec2 q = tl::trafficDetail::curvePoint(LP, Fixed::fromInt(a));
+                cx = int(q.x.floorInt()); cz = int(q.y.floorInt());
+            } else {
+                cx = LP.axis == tl::TrafficAxis::X ? a : LP.across0;
+                cz = LP.axis == tl::TrafficAxis::X ? LP.across0 : a;
+            }
         }
         if (cx < 0 || cz < 0 || cx >= net_.w || cz >= net_.h) continue;
         const int pi = net_.pieceAt[size_t(cz * net_.w + cx)];
         if (pi < 0) continue;
         const auto& P = net_.pieces[size_t(pi)];
-        const int ac = P.axis == tl::TrafficAxis::X ? cx : cz;
+        const Vec2 cellMid{Fixed::fromInt(cx) + kHalf, Fixed::fromInt(cz) + kHalf};
+        // spline roads: the along of the cell on the centre line (whole cells, as the grid has them)
+        const int ac = P.curved() ? int(tl::trafficAlongOf(P, cellMid).floorInt()) : P.axis == tl::TrafficAxis::X ? cx : cz;
         if (P.lanes <= 0 || P.length() < 3 || ac <= P.along0 || ac >= P.along1) continue;   // keep away from the junctions
         int s = sim.rng().below(2) ? 1 : -1;
         if (!foci.empty()) {   // heading toward the hero rather than out of the simulated area
             Vec2 near = foci[0];
             const Vec2 here{Fixed::fromInt(cx) + kHalf, Fixed::fromInt(cz) + kHalf};
             for (auto& f : foci) if ((f - here).lengthSq() < (near - here).lengthSq()) near = f;
-            const Fixed toward = tl::trafficDetail::axisDir(P.axis, 1).dot(near - here);
+            const Fixed toward = tl::trafficDir(P, Fixed::fromInt(ac), 1).dot(near - here);
             if (fxAbs(toward) > Fixed::fromInt(3)) s = toward.raw > 0 ? 1 : -1;
         }
         if (onLine) s = onLine->dir;
+        if (tl::trafficLanes(P, s) <= 0) { if (onLine) continue; s = -s; }   // one-way roads
         const uint16_t lineLeg = onLine ? onLine->leg : 0;
-        const int k = kind == kTrafficBus ? P.lanes - 1 : int(sim.rng().below(uint32_t(P.lanes)));   // buses keep to the kerb
+        const int nl = tl::trafficLanes(P, s);
+        const int k = kind == kTrafficBus ? nl - 1 : int(sim.rng().below(uint32_t(nl)));   // buses keep to the kerb
         const Fixed along = Fixed::fromInt(ac) + Fixed::fromRatio(int(sim.rng().below(8)), 8);
         const Vec2 pos = tl::trafficLanePoint(net_, P, s, k, along);
         if (!foci.empty()) {
@@ -882,7 +927,7 @@ bool Traffic::spawnCar(Simulation& sim, TrafficStore& st, const std::vector<Vec2
         }
         if (!gs.grid.passableAt(v3(pos), kLayerGround)) continue;
         // the lane must be free a few cells around the spot (parked cars at the curb next to it are fine)
-        const Vec2 dir = tl::trafficDetail::axisDir(P.axis, s);
+        const Vec2 dir = tl::trafficDir(P, along, s);
         bool clear = true;
         const uint16_t type = pick(sim, fleet);
         if (type == UINT16_MAX) return false;
@@ -909,7 +954,8 @@ bool Traffic::spawnCar(Simulation& sim, TrafficStore& st, const std::vector<Vec2
         c.cruise = lo + (hi - lo) * sim.rng().unit();
         c.tailPiece = int32_t(pi); c.tailDir = int8_t(s); c.tailLane = uint8_t(k);
         c.route.push_back({pos, -1, 0, 0});
-        c.route.push_back({tl::trafficLanePoint(net_, P, s, k, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(P.axis), 0});
+        for (const Vec2& q : tl::trafficLaneCurve(net_, P, s, k, along)) c.route.push_back({q, -1, 0, 0});
+        c.route.push_back({tl::trafficLanePoint(net_, P, s, k, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(tl::trafficApproachAxis(P, s > 0 ? 1 : 0)), 0});
         c.wp = 1;
         m_->driving()->adopt(sim, e, c.cruise * Fixed::fromRatio(3, 4));
         insertSorted(st.cars, std::move(c));
@@ -1145,7 +1191,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
     const bool inMap = hereCell >= 0 && size_t(hereCell) < net_.pieceAt.size();
     if ((c.task == kTaskGoing || c.task == kTaskHome || c.task == kTaskTrip || c.task == 250 || c.task == kTaskGang) && inMap && net_.pieceAt[size_t(hereCell)] == c.destPiece && c.destPiece >= 0) {
         const auto& P = net_.pieces[size_t(c.destPiece)];   // pull up at the address
-        const int s = tl::trafficDetail::axisDir(P.axis, 1).dot(fwd).raw >= 0 ? 1 : -1;
+        const int s = tl::trafficDir(P, tl::trafficAlongOf(P, pos), 1).dot(fwd).raw >= 0 ? 1 : -1;
         const Fixed d = (c.destAlong - tl::trafficAlongOf(P, pos)) * s;
         if (d > -kHalf) { want = fxMin(want, tl::trafficStopSpeed(fxMax(d - Fixed::fromRatio(1, 10), Fixed{}) * mpc_, rules_.decel)); if (d < Fixed::fromInt(3)) heldBySignal = true; }
     }
@@ -1153,8 +1199,8 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
         if (sim.tick() < c.dwellUntil) { want = Fixed{}; heldBySignal = true; }
         else if (const int pi = inMap ? net_.pieceAt[size_t(hereCell)] : -1; pi >= 0) {
             const auto& P = net_.pieces[size_t(pi)];
-            const int s = tl::trafficDetail::axisDir(P.axis, 1).dot(fwd).raw >= 0 ? 1 : -1;
             const Fixed a = tl::trafficAlongOf(P, pos);
+            const int s = tl::trafficDir(P, a, 1).dot(fwd).raw >= 0 ? 1 : -1;
             auto it = std::lower_bound(stops_.begin(), stops_.end(), pi, [](const BusStop& b, int q) { return b.piece < q; });
             for (; it != stops_.end() && it->piece == pi; ++it) {
                 const int idx = int(it - stops_.begin());
@@ -1259,7 +1305,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
                         else {const auto&type=m_->rules().types[u->type];if(u->hp.raw>0 && !(type.layer&kLayerAir)){Fixed r=type.radius+(type.speed.raw>0?Fixed::fromRatio(3,5):Fixed{});obstacles.push_back({v2(tr->pos),{kUnit,Fixed{}},r,r});}}
                     });
                     Vec2 axis=fwd;int cell=gs.grid.cellOf(v3(pos));int piece=cell>=0?net_.pieceAt[size_t(cell)]:-1;
-                    if(piece>=0){auto roadAxis=tl::trafficDetail::axisDir(net_.pieces[size_t(piece)].axis,1);axis=roadAxis*(roadAxis.dot(fwd)>=Fixed{}?kUnit:-kUnit);}
+                    if(piece>=0){const auto& rp=net_.pieces[size_t(piece)];auto roadAxis=tl::trafficDir(rp,tl::trafficAlongOf(rp,pos),1);axis=roadAxis*(roadAxis.dot(fwd)>=Fixed{}?kUnit:-kUnit);}
                     const Fixed radius=halfWid+Fixed::fromRatio(1,10);
                     auto clear=[&](Vec2 q){for(int x:{-1,1})for(int z:{-1,1}){auto sample=q+Vec2{radius*x,radius*z};if(!onRoad(sample)||!gs.grid.passableAt(v3(sample),kLayerGround))return false;}
                         for(const auto&o:obstacles){auto delta=q-o.pos;Fixed along=fxMax(fxAbs(delta.dot(o.axis))-o.length,Fixed{}),across=fxMax(fxAbs(tl::trafficDetail::cross(delta,o.axis))-o.width,Fixed{});if(along*along+across*across<radius*radius)return false;}return true;};

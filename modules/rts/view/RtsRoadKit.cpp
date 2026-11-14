@@ -203,24 +203,88 @@ std::vector<uint32_t> markingAtlas(int cell) {
     return px;
 }
 
+std::vector<uint32_t> vergeAtlas(int cell) {
+    const int W = cell * kVergeSlots, H = cell;
+    std::vector<uint32_t> px(size_t(W) * size_t(H), 0);
+    auto enc = [](float v) { return uint32_t(q(std::pow(std::clamp(v, 0.0f, 1.0f), 1 / 2.2f))); };
+    auto put = [&](int slot, int x, int y, Rgb c, float a) {
+        px[size_t(y) * size_t(W) + size_t(slot * cell + x)] = enc(c.r) | enc(c.g) << 8 | enc(c.b) << 16 | uint32_t(std::clamp(a, 0.0f, 1.0f) * 255.0f + 0.5f) << 24;
+    };
+    for (int slot = 0; slot < 3; ++slot)
+        for (int y = 0; y < H; ++y)
+            for (int x = 0; x < cell; ++x) {
+                const float fx = float(x), fy = float(y), u = (fx + 0.5f) / float(cell);
+                Rgb c;
+                const float g = rnd(x, y, 131 + slot), n = fbm(fx, fy, cell, 8, 141 + slot);
+                if (slot == 0) { const float v = 0.30f + (n - 0.5f) * 0.18f + (g - 0.5f) * 0.16f; c = {v * 1.02f, v * 0.96f, v * 0.86f}; }
+                else if (slot == 1) { const float v = 0.22f + (n - 0.5f) * 0.12f + (g - 0.5f) * 0.08f; c = {v * 0.62f, v * 1.05f, v * 0.42f}; }
+                else { const float v = 0.26f + (n - 0.5f) * 0.14f + (g - 0.5f) * 0.06f; c = {v * 1.05f, v * 0.84f, v * 0.62f}; }
+                // the inner edge eats a little into the asphalt (ragged, right at its edge: no ground shows between
+                // the two), the outer edge thins out into the ground
+                const float rag = fbm(fy * 0.5f, 3.0f, cell, 4, 151 + slot), crumb = fbm(fx, fy, cell, 16, 161 + slot);
+                const float innerEdge = 0.01f + 0.035f * rag;
+                const float outer = 0.62f + 0.22f * fbm(fy * 0.5f, 9.0f, cell, 4, 171 + slot);
+                float a = std::clamp((u - innerEdge) / 0.025f + (crumb - 0.5f) * 1.2f, 0.0f, 1.0f);
+                a *= std::clamp(1.0f - (u - outer) / (1.0f - outer), 0.0f, 1.0f) * (u > outer ? (0.6f + 0.8f * crumb) : 1.0f);
+                put(slot, x, y, c, a);
+            }
+    // slot 3: asphalt breaking up into dirt, v 0 (still whole) .. 1 (the dirt road's own surface), u across the
+    // carriageway (the edges go first); not tiled along v
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y), u = (fx + 0.5f) / float(cell), v = (fy + 0.5f) / float(H);
+            const float n = fbm(fx, fy, cell, 6, 401), fine = fbm(fx, fy, cell, 24, 403), g = rnd(x, y, 405);
+            const float edge = std::pow(std::fabs(u - 0.5f) * 2.0f, 3.0f) * 0.35f;   // the edges crumble first
+            const float vv = v * v * (3 - 2 * v);
+            const float level = -0.12f + 0.55f * v + 0.75f * vv + edge;                           // how much has broken away here
+            const float k = level - (n * 0.75f + fine * 0.25f);
+            float a = std::clamp(k / 0.03f, 0.0f, 1.0f);
+            // the dirt road's colour (decals are lit a little darker than meshes: brighter to match)
+            const float dv = (0.26f + (fbm(fx, fy, cell, 4, 41) - 0.5f) * 0.16f + (g - 0.5f) * 0.06f) * 1.45f;
+            Rgb c{dv * 1.05f, dv * 0.84f, dv * 0.62f};
+            if (g > 0.985f) c = Rgb{0.40f, 0.38f, 0.34f};                              // grit
+            // the broken edge of the asphalt: a dark rim where it cracked off, crumbs of it left on the dirt
+            if (k > -0.035f && k <= 0.0f) { c = Rgb{0.045f, 0.042f, 0.04f}; a = std::max(a, 0.75f * (1.0f + k / 0.035f)); }
+            else if (a > 0 && v < 0.85f && rnd(x / 2, y / 2, 407) > 0.975f) c = Rgb{0.08f, 0.08f, 0.082f};
+            // fine cracks in the asphalt that is still there
+            if (a < 0.5f && std::fabs(fbm(fx, fy, cell, 12, 409) - 0.5f) < 0.008f + 0.01f * vv) { c = Rgb{0.04f, 0.037f, 0.035f}; a = std::max(a, 0.8f * std::clamp(v * 3.0f, 0.0f, 1.0f)); }
+            put(3, x, y, c, a);
+        }
+    // slot 4: one wheel's track (tyre rubber on the asphalt): u across it, v along (tiles)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y), u = (fx + 0.5f) / float(cell);
+            const float d = (u - 0.5f) / 0.5f;
+            const float a = std::exp(-d * d * 3.0f) * (0.6f + 0.8f * fbm(fx, fy, cell, 4, 411)) * (rnd(x, y, 413) > 0.93f ? 0.4f : 1.0f);
+            const float v = 0.058f + (fbm(fx, fy, cell, 8, 415) - 0.5f) * 0.01f;
+            put(4, x, y, Rgb{v, v, v * 1.02f}, a);
+        }
+    return px;
+}
+
 bool roadSurfacePainted(const RoadTypeDef& t) {
     if (t.forward.empty() && t.backward.empty()) return false;
     if (t.surface != RoadSurface::Asphalt && t.surface != RoadSurface::Concrete) return false;
-    return t.laneLines || t.centre != RoadMarking::None;
+    return t.drivable();   // lines or not: the wheel tracks
+}
+
+float paintMargin(const RoadTypeDef& t) {
+    const auto& v = t.forward.empty() ? t.backward : t.forward;
+    return v.empty() ? 0.5f : float(v.back().width.toDouble());
 }
 
 Image roadSurface(const RoadTypeDef& t, int variant) {
     Image img;
     const float wl = float(t.carriageway(-1).toDouble()), wr = float(t.carriageway(1).toDouble());   // cells
-    const float total = wl + wr;
-    const int W = std::clamp(int(total * 64.0f), 64, 512), H = 256;
+    const float total = wl + wr, M = paintMargin(t), span = total + 2 * M;   // plain asphalt margin on both sides
+    const int W = std::clamp(int(span * 64.0f), 64, 640), H = 256;
     img.name = "#road-surface-" + t.id + "-" + std::to_string(variant);
     img.width = W; img.height = H;
     img.rgba.resize(size_t(W) * size_t(H) * 4);
     // lines: (centre offset in cells from the left edge, half width in cells, dash on / period in [0,1] of v, colour)
     struct L { float u, hw, on, phase; Rgb c; };
     std::vector<L> lines;
-    const Rgb white{0.80f, 0.80f, 0.78f}, yellow{0.82f, 0.55f, 0.08f};
+    const Rgb white{0.80f, 0.80f, 0.78f}, yellow{0.86f, 0.58f, 0.04f};
     // cells per metre of this type, from the standard 3.5 m lane: lane width is stored in cells already, so a line
     // width in metres needs the scale; take it from the data's metres (lane widths are 2.5..5 m in practice)
     const float lane = t.forward.empty() ? float(t.backward[0].width.toDouble()) : float(t.forward[0].width.toDouble());
@@ -230,11 +294,13 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
     const bool both = !t.forward.empty() && !t.backward.empty();
     const float c0 = wl;   // the centre line in texture cells
     if (both && t.median.raw == 0) {
+        // American style: the line between the two directions is always yellow (dashed: passing allowed; double
+        // solid on wider roads); lines between lanes of one direction and the right edges are white
         switch (t.centre) {
-        case RoadMarking::Dashed: lines.push_back({c0, hwThin * 1.2f, dash, 0, white}); break;
-        case RoadMarking::Solid: lines.push_back({c0, hwThin * 1.2f, 1, 0, white}); break;
-        case RoadMarking::Double: lines.push_back({c0 - 0.15f * perM, hwThin, 1, 0, white}); lines.push_back({c0 + 0.15f * perM, hwThin, 1, 0, white}); break;
-        case RoadMarking::Yellow: lines.push_back({c0 - 0.12f * perM, hwThin, 1, 0, yellow}); lines.push_back({c0 + 0.12f * perM, hwThin, 1, 0, yellow}); break;
+        case RoadMarking::Dashed: lines.push_back({c0, hwThin * 1.2f, dash, 0, yellow}); break;
+        case RoadMarking::Solid: lines.push_back({c0, hwThin * 1.2f, 1, 0, yellow}); break;
+        case RoadMarking::Double: case RoadMarking::Yellow:
+            lines.push_back({c0 - 0.14f * perM, hwThin, 1, 0, yellow}); lines.push_back({c0 + 0.14f * perM, hwThin, 1, 0, yellow}); break;
         default: break;
         }
     }
@@ -243,7 +309,8 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
             const auto& v = t.lanesOf(dir);
             float off = med;
             for (size_t k = 0; k < v.size(); ++k) {
-                if (k == 0 && (!both || t.median.raw > 0)) lines.push_back({c0 + float(dir) * (off + 0.1f * perM), hwThin, 1, 0, both ? yellow : white});
+                // the left edge of a direction (at the median, or of a one-way road) is yellow
+                if (k == 0 && (!both || t.median.raw > 0)) lines.push_back({c0 + float(dir) * (off + 0.1f * perM), hwThin, 1, 0, yellow});
                 off += float(v[k].width.toDouble());
                 const bool last = k + 1 == v.size();
                 const bool parkingNext = !last && v[k + 1].use == RoadLaneUse::Parking;
@@ -255,15 +322,62 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
                 }
             }
         }
+    if (variant & 4) lines.clear();   // tracks and grime only: where the road narrows or wears out
+    // wheel paths: every driving lane is worn along two tracks (darker, smoother: tyres polish the stone and leave
+    // rubber) with a faint oil line between them, wandering a little along the road
+    struct Track { float u, hw; };
+    std::vector<Track> tracks;
+    std::vector<float> oil;
+    for (int dir : {1, -1}) {
+        float off = med;
+        for (auto& l : t.lanesOf(dir)) {
+            const float w = float(l.width.toDouble()), cU = c0 + float(dir) * (off + w * 0.5f);
+            off += w;
+            if (l.use == RoadLaneUse::Parking || l.use == RoadLaneUse::Bike) continue;
+            const float gauge = 0.82f * perM;   // half the distance between the wheels
+            tracks.push_back({cU - gauge, 0.32f * perM});
+            tracks.push_back({cU + gauge, 0.32f * perM});
+            oil.push_back(cU);
+        }
+    }
     for (int y = 0; y < H; ++y)
         for (int x = 0; x < W; ++x) {
             const float fx = float(x), fy = float(y);
             // asphalt, seamless along v (the texture repeats along the road)
             const float n = fbm(fx, fy, H, 8, 11), g = rnd(x % H, y, 3);
-            const float a = 0.085f + (n - 0.5f) * 0.05f + (g > 0.93f ? 0.05f : g < 0.05f ? -0.03f : 0.0f);
+            float a = 0.085f + (n - 0.5f) * 0.05f + (g > 0.93f ? 0.05f : g < 0.05f ? -0.03f : 0.0f);
+            {
+                const float u = (fx + 0.5f) / float(W) * span - M;
+                const float wander = (fbm(7.0f, fy, H, 2, 91) - 0.5f) * 0.25f * perM;   // tracks are not ruler-straight
+                float worn = 0;
+                for (auto& tr : tracks) {
+                    const float d = std::fabs(u - tr.u - wander) / tr.hw;
+                    if (d < 1.6f) worn = std::max(worn, std::exp(-d * d * 1.8f));
+                }
+                const float patch = 0.75f + 0.5f * fbm(fx, fy, H, 4, 93);   // heavier in places
+                const float speckle = g > 0.93f ? 0.05f * worn : 0.0f;       // the bright stones get worn away
+                a = a - worn * patch * 0.028f - speckle;
+                for (float ou : oil) {
+                    const float d = std::fabs(u - ou - wander) / (0.22f * perM);
+                    if (d < 2) a -= std::exp(-d * d * 2.0f) * 0.012f * (0.6f + 0.8f * fbm(fx, fy, H, 8, 97));
+                }
+            }
             Rgb c{a, a, a * 1.02f};
-            const float u = (fx + 0.5f) / float(W) * total, v = (fy + 0.5f) / float(H);
-            const float px = total / float(W);   // cells per pixel: antialiasing width
+            const float u = (fx + 0.5f) / float(W) * span - M, v = (fy + 0.5f) / float(H);
+            {   // dust and grime washed against the curbs (and the median's curbs): a brownish band with a ragged edge,
+                // bits of grit and leaves in the gutter
+                float d = std::min(std::fabs(u), std::fabs(u - total));
+                if (t.median.raw > 0 && t.look["median"].getBool("curb", false)) d = std::min(d, std::fabs(std::fabs(u - c0) - med));
+                const float dm = d / perM;   // metres from the curb
+                const float rag = 0.25f + 0.2f * fbm(fx * 0.3f, fy, H, 4, 181);
+                const float grime = std::exp(-dm / rag) * (0.55f + 0.7f * fbm(fx, fy, H, 8, 183));
+                if (grime > 0.01f) {
+                    c = mix(c, Rgb{0.155f, 0.14f, 0.115f}, std::clamp(grime * 0.75f, 0.0f, 0.85f));
+                    const float bit = rnd(x, y, 187);
+                    if (dm < 0.35f && bit > 0.985f) c = bit > 0.995f ? Rgb{0.20f, 0.13f, 0.05f} : Rgb{0.24f, 0.23f, 0.21f};   // a leaf, a pebble
+                }
+            }
+            const float px = span / float(W);   // cells per pixel: antialiasing width
             for (auto& l : lines) {
                 const float d = std::fabs(u - l.u) - l.hw;
                 float cov = std::clamp(0.5f - d / px, 0.0f, 1.0f);
@@ -285,8 +399,8 @@ Material material(int mat) {
     m.vertexColors = false;
     m.roughness = 0.9f;
     switch (mat) {
-    case V::kAsphalt: m.name = "road_asphalt"; m.roughness = 0.86f; break;
-    case V::kAsphaltWorn: m.name = "road_asphalt_worn"; m.roughness = 0.92f; break;
+    case V::kAsphalt: m.name = "road_asphalt"; m.roughness = 0.86f; m.vertexColors = true; break;
+    case V::kAsphaltWorn: m.name = "road_asphalt_worn"; m.roughness = 0.92f; m.vertexColors = true; break;
     case V::kConcrete: m.name = "road_concrete"; m.roughness = 0.8f; break;
     case V::kCobble: m.name = "road_cobble"; m.roughness = 0.75f; break;
     case V::kPaving: m.name = "road_paving"; m.roughness = 0.8f; break;

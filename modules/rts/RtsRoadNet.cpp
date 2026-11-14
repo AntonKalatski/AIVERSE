@@ -635,7 +635,10 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
             for (size_t k = 0; k < m; ++k) if (k != i && A[k].drivable) widest = fxMax(widest, fxMax(A[k].cwL, A[k].cwR));
             if (!A[i].drivable) trim[i] = fxMax(widest, Fixed{}) + fxMax(A[i].hwL, A[i].hwR) / 4;   // paths stop at the road's edge
             trim[i] = fxMax(trim[i], widest * Fixed::fromRatio(3, 4));
-            const Fixed limit = g.length * Fixed::fromRatio(9, 20);
+            // half the edge when there is a junction at its other end too; most of it when the other end is free
+            const RoadEdge& ae = n.edges[size_t(A[i].edge)];
+            const int other = n.nodeIndex(A[i].end == 0 ? ae.b : ae.a);
+            const Fixed limit = g.length * (other >= 0 && arms[size_t(other)].size() >= 3 ? Fixed::fromRatio(9, 20) : Fixed::fromRatio(9, 10));
             if (trim[i] > limit) { G.issues.push_back("node " + std::to_string(J.node) + ": edge " + std::to_string(n.edges[size_t(A[i].edge)].id) + " is too short for the junction"); trim[i] = limit; }
             RoadEdgeGeom& gm = G.edges[size_t(A[i].edge)];
             (A[i].end == 0 ? gm.trim0 : gm.trim1) = trim[i];

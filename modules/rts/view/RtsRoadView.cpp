@@ -45,6 +45,21 @@ bool inGaps2(const std::vector<std::pair<float, float>>& g, float s) {
     for (auto& [a, b] : g) if (s >= a && s <= b) return true;
     return false;
 }
+// slow variation of the asphalt over tens of metres (newer patches, older stretches): a vertex colour multiplier
+uint32_t largeScaleTint(float x, float z) {
+    auto h = [](int a, int b) { uint32_t v = uint32_t(a) * 374761393u + uint32_t(b) * 668265263u; v = (v ^ (v >> 13)) * 1274126177u; return float((v ^ (v >> 16)) & 0xffffu) / 65535.0f; };
+    auto noise = [&](float px, float pz) {
+        const int x0 = int(std::floor(px)), z0 = int(std::floor(pz));
+        const float fx = px - float(x0), fz = pz - float(z0), u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+        const float a = h(x0, z0) + (h(x0 + 1, z0) - h(x0, z0)) * u, b = h(x0, z0 + 1) + (h(x0 + 1, z0 + 1) - h(x0, z0 + 1)) * u;
+        return a + (b - a) * v;
+    };
+    const float n = noise(x / 9.0f, z / 9.0f) * 0.65f + noise(x / 3.5f + 17, z / 3.5f + 5) * 0.35f;
+    const float k = 0.86f + 0.24f * n;   // linear multiplier
+    const uint32_t c = uint32_t(std::clamp(k, 0.0f, 1.0f) * 255.0f + 0.5f);
+    return c | (c << 8) | (std::min(255u, c + 3) << 16) | 0xff000000u;
+}
+
 bool inBay(const RoadEdgeGeom& g, int side, float s) {
     for (auto& b : g.bays) if (b.side == side && s >= float(b.s0.toDouble()) && s <= float(b.s3.toDouble())) return true;
     return false;
@@ -66,6 +81,7 @@ public:
     struct Prop { std::string shape, model; mat4 xf; };
     std::vector<Prop> props;
     std::vector<render::SpriteVertex> decals;   // road paint (4 vertices per quad)
+    std::vector<render::SpriteVertex> verges;   // soft verges (4 vertices per quad)
 
     void build() {
         for (size_t i = 0; i < N_.edges.size(); ++i) edge(int(i));
@@ -125,7 +141,8 @@ public:
                     quad(A.walkR, a1, a2, b2, b1, {a1.x * um, a1.z * um}, {a2.x * um, a2.z * um}, {b2.x * um, b2.z * um}, {b1.x * um, b1.z * um}, {0, 1, 0});
                     if (h > 0) {
                         const float3 out = normalize((a0 + b0) * 0.5f - c);
-                        quad(RtsRoadView::kCurb, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, -out);
+                        const float len = std::hypot(b0.x - a0.x, b0.z - a0.z), hh = wy(h);
+                        quad(RtsRoadView::kCurb, a0, a1, b1, b0, curbUv(0, 0), curbUv(0, hh), curbUv(len, hh), curbUv(len, 0), -out);
                     }
                 }
             }
@@ -160,9 +177,11 @@ private:
         auto& V = A.v[size_t(mat)];
         auto& I = A.i[size_t(mat)];
         const uint32_t base = uint32_t(V.size());
+        const bool tint = mat >= RtsRoadView::kMatCount || mat == RtsRoadView::kAsphalt || mat == RtsRoadView::kAsphaltWorn;
         for (auto [p, uv] : {std::pair{a, ua}, std::pair{b, ub}, std::pair{c, uc}}) {
             ModelVertex mv;
             mv.pos = p; mv.nrm = nrm; mv.uv = uv;
+            if (tint) mv.color = largeScaleTint(p.x, p.z);
             V.push_back(mv);
         }
         I.push_back(base); I.push_back(base + 1); I.push_back(base + 2);
@@ -312,21 +331,30 @@ private:
             // only when the sidewalk would get narrower than 1.5 m (its outer edge)
             std::vector<Prof> pr;
             const float swL = f(L.sidewalk), swR = f(R.sidewalk);
-            const int road = wearAt(sm) > 0.08f ? RtsRoadView::kAsphaltWorn : roadMat;
-            // the carriageway with its lines painted in (a texture per type and open side); plain where the road
-            // wears out or narrows
+            const int road = roadMat;
+            // the carriageway with its lines and wheel tracks painted in (a texture per type and open side); where
+            // the road wears out or narrows the same texture without the lines (the tracks run on), and a stretch
+            // wearing out gets the broken asphalt as a decal over it, growing toward the unpaved road
             int carr = road;
-            if (painted_ && road == roadMat && narrowAt(sm) >= 0.999f) {
+            const float wearK = wearAt(sm);
+            const bool fading = wearK > 0.0f || narrowAt(sm) < 0.999f;
+            if (painted_) {
                 const bool openR = gapR || inBay(g, 1, sm), openL = gapL || inBay(g, -1, sm);
-                const int variant = fs > 0 ? (openR ? 1 : 0) | (openL ? 2 : 0) : (openL ? 1 : 0) | (openR ? 2 : 0);
+                const int variant = fading ? 4 : fs > 0 ? (openR ? 1 : 0) | (openL ? 2 : 0) : (openL ? 1 : 0) | (openR ? 2 : 0);
                 const int m = painted_(E.typeIndex, variant);
                 if (m >= 0) carr = m;
             }
-            if (!gapL && L.sidewalk.raw > 0) { pr.push_back({-(cwl + f(L.shoulder) + swL), hsL, -1, 2}); pr.push_back({-(cwl + f(L.shoulder)), hsL, surfaceMat(L.sidewalkSurface), 1}); }
+            const float ct = curbTop();
+            if (!gapL && L.sidewalk.raw > 0) {
+                pr.push_back({-(cwl + f(L.shoulder) + swL), hsL, -1, 2});
+                if (hsL > 0) { pr.push_back({-(cwl + f(L.shoulder) + ct), hsL, surfaceMat(L.sidewalkSurface), 1}); pr.push_back({-(cwl + f(L.shoulder)), hsL, RtsRoadView::kCurb, 1}); }
+                else pr.push_back({-(cwl + f(L.shoulder)), hsL, surfaceMat(L.sidewalkSurface), 1});
+            }
             if (!gapL && hsL > 0 && !pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, RtsRoadView::kCurb, 1});
-            if (!gapL && L.shoulder.raw > 0) { if (pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, -1, 1}); pr.push_back({-cwl, 0, surfaceMat(L.shoulderSurface), 1}); }
+            const bool softL = soft(L) && A.ground && B.ground, softR = soft(R) && A.ground && B.ground;   // verges as decals on the ground
+            if (!gapL && L.shoulder.raw > 0 && !softL) { if (pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, -1, 1}); pr.push_back({-cwl, 0, surfaceMat(L.shoulderSurface), 1}); }
             if (pr.empty()) pr.push_back({-cwl, 0, -1, 1});
-            pr.push_back({-cwl, 0, road, 0});   // the bay's own surface (no width without a bay)
+            pr.push_back({-cwl, 0, carr, 0});   // the bay's own surface (no width without a bay): the carriageway texture's margin
             if (t.median.raw > 0) {
                 const float m = f(t.median) / 2;
                 // a crossing cuts through the median at road level, paved (no grass, no curb under the zebra)
@@ -338,11 +366,13 @@ private:
                 if (h > 0) pr.push_back({m, 0, RtsRoadView::kCurb, 0});
             }
             pr.push_back({cwr, 0, carr, 0});
-            pr.push_back({cwr, 0, road, 1});
-            if (!gapR && R.shoulder.raw > 0) pr.push_back({cwr + f(R.shoulder), 0, surfaceMat(R.shoulderSurface), 1});
+            pr.push_back({cwr, 0, carr, 1});
+            if (!gapR && R.shoulder.raw > 0 && !softR) pr.push_back({cwr + f(R.shoulder), 0, surfaceMat(R.shoulderSurface), 1});
+            if (!gapL && softL) verge(g, sa, sb, -1, cwl, f(L.shoulder), L.shoulder.raw > 0 ? L.shoulderSurface : t.surface == RoadSurface::Asphalt ? RoadSurface::Gravel : t.surface);
+            if (!gapR && softR) verge(g, sa, sb, 1, cwr, f(R.shoulder), R.shoulder.raw > 0 ? R.shoulderSurface : t.surface == RoadSurface::Asphalt ? RoadSurface::Gravel : t.surface);
             if (!gapR && R.sidewalk.raw > 0) {
                 const float o = cwr + f(R.shoulder);
-                if (hsR > 0) pr.push_back({o, hsR, RtsRoadView::kCurb, 1});
+                if (hsR > 0) { pr.push_back({o, hsR, RtsRoadView::kCurb, 1}); pr.push_back({o + ct, hsR, RtsRoadView::kCurb, 1}); }
                 pr.push_back({o + swR, hsR, surfaceMat(R.sidewalkSurface), 2});
             }
             const float minWalk = 1.5f / cm_;
@@ -367,15 +397,48 @@ private:
                 float3 hint{0, 1, 0};
                 if (face) hint = A.n * (p1.h < p0.h ? 1.0f : -1.0f);   // curb faces look at the lower side
                 if (p1.mat == carr && carr != road) {   // painted carriageway: u across the type's carriageway, v per dash period
-                    const float tl = f(t.carriageway(-1)), tw = std::max(0.01f, tl + f(t.carriageway(1)));
-                    const float ua0 = (float(fs) * oa0 + tl) / tw, ua1 = (float(fs) * oa1 + tl) / tw, ub0 = (float(fs) * ob0 + tl) / tw, ub1 = (float(fs) * ob1 + tl) / tw;
+                    const float M = roadkit::paintMargin(t), tl = f(t.carriageway(-1)) + M, tw = std::max(0.01f, f(t.carriageway(-1)) + f(t.carriageway(1)) + 2 * M);
+                    // u from the offsets before the road narrows: the whole cross-section squeezes in with it
+                    const float pa0 = offBay(p0, A), pa1 = offBay(p1, A), pb0 = offBay(p0, B), pb1 = offBay(p1, B);
+                    const float ua0 = (float(fs) * pa0 + tl) / tw, ua1 = (float(fs) * pa1 + tl) / tw, ub0 = (float(fs) * pb0 + tl) / tw, ub1 = (float(fs) * pb1 + tl) / tw;
                     const float pv = cm_ / roadkit::kRoadPaintPeriod;
                     quad(p1.mat, a0, a1, b1, b0, {ua0, sa * pv}, {ua1, sa * pv}, {ub1, sb * pv}, {ub0, sb * pv}, hint);
                     continue;
                 }
-                const float va = sa * um, vb = sb * um;
-                const float u0 = face ? 0.0f : oa0 * um, u1 = face ? wy(std::fabs(p1.h - p0.h)) * um : oa1 * um;
+                // plain asphalt at the scale of the carriageway texture (the two must look alike side by side)
+                const float k = (p1.mat == RtsRoadView::kAsphalt || p1.mat == RtsRoadView::kAsphaltWorn) ? 0.25f : 1.0f;
+                if (!face && p1.mat != RtsRoadView::kAsphalt && p1.mat != RtsRoadView::kAsphaltWorn) {
+                    // paving, cobbles, gravel, grass: laid in the world, not along the road, so the pattern stays whole
+                    // where the kerb bends round a bay or a corner (and matches the junction corners)
+                    auto w = [&](float3 q) { return float2{q.x * um, q.z * um}; };
+                    quad(p1.mat, a0, a1, b1, b0, w(a0), w(a1), w(b1), w(b0), hint);
+                    continue;
+                }
+                if (face) {   // a curb face: up the face, along the road
+                    const float hh = wy(std::fabs(p1.h - p0.h));
+                    const bool up = p1.h > p0.h;
+                    quad(p1.mat, a0, a1, b1, b0, curbUv(sa, up ? 0 : hh), curbUv(sa, up ? hh : 0), curbUv(sb, up ? hh : 0), curbUv(sb, up ? 0 : hh), hint);
+                    continue;
+                }
+                const float va = sa * um * k, vb = sb * um * k;
+                const float u0 = oa0 * um * k, u1 = oa1 * um * k;
                 quad(p1.mat, a0, a1, b1, b0, {u0, va}, {u1, va}, {u1, vb}, {u0, vb}, hint);
+            }
+            if (wearK > 0.0f || wearAt(sa) > 0.0f || wearAt(sb) > 0.0f) {   // the asphalt breaking up toward the unpaved road
+                const Prof el{-cwl, 0, 0, 0}, er{cwr, 0, 0, 0};
+                const float m = 0.15f / cm_;   // a little over the edges, under the verges
+                const float la = offAt(el, A) - m, ra = offAt(er, A) + m, lb = offAt(el, B) - m, rb = offAt(er, B) + m;
+                const float u0 = float(roadkit::kVergeWearSlot) / float(roadkit::kVergeSlots) + 0.002f, u1 = float(roadkit::kVergeWearSlot + 1) / float(roadkit::kVergeSlots) - 0.002f;
+                const float va = std::clamp(wearAt(sa), 0.002f, 0.998f), vb = std::clamp(wearAt(sb), 0.002f, 0.998f);
+                const float3 c[4] = {at(B, lb, 0), at(B, rb, 0), at(A, ra, 0), at(A, la, 0)};
+                const float2 uv[4] = {{u0, vb}, {u1, vb}, {u1, va}, {u0, va}};
+                for (int k = 0; k < 4; ++k) {
+                    render::SpriteVertex v;
+                    v.pos = c[k]; v.pos.y += 0.002f;
+                    v.uv = uv[k]; v.color = 0xffffffffu; v.team = 0;
+                    v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+                    verges.push_back(v);
+                }
             }
             // where a branch leaves / joins: what is left of each side outside the other roads' carriageways
             if (gapL) clippedSide(ei, A, B, -1, cwl, cwl + f(L.shoulder) + f(L.sidewalk), hsL, L);
@@ -449,13 +512,15 @@ private:
             const float a = o0, b = inner + (outer - inner) * float(e) / float(n);
             const float sa = float(side) * a, sb = float(side) * b;
             const float3 a0 = at(A, sa, h), a1 = at(A, sb, h), b0 = at(B, sa, h), b1 = at(B, sb, h);
-            quad(mat, a0, a1, b1, b0, {sa * um, A.s * um}, {sb * um, A.s * um}, {sb * um, B.s * um}, {sa * um, B.s * um}, {0, 1, 0});
+            auto wuv = [&](float3 q) { return float2{q.x * um, q.z * um}; };
+            quad(mat, a0, a1, b1, b0, wuv(a0), wuv(a1), wuv(b1), wuv(b0), {0, 1, 0});
             if (h > 0)   // curb faces at both ends of the piece (toward the road / the branch)
                 for (int end = 0; end < 2; ++end) {
                     const float o = end ? sb : sa;
                     if (end == 1 && e >= n) continue;   // the outer edge of the sidewalk: no face
                     const float3 top0 = at(A, o, h), top1 = at(B, o, h), bot0 = at(A, o, 0), bot1 = at(B, o, 0);
-                    quad(RtsRoadView::kCurb, bot0, top0, top1, bot1, {0, 0}, {0, 1}, {1, 1}, {1, 0}, A.n * (float(side) * (end ? 1.0f : -1.0f)));
+                    const float hh = wy(h);
+                    quad(RtsRoadView::kCurb, bot0, top0, top1, bot1, curbUv(A.s, 0), curbUv(A.s, hh), curbUv(B.s, hh), curbUv(B.s, 0), A.n * (float(side) * (end ? 1.0f : -1.0f)));
                 }
             k = e;
         }
@@ -507,6 +572,40 @@ private:
             break;
         }
         default: break;
+        }
+    }
+
+    float curbTop() const { return 0.15f / cm_; }   // the width of the curb stone's top, cells
+    // UV of a curb face: u up the face, v along the curb (the same scale everywhere, so the stone runs on unbroken)
+    float2 curbUv(float along, float height) const { const float um = 1.0f / (4.0f / cm_); return {height * um, along * um}; }
+
+    // a side without a curb and without a sidewalk: its verge blends into the ground
+    static bool soft(const RoadSideDef& S) { return (S.curb == RoadCurb::None || S.curb == RoadCurb::Shoulder) && S.sidewalk.raw == 0; }
+    // the verge strip of one side between two stations: from a little over the carriageway edge (ragged) to past the
+    // shoulder (fading into the ground); v tiles every kVergePeriod metres, split at the tile seams
+    void verge(const RoadEdgeGeom& g, float s0, float s1, int side, float cw, float shoulder, RoadSurface surf) {
+        const float inner = cw - 0.12f / cm_, outer = cw + std::max(shoulder, 0.4f / cm_) + 1.2f / cm_;
+        const float per = roadkit::kVergePeriod / cm_;   // cells per tile
+        const int slot = roadkit::vergeSlot(surf);
+        for (float a = s0; a < s1 - 1e-4f;) {
+            const float tileEnd = (std::floor(a / per) + 1) * per;
+            const float b = std::min(s1, tileEnd);
+            const Pt A = sample(g, a), B = sample(g, b);
+            const float va = a / per - std::floor(a / per), vb = std::min(1.0f, va + (b - a) / per);
+            const float u0 = float(slot) / float(roadkit::kVergeSlots) + 0.002f, u1 = float(slot + 1) / float(roadkit::kVergeSlots) - 0.002f;
+            const float oi = float(side) * inner, oo = float(side) * outer;
+            // corners: forward-left, forward-right, back-right, back-left as decalQuad wants; u 0 at the road side
+            const float3 c[4] = {at(B, oi, 0), at(B, oo, 0), at(A, oo, 0), at(A, oi, 0)};
+            for (int k = 0; k < 4; ++k) {
+                render::SpriteVertex v;
+                v.pos = c[k]; v.pos.y += 0.003f;
+                const float u = (k == 0 || k == 3) ? u0 : u1, vv = (k < 2) ? vb : va;
+                v.uv = {u, vv};
+                v.color = 0xffffffffu; v.team = 0;
+                v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+                verges.push_back(v);
+            }
+            a = b;
         }
     }
 
@@ -876,7 +975,8 @@ private:
         float cx = 0, cz = 0;
         for (auto& p : J.outline) { cx += f(p.x); cz += f(p.y); }
         cx /= float(J.outline.size()); cz /= float(J.outline.size());
-        const float um = 1.0f / (4.0f / cm_);
+        const float um = 1.0f / (4.0f / cm_) * (mat == RtsRoadView::kAsphalt ? 0.25f : 1.0f);
+        (void)um;
         const float3 c{cx, h(cx, cz, 0), cz};
         for (size_t i = 0; i < J.outline.size(); ++i) {
             const Vec2 a = J.outline[i], b = J.outline[(i + 1) % J.outline.size()];
@@ -884,16 +984,128 @@ private:
             tri(mat, c, pa, pb, {cx * um, cz * um}, {pa.x * um, pa.z * um}, {pb.x * um, pb.z * um}, {0, 1, 0});
         }
         // sidewalk corners: a raised strip and the curb face along the inner curve
+        const float umw = 1.0f / (4.0f / cm_);
         for (auto& strip : J.corners) {
+            float arc = 0;   // along the curb, so its texture runs on round the corner
             for (size_t q = 0; q + 3 < strip.size(); q += 2) {
                 const Vec2 i0 = strip[q], o0 = strip[q + 1], i1 = strip[q + 2], o1 = strip[q + 3];
                 auto P = [&](Vec2 v, float hm) { return float3{f(v.x), h(f(v.x), f(v.y), hm), f(v.y)}; };
-                const float3 a = P(i0, curb), b = P(o0, curb), cc = P(o1, curb), d = P(i1, curb);
-                quad(RtsRoadView::kPaving, a, b, cc, d, {a.x * um, a.z * um}, {b.x * um, b.z * um}, {cc.x * um, cc.z * um}, {d.x * um, d.z * um}, {0, 1, 0});
+                const float3 outw0 = normalize(float3{f(o0.x - i0.x), 0, f(o0.y - i0.y)}), outw1 = normalize(float3{f(o1.x - i1.x), 0, f(o1.y - i1.y)});
+                const float top = curb > 0 ? curbTop() : 0.0f;
+                const float3 a = P(i0, curb), d = P(i1, curb);
+                const float3 at0 = a + outw0 * top, dt1 = d + outw1 * top;   // inner edge of the paving: behind the curb stone
+                const float3 b = P(o0, curb), cc = P(o1, curb);
+                auto w = [&](float3 v) { return float2{v.x * umw, v.z * umw}; };
+                quad(RtsRoadView::kPaving, at0, b, cc, dt1, w(at0), w(b), w(cc), w(dt1), {0, 1, 0});
+                const float seg = std::hypot(d.x - a.x, d.z - a.z);
                 if (curb > 0) {
+                    quad(RtsRoadView::kCurb, a, at0, dt1, d, w(a), w(at0), w(dt1), w(d), {0, 1, 0});   // the stone's top
                     const float3 a0 = P(i0, 0), d0 = P(i1, 0);
-                    const float3 outw = normalize(float3{f(o0.x - i0.x), 0, f(o0.y - i0.y)});
-                    quad(RtsRoadView::kCurb, a0, a, d, d0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, -outw);
+                    const float hh = wy(curb);
+                    quad(RtsRoadView::kCurb, a0, a, d, d0, curbUv(arc, 0), curbUv(arc, hh), curbUv(arc + seg, hh), curbUv(arc + seg, 0), -outw0);
+                }
+                arc += seg;
+            }
+        }
+        if (mat == RtsRoadView::kAsphalt || mat == RtsRoadView::kConcrete) junctionTracks(J, h);
+    }
+
+    // wheel tracks across a junction: through every lane straight on, and from the outer lanes round the turns, so
+    // the tracks painted along the roads run on through the box (darker where the paths cross)
+    template <class H>
+    void junctionTracks(const RoadJunctionGeom& J, const H& h) {
+        struct Lane { float3 p, dir; float off; };   // p: the lane's centre where the arm meets the box; dir: driving
+        struct Arm { std::vector<Lane> in, out; float3 leave; float perM; };
+        std::vector<Arm> arms;
+        for (size_t i = 0; i < J.arms.size(); ++i) {
+            const int ei = J.arms[i], end = J.armEnd[i];
+            const RoadEdge& E = N_.edges[size_t(ei)];
+            const RoadEdgeGeom& g = G_.edges[size_t(ei)];
+            const RoadTypeDef& t = T_[size_t(E.typeIndex)];
+            Arm a;
+            if (g.pts.size() < 2 || !t.drivable() || t.unpaved()) { arms.push_back(a); continue; }
+            const Pt P = sample(g, end == 0 ? f(g.trim0) : f(g.length - g.trim1));
+            const float sg = end == 0 ? 1.0f : -1.0f;
+            a.leave = P.t * sg;
+            const float3 rL = P.n * sg;   // right of the way out of the junction
+            const int fs = E.reversed ? -1 : 1, outDir = (end == 0 ? 1 : -1) * fs;
+            const auto& firstLanes = t.forward.empty() ? t.backward : t.forward;
+            a.perM = f(firstLanes[0].width) / 3.5f;
+            for (int which = 0; which < 2; ++which) {   // 0 out, 1 in
+                const int dir = which == 0 ? outDir : -outDir;
+                float off = f(t.median) * 0.5f;
+                for (auto& l : t.lanesOf(dir)) {
+                    const float w = f(l.width), c = off + w * 0.5f;
+                    off += w;
+                    if (l.use == RoadLaneUse::Parking || l.use == RoadLaneUse::Bike) continue;
+                    // outgoing lanes lie right of the way out, incoming ones right of the way in (left of out)
+                    Lane L{P.c + rL * (which == 0 ? c : -c), which == 0 ? a.leave : a.leave * -1.0f, c};
+                    (which == 0 ? a.out : a.in).push_back(L);
+                }
+            }
+            arms.push_back(a);
+        }
+        const float w = 0.32f * 3.4f, gauge = 0.82f;   // metres: a track's decal width, half the wheel base
+        const float u0 = float(roadkit::kVergeTrackSlot) / float(roadkit::kVergeSlots) + 0.002f, u1 = float(roadkit::kVergeTrackSlot + 1) / float(roadkit::kVergeSlots) - 0.002f;
+        auto path = [&](float3 p0, float3 d0, float3 p3, float3 d3, float alpha, float perM) {
+            const float len = std::hypot(p3.x - p0.x, p3.z - p0.z);
+            if (len < 1e-3f) return;
+            const float3 p1 = p0 + d0 * (len * 0.4f), p2 = p3 - d3 * (len * 0.4f);
+            auto bz = [&](float u) { const float v = 1 - u; return p0 * (v * v * v) + p1 * (3 * v * v * u) + p2 * (3 * v * u * u) + p3 * (u * u * u); };
+            const int n = std::max(2, int(std::ceil(len / 0.4f)));
+            const uint32_t col = 0x00ffffffu | uint32_t(std::clamp(alpha, 0.0f, 1.0f) * 255.0f + 0.5f) << 24;
+            const float per = roadkit::kRoadPaintPeriod / 3.0f / cm_;   // the track texture repeats every 4 m
+            for (int side : {-1, 1}) {
+                float along = 0;
+                float3 prev = bz(0);
+                for (int k = 0; k < n; ++k) {
+                    const float ua = float(k) / float(n), ub = float(k + 1) / float(n);
+                    const float3 A = bz(ua), B = bz(ub);
+                    auto nrm = [&](float u) {
+                        const float e = 1e-3f;
+                        const float3 d = bz(std::min(1.0f, u + e)) - bz(std::max(0.0f, u - e));
+                        const float3 tt = normalize(float3{d.x, 0, d.z});
+                        return float3{-tt.z, 0, tt.x};
+                    };
+                    const float3 nA = nrm(ua), nB = nrm(ub);
+                    const float ga = float(side) * gauge * perM, hw = w * 0.5f * perM;
+                    const float seg = std::hypot(B.x - A.x, B.z - A.z);
+                    const float va = along / per, vb = (along + seg) / per;
+                    along += seg;
+                    float3 c[4] = {B + nB * (ga - hw), B + nB * (ga + hw), A + nA * (ga + hw), A + nA * (ga - hw)};
+                    const float2 uv[4] = {{u0, vb}, {u1, vb}, {u1, va}, {u0, va}};
+                    for (int q = 0; q < 4; ++q) {
+                        render::SpriteVertex v;
+                        v.pos = c[q]; v.pos.y = h(c[q].x, c[q].z, 0) + 0.002f;
+                        v.uv = uv[q]; v.color = col; v.team = 0;
+                        v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+                        verges.push_back(v);
+                    }
+                    prev = B;
+                }
+                (void)prev;
+            }
+        };
+        for (size_t i = 0; i < arms.size(); ++i) {
+            const Arm& A = arms[i];
+            if (A.in.empty()) continue;
+            for (size_t j = 0; j < arms.size(); ++j) {
+                if (j == i || arms[j].out.empty()) continue;
+                const Arm& B = arms[j];
+                const float3 din = A.in[0].dir, dout = B.leave;
+                const float straight = din.x * dout.x + din.z * dout.z, cross = din.x * dout.z - din.z * dout.x;
+                if (straight > 0.6f) {   // straight on: lane k to lane k
+                    for (size_t k = 0; k < A.in.size(); ++k) {
+                        const Lane& o = B.out[std::min(k, B.out.size() - 1)];
+                        path(A.in[k].p, A.in[k].dir, o.p, o.dir, 0.32f, A.perM);
+                    }
+                } else if (straight > -0.6f) {
+                    // a right turn (right of a heading t is (-t.z, t.x): cross > 0) from the outer lane into the
+                    // outer lane, a left turn from the inner lane into the inner lane
+                    const bool right = cross > 0;
+                    const Lane& a = right ? A.in.back() : A.in.front();
+                    const Lane& b = right ? B.out.back() : B.out.front();
+                    path(a.p, a.dir, b.p, b.dir, 0.2f, A.perM);
                 }
             }
         }
@@ -932,6 +1144,7 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
     for (const char* path : {"roads/markings.png", "engine/roads/markings.png"})
         if (platform::readContentFile(path, probe)) { paint_ = paintTex_.resolve(path, false, "", true); if (paint_.valid()) break; }
     if (!paint_.valid()) paint_ = paintTex_.addGenerated("builtin:road-paint", 1024, 1024, roadkit::markingAtlas(256), false);
+    verge_ = paintTex_.addGenerated("builtin:road-verges", 256 * roadkit::kVergeSlots, 256, roadkit::vergeAtlas(256), false);
     if (hasNet_) {   // new types: the network's type indices change
         try { net_ = parseRoadNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
@@ -940,7 +1153,8 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
 
 void RtsRoadView::release(gfx::Device& dev) {
     if (decalMesh_.vb.valid()) decalBatch_.destroyMesh(dev, decalMesh_);
-    decalMesh_ = {};
+    if (vergeMesh_.vb.valid()) decalBatch_.destroyMesh(dev, vergeMesh_);
+    decalMesh_ = {}; vergeMesh_ = {};
     for (auto& c : chunks_) if (c.model) releaseModel(dev, *c.model);
     chunks_.clear();
     props_.clear();
@@ -955,7 +1169,7 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
     images_.clear();
     painted_.clear();
     if (dev_) { decalBatch_.shutdown(); paintTex_.shutdown(); }
-    paint_ = {};
+    paint_ = {}; verge_ = {};
     dev_ = nullptr;
 }
 
@@ -980,6 +1194,7 @@ int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
         images_.push_back(std::move(holder.images[size_t(img)]));
         images_.back().borrowedTexture = false;
         Material m = roadkit::material(kAsphalt);
+        m.vertexColors = true;   // the large-scale tint (largeScaleTint)
         m.name = "road_paint_" + types_[size_t(type)].id;
         m.baseTex = int(images_.size() - 1);
         materials_.push_back(m);
@@ -1084,6 +1299,7 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
         addShapes(mesh.chunks[(cx << 32) ^ (cz & 0xffffffff)], p.shape, p.xf, 1.0f / cm, shapes);
     }
     if (!mesh.decals.empty()) decalMesh_ = decalBatch_.buildMesh(dev, mesh.decals);
+    if (!mesh.verges.empty()) vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
     for (auto& [key, a] : mesh.chunks) {
         if (a.empty()) continue;
         auto m = toModel("roads", a, images_, materials_);
@@ -1121,12 +1337,13 @@ void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& 
         d.flags = kDrawStatic;
         r.drawModel(d);
     }
-    if (decalMesh_.vb.valid() && paint_.valid()) {
+    if ((decalMesh_.vb.valid() && paint_.valid()) || (vergeMesh_.vb.valid() && verge_.valid())) {
         r.drawCustom([this, &r](gfx::Device& d) {
             SpriteLighting lighting;
             lighting.bind = [&r] { r.bindLitFrame(); };
             lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
-            decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
+            if (vergeMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, vergeMesh_, verge_.tex, r.viewProj(), &lighting, true);   // under the paint
+            if (decalMesh_.vb.valid() && paint_.valid()) decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
         });
     }
     for (auto& p : props_) {

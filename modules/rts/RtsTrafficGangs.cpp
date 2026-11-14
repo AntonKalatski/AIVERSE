@@ -143,8 +143,8 @@ void Traffic::gangs(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& 
             Fixed along;
             if (!car.valid() && !rules_.cars.empty() && kerbSpot(sim, home, home.dir, along, kNullEntity, nullptr, Fixed{})) {
                 const auto& P = net_.pieces[size_t(home.piece)];
-                car = m_->spawn(sim, pick(sim, rules_.cars), rules_.carOwner, v3(tl::trafficLanePoint(net_, P, home.dir, P.lanes, along)));
-                if (car.valid()) w.get<Unit>(car).facing = v3(tl::trafficDetail::axisDir(P.axis, home.dir));
+                car = m_->spawn(sim, pick(sim, rules_.cars), rules_.carOwner, v3(tl::trafficLanePoint(net_, P, home.dir, tl::trafficLanes(P, home.dir), along)));
+                if (car.valid()) w.get<Unit>(car).facing = v3(tl::trafficDir(P, along, home.dir));
             }
         }
         if (car.valid()) {
