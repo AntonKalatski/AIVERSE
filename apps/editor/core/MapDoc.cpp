@@ -710,7 +710,9 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
         const auto& t = rules.types[size_t(ti)];
         char c = d.cell(int(std::floor(e.x)), int(std::floor(e.z)));
         bool naval = t.layer & game::kLayerNaval, air = t.layer & game::kLayerAir;
-        if (!air && !d.roadsOnly && ((naval && c != '~' && c != '=') || (!naval && (c == '~' || c == '#'))))
+        // a unit that never moves (scenery, markers: move speed 0) stands wherever it is placed, as the loader allows
+        const bool fixedProp = !t.structure && t.speed.raw <= 0;
+        if (!air && !fixedProp && !d.roadsOnly && ((naval && c != '~' && c != '=') || (!naval && (c == '~' || c == '#'))))
             out.push_back({true, nm + ": стоит на непроходимой клетке", int(i)});
     }
     // A player without map objects or a start point is only a warning: scripts or triggers may create the army,
@@ -777,7 +779,7 @@ std::vector<Issue> MapDoc::validate(const game::Rules& rules, const Json& rulesJ
                     for (int xx = x0; xx < x0 + t.footprintW; ++xx)
                         if (g.inside(xx, yy) && g.slope[size_t(g.index(xx, yy))] > g.buildLimit) steep = true;
                 if (steep) out.push_back({false, nm + ": склон круче terrain.buildSlope под зданием", int(i)});
-            } else if (!g.passable(x, y, t.pathLayer)) {
+            } else if (t.speed.raw > 0 && !g.passable(x, y, t.pathLayer)) {
                 out.push_back({true, nm + ": склон слишком крутой для этого юнита (maxSlope)", int(i)});
             }
         }

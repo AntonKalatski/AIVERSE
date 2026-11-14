@@ -13788,6 +13788,20 @@ TEST(mapdoc_validate_single_player_maps) {
     CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1}, {"team": 2}], "entities": []})", rulesJson));
     CHECK(needPlayers(R"({"name": "t", "size": [16, 16], "players": [], "entities": []})", rj));
     editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang");
+    // scenery that never moves (move speed 0) may stand on blocked cells, as the loader places it; a mover may not
+    Json pr = rulesJson;
+    pr.member("types").set("rock_prop", Json::parse(R"({"health": {"max": 1}, "invulnerable": true, "move": {"speed": 0, "radius": 0.1}})"));
+    const game::Rules prules = game::loadRules(pr);
+    auto blockedIssue = [&](const std::string& type) {
+        editor::MapDoc doc;
+        std::string e2;
+        CHECK(doc.loadJson(Json::parse(R"({"name": "t", "size": [8, 8], "players": [{"team": 1}, {"team": 2}],
+            "terrain": {"rows": ["........", "........", "...##...", "...##...", "........", "........", "........", "........"]},
+            "entities": [{"type": ")" + type + R"(", "pos": [3.5, 2.5], "owner": 0}]})"), &e2));
+        for (auto& i : doc.validate(prules, pr)) if (i.entity == 0 && i.error) return true;
+        return false;
+    };
+    CHECK(!blockedIssue("rock_prop") && blockedIssue(unit));
 }
 #endif
 
