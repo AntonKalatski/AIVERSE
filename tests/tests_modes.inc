@@ -1,5 +1,4 @@
-// ------------------------------------------------------------------ match modes (agent-bw-modes, RtsModes.cpp)
-// Bunker Wars ModsModule / BattleRoyal / SuddenDeath / CustomRules / MoraleInfo / PlayerStatistic as data.
+// ------------------------------------------------------------------ match modes (RtsModes.cpp)
 namespace modes_t {
 const char* kTypes = R"("types": {
     "village": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 30, "unit": "shroom", "interval": 100}},
@@ -250,70 +249,7 @@ TEST(modes_deterministic_match) {
     CHECK(a->checksum() == b->checksum() && a->result() != 0);
 }
 
-// ------------------------------------------------------------------ battle core (RtsCore.cpp): morale points, energy, production
-namespace core_t {
-std::string rules(const std::string& extra) {
-    return std::string(R"({"lanes": {"left": 0, "right": 0},
-      "resources": {"morale": {"start": 0, "min": 0, "capped": true, "storage": 8000, "levels": [
-          {"at": 0, "decay": {"every": 1, "amount": 10, "after": 10}},
-          {"at": 500, "mods": [{"tags": ["soldier"], "stat": "speed", "mul": 1.1}], "decay": {"every": 1, "amount": 20, "after": 9}},
-          {"at": 1000}, {"at": 2000}, {"at": 4000}, {"at": 8000}]},
-        "energy": {"start": 0, "capped": true, "storage": 500}},
-      "battleCore": {"morale": {"resource": "morale", "unitPoints": 10, "towerPoints": 10},
-                     "energy": {"resource": "energy", "perUnit": 0.45},
-                     "production": {}, "neutralGrowth": true)") + extra + R"(},
-      "types": {
-        "house": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 20, "unit": "soldier", "interval": 1},
-                  "moralePoints": {"catchNeutral": 100, "catchEnemy": 200, "lost": 50, "upgrade": 70}},
-        "soldier": {"tags": ["soldier"], "move": {"speed": 3}, "entersGarrison": true}}})";
-}
-} // namespace core_t
-
-TEST(core_morale_points_energy_and_levels) {
-    using namespace modes_t;
-    auto sim = makeSimJson(core_t::rules(""),
-        map({1, 2}, std::string(R"({"type":"house","owner":1,"pos":[5,5],"garrison":20},{"type":"house","owner":0,"pos":[12,5],"garrison":3,"values":{"easy":{"neutralMax":3}}},)") +
-                    R"({"type":"house","owner":2,"pos":[30,15],"garrison":20})"));
-    auto& m = mod(*sim);
-    Command c; c.player = 1; c.type = game::kCmdSend; c.units = {at(*sim, 5, 5)}; c.target = at(*sim, 12, 5); c.param = -10;   // exactly 10 units
-    sim->submit(c);
-    run(*sim, 4);
-    // 3 assaulting units lost against 3 defenders: attacker -10 each (floor 0), energy 0.45 x (6 - 0 - 1) x 3; the capture +100
-    CHECK(sim->world().get<Owner>(at(*sim, 12, 5)).player == 1);
-    CHECK(stockOf(*sim, 1, "morale") == Fixed::fromInt(100));
-    CHECK(fxAbs(stockOf(*sim, 1, "energy") - Fixed::fromRatio(675, 100)) < Fixed::fromRatio(1, 100));
-    CHECK(m.modeLevel(*sim, 1, 0) == 0);
-    // level 1 (500): energy per lost unit drops to x4
-    m.addResource(*sim, 1, uint16_t(m.rules().findResource("morale")), Fixed::fromInt(450));
-    run(*sim, 0.1);
-    CHECK(m.modeLevel(*sim, 1, 0) == 1);
-}
-
-TEST(core_production_limit_and_neutral_growth) {
-    using namespace modes_t;
-    // player 1: one house (cap 20) holding 12 units = 60 %: rate 0.75 -> 0.75 units per second
-    auto sim = makeSimJson(core_t::rules(""),
-        map({1, 2}, std::string(R"({"type":"house","owner":1,"pos":[5,5],"garrison":12},{"type":"house","owner":0,"pos":[12,5],"garrison":2,)") +
-                    R"("values":{"easy":{"garrison":2,"neutralMax":5},"hard":{"garrison":4,"neutralMax":9}}},{"type":"house","owner":2,"pos":[30,15],"garrison":2})"));
-    auto& w = sim->world();
-    run(*sim, 4.05);
-    CHECK(w.get<game::Garrison>(at(*sim, 5, 5)).count == 15);   // 12 + 4 x 0.75
-    CHECK(w.get<game::Garrison>(at(*sim, 30, 15)).count == 6);  // 2 + 4 (10 % of the cap: full rate)
-    CHECK(w.get<game::Garrison>(at(*sim, 12, 5)).count == 5);   // neutral: up to its maximum
-    run(*sim, 5.9);
-    CHECK(w.get<game::Garrison>(at(*sim, 5, 5)).count == 17);   // >= 75 %: rate 0.5
-    run(*sim, 10);
-    CHECK(w.get<game::Garrison>(at(*sim, 5, 5)).count == 20);   // at the cap: rate 0
-    // difficulty picks the values
-    auto sim2 = makeSimJson(core_t::rules(""),
-        map({1, 2}, std::string(R"({"type":"house","owner":1,"pos":[5,5],"garrison":1},{"type":"house","owner":0,"pos":[12,5],"garrison":2,)") +
-                    R"("values":{"easy":{"garrison":2,"neutralMax":5},"hard":{"garrison":4,"neutralMax":9}}},{"type":"house","owner":2,"pos":[30,15],"garrison":2})", R"(,"difficulty":"hard")"));
-    CHECK(sim2->world().get<game::Garrison>(at(*sim2, 12, 5)).count == 4);
-    run(*sim2, 8);
-    CHECK(sim2->world().get<game::Garrison>(at(*sim2, 12, 5)).count == 9);
-}
-
-TEST(core_koth_vars_and_checksums_unchanged_without_core) {
+TEST(modes_king_of_the_hill_trigger_vars) {
     using namespace modes_t;
     auto sim = makeSimJson(rules(R"("modes": {"kingOfTheHill": {"score": 10}})"),
         map({1, 2}, ent("village", 1, 10, 5, R"(,"modePoint":"kingOfTheHill")") + "," + ent("village", 2, 30, 15)));
@@ -321,7 +257,6 @@ TEST(core_koth_vars_and_checksums_unchanged_without_core) {
     auto& vars = mod(*sim).state(*sim).trig.vars;
     CHECK(vars.count("koth_1") && vars.count("koth_2") && vars.count("koth_max"));
     CHECK(vars["koth_2"] == Fixed::fromInt(10) && vars["koth_1"] < Fixed::fromInt(10) && vars["koth_max"] == Fixed::fromInt(10));
-    CHECK(!mod(*sim).rules().core.any);
 }
 
 TEST(modes_team_conquest_rule_sets_and_hud_vars) {
@@ -350,17 +285,104 @@ TEST(modes_team_conquest_rule_sets_and_hud_vars) {
     CHECK(threw);
 }
 
-TEST(core_player_morale_gain_multiplier) {
-    using namespace modes_t;
-    auto mp = [](const char* gain) {
-        return std::string(R"({"size":[40,20],"players":[{"name":"A","team":1,"moraleGain":)") + gain + R"(},{"name":"B","team":2}],"terrain":{"rows":[)" + rows(40, 20) +
-               R"(]},"entities":[{"type":"house","owner":1,"pos":[5,5],"garrison":20},{"type":"house","owner":0,"pos":[12,5],"garrison":0,"values":{"easy":{"neutralMax":0}}},{"type":"house","owner":2,"pos":[30,15],"garrison":5}]})";
-    };
-    for (const char* g : {"1", "1.5"}) {
-        auto sim = makeSimJson(core_t::rules(""), mp(g));
-        Command c; c.player = 1; c.type = game::kCmdSend; c.units = {at(*sim, 5, 5)}; c.target = at(*sim, 12, 5); c.param = -1;
-        sim->submit(c);
-        run(*sim, 4);
-        CHECK(stockOf(*sim, 1, "morale") == Fixed::fromInt(std::string(g) == "1" ? 100 : 150));   // catchNeutral 100 x gain
+// ------------------------------------------------------------------ native module hooks (RtsNative.h NativeHook)
+namespace hooks_t {
+// A synthetic module: sends only from "village" types, neutral garrisons grow at half rate up to 7, player 2 grows
+// at double rate, upgrades into "tower" cost nothing and take twice as long, upgrades of player 2 are refused.
+class HookProbe final : public game::NativeModule {
+public:
+    void setup(game::RtsModule& g, Simulation&, game::NativeState& s, const Json&) const override {
+        s.values["mapKey"] = g.matchMap().getInt("probeKey", -1);
     }
+    uint32_t hooks() const override { return game::kNativeHookCommand | game::kNativeHookGarrison | game::kNativeHookUpgrade; }
+    bool filterCommand(game::RtsModule& g, Simulation& sim, game::NativeState& s, Command& c) const override {
+        if (c.type != game::kCmdSend || c.units.empty() || !sim.world().alive(c.units[0])) return true;
+        ++s.values["sends"];
+        if (g.rules().types[sim.world().get<game::Unit>(c.units[0]).type].id != "village") return false;
+        if (c.param == 100) c.param = -2;   // changed: exactly two units
+        return true;
+    }
+    void garrisonGrowth(game::RtsModule&, Simulation&, game::NativeState&, Entity, uint8_t owner, Fixed& rate, int& cap) const override {
+        if (owner == 0) { rate = Fixed::fromRatio(1, 2); cap = 7; }
+        else if (owner == 2) rate = rate * Fixed::fromInt(2);
+    }
+    bool upgradeOrder(game::RtsModule& g, Simulation&, game::NativeState&, Entity, uint8_t player, uint16_t& type, Fixed& cost, Fixed& time) const override {
+        if (player == 2) return false;
+        if (g.rules().types[type].id == "tower") { cost = Fixed{}; time = Fixed::fromInt(2); }
+        return true;
+    }
+    void tick(game::RtsModule&, Simulation& sim, game::NativeState& s) const override {
+        for (auto& ev : sim.events()) if (ev.type == game::kEvAssault) { ++s.values["assaults"]; s.values["defendersLost"] += ev.value; }
+    }
+};
+std::unique_ptr<game::NativeModule> hookProbe() { return std::make_unique<HookProbe>(); }
+std::unique_ptr<Simulation> sim(const std::string& entities, bool withModule = true) {
+    const std::string r = std::string(R"({"lanes": {"left": 0, "right": 0}, "resources": {"mana": {"start": 0}},
+      "playerAbilities": [{"id": "gift", "target": "structure", "cost": {"mana": 50}, "cooldown": 30, "effects": [{"type": "garrisonAdd", "amount": 5, "affects": "own"}]}],)") +
+      (withModule ? R"("nativeModules": [{"id": "hookprobe"}],)" : "") + R"("types": {
+        "village": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 30, "unit": "shroom", "interval": 1}, "upgrades": ["tower"]},
+        "tower": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 30, "unit": "shroom", "interval": 1}, "cost": {"garrison": 4, "time": 2}},
+        "shroom": {"move": {"speed": 3}, "entersGarrison": true}}})";
+    std::vector<game::NativeDefinition> defs{{"hookprobe", 1, hookProbe}};
+    auto s = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>(std::move(defs)));
+    s->setup(Json::parse(r), Json::parse(modes_t::map({1, 2}, entities, R"(,"probeKey":42)")));
+    return s;
+}
+int garrison(Simulation& s, int x, int z) { return s.world().get<game::Garrison>(modes_t::at(s, x, z)).count; }
+} // namespace hooks_t
+
+TEST(native_hooks_command_garrison_upgrade_cast) {
+    using namespace modes_t;
+    const std::string ents = std::string(R"({"type":"village","owner":1,"pos":[5,5],"garrison":10},{"type":"tower","owner":1,"pos":[5,12],"garrison":10},)") +
+        R"({"type":"village","owner":0,"pos":[14,5],"garrison":3},{"type":"village","owner":2,"pos":[30,15],"garrison":10})";
+    auto sim = hooks_t::sim(ents);
+    auto& m = mod(*sim);
+    auto& st = sim->world().resource<game::NativeStore>()->modules[0];
+    CHECK(st.values.at("mapKey") == 42);                                  // matchMap(): the module's own map key
+    // garrisonGrowth: 4 s -> player 1 +4, player 2 +8 (rate 2), neutral +2 (rate 0.5), and the neutral cap 7
+    run(*sim, 4.05);
+    CHECK(hooks_t::garrison(*sim, 5, 5) == 14 && hooks_t::garrison(*sim, 30, 15) == 18 && hooks_t::garrison(*sim, 14, 5) == 5);
+    run(*sim, 8);
+    CHECK(hooks_t::garrison(*sim, 14, 5) == 7);
+    // filterCommand: a send from the tower is dropped; the village's 100 % becomes exactly two units
+    Command c; c.player = 1; c.type = game::kCmdSend; c.units = {at(*sim, 5, 12)}; c.target = at(*sim, 14, 5); c.param = 100;
+    const int tower0 = hooks_t::garrison(*sim, 5, 12);
+    sim->submit(c);
+    run(*sim, 0.2);
+    CHECK(hooks_t::garrison(*sim, 5, 12) >= tower0 && st.values.at("sends") == 1);
+    const int village0 = hooks_t::garrison(*sim, 5, 5);
+    c.units = {at(*sim, 5, 5)};
+    sim->submit(c);
+    run(*sim, 0.2);
+    CHECK(hooks_t::garrison(*sim, 5, 5) == village0 - 2);
+    run(*sim, 6);
+    CHECK(st.values.at("assaults") == 2 && st.values.at("defendersLost") == 2);   // kEvAssault per unit
+    // upgradeOrder: free for player 1 (garrison cost 4 x 0), twice the time; refused for player 2
+    const int before = hooks_t::garrison(*sim, 5, 5);
+    Command u; u.player = 1; u.type = game::kCmdUpgrade; u.units = {at(*sim, 5, 5)}; u.param = m.rules().findType("tower");
+    sim->submit(u);
+    Command u2 = u; u2.player = 2; u2.units = {at(*sim, 30, 15)};
+    sim->submit(u2);
+    run(*sim, 0.2);
+    CHECK(hooks_t::garrison(*sim, 5, 5) >= before);                       // nothing paid
+    run(*sim, 3);
+    CHECK(sim->world().get<game::Unit>(at(*sim, 5, 5)).type != uint16_t(m.rules().findType("tower")));   // 2 s x 2 not over yet
+    run(*sim, 1.5);
+    CHECK(sim->world().get<game::Unit>(at(*sim, 5, 5)).type == uint16_t(m.rules().findType("tower")));
+    CHECK(sim->world().get<game::Unit>(at(*sim, 30, 15)).type == uint16_t(m.rules().findType("village")));
+    // castPlayerAbilityFree: the payload without cost or cooldown
+    const Entity own = at(*sim, 5, 12);
+    const int g0 = hooks_t::garrison(*sim, 5, 12);
+    const Vec3 op = sim->world().get<Transform>(own).pos;
+    CHECK(m.castPlayerAbilityFree(*sim, 1, m.rules().findPlayerAbility("gift"), op, own));
+    CHECK(m.castPlayerAbilityFree(*sim, 1, m.rules().findPlayerAbility("gift"), op, own));   // no cooldown, no mana needed
+    CHECK(hooks_t::garrison(*sim, 5, 12) == g0 + 10 && stockOf(*sim, 1, "mana").raw == 0 && !m.castPlayerAbilityFree(*sim, 1, 99, op, own));
+    // without the module nothing changes: neutral garrisons do not grow
+    auto plain = hooks_t::sim(ents, false);
+    run(*plain, 4.05);
+    CHECK(hooks_t::garrison(*plain, 14, 5) == 3 && hooks_t::garrison(*plain, 30, 15) == 14);
+    // deterministic with the hooks: two runs, same checksum
+    auto a = hooks_t::sim(ents), b = hooks_t::sim(ents);
+    for (int i = 0; i < 200; ++i) { a->step(); b->step(); }
+    CHECK(a->checksum() == b->checksum());
 }

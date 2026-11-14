@@ -31,7 +31,20 @@ public:
     // rules apply, docs/native-modules.md). Errors inside them use luaL_error (no C++ object with a
     // destructor alive at that point).
     virtual void openLua(lua_State*) const {}
+    // ---- optional hooks into built-in mechanics: declare the implemented ones in hooks() (NativeHook bits); a
+    // module without hooks costs nothing. All of them run inside the simulation: deterministic, state in NativeState.
+    virtual uint32_t hooks() const { return 0; }
+    // kNativeHookCommand: every built-in command (type < 32768) of a living player before it executes. Return false
+    // to drop it; the command may be changed (another target, param ...). Runs in nativeModules order.
+    virtual bool filterCommand(RtsModule&, Simulation&, NativeState&, Command&) const { return true; }
+    // kNativeHookGarrison: growth of a garrison this tick. rate multiplies the growth (neutral structures come in
+    // with 0: they do not grow unless a module raises it), cap is the garrison maximum (change it to override).
+    virtual void garrisonGrowth(RtsModule&, Simulation&, NativeState&, Entity, uint8_t /*owner*/, Fixed& /*rate*/, int& /*cap*/) const {}
+    // kNativeHookUpgrade: an upgrade order that passed the built-in checks, before it is paid. type may be replaced
+    // by another structure type; cost multiplies resource and garrison costs, time the build time. False refuses it.
+    virtual bool upgradeOrder(RtsModule&, Simulation&, NativeState&, Entity, uint8_t /*player*/, uint16_t& /*type*/, Fixed& /*cost*/, Fixed& /*time*/) const { return true; }
 };
+enum NativeHook : uint32_t { kNativeHookCommand = 1, kNativeHookGarrison = 2, kNativeHookUpgrade = 4 };
 using NativeFactory = std::unique_ptr<NativeModule> (*)();
 struct NativeDefinition {
     std::string id;
@@ -51,6 +64,10 @@ public:
               const std::vector<NativeDefinition>& definitions);
     void tick(RtsModule&, Simulation&) const;
     void command(RtsModule&, Simulation&, const Command&) const;
+    uint32_t hooks() const { return hooks_; }   // union of the loaded modules' NativeHook bits
+    bool filterCommand(RtsModule&, Simulation&, Command&) const;
+    void garrisonGrowth(RtsModule&, Simulation&, Entity, uint8_t owner, Fixed& rate, int& cap) const;
+    bool upgradeOrder(RtsModule&, Simulation&, Entity, uint8_t player, uint16_t& type, Fixed& cost, Fixed& time) const;
     void hash(Simulation&, Hasher&) const;
     bool serialize(Simulation&, Archive&) const;
 private:
@@ -61,5 +78,6 @@ private:
         std::unique_ptr<NativeModule> instance;
     };
     std::vector<Entry> entries_;
+    uint32_t hooks_ = 0;
 };
 } // namespace aiverse::game

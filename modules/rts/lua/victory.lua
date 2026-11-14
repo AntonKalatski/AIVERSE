@@ -51,7 +51,7 @@ function std.victory(tick)
       if has then teamHas[p.team] = true else out[#out + 1] = p end
     end
   end
-  -- match modes "conquest": {"team": true} (BW COOP conquest): a player stays while a teammate still has a base
+  -- match modes "conquest": {"team": true}: a player stays while a teammate still has a base
   for _, p in ipairs(out) do
     if not (v.team_elimination and teamHas[p.team]) then rts.defeat(p.slot) end
   end
