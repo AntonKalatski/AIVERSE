@@ -14420,3 +14420,38 @@ TEST(game_start_players_merge_per_seat_data_into_the_map) {
     try { sim.setup(Json::parseFile(kSkirmish + "/rules.json"), valley); } catch (const std::exception& e) { ok = false; std::printf("    %s\n", e.what()); }
     CHECK(ok);
 }
+
+// View scripts read game.data as the simulation scripts hold it now (not the world copy, written only before
+// checksums / snapshots / saves), for any unit: a neutral prop the simulation marks every tick.
+TEST(view_scripts_read_live_game_data_of_neutral_props) {
+    Json rules = Json::parseFile(kSkirmish + "/rules.json");
+    rules.set("scripts", Json::parse(R"(["scripts/s.lua"])"));
+    rules.set("viewScripts", Json::parse(R"(["scripts/view/v.lua"])"));
+    rules.set("$scriptSources", Json::parse(R"J({
+        "scripts/s.lua": "on('tick', function(t) for _, h in ipairs(game.units{owner = 0, type = 'footman'}) do local d = game.data(h); d.mark = t; d.kind = 'prop' end end)",
+        "scripts/view/v.lua": "view.on_frame(function(dt) for _, h in ipairs(game.units{owner = 0, type = 'footman'}) do local d = game.data(h); view.notice(tostring(d.kind) .. ':' .. tostring(d.mark) .. ':' .. tostring(game.has_data(h, 'kind')) .. ':' .. #game.units{has = 'mark'}) end end)"})J"));
+    Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
+    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    sim.setup(rules, map);
+    const int t = mod(sim).rules().findType("footman");
+    mod(sim).spawn(sim, uint16_t(t), 0, {Fixed::fromInt(12), Fixed{}, Fixed::fromInt(12)});   // a neutral prop
+    game::ViewScripts vs;
+    CHECK(vs.load(sim, rules, map, 1));
+    vs.attach(sim);
+    for (int i = 0; i < 5; ++i) sim.step();
+    const uint32_t tick = sim.tick();
+    vs.update(sim, 0.016f);
+    auto req = vs.takeRequests();
+    std::string seen;
+    for (auto& r : req) if (r.kind == game::ViewRequest::Notice) seen = r.text;
+    CHECK(seen.rfind("prop:", 0) == 0 && seen.find(":true:1") != std::string::npos);
+    CHECK(seen == "prop:" + std::to_string(tick - 1) + ":true:1" || seen == "prop:" + std::to_string(tick) + ":true:1");
+    for (auto& e : vs.log()) if (e.error) std::printf("  view log: %s\n", e.text.c_str());
+    for (auto& e : mod(sim).scripts()->log()) if (e.error) std::printf("  script log: %s\n", e.text.c_str());
+    // reading from the view changes nothing in the simulation (the world copy is still written lazily)
+    Simulation ref(SimConfig{}, std::make_unique<game::RtsModule>());
+    ref.setup(rules, map);
+    mod(ref).spawn(ref, uint16_t(t), 0, {Fixed::fromInt(12), Fixed{}, Fixed::fromInt(12)});
+    for (int i = 0; i < 5; ++i) ref.step();
+    CHECK(ref.checksum() == sim.checksum());
+}

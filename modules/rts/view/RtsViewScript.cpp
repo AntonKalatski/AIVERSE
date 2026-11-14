@@ -841,6 +841,26 @@ bool ViewScripts::load(Simulation& sim, const Json& rules, const Json& map, uint
     vm.module = static_cast<RtsModule*>(&sim.module());
     vm.sim = &sim; vm.spatialOk = false;
     vm.log = [&im](bool e, const std::string& t) { im.logLine(e, t); };
+    // game.data(h) / has_data: the simulation scripts' table as it is now, for any unit (the world copy is written only
+    // before checksums / snapshots / saves, so reading it would show stale or missing data, e.g. on neutral props)
+    vm.pushData = [&vm](Entity e) {
+        std::string blob;
+        ScriptEngine* se = vm.module ? vm.module->scripts() : nullptr;
+        if (!se || !se->peekData(*vm.sim, e, blob)) {
+            const auto* sd = vm.sim->world().tryGet<ScriptData>(e);
+            blob = sd ? sd->blob : std::string();
+        }
+        if (blob.empty()) { lua_newtable(vm.L); return; }
+        deserialize(vm.L, blob);
+        if (!lua_istable(vm.L, -1)) { lua_pop(vm.L, 1); lua_newtable(vm.L); }
+    };
+    vm.dataHas = [&vm](Entity e, const char* key) {
+        std::string blob;
+        ScriptEngine* se = vm.module ? vm.module->scripts() : nullptr;
+        if (se && se->peekData(*vm.sim, e, blob)) return blobHasKey(blob, key);
+        const auto* sd = vm.sim->world().tryGet<ScriptData>(e);
+        return sd && blobHasKey(sd->blob, key);
+    };
     if (!vm.open(Mode::View, size_t(64) << 20)) return false;
     vm.budget = 5000000;
     im.animationContext->vm=&vm;

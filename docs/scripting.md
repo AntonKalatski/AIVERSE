@@ -264,7 +264,7 @@ Queries (simulation and view scripts):
 | `game.traffic_citizen(h)` → `{state, commute, leg, home, work = {x, z, kind, open}, shift = {from, to}}`\|nil, `game.traffic_clock()` → hour | the citizen behind a person on the street or the car he drives (`commute`: walk / car / bus; `leg` on his way: walk, to_stop, at_stop, drive) and the game day (rules `traffic.population`) |
 | `game.traffic_kind(h)` → `"car"`\|`"bus"`\|`"emergency"`\|nil | a vehicle the traffic drives (sirens, HUD) |
 | `game.var(name)` | trigger variable (fx) |
-| `game.data(h)`, `game.has_data(h, key)` | the entity's own persistent table (view: read-only copy) / does it have the key |
+| `game.data(h)`, `game.has_data(h, key)` | the entity's own persistent table (view: read-only copy of the table as the simulation scripts hold it now, any unit incl. neutral props) / does it have the key |
 | `game.orders(h)`, `game.current_order(h)` | the order queue / its first order: `{order, x, z, target, param, state}` (`order`: `move attack_move attack patrol gather return build repair enter cast dig claim_cell need haul board unload follow rearm trade pick_item merge`) |
 | `game.target(h)`, `game.idle(h)` | weapon target (else the current order's target) / no orders, not moving, not fighting, nothing in production |
 | `game.facing(h)` → dx, dz, `game.velocity(h)` → vx, vz, `game.path(h)`, `game.energy(h)` → energy, max | `path`: remaining waypoints `{{x, z}, ...}` ending at the goal |
