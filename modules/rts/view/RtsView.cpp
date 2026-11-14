@@ -247,8 +247,21 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     effects_.clear();
     handleEvents(s);
     for (auto& b : shadowDraws_) b.verts.clear();
+    // objects the spline roads stand in for (roadNetwork.replaces: tags or type id prefixes) are not drawn
+    std::vector<uint8_t> replacedByRoads;
+    if (roads_->active() && !roads_->replaces().empty() && rules_) {
+        replacedByRoads.assign(rules_->types.size(), 0);
+        uint64_t mask = 0;
+        for (const auto& name : roads_->replaces()) mask |= rules_->tagMask(name);
+        for (size_t t = 0; t < rules_->types.size(); ++t) {
+            bool hit = (rules_->types[t].tags & mask) != 0;
+            for (const auto& name : roads_->replaces()) if (!hit && rules_->types[t].id.rfind(name, 0) == 0) hit = true;
+            replacedByRoads[t] = hit;
+        }
+    }
     for (size_t i = 0; i < s.objects.size(); ++i) {
         const SceneObject& o = s.objects[i];
+        if (!o.isProjectile && o.type < replacedByRoads.size() && replacedByRoads[o.type]) continue;
         if (o.isProjectile) {
             if (o.visible && o.entity.valid()) drawProjectile(r, o.entity.packed(), o, dt);
             else if (o.visible) r.drawMesh(projectile_, mat4::translate(o.pos), {1, 0.95f, 0.8f, 1}, kDrawUnlit);

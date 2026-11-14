@@ -61,7 +61,7 @@ uint32_t largeScaleTint(float x, float z) {
 }
 
 bool inBay(const RoadEdgeGeom& g, int side, float s) {
-    for (auto& b : g.bays) if (b.side == side && s >= float(b.s0.toDouble()) && s <= float(b.s3.toDouble())) return true;
+    for (auto& b : g.bays) if (!b.inLane && b.side == side && s >= float(b.s0.toDouble()) && s <= float(b.s3.toDouble())) return true;
     return false;
 }
 bool inGaps(const std::vector<std::pair<Fixed, Fixed>>& g, float s) {
@@ -892,6 +892,20 @@ private:
             const int sd = sgn > 0 ? 1 : -1;
             for (auto& b : g.bays) {   // a dashed line along the lane, BUS in the middle of the bay
                 if (b.side != sd) continue;
+                if (b.parking) {   // parking: the spaces marked across the bay (or the parking lane), a line along it
+                    const float a = f(b.s1), z = f(b.s2), st = std::max(0.5f, f(b.stall));
+                    const float in = b.inLane ? off - f(b.laneWidth) : off, out = b.inLane ? off : off + f(b.width);
+                    const float w = 0.12f / cm_;
+                    if (!b.inLane) line(g, a, z, sgn * (off - 0.1f / cm_), 0.12f, 1, 0, RtsRoadView::kWhite, none);
+                    const int n = std::max(1, int(std::floor((z - a) / st + 0.01f)));
+                    const float sp = (z - a) / float(n);
+                    for (int q = 0; q <= n; ++q) {
+                        const float sq = std::clamp(a + sp * float(q), a, z - w);
+                        if (none(sq)) continue;
+                        paint(g, sq, sq + w, sgn * (in + out) * 0.5f, out - in, roadkit::kMarkLine, paintColor(RtsRoadView::kWhite));
+                    }
+                    continue;
+                }
                 line(g, f(b.s0), f(b.s3), sgn * (off - 0.15f / cm_), 0.2f, 1, 1, RtsRoadView::kWhite, none);
                 const float mid = (f(b.s1) + f(b.s2)) * 0.5f, len = std::min(3.0f / cm_, (f(b.s2) - f(b.s1)) * 0.8f);
                 paint(g, mid - len * 0.5f, mid + len * 0.5f, sgn * (off + f(b.width) * 0.5f), f(b.width) * 0.7f, roadkit::kMarkBus, paintColor(RtsRoadView::kYellow), dir * fs);
@@ -1056,7 +1070,9 @@ private:
         if (g.pts.size() < 2) return;
         const RoadEdge& E = N_.edges[size_t(ei)];
         const uint32_t white = paintColor(RtsRoadView::kWhite);
-        const bool paints = !t.unpaved();   // nothing is painted on dirt or gravel (signals and signs still stand)
+        // nothing is painted on dirt or gravel, nor on a road drawn without lines (a quiet residential street);
+        // signals and signs still stand
+        const bool paints = !t.unpaved() && (t.laneLines || t.centre != RoadMarking::None);
         for (int end = 0; end < 2; ++end) {
             const int ni = N_.nodeIndex(end == 0 ? E.a : E.b);
             const int ji = ni >= 0 ? G_.nodeJunction[size_t(ni)] : -1;
@@ -1096,7 +1112,7 @@ private:
                 const float4 r = roadkit::markUv(roadkit::kMarkLine);
                 decalQuad(c, {r.x, r.y, r.z, r.w}, white);
             }
-            if (J.signal) signal(t, sample(g, sAt(d)), inDir, tdir, end == 0 ? -1.0f : 1.0f);
+            if (J.signal && N_.signals) signal(t, sample(g, sAt(d)), inDir, tdir, end == 0 ? -1.0f : 1.0f);
             if (stopSign) {   // STOP painted before the line, a sign at the kerb
                 const float len = 4.0f / cm_, gapS = 1.5f / cm_;
                 if (paints) paint(g, std::min(sAt(d + gapS), sAt(d + gapS + len)), std::max(sAt(d + gapS), sAt(d + gapS + len)), sg * (o0 + o1) * 0.5f,
@@ -1442,6 +1458,8 @@ void RtsRoadView::setMap(const Json& map) {
     dirty_ = true;
     if (!hasNet_) return;
     netJson_ = map["roadNetwork"];
+    replaces_.clear();
+    for (auto& v : netJson_["replaces"].items()) if (v.isString()) replaces_.push_back(v.str());
     try { net_ = parseRoadNetwork(netJson_, types_); }
     catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
 }

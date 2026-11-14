@@ -129,6 +129,9 @@ RoadNetwork parseRoadNetwork(const Json& j, const std::vector<RoadTypeDef>& type
     RoadNetwork n;
     if (j.isNull()) return n;
     if (!j.isObject()) throw std::runtime_error("map roadNetwork: {\"nodes\": [...], \"edges\": [...]}");
+    n.signals = j.getBool("signals", true);
+    n.extra = Json::object();
+    for (const auto& [k, v] : j.members()) if (k != "nodes" && k != "edges") n.extra.set(k, v);
     const Json& nodes = j["nodes"];
     for (size_t i = 0; i < nodes.size(); ++i) {
         const Json& v = nodes[i];
@@ -173,22 +176,28 @@ RoadNetwork parseRoadNetwork(const Json& j, const std::vector<RoadTypeDef>& type
         e.attach[0] = attachOf(v["attachA"], where + ".attachA");
         e.attach[1] = attachOf(v["attachB"], where + ".attachB");
         e.reversed = v.getBool("reversed", false);
-        const Json& bays = v["stops"];
-        if (!bays.isNull() && !bays.isArray()) throw std::runtime_error(where + ".stops: a list of bus stop bays");
+        for (const char* key : {"stops", "parking"}) {
+        const bool parking = std::string(key) == "parking";
+        const Json& bays = v[key];
+        if (!bays.isNull() && !bays.isArray()) throw std::runtime_error(where + "." + key + (parking ? ": a list of parking zones" : ": a list of bus stop bays"));
         for (size_t k = 0; k < bays.size(); ++k) {
             const Json& b = bays[k];
-            const std::string w = where + ".stops[" + std::to_string(k) + "]";
+            const std::string w = where + "." + key + "[" + std::to_string(k) + "]";
             RoadBay bay;
+            bay.parking = parking;
             bay.at = fxClamp(b.getFx("at", Fixed::fromRatio(1, 2)), Fixed{}, kOne);
             const int64_t side = b.getInt("side", 1);
             if (side != 1 && side != -1) throw std::runtime_error(w + ".side: 1 (right of a -> b) or -1");
             bay.side = int8_t(side);
-            bay.length = b.getFx("length", Fixed::fromInt(18));
-            bay.taper = b.getFx("taper", Fixed::fromInt(12));
-            bay.width = b.getFx("width", Fixed{});
-            if (bay.length < Fixed{} || bay.taper < Fixed{} || bay.width < Fixed{}) throw std::runtime_error(w + ": lengths must not be negative");
-            bay.shelter = b.getBool("shelter", true);
+            bay.length = b.getFx("length", Fixed::fromInt(parking ? 24 : 18));
+            bay.taper = b.getFx("taper", Fixed::fromInt(parking ? 5 : 12));
+            bay.width = b.getFx("width", parking ? Fixed::fromRatio(5, 2) : Fixed{});
+            bay.stall = b.getFx("stall", Fixed::fromInt(6));
+            if (bay.length < Fixed{} || bay.taper < Fixed{} || bay.width < Fixed{} || bay.stall <= Fixed{}) throw std::runtime_error(w + ": lengths must be positive");
+            bay.shelter = !parking && b.getBool("shelter", true);
+            bay.inside = parking && b.getBool("inside", false);
             e.bays.push_back(bay);
+        }
         }
         n.edges.push_back(e);
     }
@@ -209,7 +218,7 @@ RoadNetwork parseRoadNetwork(const Json& j, const std::vector<RoadTypeDef>& type
 }
 
 Json roadNetworkToJson(const RoadNetwork& n) {
-    Json j = Json::object();
+    Json j = n.extra.isObject() ? n.extra : Json::object();
     Json nodes = Json::array();
     for (auto& d : n.nodes) {
         Json v = Json::object();
@@ -245,7 +254,7 @@ Json roadNetworkToJson(const RoadNetwork& n) {
         if (e.attach[1].edge >= 0) v.set("attachB", attachJson(e.attach[1]));
         if (e.reversed) v.set("reversed", Json::fromBool(true));
         if (!e.bays.empty()) {
-            Json a = Json::array();
+            Json a = Json::array(), pk = Json::array();
             for (auto& b : e.bays) {
                 Json o = Json::object();
                 o.set("at", Json::number(b.at));
@@ -253,10 +262,12 @@ Json roadNetworkToJson(const RoadNetwork& n) {
                 o.set("length", Json::number(b.length));
                 o.set("taper", Json::number(b.taper));
                 if (b.width.raw) o.set("width", Json::number(b.width));
+                if (b.parking) { if (b.stall != Fixed::fromInt(6)) o.set("stall", Json::number(b.stall)); if (b.inside) o.set("inside", Json::fromBool(true)); pk.push(o); continue; }
                 if (!b.shelter) o.set("shelter", Json::fromBool(false));
                 a.push(o);
             }
-            v.set("stops", a);
+            if (a.size()) v.set("stops", a);
+            if (pk.size()) v.set("parking", pk);
         }
         edges.push(v);
     }
@@ -685,8 +696,15 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
             Fixed u2, v2;
             if (intersect(Rr, Vec2{-dr.x, -dr.y}, Ln, Vec2{-dn.x, -dn.y}, u, v) && u > Fixed{} && v > Fixed{}) quadCurve(Rr, Rr - dr * u, Ln, 8, inner);
             else for (int q = 1; q <= 8; ++q) inner.push_back(lerp(Rr, Ln, Fixed::fromRatio(q, 8)));
-            if (intersect(Ro, Vec2{-dro.x, -dro.y}, Lo, Vec2{-dlo.x, -dlo.y}, u2, v2) && u2 > Fixed{} && v2 > Fixed{}) quadCurve(Ro, Ro - dro * u2, Lo, 8, outer);
-            else for (int q = 1; q <= 8; ++q) outer.push_back(lerp(Ro, Lo, Fixed::fromRatio(q, 8)));
+            // the outer edge (where the plots behind the sidewalk begin) keeps a square corner: the plots stay
+            // rectangles, only the kerb is rounded
+            // (also when the two outer lines meet behind the arm ends: the arms' own sidewalks then end short of
+            // the corner and the strip fills it out to the square)
+            if (intersect(Ro, Vec2{-dro.x, -dro.y}, Lo, Vec2{-dlo.x, -dlo.y}, u2, v2) && fxAbs(u2) < Fixed::fromInt(6) && fxAbs(v2) < Fixed::fromInt(6)) {
+                const Vec2 C = Ro - dro * u2;
+                for (int q = 1; q <= 4; ++q) outer.push_back(lerp(Ro, C, Fixed::fromRatio(q, 4)));
+                for (int q = 1; q <= 4; ++q) outer.push_back(lerp(C, Lo, Fixed::fromRatio(q, 4)));
+            } else for (int q = 1; q <= 8; ++q) outer.push_back(lerp(Ro, Lo, Fixed::fromRatio(q, 8)));
             std::vector<Vec2> strip;
             for (size_t q = 0; q < inner.size(); ++q) { strip.push_back(inner[q]); strip.push_back(outer[q]); }
             J.corners.push_back(std::move(strip));
@@ -776,10 +794,18 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
             const auto& lanes = t.lanesOf(b.side * fs);
             bg.width = b.width.raw ? b.width / cellMetres : (lanes.empty() ? Fixed::fromInt(3) / cellMetres : lanes.back().width);
             bg.shelter = b.shelter;
+            bg.parking = b.parking;
+            bg.stall = b.stall / cellMetres;
+            if (b.parking && !lanes.empty() && lanes.back().use == RoadLaneUse::Parking) {   // marked in the parking lane
+                bg.inLane = true; bg.laneWidth = lanes.back().width; bg.width = Fixed{};
+            } else if (b.inside) {   // marked inside the kerb lane, as wide as asked
+                bg.inLane = true; bg.laneWidth = b.width / cellMetres; bg.width = Fixed{};
+            }
             const Fixed mid = g.length * b.at, half = b.length / cellMetres / 2, tp = b.taper / cellMetres;
             bg.s1 = fxMax(mid - half, g.trim0 + tp); bg.s2 = fxMin(mid + half, g.length - g.trim1 - tp);
             bg.s0 = bg.s1 - tp; bg.s3 = bg.s2 + tp;
-            if (bg.s2 <= bg.s1) { G.issues.push_back("edge " + std::to_string(e.id) + ": too short for its bus stop bay"); continue; }
+            if (bg.inLane) { bg.s0 = bg.s1 = fxMax(mid - half, g.trim0); bg.s2 = bg.s3 = fxMin(mid + half, g.length - g.trim1); }
+            if (bg.s2 <= bg.s1) { G.issues.push_back("edge " + std::to_string(e.id) + (b.parking ? ": too short for its parking zone" : ": too short for its bus stop bay")); continue; }
             g.bays.push_back(bg);
         }
     }

@@ -558,10 +558,12 @@ void registerRoadOps(Workspace& ws) {
         "shelter stands behind it. 'edge' id; 'at' (0..1 along the edge) or 'point' [x, z] (its nearest place, and "
         "the side it is on); 'side' 1 right / -1 left of a -> b; 'length' / 'taper' metres (default 18 / 12); "
         "'width' metres (default: the kerb lane); 'shelter' (default true). 'remove': true deletes the bay nearest to "
-        "'at' / 'point'.",
+        "'at' / 'point'. 'parking': true makes a parking zone instead (marked spaces, 'stall' metres each, default 6; "
+        "width 2.5 m, taper 5 m, length 24 m): in the parking lane where the road has one on that side, else a bay "
+        "cut into the sidewalk.",
         R"({"properties": {"edge": {"type": "integer"}, "at": {"type": "number"}, "point": {"type": "array"}, "side": {"type": "integer"},
             "length": {"type": "number"}, "taper": {"type": "number"}, "width": {"type": "number"}, "shelter": {"type": "boolean"},
-            "remove": {"type": "boolean"}}, "required": ["edge"]})",
+            "remove": {"type": "boolean"}, "parking": {"type": "boolean"}, "stall": {"type": "number"}}, "required": ["edge"]})",
         [w, commit](const Json& p) {
             needProject(*w);
             const auto T = roads::types(*w);
@@ -579,12 +581,25 @@ void registerRoadOps(Workspace& ws) {
             }
             w->map.beginEdit();
             RoadEdge& e = n.edges[size_t(ei)];
+            const bool parking = p.getBool("parking", false);
             if (p.getBool("remove", false)) {
-                if (e.bays.empty()) throw std::runtime_error("this edge has no bus stop bays");
-                size_t best = 0;
-                for (size_t k = 1; k < e.bays.size(); ++k) if (fxAbs(e.bays[k].at - at) < fxAbs(e.bays[best].at - at)) best = k;
-                e.bays.erase(e.bays.begin() + long(best));
-                commit(n, T, "Остановка удалена");
+                int best = -1;
+                for (size_t k = 0; k < e.bays.size(); ++k)
+                    if (e.bays[k].parking == parking && (best < 0 || fxAbs(e.bays[k].at - at) < fxAbs(e.bays[size_t(best)].at - at))) best = int(k);
+                if (best < 0) throw std::runtime_error(parking ? "this edge has no parking zones" : "this edge has no bus stop bays");
+                e.bays.erase(e.bays.begin() + best);
+                commit(n, T, parking ? "Парковка удалена" : "Остановка удалена");
+            } else if (parking) {
+                RoadBay b;
+                b.parking = true; b.shelter = false;
+                b.at = fxClamp(at, Fixed{}, Fixed::fromInt(1));
+                b.side = int8_t(side < 0 ? -1 : 1);
+                b.length = p.getFx("length", Fixed::fromInt(24));
+                b.taper = p.getFx("taper", Fixed::fromInt(5));
+                b.width = p.getFx("width", Fixed::fromRatio(5, 2));
+                b.stall = p.getFx("stall", Fixed::fromInt(6));
+                e.bays.push_back(b);
+                commit(n, T, "Парковочная зона");
             } else {
                 RoadBay b;
                 b.at = fxClamp(at, Fixed{}, Fixed::fromInt(1));

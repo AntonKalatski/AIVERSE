@@ -118,6 +118,9 @@ struct RoadBay {
     Fixed taper = Fixed::fromInt(12);        // metres of the way in / out at each end
     Fixed width{};                           // metres (0: the outermost lane's width)
     bool shelter = true;                     // a shelter on the sidewalk
+    bool parking = false;                    // a parking zone ("parking" in the map), not a bus stop
+    Fixed stall = Fixed::fromInt(6);         // parking: metres per marked space along the kerb
+    bool inside = false;                     // parking: marked inside the carriageway along the kerb ("inside": true), no bay
 };
 
 struct RoadEdge {
@@ -136,6 +139,8 @@ struct RoadEdge {
 struct RoadNetwork {
     std::vector<RoadNode> nodes;             // map order
     std::vector<RoadEdge> edges;
+    bool signals = true;                     // "signals": false — the game puts up its own traffic lights
+    Json extra;                              // the other keys of the map's roadNetwork (replaces, signals...), kept as they are
     bool empty() const { return edges.empty(); }
     int nodeIndex(int32_t id) const;         // -1: none (linear: networks are a few thousand nodes)
     int edgeIndex(int32_t id) const;
@@ -161,7 +166,9 @@ struct RoadSample {
 struct RoadSpan { Fixed s0{}, s1{}; bool tunnel = false; };
 
 // a bay in cells along the edge: widening over [s0, s1], full width over [s1, s2], narrowing over [s2, s3]
-struct RoadBayGeom { Fixed s0{}, s1{}, s2{}, s3{}; int8_t side = 1; Fixed width{}; bool shelter = true; };
+struct RoadBayGeom { Fixed s0{}, s1{}, s2{}, s3{}; int8_t side = 1; Fixed width{}; bool shelter = true; bool parking = false; bool inLane = false; Fixed laneWidth{}; Fixed stall{}; };
+// inLane: a parking zone on a road with a parking lane on that side: the spaces are marked in the lane (width 0, no
+// bay), laneWidth = that lane's width
 
 struct RoadEdgeGeom {
     std::vector<RoadSample> pts;             // whole edge, a -> b

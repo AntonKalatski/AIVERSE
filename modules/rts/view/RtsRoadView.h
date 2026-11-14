@@ -31,6 +31,9 @@ public:
     // heightAt(x, z) in world units (the view's terrain); cellMeters of the road data turns it into metres
     void draw(render::Renderer3D& r, const std::function<float(float, float)>& heightAt);
     bool active() const { return hasNet_ && !net_.empty(); }
+    // roadNetwork.replaces: tags or type ids (prefixes) of the objects the spline roads stand in for (a game's
+    // baked road surfaces): the view does not draw those while the network is shown
+    const std::vector<std::string>& replaces() const { return replaces_; }
     const std::vector<RoadTypeDef>& types() const { return types_; }
     const RoadNetwork& network() const { return net_; }
     const RoadGeometry& geometry() const { return geom_; }
@@ -61,6 +64,7 @@ private:
     float cellMeters_ = 4;
     RoadNetwork net_;
     Json netJson_;                               // the map's roadNetwork (parsed again when the types change)
+    std::vector<std::string> replaces_;
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
     std::vector<Chunk> chunks_;

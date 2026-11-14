@@ -21,7 +21,7 @@ float fl(Fixed v) { return float(v.toDouble()); }
 Vec2 v2(float x, float z) { return {fx(x), fx(z)}; }
 const char* const kCats[] = {"city", "rural", "highway", "path"};
 const char* const kCatNames[] = {"Город", "Загород", "Шоссе", "Дорожки"};
-const char* const kModes[] = {"Прямая", "Кривая", "Свободная", "Правка", "Остановка", "Удалить"};
+const char* const kModes[] = {"Прямая", "Кривая", "Свободная", "Правка", "Остановка", "Удалить", "Парковка"};
 const char* const kCurbs[] = {"none", "low", "high", "sloped", "shoulder"};
 const char* const kCurbNames[] = {"нет", "низкий", "высокий", "скошенный", "обочина"};
 const char* const kBarriers[] = {"none", "guardrail", "concrete", "fence", "wall", "hedge"};
@@ -47,7 +47,7 @@ public:
         bool active = ed.tool == Tool::Count && owner_;
         if (ui::checkbox(ICON_ROADS "  Рисовать в «Сцене»", &active)) setActive(ed, active);
         ImGui::SetItemTooltip("ЛКМ — точки дороги, ПКМ / Esc — закончить, PageUp / PageDown — высота точки, Shift — шаг 15°");
-        ui::segmented("##mode", mode_, kModes, 6);
+        ui::segmented("##mode", mode_, kModes, 7);
         if (ImGui::IsItemEdited()) { reset(); setActive(ed, true); }
         if (ui::beginProps("##draw")) {
             ui::prop("Высота", "Метры над землёй для новых точек: выше 1,5 м — мост, ниже −2,5 м — тоннель (PageUp / PageDown)");
@@ -63,6 +63,7 @@ public:
         if (!err_.empty()) ui::callout(ui::Tone::Error, err_);
         if (mode_ == 3) inspector(ed);
         if (mode_ == 4) ui::hint("Щелчок по дороге у бордюра — карман и павильон на этой стороне; Shift + щелчок — убрать ближайший.");
+        if (mode_ == 6) ui::hint("Щелчок по дороге у бордюра — парковочная зона с разметкой мест на этой стороне (в полосе парковки, если она есть, иначе карман); Shift + щелчок — убрать ближайшую.");
         palette(ed);
         builder(ed);
         issues(ed);
@@ -86,7 +87,7 @@ public:
         if (hoverOk_) hover_ = snapAt(ed, x, z, io.KeyShift);
         if (mode_ <= 2) drawInput(ed, io);
         else if (mode_ == 3) editInput(ed, io, vp);
-        else if (mode_ == 4) { if (vp.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) stopAt(ed, io.KeyShift); }
+        else if (mode_ == 4 || mode_ == 6) { if (vp.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) stopAt(ed, io.KeyShift, mode_ == 6); }
         else if (vp.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) eraseAt(ed);
         updateGhost(ed);
         overlay(ed, vp);
@@ -360,8 +361,8 @@ private:
     }
 
     // a bus stop bay where the road is clicked, on the side clicked; Shift: remove the nearest one
-    void stopAt(Editor& ed, bool remove) {
-        if (hover_.kind != roads::Snap::Edge) { ed.status = "Щёлкните по дороге у бордюра — на той стороне появится остановка с карманом"; return; }
+    void stopAt(Editor& ed, bool remove, bool parking = false) {
+        if (hover_.kind != roads::Snap::Edge) { ed.status = parking ? "Щёлкните по дороге у бордюра — на той стороне появится парковка" : "Щёлкните по дороге у бордюра — на той стороне появится остановка с карманом"; return; }
         Json q = Json::object();
         q.set("edge", Json::number(int64_t(net_.edges[size_t(hover_.edge)].id)));
         Json p = Json::array();
@@ -369,8 +370,10 @@ private:
         p.push(Json::number(hover_.p.y + roadNormal(roadSampleAt(geom_.edges[size_t(hover_.edge)], hover_.s).t).y * hover_.lateral));
         q.set("point", p);
         if (remove) q.set("remove", Json::fromBool(true));
+        if (parking) q.set("parking", Json::fromBool(true));
         const Json r = ed.ws().call("road_stop_set", q);
-        if (r.has("error")) err_ = r.getStr("error"); else { err_.clear(); ed.status = remove ? "Остановка удалена" : "Остановка с карманом добавлена"; }
+        if (r.has("error")) err_ = r.getStr("error");
+        else { err_.clear(); ed.status = parking ? (remove ? "Парковка удалена" : "Парковочная зона добавлена") : (remove ? "Остановка удалена" : "Остановка с карманом добавлена"); }
     }
 
     void inspector(Editor& ed) {
