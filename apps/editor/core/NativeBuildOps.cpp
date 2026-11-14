@@ -106,7 +106,7 @@ NativeBuilt findNativeBuilt(const Workspace& ws) {
     for (bool vs : {false, true}) {
         if (vs && nativeHost() != "windows") break;
         NativeBuildPlan p = planNativeBuild(ws.engineDir, ws.project.dir, nativeHost(), "", vs ? "" : "ninja", true, 0);
-        if (b.editor.empty() || fs::exists(p.editorBinary, ec)) { b.editor = p.editorBinary; b.launch = p.launchTarget; b.headless = p.headlessBinary; }
+        if (b.editor.empty() || fs::exists(p.editorBinary, ec)) { b.editor = p.editorBinary; b.launch = p.launchTarget; b.headless = p.headlessBinary; b.client = p.clientBinary; }
         if (fs::exists(p.editorBinary, ec)) return b;
     }
     b.editor.clear();
@@ -116,6 +116,8 @@ NativeBuilt findNativeBuilt(const Workspace& ws) {
 bool nativeBuildReady(const Workspace& ws, const NativeBuilt& b, const std::string& engineExe, std::string* why) {
     if (b.editor.empty()) { if (why) *why = "редактор для проекта ещё не собран"; return false; }
     if (!nativeBuildUpToDate(b.editor, ws.project.dir, engineExe.empty() ? ws.buildTool : engineExe, why)) return false;
+    std::error_code ec;   // older project builds had no client: Play / launch would fall back to the regular AiverseGame
+    if (!b.client.empty() && !fs::exists(b.client, ec)) { if (why) *why = "в сборке проекта нет клиента игры (AiverseGame)"; return false; }
     return nativeBuildHasModules(nativeBuildDir(ws.project.dir, nativeHost()), requiredNativeModules(ws.project.rulesJson), why);
 }
 
@@ -132,6 +134,7 @@ Json nativeStatus(Workspace& ws, const std::string& engineExe) {
     r.set("editor", Json::string(b.editor.empty() ? plan.editorBinary : b.editor));
     r.set("launch", Json::string(b.editor.empty() ? plan.launchTarget : b.launch));
     r.set("headless", Json::string(b.editor.empty() ? plan.headlessBinary : b.headless));
+    r.set("client", Json::string(b.editor.empty() ? plan.clientBinary : b.client));
     r.set("built", Json::fromBool(!b.editor.empty()));
     r.set("buildModules", strings(nativeBuildModules(plan.buildDir)));
     std::string why;
@@ -151,10 +154,11 @@ void registerNativeBuildOps(Workspace& ws, const std::string& engineExe) {
         "binary paths, built, buildModules, upToDate (newer than native/ sources and the engine binary), ready (up to date and has every module: the editor switches to it on open without asking), why. See docs/native-modules.md.",
         Json::parse("{}"), [w, engineExe](const Json&) { return nativeStatus(*w, engineExe); }, false});
     ws.registerOp({"native_build",
-        "Configure + build the engine for the open project (-DAIVERSE_CONTENT_DIR=<project>, Release, targets aiverse_editor + aiverse_headless) "
+        "Configure + build the engine for the open project (-DAIVERSE_CONTENT_DIR=<project>, Release, targets aiverse_editor + aiverse_headless + aiverse_client: "
+        "the AiverseGame the editor launches then has the project's modules too) "
         "into <project>/Builds/.temp/editor-<host> (git-ignored; never touches the engine checkout). Output streams into the build log: "
         "poll build_status, then native_status. wait=true blocks until the build ends (aiversemcp without the editor; inside the "
-        "editor the window freezes meanwhile). Returns the editor / headless binary paths. Restart into it: GUI only.",
+        "editor the window freezes meanwhile). Returns the editor / headless / client binary paths. Restart into it: GUI only.",
         Json::parse(R"({"properties": {"wait": {"type": "boolean"}}})"), [w, engineExe](const Json& p) {
             if (w->project.dir.empty()) throw std::runtime_error("no game is open");
             NativeTools tools = findNativeTools(*w);

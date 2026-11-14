@@ -34,6 +34,7 @@ struct NativeBuildPlan {
     std::string editorBinary;                   // the executable that the build produces
     std::string launchTarget;                   // what restart launches: the .app bundle on macOS, else editorBinary
     std::string headlessBinary;
+    std::string clientBinary;                   // AiverseGame with the project's modules (the editor's "launch client")
 };
 
 // <project>/Builds/.temp: hidden intermediates of every build of the project (aiversebuild's _build, _pack, ...

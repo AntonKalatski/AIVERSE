@@ -19,11 +19,11 @@ NativeBuildPlan nativePlanFor(const Workspace& ws, const NativeTools& tools);
 // Returns "" when started, else a readable error (already written to the Console and editor.log).
 std::string startNativeBuild(Workspace& ws, const NativeBuildPlan& plan);
 // The project's built editor, whichever generator made it: editor binary ("" = none) and what restart launches.
-struct NativeBuilt { std::string editor, launch, headless; };
+struct NativeBuilt { std::string editor, launch, headless, client; };
 NativeBuilt findNativeBuilt(const Workspace& ws);
 // Up to date (NativeBuild.h) and holds every module the rules list: the editor may switch to it unasked.
 bool nativeBuildReady(const Workspace& ws, const NativeBuilt& b, const std::string& engineExe, std::string* why);
-// {required, compiled, missing, buildDir, editor, headless, built, upToDate, ready, why, building}
+// {required, compiled, missing, buildDir, editor, headless, client, built, upToDate, ready, why, building}
 Json nativeStatus(Workspace& ws, const std::string& engineExe);
 
 // engineExe: the binary whose mtime marks the engine version for the up-to-date check ("" = aiversebuild).

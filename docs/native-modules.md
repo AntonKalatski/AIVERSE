@@ -46,8 +46,11 @@ following:
   after a successful build the editor restarts into the built one by itself.
 
 The build runs `cmake -S <engine> -B <project>/Builds/.temp/editor-<platform> -DAIVERSE_CONTENT_DIR=<project>
--DCMAKE_BUILD_TYPE=Release` and the `aiverse_editor` + `aiverse_headless` targets (`AIVERSE_NATIVE_BUILD_JOBS` sets the
-number of jobs). CMake and Ninja are found the same way as for the Build window (`aiversebuild --check-toolchain`:
+-DCMAKE_BUILD_TYPE=Release` and the `aiverse_editor` + `aiverse_headless` + `aiverse_client` targets
+(`AIVERSE_NATIVE_BUILD_JOBS` sets the number of jobs). The client (`AiverseGame`, built with
+`-DAIVERSE_CLIENT_BUNDLE_CONTENT=OFF`: no copy of the project next to it, it runs on the project folder) has the project's
+modules too, so "launch client" / Play as in the client run the project's C++ plugins; a project build made before
+without the client is not "ready" until it is rebuilt. CMake and Ninja are found the same way as for the Build window (`aiversebuild --check-toolchain`:
 Homebrew, `~/.aiverse/toolchains`, etc.); if CMake is missing, the banner offers to install it.
 
 The whole CMake build folder lives in the hidden `Builds/.temp/` (together with `aiversebuild`'s intermediate files):
@@ -59,8 +62,8 @@ in its own repository. The module registry is generated into the build folder; t
 regular editor are not touched. The built editor is a single-project tool: it does not register itself as the `.aiverse`
 handler (files are still opened by the main editor; on macOS its `AiverseEditor.app` has its own bundle id
 `com.aiverse.editor.project`), it is started only by switching and receives `--native-editor` (`AIVERSE_NATIVE_EDITOR=1`),
-so it does not switch further itself. It takes `aiversebuild`, `aiversemcp` and `AiverseGame` from the regular build
-(`--tools-from`).
+so it does not switch further itself. It takes `aiversebuild` and `aiversemcp` from the regular build
+(`--tools-from`) and its own `AiverseGame`.
 
 Agents do the same over MCP: `native_status` (what is missing, where the build is, whether it is up to date) and
 `native_build` (`{"wait": true}` waits for the end and returns the binary path; without it, follow through

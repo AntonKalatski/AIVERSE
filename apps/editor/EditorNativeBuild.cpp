@@ -85,7 +85,7 @@ void Editor::restartIntoNativeBuild() {
         return;
     }
     if (playing()) stopPlay();
-    // aiversebuild / aiversemcp / AiverseGame stay those of this (regular) build: the project build has only the editor
+    // aiversebuild / aiversemcp stay those of this (regular) build; AiverseGame comes from the project build (its modules)
     std::string tools;
     if (fs::path bt(opt_.buildTool); bt.is_absolute() && fs::exists(bt, ec)) tools = bt.parent_path().string();
     const std::string arg = ws_.project.file.empty() ? ws_.project.dir : ws_.project.file;

@@ -529,6 +529,10 @@ option(AIVERSE_PRECOMPILE_METAL "Precompile macOS client Metal shaders after lin
 set(AIVERSE_METAL_CONTENT_DIR "" CACHE PATH "Resolved loose content override for native client shader capture")
 set(AIVERSE_METAL_CAPTURE_MAP "0" CACHE STRING "Map index for build-time Metal variant capture")
 
+# OFF: the client is not packaged with a copy of the content (the editor's per-project build: it runs the client on
+# the project folder through AIVERSE_CONTENT, and the build dir lives inside that folder).
+option(AIVERSE_CLIENT_BUNDLE_CONTENT "Copy the game content next to / into the client executable" ON)
+
 function(aiverse_package_app target)
     aiverse_package_notices(${target})
     # the editor's project file (<Title>.aiverse, legacy .aiverse) is not game content: dropped from loose dev bundles
@@ -577,7 +581,7 @@ function(aiverse_package_app target)
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${res_dir}/content"
                 COMMAND ${CMAKE_COMMAND} -E copy "${AIVERSE_CONTENT_PACK}" "${res_dir}/content/content.rpak"
                 COMMENT "Bundling content pack")
-        else()
+        elseif(AIVERSE_CLIENT_BUNDLE_CONTENT)
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${res_dir}"
                 COMMAND ${CMAKE_COMMAND} -E copy_directory "${AIVERSE_CONTENT_DIR}" "${res_dir}/content"
@@ -620,7 +624,7 @@ function(aiverse_package_app target)
                 COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/content"
                 COMMAND ${CMAKE_COMMAND} -E copy "${AIVERSE_CONTENT_PACK}" "$<TARGET_FILE_DIR:${target}>/content/content.rpak"
                 COMMENT "Copying content pack next to the executable")
-        else()
+        elseif(AIVERSE_CLIENT_BUNDLE_CONTENT)
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_directory "${AIVERSE_CONTENT_DIR}" "$<TARGET_FILE_DIR:${target}>/content"
                 COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${target}>/content/Builds" "$<TARGET_FILE_DIR:${target}>/content/logs" ${_aiverse_rm_exe}   # project outputs, .aiverse
