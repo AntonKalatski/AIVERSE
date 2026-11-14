@@ -1,3 +1,4 @@
+#include "kingston/DeckBroadphase.h"
 // Driving (rules "driving", RtsDriving.h): vehicle adoption, getting in / out, the stick -> pedals mapping, the
 // vehicle-controllers step and this module's part of the contract: the sweep of the body over the map grid and other
 // units, collision response, crash and run-over damage. Fixed maths only; every loop runs in entity-index order.
@@ -68,8 +69,20 @@ bool levelsApart(const DrivingStore& st, int deckA, Vec3 a, int deckB, Vec3 b) {
 }
 
 DrivingCar* findCar(DrivingStore& st, Entity e) {
-    auto it = std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& c, uint32_t i) { return c.e.index < i; });
-    return it != st.cars.end() && it->e == e ? &*it : nullptr;
+    // O(1) when the cached position is still the lower bound of e.index in the sorted cars (checked
+    // against both neighbours); otherwise the binary search, which refreshes the cache.
+    const size_t n = st.cars.size();
+    size_t p = n + 1;
+    if (e.index < st.slotOf.size()) {
+        const size_t q = st.slotOf[e.index];
+        if (q <= n && (q == n || st.cars[q].e.index >= e.index) && (q == 0 || st.cars[q - 1].e.index < e.index)) p = q;
+    }
+    if (p > n) {
+        p = size_t(std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& c, uint32_t i) { return c.e.index < i; }) - st.cars.begin());
+        if (st.slotOf.size() <= e.index) st.slotOf.resize(size_t(e.index) + 1, UINT32_MAX);
+        st.slotOf[e.index] = uint32_t(p);
+    }
+    return p < n && st.cars[p].e == e ? &st.cars[p] : nullptr;
 }
 } // namespace
 
@@ -118,7 +131,8 @@ DrivingRules Driving::parse(const Json& j, const std::vector<std::string>& ids) 
 }
 
 const DrivingVehicleType* Driving::typeOf(uint16_t unitType) const {
-    for (auto& v : rules_.vehicles) if (v.type == unitType) return &v;
+    if (unitType < vehicleOf_.size()) return vehicleOf_[unitType] >= 0 ? &rules_.vehicles[size_t(vehicleOf_[unitType])] : nullptr;
+    for (auto& v : rules_.vehicles) if (v.type == unitType) return &v;   // before setup
     return nullptr;
 }
 
@@ -132,6 +146,12 @@ void Driving::setup(Simulation& sim, RtsModule& m, const Json& rulesJson) {
     if (!active()) return;
     if (!m.topDown() || !m.topDown()->active()) throw std::runtime_error("driving: needs the 'topDown' block (the hero is the driver)");
     rules_.doorTicks = uint32_t((rules_.doorSeconds * int64_t(sim.tickRate())).toInt());
+    // how far a body of each type reaches from its centre (cars: half their length): the sweep's cheap first test
+    vehicleOf_.assign(m.rules().types.size(), -1);   // unit type -> vehicle (the first one, as the list is searched)
+    for (size_t i = rules_.vehicles.size(); i-- > 0;) if (rules_.vehicles[i].type < vehicleOf_.size()) vehicleOf_[rules_.vehicles[i].type] = int32_t(i);
+    reach_.assign(m.rules().types.size(), Fixed{});
+    for (size_t i = 0; i < reach_.size(); ++i) reach_[i] = m.rules().types[i].radius;
+    for (auto& v : rules_.vehicles) if (v.type < reach_.size()) reach_[v.type] = fxMax(v.length / 2, v.width / 2);
     auto& st = sim.world().setResource<DrivingStore>();
     adoptAndDrop(sim, st);
 }
@@ -182,7 +202,7 @@ void Driving::hash(Simulation& sim, Hasher& h) const {
         h.v3(s.position); h.v3(s.velocity);
         for (Fixed f : {s.yaw, s.yawRate, s.pitch, s.roll, s.steer, s.rpm, s.airspeed, s.sink, s.longAccel, s.trackLeft, s.trackRight}) h.fx(f);
         h.i32(s.gear); h.u32(s.shiftUntil); h.u32(s.slipMask); h.u32(s.lastTick);
-        h.u32(uint32_t(s.grounded) | uint32_t(s.drifting) << 1 | uint32_t(s.stalled) << 2 | uint32_t(s.initialized) << 3 | uint32_t(c.autopilot) << 4);
+        h.u32(uint32_t(s.grounded) | uint32_t(s.drifting) << 1 | uint32_t(s.stalled) << 2 | uint32_t(s.initialized) << 3 | uint32_t(c.autopilot) << 4 | uint32_t(c.locked) << 5);
         for (Fixed f : {c.pilot.throttle, c.pilot.brake, c.pilot.steer}) h.fx(f);
         h.u32(uint32_t(c.pilot.handbrake) | uint32_t(c.pilot.shiftUp) << 1 | uint32_t(c.pilot.shiftDown) << 2);
     }
@@ -200,7 +220,7 @@ void Driving::io(Simulation& sim, Archive& a) {
         a(s.airspeed, s.sink, s.longAccel, s.trackLeft, s.trackRight, s.gear, s.shiftUntil, s.slipMask, s.lastTick);
         a(s.grounded, s.drifting, s.stalled, s.initialized);
         a(c.autopilot, c.pilot.throttle, c.pilot.brake, c.pilot.steer, c.pilot.handbrake, c.pilot.shiftUp, c.pilot.shiftDown);
-        a(c.deck);
+        a(c.deck, c.locked);
     }
     uint32_t nd = uint32_t(st->decks.size());
     aiverse::io(a, nd);
@@ -298,7 +318,12 @@ void Driving::adoptAndDrop(Simulation& sim, DrivingStore& st) {
         if (!findCar(st, e)) fresh.push_back(e);
     });
     std::sort(fresh.begin(), fresh.end(), [](Entity a, Entity b) { return a.index < b.index; });
-    for (Entity e : fresh) {
+    for (Entity e : fresh) adoptOne(sim, st, e);
+}
+
+void Driving::adoptOne(Simulation& sim, DrivingStore& st, Entity e) {
+    World& w = sim.world();
+    {
         Unit& u = w.get<Unit>(e);
         const DrivingVehicleType& vt = *typeOf(u.type);
         const Vec3 p = w.get<Transform>(e).pos;
@@ -312,6 +337,55 @@ void Driving::adoptAndDrop(Simulation& sim, DrivingStore& st) {
         auto it = std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& x, uint32_t i) { return x.e.index < i; });
         st.cars.insert(it, c);
     }
+}
+
+bool Driving::adopt(Simulation& sim, Entity e, Fixed speed) {
+    auto* st = store(sim);
+    World& w = sim.world();
+    if (!st || !w.alive(e) || !w.has<Transform>(e)) return false;
+    Unit& u = w.get<Unit>(e);
+    if (u.hp.raw <= 0 || (u.flags & (kUnitOffMap | kUnitUnderConstruction)) || !typeOf(u.type)) return false;
+    if (!findCar(*st, e)) adoptOne(sim, *st, e);
+    DrivingCar* c = findCar(*st, e);
+    if (!c) return false;
+    const Vec3 f = forwardOf(c->st.yaw);
+    c->st.velocity = Vec3{f.x * speed, Fixed{}, f.z * speed};
+    return true;
+}
+
+bool Driving::setLocked(Simulation& sim, Entity vehicle, bool locked) {
+    auto* st = store(sim);
+    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
+    if (!c) return false;
+    c->locked = locked;
+    return true;
+}
+
+bool Driving::locked(Simulation& sim, Entity vehicle) const {
+    const DrivingCar* c = car(sim, vehicle);
+    return c && c->locked;
+}
+
+Entity Driving::enterTarget(Simulation& sim, Entity hero) const {
+    auto* st = store(sim);
+    World& w = sim.world();
+    if (!st || !w.alive(hero)) return kNullEntity;
+    const Unit& hu = w.get<Unit>(hero);
+    if (hu.hp.raw <= 0 || (hu.flags & kUnitOffMap)) return kNullEntity;
+    const Vec3 hp = w.get<Transform>(hero).pos;
+    const Fixed hr = m_->rules().types[hu.type].radius;
+    Entity best = kNullEntity;
+    Fixed bestD{};
+    for (auto& c : st->cars) {
+        if (c.driver.valid() || !w.alive(c.e)) continue;
+        const Unit& cu = w.get<Unit>(c.e);
+        if (cu.hp.raw <= 0) continue;
+        const Fixed d = flat(w.get<Transform>(c.e).pos - hp).length() - typeOf(cu.type)->length / 2 - hr;
+        if (d > rules_.enterRange) continue;
+        if (c.deck >= 0 && deckDeep(st->decks[size_t(c.deck)], w.get<Transform>(c.e).pos)) continue;
+        if (!best.valid() || d < bestD) { best = c.e; bestD = d; }
+    }
+    return best;
 }
 
 void Driving::enter(Simulation& sim, DrivingStore& st, uint8_t player, Entity hero) {
@@ -332,7 +406,7 @@ void Driving::enter(Simulation& sim, DrivingStore& st, uint8_t player, Entity he
         if (c.deck >= 0 && deckDeep(st.decks[size_t(c.deck)], w.get<Transform>(c.e).pos)) continue;   // above / below the hero
         if (!best || d < bestD) { best = &c; bestD = d; }   // cars are in entity order: ties keep the lower index
     }
-    if (!best) return;
+    if (!best || best->locked) return;   // a locked door: the game says so and decides who opens it
     best->driver = hero;
     best->player = player;
     best->doorUntil = sim.tick() + rules_.doorTicks;
@@ -389,11 +463,13 @@ bool Driving::command(Simulation& sim, const Command& cmd) {
 vl::VehicleInput Driving::inputOf(Simulation& sim, const DrivingCar& c) const {
     vl::VehicleInput in;
     auto* td = m_->topDown()->store(sim);
-    if (!c.driver.valid() || !td || c.player >= td->pilots.size()) {
-        if (c.autopilot) return c.pilot;                   // a computer driver (traffic)
-        in.handbrake = true;                               // parked
+    if (!c.driver.valid()) {   // nobody at the wheel: a traffic car's bot driver (RtsTraffic.cpp), else parked
+        if (Traffic* tr = m_->traffic(); tr && tr->active() && tr->aiInput(sim, c.e, in)) return in;
+        if (c.autopilot) return c.pilot;
+        in.handbrake = true;
         return in;
     }
+    if (!td || c.player >= td->pilots.size()) { in.handbrake = true; return in; }   // parked
     const topdown::Input& s = td->pilots[c.player].input;
     const Fixed mag = Fixed::fromRatio(s.moveMag, topdown::kMagMax), ang = Fixed::fromRaw(s.moveAngle);
     in.handbrake = s.fire;
@@ -428,11 +504,16 @@ void Driving::drive(Simulation& sim, DrivingStore& st, size_t index) {
     DrivingCar& c = st.cars[index];
     if (!w.alive(c.e)) return;
     Unit& u = w.get<Unit>(c.e);
-    if (u.hp.raw <= 0) return;
+    if (u.hp.raw <= 0 || (u.flags & kUnitInCargo)) return;
     const DrivingVehicleType& vt = *typeOf(u.type);
     const Fixed mpc = rules_.metersPerCell;
-    // parked and at rest: nothing to integrate until somebody gets in or something hits it (a city has hundreds)
-    if (!c.driver.valid() && !c.autopilot && c.st.initialized && c.st.velocity.x.raw == 0 && c.st.velocity.z.raw == 0 && c.st.yawRate.raw == 0) return;
+    // A parked car at rest sleeps: no controller step, no sweep (a city has hundreds of them). Whatever hits it
+    // gives it a velocity (car against car) and that wakes it; getting in or a traffic driver wake it too.
+    if (!c.driver.valid() && !c.autopilot && c.st.initialized && c.st.velocity == Vec3{} && c.st.yawRate.raw == 0) {
+        vl::VehicleInput none;
+        Traffic* tr = m_->traffic();
+        if (!(tr && tr->active() && tr->aiInput(sim, c.e, none))) return;
+    }
     auto res = vl::stepVehicle(vt.def, c.st, sim.tick(), sim.dt(), inputOf(sim, c), vl::VehicleContacts{});
     Transform& tr = w.get<Transform>(c.e);
     if (res) {
@@ -478,6 +559,7 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
     }
     for (size_t i = 0; i < st.decks.size() && c.deck < 0; ++i) {
         const DrivingDeck& d = st.decks[i];
+        if (!kingston::deckMayTouchBody(d, pos, half)) continue;
         const Fixed m = deckMouth(d);
         for (Fixed off : offs) {
             const DeckSpot s = deckSpot(d, pos + f * off);
@@ -537,7 +619,11 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
         if (!ou || ou->hp.raw <= 0 || (ou->flags & kUnitOffMap)) return;
         const UnitType& ot = m_->rules().types[ou->type];
         if (ot.structure || (ot.layer & kLayerAir)) return;
-        near.push_back({o, w.get<Transform>(o).pos, ot.radius});
+        // too far to touch whatever the headings (no square root; a city block has dozens of bodies in the query)
+        const Vec3 op = w.get<Transform>(o).pos;
+        const Fixed touch = half + r + reach_[ou->type] + Fixed::fromRatio(1, 32);   // (a little over: the exact test follows)
+        if (flat(pos - op).lengthSq() >= touch * touch) return;
+        near.push_back({o, op, ot.radius});
     });
     std::sort(near.begin(), near.end(), [](const Near& a, const Near& b) { return a.e.index < b.e.index; });
     struct Hurt { Entity e; Fixed dmg; Entity by; uint8_t owner; };

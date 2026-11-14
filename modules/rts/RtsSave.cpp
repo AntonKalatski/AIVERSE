@@ -265,8 +265,10 @@ bool RtsModule::serializeState(Simulation& sim, Archive& a) {
     if (driving_ && driving_->active()) driving_->io(sim, a);   // vehicles (games with rules "driving" only)
     if (commerce_ && commerce_->active()) commerce_->io(sim, a);   // premises and accounts (games with rules "commerce" only)
     if (career_ && career_->active()) career_->io(sim, a);         // career ladders (games with rules "careers" only)
+    if (prompts_ && prompts_->active()) prompts_->io(sim, a);      // open prompts (games with rules "prompts" only)
     if (!ioModesState(*this, sim, a)) return false;           // match modes (games with modes only, RtsModes.cpp)
     if (arsenal_ && arsenal_->active()) arsenal_->io(sim, a);   // weapons, ammo, crates (games with rules "arsenal" only)
+    if (traffic_ && traffic_->active()) traffic_->io(sim, a);   // city traffic (games with rules "traffic" only)
     if (!a.writing()) {
         gs.grid.invalidatePathing();   // derived caches (clearance, HPA*) rebuild from the loaded cells
         gs.grid.clearSoft();

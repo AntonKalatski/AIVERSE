@@ -73,7 +73,8 @@ struct Lighting {
     float3 groundColor{0.33f, 0.29f, 0.23f};
     float3 fogColor{0.62f, 0.70f, 0.80f};
     float fogDensity = 0.0025f;
-    float shadowSoftness = 0.22f;          // penumbra radius in world units (same look at every quality tier)
+    float shadowSoftness = 0.22f;          // maximum penumbra radius in world units; medium/high harden at contact
+    bool shadowContactHardening = true;    // medium/high: sharper contacts; false keeps a fixed radius
     bool tonemap = true;                   // false: lit shaders clamp instead of the ACES fit (flat / unlit art styles)
     bool srgbModels = false;               // true: model shaders encode their output with the exact sRGB curve (as a
                                            // linear-colour-space Unity project) instead of the engine's sqrt (gamma 2)
@@ -119,7 +120,7 @@ public:
 struct BakedSample { int clipA = -1, clipB = -1; float timeA = 0, timeB = 0, mix = 1; bool loopA = true, loopB = true; };
 
 // One model instance. Node matrices come from an animated pose (Animation.h) or the bind pose.
-// Rigid parts and baked-skinned meshes of identical instances are drawn instanced (32 portable / up to 256 with large uniform buffers).
+// Rigid parts and baked-skinned meshes of identical instances are drawn instanced (28 with 4 KB uniforms / up to 256 with large uniform buffers).
 // Immutable rigid source cache. Rebuild after changing the model or its transform.
 struct StaticModelCache {
     const Model* model=nullptr;
@@ -157,6 +158,7 @@ enum DrawFlags : uint32_t {
     // drawn blended because of its opacity (tint.w < 1) but still writing depth: a faded solid object (view.entity_fx)
     // stays in front of the ground layers drawn after the translucent pass (paint layers, ground canvas, sprites)
     kDrawFadeDepth = 8,
+    kDrawActorReveal = 128, // local main-view cutaway; never changes sun shadows
     // transparent object (Unity's transparent queue, ZWrite Off): every primitive goes to the blended pass even when opaque,
     // sorted back to front one by one (ortho cameras: depth along the view direction), without depth write, so a nearer
     // part drawn earlier is painted over by a farther part drawn later; casts no shadow. Its depth is written afterwards
@@ -165,6 +167,7 @@ enum DrawFlags : uint32_t {
     // static scenery (does not move for the whole map): receives a baked lightmap and is part of the scene
     // the light baker captures (Renderer3D::setModelCapture). Dynamic objects get light probes instead.
     kDrawStatic = 32,
+    kDrawKeepShadow = 64, // preserve opaque shadow casting while the camera image fades
 };
 
 struct ModelRenderStats {
@@ -192,6 +195,7 @@ public:
     void triangle(float3 a, float3 b, float3 c, uint32_t color);    // flat, alpha-blended
     void quadXZ(float3 a, float3 b, float width, uint32_t color, float y = 0.02f);
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
+    bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
@@ -213,6 +217,7 @@ public:
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
     const mat4& lightViewProj() const { return lightViewProj_; }
     const RTSCamera& camera() const { return cam_; }
+    float4 actorReveal{}; // world-space actor centre + aperture radius, zero disables
 
     // Traced lighting ("trace" tier, Renderer3DTrace.cpp): sun rays marched over the terrain height
     // field (long soft shadows of cliffs and mountains, every lit shader) and screen-space
@@ -250,14 +255,16 @@ public:
         double submitMs=0,occlusionMs=0;
         std::array<double,5> selectMs{},sortMs{},drawMs{};
         std::array<uint32_t,5> draws{},instances{},triangles{};
-        uint32_t cachedModels=0,lodNodes=0;
+        uint32_t cachedModels=0,lodNodes=0,lodTransitionNodes=0;
     };
     void setProfiling(bool enabled) { profiling_=enabled; }
     const RenderProfile& profile() const { return profile_; }
-    // Set before rendering; zero chooses the backend limit (32 portable / 256 Metal).
+    // Set before rendering; zero chooses the backend limit (28 with 4 KB uniforms / 256 Metal).
     void setInstanceLimit(uint32_t limit);
     uint32_t instanceLimit() const { return instanceLimit_; }
     void setModelLodEnabled(bool enabled) { modelLodEnabled_=enabled; }
+    // Relative screen-size band around each threshold; 0 restores instant switches.
+    void setModelLodFadeWidth(float width) { modelLodFadeWidth_=std::clamp(width,0.0f,0.49f); }
 
     // Baked global illumination (agent-lightbake): lightmaps for static models (matched by model path,
     // node and world transform), light probes for everything else, mixed with the realtime sun by the
@@ -291,10 +298,13 @@ private:
         bool baked;         // skinned from the baked texture (rows in anim)
         float4 anim;        // baked row A, row B, mix
         float dissolve, teamGlow;
+        float lodThreshold=1; bool lodInvert=false;
         float4 outline;
         int32_t morph;      // offset into morphData_ (8 weights), -1 = none
         int16_t lmPage = -1;  // baked lightmap page (anim = uv2 scale / offset), -1 = none
         uint8_t gi = 0;       // 0 realtime ambient, 1 lightmap, 2 light probes
+        const std::vector<Material>* paletteMaterials = nullptr;
+        uint8_t materialRole = 0; // 1 original colour suppressed, 2 palette batch (colour only)
         uint8_t shadowRole = 0;   // 0 normal, 1 part covered by its mesh's shadow batch, 2 the shadow batch
         bool inView, inShadow; float depth;
     };
@@ -362,6 +372,7 @@ private:
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
     bool profiling_=false,modelLodEnabled_=true;
+    float modelLodFadeWidth_=.15f;
     RenderProfile profile_;
     uint32_t instanceLimit_=32;
     GeometryStats geometryStats_;
@@ -386,7 +397,9 @@ private:
             return graph && other.graph && graph->glsl == other.graph->glsl && graph->vertexGlsl == other.graph->vertexGlsl && graph->textures.size() == other.graph->textures.size() && graph->outputs == other.graph->outputs;
         }
     };
-    struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; };
+    struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };
+    bool warmingPipelines_ = false, warmingPending_ = false;
+    std::vector<std::pair<ModelShaderKey, gfx::Device::PipelineJob>> pendingModelPipes_;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;

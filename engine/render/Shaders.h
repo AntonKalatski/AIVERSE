@@ -2,7 +2,7 @@
 // #version line (the GL backend prepends "#version 300 es" or "#version 330 core").
 //
 // Lit pipeline (single pass, forward, mobile friendly):
-//   sun (Lambert + Blinn specular) x shadow map with hardware PCF
+//   sun (Lambert + Blinn specular) x contact-hardening shadow map
 //   + hemisphere ambient (sky/ground) + rim + distance fog + ACES tonemap, lighting in linear space.
 #pragma once
 #include "LightShaders.h"   // AIVERSE_GLSL_LIGHTS / AIVERSE_MSL_LIGHTS: dynamic point lights (U2, tex1)
@@ -13,7 +13,7 @@ namespace aiverse::render::shaders {
 //   U0 (per draw):  mat4 model; vec4 color; vec4 params(x unlit, y specular, z receiveShadow, w emissive)
 //   U1 (per frame): mat4 viewProj; mat4 lightViewProj; mat4 invViewProj; vec4 sunDir(xyz, w intensity); vec4 sunColor;
 //                   vec4 skyColor; vec4 groundColor; vec4 fog(rgb, density); vec4 camPos(xyz, presentation time);
-//                   vec4 shadow(x uvFlipY, y depthScale, z depthOffset, w texel); vec4 quality(x taps, y enabled, z radius uv, w normal offset)
+//                   vec4 shadow(x uvFlipY, y depthScale, z depthOffset, w texel); vec4 quality(x taps, y 0=off/1=fixed/2=contact-hardening, z max radius uv, w normal offset)
 //                   Traced lighting (AIVERSE_*_TRACE, Renderer3D "trace" tier):
 //                   vec4 trace0(x,y height-field origin xz, z,w 1 / extent xz)
 //                   vec4 trace1(x height min, y height range (<= 0: terrain shadows off), z march distance, w penumbra tan)
@@ -134,6 +134,7 @@ namespace aiverse::render::shaders {
     "        float sd = texture(" DEPTH ", tuv).r;\n" \
     "        if (sd >= 0.9999) continue;\n" \
     "        vec3 s = ssrUnproject(uv, sd);\n" \
+    "#ifndef AIVERSE_MODEL_SSR\n        if (s.y <= wpos.y + 0.02) continue;\n#endif\n" \
     "        float dp = dot(p - u_camPos.xyz, fwd), ds = dot(s - u_camPos.xyz, fwd);\n" \
     "        if (ds < dp) {\n" \
     "            if (dp - ds > u_trace3.y + (d - prevD)) break;   /* the ray passed behind something thin: no hit */\n" \
@@ -189,6 +190,7 @@ namespace aiverse::render::shaders {
     "        float sd = sdp.sample(sds, tuv);\n" \
     "        if (sd >= 0.9999) continue;\n" \
     "        float3 s = ssrUnproject(f, uv, sd);\n" \
+    "#ifndef AIVERSE_MODEL_SSR\n        if (s.y <= wpos.y + 0.02) continue;\n#endif\n" \
     "        float dp = dot(p - f.camPos.xyz, fwd), ds = dot(s - f.camPos.xyz, fwd);\n" \
     "        if (ds < dp) {\n" \
     "            if (dp - ds > f.trace3.y + (d - prevD)) break;\n" \
@@ -215,10 +217,35 @@ namespace aiverse::render::shaders {
     "}\n"
 
 
-// Shadow lookup shared by every lit shader (needs U1 and the shadow map in slot 0).
+// Sun shadow lookup shared by every lit shader (raw depth map in slot 0).
+// Raw depth is shared by blocker search and bilinear PCF. No extra texture binding is needed.
+#define AIVERSE_GLSL_SUN_FILTER(TEX) \
+    "float sunDepth(vec2 uv) {\n" \
+    "    ivec2 size = textureSize(" TEX ", 0);\n" \
+    "    return texelFetch(" TEX ", clamp(ivec2(floor(uv * vec2(size))), ivec2(0), size - 1), 0).r;\n" \
+    "}\n" \
+    "float sunCompare(vec2 uv, float d) {\n" \
+    "    vec2 size = vec2(textureSize(" TEX ", 0));\n" \
+    "    vec2 p = uv * size - 0.5, f = fract(p), base = (floor(p) + 0.5) / size;\n" \
+    "    vec2 t = 1.0 / size;\n" \
+    "    return mix(mix(step(d, sunDepth(base)), step(d, sunDepth(base + vec2(t.x, 0.0))), f.x),\n" \
+    "               mix(step(d, sunDepth(base + vec2(0.0, t.y))), step(d, sunDepth(base + t)), f.x), f.y);\n" \
+    "}\n"
+
+#define AIVERSE_MSL_SUN_FILTER \
+    "static float sunDepth(depth2d<float> sm, float2 uv) {\n" \
+    "    int2 size = int2(sm.get_width(), sm.get_height());\n" \
+    "    return sm.read(uint2(clamp(int2(floor(uv * float2(size))), int2(0), size - 1)));\n" \
+    "}\n" \
+    "static float sunCompare(depth2d<float> sm, float2 uv, float d) {\n" \
+    "    constexpr sampler compareSampler(coord::normalized, address::clamp_to_edge, filter::linear, compare_func::less_equal);\n" \
+    "    return sm.sample_compare(compareSampler, uv, d);\n" \
+    "}\n"
+
 #define AIVERSE_GLSL_SHADOW \
-    "uniform highp sampler2DShadow tex0;\n" \
-    "// Soft shadows: rotated Poisson-disc PCF over hardware 2x2 compare taps.\n" \
+    "uniform highp sampler2D tex0;\n" \
+    AIVERSE_GLSL_SUN_FILTER("tex0") \
+    "// Soft shadows: rotated Poisson-disc PCF over bilinear 2x2 compare taps.\n" \
     "//   u_quality.x taps (1 / 4 / 8 / 16), u_quality.z filter radius in shadow UV, u_quality.w normal offset (world)\n" \
     "const vec2 kDisk[16] = vec2[16](\n" \
     "    vec2(-0.613, 0.617), vec2(0.170, -0.040), vec2(-0.299, 0.791), vec2(0.645, 0.493),\n" \
@@ -234,15 +261,33 @@ namespace aiverse::render::shaders {
     "    vec2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (u_shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
     "    float d = p.z * u_shadow.y + u_shadow.z;\n" \
+    "    vec2 dx = dFdx(uv), dy = dFdy(uv);\n" \
+    "    float zx = dFdx(d), zy = dFdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
+    "    vec2 gradient = abs(det) > 1e-10 ? vec2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : vec2(0.0);\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = u_quality.z;\n" \
-    "    if (u_quality.x < 2.0) return texture(tex0, vec3(uv, d));\n" \
-    "    if (u_quality.x < 5.0) { // weak GPUs: fixed 4 taps, each a bilinear 2x2 compare\n" \
-    "        float s = texture(tex0, vec3(uv + vec2(-0.5, -0.5) * r, d));\n" \
-    "        s += texture(tex0, vec3(uv + vec2( 0.5, -0.5) * r, d));\n" \
-    "        s += texture(tex0, vec3(uv + vec2(-0.5,  0.5) * r, d));\n" \
-    "        s += texture(tex0, vec3(uv + vec2( 0.5,  0.5) * r, d));\n" \
+    "    if (u_quality.x < 2.0) return sunCompare(uv, d);\n" \
+    "    if (u_quality.x < 5.0) { // weak GPUs: fixed 4 taps, no blocker search\n" \
+    "        float s = sunCompare(uv + vec2(-0.5, -0.5) * r, d + dot(gradient, vec2(-0.5, -0.5) * r));\n" \
+    "        s += sunCompare(uv + vec2( 0.5, -0.5) * r, d + dot(gradient, vec2( 0.5, -0.5) * r));\n" \
+    "        s += sunCompare(uv + vec2(-0.5,  0.5) * r, d + dot(gradient, vec2(-0.5,  0.5) * r));\n" \
+    "        s += sunCompare(uv + vec2( 0.5,  0.5) * r, d + dot(gradient, vec2( 0.5,  0.5) * r));\n" \
     "        return s * 0.25;\n" \
+    "    }\n" \
+    "    if (u_quality.y > 1.5) {\n" \
+    "        // PCSS for a directional area light. shadowSoftness remains the maximum world radius.\n" \
+    "        // Search the centre as well as the disk so narrow casters are not missed at contact.\n" \
+    "        float gap = 0.0, blockers = 0.0;\n" \
+    "        for (int i = -1; i < 8; ++i) {\n" \
+    "            vec2 o = i < 0 ? vec2(0.0) : kDisk[i] * r;\n" \
+    "            float delta = d + dot(gradient, o) - sunDepth(uv + o);\n" \
+    "            if (delta > 0.000001) { gap += delta; blockers += 1.0; }\n" \
+    "        }\n" \
+    "        if (blockers == 0.0) return 1.0;\n" \
+    "        float depthPerWorld = length(vec3(u_lightViewProj[0].z, u_lightViewProj[1].z, u_lightViewProj[2].z)) * u_shadow.y;\n" \
+    "        float uvPerWorld = 0.5 * length(vec3(u_lightViewProj[0].x, u_lightViewProj[1].x, u_lightViewProj[2].x));\n" \
+    "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
+    "        r = clamp(penumbra, min(r, u_shadow.w * 0.5), r);\n" \
     "    }\n" \
     "    // per-pixel rotation (interleaved gradient noise) turns banding into fine grain; a kernel of a\n" \
     "    // few texels can't band (each tap is a bilinear compare), where the grain would only show as stipple\n" \
@@ -254,12 +299,13 @@ namespace aiverse::render::shaders {
     "        if (i >= n_) break;\n" \
     "        vec2 o = kDisk[i];\n" \
     "        o = vec2(o.x * cs.x - o.y * cs.y, o.x * cs.y + o.y * cs.x);\n" \
-    "        s += texture(tex0, vec3(uv + o * r, d));\n" \
+    "        s += sunCompare(uv + o * r, d + dot(gradient, o * r));\n" \
     "    }\n" \
     "    return s / float(n_);\n" \
     "}\n"
 
 #define AIVERSE_MSL_SHADOW \
+    AIVERSE_MSL_SUN_FILTER \
     "constant float2 kDisk[16] = {\n" \
     "    float2(-0.613, 0.617), float2(0.170, -0.040), float2(-0.299, 0.791), float2(0.645, 0.493),\n" \
     "    float2(-0.651, 0.717), float2(0.421, 0.027), float2(-0.817, -0.271), float2(-0.705, -0.668),\n" \
@@ -274,15 +320,33 @@ namespace aiverse::render::shaders {
     "    float2 uv = p.xy * 0.5 + 0.5;\n" \
     "    if (f.shadow.x > 0.5) uv.y = 1.0 - uv.y;\n" \
     "    float d = p.z * f.shadow.y + f.shadow.z;\n" \
+    "    float2 dx = dfdx(uv), dy = dfdy(uv);\n" \
+    "    float zx = dfdx(d), zy = dfdy(d), det = dx.x * dy.y - dx.y * dy.x;\n" \
+    "    float2 gradient = abs(det) > 1e-10 ? float2(dy.y * zx - dx.y * zy, dx.x * zy - dy.x * zx) / det : float2(0.0);\n" \
     "    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || d >= 1.0) return 1.0;\n" \
     "    float r = f.quality.z;\n" \
-    "    if (f.quality.x < 2.0) return sm.sample_compare(ss, uv, d);\n" \
+    "    if (f.quality.x < 2.0) return sunCompare(sm, uv, d);\n" \
     "    if (f.quality.x < 5.0) {\n" \
-    "        float s = sm.sample_compare(ss, uv + float2(-0.5, -0.5) * r, d);\n" \
-    "        s += sm.sample_compare(ss, uv + float2( 0.5, -0.5) * r, d);\n" \
-    "        s += sm.sample_compare(ss, uv + float2(-0.5,  0.5) * r, d);\n" \
-    "        s += sm.sample_compare(ss, uv + float2( 0.5,  0.5) * r, d);\n" \
+    "        float s = sunCompare(sm, uv + float2(-0.5, -0.5) * r, d + dot(gradient, float2(-0.5, -0.5) * r));\n" \
+    "        s += sunCompare(sm, uv + float2( 0.5, -0.5) * r, d + dot(gradient, float2( 0.5, -0.5) * r));\n" \
+    "        s += sunCompare(sm, uv + float2(-0.5,  0.5) * r, d + dot(gradient, float2(-0.5,  0.5) * r));\n" \
+    "        s += sunCompare(sm, uv + float2( 0.5,  0.5) * r, d + dot(gradient, float2( 0.5,  0.5) * r));\n" \
     "        return s * 0.25;\n" \
+    "    }\n" \
+    "    if (f.quality.y > 1.5) {\n" \
+    "        // PCSS for a directional area light. shadowSoftness remains the maximum world radius.\n" \
+    "        // Search the centre as well as the disk so narrow casters are not missed at contact.\n" \
+    "        float gap = 0.0, blockers = 0.0;\n" \
+    "        for (int i = -1; i < 8; ++i) {\n" \
+    "            float2 o = i < 0 ? float2(0.0) : kDisk[i] * r;\n" \
+    "            float delta = d + dot(gradient, o) - sunDepth(sm, uv + o);\n" \
+    "            if (delta > 0.000001) { gap += delta; blockers += 1.0; }\n" \
+    "        }\n" \
+    "        if (blockers == 0.0) return 1.0;\n" \
+    "        float depthPerWorld = length(float3(f.lightViewProj[0].z, f.lightViewProj[1].z, f.lightViewProj[2].z)) * f.shadow.y;\n" \
+    "        float uvPerWorld = 0.5 * length(float3(f.lightViewProj[0].x, f.lightViewProj[1].x, f.lightViewProj[2].x));\n" \
+    "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
+    "        r = clamp(penumbra, min(r, f.shadow.w * 0.5), r);\n" \
     "    }\n" \
     "    float a = r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))));\n" \
     "    float2 cs = float2(cos(a), sin(a));\n" \
@@ -292,7 +356,7 @@ namespace aiverse::render::shaders {
     "        if (i >= cnt) break;\n" \
     "        float2 o = kDisk[i];\n" \
     "        o = float2(o.x * cs.x - o.y * cs.y, o.x * cs.y + o.y * cs.x);\n" \
-    "        s += sm.sample_compare(ss, uv + o * r, d);\n" \
+    "        s += sunCompare(sm, uv + o * r, d + dot(gradient, o * r));\n" \
     "    }\n" \
     "    return s / float(cnt);\n" \
     "}\n"
@@ -329,6 +393,19 @@ void main() {
     vec4 albedo = u_color * v_col;
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
     vec3 n = normalize(v_nrm);
+    // Kingston open-water ripples v1
+    // Open water is below the road film (.045); rain pools keep their own look.
+    if (u_params.y >= 0.85 && v_wpos.y < 0.04 && n.y > 0.9) {
+        float wx = v_wpos.x, wz = v_wpos.z;
+        float wt = (l_cloud.x + l_cloud.y) * 20.0;
+        float a = wx * 1.8 + wz * 0.8 + wt;
+        float b = wx * -1.1 + wz * 2.3 - wt * 1.3;
+        float c = wx * 4.7 + wz * 3.1 + wt * 1.8;
+        n = normalize(vec3(-0.10*cos(a) + 0.055*cos(b) - 0.025*cos(c),
+                              1.0, -0.045*cos(a) - 0.11*cos(b) - 0.018*cos(c)));
+        // Gentle colour variation follows the same waves, without white painted stripes.
+        base *= 0.90 + 0.13*sin(a) + 0.08*sin(b);
+    }
     vec3 L = normalize(u_sunDir.xyz);
     vec3 V = normalize(u_camPos.xyz - v_wpos);
     float ndl = max(dot(n, L), 0.0);
@@ -340,6 +417,7 @@ void main() {
     vec3 amb = mix(ground, sky, n.y * 0.5 + 0.5)*ambientVisibility;
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(n, H), 0.0), 40.0) * u_params.y;
+    if (u_params.y >= 0.85 && v_wpos.y >= 0.04) spec = pow(max(dot(n, H), 0.0), 180.0) * 0.04;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
@@ -348,11 +426,11 @@ void main() {
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
     vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V, u_params.y);   // planar reflection (water, High)
-    if (u_params.y >= 0.85 && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
+    if (u_params.y >= 0.85 && v_wpos.y >= 0.04 && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
         vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
         float hit;
         vec3 rc = ssrWater(v_wpos, nn, V, hit);
-        float fres = 0.5 + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
+        float fres = (v_wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
         outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
     }
     o_color = vec4(outc, albedo.a);
@@ -387,6 +465,19 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float4 albedo = u.color * in.col;
     float3 base = rtsDecodeScene(albedo.rgb);
     float3 n = normalize(in.nrm);
+    // Kingston open-water ripples v1
+    // Open water is below the road film (.045); rain pools keep their own look.
+    if (u.params.y >= 0.85 && in.wpos.y < 0.04 && n.y > 0.9) {
+        float wx = in.wpos.x, wz = in.wpos.z;
+        float wt = (l.cloud.x + l.cloud.y) * 20.0;
+        float a = wx * 1.8 + wz * 0.8 + wt;
+        float b = wx * -1.1 + wz * 2.3 - wt * 1.3;
+        float c = wx * 4.7 + wz * 3.1 + wt * 1.8;
+        n = normalize(float3(-0.10*cos(a) + 0.055*cos(b) - 0.025*cos(c),
+                              1.0, -0.045*cos(a) - 0.11*cos(b) - 0.018*cos(c)));
+        // Gentle colour variation follows the same waves, without white painted stripes.
+        base *= 0.90 + 0.13*sin(a) + 0.08*sin(b);
+    }
     float3 L = normalize(f.sunDir.xyz);
     float3 V = normalize(f.camPos.xyz - in.wpos);
     float ndl = max(dot(n, L), 0.0);
@@ -397,6 +488,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float3 amb = mix(rtsDecodeScene(f.groundColor.rgb), rtsDecodeScene(f.skyColor.rgb), n.y * 0.5 + 0.5)*ambientVisibility;
     float3 H = normalize(L + V);
     float spec = pow(max(dot(n, H), 0.0), 40.0) * u.params.y;
+    if (u.params.y >= 0.85 && in.wpos.y >= 0.04) spec = pow(max(dot(n, H), 0.0), 180.0) * 0.04;
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
@@ -405,11 +497,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col), in.wpos, n, V, u.params.y);
-    if (u.params.y >= 0.85 && f.trace2.w > 0.5) {
+    if (u.params.y >= 0.85 && in.wpos.y >= 0.04 && f.trace2.w > 0.5) {
         float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
         float hit;
         float3 rc = ssrWater(f, tex4, s4, tex5, s5, in.wpos, nn, V, hit);
-        float fres = 0.5 + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
+        float fres = (in.wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
         outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
     }
     return float4(outc, albedo.a);

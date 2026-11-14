@@ -8,6 +8,8 @@
 #include "modules/rts/view/EntityActionControls.h"
 #include "modules/rts/view/TopDownControls.h"
 #include "modules/rts/view/TopDownPrediction.h"
+#include <chrono>
+#include "engine/splash/SplashScreen.h"
 #include <array>
 #include <functional>
 #include <map>
@@ -95,6 +97,9 @@ public:
     // Startup in steps, one per frame, so the splash screen (ClientSplash.h) keeps animating.
     static constexpr int kInitSteps = 6;
     void initStep(gfx::Device& dev, int step);
+    void drawLoadingStatus(gfx::Device& dev, double dt, float progress, const std::string& label);
+    std::string initLabel(int step) const;
+    bool mapLoading() const { return mapLoading_; }
     static float initWeight(int step);   // share of the loading progress bar
     void frame(gfx::Device& dev, double dt);
     void event(const platform::Event& e);
@@ -113,7 +118,7 @@ public:
     // instead of the screen; the host also sets platform::setHostedView around every call.
     void setHostTarget(gfx::TextureHandle color, gfx::TextureHandle depth, int w, int h) { hostColor_ = color; hostDepth_ = depth; hostW_ = w; hostH_ = h; }
     Simulation* simulation() { return sim_.get(); }
-    bool inMatch() const { return sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
+    bool inMatch() const { return !mapLoading_ && sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
     const std::string& errorText() const { return error_; }
 
 private:
@@ -121,6 +126,26 @@ private:
     enum class Mode { Normal, AttackMove, Patrol, Place, Rally, Ability, Claim, Skill, Dig, Undig, Room, Road, Unroad, Drop, ScriptCmd };
 
     void startMatch(size_t idx, const Json& initialVars = Json());
+    std::function<void(uint16_t)> typeAssetLoader_;
+    void configureLoading();
+    void updateBackgroundLoading();
+    bool ensureLocalAssets();
+    float assetRadius() const;
+    float assetDistance(const SceneObject& object) const;
+    float initialAssetRadius_ = 0;
+    std::vector<uint16_t> backgroundTypes_;
+    int backgroundType_ = -1;
+    size_t loadingStalls_ = 0;
+    size_t backgroundRemaining_ = 0;
+    void beginMapLoading();
+    void frameMapLoading(gfx::Device& dev, double dt);
+    bool mapLoading_ = false, mapJustLoaded_ = false, loadingPrimed_ = false;
+    bool startupReported_ = false;
+    std::chrono::steady_clock::time_point startupStarted_ = std::chrono::steady_clock::now();
+    splash::SplashScreen loadingSplash_;
+    std::vector<uint16_t> loadingTypes_, warmingTypes_;
+    size_t loadingCursor_ = 0;
+    std::chrono::steady_clock::time_point loadingStarted_;
     void fitCamera();
     // planet maps (ClientPlanet.cpp): orbit camera input, picking through RtsView; flat maps never get here
     bool planet() const { return view_.planetMode(); }
@@ -219,7 +244,7 @@ private:
     net::RollbackSession* tdHooked_ = nullptr;
     bool tdMouseHeld_ = false, tdFireHeld_ = false;
     // ClientCommerce.cpp: the city economy (rules "commerce"): the deals at the door in front of the hero
-    struct CommerceChoice { std::string label; game::CommerceOp op; int premise; int64_t value; };
+    struct CommerceChoice { std::string label; game::CommerceOp op; int premise; int64_t value; int career = -1; };
     int commerceDoor();
     std::vector<CommerceChoice> commerceChoices(int premise, std::string& title);
     bool commerceKey(platform::Key key);
@@ -313,6 +338,8 @@ private:
     game::ScriptSound* scriptSound_ = nullptr;          // set once the audio engine is up
     std::vector<Entity> heardSelection_;  // selection when the last select sound played
     RTSCamera cam_;
+    aiverse::Vec2 screenSize_{};        // map screen being framed (BW multiscreen)
+    bool screenFramed_ = false;
     Json manifest_, rulesJson_;
     std::vector<MapEntry> maps_;
     std::string gameName_ = "AIVERSE";
@@ -332,6 +359,11 @@ private:
     Screen screen_ = Screen::Menu;
     std::unique_ptr<Simulation> sim_;
     std::unique_ptr<net::NetClient> net_;     // after sim_: destroyed first, so it never outlives the sim it drives
+    struct CityLink;                          // a persistent city on a server (ClientCity.cpp, docs/city-server.md)
+    std::shared_ptr<CityLink> city_;          // after sim_ too; reset before the simulation it shows the city in
+    void cityPrepare(Json& rules, Json& map);
+    void cityAttach();
+    float cityFrame(double dt);
     std::vector<RtsAI> bots_;
     RtsScene scene_;
     uint8_t human_ = 1;

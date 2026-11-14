@@ -1,9 +1,11 @@
 // Renderer3D: models (PBR materials, GPU skinning, alpha modes) — shader permutations, culling,
 // sorting and the per-draw uniform blocks. See ModelShaders.h for the uniform layouts.
 #include "Renderer3D.h"
+#include "ModelMerge.h"
 #include "ModelShaders.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
+#include "ModelLodTransition.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -15,12 +17,12 @@
 namespace aiverse::render {
 
 namespace {
-struct MaterialUniforms { float base[4]; float emissive[4]; float pbr[4]; float misc[4]; float uv0[4]; float uv1[4]; float light[4]; };
+struct MaterialUniforms { float base[4]; float emissive[4]; float pbr[4]; float misc[4]; float uv0[4]; float uv1[4]; float light[4]; float reveal[4]; float revealAxis[4]; };
 constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec4 per joint
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
-                   kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096;   // GI keys: agent-lightbake
+                   kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
     double* value;
     std::chrono::steady_clock::time_point start;
@@ -68,19 +70,19 @@ void Renderer3D::shutdownModels() {
     modelError_.clear();
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    modelPipes_.clear(); modelShaders_.clear();
+    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
     for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
 }
 
 void Renderer3D::setInstanceLimit(uint32_t limit) {
-    const auto maximum=dev_?uint32_t(std::clamp<size_t>(dev_->maxUniformBytes()/128,1,256)):32u;
+    const auto maximum=dev_?uint32_t(std::clamp<size_t>(dev_->maxUniformBytes()/144,1,256)):32u;
     const auto next=limit?std::clamp(limit,1u,maximum):maximum;
     if(next==instanceLimit_)return;
     instanceLimit_=next;
     if(!dev_)return;
     for(auto& [key,p]:modelPipes_)dev_->destroyPipeline(p);
     for(auto& [key,s]:modelShaders_)if(s.shader.valid())dev_->destroyShader(s.shader);
-    modelPipes_.clear();modelShaders_.clear();
+    pendingModelPipes_.clear(); modelPipes_.clear();modelShaders_.clear();
 }
 void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     model=&source;world=transform;transforms.clear();primitiveOffsets.clear();
@@ -97,12 +99,14 @@ void Renderer3D::setMaterialQuality(MaterialQuality q) {
     if (!dev_) return;
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    modelPipes_.clear(); modelShaders_.clear();
+    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
 }
 
 gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bool instanced) {
     const bool shadow = phase == 0, outline = phase == 3, depthAfter = phase == 4;
     const bool skinned = it.joints >= 0, baked = it.baked, morph = it.morph >= 0;
+    const bool materialPalette = phase == 1 && it.paletteMaterials;
+    const bool lodFade = it.lodThreshold<1 || it.lodInvert;
     const bool mask = !outline && it.mat->alpha == AlphaMode::Mask;
     const bool normalMap = phase != 0 && !outline && it.mat->normalTex >= 0 && matQuality_ != MaterialQuality::Low;
     const bool blend = outline || (!shadow && !depthAfter && (it.mat->alpha == AlphaMode::Blend || it.tint.w < 0.99f || transparentItem(it.flags)));
@@ -112,7 +116,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const uint32_t shaderKey = (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
-                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u);
+                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) | (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u);
     const auto selectedGraph=it.mat->shaderGraph && int(matQuality_)>=it.mat->shaderGraph->minQuality?it.mat->shaderGraph:nullptr;
@@ -121,9 +125,17 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const ModelShaderKey pkey{pipeKey, selectedGraph};
     for (auto& [k, p] : modelPipes_) if (k == pkey) return p;
 
+    for (auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();++it) if(it->first==pkey) {
+        gfx::PipelineHandle result;
+        if (!it->second(result)) { warmingPending_=true; return {}; }
+        pendingModelPipes_.erase(it);
+        if (!result.valid()) modelError_="model pipeline: "+dev_->lastError();
+        modelPipes_.push_back({pkey,result}); return result;
+    }
     ShaderEntry* entry = nullptr;
     for (auto& [k, s] : modelShaders_) if (k == skey) entry = &s;
     if (!entry) {
+        if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[stream-pipeline] shader=%u graph=%d\n",shaderKey,graph?1:0);
         std::string defs;
         defs += "#define AIVERSE_INST " + std::to_string(instanced ? instanceLimit_ : 1) + "\n";
         if (skinned) defs += "#define SKINNED 1\n";
@@ -131,6 +143,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (morph) defs += "#define MORPH 1\n";
         if (normalMap) defs += "#define NORMALMAP 1\n";
         if (mask) defs += "#define ALPHAMASK 1\n";
+        if (materialPalette) defs += "#define MATERIAL_PALETTE 1\n";
+        if (lodFade) defs += "#define LODFADE 1\n";
         if (outline) defs += "#define OUTLINE 1\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
@@ -209,8 +223,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
         sd.uniformSlots = shadow ? 5 : 6; sd.textureSlots = graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
-        e.shader = dev_->createShader(sd);
-        if (!e.shader.valid()) {
+        if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
+        else e.shader = dev_->createShader(sd);
+        if (!e.job && !e.shader.valid()) {
             e.failed = true;
             modelError_ = "model shader (" + defs + "): " + dev_->lastError();
             std::fprintf(stderr, "%s\n", modelError_.c_str());
@@ -218,6 +233,12 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         modelShaders_.push_back({skey, e});
         entry = &modelShaders_.back().second;
     }
+    if (entry->job) {
+        if (!entry->job(entry->shader)) { warmingPending_=true; return {}; }
+        entry->job={};
+        if (!entry->shader.valid()) { entry->failed=true; modelError_="model shader: "+dev_->lastError(); }
+    }
+    if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[stream-pipeline-state] key=%u phase=%d\n",pipeKey,phase);
     gfx::PipelineHandle ph;
     if (!entry->failed) {
         gfx::PipelineDesc pd;
@@ -243,11 +264,50 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
             pd.colorWrite = false;
         }
         pd.label = shadow ? "model shadow" : outline ? "model outline" : depthAfter ? "model depth" : "model";
-        ph = dev_->createPipeline(pd);
+        if (warmingPipelines_) {
+            auto job=dev_->createPipelineAsync(pd);
+            if (!job(ph)) { pendingModelPipes_.push_back({pkey,std::move(job)}); warmingPending_=true; return {}; }
+        } else ph = dev_->createPipeline(pd);
         if (!ph.valid()) modelError_ = "model pipeline: " + dev_->lastError();
     }
     modelPipes_.push_back({pkey, ph});
     return ph;
+}
+
+bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Material>* materials) {
+    warmingPipelines_=true; warmingPending_=false;
+    auto warm=[&](const ModelItem& item,int phase,bool instanced) {
+        const auto pipe=modelPipeline(item,phase,instanced);
+        if (pipe.valid() && !dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) warmingPending_=true;
+    };
+    const auto& mats = materials ? *materials : model.materials;
+    bool lod = false, palette = false;
+    for (const auto& mesh : model.meshes) {
+        lod |= !mesh.lods.empty();
+        palette |= !mesh.materialBatches.empty();
+    }
+    for (const auto& material : mats) {
+        ModelItem item{}; item.model=&model; item.mat=&material; item.tint={1,1,1,1}; item.joints=model.skins.empty()?-1:0; item.morph=-1;
+        for (int skin=0; skin<(model.baked.tex.valid()?2:1); ++skin) {
+            item.baked=skin!=0; if(item.baked)item.joints=-1;
+            for (int fade=0; fade<(lod?2:1); ++fade) {
+                item.lodThreshold=fade?.5f:1.0f;
+                for (bool instanced : {false,true}) for(int phase : {0,1}) {
+                    item.paletteMaterials=nullptr; item.tint.w=1;
+                    warm(item,phase,instanced);
+                    // Fading passengers/roofs changes blend state, but should not compile during movement.
+                    if(phase==1){
+                        item.tint.w=.5f;warm(item,phase,instanced);
+                        item.flags=kDrawFadeDepth;warm(item,phase,instanced);
+                        item.tint.w=1;item.flags=0;
+                        warm(item,3,instanced);warm(item,4,instanced);
+                    }
+                    if(phase==1 && palette){item.paletteMaterials=&mats;warm(item,phase,instanced);}
+                }
+            }
+        }
+    }
+    warmingPipelines_=false; return !warmingPending_;
 }
 
 void Renderer3D::drawModel(const ModelDraw& d) {
@@ -268,7 +328,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     const auto& graphMaterials=d.materials && d.materials->size()>=m->materials.size()?*d.materials:m->materials;
     const bool displaced=cache?cache->displaced:std::any_of(graphMaterials.begin(),graphMaterials.end(),[this](const Material& mat){return mat.shaderGraph && int(matQuality_)>=mat.shaderGraph->minQuality && mat.shaderGraph->outputs.count("vertexOffset");});
     const bool inView = displaced || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e, c + e));
-    const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && d.tint.w >= 0.99f && d.dissolve <= 0 &&
+    const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 &&
                           (displaced || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e, c + e)));
     if (!inView && !inShadow) return;
     const std::vector<mat4>& world = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
@@ -294,6 +354,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (!nodeView && !nodeShadow) ++modelStats_.culledNodes; // retained for later mirror/spot frusta
         }
         int meshIndex = node.mesh; size_t level = 0;
+        ModelLodBlend lodBlend{node.mesh};
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
         const bool skinLod = node.skin >= 0 && !displaced && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
@@ -319,33 +380,42 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             float pixels = nodeView ? geometryErrorPixels(viewProj_ * lodWorld, lodMin, lodMax, error, sceneW_, sceneH_, zeroToOne) : 0;
             if (nodeShadow) pixels = std::max(pixels, geometryErrorPixels(lightViewProj_ * lodWorld, lodMin, lodMax, error, shadowSize_, shadowSize_, zeroToOne));
             if (!nodeView && !nodeShadow) pixels = std::numeric_limits<float>::infinity(); // full detail for later mirror/spot frusta
-            for (size_t i = 0; i < baseMesh.lods.size(); ++i) {
-                const auto& lod = baseMesh.lods[i];
-                if (pixels < lod.maxPixels && lod.mesh >= 0 && size_t(lod.mesh) < m->meshes.size()) { meshIndex = lod.mesh; level = i + 1; }
-            }
+            const bool opaque = d.tint.w>=.99f && d.dissolve<=0 && !transparentItem(d.flags) &&
+                std::none_of(mats.begin(),mats.end(),[](const Material& mat){return mat.alpha==AlphaMode::Blend || mat.transparent;});
+            const float fadeWidth = opaque && !m->geometry && matQuality_!=MaterialQuality::Low ? modelLodFadeWidth_ : 0;
+            lodBlend=selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
+            meshIndex=lodBlend.mesh;level=lodBlend.level;
+            if(lodBlend.incoming>=0)++profile_.lodTransitionNodes;
             if (meshIndex != node.mesh) ++profile_.lodNodes;
         }
         ++modelStats_.lodNodes[std::min<size_t>(level, 3)];
         // Shadow batch (mergeStaticPrimitives): one shadow draw covers the opaque parts of the mesh.
-        // Material overrides may change what casts, so they draw the parts one by one.
+        // Material copies are common in game views; only shadow-incompatible overrides disable batching.
+        for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
+        meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
-        const bool shadowBatch = drawMesh.shadowBatch.indexCount > 0 && !m->geometry && !d.materials && !d.nodeMaterial && d.variant < 0;
-        auto addItem = [&](const Primitive& p, uint8_t shadowRole) {
+        const bool shadowBatch = !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
+        std::vector<const MaterialBatch*> colourBatches;
+        if (!m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+            for (const auto& batch : drawMesh.materialBatches)
+                if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
+        auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
             if (p.indexCount == 0) return;
             int mi = p.material;
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
             ModelItem it;
             it.geometry = d.geometry;
+            if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
             size_t pi = cache?cache->primitiveOffsets[size_t(meshIndex)]:0;
             if(!cache)for (int mesh = 0; mesh < meshIndex; ++mesh) pi += m->meshes[size_t(mesh)].primitives.size();
-            it.geometryPrimitive = shadowRole == 2 ? 0 : pi + size_t(&p - m->meshes[size_t(meshIndex)].primitives.data());
+            it.geometryPrimitive = shadowRole == 2 || materialRole == 2 ? 0 : pi + size_t(&p - m->meshes[size_t(meshIndex)].primitives.data());
             it.model = m; it.prim = &p; it.mat = &mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))];
             it.tint = d.tint; it.team = d.team; it.flash = d.flash; it.flags = d.flags | (mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))].transparent ? uint32_t(kDrawTransparent) : 0u);
             it.dissolve = d.dissolve; it.teamGlow = d.teamGlow; it.outline = d.outline;
             it.rigid = rigid;
-            it.castShadow = !(d.flags & kDrawNoCastShadow) && d.tint.w >= 0.99f && d.dissolve <= 0 && it.mat->castShadow && it.mat->alpha != AlphaMode::Blend && !transparentItem(it.flags);
+            it.castShadow = !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 && it.mat->castShadow && it.mat->alpha != AlphaMode::Blend && !transparentItem(it.flags);
             it.inView = nodeView; it.inShadow = nodeShadow && it.castShadow;
             it.joints = -1; it.baked = false; it.anim = anim; it.morph = -1;
             const bool skinnedPrim = node.skin >= 0 && !p.jointPalette.empty();
@@ -379,12 +449,23 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             it.depth = cam_.ortho ? dot(wc - camPos_, normalize(cam_.target - camPos_)) : length(wc - camPos_);
             bakedItem(it, d, n);
             it.shadowRole = shadowRole;
+            it.materialRole = materialRole;
+            if (materialRole == 2) it.paletteMaterials = &mats;
             if (shadowRole == 2) it.inView = false;   // the batch exists only for shadow passes
             modelItems_.push_back(it);
         };
-        for (const Primitive& p : drawMesh.primitives) addItem(p, shadowBatch && p.shadowBatched ? 1 : 0);
+        for (size_t i = 0; i < drawMesh.primitives.size(); ++i) {
+            const auto& p = drawMesh.primitives[i];
+            bool covered = false;
+            for (const auto* batch : colourBatches)
+                covered |= std::find(batch->parts.begin(), batch->parts.end(), i) != batch->parts.end();
+            addItem(p, shadowBatch && p.shadowBatched ? 1 : 0, covered ? 1 : 0);
+        }
+        for (const auto* batch : colourBatches) addItem(batch->primitive, 0, 2);
         if (shadowBatch) addItem(drawMesh.shadowBatch, 2);
+        }
     }
+
 }
 
 void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase) {
@@ -398,25 +479,26 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     }
     // Upload the whole instance block declared by this backend's shader variant.
     const uint32_t slots = instanced ? instanceLimit_ : 1u;
-    instData_.assign(size_t(slots) * 32, 0.0f);
+    instData_.assign(size_t(slots) * 36, 0.0f);
     for (uint32_t i = 0; i < count; ++i) {
         const ModelItem& x = modelItems_[items[i]];
-        float* d = instData_.data() + size_t(i) * 32;
+        float* d = instData_.data() + size_t(i) * 36;
         std::memcpy(d, x.world.m, 16 * sizeof(float));
-        d[16] = x.tint.x; d[17] = x.tint.y; d[18] = x.tint.z; d[19] = x.tint.w;
+        d[16] = x.tint.x; d[17] = x.tint.y; d[18] = x.tint.z; d[19] = phase == 0 && (x.flags & kDrawKeepShadow) ? 1.f : x.tint.w;
         if (phase == 3) { d[20] = x.outline.x; d[21] = x.outline.y; d[22] = x.outline.z; d[23] = 0; }
         else { d[20] = x.team.x; d[21] = x.team.y; d[22] = x.team.z; d[23] = x.flash; }
         d[24] = (x.mat->receiveShadow && !(x.flags & kDrawNoReceiveShadow)) ? 1.0f : 0.0f;
         d[25] = x.dissolve;
         d[26] = x.outline.w;
         d[27] = phase == 3 ? 0.0f : x.teamGlow;
+        d[32] = x.lodThreshold; d[33] = x.lodInvert ? 1.0f : 0.0f;
         d[28] = x.anim.x; d[29] = x.anim.y; d[30] = x.anim.z; d[31] = x.anim.w;   // w: lightmap uv2 offset.y (agent-lightbake)
     }
     dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
     const Material& mt = *it.mat;
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
     const bool newModel = !lastItem_ || lastItem_->model != it.model || (phase != 0 && lastItem_->gi != 0);
-    if (!lastItem_ || lastItem_->mat != it.mat || newModel) {
+    if (!lastItem_ || lastItem_->mat != it.mat || newModel || ((lastItem_->flags ^ it.flags) & kDrawActorReveal)) {
         MaterialUniforms mu{};
         mu.base[0] = mt.baseColor.x; mu.base[1] = mt.baseColor.y; mu.base[2] = mt.baseColor.z; mu.base[3] = mt.baseColor.w;
         mu.emissive[0] = mt.emissive.x * mt.emissiveStrength; mu.emissive[1] = mt.emissive.y * mt.emissiveStrength; mu.emissive[2] = mt.emissive.z * mt.emissiveStrength;
@@ -427,6 +509,13 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
         mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
         mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
         mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
+        if (phase != 0 && geometryMainView_ && (it.flags & kDrawActorReveal) && actorReveal.w > 0) {
+            mu.reveal[0]=actorReveal.x;mu.reveal[1]=actorReveal.y;mu.reveal[2]=actorReveal.z;mu.reveal[3]=actorReveal.w;
+            const float3 centre{actorReveal.x,actorReveal.y,actorReveal.z};
+            const float3 axis=normalize(cam_.ortho ? cam_.eye()-cam_.target : cam_.eye()-centre);
+            mu.revealAxis[0]=axis.x;mu.revealAxis[1]=axis.y;mu.revealAxis[2]=axis.z;
+            mu.revealAxis[3]=cam_.ortho ? 0.f : 1.f/std::max(.01f,length(cam_.eye()-centre));
+        }
         dev_->setUniforms(2, &mu, sizeof mu);
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
@@ -446,6 +535,16 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
         dev_->setTexture(8, it.model->morphTex.valid() ? it.model->morphTex : white_);
     }
     if (it.gi && (phase == 1 || phase == 2)) bindBakedGI(it);
+    if (phase == 1 && it.paletteMaterials) {
+        float palette[kMaxMaterialPalette * 8] = {};
+        for (size_t i = 0; i < it.paletteMaterials->size(); ++i) {
+            const auto& m = (*it.paletteMaterials)[i];
+            float* p = palette + i * 8;
+            p[0] = m.baseColor.x; p[1] = m.baseColor.y; p[2] = m.baseColor.z; p[3] = m.baseColor.w;
+            p[4] = m.metallic; p[5] = m.roughness;
+        }
+        dev_->setUniforms(3, palette, sizeof palette);
+    }
     if (it.joints >= 0) dev_->setUniforms(3, jointData_.data() + it.joints, kJointFloats * sizeof(float));
     else if (it.baked && (!lastItem_ || !lastItem_->baked || lastItem_->prim != it.prim)) {
         float pal[80] = {};
@@ -484,11 +583,22 @@ void Renderer3D::renderModels(int phase) {
         }
         bool take = phase == 0 ? shadow : phase == 3 ? visible && it.outline.w > 0 : phase == 4 ? visible && transparentItem(it.flags) :
                     visible && (phase == 2) == blended;
+        if (phase != 0 && it.tint.w <= 0.f) take = false;
         if (it.shadowRole == (phase == 0 ? 1 : 2)) take = false;   // batched parts cast through their shadow batch
         if(take&&phase==0&&!it.mat->shaderGraph&&it.joints<0&&!it.baked&&it.morph<0)
             take=geometryBoxVisible(lightViewProj_*it.world,it.prim->boundsMin,it.prim->boundsMax);
         // Reflection has its own view, never consume main-view occlusion there.
-        if (phase == 1 && !geometryMainView_) take = !blended && (it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
+        if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
+        // Kingston water: ground models must not cover the mirrored city.
+        // This flat city puts the rainwater at y=.045. Fully submerged primitives
+        // are omitted only from the reflection, retaining normal and shadow draws.
+        if (take && phase == 1 && !geometryMainView_) {
+            const auto center=(it.prim->boundsMin+it.prim->boundsMax)*.5f;
+            const auto extent=(it.prim->boundsMax-it.prim->boundsMin)*.5f;
+            const float top=it.world.transformPoint(center).y + std::abs(it.world.at(1,0))*extent.x + std::abs(it.world.at(1,1))*extent.y + std::abs(it.world.at(1,2))*extent.z;
+            if(top<=.055f)take=false;
+        }
+        if ((it.materialRole == 1 && phase == 1) || (it.materialRole == 2 && phase != 1)) take = false;
         if (take && phase != 0 && geometryMainView_ && it.geometry.occlusion && !it.mat->shaderGraph && it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 &&
             geometryOcclusion_.hidden(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax)) {
             if (phase == 1 || phase == 2) ++geometryStats_.occluded;
@@ -518,9 +628,10 @@ void Renderer3D::renderModels(int phase) {
     lastItem_ = nullptr;
     auto batchable = [&](const ModelItem& x) { return modelInstancingEnabled_ && x.joints < 0 && x.morph < 0; };
     auto sameBatch = [&](const ModelItem& x, const ModelItem& y) {
+        if((x.lodThreshold<1 || x.lodInvert)!=(y.lodThreshold<1 || y.lodInvert))return false;
         const bool bx = x.mat->alpha == AlphaMode::Blend || x.tint.w < 0.99f, by = y.mat->alpha == AlphaMode::Blend || y.tint.w < 0.99f;
-        return x.prim == y.prim && x.mat == y.mat && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
-               (x.flags & (kDrawFadeDepth | kDrawTransparent)) == (y.flags & (kDrawFadeDepth | kDrawTransparent));
+        return x.paletteMaterials == y.paletteMaterials && x.prim == y.prim && x.mat == y.mat && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
+               (x.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal)) == (y.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal));
     };
     for (size_t i = 0; i < order_.size();) {
         size_t j = i + 1;
@@ -538,6 +649,7 @@ void Renderer3D::prepareOcclusion() {
     uint32_t budget = 8192;
     for (const auto& it : modelItems_) {
         if (!budget) break;
+        if (actorReveal.w > 0 && (it.flags & kDrawActorReveal)) continue; // cutaway cannot occlude the actor on CPU
         if (!it.inView || !it.geometry.occluder || !it.model->geometry || it.joints >= 0 || it.baked || it.morph >= 0 ||
             it.mat->alpha != AlphaMode::Opaque || it.mat->transparent || it.mat->shaderGraph ||
             it.tint.w < 1 || it.dissolve > 0 || transparentItem(it.flags)) continue;

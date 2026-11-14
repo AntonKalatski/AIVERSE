@@ -258,6 +258,11 @@ Queries (simulation and view scripts):
 | `game.stat(h, "damage")`, `game.has_status(h, "slow")` | effective stat (techs, buffs, statuses) |
 | `game.type_info("footman")`, `game.types()` | `{id, name, structure, max_hp, speed, armor, cost, tags, upgrades}` (upgrades: type ids of its in-place upgrades) |
 | `game.map_size()` → w, h, `game.passable(x, z [, "ground"\|"air"\|"naval"])`, `game.level(x, z)`, `game.height(x, z)`, `game.area(name)` | map |
+| `game.traffic_light(x, z [, "x"\|"z"])` → `"green"`\|`"yellow"`\|`"red"`\|nil | signal of the junction at / next to the point (rules `traffic`, docs/traffic.md) |
+| `game.traffic_report(kind, x, z [, offender])` → id\|nil, `game.traffic_incidents()` → `{{id, kind, x, z, state}, ...}` | city incidents (`"injured"`, `"crime"`, `"fire"`, `"wreck"`) and what the services are doing about them (docs/traffic.md) |
+| `game.traffic_gang()` → `{state, x, z, car, size, loot}`\|nil, `{robberies, caught, loot}` | the gang of citizens that is out robbing now and the totals (rules `traffic.gangs`) |
+| `game.traffic_citizen(h)` → `{state, commute, leg, home, work = {x, z, kind, open}, shift = {from, to}}`\|nil, `game.traffic_clock()` → hour | the citizen behind a person on the street or the car he drives (`commute`: walk / car / bus; `leg` on his way: walk, to_stop, at_stop, drive) and the game day (rules `traffic.population`) |
+| `game.traffic_kind(h)` → `"car"`\|`"bus"`\|`"emergency"`\|nil | a vehicle the traffic drives (sirens, HUD) |
 | `game.var(name)` | trigger variable (fx) |
 | `game.data(h)`, `game.has_data(h, key)` | the entity's own persistent table (view: read-only copy) / does it have the key |
 | `game.orders(h)`, `game.current_order(h)` | the order queue / its first order: `{order, x, z, target, param, state}` (`order`: `move attack_move attack patrol gather return build repair enter cast dig claim_cell need haul board unload follow rearm trade pick_item merge`) |
@@ -674,6 +679,17 @@ sprites (`ArmyUnitModelLayer.AttachShadow`) with it. Client only (drawn by `RtsV
 `view_ground_shadow_option`.
 
 ### Entity scale and opacity (view scripts)
+
+`view.entity_parent(child, parent, {x=0,y=0,z=0,yaw=0})` attaches an entity's presentation
+ to another entity's final rendered frame. Offsets are in cells: +X forward, +Y up, +Z right;
+ yaw is in degrees. Nested attachments inherit translation, rotation, tilt and scale. Cycles
+ and non-finite offsets are rejected. `view.entity_parent(child, nil)` detaches. Native hosts
+ may provide `RtsScene::entityFrames` for physics-driven chassis after their visual update.
+ Children use that same frame rather than independently interpolated simulation positions.
+ This is a **presentation-only** hierarchy: collision, ownership and simulation positions do
+ not change. Links are cleared with the view and when either entity dies; rebuild them from
+ saved simulation state in `view.on_frame` after loading a game. Tests: `view_entity_parent_frames`
+ and `view_entity_parent_api`.
 
 `view.entity_fx(h, fields)` overrides how one entity (unit, structure, prop: any handle of `game.units`) is drawn,
 on the local machine only:

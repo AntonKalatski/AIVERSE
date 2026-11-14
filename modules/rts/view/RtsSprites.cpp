@@ -44,7 +44,7 @@ void spriteCorners(const SpriteLook& L, const Basis& B, float3 ground, float3 (&
 }
 } // namespace
 
-bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& base, const SpriteDefaults& defaults) {
+bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& base, const SpriteDefaults& defaults, bool deferTypes) {
     rules_ = &rules;
     base_ = base;
     defaults_ = defaults;
@@ -61,12 +61,17 @@ bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& ba
         }
     shadowTex_ = textures_.addGenerated("builtin:shadow", S, S, px, false);
     looks_.assign(rules.types.size(), {});
-    for (size_t i = 0; i < rules.types.size(); ++i) {
-        const Json& s = rules.types[i].view["sprite"];
-        if (s.isObject()) loadLook(looks_[i], rules.types[i], s);
-    }
+    loadedTypes_.assign(rules.types.size(), false);
+    if (!deferTypes) for (size_t i = 0; i < rules.types.size(); ++i) loadType(uint16_t(i));
     ready_ = true;
     return true;
+}
+
+void Rts2DView::loadType(uint16_t type) {
+    if (!rules_ || type >= loadedTypes_.size() || loadedTypes_[type]) return;
+    const Json& s = rules_->types[type].view["sprite"];
+    if (s.isObject()) loadLook(looks_[type], rules_->types[type], s);
+    loadedTypes_[type] = true;
 }
 
 void Rts2DView::shutdown(gfx::Device& dev) {
@@ -316,7 +321,7 @@ void Rts2DView::addObject(const SceneObject& o, float groundY, const EntityFxVal
                     ? time_ - double(std::clamp(o.build, 0.0f, 1.0f)) * L.anims[kActBuild].count / std::max(0.01f, L.anims[kActBuild].fps)
                     : -double(o.entity.index % 97) * 0.37;   // desynchronise identical units
     if (fx) {   // view.entity_fx: width (x) / height (y) scale, opacity
-        const float a = std::clamp(fx->opacity(), 0.0f, 1.0f);
+        const float a = std::clamp(fx->opacity(), 0.0f, 1.0f) * std::clamp(o.fade, 0.0f, 1.0f);
         if (a <= 0 || fx->scale(0) <= 0 || fx->scale(1) <= 0) return;
         if (fx->scale(0) != 1 || fx->scale(1) != 1) {
             SpriteLook S = L;
@@ -327,7 +332,7 @@ void Rts2DView::addObject(const SceneObject& o, float groundY, const EntityFxVal
         emit(L, ground, o.facing, act, t0, team, tint, false, a);
         return;
     }
-    emit(L, ground, o.facing, act, t0, team, tint, false, 1);
+    emit(L, ground, o.facing, act, t0, team, tint, false, std::clamp(o.fade, 0.0f, 1.0f));   // route end fade
 }
 
 void Rts2DView::endFrame(const MapGrid&) {
@@ -370,6 +375,16 @@ void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
     }
     if (batch_.casterCount() > 0 && r.shadowQuality() != ShadowQuality::Off)
         r.drawCustomShadow([this, &r](gfx::Device& dev) { batch_.flushCasters(dev, r.lightViewProj()); });
+    // Kingston tile ground precedes open water.
+    r.drawCustomOpaque([this, &r, &grid, lh](gfx::Device& dev) {
+        refreshTiles(dev, grid, lh);
+        r.lights.bind(2,1);
+        SpriteLighting lighting;
+        lighting.bind=[&r]{ r.bindLitFrame(); };
+        lighting.ref=referenceLight();
+        lighting.receiveShadows=r.shadowQuality()>=ShadowQuality::Medium;
+        if (tileMesh_.vb.valid() && atlas_.valid()) batch_.drawMesh(dev, tileMesh_, atlas_.tex, r.viewProj(), defaults_.lit ? &lighting : nullptr);
+    });
     r.drawCustom([this, &r, &grid, lh](gfx::Device& dev) {
         refreshTiles(dev, grid, lh);
         r.lights.bind(2, 1);   // unlit sprites: day/night tint + light map (lighting agent); the lit path rebinds its frame
@@ -378,7 +393,7 @@ void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
         lighting.ref = referenceLight();
         // receiving sun shadows costs a PCF lookup per sprite pixel: Medium and up
         lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
-        if (tileMesh_.vb.valid() && atlas_.valid()) batch_.drawMesh(dev, tileMesh_, atlas_.tex, r.viewProj(), defaults_.lit ? &lighting : nullptr);
+
         batch_.flush(dev, r.viewProj(), &lighting);
     });
 }

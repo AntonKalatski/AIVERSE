@@ -377,7 +377,8 @@ void RtsModule::sysGarrison(Simulation& sim) {
             if (o.player < collector.size() && collector[o.player].second && collector[o.player].first != e) {
                 // BW RedirectProduction.SendUnits: the normal delta goes to the pool; a growing house adds addUnitsPerSecond instead
                 StatusInst& pool = *collector[o.player].second;
-                const Fixed rate = stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval;
+                Fixed rate = stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval;
+                if (!coreRate.empty() && o.player < coreRate.size()) rate = rate * coreRate[o.player];   // battle core: Player.GetIncreaseRate
                 const Fixed delta = g.count < cap ? dt * rate : Fixed{};   // HouseModule: 0 when it cannot grow
                 pool.acc += delta;
                 if (delta.raw > 0) {
@@ -401,7 +402,9 @@ void RtsModule::sysGarrison(Simulation& sim) {
             if (into->count < cap || into != &g) {
                 g.growth += dt * stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval;
                 if (!coreRate.empty() && o.player < coreRate.size()) g.growth -= dt * stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval * (kOne - coreRate[o.player]);
-                while (g.growth >= kOne && (into != &g || into->count < cap)) { ++into->count; g.growth -= kOne; }
+                int made = 0;
+                while (g.growth >= kOne && (into != &g || into->count < cap)) { ++into->count; g.growth -= kOne; ++made; }
+                if (made) bwNoteProduced(sim, e, made);   // agent-bw-ai: per point produced units (match stats)
                 if (into == &g && g.count >= cap) g.growth = Fixed{};
             } else if (g.count > cap) {
                 g.growth -= dt * t.garrisonDecay;
@@ -412,7 +415,9 @@ void RtsModule::sysGarrison(Simulation& sim) {
             if (g.count < t.garrisonMax) {
                 g.growth += dt / t.spawnInterval;
                 if (!coreRate.empty() && o.player < coreRate.size()) g.growth -= dt / t.spawnInterval * (kOne - coreRate[o.player]);
-                while (g.growth >= kOne && g.count < t.garrisonMax) { ++g.count; g.growth -= kOne; }
+                int made = 0;
+                while (g.growth >= kOne && g.count < t.garrisonMax) { ++g.count; g.growth -= kOne; ++made; }
+                if (made) bwNoteProduced(sim, e, made);   // agent-bw-ai
                 if (g.count >= t.garrisonMax) g.growth = Fixed{};
             } else if (g.count > t.garrisonMax) {
                 g.growth -= dt * t.garrisonDecay;
@@ -442,7 +447,10 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
         Vec3 from = w.get<Transform>(r.from).pos, to = w.get<Transform>(r.target).pos;
         if (rules_.lanes.enabled) {
             // Mushroom Wars 2: spread over the generated lanes round-robin, follow the lane strictly
-            std::vector<int> lanes = lanesBetween(sim, r.from, r.target);
+            // authored routes: the open route's lines, or a flying route from a flying garrison (RtsRoutes.cpp)
+            const bool authored = routesAuthored();
+            std::vector<int> lanes = !authored ? lanesBetween(sim, r.from, r.target)
+                                   : (rules_.advancedEffects && (statusFlags(sim, r.from) & kStFlying)) ? flyingLanes(sim, r.from, r.target) : routeLanes(sim, r.from, r.target, false);
             if (!lanes.empty()) {
                 if (gs.laneRoundRobin.size() <= r.from.index) gs.laneRoundRobin.resize(r.from.index + 1, 0);
                 uint32_t& rr = gs.laneRoundRobin[r.from.index];
@@ -453,7 +461,7 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
                 // start at the first lane point outside the source footprint
                 uint16_t pos = 0;
                 auto& f = w.get<Footprint>(r.from);
-                while (pos + 1u < L.points.size()) {
+                while (!authored && pos + 1u < L.points.size()) {   // BW routes start at the point itself
                     Vec3 p = L.points[reverse ? L.points.size() - 1 - pos : pos];
                     int cx, cy; gs.grid.cellXY(p, cx, cy);
                     if (cx < f.x || cy < f.y || cx >= f.x + f.w || cy >= f.y + f.h) break;
@@ -463,6 +471,7 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
                 Entity n = spawn(sim, r.unit, r.owner, start);
                 if (!w.has<Orders>(n)) return n;
                 w.add<LaneWalker>(n, LaneWalker{lane, pos, reverse});
+                startRouteWalk(sim, n, lane);
                 tagGroup(n, r);
                 Order ord;
                 ord.type = OrderType::Enter; ord.target = r.target; ord.point = flat(to); ord.state = 3; // 3 = lane walk

@@ -292,7 +292,7 @@ if(NOT EMSCRIPTEN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/battle/BattleLoad
     target_link_libraries(aiverse_battle_rts PUBLIC aiverse_battle_load aiverse_game)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/server/GameData.cpp")
-    add_library(aiverse_net_game STATIC apps/server/GameData.cpp)
+    add_library(aiverse_net_game STATIC apps/server/GameData.cpp apps/server/BwStats.cpp)   # BwStats: agent-bw-meta
     target_link_libraries(aiverse_net_game PUBLIC aiverse_net_server aiverse_game)
 endif()
 # Bunker Wars adapter (agent-bw-meta, docs/meta-bunkerwars.md): default HTTPS transport on the
@@ -408,11 +408,14 @@ target_link_libraries(aiverse_models PUBLIC aiverse_engine)
 target_sources(aiverse_models PRIVATE engine/render/SurfaceLocomotion.cpp engine/render/AnimationContacts.cpp engine/render/FullBodyIK.cpp engine/render/AnimationGraph.cpp engine/render/AnimationRig.cpp engine/render/AnimationMotion.cpp)
 # Unity animation import (agent-unity-anim): clip sidecars and the Mecanim-style controller node.
 target_sources(aiverse_models PRIVATE engine/render/ModelClips.cpp engine/render/AnimationController.cpp)
-if(NOT EMSCRIPTEN AND NOT ANDROID AND NOT IOS)
+if((AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS) AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT IOS)
     add_executable(aiverse_clipinfo tools/unity_anim/clipinfo.cpp)
     target_link_libraries(aiverse_clipinfo PRIVATE aiverse_models aiverse_zstd_dec)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_deferred_loading_tests tests/deferred_loading.cpp)
+    target_link_libraries(aiverse_deferred_loading_tests PRIVATE aiverse_runtime aiverse_game_view aiverse_content_reader)
+    add_test(NAME aiverse_deferred_loading_tests COMMAND aiverse_deferred_loading_tests)
     add_executable(aiverse_unity_anim_tests tests/unity_anim/controller.cpp)
     target_link_libraries(aiverse_unity_anim_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME unity_anim_controller COMMAND aiverse_unity_anim_tests)
@@ -526,7 +529,14 @@ target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiver
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
 
 # Helper: package content + platform metadata around an executable.
+include(platform/cmake/ThirdPartyNotices.cmake)
+
+option(AIVERSE_PRECOMPILE_METAL "Precompile macOS client Metal shaders after linking (requires GUI and Metal Toolchain)" OFF)
+set(AIVERSE_METAL_CONTENT_DIR "" CACHE PATH "Resolved loose content override for native client shader capture")
+set(AIVERSE_METAL_CAPTURE_MAP "0" CACHE STRING "Map index for build-time Metal variant capture")
+
 function(aiverse_package_app target)
+    aiverse_package_notices(${target})
     # the editor's project file (<Title>.aiverse, legacy .aiverse) is not game content: dropped from loose dev bundles
     file(GLOB _aiverse_projfiles RELATIVE "${AIVERSE_CONTENT_DIR}" "${AIVERSE_CONTENT_DIR}/*.aiverse" "${AIVERSE_CONTENT_DIR}/*.aiverse")
     set(_aiverse_rm_exe "")
@@ -581,6 +591,21 @@ function(aiverse_package_app target)
                 COMMAND ${CMAKE_COMMAND} -E copy_directory "${AIVERSE_ENGINE_ASSETS}" "${res_dir}/content/engine"
                 COMMENT "Bundling content")
         endif()
+        if(AIVERSE_PRECOMPILE_METAL AND AIVERSE_PLATFORM STREQUAL "macos" AND target STREQUAL "aiverse_client")
+            if(AIVERSE_CONTENT_PACK)
+                message(FATAL_ERROR "Precompile Metal against loose staging content before creating content.rpak")
+            endif()
+            find_package(Python3 COMPONENTS Interpreter REQUIRED)
+            set(_metal_content "${res_dir}/content")
+            if(AIVERSE_METAL_CONTENT_DIR)
+                set(_metal_content "${AIVERSE_METAL_CONTENT_DIR}")
+            endif()
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/metal/precompile.py"
+                    --executable "$<TARGET_FILE:${target}>" --content "${_metal_content}"
+                    --work-dir "${CMAKE_CURRENT_BINARY_DIR}/metal-precompile" --map "${AIVERSE_METAL_CAPTURE_MAP}"
+                COMMENT "Precompiling Metal libraries and host-GPU pipelines" VERBATIM)
+        endif()
     elseif(AIVERSE_PLATFORM STREQUAL "web")
         set_target_properties(${target} PROPERTIES OUTPUT_NAME "index" SUFFIX ".html")
         if(AIVERSE_CONTENT_PACK)
@@ -618,6 +643,7 @@ if(AIVERSE_BUILD_CLIENT)
         target_link_libraries(main PRIVATE aiverse_runtime aiverse_game_view aiverse_game_audio)
         # Keep ANativeActivity_onCreate from the glue library.
         set_target_properties(main PROPERTIES LINK_FLAGS "-u ANativeActivity_onCreate")
+        aiverse_package_notices(main)
         set(AIVERSE_CLIENT_TARGET main)
     else()
         add_executable(aiverse_client apps/client/main.cpp $<TARGET_OBJECTS:aiverse_runtime>)
@@ -841,6 +867,17 @@ if(AIVERSE_BUILD_SERVER)
     target_link_libraries(aiverse_netbot PRIVATE aiverse_net_game aiverse_i18n)
 endif()
 # Hosted battles (agent-net-mobile): battle tool (the load harness library is defined next to aiverse_net_server).
+# The persistent city server (docs/city-server.md): one authoritative simulation, clients get what is near them.
+add_library(aiverse_net_city STATIC engine/net/city/CityNet.cpp engine/net/city/CityMirror.cpp)
+target_link_libraries(aiverse_net_city PUBLIC aiverse_net aiverse_game)
+target_include_directories(aiverse_net_city PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(aiverse_net_city_meta STATIC engine/net/city/CityMeta.cpp)   # accounts in the meta service (module "world")
+target_link_libraries(aiverse_net_city_meta PUBLIC aiverse_net_city aiverse::meta AIVERSE::meta_world)
+if(AIVERSE_BUILD_SERVER)
+    add_executable(aiverse_city apps/city/main.cpp)
+    target_link_libraries(aiverse_city PRIVATE aiverse_net_city aiverse_net_city_meta)
+endif()
+
 if(AIVERSE_BUILD_SERVER AND TARGET aiverse_battle_load)
     add_executable(aiverse_battle apps/battle/main.cpp)
     target_link_libraries(aiverse_battle PRIVATE aiverse_battle_load aiverse_battle_rts)
@@ -867,6 +904,7 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_tests PRIVATE aiverse_postfx_data)   # postfx agent
     target_link_libraries(aiverse_tests PRIVATE aiverse_game aiverse_game_audio aiverse_audiopack)
     target_link_libraries(aiverse_tests PRIVATE aiverse_game_fx)
+    target_link_libraries(aiverse_tests PRIVATE aiverse_net_city aiverse_net_city_meta)   # the city server (agent-gta2)
     target_link_libraries(aiverse_tests PRIVATE aiverse_terrain_detail)   # terrain detail surface tests (agent-terrain)
     target_link_libraries(aiverse_tests PRIVATE aiverse_game_view)   # fog of war look parsing (view, no GPU)
     # view.entity_fx draw tests: the 3D renderer against a recording gfx::Device (no GPU; platform stubs in tests.cpp)
@@ -1034,7 +1072,7 @@ target_link_libraries(aiverse_splash PUBLIC aiverse_engine aiverse_atlas)
 set(AIVERSE_SPLASH_BACKGROUND "" CACHE STRING "Window background before the first frame, 0xRRGGBB (set by aiversebuild)")
 foreach(t aiverse_client main)
     if(TARGET ${t})
-        target_sources(${t} PRIVATE apps/client/ClientSplash.cpp)
+        target_sources(${t} PRIVATE apps/client/ClientSplash.cpp apps/client/ClientLoading.cpp)
         target_link_libraries(${t} PRIVATE aiverse_splash)
         if(AIVERSE_SPLASH_BACKGROUND)
             target_compile_definitions(${t} PRIVATE AIVERSE_SPLASH_BACKGROUND=${AIVERSE_SPLASH_BACKGROUND})
@@ -1133,7 +1171,7 @@ endif()
 target_sources(aiverse_game PRIVATE modules/rts/RtsGridFields.cpp modules/rts/RtsGridFieldData.cpp modules/rts/RtsGridFieldsApi.cpp)
 # extraction raids (agent-extraction): match loop, extraction points, raid inventory, interactables, receipts, bot, Lua `raid`
 target_sources(aiverse_game PRIVATE modules/rts/RtsRaid.cpp modules/rts/RtsRaidData.cpp modules/rts/RtsRaidBot.cpp modules/rts/RtsRaidApi.cpp)
-target_sources(aiverse_game PRIVATE modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp modules/rts/RtsDrivingApi.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp)   # agent-gta2: city economy
+target_sources(aiverse_game PRIVATE modules/rts/RtsCommerce.cpp modules/rts/RtsCommerceApi.cpp modules/rts/RtsDrivingApi.cpp modules/rts/RtsCareer.cpp modules/rts/RtsCareerApi.cpp modules/rts/RtsPrompt.cpp)   # agent-gta2: city economy
 # top-down heroes (agent-topdown-control): rules "topDown", stick input commands, aim / auto-fire (docs/topdown.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTopDown.cpp)
 # in-match progression (agent-df-progression-glue): match-progression package on real units, rules "progression" (docs/progression.md)
@@ -1148,6 +1186,8 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsDriving.cpp)
 # Bunker Wars routes, groups, multiscreen (docs/game-format.md § Routes)
 target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRoutesData.cpp modules/rts/RtsScriptRoutes.cpp)
 target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
+# traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
+target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
 # the engine's standard Lua library (rule-level mechanics) is compiled in: modules/rts/lua/*.lua
 file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/*.lua)
 set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/RtsStdLua.h)
@@ -1171,6 +1211,8 @@ foreach(t aiverse_client main)
         target_sources(${t} PRIVATE apps/client/ClientRegionInput.cpp)
         target_sources(${t} PRIVATE apps/client/ClientTopDown.cpp)   # top-down heroes (agent-topdown-control)
         target_sources(${t} PRIVATE apps/client/ClientCommerce.cpp)   # city economy (agent-gta2)
+        target_sources(${t} PRIVATE apps/client/ClientCity.cpp)       # a seat in a city on a server (agent-gta2)
+        target_link_libraries(${t} PRIVATE aiverse_net_city)
     endif()
 endforeach()
 
@@ -1273,11 +1315,11 @@ endif()
 
 # The game client's core (GameClient: menus, script UI, view scripts, input, audio): AiverseGame's
 # main.cpp adds only the entry point; the editor's Game window hosts the same code (apps/editor/ClientHost.cpp).
-set(AIVERSE_CLIENT_CORE_SOURCES apps/client/GameClient.cpp apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp
+set(AIVERSE_CLIENT_CORE_SOURCES apps/client/ClientLoading.cpp apps/client/GameClient.cpp apps/client/ClientUi.cpp apps/client/ClientActions.cpp apps/client/ClientScript.cpp
     apps/client/ClientScriptCmd.cpp apps/client/ClientScriptUi.cpp apps/client/Minimap.cpp apps/client/Lobby.cpp apps/client/ClientFx.cpp
     apps/client/ClientPlanet.cpp apps/client/MinimapPlanet.cpp apps/client/ClientRegionInput.cpp
     apps/client/ClientBaked.cpp   # ClientBaked: the map's baked lighting (agent-lightbake)
-    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp)   # top-down heroes (agent-topdown-control), city economy (agent-gta2)
+    apps/client/ClientTopDown.cpp apps/client/ClientCommerce.cpp apps/client/ClientCity.cpp)   # top-down heroes (agent-topdown-control), city economy (agent-gta2)
 foreach(t aiverse_client main)
     if(TARGET ${t})
         target_link_libraries(${t} PRIVATE aiverse_content_reader)   # streamed world: worker-thread project reader
@@ -1288,7 +1330,8 @@ endforeach()
 # Editor: play the project as in the game client, hosted in the Game window or in AiverseGame (apps/editor/EditorClientPlay.cpp)
 if(TARGET aiverse_editor)
     target_sources(aiverse_editor PRIVATE apps/editor/EditorClientPlay.cpp apps/editor/ClientHost.cpp ${AIVERSE_CLIENT_CORE_SOURCES})
-    target_link_libraries(aiverse_editor PRIVATE aiverse_net aiverse_game_audio aiverse_atlas aiverse_ui aiverse_game_fx aiverse_i18n aiverse_content_reader)
+    target_link_libraries(aiverse_editor PRIVATE aiverse_net_city)
+    target_link_libraries(aiverse_editor PRIVATE aiverse_splash aiverse_net aiverse_game_audio aiverse_atlas aiverse_ui aiverse_game_fx aiverse_i18n aiverse_content_reader)
 endif()
 if(AIVERSE_BUILD_TESTS AND (AIVERSE_PLATFORM STREQUAL "linux" OR AIVERSE_PLATFORM STREQUAL "macos"))
     add_executable(aiverse_hosted_view_tests tests/hosted_view.cpp $<TARGET_OBJECTS:aiverse_runtime>)
@@ -1354,7 +1397,7 @@ if(AIVERSE_BUILD_TOOLS)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_meta_service_tests tests/meta/service_tests.cpp)
-    target_link_libraries(aiverse_meta_service_tests PRIVATE aiverse::meta)
+    target_link_libraries(aiverse_meta_service_tests PRIVATE aiverse::meta AIVERSE::meta_world)
     add_test(NAME meta_service COMMAND aiverse_meta_service_tests ${CMAKE_CURRENT_SOURCE_DIR}/examples/meta/service.json)
 endif()
 
@@ -1472,11 +1515,24 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
     endif()
 endif()
 
+# Independently selectable CPU cable geometry; no renderer, physics or GPU link.
+add_library(aiverse_cables STATIC EXCLUDE_FROM_ALL engine/cables/Cables.cpp)
+add_library(AIVERSE::cables ALIAS aiverse_cables)
+target_include_directories(aiverse_cables PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+if(NOT MSVC)
+    target_compile_options(aiverse_cables PRIVATE -Wall -Wextra)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_cables_tests tests/cables/cables.cpp)
+    target_link_libraries(aiverse_cables_tests PRIVATE AIVERSE::cables)
+    add_test(NAME cables_geometry COMMAND aiverse_cables_tests)
+endif()
+
 # Host authoring: shared by the editor, MCP and CPU tests.
 if(AIVERSE_DESKTOP AND (TARGET aiverse_editor_core OR AIVERSE_BUILD_TESTS))
-    add_library(aiverse_modeling STATIC tools/modeling/Geometry.cpp tools/modeling/Boolean.cpp tools/modeling/Advanced.cpp
+    add_library(aiverse_modeling STATIC tools/modeling/Cable.cpp tools/modeling/Geometry.cpp tools/modeling/Boolean.cpp tools/modeling/Advanced.cpp
         tools/modeling/Document.cpp tools/modeling/Export.cpp tools/modeling/Clips.cpp tools/modeling/Recipes.cpp)
-    target_link_libraries(aiverse_modeling PUBLIC aiverse_models)
+    target_link_libraries(aiverse_modeling PUBLIC aiverse_models AIVERSE::cables)
     target_include_directories(aiverse_modeling PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
@@ -1556,6 +1612,10 @@ if(AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP)
         third_party/meshoptimizer/src/simplifier.cpp
         third_party/meshoptimizer/src/vcacheoptimizer.cpp)
     target_include_directories(aiverse_meshoptimizer_lod PUBLIC third_party/meshoptimizer/src)
+    add_executable(aiverse_model_lod_transition_test tests/render/ModelLodTransition.cpp)
+    target_include_directories(aiverse_model_lod_transition_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_model_lod_transition_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME model_lod_transition COMMAND aiverse_model_lod_transition_test)
     add_executable(aiverse_model_visibility_test tests/render/ModelVisibility.cpp)
     target_include_directories(aiverse_model_visibility_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_options(aiverse_model_visibility_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
@@ -1684,4 +1744,14 @@ if(WIN32)
         endforeach()
     endfunction()
     aiverse_utf8_manifest("${CMAKE_CURRENT_SOURCE_DIR}")
+endif()
+
+if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_shadow_batches tests/render/shadow_batches.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_shadow_batches PRIVATE aiverse_runtime)
+endif()
+
+if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_material_batches tests/render/material_batches.cpp $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_material_batches PRIVATE aiverse_runtime)
 endif()

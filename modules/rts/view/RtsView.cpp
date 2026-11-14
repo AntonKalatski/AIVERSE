@@ -1,5 +1,7 @@
 #include "RtsView.h"
 #include "../RtsModule.h"
+#include "../RtsArsenal.h"
+#include "../RtsTopDown.h"
 #include "imgui.h"
 #include "../../../engine/platform/Platform.h"
 
@@ -19,6 +21,10 @@ float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble())
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
+#ifndef __EMSCRIPTEN__
+    if (preparing_.valid()) preparing_.wait();
+    preparing_ = {}; prepareType_ = -1; preparingResource_.clear();
+#endif
     rules_ = &rules;
     dev_ = &dev;
     if (!fog_.ready()) fog_.init(dev);
@@ -39,6 +45,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         overlays_.initGpu(dev);
     }
     if (!models_.count("shape:generic")) buildShapes(dev);
+    if (twoD_) { twoD_->shutdown(dev); twoD_.reset(); }
     looks_.clear();
     warnings_.clear();
     geometryScene_.shutdown(dev);
@@ -64,15 +71,16 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         }
     }
     for (auto& w : overlays_.set().warnings) warnings_.push_back(w);
-    anims_.clear(); animationCache_.clear();
+    anims_.clear(); streamingChoices_.clear(); animationCache_.clear();
     tracers_.clear();
-    for (auto& t : rules.types) {
-        TypeLook l;
-        buildLook(dev, t, l);
-        looks_.push_back(std::move(l));
-    }
+    looks_.resize(rules.types.size());
+    loadedTypes_.assign(rules.types.size(), false);
+    requestedModels_.assign(rules.types.size(), {}); loadedModels_.assign(rules.types.size(), {});
+    if(deferredLoading_)for(size_t t=0;t<rules.types.size();++t)
+        requestedModels_[t]=rules.types[t].view["streaming"].getStr("coarseModel");
+    if (!deferredLoading_) for (size_t i = 0; i < rules.types.size(); ++i) loadType(uint16_t(i));
     twoD_ = std::make_unique<Rts2DView>();
-    if (!twoD_->init(dev, rules, contentBase_, spriteDefaults_)) twoD_.reset();
+    if (!twoD_->init(dev, rules, contentBase_, spriteDefaults_, deferredLoading_)) twoD_.reset();
     lights_.init(rules);
     groundFx_.init(dev, rules, read_, contentBase_);
     terrain_.init(dev, rules, read_, contentBase_);
@@ -81,9 +89,14 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
 }
 
 void RtsView::shutdown(gfx::Device& dev) {
+#ifndef __EMSCRIPTEN__
+    if (preparing_.valid()) preparing_.wait();
+    preparing_ = {}; prepareType_ = -1; preparingResource_.clear();
+#endif
     geometryScene_.shutdown(dev);
     for (auto& [k, m] : models_) if (m) releaseModel(dev, *m);
-    models_.clear(); looks_.clear(); anims_.clear(); animationCache_.clear(); tracers_.clear();
+    textureCache_->shutdown(dev);
+    models_.clear(); looks_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
     for (Mesh* m : {&projectile_}) { dev.destroyBuffer(m->vb); dev.destroyBuffer(m->ib); *m = Mesh{}; }
     terrain_.shutdown(dev);
     fog_.shutdown();
@@ -152,7 +165,36 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
     groundCanvas_.draw(r, *dev_, groundMerged_, contentBase_);
 }
 
-void RtsView::draw(Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    // Script spawns, reinforcements and restored entities need not exist at map load time.
+    if (!streamingTypes_) for (const auto& o : input.objects) if (!o.isProjectile) loadType(o.type);
+    RtsScene resolved;
+    const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
+    if(hierarchy) {
+        resolved=input;
+        std::map<uint64_t,mat4> bases,effects;
+        for(const auto& o:input.objects) {
+            if(!o.entity.valid() || o.type>=looks_.size() || o.body!=-1)continue;
+            const auto& look=looks_[o.type];EntityFxValues fx;input.entityFx->lookup(o.entity.packed(),fx);
+            constexpr float deg=.017453292f;
+            auto effect=mat4::translate({0,(look.air?look.flyHeight:0)+fx.v[EntityFxValues::kLift],0})
+                *mat4::rotateZ(-fx.v[EntityFxValues::kPitch]*deg)*mat4::rotateX(-fx.v[EntityFxValues::kRoll]*deg)
+                *mat4::scale({fx.scale(0),fx.scale(1),fx.scale(2)});
+            effects[o.entity.packed()]=effect;
+            auto external=input.entityFrames.find(o.entity.packed());
+            bases[o.entity.packed()]=external!=input.entityFrames.end()?external->second:
+                mat4::translate({o.pos.x,heightAt(grid,o.pos.x,o.pos.z),o.pos.z})
+                *mat4::rotateY(std::atan2(-o.facing.z,o.facing.x))*effect;
+        }
+        auto frames=input.entityFx->hierarchy.resolve(bases,effects);
+        for(auto& o:resolved.objects)if(input.entityFx->hierarchy.parents.count(o.entity.packed())) {
+            auto it=frames.find(o.entity.packed());
+            if(it==frames.end()){o.visible=false;continue;}
+            o.parented=true;o.parentFrame=it->second;o.pos=it->second.transformPoint({0,0,0});
+            o.facing=it->second.transformPoint({1,0,0})-o.pos;
+        }
+    }
+    const RtsScene& s=hierarchy?resolved:input;
     fx_ = s.entityFx.get();   // view.entity_fx
     if (planets_.active()) { drawPlanets(r, s, time, vision, grid); return; }   // RtsPlanetView.cpp
     animationObstacles_.clear();animationSurfaceFrames_=std::make_shared<std::map<uint64_t,mat4>>();
@@ -165,6 +207,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& s, double time, const std::vec
         float yaw=state!=anims_.end()?state->second.yaw:std::atan2(-o.facing.z,o.facing.x);float k=look.scale,grow=look.construction==Construction::Grow?std::clamp(o.build,.15f,1.f):1;
         mat4 base;if(look.structure&&look.shape&&!stage)base=mat4::translate(position)*mat4::scale({look.sx*k,k*std::max(look.sx,look.sz)*.75f*grow,look.sz*k});else base=mat4::translate(position)*mat4::rotateY(yaw)*mat4::scale({k,k*(look.structure?grow:1),k});
         if(hasFx){auto tilt=mat4::rotateZ(-values.v[EntityFxValues::kPitch]*.017453292f)*mat4::rotateX(-values.v[EntityFxValues::kRoll]*.017453292f);base=mat4::translate(position)*mat4::rotateY(yaw)*tilt*mat4::rotateY(-yaw)*mat4::translate(-position)*base*mat4::scale({values.scale(0),values.scale(1),values.scale(2)});}
+        if(o.parented)base=o.parentFrame*mat4::scale({k,k*(look.structure?grow:1),k});
         if(state!=anims_.end())base=base*state->second.objXf;base=base*ch->fix;const auto& model=*ch->model;
         const auto& matrices=!stage&&state!=anims_.end()&&state->second.world.size()==model.nodes.size()?state->second.world:model.bindWorld;
         for(size_t node=0;node<model.nodes.size()&&node<matrices.size();++node){int mesh=model.nodes[node].mesh;if(mesh<0||size_t(mesh)>=model.meshes.size())continue;auto transform=base*matrices[node];const auto& primitives=model.meshes[size_t(mesh)].primitives;
@@ -180,6 +223,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& s, double time, const std::vec
     if (twoD_) twoD_->beginFrame(r.camera(), time, r, &grid, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);
     bars_.assign(s.objects.size(), {});
     if (hasTerrain_ && !tiles) terrain_.draw(r, grid, vision, groundFx_.drawsDig());
+    if (hasTerrain_ && tiles) terrain_.drawWater(r);
     if (!tiles) groundFx_.draw(r, s, time, vision, grid, *this);
     paintLayers_.draw(r, *dev_, s.paintLayers, grid, *this, vision, time, s.viewer);
     if (tiles || !groundFx_.drawsLinks())
@@ -208,7 +252,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& s, double time, const std::vec
             bars_[i] = twoD_->barPoint(o, g);
             continue;   // selection rings: overlays
         }
-        if (o.type >= looks_.size()) continue;
+        if (o.type >= looks_.size() || !typeLoaded(o.type)) continue;
         // editor placements have no entity: key them by position in the list
         const uint64_t key = o.entity.valid() ? o.entity.packed() : (1ull << 63) | uint64_t(i);
         EntityAnim& st = stateFor(key, o);
@@ -309,6 +353,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
     const Rules& R = m->rules();
     GameState& gs = m->state(sim);
     out.objects.clear();
+    out.entityFrames.clear();
     out.roads.clear();
     out.events = sim.events();
     out.tick = sim.tick();
@@ -332,6 +377,10 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         if (u.flags & kUnitInCargo) return;   // inside a transport (agent-mech)
         SceneObject so;
         so.entity = e; so.type = u.type; so.owner = o.player;
+        if(auto*arsenal=m->arsenal())if(auto*hand=arsenal->hand(sim,o.player))if(hand->hero==e&&hand->current>=0&&size_t(hand->current)<arsenal->rules().weapons.size()){
+            so.heldWeapon=arsenal->rules().weapons[hand->current].weapon;
+            if(auto*td=m->topDown())if(auto*pilots=td->store(sim))if(o.player<pilots->pilots.size())so.weaponAim=pilots->pilots[o.player].input.aim||pilots->pilots[o.player].input.fire;
+        }
         float3 a = toF(t.prevPos), b = toF(t.pos);
         so.pos = lerp(a, b, alpha);
         so.facing = toF(u.facing);
@@ -344,6 +393,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
             }
         }
         so.hp = ut.maxHp.raw > 0 ? float((u.hp / ut.maxHp).toDouble()) : 1.0f;
+        if (!gs.routes.walks.empty()) so.fade = float(m->routeAlpha(sim, e).toDouble());   // BW route end fade
         if (auto* c = w.tryGet<Construction>(e)) so.build = float(c->progress.toDouble());
         so.unpowered = (u.flags & kUnitDisabled) || (o.player < gs.players.size() && gs.players[o.player].productionMult < Fixed::fromInt(1));
         if (auto* g = w.tryGet<Garrison>(e)) so.garrison = g->count;

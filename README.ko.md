@@ -182,7 +182,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **그래픽과 사운드**
 - 자체 RHI: Metal, GLES3 / WebGL2, GL 3.3
-- PBR, glTF/OBJ, 스켈레탈 및 절차적 애니메이션
+- PBR, glTF/OBJ, 스켈레탈 및 절차적 애니메이션, 절차적 케이블, 부모·자식 엔티티 렌더링
 - 그림자, 동적 조명, 밤, 포스트 이펙트, Shader Graph
 - Unity ParticleSystem 모듈을 지원하는 파티클과 Unity 임포터
 - 2D: 스프라이트, 오토타일 타일맵
@@ -281,11 +281,14 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 | [파티클](docs/particles.md) · [모델](docs/models.md) · [Shader Graph](docs/shader-graph.md) | 비주얼 |
 | [메타 게임](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [플러그인](docs/plugins.md) | 수익화와 스토어 |
 | [FPS](docs/fps.md) · [대형 월드](docs/large-worlds.md) | FPS 모듈 |
+| [탑다운 히어로](docs/topdown.md) · [운전](docs/driving.md) · [도시 교통](docs/traffic.md) | 도시 게임: 자동차, 신호등, 보행자, 긴급 서비스, 직장이 있는 시민 |
 | [AGENTS.md](AGENTS.md) | 엔진 자체를 수정하는 에이전트를 위한 규칙 |
 | [Unity에서 넘어오기](docs/ko/engine-import.md) | 씬, 프리팹, 에셋 가져오기와 에이전트를 통한 로직 이전 |
 
 ## 라이선스
 
-[MIT](LICENSE). 서드파티 라이브러리는 각자의 라이선스와 함께 `third_party/`에 있습니다(MIT, BSD, zlib,
-OFL, CC0, CC-BY만 허용). 상용 게임의 원본 에셋은 포함되어 있지 않으며, 임포터는 사용자가 소유한 사본에서
+[MIT](LICENSE). 서드파티 라이브러리는 각자의 라이선스와 함께 `third_party/`에 있습니다(MIT, MIT-0, BSD, ISC, zlib,
+OFL, CC0, CC-BY 등). 상용 게임의 원본 에셋은 포함되어 있지 않으며, 임포터는 사용자가 소유한 사본에서
 읽어 옵니다.
+
+게임 빌드에는 `THIRD_PARTY_NOTICES.txt`가 자동으로 포함됩니다. 외부 SDK의 라이선스 고지는 프로젝트에서 제공해야 합니다([자세히 보기](docs/third-party-notices.md)).
