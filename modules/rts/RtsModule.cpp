@@ -1,5 +1,6 @@
 // Setup, commands, shared queries and state hashing for the generic RTS module.
 #include "RtsInternal.h"
+#include "../../engine/data/JsonCompose.h"
 #include "RtsBwAI.h"   // agent-bw-ai
 #include "RtsInitialVars.h"
 #include "../../engine/core/FixedMath.h"
@@ -14,7 +15,10 @@ using namespace detail;
 
 // ================================================================= setup
 
-void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
+void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
+    // every block below reads entries with their "extends" applied (engine/data/JsonCompose.h)
+    const Json resolvedRules = needsExtends(rulesIn) ? resolveExtends(rulesIn) : Json();
+    const Json& rulesJson = resolvedRules.isObject() ? resolvedRules : rulesIn;
     rules_ = loadRules(rulesJson);
     sim.world().setResource<GameState>();
     // map generation (map "generate" / world body "generate"): deterministic, regenerated identically by every
@@ -28,6 +32,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
     }
     const Json& mapIn = generated_.isObject() ? generated_ : map;
     if (rules_.bwAI) bwAI_ = loadBwAIConfig(rulesJson["ai"], mapIn, rules_);   // agent-bw-ai: rules ai.bw + map "ai"
+    matchMap_ = mapIn;
     setupMap(sim, mapIn);
     loadTriggers(rules_, rulesJson, mapIn, triggers_);
     mechSetup(sim, mapIn);   // agent-mech
@@ -97,7 +102,6 @@ void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
     if (fields_->active()) sim.addSystem("gridfields", [this](Simulation& s) { fields_->tick(s); });   // RtsGridFields.cpp
     sim.addSystem("vision", [this](Simulation& s) { sysVision(s); });
     if (env_->active() && env_->hasFog()) sim.addSystem("environment3", [this](Simulation& s) { env_->fogTick(s); });   // BW fog (RtsEnv.cpp)
-    if (rules_.core.any) sim.addSystem("battlecore", [this](Simulation& s) { sysCore(s); });   // RtsCore.cpp: energy / morale of the deaths
     if (modes_.any) sim.addSystem("modes", [this](Simulation& s) { sysModes(s); });   // RtsModes.cpp: match modes decide before victory
     sim.addSystem("victory", [this](Simulation& s) { script_->callStd(s, StdFn::Victory); });   // lua/victory.lua
     sim.addSystem("triggers", [this](Simulation& s) {   // last: sees every event of the tick (lua/triggers.lua)
@@ -108,7 +112,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesJson, const Json& map) {
     if (traffic_->active()) sim.addSystem("traffic", [this](Simulation& s) { traffic_->collect(s); });   // last: keeps the tick's shots / hits / deaths (scripts' too) for its next tick
     sim.world().setResource<MatchOutcome>();
     sim.addSystem("outcome", [this](Simulation& s) { freezeOutcome(s); });   // last: the result of the whole tick
-    // Gameplay time scale (Bunker Wars SetGameplayTimescale: tutorial windows freeze the battle): with the trigger
+    // Gameplay time scale (tutorial windows that freeze or slow the battle): with the trigger
     // variable "gameplay_scale" in [0, 1) the gameplay systems run on that share of the ticks; commands, vision,
     // victory, triggers, scripts and the outcome keep running. Without the variable nothing changes.
     sim.wrapSystems([this](const std::string& n, Simulation::SystemFn f) -> Simulation::SystemFn {
@@ -1032,6 +1036,15 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
     GameState& gs = state(sim);
     auto* pi = sim.player(cmd.player);
     if (!pi || !pi->alive) return;
+    if (cmd.type < 32768 && !nativeFiltering_ && (native_.hooks() & kNativeHookCommand)) {
+        // native modules may drop or change a built-in command (NativeModule::filterCommand)
+        Command filtered = cmd;
+        if (!native_.filterCommand(*this, sim, filtered)) return;
+        nativeFiltering_ = true;
+        applyCommand(sim, filtered);
+        nativeFiltering_ = false;
+        return;
+    }
     if (script_ && (script_->hooks() & ScriptEngine::kHookCommand) && cmd.type != kCmdScript && !script_->allowCommand(sim, cmd)) return;   // before_command (G12)
     if (topDown_ && topDown_->command(sim, cmd)) return;   // kCmdTopDown, kCmdTopDownAbility = 0xF100 / 0xF101 (RtsTopDown.cpp)
     if (cmd.type >= 32768) { native_.command(*this, sim, cmd); return; }   // native modules (never the two hero ids)
@@ -1251,15 +1264,20 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
             bool busy = false;
             for (auto& it : prod.queue) if (it.upgrade) busy = true;
             if (busy || int(prod.queue.size()) >= rules_.maxQueue) break;
+            Fixed nativeCost = kOne, nativeTime = kOne;   // NativeModule::upgradeOrder: another type, cost / time factors
+            if ((native_.hooks() & kNativeHookUpgrade) &&
+                (!native_.upgradeOrder(*this, sim, e, cmd.player, ut, nativeCost, nativeTime) || ut >= rules_.types.size() ||
+                 rules_.types[ut].structure != t.structure || nativeCost.raw < 0 || nativeTime.raw < 0)) break;
             std::vector<Amount> ucost = rules_.types[ut].cost;
             if (rules_.advancedEffects) { Fixed mult = stat(sim, e, Stat::UpgradeCost); for (auto& c : ucost) c.value = c.value * mult; }
+            for (auto& c : ucost) c.value = c.value * nativeCost;
             // Mushroom Wars 2: upgrades and conversions are paid with units of the garrison
-            const int ug = rules_.types[ut].upgradeGarrison;
+            const int ug = nativeCost == kOne ? rules_.types[ut].upgradeGarrison : int((nativeCost * int64_t(rules_.types[ut].upgradeGarrison) + Fixed::fromRatio(1, 2)).floorInt());
             auto* ugar = ug > 0 ? w.tryGet<Garrison>(e) : nullptr;
             if (ug > 0 && (!ugar || ugar->count < ug)) break;
             if (rules_.costModel == CostModel::Upfront && !pay(sim, cmd.player, ucost, {})) break;
             if (ugar) ugar->count -= ug;
-            prod.queue.push_back({int32_t(ut), Fixed{}, Fixed{}, true});
+            prod.queue.push_back({int32_t(ut), Fixed{}, Fixed{}, true, nativeTime});
             break;
         }
         case kCmdRally:
@@ -1360,7 +1378,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
             if (!g || !w.alive(cmd.target) || cmd.target == e || !w.has<Garrison>(cmd.target) || t.spawnUnit == kNoType) break;
             if (rules_.advancedEffects && (statusFlags(sim, e) & kStLock)) break;   // locked: can't send
             if (env_ && env_->active() && !env_->sendAllowed(sim, e, cmd.target)) break;   // linked caves, graveyards
-            if (!canSend(sim, e, cmd.target)) break;   // authored routes: no route, no send (BW RoutesModule.FindUnlocked)
+            if (!canSend(sim, e, cmd.target)) break;   // authored routes: no route, no send
             if (rules_.advancedEffects && skillSend(sim, e, cmd.target, cmd.player, cmd.param)) break;   // teleport (RtsSkillObjects.cpp)
             const int sendable = std::max(0, g->count - t.garrisonKeep);   // State.io: one soldier stays home
             // param < 0: exactly -param units (Bunker Wars MoveUnits counts, agent-bw-ai); else a percent
@@ -1368,7 +1386,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
                                   : int(int64_t(sendable) * std::clamp<int64_t>(cmd.param, 1, 100) / 100);
             if (n <= 0 && sendable > 0) n = 1;
             if (n <= 0 && t.garrisonKeep > 0) break;
-            if (rules_.routes.groups) {   // BW groups: units leave row by row and are paid when they leave (RtsRoutes.cpp)
+            if (rules_.routes.groups) {   // row groups: units leave row by row and are paid when they leave (RtsRoutes.cpp)
                 if (n <= 0) break;
                 sendAlongRoute(sim, e, cmd.target, cmd.player, n);
                 uint8_t to = w.get<Owner>(cmd.target).player;
@@ -1462,6 +1480,16 @@ uint32_t RtsModule::ticksUntilWave(Simulation& sim) const {
 
 // ================================================================= hashing / result
 
+bool RtsModule::castPlayerAbilityFree(Simulation& sim, uint8_t player, int index, Vec3 point, Entity target) {
+    GameState& gs = state(sim);
+    if (player == 0 || player >= gs.players.size() || index < 0 || size_t(index) >= rules_.playerAbilities.size()) return false;
+    const PlayerAbilityDef& a = playerAbilityFor(sim, player, index);
+    EffectCtx ctx;
+    ctx.owner = player; ctx.point = flat(point); ctx.origin = ctx.point; ctx.target = target;
+    applyPayload(sim, a.payload, ctx);
+    return true;
+}
+
 int RtsModule::result(Simulation& sim) {
     if (auto* o = sim.world().resource<MatchOutcome>(); o && o->result) return o->result;   // frozen (freezeOutcome)
     return liveResult(sim);
@@ -1533,7 +1561,7 @@ void RtsModule::hashState(Simulation& sim, Hasher& h) {
     for (auto t : gs.score) h.fx(t);
     for (auto& [k, v] : gs.trig.vars) { h.str(k); h.fx(v); }
     if (rules_.dungeon) hashDungeon(sim, h);
-    hashRoutes(sim, h);   // authored routes / BW groups / screen (only on maps / rules that use them)
+    hashRoutes(sim, h);   // authored routes / row groups / screen (only on maps / rules that use them)
     if (rules_.settlers) hashSettlers(sim, h);
     if (rules_.advancedEffects) hashEffects(sim, h);
     if (rules_.originals) hashOriginals(sim, h);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Game audio "FMOD" banks -> AIVERSE audio.json (sounds, music playlists, event cues) + an event map.
 
-Bunker Wars / Mushroom Wars 2 do not ship FMOD Studio banks: their "FMOD" is the UI.Windows audio
+Games built on UI.Windows do not ship FMOD Studio banks: their "FMOD" is the UI.Windows audio
 system (FMODChannels / FMODEventReference ScriptableObjects): a bank of groups -> items (key, clips,
 SFX or Music, volume, play chance, max instances, music channel, loop, fades, triggerOnBegin /
 triggerOnEnd chains) and ~800 event reference assets ({key} to play, {key, volume, delay, duration}
@@ -20,8 +20,8 @@ Writes into the game folder:
                                   also kept here, the sound gets "chance")
 
 Mapping (docs/game-format.md § audio.json):
-  SFX item    -> sounds[key]: files, volume, maxInstances = maxCount (steal "none": BW skips the play),
-                 bus "ui" for menu groups, "sfx" otherwise; not positional (BW plays them 2D);
+  SFX item    -> sounds[key]: files, volume, maxInstances = maxCount (steal "none": UI.Windows skips the play),
+                 bus "ui" for menu groups, "sfx" otherwise; not positional (UI.Windows plays them 2D);
                  playChance < 1 -> "chance"
   Music item  -> music[key]: files, loop, volume. A triggerOnBegin chain (map-background ->
                  map-ambient -> war theme -> rain) plays on several channels at once: it becomes one
@@ -241,7 +241,7 @@ def convert(items, refs, events, assets, out_dir, copy=True, log=print):
                 layer = {"file": f}
                 vol = li["volume"]
                 if k != key and k in raised:
-                    layer["intensity"] = 0.5   # BW raises it with volume events: it fades in with the fighting
+                    layer["intensity"] = 0.5   # volume events raise it: it fades in with the fighting
                     if vol <= 0:
                         vol = raised[k]
                 if vol != 1.0:

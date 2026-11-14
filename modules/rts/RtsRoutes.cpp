@@ -1,9 +1,9 @@
-// Bunker Wars routes, groups and multiscreen on the generic RTS module (docs/game-format.md § Routes):
-// - map "routes" replace the generated lanes: each route becomes `lanes.routes.lines` lanes (BW sub-splines) between
-//   its two garrisons; pairs without a route cannot send (BW RoutesModule.FindUnlocked); blockers close a route.
-// - rules "lanes.groups": sends become BW groups (UnitsModule Group): rows spawn as the row in front walks
+// Authored routes, row groups and the multiscreen view of the RTS module (docs/game-format.md § Routes):
+// - map "routes" replace the generated lanes: each route becomes `lanes.routes.lines` lanes between
+//   its two garrisons; pairs without a route cannot send; blockers close a route.
+// - rules "lanes.groups": sends become row groups: rows spawn as the row in front walks
 //   rowSpacing, the garrison pays per row, a second send on the same route merges, an owner change closes it.
-// - map "screen": BW MultiscreenModule; garrisons off the screen do not grow, scripts move the screen.
+// - map "screen": garrisons off the screen do not grow, scripts move the screen.
 #include "RtsInternal.h"
 #include "RtsEnv.h"
 #include <algorithm>
@@ -45,18 +45,18 @@ void RtsModule::setupRoutes(Simulation& sim, const Json& map, const std::vector<
         const int a = find(r.from, int(i)), b = find(r.to, int(i));
         if (!w.has<Garrison>(placed[size_t(a)]) || !w.has<Garrison>(placed[size_t(b)]))
             throw std::runtime_error("map route " + std::to_string(i) + ": '" + r.from + "' and '" + r.to + "' must both be garrison structures");
-        // BW RoutesModule.Init: a route between points of different screen groups does not exist
+        // a route between points of different screen groups does not exist
         if (!screenGroupsMatch(intList(ents[size_t(a)]["screenGroups"]), intList(ents[size_t(b)]["screenGroups"]))) continue;
         for (auto& d : routeDefs_)
             if ((d.from == r.from && d.to == r.to) || (d.from == r.to && d.to == r.from))
                 throw std::runtime_error("map route " + std::to_string(i) + ": a second route between '" + r.from + "' and '" + r.to + "'");
         std::vector<Entity> blockers;
         for (auto& id : r.blockers) blockers.push_back(placed[size_t(find(id, int(i)))]);
-        // BW MapRoutesModule.GetTowersCoverage: 21 values, the stored ones aligned to the end
+        // coverage table: value k = range k x coverageStep; the last given value holds for longer ranges
         std::vector<std::pair<Entity, std::array<Fixed, 21>>> cov;
         for (auto& [id, d] : r.coverage) {
             std::array<Fixed, 21> v{};
-            for (size_t k = 0; k < d.size(); ++k) v[21 - d.size() + k] = d[k];
+            for (size_t k = 0; k < 21 && !d.empty(); ++k) v[k] = d[std::min(k, d.size() - 1)];
             cov.push_back({placed[size_t(find(id, int(i)))], v});
         }
         routeLines_.push_back(buildRouteLines(r, rules_.routes));
@@ -169,7 +169,7 @@ std::vector<int> RtsModule::flyingLanes(Simulation& sim, Entity from, Entity to)
         rs.laneFlying.resize(gs.lanes.size(), 0); rs.laneRoute.resize(gs.lanes.size(), -1); rs.laneScale.resize(gs.lanes.size(), kOne);
     }
     const Vec3 a = w.get<Transform>(from).pos, b = w.get<Transform>(to).pos;
-    const RouteDef fr = flyingRoute({a.x, a.z}, {b.x, b.z}, rules_.routes);   // BW RoutesModule.CreateFlyingRoute
+    const RouteDef fr = flyingRoute({a.x, a.z}, {b.x, b.z}, rules_.routes);
     const auto lines = buildRouteLines(fr, rules_.routes);
     const Fixed len0 = polylineLength(lines[0]);
     for (size_t k = 0; k < lines.size(); ++k) {
@@ -187,14 +187,14 @@ std::vector<int> RtsModule::flyingLanes(Simulation& sim, Entity from, Entity to)
 
 bool RtsModule::sendsFlying(Simulation& sim, Entity from) const {
     if (!rules_.advancedEffects || !(statusFlags(sim, from) & kStFlying)) return false;
-    // one flying group at a time (BW PointsFlyingUnits.flyGroup)
+    if (!rules_.routes.flySingle) return true;
     for (const auto& g : sim.world().resource<GameState>()->routes.groups) if (g.from == from && g.flying) return false;
     return true;
 }
 
 bool RtsModule::canSend(Simulation& sim, Entity from, Entity to) const {
     if (env_ && env_->active() && !env_->sendAllowed(sim, from, to)) return false;   // environment: graveyards, linked caves
-    if (sendsFlying(sim, from)) return true;   // BW FindFlyingRoute ignores ground routes and locks
+    if (sendsFlying(sim, from)) return true;   // flying sends ignore ground routes and locks
     if (routeDefs_.empty()) return true;
     return !routeLanes(sim, from, to, false).empty();
 }
@@ -247,14 +247,14 @@ int RtsModule::towerDamageBySpline(Simulation& sim, Entity from, Entity to, Enti
     return int((covered / speed).floorInt());
 }
 
-// ---------------------------------------------------------------- walkers: random offset + end fade (BW Unit.Move)
+// ---------------------------------------------------------------- walkers: random offset + end fade
 
 void RtsModule::startRouteWalk(Simulation& sim, Entity unit, int lane) {
     GameState& gs = state(sim);
     if (routeDefs_.empty() && (size_t(lane) >= gs.routes.laneFlying.size() || !gs.routes.laneFlying[size_t(lane)])) return;
     RouteWalk rw;
     rw.base = sim.world().get<Transform>(unit).pos;
-    // BW: Vector2.one * random(-1, 1) * positionRandomOffset (one value on both axes)
+    // one random value in (-1, 1) x jitter on both axes
     rw.jitter = (sim.rng().unit() * 2 - kOne) * rules_.routes.jitter;
     rw.alpha = Fixed{};
     gs.routes.walks[unit.packed()] = rw;
@@ -266,28 +266,28 @@ Fixed RtsModule::routeAlpha(Simulation& sim, Entity unit) const {
     return it == walks.end() ? kOne : it->second.alpha;
 }
 
-// kCmdSend with lanes.groups: BW UnitsModule.Go -> FindGroup / AddNeedCount or CreateGroup
+// kCmdSend with lanes.groups: merge into the open group of this route, else a new group
 bool RtsModule::sendAlongRoute(Simulation& sim, Entity from, Entity to, uint8_t player, int n) {
     World& w = sim.world();
     GameState& gs = state(sim);
     auto& g = w.get<Garrison>(from);
     for (auto& sg : gs.routes.groups)
         if (sg.from == from && sg.to == to && sg.owner == player && !sg.flying && !sendsFlying(sim, from)) {
-            sg.need = std::min(sg.need + n - sg.spawned, g.count) + sg.spawned;   // BW UnitGroup.AddNeedCount
+            sg.need = std::min(sg.need + n - sg.spawned, g.count) + sg.spawned;   // never more than the garrison holds
             return true;
         }
     SendGroup sg;
     sg.id = gs.nextGroupId++;
     sg.from = from; sg.to = to; sg.owner = player; sg.need = n;
     sg.flying = sendsFlying(sim, from);
-    if (sg.flying) sg.need = g.count;   // BW PointsFlyingUnits: the fly group takes the whole garrison (maxValue 0)
+    if (sg.flying && rules_.routes.flyAll) sg.need = g.count;   // lanes.groups.flyAll: a flying send takes the whole garrison
     sg.rowDist = sg.flying ? rules_.routes.flyRowSpacing : rules_.routes.rowSpacing;   // the first row leaves at once
     gs.routes.groups.push_back(sg);
     g.pendingGroup = sg.id;
     return true;
 }
 
-// BW UnitGroup.AdvanceTick: spawn rows, pay per row, close on owner change / shortage / done
+// Groups: spawn rows, pay per row, close on owner change / shortage / done
 void RtsModule::sysSendGroups(Simulation& sim) {
     World& w = sim.world();
     GameState& gs = state(sim);
@@ -299,7 +299,7 @@ void RtsModule::sysSendGroups(Simulation& sim) {
         if (!w.alive(sg.from) || !w.alive(sg.to) || !w.has<Garrison>(sg.from) || w.get<Owner>(sg.from).player != (sg.payer ? sg.payer : sg.owner)) continue;
         const UnitType& ft = rules_.types[w.get<Unit>(sg.from).type];
         if (ft.spawnUnit == kNoType) continue;
-        // a group keeps its route once sent (BW: locks only refuse new sends)
+        // a group keeps its route once sent (a closed route only refuses new sends)
         std::vector<int> lanes;
         if (sg.flying) lanes = flyingLanes(sim, sg.from, sg.to);
         else for (int l : lanesBetween(sim, sg.from, sg.to)) if (size_t(l) >= gs.routes.laneFlying.size() || !gs.routes.laneFlying[size_t(l)]) lanes.push_back(l);
@@ -311,7 +311,7 @@ void RtsModule::sysSendGroups(Simulation& sim) {
             if (sg.rowDist >= spacing) {
                 const int perRow = std::min<int>(rules_.routes.lines, int(lanes.size()));
                 const int toAlloc = std::min(perRow, sg.need - sg.spawned);
-                const int alloc = std::clamp(std::min(toAlloc, g.count), 0, toAlloc);   // BW PointInfo.Allocate
+                const int alloc = std::clamp(std::min(toAlloc, g.count), 0, toAlloc);
                 g.count -= alloc;
                 const Vec3 to = w.get<Transform>(sg.to).pos;
                 for (int k = 0; k < alloc; ++k) {
@@ -341,6 +341,52 @@ void RtsModule::sysSendGroups(Simulation& sim) {
     groups = std::move(keep);
 }
 
+bool RtsModule::routeWalkerDistances(Simulation& sim, Entity e, Fixed& walked, Fixed& left) const {
+    World& w = sim.world();
+    const GameState& gs = *w.resource<GameState>();
+    if (!w.alive(e)) return false;
+    const auto* lw = w.tryGet<LaneWalker>(e);
+    if (!lw || lw->lane < 0 || size_t(lw->lane) >= gs.lanes.size()) return false;
+    const auto& pts = gs.lanes[size_t(lw->lane)].points;
+    if (pts.size() < 2) return false;
+    auto at = [&](size_t i) { return pts[lw->reverse ? pts.size() - 1 - i : i]; };
+    Vec3 cur = w.get<Transform>(e).pos;
+    if (auto it = gs.routes.walks.find(e.packed()); it != gs.routes.walks.end()) cur = it->second.base;
+    Fixed total{}, done{};
+    const size_t reached = std::min<size_t>(lw->pos, pts.size());   // points already passed
+    for (size_t i = 1; i < pts.size(); ++i) {
+        const Fixed d = dist2D(at(i), at(i - 1));
+        total += d;
+        if (i < reached) done += d;
+    }
+    if (reached > 0) done += dist2D(cur, at(reached - 1));
+    walked = fxMin(done, total);
+    left = total - walked;
+    return true;
+}
+
+std::vector<Entity> RtsModule::routeWalkerTargets(Simulation& sim, const WalkerQuery& q) const {
+    World& w = sim.world();
+    std::vector<std::pair<Fixed, Entity>> found;
+    const Fixed fl = flat(q.facing).length();
+    w.each<LaneWalker, Unit, Owner, Transform>([&](Entity e, LaneWalker&, Unit& u, Owner& o, Transform& tr) {
+        if (u.hp.raw <= 0 || (u.flags & kUnitOffMap) || !hostile(sim, q.owner, o.player)) return;
+        if (!inRangeEllipse(q.pos, tr.pos, q.range, q.aspect)) return;
+        const Vec3 d = flat(tr.pos - q.pos);
+        const Fixed dl = d.length();
+        if (q.sectorCos > Fixed::fromInt(-1) && fl.raw > 0 && dl.raw > 0 && flat(q.facing).dot(d) < q.sectorCos * fl * dl) return;
+        if (q.minFromEnds.raw > 0) {
+            Fixed walked{}, left{};
+            if (routeWalkerDistances(sim, e, walked, left) && (walked <= q.minFromEnds || left <= q.minFromEnds)) return;
+        }
+        found.push_back({dl, e});
+    });
+    std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first != b.first ? a.first < b.first : a.second.index < b.second.index; });
+    std::vector<Entity> out;
+    for (auto& f : found) out.push_back(f.second);
+    return out;
+}
+
 // ---------------------------------------------------------------- multiscreen
 
 Vec3 RtsModule::screenCenter(Simulation& sim) const { return sim.world().resource<GameState>()->routes.screenCenter; }
@@ -351,7 +397,7 @@ bool RtsModule::onScreen(Simulation& sim, Vec3 p) const {
         return true;
     }
     const Vec3 c = screenCenter(sim);
-    return fxAbs(p.x - c.x) <= screen_.size.x / 2 && fxAbs(p.z - c.z) <= screen_.size.y / 2;   // BW IsPointInsideScreen
+    return fxAbs(p.x - c.x) <= screen_.size.x / 2 && fxAbs(p.z - c.z) <= screen_.size.y / 2;
 }
 
 bool RtsModule::screenView(Simulation& sim, Vec3& center, Vec2& size) const {

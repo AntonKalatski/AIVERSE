@@ -1,4 +1,5 @@
 #include "RtsView.h"
+#include "../../../engine/data/JsonCompose.h"
 #include "../RtsModule.h"
 #include "../RtsArsenal.h"
 #include "../RtsTopDown.h"
@@ -36,7 +37,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         std::string text, rulesPath = "rules.json";
         Json game, rj;
         try { if (read_("game.json", text)) { game = Json::parse(text); rulesPath = game.getStr("rules", "rules.json"); } } catch (...) {}
-        try { if (read_(rulesPath, text)) rj = Json::parse(text); } catch (...) {}
+        try { rj = readComposedJson(rulesPath, [this](const std::string& p, std::string& o) { return read_(p, o); }); } catch (...) {}
         fog_.setLook(parseFogLook(rj["fogOfWar"], game["fogOfWar"]));
         spriteDefaults_ = parseSpriteDefaults(rj["sprites"], game["sprites"]);   // 2D: shadow mode, lit
         fogMeshDirty_ = true;
@@ -393,7 +394,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
             }
         }
         so.hp = ut.maxHp.raw > 0 ? float((u.hp / ut.maxHp).toDouble()) : 1.0f;
-        if (!gs.routes.walks.empty()) so.fade = float(m->routeAlpha(sim, e).toDouble());   // BW route end fade
+        if (!gs.routes.walks.empty()) so.fade = float(m->routeAlpha(sim, e).toDouble());   // route end fade
         if (auto* c = w.tryGet<Construction>(e)) so.build = float(c->progress.toDouble());
         so.unpowered = (u.flags & kUnitDisabled) || (o.player < gs.players.size() && gs.players[o.player].productionMult < Fixed::fromInt(1));
         if (auto* g = w.tryGet<Garrison>(e)) so.garrison = g->count;
@@ -446,7 +447,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
     w.each<Projectile, Transform>([&](Entity e, Projectile& pr, Transform& t) {
         SceneObject so;
         so.entity = e; so.isProjectile = true; so.source = pr.source;
-        if (auto* su = w.tryGet<Unit>(pr.source)) so.shooterType = su->type; // picks the projectile's light
+        if (auto* su = w.tryGet<Unit>(pr.source)) { so.shooterType = su->type; if (pr.sourceType == su->type) so.shotWeapon = pr.weapon; } // picks the projectile's light and size
         so.pos = lerp(toF(t.prevPos), toF(t.pos), alpha);
         if (viewer != 0) {
             int x = int(t.pos.x.floorInt()), y = int(t.pos.z.floorInt());

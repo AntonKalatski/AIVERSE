@@ -75,8 +75,8 @@ void registerRouteOps(Workspace& ws) {
         ws.registerOp({name, desc, Json::parse(schema), std::move(fn), false});
     };
     add("route_list",
-        "Authored routes of the open map (map \"routes\", Bunker Wars RoutesModule; docs/game-format.md § Routes): from / to "
-        "entity ids, control points, per-point offsets, raw lines, blockers, line-0 length and BW AI length, plus the map "
+        "Authored routes of the open map (map \"routes\"; docs/game-format.md § Routes): from / to "
+        "entity ids, control points, per-point offsets, raw lines, blockers, line-0 length and AI length, plus the map "
         "\"screen\" block. With routes, units are only sent between garrisons that have a route.",
         "{}", [w](const Json&) {
             needProject(*w);
@@ -92,7 +92,7 @@ void registerRouteOps(Workspace& ws) {
         "Add or replace the route between two garrison entities (ids or indices; entities without an id get one). 'points' "
         "[[x, z], ...] control points from the first garrison to the second (at least 2; a point may be {\"at\": [x, z], "
         "\"offsets\": [8 numbers], \"zone\": int, \"slowdown\": n}); optional 'lines' (raw nodes per line), 'blockers' "
-        "(entity ids that close the route while alive), 'flying'. Without points: a straight BW route (in / out points).",
+        "(entity ids that close the route while alive), 'flying'. Without points: a straight route (in / out points).",
         R"({"properties": {"from": {}, "to": {}, "points": {"type": "array"}, "lines": {"type": "array"}, "blockers": {"type": "array"},
             "flying": {"type": "boolean"}}, "required": ["from", "to"]})",
         [w](const Json& p) {
@@ -109,7 +109,7 @@ void registerRouteOps(Workspace& ws) {
             else {
                 game::RouteDef s = game::flyingRoute(posOf(w->map.data.entities[size_t(ia)]), posOf(w->map.data.entities[size_t(ib)]), R.routes);
                 s.flying = false;
-                s.points.erase(s.points.begin() + 2);   // BW CreateRouteInfo without the middle point
+                s.points.erase(s.points.begin() + 2);   // no middle point on the ground
                 rj.set("points", game::routeToJson(s)["points"]);
             }
             for (const char* k : {"lines", "blockers", "flying"}) if (p.has(k)) rj.set(k, p[k]);
@@ -151,7 +151,7 @@ void registerRouteOps(Workspace& ws) {
             return r;
         });
     add("route_generate",
-        "Author straight routes like the Bunker Wars map editor (MapRoutesModule.Setup / CreateRouteInfo): for every pair of "
+        "Author straight routes as a starting point: for every pair of "
         "garrison entities (or those within 'maxDistance' cells) that has no route yet, a route with in / out points "
         "lanes.routes.inOut from each end. 'replace': true regenerates existing ones too. Edit the points afterwards with route_set.",
         R"({"properties": {"maxDistance": {"type": "number"}, "replace": {"type": "boolean"}}})",
@@ -188,7 +188,7 @@ void registerRouteOps(Workspace& ws) {
             return r;
         });
     add("screen_set",
-        "Set or delete the map \"screen\" (Bunker Wars MultiscreenModule): 'size' [w, h] cells (BW 2720 x 1520 px = 54.4 x 30.4), "
+        "Set or delete the map \"screen\": 'size' [w, h] cells, "
         "'center' [x, z] (default map centre), 'bounds' [left, right, top, bottom] how far scripts may move the centre, "
         "'smooth' camera follow rate; 'delete': true removes it. Garrisons off the screen do not grow.",
         R"({"properties": {"size": {"type": "array"}, "center": {"type": "array"}, "bounds": {"type": "array"}, "smooth": {"type": "number"},

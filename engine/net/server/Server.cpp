@@ -268,6 +268,12 @@ void Server::Impl::handle(Client& c, const Bytes& msg) {
     case Msg::InputFrame: if (room && room->match) onInputFrame(c, *room, r); break;
     case Msg::Checksum: if (room && room->match) onChecksum(c, *room, r); break;
     case Msg::MatchResult: if (room && room->match) onMatchResult(c, *room, r); break;
+    case Msg::ClockRate: {   // game speed asked by the client's simulation; applied when every player agrees (matchUpdate)
+        ClockRateMsg cr;
+        if (!room || !room->match || !decode(r, cr)) break;
+        if (Member* m = member(*room, c.id); m && m->slot) m->clockRate = cr.rate;
+        break;
+    }
     case Msg::Away: {   // the app went to the background: stop waiting for its input (frames resume it)
         const bool away = r.u8() != 0;
         if (Member* m = room && room->match ? member(*room, c.id) : nullptr; m && m->slot && away) m->synced = false;
@@ -281,7 +287,7 @@ void Server::Impl::handle(Client& c, const Bytes& msg) {
     }
     case Msg::Ping: {
         Writer w(Msg::Pong); w.u64(r.u64());
-        w.u32(room && room->match ? uint32_t((now - room->match->startMs) * room->settings.tickRate / 1000) : 0);
+        w.u32(room && room->match ? room->match->nominal(now, room->settings.tickRate) : 0);
         send(c, w.buf);
         break;
     }

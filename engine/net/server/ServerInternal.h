@@ -50,11 +50,23 @@ struct Member {                            // a client taking part in a running 
     bool reported = false;
     Bytes report;                         // hosted: ResultReport blob
     uint32_t droppedCommands = 0;
+    uint32_t clockRate = 65536;           // game speed its simulation last asked for (Msg::ClockRate)
 };
 
 struct Match {
     uint64_t seed = 0;
     uint64_t startMs = 0;
+    // match clock: nominal tick = clockTick + (now - clockMs) * tickRate * clockRate / 65536000. Re-based whenever
+    // every player's simulation asks for another game speed (match modes: time-limit speed-up, sudden-death preview)
+    uint64_t clockMs = 0;
+    uint32_t clockTick = 0, clockRate = 65536;
+    uint32_t nominal(uint64_t now, uint32_t tickRate) const {
+        return now > clockMs ? clockTick + uint32_t((now - clockMs) * tickRate * clockRate / 65536000ull) : clockTick;
+    }
+    uint64_t deadlineMs(uint32_t tick, uint32_t tickRate) const {   // real time at which `tick` is over
+        const uint64_t ahead = tick + 1 > clockTick ? tick + 1 - clockTick : 0;
+        return clockMs + ahead * 65536000ull / (uint64_t(tickRate) * clockRate);
+    }
     std::vector<MatchPlayer> players;
     std::map<uint8_t, uint64_t> keyBySlot; // rating identity, fixed at start: leaving must not dodge the loss
     std::vector<Member> members;

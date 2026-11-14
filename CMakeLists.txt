@@ -104,6 +104,7 @@ add_library(aiverse_engine STATIC
     engine/core/Fixed.cpp
     engine/core/FixedMath.cpp
     engine/data/Json.cpp
+    engine/data/JsonCompose.cpp
     engine/sim/Simulation.cpp
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
@@ -148,7 +149,6 @@ add_library(aiverse_game STATIC
     modules/rts/RtsFidelity.cpp
     modules/rts/RtsModesData.cpp
     modules/rts/RtsModes.cpp
-    modules/rts/RtsCore.cpp
     modules/rts/RtsAIOriginals.cpp
     modules/rts/RtsAIFidelity.cpp
     modules/rts/RtsAITerrain.cpp
@@ -470,7 +470,7 @@ add_library(aiverse_plugins STATIC
     engine/services/Analytics.cpp      # analytics / privacy (ATT, consent) services + their Lua tables
     engine/services/Privacy.cpp
     engine/services/ServicesLua.cpp
-    engine/services/Social.cpp engine/services/Push.cpp engine/services/Links.cpp engine/services/Consent.cpp)   # agent-bw-client
+    engine/services/Social.cpp engine/services/Push.cpp engine/services/Links.cpp engine/services/Consent.cpp)   # social / push / links / consent services
 target_include_directories(aiverse_plugins PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(aiverse_plugins PUBLIC aiverse_lua)   # ServicesLua (analytics.* / privacy.* for the UI Lua)
 if(AIVERSE_MOCK_PLUGINS)
@@ -706,7 +706,7 @@ if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
     # Editor core: project/map documents and the operation registry shared by the editor and aiversemcp.
     add_library(aiverse_editor_core STATIC apps/editor/core/MapDoc.cpp apps/editor/core/MapDocPlanet.cpp apps/editor/core/Workspace.cpp apps/editor/core/Net.cpp apps/editor/core/McpInstall.cpp apps/editor/core/Projects.cpp
     apps/editor/core/DataOps.cpp apps/editor/core/BalanceOps.cpp
-    apps/editor/core/SimTools.cpp apps/editor/core/ScenarioOps.cpp apps/editor/core/SchemaOps.cpp apps/editor/core/CampaignOps.cpp apps/editor/core/StrategicOps.cpp
+    apps/editor/core/SimTools.cpp apps/editor/core/ScenarioOps.cpp apps/editor/core/SchemaOps.cpp apps/editor/core/PruneOps.cpp apps/editor/core/CampaignOps.cpp apps/editor/core/StrategicOps.cpp
     apps/editor/core/ToolchainOps.cpp apps/editor/core/WorldInspect.cpp)   # scenario_run, rules_lint, rules_schema keys
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_game)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_postfx_data)   # postfx_* ops (postfx agent)
@@ -1666,7 +1666,7 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND AND UNIX AND NOT CMAKE_CROS
 endif()
 
 # ---------------------------------------------------------------------------
-# agent-bw-client: Spine 2D skeletal animation (engine/spine). aiverse_spine is GPU-free (data, pose,
+# Spine 2D skeletal animation (engine/spine). aiverse_spine is GPU-free (data, pose,
 # animation state, draw lists: tests and tools link it); the RHI renderer and the client's UI views
 # (apps/client/ClientSpine.cpp, <img src="#spine:NAME"/>) go into every target that hosts GameClient.
 # ---------------------------------------------------------------------------
@@ -1682,7 +1682,7 @@ endforeach()
 if(TARGET aiverse_tests)
     target_link_libraries(aiverse_tests PRIVATE aiverse_spine)
 endif()
-# agent-bw-client: gamepads (engine/platform/Gamepad.h): common state + one backend per platform.
+# Gamepads (engine/platform/Gamepad.h): common state + one backend per platform.
 if(TARGET aiverse_runtime)
     target_sources(aiverse_runtime PRIVATE engine/platform/gamepad/GamepadCommon.cpp)
     if(AIVERSE_PLATFORM STREQUAL "macos" OR AIVERSE_PLATFORM STREQUAL "ios")
@@ -1703,13 +1703,8 @@ endif()
 if(TARGET aiverse_tests)
     target_sources(aiverse_tests PRIVATE engine/platform/gamepad/GamepadCommon.cpp engine/platform/gamepad/GamepadNone.cpp apps/client/ClientGamepad.cpp)
 endif()
-if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)   # agent-bw-client: BW importers (synthetic data, no game files)
-    add_test(NAME bw_tutorial_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/bunkerwars/test_tutorial.py)
-    if(TARGET aiverse_headless)
-        set_tests_properties(bw_tutorial_importer PROPERTIES ENVIRONMENT "AIVERSE_HEADLESS=$<TARGET_FILE:aiverse_headless>")
-    endif()
-    add_test(NAME fmod_audio_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/fmod/test_import_audio.py)
-    add_test(NAME bw_client_layer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/bunkerwars/test_client.py)
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)   # UI.Windows audio bank importer (synthetic data, no game files)
+    add_test(NAME uiwindows_audio_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/fmod/test_import_audio.py)
 endif()
 # Windows: every executable gets platform/windows/utf8.manifest (activeCodePage UTF-8). Paths in the
 # engine are UTF-8 std::strings; without it the narrow CRT/STL file APIs use the legacy ANSI code page

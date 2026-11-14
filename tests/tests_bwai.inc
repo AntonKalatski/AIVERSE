@@ -211,14 +211,22 @@ TEST(bwai_trigger_actions) {
     CHECK(rejected);
 }
 
-// The real Bunker Wars template with BW groups (rows paid as they leave): Expert beats Ashley from both sides
+// The real Bunker Wars game (outside this repository: AIVERSE_BW_GAME_DIR, skipped without) with BW groups (rows paid as
+// they leave): Expert beats Ashley from both sides
 TEST(bwai_bunkerwars_expert_beats_ashley) {
-    const std::string game = std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars";
+    const char* gameDir = std::getenv("AIVERSE_BW_GAME_DIR");
+    if (!gameDir || !*gameDir) { std::printf("  skipped: AIVERSE_BW_GAME_DIR is not set\n"); return; }
+    const std::string game = gameDir;
     Json rules = Json::parseFile(game + "/rules.json");
+    if (rules.has("nativeModules") && rules["nativeModules"].size() > 0) {   // the game's own C++ is not in this binary
+        std::printf("  skipped: the game needs its native modules (build with -DAIVERSE_CONTENT_DIR; its tests live in the game)\n");
+        return;
+    }
     rules.set("ai", Json::parse(R"({"controller":"bw"})"));
     rules.find("lanes")->set("groups", Json::fromBool(true));
     for (int side = 0; side < 2; ++side) {
         Json map = Json::parseFile(game + "/maps/2players_2001.json");
+        map.erase("ai");   // the map's own profiles and recorded debuts: this test compares the two built-in profiles
         map.find("players")->at(0).set("bot", Json::string(side ? "ashley" : "expert"));
         map.find("players")->at(1).set("bot", Json::string(side ? "expert" : "ashley"));
         const BwaiMatch r = bwaiMatch(rules, map, 1, 20 * 60 * 20);

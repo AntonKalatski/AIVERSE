@@ -299,7 +299,7 @@ Actions (simulation scripts only):
 | `game.command(p, {type = "train", units = {h}, param = "footman", x =, z =, target =, queue =})` | any player command, validated like network input (see below) |
 | `game.cast(h, ability, target \| x, z)`, `game.player_ability(p, id, x, z [, free])` | abilities |
 | `game.set_var(name, v)`, `game.add_var(name, v)` | trigger variables, shared with rules triggers |
-| variable `gameplay_scale` | gameplay time scale in [0, 1] (unset / >= 1: normal): 0 freezes every gameplay system (economy, production, movement, weapons, abilities, modes, environment, ...) while commands, vision, victory, triggers and scripts keep running; 0.5 runs them on every second tick (Bunker Wars tutorial windows, `SetGameplayTimescale`). The engine keeps its accumulator in `gameplay_scale_acc` |
+| variable `gameplay_scale` | gameplay time scale in [0, 1] (unset / >= 1: normal): 0 freezes every gameplay system (economy, production, movement, weapons, abilities, modes, environment, ...) while commands, vision, victory, triggers and scripts keep running; 0.5 runs them on every second tick (tutorial windows, slow motion). The engine keeps its accumulator in `gameplay_scale_acc` |
 | `game.message(p, text [, x, z])` | a notice (p = 0: everyone) |
 | `game.victory(p)`, `game.defeat(p)`, `game.draw()` | end conditions |
 | `game.clear_data(h)` | forget the entity's `game.data` table |
@@ -319,12 +319,12 @@ be given by field instead: rect commands (`dig paint_room build_road`) `w, h, ex
 
 Not available yet: fog reveal from scripts (use a `reveal` effect in an ability).
 
-### Routes and the screen (Bunker Wars)
+### Routes and the screen
 
 Maps with `routes` / `screen` (docs/game-format.md § Routes): `game.can_send(a, b)` (an open route joins the two
 garrisons; always true without routes), `game.route_length(a, b)` (line 0, nil without a route), `game.screen()` ->
 x, z, w, h of the current screen (nil without one), `game.on_screen(x, z)`, and in simulation scripts
-`game.set_screen(x, z)` (moves the screen centre, clamped to its bounds; BW MapScroller actions).
+`game.set_screen(x, z)` (moves the screen centre, clamped to its bounds).
 
 ### Grid fields: the `field` table
 

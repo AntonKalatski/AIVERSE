@@ -19,7 +19,7 @@ inline Fixed maxWeaponRange(const UnitType& t) {
     for (auto& w : t.weapons) r = fxMax(r, w.range);
     return r;
 }
-// Point b inside the ellipse around a with x radius r and z radius r * aspect (BW Math.IsInEllipse; flat maps).
+// Point b inside the ellipse around a with x radius r and z radius r * aspect.
 inline bool inRangeEllipse(Vec3 a, Vec3 b, Fixed r, Fixed aspect) {
     const Fixed ry = r * aspect;
     if (r.raw <= 0 || ry.raw <= 0) return false;

@@ -130,6 +130,28 @@ eliminated players. The module must additionally check rights to the unit, the t
 invalid commands are ignored without asserts/exceptions. Unknown commands in this range are ignored. One command type
 belongs to one module; a repeated ID or command is a load error.
 
+### Hooks into built-in mechanics
+
+A module can change built-in mechanics through optional hooks. It declares the ones it implements in
+`uint32_t hooks() const` (`NativeHook` bits); a module without hooks costs nothing, and games without such modules
+keep their checksums. Hooks run inside the simulation in `nativeModules` order and follow the same rules as `tick`
+(deterministic, mutable state only in `NativeState`).
+
+| bit | method | when | what it may do |
+|---|---|---|---|
+| `kNativeHookCommand` | `bool filterCommand(game, sim, state, Command& cmd)` | every built-in command (type < 32768) of a living player, before it executes | return false to drop the command; change it (target, param, units). Rules such as "sends only between certain structure types" |
+| `kNativeHookGarrison` | `void garrisonGrowth(game, sim, state, structure, owner, Fixed& rate, int& cap)` | every garrison with a growth interval, every tick | `rate` multiplies the growth of this tick, `cap` is the garrison maximum. Neutral structures (owner 0) come in with rate 0: they grow only when a module raises it |
+| `kNativeHookUpgrade` | `bool upgradeOrder(game, sim, state, structure, player, uint16_t& type, Fixed& cost, Fixed& time)` | an upgrade order (`kCmdUpgrade`) that passed the built-in checks, before it is paid | replace `type` by another structure type; `cost` multiplies the resource and garrison cost (upfront cost model), `time` the build time; false refuses the order |
+
+Public `RtsModule` API for such rules:
+
+- `castPlayerAbilityFree(sim, player, ability, point, target)` applies the payload of a player ability at once: no cost,
+  cooldown, charges or cast time (scripted casts).
+- `matchMap()` is the map the match was set up from (after generation): read the module's own map keys in `setup`.
+- Event `kEvAssault` (player = attacker, a = structure, b = the unit, value = defenders lost) is emitted for every unit
+  that assaults a defended garrison; together with `kEvCaptured`, `kEvDied` (b = killer) and `kEvUpgraded` a module's
+  `tick` sees every outcome of a garrison battle in `sim.events()`.
+
 ## State, rollback, saves and determinism
 
 All methods are const: the module object's fields are for immutable configuration. Keep mutable state in the passed

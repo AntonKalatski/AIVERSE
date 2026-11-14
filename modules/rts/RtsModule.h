@@ -210,6 +210,8 @@ enum GameEvent : uint16_t {
     kEvTelegraphEnd,    // a = caster, value = attack index | 1 << 16 when cancelled (caster died in the windup)
     kEvEnv,             // map environment (RtsEnv.h): value = EnvEventKind << 16 | data, a / b / pos per kind (weather, wind, worm, toad, bombs, Mouro, souls, walls)
     kEvModePhase,       // match modes (RtsModes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
+    kEvShotEnd,         // a free-fire shot (rules "arsenal") stopped at a wall / its range, or went off (splash): a = shooter, value = weapon index of its type, pos
+    kEvAssault,         // a unit assaulted a defended garrison: player = attacker, a = structure, b = the unit, value = defenders lost
 };
 // kEvModePhase values
 enum ModePhaseEvent : int64_t { kModeSdCounter = 1, kModeSdPreview, kModeSdStart, kModeSdEnd, kModeTimeStep, kModeTimeUp,
@@ -555,7 +557,7 @@ struct GameState {
     bool lanesDirty = true;
     uint32_t laneSignature = 0;              // garrisons/obstacles the lanes were built for
     std::vector<uint32_t> laneRoundRobin;    // per garrison entity index: next lane slot
-    RouteState routes;                       // authored routes, BW groups, multiscreen (RtsRoutes.cpp)
+    RouteState routes;                       // authored routes, row groups, multiscreen (RtsRoutes.cpp)
     // planets (map `world` block): bodies, cube-sphere layout of the grid rows (RtsSurface.h); null on flat maps
     std::shared_ptr<const Surface> surface;
     // fidelity mechanics: eaters (sandworms) that submerged and come back later
@@ -635,24 +637,30 @@ public:
     // AIVERSE_VISION=ref does the same, AIVERSE_VISION=check runs both and aborts on a difference).
     void setVisionReference(bool on);
     bool hostile(Simulation& sim, uint8_t a, uint8_t b) const;
-    // Authored routes (map "routes", BW RoutesModule): true when the map has them. Then units are sent only between
-    // garrisons with an open route (canSend); routeLength = BW Route.GetLength (line 0), -1 when there is none.
+    // Authored routes (map "routes"): true when the map has them. Then units are sent only between
+    // garrisons with an open route (canSend); routeLength = length of line 0, -1 when there is none.
     bool routesAuthored() const { return !routeDefs_.empty(); }
     bool canSend(Simulation& sim, Entity from, Entity to) const;
     Fixed routeLength(Simulation& sim, Entity from, Entity to) const;
-    Fixed routeAiLength(Simulation& sim, Entity from, Entity to) const;   // BW Route.GetAILength (slowdown zones); -1: none
-    // Flying sends (BW PointsFlyingUnits): a garrison with a `flying` status sends along a straight flying route (made on
-    // first use, BW FindFlyingRoute) even without a ground route, one flying group at a time, rows flyRowSpacing apart.
+    Fixed routeAiLength(Simulation& sim, Entity from, Entity to) const;   // slowdown zones count longer; -1: none
+    // Flying sends: a garrison with a `flying` status sends along a straight flying route (made on
+    // first use) even without a ground route; rows flyRowSpacing apart (lanes.groups flyAll / flySingle).
     bool sendsFlying(Simulation& sim, Entity from) const;
-    // BW Spline.GetTowerCoverageDistance: route length within `range` of tower point `tower` (map towersCoverage), 0 when
+    // Route length within `range` of tower point `tower` (map towersCoverage), 0 when
     // the map has none; and the AI estimates built on it (TowerModule.GetUnitsDamageForSpline / GetDamageBySpline).
     Fixed towerCoverage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range) const;
     int towerUnitsDamage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, int count, Fixed rowDistance, Fixed unitSpeed) const;
     int towerDamageBySpline(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, Fixed waveLength, Fixed unitSpeed) const;
-    // Alpha of a route walker at the route ends (BW SubSpline.GetAlpha; 1 elsewhere / for other units): the view fades it.
+    // Alpha of a route walker at the route ends: the view fades it.
     Fixed routeAlpha(Simulation& sim, Entity unit) const;
+    // Walkers are ordinary unit entities (LaneWalker + Enter order + GroupTag); they never acquire targets themselves.
+    // routeWalkerTargets: living hostile walkers inside the query ellipse / sector, nearest first (ties: entity index),
+    // for skills that let walkers shoot. Kill them with dealDamage / hp = 0 as any unit: groups count
+    // only spawned units, nothing else to keep consistent. routeWalkerDistances: walked / left along its own line.
+    std::vector<Entity> routeWalkerTargets(Simulation& sim, const WalkerQuery& q) const;
+    bool routeWalkerDistances(Simulation& sim, Entity unit, Fixed& walked, Fixed& left) const;
     const std::vector<RouteDef>& routeDefs() const { return routeDefs_; }
-    // Multiscreen (map "screen", BW MultiscreenModule): the current screen and whether a point is on it (always true
+    // Multiscreen (map "screen"): the current screen and whether a point is on it (always true
     // without a screen). Garrisons off the screen do not grow. setScreenCenter clamps to the screen bounds.
     const ScreenDef& screen() const { return screen_; }
     bool onScreen(Simulation& sim, Vec3 p) const;            // map "screen", else the env map scroller screen
@@ -733,6 +741,11 @@ public:
     void addPlayerStatus(Simulation& sim, uint8_t player, int def, Fixed duration, const EffectCtx& ctx);
     int dispel(Simulation& sim, Entity target, uint64_t tags, uint8_t from);    // removed count
     bool castPlayerAbility(Simulation& sim, uint8_t player, int index, Vec3 point, Entity target);
+    // The payload of a player ability applied for `player` at once: no cost, cooldown, charges or cast time
+    // (scripted casts of native modules and rules). False for an unknown ability / player.
+    bool castPlayerAbilityFree(Simulation& sim, uint8_t player, int index, Vec3 point, Entity target);
+    // The map this match was set up from (after generation): native modules read their own map keys in setup().
+    const Json& matchMap() const { return matchMap_; }
     Fixed playerStat(Simulation& sim, uint8_t player, Stat s, Fixed base) const; // player statuses
     std::vector<Entity> groupMembers(Simulation& sim, uint32_t group) const;
     // Where to aim a skill (autocast, auto skills, AI): fills point / target; false when there is nothing worth it.
@@ -855,7 +868,7 @@ public:
 
 private:
     ModesRules modes_;               // match modes of this match (read-only after setup, RtsModes.cpp)
-    // gameplay time scale (trigger variable "gameplay_scale", agent-bw-client): whether this tick runs the gameplay
+    // gameplay time scale (trigger variable "gameplay_scale"): whether this tick runs the gameplay
     // systems; recomputed from the (hashed, saved) variables at the start of every tick
     bool gameplayRun_ = true;
     void gameplayClock(Simulation& sim);
@@ -863,16 +876,6 @@ private:
     void sysModes(Simulation& sim);
     void sysMatchStats(Simulation& sim);
     void hashModes(Simulation& sim, Hasher& h);
-    // battle core (RtsCore.cpp): rules "battleCore"
-    void coreSetup(Simulation& sim, const Json& map);
-    void coreMorale(Simulation& sim, uint8_t player, Fixed points, bool gain, bool resetCooldown);
-    void coreUnitsLost(Simulation& sim, uint8_t player, int count);
-    void coreAssault(Simulation& sim, uint8_t attacker, uint8_t defender);
-    void coreCaptured(Simulation& sim, uint16_t type, uint8_t from, uint8_t to);
-    void coreUpgraded(Simulation& sim, uint8_t owner, uint16_t type);
-    void sysCore(Simulation& sim);
-    std::vector<Fixed> coreGrowthRates(Simulation& sim) const;
-    int coreNeutralMax(Simulation& sim, Entity e, const UnitType& t) const;
     friend bool ioModesState(RtsModule& m, Simulation& sim, Archive& a);
     std::shared_ptr<const struct BwAIConfig> bwAI_;   // agent-bw-ai
     mutable std::vector<uint8_t> bwBots_;             // agent-bw-ai: bot slots of this process (presentation-like, never read by the sim)
@@ -989,7 +992,7 @@ private:
     void rebuildLanes(Simulation& sim);
     void rebuildLanesSphere(Simulation& sim, const std::vector<Entity>& nodes);   // planets: same-body pairs, on the surface
     bool runLaneWalk(Simulation& sim, Entity e, Order& o);
-    // authored routes / BW groups / multiscreen (RtsRoutes.cpp)
+    // authored routes / row groups / multiscreen (RtsRoutes.cpp)
     void setupRoutes(Simulation& sim, const Json& map, const std::vector<Entity>& placed);
     void rebuildRoutes(Simulation& sim);
     void sysRoutes(Simulation& sim);
@@ -1059,6 +1062,8 @@ private:
     std::unique_ptr<Environment> env_;     // map environment (RtsEnv.h; state: EnvState resource)
     std::vector<NativeDefinition> nativeDefinitions_;
     NativeModules native_;
+    bool nativeFiltering_ = false;   // inside NativeModule::filterCommand's re-entry (never set between commands)
+    Json matchMap_;                  // see matchMap()
     std::unique_ptr<ScriptEngine> script_; // Lua VM (RtsScript.h); its persistent state is the ScriptStore resource
     // foundations, traps, group teleports, charge effects (RtsFidelity.cpp)
     void sysFidelity(Simulation& sim);

@@ -175,6 +175,9 @@ bool decode(ByteReader& r, InputFrameMsg& m) { m.tick = r.u32(); return readComm
 Bytes encode(const ChecksumMsg& m) { Writer w(Msg::Checksum); w.u32(m.tick); w.u64(m.hash); return w.buf; }
 bool decode(ByteReader& r, ChecksumMsg& m) { m.tick = r.u32(); m.hash = r.u64(); return r.ok(); }
 
+Bytes encode(const ClockRateMsg& m, bool fromServer) { Writer w(fromServer ? Msg::ClockRateSet : Msg::ClockRate); w.u32(m.tick); w.u32(m.rate); return w.buf; }
+bool decode(ByteReader& r, ClockRateMsg& m) { m.tick = r.u32(); m.rate = r.u32(); return r.ok() && m.rate >= kClockRateMin && m.rate <= kClockRateMax; }
+
 Bytes encode(const MatchResultMsg& m) { Writer w(Msg::MatchResult); w.u32(m.tick); w.u32(uint32_t(m.result)); w.u64(m.hash); return w.buf; }
 bool decode(ByteReader& r, MatchResultMsg& m) { m.tick = r.u32(); m.result = int32_t(r.u32()); m.hash = r.u64(); return r.ok(); }
 

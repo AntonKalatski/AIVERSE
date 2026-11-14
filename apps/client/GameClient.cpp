@@ -1,5 +1,6 @@
 #include "engine/platform/WindowSettings.h"
 #include "modules/rts/RtsInitialVars.h"
+#include "engine/data/JsonCompose.h"
 // Generic RTS game client. Everything game-specific comes from the project's data (game.json,
 // rules.json, maps): the same executable plays a Warcraft-like, a Red-Alert-like or a
 // Mushroom-Wars-like game.
@@ -68,8 +69,7 @@ void GameClient::initStep(gfx::Device& dev, int step) {
             if (!platform::readContentFile("game.json", text)) throw std::runtime_error("game.json not found in content");
             manifest_ = Json::parse(text);
             gameName_ = manifest_.getStr("name", gameName_);
-            if (!platform::readContentFile(manifest_.getStr("rules", "rules.json"), text)) throw std::runtime_error("rules not found");
-            rulesJson_ = Json::parse(text);
+            rulesJson_ = readComposedJson(manifest_.getStr("rules", "rules.json"), [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); });   // + includes / extends
             langs_ = i18n::readGameLanguages(manifest_);
             applyLanguage(!forcedLanguage_.empty() ? forcedLanguage_
                                                    : i18n::chooseLanguage(langs_, i18n::readSavedLanguage(platform::userDataDir())), false);
@@ -901,7 +901,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         cam_.target.z = std::clamp(cam_.target.z, 0.0f, float(g.h));
         }
         if (aiverse::Vec3 sc{}; !planet() && mod().screenView(*sim_, sc, screenSize_)) {
-            // map "screen" / map scroller (BW MultiscreenModule): the camera follows the centre and frames the screen
+            // map "screen" / map scroller: the camera follows the centre and frames the screen
             const float smooth = mod().screen().enabled ? float(mod().screen().smooth.toDouble()) : 10.0f;
             const float k = screenFramed_ ? std::min(1.0f, float(dt) * smooth) : 1.0f;   // the first frame jumps
             cam_.target.x += (float(sc.x.toDouble()) - cam_.target.x) * k;

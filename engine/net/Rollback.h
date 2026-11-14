@@ -39,6 +39,7 @@ class RollbackSession {
 public:
     using SendFrame = std::function<void(uint32_t tick, const std::vector<Command>& cmds)>;
     using SendChecksum = std::function<void(uint32_t tick, uint64_t hash)>;
+    using SendClockRate = std::function<void(uint32_t tick, uint32_t rateQ16)>;
 
     // controlled: player slots whose commands this client issues (empty = spectator).
     // Installs a command sink on the sim: from now on sim.submit() goes to the network.
@@ -55,6 +56,12 @@ public:
     // Advance by real time. Returns ticks newly simulated (not counting re-simulation).
     int update(double seconds, uint64_t nowMs);
 
+    // Game speed (GameModule::speedScale): the session reports the rate its simulation is at through `send`
+    // whenever it changes, and paces with the rate the server confirmed (clockRate()). Without a sender, or with
+    // a server that never answers (older server), the match runs at the nominal rate as before.
+    void setClockRateSender(SendClockRate send) { sendClockRate_ = std::move(send); }
+    void clockRate(uint32_t serverTick, uint32_t rateQ16, uint32_t rttMs, uint64_t nowMs);
+    double clockRate() const { return rate_; }
     void setControlled(std::vector<uint8_t> slots) { controlled_ = std::move(slots); }
     // Presentation hook: called with true right before a rollback restores an older state and with
     // false right after the re-simulation caught up again; both times the sim is at the same tick,
@@ -101,6 +108,9 @@ private:
     uint32_t serverTick_ = 0, rtt_ = 0;
     uint64_t serverAt_ = 0;
     bool haveServerTime_ = false;
+    SendClockRate sendClockRate_;
+    double rate_ = 1.0;              // confirmed by the server (Msg::ClockRateSet)
+    uint32_t sentRate_ = 65536;      // last rate reported to the server
     int result_ = 0;                 // confirmed
     uint32_t resultTick_ = 0;
     uint64_t resultHash_ = 0;

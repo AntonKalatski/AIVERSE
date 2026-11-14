@@ -54,10 +54,16 @@ void RollbackSession::serverTime(uint32_t serverTick, uint32_t rttMs, uint64_t n
     serverTick_ = serverTick; rtt_ = rttMs; serverAt_ = nowMs; haveServerTime_ = true;
 }
 
+void RollbackSession::clockRate(uint32_t serverTick, uint32_t rateQ16, uint32_t rttMs, uint64_t nowMs) {
+    // the server's clock was re-based at serverTick: take it as a clock sample at the old rate first
+    serverTick_ = serverTick; rtt_ = rttMs; serverAt_ = nowMs; haveServerTime_ = true;
+    rate_ = double(rateQ16) / 65536.0;
+}
+
 int32_t RollbackSession::drift(uint64_t nowMs) const {
     if (!haveServerTime_) return 0;
     const double tickMs = 1000.0 / sim_.tickRate();
-    const double est = serverTick_ + (double(nowMs - serverAt_) + rtt_ * 0.5) / tickMs;
+    const double est = serverTick_ + (double(nowMs - serverAt_) + rtt_ * 0.5) / tickMs * rate_;
     return int32_t(double(sim_.tick()) - est);
 }
 
@@ -123,7 +129,13 @@ int RollbackSession::update(double seconds, uint64_t nowMs) {
     double speed = 1.0;
     if (d < -2) speed = std::min(1.0 + 0.1 * double(-d), 2.0);
     else if (d > 2) speed = std::max(1.0 - 0.1 * double(d), 0.5);
-    acc_ += seconds * speed;
+    acc_ += seconds * speed * rate_;
+    if (sendClockRate_ && !controlled_.empty()) {
+        // report the game speed of the simulation (deterministic state; a misprediction is corrected by the next report)
+        const double want = sim_.module().speedScale(sim_);
+        const uint32_t q = uint32_t(std::min(4.0, std::max(0.25, want)) * 65536.0 + 0.5);
+        if (q != sentRate_) { sentRate_ = q; sendClockRate_(sim_.tick(), q); }
+    }
 
     int stepped = 0;
     const bool farBehind = d < -int32_t(sim_.tickRate()); // more than a second: reconnect / resume

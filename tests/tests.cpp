@@ -14204,7 +14204,7 @@ TEST(ktx2_astc6x6_and_packaging_writer) {
 #include "tests_topdown.inc"   // top-down heroes (agent-topdown-control)
 #include "tests_progression.inc"   // in-match progression on real units (agent-df-progression-glue)
 #include "tests_encounters.inc"   // boss encounters (agent-df-encounters-glue)
-#include "tests_bwclient.inc"   // agent-bw-client: Spine, gamepad, client services
+#include "tests_clientkit.inc"   // Spine, gamepads, client services, audio chance, gameplay time scale
 #include "tests_skillobjects.inc"   // agent-bw-skills: skill objects
 
 // agent-bw-data: Bunker Wars armories — the bonus is a table by the number owned (1.5, 1.75, 1.9, 2), not mul^n
@@ -14287,3 +14287,4 @@ TEST(model_merge_static_primitives) {
 #include "tests_traffic.inc"   // city traffic: AI cars, signals, pedestrians (agent-traffic)
 #include "tests_city.inc"      // city planner (agent-gta2)
 #include "tests_city_net.inc"  // the city server (agent-gta2)
+#include "tests_rules_split.inc"   // rules.json include / extends (engine/data/JsonCompose.h)

@@ -17,10 +17,12 @@ enum class Msg : uint8_t {
     Hello = 1, ListRooms, CreateRoom, JoinRoom, LeaveRoom, SetMap, SetSettings, TakeSlot, SetSlotKind,
     SetReady, StartMatch, Chat, QueueJoin, QueueLeave, InputFrame, Checksum, MatchResult, Ping,
     ResultReport, Away,   // hosted battles (BattleProtocol.h); older servers ignore them
+    ClockRate,            // game speed the client's simulation asks for (match modes); older servers ignore it
     // server -> client
     Welcome = 64, Error, RoomList, RoomState, QueueStatus, MatchStart, TickBatch, SlotControl,
     PlayerStatus, Desync, MatchEnd, ChatMsg, Pong,
     MatchPayload,         // hosted battles: start payload before MatchStart (BattleProtocol.h)
+    ClockRateSet,         // the match clock now runs at this rate from this tick; older clients ignore it
 };
 
 enum class ErrorCode : uint16_t {
@@ -105,6 +107,11 @@ struct MatchStartMsg {
 struct TickBatchMsg { uint32_t serverTick = 0, first = 0, count = 0; std::vector<Command> commands; };
 struct InputFrameMsg { uint32_t tick = 0; std::vector<Command> commands; };
 struct ChecksumMsg { uint32_t tick = 0; uint64_t hash = 0; };
+// Game speed (GameModule::speedScale, e.g. a time-limit speed-up): rate in 1/65536 ticks per nominal tick.
+// Client -> server (Msg::ClockRate): the rate its simulation is at, tick = its sim tick. Server -> client
+// (Msg::ClockRateSet): every player asked for this rate, the match clock runs at it from nominal tick `tick`.
+constexpr uint32_t kClockRateOne = 65536, kClockRateMin = 65536 / 4, kClockRateMax = 65536 * 4;
+struct ClockRateMsg { uint32_t tick = 0; uint32_t rate = kClockRateOne; };
 struct MatchResultMsg { uint32_t tick = 0; int32_t result = 0; uint64_t hash = 0; };
 struct PlayerStatusMsg { uint8_t slot = 0; uint8_t status = 0; }; // 0 connected, 1 disconnected, 2 left
 struct DesyncMsg { uint32_t tick = 0; std::vector<std::pair<uint8_t, uint64_t>> hashes; };
@@ -137,6 +144,7 @@ Bytes encode(const MatchStartMsg&);   bool decode(ByteReader&, MatchStartMsg&);
 Bytes encode(const TickBatchMsg&);    bool decode(ByteReader&, TickBatchMsg&);
 Bytes encode(const InputFrameMsg&);   bool decode(ByteReader&, InputFrameMsg&);
 Bytes encode(const ChecksumMsg&);     bool decode(ByteReader&, ChecksumMsg&);
+Bytes encode(const ClockRateMsg&, bool fromServer);   bool decode(ByteReader&, ClockRateMsg&);
 Bytes encode(const MatchResultMsg&);  bool decode(ByteReader&, MatchResultMsg&);
 Bytes encode(const PlayerStatusMsg&); bool decode(ByteReader&, PlayerStatusMsg&);
 Bytes encode(const DesyncMsg&);       bool decode(ByteReader&, DesyncMsg&);
