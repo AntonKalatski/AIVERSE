@@ -46,8 +46,11 @@ following:
   after a successful build the editor restarts into the built one by itself.
 
 The build runs `cmake -S <engine> -B <project>/Builds/.temp/editor-<platform> -DAIVERSE_CONTENT_DIR=<project>
--DCMAKE_BUILD_TYPE=Release` and the `aiverse_editor` + `aiverse_headless` targets (`AIVERSE_NATIVE_BUILD_JOBS` sets the
-number of jobs). CMake and Ninja are found the same way as for the Build window (`aiversebuild --check-toolchain`:
+-DCMAKE_BUILD_TYPE=Release` and the `aiverse_editor` + `aiverse_headless` + `aiverse_client` targets
+(`AIVERSE_NATIVE_BUILD_JOBS` sets the number of jobs). The client (`AiverseGame`, built with
+`-DAIVERSE_CLIENT_BUNDLE_CONTENT=OFF`: no copy of the project next to it, it runs on the project folder) has the project's
+modules too, so "launch client" / Play as in the client run the project's C++ plugins; a project build made before
+without the client is not "ready" until it is rebuilt. CMake and Ninja are found the same way as for the Build window (`aiversebuild --check-toolchain`:
 Homebrew, `~/.aiverse/toolchains`, etc.); if CMake is missing, the banner offers to install it.
 
 The whole CMake build folder lives in the hidden `Builds/.temp/` (together with `aiversebuild`'s intermediate files):
@@ -59,8 +62,8 @@ in its own repository. The module registry is generated into the build folder; t
 regular editor are not touched. The built editor is a single-project tool: it does not register itself as the `.aiverse`
 handler (files are still opened by the main editor; on macOS its `AiverseEditor.app` has its own bundle id
 `com.aiverse.editor.project`), it is started only by switching and receives `--native-editor` (`AIVERSE_NATIVE_EDITOR=1`),
-so it does not switch further itself. It takes `aiversebuild`, `aiversemcp` and `AiverseGame` from the regular build
-(`--tools-from`).
+so it does not switch further itself. It takes `aiversebuild` and `aiversemcp` from the regular build
+(`--tools-from`) and its own `AiverseGame`.
 
 Agents do the same over MCP: `native_status` (what is missing, where the build is, whether it is up to date) and
 `native_build` (`{"wait": true}` waits for the end and returns the binary path; without it, follow through
@@ -86,6 +89,25 @@ created: you can add include directories and compile definitions to it. The regi
 to the factories, so linker optimization will not remove the registration. Settings and sources must be self-contained
 inside `native/` so that the export works on another machine. Registration order does not affect execution order: that
 is set by the array in rules.json. Modules that are compiled but not listed in rules.json do not run.
+
+### Engine libraries
+
+`native/CMakeLists.txt` is loaded at the end of the engine's configure (`aiverse_native_configure()` in the top-level
+CMakeLists): every engine target exists by then — `aiverse_net` (sockets, secure battle transport, `NetClient`),
+`aiverse_grpc` / `aiverse_protobuf`, `aiverse_plugins`, the meta libraries, `aiverse_net_server` / `aiverse_server` /
+`aiverse_battle_rts` when the server is built, the executables (`aiverse_client`, `aiverse_headless`, ...) — and so is
+`aiverse_protobuf_generate()`. Two helpers attach them to a module:
+
+```cmake
+aiverse_native_module(ID online VERSION 1 ENTRY createOnline SOURCES Online.cpp Plugin.cpp)
+aiverse_native_use_grpc(ID online IMPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/proto" PROTOS api.proto auth.proto)  # messages + stubs
+aiverse_native_link(ID online LIBRARIES aiverse_net aiverse_plugins)
+```
+
+`aiverse_native_link` gives the module's objects the libraries' include paths / definitions and links them into
+`aiverse_game` (which carries the module's objects into every executable). `aiverse_native_use_grpc` runs
+`aiverse_protobuf_generate(... GRPC)` on the module target (`NO_STUBS`: messages only; no `PROTOS`: only the link) and
+links `aiverse_grpc`. Developer tools and tests of the project can be plain `add_executable` targets in the same file.
 
 ## API and execution order
 
@@ -314,15 +336,11 @@ static object, so compile the file into the executable itself, not into a static
 drop:
 
 ```cmake
-# native/<part>/module.cmake - executables do not exist yet when native/ is processed
-function(my_backend_attach)
-    if(TARGET aiverse_server)
-        target_sources(aiverse_server PRIVATE ${MY_DIR}/MyServerExtension.cpp)
-        target_link_libraries(aiverse_server PRIVATE my_backend_core)
-    endif()
-endfunction()
-set(MY_DIR ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
-cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL my_backend_attach)
+# native/CMakeLists.txt (configured after the engine's targets, § Engine libraries)
+if(TARGET aiverse_server)
+    target_sources(aiverse_server PRIVATE ${CMAKE_CURRENT_LIST_DIR}/MyServerExtension.cpp)
+    target_link_libraries(aiverse_server PRIVATE my_backend_core)
+endif()
 ```
 
 ### Client side: a native plugin, Lua on top
@@ -330,8 +348,9 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL my_backend_attach)
 Register a `plugins::NativePlugin` (`AIVERSE_PLUGIN("mybackend", MyPlugin)`, [plugins.md](plugins.md)) in a
 source added to the client targets the same way. Lua reaches it with
 `plugins.call("mybackend", method, args, function(ok, data) end)`; `update()` runs every frame (pump the
-HTTP client there); the plugin talks back with `plugins::emit("mybackend", event, json)`, which every UI
-script receives as `game.on('plugin', function(e) -- e.plugin, e.event, e.data`.
+HTTP client there); the plugin talks back with `plugins::emit("mybackend", event, json)`, which UI scripts
+receive per plugin with `plugins.on("mybackend", function(event, data, name) end)` (`plugins.off("mybackend"[, fn])`
+removes them), and every UI script as `game.on('plugin', function(e) -- e.plugin, e.event, e.data`.
 
 When the backend's matchmaker has formed a match, the script calls `game.connect(address, queue)`: the
 client connects to that game server and joins the queue as soon as it is connected (`"ticket:<ticket>"`

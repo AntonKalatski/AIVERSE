@@ -13,6 +13,7 @@
 #include "apps/battle/RtsBattle.h"
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/RtsTopDown.h"
+#include "engine/net/BattleJoin.h"
 #include "engine/net/HeroInput.h"
 #include "engine/net/Conn.h"
 #include "engine/net/MatchTicket.h"
@@ -489,6 +490,74 @@ TEST(battle_control_requests_are_signed_fresh_and_unique) {
     CHECK(call(R"({"op":"release","ts":")" + ts + R"(","nonce":"n5","matchId":"77"})", bc.controlKey).getBool("ok"));
     Json reps = call(R"({"op":"reports","ts":")" + ts + R"(","nonce":"n6"})", bc.controlKey);
     CHECK(reps["reports"].size() == 1 && reps["reports"][0].getStr("matchId") == "77" && reps["reports"][0].getBool("aborted"));
+}
+
+// ---------------- game client side: joining by ticket text (net::joinBattle, game.joinBattle in UI Lua)
+TEST(battle_join_by_ticket_payload_and_compat) {
+    const std::string compat = "1.0|protocol:3|map:x";
+    const net::Key key = net::randomKey();
+    net::BattleJoinOptions o;
+    o.name = "Alice"; o.gameId = "g"; o.compatKey = compat;
+    o.clock = [] { return kUnix; };
+    std::string why;
+    CHECK(!net::joinBattle("not a ticket", o, &why) && why == "ticket");
+    {   // expired, or issued for another build
+        auto c = claims(31, "u1", 1); c.expiresAtMs = kUnix - 1;
+        CHECK(!net::joinBattle(net::issueTicket(key, c, "10.0.0.1:27015").encode(), o, &why) && why == "expired");
+        CHECK(!net::joinBattle(net::issueTicket(key, claims(31, "u1", 1, "0.9|protocol:3|map:x"), "10.0.0.1:27015").encode(), o, &why) &&
+              why == "compat");
+    }
+    // a real hosted battle on the simulated network: one human (with a JSON loadout) + a bot seat
+    net::SimNetwork simnet(5);
+    uint64_t now = 1000;
+    simnet.setTime(now);
+    net::ServerConfig cfg; cfg.udpPort = cfg.wsPort = 0; cfg.log = false; cfg.hostedOnly = true;
+    net::Server srv(cfg);
+    srv.setTicketClock([&] { return kUnix + now; });
+    const net::Address serverAddr = net::SimNetwork::address("10.0.0.1", 27015);
+    srv.attachSecure(simnet.open("10.0.0.1", 27015), key);
+    auto a = allocation(31, 1);
+    const std::string deck = R"({"deck": {"units": ["scout", "tank"], "tech": 2}})";
+    a.players[0].info.loadout.assign(deck.begin(), deck.end());
+    const std::string gd = R"({"mode": "pve"})";
+    a.gameData.assign(gd.begin(), gd.end());
+    std::string err;
+    CHECK(srv.allocateMatch(a, &err));
+    uint16_t port = 41000;
+    int opened = 0;
+    o.connect = [&](const net::ClientTicket& t) {
+        ++opened;
+        return net::connectSecure(simnet.open("10.1.0.9", port++, net::linkPreset("wifi")), serverAddr, t);
+    };
+    o.clock = [&] { return kUnix + now; };
+    auto client = net::joinBattle(net::issueTicket(key, claims(31, "u1", 1, compat), "10.0.0.1:27015").encode(), o, &why);
+    CHECK(client != nullptr && why.empty() && opened == 1);
+    if (!client) return;
+    for (int i = 0; i < 500 && !client->matchReady(); ++i) {
+        now += 10;
+        simnet.setTime(now);
+        srv.update(now);
+        client->update(now);
+    }
+    CHECK(client->matchReady() && client->matchPayload() != nullptr);
+    if (!client->matchPayload()) return;
+    const net::MatchPayloadMsg& pl = *client->matchPayload();
+    CHECK(pl.matchId == 31 && net::battleCompatible(pl, compat) && net::battleCompatible(pl, ""));
+    CHECK(!net::battleCompatible(pl, "2.0|protocol:3|map:x"));
+    CHECK(client->match().localSlot == 1);
+    // the seat's JSON loadout lands in the map's players[slot - 1]; other seats keep their entry; gameData -> "battle"
+    Json map = Json::parse(R"({"size": [8, 8], "players": [{"name": "A", "team": 1}, {"name": "B", "team": 2}]})");
+    net::applyBattlePayload(map, pl);
+    CHECK(map["players"][size_t(0)]["deck"]["units"].size() == 2 && map["players"][size_t(0)]["deck"].getInt("tech") == 2);
+    CHECK(map["players"][size_t(0)].getStr("name") == "A" && !map["players"][size_t(1)].has("deck"));
+    CHECK(map["battle"].getStr("mode") == "pve");
+    // non-JSON loadouts stay out of the map
+    net::MatchPayloadMsg raw = pl;
+    raw.players[0].loadout = {1, 2, 3};
+    raw.gameData.clear();
+    Json m2 = Json::parse(R"({"players": [{"team": 1}, {"team": 2}]})");
+    net::applyBattlePayload(m2, raw);
+    CHECK(!m2["players"][size_t(0)].has("deck") && !m2.has("battle"));
 }
 
 int main(int argc, char** argv) {

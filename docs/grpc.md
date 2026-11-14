@@ -103,7 +103,16 @@ the server answers with a `0x80` header block, framed messages and a final `0x80
 
 Adapters for a particular game's backend (its protos, login and matchmaking flow) live in that game's
 project as a native module, not in the engine: they link `AIVERSE::grpc`, generate their protos with
-`aiverse_protobuf_generate()` and expose the result through `aiverse::meta::Backend`.
+`aiverse_protobuf_generate()` and expose the result through `aiverse::meta::Backend`. A project's
+`native/CMakeLists.txt` is configured after the engine targets, so both are available there directly; the helper
+
+```cmake
+aiverse_native_module(ID backend VERSION 1 ENTRY createBackend SOURCES Backend.cpp)
+aiverse_native_use_grpc(ID backend IMPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/proto" PROTOS api.proto)
+```
+
+generates the messages + client stubs into the module and links `aiverse_grpc` into `aiverse_game`
+(docs/native-modules.md § Engine libraries). Test: `tests/native_project_build.py` (ctest `native_project_build`).
 
 ## Tests
 

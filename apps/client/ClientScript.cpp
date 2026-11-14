@@ -142,7 +142,7 @@ struct LuaApi {
         for (size_t i = 0; i < m.size(); ++i) { lua_pushstring(L, m[i].title.c_str()); lua_rawseti(L, -2, lua_Integer(i + 1)); }
         return 1;
     }
-    // game.start(map [, {difficulty = 0..2, spectate = bool}])
+    // game.start(map [, {difficulty = 0..2, spectate = bool, initialVars, ruleSets, players, deck}])
     static int start(lua_State* L) {
         GameClient& c = client(L);
         const lua_Integer i = luaL_checkinteger(L, 1);
@@ -181,7 +181,21 @@ struct LuaApi {
             lua_pop(L, 1);
         }
         c.startRuleSets_ = std::move(ruleSets);
-        if (c.uiPreview_) return 0;   // previews validate options but never start a match
+        // players = {[slot] = {deck = {...}, ...}} / deck = {...} (the local player's): per-seat start data, merged
+        // into the map's players[slot - 1] (StartPlayers.h); any JSON-able values
+        Json players, deck;
+        if (lua_istable(L, 2)) {
+            lua_getfield(L, 2, "players");
+            if (!lua_isnil(L, -1) && !lua_istable(L, -1)) return luaL_error(L, "game.start: players must be a table");
+            if (lua_istable(L, -1)) players = ui::luaToJson(L, -1);
+            lua_getfield(L, 2, "deck");
+            if (!lua_isnil(L, -1) && !lua_istable(L, -1)) return luaL_error(L, "game.start: deck must be a table");
+            if (lua_istable(L, -1)) deck = ui::luaToJson(L, -1);
+            lua_pop(L, 2);
+        }
+        c.startPlayers_ = std::move(players);
+        c.startDeck_ = std::move(deck);
+        if (c.uiPreview_) { c.startPlayers_ = c.startDeck_ = Json(); return 0; }   // previews validate options but never start a match
         if (lua_istable(L, 2)) {
             lua_getfield(L, 2, "difficulty");
             if (lua_isinteger(L, -1)) c.difficulty_ = int(std::clamp<lua_Integer>(lua_tointeger(L, -1), 0, 2));
@@ -214,6 +228,28 @@ struct LuaApi {
         const std::string address = luaL_checkstring(L, 1), queue = luaL_optstring(L, 2, "");
         if (!c.uiPreview_) c.joinServer(address, queue);
         return 0;
+    }
+    // game.joinBattle(ticketText [, {name = "...", compatKey = "<appVersion>|protocol:<n>|map:<id>"}]): a hosted battle by the
+    // sealed ticket of the game's matchmaker (docs/battle-net.md). true, or false + reason ("ticket", "expired", "compat",
+    // "unsupported", "connect"); later failures arrive as game.on("battleFailed", fn) {reason, text}
+    static int joinBattle(lua_State* L) {
+        auto& c = client(L);
+        const std::string ticket = luaL_checkstring(L, 1);
+        std::string name, compat;
+        if (lua_istable(L, 2)) {
+            lua_getfield(L, 2, "name");
+            if (lua_type(L, -1) == LUA_TSTRING) name = lua_tostring(L, -1);
+            lua_getfield(L, 2, "compatKey");
+            if (lua_type(L, -1) == LUA_TSTRING) compat = lua_tostring(L, -1);
+            lua_pop(L, 2);
+        }
+        if (c.uiPreview_) { lua_pushboolean(L, 1); return 1; }   // previews never connect
+        std::string why;
+        const bool ok = c.joinBattle(ticket, name, compat, &why);
+        lua_pushboolean(L, ok);
+        if (ok) return 1;
+        lua_pushstring(L, why.c_str());
+        return 2;
     }
     static int howto(lua_State* L) {
         auto& c = client(L);
@@ -440,7 +476,7 @@ void GameClient::initLua() {
         {"tr", LuaApi::tr}, {"hasText", LuaApi::hasText}, {"language", LuaApi::language}, {"languages", LuaApi::languages},
         {"setLanguage", LuaApi::setLanguage}, {"name", LuaApi::name}, {"maps", LuaApi::maps}, {"start", LuaApi::start},
         {"difficulty", LuaApi::difficulty}, {"screen", LuaApi::screen}, {"pause", LuaApi::pause}, {"resume", LuaApi::resume},
-        {"menu", LuaApi::menu}, {"online", LuaApi::online}, {"connect", LuaApi::connect}, {"howto", LuaApi::howto}, {"engineMenu", LuaApi::engineMenu},
+        {"menu", LuaApi::menu}, {"online", LuaApi::online}, {"connect", LuaApi::connect}, {"joinBattle", LuaApi::joinBattle}, {"howto", LuaApi::howto}, {"engineMenu", LuaApi::engineMenu},
         {"notice", LuaApi::notice}, {"safeArea", LuaApi::safeArea}, {"lastResult", LuaApi::lastResult}, {"touch", LuaApi::touch}, {"openUrl", LuaApi::openUrl},
         {"platform", LuaApi::platformName}, {"preview", LuaApi::preview}, {"time", LuaApi::time}, {"json", LuaApi::json}, {"decode", LuaApi::decode}, {"encode", LuaApi::encode},
         {"log", LuaApi::log}});

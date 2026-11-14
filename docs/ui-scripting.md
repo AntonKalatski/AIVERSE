@@ -51,14 +51,19 @@ Engine side: `engine/assets/ui/lib/meta.lua` (ui / profile / shop, runs before `
   per purchase token, then finishes it; late purchases arrive by themselves), `watch(id, fn(ok))` (rewarded ad,
   cooldown), `restore(fn)`, `cooldown(id)`.
 - `game` — `tr(key, args)`, `hasText(key)`, `language()`, `languages()`, `setLanguage(tag)`, `name()`, `maps()`,
-  `start(i, {difficulty, spectate, initialVars, ruleSets})`, `difficulty(n?)`, `screen()`, `pause()`, `resume()`, `menu()`, `online()`,
-  `connect(address, queue?)` (join the game server the game's own matchmaker named; `"ticket:<ticket>"` claims a reserved seat; docs/native-modules.md "Remote backends"), `on('plugin', fn{plugin, event, data})` (events of native plugins),
+  `start(i, {difficulty, spectate, initialVars, ruleSets, players, deck})` (`players = {[slot] = {deck = {...}, ...}}`: per-seat start
+  data merged key by key into the map's `players[slot]` before setup, as a hosted battle does with loadouts; `deck = {...}` is
+  `players[<local slot>].deck`, the battle deck of in-match progression), `difficulty(n?)`, `screen()`, `pause()`, `resume()`, `menu()`, `online()`,
+  `connect(address, queue?)` (join the game server the game's own matchmaker named; `"ticket:<ticket>"` claims a reserved seat; docs/native-modules.md "Remote backends"), `joinBattle(ticket, {name, compatKey})` (a hosted battle by the sealed ticket of the game's matchmaker: true, or false + reason; docs/battle-net.md "Game client"), `on('plugin', fn{plugin, event, data})` (events of native plugins),
   `howto(open?)`, `engineMenu(on?)`, `notice(text)`, `lastResult()`, `safeArea()`, `touch()`, `platform()`, `openUrl(url)` (http(s) / mailto in the system browser; false if refused),
   `preview()`, `time()`, `sendPercent(p?)` (share of a garrison a send takes, 1..100; pads and the HUD use it), `useAbility(i)` (player ability by rules index, as its HUD card: instant cast or targeting), `json('ui/x.json')`, `decode(text)`, `encode(v)`, `log(...)` (= `print`),
   `on(event, fn)`, `off(event, fn)`.
 - Events: `screen` (menu | lobby | playing | paused | over), `open` / `close` `{screen}`,
   `matchEnd {won, result, seconds, map, mapTitle, difficulty, spectator, online, vars}` (`vars`: the simulation's variables at the end, `game.set_var` names -> numbers: how a game's scripts tell its screens how the match ended, e.g. a retry chosen on an in-match result panel), `language`, `purchase`, `profile`,
-  `shop {id, ok, reason}`, `update (dt)`, `back`, `resize`.
+  `shop {id, ok, reason}`, `update (dt)`, `back`, `resize`, `battleFailed {reason, text}` (`game.joinBattle`: connect |
+  disconnected | compat | error, plus the reasons joinBattle returns).
+- `plugins` — `available(name)`, `call(name, method, args, fn(ok, data))`, `on(name, fn(event, data, name))` (the events
+  that plugin sends with `plugins::emit`, in registration order), `off(name[, fn])`.
 - `storage` — `load(name)`, `save(name, table)`, `erase(name)`: JSON files per game in the user folder.
 - `sound` — voice handles and music, the same table as in view scripts: `play(name, {gain, pan, pitch, variant, at, loop})`,
   `set`, `stop`, `pause`, `seek`, `state`, `variants`, `length`, `music(name, fade)`, `music_gain`, `current_music`, `settings`,

@@ -2,6 +2,7 @@
 // The match itself is the same client as offline: NetClient drives the Simulation (attach / advance),
 // the UI keeps submitting Commands as the local slot. Layout: engine/assets/ui/lobby.rml.
 #include "engine/net/NetLocalize.h"
+#include "engine/net/BattleJoin.h"
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -130,9 +131,13 @@ void GameClient::updateNet(double dt, bool& advanced) {
             break;
         case K::Disconnected:
             netError_ = text;
+            if (battle_) { battleFailed(netMatch_ ? "disconnected" : "connect", text); return; }
             if (netMatch_) leaveNetMatch();
             break;
-        case K::Error: netError_ = text; break;
+        case K::Error:
+            netError_ = text;
+            if (battle_ && !netMatch_) { battleFailed("error", text); return; }
+            break;
         case K::Chat:
             chat_.push_back(text);
             if (chat_.size() > 50) chat_.erase(chat_.begin());
@@ -156,12 +161,54 @@ void GameClient::updateNet(double dt, bool& advanced) {
         default: break;
         }
     }
-    if (net_ && net_->matchReady()) startNetMatch();
+    if (net_ && net_->matchReady()) {
+        const net::MatchPayloadMsg* pl = net_->matchPayload();
+        if (battle_ && (!pl || !net::battleCompatible(*pl, battleCompat_))) { battleFailed("compat"); return; }   // another build's match
+        startNetMatch();
+    }
     if (!netMatch_ || !sim_ || !net_ || !net_->session()) return;
     if (!net_->session()->confirmedResult())
         for (auto& b : bots_) b.update(*sim_);
     net_->advance(dt);   // instead of sim_->advance(): predicted ticks, rollbacks, confirmed input
     advanced = true;
+}
+
+// game.joinBattle: the game's matchmaker allocated a hosted battle and handed this player a sealed ticket
+// (net::ClientTicket::encode text). The secure transport connects to the server in the ticket; the match then
+// starts like any network match (MatchPayload + MatchStart), with the outcome blob as the result report.
+bool GameClient::joinBattle(const std::string& ticketText, const std::string& name, const std::string& compatKey, std::string* reason) {
+    if (netMatch_) leaveNetMatch();
+    net_.reset();
+    battle_ = false;
+    net::BattleJoinOptions o;
+    o.name = name.empty() ? (netName_.empty() ? tr("lobby.default_name") : netName_) : name;
+    o.gameId = manifest_.getStr("id");
+    o.compatKey = compatKey;
+    o.clientKey = netKey_;
+    std::string why;
+    net_ = net::joinBattle(ticketText, o, &why);
+    if (!net_) {
+        if (reason) *reason = why;
+        battleFailed(why);
+        return false;
+    }
+    battle_ = true;
+    battleCompat_ = compatKey;
+    pendingQueue_.clear();
+    netError_.clear();
+    return true;
+}
+
+void GameClient::battleFailed(const std::string& reason, const std::string& text) {
+    const bool wasBattle = battle_ || !net_;
+    if (netMatch_) leaveNetMatch();
+    if (battle_) { net_.reset(); battle_ = false; }
+    if (!wasBattle) return;
+    Json e = Json::object();
+    e.set("reason", Json::string(reason));
+    if (!text.empty()) e.set("text", Json::string(text));
+    luaEmit("battleFailed", e);
+    if (screen_ != Screen::Menu) setScreen(Screen::Menu);
 }
 
 // game.connect: an external matchmaker (the game's meta backend) formed a match: connect to the game
@@ -189,8 +236,10 @@ void GameClient::startNetMatch() {
         for (auto& g : groups_) g.clear();
         city_.reset(); sim_.reset(); // MatchStart already dropped the previous session
         Json map = Json::parse(mapText);
+        mapCamera_ = map["camera"];   // per-map top-down framing (topDownConfigure)
         std::string terr; // 2D tile maps: same as offline, or the match desyncs from the server's replay
         if (!applyTilesToMap(map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
+        if (const net::MatchPayloadMsg* pl = net_->matchPayload()) net::applyBattlePayload(map, *pl);   // hosted: per-seat loadouts
         sim_ = std::make_unique<Simulation>(net_->simConfig(), std::make_unique<RtsModule>());
         Json rules = readComposedJson(manifest_.getStr("rules", "rules.json"), [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); });
         if (!embedScripts(rules, map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
@@ -203,6 +252,8 @@ void GameClient::startNetMatch() {
         return;
     }
     net_->attach(*sim_);
+    if (net_->matchPayload())   // hosted battles: the frozen outcome bytes every client must agree on
+        net_->setResultReporter([this] { return sim_ ? mod().outcomeBlob(*sim_) : std::vector<uint8_t>{}; });
     if (!netMatch_) prevSpectator_ = spectator_;
     netMatch_ = true;
     human_ = m.localSlot;            // 0 = spectator: no commands, full vision
@@ -231,7 +282,8 @@ void GameClient::startNetMatch() {
 
 void GameClient::leaveNetMatch() {
     mapLoading_ = false; loadingTypes_.clear(); loadingSplash_.shutdown();
-    if (net_) { net_->leaveMatch(); net_->refreshRooms(); }   // detach before the simulation goes away
+    if (net_) { net_->leaveMatch(); if (!battle_) net_->refreshRooms(); }   // detach before the simulation goes away
+    if (battle_) { net_.reset(); battle_ = false; }   // a battle has no lobby to return to
     fx_.stopMatch();
     city_.reset(); sim_.reset();
     bots_.clear();

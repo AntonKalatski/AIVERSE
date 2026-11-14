@@ -12705,6 +12705,9 @@ TEST(native_editor_build_helpers) {
     CHECK(has(p.configureArgs, "-DAIVERSE_CONTENT_DIR=/games/My Game") && has(p.configureArgs, "-DCMAKE_BUILD_TYPE=Release"));
     CHECK(has(p.configureArgs, "-G") && has(p.configureArgs, "-DCMAKE_MAKE_PROGRAM=/usr/bin/ninja") && has(p.configureArgs, "-DAIVERSE_NATIVE_DIR="));
     CHECK(has(p.buildArgs, "aiverse_editor") && has(p.buildArgs, "aiverse_headless") && has(p.buildArgs, "3"));
+    // the client too (the project's modules reach "launch client"), without a content copy inside the project
+    CHECK(has(p.buildArgs, "aiverse_client") && has(p.configureArgs, "-DAIVERSE_CLIENT_BUNDLE_CONTENT=OFF") && has(p.configureArgs, "-DAIVERSE_BUILD_CLIENT=ON"));
+    CHECK(fs::path(p.clientBinary) == fs::path("/games/My Game/Builds/.temp/editor-linux/AiverseGame"));
     CHECK(fs::path(p.editorBinary) == fs::path("/games/My Game/Builds/.temp/editor-linux/aiverse_editor") && p.launchTarget == p.editorBinary);
     const std::string cmd = nativeBuildCommand(p);
     CHECK(cmd.rfind("'/usr/bin/cmake' '-S' '/eng' '-B' '" + p.buildDir + "'", 0) == 0);
@@ -12713,6 +12716,7 @@ TEST(native_editor_build_helpers) {
     NativeBuildPlan mac = planNativeBuild("/eng", "/g", "macos", "/opt/homebrew/bin/cmake", "", false, 0);
     CHECK(fs::path(mac.launchTarget) == fs::path("/g/Builds/.temp/editor-macos/AiverseEditor.app") &&
           fs::path(mac.editorBinary) == fs::path("/g/Builds/.temp/editor-macos/AiverseEditor.app/Contents/MacOS/AiverseEditor"));
+    CHECK(fs::path(mac.clientBinary) == fs::path("/g/Builds/.temp/editor-macos/AiverseGame.app/Contents/MacOS/AiverseGame"));
     CHECK(!has(mac.buildArgs, "--parallel") && !has(mac.configureArgs, "-G"));
     CHECK(has(mac.configureArgs, "-DAIVERSE_EDITOR_BUNDLE_ID=com.aiverse.editor.project") && !has(p.configureArgs, "-DAIVERSE_EDITOR_BUNDLE_ID=com.aiverse.editor.project"));
     CHECK(fs::path(planNativeBuild("/eng", "/g", "windows", "cmake", "", false, 0).editorBinary) == fs::path("/g/Builds/.temp/editor-windows/Release/aiverse_editor.exe"));
@@ -13743,6 +13747,62 @@ TEST(mapdoc_validate_scripted_players_without_start) {
     rulesJson.set("scripts", scripts);
     CHECK(startIssue(rulesJson, &error) && !error);
 }
+
+// One real player: rejected for a plain duel map, accepted when the map plays against it (raid, creeps owner 255,
+// a monsters / waves side, scripts); the message comes from the editor string table (key editor.map.need_players).
+TEST(mapdoc_validate_single_player_maps) {
+    Json rulesJson = Json::parseFile(kSkirmish + "/rules.json");
+    const game::Rules rules = game::loadRules(rulesJson);
+    const std::string unit = rules.types[0].id;
+    auto needPlayers = [&](const std::string& mapText, const Json& rj, std::string* text = nullptr) {
+        editor::MapDoc doc;
+        std::string err;
+        CHECK(doc.loadJson(Json::parse(mapText), &err));
+        for (auto& i : doc.validate(rules, rj))
+            if (i.key == "editor.map.need_players") { if (text) *text = i.text; return true; }
+        return false;
+    };
+    const std::string solo = R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": []})";
+    std::string text;
+    editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang", "en");
+    CHECK(needPlayers(solo, rulesJson, &text));
+    CHECK(text.find("At least 2 players") == 0);
+    editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang", "ru");
+    CHECK(needPlayers(solo, rulesJson, &text) && text.find("Нужно минимум 2") == 0);
+    // creeps (owner 255, also -1) play against the hero
+    CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": [{"type": ")" + unit +
+                       R"(", "pos": [10, 10], "owner": 255}]})", rulesJson));
+    editor::MapDoc creeps;
+    std::string err;
+    CHECK(creeps.loadJson(Json::parse(R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": [{"type": ")" + unit +
+                                      R"(", "pos": [10, 10], "owner": 255}]})"), &err));
+    for (auto& i : creeps.validate(rules, rulesJson)) CHECK(i.text.find("владелец") == std::string::npos);   // 255 is a valid owner
+    // a raid (map or rules block), a monsters side, scripts
+    CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1, "start": [4, 4]}], "entities": [], "raid": {"duration": 60}})", rulesJson));
+    Json rj = rulesJson;
+    Json scripts = Json::array();
+    scripts.push(Json::string("scripts/game.lua"));
+    rj.set("scripts", scripts);
+    CHECK(!needPlayers(solo, rj));
+    // two players stay fine, an empty player list does not
+    CHECK(!needPlayers(R"({"name": "t", "size": [16, 16], "players": [{"team": 1}, {"team": 2}], "entities": []})", rulesJson));
+    CHECK(needPlayers(R"({"name": "t", "size": [16, 16], "players": [], "entities": []})", rj));
+    editor::setEditorLanguage(std::string(AIVERSE_SOURCE_DIR) + "/engine/assets/lang");
+    // scenery that never moves (move speed 0) may stand on blocked cells, as the loader places it; a mover may not
+    Json pr = rulesJson;
+    pr.member("types").set("rock_prop", Json::parse(R"({"health": {"max": 1}, "invulnerable": true, "move": {"speed": 0, "radius": 0.1}})"));
+    const game::Rules prules = game::loadRules(pr);
+    auto blockedIssue = [&](const std::string& type) {
+        editor::MapDoc doc;
+        std::string e2;
+        CHECK(doc.loadJson(Json::parse(R"({"name": "t", "size": [8, 8], "players": [{"team": 1}, {"team": 2}],
+            "terrain": {"rows": ["........", "........", "...##...", "...##...", "........", "........", "........", "........"]},
+            "entities": [{"type": ")" + type + R"(", "pos": [3.5, 2.5], "owner": 0}]})"), &e2));
+        for (auto& i : doc.validate(prules, pr)) if (i.entity == 0 && i.error) return true;
+        return false;
+    };
+    CHECK(!blockedIssue("rock_prop") && blockedIssue(unit));
+}
 #endif
 
 // ---------------------------------------------------------------- game.json "window" (desktop window settings)
@@ -14288,3 +14348,124 @@ TEST(model_merge_static_primitives) {
 #include "tests_city.inc"      // city planner (agent-gta2)
 #include "tests_city_net.inc"  // the city server (agent-gta2)
 #include "tests_rules_split.inc"   // rules.json include / extends (engine/data/JsonCompose.h)
+
+// ---------------------------------------------------------------- UI Lua plugins.on (apps/client/ClientServices.cpp)
+#include "apps/client/ClientServices.h"
+namespace {
+struct ChirpPlugin : plugins::NativePlugin {
+    void call(const std::string& method, const std::string& args, plugins::Reply r) override {
+        if (method == "chirp") plugins::emit("chirp", "sang", args);
+        r.ok("{}");
+    }
+};
+} // namespace
+TEST(ui_lua_plugins_on_gets_one_plugins_events) {
+    lua_State* L = luaL_newstate();
+    luaL_openlibs(L);
+    auto alive = std::make_shared<bool>(true);
+    std::vector<std::string> any;   // game.on('plugin') keeps working beside it
+    client::ClientServices svc;
+    svc.attach(L, alive, [&](const char* name, const Json& e) { if (std::string(name) == "plugin") any.push_back(e.getStr("plugin") + ":" + e.getStr("event")); });
+    plugins::registerPlugin("chirp", std::make_shared<ChirpPlugin>());
+    auto run = [&](const char* code) {
+        const bool ok = luaL_dostring(L, code) == LUA_OK;
+        if (!ok) { std::printf("    lua: %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+        return ok;
+    };
+    CHECK(run(R"(got = {}
+        h = function(ev, data, name) got[#got + 1] = ev .. ":" .. tostring(data.n) .. ":" .. name end
+        plugins.on("chirp", h)
+        plugins.on("chirp", function(ev) got[#got + 1] = "second " .. ev end)
+        plugins.on("other", function() got[#got + 1] = "wrong plugin" end))"));
+    plugins::call("chirp", "chirp", R"({"n":3})", {});
+    plugins::pump();
+    plugins::pump();
+    auto got = [&] {
+        std::string s;
+        lua_getglobal(L, "got");
+        for (lua_Integer i = 1; i <= lua_Integer(lua_rawlen(L, -1)); ++i) { lua_rawgeti(L, -1, i); s += std::string(lua_tostring(L, -1)) + ";"; lua_pop(L, 1); }
+        lua_pop(L, 1);
+        return s;
+    };
+    CHECK(got() == "sang:3:chirp;second sang;");
+    CHECK(any.size() == 1 && any[0] == "chirp:sang");
+    // off(name, fn) removes that handler, off(name) all of them
+    CHECK(run(R"(got = {} plugins.off("chirp", h))"));
+    plugins::call("chirp", "chirp", R"({"n":4})", {});
+    plugins::pump(); plugins::pump();
+    CHECK(got() == "second sang;");
+    CHECK(run(R"(got = {} plugins.off("chirp"))"));
+    plugins::call("chirp", "chirp", R"({"n":5})", {});
+    plugins::pump(); plugins::pump();
+    const std::string rest = got();
+    if (!rest.empty() || any.size() != 3) std::printf("    after off: '%s', %zu plugin events\n", rest.c_str(), any.size());
+    CHECK(rest.empty() && any.size() == 3);
+    CHECK(!run(R"(plugins.on("chirp", 5))"));   // a handler must be a function
+    plugins::unregisterPlugin("chirp");
+    svc.detach();
+    *alive = false;
+    lua_close(L);
+}
+
+// ---------------------------------------------------------------- game.start {players, deck} (apps/client/StartPlayers.h)
+#include "apps/client/StartPlayers.h"
+TEST(game_start_players_merge_per_seat_data_into_the_map) {
+    const Json map0 = Json::parse(R"({"players": [{"name": "A", "team": 1}, {"name": "B", "team": 2}]})");
+    Json m = map0;
+    // array by slot (Lua {{...}, {...}}), deck shorthand for the local player
+    CHECK(client::mergeStartPlayers(m, Json::parse(R"([{"deck": {"units": ["a", "b"]}}, {"color": 3}])"), 1, Json()).empty());
+    CHECK(m["players"][size_t(0)]["deck"]["units"].size() == 2 && m["players"][size_t(0)].getStr("name") == "A");
+    CHECK(m["players"][size_t(1)].getInt("color") == 3 && m["players"][size_t(1)].getInt("team") == 2);
+    m = map0;
+    CHECK(client::mergeStartPlayers(m, Json::parse(R"({"2": {"deck": {"tech": 4}}})"), 1, Json::parse(R"({"tech": 1})")).empty());
+    CHECK(m["players"][size_t(1)]["deck"].getInt("tech") == 4 && m["players"][size_t(0)]["deck"].getInt("tech") == 1);
+    // nothing given: the map stays as it is; bad slots / shapes stop the start
+    m = map0;
+    CHECK(client::mergeStartPlayers(m, Json(), 1, Json()).empty() && m == map0);
+    CHECK(!client::mergeStartPlayers(m, Json::parse(R"({"3": {"deck": {}}})"), 1, Json()).empty());
+    CHECK(!client::mergeStartPlayers(m, Json::parse(R"({"x": {"deck": {}}})"), 1, Json()).empty());
+    CHECK(!client::mergeStartPlayers(m, Json::parse(R"([5])"), 1, Json()).empty());
+    CHECK(!client::mergeStartPlayers(m, Json(), 4, Json::parse(R"({"tech": 1})")).empty());
+    // the merged map still sets up a simulation (per-player keys the module reads, e.g. players[i].deck)
+    Json valley = Json::parseFile(kSkirmish + "/maps/valley.json");
+    CHECK(client::mergeStartPlayers(valley, Json(), 1, Json::parse(R"({"units": []})")).empty());
+    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    bool ok = true;
+    try { sim.setup(Json::parseFile(kSkirmish + "/rules.json"), valley); } catch (const std::exception& e) { ok = false; std::printf("    %s\n", e.what()); }
+    CHECK(ok);
+}
+
+// View scripts read game.data as the simulation scripts hold it now (not the world copy, written only before
+// checksums / snapshots / saves), for any unit: a neutral prop the simulation marks every tick.
+TEST(view_scripts_read_live_game_data_of_neutral_props) {
+    Json rules = Json::parseFile(kSkirmish + "/rules.json");
+    rules.set("scripts", Json::parse(R"(["scripts/s.lua"])"));
+    rules.set("viewScripts", Json::parse(R"(["scripts/view/v.lua"])"));
+    rules.set("$scriptSources", Json::parse(R"J({
+        "scripts/s.lua": "on('tick', function(t) for _, h in ipairs(game.units{owner = 0, type = 'footman'}) do local d = game.data(h); d.mark = t; d.kind = 'prop' end end)",
+        "scripts/view/v.lua": "view.on_frame(function(dt) for _, h in ipairs(game.units{owner = 0, type = 'footman'}) do local d = game.data(h); view.notice(tostring(d.kind) .. ':' .. tostring(d.mark) .. ':' .. tostring(game.has_data(h, 'kind')) .. ':' .. #game.units{has = 'mark'}) end end)"})J"));
+    Json map = Json::parseFile(kSkirmish + "/maps/valley.json");
+    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    sim.setup(rules, map);
+    const int t = mod(sim).rules().findType("footman");
+    mod(sim).spawn(sim, uint16_t(t), 0, {Fixed::fromInt(12), Fixed{}, Fixed::fromInt(12)});   // a neutral prop
+    game::ViewScripts vs;
+    CHECK(vs.load(sim, rules, map, 1));
+    vs.attach(sim);
+    for (int i = 0; i < 5; ++i) sim.step();
+    const uint32_t tick = sim.tick();
+    vs.update(sim, 0.016f);
+    auto req = vs.takeRequests();
+    std::string seen;
+    for (auto& r : req) if (r.kind == game::ViewRequest::Notice) seen = r.text;
+    CHECK(seen.rfind("prop:", 0) == 0 && seen.find(":true:1") != std::string::npos);
+    CHECK(seen == "prop:" + std::to_string(tick - 1) + ":true:1" || seen == "prop:" + std::to_string(tick) + ":true:1");
+    for (auto& e : vs.log()) if (e.error) std::printf("  view log: %s\n", e.text.c_str());
+    for (auto& e : mod(sim).scripts()->log()) if (e.error) std::printf("  script log: %s\n", e.text.c_str());
+    // reading from the view changes nothing in the simulation (the world copy is still written lazily)
+    Simulation ref(SimConfig{}, std::make_unique<game::RtsModule>());
+    ref.setup(rules, map);
+    mod(ref).spawn(ref, uint16_t(t), 0, {Fixed::fromInt(12), Fixed{}, Fixed::fromInt(12)});
+    for (int i = 0; i < 5; ++i) ref.step();
+    CHECK(ref.checksum() == sim.checksum());
+}

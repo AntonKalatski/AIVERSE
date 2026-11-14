@@ -148,7 +148,30 @@ load test and the tools all speak it.
   instead of waiting for the 10 s silence timeout. The session then fast-forwards within
   `catchUpBudgetMs` per frame.
 
-## Hosted battles on the server
+## Game client (`game.joinBattle`)
+
+The game client joins a hosted battle from UI Lua with the ticket text its matchmaker returned
+(`ClientTicket::encode()`, the server address is inside):
+
+```lua
+local ok, why = game.joinBattle(ticketText, {name = profile.name, compatKey = "1.2.3|protocol:3|map:square"})
+game.on("battleFailed", function(e) show_error(e.reason, e.text) end)   -- connect, disconnected, compat, error, ...
+```
+
+`net::joinBattle` (`engine/net/BattleJoin.h`) decodes the ticket, refuses an expired one (`"expired"`) or one
+issued for another build (`"compat"`: the ticket's compatibility hash against `compatKey`), connects with
+`connectSecure(ticket)` and gives `NetClient` a reconnect with the same ticket. The match then starts like any
+network match: when `MatchPayload` + `MatchStart` arrive the client checks the payload's compatibility key
+(`battleCompatible`), builds the map with `applyBattlePayload` — a seat's loadout that is a JSON object is merged
+into `players[slot - 1]` of the map (for example `{"deck": {...}}`, progression.md), match-wide `gameData` that is
+a JSON object becomes the map's `"battle"` key — and attaches the simulation. The result reporter sends
+`RtsModule::outcomeBlob()`. On phones the client calls `suspend` / `resume` on focus loss / gain. A failed
+connect (rejected tickets get no answer: the 10 s connect timeout), a lost battle after the reconnect window or a
+payload for another build ends the battle, goes back to the menu and emits `battleFailed {reason, text}`.
+Web builds return `"unsupported"` (no UDP). Test: `battle_join_by_ticket_payload_and_compat`
+(`aiverse_battle_tests`).
+
+
 
 ```cpp
 net::ServerConfig cfg; cfg.hostedOnly = true; cfg.udpPort = cfg.wsPort = 0;

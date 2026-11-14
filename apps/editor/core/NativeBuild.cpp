@@ -117,10 +117,12 @@ NativeBuildPlan planNativeBuild(const std::string& engineDir, const std::string&
         "-DCMAKE_BUILD_TYPE=Release",
         "-DAIVERSE_CONTENT_DIR=" + projectDir,
         "-DAIVERSE_NATIVE_DIR=",            // a stale override must not pick another project's modules
-        "-DAIVERSE_BUILD_TESTS=OFF", "-DAIVERSE_BUILD_SERVER=OFF"});
+        "-DAIVERSE_BUILD_TESTS=OFF", "-DAIVERSE_BUILD_SERVER=OFF",
+        // the client with the project's modules: run on the project folder (AIVERSE_CONTENT), no content copy
+        "-DAIVERSE_BUILD_CLIENT=ON", "-DAIVERSE_CLIENT_BUNDLE_CONTENT=OFF", "-DAIVERSE_GAME_EXECUTABLE=AiverseGame"});
     // macOS picks the .aiverse handler by bundle id: the project's AiverseEditor.app must not share the regular one's
     if (host == "macos") p.configureArgs.push_back("-DAIVERSE_EDITOR_BUNDLE_ID=com.aiverse.editor.project");
-    p.buildArgs = {"--build", p.buildDir, "--config", "Release", "--target", "aiverse_editor", "aiverse_headless"};
+    p.buildArgs = {"--build", p.buildDir, "--config", "Release", "--target", "aiverse_editor", "aiverse_headless", "aiverse_client"};
     if (jobs > 0) p.buildArgs.insert(p.buildArgs.end(), {"--parallel", std::to_string(jobs)});
     const fs::path bd(p.buildDir);
     // multi-config generators (Visual Studio) put binaries in Release/; Ninja / Makefiles in the dir itself
@@ -130,12 +132,15 @@ NativeBuildPlan planNativeBuild(const std::string& engineDir, const std::string&
         p.launchTarget = (bin / "AiverseEditor.app").string();
         p.editorBinary = (bin / "AiverseEditor.app" / "Contents" / "MacOS" / "AiverseEditor").string();
         p.headlessBinary = (bin / "aiverse_headless").string();
+        p.clientBinary = (bin / "AiverseGame.app" / "Contents" / "MacOS" / "AiverseGame").string();
     } else if (host == "windows") {
         p.editorBinary = p.launchTarget = (bin / "aiverse_editor.exe").string();
         p.headlessBinary = (bin / "aiverse_headless.exe").string();
+        p.clientBinary = (bin / "AiverseGame.exe").string();
     } else {
         p.editorBinary = p.launchTarget = (bin / "aiverse_editor").string();
         p.headlessBinary = (bin / "aiverse_headless").string();
+        p.clientBinary = (bin / "AiverseGame").string();
     }
     return p;
 }

@@ -263,7 +263,14 @@ private:
     // game.connect(address, queue): a match an external matchmaker formed (the game's backend plugin hands it over)
     void joinServer(const std::string& address, const std::string& queueId);
     std::string pendingQueue_;
+    // game.joinBattle(ticket, {name, compatKey}): a hosted battle by sealed ticket (secure transport, docs/battle-net.md);
+    // false + "battleFailed" {reason} for UI Lua when it cannot start or is lost
+    bool joinBattle(const std::string& ticketText, const std::string& name, const std::string& compatKey, std::string* reason);
+    void battleFailed(const std::string& reason, const std::string& text = "");
+    bool battle_ = false;            // net_ is a hosted battle (no lobby): back to the menu when it ends
+    std::string battleCompat_;       // compatibility key this build expects (empty: unchecked)
     std::vector<std::string> startRuleSets_;   // game.start {ruleSets}: map "ruleSets" of the next local match
+    Json startPlayers_, startDeck_;              // game.start {players, deck}: per-seat start data (StartPlayers.h)
     void startNetMatch();
     void leaveNetMatch();
     void buildLobby(UiState& s);
@@ -345,6 +352,7 @@ private:
     aiverse::Vec2 screenSize_{};        // map screen being framed (BW multiscreen)
     bool screenFramed_ = false;
     Json manifest_, rulesJson_;
+    Json mapCamera_;                             // the running map's "camera" block (top-down camera override)
     std::vector<MapEntry> maps_;
     std::string gameName_ = "AIVERSE";
     Rules rules_;
