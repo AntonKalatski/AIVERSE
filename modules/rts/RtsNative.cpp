@@ -29,6 +29,7 @@ void openNativeLua(lua_State* L, const Json& rules, const std::vector<NativeDefi
 void NativeModules::load(RtsModule& rts, Simulation& sim, const Json& rules,
                          const std::vector<NativeDefinition>& definitions) {
     entries_.clear();
+    hooks_ = 0;
     if (!rules.has("nativeModules")) return;
     const auto& list = rules["nativeModules"];
     if (!list.isArray()) throw std::runtime_error("nativeModules: expected an array");
@@ -75,6 +76,7 @@ void NativeModules::load(RtsModule& rts, Simulation& sim, const Json& rules,
         entries_[i].instance->setup(rts, sim, store.modules[i], Json::parse(entries_[i].config));
         sim.world().flush();
     }
+    for (auto& e : entries_) hooks_ |= e.instance->hooks();   // read once, after every setup
     sim.addSystem("nativeModules", [this, &rts](Simulation& s) { tick(rts, s); });
 }
 void NativeModules::tick(RtsModule& rts, Simulation& sim) const {
@@ -107,6 +109,33 @@ bool NativeModules::upgradeOrder(RtsModule& rts, Simulation& sim, Entity e, uint
             !entries_[i].instance->upgradeOrder(rts, sim, sim.world().resource<NativeStore>()->modules[i], e, player, type, cost, time)) return false;
     return true;
 }
+#define AIVERSE_NATIVE_EACH(bit) \
+    auto* store = sim.world().resource<NativeStore>(); \
+    if (store) for (size_t i = 0; i < entries_.size() && i < store->modules.size(); ++i) if (entries_[i].instance->hooks() & (bit))
+void NativeModules::unitSpeed(RtsModule& rts, Simulation& sim, Entity e, Fixed& add, Fixed& mul) const {
+    AIVERSE_NATIVE_EACH(kHookSpeed) entries_[i].instance->unitSpeed(rts, sim, store->modules[i], e, add, mul);
+}
+bool NativeModules::allowSend(RtsModule& rts, Simulation& sim, Entity from, Entity to) const {
+    AIVERSE_NATIVE_EACH(kHookSend) if (!entries_[i].instance->allowSend(rts, sim, store->modules[i], from, to)) return false;
+    return true;
+}
+void NativeModules::damage(RtsModule& rts, Simulation& sim, Entity target, Entity source, Fixed& dmg) const {
+    AIVERSE_NATIVE_EACH(kHookDamage) if (entries_[i].instance->damage(rts, sim, store->modules[i], target, source, dmg)) return;
+}
+void NativeModules::unitDied(RtsModule& rts, Simulation& sim, Entity e, uint8_t owner, Vec3 pos, bool silent) const {
+    AIVERSE_NATIVE_EACH(kHookDeath) entries_[i].instance->unitDied(rts, sim, store->modules[i], e, owner, pos, silent);
+}
+void NativeModules::assault(RtsModule& rts, Simulation& sim, Entity s, uint8_t attacker, uint8_t defender, int attackerLost, int defenderLost) const {
+    AIVERSE_NATIVE_EACH(kHookAssault) entries_[i].instance->assault(rts, sim, store->modules[i], s, attacker, defender, attackerLost, defenderLost);
+}
+bool NativeModules::allowDefeat(RtsModule& rts, Simulation& sim, uint8_t player) const {
+    AIVERSE_NATIVE_EACH(kHookDefeat) if (!entries_[i].instance->allowDefeat(rts, sim, store->modules[i], player)) return false;
+    return true;
+}
+void NativeModules::sceneBodies(RtsModule& rts, Simulation& sim, std::vector<NativeModule::Body>& out) const {
+    AIVERSE_NATIVE_EACH(kHookScene) entries_[i].instance->sceneBodies(rts, sim, store->modules[i], out);
+}
+#undef AIVERSE_NATIVE_EACH
 void NativeModules::hash(Simulation& sim, Hasher& h) const {
     if (entries_.empty()) return; // preserve existing games' checksums
     h.str("nativeModules"); h.u32(uint32_t(entries_.size()));

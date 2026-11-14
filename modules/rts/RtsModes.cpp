@@ -251,7 +251,7 @@ void RtsModule::sysModes(Simulation& sim) {
     auto defeatTeam = [&](int team) {
         for (auto& p : sim.players())
             if (int(p.team) == team && !isWavePlayer(gs, p.slot)) {
-                if (envInvincible(sim, p.slot)) continue;   // map scroller setInvincible (BW ModBase.TestPlayer)
+                if (!defeatAllowed(sim, p.slot)) continue;   // native modules may keep a player in the match (kHookDefeat)
                 if (p.slot < ms.outcome.size() && ms.outcome[p.slot] == 0) ms.outcome[p.slot] = 2;
                 if (!p.alive) continue;
                 p.alive = false;

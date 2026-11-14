@@ -355,7 +355,7 @@ void GridFields::spread(GridFieldStore::Field& f, const GridFieldDef& d, const F
         });
     }
     const int nb = k.eight ? 8 : 4;
-    // spread chance scale (map environment: rain lowers the grass fire spread, BW grassRainBurnRandomFactor)
+    // spread chance scale (map environment: rain lowers the grass fire spread)
     const int64_t scale = size_t(fi) < spreadScale_.size() ? spreadScale_[size_t(fi)] : 65536;
     const bool random = k.chance > 0 || k.fuelChance > 0 || scale < 65536;
     std::vector<std::pair<size_t, int32_t>> ignite;

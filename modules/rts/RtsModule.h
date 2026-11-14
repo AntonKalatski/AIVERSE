@@ -208,10 +208,11 @@ enum GameEvent : uint16_t {
     kEvTelegraphStart,  // a = caster, b = aimed unit, value = attack index, pos = area origin, player = caster owner
     kEvTelegraphStrike, // a = caster, b = unit struck, value = attack index | damage (whole units) << 16, pos = unit struck
     kEvTelegraphEnd,    // a = caster, value = attack index | 1 << 16 when cancelled (caster died in the windup)
-    kEvEnv,             // map environment (RtsEnv.h): value = EnvEventKind << 16 | data, a / b / pos per kind (weather, wind, worm, toad, bombs, Mouro, souls, walls)
+    kEvEnv,             // map environment (RtsEnv.h): value = EnvEventKind << 16 | data, a / pos per kind (weather, lightning, wind)
     kEvModePhase,       // match modes (RtsModes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
     kEvShotEnd,         // a free-fire shot (rules "arsenal") stopped at a wall / its range, or went off (splash): a = shooter, value = weapon index of its type, pos
     kEvAssault,         // a unit assaulted a defended garrison: player = attacker, a = structure, b = the unit, value = defenders lost
+    kEvNative,          // emitted by native modules for the view / scripts: value, a, b, pos are the module's (docs/native-modules.md)
 };
 // kEvModePhase values
 enum ModePhaseEvent : int64_t { kModeSdCounter = 1, kModeSdPreview, kModeSdStart, kModeSdEnd, kModeTimeStep, kModeTimeUp,
@@ -616,6 +617,7 @@ public:
     Progression* progression() const { return progression_.get(); }   // in-match progression (RtsProgression.h); inactive without rules "progression"
     Encounters* encounters() const { return encounters_.get(); }   // boss encounters (RtsEncounters.h); null before setup
     Environment* environment() const { return env_ && env_->active() ? env_.get() : nullptr; }   // map environment (RtsEnv.h); null without one
+    const NativeModules& native() const { return native_; }   // native modules of this game (hooks: docs/native-modules.md)
     // The map the simulation was set up from when the map had a "generate" block (nullptr otherwise):
     // presentation reads terrainMaterial / heights / regions from it (agent-terrain-gen).
     const Json* generatedMap() const { return generated_.isObject() ? &generated_ : nullptr; }
@@ -759,14 +761,12 @@ public:
     std::vector<int> lanesBetween(Simulation& sim, Entity a, Entity b) const;
     // one unit of `unit` leaves garrison `from` for `target` (lanes / roads / straight, like sysGarrison releases)
     Entity releaseUnit(Simulation& sim, Entity from, Entity target, uint16_t unit, uint8_t owner, uint32_t group);
-    // assault results for the environment (souls, burning buildings, last action buildings)
-    // map scroller setInvincible (BW Player.isInvincible): match modes and the victory script never defeat the player
-    bool envInvincible(Simulation& sim, uint8_t slot) const { return env_ && env_->active() && env_->invincible(sim, slot); }
-    // the first effect filter of a payload (through area / projectile delivery) accepts `e` for `owner` (BW skill filters)
-    bool envFilterAccepts(Simulation& sim, int payload, Entity e, uint8_t owner) const;
-    void envAssault(Simulation& sim, Entity structure, uint8_t attacker, uint8_t defender, int attackerLost, int defenderLost) {
-        if (env_ && env_->active()) env_->onAssault(sim, structure, attacker, defender, attackerLost, defenderLost);
-    }
+    // the first effect filter of a payload (through area / projectile / chain delivery) accepts `e` for `owner`
+    bool payloadAccepts(Simulation& sim, int payload, Entity e, uint8_t owner) const;
+    // false: a native module keeps the player in the match (kHookDefeat); match modes and rDefeat ask it
+    bool defeatAllowed(Simulation& sim, uint8_t slot) { return !native_.has(kHookDefeat) || native_.allowDefeat(*this, sim, slot); }
+    // the map the match was set up from; kept only for games with native modules (their setup reads its blocks)
+    const Json& mapData() const { return matchMap_; }   // same as matchMap()
     // ---- fidelity mechanics (RtsOriginals.cpp)
     std::vector<Amount> trainCost(Simulation& sim, uint8_t player, uint16_t type, Fixed* timeMult = nullptr) const; // growth, free hero, revive
     bool heroAllowed(Simulation& sim, uint8_t player, uint16_t type) const;   // limit and tiers

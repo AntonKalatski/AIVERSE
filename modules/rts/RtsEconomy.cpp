@@ -357,8 +357,8 @@ void RtsModule::sysGarrison(Simulation& sim) {
     w.each<Garrison, Unit, Owner>([&](Entity e, Garrison& g, Unit& u, Owner& o) {
         const UnitType& t = rules_.types[u.type];
         if (u.flags & kUnitUnderConstruction) return;
-        // environment (off-screen production) and multiscreen: points off the screen do not grow
-        const bool grows = (!env_ || !env_->active() || env_->producing(sim, e)) && (!screen_.enabled || onScreen(sim, w.get<Transform>(e).pos));
+        // multiscreen: points off the screen do not grow
+        const bool grows = !screen_.enabled || onScreen(sim, w.get<Transform>(e).pos);
         if (!grows) {}
         else if (o.player == 0 && nativeGrowth && t.spawnInterval.raw > 0) {
             // neutral garrisons do not grow by themselves: a native module may give them a rate and a maximum

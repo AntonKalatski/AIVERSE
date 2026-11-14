@@ -619,7 +619,7 @@ void RtsModule::enterGarrison(Simulation& sim, Entity e, Entity s) {
         const int before = g->count;
         while (g->damageAcc >= kOne && g->count > 0) { --g->count; ++g->lost; g->damageAcc -= kOne; }
         if (rules_.originals) assaultOriginals(sim, e, s);
-        envAssault(sim, s, me, owner, 1, before - g->count);
+        if (native_.has(kHookAssault)) native_.assault(*this, sim, s, me, owner, 1, before - g->count);
         sim.emit({kEvAssault, me, s, e, before - g->count, w.get<Transform>(s).pos});
     } else if (tt.capturable) {
         // revenge payloads of the defender and recapture of a temporarily captured structure

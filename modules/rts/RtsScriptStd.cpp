@@ -38,7 +38,7 @@ int rAlive(lua_State* L, Vm& vm) { auto* p = vm.sim->player(uint8_t(intArg(L, 1)
 // Marks a player defeated with the standard event (value = reason, default 0 eliminated).
 int rDefeat(lua_State* L, Vm& vm) {
     auto* p = vm.sim->player(uint8_t(intArg(L, 1)));
-    if (!p || vm.module->envInvincible(*vm.sim, p->slot)) return 0;   // map scroller setInvincible
+    if (!p || !vm.module->defeatAllowed(*vm.sim, p->slot)) return 0;   // native modules may keep a player in the match (kHookDefeat)
     p->alive = false;
     vm.sim->emit({kEvPlayerDefeated, p->slot, kNullEntity, kNullEntity, intArg(L, 2), {}});
     return 0;

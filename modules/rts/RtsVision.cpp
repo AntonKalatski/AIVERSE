@@ -50,7 +50,7 @@ struct VisionCache {
     // flat line-of-sight rays per radius: targets in the reference's order, sample offsets (sdy * W + sdx)
     struct Ray { int16_t dx, dy; int32_t k; uint32_t first; };
     struct Table { int W = 0, e2 = 1; bool built = false; std::vector<Ray> rays; std::vector<int32_t> off; };
-    int e2 = 1;   // fogOfWar.ellipse squared: sight discs are ellipses dx^2 + (e dz)^2 <= r^2 (BW iso fog)
+    int e2 = 1;   // fogOfWar.ellipse squared: sight discs are ellipses dx^2 + (e dz)^2 <= r^2
     std::vector<Table> tables;
     struct Entry {
         uint32_t gen = UINT32_MAX;

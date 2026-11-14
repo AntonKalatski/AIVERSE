@@ -97,11 +97,10 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     if (env_->active()) sim.addSystem("environment", [this](Simulation& s) { env_->tick(s); });   // RtsEnv.cpp (games with an environment only)
     sim.addSystem("death", [this](Simulation& s) { sysDeath(s); });
     sim.addSystem("capture", [this](Simulation& s) { sysCapture(s); });
-    if (env_->active()) sim.addSystem("environment2", [this](Simulation& s) { env_->lateTick(s); });
     sim.addSystem("creep", [this](Simulation& s) { sysCreep(s); });
     if (fields_->active()) sim.addSystem("gridfields", [this](Simulation& s) { fields_->tick(s); });   // RtsGridFields.cpp
     sim.addSystem("vision", [this](Simulation& s) { sysVision(s); });
-    if (env_->active() && env_->hasFog()) sim.addSystem("environment3", [this](Simulation& s) { env_->fogTick(s); });   // BW fog (RtsEnv.cpp)
+    if (env_->active() && env_->hasFog()) sim.addSystem("environment3", [this](Simulation& s) { env_->fogTick(s); });   // fog without memory / start reveal (RtsEnv.cpp)
     if (modes_.any) sim.addSystem("modes", [this](Simulation& s) { sysModes(s); });   // RtsModes.cpp: match modes decide before victory
     sim.addSystem("victory", [this](Simulation& s) { script_->callStd(s, StdFn::Victory); });   // lua/victory.lua
     sim.addSystem("triggers", [this](Simulation& s) {   // last: sees every event of the tick (lua/triggers.lua)
@@ -740,7 +739,8 @@ Fixed RtsModule::stat(Simulation& sim, Entity e, Stat s) const {
     if (rules_.originals) add += playerModsStat(sim, owner, u.type, s, mul);   // forges, morale
     if (s == Stat::Speed && fields_ && fields_->hasSpeed()) if (auto* tr = w.tryGet<Transform>(e)) mul *= fields_->speedMul(sim, tr->pos, owner);   // grid fields
     if (s == Stat::Speed && encounters_ && encounters_->hasSpeed()) mul *= encounters_->speedMul(sim, e);   // boss phase / enrage speed
-    if (s == Stat::Speed && env_ && env_->active()) env_->speed(sim, e, add, mul);   // environment: wind, zones, weather, traces, snow
+    if (s == Stat::Speed && env_ && env_->active()) env_->speed(sim, e, add, mul);   // environment: wind, zones, weather, trample fields
+    if (s == Stat::Speed && native_.has(kHookSpeed)) native_.unitSpeed(const_cast<RtsModule&>(*this), sim, e, add, mul);
     // Damage/Range/GatherRate/AttackSpeed "add" are fractional bonuses on top of 1 / absolute range
     Fixed v = (base + add) * mul;
     if (progression_ && progression_->active()) progression_->modStat(sim, e, s, v);   // perk pipeline (RtsProgression.cpp)
@@ -1377,7 +1377,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
             auto* g = w.tryGet<Garrison>(e);
             if (!g || !w.alive(cmd.target) || cmd.target == e || !w.has<Garrison>(cmd.target) || t.spawnUnit == kNoType) break;
             if (rules_.advancedEffects && (statusFlags(sim, e) & kStLock)) break;   // locked: can't send
-            if (env_ && env_->active() && !env_->sendAllowed(sim, e, cmd.target)) break;   // linked caves, graveyards
+            if (native_.has(kHookSend) && !native_.allowSend(*this, sim, e, cmd.target)) break;   // native modules (kHookSend)
             if (!canSend(sim, e, cmd.target)) break;   // authored routes: no route, no send
             if (rules_.advancedEffects && skillSend(sim, e, cmd.target, cmd.player, cmd.param)) break;   // teleport (RtsSkillObjects.cpp)
             const int sendable = std::max(0, g->count - t.garrisonKeep);   // State.io: one soldier stays home

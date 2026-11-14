@@ -640,7 +640,7 @@ bool RtsModule::runOrder(Simulation& sim, Entity e, Order& o) {
                 const int before = g->count;
                 while (g->damageAcc >= kOne && g->count > 0) { --g->count; g->damageAcc -= kOne; }
                 if (rules_.originals) assaultOriginals(sim, e, o.target);
-                envAssault(sim, o.target, me, to.player, 1, before - g->count);
+                if (native_.has(kHookAssault)) native_.assault(*this, sim, o.target, me, to.player, 1, before - g->count);
                 sim.emit({kEvAssault, me, o.target, e, before - g->count, w.get<Transform>(o.target).pos});
             } else if (tt.capturable) {
                 uint8_t old = to.player;
