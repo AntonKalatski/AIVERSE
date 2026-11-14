@@ -507,6 +507,7 @@ else()
 endif()
 
 add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/view/RtsTerrain.cpp
+    modules/rts/view/RtsRoadView.cpp modules/rts/view/RtsRoadKit.cpp
     modules/rts/view/RtsShapes.cpp modules/rts/view/RtsLook.cpp modules/rts/view/RtsAnimate.cpp
     modules/rts/view/RtsViewDraw.cpp modules/rts/view/RtsPortrait.cpp
     modules/rts/view/RtsLights.cpp modules/rts/view/RtsLightsData.cpp modules/rts/view/RtsGroundFx.cpp modules/rts/view/RtsTerrainRender.cpp modules/rts/view/RtsTerrainDetailMesh.cpp
@@ -1034,6 +1035,7 @@ if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/FieldOps.cpp)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/RaidOps.cpp)   # extraction raids (agent-extraction)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/RouteOps.cpp)   # Bunker Wars routes / screen
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/RoadOps.cpp)    # spline roads (docs/roads.md)
 endif()
 
 # VFX tools (vfx tools agent): Unity particle importer tests (Python, stdlib only) and the fx_* editor
@@ -1183,6 +1185,8 @@ target_sources(aiverse_game PRIVATE modules/rts/RtsRoutes.cpp modules/rts/RtsRou
 target_sources(aiverse_game PRIVATE modules/rts/RtsArsenal.cpp)
 # traffic (agent-traffic): AI cars on lanes, signalised junctions, pedestrians (docs/traffic.md)
 target_sources(aiverse_game PRIVATE modules/rts/RtsTraffic.cpp modules/rts/RtsTrafficCity.cpp modules/rts/RtsTrafficPopulation.cpp modules/rts/RtsTrafficCommute.cpp modules/rts/RtsTrafficGangs.cpp)
+# spline roads (agent-roads): road types + library, map roadNetwork, shared geometry (docs/roads.md)
+target_sources(aiverse_game PRIVATE modules/rts/RtsRoadNet.cpp modules/rts/RtsRoadTypes.cpp)
 # the engine's standard Lua library (rule-level mechanics) is compiled in: modules/rts/lua/*.lua
 file(GLOB AIVERSE_STD_LUA CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/lua/*.lua)
 set(AIVERSE_STD_LUA_H ${CMAKE_CURRENT_BINARY_DIR}/gen/RtsStdLua.h)

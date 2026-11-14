@@ -238,10 +238,10 @@ void SpriteBatch::destroyMesh(gfx::Device& dev, SpriteMesh& m) {
     m = {};
 }
 
-void SpriteBatch::drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting* lighting) {
+void SpriteBatch::drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting* lighting, bool decal) {
     if (!m.vb.valid() || !tex.valid()) return;
-    const bool lit = lighting && lighting->bind && litGroundPipe_.valid();
-    dev.setPipeline(lit ? litGroundPipe_ : groundPipe_);
+    const bool lit = lighting && lighting->bind && (decal ? litDecalPipe_ : litGroundPipe_).valid();
+    dev.setPipeline(lit ? (decal ? litDecalPipe_ : litGroundPipe_) : (decal ? decalPipe_ : groundPipe_));
     setUniforms(dev, viewProj, lit, lighting);
     dev.setTexture(lit ? 2 : 0, tex);
     drawRange(dev, m.vb, 0, m.quads);

@@ -65,7 +65,8 @@ public:
     static void appendQuad(std::vector<SpriteVertex>& out, const TextureRef& tex, const float3 (&corners)[4], float4 uv, uint32_t color);
     SpriteMesh buildMesh(gfx::Device& dev, const std::vector<SpriteVertex>& verts);
     void destroyMesh(gfx::Device& dev, SpriteMesh& m);
-    void drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting* lighting = nullptr);
+    // decal: drawn with the decal pipelines (depth bias toward the camera: paint on a surface, e.g. road markings)
+    void drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting* lighting = nullptr, bool decal = false);
 
 private:
     struct Quad { gfx::TextureHandle tex; int layer; float key; uint32_t seq; uint32_t flags; SpriteVertex v[4]; };
