@@ -39,6 +39,7 @@ struct ProgUnit {
     uint8_t player = 0;
     int8_t slot = 0;              // deck slot (0 = hero)
     uint8_t bearer = 0;           // kProgBearerHero / kProgBearerAlly
+    uint32_t shots = 0;           // shots fired (perks with "everyNth" only: hashed / saved then)
 };
 struct ProgressionStore {
     lib::genre::PerkState perks;
@@ -49,6 +50,7 @@ struct ProgressionStore {
     std::vector<int64_t> kills;               // per player slot
     std::vector<lib::genre::OrbSpawn> orbQueue;   // orbs to drop on the next step (Lua spawn_orb)
     const ProgUnit* find(Entity e) const;
+    ProgUnit* find(Entity e) { return const_cast<ProgUnit*>(static_cast<const ProgressionStore*>(this)->find(e)); }
 };
 
 class Progression {
@@ -74,6 +76,9 @@ public:
     int16_t hitPayload(Simulation& sim, Entity source) const;                         // perk on-hit payload (rolls the chance)
     void beforeShot(Simulation& sim, Projectile& p) const;                            // bullet variant, splash, on-hit
     void afterShot(Simulation& sim, Projectile& p) const;                             // ricochet / fly-through counts
+    void onShot(Simulation& sim, Entity shooter);                                     // one shot fired (everyNth counters)
+    int fireCount(Simulation& sim, Entity shooter) const;                             // bullets per shot (fireCount stat, 1..8)
+    bool pausesGameplay(Simulation& sim) const;                                       // pauseOnOffer and an offer is open
     const projectile::ProjectileFlight* variantFlight(int weapon) const;               // Projectile::weapon <= -2
     static int variantIndex(int weapon) { return weapon <= -2 ? -2 - weapon : -1; }
 

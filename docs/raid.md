@@ -86,15 +86,22 @@ Drone Fall mapping: zone extraction points = `scope: "point"`, `open`/`sleep` = 
 
 ## Objectives
 
-`{"id", "text", "kind": "collect" | "reach" | "kill" | "interact" | "script", "item", "type", "pos", "radius",
+`{"id", "text", "kind": "collect" | "reach" | "kill" | "interact" | "script" | "defend", "item", "type", "pos", "radius",
 "count", "shared", "required", "reward": {"asset": n}}`. Collect counts carried + secured items; reach needs a
 raider within `radius`; kill counts kills of `type` (any hostile without it); interact completes from
 interactables of `type` or naming the objective; script objectives progress only from Lua. `shared` completes
 it for the whole team; `required` marks the receipt `completed` only when it is done (and the raider got out).
 
+`defend` (`type` required, `count` default 1): units of that type, own or allied, must survive. Progress is the most
+of them alive at once (so units a script spawns later count once they appear); once `count` were there, fewer fails
+the raid for that player: status `failed`, the objective `lost` (`objDone` 2, `kEvRaidObjective` value
+`objective | 2 << 16`), receipt `"outcome": "failed", "reason": "<objective id>"`. Extracting while they live completes
+it. The bot does not walk to defend objectives (nothing to reach); with `raid` on a map, `rules.raid.objectives`
+can add one per map (docs/game-format.md § Per-map rules overrides).
+
 ## Match states
 
-`briefing → running → over` (`kEvRaidPhase`). Per player (`kEvRaidPlayer`): `in_raid → extracted | dead | timeout | abandoned`.
+`briefing → running → over` (`kEvRaidPhase`). Per player (`kEvRaidPlayer`): `in_raid → extracted | dead | timeout | abandoned | failed`.
 The raid ends when all raid players are resolved, the clock ends (the rest time out and lose their bags), or
 on the first extraction with `endOnFirstExtract`. The winner team: most value brought out (+1 per extracted
 raider), a tie is a draw; in PvE with nobody out, a hostile player team if there is one, else a draw. The raid

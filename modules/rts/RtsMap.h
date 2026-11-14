@@ -1,6 +1,7 @@
 // Terrain grid (cell types, cliff levels, ramps, creep, resource fields, regions), pathfinding
 // (A* on 8-connected cells with level/ramp rules), road graph, spatial hash. Integer/fixed only.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -351,11 +352,21 @@ struct SpatialHash {
         }
         int r = int((radius.raw >> Fixed::kFracBits) / cell) + 1;
         int cx = int(p.x.floorInt()) / cell, cy = int(p.z.floorInt()) / cell;
-        for (int y = cy - r; y <= cy + r; ++y)
-            for (int x = cx - r; x <= cx + r; ++x) {
-                if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const int x0 = std::max(0, cx - r), x1 = std::min(w - 1, cx + r), y0 = std::max(0, cy - r), y1 = std::min(h - 1, cy + r);
+        if (x0 > x1 || y0 > y1) return;
+        // a wide query over a sparse map (hunt ranges of hundreds of cells): visit only the non-empty buckets, in
+        // bucket index order = the row-major order of the loop below, so callers see the same entities in the same order
+        if (size_t(x1 - x0 + 1) * size_t(y1 - y0 + 1) > used.size() * 4 + 16) {
+            std::vector<int32_t> hit;
+            hit.reserve(used.size());
+            for (int32_t i : used) { const int x = i % w, y = i / w; if (x >= x0 && x <= x1 && y >= y0 && y <= y1) hit.push_back(i); }
+            std::sort(hit.begin(), hit.end());
+            for (int32_t i : hit) for (Entity e : buckets[size_t(i)]) fn(e);
+            return;
+        }
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x)
                 for (Entity e : buckets[size_t(y * w + x)]) fn(e);
-            }
     }
 };
 

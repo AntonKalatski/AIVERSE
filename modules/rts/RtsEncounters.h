@@ -48,6 +48,7 @@ struct EncAttack {
     uint16_t damageType = 0xFFFF;         // kDamagePure unless "damageType"
     std::string ability;                  // a unit ability with this id starts the attack ("" none)
     Fixed reach{};                        // how close a mob must be to start it (maxRange, else the area's extent)
+    bool decal = true;                    // "decal": false: the view draws no ground telegraph (the game shows its own)
 };
 // A boss unit type. Library BossDef id = type + 1 (add-wave units likewise: type + 1).
 struct EncBossDef {
@@ -61,6 +62,8 @@ struct EncMobDef {
     int16_t attack = -1;                  // telegraphed attack used in melee reach (-1: weapons only)
     uint32_t think = 4;                   // ticks between decisions (staggered by entity)
     Fixed flowDistance = Fixed::fromInt(10);   // farther than this: attack-move along a flow field (rules movement.flowField)
+    uint64_t preferTags = 0;              // "preferTags": hunt the nearest hostile unit with one of these type tags first
+    Fixed preferRange{};                  //   ... within this distance (0: anywhere); a hostile within bite reach still comes first
 };
 struct EncounterRules {
     bool enabled = false;
@@ -73,6 +76,7 @@ struct EncounterRules {
     Fixed spawnMin = Fixed::fromInt(8), spawnMax = Fixed::fromInt(12);   // scheduled boss: ring around the participant
     std::vector<int16_t> bossOfType, mobOfType;   // per unit type: index into bosses / mobs or -1
     bool speedMods = false;                        // a phase / enrage changes speed (stat hook)
+    uint64_t preferAny = 0;                        // union of the mobs' preferTags (0: no mob prefers anything)
     int findAttack(const std::string& id) const { for (size_t i = 0; i < attacks.size(); ++i) if (attacks[i].id == id) return int(i); return -1; }
 };
 
@@ -125,6 +129,9 @@ public:
     void io(Simulation& sim, Archive& a);
     EncounterStore* store(Simulation& sim) const;
     bool monsterPlayer(uint8_t slot) const;              // map "monsters": true players and hostile creeps (owner 255)
+    // a boss / mob unit type of a monster player: its brain decides where it walks, so the creep camp leash
+    // (RtsWorld.cpp sysNeutrals: back home beyond 10 cells) and creep wandering leave it alone
+    bool drives(uint8_t owner, uint16_t type) const { return active() && type < R_.mobOfType.size() && (R_.bossOfType[type] >= 0 || R_.mobOfType[type] >= 0) && monsterPlayer(owner); }
     int64_t teamKey(Simulation& sim, uint8_t owner) const;   // telegraph sides: 0 neutral, 256 creeps, else the team
     // stat hook: phase / enrage speed multiplier of a boss (1 for everything else)
     bool hasSpeed() const { return R_.speedMods; }
@@ -155,6 +162,7 @@ private:
     RtsModule* m_ = nullptr;
     std::vector<uint8_t> monsters_;                     // monster player slots (sorted)
     std::vector<EncStatusKind> statusKinds_;            // per rules status
+    std::vector<Entity> preferred_;                     // this tick: living units with a preferred tag (ECS order; rebuilt every tick)
 };
 
 } // namespace aiverse::game

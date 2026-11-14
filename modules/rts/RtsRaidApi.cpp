@@ -27,7 +27,7 @@ bool playerArg(lua_State* L, Vm& vm, int idx, Raid* r, RaidPlayer*& p) {
 }
 const char* const kPhase[] = {"briefing", "running", "over"};
 const char* const kPointPhase[] = {"locked", "sleep", "inbound", "open", "departing"};
-const char* const kStatus[] = {"waiting", "in_raid", "extracted", "dead", "timeout", "abandoned"};
+const char* const kStatus[] = {"waiting", "in_raid", "extracted", "dead", "timeout", "abandoned", "failed"};
 
 int rActive(lua_State* L, Vm& vm) { lua_pushboolean(L, raidOf(vm) != nullptr); return 1; }
 int rPhase(lua_State* L, Vm& vm) {
@@ -63,7 +63,7 @@ int rPlayer(lua_State* L, Vm& vm) {
     lua_createtable(L, 0, 10);
     lua_pushinteger(L, p->slot); lua_setfield(L, -2, "slot");
     lua_pushinteger(L, p->team); lua_setfield(L, -2, "team");
-    lua_pushstring(L, kStatus[std::min<int>(5, p->status)]); lua_setfield(L, -2, "status");
+    lua_pushstring(L, kStatus[std::min<int>(6, p->status)]); lua_setfield(L, -2, "status");
     lua_pushinteger(L, r->securedValue(*p)); lua_setfield(L, -2, "value");
     lua_pushinteger(L, p->kills); lua_setfield(L, -2, "kills");
     pushItems(L, rules, p->secured); lua_setfield(L, -2, "secured");
@@ -81,7 +81,7 @@ int rPlayer(lua_State* L, Vm& vm) {
     lua_newtable(L);
     for (size_t k = 0; k < r->rules().objectives.size(); ++k) {
         lua_createtable(L, 0, 2);
-        lua_pushboolean(L, p->objDone[k]); lua_setfield(L, -2, "done");
+        lua_pushboolean(L, p->objDone[k] == 1); lua_setfield(L, -2, "done");
         lua_pushinteger(L, p->objProgress[k]); lua_setfield(L, -2, "progress");
         lua_setfield(L, -2, r->rules().objectives[k].id.c_str());
     }

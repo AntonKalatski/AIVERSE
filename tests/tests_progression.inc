@@ -332,3 +332,63 @@ TEST(progression_bot_hero_collects_orbs_and_walks_to_a_circle) {
     const Vec3 at = sim->world().get<Transform>(prog(*sim).heroOf(*sim, 1)).pos;   // where the card was picked
     CHECK((at - Vec3{Fixed::fromInt(20), Fixed{}, Fixed::fromInt(8)}).xz().length() < Fixed::fromInt(3));
 }
+
+// fireCount (bullets per shot), an "everyNth" perk (its on-hit only on every second shot), a knockback on-hit
+// payload, and "pauseOnOffer" (the battle holds while an offer is open; the choice still reaches it).
+TEST(progression_fire_count_every_nth_knockback_and_pause) {
+    std::string rules = kProgRules;
+    rules.replace(rules.find(R"(      {"id": 10, "key": "magnet")"), 0,
+        R"(      {"id": 11, "key": "double", "effects": [{"stat": "fireCount", "op": "add", "value": 1000}]},
+      {"id": 12, "key": "push", "everyNth": 2, "onHit": [{"type": "knockback", "amount": 1, "fromCaster": true}]},
+)");
+    rules.replace(rules.find(R"("tank": {"health")"), 0, R"("walker": {"health": {"max": 100000}, "move": {"speed": 1, "radius": 0.4}, "sight": 2},
+    )");
+    auto sim = makeSimJson(rules, progMap(R"({"type":"drone","owner":1,"pos":[4.5,8.5]},{"type":"walker","owner":2,"pos":[8.5,8.5]})"));
+    auto& pg = prog(*sim);
+    CHECK(pg.rules().anyNth && pg.rules().ext.at(12).everyNth == 2);
+    const Entity hero = pg.heroOf(*sim, 1), walker = findType(*sim, "walker", 2);
+    CHECK(pg.fireCount(*sim, hero) == 1);
+    CHECK(pg.grantPerk(*sim, 1, perkId(*sim, "double"), -1) && pg.fireCount(*sim, hero) == 2);
+    CHECK(pg.grantPerk(*sim, 1, perkId(*sim, "push"), -1));
+    std::set<uint64_t> seen;
+    int attacks = 0, bullets = 0, pushing = 0;
+    const Fixed x0 = sim->world().get<Transform>(walker).pos.x;
+    for (int i = 0; i < 80; ++i) {
+        sim->step();
+        for (auto& e : sim->events()) if (e.type == game::kEvAttack && e.a == hero) ++attacks;
+        sim->world().each<game::Projectile>([&](Entity p, game::Projectile& pr) {
+            if (pr.source != hero || !seen.insert(p.packed()).second) return;
+            ++bullets;
+            if (pr.onHit >= 0) ++pushing;
+        });
+    }
+    CHECK(attacks >= 4 && bullets == 2 * attacks);                    // two bullets per shot
+    CHECK(pushing >= bullets / 2 - 2 && pushing <= bullets / 2 + 2);   // the on-hit rides every second shot
+    CHECK(sim->world().get<Transform>(walker).pos.x > x0 + Fixed::fromInt(1));   // knocked back (it walks at 1 cell / s toward nothing)
+    // errors: everyNth needs a bullet or an on-hit
+    std::string bad = rules;
+    bad.replace(bad.find(R"("key": "double",)"), 16, R"("key": "double", "everyNth": 3,)");
+    bool threw = false;
+    try { makeSimJson(bad, progMap("")); } catch (const std::exception& e) { threw = std::string(e.what()).find("everyNth") != std::string::npos; }
+    CHECK(threw);
+    // pauseOnOffer: the battle holds while the cards are open
+    std::string paused = rules;
+    paused.replace(paused.find(R"("players": [1],)"), 15, R"("players": [1], "pauseOnOffer": true,)");
+    auto ps = makeSimJson(paused, progMap(R"({"type":"drone","owner":1,"pos":[4.5,8.5]},{"type":"walker","owner":2,"pos":[20.5,3.5]})"));
+    auto& pp2 = prog(*ps);
+    const Entity w2 = findType(*ps, "walker", 2);
+    Command mv; mv.player = 2; mv.type = game::kCmdMove; mv.units = {w2}; mv.point = {Fixed::fromInt(28), Fixed{}, Fixed::fromRatio(35, 10)};
+    ps->submit(mv);
+    run(*ps, 0.5);
+    const Fixed before = ps->world().get<Transform>(w2).pos.x;
+    CHECK(before > Fixed::fromRatio(205, 10));
+    CHECK(pp2.grantXp(*ps, 1, 3, false));
+    run(*ps, 0.2);
+    CHECK(pp(*ps, 1).offer.open && pp2.pausesGameplay(*ps));
+    const Fixed held = ps->world().get<Transform>(w2).pos.x;
+    run(*ps, 1.0);
+    CHECK(ps->world().get<Transform>(w2).pos.x == held);   // nothing moves
+    progCmd(*ps, 1, game::kProgChoose, 0, pp(*ps, 1).offer.revision);
+    run(*ps, 1.0);
+    CHECK(!pp(*ps, 1).offer.open && ps->world().get<Transform>(w2).pos.x > held);
+}

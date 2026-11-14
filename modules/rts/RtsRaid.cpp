@@ -13,11 +13,21 @@ uint32_t ticksOf(Fixed s, uint32_t rate) { return s.raw <= 0 ? 0 : uint32_t((s *
 Fixed sq(Fixed v) { return v * v; }
 bool within(Vec3 a, Fixed x, Fixed z, Fixed r) { return sq(a.x - x) + sq(a.z - z) <= sq(r); }
 const char* statusName(uint8_t s) {
-    static const char* n[] = {"waiting", "in_raid", "extracted", "dead", "timeout", "abandoned"};
-    return s < 6 ? n[s] : "?";
+    static const char* n[] = {"waiting", "in_raid", "extracted", "dead", "timeout", "abandoned", "failed"};
+    return s < 7 ? n[s] : "?";
 }
 std::string hex(uint64_t v) { char b[20]; std::snprintf(b, sizeof b, "%016llx", (unsigned long long)v); return b; }
 bool resolved(uint8_t s) { return s >= uint8_t(RaidStatus::Extracted); }
+// defend objectives whose units (own / allied, alive) are all there: done (the player gets out with them)
+template <class Count> void completeDefend(Simulation& sim, const RaidRules& R, RaidPlayer& p, Count&& alive) {
+    for (size_t k = 0; k < R.objectives.size(); ++k) {
+        const RaidObjectiveDef& o = R.objectives[k];
+        if (o.kind != RaidObjKind::Defend || p.objDone[k] || alive(o.type) < o.count) continue;
+        p.objDone[k] = 1;
+        p.objProgress[k] = o.count;
+        sim.emit({kEvRaidObjective, p.slot, kNullEntity, kNullEntity, int64_t(k) | int64_t(1) << 16, {}});
+    }
+}
 } // namespace
 
 RaidStore* Raid::store(Simulation& sim) const { return sim.world().resource<RaidStore>(); }
@@ -315,6 +325,7 @@ bool Raid::extract(Simulation& sim, uint8_t player, int point) {
     if (!p || p->status != uint8_t(RaidStatus::InRaid)) return false;
     World& w = sim.world();
     secureCarried(sim, *p);
+    completeDefend(sim, R_, *p, [&](uint16_t t) { return defenders(sim, player, t); });   // before the extraction takes the defended units off the map
     Entity body = kNullEntity;
     Vec3 at{};
     w.each<Unit, Owner>([&](Entity e, Unit& u, Owner& o) {
@@ -349,6 +360,7 @@ bool Raid::resolve(Simulation& sim, uint8_t player, RaidStatus s) {
         });
         for (auto& r : p->carriedRes) r = Fixed{};
     }
+    if (s == RaidStatus::Extracted) completeDefend(sim, R_, *p, [&](uint16_t t) { return defenders(sim, player, t); });
     st->channels.erase(std::remove_if(st->channels.begin(), st->channels.end(), [&](const RaidChannel& c) { return c.player == player; }), st->channels.end());
     p->status = uint8_t(s);
     p->endTick = sim.tick();
@@ -520,7 +532,7 @@ void Raid::tickPickup(Simulation& sim) {
 bool Raid::objectiveDone(Simulation& sim, uint8_t player, int k) const {
     RaidStore* st = store(sim);
     const RaidPlayer* p = st ? st->find(player) : nullptr;
-    return p && k >= 0 && size_t(k) < p->objDone.size() && p->objDone[size_t(k)];
+    return p && k >= 0 && size_t(k) < p->objDone.size() && p->objDone[size_t(k)] == 1;
 }
 
 void Raid::progress(Simulation& sim, uint8_t player, int k, int amount) {
@@ -545,6 +557,7 @@ void Raid::tickObjectives(Simulation& sim) {
     World& w = sim.world();
     for (size_t k = 0; k < R_.objectives.size(); ++k) {
         const RaidObjectiveDef& o = R_.objectives[k];
+        if (o.kind == RaidObjKind::Defend) { tickDefend(sim, k); continue; }
         if (o.kind != RaidObjKind::Reach && o.kind != RaidObjKind::Collect) continue;
         for (auto& p : st.players) {
             if (p.status != uint8_t(RaidStatus::InRaid) || p.objDone[k]) continue;
@@ -556,6 +569,31 @@ void Raid::tickObjectives(Simulation& sim) {
             if (o.kind == RaidObjKind::Collect) for (auto& [it, n] : p.secured) if (it == o.item) have += n;
             if (have > p.objProgress[k]) progress(sim, p.slot, int(k), have - p.objProgress[k]);
         }
+    }
+}
+
+// Defend objectives: progress = the most defended units (own or allied, alive) seen at once; once `count` were there,
+// fewer than `count` fails the raid for that player (status "failed", objective "lost"). Extracting with them alive
+// completes it (Raid::resolve).
+int Raid::defenders(Simulation& sim, uint8_t player, uint16_t type) const {
+    int n = 0;
+    sim.world().each<Unit, Owner>([&](Entity, Unit& u, Owner& o) {
+        if (u.type == type && u.hp.raw > 0 && !(u.flags & kUnitOffMap) && !m_->hostile(sim, player, o.player)) ++n;
+    });
+    return n;
+}
+
+void Raid::tickDefend(Simulation& sim, size_t k) {
+    RaidStore& st = *store(sim);
+    const RaidObjectiveDef& o = R_.objectives[k];
+    for (auto& p : st.players) {
+        if (p.status != uint8_t(RaidStatus::InRaid) || p.objDone[k]) continue;
+        const int alive = defenders(sim, p.slot, o.type);
+        if (alive > p.objProgress[k]) p.objProgress[k] = std::min(alive, o.count);
+        if (p.objProgress[k] < o.count || alive >= o.count) continue;
+        p.objDone[k] = 2;
+        sim.emit({kEvRaidObjective, p.slot, kNullEntity, kNullEntity, int64_t(k) | int64_t(2) << 16, {}});
+        resolve(sim, p.slot, RaidStatus::Failed);
     }
 }
 
@@ -621,7 +659,7 @@ std::string Raid::receiptJson(Simulation& sim, const RaidPlayer& p) const {
     j.set("ms", Json::number(int64_t(end >= st.phaseTick ? end - st.phaseTick : 0) * 1000 / int64_t(sim.tickRate())));   // raid time
     j.set("winner", Json::fromBool(st.phase == uint8_t(RaidPhase::Over) && st.winnerTeam > 0 && st.winnerTeam == p.team));
     bool req = out;
-    for (size_t k = 0; k < R_.objectives.size(); ++k) if (R_.objectives[k].required && !p.objDone[k]) req = false;
+    for (size_t k = 0; k < R_.objectives.size(); ++k) if (R_.objectives[k].required && p.objDone[k] != 1) req = false;
     j.set("completed", Json::fromBool(req));
     j.set("value", Json::number(securedValue(p)));
     auto items = [&](const std::vector<std::pair<uint16_t, int>>& v) {
@@ -637,7 +675,8 @@ std::string Raid::receiptJson(Simulation& sim, const RaidPlayer& p) const {
     Json objs = Json::object();
     for (size_t k = 0; k < R_.objectives.size(); ++k) {
         Json o = Json::object();
-        o.set("done", Json::fromBool(p.objDone[k] != 0));
+        o.set("done", Json::fromBool(p.objDone[k] == 1));
+        if (p.objDone[k] == 2) o.set("lost", Json::fromBool(true));
         o.set("progress", Json::number(int64_t(p.objProgress[k])));
         o.set("count", Json::number(int64_t(R_.objectives[k].count)));
         objs.set(R_.objectives[k].id, o);
@@ -645,6 +684,9 @@ std::string Raid::receiptJson(Simulation& sim, const RaidPlayer& p) const {
     j.set("objectives", objs);
     j.set("kills", Json::number(int64_t(p.kills)));
     if (p.status == uint8_t(RaidStatus::Dead)) j.set("killer", Json::number(int64_t(p.killer)));
+    if (p.status == uint8_t(RaidStatus::Failed))   // why: the first lost defend objective
+        for (size_t k = 0; k < R_.objectives.size(); ++k)
+            if (p.objDone[k] == 2) { j.set("reason", Json::string(R_.objectives[k].id)); break; }
     // reward bundle for the meta (asset id -> amount): only what was brought out
     std::vector<std::pair<std::string, int64_t>> bundle;
     auto add = [&](const std::string& a, int64_t n) {
@@ -656,7 +698,7 @@ std::string Raid::receiptJson(Simulation& sim, const RaidPlayer& p) const {
         for (auto& [it, n] : p.secured) add(R_.itemAsset[it], n);
         for (size_t r = 0; r < p.securedRes.size(); ++r) add(rules.resources[r].id, p.securedRes[r].toInt());
         for (size_t k = 0; k < R_.objectives.size(); ++k)
-            if (p.objDone[k]) for (auto& [a, n] : R_.objectives[k].reward) add(a, n);
+            if (p.objDone[k] == 1) for (auto& [a, n] : R_.objectives[k].reward) add(a, n);
     }
     std::sort(bundle.begin(), bundle.end());
     Json rw = Json::object();

@@ -36,6 +36,7 @@ struct ProgPerkExt {
     std::vector<projectile::ProjectileModifier> bullets;   // "bullet": {"modifiers": [...]} split / ricochet / flyThrough / damage / speed / radius
     int16_t onHit = -1;                                    // "onHit": effects payload applied to targets the bearer hits
     Fixed onHitChance = Fixed::fromInt(1);
+    uint32_t everyNth = 0;                                 // "everyNth": bullet / onHit only on every Nth shot of the bearer (0: every shot)
 };
 
 // A projectile weapon of a progression unit with a set of bullet perks: the weapon's own program followed by each
@@ -72,6 +73,10 @@ struct ProgressionRules {
     std::vector<int64_t> bulletPerks;          // perks with bullet modifiers (ascending id), at most 6
     std::map<int64_t, ProgPerkExt> ext;        // engine keys by perk id
     std::vector<ProgFlightVariant> variants;   // Projectile::weapon = -2 - index
+    std::vector<uint32_t> bulletMaskOf;        // per unit type: the bullet perks (bits of bulletPerks) that can apply to it
+    bool restrictedVariants = false;           // variants only for the bullet perks a type can own (the full set passed 126)
+    bool anyNth = false;                       // a perk uses "everyNth" (units count their shots: hashed / saved)
+    bool pauseOnOffer = false;                 // "pauseOnOffer": gameplay pauses while an offer is open (single-player maps)
     std::map<uint64_t, int> variantOf;         // (type << 40 | weapon << 32 | mask) -> index
     Json decks;                                // "decks": payloads by player (optional)
     Json defaultDeck;                          // "defaultDeck": the payload every player gets without one

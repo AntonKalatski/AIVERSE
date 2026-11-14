@@ -114,7 +114,9 @@ Vehicles the hero drives: rules `driving`, docs/driving.md.
   "abilities": {"hold": ["laser"], "rootWhileCasting": false},
   "squad": {"types": ["guard"], "size": 4, "radius": 2.5, "tolerance": 0.5, "rotate": true, "fireWhileMoving": false, "repath": 0.25},
   "escape": {"duration": 5, "cooldown": 30, "pause": true},
-  "bot": {"progression": false},
+  "bot": {"progression": false, "orbRange": 14, "pathCheck": false,
+          "kite": {"swarmHealth": 0.6, "swarmCount": 6, "hitShare": 0.05, "margin": 2.5},
+          "pickups": [{"type": "medkit", "hurtBelow": 0.7, "range": 20}]},
   "autoFire": {"enabled": true, "whileMoving": false, "cone": 360, "range": 0, "lineOfFire": true,
                "retarget": "nearest", "interval": 0.2, "switchMargin": 0.5, "preferArmed": true,
                "priority": ["drone"], "movingSpeed": 0.1}
@@ -122,6 +124,27 @@ Vehicles the hero drives: rules `driving`, docs/driving.md.
 ```
 
 `"autoFire": false` switches auto-fire off (aim or the fire bit only).
+
+Squad followers fire while they walk: an auto-targeting unit in range normally stops to shoot, a follower keeps
+walking to its slot (with `squad.fireWhileMoving` it keeps shooting while the hero moves too).
+
+### Bots (`bot`)
+
+Tuning of the computer pilot (raid bots, skirmish bots with `bot.progression`, any `steerCommand` caller). Every key
+is optional and the defaults are the values the pilot always used, so games without them play exactly as before.
+
+| key | default | meaning |
+|---|---|---|
+| `progression` | false | skirmish bots walk to xp orbs / summon circles first (raid bots always do) |
+| `orbRange` | 14 | xp orbs this close are collected before other goals; `"weapon"`: the hero's weapon range (+ range stat) |
+| `kite.swarmHealth` | 0.6 | below this health share a crowd of armed foes is a threat (the hero backs off instead of standing in it) |
+| `kite.swarmCount` | 6 | armed foes about to reach the hero that make a crowd |
+| `kite.hitShare` | 0.05 | a foe whose single hit is this share of max health is a threat at any health |
+| `kite.margin` | 2.5 | a foe inside its weapon range + margin is "about to reach" the hero |
+| `pickups` | [] | `{"type", "hurtBelow" (share, 1 = always), "range"}`: units of that type (any owner, e.g. heal / magnet pickups a script spawns) the hero walks over first while its health is below `hurtBelow` |
+| `pathCheck` | false | walk straight only when the whole body fits the line (else follow a path), and skip goals it cannot reach (pickups, orbs, raid goals: the nearest reachable of up to 4 is taken; none: the next kind of goal) instead of walking into a wall |
+
+The map can change these per map (map `rules`, docs/game-format.md § Per-map rules overrides).
 
 ## game.json (client)
 
@@ -188,4 +211,4 @@ wheel / pinch zoom stays inside min / max. `AIVERSE_TOUCH_CONTROLS=1` draws the 
 Platform gamepad polling (pads feed `TopDownFrameInput` only), an aim-drag indicator drawn in the world (on screen a
 knob off the button shows the drag), escape preview effects beyond the move marker (Drone Fall's grayscale camera / telegraph
 circle: game view work), squad members walking as one rigid group (they path to their slots individually),
-mode rules for escape (PvE only is the game's data decision: leave `escape` out of PvP rules), planets.
+planets. Escape per mode / map: map `rules` (`{"topDown": {"escape": null}}` on a PvP map).

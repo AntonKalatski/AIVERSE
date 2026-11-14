@@ -26,7 +26,8 @@ class RtsModule;
 
 enum class RaidPhase : uint8_t { Briefing = 0, Running = 1, Over = 2 };
 enum class RaidPointPhase : uint8_t { Locked = 0, Sleep = 1, Inbound = 2, Open = 3, Departing = 4 };
-enum class RaidStatus : uint8_t { Waiting = 0, InRaid = 1, Extracted = 2, Dead = 3, TimedOut = 4, Abandoned = 5 };
+enum class RaidStatus : uint8_t { Waiting = 0, InRaid = 1, Extracted = 2, Dead = 3, TimedOut = 4, Abandoned = 5,
+                                  Failed = 6 /*a defend objective's units were destroyed (receipt "reason")*/ };
 // sub-kinds of kEvRaidChannel / kEvRaidInteract (value >> 16)
 enum class RaidChannelEv : uint8_t { Start = 0, Interrupted = 1, Done = 2 };
 // raid commands: kCmdRaid param = op | point index << 8 (call: -1 << 8 = the nearest callable point)
@@ -59,7 +60,7 @@ struct RaidPlayer {
     std::vector<std::pair<uint16_t, int>> secured, lost;   // item -> count (sorted by item)
     std::vector<Fixed> carriedRes, securedRes;             // per resource
     std::vector<int> objProgress;                          // per objective
-    std::vector<uint8_t> objDone;                          // per objective: 0 open, 1 done
+    std::vector<uint8_t> objDone;                          // per objective: 0 open, 1 done, 2 lost (defend: destroyed)
     Fixed hpSum{};                                         // raiders' hp at the end of the last raid tick (interrupts)
     bool hit = false;                                      // raiders lost hp this tick
 };
@@ -111,6 +112,8 @@ private:
     void tickPickup(Simulation& sim);
     void tickObjectives(Simulation& sim);
     void tickDeaths(Simulation& sim);
+    void tickDefend(Simulation& sim, size_t objective);
+    int defenders(Simulation& sim, uint8_t player, uint16_t type) const;   // own / allied living units of a type
     void finish(Simulation& sim);
     void setPointPhase(Simulation& sim, size_t i, RaidPointPhase ph, uint32_t until);
     void secureCarried(Simulation& sim, RaidPlayer& p);

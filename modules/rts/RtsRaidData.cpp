@@ -97,7 +97,12 @@ RaidObjectiveDef parseObjective(const Rules& r, const Json& j, const std::string
     } else if (k == "kill") { o.kind = RaidObjKind::Kill; if (j.has("type")) o.type = typeRef(r, j.getStr("type"), where + ".type"); }
     else if (k == "interact") { o.kind = RaidObjKind::Interact; if (j.has("type")) o.type = typeRef(r, j.getStr("type"), where + ".type"); }
     else if (k == "script") o.kind = RaidObjKind::Script;
-    else fail(where + ".kind", "collect, reach, kill, interact or script expected");
+    else if (k == "defend") {   // units of this type (own or allied) must survive: losing them fails the raid
+        o.kind = RaidObjKind::Defend;
+        if (!j.has("type")) fail(where + ".type", "the defended unit type expected");
+        o.type = typeRef(r, j.getStr("type"), where + ".type");
+    }
+    else fail(where + ".kind", "collect, reach, kill, interact, script or defend expected");
     o.count = int(j.getInt("count", 1));
     if (o.count < 1 || o.count > 100000) fail(where + ".count", "must be 1..100000");
     o.shared = j.getBool("shared", false);

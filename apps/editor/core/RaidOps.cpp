@@ -53,7 +53,7 @@ Json raidInfo(const Workspace& ws) {
     }
     r.set("points", pts);
     Json objs = Json::array();
-    static const char* kk[] = {"collect", "reach", "kill", "interact", "script"};
+    static const char* kk[] = {"collect", "reach", "kill", "interact", "script", "defend"};
     for (auto& o : R.objectives) {
         Json j = Json::object();
         j.set("id", str(o.id)); j.set("text", str(o.text)); j.set("kind", str(kk[int(o.kind)]));

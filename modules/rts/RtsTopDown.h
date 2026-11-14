@@ -87,6 +87,18 @@ struct TopDownRules {
     } escape;
     bool botProgression = false;          // "bot": {"progression": true}: skirmish bots walk to xp orbs / summon circles
                                           // first (raid bots always do)
+    // computer pilot tuning ("bot", docs/topdown.md § Bots); the defaults are the original fixed values
+    struct BotPickup { uint16_t type = 0xFFFF; int64_t hurtBelowMilli = 1000; Fixed range = Fixed::fromInt(20); };
+    struct Bot {
+        Fixed orbRange = Fixed::fromInt(14);   // "orbRange": xp orbs this close are collected first ("weapon": the hero's weapon range)
+        bool orbWeapon = false;
+        int64_t swarmHealthMilli = 600;        // "kite.swarmHealth": below this health share a crowd is a threat too
+        int swarmCount = 6;                    // "kite.swarmCount": armed foes in reach that make a crowd
+        int64_t hitShareMilli = 50;            // "kite.hitShare": one hit of this share of max health is a threat at any health
+        Fixed margin = Fixed::fromRatio(5, 2); // "kite.margin": a foe inside its weapon range + margin is about to reach the hero
+        std::vector<BotPickup> pickups;        // "pickups": units (any owner) to walk over when hurt (heal / magnet pickups)
+        bool pathCheck = false;                // "pathCheck": walk straight only when the body fits, skip unreachable goals
+    } bot;
     bool extended = false;                // any of the blocks above: extra pilot state is hashed / saved
 };
 
@@ -139,6 +151,11 @@ public:
     // until within `stand` (then stop, so channels / interactions work), and give ground to armed foes that come
     // closer than `kite` (0: 35% of the weapon range) on the way. false: the input would not change.
     bool steerCommand(Simulation& sim, uint8_t player, Vec3 goal, Fixed stand, Command& out, Fixed kite = Fixed{});
+    // Bot helpers ("bot" block): how far the hero collects xp orbs; the nearest reachable pickup to walk over now
+    // (hurt below its threshold); whether the hero can walk to a point (always true without "pathCheck").
+    Fixed botOrbRange(Simulation& sim, uint8_t player) const;
+    bool botPickupGoal(Simulation& sim, uint8_t player, Vec3& goal, Fixed& stand) const;
+    bool reachable(Simulation& sim, Entity hero, Vec3 to) const;
     // squad followers of a player's hero (alive, slot order); isFollower: a squad member of anyone
     std::vector<Entity> squadOf(Simulation& sim, uint8_t player) const;
     bool isFollower(Simulation& sim, Entity e) const;
@@ -174,6 +191,7 @@ private:
     void doEscape(Simulation& sim, TopDownPilot& p, uint8_t player, Vec3 to);
     void freeFire(Simulation& sim, TopDownPilot& p, uint8_t owner);
     Vec3 walkDir(Simulation& sim, Entity hero, Vec3 to) const;   // straight when walkable, else the next path waypoint
+    bool bodyLine(Simulation& sim, Vec3 from, Vec3 to, Fixed radius, uint8_t layer) const;   // the centre line and both body edges walkable
     bool holds(Simulation& sim, Entity hero, int index) const;   // a hold ability (repeats while pressed)
     bool walkable(Simulation& sim, Vec3 from, Vec3 to, Fixed radius, uint8_t layer, Vec3* stop) const;   // straight walk; stop: before the first block
     void aimHero(Simulation& sim, TopDownPilot& p, uint8_t player);

@@ -747,3 +747,107 @@ TEST(topdown_speed_camera_zooms_out_and_looks_ahead) {
     for (int i = 0; i < 30; ++i) { h2.x += 10 * dt; plain.updateCamera(cam, h2, true, dt, 200, 100); }
     CHECK(std::abs(cam.distance - 16) < 0.01f && std::abs(cam.target.x - h2.x) < 0.01f);
 }
+
+// ---------------------------------------------------------------- squad followers fire on the move
+TEST(topdown_squad_followers_keep_walking_while_they_fire) {
+    // a gunner as fast as the hero, its weapon in range of a row of targets along the hero's path: it shoots them
+    // and still keeps its slot (an auto-targeting unit in range used to stop moving, the follower fell behind)
+    std::string rules = tdRules(R"("squad": {"types": ["gunner"], "radius": 1.5, "fireWhileMoving": true},)");
+    rules.replace(rules.find(R"("dummy":)"), 0, R"("gunner": {"health": {"max": 300}, "move": {"speed": 6, "radius": 0.4}, "sight": 8, "weapons": [{"range": 6, "damage": 5, "cooldown": 0.25}]},
+    )");
+    auto sim = makeSimJson(rules, topDownMap(R"({"type":"drone","owner":1,"pos":[3.5,8.5]},{"type":"gunner","owner":1,"pos":[2.5,8.5]},
+        {"type":"dummy","owner":2,"pos":[8.5,13.5]},{"type":"dummy","owner":2,"pos":[14.5,13.5]},{"type":"dummy","owner":2,"pos":[20.5,13.5]})", false));
+    run(*sim, 0.5);
+    auto* td = mod(*sim).topDown();
+    auto squad = td->squadOf(*sim, 1);
+    CHECK(squad.size() == 1);
+    Fixed worst{};
+    steer(*sim, 1, kEast, 1000);
+    for (int i = 0; i < 12; ++i) {   // 3 s east: the hero walks ~17 cells
+        run(*sim, 0.25);
+        const Fixed d = (tdPos(*sim, squad[0]) - tdPos(*sim, td->heroOf(*sim, 1))).xz().length();
+        if (i >= 4 && d > worst) worst = d;
+    }
+    CHECK(tdPos(*sim, td->heroOf(*sim, 1)).x > Fixed::fromInt(16));
+    CHECK(worst < Fixed::fromInt(4));   // kept up with the hero (slot radius 1.5)
+    int hurt = 0;
+    sim->world().each<game::Unit, Owner>([&](Entity, game::Unit& u, Owner& o) {
+        if (o.player == 2 && u.hp < Fixed::fromInt(100000)) ++hurt;
+    });
+    CHECK(hurt >= 2);   // and shot on the way
+}
+
+// A state saved before the match end and loaded into a simulation that already reached it: the frozen outcome comes
+// from the save (none here), so the computer players keep playing and the match ends identically (headless
+// --verify-restore-at windows across the end desynced on the serialized pass).
+TEST(topdown_load_before_the_end_restores_no_outcome) {
+    const std::string map = topDownMap(R"({"type":"drone","owner":1,"pos":[4.5,8.5]},{"type":"mover","owner":2,"pos":[6.5,8.5]})", false);
+    auto sim = makeSimJson(kTopDownRules, map);
+    sim->world().get<game::Unit>(findType(*sim, "mover", 2)).hp = Fixed::fromInt(1);
+    CHECK(sim->result() == 0);
+    const std::string save = sim->serialize();
+    std::vector<uint64_t> sums;
+    for (int i = 0; i < 40; ++i) { sim->step(); sums.push_back(sim->checksum()); }
+    CHECK(sim->result() == 1 && mod(*sim).outcome(*sim));
+    std::string err;
+    CHECK(sim->deserialize(save, &err));
+    CHECK(sim->result() == 0 && !mod(*sim).outcome(*sim));
+    for (int i = 0; i < 40; ++i) { sim->step(); CHECK(sim->checksum() == sums[size_t(i)]); }
+    CHECK(sim->result() == 1);
+    // saved after the end: the outcome travels with the state
+    const std::string late = sim->serialize();
+    auto copy = makeSimJson(kTopDownRules, map);
+    CHECK(copy->deserialize(late, &err) && copy->result() == 1 && mod(*copy).outcomeBlob(*copy) == mod(*sim).outcomeBlob(*sim));
+}
+
+// Computer pilot tuning (rules topDown.bot): orb range from the weapon, earlier crowd kiting, heal pickups when hurt,
+// and goals behind walls skipped ("pathCheck").
+TEST(topdown_bot_tuning_pickups_kiting_and_reachability) {
+    // 32x16, a closed box (x 18..22, y 6..10) with a pickup inside; another pickup in the open, farther away
+    std::string rows;
+    for (int y = 0; y < 16; ++y) {
+        std::string r(32, '.');
+        if (y >= 6 && y <= 10) { r[18] = r[22] = '#'; if (y == 6 || y == 10) for (int x = 18; x <= 22; ++x) r[size_t(x)] = '#'; }
+        rows += std::string(y ? "," : "") + "\"" + r + "\"";
+    }
+    auto boxMap = [&](const std::string& entities) {
+        return R"({"size":[32,16],"players":[{"name":"A","team":1},{"name":"B","team":2}],"terrain":{"rows":[)" + rows + "]},\"entities\":[" + entities + "]}";
+    };
+    const std::string medkit = R"("medkit": {"health": {"max": 1}, "move": {"speed": 0, "radius": 0.3}, "sight": 1},
+    )";
+    auto rulesWith = [&](const std::string& bot) {
+        std::string r = tdRules(bot);
+        r.replace(r.find(R"("dummy":)"), 0, medkit);
+        return r;
+    };
+    const std::string ents = R"({"type":"drone","owner":1,"pos":[14.5,8.5]},{"type":"medkit","owner":0,"pos":[20.5,8.5]},{"type":"medkit","owner":0,"pos":[4.5,8.5]},{"type":"dummy","owner":2,"pos":[30.5,1.5]})";
+    const std::string bot = R"("bot": {"orbRange": "weapon", "kite": {"swarmHealth": 0.9, "swarmCount": 2}, "pickups": [{"type": "medkit", "hurtBelow": 0.7, "range": 30}], "pathCheck": true},)";
+    auto sim = makeSimJson(rulesWith(bot), boxMap(ents));
+    auto* td = mod(*sim).topDown();
+    const auto& B = td->rules().bot;
+    CHECK(B.orbWeapon && B.swarmHealthMilli == 900 && B.swarmCount == 2 && B.pickups.size() == 1 && B.pathCheck);
+    CHECK(td->botOrbRange(*sim, 1) == Fixed::fromInt(6));   // the drone's weapon range
+    Vec3 g; Fixed s;
+    CHECK(!td->botPickupGoal(*sim, 1, g, s));   // full health: no pickup run
+    const Entity hero = td->heroOf(*sim, 1);
+    sim->world().get<game::Unit>(hero).hp = Fixed::fromInt(300);
+    CHECK(td->botPickupGoal(*sim, 1, g, s) && g.x == Fixed::fromRatio(45, 10));   // the boxed one is nearer but unreachable
+    CHECK(!td->reachable(*sim, hero, {Fixed::fromRatio(205, 10), Fixed{}, Fixed::fromRatio(85, 10)}));
+    // without pathCheck the nearest one wins (the old behaviour)
+    auto plain = makeSimJson(rulesWith(R"("bot": {"pickups": [{"type": "medkit", "hurtBelow": 0.7, "range": 30}]},)"), boxMap(ents));
+    plain->world().get<game::Unit>(mod(*plain).topDown()->heroOf(*plain, 1)).hp = Fixed::fromInt(300);
+    CHECK(mod(*plain).topDown()->botPickupGoal(*plain, 1, g, s) && g.x == Fixed::fromRatio(205, 10));
+    CHECK(mod(*plain).topDown()->botOrbRange(*plain, 1) == Fixed::fromInt(14));
+    // kiting: two armed foes close by at 80% health are a crowd with swarmHealth 0.9 / swarmCount 2, not by default
+    const std::string crowd = R"({"type":"drone","owner":1,"pos":[8.5,3.5]},{"type":"mover","owner":2,"pos":[9.5,3.5]},{"type":"mover","owner":2,"pos":[8.5,4.5]})";
+    auto k1 = makeSimJson(rulesWith(bot), boxMap(crowd));
+    auto k0 = makeSimJson(rulesWith(""), boxMap(crowd));
+    Command c;
+    for (auto* k : {k1.get(), k0.get()}) { k->step(); k->world().get<game::Unit>(mod(*k).topDown()->heroOf(*k, 1)).hp = Fixed::fromInt(480); }   // a step fills the spatial hash
+    CHECK(mod(*k1).topDown()->steerCommand(*k1, 1, tdPos(*k1, mod(*k1).topDown()->heroOf(*k1, 1)), Fixed::fromInt(1000), c));
+    CHECK(!mod(*k0).topDown()->steerCommand(*k0, 1, tdPos(*k0, mod(*k0).topDown()->heroOf(*k0, 1)), Fixed::fromInt(1000), c));
+    // errors
+    bool threw = false;
+    try { makeSimJson(rulesWith(R"("bot": {"orbRange": "far"},)"), boxMap(ents)); } catch (const std::exception& e) { threw = std::string(e.what()).find("topDown.bot.orbRange") != std::string::npos; }
+    CHECK(threw);
+}

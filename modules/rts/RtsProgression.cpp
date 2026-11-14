@@ -552,10 +552,18 @@ bool Progression::botGoal(Simulation& sim, uint8_t player, Vec3& goal, Fixed& st
         if (best) { goal = best->position; stand = fxMax(best->radius - Fixed::fromRatio(1, 2), Fixed::fromRatio(1, 4)); return true; }
     }
     const lib::genre::XpOrb* orb = nullptr;
+    const TopDown* td = m_->topDown();
+    const bool check = td && td->active() && td->rules().bot.pathCheck;   // rules topDown.bot.pathCheck: skip orbs it cannot walk to
+    std::vector<const lib::genre::XpOrb*> near;
     for (auto& o : st->pickups.orbs) {   // orbs are kept in id order: ties go to the older one
         if (o.owner != 0 && o.owner != player) continue;
         if (d2(o.position) > orbRange * orbRange) continue;
+        if (check) { near.push_back(&o); continue; }
         if (!orb || d2(o.position) < d2(orb->position)) orb = &o;
+    }
+    if (check) {
+        std::stable_sort(near.begin(), near.end(), [&](auto* a, auto* b) { return d2(a->position) < d2(b->position); });
+        for (size_t i = 0; i < near.size() && i < 4 && !orb; ++i) if (td->reachable(sim, h, near[i]->position)) orb = near[i];
     }
     if (!orb) return false;
     goal = orb->position;
@@ -662,11 +670,12 @@ int16_t Progression::hitPayload(Simulation& sim, Entity source) const {
     const ProgUnit* pu = st ? st->find(source) : nullptr;
     const lg::PlayerProgress* p = pu ? lg::progressOf(st->perks, pu->player) : nullptr;
     if (!p) return -1;
-    // the first owned perk (occurrence order) with an on-hit payload that reaches this unit
+    // the first owned perk (occurrence order) with an on-hit payload that reaches this unit (everyNth: on that shot)
     for (auto& o : p->mods) {
         if (!lg::appliesTo(o, pu->slot)) continue;
         auto x = R_->ext.find(o.perk);
         if (x == R_->ext.end() || x->second.onHit < 0) continue;
+        if (x->second.everyNth && pu->shots % x->second.everyNth != 0) continue;
         const auto& def = R_->defs.perks.at(o.perk);
         if (def.bearer && def.bearer != pu->bearer) continue;
         if (x->second.onHitChance < Fixed::fromInt(1) && !(sim.rng().unit() < x->second.onHitChance)) return -1;
@@ -693,8 +702,10 @@ void Progression::beforeShot(Simulation& sim, Projectile& pr) const {
     for (size_t k = 0; k < R_->bulletPerks.size(); ++k) {
         const auto& def = R_->defs.perks.at(R_->bulletPerks[k]);
         if (def.bearer && def.bearer != pu->bearer) continue;
+        if (const uint32_t n = R_->ext.at(R_->bulletPerks[k]).everyNth; n && pu->shots % n != 0) continue;   // not this shot
         for (auto& o : p->mods) if (o.perk == R_->bulletPerks[k] && lg::appliesTo(o, pu->slot)) { mask |= 1u << k; break; }
     }
+    if (R_->restrictedVariants && pr.sourceType < R_->bulletMaskOf.size()) mask &= R_->bulletMaskOf[pr.sourceType];
     if (!mask) return;
     const int v = R_->variantFor(pr.sourceType, pr.weapon, mask);
     if (v >= 0) pr.weapon = int8_t(-2 - v);
@@ -720,6 +731,27 @@ void Progression::afterShot(Simulation& sim, Projectile& pr) const {
     }
 }
 
+void Progression::onShot(Simulation& sim, Entity shooter) {
+    if (!R_->anyNth) return;
+    ProgressionStore* st = store(sim);
+    if (ProgUnit* pu = st ? st->find(shooter) : nullptr) ++pu->shots;
+}
+
+int Progression::fireCount(Simulation& sim, Entity shooter) const {
+    const ProgressionStore* st = store(sim);
+    if (!st || !st->find(shooter)) return 1;
+    const int64_t n = statOf(sim, shooter, lg::perk_stat::FireCount, 1000);   // milli bullets, like every stat
+    return int(std::clamp<int64_t>(n / 1000, 1, 8));
+}
+
+bool Progression::pausesGameplay(Simulation& sim) const {
+    if (!R_->pauseOnOffer) return false;
+    const ProgressionStore* st = store(sim);
+    if (!st) return false;
+    for (auto& [player, p] : st->perks.players) if (p.offer.open) return true;
+    return false;
+}
+
 // ================================================================= hash / save
 
 void Progression::hash(Simulation& sim, Hasher& h) const {
@@ -730,7 +762,7 @@ void Progression::hash(Simulation& sim, Hasher& h) const {
     h.u64(lg::progressionHash(st->pickups));
     h.u64(lg::progressionHash(st->summons));
     h.u32(uint32_t(st->units.size()));
-    for (auto& u : st->units) { h.u64(u.entity); h.u32(u.player); h.i32(u.slot); h.u32(u.bearer); }
+    for (auto& u : st->units) { h.u64(u.entity); h.u32(u.player); h.i32(u.slot); h.u32(u.bearer); if (R_->anyNth) h.u32(u.shots); }
     for (auto m : st->magnet) h.u32(m);
     for (auto k : st->kills) h.i64(k);
     h.u32(uint32_t(st->orbQueue.size()));
@@ -747,6 +779,7 @@ void Progression::io(Simulation& sim, Archive& a) {
     a(n);
     if (!a.writing()) { if (n > lg::kPickupMaxSpawns) { a.fail(); return; } st->orbQueue.resize(n); }
     for (auto& o : st->orbQueue) a(o.owner, o.value, o.position);
+    if (R_->anyNth) for (auto& u : st->units) a(u.shots);   // everyNth counters (games without such perks: not saved)
     if (!a.writing()) {
         const size_t slots = sim.players().size() + 1;
         bool sorted = std::is_sorted(st->units.begin(), st->units.end(), [](const ProgUnit& x, const ProgUnit& y) { return x.entity < y.entity; });

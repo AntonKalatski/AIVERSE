@@ -33,16 +33,32 @@ void raidBotThink(Simulation& sim, RtsModule& m, uint8_t player) {
     if (raiders.empty()) return;
     const Vec3 at = w.get<Transform>(raiders[0]).pos;
     const bool hero = myHero.valid() && td->isHero(sim, raiders[0]);
+    // hurt: heal / magnet pickups first (rules topDown.bot.pickups)
+    if (hero) { Vec3 g; Fixed s; if (td->botPickupGoal(sim, player, g, s)) { steer(g, s); return; } }
     // progression first (rules "progression"): a banked level -> a summon circle, else xp orbs close by
     if (Progression* pg = m.progression(); hero && pg && pg->active()) {
         Vec3 g; Fixed s;
-        if (pg->botGoal(sim, player, g, s)) { steer(g, s); return; }
+        if (pg->botGoal(sim, player, g, s, td->botOrbRange(sim, player))) { steer(g, s); return; }
     }
     bool have = false;
     Vec3 goal{};
     Fixed stand = Fixed::fromRatio(1, 2);   // close enough
+    // A hero with topDown.bot.pathCheck skips goals it cannot walk to (the nearest reachable one of a group wins);
+    // everyone else takes the nearest goal as before.
+    const bool checkPaths = hero && td->rules().bot.pathCheck;
+    struct Cand { Vec3 pos; Fixed radius; };
+    std::vector<Cand> cands;
     auto consider = [&](Vec3 pos, Fixed radius) {
+        if (checkPaths) { cands.push_back({pos, radius}); return; }
         if (!have || d2(at, pos.x, pos.z) < d2(at, goal.x, goal.z)) { goal = pos; stand = radius; have = true; }
+    };
+    auto settle = [&]() {   // checkPaths: the nearest reachable candidate so far (at most 4 path checks)
+        if (have || cands.empty()) return have;
+        std::stable_sort(cands.begin(), cands.end(), [&](const Cand& a, const Cand& b) { return d2(at, a.pos.x, a.pos.z) < d2(at, b.pos.x, b.pos.z); });
+        for (size_t i = 0; i < cands.size() && i < 4 && !have; ++i)
+            if (td->reachable(sim, raiders[0], cands[i].pos)) { goal = cands[i].pos; stand = cands[i].radius; have = true; }
+        cands.clear();
+        return have;
     };
     // usable interactables of a type / objective
     auto interactables = [&](auto&& want) {
@@ -59,7 +75,7 @@ void raidBotThink(Simulation& sim, RtsModule& m, uint8_t player) {
     for (size_t k = 0; k < R.objectives.size(); ++k) {
         bool need = R.objectives[k].required;
         for (auto& pt : R.points) for (auto& q : pt.requires_) need |= q == R.objectives[k].id;
-        if (need && !p->objDone[k]) needed.push_back(int(k));
+        if (need && !p->objDone[k] && R.objectives[k].kind != RaidObjKind::Defend) needed.push_back(int(k));   // defend: nothing to walk to
     }
     for (int k : needed) {
         const RaidObjectiveDef& o = R.objectives[size_t(k)];
@@ -68,7 +84,7 @@ void raidBotThink(Simulation& sim, RtsModule& m, uint8_t player) {
             interactables([&](uint16_t t) { return t == o.type || R.interact[t].objective == o.id; });
         else if (o.kind == RaidObjKind::Collect) {
             for (auto& g : m.state(sim).mech.groundItems) if (g.item == o.item) consider(g.pos, Fixed::fromRatio(1, 2));
-            if (!have) interactables([&](uint16_t t) { return R.interact[t].loot >= 0; });
+            if (!have && cands.empty()) interactables([&](uint16_t t) { return R.interact[t].loot >= 0; });
         } else if (o.kind == RaidObjKind::Kill) {
             Entity best = kNullEntity;
             Fixed bd{};
@@ -87,18 +103,18 @@ void raidBotThink(Simulation& sim, RtsModule& m, uint8_t player) {
                 return;
             }
         }
-        if (have) break;
+        if (settle()) break;
     }
     // 2. loot while there is room and time (more than a third of the clock left)
     const bool time = !st->endTick || (st->endTick - sim.tick()) * 3 > (st->endTick - st->phaseTick);
     bool room = false;
     for (Entity e : raiders) if (auto* bag = w.tryGet<ItemBag>(e)) room |= std::find(bag->items.begin(), bag->items.end(), int16_t(-1)) != bag->items.end();
-    if (!have && time && room) {
+    if (!settle() && time && room) {
         for (auto& g : m.state(sim).mech.groundItems) consider(g.pos, Fixed::fromRatio(1, 2));
         interactables([&](uint16_t t) { return R.interact[t].loot >= 0; });
     }
     // 3. extraction
-    if (!have) {
+    if (!settle()) {
         int callable = -1;
         for (size_t i = 0; i < R.points.size(); ++i) {
             if (!raid->canUsePoint(sim, player, int(i))) continue;
@@ -109,13 +125,13 @@ void raidBotThink(Simulation& sim, RtsModule& m, uint8_t player) {
                 consider({ps.x, Fixed{}, ps.z}, R.points[i].radius - Fixed::fromRatio(1, 2));
             else if (ph == RaidPointPhase::Sleep && R.points[i].call && callable < 0) callable = int(i);
         }
-        if (!have && callable >= 0) {
+        if (!settle() && callable >= 0) {
             Command c; c.type = kCmdRaid; c.player = player; c.param = kRaidCall | int64_t(callable) << 8;
             sim.submit(c);
             if (!hero) return;   // a hero keeps steering (kiting) while it waits for the call
         }
     }
-    if (!have) { if (hero) steer(at, Fixed::fromInt(1000)); return; }   // nothing to do: stand (kiting only)
+    if (!settle()) { if (hero) steer(at, Fixed::fromInt(1000)); return; }   // nothing to do: stand (kiting only)
     if (hero) { steer(goal, fxMax(stand, Fixed::fromRatio(1, 4))); return; }
     if (dist2D(at, {goal.x, at.y, goal.z}) <= fxMax(stand, Fixed::fromRatio(1, 4))) {
         // arrived: stand still (a channel needs the raider inside)

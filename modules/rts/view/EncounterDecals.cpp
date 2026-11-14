@@ -43,7 +43,7 @@ void appendEncounterDecals(Simulation& sim, RtsModule& m, const RtsView& view, u
     const uint32_t tick = sim.tick();
     for (auto& c : st->casts) {
         const lib::genre::TelegraphView v = enc->view(c, tick);
-        if (!v.live) continue;
+        if (!v.live || (c.attack < enc->rules().attacks.size() && !enc->rules().attacks[c.attack].decal)) continue;   // "decal": false
         const Vec3 o{v.pose.origin.x, Fixed{}, v.pose.origin.y};
         if (viewer && !m.isVisible(sim, viewer, o)) continue;
         const bool own = viewer && c.owner && m.teamOf(sim, c.owner) == viewerTeam;

@@ -22,7 +22,7 @@ enum class RaidScope : uint8_t { Player, Point };          // channel progress p
 enum class RaidContest : uint8_t { Block, Ignore, Reset };  // hostile raider inside: pause, nothing, reset progress
 enum class RaidLeave : uint8_t { Reset, Pause };            // channelling raider steps out
 enum class RaidLoss : uint8_t { Drop, Destroy };            // a dead raider's carried items: on the ground / gone
-enum class RaidObjKind : uint8_t { Collect, Reach, Kill, Interact, Script };
+enum class RaidObjKind : uint8_t { Collect, Reach, Kill, Interact, Script, Defend };   // defend: units of `type` must survive
 
 struct RaidLootEntry {
     int16_t item = -1;          // rules "items" index, or
@@ -79,7 +79,7 @@ struct RaidObjectiveDef {
     std::string id, text;
     RaidObjKind kind = RaidObjKind::Script;
     int16_t item = -1;                   // collect: item carried (bag) or secured
-    uint16_t type = 0xFFFF;              // kill: victim type (0xFFFF any enemy); interact: the interactable type
+    uint16_t type = 0xFFFF;              // kill: victim type (0xFFFF any enemy); interact: the interactable type; defend: the defended type
     Fixed x{}, z{}, radius = Fixed::fromInt(3);   // reach
     int count = 1;
     bool shared = false;                 // progress is the team's (every teammate completes it)

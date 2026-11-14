@@ -269,6 +269,16 @@ bool RtsModule::serializeState(Simulation& sim, Archive& a) {
     if (!ioModesState(*this, sim, a)) return false;           // match modes (games with modes only, RtsModes.cpp)
     if (arsenal_ && arsenal_->active()) arsenal_->io(sim, a);   // weapons, ammo, crates (games with rules "arsenal" only)
     if (traffic_ && traffic_->active()) traffic_->io(sim, a);   // city traffic (games with rules "traffic" only)
+    // the frozen match outcome (save version 9). Without it a state loaded into a simulation that had already reached
+    // its end kept that result: result() answered early and the computer players stopped (restore desync).
+    if (auto* o = w.resource<MatchOutcome>()) {
+        if (a.formatVersion >= 9) {
+            int32_t r = o->result;
+            a(r, o->tick, o->blob);
+            o->result = r;
+            if (!a.writing() && (r < -1 || r > 255 || (r != 0) != !o->blob.empty())) a.fail();
+        } else if (!a.writing()) *o = MatchOutcome{};   // older saves: latched again by the next tick's "outcome" system
+    }
     if (!a.writing()) {
         gs.grid.invalidatePathing();   // derived caches (clearance, HPA*) rebuild from the loaded cells
         gs.grid.clearSoft();

@@ -4,6 +4,7 @@
 #include "libraries/include/aiverselib/genre/PerksData.h"
 #include "libraries/include/aiverselib/genre/PerksPersistence.h"
 #include <algorithm>
+#include <bit>
 #include <stdexcept>
 
 namespace aiverse::game {
@@ -43,14 +44,43 @@ int64_t milli(Fixed v) { return (v.raw * 1000 + (v.raw >= 0 ? 32768 : -32768)) /
 // Bullet variants: every projectile weapon of a progression unit type x every non-empty subset of bullet perks.
 void buildVariants(Rules& r, ProgressionRules& p) {
     const size_t k = p.bulletPerks.size();
+    p.bulletMaskOf.assign(r.types.size(), 0);
     if (k == 0) return;
     for (size_t t = 0; t < r.types.size(); ++t) {
         if (!p.typeUnit[t]) continue;
+        // bullet perks that can reach this type: a slot perk limited to other deck units, or a perk of the other
+        // bearer (hero / ally), never does
+        const auto du = p.defs.units.find(p.typeUnit[t]);
+        const int64_t bearer = du != p.defs.units.end() && du->second.hero ? kProgBearerHero : kProgBearerAlly;
+        uint32_t applicable = 0;
+        for (size_t b = 0; b < k; ++b) {
+            const auto& def = p.defs.perks.at(p.bulletPerks[b]);
+            if (def.bearer && def.bearer != bearer) continue;
+            if (def.scope == lg::PerkScope::Slot && !def.units.empty() && !std::binary_search(def.units.begin(), def.units.end(), p.typeUnit[t])) continue;
+            applicable |= 1u << b;
+        }
+        p.bulletMaskOf[t] = applicable;
+    }
+    // Games within the limit with every subset keep the variant numbering they always had; past it only the subsets a
+    // unit can own are built (the limit counts those).
+    size_t all = 0, own = 0;
+    for (size_t t = 0; t < r.types.size(); ++t) {
+        if (!p.typeUnit[t]) continue;
+        size_t pw = 0;
+        for (size_t w = 0; w < r.types[t].weapons.size() && w < 4; ++w) pw += r.types[t].weapons[w].projectileSpeed.raw > 0;
+        all += pw * ((size_t(1) << k) - 1);
+        own += pw * ((size_t(1) << std::popcount(p.bulletMaskOf[t])) - 1);
+    }
+    p.restrictedVariants = all > 126 && own < all;
+    for (size_t t = 0; t < r.types.size(); ++t) {
+        if (!p.typeUnit[t]) continue;
+        const uint32_t applicable = p.restrictedVariants ? p.bulletMaskOf[t] : ~0u;
         auto& ut = r.types[t];
         for (size_t w = 0; w < ut.weapons.size() && w < 4; ++w) {
             const WeaponDef& wd = ut.weapons[w];
             if (wd.projectileSpeed.raw <= 0) continue;
             for (uint32_t mask = 1; mask < (1u << k); ++mask) {
+                if (mask & ~applicable) continue;
                 ProgFlightVariant v;
                 v.type = uint16_t(t); v.weapon = uint8_t(w); v.mask = mask;
                 v.flight = wd.flight;
@@ -68,7 +98,7 @@ void buildVariants(Rules& r, ProgressionRules& p) {
                 }
                 if (v.flight.modifiers.size() > 16)
                     bad("perks", "type '" + ut.id + "' weapon " + std::to_string(w) + ": its flight modifiers plus the bullet perks exceed 16 entries");
-                if (p.variants.size() >= 126) bad("perks", "too many bullet perk combinations (at most 126 weapon x perk-set variants; use fewer bullet perks or tier chains)");
+                if (p.variants.size() >= 126) bad("perks", "too many bullet perk combinations (at most 126 weapon x perk-set variants of the bullet perks each unit can own; use fewer bullet perks, limit them to units / a bearer, or tier chains)");
                 p.variantOf[uint64_t(t) << 40 | uint64_t(w) << 32 | mask] = int(p.variants.size());
                 p.variants.push_back(std::move(v));
             }
@@ -87,7 +117,7 @@ void loadProgressionRules(Rules& r, const Json& j0, EffectParser& ep) {
     keysOnly(j, "", {"stats", "perks", "units", "deck", "xp", "offers", "summonPoints",   // library format (PerksData.h)
                      "players", "killXp", "orbs", "orbOwner", "autoOpen", "offerChoices", "offerRerolls", "rerollAvoidsRepeat",
                      "maxLevel", "xpGrowthPerLevel", "maxRecruitsPerSlot", "maxSquad", "pickups", "summons", "squad", "critDamage",
-                     "decks", "defaultDeck", "offerAt"});
+                     "decks", "defaultDeck", "offerAt", "pauseOnOffer"});
     // ---- library definitions (a copy without the engine keys of units[] and perks[])
     Json lib = Json::object();
     for (const char* k : {"stats", "perks", "units", "deck", "xp", "offers", "summonPoints"}) if (j.has(k)) lib.set(k, j[k]);
@@ -107,7 +137,7 @@ void loadProgressionRules(Rules& r, const Json& j0, EffectParser& ep) {
             Json& pj = perks->at(i);
             if (!pj.isObject()) continue;
             Json e = Json::object();
-            for (const char* k : {"bullet", "onHit", "onHitChance"}) if (pj.has(k)) { e.set(k, pj[k]); pj.erase(k); }
+            for (const char* k : {"bullet", "onHit", "onHitChance", "everyNth"}) if (pj.has(k)) { e.set(k, pj[k]); pj.erase(k); }
             if (e.size()) perkExt.push_back({i, std::move(e)});
         }
     try {
@@ -141,6 +171,13 @@ void loadProgressionRules(Rules& r, const Json& j0, EffectParser& ep) {
         if (e.has("onHitChance")) {
             x.onHitChance = e["onHitChance"].fx();
             if (x.onHitChance.raw < 0 || x.onHitChance > Fixed::fromInt(1)) bad(where + ".onHitChance", "must be 0..1");
+        }
+        if (e.has("everyNth")) {
+            const int64_t n = e["everyNth"].integer(0);
+            if (!e["everyNth"].isNumber() || n < 1 || n > 1000) bad(where + ".everyNth", "must be 1..1000 (shots)");
+            if (!e.has("bullet") && !e.has("onHit")) bad(where + ".everyNth", "needs a \"bullet\" or \"onHit\" (stat effects apply to every shot)");
+            x.everyNth = n > 1 ? uint32_t(n) : 0;
+            p.anyNth |= x.everyNth > 0;
         }
         p.ext[id] = std::move(x);
     }
@@ -222,6 +259,7 @@ void loadProgressionRules(Rules& r, const Json& j0, EffectParser& ep) {
     if (owner != "anyone" && owner != "killer") bad("orbOwner", "expected 'anyone' or 'killer'");
     p.orbsForKiller = owner == "killer";
     p.autoOpen = j.getBool("autoOpen", true);
+    p.pauseOnOffer = j.getBool("pauseOnOffer", false);
     const std::string at = j.getStr("offerAt", "anywhere");
     if (at != "anywhere" && at != "summonPoints") bad("offerAt", "expected 'anywhere' or 'summonPoints'");
     p.offerAtCircles = at == "summonPoints";

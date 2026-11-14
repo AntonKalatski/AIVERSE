@@ -121,6 +121,41 @@ TopDownRules TopDown::parse(const Json& j, const std::vector<std::string>& ids) 
         }
     }
     r.botProgression = j["bot"].getBool("progression", false);
+    if (const Json& b = j["bot"]; b.isObject()) {
+        auto& B = r.bot;
+        auto share = [&](const Json& o, const char* key, int64_t def, const std::string& where) -> int64_t {
+            if (!o.has(key)) return def;
+            const Fixed v = o.getFx(key, Fixed{});
+            if (!o[key].isNumber() || v.raw < 0 || v > Fixed::fromInt(1)) throw std::runtime_error(where + "." + key + ": a share of max health, 0..1");
+            return (v.raw * 1000 + 32768) >> 16;   // milli, rounded (0.6 -> 600)
+        };
+        if (b["orbRange"].isString()) {
+            if (b.getStr("orbRange") != "weapon") throw std::runtime_error("topDown.bot.orbRange: cells or \"weapon\"");
+            B.orbWeapon = true;
+        } else B.orbRange = nonNegative(b, "orbRange", B.orbRange, "topDown.bot");
+        if (const Json& k = b["kite"]; k.isObject()) {
+            B.swarmHealthMilli = share(k, "swarmHealth", B.swarmHealthMilli, "topDown.bot.kite");
+            B.hitShareMilli = share(k, "hitShare", B.hitShareMilli, "topDown.bot.kite");
+            B.swarmCount = int(k.getInt("swarmCount", B.swarmCount));
+            if (B.swarmCount < 1 || B.swarmCount > 64) throw std::runtime_error("topDown.bot.kite.swarmCount: 1..64");
+            B.margin = nonNegative(k, "margin", B.margin, "topDown.bot.kite");
+        }
+        for (size_t i = 0; i < b["pickups"].size(); ++i) {
+            const Json& pj = b["pickups"][i];
+            const std::string where = "topDown.bot.pickups[" + std::to_string(i) + "]";
+            if (!pj.isObject()) throw std::runtime_error(where + ": expected {\"type\": id, \"hurtBelow\": share, \"range\": cells}");
+            TopDownRules::BotPickup p;
+            if (pj.has("type")) {
+                auto t = typeList(pj["type"], ids, where + ".type");
+                if (t.size() != 1) throw std::runtime_error(where + ".type: one unit type id");
+                p.type = t[0];
+            } else throw std::runtime_error(where + ".type: the pickup unit type expected");
+            p.hurtBelowMilli = share(pj, "hurtBelow", p.hurtBelowMilli, where);
+            p.range = nonNegative(pj, "range", p.range, where);
+            B.pickups.push_back(p);
+        }
+        B.pathCheck = b.getBool("pathCheck", false);
+    }
     r.extended = r.freeFire || !r.holdIds.empty() || r.rootWhileCasting || r.squad.enabled || r.escape.enabled;
     return r;
 }
@@ -647,8 +682,11 @@ void TopDown::freeFire(Simulation& sim, TopDownPilot& p, uint8_t owner) {
         c->cooldown[i] = wd.cooldown;
         sim.emit({kEvAttack, owner, e, hit, int64_t(i), pos});
         const Fixed dmg = wd.damage * mult;
+        Progression* prog = m_->progression() && m_->progression()->active() ? m_->progression() : nullptr;   // perks on free-fire shots too
+        if (prog) prog->onShot(sim, e);
+        const int volley = prog ? prog->fireCount(sim, e) : 1;
         if (wd.projectileSpeed.raw <= 0 && !wd.flight.enabled) {   // instant weapons hit at once
-            if (hit.valid()) m_->dealDamage(sim, hit, dmg, wd.damageType, e, owner, &wd);
+            if (hit.valid()) for (int k = 0; k < volley; ++k) m_->dealDamage(sim, hit, dmg, wd.damageType, e, owner, &wd);
             continue;
         }
         Projectile pr;
@@ -657,12 +695,19 @@ void TopDown::freeFire(Simulation& sim, TopDownPilot& p, uint8_t owner) {
         pr.sourceType = u.type; pr.weapon = int8_t(i);
         pr.target = wd.flight.enabled ? kNullEntity : hit;   // programs find their own victims
         pr.aim = m_->lift(sim, wd.flight.enabled ? pos + dir * range : end, Fixed::fromRatio(4, 10));
-        const Vec3 start = m_->lift(sim, pos, Fixed::fromRatio(6, 10));
-        Entity pe = w.create();
-        w.add<Transform>(pe, Transform{start, start, Fixed{}});
-        m_->initProjectileProgram(sim, pr, start);
-        w.add<Projectile>(pe, pr);
-        w.add<Owner>(pe, Owner{owner});
+        const Vec3 start0 = m_->lift(sim, pos, Fixed::fromRatio(6, 10));
+        if (prog) prog->beforeShot(sim, pr);   // bullet perks, splash, on-hit
+        const Vec3 side{-dir.z, Fixed{}, dir.x};
+        for (int k = 0; k < volley; ++k) {   // fireCount: parallel bullets a quarter cell apart
+            const Vec3 start = k ? start0 + side * (Fixed::fromRatio((k + 1) / 2, 4) * ((k & 1) ? 1 : -1)) : start0;
+            Projectile shot = pr;
+            Entity pe = w.create();
+            w.add<Transform>(pe, Transform{start, start, Fixed{}});
+            m_->initProjectileProgram(sim, shot, start);
+            if (prog) prog->afterShot(sim, shot);
+            w.add<Projectile>(pe, shot);
+            w.add<Owner>(pe, Owner{owner});
+        }
     }
 }
 
@@ -994,7 +1039,9 @@ Vec3 TopDown::walkDir(Simulation& sim, Entity e, Vec3 to) const {
     const Vec3 pos = w.get<Transform>(e).pos;
     const UnitType& t = m_->rules().types[w.get<Unit>(e).type];
     MapGrid& g = m_->state(sim).grid;
-    if (g.lineWalkable(g.cellX(pos.x), g.cellY(pos.z), g.cellX(to.x), g.cellY(to.z), t.pathLayer)) return flat(to - pos);
+    if (rules_.bot.pathCheck) {   // the whole body must fit the straight line (its two edges too), else follow a path
+        if (bodyLine(sim, pos, to, t.radius, t.pathLayer)) return flat(to - pos);
+    } else if (g.lineWalkable(g.cellX(pos.x), g.cellY(pos.z), g.cellX(to.x), g.cellY(to.z), t.pathLayer)) return flat(to - pos);
     std::vector<Vec3> path;
     int gx = g.cellX(to.x), gy = g.cellY(to.z);   // structures stand on blocked cells: walk to a free one next to it
     Vec3 goal = to;
@@ -1002,6 +1049,61 @@ Vec3 TopDown::walkDir(Simulation& sim, Entity e, Vec3 to) const {
     if (g.findPath(pos, goal, t.pathLayer, path, 4000, MapGrid::clearanceFor(t.radius)))
         for (auto& wp : path) if (dist2D(wp, pos) > kHalf) return flat(wp - pos);
     return {};
+}
+
+bool TopDown::bodyLine(Simulation& sim, Vec3 from, Vec3 to, Fixed radius, uint8_t layer) const {
+    const MapGrid& g = m_->state(sim).grid;
+    const Vec3 d = flat(to - from);
+    const Fixed len = d.length();
+    if (len.raw <= 0) return true;
+    const Vec3 side = Vec3{-d.z, Fixed{}, d.x} / len * radius;
+    for (const Vec3& o : {Vec3{}, side, Vec3{-side.x, Fixed{}, -side.z}}) {
+        const Vec3 a = from + o, b = to + o;
+        if (!g.lineWalkable(g.cellX(a.x), g.cellY(a.z), g.cellX(b.x), g.cellY(b.z), layer)) return false;
+    }
+    return true;
+}
+
+bool TopDown::reachable(Simulation& sim, Entity e, Vec3 to) const {
+    if (!rules_.bot.pathCheck || !sim.world().alive(e)) return true;
+    World& w = sim.world();
+    const Vec3 pos = w.get<Transform>(e).pos;
+    const UnitType& t = m_->rules().types[w.get<Unit>(e).type];
+    if ((t.layer & kLayerAir) && !m_->state(sim).grid.airSolid) return true;
+    if (bodyLine(sim, pos, to, t.radius, t.pathLayer)) return true;
+    MapGrid& g = m_->state(sim).grid;
+    std::vector<Vec3> path;
+    return g.findPath(pos, flat(to), t.pathLayer, path, 4000, MapGrid::clearanceFor(t.radius));
+}
+
+Fixed TopDown::botOrbRange(Simulation& sim, uint8_t player) const {
+    if (!rules_.bot.orbWeapon) return rules_.bot.orbRange;
+    const Entity h = heroOf(sim, player);
+    return h.valid() ? weaponRange(sim, h) : rules_.bot.orbRange;
+}
+
+bool TopDown::botPickupGoal(Simulation& sim, uint8_t player, Vec3& goal, Fixed& stand) const {
+    if (rules_.bot.pickups.empty()) return false;
+    const Entity h = heroOf(sim, player);
+    if (!h.valid()) return false;
+    World& w = sim.world();
+    const Unit& hu = w.get<Unit>(h);
+    const Fixed maxHp = m_->stat(sim, h, Stat::MaxHp);
+    const Vec3 pos = w.get<Transform>(h).pos;
+    struct Cand { Fixed d; uint32_t index; Vec3 at; Fixed r; };
+    std::vector<Cand> cands;
+    for (const auto& pk : rules_.bot.pickups) {
+        if (pk.hurtBelowMilli < 1000 && hu.hp * 1000 >= maxHp * pk.hurtBelowMilli) continue;   // not hurt enough for this one
+        w.each<Unit, Transform>([&](Entity c, Unit& u, Transform& tr) {
+            if (u.type != pk.type || u.hp.raw <= 0 || (u.flags & kUnitOffMap)) return;
+            const Fixed d = dist2D(tr.pos, pos);
+            if (d <= pk.range) cands.push_back({d, c.index, tr.pos, m_->rules().types[u.type].radius});
+        });
+    }
+    std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) { return a.d != b.d ? a.d < b.d : a.index < b.index; });
+    for (size_t i = 0; i < cands.size() && i < 4; ++i)
+        if (reachable(sim, h, cands[i].at)) { goal = cands[i].at; stand = Fixed::fromRatio(1, 4); return true; }
+    return false;
 }
 
 bool TopDown::steerCommand(Simulation& sim, uint8_t player, Vec3 goal, Fixed stand, Command& out, Fixed kite) {
@@ -1031,7 +1133,7 @@ bool TopDown::steerCommand(Simulation& sim, uint8_t player, Vec3 goal, Fixed sta
         if (ct.weapons.empty()) return;
         Fixed reach{}, hit{};
         for (auto& wd : ct.weapons) { reach = fxMax(reach, wd.range); hit = fxMax(hit, wd.damage); }
-        const Fixed keep = kite.raw > 0 ? kite : reach + Fixed::fromRatio(5, 2);
+        const Fixed keep = kite.raw > 0 ? kite : reach + rules_.bot.margin;
         const Fixed d = m_->contactDistance(sim, e, c);
         if (d >= keep) return;
         Vec3 off = flat(pos - w.get<Transform>(c).pos);
@@ -1039,10 +1141,10 @@ bool TopDown::steerCommand(Simulation& sim, uint8_t player, Vec3 goal, Fixed sta
         if (l.raw <= 0) return;
         const Vec3 push = off / l * (keep - d + Fixed::fromRatio(1, 4));   // order-independent sums (fixed point, exact)
         swarmAway += push; ++swarm;
-        if (kite.raw > 0 || hit * 20 >= maxHp) { away += push; ++threats; }
+        if (kite.raw > 0 || hit * 1000 >= maxHp * rules_.bot.hitShareMilli) { away += push; ++threats; }
     });
-    const bool hurt = w.get<Unit>(e).hp * 10 < maxHp * 6;   // below 60%: a swarm is a threat too
-    if (!threats && swarm >= 6 && hurt) { away = swarmAway; threats = swarm; }
+    const bool hurt = w.get<Unit>(e).hp * 1000 < maxHp * rules_.bot.swarmHealthMilli;   // below 60% (bot.kite): a swarm is a threat too
+    if (!threats && swarm >= rules_.bot.swarmCount && hurt) { away = swarmAway; threats = swarm; }
     // telegraphs (rules "encounters"): standing in a hostile area in windup / active steps out of it first
     Vec3 dodge{};
     if (Encounters* enc = m_->encounters(); enc && enc->active()) {

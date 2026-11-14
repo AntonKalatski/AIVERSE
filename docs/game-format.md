@@ -367,9 +367,31 @@ Map players choose a faction and a `start` point; start objects spawn there.
   "waves": [{"time": 60, "player": 2, "at": [60, 24], "spread": 3, "spawn": [{"type": "zombie", "count": 10}],
              "every": 45, "growth": 1.3, "repeats": 10}],
   "victory": {"mode": "survive", "seconds": 900},                     // overrides rules.victory
+  "rules": {"topDown": {"escape": null}},                              // per-map overrides of rules blocks (below)
   "triggers": []
 }
 ```
+
+### Per-map rules overrides (map `rules`)
+
+A map may override tuning blocks of the rules for its matches: `"rules": {"<block>": {...}}` is merged over rules.json
+before anything parses it (`modules/rts/RtsMapRules.cpp`), so every block validates the merged result with its usual
+errors. Objects merge key by key (recursively); any other value — numbers, strings, lists such as an xp table —
+replaces the rules value; `null` removes the key (`"escape": null` switches the escape off on that map).
+
+```json
+"rules": {
+  "topDown": {"escape": {"cooldown": 45}, "squad": {"fireWhileMoving": true}, "bot": {"orbRange": "weapon"}},
+  "raid": {"duration": 300, "pickupRadius": 2},
+  "progression": {"offerAt": "summonPoints", "xp": {"toNext": [10, 20, 35]}, "pauseOnOffer": true},
+  "encounters": {"mobs": {"zombie": {"aggroRange": 12}}, "preferTags": ["cargo"]}
+}
+```
+
+Patchable: `topDown.{respawn, move, aim, abilities, squad, escape, autoFire, bot}` (not `heroes`/`input`: they decide
+who is steered and how commands are quantized), the whole `raid`, `progression` and `encounters` blocks. Any other
+block (types, resources, abilities, ...) is an error: `map rules.types: this block cannot be overridden per map
+(allowed: ...)`. The map's own `raid` block (points, objectives by id) and `progression.summonPoints` still apply on top.
 
 ## audio.json
 
@@ -1547,7 +1569,10 @@ commands (replays continue), the entity allocator, every component pool in dense
 caches (clearance, HPA*, rebuilt on demand). The computer players keep their own memory, so bots resume from the loaded
 state with fresh plans. Module side: `RtsModule::serializeState` (`modules/rts/RtsSave.cpp`); a component type missing from
 its list makes saving fail. `aiverse_headless --save F --save-at S` / `--load F`; MCP `match_run` with `saveCheck` (seconds).
-A skirmish match at 90 s is ~150 KB.
+A skirmish match at 90 s is ~150 KB. Since save version 9 the frozen match outcome (`MatchOutcome`) is saved too: a
+state from before the end, loaded into a simulation that had already finished, no longer keeps the old result (the
+computer players stopped and `--verify-restore-at` windows across the match end desynced on the serialized pass);
+older saves load with no outcome, latched again on the next tick.
 
 ## Campaigns (agent-mech)
 

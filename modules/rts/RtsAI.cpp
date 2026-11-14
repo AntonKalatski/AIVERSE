@@ -69,7 +69,8 @@ void RtsAI::update(Simulation& sim) {
             Command c;
             Vec3 g; Fixed s;
             Progression* pg = td->rules().botProgression ? m->progression() : nullptr;   // rules topDown.bot.progression
-            if (pg && pg->active() && td->heroOf(sim, player_).valid() && pg->botGoal(sim, player_, g, s)) { if (td->steerCommand(sim, player_, g, s, c)) send(sim, c); }
+            if (td->botPickupGoal(sim, player_, g, s)) { if (td->steerCommand(sim, player_, g, s, c)) send(sim, c); }   // hurt: heal pickups (topDown.bot.pickups)
+            else if (pg && pg->active() && td->heroOf(sim, player_).valid() && pg->botGoal(sim, player_, g, s, td->botOrbRange(sim, player_))) { if (td->steerCommand(sim, player_, g, s, c)) send(sim, c); }
             else if (td->botCommand(sim, player_, c)) send(sim, c);
         }
         special(sim, *m);

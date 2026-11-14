@@ -12,7 +12,8 @@ against a three-phase golem with adds and crawler packs).
 - **Monster players**: map players with `"monsters": true`, and always the hostile creeps (owner 255, e.g. units a
   game's Lua director spawns). The computer player leaves them alone; their units of a boss type get a boss brain,
   their units of a mob type get mob behaviour. Other players' units are never steered. Creeps are a side of their
-  own for telegraphs (they never hit each other unless `friendlyFire`).
+  own for telegraphs (they never hit each other unless `friendlyFire`). Driven creeps skip the creep camp rules
+  (`neutral.leash`: back home beyond 10 cells and heal; wandering): their brain decides where they walk.
 - A boss walks with a move order and stops at `approach`: the weapon system neither stops nor redirects a unit with
   orders, so a boss whose (other) weapons outrange its pattern bands still closes in; in reach its weapons fight.
 - **Telegraphed attacks** work for every unit: bosses and mobs start them, a unit ability can start one
@@ -83,6 +84,7 @@ as 0..1. Sizes must be positive (`encounters.attacks.rock.length: must be positi
 | `trackAim`, `sweep`, `cancelOnDeath`, `friendlyFire` | re-aim during windup; line that grows over `active` and carries the caster (charges); the caster dying in the windup cancels it (default true); hit allies too |
 | `minRange`, `maxRange` | aim clamp; for mobs `maxRange` (or the area's extent) is the reach to start it |
 | `ability` | a unit ability with this id starts the attack toward its point (the ability keeps its own cooldown, cost and effects) |
+| `decal` | false: the view draws no ground telegraph for this attack (the game draws its own; `telegraph_*` events still fire) |
 
 ### `bosses.<unit type>`
 
@@ -106,6 +108,11 @@ return home beyond `leash`. Swarm pressure (`spacing`, `correction`, `lookAhead`
 around the crowd. Decisions become ordinary orders every `think` seconds: attack (armed units), attack-move along
 a shared flow field when the target is farther than `flowDistance` (rules `movement.flowField`), move (wander,
 flee, return, unarmed hunters to `stopDistance`). `attack`: a telegraphed attack used within its reach.
+
+`preferTags` (per mob, or top-level `encounters.preferTags` for every mob; a mob's own list replaces it, `[]` turns it
+off) and `preferRange` (0: anywhere): the mob hunts the nearest hostile unit whose type has one of these tags (a
+defended cargo, an objective) over nearer hostiles — unless a hostile is within its bite reach (its `attack`'s reach,
+else its weapon range), which it fights first. A personal boss's add keeps hunting its participant.
 
 ### `schedule`
 

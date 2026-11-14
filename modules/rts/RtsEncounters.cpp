@@ -179,6 +179,7 @@ EncounterRules Encounters::parse(const Json& j, const Rules& rules, uint32_t rat
             ea.damageType = uint16_t(it - rules.damageTypes.begin());
         }
         ea.ability = a.getStr("ability", "");
+        ea.decal = a.getBool("decal", true);
         ea.reach = d.maxRange.raw > 0 ? d.maxRange : areaExtent(d);
         if (!lg::valid(d)) fail(w, "invalid attack (sizes, ranges or times out of bounds)");
         R.telegraphs[d.id] = d;
@@ -268,6 +269,18 @@ EncounterRules Encounters::parse(const Json& j, const Rules& rules, uint32_t rat
     }
 
     // ---- mobs (by unit type)
+    auto tagsOf = [&](const Json& list, const std::string& where) {
+        uint64_t mask = 0;
+        if (!list.isArray()) fail(where, "expected a list of unit type tags");
+        for (auto& t : list.items()) {
+            const uint64_t bit = rules.tagMask(t.str());
+            if (!bit) fail(where, "unknown tag '" + t.str() + "' (no unit type has it)");
+            mask |= bit;
+        }
+        return mask;
+    };
+    const uint64_t preferAll = j.has("preferTags") ? tagsOf(j["preferTags"], "encounters.preferTags") : 0;
+    const Fixed preferRangeAll = nonNeg(j, "preferRange", Fixed{}, "encounters");
     for (auto& [tid, m] : j["mobs"].members()) {
         const std::string w = "encounters.mobs." + tid;
         if (!m.isObject()) fail(w, "expected an object");
@@ -301,6 +314,9 @@ EncounterRules Encounters::parse(const Json& j, const Rules& rules, uint32_t rat
         if (m.has("attack")) md.attack = int16_t(attackRef(m.getStr("attack", ""), w + ".attack") - 1);
         md.think = std::max<uint32_t>(1, secs(m, "think", ticksOf(Fixed::fromRatio(1, 5), rate), rate, w));
         md.flowDistance = nonNeg(m, "flowDistance", md.flowDistance, w);
+        md.preferTags = m.has("preferTags") ? tagsOf(m["preferTags"], w + ".preferTags") : preferAll;
+        md.preferRange = nonNeg(m, "preferRange", preferRangeAll, w);
+        R.preferAny |= md.preferTags;
         if (!lg::valid(c)) fail(w, "invalid behaviour (ranges or times out of bounds)");
         R.mobOfType[md.type] = int16_t(R.mobs.size());
         R.mobs.push_back(md);
@@ -506,6 +522,13 @@ void Encounters::tick(Simulation& sim) {
     EncounterStore* st = store(sim);
     if (!st) return;
     discover(sim, *st);
+    preferred_.clear();
+    if (R_.preferAny) {   // preferred targets of mobs (preferTags): few units, collected once per tick
+        const Rules& rules = m_->rules();
+        sim.world().each<Unit>([&](Entity e, Unit& u) {
+            if (u.hp.raw > 0 && !(u.flags & kUnitOffMap) && (rules.types[u.type].tags & R_.preferAny)) preferred_.push_back(e);
+        });
+    }
     tickSchedule(sim, *st);
     for (size_t i = 0; i < st->bosses.size(); ++i) tickBoss(sim, *st, st->bosses[i]);
     const uint32_t tick = sim.tick();
@@ -754,18 +777,35 @@ void Encounters::tickMob(Simulation& sim, EncounterStore& st, EncMobState& ms, c
     const Fixed maxHp = m_->stat(sim, e, Stat::MaxHp);
     self.hpMilli = maxHp.raw > 0 ? std::clamp<int64_t>(u.hp.raw * 1000 / maxHp.raw, 0, 1000) : 1000;
     self.committed = committed ? int64_t(committed) + 1 : 0;
-    self.priority = ms.priority ? int64_t(ms.priority) + 1 : 0;
     self.movementLocked = locked || (flags & (kStStun | kStRoot));
     std::vector<lg::MobCandidate> cands;
     std::vector<lg::MobNeighbour> neigh;
     const Fixed look = fxMax(fxMax(d.cfg.loseRange, d.cfg.fleeRange), d.cfg.aggroRange);
+    // bite reach: its telegraph attack, else its weapons (preferTags yield to a hostile this close)
+    const Fixed bite = d.attack >= 0 ? R_.attacks[size_t(d.attack)].reach : (t.weapons.empty() ? t.radius : maxWeaponRange(t)) + t.radius;
+    bool inBite = false;
     gs.hash.query(pos, look, [&](Entity c) {
         if (c == e || !liveUnit(w, c) || cands.size() >= lg::kMobMaxCandidates) return;
         if (!m_->hostile(sim, owner, w.get<Owner>(c).player)) return;
         const Vec3 cp = w.get<Transform>(c).pos;
         if (dist2D(cp, pos) > look) return;
-        cands.push_back({idOf(c), cp.xz(), true, !m_->rules().types[w.get<Unit>(c).type].invulnerable});
+        const UnitType& ct = m_->rules().types[w.get<Unit>(c).type];
+        cands.push_back({idOf(c), cp.xz(), true, !ct.invulnerable});
+        inBite |= !ct.invulnerable && dist2D(cp, pos) - ct.radius <= bite;
     });
+    // preferred target (rules preferTags): the nearest hostile unit with such a tag, unless a hostile is in bite reach
+    if (!ms.priority && d.preferTags && !inBite) {
+        Entity best;
+        Fixed bd{};
+        for (Entity c : preferred_) {
+            if (!liveUnit(w, c) || !(m_->rules().types[w.get<Unit>(c).type].tags & d.preferTags) || !m_->hostile(sim, owner, w.get<Owner>(c).player)) continue;
+            const Fixed dd = dist2D(w.get<Transform>(c).pos, pos);
+            if ((d.preferRange.raw > 0 && dd > d.preferRange) || dd >= lg::kCombatCoordLimit) continue;
+            if (!best.valid() || dd < bd) { best = c; bd = dd; }
+        }
+        if (best.valid()) ms.priority = best.packed();
+    }
+    self.priority = ms.priority ? int64_t(ms.priority) + 1 : 0;
     // priority / committed targets count even beyond the query radius
     for (int64_t id : {self.priority, self.committed}) {
         const Entity c = entityOf(id);

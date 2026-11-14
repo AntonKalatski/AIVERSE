@@ -155,7 +155,8 @@ void RtsModule::sysWeapons(Simulation& sim) {
             if (!m->moving || (sim.tick() + e.index) % 20 == 0) moveTo(sim, e, tp, range);
             return;
         }
-        if (c.autoTarget && ord && ord->queue.empty() && m && m->moving && dist <= range) stopMoving(sim, e);
+        // in range: stop and shoot; top-down squad followers keep walking to their slot while they fire (RtsTopDown.cpp)
+        if (c.autoTarget && ord && ord->queue.empty() && m && m->moving && dist <= range && !(u.flags & kUnitFollower)) stopMoving(sim, e);
         Vec3 face = flat(tp - tr.pos);
         if (face.length().raw > 0) u.facing = face / face.length();
         // damage scaling: techs/buffs, squad members alive, height advantage
@@ -176,6 +177,9 @@ void RtsModule::sysWeapons(Simulation& sim) {
             if (mechOn(sim) && !mechOnFire(sim, e, i, c.target)) continue;   // agent-mech: turret aim, ammo, suppression, crews
             c.cooldown[i] = wd.cooldown;
             sim.emit({kEvAttack, o.player, e, c.target, int64_t(i), tr.pos});
+            const bool prog = progression_ && progression_->active();
+            if (prog) progression_->onShot(sim, e);   // perks that fire on every Nth shot (RtsProgression.cpp)
+            const int volley = prog ? progression_->fireCount(sim, e) : 1;   // fireCount stat: bullets per shot
             // shooting uphill can miss (StarCraft); the roll uses the shared deterministic RNG
             // (a full level or more below: the whole chance; less on a heightfield slope: proportionally less)
             if (adv.raw < 0 && rules_.heights.missUphill.raw > 0 && sim.rng().unit() < rules_.heights.missUphill * fxMin(kOne, -adv)) {
@@ -188,6 +192,7 @@ void RtsModule::sysWeapons(Simulation& sim) {
             const int16_t enchant = statusOnHit(e);
             const bool proc = wd.onHit >= 0 && (wd.onHitChance >= kOne || sim.rng().unit() < wd.onHitChance);
             if (wd.projectileSpeed.raw <= 0) {
+                for (int k = 1; k < volley && w.alive(c.target); ++k) dealDamage(sim, c.target, dmg, dtype, e, o.player, &wd);   // extra bullets
                 dealDamage(sim, c.target, dmg, dtype, e, o.player, &wd);
                 if (proc) onHits.push_back({wd.onHit, e, c.target, o.player, u.type, tp});
                 if (progression_ && progression_->active()) if (int16_t ph = progression_->hitPayload(sim, e); ph >= 0) onHits.push_back({ph, e, c.target, o.player, u.type, tp});   // perk on-hit (burn, stun)
@@ -207,6 +212,13 @@ void RtsModule::sysWeapons(Simulation& sim) {
                 if (proc && enchant >= 0) onHits.push_back({enchant, e, c.target, o.player, u.type, tp});
                 Vec3 start = lift(sim, tr.pos, Fixed::fromRatio(6, 10));
                 shots.push_back({pr, start});
+                if (volley > 1) {   // fireCount: parallel bullets, a quarter cell apart across the line of fire
+                    const Vec3 side = face.length().raw > 0 ? Vec3{-face.z, Fixed{}, face.x} / face.length() : Vec3{kOne, Fixed{}, Fixed{}};
+                    for (int k = 1; k < volley; ++k) {
+                        const Fixed off = Fixed::fromRatio((k + 1) / 2, 4) * ((k & 1) ? 1 : -1);
+                        shots.push_back({pr, start + side * off});
+                    }
+                }
             }
         }
     });

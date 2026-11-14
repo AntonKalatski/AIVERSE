@@ -268,3 +268,35 @@ TEST(raid_bot_steers_a_topdown_hero_to_extraction) {
     // it walked (stick input), not teleported: the hero's pilot saw kCmdTopDown commands
     CHECK(td->store(*sim)->pilots[1].inputTick > 0);
 }
+
+// Defend objectives: units of a type (own / allied) must survive. Losing them fails the raid ("failed", receipt
+// "reason" = the objective id, objective "lost"); extracting with them alive completes the objective.
+TEST(raid_defend_objective_fails_the_raid_when_destroyed) {
+    std::string rules = kRaidRules;
+    rules.replace(rules.find(R"("box":)"), 0, R"("cargo": {"health": {"max": 50}, "move": {"speed": 0, "radius": 0.4}},
+    )");
+    rules.replace(rules.find(R"("objectives": [)") + 15, 0, R"({"id": "keep", "kind": "defend", "type": "cargo", "required": true}, )");
+    const std::string map = raidMap(R"({"type":"runner","owner":1,"pos":[4.5,8.5]},{"type":"cargo","owner":1,"pos":[5.5,8.5]},{"type":"runner","owner":2,"pos":[28.5,2.5]})");
+    auto sim = makeSimJson(rules, map);
+    run(*sim, 1.0);
+    auto& p1 = *raidStore(*sim).find(1);
+    CHECK(p1.status == uint8_t(game::RaidStatus::InRaid) && p1.objProgress[0] == 1 && p1.objDone[0] == 0);
+    CHECK(raidStore(*sim).find(2)->objProgress[0] == 0);   // the other side has nothing to defend
+    sim->world().get<game::Unit>(findType(*sim, "cargo", 1)).hp = Fixed{};
+    run(*sim, 0.2);
+    CHECK(p1.status == uint8_t(game::RaidStatus::Failed) && p1.objDone[0] == 2);
+    const Json r = Json::parse(mod(*sim).raid()->receiptJson(*sim, p1));
+    CHECK(r.getStr("outcome") == "failed" && r.getStr("reason") == "keep" && r["objectives"]["keep"].getBool("lost") && !r.getBool("completed"));
+    CHECK(raidStore(*sim).find(2)->status == uint8_t(game::RaidStatus::InRaid));
+    // brought out alive: done
+    auto ok = makeSimJson(rules, map);
+    run(*ok, 1.0);
+    CHECK(mod(*ok).raid()->extract(*ok, 1, 0));
+    CHECK(raidStore(*ok).find(1)->objDone[0] == 1 && mod(*ok).raid()->objectiveDone(*ok, 1, 0));
+    // errors: a defend objective names its unit type
+    std::string bad = rules;
+    bad.replace(bad.find(R"("type": "cargo", "required")"), 16, "");
+    bool threw = false;
+    try { makeSimJson(bad, map); } catch (const std::exception& e) { threw = std::string(e.what()).find("objectives") != std::string::npos; }
+    CHECK(threw);
+}

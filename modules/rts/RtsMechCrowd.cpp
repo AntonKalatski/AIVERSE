@@ -30,7 +30,12 @@ void RtsModule::mechSeparation(Simulation& sim, const std::vector<Fixed>& weight
         cx = std::clamp(int(p.x.floorInt()), 0, gw - 1);
         cy = std::clamp(int(p.z.floorInt()), 0, gh - 1);
     };
-    std::vector<int32_t> head(size_t(gw) * size_t(gh), -1), next(bodies.size(), -1);
+    // cell -> first body: kept between calls and reset only at the cells used (a fresh map-sized array per call was
+    // a memset of the whole map, twice per tick on big maps)
+    thread_local std::vector<int32_t> head;
+    if (head.size() != size_t(gw) * size_t(gh)) head.assign(size_t(gw) * size_t(gh), -1);
+    std::vector<int32_t> next(bodies.size(), -1);
+    struct Clear { const std::vector<Body>& b; decltype(cellOf)& cell; int gw; ~Clear() { for (auto& x : b) { int cx, cy; cell(x.pos, cx, cy); head[size_t(cy) * size_t(gw) + size_t(cx)] = -1; } } } clear{bodies, cellOf, gw};
     for (size_t i = bodies.size(); i-- > 0;) {
         int cx, cy; cellOf(bodies[i].pos, cx, cy);
         const size_t c = size_t(cy) * size_t(gw) + size_t(cx);

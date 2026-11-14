@@ -3,6 +3,7 @@
 #include "../../engine/data/JsonCompose.h"
 #include "RtsBwAI.h"   // agent-bw-ai
 #include "RtsInitialVars.h"
+#include "RtsMapRules.h"
 #include "../../engine/core/FixedMath.h"
 #include "gen/MapGen.h"
 #include <algorithm>
@@ -18,7 +19,10 @@ using namespace detail;
 void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     // every block below reads entries with their "extends" applied (engine/data/JsonCompose.h)
     const Json resolvedRules = needsExtends(rulesIn) ? resolveExtends(rulesIn) : Json();
-    const Json& rulesJson = resolvedRules.isObject() ? resolvedRules : rulesIn;
+    const Json& baseRules = resolvedRules.isObject() ? resolvedRules : rulesIn;
+    // map "rules": per-map overrides of tuning blocks, merged before anything parses them (RtsMapRules.cpp)
+    const Json mapRules = applyMapRules(baseRules, map);
+    const Json& rulesJson = mapRules.isObject() ? mapRules : baseRules;
     rules_ = loadRules(rulesJson);
     sim.world().setResource<GameState>();
     // map generation (map "generate" / world body "generate"): deterministic, regenerated identically by every
@@ -1648,6 +1652,8 @@ namespace aiverse::game {
 // "gameplay_scale" in [0, 1): an accumulator (variable "gameplay_scale_acc") lets that share of ticks through, so
 // 0 freezes the battle and 0.5 runs it at half speed (a tween 1 -> 0 slows it down on the way, as in BW).
 void RtsModule::gameplayClock(Simulation& sim) {
+    // rules progression.pauseOnOffer: an open level-up offer holds the battle (commands still reach the offer)
+    if (progression_ && progression_->active() && progression_->pausesGameplay(sim)) { gameplayRun_ = false; return; }
     auto& vars = state(sim).trig.vars;
     auto it = vars.find("gameplay_scale");
     if (it == vars.end() || it->second >= Fixed::fromInt(1)) { gameplayRun_ = true; return; }

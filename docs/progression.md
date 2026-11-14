@@ -43,7 +43,10 @@ integers, multiply values are milli: 1250 = x1.25) plus engine keys:
     {"id": 3, "key": "split_shot", "bearer": 1,                       // engine key "bullet": projectile program modifiers
      "bullet": {"modifiers": [{"kind": "split", "count": 3, "angle": 36}]}},
     {"id": 6, "key": "burning_hits", "hook": "on_burning_hits",       // engine keys "onHit" (+ "onHitChance")
-     "onHit": [{"type": "status", "status": "burn", "duration": 3}], "onHitChance": 0.5}],
+     "onHit": [{"type": "status", "status": "burn", "duration": 3}], "onHitChance": 0.5},
+    {"id": 7, "key": "double_shot", "effects": [{"stat": "fireCount", "op": "add", "value": 1000}]},   // 2 bullets per shot
+    {"id": 8, "key": "push_every_3rd", "everyNth": 3,                   // engine key: bullet / onHit on every 3rd shot
+     "onHit": [{"type": "knockback", "amount": 1.5, "fromCaster": true}]}],
   "deck": {"maxSlots": 4},
   "xp": {"toNext": [4, 6, 8, 10]}, "xpGrowthPerLevel": 3, "maxLevel": 0,
   "offers": {"default": ["anyPerk", "anyPerk", "anyPerk"], "levels": [{"level": 1, "variants": ["recruit", "recruit"]}]},
@@ -54,6 +57,7 @@ integers, multiply values are milli: 1250 = x1.25) plus engine keys:
   "autoOpen": true,                       // false: offers wait for an "open" command (stations)
   "offerAt": "anywhere",                  // "summonPoints": cards open only while the hero stands in a circle
                                           // (Drone Fall stations); leaving closes them, xp stays banked
+  "pauseOnOffer": false,                  // true: the battle holds while any offer is open (single-player maps)
   "pickups": {"radius": 2.5, "magnetRadius": 40, "grabRadius": 0.5, "attractSpeed": 0, "attractAccel": 0, "maxSpeed": 40,
               "landing": 0.3, "lifetime": 40, "maxOrbs": 1024},       // seconds, units, units / s
   "summons": {"progress": 2, "cooldown": 0, "maxAllies": 4, "charges": 0, "chargeRecharge": 0, "resetOnExit": true},
@@ -66,7 +70,14 @@ integers, multiply values are milli: 1250 = x1.25) plus engine keys:
 }
 ```
 
-Maps may add / replace circles by id: `"progression": {"summonPoints": [...]}`.
+Maps may add / replace circles by id: `"progression": {"summonPoints": [...]}`, and override any other key per map
+with the map `rules` block (`{"rules": {"progression": {"offerAt": "summonPoints", "xp": {"toNext": [...]}}}}`,
+docs/game-format.md § Per-map rules overrides).
+
+`pauseOnOffer`: while an offer of any player is open the gameplay systems stop (the gameplay time scale, as
+`gameplay_scale` 0: commands, vision, victory, triggers and scripts keep running), so the choice command still reaches
+the offer and closes it. The simulation pauses for every peer alike: switch it on for single-player maps (per map with
+the map `rules` block); clocks counted in ticks (raid duration, encounter schedule) keep counting.
 
 ## The battle deck (match start payload)
 
@@ -110,9 +121,10 @@ milli units (add 1000 = +1 speed / hp / range).
 | `critChance` / `critDamage` | `dealDamage` from the unit (roll on `sim.rng()`, only when the chance is > 0) | 0 / `critDamage` |
 | `healthRegen` | the progression system, per tick | 0 (milli hp / s) |
 | `pickupRadius` / `pickupXp` | xp orb collection | `pickups.radius` x 1000 / 1000 |
+| `fireCount` | bullets per shot (weapons system and top-down free fire): parallel bullets a quarter cell apart, instant weapons hit that many times; 1..8 | 1000 (one bullet) |
 
-A stat without an effect on the unit stays exactly the engine's value (no milli rounding). `fireCount`,
-`summonCharges`, `summonCooldown` and game stats (ids >= 16) are readable with `progression.stat(unit, stat, base)`.
+A stat without an effect on the unit stays exactly the engine's value (no milli rounding). `summonCharges`,
+`summonCooldown` and game stats (ids >= 16) are readable with `progression.stat(unit, stat, base)`.
 Techs, buffs, statuses, auras and the rest of `RtsModule::stat` apply first; the perk pipeline is the last step.
 
 ## Bullets and hits
@@ -122,11 +134,17 @@ programs' order semantics: a scalar after a split gate affects only the children
 `[{"kind": "split", "count": 2}, {"kind": "damage", "factor": 0.5}]`) extend
 the shooter's projectile weapons: at load every projectile weapon (`projectileSpeed` > 0) of a deck unit type gets one
 **variant** per non-empty set of bullet perks: the weapon's own `flight` program (or a default homing one) followed by
-each perk's modifiers in perk id order (at most 6 bullet perks, 16 modifiers per program, 126 variants). A shot of a
+each perk's modifiers in perk id order (at most 6 bullet perks, 16 modifiers per program, 126 variants; when every
+set for every type would pass 126, only the sets a type can own are built and counted: perks of the other bearer and
+slot perks limited to other deck `units` are left out). A shot of a
 unit with bullet perks uses its variant (`Projectile::weapon = -2 - variant`); ricochet / fly-through counts grow with
 the number of times the perk was taken. The chain kernel, collisions, damage and saves are the projectile programs'.
 A perk's `onHit` payload (any effects list: burn, stun, slow, ...) is applied to what the bearer's weapons hit
 (projectiles carry it when their weapon has no on-hit of its own), with `onHitChance` rolled on `sim.rng()`.
+Knockback / push: an `onHit` with `{"type": "knockback", "amount": cells, "fromCaster": true}` (the effect engine's
+knockback: away from the shooter, stops at walls). `everyNth` (2..1000, engine key of a perk with `bullet` or `onHit`):
+those apply only on every Nth shot of the bearer (each unit counts its shots; the counters are hashed and saved only
+in games with such a perk). Top-down free-fire shots (`aim.freeFire`) use the bullet perks, on-hit and fireCount too.
 
 ## Levels, offers, choices
 
@@ -219,6 +237,5 @@ reaches level 3, recruits 2 robots, takes a perk, restore verification OK; with 
 
 ## Not done
 
-`fireCount` (multi-barrel shots) and summon-charge stats are not mapped to engine pipelines; bullet perks need
-projectile weapons (instant-hit weapons get on-hit payloads and stats only); offers are not modal (the match does not
-pause); no built-in card UI in the engine client (the game's UI Lua draws it); planets untested.
+Summon-charge stats are not mapped to engine pipelines; bullet perks need
+projectile weapons (instant-hit weapons get on-hit payloads and stats only); no built-in card UI in the engine client (the game's UI Lua draws it); planets untested.

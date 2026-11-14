@@ -345,3 +345,51 @@ TEST(encounters_bot_hero_dodges_a_telegraph) {
     for (int i = 0; i < 12; ++i) sim->step();   // the windup is 0.6 s
     CHECK(encDist(sim->world().get<Transform>(hero).pos, {Fixed::fromRatio(105, 10), Fixed{}, Fixed::fromRatio(105, 10)}) > Fixed::fromRatio(15, 10));
 }
+
+// Encounter mobs of owner 255 (hostile creeps) are walked by their brains: the creep camp leash (back home beyond
+// "neutral.leash", 10 cells by default, healing on the way) no longer pulls them off a hunt.
+TEST(encounters_creep_mobs_ignore_the_camp_leash) {
+    std::string rules = kEncRules;
+    rules.replace(rules.find(R"("aggroRange": 7, "loseRange": 10)"), std::string(R"("aggroRange": 7, "loseRange": 10)").size(), R"("aggroRange": 30, "loseRange": 40)");
+    auto sim = makeSimJson(rules, encMap(R"({"type":"dummy","owner":1,"pos":[30.5,12.5]},{"type":"crawler","owner":255,"pos":[3.5,12.5]})", false));
+    const Entity crawler = findType(*sim, "crawler", 255), dummy = findType(*sim, "dummy", 1);
+    CHECK(sim->world().has<game::Guard>(crawler));   // still a creep (the leash is just not applied)
+    const Vec3 home = sim->world().get<Transform>(crawler).pos;
+    Fixed farthest{};
+    for (int i = 0; i < 40; ++i) { run(*sim, 0.25); farthest = fxMax(farthest, encDist(sim->world().get<Transform>(crawler).pos, home)); }
+    CHECK(farthest > Fixed::fromInt(18));   // walked well past 10 cells toward its target
+    CHECK(encDist(sim->world().get<Transform>(crawler).pos, sim->world().get<Transform>(dummy).pos) < Fixed::fromInt(8));
+    CHECK(!sim->world().get<game::Guard>(crawler).returning);
+}
+
+// preferTags: a mob hunts the nearest hostile unit with a listed type tag (a defended cargo) over a closer hostile,
+// unless a hostile is within its bite reach. Per-attack "decal": false (parsed; the view skips the ground decal).
+TEST(encounters_mobs_prefer_tagged_targets_unless_bitten) {
+    std::string rules = kEncRules;
+    rules.replace(rules.find(R"("dummy":   {)"), 0, R"("cargo":   {"tags": ["defended"], "health": {"max": 100000}, "move": {"speed": 0, "radius": 0.5}, "sight": 2},
+    )");
+    rules.replace(rules.find(R"("attack": "bite", "think": 0.1})"), std::string(R"("attack": "bite", "think": 0.1})").size(),
+                  R"("attack": "bite", "think": 0.1, "preferTags": ["defended"]})");
+    rules.replace(rules.find(R"("damage": 6})"), std::string(R"("damage": 6})").size(), R"("damage": 6, "decal": false})");
+    auto sim = makeSimJson(rules, encMap(R"({"type":"dummy","owner":1,"pos":[10.5,16.5]},{"type":"cargo","owner":1,"pos":[30.5,12.5]},{"type":"crawler","owner":2,"pos":[10.5,12.5]})"));
+    auto* en = mod(*sim).encounters();
+    CHECK(!en->rules().attacks[size_t(en->rules().findAttack("bite"))].decal && en->rules().attacks[size_t(en->rules().findAttack("slam"))].decal);
+    CHECK(en->rules().mobs[0].preferTags == mod(*sim).rules().tagMask("defended"));
+    const Entity crawler = findType(*sim, "crawler", 2), dummy = findType(*sim, "dummy", 1), cargo = findType(*sim, "cargo", 1);
+    run(*sim, 2.0);
+    const game::EncMobState* ms = encStore(*sim).mob(crawler.packed());
+    CHECK(ms && ms->brain.mode == game::lg::MobMode::Hunt && ms->brain.target == int64_t(cargo.packed()) + 1);
+    CHECK(sim->world().get<Transform>(crawler).pos.x > Fixed::fromInt(14));   // walked past the dummy (4 cells away)
+    // a hostile in bite reach comes first
+    const Vec3 cp = sim->world().get<Transform>(crawler).pos;
+    sim->world().get<Transform>(dummy).pos = {cp.x + Fixed::fromRatio(9, 10), Fixed{}, cp.z};
+    run(*sim, 0.5);
+    ms = encStore(*sim).mob(crawler.packed());
+    CHECK(ms && ms->brain.target == int64_t(dummy.packed()) + 1);
+    // unknown tag: a readable error
+    std::string bad = rules;
+    bad.replace(bad.find(R"("preferTags": ["defended"])"), std::string(R"("preferTags": ["defended"])").size(), R"("preferTags": ["ghost"])");
+    bool threw = false;
+    try { makeSimJson(bad, encMap("")); } catch (const std::exception& e) { threw = std::string(e.what()).find("encounters.mobs.crawler.preferTags") != std::string::npos; }
+    CHECK(threw);
+}
