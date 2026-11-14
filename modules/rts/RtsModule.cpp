@@ -1360,7 +1360,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
             if (!g || !w.alive(cmd.target) || cmd.target == e || !w.has<Garrison>(cmd.target) || t.spawnUnit == kNoType) break;
             if (rules_.advancedEffects && (statusFlags(sim, e) & kStLock)) break;   // locked: can't send
             if (env_ && env_->active() && !env_->sendAllowed(sim, e, cmd.target)) break;   // linked caves, graveyards
-            if (!canSend(sim, e, cmd.target)) break;   // authored routes: no route, no send (BW RoutesModule.FindUnlocked)
+            if (!canSend(sim, e, cmd.target)) break;   // authored routes: no route, no send
             if (rules_.advancedEffects && skillSend(sim, e, cmd.target, cmd.player, cmd.param)) break;   // teleport (RtsSkillObjects.cpp)
             const int sendable = std::max(0, g->count - t.garrisonKeep);   // State.io: one soldier stays home
             // param < 0: exactly -param units (Bunker Wars MoveUnits counts, agent-bw-ai); else a percent
@@ -1368,7 +1368,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
                                   : int(int64_t(sendable) * std::clamp<int64_t>(cmd.param, 1, 100) / 100);
             if (n <= 0 && sendable > 0) n = 1;
             if (n <= 0 && t.garrisonKeep > 0) break;
-            if (rules_.routes.groups) {   // BW groups: units leave row by row and are paid when they leave (RtsRoutes.cpp)
+            if (rules_.routes.groups) {   // row groups: units leave row by row and are paid when they leave (RtsRoutes.cpp)
                 if (n <= 0) break;
                 sendAlongRoute(sim, e, cmd.target, cmd.player, n);
                 uint8_t to = w.get<Owner>(cmd.target).player;
@@ -1533,7 +1533,7 @@ void RtsModule::hashState(Simulation& sim, Hasher& h) {
     for (auto t : gs.score) h.fx(t);
     for (auto& [k, v] : gs.trig.vars) { h.str(k); h.fx(v); }
     if (rules_.dungeon) hashDungeon(sim, h);
-    hashRoutes(sim, h);   // authored routes / BW groups / screen (only on maps / rules that use them)
+    hashRoutes(sim, h);   // authored routes / row groups / screen (only on maps / rules that use them)
     if (rules_.settlers) hashSettlers(sim, h);
     if (rules_.advancedEffects) hashEffects(sim, h);
     if (rules_.originals) hashOriginals(sim, h);

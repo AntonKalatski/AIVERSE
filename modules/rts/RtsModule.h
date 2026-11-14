@@ -555,7 +555,7 @@ struct GameState {
     bool lanesDirty = true;
     uint32_t laneSignature = 0;              // garrisons/obstacles the lanes were built for
     std::vector<uint32_t> laneRoundRobin;    // per garrison entity index: next lane slot
-    RouteState routes;                       // authored routes, BW groups, multiscreen (RtsRoutes.cpp)
+    RouteState routes;                       // authored routes, row groups, multiscreen (RtsRoutes.cpp)
     // planets (map `world` block): bodies, cube-sphere layout of the grid rows (RtsSurface.h); null on flat maps
     std::shared_ptr<const Surface> surface;
     // fidelity mechanics: eaters (sandworms) that submerged and come back later
@@ -635,24 +635,30 @@ public:
     // AIVERSE_VISION=ref does the same, AIVERSE_VISION=check runs both and aborts on a difference).
     void setVisionReference(bool on);
     bool hostile(Simulation& sim, uint8_t a, uint8_t b) const;
-    // Authored routes (map "routes", BW RoutesModule): true when the map has them. Then units are sent only between
-    // garrisons with an open route (canSend); routeLength = BW Route.GetLength (line 0), -1 when there is none.
+    // Authored routes (map "routes"): true when the map has them. Then units are sent only between
+    // garrisons with an open route (canSend); routeLength = length of line 0, -1 when there is none.
     bool routesAuthored() const { return !routeDefs_.empty(); }
     bool canSend(Simulation& sim, Entity from, Entity to) const;
     Fixed routeLength(Simulation& sim, Entity from, Entity to) const;
-    Fixed routeAiLength(Simulation& sim, Entity from, Entity to) const;   // BW Route.GetAILength (slowdown zones); -1: none
-    // Flying sends (BW PointsFlyingUnits): a garrison with a `flying` status sends along a straight flying route (made on
-    // first use, BW FindFlyingRoute) even without a ground route, one flying group at a time, rows flyRowSpacing apart.
+    Fixed routeAiLength(Simulation& sim, Entity from, Entity to) const;   // slowdown zones count longer; -1: none
+    // Flying sends: a garrison with a `flying` status sends along a straight flying route (made on
+    // first use) even without a ground route; rows flyRowSpacing apart (lanes.groups flyAll / flySingle).
     bool sendsFlying(Simulation& sim, Entity from) const;
-    // BW Spline.GetTowerCoverageDistance: route length within `range` of tower point `tower` (map towersCoverage), 0 when
+    // Route length within `range` of tower point `tower` (map towersCoverage), 0 when
     // the map has none; and the AI estimates built on it (TowerModule.GetUnitsDamageForSpline / GetDamageBySpline).
     Fixed towerCoverage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range) const;
     int towerUnitsDamage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, int count, Fixed rowDistance, Fixed unitSpeed) const;
     int towerDamageBySpline(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, Fixed waveLength, Fixed unitSpeed) const;
-    // Alpha of a route walker at the route ends (BW SubSpline.GetAlpha; 1 elsewhere / for other units): the view fades it.
+    // Alpha of a route walker at the route ends: the view fades it.
     Fixed routeAlpha(Simulation& sim, Entity unit) const;
+    // Walkers are ordinary unit entities (LaneWalker + Enter order + GroupTag); they never acquire targets themselves.
+    // routeWalkerTargets: living hostile walkers inside the query ellipse / sector, nearest first (ties: entity index),
+    // for skills that let walkers shoot. Kill them with dealDamage / hp = 0 as any unit: groups count
+    // only spawned units, nothing else to keep consistent. routeWalkerDistances: walked / left along its own line.
+    std::vector<Entity> routeWalkerTargets(Simulation& sim, const WalkerQuery& q) const;
+    bool routeWalkerDistances(Simulation& sim, Entity unit, Fixed& walked, Fixed& left) const;
     const std::vector<RouteDef>& routeDefs() const { return routeDefs_; }
-    // Multiscreen (map "screen", BW MultiscreenModule): the current screen and whether a point is on it (always true
+    // Multiscreen (map "screen"): the current screen and whether a point is on it (always true
     // without a screen). Garrisons off the screen do not grow. setScreenCenter clamps to the screen bounds.
     const ScreenDef& screen() const { return screen_; }
     bool onScreen(Simulation& sim, Vec3 p) const;            // map "screen", else the env map scroller screen
@@ -989,7 +995,7 @@ private:
     void rebuildLanes(Simulation& sim);
     void rebuildLanesSphere(Simulation& sim, const std::vector<Entity>& nodes);   // planets: same-body pairs, on the surface
     bool runLaneWalk(Simulation& sim, Entity e, Order& o);
-    // authored routes / BW groups / multiscreen (RtsRoutes.cpp)
+    // authored routes / row groups / multiscreen (RtsRoutes.cpp)
     void setupRoutes(Simulation& sim, const Json& map, const std::vector<Entity>& placed);
     void rebuildRoutes(Simulation& sim);
     void sysRoutes(Simulation& sim);

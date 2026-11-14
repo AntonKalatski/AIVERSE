@@ -358,7 +358,7 @@ void RtsModule::sysGarrison(Simulation& sim) {
     w.each<Garrison, Unit, Owner>([&](Entity e, Garrison& g, Unit& u, Owner& o) {
         const UnitType& t = rules_.types[u.type];
         if (u.flags & kUnitUnderConstruction) return;
-        // environment (off-screen production) and multiscreen (BW HouseModule.GetIncreaseRate): points off the screen do not grow
+        // environment (off-screen production) and multiscreen: points off the screen do not grow
         const bool grows = (!env_ || !env_->active() || env_->producing(sim, e)) && (!screen_.enabled || onScreen(sim, w.get<Transform>(e).pos));
         if (!grows) {}
         else if (o.player == 0 && rules_.core.neutralGrowth && t.spawnInterval.raw > 0) {
@@ -434,7 +434,7 @@ void RtsModule::sysGarrison(Simulation& sim) {
         }
     });
     for (auto& r : releases) releaseUnit(sim, r.from, r.target, r.unit, r.owner, r.group);
-    if (rules_.routes.groups) sysSendGroups(sim);   // BW groups (RtsRoutes.cpp)
+    if (rules_.routes.groups) sysSendGroups(sim);   // row groups (RtsRoutes.cpp)
 }
 
 Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint16_t unit, uint8_t owner, uint32_t group) {
@@ -461,7 +461,7 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
                 // start at the first lane point outside the source footprint
                 uint16_t pos = 0;
                 auto& f = w.get<Footprint>(r.from);
-                while (!authored && pos + 1u < L.points.size()) {   // BW routes start at the point itself
+                while (!authored && pos + 1u < L.points.size()) {   // authored routes start at the point itself
                     Vec3 p = L.points[reverse ? L.points.size() - 1 - pos : pos];
                     int cx, cy; gs.grid.cellXY(p, cx, cy);
                     if (cx < f.x || cy < f.y || cx >= f.x + f.w || cy >= f.y + f.h) break;

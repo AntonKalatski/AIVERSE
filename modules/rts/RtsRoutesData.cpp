@@ -1,5 +1,4 @@
-// Route geometry and data parsing (RtsRoutesData.h). A 1:1 port of Bunker Wars Spline / SubSpline / Interpolate
-// in fixed point: same node counts, same offsets, same trimming quirks, so the lines units walk match BW.
+// Route geometry and data parsing (RtsRoutesData.h), all in fixed point so every peer walks identical lines.
 #include "RtsRoutesData.h"
 #include <algorithm>
 #include <stdexcept>
@@ -21,7 +20,7 @@ Vec2 normalized(Vec2 v) {
     return l.raw > 0 ? v / l : Vec2{};
 }
 
-// BW Interpolate.CatmullRom (GemsV1 p.266): t = step / stepCount
+// Catmull-Rom (GemsV1 p.266): t = step / stepCount
 Vec2 catmullRom(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, int step, int steps) {
     const Fixed t = Fixed::fromInt(step) / steps, t2 = t * t, t3 = t2 * t;
     const Fixed h = Fixed::fromRatio(1, 2), a15 = Fixed::fromRatio(3, 2), a25 = Fixed::fromRatio(5, 2);
@@ -32,7 +31,7 @@ Vec2 catmullRom(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, int step, int steps) {
     return p0 * c0 + p1 * c1 + p2 * c2 + p3 * c3;
 }
 
-// BW Interpolate.NewCatmullRom(nodes, slices, loop = false)
+// Open Catmull-Rom through the nodes: slices + 1 points per segment, end points doubled
 std::vector<Vec2> newCatmullRom(const std::vector<Vec2>& nodes, int slices) {
     std::vector<Vec2> out;
     if (nodes.size() < 2) return out;
@@ -53,7 +52,7 @@ Vec2 moveTowards(Vec2 from, Vec2 to, Fixed step) {
     return from + d * (step / l);
 }
 
-// BW SubSpline.Recalculate end trimming, quirks included: at the start the moved node survives only when nodes
+// End trimming (the rule existing route data was authored against): at the start the moved node survives only when nodes
 // within `off` were dropped; at the end the moved node is always dropped again.
 void trimEnds(std::vector<Vec2>& list, Fixed off) {
     if (list.size() < 2 || (list.front() - list.back()).length() <= off * 4) return;
@@ -81,7 +80,7 @@ void trimEnds(std::vector<Vec2>& list, Fixed off) {
     }
 }
 
-// BW Spline.GetOffset. Map z = -BW y, so BW's right of a forward (fx, fy), (fy, -fx), is (-dz, dx) here.
+// Column offset of a line at an inner control point; right of a forward (dx, dz) is (-dz, dx).
 Vec2 columnOffset(Vec2 cur, Vec2 prev, Vec2 next, Fixed value, int line, Fixed colWidth) {
     auto right = [](Vec2 f) { return normalized(Vec2{-f.y, f.x}); };
     const Vec2 r1 = right(cur - prev), r2 = right(next - cur);
@@ -116,6 +115,8 @@ void loadRouteRules(const Json& lanes, RouteRules& r) {
         if (j.isObject()) {
             r.rowSpacing = j.getFx("rowSpacing", r.rowSpacing);
             r.flyRowSpacing = j.getFx("flyRowSpacing", r.flyRowSpacing);
+            r.flyAll = j.getBool("flyAll", r.flyAll);
+            r.flySingle = j.getBool("flySingle", r.flySingle);
             if (r.rowSpacing.raw <= 0 || r.flyRowSpacing.raw <= 0) throw std::runtime_error("rules lanes.groups: rowSpacing must be > 0");
         }
     }

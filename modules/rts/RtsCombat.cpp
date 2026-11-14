@@ -36,7 +36,7 @@ void RtsModule::sysTargeting(Simulation& sim) {
         const bool hf = gs.grid.hf;
         Entity best;
         Fixed bestD{};
-        // elliptical range (weapon rangeAspect, Bunker Wars towers): the sight ellipse squashed along z
+        // elliptical range (weapon rangeAspect): the sight ellipse squashed along z
         const Fixed aspect = t.weapons.empty() ? kOne : t.weapons[0].rangeAspect;
         gs.hash.query(tr.pos, sight, [&](Entity cand) {
             if (cand == e) return;

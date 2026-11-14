@@ -895,7 +895,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         cam_.target.z = std::clamp(cam_.target.z, 0.0f, float(g.h));
         }
         if (aiverse::Vec3 sc{}; !planet() && mod().screenView(*sim_, sc, screenSize_)) {
-            // map "screen" / map scroller (BW MultiscreenModule): the camera follows the centre and frames the screen
+            // map "screen" / map scroller: the camera follows the centre and frames the screen
             const float smooth = mod().screen().enabled ? float(mod().screen().smooth.toDouble()) : 10.0f;
             const float k = screenFramed_ ? std::min(1.0f, float(dt) * smooth) : 1.0f;   // the first frame jumps
             cam_.target.x += (float(sc.x.toDouble()) - cam_.target.x) * k;

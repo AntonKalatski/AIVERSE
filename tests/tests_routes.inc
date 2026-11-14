@@ -1,18 +1,18 @@
-// ------------------------------------------------------------------ Bunker Wars routes, groups, multiscreen
+// ------------------------------------------------------------------ authored routes, row groups, multiscreen
 // (modules/rts/RtsRoutes*.cpp, docs/game-format.md § Routes)
 
 static bool nearFx(Fixed a, double b, double eps = 1e-3) { return std::fabs(a.toDouble() - b) <= eps; }
 
 TEST(routes_spline_matches_bw) {
-    game::RouteRules rr;   // BW defaults: 6 lines, column padding 0.5, trim 0.25, 10 nodes between points
+    game::RouteRules rr;   // defaults: 6 lines, column padding 0.5, trim 0.25, 10 nodes between points
     game::RouteDef st;
     st.from = "a"; st.to = "b";
     st.points = {{Fixed{}, Fixed{}}, {Fixed::fromInt(10), Fixed{}}};
     st.offsets.assign(2, {}); st.zones.assign(2, 0); st.slowdown.assign(2, Fixed{});
     auto lines = game::buildRouteLines(st, rr);
     CHECK(lines.size() == 6);
-    // 12 Catmull-Rom nodes 10/11 apart; BW trimming drops the first and the last node (the moved node is removed again)
-    // Catmull-Rom with doubled end points eases in / out; BW trimming drops the nodes within 0.2 of the ends (and the
+    // 12 Catmull-Rom nodes 10/11 apart; trimming drops the first and the last node (the moved node is removed again)
+    // Catmull-Rom with doubled end points eases in / out; trimming drops the nodes within 0.2 of the ends (and the
     // moved end node again), so the line starts beyond 0.25 and ends before 9.75 on the straight
     bool straight = lines[0].size() >= 8 && lines[0].size() <= 12 && lines[0].front().x >= Fixed::fromRatio(1, 4) && lines[0].back().x <= Fixed::fromRatio(39, 4);
     for (size_t i = 1; i < lines[0].size(); ++i) straight = straight && lines[0][i].x > lines[0][i - 1].x && lines[0][i].y.raw == 0;
@@ -21,12 +21,12 @@ TEST(routes_spline_matches_bw) {
     game::RouteDef bend = st;
     bend.points = {{Fixed{}, Fixed{}}, {Fixed::fromInt(5), Fixed{}}, {Fixed::fromInt(10), Fixed{}}};
     bend.offsets.assign(3, {}); bend.zones.assign(3, 0); bend.slowdown.assign(3, Fixed{});
-    bend.offsets[1][3] = Fixed::fromRatio(1, 10);   // per-line extra offset (BW Spline.Offset)
+    bend.offsets[1][3] = Fixed::fromRatio(1, 10);   // per-line extra offset
     lines = game::buildRouteLines(bend, rr);
-    const double want[6] = {-0.25, 0.25, -0.75, 0.85, -1.25, 1.25};   // columnPadding 0.5 (BW 20 / 40)
+    const double want[6] = {-0.25, 0.25, -0.75, 0.85, -1.25, 1.25};   // columnPadding 0.5
     auto atMid = [](const std::vector<Vec2>& l) { size_t b = 0; for (size_t i = 0; i < l.size(); ++i) if (fxAbs(l[i].x - Fixed::fromInt(5)) < fxAbs(l[b].x - Fixed::fromInt(5))) b = i; return l[b]; };
     for (int k = 0; k < 6; ++k) CHECK(nearFx(atMid(lines[size_t(k)]).x, 5.0) && nearFx(atMid(lines[size_t(k)]).y, want[k]));
-    // raw nodes win over the control points (BW rawSplineLines)
+    // raw nodes win over the control points
     bend.lines = {{{Fixed{}, Fixed::fromInt(3)}, {Fixed::fromInt(10), Fixed::fromInt(3)}}};
     lines = game::buildRouteLines(bend, rr);
     CHECK(nearFx(lines[0][3].y, 3.0) && nearFx(atMid(lines[1]).y, 0.25));
@@ -94,7 +94,7 @@ TEST(routes_replace_lanes_and_gate_sends) {
     w.each<game::Unit>([&](Entity e, game::Unit& u) { if (m.rules().types[u.type].id == "rock") rock = e; });
     w.get<game::Unit>(rock).hp = Fixed{};
     run(*sim, 2);
-    CHECK(gs.lanes.size() == 12 && m.canSend(*sim, b, c));               // b-c opened (BW Route.RemoveLocker)
+    CHECK(gs.lanes.size() == 12 && m.canSend(*sim, b, c));               // b-c opened
 }
 
 TEST(routes_rows_stay_abreast) {
@@ -107,14 +107,14 @@ TEST(routes_rows_stay_abreast) {
     std::vector<Entity> row;
     w.each<game::LaneWalker>([&](Entity e, game::LaneWalker&) { row.push_back(e); });
     CHECK(row.size() == 6);
-    // every line is walked at line 0's progress (BW): the row crosses x = 12 (the bend) at about the same time
+    // every line is walked at line 0's progress: the row crosses x = 12 (the bend) at about the same time
     Fixed lo = Fixed::fromInt(100), hi{};
     for (Entity e : row) { lo = fxMin(lo, w.get<Transform>(e).pos.x); hi = fxMax(hi, w.get<Transform>(e).pos.x); }
     CHECK(hi - lo < Fixed::fromRatio(1, 2));
     (void)m;
 }
 
-TEST(routes_bw_groups_rows_merge_close) {
+TEST(routes_groups_rows_merge_close) {
     auto sim = makeSimJson(routeRules(true), routeMap());
     auto& m = mod(*sim);
     auto& gs = m.state(*sim);
@@ -163,7 +163,7 @@ TEST(routes_screen_groups_and_multiscreen) {
     auto sim = makeSimJson(rules, map);
     auto& m = mod(*sim);
     World& w = sim->world();
-    CHECK(m.routeDefs().size() == 1);                                     // b-c dropped (BW CompareScreenGroups)
+    CHECK(m.routeDefs().size() == 1);                                     // b-c dropped
     Entity a = villageAt(*sim, 5), c = villageAt(*sim, 35);
     CHECK(m.screen().enabled && m.onScreen(*sim, w.get<Transform>(a).pos) && !m.onScreen(*sim, w.get<Transform>(c).pos));
     run(*sim, 3);
@@ -174,8 +174,8 @@ TEST(routes_screen_groups_and_multiscreen) {
     CHECK(w.get<game::Garrison>(c).count > 5);
 }
 
-TEST(routes_flying_tower_ufo) {
-    // BW PositionFlyingTower (Hero14 UFO: 10 s, range 600 px x aspect 0.5, 3.5 shots / s): a temporary tower at a point
+TEST(routes_point_tower_elliptical_range) {
+    // a temporary tower at a point with an elliptical range (weapon rangeAspect)
     const char* rules = R"({
       "resources": {"mana": {"start": 100, "regen": 1}},
       "playerAbilities": [{"id": "ufo", "target": "point", "cost": {}, "effects": [{"type": "spawn", "unit": "ufo", "duration": 10}]}],
@@ -206,12 +206,13 @@ TEST(routes_flying_tower_ufo) {
 }
 
 TEST(routes_flying_send_offsets_fade_coverage) {
-    // a flying garrison (BW PointsFlyingUnits) sends along a straight flying route without a ground route, rows 3 apart,
+    // a flying garrison sends along a straight flying route without a ground route, rows 3 apart,
     // the whole garrison; walkers carry a random diagonal offset faded at the route ends; towersCoverage feeds the AI helpers
     std::string rules = routeRules(true);
+    rules.replace(rules.find(R"("rowSpacing": 3)"), 15, R"("rowSpacing": 3, "flyAll": true, "flySingle": true)");
     rules.replace(rules.find(R"("types": {)"), 10, R"("statuses": {"fly": {"flags": ["flying"]}}, "types": {)");
     std::string map = routeMap();
-    map.replace(map.find(R"("blockers":["r"]})"), 17, R"("blockers":["r"],"towersCoverage":[{"point":"d","distances":[1,2,4]}]})");
+    map.replace(map.find(R"("blockers":["r"]})"), 17, R"("blockers":["r"],"towersCoverage":[{"point":"d","distances":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,4]}]})");
     auto sim = makeSimJson(rules, map);
     auto& m = mod(*sim);
     auto& gs = m.state(*sim);
@@ -236,7 +237,20 @@ TEST(routes_flying_send_offsets_fade_coverage) {
     });
     CHECK(straight && jittered);
     CHECK(m.routeAlpha(*sim, kNullEntity) == Fixed::fromInt(1));
-    // coverage (BW GetTowerCoverageDistance): [0 ... 0, 1, 2, 4] over ranges 0..20 steps of 1.25
+    {   // walker queries for skills: hostile walkers in an ellipse, with distances along the line
+        Entity any;
+        w.each<game::LaneWalker>([&](Entity e, game::LaneWalker&) { if (!any.valid()) any = e; });
+        game::WalkerQuery q; q.pos = w.get<Transform>(any).pos; q.range = Fixed::fromInt(30); q.owner = 2;
+        auto hit = m.routeWalkerTargets(*sim, q);
+        CHECK(!hit.empty() && hit[0] == any);
+        q.owner = 1;
+        CHECK(m.routeWalkerTargets(*sim, q).empty());                    // own walkers are not targets
+        q.owner = 2; q.minFromEnds = Fixed::fromInt(100);
+        CHECK(m.routeWalkerTargets(*sim, q).empty());                    // all within 100 of a route end
+        Fixed walked{}, left{};
+        CHECK(m.routeWalkerDistances(*sim, any, walked, left) && walked.raw > 0 && left.raw > 0);
+    }
+    // coverage: [0 ... 0, 1, 2, 4] over ranges 0..20 steps of 1.25
     CHECK(m.towerCoverage(*sim, b, c, d, Fixed::fromInt(25)) == Fixed::fromInt(4));
     CHECK(m.towerCoverage(*sim, c, b, d, Fixed::fromRatio(5, 4) * 19 + Fixed::fromRatio(5, 8)) == Fixed::fromInt(3));   // halfway 2 -> 4
     CHECK(m.towerCoverage(*sim, b, c, d, Fixed::fromInt(1)).raw == 0 && m.towerCoverage(*sim, a, b, d, Fixed::fromInt(25)).raw == 0);
