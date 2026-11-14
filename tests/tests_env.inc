@@ -1,6 +1,5 @@
-// Map environment (Bunker Wars port, RtsEnv.h, docs/game-format.md § Environment): weather, wind, worms,
-// toads, bombers, Mouro, map scroller, off-map senders, auto skills, caves, graveyards + souls, walls,
-// saves and determinism.
+// Map environment (RtsEnv.h, docs/game-format.md § Map environment): weather, wind, zones, trample fields, auto
+// skills on splines, fog options, saves and determinism; gameplay hooks of native modules (docs/native-modules.md).
 #include "modules/rts/RtsEnv.h"
 
 namespace {
@@ -13,25 +12,17 @@ const char* kEnvRules = R"J({
   ],
   "types": {
     "village": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "capturable": true, "garrison": {"max": 60, "unit": "shroom", "interval": 1}},
-    "village2": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "capturable": true, "level": 2, "garrison": {"max": 60, "unit": "shroom", "interval": 1}},
-    "grave": {"structure": {"footprint": [2, 2]}, "invulnerable": true, "garrison": {"max": 999, "unit": "shroom", "interval": 0}},
-    "wall": {"structure": {"footprint": [1, 1]}, "health": {"max": 100}, "countsForVictory": false},
     "shroom": {"move": {"speed": 2}, "entersGarrison": true, "health": {"max": 10}},
-    "bomber": {"move": {"speed": 0, "layer": "air"}, "health": {"max": 100}, "countsForVictory": false},
-    "worm_look": {"move": {"speed": 0}, "invulnerable": true, "countsForVictory": false}
+    "marker": {"move": {"speed": 0}, "invulnerable": true, "countsForVictory": false}
   }
 })J";
 
 std::string envMap(const std::string& env, int w = 40, int h = 20, const std::string& extraEntities = "") {
     return flatMap(w, h, R"(,"entities":[{"type":"village","owner":1,"pos":[5,10],"garrison":40,"id":"home"},
         {"type":"village","owner":2,"pos":[35,10],"garrison":40,"id":"enemy"},
-        {"type":"village","owner":0,"pos":[20,3],"garrison":10,"id":"cave_a"},
-        {"type":"village","owner":0,"pos":[20,17],"garrison":10,"id":"cave_b"})" + extraEntities + R"(],
+        {"type":"village","owner":0,"pos":[20,3],"garrison":10,"id":"north"},
+        {"type":"village","owner":0,"pos":[20,17],"garrison":10,"id":"south"})" + extraEntities + R"(],
         "environment":)" + env);
-}
-void envUpgrades(std::string& rules) {   // village -> village2 upgrade chain for the toad downgrade
-    const std::string k = "\"village\": {\"structure\"";
-    rules.replace(rules.find(k), k.size(), "\"village\": {\"upgrades\": [\"village2\"], \"structure\"");
 }
 void envSendCmd(Simulation& sim, uint8_t p, Entity from, Entity to, int pct) {
     Command c; c.player = p; c.type = game::kCmdSend; c.units = {from}; c.target = to; c.param = pct; sim.submit(c);
@@ -42,7 +33,16 @@ int envEvents(Simulation& sim, int64_t kind, int64_t data = -1) {
         if (ev.type == game::kEvEnv && (ev.value >> 16) == kind && (data < 0 || (ev.value & 0xFFFF) == data)) ++n;
     return n;
 }
-Entity envPoint(Simulation& sim, int i) { return mod(sim).environment()->point(sim, i); }
+Entity envPoint(Simulation& sim, int i) {   // the i-th village of envMap (nearest garrison to its map position)
+    static const int at[4][2] = {{5, 10}, {35, 10}, {20, 3}, {20, 17}};
+    const Vec3 p{Fixed::fromInt(at[i][0]), Fixed{}, Fixed::fromInt(at[i][1])};
+    Entity best; Fixed bd{};
+    sim.world().each<game::Garrison, Transform>([&](Entity e, game::Garrison&, Transform& t) {
+        const Fixed d = (t.pos - p).xz().length();
+        if (!best.valid() || d < bd) { best = e; bd = d; }
+    });
+    return best;
+}
 } // namespace
 
 TEST(env_absent_keeps_the_game_unchanged) {
@@ -110,133 +110,21 @@ TEST(env_water_zone_slows_and_blizzard_kills_walkers) {
     CHECK(sim->world().get<game::Garrison>(enemy).count >= 40);
 }
 
-TEST(env_caves_share_owner_and_garrison) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({"caves": [["cave_a", "cave_b"]]})"));
-    auto* env = mod(*sim).environment();
-    World& w = sim->world();
-    Entity ca = envPoint(*sim, 2), cb = envPoint(*sim, 3), home = envPoint(*sim, 0);
-    CHECK(ca.valid() && cb.valid());
-    CHECK(!env->sendAllowed(*sim, ca, cb));
-    envSendCmd(*sim, 1, home, ca, 100);
-    run(*sim, 12);
-    CHECK(w.get<Owner>(ca).player == 1);
-    CHECK(w.get<Owner>(cb).player == 1);   // caught one cave = caught all
-    CHECK(w.get<game::Garrison>(ca).count == w.get<game::Garrison>(cb).count);
-    w.get<game::Garrison>(ca).count += 7;  // any change lands on every cave of the group
-    run(*sim, 0.1);
-    CHECK(w.get<game::Garrison>(cb).count == w.get<game::Garrison>(ca).count);
-}
-
-TEST(env_graveyard_collects_souls_and_sends_them) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({"graveyard": {"type": "grave", "graveyardLimit": 6, "awaitDuration": 0.5},
-        "souls": {"flyVelocity": 20, "attackerSoulDivider": 1, "defenderSoulDivider": 1}, "pointFire": {"fireDuration": 3}})", 40, 20,
-        R"(,{"type":"grave","owner":0,"pos":[20,10],"garrison":0,"id":"grave"})"));
-    auto* env = mod(*sim).environment();
-    World& w = sim->world();
-    Entity home = envPoint(*sim, 0), enemy = envPoint(*sim, 1), gy = envPoint(*sim, 4);
-    CHECK(gy.valid() && !env->sendAllowed(*sim, home, gy));
-    envSendCmd(*sim, 1, home, enemy, 50);
-    bool sentOut = false, fire = false;
-    auto* st = w.resource<game::EnvState>();
-    for (int t = 0; t < 20 * 25; ++t) {
-        sim->step();
-        if (envEvents(*sim, game::kEnvGraveyard, 2)) sentOut = true;
-        for (auto& f : st->fires) if (f.e == enemy && f.timer.raw > 0) fire = true;
-    }
-    CHECK(fire);       // the assaulted building burns
-    CHECK(sentOut);    // souls of the assault filled the graveyard, it marched out to the last action buildings
-    CHECK(!st->lastAction[2].empty() && st->lastAction[2].back() == 1);
-}
-
-TEST(env_worm_toad_and_bomber) {
-    std::string rules = kEnvRules;
-    envUpgrades(rules);
-    auto sim = makeSimJson(rules, envMap(R"({
-        "splines": [{"id": "path", "points": [[6, 6], [34, 6], [34, 14], [6, 14]], "loop": true}],
-        "worms": [{"paths": ["path"], "onTheGroundCycles": [[30, 30]], "undergroundCycles": [[0.2, 0.2]], "spawnArmyCycles": [[3, 3]],
-                   "info": {"speed": 3, "killZoneEnd": 2, "killZoneWidth": 4, "visionDistance": 6, "minDistanceToBuilding": 4,
-                            "traceWidth": 2, "tailData": [{"shift": 0}, {"shift": 1}, {"shift": 1}]}, "look": "worm_look"}],
-        "zones": [{"id": "swamp", "kind": "toad", "rect": [0, 0, 40, 20]}],
-        "toad": {"pos": [20, 10], "attackDuration": 0.2, "postAttackDuration": 0.1, "maxUnits": 3},
-        "flyBomb": {"rallyPoints": [{"start": [0, 10], "end": [40, 10]}], "flyVelocity": 10, "minIdleDuration": 0.1, "maxIdleDuration": 0.1,
-                    "minDropBombPeriod": 0.3, "maxDropBombPeriod": 0.3, "minDropBombHeight": 1, "maxDropBombHeight": 1, "gravity": -20,
-                    "explosionSkill": "boom", "type": "bomber"}})", 40, 20,
-        R"(,{"type":"village2","owner":2,"pos":[20,10],"garrison":5,"id":"big"})"));
-    auto& m = mod(*sim);
-    World& w = sim->world();
-    auto* st = w.resource<game::EnvState>();
-    Entity home = envPoint(*sim, 0), enemy = envPoint(*sim, 1), big = envPoint(*sim, 4);
-    int toadAttacks = 0, toadExplosions = 0, bombs = 0, wormArmy = 0, wormUp = 0;
-    for (int t = 0; t < 20 * 20; ++t) {
-        if (t % 20 == 0) envSendCmd(*sim, 1, home, enemy, 30);
-        sim->step();
-        toadAttacks += envEvents(*sim, game::kEnvToadAttack);
-        toadExplosions += envEvents(*sim, game::kEnvToadExplode);
-        bombs += envEvents(*sim, game::kEnvBomb, 1);
-        for (auto& ev : sim->events())
-            if (ev.type == game::kEvEnv && (ev.value >> 16) == game::kEnvWorm) {
-                const int s = int((ev.value >> 8) & 0xFF);
-                if (s == 6) ++wormArmy;
-                if (s == 0) ++wormUp;
-            }
-    }
-    CHECK(toadAttacks >= 3);
-    CHECK(toadExplosions >= 1);
-    CHECK(!w.alive(big) || m.rules().types[w.get<game::Unit>(big).type].id == "village");   // exploded: back to level 1
-    CHECK(bombs >= 3);
-    CHECK(wormArmy >= 1 && wormUp >= 1);   // army from under ground, then it crawls
-    CHECK(st->worms.size() == 1 && st->worms[0].seg.size() == 3);
-    std::vector<game::Environment::Body> bodies;
-    m.environment()->bodies(*sim, bodies);
-    if (st->worms[0].state != 4) CHECK(!bodies.empty());
-}
-
-TEST(env_scroller_outmap_mouro_and_autoskills) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({
-        "outmapUnits": {"sources": ["cave_a"], "moveActions": [{"time": 0.5, "from": "cave_a", "to": "home", "count": 6}]},
-        "mapScroller": {"screen": [40, 20], "actions": [{"type": "waitTime", "seconds": 1}, {"type": "moveScreen", "position": [5, 0], "duration": 1},
-                                                     {"type": "convertAll", "to": "player"}]},
-        "splines": [{"id": "fire", "points": [[8, 2], [38, 2]], "skill": "bless", "velocity": 20, "emitPeriod": 1}],
-        "mouro": {"castPos": [20, 10], "actionHolders": [{"startsFrom": 0.2, "actions": [
-            {"name": "army", "type": "addUnits", "sourcePoints": ["cave_b"], "targetPoints": ["home"], "unitsPerPoint": 8, "duration": 1, "castAt": 0.1}]}]}})"));
-    World& w = sim->world();
-    auto* st = w.resource<game::EnvState>();
-    Entity home = envPoint(*sim, 0), enemy = envPoint(*sim, 1);
-    int mouroActions = 0, scroll = 0, abilities = 0;
+TEST(env_auto_skill_fires_along_its_spline) {
+    auto sim = makeSimJson(kEnvRules, envMap(R"({"splines": [{"id": "fire", "points": [[8, 2], [38, 2]], "skill": "bless", "velocity": 20, "emitPeriod": 1}]})"));
+    int abilities = 0;
     for (int t = 0; t < 20 * 4; ++t) {
         sim->step();
-        mouroActions += envEvents(*sim, game::kEnvMouroAction);
-        scroll += envEvents(*sim, game::kEnvScroll);
         for (auto& ev : sim->events()) if (ev.type == game::kEvPlayerAbility && ev.player == 0) ++abilities;
     }
-    CHECK(st->outmapDone);
-    CHECK(mouroActions >= 1);
-    CHECK(scroll >= 3);
-    CHECK(st->screenPos.x == Fixed::fromInt(5));
-    CHECK(w.get<Owner>(enemy).player == 1 && w.get<Owner>(home).player == 1);   // convertAll to the player
-    CHECK(abilities >= 2);   // the auto skill fired at the spline start every second
-}
-
-TEST(env_walls_count_hits_and_fall) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({"walls": [{"point": "wall", "hp": 3, "destroyDuration": 0.5}]})", 40, 20,
-        R"(,{"type":"wall","owner":0,"pos":[20,10],"id":"wall"})"));
-    auto* env = mod(*sim).environment();
-    World& w = sim->world();
-    Entity wall = envPoint(*sim, 4);
-    CHECK(w.get<Owner>(wall).player == game::kHostileNeutral);
-    for (int i = 0; i < 3; ++i) { Fixed d = Fixed::fromInt(1000); CHECK(env->damageOverride(*sim, wall, d) && d.raw == 0); }
-    CHECK(w.get<Owner>(wall).player == 0);   // rubble: nobody shoots it
-    run(*sim, 1);
-    CHECK(!w.alive(wall));
+    CHECK(abilities >= 3);   // cast at the spline start every second, for the neutral player
 }
 
 TEST(env_save_load_continues_identically) {
-    const std::string env = R"({"weather": ["rain", "lightning"], "weatherParams": {"lightningKillTime": 0.5, "lightningKillFactor": 50},
+    const std::string env = R"({"weather": ["rain", "lightning", "blizzard"], "weatherParams": {"lightningKillTime": 0.5, "lightningKillFactor": 50, "blizzardFillTime": 2, "blizzardWaitTime": 1},
         "wind": {"minIdleDuration": 0.3, "maxIdleDuration": 1, "minBlowDuration": 1, "maxBlowDuration": 2, "minForce": 0.5, "maxForce": 1},
-        "graveyard": {"type": "grave", "graveyardLimit": 5}, "caves": [["cave_a", "cave_b"]],
-        "splines": [{"id": "path", "points": [[6, 6], [34, 6], [34, 14]], "loop": false}],
-        "worms": [{"paths": ["path"], "onTheGroundCycles": [[2, 3]], "undergroundCycles": [[1, 2]], "info": {"speed": 3}}]})";
-    const std::string map = envMap(env, 40, 20, R"(,{"type":"grave","owner":0,"pos":[20,10],"garrison":0})");
+        "splines": [{"id": "path", "points": [[6, 6], [34, 6], [34, 14]], "skill": "bless", "velocity": 10, "emitPeriod": 2}]})";
+    const std::string map = envMap(env);
     auto a = makeSimJson(kEnvRules, map, 9);
     for (int t = 0; t < 20 * 6; ++t) {
         if (t % 30 == 0) envSendCmd(*a, 1, envPoint(*a, 0), envPoint(*a, 1), 40);
@@ -252,33 +140,6 @@ TEST(env_save_load_continues_identically) {
     for (int t = 0; t < 20 * 6; ++t) { a->step(); b->step(); }
     CHECK(b->checksum() == a->checksum());
     CHECK(a->serialize() == b->serialize());
-}
-
-// ---------------------------------------------------------------- stage 2 (1:1 gaps)
-
-TEST(env_multi_spline_auto_skill_walks_its_splines) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({
-        "splines": [{"id": "a", "points": [[4, 4], [12, 4]], "velocity": 8}, {"id": "b", "points": [[14, 6], [14, 14]], "velocity": 8},
-                    {"id": "c", "points": [[30, 14], [36, 14]], "velocity": 8}],
-        "multiSplineSkills": [{"skill": "bless", "order": [0, 1, 2], "randomJump": false, "shouldBuildTransferSpline": true}]})"));
-    World& w = sim->world();
-    auto* st = w.resource<game::EnvState>();
-    int casts = 0;
-    for (int t = 0; t < 6; ++t) { sim->step(); for (auto& ev : sim->events()) if (ev.type == game::kEvPlayerAbility && ev.player == 0) ++casts; }
-    CHECK(casts == 1);                         // no emit period: once, at the start of the first spline
-    CHECK(st->multis.size() == 1 && st->multis[0].created);
-    if (!st->multis[0].moving.empty()) {       // the area rides spline a, then the transfer curve towards b
-        Entity a = st->multis[0].moving[0].area;
-        bool transferred = false;
-        Fixed maxZ{};
-        for (int t = 0; t < 40 && w.alive(a); ++t) {
-            sim->step();
-            if (!st->multis[0].moving.empty() && st->multis[0].moving[0].transfer) transferred = true;
-            maxZ = fxMax(maxZ, w.get<Transform>(a).pos.z);
-        }
-        CHECK(transferred);
-        CHECK(maxZ > Fixed::fromInt(4));
-    }
 }
 
 TEST(env_rain_lowers_the_grass_fire_spread) {
@@ -300,76 +161,22 @@ TEST(env_rain_lowers_the_grass_fire_spread) {
     };
     const int dry = burning(false), wet = burning(true);
     CHECK(dry > 40);
-    CHECK(wet < dry);   // grassRainBurnRandomFactor 0.5: half the neighbours catch per run
+    CHECK(wet < dry);   // rain factor 0.5: half the neighbours catch per run
 }
 
-TEST(env_set_invincible_blocks_defeat) {
-    std::string rules = kEnvRules;
-    rules.insert(1, R"("victory": "noEntities",)");
-    auto alive2 = [&](bool inv) {
-        const std::string env = std::string(R"({"mapScroller": {"actions": [{"type": "setInvincible", "player": "bot", "invincible": )") + (inv ? "true" : "false") + "}]}}";
-        auto sim = makeSimJson(rules, flatMap(20, 10, R"(,"entities":[{"type":"village","owner":1,"pos":[5,5],"garrison":5}],"environment":)" + env));
-        run(*sim, 2);
-        return sim->player(2)->alive;
-    };
-    CHECK(!alive2(false));
-    CHECK(alive2(true));
-}
-
-TEST(env_blizzard_sets_the_ai_var_and_mouro_refills_energy) {
-    std::string rules = kEnvRules;
-    rules.replace(rules.find("\"morale\": {\"start\": 0}"), 22, R"("morale": {"start": 0}, "energy": {"start": 10, "capped": true, "storage": 300})");
-    auto sim = makeSimJson(rules, envMap(R"({"weather": ["blizzard"], "weatherParams": {"blizzardFillTime": 1, "blizzardWaitTime": 1},
-        "mouro": {"castPos": [20, 10], "actionHolders": [{"actions": [{"name": "boom", "type": "castAt", "skill": "boom", "duration": 1, "castAt": 0.1}]}]}})"));
+TEST(env_blizzard_sets_the_trigger_var) {
+    auto sim = makeSimJson(kEnvRules, envMap(R"({"weather": ["blizzard"], "weatherParams": {"blizzardFillTime": 1, "blizzardWaitTime": 1}})"));
     auto& gs = mod(*sim).state(*sim);
     bool on = false, off = false;
-    Fixed energy{};
     for (int t = 0; t < 20 * 3; ++t) {
         sim->step();
         auto it = gs.trig.vars.find("blizzard");
         if (it != gs.trig.vars.end()) { if (it->second.raw) on = true; else off = true; }
-        energy = fxMax(energy, stockOf(*sim, 2, "energy"));
     }
     CHECK(on && off);                          // 1 while it blows, 0 while it waits
-    CHECK(energy == Fixed::fromInt(300));      // ResetCastSkillValues: the bot's energy is full before each cast
 }
 
-TEST(env_mouro_skeletons_use_the_skill_filter) {
-    std::string rules = kEnvRules;
-    rules.replace(rules.find("\"playerAbilities\": ["), 20, R"("playerAbilities": [
-    {"id": "skel", "target": "point", "effects": [{"type": "garrisonAdd", "amount": 1, "radius": 1, "kind": "structure", "affects": "allies"}]},)");
-    auto sim = makeSimJson(rules, envMap(R"({"mouro": {"actionHolders": [{"actions": [
-        {"name": "skeletons", "type": "skeletonAttack", "skill": "skel", "targetPointsCount": 3, "duration": 1, "castAt": 0.1}]}]}})"));
-    World& w = sim->world();
-    std::vector<Vec3> hits;
-    for (int t = 0; t < 20 * 2; ++t) {
-        sim->step();
-        for (auto& ev : sim->events()) if (ev.type == game::kEvPlayerAbility && ev.player == 2) hits.push_back(ev.pos);
-    }
-    CHECK(!hits.empty());
-    const Vec3 bot = w.get<Transform>(envPoint(*sim, 1)).pos;
-    for (auto& p : hits) CHECK((p - bot).xz().length() < Fixed::fromInt(1));   // "allies" of the bot: only its own point
-}
-
-TEST(env_bombs_fall_in_bw_screen_space) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({"flyBomb": {"rallyPoints": [{"start": [2, 10], "end": [38, 10]}], "flyVelocity": 4, "amplitude": [0, 0],
-        "minIdleDuration": 0.05, "maxIdleDuration": 0.05, "minDropBombPeriod": 0.5, "maxDropBombPeriod": 0.5, "maxBombsByPass": 1,
-        "minDropBombHeight": 3, "maxDropBombHeight": 3, "gravity": -20, "explosionSkill": "boom"}})"));
-    Vec3 drop{}, boom{};
-    bool dropped = false, exploded = false;
-    for (int t = 0; t < 20 * 3 && !exploded; ++t) {
-        sim->step();
-        for (auto& ev : sim->events()) if (ev.type == game::kEvEnv && (ev.value >> 16) == game::kEnvBomb) {
-            if ((ev.value & 0xFFFF) == 0) { drop = ev.pos; dropped = true; } else { boom = ev.pos; exploded = true; }
-        }
-    }
-    CHECK(dropped && exploded);
-    // lift = height = 3: the screen drop of 3 ends on the bomber's ground track (z 10), drifted along x by its speed
-    CHECK(fxAbs(boom.z - drop.z) < Fixed::fromRatio(1, 4));
-    CHECK(boom.x > drop.x);
-}
-
-TEST(env_bw_fog_ellipse_start_reveal_and_no_memory) {
+TEST(env_fog_ellipse_start_reveal_and_no_memory) {
     std::string rules = kEnvRules;
     rules.insert(1, R"("fogOfWar": {"mode": "full", "ellipse": 2},)");
     rules.replace(rules.find("\"shroom\": {\"move\": {\"speed\": 2}"), 31, R"("shroom": {"move": {"speed": 2}, "sight": 6)");
@@ -385,42 +192,95 @@ TEST(env_bw_fog_ellipse_start_reveal_and_no_memory) {
     CHECK(gs.vision[1][size_t(g.index(20, 14))] == 0);      // ... but not 4 along z (4 x 2 > 6)
 }
 
-TEST(env_scroller_moves_the_routes_screen) {
-    std::string map = envMap(R"({"mapScroller": {"actions": [{"type": "moveScreen", "position": [30, 10], "duration": 1}]}})");
-    map.insert(map.size() - 1, R"(,"screen": {"size": [20, 20], "center": [10, 10], "bounds": [0, 30, 0, 0]})");
-    auto sim = makeSimJson(kEnvRules, map);
-    auto& m = mod(*sim);
-    CHECK(!m.environment()->insideScreen(*sim, Vec3{Fixed::fromInt(35), Fixed{}, Fixed::fromInt(10)}));
-    run(*sim, 1.5);
-    CHECK(m.screenCenter(*sim).x == Fixed::fromInt(30));
-    CHECK(m.environment()->insideScreen(*sim, Vec3{Fixed::fromInt(35), Fixed{}, Fixed::fromInt(10)}));
-    CHECK(m.onScreen(*sim, Vec3{Fixed::fromInt(35), Fixed{}, Fixed::fromInt(10)}));
-}
-
-TEST(env_worm_army_is_removed_like_bw) {
-    auto sim = makeSimJson(kEnvRules, envMap(R"({
-        "splines": [{"id": "path", "points": [[6, 6], [34, 6], [34, 14], [6, 14]], "loop": true}],
-        "worms": [{"paths": ["path"], "onTheGroundCycles": [[1, 1]], "undergroundCycles": [[0.2, 0.2]], "spawnArmyCycles": [[4, 4]],
-                   "info": {"speed": 3, "minDistanceToBuilding": 4, "headAppearDuration": 0.2, "headDisappearDuration": 0.3}}]})"));
-    World& w = sim->world();
-    auto* st = w.resource<game::EnvState>();
-    uint32_t group = 0;
-    bool sawPost = false, cleared = false, minion = false;
-    for (int t = 0; t < 20 * 20 && !cleared; ++t) {
-        sim->step();
-        auto& ws = st->worms[0];
-        if (ws.armyGroup) {
-            group = ws.armyGroup;
-            for (uint32_t g : st->minionGroups) if (g == group) minion = true;
-        }
-        if (ws.state == 7) sawPost = true;   // BW OnGroupClosed: every unit left -> PostSpawnArmy
-        if (group && !ws.armyGroup) {        // BW OnGroupRemoving: the last unit entered a building or died
-            bool alive = false;
-            w.each<game::GroupTag>([&](Entity, game::GroupTag& g) { if (g.id == group) alive = true; });
-            CHECK(!alive);
-            for (uint32_t g : st->minionGroups) CHECK(g != group);
-            cleared = true;
-        }
+// ---- gameplay hooks of native modules (RtsNative.h): only the declared ones are called
+namespace {
+class HookProbe final : public game::NativeModule {
+public:
+    void setup(game::RtsModule& m, Simulation&, game::NativeState& s, const Json& cfg) const override {
+        s.values["mask"] = cfg.getInt("hooks", 0);
+        s.values["entities"] = int64_t(m.mapData()["entities"].size());   // the setup map is readable
+        const_cast<HookProbe*>(this)->mask_ = uint32_t(cfg.getInt("hooks", 0));
     }
-    CHECK(group != 0 && minion && sawPost && cleared);
+    uint32_t hooks() const override { return mask_; }
+    void unitSpeed(game::RtsModule&, Simulation& sim, const game::NativeState&, Entity e, Fixed&, Fixed& mul) const override {
+        if (sim.world().get<Owner>(e).player == 1) mul = mul / 2;
+    }
+    bool allowSend(game::RtsModule&, Simulation& sim, const game::NativeState&, Entity, Entity to) const override {
+        return sim.world().get<Owner>(to).player != 0;   // neutral buildings take nobody
+    }
+    bool damage(game::RtsModule&, Simulation& sim, game::NativeState& s, Entity target, Entity, Fixed& dmg) const override {
+        if (sim.world().get<Owner>(target).player != 2) return false;
+        ++s.values["hits"]; dmg = Fixed{};
+        return true;
+    }
+    void unitDied(game::RtsModule&, Simulation&, game::NativeState& s, Entity, uint8_t, Vec3, bool silent) const override { ++s.values[silent ? "entered" : "died"]; }
+    void assault(game::RtsModule&, Simulation&, game::NativeState& s, Entity, uint8_t, uint8_t, int a, int d) const override { s.values["lostA"] += a; s.values["lostD"] += d; }
+    bool allowDefeat(game::RtsModule&, Simulation&, const game::NativeState&, uint8_t player) const override { return player != 1; }
+    void sceneBodies(game::RtsModule& m, Simulation&, const game::NativeState&, std::vector<Body>& out) const override {
+        out.push_back({uint16_t(m.rules().findType("marker")), Vec3{Fixed::fromInt(3), Fixed{}, Fixed::fromInt(3)}, Vec3{Fixed::fromInt(1), Fixed{}, Fixed{}}, true});
+    }
+private:
+    uint32_t mask_ = 0;
+};
+std::unique_ptr<game::NativeModule> hookProbe() { return std::make_unique<HookProbe>(); }
+std::unique_ptr<Simulation> hookSim(int mask) {
+    Json rules = Json::parse(kEnvRules);
+    rules.set("nativeModules", Json::parse(R"([{"id":"hooks","config":{"hooks":)" + std::to_string(mask) + "}}]"));
+    std::vector<game::NativeDefinition> defs{{"hooks", 1, hookProbe}};
+    auto sim = std::make_unique<Simulation>(SimConfig{}, std::make_unique<game::RtsModule>(std::move(defs)));
+    sim->setup(rules, Json::parse(envMap("null", 40, 20, R"(,{"type":"shroom","owner":1,"pos":[8,5]},{"type":"shroom","owner":2,"pos":[30,5]})")));
+    return sim;
+}
+int64_t hookValue(Simulation& sim, const char* key) {
+    auto* st = &sim.world().resource<game::NativeStore>()->modules[0];
+    auto it = st->values.find(key);
+    return it == st->values.end() ? 0 : it->second;
+}
+Entity hookUnit(Simulation& sim, uint8_t owner) {
+    Entity out;
+    sim.world().each<game::Unit, Owner>([&](Entity e, game::Unit& u, Owner& o) { if (!out.valid() && o.player == owner && !mod(sim).rules().types[u.type].structure) out = e; });
+    return out;
+}
+} // namespace
+
+TEST(native_hooks_are_called_only_when_declared) {
+    using namespace game;
+    auto off = hookSim(0), on = hookSim(kHookSpeed | kHookSend | kHookDamage | kHookDeath | kHookAssault | kHookDefeat | kHookScene);
+    CHECK(hookValue(*on, "entities") == 6);
+    for (Simulation* s : {off.get(), on.get()}) {
+        const bool h = s == on.get();
+        RtsModule& m = mod(*s);
+        Entity mine = hookUnit(*s, 1), theirs = hookUnit(*s, 2), home = envPoint(*s, 0), enemy = envPoint(*s, 1), north = envPoint(*s, 2);
+        CHECK(m.stat(*s, mine, Stat::Speed) == Fixed::fromInt(h ? 1 : 2));          // kHookSpeed
+        CHECK(m.stat(*s, theirs, Stat::Speed) == Fixed::fromInt(2));
+        CHECK(m.canSend(*s, home, north) == !h && m.canSend(*s, home, enemy));      // kHookSend
+        CHECK(m.defeatAllowed(*s, 1) == !h && m.defeatAllowed(*s, 2));              // kHookDefeat
+        m.dealDamage(*s, theirs, Fixed::fromInt(4), 0, mine, 1, nullptr);           // kHookDamage
+        CHECK(s->world().get<Unit>(theirs).hp == Fixed::fromInt(h ? 10 : 6));
+        std::vector<NativeModule::Body> bodies;                                      // kHookScene
+        m.native().sceneBodies(m, *s, bodies);
+        CHECK(bodies.size() == (h ? 1u : 0u));
+        envSendCmd(*s, 1, home, north, 100);                                        // refused by the send filter
+        run(*s, 0.5);
+        CHECK((s->world().get<Garrison>(home).count >= 40) == h);                   // nobody left the building
+        envSendCmd(*s, 1, home, enemy, 50);
+        s->world().get<Unit>(mine).hp = Fixed{};
+        run(*s, 45);
+        CHECK(hookValue(*s, "hits") == (h ? 1 : 0));
+        CHECK((hookValue(*s, "died") >= 1) == h);                                    // kHookDeath
+        CHECK((hookValue(*s, "lostA") >= 10 && hookValue(*s, "lostD") >= 1) == h);   // kHookAssault: 20 walkers hit the enemy village
+    }
+    // the hooks are part of the deterministic step: same seed, same checksum
+    auto again = hookSim(kHookSpeed | kHookSend | kHookDamage | kHookDeath | kHookAssault | kHookDefeat | kHookScene);
+    CHECK(again->checksum() != on->checksum());
+    {
+        RtsModule& m = mod(*again);
+        m.dealDamage(*again, hookUnit(*again, 2), Fixed::fromInt(4), 0, hookUnit(*again, 1), 1, nullptr);
+        envSendCmd(*again, 1, envPoint(*again, 0), envPoint(*again, 2), 100);
+        run(*again, 0.5);
+        envSendCmd(*again, 1, envPoint(*again, 0), envPoint(*again, 1), 50);
+        again->world().get<Unit>(hookUnit(*again, 1)).hp = Fixed{};
+        run(*again, 45);
+    }
+    CHECK(again->checksum() == on->checksum());
 }

@@ -35,7 +35,7 @@ bool RtsModule::hypnotisedFlagSend(Simulation& sim, const Command& cmd) {
         if (!w.alive(cmd.target) || cmd.target == e || !w.has<Garrison>(cmd.target)) continue;
         const UnitType& t = rules_.types[w.get<Unit>(e).type];
         if (t.spawnUnit == kNoType) continue;
-        if (env_ && env_->active() && !env_->sendAllowed(sim, e, cmd.target)) continue;
+        if (native_.has(kHookSend) && !native_.allowSend(*this, sim, e, cmd.target)) continue;
         if (!canSend(sim, e, cmd.target)) continue;
         Garrison& g = w.get<Garrison>(e);
         const int share = int((Fixed::fromInt(g.count) * fxClamp(sd.sendShare, Fixed{}, Fixed::fromInt(1))).floorInt());

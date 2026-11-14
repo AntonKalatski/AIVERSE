@@ -358,8 +358,8 @@ void RtsModule::sysGarrison(Simulation& sim) {
     w.each<Garrison, Unit, Owner>([&](Entity e, Garrison& g, Unit& u, Owner& o) {
         const UnitType& t = rules_.types[u.type];
         if (u.flags & kUnitUnderConstruction) return;
-        // environment (off-screen production) and multiscreen (BW HouseModule.GetIncreaseRate): points off the screen do not grow
-        const bool grows = (!env_ || !env_->active() || env_->producing(sim, e)) && (!screen_.enabled || onScreen(sim, w.get<Transform>(e).pos));
+        // multiscreen (BW HouseModule.GetIncreaseRate): points off the screen do not grow
+        const bool grows = !screen_.enabled || onScreen(sim, w.get<Transform>(e).pos);
         if (!grows) {}
         else if (o.player == 0 && rules_.core.neutralGrowth && t.spawnInterval.raw > 0) {
             // battle core: neutral garrisons grow up to their neutral maximum (BW HouseModule, rate 1)

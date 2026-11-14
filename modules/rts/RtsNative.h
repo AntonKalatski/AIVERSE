@@ -31,7 +31,28 @@ public:
     // rules apply, docs/native-modules.md). Errors inside them use luaL_error (no C++ object with a
     // destructor alive at that point).
     virtual void openLua(lua_State*) const {}
+
+    // ---- optional gameplay hooks (docs/native-modules.md § Hooks). hooks() returns the NativeHook bits the module
+    // implements (read after setup); the engine calls only those, in rules.json order, so a game without them pays nothing.
+    virtual uint32_t hooks() const { return 0; }
+    // kHookSpeed: extra add / multiplier of a unit's Speed stat (called from RtsModule::stat: read-only, cheap).
+    virtual void unitSpeed(RtsModule&, Simulation&, const NativeState&, Entity, Fixed& /*add*/, Fixed& /*mul*/) const {}
+    // kHookSend: false refuses sending units from one garrison to another (commands, effects and bots ask canSend).
+    virtual bool allowSend(RtsModule&, Simulation&, const NativeState&, Entity /*from*/, Entity /*to*/) const { return true; }
+    // kHookDamage: before damage is applied; may change it (0 = nothing happens). True: later modules are not asked.
+    virtual bool damage(RtsModule&, Simulation&, NativeState&, Entity /*target*/, Entity /*source*/, Fixed& /*dmg*/) const { return false; }
+    // kHookDeath: a unit is being removed (silent: without death effects, e.g. it entered a garrison).
+    virtual void unitDied(RtsModule&, Simulation&, NativeState&, Entity, uint8_t /*owner*/, Vec3 /*pos*/, bool /*silent*/) const {}
+    // kHookAssault: a unit of `attacker` hit garrison `structure` of `defender`: units lost on both sides.
+    virtual void assault(RtsModule&, Simulation&, NativeState&, Entity /*structure*/, uint8_t /*attacker*/, uint8_t /*defender*/,
+                         int /*attackerLost*/, int /*defenderLost*/) const {}
+    // kHookDefeat: false keeps a player in the match when match modes / victory scripts would defeat it.
+    virtual bool allowDefeat(RtsModule&, Simulation&, const NativeState&, uint8_t /*player*/) const { return true; }
+    // kHookScene: extra objects for the view, drawn as unit types (presentation: must not change anything).
+    struct Body { uint16_t type = 0; Vec3 pos{}, facing{}; bool moving = false; };
+    virtual void sceneBodies(RtsModule&, Simulation&, const NativeState&, std::vector<Body>&) const {}
 };
+enum NativeHook : uint32_t { kHookSpeed = 1, kHookSend = 2, kHookDamage = 4, kHookDeath = 8, kHookAssault = 16, kHookDefeat = 32, kHookScene = 64 };
 using NativeFactory = std::unique_ptr<NativeModule> (*)();
 struct NativeDefinition {
     std::string id;
@@ -53,7 +74,17 @@ public:
     void command(RtsModule&, Simulation&, const Command&) const;
     void hash(Simulation&, Hasher&) const;
     bool serialize(Simulation&, Archive&) const;
+    // hooks (no-ops unless a loaded module declares the bit)
+    bool has(uint32_t hook) const { return (hooks_ & hook) != 0; }
+    void unitSpeed(RtsModule&, Simulation&, Entity, Fixed& add, Fixed& mul) const;
+    bool allowSend(RtsModule&, Simulation&, Entity from, Entity to) const;
+    void damage(RtsModule&, Simulation&, Entity target, Entity source, Fixed& dmg) const;
+    void unitDied(RtsModule&, Simulation&, Entity, uint8_t owner, Vec3 pos, bool silent) const;
+    void assault(RtsModule&, Simulation&, Entity structure, uint8_t attacker, uint8_t defender, int attackerLost, int defenderLost) const;
+    bool allowDefeat(RtsModule&, Simulation&, uint8_t player) const;
+    void sceneBodies(RtsModule&, Simulation&, std::vector<NativeModule::Body>&) const;
 private:
+    uint32_t hooks_ = 0;
     struct Entry {
         std::string id, config;
         uint32_t version;

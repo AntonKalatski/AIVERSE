@@ -193,7 +193,7 @@ bool RtsModule::sendsFlying(Simulation& sim, Entity from) const {
 }
 
 bool RtsModule::canSend(Simulation& sim, Entity from, Entity to) const {
-    if (env_ && env_->active() && !env_->sendAllowed(sim, from, to)) return false;   // environment: graveyards, linked caves
+    if (native_.has(kHookSend) && !native_.allowSend(const_cast<RtsModule&>(*this), sim, from, to)) return false;   // native modules (kHookSend)
     if (sendsFlying(sim, from)) return true;   // BW FindFlyingRoute ignores ground routes and locks
     if (routeDefs_.empty()) return true;
     return !routeLanes(sim, from, to, false).empty();
@@ -346,32 +346,18 @@ void RtsModule::sysSendGroups(Simulation& sim) {
 Vec3 RtsModule::screenCenter(Simulation& sim) const { return sim.world().resource<GameState>()->routes.screenCenter; }
 
 bool RtsModule::onScreen(Simulation& sim, Vec3 p) const {
-    if (!screen_.enabled) {   // the environment's map scroller screen (RtsEnv.cpp), else everything is on screen
-        if (const Environment* ev = environment(); ev && ev->def().screen.enabled) return ev->insideScreen(sim, p);
-        return true;
-    }
+    if (!screen_.enabled) return true;
     const Vec3 c = screenCenter(sim);
     return fxAbs(p.x - c.x) <= screen_.size.x / 2 && fxAbs(p.z - c.z) <= screen_.size.y / 2;   // BW IsPointInsideScreen
 }
 
 bool RtsModule::screenView(Simulation& sim, Vec3& center, Vec2& size) const {
     if (screen_.enabled) { center = screenCenter(sim); size = screen_.size; return true; }
-    if (const Environment* ev = environment(); ev && ev->def().screen.enabled)
-        if (const EnvState* st = ev->state(sim)) {
-            const Vec3 s = ev->def().screen.size;
-            center = st->screenPos + s / Fixed::fromInt(2);
-            size = {s.x, s.z};
-            return true;
-        }
     return false;
 }
 
 void RtsModule::setScreenCenter(Simulation& sim, Vec3 c) {
-    if (!screen_.enabled) {
-        if (Environment* ev = environment(); ev && ev->def().screen.enabled)
-            if (EnvState* st = ev->state(sim)) st->screenPos = flat(c) - ev->def().screen.size / Fixed::fromInt(2);
-        return;
-    }
+    if (!screen_.enabled) return;
     Vec3& sc = state(sim).routes.screenCenter;
     sc.x = fxClamp(c.x, screen_.center.x - screen_.left, screen_.center.x + screen_.right);
     sc.z = fxClamp(c.z, screen_.center.y - screen_.top, screen_.center.y + screen_.bottom);

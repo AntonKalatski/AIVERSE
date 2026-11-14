@@ -123,6 +123,33 @@ addresses or global mutable state). Errors go through `luaL_error`; at the momen
 objects with destructors on the stack. Work inside the function is not counted in the Lua instruction budget: the caller
 limits how often it is called. A module that is compiled but not listed in rules.json does not register its functions.
 
+### Gameplay hooks
+
+A module that needs to take part in the engine's own rules (instead of only running after them in `tick`) overrides
+`hooks()` and returns the `NativeHook` bits it implements. The mask is read once after every `setup`; the engine calls
+only the declared hooks, for the listed modules in rules.json order, so a game without them pays nothing.
+
+| Bit | Method | Called |
+|---|---|---|
+| `kHookSpeed` | `unitSpeed(game, sim, state, unit, add, mul)` | from `RtsModule::stat` for `Stat::Speed`: change `add` (distance per second) / `mul`. Read-only and cheap: it runs for every moving unit every tick |
+| `kHookSend` | `allowSend(game, sim, state, from, to)` | `RtsModule::canSend`, the send command, bots: `false` refuses sending garrison units from one building to another |
+| `kHookDamage` | `damage(game, sim, state, target, source, dmg)` | before damage is applied (`dealDamage`): the module may change `dmg` (0 = nothing happens). `true` stops asking later modules |
+| `kHookDeath` | `unitDied(game, sim, state, unit, owner, pos, silent)` | in the death system while the unit still exists (`silent`: removed without death effects) |
+| `kHookAssault` | `assault(game, sim, state, structure, attacker, defender, attackerLost, defenderLost)` | a unit hit an enemy garrison: units lost on both sides |
+| `kHookDefeat` | `allowDefeat(game, sim, state, player)` | match modes and the Lua `defeat` call: `false` keeps the player in the match |
+| `kHookScene` | `sceneBodies(game, sim, state, out)` | when the view builds the scene: extra bodies drawn as unit types (`type`, `pos`, `facing`, `moving`). Presentation only: it must not change anything |
+
+The hooks run inside the deterministic step (except `kHookScene`), so the rules of `tick` apply: fixed point, `sim.rng()`,
+no hidden state. `unitSpeed`, `allowSend` and `allowDefeat` get the state read-only: they are queries and may be called
+any number of times. For presentation a module emits `kEvNative` (`sim.emit`): `value`, `a`, `b`, `pos` are the
+module's own; view scripts and the client read them like any other event.
+
+`RtsModule::mapData()` is the map the match was set up from (kept only for games that list native modules): `setup`
+reads the module's own map blocks from it, `config` stays the place for rules-level defaults. Other engine systems a
+module may build on: `environment()` (weather, wind, zones, splines: `def()` / `state()`, `killedByWeather`),
+`payloadAccepts` (the unit filter of an ability's payload), `releaseUnit` (one unit leaves a garrison for a target the
+way sends do), `onScreen` / `setScreenCenter` (multiscreen maps).
+
 For custom commands, set a unique `"command": 32768` in the `nativeModules` element (range 32768–65535). Use
 `Command.param`, `flags`, `units`, `target`, `point` for arguments and subtypes. Submit them through
 `Simulation::submit` so they reach the network and the replay. The engine drops commands from non-existent and

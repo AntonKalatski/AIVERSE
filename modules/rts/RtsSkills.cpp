@@ -620,7 +620,7 @@ void RtsModule::enterGarrison(Simulation& sim, Entity e, Entity s) {
         while (g->damageAcc >= kOne && g->count > 0) { --g->count; ++g->lost; g->damageAcc -= kOne; }
         if (rules_.originals) assaultOriginals(sim, e, s);
         if (rules_.core.any) coreAssault(sim, me, owner);   // battle core (RtsCore.cpp)
-        envAssault(sim, s, me, owner, 1, before - g->count);
+        if (native_.has(kHookAssault)) native_.assault(*this, sim, s, me, owner, 1, before - g->count);
     } else if (tt.capturable) {
         // revenge payloads of the defender and recapture of a temporarily captured structure
         std::vector<std::pair<int16_t, uint8_t>> revenge;

@@ -13579,7 +13579,7 @@ TEST(file_assoc_linux_registration_temp_home) {
 #endif
 #include "tests_fields.inc"   // grid fields (G5)
 #include "tests_raid.inc"     // extraction raids (agent-extraction)
-#include "tests_env.inc"      // map environment (Bunker Wars port)
+#include "tests_env.inc"      // map environment, gameplay hooks of native modules
 
 // ------------------------------------------------------------------ planet detail grids (agent-terrain)
 

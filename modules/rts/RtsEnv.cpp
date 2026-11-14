@@ -1,6 +1,5 @@
-// Environment runtime (RtsEnv.h): setup, system order, weather, wind, zones, trample fields, per-unit state,
-// speed hook, hash and saves. Bosses: RtsEnvBoss.cpp; Mouro / scroller / off-map / auto skills:
-// RtsEnvScript.cpp; caves / graveyards / souls / fire / walls: RtsEnvPoints.cpp.
+// Environment runtime (RtsEnv.h): setup, weather, wind, zones, trample fields, per-unit state, auto skills on
+// splines, speed hook, hash and saves, fog options.
 #include "RtsEnv.h"
 #include "RtsInternal.h"
 #include "../../engine/core/FixedMath.h"
@@ -72,14 +71,11 @@ bool EnvZone::contains(Vec3 p) const {
 
 EnvState* Environment::state(Simulation& sim) const { return sim.world().resource<EnvState>(); }
 
-bool Environment::complexityOk(const std::string& c) const { return c.empty() || c == "any" || c == matchComplexity_; }
-
 void Environment::setup(Simulation& sim, RtsModule& m, const Json& rules, const Json& map) {
     m_ = &m;
     def_ = EnvDef{};
     loadEnvironment(def_, m.rules(), rules, map);
     if (!def_.active) return;
-    matchComplexity_ = def_.complexity;
     // grid field references (trample, lightning burn)
     GridFields* gf = m.gridFields();
     auto fieldRef = [&](const std::string& id, const char* where) -> int16_t {
@@ -91,93 +87,19 @@ void Environment::setup(Simulation& sim, RtsModule& m, const Json& rules, const 
     def_.weather.burnField = fieldRef(def_.weather.burnId, "weatherParams.lightningBurn");
     for (auto& t : def_.trample) {
         t.field = fieldRef(t.fieldId, "trample"); t.killField = fieldRef(t.killId, "trample.killField");
-        // BW GrassModule: in rain a burning tile lights a neighbour only with grassRainBurnRandomFactor
+        // in rain a burning tile lights a neighbour only with the rain factor
         if (def_.weather.rain && t.killField >= 0) gf->setSpreadScale(t.killField, def_.weather.rainSpread);
     }
-    // only the worm configs of this match's complexity (BW WormConfigs.GetByComplexity: the first match)
-    std::vector<EnvWormDef> worms;
-    for (auto& w : def_.worms) if (complexityOk(w.complexity)) { worms.push_back(w); break; }
-    def_.worms = std::move(worms);
-    for (auto& h : def_.mouro.holders) {
-        bool ok = h.complexities.empty();
-        for (auto& c : h.complexities) ok |= complexityOk(c);
-        if (!ok) h.actions.clear();
-    }
-
     EnvState& st = sim.world().setResource<EnvState>();
-    World& w = sim.world();
-    GameState& gs = m.state(sim);
-    // map points: map entity index -> spawned entity (same type, nearest to the map position, each used once)
-    const auto& ents = map["entities"].items();
-    st.points.assign(ents.size(), kNullEntity);
-    std::vector<uint64_t> used;
-    for (size_t i = 0; i < ents.size(); ++i) {
-        int t = m.rules().findType(ents[i].getStr("type"));
-        const Json& pj = ents[i].has("at") ? ents[i]["at"] : ents[i]["pos"];
-        if (t < 0 || !pj.isArray()) continue;
-        Vec3 p{pj[0].fx(), Fixed{}, pj[pj.size() >= 3 ? 2 : 1].fx()};
-        Entity best; Fixed bd{};
-        w.each<Unit, Transform>([&](Entity e, Unit& u, Transform& tr) {
-            if (u.type != uint16_t(t) || std::find(used.begin(), used.end(), e.packed()) != used.end()) return;
-            Fixed d = dist2D(tr.pos, p);
-            if (!best.valid() || d < bd) { best = e; bd = d; }
-        });
-        if (best.valid()) { st.points[i] = best; used.push_back(best.packed()); }
-    }
-    const size_t np = gs.players.size();
-    st.lastAction.assign(np, {});
-    st.invincible.assign(np, 0);
-    st.skillCast.assign(np, 0);
-    st.soulAcc.assign(ents.size() * 2, Fixed{});
-    // weather: BW starts the puddle cycle at 0 filling; no rain = dry ground (puddles 1 = full water slowdown)
+    // the puddle cycle starts at 0 filling; no rain = dry ground (puddles 1 = full water slowdown)
     st.puddles = def_.weather.rain ? Fixed{} : Fixed::fromInt(1);
     st.blizzardState = def_.weather.blizzard ? 0 : 1;
     if (def_.wind.enabled) { st.windIdle = range(sim, def_.wind.idleMin, def_.wind.idleMax); st.windVisual = -1; }
-    st.worms.assign(def_.worms.size(), {});
-    for (size_t i = 0; i < def_.worms.size(); ++i) {
-        auto& ws = st.worms[i];
-        ws.seg.assign(def_.worms[i].segments.size(), {});
-        ws.headTimer = def_.worms[i].headSwitch; ws.scanTimer = def_.worms[i].scanPeriod;
-        wormDigDown(sim, st, i);   // BW: the worm starts underground
-    }
-    st.toads.assign(def_.toads.size(), {});
-    for (size_t i = 0; i < def_.toads.size(); ++i) st.toads[i].idle = def_.toads[i].idleSwitch;
-    st.flyers.assign(def_.flyers.size(), {});
-    for (size_t i = 0; i < def_.flyers.size(); ++i) {
-        st.flyers[i].health = def_.flyers[i].health;
-        st.flyers[i].idle = range(sim, def_.flyers[i].idleMin, def_.flyers[i].idleMax);
-    }
-    st.mouro.holders.assign(def_.mouro.holders.size(), {});
-    for (size_t i = 0; i < def_.mouro.holders.size(); ++i) {
-        auto& hs = st.mouro.holders[i];
-        hs.delay = def_.mouro.holders[i].delay;
-        hs.actions.assign(def_.mouro.holders[i].actions.size(), {});
-        for (size_t k = 0; k < hs.actions.size(); ++k) hs.order.push_back(uint16_t(k));
-    }
-    st.mouro.emotionPlays.assign(def_.mouro.emotions.size(), 0);
-    st.scrollerState.assign(def_.scroller.size(), 0);
-    st.scrollerTimer.assign(def_.scroller.size(), Fixed{});
-    st.screenPos = def_.screen.start;
-    st.multis.assign(def_.multis.size(), {});
-    st.fogSeen.assign(np, {});
+    st.fogSeen.assign(m.state(sim).players.size(), {});
     st.autos.assign(def_.splines.size(), {});
     for (size_t i = 0; i < def_.splines.size(); ++i) {
         const EnvSpline& sp = def_.splines[i];
         st.autos[i].timer = sp.firstEmission.raw > 0 ? sp.firstEmission : sp.emitPeriod;
-    }
-    for (auto& g : def_.caves) {
-        EnvCave c;
-        Entity e0 = st.points[size_t(g[0])];
-        if (w.alive(e0)) { c.owner = w.get<Owner>(e0).player; if (auto* ga = w.tryGet<Garrison>(e0)) c.count = ga->count; }
-        st.caves.push_back(c);
-        for (int pi : g) if (Entity e = st.points[size_t(pi)]; w.alive(e)) { w.get<Owner>(e).player = c.owner; if (auto* ga = w.tryGet<Garrison>(e)) ga->count = c.count; }
-    }
-    if (def_.graveyardType != 0xFFFF)
-        w.each<Unit>([&](Entity e, Unit& u) { if (u.type == def_.graveyardType) { st.graveyards.push_back(e); st.graveyardTimer.push_back(Fixed{}); } });
-    for (auto& wd : def_.walls) {
-        EnvWall wl; wl.e = st.points[size_t(wd.point)]; wl.hits = wd.hits; wl.timer = wd.destroyTime;
-        if (w.alive(wl.e) && !wd.ignoreTowers) w.get<Owner>(wl.e).player = kHostileNeutral;   // every tower shoots walls
-        st.walls.push_back(wl);
     }
 }
 
@@ -186,13 +108,6 @@ void Environment::setup(Simulation& sim, RtsModule& m, const Json& rules, const 
 Fixed Environment::range(Simulation& sim, Fixed lo, Fixed hi) const {
     if (hi <= lo) return lo;
     return lo + (hi - lo) * sim.rng().unit();
-}
-
-uint8_t Environment::slotOf(Simulation&, uint8_t who) const {
-    // BW MouroBoss.GetPlayer: the human player / the bot; here map "environment.mouro.player" / "bot" (default slots 1 / 2)
-    if (who == 2) return 0;
-    if (who == 1) return def_.mouro.bot ? def_.mouro.bot : 2;
-    return def_.mouro.player ? def_.mouro.player : 1;
 }
 
 std::vector<Entity> Environment::units_(Simulation& sim) const {
@@ -207,7 +122,7 @@ std::vector<Entity> Environment::units_(Simulation& sim) const {
     return out;
 }
 
-void Environment::kill(Simulation& sim, EnvState& st, Entity e, bool noSoul) {
+void Environment::kill(Simulation& sim, EnvState& st, Entity e, bool weather) {
     World& w = sim.world();
     if (!w.alive(e)) return;
     Unit& u = w.get<Unit>(e);
@@ -215,7 +130,7 @@ void Environment::kill(Simulation& sim, EnvState& st, Entity e, bool noSoul) {
     if (m_->rules().types[u.type].invulnerable || (m_->statusFlags(sim, e) & kStInvulnerable)) return;
     u.hp = Fixed{};
     u.lastAttacker = 0;
-    if (noSoul) st.noSoul.push_back(e.packed());
+    if (weather) st.weatherKilled.push_back(e.packed());
 }
 
 void Environment::cast(Simulation& sim, uint8_t player, int skill, Vec3 point, Entity target, std::vector<Entity>* areas) {
@@ -231,33 +146,9 @@ void Environment::cast(Simulation& sim, uint8_t player, int skill, Vec3 point, E
             if (sim.events()[i].type == kEvAreaStart) areas->push_back(sim.events()[i].a);
 }
 
-int Environment::pointIndex(Simulation& sim, Entity e) const {
-    if (EnvState* st = state(sim))
-        for (size_t i = 0; i < st->points.size(); ++i) if (st->points[i] == e) return int(i);
-    return -1;
-}
-Entity Environment::point(Simulation& sim, int i) const {
+bool Environment::killedByWeather(Simulation& sim, Entity e) const {
     EnvState* st = state(sim);
-    if (!st || i < 0 || size_t(i) >= st->points.size() || !sim.world().alive(st->points[size_t(i)])) return kNullEntity;
-    return st->points[size_t(i)];
-}
-
-bool Environment::insideScreen(Simulation& sim, Vec3 p) const {
-    if (m_ && m_->screen().enabled) return m_->onScreen(sim, p);   // the map "screen" (RtsRoutes.cpp) wins
-    if (!def_.screen.enabled) return true;
-    EnvState* st = state(sim);
-    if (!st) return true;
-    return p.x >= st->screenPos.x && p.z >= st->screenPos.z && p.x <= st->screenPos.x + def_.screen.size.x && p.z <= st->screenPos.z + def_.screen.size.z;
-}
-
-bool Environment::invincible(Simulation& sim, uint8_t slot) const {
-    EnvState* st = state(sim);
-    return st && slot < st->invincible.size() && st->invincible[slot];
-}
-
-bool Environment::producing(Simulation& sim, Entity s) const {
-    if (!def_.screen.enabled || (m_ && m_->screen().enabled)) return true;   // the map "screen" gates growth itself
-    return insideScreen(sim, sim.world().get<Transform>(s).pos);
+    return st && std::find(st->weatherKilled.begin(), st->weatherKilled.end(), e.packed()) != st->weatherKilled.end();
 }
 
 // ================================================================= tick
@@ -266,38 +157,15 @@ void Environment::tick(Simulation& sim) {
     EnvState* stp = state(sim);
     if (!stp) return;
     EnvState& st = *stp;
-    st.noSoul.clear();
+    st.weatherKilled.clear();
     weather(sim, st);
     wind(sim, st);
     units(sim, st);
     trample(sim, st);
-    worms(sim, st);
-    toads(sim, st);
-    flyers(sim, st);
-    outmap(sim, st);
     autos(sim, st);
-    multiAutos(sim, st);
-    mouro(sim, st);
-    scroller(sim, st);
-    soulsTick(sim, st);
-    sendsTick(sim, st);
-    graveyards(sim, st);
-    firesTick(sim, st);
 }
 
-void Environment::lateTick(Simulation& sim) {
-    EnvState* stp = state(sim);
-    if (!stp) return;
-    EnvState& st = *stp;
-    // captures of this tick (any system): last action buildings, cave groups, walls that fall with their points
-    for (const SimEvent& ev : sim.events())
-        if (ev.type == kEvCaptured) onCaptured(sim, ev.a, uint8_t(ev.value), ev.player);
-    caves(sim, st);
-    wallsTick(sim, st);
-    std::fill(st.skillCast.begin(), st.skillCast.end(), uint8_t(0));
-}
-
-// ================================================================= weather (BW Environment.Module)
+// ================================================================= weather
 
 void Environment::weather(Simulation& sim, EnvState& st) {
     const EnvWeatherDef& W = def_.weather;
@@ -338,7 +206,7 @@ void Environment::weather(Simulation& sim, EnvState& st) {
         if (st.blizzardState == 0) { st.blizzardTimer += dt / W.blizzardFill; if (st.blizzardTimer >= one) { st.blizzardTimer = Fixed{}; st.blizzardState = 1; sim.emit({kEvEnv, 0, kNullEntity, kNullEntity, (kEnvWeather << 16) | 4 | (1 << 8), {}}); } }
         else { st.blizzardTimer += dt / W.blizzardWait; if (st.blizzardTimer >= one) { st.blizzardTimer = Fixed{}; st.blizzardState = 0; sim.emit({kEvEnv, 0, kNullEntity, kNullEntity, (kEnvWeather << 16) | 4, {}}); } }
     } else st.blizzardState = 1;
-    if (W.blizzard) {   // BW Environment.IsBlizzard for the computer player (agent-bw-ai reads vars.blizzard)
+    if (W.blizzard) {   // bots and scripts read the trigger var
         const Fixed v = Fixed::fromInt(st.blizzardState == 0 ? 1 : 0);
         auto& vars = m_->state(sim).trig.vars;
         auto it = vars.find(W.blizzardVar);
@@ -360,7 +228,7 @@ void Environment::weather(Simulation& sim, EnvState& st) {
                         Vec3 p = w.get<Transform>(obj).pos;
                         if (k < nUnits) {
                             kill(sim, st, obj, true);
-                            const Fixed rx = W.lightningRange, rz = W.lightningRange / 2;   // BW ellipse (range, range / 2)
+                            const Fixed rx = W.lightningRange, rz = W.lightningRange / 2;   // ellipse (range, range / 2)
                             for (size_t i = 0; i < nUnits; ++i) {
                                 Vec3 q = w.get<Transform>(objs[i]).pos - p;
                                 if (rx.raw <= 0 || rz.raw <= 0) break;
@@ -390,7 +258,7 @@ void Environment::weather(Simulation& sim, EnvState& st) {
     }
 }
 
-// ================================================================= wind (BW Wind)
+// ================================================================= wind
 
 void Environment::wind(Simulation& sim, EnvState& st) {
     const EnvWindDef& N = def_.wind;
@@ -436,7 +304,7 @@ void Environment::units(Simulation& sim, EnvState& st) {
         if (st.units.size() <= e.index) st.units.resize(e.index + 1);
         EnvUnit& eu = st.units[e.index];
         if (!eu.init || eu.gen != e.gen) { eu = EnvUnit{}; eu.gen = e.gen; eu.init = true; eu.resist = range(sim, W.blizzardResistMin, W.blizzardResistMax); }
-        if (delta.raw <= 0 || !w.has<LaneWalker>(e)) continue;   // BW: only units on the way between buildings freeze
+        if (delta.raw <= 0 || !w.has<LaneWalker>(e)) continue;   // only units on the way between buildings freeze
         eu.blizzard -= delta / fxMax(eu.resist, Fixed::fromRatio(1, 100));
         if (eu.blizzard.raw <= 0) kill(sim, st, e, true);
     }
@@ -465,6 +333,55 @@ void Environment::trample(Simulation& sim, EnvState& st) {
     }
 }
 
+// ================================================================= auto skills on splines
+
+void Environment::autos(Simulation& sim, EnvState& st) {
+    World& w = sim.world();
+    const Fixed dt = sim.dt();
+    for (size_t i = 0; i < def_.splines.size(); ++i) {
+        const EnvSpline& sp = def_.splines[i];
+        if (sp.skill < 0 || !sp.enabled) continue;
+        bool onScreen = true;
+        for (auto& p : sp.points) if (!m_->onScreen(sim, p)) onScreen = false;   // multiscreen maps: only splines on the screen emit
+        if (!onScreen) { st.autos[i].late = true; continue; }
+        EnvAuto& au = st.autos[i];
+        // emission
+        if (!(sp.emitPeriod.raw <= 0 && au.timer.raw <= 0 && !au.late)) {
+            au.timer -= dt;
+            if (au.timer.raw <= 0) {
+                au.late = false;
+                std::vector<Entity> areas;
+                cast(sim, 0, sp.skill, sp.points.front(), kNullEntity, &areas);
+                if (sp.points.size() > 1) for (Entity a : areas) au.moving.push_back({a, Fixed{}});
+                au.timer += sp.emitPeriod;
+            }
+        }
+        // the emitted areas ride along the spline
+        for (size_t k = 0; k < au.moving.size();) {
+            auto& mv = au.moving[k];
+            if (!w.alive(mv.area)) { au.moving.erase(au.moving.begin() + long(k)); continue; }
+            mv.dist += dt * sp.velocity;
+            if (sp.loop && sp.emitPeriod.raw <= 0 && sp.length.raw > 0) while (mv.dist >= sp.length) mv.dist -= sp.length;
+            Vec3 target = sp.at(mv.dist);
+            Transform& t = w.get<Transform>(mv.area);
+            Vec3 cur{t.pos.x, Fixed{}, t.pos.z};
+            moveTowards(cur, target, dt * sp.velocity);
+            t.pos.x = cur.x; t.pos.z = cur.z;
+            if (mv.dist.raw < 0 || mv.dist > sp.length) { w.destroyLater(mv.area); au.moving.erase(au.moving.begin() + long(k)); continue; }
+            ++k;
+        }
+    }
+}
+
+bool RtsModule::payloadAccepts(Simulation& sim, int payload, Entity e, uint8_t owner) const {
+    for (int depth = 0; depth < 4 && payload >= 0 && size_t(payload) < rules_.payloads.size() && !rules_.payloads[size_t(payload)].empty(); ++depth) {
+        const EffectDef& ef = rules_.payloads[size_t(payload)][0];
+        if ((ef.kind == EffectKind::Area || ef.kind == EffectKind::Projectile || ef.kind == EffectKind::Chain) && ef.payload >= 0) { payload = ef.payload; continue; }
+        return filterOk(sim, ef.filter, e, owner, kNullEntity);
+    }
+    return sim.world().has<Owner>(e) && hostile(sim, owner, sim.world().get<Owner>(e).player);
+}
+
 // ================================================================= speed hook
 
 void Environment::speed(Simulation& sim, Entity e, Fixed& add, Fixed& mul) const {
@@ -491,25 +408,8 @@ void Environment::speed(Simulation& sim, Entity e, Fixed& add, Fixed& mul) const
             Fixed slow = z.slowdown;
             if (z.kind == EnvZoneKind::Water && !def_.weather.winter) slow = slow + (one - slow) * (one - st->puddles);
             if (slow.raw > 0) mul = mul / slow;
-            break;   // BW zones: the first zone containing the point
+            break;   // the first zone containing the point
         }
-    // worm traces slow walkers down (skillSlowdownCoefficient /= trace coefficient)
-    if (!air)
-        for (size_t i = 0; i < st->worms.size(); ++i) {
-            const auto& ws = st->worms[i];
-            for (size_t k = 1; k < ws.traces.size(); ++k) {
-                const EnvTrace& a = ws.traces[k - 1]; const EnvTrace& b = ws.traces[k];
-                if (b.timer.raw < 0 || b.kill) continue;
-                auto side = [](Vec3 o, Vec3 x, Vec3 y) { return (x.x - o.x) * (y.z - o.z) - (x.z - o.z) * (y.x - o.x); };
-                auto inTri = [&](Vec3 q, Vec3 t0, Vec3 t1, Vec3 t2) {
-                    Fixed d1 = side(t0, t1, q), d2 = side(t1, t2, q), d3 = side(t2, t0, q);
-                    bool neg = d1.raw < 0 || d2.raw < 0 || d3.raw < 0, pos = d1.raw > 0 || d2.raw > 0 || d3.raw > 0;
-                    return !(neg && pos);
-                };
-                if (inTri(p, a.right, a.left, b.right) || inTri(p, a.left, b.right, b.left)) { mul *= def_.worms[i].traceSlowdown; goto traced; }
-            }
-        }
-traced:
     // trample fields: winter speed table / grass lerp
     if (!air && !def_.trample.empty()) {
         GridFields* gf = m_->gridFields();
@@ -525,10 +425,6 @@ traced:
             if (tr.lerpSpeed.raw >= 0 && v.raw > 0) mul *= one + (tr.lerpSpeed - one) * fxClamp(v, Fixed{}, one);
         }
     }
-    // groups of bosses walk faster (worm army: armySpeedCoefficient)
-    if (!st->minionGroups.empty())
-        if (auto* gt = w.tryGet<GroupTag>(e))
-            for (size_t k = 0; k < st->minionGroups.size(); ++k) if (st->minionGroups[k] == gt->id) { mul *= st->minionSpeed[k]; break; }
     // wind: distance per second along the movement direction
     if (def_.wind.enabled && st->windBlow.raw > 0) add += windMultiplier(sim, u.facing);
 }
@@ -541,70 +437,27 @@ void Environment::hash(Simulation& sim, Hasher& h) const {
     h.u32(st->puddlesState | st->snowState << 8 | st->blizzardState << 16 | st->lightningState << 24);
     h.fx(st->puddles); h.fx(st->rainTimer); h.fx(st->snowTimer); h.fx(st->blizzardTimer); h.fx(st->lightningTimer); h.fx(st->lightningKill);
     h.v3(st->windForce); h.fx(st->windBlow); h.fx(st->windIdle); h.i32(st->windDir);
-    for (auto& w : st->worms) {
-        h.u32(w.state); h.i32(w.path); h.fx(w.timer); h.fx(w.scanTimer); h.fx(w.traceTimer); h.u32(uint32_t(w.traces.size()));
-        for (auto& s : w.seg) { h.fx(s.dist); h.v3(s.pos); }
-        h.u32(w.armyGroup);
-    }
-    for (auto& t : st->toads) { h.fx(t.attack); h.i32(t.units); h.u64(t.target.packed()); h.fx(t.explode); }
-    for (auto& f : st->flyers) { h.u32(f.state); h.fx(f.idle); h.fx(f.fly); h.v3(f.pos); h.i32(f.health); h.u32(uint32_t(f.bombs.size())); }
-    h.u32(st->mouro.mode); h.i32(st->mouro.holder); h.i32(st->mouro.maxDomination);
-    for (auto& hs : st->mouro.holders) { h.fx(hs.time); h.fx(hs.suspend); for (auto& a : hs.actions) { h.u32(a.state); h.fx(a.timer); } }
-    for (size_t i = 0; i < st->scrollerState.size(); ++i) { h.u32(st->scrollerState[i]); h.fx(st->scrollerTimer[i]); }
-    h.v3(st->screenPos); h.fx(st->outmapTimer); h.i32(st->outmapIndex);
     for (auto& a : st->autos) { h.fx(a.timer); h.u32(uint32_t(a.moving.size())); for (auto& mv : a.moving) h.fx(mv.dist); }
-    h.u32(uint32_t(st->souls.size()));
-    for (auto& s : st->souls) { h.fx(s.t); h.u64(s.target.packed()); }
-    for (auto& s : st->sends) { h.u64(s.from.packed()); h.u64(s.to.packed()); h.i32(s.left); }
-    for (auto& c : st->caves) { h.u32(c.owner); h.i32(c.count); }
-    for (auto& g : st->graveyardTimer) h.fx(g);
-    for (auto& f : st->fires) { h.u64(f.e.packed()); h.fx(f.timer); }
-    for (auto& w : st->walls) { h.i32(w.hits); h.u32(w.state); h.fx(w.timer); }
     for (auto& u : st->units) h.fx(u.blizzard);
-    for (auto& mu : st->multis) { h.u32(mu.created); for (auto& mv : mu.moving) { h.fx(mv.dist); h.i32(mv.cur); h.u32(mv.transfer); } }
-    for (auto& v : st->invincible) h.u32(v);
 }
 
 // save io of the environment state (found by ADL from Archive)
-static void io(Archive& a, EnvSegment& x) { a(x.dist, x.rel, x.pos, x.prev); }
-static void io(Archive& a, EnvTrace& x) { a(x.pos, x.left, x.right, x.timer, x.rel, x.kill); }
-static void io(Archive& a, EnvWormState& x) {
-    a(x.state, x.path, x.forward, x.timer, x.headTimer, x.scanTimer, x.traceTimer, x.upCounter, x.downCounter, x.armyCounter, x.headFrame, x.armySpawned,
-      x.armyGroup, x.armyFrom, x.armyTo, x.armyLane, x.armyDist, x.armyPos, x.seg, x.traces, x.reverseArea);
-}
-static void io(Archive& a, EnvToadState& x) { a(x.idle, x.attack, x.explode, x.explodeDelay, x.units, x.target, x.lastTarget, x.post); }
-static void io(Archive& a, EnvBomb& x) { a(x.start, x.vel, x.pos, x.t, x.height, x.lift); }
-static void io(Archive& a, EnvFlyerState& x) { a(x.state, x.idle, x.fly, x.drop, x.length, x.height, x.rally, x.dropped, x.health, x.from, x.to, x.pos, x.body, x.bombs); }
-static void io(Archive& a, EnvActionState& x) { a(x.state, x.timer, x.await, x.executed); }
-static void io(Archive& a, EnvHolderState& x) { a(x.time, x.delay, x.suspend, x.order, x.actions); }
-static void io(Archive& a, EnvMouroState& x) { a(x.mode, x.holder, x.maxDomination, x.actionsDone, x.holders, x.emotionCooldown, x.emotionPlays, x.lastEmotion); }
-static void io(Archive& a, EnvSoul& x) { a(x.from, x.to, x.vel, x.t, x.total, x.gravity, x.target, x.owner, x.targetOwner, x.add); }
-static void io(Archive& a, EnvSend& x) { a(x.from, x.to, x.left, x.owner, x.group, x.unit, x.lane, x.lanePos, x.reverse, x.speedMul); }
 static void io(Archive& a, EnvAuto::Moving& x) { a(x.area, x.dist); }
 static void io(Archive& a, EnvAuto& x) { a(x.timer, x.late, x.moving); }
-static void io(Archive& a, EnvCave& x) { a(x.owner, x.count); }
-static void io(Archive& a, EnvWall& x) { a(x.e, x.hits, x.timer, x.state); }
-static void io(Archive& a, EnvFire& x) { a(x.e, x.timer, x.start, x.percent); }
 static void io(Archive& a, EnvUnit& x) { a(x.gen, x.blizzard, x.resist, x.init); }
-static void io(Archive& a, EnvMulti::Moving& x) { a(x.area, x.dist, x.cur, x.from, x.transfer); }
-static void io(Archive& a, EnvMulti& x) { a(x.created, x.moving); }
-
 void Environment::io(Simulation& sim, Archive& a) {
     EnvState* st = state(sim);
     if (!st) return;
     a(st->puddlesState, st->snowState, st->blizzardState, st->lightningState, st->puddles, st->rainTimer, st->snowTimer, st->snowFill, st->blizzardTimer,
       st->lightningTimer, st->lightningKill, st->lightningPos, st->windForce, st->windBlow, st->windIdle, st->windDir, st->windVisual);
-    a(st->worms, st->toads, st->flyers, st->mouro, st->scrollerState, st->scrollerTimer, st->screenPos, st->screenFrom, st->invincible, st->outmapTimer,
-      st->outmapIndex, st->outmapDone, st->autos, st->souls, st->sends, st->caves, st->graveyardTimer, st->graveyards, st->lastAction, st->soulAcc,
-      st->fires, st->walls, st->points, st->minionGroups, st->minionSpeed, st->units);
-    a(st->multis, st->fogSeen);
+    a(st->autos, st->units, st->weatherKilled, st->fogSeen);
 }
 
-// ================================================================= fog of war (BW FogOfWar)
+// ================================================================= fog of war
 
-// Runs after the vision system. Without explored memory, cells that went out of sight become unexplored again (BW
-// draws only live observers); during the first startDuration seconds every player also sees a disc around its first
-// building that shrinks from startFowSize to nothing (BW SetInitialFow during the countdown).
+// Runs after the vision system. Without explored memory, cells that went out of sight become unexplored again;
+// during the first startDuration seconds every player also sees a disc around its first building that shrinks
+// from startFowSize to nothing.
 void Environment::fogTick(Simulation& sim) {
     EnvState* st = state(sim);
     if (!st || sim.tick() % 5 != 0) return;   // the vision system runs every 5 ticks
