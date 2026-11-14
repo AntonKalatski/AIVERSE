@@ -166,7 +166,7 @@ struct LuaApi {
             lua_pop(L, 1);
         }
         // ruleSets = {"league3", ...}: named rule sets of rules.json switched on for this local match (the lobby
-        // fills them from a meta backend, e.g. BW customRules); unknown ids are dropped in startMatch
+        // fills them from the game's meta backend); unknown ids are dropped in startMatch
         std::vector<std::string> ruleSets;
         if (lua_istable(L, 2)) {
             lua_getfield(L, 2, "ruleSets");

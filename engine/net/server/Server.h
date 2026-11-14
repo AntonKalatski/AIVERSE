@@ -103,8 +103,8 @@ struct HostedMatchInfo {
     uint32_t joined = 0, expected = 0, tick = 0;
     uint64_t ageMs = 0;
 };
-// Matches placed by an external matchmaker (a meta backend such as the Bunker Wars servers, see
-// docs/meta-bunkerwars.md): the seats are known in advance and each player proves its seat with a
+// Matches placed by an external matchmaker (a game's own meta backend, docs/native-modules.md
+// "Remote backends"): the seats are known in advance and each player proves its seat with a
 // ticket, sent as the queue id "ticket:<ticket>" (QueueJoin with the client's maps, so the data hash
 // is still checked). The match starts when every human seat is taken.
 struct ReservedSeat {
