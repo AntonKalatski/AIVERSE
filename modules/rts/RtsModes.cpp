@@ -1,17 +1,12 @@
-// Match modes (agent-bw-modes): Bunker Wars / Mushroom Wars 2 victory modes and match clocks as generic data
-// (RtsModes.h, docs/game-format.md § Match modes). Ported 1:1 in fixed point:
-//   ModsModule/Impl/Domination.cs   -> modes.domination   (hold timer per point, holdAny = FFA, holdAll = COOP)
-//   ModsModule/Impl/KingOfTheHill.cs + PointModules/BaseModule.UpdateKingOfTheHillScore -> modes.kingOfTheHill
-//   ModsModule/Impl/TimeMod.cs      -> modes.timeLimit    (speed steps, MaxPoints / PointsComparison)
-//   SuddenDeathModule.cs            -> modes.suddenDeath  (counter, preview speed, factor status, end by points)
-//   BattleRoyal/BattleRoyalModule.cs -> modes.zones       (per-player rect chain, points outside turn neutral)
-//   CustomRulesInfo.TimeSlots       -> timedRules         (player statuses switched by time slots)
-//   MoraleInfo levels + Player.UpdateMorale -> resource "levels" (level mods, decay after a quiet period)
-//   PlayerStatistic counters        -> matchStats
-// Clocks: BW scales the delta time of gameplay modules (TimeMod speed x sudden death speedFactor) while zones and
-// sudden death count unscaled ticks. Here the simulation tick stays fixed: speedScale() makes the client run that
-// many ticks per real tick, gameplay timers use sim time, zones / sudden death / time slots use realTime
-// (sum of dt / speed). Outcomes are deterministic: every value is Fixed and part of hashState.
+// Match modes: rule-level victory modes and match clocks as generic data (RtsModes.h, docs/game-format.md § Match modes):
+//   modes.domination (hold timer per point; holdAny for free-for-all, holdAll for teams), modes.kingOfTheHill (a
+//   score per side counting down while it holds the hill), modes.timeLimit (speed steps, decision by points),
+//   modes.suddenDeath (counter, slowed preview, a status for everyone, optional end by points), modes.zones (a
+//   rect chain per player, points outside turn neutral), timedRules (player statuses switched by time slots),
+//   resource "levels" (level mods, decay after a quiet period), matchStats.
+// Clocks: the simulation tick stays fixed. speedScale() makes the client run that many ticks per real tick, gameplay
+// timers use sim time, zones / sudden death / time slots use realTime (sum of dt / speed), so a speed-up shortens
+// them in game time but not in real time. Outcomes are deterministic: every value is Fixed and part of hashState.
 #include "RtsInternal.h"
 #include <algorithm>
 
@@ -31,7 +26,7 @@ bool isWavePlayer(const GameState& gs, uint8_t slot) {
 }
 bool neutralOwner(uint8_t p) { return p == 0 || p == kHostileNeutral; }
 
-// Battle-royal rect of a zone chain at `t` seconds (BattleRoyalModule.UpdateRectByTick, ticks -> seconds).
+// Rect of a zone chain at `t` seconds.
 void zoneAt(const ModesRules& m, ZoneState& z, Fixed t) {
     if (z.start < 0) return;
     const ZoneStep* el = &m.zoneStart[size_t(z.start)];
@@ -72,17 +67,9 @@ void RtsModule::modesSetup(Simulation& sim, const Json& rulesJson, const Json& m
     ModesState& ms = gs.modes;
     const size_t np = gs.players.size();
     ms.timeLeft = modes_.timeSeconds;
-    // per player morale multipliers (BW moraleIncreaseCoefficient, AI complexity increase / decrease coefficients)
-    modes_.playerGain.assign(np, Fixed::fromInt(1));
-    modes_.playerDecay.assign(np, Fixed::fromInt(1));
-    for (size_t i = 0; i < map["players"].size() && i + 1 < np; ++i) {
-        const Json& pj = map["players"][i];
-        modes_.playerGain[i + 1] = pj.getFx("moraleGain", Fixed::fromInt(1));
-        modes_.playerDecay[i + 1] = pj.getFx("moraleDecay", Fixed::fromInt(1));
-    }
 
-    // ---- mode points: map entities / types with "modePoint" (BW PointInfo.isDominationPoint / isKingOfTheHillPoint)
-    // a name or a list of names (BW points can be both a domination and a king of the hill point): a mask, 1 | 2
+    // ---- mode points: map entities / types with "modePoint"
+    // a name or a list of names (a point can be both a domination and a king of the hill point): a mask, 1 | 2
     auto kindOf = [](const Json& v) -> uint8_t {
         auto one = [](const std::string& s) -> uint8_t { return s == "domination" ? 1 : s == "kingOfTheHill" ? 2 : 0; };
         if (!v.isArray()) return one(v.str());
@@ -121,7 +108,7 @@ void RtsModule::modesSetup(Simulation& sim, const Json& rulesJson, const Json& m
         const int garrison = k == 1 ? modes_.domGarrison : modes_.kohGarrison;
         if (auto* g = w.tryGet<Garrison>(e); g && garrison >= 0) g->count = garrison;
         ModePoint p; p.e = e; p.kind = k; p.lastOwner = w.get<Owner>(e).player;
-        if (!neutralOwner(p.lastOwner)) p.hold = modes_.domHold;   // BW: the first owner set on load starts the timer
+        if (!neutralOwner(p.lastOwner)) p.hold = modes_.domHold;   // the first owner set on load starts the timer
         ms.points.push_back(p);
     }
 
@@ -151,7 +138,7 @@ void RtsModule::modesSetup(Simulation& sim, const Json& rulesJson, const Json& m
             });
         }
 
-    // ---- custom rule sets chosen for this match (BW CustomRules / HeroCustomRules from the backend -> map "ruleSets")
+    // ---- custom rule sets chosen for this match (map "ruleSets": e.g. picked by the lobby)
     for (auto& id : map["ruleSets"].items()) {
         const Json& rs = rulesJson["ruleSets"][id.str()];
         if (!rs.isArray()) throw std::runtime_error("map ruleSets: unknown rule set '" + id.str() + "'");
@@ -182,7 +169,6 @@ void RtsModule::modesSetup(Simulation& sim, const Json& rulesJson, const Json& m
     ms.stats.assign(np, std::vector<int64_t>(kMsCount, 0));
     ms.abilityUses.assign(np, std::vector<int32_t>(rules_.playerAbilities.size(), 0));
     ms.outcome.assign(np, 0);
-    if (rules_.core.any) coreSetup(sim, map);   // battle core: point values per difficulty (RtsCore.cpp)
 }
 
 // ================================================================= queries
@@ -206,7 +192,7 @@ int64_t RtsModule::matchStat(Simulation& sim, uint8_t player, MatchStat key) con
     return gs->modes.stats[player][key];
 }
 
-// level index of `player` in levels entry `l` (MoraleInfo.GetLevelFromPoints): the last level reached, -1 below the first
+// level index of `player` in levels entry `l`: the last level reached, -1 below the first
 int RtsModule::modeLevel(Simulation& sim, uint8_t player, int16_t l) const {
     auto* gs = sim.world().resource<GameState>();
     if (!gs || l < 0 || size_t(l) >= modes_.levels.size() || player >= gs->players.size()) return -1;
@@ -217,7 +203,7 @@ int RtsModule::modeLevel(Simulation& sim, uint8_t player, int16_t l) const {
     return idx;
 }
 
-// stat mods of the player's current levels (MoraleInfo damagePercent / shieldPercent / speedPercent)
+// stat mods of the player's current levels
 Fixed RtsModule::modesLevelStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, Fixed& mul) const {
     Fixed add{};
     for (size_t l = 0; l < modes_.levels.size(); ++l) {
@@ -251,7 +237,7 @@ void RtsModule::sysModes(Simulation& sim) {
         if (u.hp.raw <= 0) return false;
         return M.garrisonPoints ? w.has<Garrison>(e) : (rules_.types[u.type].structure && rules_.types[u.type].countsForVictory);
     };
-    auto inZone = [&](uint8_t owner, Vec3 pos) {   // MultiscreenModule.IsPointInsideScreen with battle royal
+    auto inZone = [&](uint8_t owner, Vec3 pos) {   // a point outside its owner's zone / screen does not count
         if (!M.zones) return onScreen(sim, pos);   // multiscreen / map scroller (RtsRoutes.cpp)
         if (owner >= ms.zone.size() || !ms.zone[owner].on) return true;
         return inRect(ms.zone[owner].rect, pos);
@@ -284,7 +270,7 @@ void RtsModule::sysModes(Simulation& sim) {
         gs.winnerTeam = 0;
         for (int t : teams) markTeam(t, 3);
     };
-    auto pointsOfTeams = [&]() {   // team -> points owned (players.GetPointsCount), only teams owning any
+    auto pointsOfTeams = [&]() {   // team -> points owned, only teams owning any
         std::vector<std::pair<int, int>> n;
         w.each<Unit, Owner>([&](Entity e, Unit&, Owner& o) {
             if (neutralOwner(o.player) || !isPoint(e)) return;
@@ -296,7 +282,7 @@ void RtsModule::sysModes(Simulation& sim) {
         return n;
     };
 
-    // ---- mode points: hold timers (BaseModule.OnOwnerChanged / UpdateDominationTimeout), king of the hill score
+    // ---- mode points: hold timers, king of the hill score
     for (auto& mp : ms.points) {
         if (!w.alive(mp.e) || !w.has<Owner>(mp.e)) continue;
         const uint8_t owner = w.get<Owner>(mp.e).player;
@@ -315,7 +301,7 @@ void RtsModule::sysModes(Simulation& sim) {
         }
     }
 
-    // king of the hill scores as trigger variables for scripts and the BW computer player (koth_<slot>, koth_max)
+    // king of the hill scores as trigger variables for scripts and computer players (koth_<slot>, koth_max)
     if (M.koh) {
         for (auto& p : sim.players()) {
             const size_t t = size_t(teamOfSlot(p.slot));
@@ -351,7 +337,7 @@ void RtsModule::sysModes(Simulation& sim) {
         }
     }
 
-    // ---- timed rules (CustomRules time slots): player statuses on / off
+    // ---- timed rules: player statuses on / off by time slots
     if (!M.timedRules.empty()) {
         int best = -1;
         for (size_t r = 0; r < M.timedRules.size(); ++r) {
@@ -403,7 +389,7 @@ void RtsModule::sysModes(Simulation& sim) {
             if (lv >= 0) {
                 const LevelDef& d = rl.levels[size_t(lv)];
                 if (d.decayEvery.raw > 0) {
-                    ms.decayTimer[l][p] += p < M.playerDecay.size() ? dt * M.playerDecay[p] : dt;
+                    ms.decayTimer[l][p] += dt;
                     if (ms.decayTimer[l][p] >= d.decayEvery) {
                         ms.decayTimer[l][p] -= d.decayEvery;
                         const Fixed quiet = dt * int64_t(sim.tick() - ms.lastGain[l][p]);
@@ -448,7 +434,7 @@ void RtsModule::sysModes(Simulation& sim) {
                 } else if (!n.empty()) {
                     int cnt = 0, win = -1;
                     for (auto& [t, c] : n) if (M.timeCoef * int64_t(c) > Fixed::fromInt(mx)) { ++cnt; win = t; }
-                    if (cnt != 1) drawAll();   // BW: > 1 draws; none qualifying (coefficient <= 1) picks key 0 - a draw here
+                    if (cnt != 1) drawAll();   // several or none qualifying: a draw
                     else {
                         gs.winnerTeam = win; markTeam(win, 1);
                         for (auto& [t, c] : n) if (t != win) defeatTeam(t);
@@ -460,8 +446,8 @@ void RtsModule::sysModes(Simulation& sim) {
         }
     }
 
-    // ---- domination: every domination point held (timers run out) -> sides holding none are out (FFA) /
-    //      one side holding them all wins (COOP)
+    // ---- domination: every domination point held (timers run out) -> sides holding none are out (free-for-all) /
+    //      one side holding them all wins (teams)
     if (M.domination && gs.winnerTeam < 0) {
         bool ready = false, abort = false;
         std::vector<int> held;
@@ -529,7 +515,7 @@ void RtsModule::sysModes(Simulation& sim) {
                 ms.sdPhase = 3; ms.sdCounter = false;
                 sim.emit({kEvModePhase, 0, kNullEntity, kNullEntity, kModeSdEnd, {}});
                 if (gs.winnerTeam < 0) {
-                    // SuddenDeathModule.CheckMode: sides with the most points win; all equal -> draw; a tie of some ->
+                    // sides with the most points win; all equal -> draw; a tie of some ->
                     // they win and the others draw (one winning team here: the match result is a draw)
                     std::vector<std::pair<int, int>> sum;
                     for (int t : teams) sum.push_back({t, 0});
@@ -577,7 +563,7 @@ void RtsModule::sysModes(Simulation& sim) {
         }
 }
 
-// ================================================================= match statistics (PlayerStatistic)
+// ================================================================= match statistics
 
 void RtsModule::sysMatchStats(Simulation& sim) {
     World& w = sim.world();
@@ -653,7 +639,6 @@ void RtsModule::hashModes(Simulation& sim, Hasher& h) {
     for (auto x : ms.pointProduced) h.u64(uint64_t(x));   // agent-bw-ai
     for (auto x : ms.pointKills) h.u64(uint64_t(x));
     for (auto o : ms.outcome) h.i32(o);
-    for (auto x : ms.neutralMax) h.i32(x);
 }
 
 void io(Archive& a, ModeRect& r) { a(r.x, r.z, r.w, r.h); }
@@ -664,7 +649,7 @@ bool ioModesState(RtsModule& m, Simulation& sim, Archive& a) {
     if (!m.modes_.any) return true;   // games without modes keep their save format
     ModesState& s = m.state(sim).modes;
     a(s.realTime, s.speed, s.timeSpeed, s.sdSpeed, s.timeLeft, s.timeIndex, s.sdPhase, s.sdCounter, s.sdRuleSet, s.points, s.kohScore,
-      s.kohAlarmed, s.zone, s.ruleOn, s.level, s.decayTimer, s.lastStock, s.lastGain, s.stats, s.abilityUses, s.outcome, s.neutralMax, s.pointProduced, s.pointKills);
+      s.kohAlarmed, s.zone, s.ruleOn, s.level, s.decayTimer, s.lastStock, s.lastGain, s.stats, s.abilityUses, s.outcome, s.pointProduced, s.pointKills);
     return a.ok();
 }
 

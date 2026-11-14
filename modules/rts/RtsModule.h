@@ -210,6 +210,7 @@ enum GameEvent : uint16_t {
     kEvTelegraphEnd,    // a = caster, value = attack index | 1 << 16 when cancelled (caster died in the windup)
     kEvEnv,             // map environment (RtsEnv.h): value = EnvEventKind << 16 | data, a / b / pos per kind (weather, wind, worm, toad, bombs, Mouro, souls, walls)
     kEvModePhase,       // match modes (RtsModes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
+    kEvAssault,         // a unit assaulted a defended garrison: player = attacker, a = structure, b = the unit, value = defenders lost
 };
 // kEvModePhase values
 enum ModePhaseEvent : int64_t { kModeSdCounter = 1, kModeSdPreview, kModeSdStart, kModeSdEnd, kModeTimeStep, kModeTimeUp,
@@ -733,6 +734,11 @@ public:
     void addPlayerStatus(Simulation& sim, uint8_t player, int def, Fixed duration, const EffectCtx& ctx);
     int dispel(Simulation& sim, Entity target, uint64_t tags, uint8_t from);    // removed count
     bool castPlayerAbility(Simulation& sim, uint8_t player, int index, Vec3 point, Entity target);
+    // The payload of a player ability applied for `player` at once: no cost, cooldown, charges or cast time
+    // (scripted casts of native modules and rules). False for an unknown ability / player.
+    bool castPlayerAbilityFree(Simulation& sim, uint8_t player, int index, Vec3 point, Entity target);
+    // The map this match was set up from (after generation): native modules read their own map keys in setup().
+    const Json& matchMap() const { return matchMap_; }
     Fixed playerStat(Simulation& sim, uint8_t player, Stat s, Fixed base) const; // player statuses
     std::vector<Entity> groupMembers(Simulation& sim, uint32_t group) const;
     // Where to aim a skill (autocast, auto skills, AI): fills point / target; false when there is nothing worth it.
@@ -863,16 +869,6 @@ private:
     void sysModes(Simulation& sim);
     void sysMatchStats(Simulation& sim);
     void hashModes(Simulation& sim, Hasher& h);
-    // battle core (RtsCore.cpp): rules "battleCore"
-    void coreSetup(Simulation& sim, const Json& map);
-    void coreMorale(Simulation& sim, uint8_t player, Fixed points, bool gain, bool resetCooldown);
-    void coreUnitsLost(Simulation& sim, uint8_t player, int count);
-    void coreAssault(Simulation& sim, uint8_t attacker, uint8_t defender);
-    void coreCaptured(Simulation& sim, uint16_t type, uint8_t from, uint8_t to);
-    void coreUpgraded(Simulation& sim, uint8_t owner, uint16_t type);
-    void sysCore(Simulation& sim);
-    std::vector<Fixed> coreGrowthRates(Simulation& sim) const;
-    int coreNeutralMax(Simulation& sim, Entity e, const UnitType& t) const;
     friend bool ioModesState(RtsModule& m, Simulation& sim, Archive& a);
     std::shared_ptr<const struct BwAIConfig> bwAI_;   // agent-bw-ai
     mutable std::vector<uint8_t> bwBots_;             // agent-bw-ai: bot slots of this process (presentation-like, never read by the sim)
@@ -1059,6 +1055,8 @@ private:
     std::unique_ptr<Environment> env_;     // map environment (RtsEnv.h; state: EnvState resource)
     std::vector<NativeDefinition> nativeDefinitions_;
     NativeModules native_;
+    bool nativeFiltering_ = false;   // inside NativeModule::filterCommand's re-entry (never set between commands)
+    Json matchMap_;                  // see matchMap()
     std::unique_ptr<ScriptEngine> script_; // Lua VM (RtsScript.h); its persistent state is the ScriptStore resource
     // foundations, traps, group teleports, charge effects (RtsFidelity.cpp)
     void sysFidelity(Simulation& sim);

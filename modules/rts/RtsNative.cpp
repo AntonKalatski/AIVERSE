@@ -67,6 +67,8 @@ void NativeModules::load(RtsModule& rts, Simulation& sim, const Json& rules,
         entries_.push_back({id, config.dump(-1), def->version, uint16_t(command), std::move(instance)});
     }
     if (entries_.empty()) return;
+    hooks_ = 0;
+    for (auto& e : entries_) hooks_ |= e.instance->hooks();
     auto& store = sim.world().setResource<NativeStore>();
     store.modules.resize(entries_.size());
     for (size_t i = 0; i < entries_.size(); ++i) {
@@ -87,6 +89,23 @@ void NativeModules::command(RtsModule& rts, Simulation& sim, const Command& cmd)
         entries_[i].instance->command(rts, sim, sim.world().resource<NativeStore>()->modules[i], cmd);
         return;
     }
+}
+bool NativeModules::filterCommand(RtsModule& rts, Simulation& sim, Command& cmd) const {
+    for (size_t i = 0; i < entries_.size(); ++i)
+        if ((entries_[i].instance->hooks() & kNativeHookCommand) &&
+            !entries_[i].instance->filterCommand(rts, sim, sim.world().resource<NativeStore>()->modules[i], cmd)) return false;
+    return true;
+}
+void NativeModules::garrisonGrowth(RtsModule& rts, Simulation& sim, Entity e, uint8_t owner, Fixed& rate, int& cap) const {
+    for (size_t i = 0; i < entries_.size(); ++i)
+        if (entries_[i].instance->hooks() & kNativeHookGarrison)
+            entries_[i].instance->garrisonGrowth(rts, sim, sim.world().resource<NativeStore>()->modules[i], e, owner, rate, cap);
+}
+bool NativeModules::upgradeOrder(RtsModule& rts, Simulation& sim, Entity e, uint8_t player, uint16_t& type, Fixed& cost, Fixed& time) const {
+    for (size_t i = 0; i < entries_.size(); ++i)
+        if ((entries_[i].instance->hooks() & kNativeHookUpgrade) &&
+            !entries_[i].instance->upgradeOrder(rts, sim, sim.world().resource<NativeStore>()->modules[i], e, player, type, cost, time)) return false;
+    return true;
 }
 void NativeModules::hash(Simulation& sim, Hasher& h) const {
     if (entries_.empty()) return; // preserve existing games' checksums

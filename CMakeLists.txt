@@ -148,7 +148,6 @@ add_library(aiverse_game STATIC
     modules/rts/RtsFidelity.cpp
     modules/rts/RtsModesData.cpp
     modules/rts/RtsModes.cpp
-    modules/rts/RtsCore.cpp
     modules/rts/RtsAIOriginals.cpp
     modules/rts/RtsAIFidelity.cpp
     modules/rts/RtsAITerrain.cpp
