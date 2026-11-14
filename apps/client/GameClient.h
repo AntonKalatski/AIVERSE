@@ -265,6 +265,7 @@ private:
     void joinBattle(const std::string& address, const std::string& queueId, bool spectator);
     ClientMeta backendMeta_;
     std::string pendingQueue_;
+    std::vector<std::string> startRuleSets_;   // game.start {ruleSets}: map "ruleSets" of the next local match
     void startNetMatch();
     void leaveNetMatch();
     void buildLobby(UiState& s);

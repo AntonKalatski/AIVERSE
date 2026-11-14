@@ -49,6 +49,17 @@ struct Reg { Reg(const char* n, std::function<void()> f) { registry().push_back(
 #endif
 static const std::string kData = std::string(AIVERSE_SOURCE_DIR) + "/tests/data/bw_meta/";
 static const std::string kMushrooms = std::string(AIVERSE_SOURCE_DIR) + "/templates/mushrooms";
+// The real Bunker Wars game lives outside the engine repo: AIVERSE_BW_GAME_DIR (environment, else the
+// CMake definition). Tests that need it skip when it is absent.
+static std::string bwGameDir() {
+    if (const char* e = std::getenv("AIVERSE_BW_GAME_DIR"); e && *e) return e;
+#ifdef AIVERSE_BW_GAME_DIR
+    return AIVERSE_BW_GAME_DIR;
+#else
+    return {};
+#endif
+}
+static bool bwGameHas(const std::string& rel) { std::ifstream f(bwGameDir() + "/" + rel); return !bwGameDir().empty() && bool(f); }
 static std::string readFile(const std::string& p) { std::ifstream f(p, std::ios::binary); std::stringstream s; s << f.rdbuf(); return s.str(); }
 static std::string hex(const mp::Bytes& b) { return enc::hexUpper(b.data(), b.size()); }
 
@@ -648,14 +659,27 @@ TEST(bw_node_hosts_a_backend_match) {
 }
 
 TEST(bw_node_map_table_for_bunkerwars) {
-    // tools/meta/bw_map_ids.py output: BW MapHeader ids -> templates/bunkerwars maps.
+    // tools/meta/bw_map_ids.py output: BW MapHeader ids -> the game's maps. A table file path works like an object.
+    {
+        const std::string tmp = kData + "map_ids_fixture.json";
+        Json small = Json::object();
+        small.set("maps", Json::string(tmp));
+        small.set("gameId", Json::string("bw"));
+        bw::NodeConfig n2 = bw::NodeConfig::parse(small);
+        CHECK(n2.maps.size() == 2 && n2.maps[2001] == "maps/2players_2001.json" && n2.maps[30001] == "maps/campaign3_30001.json");
+        Json spec2 = Json::parse(readFile(kData + "game_spec.json"));
+        spec2.set("mapId", Json::number(int64_t(424242)));
+        std::string err2;
+        CHECK(!bw::reservationFromSpec(spec2, n2, &err2) && err2.find("424242") != std::string::npos);
+    }
+    if (!bwGameHas("bw/map_ids.json")) { std::printf("  (AIVERSE_BW_GAME_DIR not set: real map table skipped)\n"); return; }
     Json cfg = Json::object();
-    cfg.set("maps", Json::string(std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars/bw/map_ids.json"));
+    cfg.set("maps", Json::string(bwGameDir() + "/bw/map_ids.json"));
     cfg.set("gameId", Json::string("bw"));
     bw::NodeConfig nc = bw::NodeConfig::parse(cfg);
     CHECK(nc.maps.size() > 100 && nc.maps[2001] == "maps/2players_2001.json");
     for (auto& [id, file] : nc.maps) {
-        std::ifstream f(std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars/" + file);
+        std::ifstream f(bwGameDir() + "/" + file);
         if (!f) { CHECK(!"map file of the table exists"); std::printf("    missing %s\n", file.c_str()); break; }
     }
     Json spec = Json::parse(readFile(kData + "game_spec.json"));
@@ -1050,8 +1074,9 @@ TEST(bw_meta_tutorials_runner) {
 }
 
 TEST(bw_meta_tutorials_real_data) {
-    // ui/bw_tutorials.json of templates/bunkerwars (tools/meta/bw_tutorials.py from the BW client).
-    Json doc = Json::parseFile(std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars/ui/bw_tutorials.json");
+    // ui/bw_tutorials.json of the game (tools/meta/bw_tutorials.py from the BW client).
+    if (!bwGameHas("ui/bw_tutorials.json")) { std::printf("  (AIVERSE_BW_GAME_DIR not set: skipped)\n"); return; }
+    Json doc = Json::parseFile(bwGameDir() + "/ui/bw_tutorials.json");
     bw::MetaTutorials t;
     CHECK(t.load(doc) && t.size() == 217);
     t.setProfile(Json::parse(readFile(kData + "profile_get.json")));

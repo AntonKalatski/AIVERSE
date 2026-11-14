@@ -8,7 +8,7 @@ read_meta) and resolves what the runner needs by id instead of Unity references:
   - HasProfileFeatures feature -> "featureId" (feature asset "id" / name).
 Writes <game>/ui/bw_tutorials.json ({"version": 2, "tutorials": [...]}).
 
-    tools/meta/bw_tutorials.py --unity <bunker-wars>/Client/Assets [--game templates/bunkerwars]
+    tools/meta/bw_tutorials.py --unity <bunker-wars>/Client/Assets --game <game folder>
 """
 import argparse, json, re, sys
 from pathlib import Path
@@ -48,7 +48,7 @@ def asset_field(path, names):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--unity", required=True)
-    ap.add_argument("--game", default=str(ROOT / "templates" / "bunkerwars"))
+    ap.add_argument("--game", required=True, help="the game folder (lives outside the engine repo)")
     a = ap.parse_args(argv)
     assets = Path(a.unity)
     meta = tutorial.read_meta(assets)

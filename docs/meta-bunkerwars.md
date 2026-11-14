@@ -157,9 +157,9 @@ that does not reach the players' checksum sends no values and `strErrors: "stats
 
 ## Map ids
 
-`tools/meta/bw_map_ids.py` writes `templates/bunkerwars/bw/map_ids.json` (BW `MapHeader.mapId` ->
+`tools/meta/bw_map_ids.py --game <game>` writes `<game>/bw/map_ids.json` (BW `MapHeader.mapId` ->
 engine map, 119 ids; campaign split-test variants under `variants`). Battle node config:
-`"maps": "templates/bunkerwars/bw/map_ids.json"`. Re-run it after the BW importer.
+`"maps": "<game>/bw/map_ids.json"`. Re-run it after the BW importer.
 
 ## Spectators
 
@@ -178,7 +178,7 @@ Incoming messages, members, notifications (friend / game / spectator / clan) and
 
 ## Meta tutorials
 
-`tools/meta/bw_tutorials.py --unity <bunker-wars>/Client/Assets` writes `templates/bunkerwars/ui/bw_tutorials.json`
+`tools/meta/bw_tutorials.py --unity <bunker-wars>/Client/Assets --game <game>` writes `<game>/ui/bw_tutorials.json`
 (217 TutorialData of `_TutorialMeta` with guids; map / campaign / feature references resolved to ids).
 `bw::MetaTutorials` (engine/meta/bw/BwTutorials.h) reproduces UI.Windows `TutorialSystem`: window events
 start the tutorials of that window (BW class, short class name or engine screen id) whose conditions
@@ -190,20 +190,25 @@ currencies, HasProfileHeroSlotIsNull); the client-screen ones (craft / card scre
 progress, trophy road, boosters, clan screen mode, profile features) go to `TutorialHost::condition`
 and count as false without it (`unsupported()`).
 
-## Client screens (templates/bunkerwars/ui)
+## Client screens (the game's `ui/`)
 
 `apps/client/ClientMeta.cpp` gives UI scripts the `backend` table (login, request, view, cached, chat,
 match, spectate, cancel, connected, tutorial*, events `game.on("backend")`: match / handoff /
 tutorial / chat / notAuthorized). Configuration: game.json `"backend"` or `ui/backend.json`
 (`type`, `hosts`, `client`, `tutorials`). On `handoff` the client connects its NetClient to the engine
 battle server and joins the ticket queue by itself; the match then runs like any network match.
-`templates/bunkerwars/ui`: `bw_login` (guest sign-in, guid kept in `storage`), `bw_home` (profile,
+The Bunker Wars game (outside this repo, `AIVERSE_BW_GAME_DIR`) has in `ui/`: `bw_login` (guest sign-in, guid kept in `storage`), `bw_home` (profile,
 league, balances; play / heroes / shop / clan), `bw_heroes` (select hero), `bw_shop` (offers, market),
 `bw_clan` (own clan, list, join request), `bw_queue` (matchmaking until the handoff), `bw_results`
 (after every match); texts in `ui/bw_meta_lang.json`. Screens send BW window events to the tutorial
 runner (`bw_home` = MainScreen + PlayComponents + HeroAnimationComponent ...); tutorial tags are element
 ids, LockElement shows the hint panel. These are functional screens on the engine's default styles,
-not the BW art (UI.Windows prefabs can be converted with `tools/importers/unity_ui` from the user's copy).
+not the BW art. Screens converted from the BW client by `tools/importers/bunkerwars/client.py` are used when
+present: `victory` / `defeat` (local) and `endmatch` (online) replace `bw_results` after a match, and
+`popupmenuscreenmobile` replaces the engine pause menu (`game.on("screen")`). `game.start(i, {ruleSets = {...}})`
+switches named rules.json `ruleSets` on for a local match; the lobby fills them from `challenges.customRules`
+(`custom<clientId>`; ids the rules do not define are dropped). Online matches on engine nodes cannot carry
+per-match rule sets yet: every player must load the same map bytes (data hash), and GameSpec has no field for them.
 
 ## Native HTTP stacks: what was compiled
 
@@ -269,7 +274,7 @@ does 1-4 on its side; these are the same contracts).
 7. **Clients**: BW Unity clients from the current branch already switch to `battleHost` with the ticket
    (`MultiplayerManager.SwitchToBattleNode`), but an engine node speaks the engine protocol (UDP / WebSocket,
    `engine/net/Protocol.h`), not BW TCP frames: only engine clients (`AiverseGame` with
-   `templates/bunkerwars`) can play on it. Mixed BW-client / engine-client matches are not possible; route
+   the Bunker Wars game) can play on it. Mixed BW-client / engine-client matches are not possible; route
    engine clients by `clientVersion` / a feature flag to engine nodes and BW clients to the Java battle server.
-8. **Map ids**: the engine maps exist for the ids in `templates/bunkerwars/bw/map_ids.json`; a placement
+8. **Map ids**: the engine maps exist for the ids in `<game>/bw/map_ids.json`; a placement
    for any other `mapId` gets `400 invalid game spec` and must fall back.

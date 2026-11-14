@@ -256,6 +256,12 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
     try {
         map = Json::parse(text);
         game::mergeInitialVars(map, initialVars);
+        if (!startRuleSets_.empty()) {   // game.start {ruleSets}: only sets the rules define (agent-bw-meta)
+            Json sets = map["ruleSets"].isArray() ? map["ruleSets"] : Json::array();
+            for (auto& id : startRuleSets_) if (rulesJson_["ruleSets"][id].isArray()) sets.push(Json::string(id));
+            if (sets.size()) map.set("ruleSets", sets);
+            startRuleSets_.clear();
+        }
         std::string terr; // 2D tile maps: the tileset decides cell kinds / levels / fields
         if (!applyTilesToMap(map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
         SimConfig cfg;

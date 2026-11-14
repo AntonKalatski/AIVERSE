@@ -5,7 +5,7 @@ Reads the importer's sidecars <game>/bw/maps/<map>.json ("mapId", the BW MapHead
 sends as GameSpec.mapId / Match.mapId) and writes <game>/bw/map_ids.json:
   {"version": 1, "maps": {"2001": "maps/2players_2001.json", ...}, "variants": {"20001": [...]}}
 Maps with several engine variants of one BW id (campaign _a/_b) take the first one in name order and
-list all of them under "variants". Usage: tools/meta/bw_map_ids.py [--game templates/bunkerwars] [--check]
+list all of them under "variants". Usage: tools/meta/bw_map_ids.py --game <game folder> [--check]
 """
 import argparse, json, os, sys
 
@@ -30,7 +30,7 @@ def build(game):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--game", default="templates/bunkerwars")
+    ap.add_argument("--game", required=True, help="the game folder (lives outside the engine repo)")
     ap.add_argument("--check", action="store_true", help="fail if the table is out of date")
     a = ap.parse_args()
     text = build(a.game)

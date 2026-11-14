@@ -165,6 +165,22 @@ struct LuaApi {
             }
             lua_pop(L, 1);
         }
+        // ruleSets = {"league3", ...}: named rule sets of rules.json switched on for this local match (the lobby
+        // fills them from a meta backend, e.g. BW customRules); unknown ids are dropped in startMatch
+        std::vector<std::string> ruleSets;
+        if (lua_istable(L, 2)) {
+            lua_getfield(L, 2, "ruleSets");
+            if (lua_istable(L, -1))
+                for (lua_Integer k = 1; k <= 32; ++k) {
+                    lua_rawgeti(L, -1, k);
+                    const bool isStr = lua_type(L, -1) == LUA_TSTRING;
+                    if (isStr) ruleSets.emplace_back(lua_tostring(L, -1));
+                    lua_pop(L, 1);
+                    if (!isStr) break;
+                }
+            lua_pop(L, 1);
+        }
+        c.startRuleSets_ = std::move(ruleSets);
         if (c.uiPreview_) return 0;   // previews validate options but never start a match
         if (lua_istable(L, 2)) {
             lua_getfield(L, 2, "difficulty");

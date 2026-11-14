@@ -27,7 +27,7 @@ NodeConfig NodeConfig::parse(const Json& j) {
     c.settings.inputDelay = uint32_t(jsonInt(j["inputDelay"], c.settings.inputDelay));
     c.settings.rollbackWindow = uint32_t(jsonInt(j["rollbackWindow"], c.settings.rollbackWindow));
     // "maps": {"2001": "maps/a.json"} or the path of a table made by tools/meta/bw_map_ids.py
-    // (templates/bunkerwars/bw/map_ids.json: {"maps": {...}}).
+    // (<game>/bw/map_ids.json: {"maps": {...}}).
     Json table = j["maps"];
     if (table.isString()) {
         Json file = Json::parseFile(table.str());
