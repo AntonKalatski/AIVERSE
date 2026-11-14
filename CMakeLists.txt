@@ -1712,6 +1712,11 @@ endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)   # UI.Windows audio bank importer (synthetic data, no game files)
     add_test(NAME uiwindows_audio_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/fmod/test_import_audio.py)
 endif()
+# The project's native modules (<content>/native, modules/rts/native/Build.cmake) after every engine target, so a
+# module's CMake may link aiverse_net / aiverse_grpc / aiverse_plugins / server libraries and call
+# aiverse_protobuf_generate (docs/native-modules.md § Engine libraries); before the Windows manifest pass below.
+aiverse_native_configure()
+
 # Windows: every executable gets platform/windows/utf8.manifest (activeCodePage UTF-8). Paths in the
 # engine are UTF-8 std::strings; without it the narrow CRT/STL file APIs use the legacy ANSI code page
 # and a project in a folder like "Моя стратегия" cannot be opened. MSVC merges .manifest sources into

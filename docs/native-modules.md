@@ -90,6 +90,25 @@ to the factories, so linker optimization will not remove the registration. Setti
 inside `native/` so that the export works on another machine. Registration order does not affect execution order: that
 is set by the array in rules.json. Modules that are compiled but not listed in rules.json do not run.
 
+### Engine libraries
+
+`native/CMakeLists.txt` is loaded at the end of the engine's configure (`aiverse_native_configure()` in the top-level
+CMakeLists): every engine target exists by then — `aiverse_net` (sockets, secure battle transport, `NetClient`),
+`aiverse_grpc` / `aiverse_protobuf`, `aiverse_plugins`, the meta libraries, `aiverse_net_server` / `aiverse_server` /
+`aiverse_battle_rts` when the server is built, the executables (`aiverse_client`, `aiverse_headless`, ...) — and so is
+`aiverse_protobuf_generate()`. Two helpers attach them to a module:
+
+```cmake
+aiverse_native_module(ID online VERSION 1 ENTRY createOnline SOURCES Online.cpp Plugin.cpp)
+aiverse_native_use_grpc(ID online IMPORT_ROOT "${CMAKE_CURRENT_LIST_DIR}/proto" PROTOS api.proto auth.proto)  # messages + stubs
+aiverse_native_link(ID online LIBRARIES aiverse_net aiverse_plugins)
+```
+
+`aiverse_native_link` gives the module's objects the libraries' include paths / definitions and links them into
+`aiverse_game` (which carries the module's objects into every executable). `aiverse_native_use_grpc` runs
+`aiverse_protobuf_generate(... GRPC)` on the module target (`NO_STUBS`: messages only; no `PROTOS`: only the link) and
+links `aiverse_grpc`. Developer tools and tests of the project can be plain `add_executable` targets in the same file.
+
 ## API and execution order
 
 `modules/rts/RtsNative.h` contains the `NativeModule` interface:
@@ -317,15 +336,11 @@ static object, so compile the file into the executable itself, not into a static
 drop:
 
 ```cmake
-# native/<part>/module.cmake - executables do not exist yet when native/ is processed
-function(my_backend_attach)
-    if(TARGET aiverse_server)
-        target_sources(aiverse_server PRIVATE ${MY_DIR}/MyServerExtension.cpp)
-        target_link_libraries(aiverse_server PRIVATE my_backend_core)
-    endif()
-endfunction()
-set(MY_DIR ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
-cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL my_backend_attach)
+# native/CMakeLists.txt (configured after the engine's targets, § Engine libraries)
+if(TARGET aiverse_server)
+    target_sources(aiverse_server PRIVATE ${CMAKE_CURRENT_LIST_DIR}/MyServerExtension.cpp)
+    target_link_libraries(aiverse_server PRIVATE my_backend_core)
+endif()
 ```
 
 ### Client side: a native plugin, Lua on top
