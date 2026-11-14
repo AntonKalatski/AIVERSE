@@ -256,6 +256,7 @@ add_library(aiverse_net STATIC
     engine/net/BattleProtocol.cpp
     engine/net/SimNet.cpp
     engine/net/SecureUdp.cpp
+    engine/net/BattleJoin.cpp
     third_party/monocypher/monocypher.c)
 set_source_files_properties(third_party/monocypher/monocypher.c PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w,-w>")
 target_link_libraries(aiverse_net PUBLIC aiverse_engine)
@@ -709,8 +710,8 @@ if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
     apps/editor/core/SimTools.cpp apps/editor/core/ScenarioOps.cpp apps/editor/core/SchemaOps.cpp apps/editor/core/PruneOps.cpp apps/editor/core/CampaignOps.cpp apps/editor/core/StrategicOps.cpp
     apps/editor/core/ToolchainOps.cpp apps/editor/core/WorldInspect.cpp)   # scenario_run, rules_lint, rules_schema keys
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_game)
-    target_link_libraries(aiverse_editor_core PUBLIC aiverse_postfx_data)   # postfx_* ops (postfx agent)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_i18n)   # editor messages (editorText)
+    target_link_libraries(aiverse_editor_core PUBLIC aiverse_postfx_data)   # postfx_* ops (postfx agent)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PostFxOps.cpp)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightBakeOps.cpp)   # lightbake_* ops (agent-lightbake)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_bake)

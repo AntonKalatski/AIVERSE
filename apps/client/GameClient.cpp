@@ -536,6 +536,9 @@ void GameClient::event(const Event& e) {
     // mobile apps go quiet in the background; desktop keeps playing when the window loses focus
     if (e.type == EventType::FocusLost && platform::isTouchDevice()) audio_.setPaused(true);
     if (e.type == EventType::FocusGained) audio_.setPaused(false);
+    // hosted battles on phones: away in the background (nobody waits for our input), back with a reconnect if long
+    if (battle_ && net_ && e.type == EventType::FocusLost && platform::isTouchDevice()) net_->suspend(net::nowMs());
+    if (battle_ && net_ && e.type == EventType::FocusGained && net_->suspended()) net_->resume(net::nowMs());
     if (e.type == EventType::Resized) luaEmit("resize", Json());   // UI scripts: safe area, layout
     if (howtoOpen_ && e.type == EventType::KeyDown && e.key == Key::Escape) { howtoOpen_ = false; return; }
     // the game's own screens (ui/lib/meta.lua): Esc / Android back goes through ui.back()
@@ -1032,15 +1035,15 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
         drawToolPreview();
-        r3d_.render(pass, &postFx_);
-        fx_.render(r3d_.lighting);
-        r3d_.resolvePostFx();   // post effects (if any) under the HUD
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
+        r3d_.render(pass, &postFx_);
+        fx_.render(r3d_.lighting);
+        r3d_.lighting.fogDensity = fogBase;
+        r3d_.resolvePostFx();   // post effects (if any) under the HUD
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
-        r3d_.lighting.fogDensity = fogBase;
         topDownDraw();
     } else {
         pass.clearColor[0] = 0.10f; pass.clearColor[1] = 0.12f; pass.clearColor[2] = 0.14f;
