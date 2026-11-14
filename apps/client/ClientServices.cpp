@@ -10,6 +10,7 @@
 //   consent.available() consent.request(fn(r)[, debugEEA]) consent.options(fn(r)): r = {status, canRequestAds, personalized, optionsRequired}
 //   plugins.available(name) plugins.call(name, method, args, fn(ok, data_or_error)): any plugin method (backend tokens,
 //   SDK extras such as xsolla.token) for game scripts that need more than the services above
+//   plugins.on(name, fn(event, data, name)) plugins.off(name[, fn]): events one plugin sends (plugins::emit), to UI Lua
 // Events through game.on (ui/lib/meta.lua): "social" {event, data}, "push" {event, data}, "link" {url, source, deferred, data}.
 extern "C" {
 #include <lauxlib.h>
@@ -33,6 +34,8 @@ namespace {
 struct Ctx {
     std::shared_ptr<bool> alive;
     std::function<void(const char*, const Json&)> emit;
+    lua_State* L = nullptr;
+    int handlers = LUA_NOREF;   // registry: {[plugin name] = {fn, ...}} of plugins.on
 };
 Ctx& ctx(lua_State* L) { return *static_cast<Ctx*>(lua_touserdata(L, lua_upvalueindex(1))); }
 
@@ -193,6 +196,72 @@ int gCall(lua_State* L) {
     return 0;
 }
 
+// plugins.on(name, fn): fn(event, data, name) for every event that plugin emits (plugins::emit), in order of
+// registration; plugins.off(name[, fn]) removes fn (or every handler of that plugin).
+void pushHandlers(lua_State* L, Ctx& c) {
+    if (c.handlers == LUA_NOREF) { lua_newtable(L); lua_pushvalue(L, -1); c.handlers = luaL_ref(L, LUA_REGISTRYINDEX); }
+    else lua_rawgeti(L, LUA_REGISTRYINDEX, c.handlers);
+}
+int gOn(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    pushHandlers(L, ctx(L));
+    if (lua_getfield(L, -1, name) != LUA_TTABLE) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -3, name);
+    }
+    lua_pushvalue(L, 2);
+    lua_rawseti(L, -2, lua_Integer(lua_rawlen(L, -2) + 1));
+    lua_pop(L, 2);
+    return 0;
+}
+int gOff(lua_State* L) {
+    const char* name = luaL_checkstring(L, 1);
+    const bool all = lua_isnoneornil(L, 2);
+    pushHandlers(L, ctx(L));
+    const int handlers = lua_gettop(L);
+    if (all) {
+        lua_pushnil(L);
+        lua_setfield(L, handlers, name);
+    } else if (lua_getfield(L, handlers, name) == LUA_TTABLE) {
+        const int list = lua_gettop(L);
+        lua_newtable(L);   // the list without fn
+        const int kept = lua_gettop(L);
+        lua_Integer n = 0;
+        const lua_Integer len = lua_Integer(lua_rawlen(L, list));
+        for (lua_Integer i = 1; i <= len; ++i) {
+            lua_rawgeti(L, list, i);
+            if (lua_rawequal(L, -1, 2)) lua_pop(L, 1);
+            else lua_rawseti(L, kept, ++n);
+        }
+        lua_setfield(L, handlers, name);
+    }
+    lua_settop(L, handlers - 1);
+    return 0;
+}
+void callHandlers(Ctx& c, const std::string& plugin, const std::string& ev, const Json& data) {
+    lua_State* L = c.L;
+    if (!L || c.handlers == LUA_NOREF) return;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, c.handlers);
+    if (lua_getfield(L, -1, plugin.c_str()) != LUA_TTABLE) { lua_pop(L, 2); return; }
+    const lua_Integer n = lua_Integer(lua_rawlen(L, -1));
+    for (lua_Integer i = 1; i <= n; ++i) {   // a handler may call plugins.off: the list in hand stays as it was
+        lua_rawgeti(L, -1, i);
+        if (!lua_isfunction(L, -1)) { lua_pop(L, 1); continue; }
+        lua_pushstring(L, ev.c_str());
+        ui::luaPushJson(L, data);
+        lua_pushstring(L, plugin.c_str());
+        if (lua_pcall(L, 3, 0, 0) != LUA_OK) {
+            std::fprintf(stderr, "[lua] plugins.on(%s): %s\n", plugin.c_str(), lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+        if (!*c.alive) return;   // the state went away inside the handler
+    }
+    lua_pop(L, 2);
+}
+
 void table(lua_State* L, Ctx* c, const char* name, std::initializer_list<luaL_Reg> fns) {
     lua_newtable(L);
     for (auto& f : fns) {
@@ -228,7 +297,8 @@ void ClientServices::attach(lua_State* L, std::shared_ptr<bool> alive, std::func
                          {"badge", pBadge}});
     table(L, c, "links", {{"available", lAvailable}, {"initial", lInitial}, {"parse", lParse}});
     table(L, c, "consent", {{"available", cAvailable}, {"request", cRequest}, {"options", cOptions}});
-    table(L, c, "plugins", {{"available", gAvailable}, {"call", gCall}});
+    c->L = L;
+    table(L, c, "plugins", {{"available", gAvailable}, {"call", gCall}, {"on", gOn}, {"off", gOff}});
     auto relay = [c](const char* kind) {
         return [c, kind](const std::string& ev, const std::string& data) {
             if (!*c->alive || !c->emit) return;
@@ -248,6 +318,7 @@ void ClientServices::attach(lua_State* L, std::shared_ptr<bool> alive, std::func
         j.set("event", Json::string(ev));
         try { j.set("data", Json::parse(data)); } catch (...) { j.set("data", Json()); }
         c->emit("plugin", j);
+        if (*c->alive) callHandlers(*c, plugin, ev, j["data"]);   // plugins.on(plugin, fn)
     });
     impl_->linkId = links::onLink([c](const links::Link& l) { if (*c->alive && c->emit) c->emit("link", linkJson(l)); });
 }

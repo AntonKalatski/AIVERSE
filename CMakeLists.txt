@@ -1687,6 +1687,7 @@ foreach(t aiverse_client main aiverse_editor)
 endforeach()
 if(TARGET aiverse_tests)
     target_link_libraries(aiverse_tests PRIVATE aiverse_spine)
+    target_sources(aiverse_tests PRIVATE apps/client/ClientServices.cpp)   # UI Lua services tables (plugins.on)
 endif()
 # Gamepads (engine/platform/Gamepad.h): common state + one backend per platform.
 if(TARGET aiverse_runtime)

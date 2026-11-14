@@ -60,6 +60,8 @@ Engine side: `engine/assets/ui/lib/meta.lua` (ui / profile / shop, runs before `
   `matchEnd {won, result, seconds, map, mapTitle, difficulty, spectator, online, vars}` (`vars`: the simulation's variables at the end, `game.set_var` names -> numbers: how a game's scripts tell its screens how the match ended, e.g. a retry chosen on an in-match result panel), `language`, `purchase`, `profile`,
   `shop {id, ok, reason}`, `update (dt)`, `back`, `resize`, `battleFailed {reason, text}` (`game.joinBattle`: connect |
   disconnected | compat | error, plus the reasons joinBattle returns).
+- `plugins` — `available(name)`, `call(name, method, args, fn(ok, data))`, `on(name, fn(event, data, name))` (the events
+  that plugin sends with `plugins::emit`, in registration order), `off(name[, fn])`.
 - `storage` — `load(name)`, `save(name, table)`, `erase(name)`: JSON files per game in the user folder.
 - `sound` — voice handles and music, the same table as in view scripts: `play(name, {gain, pan, pitch, variant, at, loop})`,
   `set`, `stop`, `pause`, `seek`, `state`, `variants`, `length`, `music(name, fade)`, `music_gain`, `current_music`, `settings`,

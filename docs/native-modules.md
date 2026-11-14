@@ -348,8 +348,9 @@ endif()
 Register a `plugins::NativePlugin` (`AIVERSE_PLUGIN("mybackend", MyPlugin)`, [plugins.md](plugins.md)) in a
 source added to the client targets the same way. Lua reaches it with
 `plugins.call("mybackend", method, args, function(ok, data) end)`; `update()` runs every frame (pump the
-HTTP client there); the plugin talks back with `plugins::emit("mybackend", event, json)`, which every UI
-script receives as `game.on('plugin', function(e) -- e.plugin, e.event, e.data`.
+HTTP client there); the plugin talks back with `plugins::emit("mybackend", event, json)`, which UI scripts
+receive per plugin with `plugins.on("mybackend", function(event, data, name) end)` (`plugins.off("mybackend"[, fn])`
+removes them), and every UI script as `game.on('plugin', function(e) -- e.plugin, e.event, e.data`.
 
 When the backend's matchmaker has formed a match, the script calls `game.connect(address, queue)`: the
 client connects to that game server and joins the queue as soon as it is connected (`"ticket:<ticket>"`

@@ -14334,3 +14334,61 @@ TEST(model_merge_static_primitives) {
 #include "tests_city.inc"      // city planner (agent-gta2)
 #include "tests_city_net.inc"  // the city server (agent-gta2)
 #include "tests_rules_split.inc"   // rules.json include / extends (engine/data/JsonCompose.h)
+
+// ---------------------------------------------------------------- UI Lua plugins.on (apps/client/ClientServices.cpp)
+#include "apps/client/ClientServices.h"
+namespace {
+struct ChirpPlugin : plugins::NativePlugin {
+    void call(const std::string& method, const std::string& args, plugins::Reply r) override {
+        if (method == "chirp") plugins::emit("chirp", "sang", args);
+        r.ok("{}");
+    }
+};
+} // namespace
+TEST(ui_lua_plugins_on_gets_one_plugins_events) {
+    lua_State* L = luaL_newstate();
+    luaL_openlibs(L);
+    auto alive = std::make_shared<bool>(true);
+    std::vector<std::string> any;   // game.on('plugin') keeps working beside it
+    client::ClientServices svc;
+    svc.attach(L, alive, [&](const char* name, const Json& e) { if (std::string(name) == "plugin") any.push_back(e.getStr("plugin") + ":" + e.getStr("event")); });
+    plugins::registerPlugin("chirp", std::make_shared<ChirpPlugin>());
+    auto run = [&](const char* code) {
+        const bool ok = luaL_dostring(L, code) == LUA_OK;
+        if (!ok) { std::printf("    lua: %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+        return ok;
+    };
+    CHECK(run(R"(got = {}
+        h = function(ev, data, name) got[#got + 1] = ev .. ":" .. tostring(data.n) .. ":" .. name end
+        plugins.on("chirp", h)
+        plugins.on("chirp", function(ev) got[#got + 1] = "second " .. ev end)
+        plugins.on("other", function() got[#got + 1] = "wrong plugin" end))"));
+    plugins::call("chirp", "chirp", R"({"n":3})", {});
+    plugins::pump();
+    plugins::pump();
+    auto got = [&] {
+        std::string s;
+        lua_getglobal(L, "got");
+        for (lua_Integer i = 1; i <= lua_Integer(lua_rawlen(L, -1)); ++i) { lua_rawgeti(L, -1, i); s += std::string(lua_tostring(L, -1)) + ";"; lua_pop(L, 1); }
+        lua_pop(L, 1);
+        return s;
+    };
+    CHECK(got() == "sang:3:chirp;second sang;");
+    CHECK(any.size() == 1 && any[0] == "chirp:sang");
+    // off(name, fn) removes that handler, off(name) all of them
+    CHECK(run(R"(got = {} plugins.off("chirp", h))"));
+    plugins::call("chirp", "chirp", R"({"n":4})", {});
+    plugins::pump(); plugins::pump();
+    CHECK(got() == "second sang;");
+    CHECK(run(R"(got = {} plugins.off("chirp"))"));
+    plugins::call("chirp", "chirp", R"({"n":5})", {});
+    plugins::pump(); plugins::pump();
+    const std::string rest = got();
+    if (!rest.empty() || any.size() != 3) std::printf("    after off: '%s', %zu plugin events\n", rest.c_str(), any.size());
+    CHECK(rest.empty() && any.size() == 3);
+    CHECK(!run(R"(plugins.on("chirp", 5))"));   // a handler must be a function
+    plugins::unregisterPlugin("chirp");
+    svc.detach();
+    *alive = false;
+    lua_close(L);
+}
