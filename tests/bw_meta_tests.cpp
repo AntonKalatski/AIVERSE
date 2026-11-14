@@ -2,6 +2,7 @@
 // client against recorded-shape mock replies (tests/data/bw_meta), meta::Backend mapping, the
 // matchmaking handoff session and the engine server as a BW battle node.
 // Run: ./aiverse_bw_meta_tests (from the repo root or with AIVERSE_SOURCE_DIR).
+#include <cstdlib>
 #include <cstdio>
 #include <deque>
 #include <fstream>
@@ -648,14 +649,18 @@ TEST(bw_node_hosts_a_backend_match) {
 }
 
 TEST(bw_node_map_table_for_bunkerwars) {
-    // tools/meta/bw_map_ids.py output: BW MapHeader ids -> templates/bunkerwars maps.
+    // tools/meta/bw_map_ids.py output: BW MapHeader ids -> maps of the Bunker Wars game folder (not in this repository:
+    // AIVERSE_BW_GAME_DIR names it; skipped without).
+    const char* gameDir = std::getenv("AIVERSE_BW_GAME_DIR");
+    if (!gameDir || !*gameDir) { std::printf("    skipped: AIVERSE_BW_GAME_DIR is not set\n"); return; }
+    const std::string game = gameDir;
     Json cfg = Json::object();
-    cfg.set("maps", Json::string(std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars/bw/map_ids.json"));
+    cfg.set("maps", Json::string(game + "/bw/map_ids.json"));
     cfg.set("gameId", Json::string("bw"));
     bw::NodeConfig nc = bw::NodeConfig::parse(cfg);
     CHECK(nc.maps.size() > 100 && nc.maps[2001] == "maps/2players_2001.json");
     for (auto& [id, file] : nc.maps) {
-        std::ifstream f(std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars/" + file);
+        std::ifstream f(game + "/" + file);
         if (!f) { CHECK(!"map file of the table exists"); std::printf("    missing %s\n", file.c_str()); break; }
     }
     Json spec = Json::parse(readFile(kData + "game_spec.json"));
@@ -1050,8 +1055,11 @@ TEST(bw_meta_tutorials_runner) {
 }
 
 TEST(bw_meta_tutorials_real_data) {
-    // ui/bw_tutorials.json of templates/bunkerwars (tools/meta/bw_tutorials.py from the BW client).
-    Json doc = Json::parseFile(std::string(AIVERSE_SOURCE_DIR) + "/templates/bunkerwars/ui/bw_tutorials.json");
+    // ui/bw_tutorials.json of the Bunker Wars game folder (tools/meta/bw_tutorials.py from the BW client); the game is
+    // not in this repository: AIVERSE_BW_GAME_DIR names it, skipped without.
+    const char* gameDir = std::getenv("AIVERSE_BW_GAME_DIR");
+    if (!gameDir || !*gameDir) { std::printf("    skipped: AIVERSE_BW_GAME_DIR is not set\n"); return; }
+    Json doc = Json::parseFile(std::string(gameDir) + "/ui/bw_tutorials.json");
     bw::MetaTutorials t;
     CHECK(t.load(doc) && t.size() == 217);
     t.setProfile(Json::parse(readFile(kData + "profile_get.json")));

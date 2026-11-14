@@ -112,7 +112,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     if (traffic_->active()) sim.addSystem("traffic", [this](Simulation& s) { traffic_->collect(s); });   // last: keeps the tick's shots / hits / deaths (scripts' too) for its next tick
     sim.world().setResource<MatchOutcome>();
     sim.addSystem("outcome", [this](Simulation& s) { freezeOutcome(s); });   // last: the result of the whole tick
-    // Gameplay time scale (Bunker Wars SetGameplayTimescale: tutorial windows freeze the battle): with the trigger
+    // Gameplay time scale (tutorial windows that freeze or slow the battle): with the trigger
     // variable "gameplay_scale" in [0, 1) the gameplay systems run on that share of the ticks; commands, vision,
     // victory, triggers, scripts and the outcome keep running. Without the variable nothing changes.
     sim.wrapSystems([this](const std::string& n, Simulation::SystemFn f) -> Simulation::SystemFn {

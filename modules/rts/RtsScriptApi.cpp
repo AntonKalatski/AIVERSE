@@ -380,7 +380,7 @@ int gTypeInfo(lua_State* L, Vm& vm) {
     for (size_t i = 0; i < R.tagNames.size() && i < 64; ++i)
         if (t.tags & (uint64_t(1) << i)) { lua_pushstring(L, R.tagNames[i].c_str()); lua_rawseti(L, -2, ++n); }
     lua_setfield(L, -2, "tags");
-    lua_createtable(L, int(t.upgrades.size()), 0);   // in-place upgrades (agent-bw-client: BW point levels / casts)
+    lua_createtable(L, int(t.upgrades.size()), 0);   // in-place upgrades
     for (size_t i = 0; i < t.upgrades.size(); ++i) { lua_pushstring(L, R.types[t.upgrades[i]].id.c_str()); lua_rawseti(L, -2, lua_Integer(i + 1)); }
     lua_setfield(L, -2, "upgrades");
     return 1;
@@ -1088,7 +1088,7 @@ int gSetHp(lua_State* L, Vm& vm) {
     return 1;
 }
 // game.set_garrison(h, n): units inside a garrison structure (>= 0, may exceed the growth max like
-// scripted reinforcements); false for units without a garrison (agent-bw-client: tutorial PointSetUnits)
+// scripted reinforcements); false for units without a garrison
 int gSetGarrison(lua_State* L, Vm& vm) {
     CTX;
     Fixed v;
@@ -1101,7 +1101,7 @@ int gSetGarrison(lua_State* L, Vm& vm) {
     lua_pushboolean(L, 1);
     return 1;
 }
-// game.modes(): read-only snapshot of the match modes state (agent-bw-client: Bunker Wars HUD timers / morale stars);
+// game.modes(): read-only snapshot of the match modes state (HUD timers, level stars);
 // nil when the match has no modes block. Per-slot tables are keyed by player slot, koh by team.
 int gModes(lua_State* L, Vm& vm) {
     CTX;
@@ -1145,7 +1145,7 @@ int gModes(lua_State* L, Vm& vm) {
     lua_setfield(L, -2, "outcome");
     return 1;
 }
-// game.player_abilities(p): the player's skill cards (rules playerAbilities), read-only (agent-bw-client: BW HUD)
+// game.player_abilities(p): the player's skill cards (rules playerAbilities), read-only (a game's own HUD)
 int gPlayerAbilities(lua_State* L, Vm& vm) {
     CTX;
     uint8_t p; if (!playerArg(L, vm, 1, p)) return -1;
@@ -1174,7 +1174,7 @@ int gPlayerAbilities(lua_State* L, Vm& vm) {
     return 1;
 }
 // game.set_ability_cooldown(p, id, seconds): restarts a player ability's cooldown (0 = ready now); false for an
-// unknown ability (agent-bw-client: BW tutorial SetSkillCooldown)
+// unknown ability (tutorials, scripted events)
 int gSetAbilityCooldown(lua_State* L, Vm& vm) {
     CTX;
     uint8_t p; if (!playerArg(L, vm, 1, p)) return -1;

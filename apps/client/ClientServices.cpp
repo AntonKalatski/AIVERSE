@@ -1,4 +1,4 @@
-// Lua tables for the client platform services (agent-bw-client), in the UI Lua state next to
+// Lua tables for the client platform services, in the UI Lua state next to
 // store.* / ads.*:
 //   social.available() social.provider() social.user(fn(u)) social.unlock(id[, fn(ok, err)])
 //   social.progress(id, cur, max) social.achievements(fn(list, err)) social.stat(id[, fn(v)])

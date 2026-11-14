@@ -299,7 +299,7 @@ Actions (simulation scripts only):
 | `game.command(p, {type = "train", units = {h}, param = "footman", x =, z =, target =, queue =})` | any player command, validated like network input (see below) |
 | `game.cast(h, ability, target \| x, z)`, `game.player_ability(p, id, x, z [, free])` | abilities |
 | `game.set_var(name, v)`, `game.add_var(name, v)` | trigger variables, shared with rules triggers |
-| variable `gameplay_scale` | gameplay time scale in [0, 1] (unset / >= 1: normal): 0 freezes every gameplay system (economy, production, movement, weapons, abilities, modes, environment, ...) while commands, vision, victory, triggers and scripts keep running; 0.5 runs them on every second tick (Bunker Wars tutorial windows, `SetGameplayTimescale`). The engine keeps its accumulator in `gameplay_scale_acc` |
+| variable `gameplay_scale` | gameplay time scale in [0, 1] (unset / >= 1: normal): 0 freezes every gameplay system (economy, production, movement, weapons, abilities, modes, environment, ...) while commands, vision, victory, triggers and scripts keep running; 0.5 runs them on every second tick (tutorial windows, slow motion). The engine keeps its accumulator in `gameplay_scale_acc` |
 | `game.message(p, text [, x, z])` | a notice (p = 0: everyone) |
 | `game.victory(p)`, `game.defeat(p)`, `game.draw()` | end conditions |
 | `game.clear_data(h)` | forget the entity's `game.data` table |

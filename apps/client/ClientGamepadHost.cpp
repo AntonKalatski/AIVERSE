@@ -40,7 +40,7 @@ void GameClient::updateGamepad(float dt) {
     padPanY_ = f.panY;
 }
 
-// Game actions of the pad layout (ClientGamepad.h): the Bunker Wars chords and any game's "buttons" / "chords".
+// Game actions of the pad layout (ClientGamepad.h): a game's "buttons" / "chords".
 void GameClient::runPadAction(const ClientGamepad::Action& a) {
     World& w = sim_->world();
     auto mine = [&](Entity e) { return e.valid() && w.alive(e) && w.has<Owner>(e) && w.get<Owner>(e).player == human_; };
@@ -49,7 +49,7 @@ void GameClient::runPadAction(const ClientGamepad::Action& a) {
         platform::Event e; e.type = platform::EventType::KeyDown; e.key = platform::Key::Escape; e.x = a.x; e.y = a.y;
         padInjecting_ = true; event(e); e.type = platform::EventType::KeyUp; event(e); padInjecting_ = false;
     } else if (a.what.rfind("send:", 0) == 0) {
-        // BW JoystickInputStrategy1.MoveUnits: SetUnitsPercent + OnMoveUnits(origin, target)
+        // sets the send percent and sends from the origin (or the selection) to the target
         const int pct = std::clamp(arg(5), 1, 100);
         sendPercent_ = pct;
         Entity target = pick(a.x, a.y);
@@ -66,7 +66,7 @@ void GameClient::runPadAction(const ClientGamepad::Action& a) {
         c.type = kCmdSend; c.param = pct; c.units = src; c.target = target;
         issue(c);
     } else if (a.what.rfind("ability:", 0) == 0) {
-        // BW SelectSlotN: the N-th skill card of the panel (owned, active, not automatic)
+        // the N-th skill card of the panel (owned, active, not automatic)
         const GameState& gs = mod().state(*sim_);
         if (human_ >= gs.playerAbilities.size()) return;
         int left = arg(8);
@@ -82,7 +82,7 @@ void GameClient::runPadAction(const ClientGamepad::Action& a) {
             return;
         }
     } else if (a.what == "upgrade" || a.what.rfind("convert:", 0) == 0) {
-        // BW UpgradeToNextLevel / ConvertToHouse / Tower / Smithy on the point under the selector
+        // next level / conversion of the structure under the cursor
         Entity e = pick(a.x, a.y);
         if (!mine(e)) { cleanSelection(); e = selection_.empty() ? Entity{} : selection_.front(); }
         if (!mine(e) || !w.has<Unit>(e)) return;
@@ -109,7 +109,7 @@ void GameClient::drawGamepadCursor() {
     dl->AddCircle(c, 14.f, IM_COL32(0, 0, 0, 160), 24, 5.f);
     dl->AddCircle(c, 14.f, IM_COL32(255, 230, 120, 255), 24, 2.5f);
     dl->AddCircleFilled(c, 3.f, IM_COL32(255, 230, 120, 255));
-    if (padAiming_) {   // BW ShowArrow(origin, target) while the send modifier is held
+    if (padAiming_) {   // origin -> target arrow while the send modifier is held
         ImVec2 o(padOriginX_, padOriginY_);
         dl->AddLine(o, c, IM_COL32(0, 0, 0, 140), 7.f);
         dl->AddLine(o, c, IM_COL32(255, 230, 120, 230), 3.f);
@@ -118,7 +118,7 @@ void GameClient::drawGamepadCursor() {
 }
 
 // UI Lua: game.sendPercent([p]) -> p, game.useAbility(i) -> ok. sendPercent: the share of a garrison a send takes (25 / 50 / 75 / 100 in the engine HUD,
-// any 1..100 from a game's own percent chooser, e.g. Bunker Wars PercentChooser); pads and the HUD share it.
+// any 1..100 from a game's own percent chooser); pads and the HUD share it.
 void GameClient::openPadLua(lua_State* L) {
     lua_getglobal(L, "game");
     if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
@@ -131,7 +131,7 @@ void GameClient::openPadLua(lua_State* L) {
     }, 1);
     lua_setfield(L, -2, "sendPercent");
     // game.useAbility(i): the player ability with that rules index (0-based) as its HUD card would: instant
-    // targets cast at once, others enter the targeting mode (a game's own skill panel, e.g. BW HeroSkillsComponent)
+    // targets cast at once, others enter the targeting mode (a game's own skill panel)
     lua_pushlightuserdata(L, this);
     lua_pushcclosure(L, [](lua_State* S) -> int {
         auto* c = static_cast<GameClient*>(lua_touserdata(S, lua_upvalueindex(1)));

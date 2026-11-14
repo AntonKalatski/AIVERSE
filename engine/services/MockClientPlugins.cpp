@@ -1,4 +1,4 @@
-// Desktop stand-ins for the client platform services (agent-bw-client): "mock-social" (Steam-like
+// Desktop stand-ins for the client platform services: "mock-social" (Steam-like
 // achievements, stats, friends, presence, overlay), "mock-push" (local notifications, a fake token),
 // "mock-links" (deep links) and "mock-consent" (a CMP form). Registered like the store / ads mocks (MockPlugins.cpp): listed in
 // game.json "plugins" or AIVERSE_MOCK_PLUGINS=1; compiled out of packaged builds.
