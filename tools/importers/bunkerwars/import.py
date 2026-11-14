@@ -35,7 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'lib'))
 from unity import unity_yaml as uy  # noqa: E402
 
-CACHE_VERSION = 's2.5'           # bump when the map / skills conversion changes (--cache)
+CACHE_VERSION = 's2.6'           # bump when the map / skills conversion changes (--cache)
 SCALE = 50                      # BW world units per cell (the routes, skills and AI ports use the same)
 DEFAULT_MAP = (2720, 1520)      # MultiscreenModule.mapSize
 TYPE_HOUSE, TYPE_TOWER, TYPE_SMITHY = 1, 2, 4
@@ -410,10 +410,7 @@ def build_rules(src, races, race, battle, heroes, morale, lang):
         'entersGarrison': True,
         'view': {'shape': 'infantry', 'scale': 0.5}}
     types['soldier'] = soldier
-    # SkeletonArmy (Skill30) spawns these at a structure: soldiers of the caster that never enter the soul cycle
-    types['skeleton'] = dict(soldier, name='Скелет', tags=['soldier', 'skeleton'], view={'shape': 'infantry', 'scale': 0.5})
     lang['ru']['type.soldier'], lang['en']['type.soldier'] = 'Солдат', 'Soldier'
-    lang['ru']['type.skeleton'], lang['en']['type.skeleton'] = 'Скелет', 'Skeleton'
     smithies = sorted((b for b in blist if b.get('type') == TYPE_SMITHY), key=lambda b: b.get('level', 0))
     names = {'house': ('HUDScreen|BuildingMenu|Bunker|Description', 'Бункер', 'Bunker'),
              'tower': ('HUDScreen|BuildingMenu|Tower|Description', 'Вышка', 'Tower'),
@@ -445,6 +442,10 @@ def build_rules(src, races, race, battle, heroes, morale, lang):
         if ups:
             t['upgrades'] = ups
         t['cost'] = {'garrison': int(b.get('cost') or 0), 'time': num(b.get('buildingTime', 0))}
+        mp = {k: num(b.get(f, 0)) for k, f in (('catchNeutral', 'moraleCatchNeutralPoints'), ('catchEnemy', 'moraleCatchEnemyPoints'),
+                                              ('lost', 'moraleLostPoints'), ('upgrade', 'moraleUpgradePoints'))}
+        if any(mp.values()):
+            t['moralePoints'] = mp
         if b.get('firePerSecond') and b.get('fireRange'):
             # BW towers: rangeX = fireRange, rangeY = aspectRatio x rangeX (TowerModule.UpdateInfo)
             t['weapons'] = [{'range': cells(b['fireRange']), 'rangeAspect': aspect, 'damage': 1,
@@ -500,14 +501,22 @@ def build_rules(src, races, race, battle, heroes, morale, lang):
                              'trim': cells((battle.get('routeVisualizer') or {}).get('pathPointOffset', 10))},
                   'groups': {'rowSpacing': cells(units.get('rowsOffset', 70)), 'flyRowSpacing': cells(units.get('flyingRowsOffset', 80))}},
         'resources': {
-            'skillEnergy': {'name': 'Энергия', 'start': 0, 'regen': num(hero.get('passiveEnergyPerSecond', 2.5)),
-                            'capped': True, 'storage': num(hero.get('maxSkillEnergy', 500)),
-                            'gain': {'lost': num(hero.get('energyPerLostUnitAtMorale0', 2.25))}},
+            'energy': {'name': 'Энергия', 'start': 0, 'regen': num(hero.get('passiveEnergyPerSecond', 2.5)),
+                            'capped': True, 'storage': num(hero.get('maxSkillEnergy', 500))},
             'morale': {'name': 'Боевой дух', 'start': 0, 'min': num(bm.get('minValue', 0)), 'capped': True,
                        'storage': num(bm.get('maxValue', 8000)), 'levels': levels}},
         'types': types,
+        # BW battle core (agent-bw-modes RtsCore): morale points, energy per lost unit, production limit, neutral growth
+        'battleCore': {'morale': {'resource': 'morale', 'unitPoints': num(bm.get('unitsToPointsCoefficient', 10)),
+                                  'towerPoints': num(bm.get('unitsToPointsCoefficient', 10)),
+                                  'gainMult': num(bm.get('pointsIncreaseMultiplier', 1)),
+                                  'lossMult': num(bm.get('pointsDecreaseMultiplier', 1)), 'max': num(bm.get('maxValue', 8000))},
+                       'energy': {'resource': 'energy', 'perUnit': num(hero.get('energyPerUnit', 0.45)),
+                                  'levels': len(levels) or 6},
+                       'production': {'limit': num((battle.get('buildings') or {}).get('productionLimitMultiplier', 1))},
+                       'neutralGrowth': True},
     }
-    lang['ru']['resource.skillEnergy'], lang['en']['resource.skillEnergy'] = 'Энергия', 'Energy'
+    lang['ru']['resource.energy'], lang['en']['resource.energy'] = 'Энергия', 'Energy'
     lang['ru']['resource.morale'], lang['en']['resource.morale'] = 'Боевой дух', 'Morale'
     return rules
 
@@ -791,6 +800,13 @@ def build_map(src, hp, header, players, ctx, warnings):
         # BW point index = this entity's place among the map's garrisons (AI, tutorials, environment use it)
         e = {'type': tid, 'owner': owner, 'pos': to_cell(pos.get('x', 0), pos.get('y', 0), w, h),
              'garrison': int(v.get('startValue', 0) or 0), 'id': 'p%d' % i}
+        if vals:   # BW values per difficulty (battle core picks the map's `difficulty`)
+            e['values'] = {COMPLEXITY[k]: {'garrison': int(x.get('startValue', 0) or 0), 'neutralMax': int(x.get('maxValueNeutral', 0) or 0),
+                                           'dominationGarrison': int(x.get('startDominationValue', 0) or 0),
+                                           'dominationMax': int(x.get('maxDominationValue', 0) or 0),
+                                           'kingOfTheHillGarrison': int(x.get('startKingOfTheHillValue', 0) or 0),
+                                           'kingOfTheHillMax': int(x.get('maxKingOfTheHillValue', 0) or 0)}
+                           for k, x in enumerate(vals[:4])}
         mp_ = [n for f, bit, n in (('isDominationPoint', 2, 'domination'), ('isKingOfTheHillPoint', 4, 'kingOfTheHill'))
                if p.get(f) and gm & bit]
         if mp_:
@@ -833,10 +849,13 @@ def build_map(src, hp, header, players, ctx, warnings):
             ai_players[str(slot)] = 'map_slot%d' % slot
         elif diff:
             ai_players[str(slot)] = diff
-    m = {'name': None, 'size': [W, H], 'players': mplayers,
+    m = {'name': None, 'size': [W, H], 'players': mplayers, 'difficulty': COMPLEXITY[complexity],
          'terrain': {'rows': ['.' * W] * H}, 'entities': ents}
     if header.get('fogOfWar'):
         m['fogOfWar'] = {'mode': 'full'}
+    teams = [p_['team'] for p_ in mplayers]
+    if (header.get('modes') or 0) & 2 and len(set(teams)) < len(teams):   # BW COOP: the team is out together
+        m['conquest'] = {'team': True}
     if gm & 7 == 2:
         m['matchMode'] = 'domination'
     elif gm & 7 == 4:
@@ -999,7 +1018,7 @@ def convert_skills(src, out):
     tmp = os.path.join(out, 'bw', '.skills.tmp.json')
     os.makedirs(os.path.dirname(tmp), exist_ok=True)
     root = os.path.dirname(os.path.dirname(src.assets))
-    rc = skconv.main(['--bw', root, '--out', tmp, '--px-per-cell', str(SCALE), '--energy-resource', 'skillEnergy',
+    rc = skconv.main(['--bw', root, '--out', tmp, '--px-per-cell', str(SCALE), '--energy-resource', 'energy',
                       '--aspect', '0.5', '--report', os.path.join(out, 'bw', 'skills_coverage.md')])
     if rc:
         src.warnings.append('skills converter failed (%s)' % rc)
@@ -1148,6 +1167,7 @@ def run(source, out, cache_dir=None, skills=True):
             types.setdefault(k, v)
         used = set()
         _collect(conv['playerAbilities'], 'unit', used)
+        _collect(conv['playerAbilities'], 'to', used)
         for u in sorted(used - set(types)):
             src.warnings.append('skills spawn unknown type %s' % u)
     ids = {a['id'] for a in rules.get('playerAbilities', [])}
@@ -1361,16 +1381,39 @@ HOWTO = {
 }
 
 
+def run_client(source, out, copy):
+    """tools/importers/bunkerwars/client.py (agent-bw-client) without its tutorial step (run() installed the tutorials
+    already): battle screens / HUD / tutorial windows, the HUD scripts, skin, gamepad scheme; audio only with copy."""
+    sys.path.insert(0, HERE)
+    import client as bw_client  # noqa: E402
+    assets = None
+    for cand in (source, os.path.join(source, 'Client', 'Assets'), os.path.join(source, 'Assets')):
+        if os.path.isdir(os.path.join(cand, 'ME.TexturesGenerator')):
+            assets = cand
+            break
+    rep = {}
+    bw_client.install_screens(assets, out, copy, rep, sorted(bw_client.tutorial_windows(out)))
+    if copy:
+        bw_client.install_audio(assets, out, copy, rep)
+    bw_client.wire(out, rep)
+    return rep
+
+
 def main():
     ap = argparse.ArgumentParser(description='Import Bunker Wars into an AIVERSE game folder')
     ap.add_argument('--source', required=True, help='Bunker Wars repository (or its Client / Client/Assets folder)')
     ap.add_argument('--out', required=True, help='output game folder')
     ap.add_argument('--json', action='store_true', help='one JSON report on stdout (MCP / editor)')
+    ap.add_argument('--client', choices=('copy', 'nocopy'), help='then run client.py (agent-bw-client: HUD, tutorial windows, '
+                    'skin, gamepad, audio); nocopy keeps BW art out of the folder (the committed template)')
+    ap.add_argument('--client-only', action='store_true', help='only the --client step (on a folder this importer made)')
     ap.add_argument('--no-skills', action='store_true', help='skip the energy skills converter (skills/convert.py)')
     ap.add_argument('--cache', help='folder for resumable results of the slow steps (outside the game folder)')
     a = ap.parse_args()
     try:
-        rep = run(a.source, os.path.expanduser(a.out), a.cache, skills=not a.no_skills)
+        rep = {'warnings': [], 'skipped': []} if a.client_only else run(a.source, os.path.expanduser(a.out), a.cache, skills=not a.no_skills)
+        if a.client:
+            rep['client'] = run_client(a.source, os.path.expanduser(a.out), a.client == 'copy')
     except SystemExit as ex:
         if a.json:
             print(json.dumps({'ok': False, 'error': str(ex)}, ensure_ascii=False))
@@ -1380,8 +1423,11 @@ def main():
         print(json.dumps(dict({'ok': True}, **rep), ensure_ascii=False))
         return
     print('Bunker Wars -> %s' % a.out)
-    print('  maps: %d (+%d sidecar only), types: %d, heroes: %d, skills: %d, race: %s' % (
-        rep['maps'], rep['mapsSidecarOnly'], rep['types'], rep['heroes'], rep['skills'], rep['race']))
+    if 'maps' in rep:
+        print('  maps: %d (+%d sidecar only), types: %d, heroes: %d, skills: %d, race: %s' % (
+            rep['maps'], rep['mapsSidecarOnly'], rep['types'], rep['heroes'], rep['skills'], rep['race']))
+    if 'client' in rep:
+        print('  client: ' + ', '.join(sorted(rep['client'])))
     for s in rep['skipped']:
         print('  skipped: ' + s)
     for w in rep['warnings']:
