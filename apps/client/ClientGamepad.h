@@ -1,7 +1,7 @@
 // Gamepad play for any game (engine/platform/Gamepad.h): a virtual cursor on the left stick that
 // clicks, drags and right-clicks like a mouse (so menus, UI documents, selection and orders work
 // unchanged), camera pan on the right stick, zoom on the triggers, buttons bound to keys / mouse
-// buttons in game.json. The cursor can snap to objects (Bunker Wars / Mushroom Wars pads jump
+// buttons in game.json. The cursor can snap to objects (node-capture games: the pad jumps
 // between buildings): a flick of the stick moves it to the nearest target in that direction, and a
 // slow cursor is pulled onto a target under it.
 //
@@ -18,10 +18,7 @@
 // the selected one, to its next level: the first `upgrades` entry sharing its tags), "convert:<tag>" (the first
 // `upgrades` entry with that tag), "cancel" (Escape); any other "event:<name>" goes to the view scripts as
 // ui.on("pad", fn({action = name})). "lt" / "rt" name the triggers as buttons (a trigger used in a chord no
-// longer zooms). "scheme": "bunkerwars" = Bunker Wars' pad layout (ME.TexturesGenerator/_DatabaseData/GameInfo/
-// Input/InputConfig.asset): RB + B / A / X / Y send 25 / 50 / 75 / 100 %, LB + A upgrade, LB + X / Y / B convert
-// to bunker / tower / armory, A double press upgrade, D-pad right / down / left / up = skill slots 1-4, LT + B / A /
-// X / Y emotions 1-4 (event:emotion1..4); keys given in "buttons" / "chords" override the scheme.
+// longer zooms).
 //
 // Presentation / input only: everything becomes the same platform events as mouse and keyboard.
 #pragma once

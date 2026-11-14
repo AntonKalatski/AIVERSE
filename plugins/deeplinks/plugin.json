@@ -1,6 +1,6 @@
 {
   "name": "deeplinks",
-  "description": "Deep links for Android, iOS and the web: custom URL schemes, Android App Links / iOS universal links, the link the app was launched with and every link while it runs. Protocol: links (docs/plugins.md, engine/services/Links.h). Config: scheme (custom URL scheme, e.g. \"bunkerwars\"), host (verified https host for App Links / universal links, optional), path (optional path prefix).",
+  "description": "Deep links for Android, iOS and the web: custom URL schemes, Android App Links / iOS universal links, the link the app was launched with and every link while it runs. Protocol: links (docs/plugins.md, engine/services/Links.h). Config: scheme (custom URL scheme, e.g. \"mygame\"), host (verified https host for App Links / universal links, optional), path (optional path prefix).",
   "provides": ["links"],
   "android": {
     "java": "android/java",
