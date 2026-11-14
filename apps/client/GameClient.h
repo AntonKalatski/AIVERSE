@@ -38,6 +38,7 @@
 #include "modules/rts/view/RtsView.h"
 #include "ClientFx.h"
 #include "ClientSpine.h"
+#include "ClientMeta.h"
 #include "ClientServices.h"
 #include "ClientGamepad.h"
 #include "modules/rts/view/RtsViewScript.h"
@@ -217,6 +218,10 @@ private:
     // Lobby.cpp
     void netAction(const std::string& what, int arg);
     void updateNet(double dt, bool& advanced);
+    // `backend` Lua table (ClientMeta.cpp, agent-bw-meta): a remote meta backend hands a match over
+    void joinBattle(const std::string& address, const std::string& queueId, bool spectator);
+    ClientMeta backendMeta_;
+    std::string pendingQueue_;
     void startNetMatch();
     void leaveNetMatch();
     void buildLobby(UiState& s);

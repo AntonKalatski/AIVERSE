@@ -432,7 +432,9 @@ void GameClient::initLua() {
     game::openScriptSound(lua_, &scriptSound_);
     openSpineLua(lua_, &spine_);   // `spine`: skeleton views (ClientSpine.h)
     spine_.onEvent = [this](const Json& e) { luaEmit("spine", e); };
-    services_.attach(lua_, luaAlive_, [this](const char* name, const Json& e) { luaEmit(name, e); });   // `sound`: voice handles, music (modules/rts/view/ScriptSound.h)
+    services_.attach(lua_, luaAlive_, [this](const char* name, const Json& e) { luaEmit(name, e); });
+    backendMeta_.attach(lua_, luaAlive_, manifest_["backend"], [this](const char* name, const Json& e) { luaEmit(name, e); },
+                        [this](const std::string& a, const std::string& q, bool s) { joinBattle(a, q, s); });   // `backend` (agent-bw-meta)   // `sound`: voice handles, music (modules/rts/view/ScriptSound.h)
     ui_.attachLua(lua_);
     // purchases that complete outside store.buy (pending -> purchased, after a restart)
     auto alive = luaAlive_;
@@ -491,6 +493,7 @@ void GameClient::runGameScript() {
 void GameClient::shutdownLua() {   // after the UI: RmlUi's documents hold references into the state
     if (luaAlive_) *luaAlive_ = false;
     services_.detach();
+    backendMeta_.detach();
     purchases_.clear();
     if (lua_) lua_close(lua_);
     lua_ = nullptr;

@@ -1,0 +1,6 @@
+{
+ "type": "bunkerwars",
+ "hosts": ["https://bunkerwars-meta.k8s.bunkerwars.game"],
+ "client": "1.18.9",
+ "tutorials": "ui/bw_tutorials.json"
+}

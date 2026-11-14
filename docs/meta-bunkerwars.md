@@ -133,10 +133,143 @@ rates). A seat not taken within `joinTimeoutSec` cancels the match (`closedFrom:
 
 - No live server was reachable from the build VM (prod/stand meta hosts refused through the proxy);
   tests use mock replies shaped after the client DTOs (`tests/data/bw_meta`).
-- The Java matchmaker (no `battle*` fields in `Match.onReady`) cannot hand battles to engine nodes;
-  the Java meta must implement `/internal/battle/*` (BunkerWars-Server-CS `docs/meta-battle-api.md`).
-- `GameReport.battleResult.matchStatistic` has no BW per-player values (70 floats per player);
-  `history` holds the engine replay (base64 `.rpl`), which BW's replay viewer cannot play.
-- BW `mapId` → engine map files is node configuration. Spectator tickets (role 1) are refused.
-- Platform HTTP verified on Linux (libcurl) only; NSURLSession, HttpURLConnection, WinHTTP and fetch()
-  request paths are written but not compiled here. Web builds have no TCP (see Web).
+- The Java matchmaker needs the changes of "Java servers" below to hand battles to engine nodes.
+- `history` holds the engine replay (base64 `.rpl`), which BW's replay viewer cannot play; some of the
+  71 statistic values are derived or 0 (see "Battle statistics").
+- Native HTTP stacks: see "Native HTTP stacks: what was compiled" (NSURLSession not compiled).
+  Web builds have no TCP (see Web).
+
+## Battle statistics (GameReport.battleResult.matchStatistic)
+
+`aiverse_server --bw-node` re-simulates every finished external match on a worker thread
+(`apps/server/BwStats.h`, like the server verdict) and fills `values` with BW `PlayerStatistic.Key`
+order (71 numbers). Exact: produced, captures (all / enemy / neutral / by house, tower, smithy),
+points lost, converts and upgrades by role, skill slot uses, max units on the field, points, energy
+received / spent, multiplayer win, morale stars and king of the hill score (when the rules turn match
+modes on). Derived from the engine's model (garrisons are counts, not units): `UnitsDeadByAttack` /
+`UnitsKilledByPlayerAttack` = garrison units lost to / killed in assaults, `UnitsDeadByDefense` /
+`UnitsKilledByPlayerDefense` = attackers that walked into an enemy garrison, `DeadByUnit` / `KilledByUnit`
+= unit-vs-unit deaths, `UnitsDeadByTower` / `KilledByPlayerTower` = killed by a structure, skills = killed
+by anything that is not a unit; attacks = arrivals at one enemy point with less than 2 s between
+units (success = the point was captured). Always 0: boss kills, colour skills (31-34), skill-star
+morale (37, 38), campaign stars, emotions, affected units per skill slot (54-58). A re-simulation
+that does not reach the players' checksum sends no values and `strErrors: "stats ..."`.
+
+## Map ids
+
+`tools/meta/bw_map_ids.py` writes `templates/bunkerwars/bw/map_ids.json` (BW `MapHeader.mapId` ->
+engine map, 119 ids; campaign split-test variants under `variants`). Battle node config:
+`"maps": "templates/bunkerwars/bw/map_ids.json"`. Re-run it after the BW importer.
+
+## Spectators
+
+Spectator tickets (`BattleTicketRole.Spectator`, payload `R: 1`, `N: name`) are accepted by the node:
+before the start the watcher waits with the reservation and gets the match with the players, later
+it joins as a late spectator (history, then `spectatorDelayTicks` behind). Client side:
+`MatchSession::spectate(roomId, custom)` -> `onSpectateJoin` -> `handoff()` with `spectator = true`.
+
+## Chat
+
+`BwBackend` chat services over a `ChatConnection` (`bindChat`): `chat.send {room, msg[, messageType]}`,
+`chat.history {room[, count]}` (reply = OnHistory), `chat.rooms`, `chat.state {whereIs, state}`,
+`chat.watch {senderIds}`, `chat.notifyRead | notifyAccept | notifyDecline | notifyRemove {id[, reqId]}`.
+Incoming messages, members, notifications (friend / game / spectator / clan) and events are kept in
+`BwBackend::chat()` and in `meta/view` `chat`.
+
+## Meta tutorials
+
+`tools/meta/bw_tutorials.py --unity <bunker-wars>/Client/Assets` writes `templates/bunkerwars/ui/bw_tutorials.json`
+(217 TutorialData of `_TutorialMeta` with guids; map / campaign / feature references resolved to ids).
+`bw::MetaTutorials` (engine/meta/bw/BwTutorials.h) reproduces UI.Windows `TutorialSystem`: window events
+start the tutorials of that window (BW class, short class name or engine screen id) whose conditions
+hold; actions run in order; `Wait`, `WaitForClick`, `WaitButtonClick` and `SetKey(save)` suspend.
+Conditions on the profile, binData keys, counters and client state are built in (HasKey, ExistKey,
+HasKeyTimer, HasCounter, SplitTest, ProfileCurrentHero, IsOfflineMode, VersionAvailableCheck,
+HasCountry, ProfileRegistrationDate, ProfileActiveDays, HasProfileContent heroes / skills / rating /
+currencies, HasProfileHeroSlotIsNull); the client-screen ones (craft / card screen selection, campaign
+progress, trophy road, boosters, clan screen mode, profile features) go to `TutorialHost::condition`
+and count as false without it (`unsupported()`).
+
+## Client screens (templates/bunkerwars/ui)
+
+`apps/client/ClientMeta.cpp` gives UI scripts the `backend` table (login, request, view, cached, chat,
+match, spectate, cancel, connected, tutorial*, events `game.on("backend")`: match / handoff /
+tutorial / chat / notAuthorized). Configuration: game.json `"backend"` or `ui/backend.json`
+(`type`, `hosts`, `client`, `tutorials`). On `handoff` the client connects its NetClient to the engine
+battle server and joins the ticket queue by itself; the match then runs like any network match.
+`templates/bunkerwars/ui`: `bw_login` (guest sign-in, guid kept in `storage`), `bw_home` (profile,
+league, balances; play / heroes / shop / clan), `bw_heroes` (select hero), `bw_shop` (offers, market),
+`bw_clan` (own clan, list, join request), `bw_queue` (matchmaking until the handoff), `bw_results`
+(after every match); texts in `ui/bw_meta_lang.json`. Screens send BW window events to the tutorial
+runner (`bw_home` = MainScreen + PlayComponents + HeroAnimationComponent ...); tutorial tags are element
+ids, LockElement shows the hint panel. These are functional screens on the engine's default styles,
+not the BW art (UI.Windows prefabs can be converted with `tools/importers/unity_ui` from the user's copy).
+
+## Native HTTP stacks: what was compiled
+
+| Stack | File | Checked |
+|---|---|---|
+| libcurl (Linux) | `HttpCurl.cpp` | built and run in tests (`bw_platform_https_transport_out_of_the_box`) |
+| WinHTTP (Windows) | `HttpWin.cpp` | compiled for `x86_64-windows-gnu` (zig 0.13 clang + mingw-w64 headers), no warnings; not run |
+| fetch() (web) | `HttpWeb.cpp` | compiled for wasm32 against emscripten 3.1.64 headers (zig clang, `__EMSCRIPTEN__`); not linked or run |
+| HttpURLConnection (Android) | `HttpAndroid.cpp` | compiled for aarch64 with an NDK-style jni.h; not run on a device |
+| NSURLSession (macOS / iOS) | `HttpApple.mm` | not compiled: needs Xcode on the Mac; the session's shell is a Linux VM and the editor's `native_build` builds the main checkout, not this branch |
+
+All `engine/meta/*.cpp`, `engine/meta/bw/*.cpp` also compile warning-free for Windows with clang.
+
+## Java servers: changes needed for engine battle nodes
+
+BunkerWars-Server (Java) is read-only for this port. To play BW battles on `aiverse_server --bw-node`
+with the Java matchmaker, the backend team applies the following (the C# BunkerWars-Server-CS already
+does 1-4 on its side; these are the same contracts).
+
+1. **Ticket secret and node registry** (new settings, `SettingsDAO` / properties):
+   `battle.ticketSecret` (>= 32 bytes, shared with the nodes), `battle.internalToken`, and the node list
+   (from heartbeats, below, or a static `battle.nodes = [{"nodeId","region","publicHost","tcpPort",
+   "internalUrl","capacity"}]`).
+2. **Heartbeat endpoint** in the battle / matchmaker process: `POST /internal/nodes/heartbeat`
+   (header `X-Internal-Token`) with `NodeHeartbeat {nodeId, region, publicHost, tcpPort, tcpPortSsl,
+   internalUrl, games, players, capacity, draining}`, every 5 s; a node silent for 15 s is dead.
+3. **Placement at Match.Ready** — `mw2-server-battle/.../processors/match/MatchReadyProcessor.ready()`,
+   right after `game.setPrepared()` and before `game.cbMatchReady(...)`:
+   - pick a node (lowest `games / capacity` among non-draining live nodes; region by worst player
+     ping, then GeoIP, then config order);
+   - `POST {node.internalUrl}/internal/games` with `X-Internal-Token` and the **GameSpec** (Gson,
+     camelCase, nulls omitted):
+     `{gameId, customId, matcher, mapId, mode, winMode, conditions, players: [PlayerConnectionInfo in map
+     slot order, bots included: {user: {id, name, leagueId, eloRating, ...}, info: {color, team}, isBot,
+     botConfigId}], potentialCheaters, fake, botsAllow, customRoom, winter, ownerId, tourneyId, exact,
+     clientVersion, specialParameters, customGameConfig, customTournamentConfig,
+     useCustomTournamentConfig, matchContext}`. `matchContext` = anything the meta needs back to compute
+     results (the `MapResult`, league rating, group); the node returns it untouched.
+     Replies: `201 {id, roomId}`, `400` invalid spec, `409` already hosted, `503` draining (try the next
+     node, up to 3).
+   - per human player issue a ticket `v1.<base64url(json{"G":gameId,"U":userId,"Exp":unixSeconds})>.
+     <base64url(HMAC-SHA256(ticketSecret, "v1.<payload>"))>` (no padding; expiry = now + 10 min);
+   - add to `Matching.Result` (mw2-server-api `Matching.java`, class `Result`) the fields
+     `public String battleHost; public Integer battlePort; public Integer battlePortSsl; public String battleTicket;`
+     and fill them per player before `cbMatchReady` (the ticket differs per player, so send one
+     `Match.onReady` per player link instead of one to `playersLink()`).
+4. **Spectators**: `Matching.SpectateJoinTO` gets the same four fields; for a game hosted on a node the
+   spectator ticket payload is `{"G":gameId,"U":0,"Exp":..,"R":1,"N":"<name>"}`. `Matching.SyncComplete`
+   gets them too, so `MatchReconnect` sends a reconnecting player to the node (`battleTicket` = a fresh
+   player ticket).
+5. **Results**: implement the meta internal API of BunkerWars-Server-CS `docs/meta-battle-api.md`:
+   `POST /internal/battle/games/{gameId}/started` `{gameId, gameStartTime, spec}` -> `resultService.matchCycleUpdate(game)`
+   for rating games and `matchChallengeService.useTokensForBattle`; `POST /internal/battle/games/{gameId}/result`
+   `GameReport {gameId, closedFrom: "RESULT"|"PROGRESS", spec, gameStartTime, battleResult: {localStatus,
+   matchStatistic: [{userId, playerInfo: {color, team}, winner, experience, values: [71 numbers]}],
+   startBattleTime, endBattleTime}, players: [{userId, isBot, status: "Victory"|"Defeat"|"Draw"|"None", ts,
+   win, softDefeat}], strErrors, strStates, history: [base64]}` -> build `Game` from `spec` + `players` and
+   call `resultService.saveResultThrowable(game)`; reply `{historyItem, drops: {userId: BattleDropTO}}`.
+   Idempotent per `gameId` (the node retries 3 times). `history` holds the engine replay (`.rpl`,
+   base64), not BW `NetworkPackage`s: store it in `game_replay` but do not feed it to the BW replay viewer.
+6. **Match events**: `POST /internal/games/{gameId}/events` `{gameId, customId, type: "started"|"closed",
+   wasStarted, hasResult}` on the matchmaker (tourneys, custom rooms, release of the players).
+7. **Clients**: BW Unity clients from the current branch already switch to `battleHost` with the ticket
+   (`MultiplayerManager.SwitchToBattleNode`), but an engine node speaks the engine protocol (UDP / WebSocket,
+   `engine/net/Protocol.h`), not BW TCP frames: only engine clients (`AiverseGame` with
+   `templates/bunkerwars`) can play on it. Mixed BW-client / engine-client matches are not possible; route
+   engine clients by `clientVersion` / a feature flag to engine nodes and BW clients to the Java battle server.
+8. **Map ids**: the engine maps exist for the ids in `templates/bunkerwars/bw/map_ids.json`; a placement
+   for any other `mapId` gets `400 invalid game spec` and must fall back.

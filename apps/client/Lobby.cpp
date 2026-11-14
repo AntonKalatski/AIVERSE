@@ -123,7 +123,10 @@ void GameClient::updateNet(double dt, bool& advanced) {
         const std::string text = net::translate(loc_, e.text); // the server sends keys (protocol v2)
         using K = net::NetEvent::Kind;
         switch (e.kind) {
-        case K::Connected: net_->refreshRooms(); break;
+        case K::Connected:
+            net_->refreshRooms();
+            if (!pendingQueue_.empty()) { net_->joinQueue(pendingQueue_, netMaps_); pendingQueue_.clear(); }   // backend handoff
+            break;
         case K::Disconnected:
             netError_ = text;
             if (netMatch_) leaveNetMatch();
@@ -158,6 +161,18 @@ void GameClient::updateNet(double dt, bool& advanced) {
         for (auto& b : bots_) b.update(*sim_);
     net_->advance(dt);   // instead of sim_->advance(): predicted ticks, rollbacks, confirmed input
     advanced = true;
+}
+
+// A remote meta backend (ClientMeta) matched us: connect to the battle server it named and claim the
+// seat (or the spectator place) with the ticket queue.
+void GameClient::joinBattle(const std::string& address, const std::string& queueId, bool spectator) {
+    if (netName_.empty()) netName_ = tr("lobby.default_name");
+    describeNetMaps();
+    net_ = std::make_unique<net::NetClient>(address, net::ClientIdentity{netName_, manifest_.getStr("id"), netKey_});
+    pendingQueue_ = queueId;
+    netError_.clear();
+    chat_.clear();
+    (void)spectator;   // the ticket says so: the server seats spectators by itself
 }
 
 void GameClient::startNetMatch() {

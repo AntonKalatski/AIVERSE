@@ -1,0 +1,20 @@
+{
+ "ru": {
+  "title": "Bunker Wars", "connecting": "Подключение…", "login": "Войти", "login_failed": "Не удалось войти:", "offline": "Играть без сети",
+  "play": "В бой", "heroes": "Герои", "shop": "Магазин", "clan": "Клан", "back": "Назад", "league": "Лига", "rating": "Рейтинг",
+  "gold": "Золото", "gems": "Кристаллы", "level": "Ур.", "select": "Выбрать", "selected": "Выбран", "buy": "Купить",
+  "offers": "Предложения", "no_clan": "Вы не в клане", "join": "Вступить", "members": "Участники", "searching": "Поиск соперника…",
+  "players": "Игроков", "battle_found": "Бой найден, подключение к серверу боя…", "cancel": "Отмена", "victory": "Победа!",
+  "defeat": "Поражение", "draw": "Ничья", "duration": "Длительность", "to_menu": "В меню", "tap": "Нажмите, чтобы продолжить",
+  "no_battle_node": "Сервер подбора не выдал боевой сервер движка", "error": "Ошибка:"
+ },
+ "en": {
+  "title": "Bunker Wars", "connecting": "Connecting…", "login": "Sign in", "login_failed": "Sign-in failed:", "offline": "Play offline",
+  "play": "Battle", "heroes": "Heroes", "shop": "Shop", "clan": "Clan", "back": "Back", "league": "League", "rating": "Rating",
+  "gold": "Gold", "gems": "Gems", "level": "Lv.", "select": "Select", "selected": "Selected", "buy": "Buy",
+  "offers": "Offers", "no_clan": "You are not in a clan", "join": "Join", "members": "Members", "searching": "Looking for an opponent…",
+  "players": "Players", "battle_found": "Battle found, connecting to the battle server…", "cancel": "Cancel", "victory": "Victory!",
+  "defeat": "Defeat", "draw": "Draw", "duration": "Duration", "to_menu": "Main menu", "tap": "Tap to continue",
+  "no_battle_node": "The matchmaker gave no engine battle server", "error": "Error:"
+ }
+}
