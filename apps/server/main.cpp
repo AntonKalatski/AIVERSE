@@ -3,7 +3,7 @@
 // Battle server mode (hosted matches from an orchestrator, docs/battle-net.md):
 //   [--battle-port N --server-key-file F] [--control-port N --control-key-file F] [--max-matches N]
 //   [--public-address host:port] [--hosted-only] [--loopback]
-//   [--bw-node node.json]   (also a Bunker Wars battle node, docs/meta-bunkerwars.md)
+//   [--extension name[=config.json]]   (code a game links in to reach its own backend, docs/native-modules.md)
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -19,10 +19,9 @@
 #include "engine/net/server/Server.h"
 #include <fstream>
 #include <memory>
-#ifndef __EMSCRIPTEN__
-#include "apps/server/BwStats.h"
-#include "engine/meta/bw/BwNode.h"
-#endif
+#include "engine/net/server/ServerExtension.h"
+#include <utility>
+#include <vector>
 #include "modules/rts/RtsModule.h"
 
 using namespace aiverse;
@@ -49,7 +48,7 @@ int main(int argc, char** argv) {
     std::string serverKeyFile, controlKeyFile, publicAddress;
     uint32_t maxMatches = 64;
     bool loopback = false;
-    std::string bwNodePath;
+    std::vector<std::pair<std::string, std::string>> extensionArgs;   // name, config file
     for (int i = 1; i < argc; ++i) {
         std::string k = argv[i];
         auto next = [&]() -> std::string { if (i + 1 >= argc) { std::fprintf(stderr, "missing value for %s\n", k.c_str()); std::exit(2); } return argv[++i]; };
@@ -59,7 +58,11 @@ int main(int argc, char** argv) {
         else if (k == "--replays") cfg.replayDir = next();
         else if (k == "--ratings") cfg.ratingsFile = next();
         else if (k == "--quiet") cfg.log = false;
-        else if (k == "--bw-node") bwNodePath = next();
+        else if (k == "--extension") {
+            const std::string v = next();
+            const size_t eq = v.find('=');
+            extensionArgs.emplace_back(v.substr(0, eq), eq == std::string::npos ? std::string() : v.substr(eq + 1));
+        }
         else if (k == "--battle-port") battlePort = uint16_t(std::stoi(next()));
         else if (k == "--server-key-file") serverKeyFile = next();
         else if (k == "--control-port") controlPort = uint16_t(std::stoi(next()));
@@ -70,7 +73,7 @@ int main(int argc, char** argv) {
         else if (k == "--loopback") loopback = true;
         else {
             std::printf("usage: aiverse_server [--config server.json] [--udp-port N] [--ws-port N] [--replays DIR] [--ratings FILE] [--quiet]\n"
-                        "       bunker wars node: --bw-node node.json\n"
+                        "       extensions: --extension name[=config.json]  (repeatable)\n"
                         "       battle mode: --battle-port N --server-key-file F [--control-port N --control-key-file F]\n"
                         "                    [--max-matches N] [--public-address host:port] [--hosted-only] [--loopback]\n");
             return 2;
@@ -79,21 +82,24 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, [](int) { g_stop = true; });
     std::signal(SIGTERM, [](int) { g_stop = true; });
 
-#ifndef __EMSCRIPTEN__
-    std::unique_ptr<meta::bw::BattleNode> bwNode;
-    if (!bwNodePath.empty()) {
-        try {
-            auto nc = meta::bw::NodeConfig::parse(Json::parseFile(bwNodePath));
-            if (nc.clientPort == 0) nc.clientPort = cfg.udpPort;
-            bwNode = std::make_unique<meta::bw::BattleNode>(nc);
-            bwNode->battleStats = netgame::bwBattleStats(cfg.gameDirs);   // BW PlayerStatistic by re-simulation
-            bwNode->install(cfg);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "bw node config: %s\n", e.what());
+    // Extensions adjust the config (ticket check, external match callbacks) before the server exists.
+    std::vector<std::unique_ptr<net::ServerExtension>> extensions;
+    for (const auto& [name, file] : extensionArgs) {
+        auto ext = net::makeServerExtension(name);
+        if (!ext) {
+            std::string known;
+            for (const auto& n : net::serverExtensions()) known += (known.empty() ? "" : ", ") + n;
+            std::fprintf(stderr, "error: no server extension '%s' in this build (have: %s)\n", name.c_str(), known.empty() ? "none" : known.c_str());
             return 2;
         }
+        try {
+            ext->configure(file.empty() ? Json() : Json::parseFile(file), cfg);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "extension %s: %s\n", name.c_str(), e.what());
+            return 2;
+        }
+        extensions.push_back(std::move(ext));
     }
-#endif
     // Keys are files (mode 0600), never command-line values: arguments show up in process lists.
     auto readKey = [](const std::string& path, net::Key& key) {
         std::ifstream f(path);
@@ -124,13 +130,10 @@ int main(int argc, char** argv) {
         std::printf("battle mode: secure udp %u, control %u, capacity %u matches%s\n", server.securePort(), control ? control->port() : 0,
                     maxMatches, cfg.hostedOnly ? ", hosted only" : "");
     }
-#ifndef __EMSCRIPTEN__
-    if (bwNode) {
-        bwNode->attach(server);
-        if (!bwNode->listen(&err)) { std::fprintf(stderr, "error: %s\n", err.c_str()); return 1; }
-        std::printf("bunker wars battle node: internal API up\n");
+    for (size_t i = 0; i < extensions.size(); ++i) {
+        if (!extensions[i]->start(server, &err)) { std::fprintf(stderr, "error: extension %s: %s\n", extensionArgs[i].first.c_str(), err.c_str()); return 1; }
+        std::printf("extension %s: started\n", extensionArgs[i].first.c_str());
     }
-#endif
     std::printf("%s: udp %u, websocket %u, %zu queue(s)%s%s\n", cfg.name.c_str(), server.udpPort(), server.wsPort(), cfg.queues.size(),
                 cfg.replayDir.empty() ? "" : ", replays in ", cfg.replayDir.c_str());
     std::fflush(stdout);
@@ -140,9 +143,7 @@ int main(int argc, char** argv) {
         const uint64_t now = net::nowMs();
         server.update(now);
         if (control) control->update(now);
-#ifndef __EMSCRIPTEN__
-        if (bwNode) bwNode->update(now);
-#endif
+        for (auto& e : extensions) e->update(now);
         if (now - lastStats >= 60000) {
             lastStats = now;
             auto s = server.stats();

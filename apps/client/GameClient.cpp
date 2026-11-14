@@ -871,7 +871,6 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     updateGamepad(float(dt));   // pad input as mouse / key events + camera pan (ClientGamepad.cpp)
     float alpha = 0;
     bool netAdvanced = false;
-    backendMeta_.update(dt);      // remote meta backend: replies, matchmaker, chat, meta tutorials (agent-bw-meta)
     updateNet(dt, netAdvanced);   // online: the network session drives the sim, even behind the pause menu
     if (netAdvanced && sim_) {
         alpha = float(sim_->alpha());

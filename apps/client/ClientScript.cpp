@@ -207,6 +207,14 @@ struct LuaApi {
         return 0;
     }
     static int online(lua_State* L) { auto& c = client(L); if (!c.uiPreview_) c.netAction("open", -1); return 0; }
+    // game.connect(address[, queue]): join a game server named by the game's own matchmaker; with a queue id
+    // ("ticket:<ticket>" for a reserved seat) the client joins it as soon as it is connected
+    static int connect(lua_State* L) {
+        auto& c = client(L);
+        const std::string address = luaL_checkstring(L, 1), queue = luaL_optstring(L, 2, "");
+        if (!c.uiPreview_) c.joinServer(address, queue);
+        return 0;
+    }
     static int howto(lua_State* L) {
         auto& c = client(L);
         c.howtoOpen_ = lua_isnone(L, 1) ? !c.howtoOpen_ : bool(lua_toboolean(L, 1));
@@ -432,7 +440,7 @@ void GameClient::initLua() {
         {"tr", LuaApi::tr}, {"hasText", LuaApi::hasText}, {"language", LuaApi::language}, {"languages", LuaApi::languages},
         {"setLanguage", LuaApi::setLanguage}, {"name", LuaApi::name}, {"maps", LuaApi::maps}, {"start", LuaApi::start},
         {"difficulty", LuaApi::difficulty}, {"screen", LuaApi::screen}, {"pause", LuaApi::pause}, {"resume", LuaApi::resume},
-        {"menu", LuaApi::menu}, {"online", LuaApi::online}, {"howto", LuaApi::howto}, {"engineMenu", LuaApi::engineMenu},
+        {"menu", LuaApi::menu}, {"online", LuaApi::online}, {"connect", LuaApi::connect}, {"howto", LuaApi::howto}, {"engineMenu", LuaApi::engineMenu},
         {"notice", LuaApi::notice}, {"safeArea", LuaApi::safeArea}, {"lastResult", LuaApi::lastResult}, {"touch", LuaApi::touch}, {"openUrl", LuaApi::openUrl},
         {"platform", LuaApi::platformName}, {"preview", LuaApi::preview}, {"time", LuaApi::time}, {"json", LuaApi::json}, {"decode", LuaApi::decode}, {"encode", LuaApi::encode},
         {"log", LuaApi::log}});
@@ -449,8 +457,6 @@ void GameClient::initLua() {
     openSpineLua(lua_, &spine_);   // `spine`: skeleton views (ClientSpine.h)
     spine_.onEvent = [this](const Json& e) { luaEmit("spine", e); };
     services_.attach(lua_, luaAlive_, [this](const char* name, const Json& e) { luaEmit(name, e); });
-    backendMeta_.attach(lua_, luaAlive_, manifest_["backend"], [this](const char* name, const Json& e) { luaEmit(name, e); },
-                        [this](const std::string& a, const std::string& q, bool s) { joinBattle(a, q, s); });   // `backend` (agent-bw-meta)
     openPadLua(lua_);   // game.sendPercent (agent-bw-client)
     ui_.attachLua(lua_);
     // purchases that complete outside store.buy (pending -> purchased, after a restart)
@@ -510,7 +516,6 @@ void GameClient::runGameScript() {
 void GameClient::shutdownLua() {   // after the UI: RmlUi's documents hold references into the state
     if (luaAlive_) *luaAlive_ = false;
     services_.detach();
-    backendMeta_.detach();
     purchases_.clear();
     if (lua_) lua_close(lua_);
     lua_ = nullptr;

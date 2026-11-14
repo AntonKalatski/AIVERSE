@@ -243,6 +243,7 @@ endif()
 add_library(aiverse_net STATIC
     engine/net/Loopback.cpp
     engine/net/Socket.cpp
+    engine/net/PlainHttp.cpp
     engine/net/Reliable.cpp
     engine/net/Udp.cpp
     engine/net/WebSocket.cpp
@@ -276,7 +277,8 @@ add_library(aiverse_net_server STATIC
     engine/net/server/Matchmaker.cpp
     engine/net/server/ServerHosted.cpp
     engine/net/server/BattleControl.cpp
-    engine/net/server/ServerReserved.cpp)
+    engine/net/server/ServerReserved.cpp
+    engine/net/server/ServerExtension.cpp)
 target_link_libraries(aiverse_net_server PUBLIC aiverse_net)
 # Game data on the network side: match loading like the game (tile maps) and the server's verdict
 # (re-simulating a match nobody settled). Server, bot client and net tests share it.
@@ -292,19 +294,8 @@ if(NOT EMSCRIPTEN AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/battle/BattleLoad
     target_link_libraries(aiverse_battle_rts PUBLIC aiverse_battle_load aiverse_game)
 endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apps/server/GameData.cpp")
-    add_library(aiverse_net_game STATIC apps/server/GameData.cpp apps/server/BwStats.cpp)   # BwStats: agent-bw-meta
+    add_library(aiverse_net_game STATIC apps/server/GameData.cpp)
     target_link_libraries(aiverse_net_game PUBLIC aiverse_net_server aiverse_game)
-endif()
-# Bunker Wars adapter (agent-bw-meta, docs/meta-bunkerwars.md): default HTTPS transport on the
-# per-platform pack HTTP stack (all platforms); TCP matchmaker/chat links, host probes, battle node
-# bridge and plain internal HTTP (native only).
-add_library(aiverse_bw_http STATIC engine/meta/bw/BwPlatformHttp.cpp)
-target_link_libraries(aiverse_bw_http PUBLIC aiverse_meta_bw aiverse_pack)
-if(NOT EMSCRIPTEN)
-    add_library(aiverse_bw_tcp STATIC engine/meta/bw/BwTcp.cpp)
-    target_link_libraries(aiverse_bw_tcp PUBLIC aiverse_meta_bw aiverse_net)
-    add_library(aiverse_bw_node STATIC engine/meta/bw/BwHttp.cpp engine/meta/bw/BwNode.cpp)
-    target_link_libraries(aiverse_bw_node PUBLIC aiverse_bw_tcp aiverse_net_server)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -864,7 +855,7 @@ endif()
 
 if(AIVERSE_BUILD_SERVER)
     add_executable(aiverse_server apps/server/main.cpp)
-    target_link_libraries(aiverse_server PRIVATE aiverse_net_game $<TARGET_NAME_IF_EXISTS:aiverse_bw_node>)
+    target_link_libraries(aiverse_server PRIVATE aiverse_net_game)
     add_executable(aiverse_netbot apps/netbot/main.cpp)
     target_link_libraries(aiverse_netbot PRIVATE aiverse_net_game aiverse_i18n)
 endif()
@@ -897,10 +888,12 @@ if(AIVERSE_BUILD_TESTS)
         target_compile_definitions(aiverse_battle_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
         add_test(NAME aiverse_battle_tests COMMAND aiverse_battle_tests)
     endif()
-    add_executable(aiverse_bw_meta_tests tests/bw_meta_tests.cpp)   # agent-bw-meta: BW backend adapter
-    target_link_libraries(aiverse_bw_meta_tests PRIVATE aiverse_bw_node aiverse_bw_http aiverse_net_game)
-    target_compile_definitions(aiverse_bw_meta_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    add_test(NAME aiverse_bw_meta_tests COMMAND aiverse_bw_meta_tests)
+    # Remote backend hooks: MessagePack / encodings, request-response HTTP, plain HTTP server, external
+    # matches (Server::reserve, tickets, spectators, ExternalMatchEnd), server extensions.
+    add_executable(aiverse_remote_tests tests/remote_tests.cpp)
+    target_link_libraries(aiverse_remote_tests PRIVATE aiverse_meta_codec aiverse_net_game aiverse_pack)
+    target_compile_definitions(aiverse_remote_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME aiverse_remote_tests COMMAND aiverse_remote_tests)
     add_executable(aiverse_tests tests/tests.cpp)
     target_link_libraries(aiverse_tests PRIVATE aiverse_game aiverse_i18n aiverse_pack_writer aiverse_models)
     target_link_libraries(aiverse_tests PRIVATE aiverse_postfx_data)   # postfx agent
@@ -1684,8 +1677,6 @@ foreach(t aiverse_client main aiverse_editor)
     if(TARGET ${t})
         target_sources(${t} PRIVATE engine/spine/SpineRender.cpp apps/client/ClientSpine.cpp apps/client/ClientServices.cpp apps/client/ClientGamepad.cpp apps/client/ClientGamepadHost.cpp)
         target_link_libraries(${t} PRIVATE aiverse_spine aiverse_render2d)
-        target_sources(${t} PRIVATE apps/client/ClientMeta.cpp)   # agent-bw-meta: `backend` Lua table
-        target_link_libraries(${t} PRIVATE aiverse_bw_http $<TARGET_NAME_IF_EXISTS:aiverse_bw_tcp>)
     endif()
 endforeach()
 if(TARGET aiverse_tests)

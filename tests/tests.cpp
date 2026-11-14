@@ -5432,12 +5432,19 @@ TEST(plugin_bridge_calls_replies_events) {
     plugins::call("no-such-plugin", "x", "{}", [&](const plugins::Result& r) { got.push_back(r.ok ? "ok" : "missing"); });
     std::vector<std::string> events;
     int id = plugins::addListener("echo", [&](const std::string& ev, const std::string& d) { events.push_back(ev + d); });
+    std::vector<std::string> anyEvents; // every plugin's events with the plugin's name (the client's game.on('plugin'))
+    int anyId = plugins::addAnyListener([&](const std::string& p, const std::string& ev, const std::string& d) { anyEvents.push_back(p + ":" + ev + d); });
     plugins::call("echo", "event", "{}", {});
     plugins::pump();
     CHECK(echo->calls.size() == 6); // init went out only once
     CHECK(got.size() == 4 && got[1] == "ERR nope" && got[2] == R"({"from":"thread"})" && got[3] == "missing");
     CHECK(events.size() == 1 && events[0] == R"(ping{"n":1})");
+    CHECK(anyEvents.size() == 1 && anyEvents[0] == R"(echo:ping{"n":1})");
     plugins::removeListener(id);
+    plugins::removeListener(anyId);
+    plugins::call("echo", "event", "{}", {});
+    plugins::pump();
+    CHECK(events.size() == 1 && anyEvents.size() == 1); // removed listeners stay silent
     plugins::unregisterPlugin("echo");
 }
 

@@ -219,3 +219,76 @@ non-deterministic data into a match. Full contract and an external example: [met
 project's `plugins::NativePlugin` (`engine/platform/Plugins.h`, [plugins.md](plugins.md)) or the project's existing UI host;
 Client::pump is called outside the sim. Linking through CMake alone does not install any UI. Calling the helper without a
 side keeps the old behaviour and links every meta policy.
+
+## Remote backends (a game's own meta server, matchmaker, battle nodes)
+
+The engine knows no particular backend. An adapter to one (its wire formats, API client, matchmaking
+session, result reports) is game code: it lives in the game's `native/` folder and is attached to the
+engine targets from the game's `module.cmake`. Nothing of it is added to the engine tree. What the
+engine gives it (all covered by `tests/remote_tests.cpp` with a synthetic backend):
+
+| Need | Engine piece |
+|---|---|
+| MessagePack, base64 / hex / SHA-256 / HMAC-SHA256 | `engine/meta/MsgPack.h`, `engine/meta/Encoding.h`; target `AIVERSE::meta_codec` |
+| HTTPS from the client (libcurl / NSURLSession / HttpURLConnection / WinHTTP / fetch) | `pack::httpRequest(HttpCall, done)` in `engine/pack/http/HttpRequest.h` (target `aiverse_pack`); `done` runs on a worker thread natively, on the main loop on the web |
+| Plain HTTP inside a cluster and in tests (no TLS, no threads, native only) | `net::HttpServer`, `net::HttpClient`, `net::parseUrl` in `engine/net/PlainHttp.h` (target `aiverse_net`) |
+| TCP / UDP / WebSocket | `engine/net/Socket.h`, `Udp.h`, `WebSocket.h` |
+| `meta::Backend` for the meta screens | `engine/meta/Client.h` (`aiverse_native_use_meta(... CLIENT)`, section above) |
+| Host a match the backend's matchmaker formed | `net::Server::reserve(Reservation)`; players join the queue `"ticket:<ticket>"`; `ServerConfig::ticketCheck` turns a ticket into `TicketInfo {externalId, userId, spectator, name}` |
+| Spectators of such a match | a ticket with `spectator = true`: joins before or after the start, never takes a seat |
+| Start / result reports, statistics | `ServerConfig::onExternalMatchStarted(id)`, `onExternalMatchEnd(ExternalMatchEnd)`: winner, end tick and hash, seats, replay file, and the confirmed input (`gameId`, `mapFile`, `seed`, `tickRate`, `inputDelay`, `commands`) so the host can re-simulate the match and observe anything it wants to report |
+| Run next to the game server | a server extension (below) |
+| Client side | a `plugins::NativePlugin` (below) |
+
+### Server extensions
+
+```cpp
+#include "engine/net/server/ServerExtension.h"
+
+class MyBackend final : public aiverse::net::ServerExtension {
+public:
+    void configure(const aiverse::Json& config, aiverse::net::ServerConfig& sc) override {
+        // before the Server exists: sc.ticketCheck, sc.onExternalMatchStarted, sc.onExternalMatchEnd...
+        // throw std::runtime_error("readable message") to refuse to start
+    }
+    bool start(aiverse::net::Server& server, std::string* error) override { server_ = &server; return true; }   // listening
+    void update(uint64_t nowMs) override {}   // after every Server::update, on the server thread
+private:
+    aiverse::net::Server* server_ = nullptr;
+};
+AIVERSE_SERVER_EXTENSION("my-backend", MyBackend);
+```
+
+`aiverse_server --extension my-backend=config.json` (repeatable; the file is optional, `config` is then
+null). An unknown name stops the server and lists the extensions in the build. The registration is a
+static object, so compile the file into the executable itself, not into a static library the linker may
+drop:
+
+```cmake
+# native/<part>/module.cmake - executables do not exist yet when native/ is processed
+function(my_backend_attach)
+    if(TARGET aiverse_server)
+        target_sources(aiverse_server PRIVATE ${MY_DIR}/MyServerExtension.cpp)
+        target_link_libraries(aiverse_server PRIVATE my_backend_core)
+    endif()
+endfunction()
+set(MY_DIR ${CMAKE_CURRENT_LIST_DIR} CACHE INTERNAL "")
+cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL my_backend_attach)
+```
+
+### Client side: a native plugin, Lua on top
+
+Register a `plugins::NativePlugin` (`AIVERSE_PLUGIN("mybackend", MyPlugin)`, [plugins.md](plugins.md)) in a
+source added to the client targets the same way. Lua reaches it with
+`plugins.call("mybackend", method, args, function(ok, data) end)`; `update()` runs every frame (pump the
+HTTP client there); the plugin talks back with `plugins::emit("mybackend", event, json)`, which every UI
+script receives as `game.on('plugin', function(e) -- e.plugin, e.event, e.data`.
+
+When the backend's matchmaker has formed a match, the script calls `game.connect(address, queue)`: the
+client connects to that game server and joins the queue as soon as it is connected (`"ticket:<ticket>"`
+for a reserved seat or a spectator place); the match then starts like any network match.
+`game.start(i, {ruleSets = {...}})` switches named rule sets on for a local match.
+
+Limits: `net::HttpServer` / `HttpClient` are HTTP/1.1 without TLS and without keep-alive, native builds
+only; a browser build has no raw TCP, so a TCP matchmaker needs a WebSocket endpoint on the backend
+side; the rule sets of a match on a remote server are those of the map (the data hash is fixed).

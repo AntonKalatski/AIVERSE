@@ -90,6 +90,7 @@ struct Bridge {
     std::map<uint64_t, Pending> pending;
     std::vector<Delivery> queue;
     std::map<int, std::pair<std::string, EventHandler>> listeners;
+    std::map<int, AnyEventHandler> anyListeners;
     std::map<std::string, bool> initSent;                       // plugin → "init" already sent
     detail::Backend* backend = nullptr;
     json::Value config = json::Value::object();
@@ -199,10 +200,18 @@ int addListener(const std::string& plugin, EventHandler handler) {
     b.listeners[id] = {plugin, std::move(handler)};
     return id;
 }
+int addAnyListener(AnyEventHandler handler) {
+    Bridge& b = Bridge::get();
+    std::lock_guard<std::mutex> l(b.m);
+    int id = b.nextListener++;
+    b.anyListeners[id] = std::move(handler);
+    return id;
+}
 void removeListener(int id) {
     Bridge& b = Bridge::get();
     std::lock_guard<std::mutex> l(b.m);
     b.listeners.erase(id);
+    b.anyListeners.erase(id);
 }
 
 void configure(const std::string& pluginsObjectJson) {
@@ -291,11 +300,14 @@ void pump() {
             cb(r);
         } else {
             std::vector<EventHandler> hs;
+            std::vector<AnyEventHandler> any;
             {
                 std::lock_guard<std::mutex> l(b.m);
                 for (auto& [id, lh] : b.listeners) if (lh.first == d.plugin || lh.first == "*") hs.push_back(lh.second);
+                for (auto& [id, h] : b.anyListeners) any.push_back(h);
             }
             for (auto& h : hs) h(d.event, d.data.empty() ? "{}" : d.data);
+            for (auto& h : any) h(d.plugin, d.event, d.data.empty() ? "{}" : d.data);
         }
     }
 }

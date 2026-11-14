@@ -42,6 +42,9 @@ void call(const std::string& plugin, const std::string& method, const std::strin
 // Events pushed by a plugin (e.g. a purchase finished while the app was in the background).
 // Returns an id for removeListener. Listeners of all plugins: plugin == "*".
 int addListener(const std::string& plugin, EventHandler handler);
+// Events of every plugin, with the plugin's name (the client relays them to Lua: game.on('plugin', ...)).
+using AnyEventHandler = std::function<void(const std::string& plugin, const std::string& event, const std::string& dataJson)>;
+int addAnyListener(AnyEventHandler handler);   // removeListener(id) removes it
 void removeListener(int id);
 
 // game.json is read automatically on first use; these override it (tests, a launcher with several

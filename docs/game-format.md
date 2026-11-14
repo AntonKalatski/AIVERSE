@@ -1183,8 +1183,8 @@ More keys (stage 2):
 - `"conquest": {"team": true}` (BW COOP conquest): a player without anything stays in the match while a teammate
   still has a base; the whole team is out together (`victory.lua`, `rts.victory_rules().team_elimination`).
 - Rules `"ruleSets": {"league3": [timed rules]}` and map `"ruleSets": ["league3"]`: named custom rule sets switched on
-  for one match. The lobby fills the map list from the BW backend (`engine/meta/bw` route
-  `challenges.customRules` = `v/profile/customRules/get`; HeroCustomRules / league configs -> rule set ids).
+  for one match. A lobby script can also pick them per match: `game.start(i, {ruleSets = {"league3"}})` (ids that
+  exist in the rules), e.g. from what the game's own backend returned.
 - Map players `"moraleGain"` / `"moraleDecay"`: per player multipliers of morale gains (battle core) and of the
   decay timer (BW moraleIncreaseCoefficient, AI complexity increase / decrease coefficients).
 - Multiscreen maps without zones (map `screen`, routes agent): domination / king-of-the-hill points off the screen

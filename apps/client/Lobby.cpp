@@ -125,7 +125,7 @@ void GameClient::updateNet(double dt, bool& advanced) {
         switch (e.kind) {
         case K::Connected:
             net_->refreshRooms();
-            if (!pendingQueue_.empty()) { net_->joinQueue(pendingQueue_, netMaps_); pendingQueue_.clear(); }   // backend handoff
+            if (!pendingQueue_.empty()) { net_->joinQueue(pendingQueue_, netMaps_); pendingQueue_.clear(); }   // game.connect
             break;
         case K::Disconnected:
             netError_ = text;
@@ -163,16 +163,16 @@ void GameClient::updateNet(double dt, bool& advanced) {
     advanced = true;
 }
 
-// A remote meta backend (ClientMeta) matched us: connect to the battle server it named and claim the
-// seat (or the spectator place) with the ticket queue.
-void GameClient::joinBattle(const std::string& address, const std::string& queueId, bool spectator) {
+// game.connect: an external matchmaker (the game's meta backend) formed a match: connect to the game
+// server it named and join the queue it gave ("ticket:<ticket>" claims a reserved seat or a spectator
+// place, Server::reserve). The match then starts like any network match.
+void GameClient::joinServer(const std::string& address, const std::string& queueId) {
     if (netName_.empty()) netName_ = tr("lobby.default_name");
     describeNetMaps();
     net_ = std::make_unique<net::NetClient>(address, net::ClientIdentity{netName_, manifest_.getStr("id"), netKey_});
     pendingQueue_ = queueId;
     netError_.clear();
     chat_.clear();
-    (void)spectator;   // the ticket says so: the server seats spectators by itself
 }
 
 void GameClient::startNetMatch() {

@@ -1,11 +1,11 @@
 #ifndef __EMSCRIPTEN__
-#include "BwHttp.h"
+#include "PlainHttp.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 
-namespace aiverse::meta::bw {
+namespace aiverse::net {
 
 bool parseUrl(const std::string& url, UrlParts& out) {
     const size_t p = url.find("://");
@@ -75,7 +75,7 @@ bool dechunk(const std::string& body, std::string& out) {
 }
 } // namespace
 
-bool parseHttpResponse(const std::string& raw, HttpResponse& out, bool complete) {
+bool parseHttpResponse(const std::string& raw, pack::HttpReply& out, bool complete) {
     const size_t he = headEnd(raw);
     if (he == std::string::npos) return false;
     const std::string head = raw.substr(0, he - 4);
@@ -125,14 +125,14 @@ void HttpServer::update(uint64_t now) {
             if (!c.s) continue;
             const size_t he = headEnd(c.in);
             if (he != std::string::npos) {
-                HttpRequest req;
+                pack::HttpCall req;
                 const std::string head = c.in.substr(0, he - 4);
                 const size_t a = head.find(' '), b = head.find(' ', a + 1);
                 req.method = head.substr(0, a);
                 req.url = a == std::string::npos ? "/" : head.substr(a + 1, b - a - 1);
                 parseHeaders(head, req.headers);
                 const size_t len = size_t(std::strtoull(headerOf(req.headers, "content-length").c_str(), nullptr, 10));
-                HttpResponse res;
+                pack::HttpReply res;
                 bool ready = false;
                 if (len > maxBody) { res.status = 413; ready = true; }
                 else if (c.in.size() >= he + len) { req.body = c.in.substr(he, len); res = handler_(req); ready = true; }
@@ -161,25 +161,25 @@ void HttpServer::update(uint64_t now) {
 
 // ---------------------------------------------------------------- client
 
-void HttpClient::request(const HttpRequest& req, std::function<void(HttpResponse)> done) {
+void HttpClient::request(const pack::HttpCall& req, std::function<void(pack::HttpReply)> done) {
     auto j = std::make_unique<Job>();
     j->req = req;
     j->done = std::move(done);
     j->started = now_;
     UrlParts u;
-    HttpResponse fail;
+    pack::HttpReply fail;
     if (!parseUrl(req.url, u) || u.scheme != "http") {
         fail.error = "unsupported url (plain http:// only): " + req.url;
         if (j->done) j->done(fail);
         return;
     }
-    net::Address addr;
-    if (!net::Address::resolve(u.host, u.port, addr, true)) {
+    Address addr;
+    if (!Address::resolve(u.host, u.port, addr, true)) {
         fail.error = "cannot resolve " + u.host;
         if (j->done) j->done(fail);
         return;
     }
-    j->s = std::make_unique<net::TcpSocket>();
+    j->s = std::make_unique<TcpSocket>();
     if (!j->s->connect(addr)) {
         fail.error = "cannot connect to " + u.host;
         if (j->done) j->done(fail);
@@ -196,10 +196,10 @@ void HttpClient::request(const HttpRequest& req, std::function<void(HttpResponse
 void HttpClient::update(uint64_t now) {
     now_ = now;
     uint8_t buf[16384];
-    std::vector<std::pair<std::function<void(HttpResponse)>, HttpResponse>> finished;
+    std::vector<std::pair<std::function<void(pack::HttpReply)>, pack::HttpReply>> finished;
     for (auto& j : jobs_) {
         if (!j->started) j->started = now;
-        HttpResponse r;
+        pack::HttpReply r;
         bool done = false;
         if (!j->connected) {
             const int c = j->s->pollConnected();
@@ -220,9 +220,9 @@ void HttpClient::update(uint64_t now) {
                 j->in.append(reinterpret_cast<const char*>(buf), size_t(n));
             }
             if (parseHttpResponse(j->in, r, closed)) done = true;
-            else if (closed) { r = HttpResponse{}; r.error = "connection closed"; done = true; }
+            else if (closed) { r = pack::HttpReply{}; r.error = "connection closed"; done = true; }
         }
-        if (!done && now - j->started > j->req.timeoutMs) { r = HttpResponse{}; r.timeout = true; r.error = "timeout"; done = true; }
+        if (!done && now - j->started > j->req.timeoutMs) { r = pack::HttpReply{}; r.timeout = true; r.error = "timeout"; done = true; }
         if (done) {
             j->s.reset();
             finished.push_back({std::move(j->done), std::move(r)});
@@ -232,9 +232,5 @@ void HttpClient::update(uint64_t now) {
     for (auto& [cb, r] : finished) if (cb) cb(std::move(r));
 }
 
-HttpTransport HttpClient::transport() {
-    return [this](const HttpRequest& req, std::function<void(HttpResponse)> done) { request(req, std::move(done)); };
-}
-
-} // namespace aiverse::meta::bw
+} // namespace aiverse::net
 #endif

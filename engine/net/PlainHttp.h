@@ -1,7 +1,7 @@
-// Plain HTTP/1.1 over the engine's non-blocking sockets, poll-driven (no threads): enough for the
-// internal APIs between battle nodes, the matchmaker and the meta server inside one cluster, and
-// for local/dev meta hosts. No TLS: public HTTPS goes through the host's own transport (platform
-// HTTP stack or libcurl) plugged into ApiClient. Native builds only.
+// Plain HTTP/1.1 over the engine's non-blocking sockets, poll-driven (no threads): a small server and
+// client for internal APIs inside one cluster (a game server next to a matchmaker / meta backend) and
+// for local tests. No TLS: public HTTPS goes through pack::httpRequest (engine/pack/http/HttpRequest.h,
+// the platform HTTP stack). Requests and replies use its HttpCall / HttpReply. Native builds only.
 #pragma once
 #ifndef __EMSCRIPTEN__
 #include <functional>
@@ -9,17 +9,17 @@
 #include <string>
 #include <vector>
 
-#include "BwApi.h"
-#include "engine/net/Socket.h"
+#include "Socket.h"
+#include "engine/pack/http/HttpRequest.h"
 
-namespace aiverse::meta::bw {
+namespace aiverse::net {
 
 struct UrlParts { std::string scheme, host, path; uint16_t port = 0; };
 bool parseUrl(const std::string& url, UrlParts& out);   // http://host[:port]/path
 
 class HttpServer {
 public:
-    using Handler = std::function<HttpResponse(const HttpRequest&)>;   // request.url = path?query
+    using Handler = std::function<pack::HttpReply(const pack::HttpCall&)>;   // call.url = path?query
     explicit HttpServer(Handler h) : handler_(std::move(h)) {}
     bool listen(uint16_t port, bool loopbackOnly = false);
     uint16_t port() const { return listener_.localPort(); }
@@ -27,25 +27,24 @@ public:
     size_t maxBody = 1u << 20;
 
 private:
-    struct Conn { std::unique_ptr<net::TcpSocket> s; std::string in, out; uint64_t since = 0; bool responded = false; };
+    struct Conn { std::unique_ptr<TcpSocket> s; std::string in, out; uint64_t since = 0; bool responded = false; };
     Handler handler_;
-    net::TcpListener listener_;
+    TcpListener listener_;
     std::vector<Conn> conns_;
 };
 
 // Asynchronous client: request() returns at once, update() drives the sockets and calls back.
 class HttpClient {
 public:
-    void request(const HttpRequest& req, std::function<void(HttpResponse)> done);
+    void request(const pack::HttpCall& req, std::function<void(pack::HttpReply)> done);
     void update(uint64_t nowMs);
     size_t pending() const { return jobs_.size(); }
-    HttpTransport transport();   // for ApiClient (plain http:// hosts only)
 
 private:
     struct Job {
-        HttpRequest req;
-        std::function<void(HttpResponse)> done;
-        std::unique_ptr<net::TcpSocket> s;
+        pack::HttpCall req;
+        std::function<void(pack::HttpReply)> done;
+        std::unique_ptr<TcpSocket> s;
         std::string out, in;
         uint64_t started = 0;
         bool connected = false, sent = false;
@@ -55,7 +54,7 @@ private:
 };
 
 // "HTTP/1.1 200 OK\r\n..." -> response (Content-Length or read-to-close bodies; chunked bodies are decoded).
-bool parseHttpResponse(const std::string& raw, HttpResponse& out, bool complete);
+bool parseHttpResponse(const std::string& raw, pack::HttpReply& out, bool complete);
 
-} // namespace aiverse::meta::bw
+} // namespace aiverse::net
 #endif

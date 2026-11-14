@@ -1,7 +1,7 @@
 // Request/response HTTP(S) on the same per-platform stacks as the chunk fetcher (fetchHttp):
 // libcurl (Linux, dlopen), NSURLSession (macOS/iOS), HttpURLConnection over JNI (Android), WinHTTP
 // (Windows), fetch() (web). Any method, headers and body; the reply keeps status, headers and body
-// in memory. Used by remote meta backends (engine/meta/bw). Not for simulation code.
+// in memory. Used by adapters to remote backends (a game's native code). Not for simulation code.
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -29,6 +29,17 @@ struct HttpReply {
 // calls done exactly once: natively from that thread, on the web from the main loop. False (and
 // done not called) when this build has no HTTP stack.
 bool httpRequest(const HttpCall& call, std::function<void(HttpReply)> done);
+
+// Header value by name (case-insensitive), "" if absent.
+inline std::string headerValue(const std::vector<std::pair<std::string, std::string>>& headers, const std::string& name) {
+    for (auto& [k, v] : headers) {
+        if (k.size() != name.size()) continue;
+        bool same = true;
+        for (size_t i = 0; i < k.size() && same; ++i) same = (k[i] | 0x20) == (name[i] | 0x20) || k[i] == name[i];
+        if (same) return v;
+    }
+    return {};
+}
 
 // "Name: value\r\n..." -> pairs (shared by the platform implementations).
 inline void parseHeaderBlock(const std::string& raw, std::vector<std::pair<std::string, std::string>>& out) {

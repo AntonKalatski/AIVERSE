@@ -207,7 +207,7 @@ void table(lua_State* L, Ctx* c, const char* name, std::initializer_list<luaL_Re
 
 struct ClientServices::Impl {
     Ctx ctx;
-    int socialId = 0, pushId = 0, linkId = 0;
+    int socialId = 0, pushId = 0, linkId = 0, pluginId = 0;
 };
 
 ClientServices::ClientServices() = default;
@@ -240,6 +240,15 @@ void ClientServices::attach(lua_State* L, std::shared_ptr<bool> alive, std::func
     };
     impl_->socialId = social::onEvent(relay("social"));
     impl_->pushId = push::onEvent(relay("push"));
+    // Events of every plugin (a game's native plugin talks back with plugins::emit): game.on('plugin', fn{plugin,event,data})
+    impl_->pluginId = plugins::addAnyListener([c](const std::string& plugin, const std::string& ev, const std::string& data) {
+        if (!*c->alive || !c->emit) return;
+        Json j = Json::object();
+        j.set("plugin", Json::string(plugin));
+        j.set("event", Json::string(ev));
+        try { j.set("data", Json::parse(data)); } catch (...) { j.set("data", Json()); }
+        c->emit("plugin", j);
+    });
     impl_->linkId = links::onLink([c](const links::Link& l) { if (*c->alive && c->emit) c->emit("link", linkJson(l)); });
 }
 
@@ -248,6 +257,7 @@ void ClientServices::detach() {
     social::removeListener(impl_->socialId);
     push::removeListener(impl_->pushId);
     links::removeListener(impl_->linkId);
+    plugins::removeListener(impl_->pluginId);
     impl_.reset();
 }
 
