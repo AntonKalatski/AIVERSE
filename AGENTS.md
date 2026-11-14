@@ -86,6 +86,46 @@ the *engine* add mechanics generically — never a special case for one game.
   readable errors (`type 'x': unknown resource 'y'`). Old game files must keep loading.
 - When a fixed block can't express something, extend the trigger system (`RtsTriggers`) instead
   of special-casing a game.
+- **Keep a game's rules.json small** (games, importers, the wizard, MCP agents; docs/game-format.md
+  § Splitting rules.json). One file holding the whole game grows to hundreds of KB that nobody (and no
+  agent context) can read:
+  - split by topic with `"include"` (`rules/units.json`, `rules/abilities.json`, `rules/ai.json`, ...);
+    a collection may span files (half the types in one, half in another), each key / id lives in one file;
+  - shared values go into an `"abstract": true` base and entries `"extends"` it, instead of copying
+    the same health / move / cost / effects block into every type or ability;
+  - `levels` hold only what changes per level (they merge into the base entry); never a full copy;
+  - importer provenance (source paths, client ids) goes into the game's sidecar files, not into rules;
+  - don't write values equal to the engine defaults.
+  Readers of rules go through `readComposedJson` / `composeJson` (`engine/data/JsonCompose.h`), never
+  `Json::parseFile(rules.json)`; data hashes use `hashGameData`. The editor saves each entry back to
+  the file it came from.
+
+**Games stay out of the engine repo (owner's rule, all agents):**
+- A concrete game project (a port, a commercial game, the owner's or a user's project) is never
+  committed here: not as `templates/<game>`, not as data dumps in `tests/`, `tools/` or `docs/`.
+  `templates/` holds only the engine's own sample games. A game lives in its own folder with its
+  own git repository outside the engine checkout (the owner's projects: on the external drive,
+  e.g. `/Volumes/KINGSTON/<Project>/games/<game>`); scratch and test games go next to it, not here.
+- Game-specific code lives only in the game project: C++ in `<project>/native/` as native modules
+  (`docs/native-modules.md`, `aiverse_native_module`, rules.json `nativeModules`,
+  `aiverse_native_use_meta` for a meta backend), platform SDKs as plugins (`docs/plugins.md`).
+  This covers bots / AI ports, backend and meta adapters, server stats, importers and converters
+  of that game's assets, its skills / modes / map actors, HUD and tutorial glue, input schemes,
+  its docs and its tests.
+- The engine gets only generic, game-agnostic mechanics and extension points. If the native
+  module API lacks a hook, add a small generic one (documented in `docs/native-modules.md`, with a
+  synthetic test) and implement the game part in the project. No game names in engine
+  identifiers, file names, JSON keys, CMake targets, docs or AGENTS.md rows.
+- The engine must build and pass every test without any external game. A test that needs a real
+  game takes its folder from an environment / CMake variable and skips when it is absent;
+  per-game checksum baselines live in the game's folder, not in `tests/checksums/baseline.txt`.
+- Importers and tools never write into `templates/` by default: the game folder is an explicit
+  argument.
+- Branches and worktrees of game work are not created in the engine repository. Keep them in the
+  project's own repository (it may fetch the engine's `main` as a remote); only generic engine
+  changes come back to the engine, through the integrator.
+- Found game-specific code already in the engine? Move it out to the project (see commit
+  "Move the Drone Fall backend adapter out of the engine") instead of extending it.
 
 **Licenses/assets:** only vendor code/assets with permissive licenses and keep their license files.
 Original assets of commercial games are never committed; importers read them from the user's own
@@ -255,6 +295,7 @@ the commit message; prefer adding a new file over editing a shared one.
 | Procedural decorative cables | `engine/cables`, `tests/cables`, `examples/cables`, `docs/cables.md`; minimal modeling/editor/CMake hooks | codex/cable-module (user assigned) |
 | Contact-hardening sun shadows | `engine/render/{Shaders.h,Renderer3D*,ScreenLighting.cpp}`, `tests/render/ContactShadowScene.h`, shared HDR test fixture, `docs/game-format.md` | codex/contact-shadows (user assigned) |
 | Third-party license audit and automatic game notices | `third_party/notices.json`, `platform/cmake/*Notices.cmake`, packaging hooks and `tests/notices` | codex/third-party-notices |
+| Rules split over files and inheritance: rules.json `include`, entry `extends` / `abstract`, write-back of edits to their files, data hashes over every rules file | `engine/data/JsonCompose.*`, `tests/tests_rules_split.inc`, docs/game-format.md § Splitting rules.json; hooks: `loadRules` / `RtsModule::setup` (resolve extends), `hashGameData` (`engine/sim/Replay`), rules readers in client / Lobby / headless / server / battle / city / aiversebuild / i18n / fps `Project.h` / view (`RtsView`, `RtsTerrainRender`, `RtsGroundFx`), editor `Project` (`rulesOrigin`, `saveRules`, `rulesFiles`), `rules_get` (`resolved`, `files`), `game_file_write` guard, `lintGameData`, game wizard | main agent |
 | Other areas | as assigned by the user | the agent the user assigned |
 | Bunker Wars energy skills: skill objects (`origins`/`consume`, `goal`, `onArrive`/`onExpire`/`onDeath`, `pull`), BW skill converter + modificator table | `modules/rts/RtsSkillObjects.cpp`, `tools/importers/bunkerwars/skills/`, `docs/bunkerwars-skills.md`, `tests/tests_skillobjects.inc`; hooks: `RtsEffects.cpp` (area / projectile spawn), `RtsUnits.cpp` (Enter), `RtsCombat.cpp` (deaths), `RtsSave.cpp` | agent-bw-skills (MAIN merges) |
 
