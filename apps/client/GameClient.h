@@ -7,6 +7,9 @@
 #include "UiModel.h"
 #include "modules/rts/view/EntityActionControls.h"
 #include "modules/rts/view/TopDownControls.h"
+#include "modules/rts/view/TopDownPrediction.h"
+#include <chrono>
+#include "engine/splash/SplashScreen.h"
 #include <array>
 #include <functional>
 #include <map>
@@ -30,6 +33,7 @@
 #include "engine/services/Store.h"
 #include "engine/sim/Simulation.h"
 #include "engine/ui/UiLayer.h"
+#include "engine/world/WorldScene.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsLocalize.h"
 #include "modules/rts/RtsModule.h"
@@ -94,6 +98,9 @@ public:
     // Startup in steps, one per frame, so the splash screen (ClientSplash.h) keeps animating.
     static constexpr int kInitSteps = 6;
     void initStep(gfx::Device& dev, int step);
+    void drawLoadingStatus(gfx::Device& dev, double dt, float progress, const std::string& label);
+    std::string initLabel(int step) const;
+    bool mapLoading() const { return mapLoading_; }
     static float initWeight(int step);   // share of the loading progress bar
     void frame(gfx::Device& dev, double dt);
     void event(const platform::Event& e);
@@ -112,7 +119,7 @@ public:
     // instead of the screen; the host also sets platform::setHostedView around every call.
     void setHostTarget(gfx::TextureHandle color, gfx::TextureHandle depth, int w, int h) { hostColor_ = color; hostDepth_ = depth; hostW_ = w; hostH_ = h; }
     Simulation* simulation() { return sim_.get(); }
-    bool inMatch() const { return sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
+    bool inMatch() const { return !mapLoading_ && sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
     const std::string& errorText() const { return error_; }
 
 private:
@@ -120,6 +127,26 @@ private:
     enum class Mode { Normal, AttackMove, Patrol, Place, Rally, Ability, Claim, Skill, Dig, Undig, Room, Road, Unroad, Drop, ScriptCmd };
 
     void startMatch(size_t idx, const Json& initialVars = Json());
+    std::function<void(uint16_t)> typeAssetLoader_;
+    void configureLoading();
+    void updateBackgroundLoading();
+    bool ensureLocalAssets();
+    float assetRadius() const;
+    float assetDistance(const SceneObject& object) const;
+    float initialAssetRadius_ = 0;
+    std::vector<uint16_t> backgroundTypes_;
+    int backgroundType_ = -1;
+    size_t loadingStalls_ = 0;
+    size_t backgroundRemaining_ = 0;
+    void beginMapLoading();
+    void frameMapLoading(gfx::Device& dev, double dt);
+    bool mapLoading_ = false, mapJustLoaded_ = false, loadingPrimed_ = false;
+    bool startupReported_ = false;
+    std::chrono::steady_clock::time_point startupStarted_ = std::chrono::steady_clock::now();
+    splash::SplashScreen loadingSplash_;
+    std::vector<uint16_t> loadingTypes_, warmingTypes_;
+    size_t loadingCursor_ = 0;
+    std::chrono::steady_clock::time_point loadingStarted_;
     void fitCamera();
     // planet maps (ClientPlanet.cpp): orbit camera input, picking through RtsView; flat maps never get here
     bool planet() const { return view_.planetMode(); }
@@ -208,8 +235,24 @@ private:
     void topDownFrame(double dt);    // input -> kCmdTopDown / kCmdTopDownAbility
     void topDownCamera(double dt);   // after the scene is built (interpolated hero position)
     void topDownDraw();              // screen canvas: sticks and buttons
+    void topDownPresent(double dt, float alpha);   // after sceneFromSim: local hero prediction + rollback smoothing
+    bool topDownPaused() const;      // single player: the escape preview pauses the match (rules topDown.escape.pause)
+    bool topDownPassable(Entity hero, float x, float z);
+    game::TopDownPrediction::Positions topDownPositions();   // heroes + squads (rollback hook)
     game::TopDownControls topDown_;
+    game::TopDownPrediction tdPredict_;
+    topdown::Input tdInput_;         // the input composed this frame (prediction)
+    net::RollbackSession* tdHooked_ = nullptr;
     bool tdMouseHeld_ = false, tdFireHeld_ = false;
+    // ClientCommerce.cpp: the city economy (rules "commerce"): the deals at the door in front of the hero
+    struct CommerceChoice { std::string label; game::CommerceOp op; int premise; int64_t value; int career = -1; };
+    int commerceDoor();
+    std::vector<CommerceChoice> commerceChoices(int premise, std::string& title);
+    bool commerceKey(platform::Key key);
+    void commerceTop(std::vector<UiItem>& top);
+    bool comMenu_ = false;
+    float tdClock_ = 0;                                  // seconds of top-down frames (aim-assist taps, lock marker)
+    std::vector<game::TopDown::AimCandidate> tdTargets_; // aim assist: what the hero could shoot this frame
     void drawToolPreview();
     // localization (presentation only: rules_ is the display copy, the sim loads its own rules)
     void applyLanguage(const std::string& tag, bool save);
@@ -270,6 +313,9 @@ private:
     Minimap minimap_;
 
     Renderer3D r3d_;
+    // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
+    std::unique_ptr<world::WorldScene> worldScene_;
+    int worldRadius_ = 2;
     render::PostFx postFx_;               // post-processing: game.json / map "postfx" (engine/render/PostFx.h)
     render::PostFxQuality postFxBase_ = render::PostFxQuality::Medium;   // tier before the governor stepped down
     void configurePostFx(const Json& map);
@@ -282,6 +328,9 @@ private:
     bool padInjecting_ = false;
     float padPanX_ = 0, padPanY_ = 0;
     void updateGamepad(float dt);
+    void runPadAction(const ClientGamepad::Action& a);   // ClientGamepadHost.cpp
+    void openPadLua(lua_State* L);                       // game.sendPercent (ClientGamepadHost.cpp)
+    bool padAiming_ = false; float padOriginX_ = 0, padOriginY_ = 0;
     void drawGamepadCursor();             // social / push / links Lua tables (ClientServices.cpp, agent-bw-client)                   // Spine skeletons in UI documents (ClientSpine.cpp, agent-bw-client)
     ClientFx fx_;                         // particle effects (ClientFx.cpp)
     game::ViewScripts viewScripts_;       // rules "viewScripts" (docs/scripting.md): notices / effects / sounds
@@ -294,6 +343,8 @@ private:
     game::ScriptSound* scriptSound_ = nullptr;          // set once the audio engine is up
     std::vector<Entity> heardSelection_;  // selection when the last select sound played
     RTSCamera cam_;
+    aiverse::Vec2 screenSize_{};        // map screen being framed (BW multiscreen)
+    bool screenFramed_ = false;
     Json manifest_, rulesJson_;
     std::vector<MapEntry> maps_;
     std::string gameName_ = "AIVERSE";
@@ -313,6 +364,11 @@ private:
     Screen screen_ = Screen::Menu;
     std::unique_ptr<Simulation> sim_;
     std::unique_ptr<net::NetClient> net_;     // after sim_: destroyed first, so it never outlives the sim it drives
+    struct CityLink;                          // a persistent city on a server (ClientCity.cpp, docs/city-server.md)
+    std::shared_ptr<CityLink> city_;          // after sim_ too; reset before the simulation it shows the city in
+    void cityPrepare(Json& rules, Json& map);
+    void cityAttach();
+    float cityFrame(double dt);
     std::vector<RtsAI> bots_;
     RtsScene scene_;
     uint8_t human_ = 1;

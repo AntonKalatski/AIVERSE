@@ -58,7 +58,7 @@ void RtsModule::sysEconomy(Simulation& sim) {
         p.typeCount[u.type]++;
         // power deficits switch off tagged objects (defences, radar, factories)
         const bool off = (t.tags & p.disabledTags) != 0 || (mechOn(sim) && mechSwitchedOff(sim, e));   // + agent-mech: unpowered / unstaffed
-        if (off) u.flags |= kUnitDisabled; else u.flags &= uint8_t(~kUnitDisabled);
+        if (off) u.flags |= kUnitDisabled; else u.flags &= kKeepFlags(~kUnitDisabled);
         p.supplyCap += t.supplyProvided;
         for (auto& a : t.storage) p.cap[a.res] += a.value;
         for (auto& a : t.provides) p.capProvided[a.res] += a.value;
@@ -235,6 +235,7 @@ void RtsModule::sysProduction(Simulation& sim) {
             ensureTypeComponents(w, d.producer, nt);
             sim.emit({kEvUpgraded, d.owner, d.producer, kNullEntity, type, w.get<Transform>(d.producer).pos});
             if (rules_.originals) gainOn(sim, d.owner, &ResourceDef::gainUpgrade, kOne);
+            if (rules_.core.any) coreUpgraded(sim, d.owner, type);   // battle core (RtsCore.cpp)
             continue;
         }
         if (nt.structure) {
@@ -318,7 +319,7 @@ void RtsModule::sysConstruction(Simulation& sim) {
     });
     for (Entity e : finished) {
         Unit& u = w.get<Unit>(e);
-        u.flags &= uint8_t(~kUnitUnderConstruction);
+        u.flags &= kKeepFlags(~kUnitUnderConstruction);
         w.remove<Construction>(e);
         if (auto* inv = w.tryGet<Inventory>(e)) { // materials are used up
             const UnitType& t = rules_.types[u.type];
@@ -338,32 +339,85 @@ void RtsModule::sysGarrison(Simulation& sim) {
     struct Release { Entity from, target; uint16_t unit; uint8_t owner; Fixed radius; uint32_t group = 0; };
     std::vector<Release> releases;
     const bool adv = rules_.advancedEffects;
+    // `collect` statuses (BW PointsRedirectProduction): one receiver per player, the newest; the others hand their pool over
+    std::vector<std::pair<Entity, StatusInst*>> collector(256, {kNullEntity, nullptr});
+    if (adv && rules_.anyCollect) {
+        std::vector<std::pair<Entity, StatusInst*>> all;
+        w.each<Statuses, Garrison, Owner>([&](Entity e, Statuses& st, Garrison&, Owner& o) {
+            for (auto& in : st.list)
+                if (rules_.statuses[in.def].collect && in.owner == o.player && in.owner < collector.size()) all.push_back({e, &in});
+        });
+        for (auto& c : all) {   // entity order is deterministic; the newest (latest `until`, then highest id) wins
+            auto& best = collector[c.second->owner];
+            if (!best.second || c.second->until > best.second->until || (c.second->until == best.second->until && c.first.index > best.first.index)) best = c;
+        }
+        for (auto& c : all)
+            if (collector[c.second->owner].second != c.second) { collector[c.second->owner].second->acc += c.second->acc; c.second->acc = Fixed{}; c.second->until = sim.tick(); }
+    }
+    const std::vector<Fixed> coreRate = coreGrowthRates(sim);   // battle core: production slows with the army (empty: off)
     w.each<Garrison, Unit, Owner>([&](Entity e, Garrison& g, Unit& u, Owner& o) {
         const UnitType& t = rules_.types[u.type];
         if (u.flags & kUnitUnderConstruction) return;
         // environment (off-screen production) and multiscreen (BW HouseModule.GetIncreaseRate): points off the screen do not grow
         const bool grows = (!env_ || !env_->active() || env_->producing(sim, e)) && (!screen_.enabled || onScreen(sim, w.get<Transform>(e).pos));
         if (!grows) {}
+        else if (o.player == 0 && rules_.core.neutralGrowth && t.spawnInterval.raw > 0) {
+            // battle core: neutral garrisons grow up to their neutral maximum (BW HouseModule, rate 1)
+            const int mx = coreNeutralMax(sim, e, t);
+            if (g.count < mx) {
+                g.growth += dt / t.spawnInterval;
+                while (g.growth >= kOne && g.count < mx) { ++g.count; g.growth -= kOne; }
+                if (g.count >= mx) g.growth = Fixed{};
+            } else g.growth = Fixed{};
+        }
         else if (adv && o.player != 0 && t.spawnInterval.raw > 0) {
             // effects: lock stops production, production speed / cap stats, redirect sends the growth elsewhere
             if (statusFlags(sim, e) & kStLock) return;
             int cap = int(stat(sim, e, Stat::GarrisonCap).floorInt());
+            if (o.player < collector.size() && collector[o.player].second && collector[o.player].first != e) {
+                // BW RedirectProduction.SendUnits: the normal delta goes to the pool; a growing house adds addUnitsPerSecond instead
+                StatusInst& pool = *collector[o.player].second;
+                Fixed rate = stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval;
+                if (!coreRate.empty() && o.player < coreRate.size()) rate = rate * coreRate[o.player];   // battle core: Player.GetIncreaseRate
+                const Fixed delta = g.count < cap ? dt * rate : Fixed{};   // HouseModule: 0 when it cannot grow
+                pool.acc += delta;
+                if (delta.raw > 0) {
+                    g.growth += dt * rules_.statuses[pool.def].collectAdd;
+                    while (g.growth >= kOne) { ++g.count; g.growth -= kOne; }
+                } else if (g.count > cap) {
+                    g.growth -= dt * t.garrisonDecay;
+                    while (g.growth <= -kOne && g.count > cap) { --g.count; g.growth += kOne; }
+                }
+            } else {
+            if (o.player < collector.size() && collector[o.player].first == e) {
+                // ReceiveUnits: the pool joins the receiver's own production (no cap, as BW adds the delta)
+                StatusInst& pool = *collector[o.player].second;
+                g.growth += pool.acc; pool.acc = Fixed{};
+                while (g.growth >= kOne) { ++g.count; g.growth -= kOne; }
+            }
             Garrison* into = &g;
             if (auto* st = w.tryGet<Statuses>(e))
                 for (auto& in : st->list)
                     if (in.def == uint16_t(rules_.stRedirect) && w.alive(in.link) && w.has<Garrison>(in.link)) into = &w.get<Garrison>(in.link);
             if (into->count < cap || into != &g) {
                 g.growth += dt * stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval;
-                while (g.growth >= kOne && (into != &g || into->count < cap)) { ++into->count; g.growth -= kOne; }
+                if (!coreRate.empty() && o.player < coreRate.size()) g.growth -= dt * stat(sim, e, Stat::ProductionSpeed) / t.spawnInterval * (kOne - coreRate[o.player]);
+                int made = 0;
+                while (g.growth >= kOne && (into != &g || into->count < cap)) { ++into->count; g.growth -= kOne; ++made; }
+                if (made) bwNoteProduced(sim, e, made);   // agent-bw-ai: per point produced units (match stats)
                 if (into == &g && g.count >= cap) g.growth = Fixed{};
             } else if (g.count > cap) {
                 g.growth -= dt * t.garrisonDecay;
                 while (g.growth <= -kOne && g.count > cap) { --g.count; g.growth += kOne; }
             } else g.growth = Fixed{};
+            }
         } else if (o.player != 0 && t.spawnInterval.raw > 0) {
             if (g.count < t.garrisonMax) {
                 g.growth += dt / t.spawnInterval;
-                while (g.growth >= kOne && g.count < t.garrisonMax) { ++g.count; g.growth -= kOne; }
+                if (!coreRate.empty() && o.player < coreRate.size()) g.growth -= dt / t.spawnInterval * (kOne - coreRate[o.player]);
+                int made = 0;
+                while (g.growth >= kOne && g.count < t.garrisonMax) { ++g.count; g.growth -= kOne; ++made; }
+                if (made) bwNoteProduced(sim, e, made);   // agent-bw-ai
                 if (g.count >= t.garrisonMax) g.growth = Fixed{};
             } else if (g.count > t.garrisonMax) {
                 g.growth -= dt * t.garrisonDecay;
@@ -393,7 +447,10 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
         Vec3 from = w.get<Transform>(r.from).pos, to = w.get<Transform>(r.target).pos;
         if (rules_.lanes.enabled) {
             // Mushroom Wars 2: spread over the generated lanes round-robin, follow the lane strictly
-            std::vector<int> lanes = lanesBetween(sim, r.from, r.target);
+            // authored routes: the open route's lines, or a flying route from a flying garrison (RtsRoutes.cpp)
+            const bool authored = routesAuthored();
+            std::vector<int> lanes = !authored ? lanesBetween(sim, r.from, r.target)
+                                   : (rules_.advancedEffects && (statusFlags(sim, r.from) & kStFlying)) ? flyingLanes(sim, r.from, r.target) : routeLanes(sim, r.from, r.target, false);
             if (!lanes.empty()) {
                 if (gs.laneRoundRobin.size() <= r.from.index) gs.laneRoundRobin.resize(r.from.index + 1, 0);
                 uint32_t& rr = gs.laneRoundRobin[r.from.index];
@@ -404,7 +461,7 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
                 // start at the first lane point outside the source footprint
                 uint16_t pos = 0;
                 auto& f = w.get<Footprint>(r.from);
-                while (pos + 1u < L.points.size()) {
+                while (!authored && pos + 1u < L.points.size()) {   // BW routes start at the point itself
                     Vec3 p = L.points[reverse ? L.points.size() - 1 - pos : pos];
                     int cx, cy; gs.grid.cellXY(p, cx, cy);
                     if (cx < f.x || cy < f.y || cx >= f.x + f.w || cy >= f.y + f.h) break;
@@ -414,6 +471,7 @@ Entity RtsModule::releaseUnit(Simulation& sim, Entity from, Entity target, uint1
                 Entity n = spawn(sim, r.unit, r.owner, start);
                 if (!w.has<Orders>(n)) return n;
                 w.add<LaneWalker>(n, LaneWalker{lane, pos, reverse});
+                startRouteWalk(sim, n, lane);
                 tagGroup(n, r);
                 Order ord;
                 ord.type = OrderType::Enter; ord.target = r.target; ord.point = flat(to); ord.state = 3; // 3 = lane walk
@@ -453,6 +511,7 @@ void RtsModule::tagReleased(Simulation& sim, Entity n, uint32_t group, Entity fr
             addStatus(sim, n, in.def, left, ctx);
         }
     }
+    onUnitReleased(sim, from, n);   // onSpawn payloads, hypnosis (RtsSkillObjects.cpp)
 }
 
 } // namespace aiverse::game

@@ -21,6 +21,7 @@
 namespace aiverse::render {
 
 class MeshBuilder;
+class ModelTextureCache;
 struct GeometryData;
 
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
@@ -64,6 +65,10 @@ struct Material {
 };
 
 struct Image {
+    std::shared_ptr<ModelTextureCache> textureCache;
+    std::string textureKey;
+    std::shared_ptr<int> textureLease;
+    std::shared_ptr<const std::vector<uint8_t>> sharedRgba;
     std::string name;               // file name or "#index" for embedded images
     int width = 0, height = 0;
     std::vector<uint8_t> rgba;      // CPU copy, released after upload
@@ -108,6 +113,13 @@ struct Primitive {
     bool shadowBatched = false;          // cast through MeshDef::shadowBatch instead of its own shadow draw
 };
 
+// Rigid opaque primitives sharing state/textures; per-vertex weights[0] selects full-float PBR factors.
+constexpr size_t kMaxMaterialPalette = 64;
+struct MaterialBatch {
+    Primitive primitive;
+    std::vector<size_t> parts;
+};
+
 struct ModelLod { int mesh = -1; float maxPixels = 0; };
 
 struct MeshDef {
@@ -118,6 +130,7 @@ struct MeshDef {
     // One index range covering the shadowBatched primitives (contiguous, opaque, same culling):
     // drawn once in shadow passes instead of each part. Not part of `primitives`. indexCount 0 = none.
     Primitive shadowBatch;
+    std::vector<MaterialBatch> materialBatches;
     float3 boundsMin, boundsMax;
     bool deformable = false;
 };
@@ -171,6 +184,7 @@ struct ModelLight {
 };
 
 struct Model {
+    bool uploadPrepared = false;
     std::shared_ptr<GeometryData> geometry;
     std::string path;
     std::vector<Node> nodes;
@@ -197,6 +211,7 @@ struct Model {
         float fps = 30;
         struct Clip { int firstRow = 0, frames = 1; };
         std::vector<Clip> clips;
+        std::vector<float> pending; // optional CPU preparation by a loading worker; freed after upload
     } baked;
 
     int findNode(const std::string& name) const;
@@ -213,7 +228,7 @@ using FileReader = std::function<bool(const std::string& path, std::string& out)
 // Loads .gltf / .glb / .obj / .fbx by extension. Throws std::runtime_error with a readable message
 // ("models/knight.glb: accessor 3 out of range"). Unsupported optional features are reported in
 // `warnings` and skipped (morph targets, compressed meshes fall back to an error).
-std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read, std::vector<std::string>* warnings = nullptr);
+std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read, std::vector<std::string>* warnings = nullptr, std::shared_ptr<ModelTextureCache> textures = {});
 std::unique_ptr<Model> loadGltf(const std::string& path, const std::string& bytes, const FileReader& read, std::vector<std::string>* warnings);
 std::unique_ptr<Model> loadObj(const std::string& path, const std::string& text, const FileReader& read, std::vector<std::string>* warnings);
 // FBX (binary / ASCII) through ufbx; converted to Y up, right-handed, metres.
@@ -255,7 +270,9 @@ std::unique_ptr<Model> modelFromParts(const std::string& name, const std::vector
 void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& idx, uint32_t first, uint32_t count);
 
 // GPU resources. Textures get mipmaps. CPU copies are released unless keepCpu.
+void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false);
+bool readModelImage(const std::string& path, const FileReader& read, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
 void releaseModel(gfx::Device& dev, Model& m);
 

@@ -1,3 +1,4 @@
+#include "engine/render/ModelTextureCache.h"
 // Presentation for the generic RTS module, shared by the game client and the editor.
 // Objects are drawn from their type's "view" block in rules.json, e.g.
 //   "view": { "shape": "soldier", "scale": 1.0, "color": [0.8, 0.7, 0.5] }
@@ -10,10 +11,16 @@
 //   units:      worker, soldier, ranged, vehicle, tank, flyer, mushroom, generic
 //   structures: hall, house, barracks, workshop, factory, tower, mine, tree, rock, mushroomhouse, structure
 #pragma once
+namespace kingston { class TowHost; }
+namespace kingston { class BulletFxHost; }
+namespace kingston { struct CabinResidentDraw; }
 #include "engine/render/GeometryScene.h"
 #include <algorithm>
 #include <map>
 #include <memory>
+#ifndef __EMSCRIPTEN__
+#include <future>
+#endif
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -46,12 +53,17 @@ struct SceneObject {
     int16_t teamOwner = -1;       // presentation-only override; -1 follows entity owner
     uint8_t colorOwner() const { return teamOwner < 0 ? owner : uint8_t(teamOwner); }
     render::float3 pos, facing{1, 0, 0};
+    bool parented = false;
+    render::mat4 parentFrame; // resolved visual frame, including inherited tilt/scale
+
     float hp = 1;                // 0..1
     float build = 1;             // construction progress 0..1
     int garrison = -1;           // shown when >= 0
     float carry = 0;             // > 0: carrying resources
+    std::string heldWeapon; bool weaponAim=false; // Kingston selected arsenal item
     int16_t carryRes = -1;       // resource index of the cargo
     bool selected = false, hovered = false, visible = true, isProjectile = false;
+    float fade = 1;              // 0..1 opacity from the sim (route walkers fade at the route ends, BW SubSpline.GetAlpha)
     bool unpowered = false;      // disabled by a power deficit / owner in low power (electric lights dim)
     uint8_t action = 0;          // SpriteAction (sprite animations): idle, move, attack, work
     // animation hints (sceneFromSim fills them; editor placements leave the defaults)
@@ -59,6 +71,7 @@ struct SceneObject {
     bool moving = false;
     bool producing = false;      // structure training / researching
     bool hasTarget = false;      // combat target (turrets aim at it)
+    float steer = 0;             // vehicles (rules "driving"): steering angle of the front wheels, rad, + = left
     render::float3 target;
     Entity source;               // projectiles: who fired (muzzle point)
     uint16_t shooterType = UINT16_MAX; // projectiles: type of the unit that fired it (lights)
@@ -73,6 +86,7 @@ struct RtsScene {
     // view.entity_fx overrides (scale, opacity, colour) by entity; null = none (EntityFx.h)
     std::shared_ptr<EntityFxStore> entityFx;
     std::vector<SceneObject> objects;
+    std::map<uint64_t, render::mat4> entityFrames; // optional final frames supplied by a native presentation host
     std::vector<std::pair<render::float3, render::float3>> roads;
     std::vector<render::float3> moveMarkers;
     // events of the last simulation tick (attacks, hits, deaths, spawns) for animations; `tick`
@@ -115,9 +129,38 @@ struct ViewEffect {
 };
 
 class RtsView {
+    friend class ::kingston::TowHost;
+    friend class ::kingston::BulletFxHost;
+    friend struct ::kingston::CabinResidentDraw;
 public:
     // reader: content files (models, textures); default platform::readContentFile.
     bool init(gfx::Device& dev, const Rules& rules, render::FileReader reader = {});
+    // Clients defer type assets until a map uses them; editor/model viewers remain eager.
+    void setDeferredLoading(bool on) { deferredLoading_ = on; }
+    bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
+    void loadType(uint16_t type);
+    void trimTypes(const std::vector<bool>& keep, bool compact = false);
+    bool typeCurrent(uint16_t t) const { return typeLoaded(t) && requestedModels_[t]==loadedModels_[t]; }
+    bool detailRequested(uint16_t t) const { return t<requestedModels_.size() && requestedModels_[t].empty(); }
+    void requestDetail(uint16_t type, bool detailed);
+    bool warmPipelines(render::Renderer3D& renderer, uint16_t type);
+    void setStreamingTypes(bool enabled) { streamingTypes_ = enabled; }
+    std::shared_ptr<render::ModelTextureCache> textureCache() const { return textureCache_; }
+    // An independent, worker-safe reader enables CPU decoding off the render thread.
+    void setAsyncReader(render::FileReader reader) { asyncReader_ = std::move(reader); }
+    bool prepareType(uint16_t type, bool allVariants = false);
+    void streamModelVariants(double budgetMs = 2);
+    size_t pendingModelVariants() const;
+    size_t modelChoiceCount(uint16_t type) const { return type < looks_.size() ? looks_[type].models.size() : 0; }
+    float typePreparationProgress() const {
+#ifndef __EMSCRIPTEN__
+        return preparePaths_.empty() ? 0.0f : float(prepareCursor_) / float(preparePaths_.size());
+#else
+        return 0.0f;
+#endif
+    }
+    const std::string& preparingResource() const { return preparingResource_; }
+    std::string typeResource(uint16_t type) const;
     void shutdown(gfx::Device& dev);
     // Terrain from the grid (chunked: only chunks whose cells changed are rebuilt); call again after
     // the editor changes the grid. Resource fields / creep changing in a match need no call (the
@@ -149,7 +192,7 @@ public:
     float heightAt(const MapGrid& grid, float x, float z) const;
     // Problems found while loading view blocks ("type 'knight': models/knight.glb: file not found").
     const std::vector<std::string>& warnings() const { return warnings_; }
-    const render::Model* modelOf(uint16_t type) const;
+    const render::Model* modelOf(uint16_t type, size_t choice = 0) const;
     const std::vector<ViewEvent>& events() const { return events_; }
     const std::vector<ViewEffect>& effects() const { return effects_; }
     void setSelectionOutline(bool on) { outline_ = on; }
@@ -248,7 +291,9 @@ private:
         struct BlendPoint { int clip; float speed; };
         std::vector<BlendPoint> blend;                      // blend space by speed (move / carry)
     };
+    struct WeaponPose { std::string weapon; int hold=-1,aim=-1,attack=-1; };
     struct Attachment {
+        std::string weapon;
         render::Model* model = nullptr;
         std::vector<render::Material> materials;
         int node = -1;                 // socket node of the host model (-1: object origin)
@@ -274,6 +319,7 @@ private:
         bool baked = false;                       // skinned from the baked clip texture (instanced crowds)
         int variant = -1;                         // KHR_materials_variants index
         std::vector<Attachment> attach;
+        std::vector<WeaponPose> weaponPoses; int weaponMask=-1;
         std::vector<Fx> fx;
         std::vector<AdditiveSpec> additive;
         std::vector<LegIK> legs;
@@ -285,6 +331,8 @@ private:
     struct Stage { float build = -1, hp = -1; ModelChoice choice; };
     enum class Construction : uint8_t { Grow, Dissolve, Stages };
     struct TypeLook {
+        std::vector<size_t> pendingVariants;
+        size_t nextVariant = 0;
         std::vector<ModelChoice> models;          // variants (picked per object)
         std::vector<ModelChoice> lods;            // farther LODs of models[0] (increasing distance)
         std::vector<Stage> stages;                // construction / damage replacements
@@ -381,12 +429,28 @@ private:
 
     const Rules* rules_ = nullptr;
     render::FileReader read_;
+    std::shared_ptr<render::ModelTextureCache> textureCache_ = std::make_shared<render::ModelTextureCache>();
     Json materialLib_ = Json::object();   // materials.json "materials"
     gfx::Device* dev_ = nullptr;
     std::map<std::string, std::unique_ptr<render::Model>> models_;  // by path; shapes as "shape:<name>"
     render::GeometryScene geometryScene_;
     std::vector<TypeLook> looks_;
+    std::vector<bool> loadedTypes_;
+    std::vector<std::string> requestedModels_, loadedModels_;
+    bool deferredLoading_ = false, streamingTypes_ = false;
+    render::FileReader asyncReader_;
+    std::string preparingResource_;
+#ifndef __EMSCRIPTEN__
+    struct PreparedModel { std::unique_ptr<render::Model> model; std::vector<std::string> warnings; };
+    std::future<PreparedModel> preparing_;
+    std::vector<std::pair<std::string, std::string>> preparePaths_;
+    size_t prepareCursor_ = 0;
+    int prepareType_ = -1;
+    bool prepareAllVariants_ = false;
+#endif
     std::vector<std::string> warnings_;
+    // Only entities first seen while variants stream need a stable choice override.
+    std::unordered_map<uint64_t, std::pair<uint16_t, int>> streamingChoices_;
     std::unordered_map<uint64_t, EntityAnim> anims_;   // presentation only: iteration order never matters
     render::Mesh projectile_;
     TerrainRenderer terrain_;    // chunked terrain + water (RtsTerrainRender.cpp)

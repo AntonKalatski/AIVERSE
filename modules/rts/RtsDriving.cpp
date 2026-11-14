@@ -1,3 +1,4 @@
+#include "kingston/DeckBroadphase.h"
 // Driving (rules "driving", RtsDriving.h): vehicle adoption, getting in / out, the stick -> pedals mapping, the
 // vehicle-controllers step and this module's part of the contract: the sweep of the body over the map grid and other
 // units, collision response, crash and run-over damage. Fixed maths only; every loop runs in entity-index order.
@@ -30,9 +31,58 @@ Fixed number(const Json& j, const char* key, Fixed def, const std::string& where
         throw std::runtime_error(where + "." + key + (positive ? ": must be positive" : ": must not be negative"));
     return v;
 }
+// Where a point is relative to a deck: distance along the centre line, distance from it, the way back to it.
+struct DeckSpot {
+    Fixed along, side;
+    Vec3 toAxis;
+    bool outside = true;   // past either end (the open mouths), or the deck has no line
+};
+const Fixed kMouth = Fixed::fromRatio(3, 2);   // cells from an end where the deck is still at ground height
+
+DeckSpot deckSpot(const DrivingDeck& d, Vec3 p) {
+    DeckSpot best;
+    bool have = false;
+    for (size_t i = 0; i + 1 < d.pts.size(); ++i) {
+        const Vec3 a = flat(d.pts[i]);
+        const Fixed len = d.at[i + 1] - d.at[i];
+        const Vec3 dir = flat(d.pts[i + 1] - d.pts[i]) / len;
+        const Fixed t = flat(p - a).dot(dir), tc = fxClamp(t, Fixed{}, len);
+        const Vec3 dv = flat(a + dir * tc - p);
+        const Fixed dist = dv.length();
+        if (have && dist >= best.side) continue;
+        best = {d.at[i] + tc, dist, dv, (i == 0 && t.raw < 0) || (i + 2 == d.pts.size() && t > len)};
+        have = true;
+    }
+    return best;
+}
+Fixed deckMouth(const DrivingDeck& d) { return fxMin(kMouth, d.length() / 2); }
+// deep: far enough from both ends to be above / below the ground level
+bool deckDeep(const DrivingDeck& d, Vec3 p) {
+    const DeckSpot s = deckSpot(d, p);
+    const Fixed m = deckMouth(d);
+    return !s.outside && s.along > m && s.along < d.length() - m;
+}
+// Two bodies on different levels pass each other; near a mouth everybody is on the ground.
+bool levelsApart(const DrivingStore& st, int deckA, Vec3 a, int deckB, Vec3 b) {
+    if (deckA == deckB) return false;
+    return (deckA < 0 || deckDeep(st.decks[size_t(deckA)], a)) && (deckB < 0 || deckDeep(st.decks[size_t(deckB)], b));
+}
+
 DrivingCar* findCar(DrivingStore& st, Entity e) {
-    auto it = std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& c, uint32_t i) { return c.e.index < i; });
-    return it != st.cars.end() && it->e == e ? &*it : nullptr;
+    // O(1) when the cached position is still the lower bound of e.index in the sorted cars (checked
+    // against both neighbours); otherwise the binary search, which refreshes the cache.
+    const size_t n = st.cars.size();
+    size_t p = n + 1;
+    if (e.index < st.slotOf.size()) {
+        const size_t q = st.slotOf[e.index];
+        if (q <= n && (q == n || st.cars[q].e.index >= e.index) && (q == 0 || st.cars[q - 1].e.index < e.index)) p = q;
+    }
+    if (p > n) {
+        p = size_t(std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& c, uint32_t i) { return c.e.index < i; }) - st.cars.begin());
+        if (st.slotOf.size() <= e.index) st.slotOf.resize(size_t(e.index) + 1, UINT32_MAX);
+        st.slotOf[e.index] = uint32_t(p);
+    }
+    return p < n && st.cars[p].e == e ? &st.cars[p] : nullptr;
 }
 } // namespace
 
@@ -81,7 +131,8 @@ DrivingRules Driving::parse(const Json& j, const std::vector<std::string>& ids) 
 }
 
 const DrivingVehicleType* Driving::typeOf(uint16_t unitType) const {
-    for (auto& v : rules_.vehicles) if (v.type == unitType) return &v;
+    if (unitType < vehicleOf_.size()) return vehicleOf_[unitType] >= 0 ? &rules_.vehicles[size_t(vehicleOf_[unitType])] : nullptr;
+    for (auto& v : rules_.vehicles) if (v.type == unitType) return &v;   // before setup
     return nullptr;
 }
 
@@ -95,6 +146,12 @@ void Driving::setup(Simulation& sim, RtsModule& m, const Json& rulesJson) {
     if (!active()) return;
     if (!m.topDown() || !m.topDown()->active()) throw std::runtime_error("driving: needs the 'topDown' block (the hero is the driver)");
     rules_.doorTicks = uint32_t((rules_.doorSeconds * int64_t(sim.tickRate())).toInt());
+    // how far a body of each type reaches from its centre (cars: half their length): the sweep's cheap first test
+    vehicleOf_.assign(m.rules().types.size(), -1);   // unit type -> vehicle (the first one, as the list is searched)
+    for (size_t i = rules_.vehicles.size(); i-- > 0;) if (rules_.vehicles[i].type < vehicleOf_.size()) vehicleOf_[rules_.vehicles[i].type] = int32_t(i);
+    reach_.assign(m.rules().types.size(), Fixed{});
+    for (size_t i = 0; i < reach_.size(); ++i) reach_[i] = m.rules().types[i].radius;
+    for (auto& v : rules_.vehicles) if (v.type < reach_.size()) reach_[v.type] = fxMax(v.length / 2, v.width / 2);
     auto& st = sim.world().setResource<DrivingStore>();
     adoptAndDrop(sim, st);
 }
@@ -111,6 +168,24 @@ const DrivingCar* Driving::car(Simulation& sim, Entity vehicle) const {
     return st ? findCar(*st, vehicle) : nullptr;
 }
 
+bool Driving::setAutopilot(Simulation& sim, Entity vehicle, const vl::VehicleInput& input) {
+    auto* st = store(sim);
+    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
+    if (!c || !vl::valid(input)) return false;
+    c->autopilot = true;
+    c->pilot = input;
+    return true;
+}
+
+bool Driving::clearAutopilot(Simulation& sim, Entity vehicle) {
+    auto* st = store(sim);
+    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
+    if (!c) return false;
+    c->autopilot = false;
+    c->pilot = {};
+    return true;
+}
+
 Fixed Driving::speed(Simulation& sim, Entity vehicle) const {
     const DrivingCar* c = car(sim, vehicle);
     return c ? vl::vehicleForwardSpeed(c->st) : Fixed{};
@@ -123,10 +198,13 @@ void Driving::hash(Simulation& sim, Hasher& h) const {
     for (auto& c : st->cars) {
         const auto& s = c.st;
         h.u64(c.e.packed()); h.u64(c.driver.packed()); h.u32(c.player); h.u32(c.doorUntil);
+        if (!st->decks.empty()) h.i32(c.deck);   // maps without decks keep their checksums
         h.v3(s.position); h.v3(s.velocity);
         for (Fixed f : {s.yaw, s.yawRate, s.pitch, s.roll, s.steer, s.rpm, s.airspeed, s.sink, s.longAccel, s.trackLeft, s.trackRight}) h.fx(f);
         h.i32(s.gear); h.u32(s.shiftUntil); h.u32(s.slipMask); h.u32(s.lastTick);
-        h.u32(uint32_t(s.grounded) | uint32_t(s.drifting) << 1 | uint32_t(s.stalled) << 2 | uint32_t(s.initialized) << 3);
+        h.u32(uint32_t(s.grounded) | uint32_t(s.drifting) << 1 | uint32_t(s.stalled) << 2 | uint32_t(s.initialized) << 3 | uint32_t(c.autopilot) << 4 | uint32_t(c.locked) << 5);
+        for (Fixed f : {c.pilot.throttle, c.pilot.brake, c.pilot.steer}) h.fx(f);
+        h.u32(uint32_t(c.pilot.handbrake) | uint32_t(c.pilot.shiftUp) << 1 | uint32_t(c.pilot.shiftDown) << 2);
     }
 }
 
@@ -141,7 +219,86 @@ void Driving::io(Simulation& sim, Archive& a) {
         a(c.e, c.driver, c.player, c.doorUntil, s.position, s.velocity, s.yaw, s.yawRate, s.pitch, s.roll, s.steer, s.rpm);
         a(s.airspeed, s.sink, s.longAccel, s.trackLeft, s.trackRight, s.gear, s.shiftUntil, s.slipMask, s.lastTick);
         a(s.grounded, s.drifting, s.stalled, s.initialized);
+        a(c.autopilot, c.pilot.throttle, c.pilot.brake, c.pilot.steer, c.pilot.handbrake, c.pilot.shiftUp, c.pilot.shiftDown);
+        a(c.deck, c.locked);
     }
+    uint32_t nd = uint32_t(st->decks.size());
+    aiverse::io(a, nd);
+    if (!a.writing()) { if (nd > 100000) { a.fail(); return; } st->decks.assign(nd, {}); }
+    for (auto& d : st->decks) a(d.id, d.width, d.pts, d.at);
+    if (!a.writing())
+        for (auto& c : st->cars) if (c.deck >= int(nd)) { a.fail(); return; }
+}
+
+// ================================================================= levels
+
+void Driving::loadMap(Simulation& sim, const Json& map) {
+    auto* st = store(sim);
+    if (!st) return;
+    st->decks.clear();
+    const Json& list = map["decks"];
+    if (list.isNull()) return;
+    if (!list.isArray()) throw std::runtime_error("map decks: expected a list");
+    for (auto& dj : list.items()) {
+        DrivingDeck d;
+        d.id = dj.getStr("id");
+        const std::string where = "map decks" + (d.id.empty() ? std::string() : " '" + d.id + "'");
+        d.width = number(dj, "width", Fixed::fromInt(2), where, true);
+        const Json& path = dj["path"];
+        if (!path.isArray() || path.size() < 2) throw std::runtime_error(where + ".path: needs at least two points [x, z] or [x, z, height]");
+        for (auto& pj : path.items()) {
+            if (!pj.isArray() || pj.size() < 2 || pj.size() > 3) throw std::runtime_error(where + ".path: a point is [x, z] or [x, z, height]");
+            const Vec3 p{pj[size_t(0)].fx(), pj.size() > 2 ? pj[size_t(2)].fx() : Fixed{}, pj[size_t(1)].fx()};
+            Fixed at{};
+            if (!d.pts.empty()) {
+                const Fixed len = flat(p - d.pts.back()).length();
+                if (len < Fixed::fromRatio(1, 16)) throw std::runtime_error(where + ".path: two points in the same place");
+                at = d.at.back() + len;
+            }
+            d.pts.push_back(p);
+            d.at.push_back(at);
+        }
+        if (st->decks.size() >= 32000) throw std::runtime_error("map decks: too many");
+        st->decks.push_back(std::move(d));
+    }
+}
+
+int Driving::deckOf(Simulation& sim, Entity vehicle) const {
+    const DrivingCar* c = car(sim, vehicle);
+    return c ? c->deck : -1;
+}
+
+int Driving::deckIndex(Simulation& sim, const std::string& id) const {
+    auto* st = store(sim);
+    if (st)
+        for (size_t i = 0; i < st->decks.size(); ++i) if (st->decks[i].id == id) return int(i);
+    return -1;
+}
+
+Fixed Driving::height(Simulation& sim, Entity vehicle) const {
+    auto* st = store(sim);
+    const DrivingCar* c = car(sim, vehicle);
+    if (!st || !c || c->deck < 0) return {};
+    const DrivingDeck& d = st->decks[size_t(c->deck)];
+    const Fixed mpc = rules_.metersPerCell;
+    const DeckSpot s = deckSpot(d, Vec3{c->st.position.x / mpc, Fixed{}, c->st.position.z / mpc});
+    for (size_t i = 0; i + 1 < d.pts.size(); ++i)
+        if (s.along <= d.at[i + 1] || i + 2 == d.pts.size())
+            return d.pts[i].y + (d.pts[i + 1].y - d.pts[i].y) * fxClamp((s.along - d.at[i]) / (d.at[i + 1] - d.at[i]), Fixed{}, kUnit);
+    return {};
+}
+
+bool Driving::setDeck(Simulation& sim, Entity vehicle, int deck) {
+    auto* st = store(sim);
+    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
+    if (!c || deck < -1 || deck >= int(st->decks.size())) return false;
+    if (deck >= 0) {
+        const DrivingDeck& d = st->decks[size_t(deck)];
+        const DeckSpot s = deckSpot(d, sim.world().get<Transform>(vehicle).pos);
+        if (s.outside || s.side > d.width / 2) return false;
+    }
+    c->deck = int16_t(deck);
+    return true;
 }
 
 // ================================================================= getting in and out
@@ -161,7 +318,12 @@ void Driving::adoptAndDrop(Simulation& sim, DrivingStore& st) {
         if (!findCar(st, e)) fresh.push_back(e);
     });
     std::sort(fresh.begin(), fresh.end(), [](Entity a, Entity b) { return a.index < b.index; });
-    for (Entity e : fresh) {
+    for (Entity e : fresh) adoptOne(sim, st, e);
+}
+
+void Driving::adoptOne(Simulation& sim, DrivingStore& st, Entity e) {
+    World& w = sim.world();
+    {
         Unit& u = w.get<Unit>(e);
         const DrivingVehicleType& vt = *typeOf(u.type);
         const Vec3 p = w.get<Transform>(e).pos;
@@ -175,6 +337,55 @@ void Driving::adoptAndDrop(Simulation& sim, DrivingStore& st) {
         auto it = std::lower_bound(st.cars.begin(), st.cars.end(), e.index, [](const DrivingCar& x, uint32_t i) { return x.e.index < i; });
         st.cars.insert(it, c);
     }
+}
+
+bool Driving::adopt(Simulation& sim, Entity e, Fixed speed) {
+    auto* st = store(sim);
+    World& w = sim.world();
+    if (!st || !w.alive(e) || !w.has<Transform>(e)) return false;
+    Unit& u = w.get<Unit>(e);
+    if (u.hp.raw <= 0 || (u.flags & (kUnitOffMap | kUnitUnderConstruction)) || !typeOf(u.type)) return false;
+    if (!findCar(*st, e)) adoptOne(sim, *st, e);
+    DrivingCar* c = findCar(*st, e);
+    if (!c) return false;
+    const Vec3 f = forwardOf(c->st.yaw);
+    c->st.velocity = Vec3{f.x * speed, Fixed{}, f.z * speed};
+    return true;
+}
+
+bool Driving::setLocked(Simulation& sim, Entity vehicle, bool locked) {
+    auto* st = store(sim);
+    DrivingCar* c = st ? findCar(*st, vehicle) : nullptr;
+    if (!c) return false;
+    c->locked = locked;
+    return true;
+}
+
+bool Driving::locked(Simulation& sim, Entity vehicle) const {
+    const DrivingCar* c = car(sim, vehicle);
+    return c && c->locked;
+}
+
+Entity Driving::enterTarget(Simulation& sim, Entity hero) const {
+    auto* st = store(sim);
+    World& w = sim.world();
+    if (!st || !w.alive(hero)) return kNullEntity;
+    const Unit& hu = w.get<Unit>(hero);
+    if (hu.hp.raw <= 0 || (hu.flags & kUnitOffMap)) return kNullEntity;
+    const Vec3 hp = w.get<Transform>(hero).pos;
+    const Fixed hr = m_->rules().types[hu.type].radius;
+    Entity best = kNullEntity;
+    Fixed bestD{};
+    for (auto& c : st->cars) {
+        if (c.driver.valid() || !w.alive(c.e)) continue;
+        const Unit& cu = w.get<Unit>(c.e);
+        if (cu.hp.raw <= 0) continue;
+        const Fixed d = flat(w.get<Transform>(c.e).pos - hp).length() - typeOf(cu.type)->length / 2 - hr;
+        if (d > rules_.enterRange) continue;
+        if (c.deck >= 0 && deckDeep(st->decks[size_t(c.deck)], w.get<Transform>(c.e).pos)) continue;
+        if (!best.valid() || d < bestD) { best = c.e; bestD = d; }
+    }
+    return best;
 }
 
 void Driving::enter(Simulation& sim, DrivingStore& st, uint8_t player, Entity hero) {
@@ -192,9 +403,10 @@ void Driving::enter(Simulation& sim, DrivingStore& st, uint8_t player, Entity he
         if (cu.hp.raw <= 0) continue;
         const Fixed d = flat(w.get<Transform>(c.e).pos - hp).length() - typeOf(cu.type)->length / 2 - hr;
         if (d > rules_.enterRange) continue;
+        if (c.deck >= 0 && deckDeep(st.decks[size_t(c.deck)], w.get<Transform>(c.e).pos)) continue;   // above / below the hero
         if (!best || d < bestD) { best = &c; bestD = d; }   // cars are in entity order: ties keep the lower index
     }
-    if (!best) return;
+    if (!best || best->locked) return;   // a locked door: the game says so and decides who opens it
     best->driver = hero;
     best->player = player;
     best->doorUntil = sim.tick() + rules_.doorTicks;
@@ -213,6 +425,7 @@ bool Driving::leave(Simulation& sim, DrivingCar& c, bool forced) {
     const UnitType& ht = m_->rules().types[hu.type];
     const MapGrid& g = m_->state(sim).grid;
     const Vec3 pos{c.st.position.x / rules_.metersPerCell, w.get<Transform>(hero).pos.y, c.st.position.z / rules_.metersPerCell};
+    if (auto* st = store(sim); st && c.deck >= 0 && !forced && deckDeep(st->decks[size_t(c.deck)], pos)) return false;   // no way down from a bridge, no door room in a tunnel
     const Vec3 f = forwardOf(c.st.yaw), r = rightOf(f);
     Fixed len = kUnit, wid = kHalf;
     if (w.alive(c.e)) if (auto* vt = typeOf(w.get<Unit>(c.e).type)) { len = vt->length; wid = vt->width; }
@@ -250,7 +463,13 @@ bool Driving::command(Simulation& sim, const Command& cmd) {
 vl::VehicleInput Driving::inputOf(Simulation& sim, const DrivingCar& c) const {
     vl::VehicleInput in;
     auto* td = m_->topDown()->store(sim);
-    if (!c.driver.valid() || !td || c.player >= td->pilots.size()) { in.handbrake = true; return in; }   // parked
+    if (!c.driver.valid()) {   // nobody at the wheel: a traffic car's bot driver (RtsTraffic.cpp), else parked
+        if (Traffic* tr = m_->traffic(); tr && tr->active() && tr->aiInput(sim, c.e, in)) return in;
+        if (c.autopilot) return c.pilot;
+        in.handbrake = true;
+        return in;
+    }
+    if (!td || c.player >= td->pilots.size()) { in.handbrake = true; return in; }   // parked
     const topdown::Input& s = td->pilots[c.player].input;
     const Fixed mag = Fixed::fromRatio(s.moveMag, topdown::kMagMax), ang = Fixed::fromRaw(s.moveAngle);
     in.handbrake = s.fire;
@@ -285,9 +504,16 @@ void Driving::drive(Simulation& sim, DrivingStore& st, size_t index) {
     DrivingCar& c = st.cars[index];
     if (!w.alive(c.e)) return;
     Unit& u = w.get<Unit>(c.e);
-    if (u.hp.raw <= 0) return;
+    if (u.hp.raw <= 0 || (u.flags & kUnitInCargo)) return;
     const DrivingVehicleType& vt = *typeOf(u.type);
     const Fixed mpc = rules_.metersPerCell;
+    // A parked car at rest sleeps: no controller step, no sweep (a city has hundreds of them). Whatever hits it
+    // gives it a velocity (car against car) and that wakes it; getting in or a traffic driver wake it too.
+    if (!c.driver.valid() && !c.autopilot && c.st.initialized && c.st.velocity == Vec3{} && c.st.yawRate.raw == 0) {
+        vl::VehicleInput none;
+        Traffic* tr = m_->traffic();
+        if (!(tr && tr->active() && tr->aiInput(sim, c.e, none))) return;
+    }
     auto res = vl::stepVehicle(vt.def, c.st, sim.tick(), sim.dt(), inputOf(sim, c), vl::VehicleContacts{});
     Transform& tr = w.get<Transform>(c.e);
     if (res) {
@@ -325,12 +551,36 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
     bool hit = false;
     Fixed crash{};
 
+    // levels: any part of the body inside a mouth puts the car on that deck; the whole body past an end takes it off
+    if (c.deck >= 0) {
+        bool allOut = true;
+        for (Fixed off : offs) if (!deckSpot(st.decks[size_t(c.deck)], pos + f * off).outside) allOut = false;
+        if (allOut) c.deck = -1;
+    }
+    for (size_t i = 0; i < st.decks.size() && c.deck < 0; ++i) {
+        const DrivingDeck& d = st.decks[i];
+        if (!kingston::deckMayTouchBody(d, pos, half)) continue;
+        const Fixed m = deckMouth(d);
+        for (Fixed off : offs) {
+            const DeckSpot s = deckSpot(d, pos + f * off);
+            if (!s.outside && s.side <= d.width / 2 && (s.along <= m || s.along >= d.length() - m)) { c.deck = int16_t(i); break; }
+        }
+    }
+
     // walls: push out of the deepest overlap, a few times
     for (int pass = 0; pass < 4; ++pass) {
         Fixed deepest{};
         Vec3 normal{};
         for (Fixed off : offs) {
             const Vec3 cp = pos + f * off;
+            if (c.deck >= 0) {   // on a deck its own walls count, not the map under / around it; the mouths are open
+                const DrivingDeck& d = st.decks[size_t(c.deck)];
+                const DeckSpot s = deckSpot(d, cp);
+                const Fixed room = fxMax(d.width / 2 - r, Fixed{});
+                if (s.outside || s.side <= room) continue;
+                if (s.side - room + kGap > deepest) { deepest = s.side - room + kGap; normal = s.toAxis / s.side; }
+                continue;
+            }
             const int x0 = g.cellX(cp.x - r), x1 = g.cellX(cp.x + r), y0 = g.cellY(cp.z - r), y1 = g.cellY(cp.z + r);
             for (int y = y0; y <= y1; ++y)
                 for (int x = x0; x <= x1; ++x) {
@@ -369,13 +619,18 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
         if (!ou || ou->hp.raw <= 0 || (ou->flags & kUnitOffMap)) return;
         const UnitType& ot = m_->rules().types[ou->type];
         if (ot.structure || (ot.layer & kLayerAir)) return;
-        near.push_back({o, w.get<Transform>(o).pos, ot.radius});
+        // too far to touch whatever the headings (no square root; a city block has dozens of bodies in the query)
+        const Vec3 op = w.get<Transform>(o).pos;
+        const Fixed touch = half + r + reach_[ou->type] + Fixed::fromRatio(1, 32);   // (a little over: the exact test follows)
+        if (flat(pos - op).lengthSq() >= touch * touch) return;
+        near.push_back({o, op, ot.radius});
     });
     std::sort(near.begin(), near.end(), [](const Near& a, const Near& b) { return a.e.index < b.e.index; });
     struct Hurt { Entity e; Fixed dmg; Entity by; uint8_t owner; };
     std::vector<Hurt> hurt;
     for (auto& o : near) {
         DrivingCar* oc = findCar(st, o.e);
+        if (levelsApart(st, c.deck, pos, oc ? oc->deck : -1, o.p)) continue;   // one of them is on a bridge or in a tunnel
         const DrivingVehicleType* ovt = oc ? typeOf(w.get<Unit>(o.e).type) : nullptr;
         const Fixed orad = ovt ? ovt->width / 2 : o.r;
         const Fixed ohalf = ovt ? fxMax(ovt->length / 2 - orad, Fixed{}) : Fixed{};

@@ -186,7 +186,7 @@ void GameClient::startNetMatch() {
     try {
         selection_.clear();
         for (auto& g : groups_) g.clear();
-        sim_.reset(); // MatchStart already dropped the previous session
+        city_.reset(); sim_.reset(); // MatchStart already dropped the previous session
         Json map = Json::parse(mapText);
         std::string terr; // 2D tile maps: same as offline, or the match desyncs from the server's replay
         if (!applyTilesToMap(map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
@@ -197,7 +197,7 @@ void GameClient::startNetMatch() {
         configurePostFx(map);
     } catch (const std::exception& e) {
         netError_ = e.what();
-        sim_.reset();
+        city_.reset(); sim_.reset();
         net_->leaveMatch();
         return;
     }
@@ -225,12 +225,14 @@ void GameClient::startNetMatch() {
     mode_ = Mode::Normal;
     notices_.clear();
     setScreen(Screen::Playing);
+    beginMapLoading();
 }
 
 void GameClient::leaveNetMatch() {
+    mapLoading_ = false; loadingTypes_.clear(); loadingSplash_.shutdown();
     if (net_) { net_->leaveMatch(); net_->refreshRooms(); }   // detach before the simulation goes away
     fx_.stopMatch();
-    sim_.reset();
+    city_.reset(); sim_.reset();
     bots_.clear();
     selection_.clear();
     netMatch_ = false;

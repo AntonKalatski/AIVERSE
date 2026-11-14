@@ -6,6 +6,7 @@
 //   RtsCombat.cpp    targeting, weapons, projectiles, abilities, buffs, heroes, squads, death
 //   RtsWorld.cpp     vision (with heights), creep, control points, regions, waves, neutrals, victory
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -21,9 +22,15 @@
 #include "RtsRaid.h"
 #include "RtsNative.h"
 #include "RtsTopDown.h"
+#include "RtsEncounters.h"
 #include "RtsEnv.h"
 #include "RtsDriving.h"
+#include "RtsCommerce.h"
+#include "RtsCareer.h"
+#include "RtsPrompt.h"
 #include "RtsRoutes.h"
+#include "RtsArsenal.h"
+#include "RtsTraffic.h"
 #include <memory>
 
 namespace aiverse::game {
@@ -90,10 +97,18 @@ enum CommandType : uint16_t {
     kCmdEndTurn,      // turn-based mode: the active player ends the turn
     kCmdScript,       // rules "commands" (RtsScript.h): param = command index, args = encoded arguments, units = selection
     kCmdRaid,         // extraction raids (RtsRaid.h): param = RaidOp | point index << 8 (call: -1 = nearest)
-    // top-down heroes (rules "topDown", RtsTopDown.h)
-    kCmdTopDown,      // no units; param = topdown::pack(Input): sticky move vector / aim / fire of the player's hero
-    kCmdTopDownAbility, // no units; param = ability index of the hero; target / point optional (default: along the aim)
+    // in-match progression (rules "progression", RtsProgression.h)
+    kCmdProgression,  // no units; param = ProgressionOp | card index << 8 | offer revision << 16 (choose / reroll / close / open)
     kCmdTopDownEnter,   // no units (rules "driving", RtsDriving.h): the hero gets into the nearest free vehicle / out of his car
+    kCmdCommerce,       // no units (rules "commerce", RtsCommerce.h): param = commercePack(op, premises, value)
+    kCmdTopDownWeapon,  // no units (rules "arsenal", RtsArsenal.h): param kWeaponNext / kWeaponPrev, or kWeaponSlot + slot
+    kCmdCareer,         // no units (rules "careers", RtsCareer.h): param = careerPack(op, career); open careers only
+    kCmdPrompt,         // no units (rules "prompts", RtsPrompt.h): param = option picked (0-based), -1 = the interact key
+    // top-down heroes (rules "topDown", RtsTopDown.h). Engine-reserved hero ids (engine/net/HeroInput.h: net::kCmdHeroInput / kCmdHeroAbility), so hosted battles,
+    // the battle load test and every top-down game share one command scheme.
+    kCmdTopDown = 0xF100, // no units; param = topdown::pack(Input): sticky move vector / aim / fire of the player's hero
+    kCmdTopDownAbility,   // no units; param = topdown::abilityParam(Ability) (old clients: the ability index = tap);
+                          // target / point optional (default: along the button's stick, else the aim); index 255 = escape
 };
 
 // Rect parameter of kCmdDig / kCmdPaintRoom: width and height in cells (1..64) and a signed 24-bit extra value.
@@ -160,7 +175,8 @@ enum GameEvent : uint16_t {
     kEvInfected,      // a = victim, value = spawned type
     kEvSubmerged,     // a = eater (sandworm) leaving; kEvSpawned marks its return
     kEvTrapFired,     // a = trap, b = victim, pos = victim
-    kEvGroupTeleport, // a = unit moved, b = caster (may be null), pos = arrival, value = 1 when it is a return trip
+    kEvGroupTeleport, // a = unit moved, b = caster (may be null), pos = arrival, value = 1 when it is a return trip;
+                      // top-down escape: value 2 = departure (pos = where it left), then value 0 at the arrival
     kEvPaved,         // a = slab (removed), value = cells paved, pos = slab centre
     kEvMorale,          // a = unit, value = 0 steady / 1 wavering / 2 routing (stage 4)
     kEvTurn,            // turn-based mode: player = whose turn starts, value = turn number
@@ -174,6 +190,24 @@ enum GameEvent : uint16_t {
     kEvRaidInteract,    // player, a = raider, b = object, value = object type | RaidChannelEv << 16 (0 start, 1 interrupted, 2 done)
     kEvRaidObjective,   // player, value = objective | 1 << 16 (completed)
     kEvRaidPlayer,      // player, value = RaidStatus (1 in raid, 2 extracted, 3 dead, 4 timed out, 5 abandoned)
+    // in-match progression (RtsProgression.h, docs/progression.md)
+    kEvProgXp,          // player, a = hero, value = xp gained (after the pickupXp stat), pos = hero
+    kEvProgLevel,       // player: a level is banked; value = levels banked | level reached << 32
+    kEvProgOffer,       // player, value = offer revision | cards << 32 | ProgOfferEv << 40 (0 opened, 1 rerolled, 2 closed, 3 empty)
+    kEvProgPerk,        // player, a = unit of the slot (hero for player perks), value = perk id | (slot + 1) << 32 (0: player scope) | 1 << 48 when it replaced a lower tier
+    kEvProgRecruit,     // player, a = new ally, value = deck slot, pos
+    kEvProgOrb,         // player = collector (0: none), value = xp | ProgOrbEv << 40 (0 spawned, 1 collected, 2 expired, 3 merged), pos
+    kEvProgSummon,      // player, a = ally (confirmed / died / expired), value = point id | SummonEventKind << 32, pos = circle centre
+    // boss encounters (rules "encounters", RtsEncounters.h, docs/encounters.md)
+    kEvBossEngaged,     // a = boss, b = its target, value = boss type, player = boss owner
+    kEvBossPhase,       // a = boss, b = target, value = phase index (0 = first)
+    kEvBossEnraged,     // a = boss, b = target, value = boss type
+    kEvBossAdds,        // a = boss, value = unit type | count << 16, pos = boss
+    kEvBossDefeated,    // a = boss, value = boss type, player = owner slot of the last damage source
+    kEvBossWindow,      // schedule: value = window index | state << 16 (0 opened, 1 boss spawned, 2 expired), player = participant, a = boss
+    kEvTelegraphStart,  // a = caster, b = aimed unit, value = attack index, pos = area origin, player = caster owner
+    kEvTelegraphStrike, // a = caster, b = unit struck, value = attack index | damage (whole units) << 16, pos = unit struck
+    kEvTelegraphEnd,    // a = caster, value = attack index | 1 << 16 when cancelled (caster died in the windup)
     kEvEnv,             // map environment (RtsEnv.h): value = EnvEventKind << 16 | data, a / b / pos per kind (weather, wind, worm, toad, bombs, Mouro, souls, walls)
     kEvModePhase,       // match modes (RtsModes.cpp): value = ModePhaseEvent, player = side concerned (0: everyone), a = point
 };
@@ -186,8 +220,12 @@ enum UnitFlags : uint16_t { kUnitHold = 1, kUnitUnderConstruction = 2, kUnitDisa
                           kUnitInHand = 16 /*picked up: off the map*/, kUnitPossessed = 32 /*directly controlled*/,
                           kUnitInTransit = 64 /*between bodies (set together with kUnitInHand: off every surface)*/,
                           kUnitInCargo = 128 /*inside a transport: off the map (agent-mech)*/,
-                          kUnitInfected = 256 /*killed by an infecting unit: rises as the infect type (originals)*/ };
+                          kUnitInfected = 256 /*killed by an infecting unit: rises as the infect type (originals)*/,
+                          kUnitFollower = 512 /*top-down squad member: follows its hero, not RTS orders / AI (RtsTopDown.cpp)*/ };
 constexpr uint16_t kUnitOffMap = kUnitInHand | kUnitInCargo;
+// Mask for clearing unit flags. Clearing used to go through uint8_t masks, which also dropped kUnitInfected; that
+// stays exactly as it was (checksums), while kUnitFollower (and later high flags) survive.
+constexpr uint16_t kKeepFlags(int notMask) { return uint16_t(notMask & 0xFF) | uint16_t(kUnitFollower); }
 
 struct Unit {
     uint16_t type = 0;
@@ -336,6 +374,8 @@ struct StatusInst {
     uint8_t revertOwner = 0;        // Capture: owner to give it back to
     bool revertsOwner = false;
     uint8_t capturedBy = 0;
+    int spent = 0;                  // targets used of an effect `budget`; skill objects: commandable / transfer used
+    uint32_t group = 0;             // commandable: the group sent from the structure
 };
 struct Statuses { std::vector<StatusInst> list; uint32_t flags = 0; };   // flags: union of active StatusFlags
 // Ground effect: delayed strike, persistent field, moving hazard, mine, portal, reveal, soul trap.
@@ -354,8 +394,15 @@ struct Area {
     Entity goal = kNullEntity;            // skill objects: the structure it heads for (onArrive target)
     bool arrived = false;
     int deaths = 0;                       // onDeath payloads applied (capped by maxTriggers)
+    int spent = 0;                        // targets used of an effect `budget`
 };
 // A unit pulled straight into a structure by a magnet (`pull` effect, RtsSkillObjects.cpp).
+// A garrison teleport in progress (BW PointsTeleport): grab from `from`, travel, fill `to`.
+struct Transfer {
+    Entity from = kNullEntity, to = kNullEntity;
+    uint8_t owner = 0;
+    Fixed toGrab{}, collected{}, acc{}, grabLeft{}, grabVel{}, wait{}, fillLeft{}, fillVel{};
+};
 struct Pulled {
     Entity target = kNullEntity;
     Vec3 start{};
@@ -440,6 +487,7 @@ struct PlayerAbilityState {
     uint32_t pendingAt = 0;            // activation delay: fires at this tick
     Vec3 pendingPoint{}; Entity pendingTarget = kNullEntity;
     uint32_t nextAuto = 0;
+    int8_t slot = -1;                  // loadout slot (BW skill slot; per-slot silence)
 };
 
 // Who / where an effect payload is applied (see RtsEffects.cpp).
@@ -452,6 +500,9 @@ struct EffectCtx {
     Fixed scale = Fixed::fromInt(1);   // chain / splash falloff
     int depth = 0;
     uint32_t group = 0;
+    Entity budgetEnt = kNullEntity;    // the area / status holder whose `budget` counter effects use
+    int16_t budgetDef = -1;            // status def (-1: an area)
+    Fixed areaRadius{};                // radius of the area the payload runs in
 };
 
 struct GameState {
@@ -516,6 +567,13 @@ struct GameState {
 // ---------------------------------------------------------------- module
 struct VisionCache;   // RtsVision.cpp
 
+// Match outcome, frozen at the end of the first tick that has a result (docs/battle-net.md): result() keeps returning
+// it and the report blob never changes again, so every client's hosted-battle result report is identical however far
+// past the result tick its rollback session predicted. A world resource: rollback snapshots copy it; it is neither
+// hashed nor saved (checksums and save layouts of every game stay as they were).
+struct MatchOutcome { int result = 0; uint32_t tick = 0; std::vector<uint8_t> blob; };
+
+class Progression;   // RtsProgression.h (rules "progression")
 class RtsModule final : public GameModule {
 public:
     RtsModule();
@@ -529,6 +587,10 @@ public:
     void prepareSnapshot(Simulation& sim) override { if (script_) script_->flush(sim); }
     bool serializeState(Simulation& sim, Archive& a) override;   // RtsSave.cpp
     int result(Simulation& sim) override;
+    // Frozen outcome (null / empty until the match has a result). The blob is what hosted battle clients report
+    // (NetClient::setResultReporter): result, tick, per player slot / team / alive / units / structures / team score.
+    const MatchOutcome* outcome(Simulation& sim) const;
+    std::vector<uint8_t> outcomeBlob(Simulation& sim) const;
     double speedScale(Simulation& sim) override;   // match modes: time limit speed steps, sudden death preview (RtsModes.cpp)
     // ---- match modes (RtsModes.cpp): the effective modes of this match (rules + matchMode preset + map)
     const ModesRules& modes() const { return modes_; }
@@ -542,8 +604,15 @@ public:
     ScriptEngine* scripts() const { return script_.get(); }   // the Lua VM (standard library + game scripts)
     GridFields* gridFields() const { return fields_.get(); }  // grid fields (RtsGridFields.h); null before setup
     Raid* raid() const { return raid_.get(); }                // extraction raids (RtsRaid.h); inactive without rules "raid"
+    Prompts* prompts() const { return prompts_.get(); }        // script choice menus (RtsPrompt.h); null before setup
+    Career* career() const { return career_.get(); }           // career ladders and perks (RtsCareer.h); null before setup
+    Commerce* commerce() const { return commerce_.get(); }     // premises, businesses, the bank (RtsCommerce.h); null before setup
+    Arsenal* arsenal() const { return arsenal_.get(); }        // the hero's weapons, ammo, crates, money (RtsArsenal.h); null before setup
+    Traffic* traffic() const { return traffic_.get(); }        // city traffic: AI cars, signals, pedestrians (RtsTraffic.h); null before setup
     Driving* driving() const { return driving_.get(); }        // vehicles the hero drives (RtsDriving.h); null before setup
     TopDown* topDown() const { return topDown_.get(); }        // top-down heroes (RtsTopDown.h); null before setup
+    Progression* progression() const { return progression_.get(); }   // in-match progression (RtsProgression.h); inactive without rules "progression"
+    Encounters* encounters() const { return encounters_.get(); }   // boss encounters (RtsEncounters.h); null before setup
     Environment* environment() const { return env_ && env_->active() ? env_.get() : nullptr; }   // map environment (RtsEnv.h); null without one
     // The map the simulation was set up from when the map had a "generate" block (nullptr otherwise):
     // presentation reads terrainMaterial / heights / regions from it (agent-terrain-gen).
@@ -571,11 +640,23 @@ public:
     bool routesAuthored() const { return !routeDefs_.empty(); }
     bool canSend(Simulation& sim, Entity from, Entity to) const;
     Fixed routeLength(Simulation& sim, Entity from, Entity to) const;
+    Fixed routeAiLength(Simulation& sim, Entity from, Entity to) const;   // BW Route.GetAILength (slowdown zones); -1: none
+    // Flying sends (BW PointsFlyingUnits): a garrison with a `flying` status sends along a straight flying route (made on
+    // first use, BW FindFlyingRoute) even without a ground route, one flying group at a time, rows flyRowSpacing apart.
+    bool sendsFlying(Simulation& sim, Entity from) const;
+    // BW Spline.GetTowerCoverageDistance: route length within `range` of tower point `tower` (map towersCoverage), 0 when
+    // the map has none; and the AI estimates built on it (TowerModule.GetUnitsDamageForSpline / GetDamageBySpline).
+    Fixed towerCoverage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range) const;
+    int towerUnitsDamage(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, int count, Fixed rowDistance, Fixed unitSpeed) const;
+    int towerDamageBySpline(Simulation& sim, Entity from, Entity to, Entity tower, Fixed range, Fixed firePerSecond, Fixed waveLength, Fixed unitSpeed) const;
+    // Alpha of a route walker at the route ends (BW SubSpline.GetAlpha; 1 elsewhere / for other units): the view fades it.
+    Fixed routeAlpha(Simulation& sim, Entity unit) const;
     const std::vector<RouteDef>& routeDefs() const { return routeDefs_; }
     // Multiscreen (map "screen", BW MultiscreenModule): the current screen and whether a point is on it (always true
     // without a screen). Garrisons off the screen do not grow. setScreenCenter clamps to the screen bounds.
     const ScreenDef& screen() const { return screen_; }
-    bool onScreen(Simulation& sim, Vec3 p) const;
+    bool onScreen(Simulation& sim, Vec3 p) const;            // map "screen", else the env map scroller screen
+    bool screenView(Simulation& sim, Vec3& center, Vec2& size) const;   // current screen (either source); false: none
     Vec3 screenCenter(Simulation& sim) const;
     void setScreenCenter(Simulation& sim, Vec3 c);
     Fixed stat(Simulation& sim, Entity e, Stat s) const;          // effective stat with techs/levels/buffs
@@ -583,6 +664,9 @@ public:
     Fixed bwTypeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, int moraleDelta) const;
     // agent-bw-ai: Bunker Wars bot settings (rules ai.bw + map "ai"), null unless rules ai.controller is "bw"
     const std::shared_ptr<const struct BwAIConfig>& bwAI() const { return bwAI_; }
+    // agent-bw-ai: slots played by BW bots in this process (not sim state: the bots' action detector ignores them)
+    void bwRegisterBot(uint8_t slot) const { if (std::find(bwBots_.begin(), bwBots_.end(), slot) == bwBots_.end()) bwBots_.push_back(slot); }
+    const std::vector<uint8_t>& bwBots() const { return bwBots_; }
     Fixed typeStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, Fixed base) const;
     int membersAlive(Simulation& sim, Entity e) const;
     int levelAt(Simulation& sim, Vec3 p) const;
@@ -663,6 +747,10 @@ public:
     // one unit of `unit` leaves garrison `from` for `target` (lanes / roads / straight, like sysGarrison releases)
     Entity releaseUnit(Simulation& sim, Entity from, Entity target, uint16_t unit, uint8_t owner, uint32_t group);
     // assault results for the environment (souls, burning buildings, last action buildings)
+    // map scroller setInvincible (BW Player.isInvincible): match modes and the victory script never defeat the player
+    bool envInvincible(Simulation& sim, uint8_t slot) const { return env_ && env_->active() && env_->invincible(sim, slot); }
+    // the first effect filter of a payload (through area / projectile delivery) accepts `e` for `owner` (BW skill filters)
+    bool envFilterAccepts(Simulation& sim, int payload, Entity e, uint8_t owner) const;
     void envAssault(Simulation& sim, Entity structure, uint8_t attacker, uint8_t defender, int attackerLost, int defenderLost) {
         if (env_ && env_->active()) env_->onAssault(sim, structure, attacker, defender, attackerLost, defenderLost);
     }
@@ -767,12 +855,29 @@ public:
 
 private:
     ModesRules modes_;               // match modes of this match (read-only after setup, RtsModes.cpp)
+    // gameplay time scale (trigger variable "gameplay_scale", agent-bw-client): whether this tick runs the gameplay
+    // systems; recomputed from the (hashed, saved) variables at the start of every tick
+    bool gameplayRun_ = true;
+    void gameplayClock(Simulation& sim);
     void modesSetup(Simulation& sim, const Json& rulesJson, const Json& map);
     void sysModes(Simulation& sim);
     void sysMatchStats(Simulation& sim);
     void hashModes(Simulation& sim, Hasher& h);
+    // battle core (RtsCore.cpp): rules "battleCore"
+    void coreSetup(Simulation& sim, const Json& map);
+    void coreMorale(Simulation& sim, uint8_t player, Fixed points, bool gain, bool resetCooldown);
+    void coreUnitsLost(Simulation& sim, uint8_t player, int count);
+    void coreAssault(Simulation& sim, uint8_t attacker, uint8_t defender);
+    void coreCaptured(Simulation& sim, uint16_t type, uint8_t from, uint8_t to);
+    void coreUpgraded(Simulation& sim, uint8_t owner, uint16_t type);
+    void sysCore(Simulation& sim);
+    std::vector<Fixed> coreGrowthRates(Simulation& sim) const;
+    int coreNeutralMax(Simulation& sim, Entity e, const UnitType& t) const;
     friend bool ioModesState(RtsModule& m, Simulation& sim, Archive& a);
     std::shared_ptr<const struct BwAIConfig> bwAI_;   // agent-bw-ai
+    mutable std::vector<uint8_t> bwBots_;             // agent-bw-ai: bot slots of this process (presentation-like, never read by the sim)
+    void bwNoteProduced(Simulation& sim, Entity e, int n);   // RtsBwAISim.cpp: per point produced units
+    bool hypnotisedFlagSend(Simulation& sim, const Command& cmd);  // RtsBwAISim.cpp: kCmdSend out of a hypnotised garrison
     Json generated_;                 // generated map (see generatedMap())
     void setupMap(Simulation& sim, const Json& map);
     // ---- planets (RtsPlanets.cpp)
@@ -830,7 +935,11 @@ private:
     void tickPlayerSkills(Simulation& sim);
     void impactProjectile(Simulation& sim, Entity p);
     const ProjectileFlight* projectileFlight(const Projectile& p) const;
+    const WeaponDef* projectileWeapon(const Projectile& p) const;   // the weapon a shot came from (also bullet perk variants)
     void initProjectileProgram(Simulation& sim, Projectile& p, Vec3 start) const;
+    int liveResult(Simulation& sim);                 // the result the state shows now (result(): frozen once decided)
+    void freezeOutcome(Simulation& sim);             // "outcome" system: latches the first result + its report blob
+    friend class Arsenal;   // free fire launches weapon projectile programs at a point (RtsArsenal.cpp)
     void bakeProjectileProgram(Projectile& p, const ProjectileFlight& f) const;
     void sysProjectilePrograms(Simulation& sim, const std::vector<Entity>& projectiles);
     // skill objects (RtsSkillObjects.cpp): objects spawned from units, goals, magnets, death payloads
@@ -846,6 +955,24 @@ private:
     void noteDeathInAreas(Simulation& sim, Entity dead, Vec3 pos);
     void flushAreaDeaths(Simulation& sim);
     void hashSkillObjects(Simulation& sim, Hasher& h);
+    int* budgetCounter(Simulation& sim, const EffectCtx& ctx);
+    bool routeFilterOk(Simulation& sim, uint8_t route, Entity unit, const EffectCtx& ctx);
+    void onUnitReleased(Simulation& sim, Entity from, Entity unit);   // a garrison sent a unit out (onSpawn, hypnosis)
+    bool skillSend(Simulation& sim, Entity from, Entity to, uint8_t player, int n);   // teleport sends; true: handled
+    bool hypnoticSend(Simulation& sim, const Command& cmd);           // sends from a structure the player commands
+    bool silencedFor(Simulation& sim, uint8_t player, int index) const;
+    void endCaptureStatuses(Simulation& sim, Entity s);
+    Fixed levelOfStock(int16_t res, Fixed stock) const;   // resource levels (morale stars), fractional
+    Fixed stockOfLevel(int16_t res, Fixed level) const;
+    void tickTransfers(Simulation& sim);
+    bool everyDue(Simulation& sim, const EffectDef& e, const EffectCtx& ctx);
+    void garrisonSend(Simulation& sim, const EffectDef& e, const EffectCtx& ctx, const std::vector<Entity>& targets);
+    void payDeathGain(Simulation& sim, Entity unit, uint8_t owner);
+    void swapRandom(Simulation& sim, const EffectDef& e, const EffectCtx& ctx, Entity h);
+    void closeGroups(Simulation& sim, const std::vector<Entity>& structures);
+    void areaOrbit(Simulation& sim, Entity a);
+    void staggerCast(Simulation& sim, int list, int index, const EffectCtx& ctx, Entity target, Fixed delay);
+    void staggerCastAt(Simulation& sim, int list, int index, const EffectCtx& ctx, Vec3 at, Fixed delay);
     void setupSkills(Simulation& sim, const Json& map);
     void hashEffects(Simulation& sim, Hasher& h);
     void enterGarrison(Simulation& sim, Entity unit, Entity structure);   // assault / reinforce with statuses (advanced)
@@ -876,6 +1003,11 @@ private:
     std::vector<Vec3> routeAnchors_;                  // 2 per route: the end positions (first / last control point)
     std::vector<std::vector<Entity>> routeBlockers_;  // per route: entities that close it while alive
     ScreenDef screen_;                                // map "screen"
+    std::vector<std::vector<std::pair<Entity, std::array<Fixed, 21>>>> routeCoverage_;   // per route: tower -> covered length per range step
+    std::vector<int> routeLanes(Simulation& sim, Entity from, Entity to, bool flying) const;   // ground lanes of an open route / flying lanes
+    std::vector<int> flyingLanes(Simulation& sim, Entity from, Entity to);                   // made on first use
+    int routeIndex(Simulation& sim, Entity a, Entity b) const;
+    void startRouteWalk(Simulation& sim, Entity unit, int lane);
     bool attackSlot(Simulation& sim, Entity e, Entity target, Fixed range, Vec3& out); // melee surround
     void moveToVia(Simulation& sim, Entity e, Vec3 goal, Fixed radius, bool aroundAllies);
 
@@ -914,8 +1046,16 @@ private:
     void flushDeathSpawns(Simulation& sim);
     std::unique_ptr<GridFields> fields_;   // grid fields config + kernels (state: GridFieldStore resource)
     std::unique_ptr<Raid> raid_;           // extraction raids (state: RaidStore resource)
+    friend class TopDown;                  // free fire launches weapon projectiles (initProjectileProgram)
+    std::unique_ptr<Prompts> prompts_;     // rules "prompts" (state: PromptStore resource)
+    std::unique_ptr<Career> career_;       // rules "careers" (state: CareerStore resource)
+    std::unique_ptr<Commerce> commerce_;   // rules "commerce" (state: CommerceStore resource)
+    std::unique_ptr<Arsenal> arsenal_;     // rules "arsenal" (state: ArsenalStore resource)
+    std::unique_ptr<Traffic> traffic_;     // rules "traffic" (state: TrafficStore resource)
     std::unique_ptr<Driving> driving_;     // rules "driving" (state: DrivingStore resource)
     std::unique_ptr<TopDown> topDown_;     // rules "topDown" (state: TopDownStore resource)
+    std::unique_ptr<Progression> progression_;   // rules "progression" (state: ProgressionStore resource)
+    std::unique_ptr<Encounters> encounters_;   // rules "encounters" (state: EncounterStore resource)
     std::unique_ptr<Environment> env_;     // map environment (RtsEnv.h; state: EnvState resource)
     std::vector<NativeDefinition> nativeDefinitions_;
     NativeModules native_;

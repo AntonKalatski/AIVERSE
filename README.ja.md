@@ -185,7 +185,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 
 **グラフィックとサウンド**
 - 独自 RHI：Metal、GLES3 / WebGL2、GL 3.3
-- PBR、glTF/OBJ、スケルタル/プロシージャルアニメーション
+- PBR、glTF/OBJ、スケルタル/プロシージャルアニメーション、プロシージャルケーブル、親子エンティティの描画
 - 影、動的ライト、夜、ポストエフェクト、Shader Graph
 - Unity ParticleSystem のモジュールに対応したパーティクルと Unity からのインポーター
 - 2D：スプライト、オートタイル付きタイルマップ
@@ -284,11 +284,14 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 | [パーティクル](docs/particles.md) · [モデル](docs/models.md) · [Shader Graph](docs/shader-graph.md) | ビジュアル |
 | [メタゲーム](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [プラグイン](docs/plugins.md) | 収益化とストア |
 | [FPS](docs/fps.md) · [大規模ワールド](docs/large-worlds.md) | FPS モジュール |
+| [見下ろし型ヒーロー](docs/topdown.md) · [運転](docs/driving.md) · [街の交通](docs/traffic.md) | 街のゲーム: 車、信号、歩行者、緊急サービス、仕事を持つ住民 |
 | [AGENTS.md](AGENTS.md) | エンジン本体を変更するエージェント向けのルール |
 | [Unity からの移行](docs/ja/engine-import.md) | シーン、プレハブ、アセットのインポートと、エージェントによるロジックの移植 |
 
 ## ライセンス
 
 [MIT](LICENSE)。サードパーティのライブラリは `third_party/` にそれぞれのライセンスとともに置かれています
-（MIT、BSD、zlib、OFL、CC0、CC-BY のみ）。商用ゲームのオリジナルアセットは含まれていません。
+（MIT、MIT-0、BSD、ISC、zlib、OFL、CC0、CC-BY など）。商用ゲームのオリジナルアセットは含まれていません。
 インポーターはあなた自身のコピーから読み込みます。
+
+ゲームのビルドには `THIRD_PARTY_NOTICES.txt` が自動的に含まれます。外部 SDK のライセンス通知はプロジェクトで用意してください（[詳細](docs/third-party-notices.md)）。

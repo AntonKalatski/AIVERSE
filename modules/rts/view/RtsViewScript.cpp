@@ -7,6 +7,7 @@
 #include <algorithm>
 #include "../RtsModule.h"
 #include "../RtsScriptInternal.h"
+#include "../RtsProgression.h"
 
 namespace aiverse::game {
 using namespace script;
@@ -38,6 +39,7 @@ struct ViewScripts::Impl {
     ViewTargeting targeting;
     float dragDx = 0, dragDy = 0;     // view.set_map_drag_offset (window points)
     ViewCamera camera;
+    std::function<bool(uint64_t,render::float3&)> visualPosition;
     std::string screen = "playing";   // host screen state (view.screen()): playing | paused | over
     ViewCameraRequest cameraRequest{};
     bool cameraRequested = false;
@@ -380,6 +382,11 @@ int vSetCamera(lua_State* L, Vm& vm) {
     return 0;
 }
 // view.to_screen(x, z [, y]) -> sx, sy, onScreen: window points (top-left origin), the space of view.draw.
+int vVisualPosition(lua_State* L, Vm& vm) {
+    Entity e; render::float3 p{}; auto& read=viewOf(vm).visualPosition;
+    if(!argEntity(L,1,e)||!e.valid()||!read||!read(e.packed(),p)){lua_pushnil(L);return 1;}
+    lua_pushnumber(L,p.x);lua_pushnumber(L,p.z);lua_pushnumber(L,p.y);return 3;
+}
 int vToScreen(lua_State* L, Vm& vm) {
     const auto& c = viewOf(vm).camera;
     const float x = float(toDouble(L, 1)), z = float(toDouble(L, 2)), y = lua_isnoneornil(L, 3) ? 0.0f : float(toDouble(L, 3));
@@ -522,6 +529,27 @@ int vAnimation(lua_State* L, Vm& vm) {
     entries[key] = std::move(next);
     return 0;
 }
+int vEntityParent(lua_State* L, Vm& vm) {
+    Entity child,parent;
+    if(!argEntity(L,1,child)||!child.valid())return fail(vm,"view.entity_parent: child handle required");
+    auto& hierarchy=viewOf(vm).fx->hierarchy;
+    if(lua_isnil(L,2)){hierarchy.parents.erase(child.packed());return 0;}
+    if(!argEntity(L,2,parent)||!parent.valid()||!vm.sim||!vm.sim->world().alive(child)||!vm.sim->world().alive(parent))
+        return fail(vm,"view.entity_parent: child and parent must be alive");
+    EntityParent link;link.parent=parent.packed();
+    if(!lua_isnoneornil(L,3)) {
+        if(!lua_istable(L,3))return fail(vm,"view.entity_parent: local transform table required");
+        float* fields[]={&link.offset.x,&link.offset.y,&link.offset.z,&link.yaw};
+        const char* names[]={"x","y","z","yaw"};
+        for(int i=0;i<4;++i){lua_getfield(L,3,names[i]);if(!lua_isnil(L,-1)){
+            if(!lua_isnumber(L,-1)||!std::isfinite(lua_tonumber(L,-1))||!std::isfinite(float(lua_tonumber(L,-1)))){lua_pop(L,1);return fail(vm,"view.entity_parent: finite local coordinates required");}
+            *fields[i]=float(lua_tonumber(L,-1));
+        }lua_pop(L,1);}
+        link.yaw*=.017453292f;
+    }
+    if(!hierarchy.set(child.packed(),link))return fail(vm,"view.entity_parent: cyclic hierarchy");
+    return 0;
+}
 int vEntityFx(lua_State* L, Vm& vm) {
     auto& im = viewOf(vm);
     Entity e;
@@ -582,6 +610,7 @@ int vEntityFx(lua_State* L, Vm& vm) {
     if (field("team_mix", V::kTeamMix, 4, false, 0.0f, 64.0f)) target.v[V::kTeamMix + 3] = std::clamp(target.v[V::kTeamMix + 3], 0.0f, 1.0f);
     field("team_glow", V::kTeamGlow, 1, true, 0.0f, 64.0f);
     field("shadow", V::kShadow, 1, true, 0.0f, 1.0f);
+    field("keep_shadow", V::kKeepShadow, 1, true, 0.0f, 1.0f);
     field("lift", V::kLift, 1, true, -1000.0f, 1000.0f);
     field("pitch", V::kPitch, 1, true, -360.0f, 360.0f);
     field("roll", V::kRoll, 1, true, -360.0f, 360.0f);
@@ -751,6 +780,25 @@ int vSend(lua_State* L, Vm& vm) {
     lua_pushboolean(L, 1);
     return 1;
 }
+// view.progression_choose(card) / view.progression_reroll(): the local player's level-up card (rules "progression",
+// RtsProgression.h) as a kCmdProgression command for the open offer's revision; a stale click is ignored by the sim.
+int vProgressionCmd(lua_State* L, Vm& vm, int64_t op) {
+    auto& im = viewOf(vm);
+    Progression* pg = vm.module ? vm.module->progression() : nullptr;
+    const auto* p = pg && pg->active() ? pg->progress(*vm.sim, im.player) : nullptr;
+    if (!p || !p->offer.open) { lua_pushboolean(L, 0); return 1; }
+    int64_t card = 1;
+    if (op == kProgChoose && !argInt(L, vm, 1, card, "card")) return -1;
+    if (card < 1 || size_t(card) > p->offer.items.size()) { lua_pushboolean(L, 0); return 1; }
+    Command c;
+    c.type = kCmdProgression;
+    c.param = progressionParam(op, int(card - 1), p->offer.revision);
+    if (im.commands.size() < 64) im.commands.push_back(c);
+    lua_pushboolean(L, 1);
+    return 1;
+}
+int vProgressionChoose(lua_State* L, Vm& vm) { return vProgressionCmd(L, vm, kProgChoose); }
+int vProgressionReroll(lua_State* L, Vm& vm) { return vProgressionCmd(L, vm, kProgReroll); }
 } // namespace
 
 ViewScripts::ViewScripts() : impl_(std::make_unique<Impl>(*this)) {}
@@ -762,6 +810,7 @@ void ViewScripts::setTargeting(const ViewTargeting& target) { impl_->targeting=t
 void ViewScripts::mapDragOffset(float& dx, float& dy) const { dx=impl_->dragDx; dy=impl_->dragDy; }
 void ViewScripts::setMapDragOffset(float dx, float dy) { impl_->dragDx=dx; impl_->dragDy=dy; }
 void ViewScripts::setCamera(const ViewCamera& camera) { impl_->camera = camera; }
+void ViewScripts::setVisualPositionReader(std::function<bool(uint64_t,render::float3&)> reader) { impl_->visualPosition=std::move(reader); }
 void ViewScripts::setScreen(const std::string& screen) { impl_->screen = screen.empty() ? "playing" : screen; }
 bool ViewScripts::takeCameraRequest(ViewCameraRequest& out) {
     if (!impl_->cameraRequested) return false;
@@ -801,10 +850,11 @@ bool ViewScripts::load(Simulation& sim, const Json& rules, const Json& map, uint
     static const luaL_Reg funcs[] = {{"on", bind<vOn>}, {"on_frame", bind<vOnFrame>}, {"notice", bind<vNotice>},
                                      {"effect", bind<vEffect>}, {"sound", bind<vSound>}, {"player", bind<vPlayer>}, {"screen", bind<vScreen>},
                                      {"send", bind<vSend>}, {"state", bind<vState>}, {"ui_call", bind<vUiCall>},
+                                     {"progression_choose", bind<vProgressionChoose>}, {"progression_reroll", bind<vProgressionReroll>},
                                      {"render_texture", bind<vRenderTexture>}, {"paint_layer", bind<vPaintLayer>}, {"targeting", bind<vTargeting>}, {"set_map_drag_offset", bind<vSetMapDragOffset>},
                                      {"camera", bind<vCamera>}, {"set_camera", bind<vSetCamera>},
-                                     {"to_screen", bind<vToScreen>}, {"draw", bind<vDraw>},
-                                     {"draw_ground", bind<vDrawGround>}, {"entity_fx", bind<vEntityFx>}, {"animation", bind<vAnimation>}, {"animation_trait", bind<vAnimationTrait>},
+                                     {"visual_position", bind<vVisualPosition>}, {"to_screen", bind<vToScreen>}, {"draw", bind<vDraw>},
+                                     {"draw_ground", bind<vDrawGround>}, {"entity_parent", bind<vEntityParent>}, {"entity_fx", bind<vEntityFx>}, {"animation", bind<vAnimation>}, {"animation_trait", bind<vAnimationTrait>},
                                      {"animation_load", bind<vAnimationLoad>}, {"animation_define", bind<vAnimationDefine>}, {"animation_use", bind<vAnimationUse>}, {"animation_status", bind<vAnimationStatus>}, {nullptr, nullptr}};
     luaL_newlib(vm.L, funcs);
     lua_setglobal(vm.L, "view");
@@ -853,6 +903,10 @@ void ViewScripts::update(Simulation& sim, float dt) {
     im.draws.clear(); im.drawVerts = 0; im.groundDraws.clear(); im.groundVerts = 0;   // view.draw / draw_ground: one frame
     // view.entity_fx: eases advance in frame time; entities gone from the simulation keep theirs for a corpse a while
     im.fx->advance(dt);
+    for(auto it=im.fx->hierarchy.parents.begin();it!=im.fx->hierarchy.parents.end();) {
+        if(!sim.world().alive(Entity::fromPacked(it->first))||!sim.world().alive(Entity::fromPacked(it->second.parent)))it=im.fx->hierarchy.parents.erase(it);
+        else ++it;
+    }
     for (auto it = im.fx->animations.begin(); it != im.fx->animations.end();) {
         if (sim.world().alive(Entity::fromPacked(it->first))) it->second.goneFor = -1;
         else if ((it->second.goneFor = std::max(0.0f, it->second.goneFor) + dt) > EntityFxEntry::kKeepDead) {

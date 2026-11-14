@@ -5,6 +5,7 @@
 // RtsView through RtsScene::entityFx, like the paint layers. Values change at once or ease over a time in seconds of
 // frame time (ViewScripts::update advances them before the frame's handlers run).
 #pragma once
+#include "EntityHierarchy.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -15,7 +16,7 @@ namespace aiverse::game {
 
 // The drawn values. Defaults = no change.
 struct EntityFxValues {
-    enum : int { kScale = 0, kOpacity = 3, kTint = 4, kTeamMix = 7, kTeamGlow = 11, kShadow = 12, kShadowScale = 13, kLift = 16, kCorpseAge = 17, kPitch = 18, kRoll = 19, kCount = 20 };
+    enum : int { kScale = 0, kOpacity = 3, kTint = 4, kTeamMix = 7, kTeamGlow = 11, kShadow = 12, kShadowScale = 13, kLift = 16, kCorpseAge = 17, kPitch = 18, kRoll = 19, kKeepShadow = 20, kCount = 21 };
     float v[kCount] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 0, -1, 0, 0};   // corpse age -1: the view's own clock; pitch / roll in degrees
     float scale(int axis) const { return v[kScale + axis]; }
     float opacity() const { return v[kOpacity]; }
@@ -53,6 +54,7 @@ struct EntityAnimationEntry {
 };
 
 struct EntityFxStore {
+    EntityHierarchy hierarchy;
     render::AnimationTraits animationTraits;
     std::map<std::string,std::shared_ptr<const AnimationDefinition>> animationDefinitions;
     std::unordered_map<uint64_t, EntityAnimationEntry> animations;

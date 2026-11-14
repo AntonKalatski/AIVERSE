@@ -187,7 +187,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 
 **Gráficos e áudio**
 - RHI próprio: Metal, GLES3 / WebGL2, GL 3.3
-- PBR, glTF/OBJ, animação esquelética e procedural
+- PBR, glTF/OBJ, animação esquelética e procedural, cabos procedurais, renderização de entidades com hierarquia
 - Sombras, luzes dinâmicas, noite, pós-processamento, Shader Graph
 - Partículas com os módulos do Unity ParticleSystem e importador do Unity
 - 2D: sprites, mapas de tiles com autotile
@@ -286,11 +286,13 @@ Os documentos de referência estão em inglês. A visão completa, o assistente 
 | [Partículas](docs/particles.md) · [Modelos](docs/models.md) · [Shader Graph](docs/shader-graph.md) | visual |
 | [Meta](docs/meta-game.md) · [LiveOps](docs/meta-liveops.md) · [Plugins](docs/plugins.md) | monetização e lojas |
 | [FPS](docs/fps.md) · [Mundos grandes](docs/large-worlds.md) | módulo FPS |
+| [Heróis em visão de cima](docs/topdown.md) · [Direção](docs/driving.md) · [Trânsito urbano](docs/traffic.md) | jogos de cidade: carros, semáforos, pedestres, serviços, moradores com emprego |
 | [AGENTS.md](AGENTS.md) | regras para agentes que alteram a própria engine |
 | [Migrando do Unity](docs/pt-BR/engine-import.md) | importar cenas, prefabs e assets, e portar a lógica com um agente |
 
 ## Licença
 
-[MIT](LICENSE). Bibliotecas de terceiros ficam em `third_party/` com suas próprias licenças (apenas MIT,
-BSD, zlib, OFL, CC0 e CC-BY). Assets originais de jogos comerciais não estão incluídos: os importadores
+[MIT](LICENSE). Bibliotecas de terceiros ficam em `third_party/` com suas próprias licenças (incluindo MIT, MIT-0, BSD, ISC, zlib, OFL, CC0 e CC-BY). Assets originais de jogos comerciais não estão incluídos: os importadores
 os leem da sua própria cópia.
+
+As compilações incluem automaticamente `THIRD_PARTY_NOTICES.txt`; o projeto deve fornecer os avisos dos SDKs externos (veja os [detalhes](docs/third-party-notices.md)).

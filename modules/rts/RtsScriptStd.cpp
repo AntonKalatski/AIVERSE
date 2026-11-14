@@ -38,7 +38,7 @@ int rAlive(lua_State* L, Vm& vm) { auto* p = vm.sim->player(uint8_t(intArg(L, 1)
 // Marks a player defeated with the standard event (value = reason, default 0 eliminated).
 int rDefeat(lua_State* L, Vm& vm) {
     auto* p = vm.sim->player(uint8_t(intArg(L, 1)));
-    if (!p) return 0;
+    if (!p || vm.module->envInvincible(*vm.sim, p->slot)) return 0;   // map scroller setInvincible
     p->alive = false;
     vm.sim->emit({kEvPlayerDefeated, p->slot, kNullEntity, kNullEntity, intArg(L, 2), {}});
     return 0;
@@ -86,6 +86,7 @@ int rVictoryRules(lua_State* L, Vm& vm) {
     for (auto& t : R.types) anyKey |= t.key;
     lua_pushboolean(L, anyKey); lua_setfield(L, -2, "any_key_type");
     lua_pushboolean(L, R.territory.enabled); lua_setfield(L, -2, "territory_enabled");
+    lua_pushboolean(L, vm.module->modes().conquestTeam); lua_setfield(L, -2, "team_elimination");   // match modes (RtsModes.cpp)
     return 1;
 }
 int rTickets(lua_State* L, Vm& vm) {
@@ -300,7 +301,8 @@ const char* const kTrigCmp[] = {">=", ">", "<=", "<", "==", "!="};
 const char* const kTrigCond[] = {"count", "resource", "variable", "researched", "random", "time", "alive", "regions", "script"};
 const char* const kTrigAction[] = {"spawn", "give", "take", "setOwner", "kill", "remove", "damage", "heal", "buff", "message", "setVariable",
     "addVariable", "research", "enableType", "disableType", "victory", "defeat", "enableTrigger", "disableTrigger", "addScore",
-    "setRegionOwner", "attackMove", "move", "setTickets", "castAbility", "objective", "dialog", "camera", "endMission", "script"};
+    "setRegionOwner", "attackMove", "move", "setTickets", "castAbility", "objective", "dialog", "camera", "endMission", "script",
+    "setResource", "resetCooldowns", "setProduction", "timeScale"};
 
 void pushTrigPlayer(lua_State* L, const TrigPlayer& p) {
     lua_createtable(L, 0, 2);
@@ -735,6 +737,21 @@ int rCastPlayerAbility(lua_State* L, Vm& vm) {
     m.applyPayload(sim, m.playerAbilityFor(sim, p, idx).payload, ctx);
     return 0;
 }
+// agent-bw-ai: bot trigger actions
+int rResetCooldowns(lua_State* L, Vm& vm) {   // (player): every player ability ready now
+    auto& gs = vm.module->state(*vm.sim);
+    const size_t p = size_t(intArg(L, 1));
+    if (p < gs.playerAbilities.size()) for (auto& st : gs.playerAbilities[p]) st.readyAt = std::min(st.readyAt, vm.sim->tick());
+    return 0;
+}
+int rSetProduction(lua_State* L, Vm& vm) {    // (e, coefficient): replaces the trigger's production buff
+    if (auto* b = vm.sim->world().tryGet<Buffs>(entArg(L, 1))) {
+        constexpr uint16_t kTag = 0xFFFE;
+        b->list.erase(std::remove_if(b->list.begin(), b->list.end(), [](const Buff& x) { return x.stat == Stat::ProductionSpeed && x.sourceType == kTag; }), b->list.end());
+        b->list.push_back({Stat::ProductionSpeed, Fixed{}, fxArg(L, 2), 0xFFFFFFFFu, kTag});
+    }
+    return 0;
+}
 int rHostile(lua_State* L, Vm& vm) { lua_pushboolean(L, vm.module->hostile(*vm.sim, uint8_t(intArg(L, 1)), uint8_t(intArg(L, 2)))); return 1; }
 int rRatio(lua_State* L, Vm&) { pushFx(L, Fixed::fromRatio(intArg(L, 1), intArg(L, 2))); return 1; }
 
@@ -845,6 +862,7 @@ void openStdApi(Vm& vm) {
         {"message_index", bind<rMessageIndex>}, {"add_score", bind<rAddScore>}, {"set_tickets", bind<rSetTickets>},
         {"set_region_owner_by_name", bind<rSetRegionOwnerByName>}, {"regions_owned", bind<rRegionsOwned>},
         {"nearest_enemy_structure", bind<rNearestEnemyStructure>}, {"cast_player_ability", bind<rCastPlayerAbility>},
+        {"reset_cooldowns", bind<rResetCooldowns>}, {"set_production", bind<rSetProduction>},
         {"hostile", bind<rHostile>}, {"ratio", bind<rRatio>},
         {"auto_build_rules", bind<rAutoBuildRules>}, {"type_cost", bind<rTypeCost>}, {"auto_built", bind<rAutoBuilt>},
         {"can_train", bind<rCanTrain>}, {"find_auto_spot", bind<rFindAutoSpot>}, {"pay", bind<rPay>}, {"refund", bind<rRefund>},

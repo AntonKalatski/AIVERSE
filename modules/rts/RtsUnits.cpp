@@ -640,6 +640,7 @@ bool RtsModule::runOrder(Simulation& sim, Entity e, Order& o) {
                 const int before = g->count;
                 while (g->damageAcc >= kOne && g->count > 0) { --g->count; g->damageAcc -= kOne; }
                 if (rules_.originals) assaultOriginals(sim, e, o.target);
+                if (rules_.core.any) coreAssault(sim, me, to.player);   // battle core (RtsCore.cpp)
                 envAssault(sim, o.target, me, to.player, 1, before - g->count);
             } else if (tt.capturable) {
                 uint8_t old = to.player;
@@ -647,6 +648,7 @@ bool RtsModule::runOrder(Simulation& sim, Entity e, Order& o) {
                 g->count = 1; g->damageAcc = Fixed{}; g->growth = Fixed{}; g->pendingOut = 0;
                 if (auto* p = w.tryGet<Production>(o.target)) p->queue.clear();
                 sim.emit({kEvCaptured, me, o.target, e, old, w.get<Transform>(o.target).pos});
+                if (rules_.core.any) coreCaptured(sim, w.get<Unit>(o.target).type, old, me);   // battle core (RtsCore.cpp)
                 if (rules_.originals) captureOriginals(sim, o.target, old, me);
             }
         }
@@ -759,7 +761,9 @@ void RtsModule::sysMovement(Simulation& sim) {
 
     if (rules_.dungeon) movePossessed(sim);
     if (topDown_ && topDown_->active()) topDown_->tick(sim);   // top-down heroes: stick movement, aim, auto-fire (RtsTopDown.cpp)
+    if (traffic_ && traffic_->active()) traffic_->tick(sim);   // traffic cars plan their pedals, pedestrians walk (RtsTraffic.cpp)
     if (driving_ && driving_->active()) driving_->tick(sim);   // vehicles: controller step, collisions, damage (RtsDriving.cpp)
+    if (arsenal_ && arsenal_->active()) arsenal_->tick(sim);   // the hero's weapons: crates, free fire along the aim (RtsArsenal.cpp)
 
     if (rules_.movement.separation) {
     // 2) separation between overlapping mobile units on the same layer. Bodies are move.radius; who yields

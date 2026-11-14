@@ -380,6 +380,9 @@ int gTypeInfo(lua_State* L, Vm& vm) {
     for (size_t i = 0; i < R.tagNames.size() && i < 64; ++i)
         if (t.tags & (uint64_t(1) << i)) { lua_pushstring(L, R.tagNames[i].c_str()); lua_rawseti(L, -2, ++n); }
     lua_setfield(L, -2, "tags");
+    lua_createtable(L, int(t.upgrades.size()), 0);   // in-place upgrades (agent-bw-client: BW point levels / casts)
+    for (size_t i = 0; i < t.upgrades.size(); ++i) { lua_pushstring(L, R.types[t.upgrades[i]].id.c_str()); lua_rawseti(L, -2, lua_Integer(i + 1)); }
+    lua_setfield(L, -2, "upgrades");
     return 1;
 }
 int gTypes(lua_State* L, Vm& vm) {
@@ -636,7 +639,8 @@ const std::pair<const char*, uint16_t> kCommands[] = {
     {"merge", kCmdMerge}, {"split", kCmdSplit}, {"trade", kCmdTrade}, {"trade_route", kCmdTradeRoute}, {"tribute", kCmdTribute},
     {"diplomacy", kCmdDiplomacy}, {"buy_item", kCmdBuyItem}, {"use_item", kCmdUseItem}, {"drop_item", kCmdDropItem},
     {"pick_item", kCmdPickItem}, {"learn", kCmdLearn}, {"bounty", kCmdBounty}, {"rotate", kCmdRotate}, {"lock", kCmdLock},
-    {"end_turn", kCmdEndTurn}, {"raid", kCmdRaid}, {"topdown", kCmdTopDown}, {"topdown_ability", kCmdTopDownAbility}, {"topdown_enter", kCmdTopDownEnter},
+    {"end_turn", kCmdEndTurn}, {"raid", kCmdRaid}, {"topdown", kCmdTopDown}, {"topdown_ability", kCmdTopDownAbility}, {"topdown_enter", kCmdTopDownEnter}, {"commerce", kCmdCommerce}, {"career", kCmdCareer}, {"prompt", kCmdPrompt}, {"topdown_weapon", kCmdTopDownWeapon},
+    {"progression", kCmdProgression},
 };
 const std::pair<const char*, int> kStances[] = {{"aggressive", 0}, {"defensive", 1}, {"hold", 2}, {"passive", 3}};
 const std::pair<const char*, int> kFormations[] = {{"line", 0}, {"box", 1}, {"wedge", 2}, {"loose", 3}, {"none", -1}};
@@ -689,6 +693,18 @@ bool commandParam(lua_State* L, Vm& vm, int t, Command& c) {
         field("aim"); in.aim = lua_toboolean(L, -1);
         field("fire"); in.fire = lua_toboolean(L, -1);
         if (ok && !field("param")) c.param = topdown::pack(in);
+        break;
+    }
+    case kCmdProgression: {   // level-up offers (RtsProgression.h): op = "choose" | "reroll" | "close" | "open", card (1-based), revision
+        int64_t op = kProgChoose;
+        if (field("op")) {
+            const char* o = lua_tostring(L, -1);
+            const std::string n = o ? o : "";
+            op = n == "choose" ? int64_t(kProgChoose) : n == "reroll" ? int64_t(kProgReroll) : n == "close" ? int64_t(kProgClose) : n == "open" ? int64_t(kProgOpen) : int64_t(0);
+            if (!op) { vm.err = "command: progression op must be choose, reroll, close or open"; ok = false; }
+        }
+        ok = ok && num("card", a, 1) && num("revision", b, 0);
+        if (ok && !field("param")) c.param = progressionParam(op, int(a - 1), uint32_t(b));
         break;
     }
     case kCmdStance: case kCmdFormation:
@@ -1085,6 +1101,95 @@ int gSetGarrison(lua_State* L, Vm& vm) {
     lua_pushboolean(L, 1);
     return 1;
 }
+// game.modes(): read-only snapshot of the match modes state (agent-bw-client: Bunker Wars HUD timers / morale stars);
+// nil when the match has no modes block. Per-slot tables are keyed by player slot, koh by team.
+int gModes(lua_State* L, Vm& vm) {
+    CTX;
+    const ModesRules& mr = m.modes();
+    if (!mr.any) { lua_pushnil(L); return 1; }
+    const ModesState& ms = m.state(sim).modes;
+    lua_newtable(L);
+    setF(L, "real_time", ms.realTime);
+    setF(L, "speed", ms.speed);
+    if (mr.timeLimit) setF(L, "time_left", ms.timeLeft);
+    if (mr.suddenDeath) {
+        setF(L, "sudden_death_at", mr.sdAt);
+        lua_pushinteger(L, ms.sdPhase); lua_setfield(L, -2, "sudden_death");
+        lua_pushboolean(L, ms.sdCounter); lua_setfield(L, -2, "sd_counter");
+    }
+    if (mr.koh) {
+        lua_newtable(L);
+        for (size_t t = 0; t < ms.kohScore.size(); ++t) { pushFx(L, ms.kohScore[t]); lua_rawseti(L, -2, lua_Integer(t)); }
+        lua_setfield(L, -2, "koh");
+    }
+    lua_createtable(L, int(ms.points.size()), 0);
+    for (size_t i = 0; i < ms.points.size(); ++i) {
+        const ModePoint& mp = ms.points[i];
+        lua_newtable(L);
+        if (w.alive(mp.e)) { pushEntity(L, mp.e); lua_setfield(L, -2, "unit"); }
+        lua_pushstring(L, mp.kind == 1 ? "domination" : "koh"); lua_setfield(L, -2, "kind");
+        setF(L, "hold", mp.hold);
+        lua_rawseti(L, -2, lua_Integer(i + 1));
+    }
+    lua_setfield(L, -2, "points");
+    lua_newtable(L);
+    for (size_t j = 0; j < mr.levels.size() && j < ms.level.size(); ++j) {
+        if (mr.levels[j].res < 0 || size_t(mr.levels[j].res) >= R.resources.size()) continue;
+        lua_newtable(L);
+        for (size_t p = 0; p < ms.level[j].size(); ++p) { lua_pushinteger(L, ms.level[j][p]); lua_rawseti(L, -2, lua_Integer(p)); }
+        lua_setfield(L, -2, R.resources[size_t(mr.levels[j].res)].id.c_str());
+    }
+    lua_setfield(L, -2, "levels");
+    lua_newtable(L);
+    for (size_t p = 0; p < ms.outcome.size(); ++p) { lua_pushinteger(L, ms.outcome[p]); lua_rawseti(L, -2, lua_Integer(p)); }
+    lua_setfield(L, -2, "outcome");
+    return 1;
+}
+// game.player_abilities(p): the player's skill cards (rules playerAbilities), read-only (agent-bw-client: BW HUD)
+int gPlayerAbilities(lua_State* L, Vm& vm) {
+    CTX;
+    uint8_t p; if (!playerArg(L, vm, 1, p)) return -1;
+    const GameState& gs = m.state(sim);
+    lua_createtable(L, int(R.playerAbilities.size()), 0);
+    if (p >= gs.playerAbilities.size()) return 1;
+    const auto& st = gs.playerAbilities[p];
+    const uint32_t tick = sim.tick(), rate = std::max<uint32_t>(1, sim.tickRate());
+    for (size_t i = 0; i < R.playerAbilities.size() && i < st.size(); ++i) {
+        const PlayerAbilityDef& d = R.advancedEffects ? m.playerAbilityFor(sim, p, int(i)) : R.playerAbilities[i];
+        lua_newtable(L);
+        lua_pushstring(L, R.playerAbilities[i].id.c_str()); lua_setfield(L, -2, "id");
+        lua_pushinteger(L, lua_Integer(i)); lua_setfield(L, -2, "index");
+        lua_pushboolean(L, st[i].owned); lua_setfield(L, -2, "owned");
+        lua_pushboolean(L, d.passive || d.autoEvery.raw > 0); lua_setfield(L, -2, "automatic");
+        lua_pushinteger(L, st[i].level); lua_setfield(L, -2, "level");
+        lua_pushinteger(L, st[i].charges); lua_setfield(L, -2, "charges");
+        setF(L, "cooldown", d.cooldown);
+        setF(L, "ready_in", st[i].readyAt > tick ? Fixed::fromRatio(int64_t(st[i].readyAt - tick), int64_t(rate)) : Fixed{});
+        lua_pushboolean(L, m.canUsePlayerAbility(sim, p, int(i))); lua_setfield(L, -2, "usable");
+        lua_newtable(L);
+        for (const auto& c : d.cost) if (c.res < R.resources.size()) setF(L, R.resources[c.res].id.c_str(), c.value);
+        lua_setfield(L, -2, "cost");
+        lua_rawseti(L, -2, lua_Integer(i + 1));
+    }
+    return 1;
+}
+// game.set_ability_cooldown(p, id, seconds): restarts a player ability's cooldown (0 = ready now); false for an
+// unknown ability (agent-bw-client: BW tutorial SetSkillCooldown)
+int gSetAbilityCooldown(lua_State* L, Vm& vm) {
+    CTX;
+    uint8_t p; if (!playerArg(L, vm, 1, p)) return -1;
+    std::string id;
+    if (!nameArg(L, vm, 2, id, "ability")) return -1;
+    Fixed sec;
+    if (!argFx(L, vm, 3, sec, "seconds")) return -1;
+    GameState& gs = m.state(sim);
+    const int i = R.findPlayerAbility(id);
+    if (i < 0 || p >= gs.playerAbilities.size() || size_t(i) >= gs.playerAbilities[p].size()) { lua_pushboolean(L, 0); return 1; }
+    const Fixed ticks = std::max(Fixed{}, sec) * Fixed::fromInt(int64_t(sim.tickRate()));
+    gs.playerAbilities[p][size_t(i)].readyAt = sim.tick() + uint32_t((ticks + Fixed::fromRatio(65535, 65536)).toInt());
+    lua_pushboolean(L, 1);
+    return 1;
+}
 int gSetEnergy(lua_State* L, Vm& vm) {
     CTX;
     Fixed v;
@@ -1210,6 +1315,154 @@ int gEnableTrigger(lua_State* L, Vm& vm) {
     return 0;
 }
 
+// game.traffic_light(x, z [, "x"|"z"]): the signal of the junction at / next to the point for traffic along that axis
+// (default: the road the point is on), "green" | "yellow" | "red", or nil (no signalised junction there)
+int gTrafficLight(lua_State* L, Vm& vm) {
+    CTX;
+    Fixed x, z;
+    if (!argFx(L, vm, 1, x, "x") || !argFx(L, vm, 2, z, "z")) return -1;
+    Traffic* t = m.traffic();
+    const int j = t && t->active() ? t->junctionAt(x, z) : -1;
+    if (j < 0 || !t->net().junctions[size_t(j)].signal) { lua_pushnil(L); return 1; }
+    lib::genre::TrafficAxis axis = lib::genre::TrafficAxis::X;
+    if (lua_isstring(L, 3)) axis = std::string(lua_tostring(L, 3)) == "z" ? lib::genre::TrafficAxis::Z : lib::genre::TrafficAxis::X;
+    else {
+        const auto& net = t->net();
+        const int cx = int(x.floorInt()), cz = int(z.floorInt());
+        if (cx >= 0 && cz >= 0 && cx < net.w && cz < net.h)
+            if (const int pi = net.pieceAt[size_t(cz * net.w + cx)]; pi >= 0) axis = net.pieces[size_t(pi)].axis;
+    }
+    static const char* names[3] = {"green", "yellow", "red"};
+    lua_pushstring(L, names[int(t->light(sim, j, axis))]);
+    return 1;
+}
+
+// game.traffic_report(kind, x, z [, offender]): something happened ("injured" | "crime" | "fire" | "wreck"); the
+// city services answer it. Returns the incident id or nil (ignored: no witness for a crime, traffic off)
+int gTrafficReport(lua_State* L, Vm& vm) {
+    CTX;
+    std::string kind;
+    Fixed x, z;
+    if (!nameArg(L, vm, 1, kind, "kind") || !argFx(L, vm, 2, x, "x") || !argFx(L, vm, 3, z, "z")) return -1;
+    static const char* names[kIncidentKinds] = {"injured", "crime", "fire", "wreck"};
+    int k = -1;
+    for (int i = 0; i < kIncidentKinds; ++i) if (kind == names[i]) k = i;
+    if (k < 0) return fail(vm, "traffic_report: injured, crime, fire or wreck");
+    Entity who = kNullEntity;
+    if (!lua_isnoneornil(L, 4)) unitArg(L, vm, 4, who);
+    Traffic* t = m.traffic();
+    Entity subject = kNullEntity;
+    if (t && t->active() && k == kIncidentFire && t->rules().incidents.fire != UINT16_MAX) subject = m.spawn(sim, t->rules().incidents.fire, 0, Vec3{x, Fixed{}, z});
+    const uint32_t id = t && t->active() ? t->report(sim, uint8_t(k), Vec2{x, z}, subject, who) : 0;
+    if (id) lua_pushinteger(L, lua_Integer(id)); else lua_pushnil(L);
+    return 1;
+}
+// game.traffic_incidents(): {{id, kind, x, z, state = "open"|"coming"|"working"}, ...} (HUD, minimap, missions)
+int gTrafficIncidents(lua_State* L, Vm& vm) {
+    CTX;
+    lua_newtable(L);
+    Traffic* t = m.traffic();
+    auto* st = t && t->active() ? t->store(sim) : nullptr;
+    if (!st) return 1;
+    static const char* names[kIncidentKinds] = {"injured", "crime", "fire", "wreck"};
+    static const char* states[3] = {"open", "coming", "working"};
+    int n = 0;
+    for (auto& i : st->incidents) {
+        lua_createtable(L, 0, 5);
+        lua_pushinteger(L, lua_Integer(i.id)); lua_setfield(L, -2, "id");
+        lua_pushstring(L, names[i.kind]); lua_setfield(L, -2, "kind");
+        pushFx(L, i.pos.x); lua_setfield(L, -2, "x");
+        pushFx(L, i.pos.y); lua_setfield(L, -2, "z");
+        lua_pushstring(L, states[std::min<int>(i.state, 2)]); lua_setfield(L, -2, "state");
+        if (i.kind == kIncidentInjured) { lua_pushboolean(L, i.fatal); lua_setfield(L, -2, "fatal"); }
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+// game.traffic_clock() -> hour of the game day as fx (0..24), or nil without a population
+int gTrafficClock(lua_State* L, Vm& vm) {
+    CTX;
+    Traffic* t = m.traffic();
+    if (!t || !t->active() || t->rules().population.count <= 0) { lua_pushnil(L); return 1; }
+    pushFx(L, Fixed::fromRatio(t->minuteOfDay(sim), 60));
+    return 1;
+}
+// game.traffic_gang() -> {state = "unseen"|"drive"|"out"|"rob"|"back"|"flee", x, z (the place they rob), car = handle,
+//  size, loot} of the gang that is out now, or nil; second value: {robberies, caught, loot} so far
+int gTrafficGang(lua_State* L, Vm& vm) {
+    CTX;
+    Traffic* t = m.traffic();
+    auto* st = t && t->active() ? t->store(sim) : nullptr;
+    if (!st) { lua_pushnil(L); return 1; }
+    const TrafficGang& g = st->gang;
+    if (g.state == kGangNone || g.target < 0) lua_pushnil(L);
+    else {
+        static const char* states[] = {"none", "unseen", "drive", "out", "rob", "back", "flee"};
+        lua_createtable(L, 0, 6);
+        lua_pushstring(L, states[std::min<int>(g.state, 6)]); lua_setfield(L, -2, "state");
+        pushFx(L, t->places()[size_t(g.target)].pos.x); lua_setfield(L, -2, "x");
+        pushFx(L, t->places()[size_t(g.target)].pos.y); lua_setfield(L, -2, "z");
+        if (g.car.valid() && sim.world().alive(g.car)) { pushEntity(L, g.car); lua_setfield(L, -2, "car"); }
+        lua_pushinteger(L, lua_Integer(g.members.size())); lua_setfield(L, -2, "size");
+        lua_pushinteger(L, g.loot); lua_setfield(L, -2, "loot");
+    }
+    lua_createtable(L, 0, 3);
+    lua_pushinteger(L, st->gangRobberies); lua_setfield(L, -2, "robberies");
+    lua_pushinteger(L, st->gangCaught); lua_setfield(L, -2, "caught");
+    lua_pushinteger(L, lua_Integer(st->gangLoot)); lua_setfield(L, -2, "loot");
+    return 2;
+}
+// game.traffic_citizen(h) -> {id-less record of the citizen behind a person on the street or the car he drives} or nil:
+// {state = "to_work"|"to_home"|..., commute = "walk"|"car"|"bus", leg = "walk"|"to_stop"|"at_stop"|"drive" (on his way),
+//  home = {x, z}, work = {x, z, kind, open}, shift = {from, to} (hours)}
+int gTrafficCitizen(lua_State* L, Vm& vm) {
+    CTX;
+    Entity e;
+    Traffic* t = m.traffic();
+    const TrafficCitizen* c = t && t->active() && unitArg(L, vm, 1, e) ? t->citizenOf(sim, e) : nullptr;
+    if (!c) { lua_pushnil(L); return 1; }
+    static const char* states[] = {"home", "to_work", "work", "to_home", "hospital", "dead", "gang", "jail"};
+    lua_createtable(L, 0, 4);
+    lua_pushstring(L, states[std::min<int>(c->state, 7)]); lua_setfield(L, -2, "state");
+    static const char* commutes[] = {"walk", "car", "bus"};
+    static const char* legs[] = {"walk", "to_stop", "at_stop", "ride", "drive"};
+    lua_pushstring(L, commutes[std::min<int>(c->commute, 2)]); lua_setfield(L, -2, "commute");
+    if (c->line >= 0 && (c->state == kCitizenToWork || c->state == kCitizenToHome)) { lua_pushstring(L, t->lineId(c->line).c_str()); lua_setfield(L, -2, "line"); }
+    if (c->state == kCitizenToWork || c->state == kCitizenToHome) { lua_pushstring(L, legs[std::min<int>(c->leg, 4)]); lua_setfield(L, -2, "leg"); }
+    auto place = [&](int i, const char* key) {
+        if (i < 0) return;
+        const auto& p = t->places()[size_t(i)];
+        lua_createtable(L, 0, 4);
+        pushFx(L, p.pos.x); lua_setfield(L, -2, "x");
+        pushFx(L, p.pos.y); lua_setfield(L, -2, "z");
+        lua_pushstring(L, t->rules().population.kinds[p.kind].id.c_str()); lua_setfield(L, -2, "kind");
+        lua_pushboolean(L, t->present(sim, i) > 0); lua_setfield(L, -2, "open");
+        lua_setfield(L, -2, key);
+    };
+    place(c->home, "home");
+    place(c->work, "work");
+    place(c->school, "school");   // where his child goes
+    if (c->via) { lua_pushboolean(L, 1); lua_setfield(L, -2, "via_school"); }
+    if (c->work >= 0) {
+        const auto& sh = t->rules().population.kinds[t->places()[size_t(c->work)].kind].shifts[c->shift];
+        lua_createtable(L, 0, 2);
+        pushFx(L, Fixed::fromRatio(sh.first, 60)); lua_setfield(L, -2, "from");
+        pushFx(L, Fixed::fromRatio(sh.second, 60)); lua_setfield(L, -2, "to");
+        lua_setfield(L, -2, "shift");
+    }
+    return 1;
+}
+// game.traffic_kind(h): "car" | "bus" | "emergency" for a vehicle the traffic drives, else nil
+int gTrafficKind(lua_State* L, Vm& vm) {
+    CTX;
+    Entity e;
+    Traffic* t = m.traffic();
+    const int k = t && t->active() && unitArg(L, vm, 1, e) ? t->kindOf(sim, e) : -1;
+    static const char* names[3] = {"car", "bus", "emergency"};
+    if (k < 0 || k > 2) lua_pushnil(L); else lua_pushstring(L, names[k]);
+    return 1;
+}
+
 } // namespace
 
 const char* commandName(uint16_t type) {
@@ -1230,7 +1483,7 @@ void openGameApi(Vm& vm) {
         {"var", bindQ<gVar>}, {"log", bindQ<gLog>}, {"data", bindQ<gData>}, {"has_data", bindQ<gHasData>},
         {"orders", bindQ<gOrders>}, {"current_order", bindQ<gCurrentOrder>}, {"target", bindQ<gTarget>}, {"idle", bindQ<gIdle>},
         {"facing", bindQ<gFacing>}, {"velocity", bindQ<gVelocity>}, {"path", bindQ<gPath>}, {"energy", bindQ<gEnergy>},
-        {"commands", bindQ<gCommands>}, {"command_cooldown", bindQ<gCommandCooldown>}, {nullptr, nullptr}};
+        {"commands", bindQ<gCommands>}, {"command_cooldown", bindQ<gCommandCooldown>}, {"traffic_light", bindQ<gTrafficLight>}, {"traffic_kind", bindQ<gTrafficKind>}, {"traffic_incidents", bindQ<gTrafficIncidents>}, {"traffic_gang", bindQ<gTrafficGang>}, {"traffic_clock", bindQ<gTrafficClock>}, {"traffic_citizen", bindQ<gTrafficCitizen>}, {nullptr, nullptr}};
     static const luaL_Reg actions[] = {
         {"give", bind<gGive>}, {"take", bind<gTake>}, {"spawn", bind<gSpawn>}, {"kill", bind<gKill>}, {"damage", bind<gDamage>},
         {"attack_event", bind<gAttackEvent>},
@@ -1240,8 +1493,8 @@ void openGameApi(Vm& vm) {
         {"draw", bind<gDraw>}, {"defeat", bind<gDefeat>}, {"research", bind<gResearch>}, {"enable_type", bind<gEnableType>},
         {"add_score", bind<gAddScore>}, {"enable_trigger", bind<gEnableTrigger>}, {"clear_data", bind<gClearData>},
         {"set_pos", bind<gSetPos>}, {"teleport", bind<gSetPos>}, {"set_facing", bind<gSetFacing>}, {"impulse", bind<gImpulse>},
-        {"knockback", bind<gKnockback>}, {"set_hp", bind<gSetHp>}, {"set_energy", bind<gSetEnergy>}, {"set_garrison", bind<gSetGarrison>},
-        {"set_stat_base", bind<gSetStatBase>}, {"transform", bind<gTransform>}, {nullptr, nullptr}};
+        {"knockback", bind<gKnockback>}, {"set_hp", bind<gSetHp>}, {"set_energy", bind<gSetEnergy>}, {"set_garrison", bind<gSetGarrison>}, {"set_ability_cooldown", bind<gSetAbilityCooldown>}, {"modes", bindQ<gModes>}, {"player_abilities", bindQ<gPlayerAbilities>},
+        {"set_stat_base", bind<gSetStatBase>}, {"transform", bind<gTransform>}, {"traffic_report", bind<gTrafficReport>}, {nullptr, nullptr}};
     luaL_newlib(L, queries);
     if (vm.mode == Mode::Sim) {
         luaL_setfuncs(L, actions, 0);
@@ -1256,6 +1509,12 @@ void openGameApi(Vm& vm) {
     lua_setglobal(L, "game");
     openFieldApi(vm);   // grid fields (RtsGridFieldsApi.cpp)
     openRaidApi(vm);    // extraction raids (RtsRaidApi.cpp)
+    openProgressionApi(vm);   // in-match progression (RtsProgressionApi.cpp)
+    openEncounterApi(vm);   // boss encounters (RtsEncountersApi.cpp)
+    openCommerceApi(vm);   // premises, businesses, the bank (RtsCommerceApi.cpp)
+    openDrivingApi(vm);    // vehicles (RtsDrivingApi.cpp)
+    openCareerApi(vm);     // career ladders (RtsCareerApi.cpp)
+    openPromptApi(vm);     // script choice menus (RtsPrompt.cpp)
 }
 
 } // namespace script
@@ -1299,10 +1558,15 @@ Json scriptApiReference() {
     q.push(fn("game.units(filter) / game.count(filter) / game.nearest(x, z, filter)", "living units sorted by handle; filter = {owner, type, tag, kind=\"unit\"|\"structure\", area, x, z, radius, has (game.data key), sort=\"id\"|\"dist\", limit}; radius queries use a bucket grid"));
     q.push(fn("game.unit(h)", "{id, type, name, owner, x, y, z, hp, max_hp, energy, structure, under_construction, level, garrison, tags, statuses} or nil"));
     q.push(fn("game.alive(h) / game.owner(h) / game.type_of(h) / game.pos(h) -> x, z / game.hp(h) -> hp, max / game.stat(h, stat) / game.has_status(h, id)", "unit fields (nil for dead handles)"));
-    q.push(fn("game.type_info(id) / game.types()", "{id, name, structure, max_hp, speed, armor, cost, tags} / all type ids"));
+    q.push(fn("game.type_info(id) / game.types()", "{id, name, structure, max_hp, speed, armor, cost, tags, upgrades} / all type ids"));
     q.push(fn("game.map_size() -> w, h / game.passable(x, z [, \"ground\"|\"air\"|\"naval\"]) / game.level(x, z) / game.height(x, z) / game.area(name)", "map queries; area = {x, z, w, h}"));
     q.push(fn("game.grid_path(width,height,cells,start,goal[,label])", "pure four-neighbour shortest grid path; zero-based cells, boolean true mask or exact integer labels; returns a one-based path excluding start, or nil; max 262144 cells"));
     q.push(fn("game.grid_sample_segment(width,height,cells,x,z,tx,tz[,label[,margin[,density]]])", "pure fixed-point sampled segment query; same masks as grid_path, cross margin probes, density 1..16, max 65536 samples; excludes start, includes endpoint"));
+    q.push(fn("game.traffic_light(x, z [, \"x\"|\"z\"])", "signal of the junction at / next to the point for traffic along that axis (default: the road there): \"green\"|\"yellow\"|\"red\", nil without a signalised junction (rules traffic, docs/traffic.md)"));
+    q.push(fn("game.traffic_incidents()", "{{id, kind = \"injured\"|\"crime\"|\"fire\"|\"wreck\", x, z, state = \"open\"|\"coming\"|\"working\"}, ...}: what the city services are dealing with (docs/traffic.md)"));
+    q.push(fn("game.traffic_gang()", "the gang that is out robbing now: {state, x, z, car, size, loot} or nil; second value {robberies, caught, loot} so far (rules traffic.gangs)"));
+    q.push(fn("game.traffic_citizen(h) / game.traffic_clock()", "the citizen behind a person on the street or the car he drives: {state, commute, leg, home = {x, z, kind}, work = {x, z, kind, open}, shift = {from, to}} or nil / hour of the game day (rules traffic.population, docs/traffic.md)"));
+    q.push(fn("game.traffic_kind(h)", "\"car\"|\"bus\"|\"emergency\" for a vehicle the traffic drives (sirens, HUD), nil otherwise"));
     q.push(fn("game.var(name)", "trigger variable (fx)"));
     q.push(fn("game.territory_at(x,z) / game.territory_count(player)", "owner at flat-map ground point (nil outside ground), or owned cell count"));
     q.push(fn("game.frontier(player)", "flat-map land boundary segments sorted by cell/edge: {x,z,nx,nz,owner,cell}; normal points outwards, owner is the neighbour"));
@@ -1326,11 +1590,14 @@ Json scriptApiReference() {
     a.push(fn("game.set_facing(h, dx, dz) / game.impulse(h, dx, dz) / game.knockback(h, x, z, distance)", "turn / push by a vector / away from a point (terrain stops it)"));
     a.push(fn("game.set_hp(h, hp) / game.set_energy(h, e)", "clamped to [0, max]; hp 0 kills"));
     a.push(fn("game.set_garrison(h, n)", "units inside a garrison structure (>= 0, may exceed its max); false without a garrison"));
+    a.push(fn("game.set_ability_cooldown(p, id, seconds)", "restart a player ability's cooldown (0 = ready now); false for an unknown ability"));
+    a.push(fn("game.player_abilities(p)", "skill cards: {id, index, owned, automatic, level, charges, cooldown, ready_in (s), usable, cost {res = n}}"));
+    a.push(fn("game.modes()", "match modes snapshot or nil: real_time, speed, time_left, sudden_death (0..3), sd_counter, koh[team], points {unit, kind, hold}, levels[resource][slot], outcome[slot]"));
     a.push(fn("game.set_stat_base(h, stat, value | nil)", "per-unit base stat (techs, buffs apply on top); nil restores the type's"));
     a.push(fn("game.transform(h, type)", "change the type in place (same handle and data, hp fraction kept)"));
     a.push(fn("game.add_status(h, status [, seconds [, caster]]) / game.buff(h, stat, add, mul [, seconds])", "statuses (rules \"statuses\") and stat modifiers"));
     a.push(fn("game.order(units, \"move\"|\"attack\"|\"patrol\"|\"stop\"|\"hold\", x, z | target)", "orders (through the normal command path)"));
-    a.push(fn("game.command(p, {type, units, x, z, target, param, queue})", "any player command: move attack stop hold patrol gather build train cancel rally smart send research place sell deploy ability reinforce claim auto_build upgrade surrender player_ability dig paint_room pick_up drop slap possess direct build_road connect_road transit stance retreat load unload guard follow formation build_line merge split trade trade_route tribute diplomacy buy_item use_item drop_item pick_item learn bounty rotate lock end_turn topdown topdown_ability; param may be a type / tech / player ability / stance / formation name; packed params by field: w h extra, end_x end_z, resource sell to amount other ally reward, topdown: angle magnitude aim_angle aim fire"));
+    a.push(fn("game.command(p, {type, units, x, z, target, param, queue})", "any player command: move attack stop hold patrol gather build train cancel rally smart send research place sell deploy ability reinforce claim auto_build upgrade surrender player_ability dig paint_room pick_up drop slap possess direct build_road connect_road transit stance retreat load unload guard follow formation build_line merge split trade trade_route tribute diplomacy buy_item use_item drop_item pick_item learn bounty rotate lock end_turn topdown topdown_ability topdown_enter topdown_weapon; param may be a type / tech / player ability / stance / formation name; packed params by field: w h extra, end_x end_z, resource sell to amount other ally reward, topdown: angle magnitude aim_angle aim fire"));
     a.push(fn("game.cast(h, ability, target | x, z) / game.player_ability(p, id, x, z [, free])", "abilities"));
     a.push(fn("game.set_var(name, v) / game.add_var(name, v)", "trigger variables (shared with rules triggers)"));
     a.push(fn("game.message(p, text [, x, z])", "notice for player p (0 = everyone)"));
@@ -1386,6 +1653,22 @@ Json scriptApiReference() {
     rd.push(fn("raid_can_extract(player, point_id)", "global veto hook: return false (+ reason) to refuse an extraction or a call"));
     rd.push(fn("on(\"raid_phase\" | \"raid_point\" | \"raid_channel\" | \"raid_extracted\" | \"raid_loot\" | \"raid_interact\" | \"raid_objective\" | \"raid_player\", fn(e))", "raid events: e = {player, unit, other, value, x, z} (docs/raid.md: value encodings)"));
     r.set("raid", rd);
+    Json pg = Json::array();   // in-match progression (RtsProgressionApi.cpp, docs/progression.md)
+    pg.push(fn("progression.active() / progression.players() / progression.player(slot)", "rules \"progression\": {level, xp, xp_to_next, progress (0..1, the xp bar), levels (banked), kills, hero, offer_open, perks = {{id, key, slot, initial}}, recruits = {[slot] = n}}"));
+    pg.push(fn("progression.offer(slot)", "the open level-up offer or nil: {revision, level, rerolls, cards = {{kind = \"perk\"|\"recruit\", perk (key), id, slot, unit (type), hook, scope}}}"));
+    pg.push(fn("progression.orbs() / progression.points([slot]) / progression.unit(unit) / progression.stat(unit, stat [, base])", "xp orbs {id, x, z, value, owner, ready}; summon circles {id, x, z, radius, state, progress}; {player, slot, bearer}; perk pipeline value (milli)"));
+    pg.push(fn("progression.choose(slot, card [, revision]) / reroll(slot) / open(slot) / close(slot) (simulation scripts)", "act on the offer (cards are 1-based); view scripts: view.progression_choose(card) / view.progression_reroll(); commands: game.command(p, {type = \"progression\", op = \"choose\", card = 1, revision = r})"));
+    pg.push(fn("progression.grant_xp(slot, xp [, pickup]) / grant_perk(slot, perk [, deck slot]) / clear_perks(slot [, deck slot [, keep_initial]]) / magnet(slot) / spawn_orb(x, z, xp [, owner]) (simulation scripts)", "scripted rewards, magnets, orbs"));
+    pg.push(fn("progression_can_offer(player, perk_key | \"recruit:<type>\")", "global veto hook: return false to keep a card out of offers"));
+    pg.push(fn("on(\"progression_xp\" | \"progression_level\" | \"progression_offer\" | \"progression_perk\" | \"progression_recruit\" | \"progression_orb\" | \"progression_summon\", fn(e))", "progression events: e = {player, unit, other, value, x, z} (docs/progression.md: value encodings); a perk's \"hook\" global runs as hook({player, unit, x, z, args = {perk, id, slot, level}})"));
+    r.set("progression", pg);
+    Json en = Json::array();   // boss encounters (RtsEncountersApi.cpp, docs/encounters.md)
+    en.push(fn("encounters.active() / encounters.bosses() / encounters.boss(unit)", "rules \"encounters\": living bosses; {phase (0 = first), enraged, engaged, defeated, participant, target}"));
+    en.push(fn("encounters.mob(unit) / encounters.telegraphs()", "mob mode (idle|wander|hunt|flee|return); running attacks {attack, caster, x, z, yaw, phase (windup|active|recovery), progress 0..1000}"));
+    en.push(fn("encounters.waves_allowed(player)", "schedule gate: false while the player's personal boss is pending / alive (pauseWaves) or during the breather"));
+    en.push(fn("encounters.cast(unit, attack, x, z [, target]) (simulation scripts)", "start a telegraphed attack of the unit toward (x, z); false when it cannot"));
+    en.push(fn("on(\"boss_engaged\" | \"boss_phase\" | \"boss_enraged\" | \"boss_adds\" | \"boss_defeated\" | \"boss_window\" | \"telegraph_start\" | \"telegraph_strike\" | \"telegraph_end\", fn(e))", "encounter events: e = {player, unit, other, value, x, z} (docs/encounters.md: value encodings); applied statuses: \"status_start\""));
+    r.set("encounters", en);
     return r;
 }
 

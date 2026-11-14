@@ -434,7 +434,8 @@ void GameClient::initLua() {
     spine_.onEvent = [this](const Json& e) { luaEmit("spine", e); };
     services_.attach(lua_, luaAlive_, [this](const char* name, const Json& e) { luaEmit(name, e); });
     backendMeta_.attach(lua_, luaAlive_, manifest_["backend"], [this](const char* name, const Json& e) { luaEmit(name, e); },
-                        [this](const std::string& a, const std::string& q, bool s) { joinBattle(a, q, s); });   // `backend` (agent-bw-meta)   // `sound`: voice handles, music (modules/rts/view/ScriptSound.h)
+                        [this](const std::string& a, const std::string& q, bool s) { joinBattle(a, q, s); });   // `backend` (agent-bw-meta)
+    openPadLua(lua_);   // game.sendPercent (agent-bw-client)
     ui_.attachLua(lua_);
     // purchases that complete outside store.buy (pending -> purchased, after a restart)
     auto alive = luaAlive_;

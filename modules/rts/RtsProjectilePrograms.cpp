@@ -1,5 +1,6 @@
 // Ordered projectile programs on flat maps and planetary surfaces. All structural ECS edits occur outside world.each.
 #include "RtsInternal.h"
+#include "KingstonRocketCollision.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>
 #include <optional>
@@ -68,8 +69,26 @@ const ProjectileFlight* RtsModule::projectileFlight(const Projectile& p) const {
         if (size_t(p.effList)>=rules_.payloads.size() || p.effIndex<0 || size_t(p.effIndex)>=rules_.payloads[size_t(p.effList)].size()) return nullptr;
         return &rules_.payloads[size_t(p.effList)][size_t(p.effIndex)].delivery.flight;
     }
+    if (p.weapon <= -2) {   // bullet perks (rules "progression"): the weapon's program + the shooter's bullet modifiers
+        const auto* pg = rules_.progression.get();
+        const int v = -2 - p.weapon;
+        if (!pg || size_t(v) >= pg->variants.size() || pg->variants[size_t(v)].type != p.sourceType) return nullptr;
+        return &pg->variants[size_t(v)].flight;
+    }
     if (p.sourceType>=rules_.types.size() || p.weapon<0 || size_t(p.weapon)>=rules_.types[p.sourceType].weapons.size()) return nullptr;
     return &rules_.types[p.sourceType].weapons[size_t(p.weapon)].flight;
+}
+const WeaponDef* RtsModule::projectileWeapon(const Projectile& p) const {
+    if (p.sourceType >= rules_.types.size()) return nullptr;
+    int weapon = p.weapon;
+    if (weapon <= -2) {
+        const auto* pg = rules_.progression.get();
+        const int v = -2 - weapon;
+        if (!pg || size_t(v) >= pg->variants.size()) return nullptr;
+        weapon = pg->variants[size_t(v)].weapon;
+    }
+    const auto& ws = rules_.types[p.sourceType].weapons;
+    return weapon >= 0 && size_t(weapon) < ws.size() ? &ws[size_t(weapon)] : nullptr;
 }
 void RtsModule::bakeProjectileProgram(Projectile& p, const ProjectileFlight& f) const {
     projectile::bake(p.program,p.speed,f);
@@ -154,7 +173,10 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
             const auto& u=w.get<Unit>(target);
             if (u.hp<=Fixed{}) return false;
             if (p.effList>=0) return filterOk(sim,rules_.payloads[size_t(p.effList)][size_t(p.effIndex)].filter,target,p.owner,p.source);
-            return hostile(sim,p.owner,w.get<Owner>(target).player) && layerHit(p.layers,rules_.types[u.type].layer);
+            const uint8_t owner=w.get<Owner>(target).player;
+            // kLayerHitsNeutral (arsenal free fire): passive neutral bodies (parked cars) stop the shot too
+            const bool foe=hostile(sim,p.owner,owner) || ((p.layers&kLayerHitsNeutral) && owner==0 && !rules_.types[u.type].invulnerable);
+            return foe && layerHit(p.layers,rules_.types[u.type].layer);
         };
         // Split preserves the source prefix; only children activate the remaining suffix.
         auto split = [&](size_t i, Vec3 at) {
@@ -192,8 +214,8 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
                 sim.emit({kEvImpact,shot.owner,target,shot.source,e.payload,at});
                 applyPayload(sim,e.payload,ctx);
             } else {
-                const auto& wd=rules_.types[shot.sourceType].weapons[size_t(shot.weapon)];
-                dealDamage(sim,target,shot.damage*ps.damageScale,shot.damageType,shot.source,shot.owner,&wd);
+                const WeaponDef* wd=projectileWeapon(shot);
+                dealDamage(sim,target,shot.damage*ps.damageScale,shot.damageType,shot.source,shot.owner,wd);
                 if (shot.onHit>=0 && w.alive(target)) {
                     EffectCtx ctx; ctx.caster=shot.source; ctx.owner=shot.owner; ctx.sourceType=shot.sourceType;
                     ctx.target=target; ctx.point=flat(at); ctx.origin=shot.start; ctx.scale=ps.damageScale;
@@ -205,10 +227,11 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
                         if (t!=target && eligible(t) && distance(at,w.get<Transform>(t).pos)<=shot.splash) splash.push_back(t);
                     });
                     std::sort(splash.begin(),splash.end(),[](Entity a,Entity b){return a.index<b.index;});
-                    for (Entity t:splash) dealDamage(sim,t,shot.damage*ps.damageScale,shot.damageType,shot.source,shot.owner,&wd);
+                    for (Entity t:splash) dealDamage(sim,t,shot.damage*ps.damageScale,shot.damageType,shot.source,shot.owner,wd);
                 }
             }
         };
+        bool spent=false;   // the flight ended at a wall or at its range without a direct hit
         Fixed timeLeft=fxMin(sim.dt(),s.lifetimeLeft);
         while (alive && timeLeft>Fixed{}) {
             // Stop exactly at the next timed Split so children start at its actual location.
@@ -234,6 +257,11 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
             }
             Vec3 heading=spatial?projectile::unit(delta):s.direction;
             auto wall=terrain(position,heading,length);
+            const auto* kingstonWeapon=projectileWeapon(p);
+            const bool kingstonRocket=kingstonWeapon&&kingstonWeapon->id=="rocket";
+            auto building=kingstonRocket?kingston::rocketWall(w,rules_,position,heading,length,s.radius):kingston::RocketContact{};
+            if(building.distance&&(!wall||*building.distance<=*wall))wall=building.distance;
+            else building={};
             struct Hit { Fixed distance; Entity target; };
             std::vector<Hit> hits;
             Vec3 centre=position+heading*(length/2);
@@ -256,22 +284,41 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
                 s.hit.push_back(hit.target);
                 Projectile shot=p;
                 bool replaced=contact(position);
+                if(kingstonRocket&&w.has<Unit>(hit.target)&&
+                   (rules_.types[w.get<Unit>(hit.target).type].tags&rules_.tagMask("city_drivable")))
+                    shot.damage=fxMax(shot.damage,w.get<Unit>(hit.target).hp*100+Fixed::fromInt(1000));
                 impact(shot,hit.target,position);
                 if (replaced) { alive=false; break; }
                 bool pass=projectile::pass(s,f);
                 if (!pass || s.distanceLeft<=Fixed{} || s.lifetimeLeft<=Fixed{}) { alive=false; break; }
                 continue;
             }
+            if(building.distance){
+                const auto key="building_rocket_"+std::to_string(building.entity.packed())+"_";
+                gs.trig.vars[key+"pending"]=kOne;
+                gs.trig.vars[key+"x"]=position.x+heading.x*(*building.distance);
+                gs.trig.vars[key+"z"]=position.z+heading.z*(*building.distance);
+            }
             Fixed finish=wall ? *wall : length;
             position+=(!wall&&finish==fullLength)?delta:heading*finish;
             transport(position,slice);
             s.distanceLeft=fxMax(Fixed{},s.distanceLeft-finish);
             s.lifetimeLeft=fxMax(Fixed{},s.lifetimeLeft-slice); s.age+=slice; timeLeft-=slice;
-            if (wall || s.distanceLeft<=Fixed{} || s.lifetimeLeft<=Fixed{}) alive=false;
+            if (wall || s.distanceLeft<=Fixed{} || s.lifetimeLeft<=Fixed{}) { alive=false; spent=true; }
             if (alive) for (size_t i=0;i<s.cursor;++i) {
                 const auto& m=f.modifiers[i];
                 if (m.kind==ProjectileModKind::Split && m.timed && !(s.consumed&(1u<<i)) && s.age>=m.after) split(i,position);
             }
+        }
+        // free fire (arsenal, kLayerHitsNeutral): a splash weapon goes off where its flight ends (a rocket into a wall)
+        if (spent && p.effList<0 && p.splash>Fixed{} && (p.layers&kLayerHitsNeutral) && p.sourceType<rules_.types.size() && p.weapon>=0) {
+            const auto& wd=rules_.types[p.sourceType].weapons[size_t(p.weapon)];
+            std::vector<Entity> splash;
+            gs.hash.query(position,p.splash+maxRadius,[&](Entity t) {
+                if (eligible(t) && distance(position,w.get<Transform>(t).pos)<=p.splash) splash.push_back(t);
+            });
+            std::sort(splash.begin(),splash.end(),[](Entity a,Entity b){return a.index<b.index;});
+            for (Entity t:splash) dealDamage(sim,t,p.damage*s.damageScale,p.damageType,p.source,p.owner,&wd);
         }
         if (w.alive(entity) && w.has<Projectile>(entity)) {
             w.get<Projectile>(entity)=std::move(p);

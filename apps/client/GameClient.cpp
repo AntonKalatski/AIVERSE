@@ -28,6 +28,8 @@
 #include "engine/render/TextureCache.h"
 #include "ClientSplash.h"
 #include "GameClient.h"
+#include "modules/rts/view/EncounterDecals.h"   // boss encounters: ground marks
+#include "engine/platform/ContentReader.h"
 #include "RegionSettings.h"
 #include "modules/rts/RtsLocalize.h"
 #include "modules/rts/RtsTiles.h"
@@ -79,6 +81,16 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         break;
     }
     case 1:     // renderer
+        view_.setDeferredLoading(std::getenv("AIVERSE_EAGER_LOADING") == nullptr);
+        view_.setStreamingTypes(initialAssetRadius_ > 0);
+#ifndef __EMSCRIPTEN__
+        { // Model URIs may contain ../ for shared textures. Normalize before the checked reader.
+            auto reader = platform::makeContentReader(platform::contentRoot(), 512u * 1024u * 1024u);
+            view_.setAsyncReader([reader](const std::string& path, std::string& out) {
+                return reader(std::filesystem::path(path).lexically_normal().generic_string(), out);
+            });
+        }
+#endif
         overlay_.init(dev, "fonts/ui.ttf", 17.0f);
         if (!r3d_.init(dev)) error_ = "renderer: " + dev.lastError();
         r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, platform::isTouchDevice()));
@@ -174,10 +186,11 @@ void GameClient::updateAudio(double dt) {
 }
 
 void GameClient::toMenu() {
+    mapLoading_ = false; loadingTypes_.clear(); loadingSplash_.shutdown();
     sound_.detach();
     fx_.stopMatch();
     audio_.stopAll(0.2f, combatBuses());
-    sim_.reset();
+    city_.reset(); sim_.reset();
     setScreen(Screen::Menu);
     menuMusic();
 }
@@ -201,6 +214,7 @@ void GameClient::applyLanguage(const std::string& tag, bool save) {
     if (!platform::hostedView()) platform::setTitle(gameName_);   // hosted: the editor keeps its title
     rules_ = loadRules(rulesJson_);
     localizeRules(rules_, loc_);
+    configureLoading();
     maps_.clear();
     for (auto& m : manifest_["maps"].items()) {
         std::string file = m.getStr("file");
@@ -212,10 +226,12 @@ void GameClient::applyLanguage(const std::string& tag, bool save) {
 }
 
 void GameClient::shutdown() {
+    loadingSplash_.shutdown();
     net_.reset(); // detaches from the simulation before it goes away
     fx_.shutdown();
     sound_.detach();
     audio_.shutdown();
+    if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
     view_.shutdown(*dev_);
     postFx_.shutdown();
     r3d_.setBakedLighting(nullptr);
@@ -245,10 +261,20 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         SimConfig cfg;
         cfg.seed = uint64_t(std::time(nullptr));
         if (const char* sd = std::getenv("AIVERSE_SEED")) cfg.seed = uint64_t(std::strtoull(sd, nullptr, 10));   // testing: reproducible matches
+        city_.reset();
         sim_ = std::make_unique<Simulation>(cfg, std::make_unique<RtsModule>());
         Json rules = rulesJson_;
         if (!embedScripts(rules, map, [](const std::string& p, std::string& o) { return platform::readContentFile(p, o); }, &terr)) throw std::runtime_error(terr);
+        cityPrepare(rules, map);   // AIVERSE_CITY: a seat in a city on a server (ClientCity.cpp)
         sim_->setup(rules, map);
+        cityAttach();
+        if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
+        // static scenery streamed around the camera instead of being loaded whole. The key is "streamedWorld" here:
+        // in these maps "world" is the planet system (FPS maps keep the same block under "world")
+        if (const Json& sw = map["streamedWorld"]; sw.getBool("async")) {
+            worldScene_ = std::make_unique<world::WorldScene>(sw, platform::makeContentReader(platform::contentRoot()), view_.textureCache());
+            worldRadius_ = int(std::clamp<int64_t>(sw.getInt("viewRadius", 2), 0, 4));
+        }
         scriptUiReset();
         if (std::getenv("AIVERSE_SCRIPT_LOG"))   // view scripts' log lines too ("[view]" / "[view error]")
             viewScripts_.onLog = [](const ScriptLogEntry& e) {
@@ -260,7 +286,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         configureBakedLighting(maps_[idx].file);
         quality_.reset(int(r3d_.shadowQuality()), int(r3d_.lights.quality()));
     } catch (const std::exception& e) {
-        error_ = e.what(); sim_.reset(); return;
+        error_ = e.what(); city_.reset(); sim_.reset(); return;
     }
     mapIndex_ = idx;
     bots_.clear();
@@ -303,6 +329,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
     sound_.attach(*sim_, spectator_ ? 0 : human_, maps_[idx].file);
     fx_.startMatch(*sim_, spectator_ ? 0 : human_, view_, mod().state(*sim_).grid);
     heardSelection_.clear();
+    beginMapLoading();
 }
 
 void GameClient::fitCamera() {
@@ -445,6 +472,7 @@ Vec3 GameClient::placeCentre(float sx, float sy, bool& ok) {
 // ------------------------------------------------------------------ input
 
 void GameClient::event(const Event& e) {
+    if (mapLoading_) { if (e.type == EventType::KeyDown && e.key == Key::Escape) toMenu(); return; }
     if (!padInjecting_ && (e.type == EventType::MouseMove || e.type == EventType::MouseDown || e.type == EventType::TouchBegin))
         gamepad_.mouseUsed(e.x, e.y);   // a real pointer hides the pad cursor (ClientGamepad.cpp)
     bool uiWants = ui_.handleEvent(e);
@@ -827,6 +855,12 @@ void GameClient::runViewScripts(float dt) {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    const auto frameStarted = std::chrono::steady_clock::now();
+    if (mapLoading_) { frameMapLoading(dev, dt); return; }
+    if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }
+    if (sim_ && screen_ == Screen::Playing) updateBackgroundLoading();
+    const double backgroundMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-frameStarted).count();
+    double worldMs = 0;
     time_ += dt;
     updateGamepad(float(dt));   // pad input as mouse / key events + camera pan (ClientGamepad.cpp)
     float alpha = 0;
@@ -861,11 +895,19 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         cam_.target.x = std::clamp(cam_.target.x, 0.0f, float(g.w));
         cam_.target.z = std::clamp(cam_.target.z, 0.0f, float(g.h));
         }
-        if (const auto& scr = mod().screen(); scr.enabled && !planet()) {   // map "screen" (BW MultiscreenModule): follow its centre
-            const auto c = mod().screenCenter(*sim_);
-            const float k = std::min(1.0f, float(dt) * float(scr.smooth.toDouble()));
-            cam_.target.x += (float(c.x.toDouble()) - cam_.target.x) * k;
-            cam_.target.z += (float(c.z.toDouble()) - cam_.target.z) * k;
+        if (aiverse::Vec3 sc{}; !planet() && mod().screenView(*sim_, sc, screenSize_)) {
+            // map "screen" / map scroller (BW MultiscreenModule): the camera follows the centre and frames the screen
+            const float smooth = mod().screen().enabled ? float(mod().screen().smooth.toDouble()) : 10.0f;
+            const float k = screenFramed_ ? std::min(1.0f, float(dt) * smooth) : 1.0f;   // the first frame jumps
+            cam_.target.x += (float(sc.x.toDouble()) - cam_.target.x) * k;
+            cam_.target.z += (float(sc.z.toDouble()) - cam_.target.z) * k;
+            const float sw = float(screenSize_.x.toDouble()), sh = float(screenSize_.y.toDouble());
+            const float t = std::tan(cam_.fovY * 0.5f), aspect = H > 0 ? W / H : 1.0f;
+            const float s = std::max(0.2f, std::sin(cam_.pitch));
+            const float d = std::max(sh * s / (2 * t), sw / (2 * t * std::max(aspect, 0.1f)));   // whole screen visible
+            cam_.minDistance = std::min(cam_.minDistance, d); cam_.maxDistance = std::max(cam_.maxDistance, d);
+            cam_.distance += (d - cam_.distance) * k;
+            screenFramed_ = true;
         }
         if (quality_.update(dt)) { // too slow for these tiers: step down (keeps the pause menu in sync)
             r3d_.setShadowQuality(ShadowQuality(quality_.shadows()));
@@ -878,7 +920,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
 
         steerPossessed();
         topDownFrame(dt);
-        if (!netMatch_) {
+        if (city_) alpha = cityFrame(dt);   // the city runs on a server: nothing is stepped here
+        else if (!netMatch_ && !topDownPaused()) {   // single player: the escape preview pauses the match
             for (auto& b : bots_) b.update(*sim_);
             static const double simSpeed = [] { const char* v = std::getenv("AIVERSE_SIM_SPEED"); return v ? std::clamp(std::atof(v), 0.1, 16.0) : 1.0; }();
             if (simSpeed == 1.0) sim_->advance(dt);
@@ -904,8 +947,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         scene_.moveMarkers.clear();
         for (auto& [p, until] : markers_) if (until > time_) scene_.moveMarkers.push_back(p);
         markers_.erase(std::remove_if(markers_.begin(), markers_.end(), [&](auto& m) { return m.second < time_; }), markers_.end());
-        if (screen_ == Screen::Playing) topDownCamera(dt);
+        if (screen_ == Screen::Playing) { topDownPresent(dt, alpha); topDownCamera(dt); }
     }
+
+    if (sim_ && ensureLocalAssets()) { frameMapLoading(dev, dt); return; }
 
     luaTick(dt);   // game.on("update", fn) in UI scripts
     updateAudio(dt);
@@ -929,7 +974,14 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             cam_ = view_.updatePlanetCamera(scene_.seconds, float(dt), fbH());
             pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
         }
+        if (worldScene_ && !planet()) {   // load / unload chunks for where the camera looks (GPU uploads: before the scene pass)
+            const Vec3 focus{Fixed::fromInt(int64_t(cam_.target.x)), Fixed{}, Fixed::fromInt(int64_t(cam_.target.z))};
+            const auto worldStarted=std::chrono::steady_clock::now();
+            worldScene_->update(dev, {&focus, 1}, worldRadius_);
+            worldMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-worldStarted).count();
+        }
         r3d_.beginScene(cam_, fbW(), fbH());
+        if (worldScene_ && !planet()) worldScene_->draw(r3d_, world::Cell{0, 0, 0}, 1);
         auto& gs = mod().state(*sim_);
         {   // input state for the overlays (placement footprint / build grids, held keys, modes, cursor)
             static const char* kModes[] = {"normal", "attack", "patrol", "place", "rally", "ability", "claim"};
@@ -960,7 +1012,11 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                    screen_ == Screen::Playing || screen_ == Screen::Over ? float(dt) : 0.0f);
         fx_.addLights(r3d_.lights);   // particle lights ("light" module)
         runViewScripts(screen_ == Screen::Playing ? float(dt) : 0.0f);
-        view_.drawGround(r3d_, groundCanvas_);
+        if (auto* enc = mod().encounters(); enc && enc->active()) {   // telegraph decals + status rings (EncounterDecals.h)
+            auto ground = groundCanvas_;
+            game::appendEncounterDecals(*sim_, mod(), view_, spectator_ ? 0 : human_, ground);
+            view_.drawGround(r3d_, ground);
+        } else view_.drawGround(r3d_, groundCanvas_);
         if (mode_ == Mode::Place && placeType_ >= 0) { // ghost of the building to place (its footprint is the "placement" overlay)
             bool ok;
             Vec3 c = placeCentre(mouseX_, mouseY_, ok);
@@ -984,6 +1040,20 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
     ui_.render();
     dev.endPass();
+    if (std::getenv("AIVERSE_STREAM_TRACE") && sim_ && !mapLoading_) {
+        static auto previous = frameStarted;
+        const double interval = std::chrono::duration<double,std::milli>(frameStarted-previous).count(); previous=frameStarted;
+        const double cpu = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-frameStarted).count();
+        size_t missing=0;
+        for(const auto& o:scene_.objects) if(!o.isProjectile && !view_.typeLoaded(o.type) && assetDistance(o)<assetRadius()-12.0f) ++missing;
+        std::fprintf(stderr,"[stream-frame] tick=%u interval=%.3f cpu=%.3f x=%.3f z=%.3f pending=%zu missing=%zu stalls=%zu background=%.3f world=%.3f\n",unsigned(sim_->tick()),interval,cpu,cam_.target.x,cam_.target.z,backgroundTypes_.size(),missing,loadingStalls_,backgroundMs,worldMs);
+    }
+    if (!startupReported_ && !mapLoading_) {
+        startupReported_ = true;
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - startupStarted_).count();
+        std::fprintf(stderr, "[loading] first %s frame in %.1f ms\n", sim_ ? "map" : "menu", ms);
+        if (std::getenv("AIVERSE_BENCH_STARTUP")) platform::requestQuit();
+    }
 }
 
 } // namespace aiverse::client
