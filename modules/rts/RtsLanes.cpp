@@ -208,7 +208,7 @@ bool RtsModule::runLaneWalk(Simulation& sim, Entity e, Order&) {
     Transform& tr = w.get<Transform>(e);
     Unit& u = w.get<Unit>(e);
     Fixed step = stat(sim, e, Stat::Speed) * sim.dt();
-    // authored routes: every line is walked at the progress of line 0 (BW Spline.InterpolateByDistance fast path)
+    // authored routes: every line is walked at the progress of line 0
     if (size_t(lw->lane) < gs.routes.laneScale.size()) step = step * gs.routes.laneScale[size_t(lw->lane)];
     // route walkers (RtsRoutes.cpp): walk from the lane position, then add the random offset faded at the route ends
     // (BW Unit.Move: pos += spawnOffsetRandom * GetMoraleOffsetFactor(alpha); morale level 0 -> factor = alpha)

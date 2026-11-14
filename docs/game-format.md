@@ -714,101 +714,87 @@ cell) and adds `left` + `right` parallel lanes `spacing` cells apart (pulled bac
 would hit an obstacle). Sent units are spread over the lanes round-robin and follow their lane exactly. Lanes are
 rebuilt when garrison buildings or obstacles change (`GameState::lanes`, `lanesDirty`, event `kEvLanesChanged`).
 
-## Routes, groups, multiscreen (Bunker Wars)
+## Routes, groups, multiscreen
 
-A 1:1 fixed-point port of Bunker Wars `RoutesModule` (Spline / Route), the group behaviour of `UnitsModule`
-(Group) and `MultiscreenModule` (`modules/rts/RtsRoutes*.cpp`). Units are in map cells: the BW importer uses
-**40 BW units per cell**, the map origin at the BW (0, 0) map centre and **z = -BW y**; the defaults below are the BW `BattleParametersInfo` values at that scale.
+Hand-authored routes between garrison structures, sends in rows, and a screen-sized play window over a larger map
+(`modules/rts/RtsRoutes*.cpp`). Lengths are map cells; every number is a rules / map key the game sets.
 
-**Map `routes`** (authored routes; when a map has them they replace the generated lanes and turn `lanes` on):
+**Map `routes`** (when a map has them they replace the generated lanes and turn `lanes` on):
 
 ```json
 "routes": [
   {"from": "village_1", "to": "base_a",                  // entity ids (or "#<index>" into "entities"), both garrisons
-   "points": [[13.98, -2.62], [12.44, -2.2], {"at": [-12.2, 4.58], "offsets": [0,0,0,0.2,0,0,0,0], "zone": 2, "slowdown": 1.5}, [-13.74, 5]],
-   "lines": [[[13.98, -2.62], [11.47, -1.92], ...], ...], // optional raw nodes per line (BW rawSplineLines)
-   "blockers": ["rock_3"],                               // the route is closed while any of them is alive (BW closedRoutes)
-   "towersCoverage": [{"point": "p7", "distances": [0.5, 1.2, 3.4]}],   // BW towersCoverage (cells, tail-aligned)
-   "flying": false}                                      // flying route: fly column padding
+   "points": [[13.98, 2.62], [12.44, 2.2], {"at": [2.2, 4.58], "offsets": [0,0,0,0.2,0,0,0,0], "zone": 2, "slowdown": 1.5}, [1.74, 5]],
+   "lines": [[[13.98, 2.62], [11.47, 1.92], ...], ...],  // optional raw nodes per line
+   "blockers": ["rock_3"],                               // the route is closed while any of them is alive
+   "towersCoverage": [{"point": "p7", "distances": [0, 0, 0.5, 1.2, 3.4]}],
+   "flying": false}                                      // uses the fly column padding
 ]
 ```
 
-- Each route becomes `lanes.routes.lines` lanes (BW sub-splines, `unitsInRow`): line k follows its raw nodes when it
-  has at least two, else the control points with the column offset of k on the inner points (even lines left, odd
-  right; 0.5, 1.5, 2.5 columns of `columnPadding`, plus the per-point `offsets[k]`); a Catmull-Rom with `smooth`
-  nodes between points, trimmed by `trim` at both ends exactly as BW does. Lanes keep the route direction
-  (`Lane::a` = `from`), offsets are -1, +1, -2, +2... in line order (`lanesBetween` returns line 0 first).
-- Sends need a route (BW `FindUnlocked`): `kCmdSend` between garrisons without an open route is ignored;
-  `RtsModule::canSend` / `routeLength` (BW `Route.GetLength`, line 0) and Lua `game.can_send(a, b)` /
-  `game.route_length(a, b)` tell. The built-in AI only sends along routes.
-- Every line is walked at the progress of line 0 (BW `InterpolateByDistance` fast path: lane speed x length k /
-  length 0), so a row stays abreast through bends.
-- A route between entities whose `screenGroups` (map entity key, list of ints) do not match does not exist (BW
-  `CompareScreenGroups`: both empty match, one empty does not, else any shared group).
-- `zone` / `slowdown` per point only feed `routeAiLength` (BW `aiLength`, `RtsModule::routeAiLength`); BW's own unit
-  movement ignores them too (`Unit.Move` discards the interpolated zone), walker speed comes from map zones.
-- `towersCoverage` (BW `SplineRouteInfo.towersCoverage`, AI only): per tower point the covered route length for tower
-  ranges 0, step, ... 20 steps (`routes.coverageStep`, BW 50 = 1.25 cells), stored without leading zeros like BW.
-  `RtsModule::towerCoverage` (BW `GetTowerCoverageDistance`, linear between steps, 0 without data),
-  `towerUnitsDamage` / `towerDamageBySpline` (BW `TowerModule.GetUnitsDamageForSpline` / `GetDamageBySpline`).
-- Every route keeps its lanes for the whole match (stable indices); a closed route only refuses new sends, groups
-  already sent keep walking it (BW locks only affect `FindUnlocked`).
-- Walkers get BW's random diagonal offset (`Unit.spawnOffsetRandom` = random(-1, 1) x `routes.jitter` on x and -z, one
-  draw of `sim.rng()` per unit) multiplied by the end fade (`SubSpline.GetAlpha`: 0 at the route ends, 1 after
-  `routes.fade`); the fade is the walker's opacity in the view (`SceneObject::fade`, `RtsModule::routeAlpha`). BW also
-  scales the offset by (1 - morale factor); without a morale level (level 0) the factor is 0.
-- **Flying sends** (BW `PointsFlyingUnits` + `RoutesModule.FindFlyingRoute`): a garrison with a status carrying the
-  `flying` flag sends along a straight flying route (`flyingRoute`: in / out points `routes.inOut`, columns
-  `flyColumnPadding`), made on first use for that pair and kept (`GameState::routes.laneFlying`), even where no ground
-  route exists and through locks. With `groups` the fly group takes the whole garrison, rows `flyRowSpacing` apart, one
-  fly group per garrison at a time (BW `flyGroup`); its walkers follow the flying lines (they don't cut straight).
-  Skills: give the structure a status with `"flags": ["flying"]` (+ `mods` speed for BW `speedCoefficient`);
-  `RtsModule::sendsFlying(from)` tells.
-- As in BW, groups on crossing or shared routes do not fight each other: units pass through and the fight happens
-  at the target point. Units on routes shoot each other only when a skill gives them weapons (BW `UnitsAttack` /
-  `unitsAttack` config).
-- A garrison replaced in place (transform) keeps its routes; routes rebuild when an end or a blocker changes.
+- Each route becomes `lanes.routes.lines` lanes: line k follows its raw nodes when it has at least two, else the
+  control points with the column offset of k on the inner points (even lines left, odd right; 0.5, 1.5, 2.5 columns of
+  `columnPadding`, plus the per-point `offsets[k]`); a Catmull-Rom with `smooth` nodes between points. With `trim` > 0
+  nodes within `trim` of both ends are cut (lines start and end a little off the points). Lanes keep the route
+  direction (`Lane::a` = `from`), offsets are -1, +1, -2, +2... in line order (`lanesBetween` returns line 0 first).
+  Lanes exist for the whole match (stable indices).
+- Sends need an open route: `kCmdSend` between garrisons without one is ignored; `RtsModule::canSend` /
+  `routeLength` (line 0) / `routeAiLength` and Lua `game.can_send(a, b)` / `game.route_length(a, b)` tell. A closed route
+  (a blocker alive) only refuses new sends; units already on it keep walking. The built-in AI only sends along routes.
+- Every line is walked at the progress of line 0 (lane speed x length k / length 0), so a row stays abreast in bends.
+- Units on crossing or shared routes do not fight each other by themselves; a skill can make walkers shoot with
+  `RtsModule::routeWalkerTargets` (hostile walkers in an ellipse / forward sector, nearest first) and
+  `routeWalkerDistances` (walked / left along the line). Walkers are ordinary unit entities with a `LaneWalker`.
+- A route between entities whose `screenGroups` (map entity key, list of ints) do not match does not exist: both empty
+  match, one empty does not, else any shared group.
+- `zone` (game-defined bits, 2 = slowdown) / `slowdown` per point feed `routeAiLength` only.
+- `towersCoverage` (for computer players): per tower entity the route length inside its range, for ranges 0, 1, 2 ...
+  x `routes.coverageStep` (at most 21 values, the last holds beyond). `RtsModule::towerCoverage` interpolates;
+  `towerUnitsDamage` / `towerDamageBySpline` estimate losses of a group passing it.
+- Walkers get a random diagonal offset (`routes.jitter`, one `sim.rng()` draw per unit) that fades in over `routes.fade`
+  from both route ends; the same fade is the unit's opacity in the view (`SceneObject::fade`, `routeAlpha`).
+- **Flying sends**: a garrison with a status carrying the `flying` flag sends along a straight flying route made on
+  first use for that pair (in / out points `routes.inOut` from the ends, columns `flyColumnPadding`), even where no
+  ground route exists or it is closed; rows are `flyRowSpacing` apart. `groups.flyAll`: such a send takes the whole
+  garrison; `groups.flySingle`: one flying group per garrison at a time. `RtsModule::sendsFlying(from)` tells.
 
 **Rules** (all optional, inside `"lanes"`):
 
-| key | default | BW |
+| key | default | |
 |---|---|---|
-| `routes.lines` | 6 | `common.unitsInRow` (1..8) |
-| `routes.columnPadding` / `flyColumnPadding` | 0.5 / 1.125 | `units.columnsPadding` / `flyColumnsPadding` |
-| `routes.trim` | 0.25 | `routeVisualizer.pathPointOffset` |
-| `routes.smooth` | 10 | `Spline.BETWEEN_NODE_COUNT` |
-| `routes.inOut` | 2.5 | `MapRoutesModule.defaultInOutLength` (flying routes) |
-| `routes.jitter` | 0.125 | `units.positionRandomOffset` (5) |
-| `routes.fade` | 0.5 | `units.alphaFadeThreshold` (20) |
-| `routes.coverageStep` | 1.25 | `Spline.towerCoverageRangeStep` (50) |
-| `groups` | off | `true` or `{"rowSpacing": 1.75, "flyRowSpacing": 3}` (`units.rowsOffset` / `flyingRowsOffset`) |
+| `routes.lines` | 6 | parallel lines per route = units per row (1..8) |
+| `routes.columnPadding` / `flyColumnPadding` | 0.5 / 1.125 | distance between columns |
+| `routes.trim` | 0.25 | cut from both ends of every line |
+| `routes.smooth` | 10 | spline nodes between control points |
+| `routes.inOut` | 2.5 | flying routes: straight part at both ends |
+| `routes.jitter` / `routes.fade` | 0.125 / 0.5 | walker offset / end fade length |
+| `routes.coverageStep` | 1.25 | range step of `towersCoverage` |
+| `groups` | off | `true` or `{"rowSpacing": 1.75, "flyRowSpacing": 3, "flyAll": false, "flySingle": false}` |
 
-**Groups** (`lanes.groups`, BW `UnitGroup`): a send creates a group (`GameState::routes.groups`, id = `GroupTag`)
-that spawns a row of up to `lines` units, one per line, whenever the row in front has walked `rowSpacing` (the first
-row leaves at once). The garrison pays per row (units stay home, and defend, until they leave). A second send on the
-same route and side while the group is open merges into it (BW `AddNeedCount`: need = min(need + n - spawned,
-garrison) + spawned). The group closes when it is complete, when the garrison runs short of a full row, or when the
-source changes owner (the rest stay home). Without `groups` sends work as before (`pendingOut`, two per tick).
+**Groups** (`lanes.groups`): a send creates a group (`GameState::routes.groups`, id = `GroupTag`) that spawns a row of
+up to `lines` units, one per line, whenever the row in front has walked `rowSpacing` (the first row leaves at once).
+The garrison pays per row (units stay home, and defend, until they leave). A second send on the same route and side
+while the group is open merges into it (need = min(need + n - spawned, garrison) + spawned). The group closes when it
+is complete, when the garrison runs short of a full row, or when the source changes owner (the rest stay home).
+Without `groups` sends work as before (`pendingOut`, two per tick).
 
-**Map `screen`** (BW `MultiscreenModule`):
+**Map `screen`**:
 
 ```json
 "screen": {"size": [68, 38], "center": [34, 19], "bounds": [0, 20, 0, 0], "smooth": 10}
 ```
 
-The playable window over a larger map: `size` (BW 2720 x 1520), start `center` (BW -offset; default the map
-centre), `bounds` = [left, right, top, bottom] how far the centre may move from its start (BW
-`gameplayRectOffset`; top = towards -z). Garrisons off the screen do not grow (BW `HouseModule`); `onScreen` is public
-for modes / AI: King of the Hill and Domination use it when there is no battle royal zone (BW `IsPointInsideScreen`).
-A map without `screen` but with an environment `mapScroller.screen` (RtsEnv) uses that screen for the same checks
-(`onScreen`, `screenView`, `setScreenCenter`, Lua); with both, the scroller moves the map `screen`. Scripts move it: `game.set_screen(x, z)` (clamped), `game.screen()` -> x, z, w, h,
-`game.on_screen(x, z)`. The client camera follows the centre (`smooth` per second) and zooms so the whole screen is visible.
-Screen centre, groups and route ends are saved and hashed.
+The playable window over a larger map: `size`, start `center` (default the map centre), `bounds` = [left, right, top,
+bottom] how far the centre may move from its start (top = towards -z). Garrisons off the screen do not grow;
+`RtsModule::onScreen` is public (King of the Hill and Domination use it when there are no player zones). A map without
+`screen` but with an environment `mapScroller.screen` uses that screen for the same checks (`onScreen`, `screenView`,
+`setScreenCenter`, Lua); with both, the scroller moves the map `screen`. Scripts: `game.set_screen(x, z)` (clamped),
+`game.screen()` -> x, z, w, h, `game.on_screen(x, z)`. The client camera follows the centre (`smooth` per second) and
+zooms so the whole screen is visible. Screen centre, groups, walker offsets and route ends are saved and hashed.
 
-**Editor / MCP**: `route_list`, `route_set` (add / replace a route; points, offsets, lines, blockers), `route_delete`,
-`route_generate` (straight routes between every pair of garrisons, or within `maxDistance`, as the BW map editor's
-`MapRoutesModule.Setup`; `route_set` without points makes one), `screen_set`; the Scene view draws the lines of every
-route (line 0 brighter) while editing.
+**Editor / MCP**: `route_list`, `route_set` (add / replace a route; points, offsets, lines, blockers; without points a
+straight route with in / out points), `route_delete`, `route_generate` (straight routes between every pair of
+garrisons, or within `maxDistance`), `screen_set`; the Scene view draws the lines of every route (line 0 brighter).
 
 ## Terrain overlays (visual `terrain` block)
 
@@ -1232,6 +1218,10 @@ Trigger variables for HUD overlays (`{var:NAME}` text, `var` conditions), script
 (seconds to the next phase / end), `mode_sd_counter`, `zone_<slot>_x` / `_z` / `_w` / `_h`. Example overlay:
 `{"id": "timer", "when": {"var": "mode_time_left", ">": 0}, "anchor": {"type": "screen", "at": [640, 24]},
 "shape": "text", "text": "{var:mode_time_left}"}`.
+
+Temporary tower at a point: point skill `{"type": "spawn", "unit": "<static type>", "duration": 10}`; weapon
+`rangeAspect` (default 1) makes a weapon's range an ellipse with z radius `range x rangeAspect` for target acquisition
+and firing (isometric maps).
 
 ## Army control (agent-mech): stances, retreat, transports
 

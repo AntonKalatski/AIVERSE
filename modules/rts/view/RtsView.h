@@ -64,7 +64,7 @@ struct SceneObject {
     int16_t carryRes = -1;       // resource index of the cargo
     int8_t shotWeapon = -1;      // projectiles: weapon index (of the shooter's type) that fired it; -1: unknown
     bool selected = false, hovered = false, visible = true, isProjectile = false;
-    float fade = 1;              // 0..1 opacity from the sim (route walkers fade at the route ends, BW SubSpline.GetAlpha)
+    float fade = 1;              // 0..1 opacity from the sim (route walkers fade at the route ends)
     bool unpowered = false;      // disabled by a power deficit / owner in low power (electric lights dim)
     uint8_t action = 0;          // SpriteAction (sprite animations): idle, move, attack, work
     // animation hints (sceneFromSim fills them; editor placements leave the defaults)
