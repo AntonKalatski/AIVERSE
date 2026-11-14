@@ -14392,3 +14392,31 @@ TEST(ui_lua_plugins_on_gets_one_plugins_events) {
     *alive = false;
     lua_close(L);
 }
+
+// ---------------------------------------------------------------- game.start {players, deck} (apps/client/StartPlayers.h)
+#include "apps/client/StartPlayers.h"
+TEST(game_start_players_merge_per_seat_data_into_the_map) {
+    const Json map0 = Json::parse(R"({"players": [{"name": "A", "team": 1}, {"name": "B", "team": 2}]})");
+    Json m = map0;
+    // array by slot (Lua {{...}, {...}}), deck shorthand for the local player
+    CHECK(client::mergeStartPlayers(m, Json::parse(R"([{"deck": {"units": ["a", "b"]}}, {"color": 3}])"), 1, Json()).empty());
+    CHECK(m["players"][size_t(0)]["deck"]["units"].size() == 2 && m["players"][size_t(0)].getStr("name") == "A");
+    CHECK(m["players"][size_t(1)].getInt("color") == 3 && m["players"][size_t(1)].getInt("team") == 2);
+    m = map0;
+    CHECK(client::mergeStartPlayers(m, Json::parse(R"({"2": {"deck": {"tech": 4}}})"), 1, Json::parse(R"({"tech": 1})")).empty());
+    CHECK(m["players"][size_t(1)]["deck"].getInt("tech") == 4 && m["players"][size_t(0)]["deck"].getInt("tech") == 1);
+    // nothing given: the map stays as it is; bad slots / shapes stop the start
+    m = map0;
+    CHECK(client::mergeStartPlayers(m, Json(), 1, Json()).empty() && m == map0);
+    CHECK(!client::mergeStartPlayers(m, Json::parse(R"({"3": {"deck": {}}})"), 1, Json()).empty());
+    CHECK(!client::mergeStartPlayers(m, Json::parse(R"({"x": {"deck": {}}})"), 1, Json()).empty());
+    CHECK(!client::mergeStartPlayers(m, Json::parse(R"([5])"), 1, Json()).empty());
+    CHECK(!client::mergeStartPlayers(m, Json(), 4, Json::parse(R"({"tech": 1})")).empty());
+    // the merged map still sets up a simulation (per-player keys the module reads, e.g. players[i].deck)
+    Json valley = Json::parseFile(kSkirmish + "/maps/valley.json");
+    CHECK(client::mergeStartPlayers(valley, Json(), 1, Json::parse(R"({"units": []})")).empty());
+    Simulation sim(SimConfig{}, std::make_unique<game::RtsModule>());
+    bool ok = true;
+    try { sim.setup(Json::parseFile(kSkirmish + "/rules.json"), valley); } catch (const std::exception& e) { ok = false; std::printf("    %s\n", e.what()); }
+    CHECK(ok);
+}

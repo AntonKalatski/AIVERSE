@@ -51,7 +51,9 @@ Engine side: `engine/assets/ui/lib/meta.lua` (ui / profile / shop, runs before `
   per purchase token, then finishes it; late purchases arrive by themselves), `watch(id, fn(ok))` (rewarded ad,
   cooldown), `restore(fn)`, `cooldown(id)`.
 - `game` — `tr(key, args)`, `hasText(key)`, `language()`, `languages()`, `setLanguage(tag)`, `name()`, `maps()`,
-  `start(i, {difficulty, spectate, initialVars, ruleSets})`, `difficulty(n?)`, `screen()`, `pause()`, `resume()`, `menu()`, `online()`,
+  `start(i, {difficulty, spectate, initialVars, ruleSets, players, deck})` (`players = {[slot] = {deck = {...}, ...}}`: per-seat start
+  data merged key by key into the map's `players[slot]` before setup, as a hosted battle does with loadouts; `deck = {...}` is
+  `players[<local slot>].deck`, the battle deck of in-match progression), `difficulty(n?)`, `screen()`, `pause()`, `resume()`, `menu()`, `online()`,
   `connect(address, queue?)` (join the game server the game's own matchmaker named; `"ticket:<ticket>"` claims a reserved seat; docs/native-modules.md "Remote backends"), `joinBattle(ticket, {name, compatKey})` (a hosted battle by the sealed ticket of the game's matchmaker: true, or false + reason; docs/battle-net.md "Game client"), `on('plugin', fn{plugin, event, data})` (events of native plugins),
   `howto(open?)`, `engineMenu(on?)`, `notice(text)`, `lastResult()`, `safeArea()`, `touch()`, `platform()`, `openUrl(url)` (http(s) / mailto in the system browser; false if refused),
   `preview()`, `time()`, `sendPercent(p?)` (share of a garrison a send takes, 1..100; pads and the HUD use it), `useAbility(i)` (player ability by rules index, as its HUD card: instant cast or targeting), `json('ui/x.json')`, `decode(text)`, `encode(v)`, `log(...)` (= `print`),

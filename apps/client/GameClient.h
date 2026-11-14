@@ -270,6 +270,7 @@ private:
     bool battle_ = false;            // net_ is a hosted battle (no lobby): back to the menu when it ends
     std::string battleCompat_;       // compatibility key this build expects (empty: unchecked)
     std::vector<std::string> startRuleSets_;   // game.start {ruleSets}: map "ruleSets" of the next local match
+    Json startPlayers_, startDeck_;              // game.start {players, deck}: per-seat start data (StartPlayers.h)
     void startNetMatch();
     void leaveNetMatch();
     void buildLobby(UiState& s);

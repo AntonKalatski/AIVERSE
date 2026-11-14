@@ -29,6 +29,7 @@
 #include "engine/render/TextureCache.h"
 #include "ClientSplash.h"
 #include "GameClient.h"
+#include "StartPlayers.h"
 #include "modules/rts/view/EncounterDecals.h"   // boss encounters: ground marks
 #include "engine/platform/ContentReader.h"
 #include "RegionSettings.h"
@@ -257,6 +258,11 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         map = Json::parse(text);
         game::mergeInitialVars(map, initialVars);
         mapCamera_ = map["camera"];   // per-map top-down framing (topDownConfigure)
+        {   // game.start {players = {...}, deck = {...}}: per-seat start data into players[slot - 1]
+            const Json players = startPlayers_, deck = startDeck_;
+            startPlayers_ = startDeck_ = Json();
+            if (std::string pe = mergeStartPlayers(map, players, human_, deck); !pe.empty()) throw std::runtime_error(pe);
+        }
         if (!startRuleSets_.empty()) {   // game.start {ruleSets}: only sets the rules define (agent-bw-meta)
             Json sets = map["ruleSets"].isArray() ? map["ruleSets"] : Json::array();
             for (auto& id : startRuleSets_) if (rulesJson_["ruleSets"][id].isArray()) sets.push(Json::string(id));

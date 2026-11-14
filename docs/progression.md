@@ -75,7 +75,8 @@ Each participating player gets a `BattleDeck` (library payload format: `player`,
 
 1. the map's player entry `players[i].deck` — hosted battles (docs/battle-net.md) put each seat's loadout here when
    they build the match map from `MatchPayloadMsg` (the payload is the same bytes on every client, so every peer builds
-   the same deck); raids (docs/raid.md) use the same map;
+   the same deck, `net::applyBattlePayload` merges a JSON loadout there); raids (docs/raid.md) use the same map; a local
+   match gets it from UI Lua `game.start(i, {deck = {...}})` or `{players = {[slot] = {deck = {...}}}}`;
 2. rules `decks` by player;
 3. rules `defaultDeck`;
 4. none: slot 0 = the lowest hero unit, then every other deck unit, `enforceUnlocks: false`.

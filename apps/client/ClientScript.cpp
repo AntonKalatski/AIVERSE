@@ -142,7 +142,7 @@ struct LuaApi {
         for (size_t i = 0; i < m.size(); ++i) { lua_pushstring(L, m[i].title.c_str()); lua_rawseti(L, -2, lua_Integer(i + 1)); }
         return 1;
     }
-    // game.start(map [, {difficulty = 0..2, spectate = bool}])
+    // game.start(map [, {difficulty = 0..2, spectate = bool, initialVars, ruleSets, players, deck}])
     static int start(lua_State* L) {
         GameClient& c = client(L);
         const lua_Integer i = luaL_checkinteger(L, 1);
@@ -181,7 +181,21 @@ struct LuaApi {
             lua_pop(L, 1);
         }
         c.startRuleSets_ = std::move(ruleSets);
-        if (c.uiPreview_) return 0;   // previews validate options but never start a match
+        // players = {[slot] = {deck = {...}, ...}} / deck = {...} (the local player's): per-seat start data, merged
+        // into the map's players[slot - 1] (StartPlayers.h); any JSON-able values
+        Json players, deck;
+        if (lua_istable(L, 2)) {
+            lua_getfield(L, 2, "players");
+            if (!lua_isnil(L, -1) && !lua_istable(L, -1)) return luaL_error(L, "game.start: players must be a table");
+            if (lua_istable(L, -1)) players = ui::luaToJson(L, -1);
+            lua_getfield(L, 2, "deck");
+            if (!lua_isnil(L, -1) && !lua_istable(L, -1)) return luaL_error(L, "game.start: deck must be a table");
+            if (lua_istable(L, -1)) deck = ui::luaToJson(L, -1);
+            lua_pop(L, 2);
+        }
+        c.startPlayers_ = std::move(players);
+        c.startDeck_ = std::move(deck);
+        if (c.uiPreview_) { c.startPlayers_ = c.startDeck_ = Json(); return 0; }   // previews validate options but never start a match
         if (lua_istable(L, 2)) {
             lua_getfield(L, 2, "difficulty");
             if (lua_isinteger(L, -1)) c.difficulty_ = int(std::clamp<lua_Integer>(lua_tointeger(L, -1), 0, 2));
