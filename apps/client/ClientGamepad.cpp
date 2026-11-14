@@ -78,15 +78,6 @@ void ClientGamepad::configure(const Json& manifest) {
             if (o.mod == c.mod && o.button == c.button) { o = c; return; }
         chords_.push_back(c);
     };
-    if (g.getStr("scheme", "") == "bunkerwars") {
-        // Bunker Wars InputConfig.asset (joystickItems; JoystickButton BottomRow1 / 2 = A / B, TopRow1 / 2 = X / Y)
-        const char* slot[] = {"right", "down", "left", "up"};   // SelectSlot1..4 on DPadRight / Down / Left / Up (mode Default)
-        for (int i = 0; i < 4; i++) bindings_[slotFromName(slot[i])] = parseBinding("ability:" + std::to_string(i + 1));
-        chord("rb+b", "send:25"); chord("rb+a", "send:50"); chord("rb+x", "send:75"); chord("rb+y", "send:100");   // mode UnitsMove (R1)
-        chord("lb+a", "upgrade"); chord("lb+x", "convert:bunker"); chord("lb+y", "convert:tower"); chord("lb+b", "convert:smithy");  // UpgradeMenu (L1)
-        chord("a+a", "upgrade");                                                                     // BottomRow1 twice
-        chord("lt+b", "event:emotion1"); chord("lt+a", "event:emotion2"); chord("lt+x", "event:emotion3"); chord("lt+y", "event:emotion4");  // Emotion (L2)
-    }
     for (const auto& [name, v] : g["buttons"].members()) {
         int b = slotFromName(name);
         if (b >= 0) bindings_[b] = parseBinding(v.str());

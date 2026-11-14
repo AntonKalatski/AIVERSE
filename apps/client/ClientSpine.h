@@ -1,6 +1,6 @@
 // Spine skeletons in the client UI (engine/spine): each "view" renders one animated skeleton into
 // its own texture every frame, shown in RmlUi documents as <img src="#spine:NAME"/> (hero portraits,
-// emotions, the waiting-screen plane of Bunker Wars).
+// emotions).
 //
 // Declared in game.json:
 //   "spine": { "hero1": { "skeleton": "spine/hero1.json", "atlas": "spine/hero1.atlas",   // atlas optional

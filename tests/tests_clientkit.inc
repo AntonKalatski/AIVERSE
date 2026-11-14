@@ -1,11 +1,12 @@
-// agent-bw-client: Spine runtime, gamepad mapping, client services (Steam social, push, links).
+// Client kit: Spine runtime, gamepad mapping, client services (social, push, links, consent), audio chance,
+// gameplay time scale.
 // Appended to tests/tests.cpp (static registration, no GPU).
 #include "engine/spine/SpineSkeleton.h"
 #include <cmath>
 #include <fstream>
 #include <sstream>
 
-namespace bwc {
+namespace ckit {
 static std::string readText(const std::string& rel) {
     std::ifstream f(std::string(AIVERSE_SOURCE_DIR) + "/" + rel, std::ios::binary);
     std::stringstream ss;
@@ -17,10 +18,10 @@ static std::shared_ptr<spine::SkeletonData> mini() {
     auto atlas = std::make_shared<spine::Atlas>(spine::parseAtlas(readText("tests/data/spine/mini.atlas")));
     return spine::parseSkeleton(readText("tests/data/spine/mini.json"), atlas);
 }
-} // namespace bwc
+} // namespace ckit
 
 TEST(spine_atlas_reads_both_layouts_and_rotated_regions) {
-    auto a = spine::parseAtlas(bwc::readText("tests/data/spine/mini.atlas"));
+    auto a = spine::parseAtlas(ckit::readText("tests/data/spine/mini.atlas"));
     CHECK(a.pages.size() == 1 && a.pages[0].pma && a.pages[0].width == 64);
     const spine::AtlasRegion* arm = a.find("arm");
     CHECK(arm && arm->degrees == 90 && arm->w == 8 && arm->h == 16 && arm->origW == 10 && arm->origH == 20);
@@ -29,36 +30,36 @@ TEST(spine_atlas_reads_both_layouts_and_rotated_regions) {
                                  "r\n  rotate: true\n  xy: 2, 4\n  size: 6, 10\n  orig: 8, 12\n  offset: 1, 1\n  index: -1\n");
     const spine::AtlasRegion* r = old.find("r");
     CHECK(r && r->degrees == 90 && r->x == 2 && r->y == 4 && r->w == 6 && r->h == 10 && r->origW == 8 && r->offY == 1);
-    CHECK(bwc::near(r->u1, (2 + 10) / 32.f) && bwc::near(r->v1, (4 + 6) / 32.f));
+    CHECK(ckit::near(r->u1, (2 + 10) / 32.f) && ckit::near(r->v1, (4 + 6) / 32.f));
     bool threw = false;
     try { spine::parseAtlas("p.png\nsize: 8,8\nr\nbounds: 0,0,2,2\nrotate: 45\n"); } catch (const std::exception&) { threw = true; }
     CHECK(threw);
 }
 
 TEST(spine_setup_pose_world_transforms_and_attachments) {
-    auto d = bwc::mini();
+    auto d = ckit::mini();
     CHECK(d->bones.size() == 6 && d->slots.size() == 3 && d->animations.size() == 2 && d->warnings.empty());
     spine::Skeleton sk(d);
     sk.updateWorldTransform();
     const spine::Bone& arm = sk.bones[size_t(sk.findBone("arm"))];
-    CHECK(bwc::near(arm.worldX, 15) && bwc::near(arm.worldY, 2) && bwc::near(arm.a, 0) && bwc::near(arm.c, 1));
+    CHECK(ckit::near(arm.worldX, 15) && ckit::near(arm.worldY, 2) && ckit::near(arm.a, 0) && ckit::near(arm.c, 1));
     const spine::Bone& hand = sk.bones[size_t(sk.findBone("hand"))];
-    CHECK(bwc::near(hand.worldX, 15) && bwc::near(hand.worldY, 10));
+    CHECK(ckit::near(hand.worldX, 15) && ckit::near(hand.worldY, 10));
     // transform constraint: "follow" sits on "hand"
     const spine::Bone& follow = sk.bones[size_t(sk.findBone("follow"))];
-    CHECK(bwc::near(follow.worldX, 15) && bwc::near(follow.worldY, 10));
+    CHECK(ckit::near(follow.worldX, 15) && ckit::near(follow.worldY, 10));
     std::vector<float> v;
     CHECK(sk.worldVertices(sk.findSlot("body"), v) && v.size() == 8);
-    CHECK(bwc::near(v[0], -3) && bwc::near(v[1], -2) && bwc::near(v[4], 13) && bwc::near(v[5], 6));
+    CHECK(ckit::near(v[0], -3) && ckit::near(v[1], -2) && ckit::near(v[4], 13) && ckit::near(v[5], 6));
     // trimmed (offsets) + rotated region: corners in the arm bone, uvs on the rotated page rect
     CHECK(sk.worldVertices(sk.findSlot("arm"), v));
-    CHECK(bwc::near(v[0], 23) && bwc::near(v[1], -2));
+    CHECK(ckit::near(v[0], 23) && ckit::near(v[1], -2));
     const spine::Attachment* att = sk.slots[size_t(sk.findSlot("arm"))].attachment;
-    CHECK(att && bwc::near(att->uvs4[0], 0.5f) && bwc::near(att->uvs4[1], 0.125f) && bwc::near(att->uvs4[4], 0.25f) && bwc::near(att->uvs4[5], 0));
+    CHECK(att && ckit::near(att->uvs4[0], 0.5f) && ckit::near(att->uvs4[1], 0.125f) && ckit::near(att->uvs4[4], 0.25f) && ckit::near(att->uvs4[5], 0));
     // weighted mesh: vertex 1 is half body, half arm
     CHECK(sk.worldVertices(sk.findSlot("skin"), v) && v.size() == 6);
-    CHECK(bwc::near(v[0], 5) && bwc::near(v[1], 2));
-    CHECK(bwc::near(v[2], 0.5f * (5 + 4) + 0.5f * (15 - 0.5f)) && bwc::near(v[3], 0.5f * 2 + 0.5f * (2 + 4)));
+    CHECK(ckit::near(v[0], 5) && ckit::near(v[1], 2));
+    CHECK(ckit::near(v[2], 0.5f * (5 + 4) + 0.5f * (15 - 0.5f)) && ckit::near(v[3], 0.5f * 2 + 0.5f * (2 + 4)));
     spine::DrawList list;
     sk.buildDrawList(list);
     // normal box, additive arm, normal mesh: three batches, mesh color carries the slot tint
@@ -68,7 +69,7 @@ TEST(spine_setup_pose_world_transforms_and_attachments) {
 }
 
 TEST(spine_animation_timelines_events_and_mixing) {
-    auto d = bwc::mini();
+    auto d = ckit::mini();
     spine::Skeleton sk(d);
     spine::AnimationState st(d);
     std::vector<int> ints;
@@ -83,28 +84,28 @@ TEST(spine_animation_timelines_events_and_mixing) {
     st.apply(sk);
     sk.updateWorldTransform();
     const spine::Bone& body = sk.bones[size_t(sk.findBone("body"))];
-    CHECK(bwc::near(body.rotation, 45) && bwc::near(body.x, 9) && bwc::near(body.y, 4));   // stepped translate
+    CHECK(ckit::near(body.rotation, 45) && ckit::near(body.x, 9) && ckit::near(body.y, 4));   // stepped translate
     const spine::Slot& bs = sk.slots[size_t(sk.findSlot("body"))];
-    CHECK(bwc::near(bs.color.r, 0.5f, 0.01f) && bwc::near(bs.color.a, 0.5f, 0.01f));
+    CHECK(ckit::near(bs.color.r, 0.5f, 0.01f) && ckit::near(bs.color.a, 0.5f, 0.01f));
     CHECK(sk.slots[size_t(sk.findSlot("arm"))].attachment == nullptr);
     CHECK(sk.drawOrder == std::vector<int>({1, 2, 0}));
-    CHECK(bwc::near(sk.ikMix[0], 0.5f));
+    CHECK(ckit::near(sk.ikMix[0], 0.5f));
     CHECK(ints == std::vector<int>({3}));
     st.update(0.6f);   // past the end: second event, completes once, pose holds the last key
     st.apply(sk);
     sk.updateWorldTransform();
     CHECK(ints == std::vector<int>({3, 7}) && completes == 1 && st.finished(0));
-    CHECK(bwc::near(sk.bones[size_t(sk.findBone("body"))].rotation, 90));
+    CHECK(ckit::near(sk.bones[size_t(sk.findBone("body"))].rotation, 90));
     // deform of a weighted mesh: first weight moved by +2 in x
     std::vector<float> v;
     CHECK(sk.worldVertices(sk.findSlot("skin"), v));
     const spine::Bone& b = sk.bones[size_t(sk.findBone("body"))];
-    CHECK(bwc::near(v[0], b.worldX + b.a * 2) && bwc::near(v[1], b.worldY + b.c * 2));
+    CHECK(ckit::near(v[0], b.worldX + b.a * 2) && ckit::near(v[1], b.worldY + b.c * 2));
     // IK at mix 1: the arm points at the target
     const spine::Bone& arm = sk.bones[size_t(sk.findBone("arm"))];
     const spine::Bone& tgt = sk.bones[size_t(sk.findBone("target"))];
     float ang = std::atan2(arm.c, arm.a), want = std::atan2(tgt.worldY - arm.worldY, tgt.worldX - arm.worldX);
-    CHECK(bwc::near(ang, want, 1e-3f));
+    CHECK(ckit::near(ang, want, 1e-3f));
 
     // bezier: eased rotation is ahead of linear in the second half
     spine::AnimationState e(d);
@@ -131,7 +132,7 @@ TEST(spine_animation_timelines_events_and_mixing) {
         to = s2.bones[size_t(s2.findBone("body"))].rotation;
     }
     float mixed = sk.bones[size_t(sk.findBone("body"))].rotation;
-    CHECK(bwc::near(mixed, from + (to - from) * 0.5f, 0.05f));
+    CHECK(ckit::near(mixed, from + (to - from) * 0.5f, 0.05f));
     m.update(0.2f);
     m.apply(sk);
     CHECK(m.current(0) == "ease");
@@ -166,7 +167,7 @@ TEST(spine_bad_data_is_reported) {
 // ---------------- client services: social (Steam), push, deep links through the desktop mocks ----------------
 // clipping attachments, path constraints, screen slots (Spine 4.0 JSON)
 TEST(spine_clipping_paths_and_screen_blend) {
-    auto atlas = std::make_shared<spine::Atlas>(spine::parseAtlas(bwc::readText("tests/data/spine/mini.atlas")));
+    auto atlas = std::make_shared<spine::Atlas>(spine::parseAtlas(ckit::readText("tests/data/spine/mini.atlas")));
     // a 16 x 8 box at the origin (x -8..8, y -4..4) cut by a square clip (x -2..2, y -10..10) up to slot "box";
     // slot "glow" draws after the clip ends with screen blending; bone "rider" follows a straight path along x
     const char* json = R"({"skeleton": {"spine": "4.0.64"},
@@ -195,25 +196,25 @@ TEST(spine_clipping_paths_and_screen_blend) {
         const spine::DrawVertex& dv = list.vertices[list.baseVertex[0] + list.indices[list.batches[0].firstIndex + i]];
         minX = std::min(minX, dv.x); maxX = std::max(maxX, dv.x);
     }
-    CHECK(bwc::near(minX, -2) && bwc::near(maxX, 2));
+    CHECK(ckit::near(minX, -2) && ckit::near(maxX, 2));
     CHECK(list.batches[1].indexCount == 6);
     // uvs of a clipped vertex are interpolated: x = 0 is the middle of the box region (u 0 .. 0.25)
     bool mid = false;
     for (uint32_t i = 0; i < list.batches[0].indexCount; i++) {
         const spine::DrawVertex& dv = list.vertices[list.baseVertex[0] + list.indices[list.batches[0].firstIndex + i]];
-        if (bwc::near(dv.x, 2)) mid |= bwc::near(dv.u, 0.125f + 0.25f * 2 / 16, 1e-3f) || bwc::near(dv.u, 0.125f - 0.25f * 2 / 16, 1e-3f);
+        if (ckit::near(dv.x, 2)) mid |= ckit::near(dv.u, 0.125f + 0.25f * 2 / 16, 1e-3f) || ckit::near(dv.u, 0.125f - 0.25f * 2 / 16, 1e-3f);
     }
     CHECK(mid);
     // path: the rider starts 20 units along the rail (fixed position), the chain keeps the bone on the x axis
     const spine::Bone& r = sk.bones[size_t(sk.findBone("rider"))];
     const spine::Bone& r2 = sk.bones[size_t(sk.findBone("rider2"))];
-    CHECK(bwc::near(r.worldX, 20, 0.5f) && bwc::near(r.worldY, 0, 0.01f) && bwc::near(r2.worldX, 30, 0.5f));
+    CHECK(ckit::near(r.worldX, 20, 0.5f) && ckit::near(r.worldY, 0, 0.01f) && ckit::near(r2.worldX, 30, 0.5f));
     spine::AnimationState st(d);
     st.setAnimation(0, "move", false);
     st.update(1);
     st.apply(sk);
     sk.updateWorldTransform();
-    CHECK(bwc::near(sk.bones[size_t(sk.findBone("rider"))].worldX, 60, 0.5f));
+    CHECK(ckit::near(sk.bones[size_t(sk.findBone("rider"))].worldX, 60, 0.5f));
 }
 
 #include "engine/platform/Plugins.h"
@@ -285,15 +286,15 @@ TEST(client_services_social_push_links_through_mocks) {
     int ll = links::onLink([&](const links::Link& l) { got.push_back(l); });
     links::Link first{"x", "", false, "{}"};
     links::initial([&](const links::Link& l) { first = l; });
-    plugins::call("mock-links", "open", R"({"url":"bunkerwars://invite?c=42&n=Big%20Boss"})");
-    plugins::call("mock-links", "open", R"({"url":"bunkerwars://invite?c=42&n=Big%20Boss"})");   // repeat: dropped
+    plugins::call("mock-links", "open", R"({"url":"mygame://invite?c=42&n=Big%20Boss"})");
+    plugins::call("mock-links", "open", R"({"url":"mygame://invite?c=42&n=Big%20Boss"})");   // repeat: dropped
     plugins::pump();
     CHECK(first.url.empty());
     CHECK(got.size() == 1 && got[0].source == "mock-links");
     links::Parsed p = links::parse(got[0].url);
-    CHECK(p.scheme == "bunkerwars" && p.host == "invite" && p.path.empty() && links::query(p, "c") == "42" && links::query(p, "n") == "Big Boss");
-    links::Parsed w = links::parse("https://bunkerwars.onelink.me/abc/clan?id=7#x");
-    CHECK(w.scheme == "https" && w.host == "bunkerwars.onelink.me" && w.path == "abc/clan" && links::query(w, "id") == "7");
+    CHECK(p.scheme == "mygame" && p.host == "invite" && p.path.empty() && links::query(p, "c") == "42" && links::query(p, "n") == "Big Boss");
+    links::Parsed w = links::parse("https://mygame.onelink.me/abc/clan?id=7#x");
+    CHECK(w.scheme == "https" && w.host == "mygame.onelink.me" && w.path == "abc/clan" && links::query(w, "id") == "7");
     links::removeListener(ll);
 
     // consent: no CMP in the build -> nothing to ask; mock CMP -> the player's answer
@@ -323,32 +324,32 @@ TEST(client_services_social_push_links_through_mocks) {
 #include "apps/client/ClientGamepad.h"
 #include "engine/platform/Gamepad.h"
 
-namespace bwc {
+namespace ckit {
 static platform::GamepadState g_fakePad;
 static void fakePads(platform::GamepadState (&pads)[platform::kMaxGamepads]) {
     pads[1] = g_fakePad;   // keep prev from the common layer: copy only the live fields
 }
-} // namespace bwc
+} // namespace ckit
 
 TEST(gamepad_state_edges_dead_zone_and_names) {
     using platform::PadButton;
     platform::detail::setGamepadBackend([](platform::GamepadState (&pads)[platform::kMaxGamepads]) {
         bool prev[int(PadButton::Count)];
         std::memcpy(prev, pads[1].prev, sizeof prev);
-        bwc::fakePads(pads);
+        ckit::fakePads(pads);
         std::memcpy(pads[1].prev, prev, sizeof prev);
     });
-    bwc::g_fakePad = {};
-    bwc::g_fakePad.connected = true;
-    bwc::g_fakePad.buttons[int(PadButton::A)] = true;
+    ckit::g_fakePad = {};
+    ckit::g_fakePad.connected = true;
+    ckit::g_fakePad.buttons[int(PadButton::A)] = true;
     CHECK(platform::pollGamepads() == 1 && platform::gamepad(1).pressed(PadButton::A) && !platform::gamepad(0).connected);
     platform::pollGamepads();
     CHECK(platform::gamepad(1).down(PadButton::A) && !platform::gamepad(1).pressed(PadButton::A));
-    bwc::g_fakePad.buttons[int(PadButton::A)] = false;
+    ckit::g_fakePad.buttons[int(PadButton::A)] = false;
     platform::pollGamepads();
     CHECK(platform::gamepad(1).released(PadButton::A));
-    bwc::g_fakePad.connected = false;
-    bwc::g_fakePad.buttons[int(PadButton::B)] = true;
+    ckit::g_fakePad.connected = false;
+    ckit::g_fakePad.buttons[int(PadButton::B)] = true;
     CHECK(platform::pollGamepads() == 0 && !platform::gamepad(1).down(PadButton::B));   // gone: all released
     platform::detail::setGamepadBackend(nullptr);
     float x = 0.1f, y = 0.1f;
@@ -356,10 +357,10 @@ TEST(gamepad_state_edges_dead_zone_and_names) {
     CHECK(x == 0 && y == 0);
     x = 1; y = 0;
     platform::applyDeadZone(x, y, 0.2f);
-    CHECK(bwc::near(x, 1) && y == 0);
+    CHECK(ckit::near(x, 1) && y == 0);
     x = 0.6f; y = 0;
     platform::applyDeadZone(x, y, 0.2f);
-    CHECK(bwc::near(x, 0.5f));
+    CHECK(ckit::near(x, 0.5f));
     CHECK(platform::padButtonFromName("lb") == PadButton::LB && std::string(platform::padButtonName(PadButton::Start)) == "start");
     CHECK(platform::padButtonFromName("nope") == PadButton::Count);
 }
@@ -379,7 +380,7 @@ TEST(gamepad_cursor_clicks_flicks_and_bindings) {
     // half tilt right for 0.5 s: quadratic speed, starts at the centre
     p.axes[int(PadAxis::LX)] = 0.6f;
     for (int i = 0; i < 50; i++) f = g.update(p, 0.01f, 800, 600, none);
-    CHECK(g.active() && g.cursorX() > 400 + 60 && g.cursorX() < 400 + 200 && bwc::near(g.cursorY(), 300));
+    CHECK(g.active() && g.cursorX() > 400 + 60 && g.cursorX() < 400 + 200 && ckit::near(g.cursorY(), 300));
     CHECK(!f.events.empty() && f.events[0].type == EventType::MouseMove);
     // A press / release = left mouse button at the cursor; X = key Q; d-pad and right stick pan; triggers zoom
     p.axes[int(PadAxis::LX)] = 0;
@@ -390,7 +391,7 @@ TEST(gamepad_cursor_clicks_flicks_and_bindings) {
     f = g.update(p, 0.1f, 800, 600, none);
     bool down = false, q = false, wheel = false;
     for (auto& e : f.events) {
-        down |= e.type == EventType::MouseDown && e.button == 0 && bwc::near(e.x, g.cursorX());
+        down |= e.type == EventType::MouseDown && e.button == 0 && ckit::near(e.x, g.cursorX());
         q |= e.type == EventType::KeyDown && e.key == platform::Key::Q;
         wheel |= e.type == EventType::MouseWheel && e.wheelY > 0;
     }
@@ -406,22 +407,25 @@ TEST(gamepad_cursor_clicks_flicks_and_bindings) {
     float tx = targets[0].x, ty = targets[0].y;
     p.axes[int(PadAxis::LX)] = 1;
     for (int i = 0; i < 5; i++) f = g.update(p, 0.016f, 800, 600, targets);
-    CHECK(bwc::near(g.cursorX(), tx) && bwc::near(g.cursorY(), ty));
+    CHECK(ckit::near(g.cursorX(), tx) && ckit::near(g.cursorY(), ty));
     // released near a target: the magnet settles the cursor on it
     p.axes[int(PadAxis::LX)] = 0;
     g.mouseUsed(tx + 30, ty - 20);
     p.buttons[int(PadButton::Y)] = true;   // any input wakes the pad cursor
     for (int i = 0; i < 60; i++) { f = g.update(p, 0.016f, 800, 600, targets); std::memcpy(p.prev, p.buttons, sizeof p.buttons); }
-    CHECK(bwc::near(g.cursorX(), tx, 0.5f) && bwc::near(g.cursorY(), ty, 0.5f));
+    CHECK(ckit::near(g.cursorX(), tx, 0.5f) && ckit::near(g.cursorY(), ty, 0.5f));
 }
 
-// Bunker Wars pad layout: R1 + face = send percent from the origin to the cursor, L1 + face = upgrade / convert,
-// A twice = upgrade, d-pad = skill slots, L2 + face = emotions (events), chords swallow the face button's own binding
-TEST(gamepad_bunkerwars_chords) {
+// chords from game.json: modifier + face = send percent from the origin to the cursor / upgrade / convert, a double
+// press, d-pad actions, trigger modifiers (events); chords swallow the face button's own binding
+TEST(gamepad_chords_and_game_actions) {
     using platform::PadAxis;
     using platform::PadButton;
     client::ClientGamepad g;
-    g.configure(Json::parse(R"({"gamepad": {"scheme": "bunkerwars", "chords": {"rb+y": "send:90"}}})"));
+    g.configure(Json::parse(R"({"gamepad": {
+        "buttons": {"right": "ability:1", "down": "ability:2", "left": "ability:3", "up": "ability:4"},
+        "chords": {"rb+b": "send:25", "rb+a": "send:50", "rb+x": "send:75", "rb+y": "send:100", "lb+a": "upgrade",
+                   "lb+x": "convert:house", "a+a": "upgrade", "lt+y": "event:emotion4"}}})"));
     platform::GamepadState p;
     p.connected = true;
     std::vector<client::ClientGamepad::Target> none;
@@ -437,21 +441,21 @@ TEST(gamepad_bunkerwars_chords) {
     p.axes[int(PadAxis::LX)] = 0;
     press(PadButton::B, true);
     f = step();
-    CHECK(f.actions.size() == 1 && f.actions[0].what == "send:25" && bwc::near(f.actions[0].originX, ox) && f.actions[0].x > ox + 50);
+    CHECK(f.actions.size() == 1 && f.actions[0].what == "send:25" && ckit::near(f.actions[0].originX, ox) && f.actions[0].x > ox + 50);
     CHECK(f.events.empty());   // B's right click is swallowed by the chord
     press(PadButton::B, false);
     f = step();
     CHECK(f.events.empty());   // ... and so is its release
     press(PadButton::Y, true);
     f = step();
-    CHECK(f.actions.size() == 1 && f.actions[0].what == "send:90");   // game.json chords override the scheme
+    CHECK(f.actions.size() == 1 && f.actions[0].what == "send:100");
     press(PadButton::Y, false); press(PadButton::RB, false);
     f = step();
     CHECK(!f.aiming);
     press(PadButton::LB, true); step();
     press(PadButton::X, true);
     f = step();
-    CHECK(f.actions.size() == 1 && f.actions[0].what == "convert:bunker");
+    CHECK(f.actions.size() == 1 && f.actions[0].what == "convert:house");
     press(PadButton::X, false); press(PadButton::LB, false); step();
     press(PadButton::Down, true);
     f = step();
@@ -472,7 +476,7 @@ TEST(gamepad_bunkerwars_chords) {
     CHECK(client::ClientGamepad::slotFromName("rt") == client::ClientGamepad::kRT && client::ClientGamepad::slotFromName("zz") == -1);
 }
 
-// ---------------- audio.json "chance" (Bunker Wars FMOD playChance) ----------------
+// ---------------- audio.json "chance" ----------------
 TEST(audio_play_chance) {
     auto a = offlineAudio(64);
     std::string err;
@@ -488,7 +492,7 @@ TEST(audio_play_chance) {
     a->stopAll(0.0f);
 }
 
-// ---------------- gameplay time scale (trigger variable "gameplay_scale": BW tutorial windows freeze the battle) ----------------
+// ---------------- gameplay time scale (trigger variable "gameplay_scale": tutorial windows freeze the battle) ----------------
 TEST(gameplay_scale_freezes_gameplay_systems) {
     using namespace modes_t;
     const std::string r = rules(R"("resources": {"energy": {"start": 0, "regen": 1}})");

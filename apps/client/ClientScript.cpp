@@ -433,7 +433,7 @@ void GameClient::initLua() {
     openSpineLua(lua_, &spine_);   // `spine`: skeleton views (ClientSpine.h)
     spine_.onEvent = [this](const Json& e) { luaEmit("spine", e); };
     services_.attach(lua_, luaAlive_, [this](const char* name, const Json& e) { luaEmit(name, e); });
-    openPadLua(lua_);   // game.sendPercent (agent-bw-client)   // `sound`: voice handles, music (modules/rts/view/ScriptSound.h)
+    openPadLua(lua_);   // game.sendPercent / game.useAbility   // `sound`: voice handles, music (modules/rts/view/ScriptSound.h)
     ui_.attachLua(lua_);
     // purchases that complete outside store.buy (pending -> purchased, after a restart)
     auto alive = luaAlive_;
