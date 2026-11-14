@@ -86,8 +86,12 @@ Built-in types: city — `street_2`, `street_2_parking`, `street_2_trees`, `aven
 ## Look
 
 Static models per 32-cell chunk through `Renderer3D::drawModel` (PBR, shadows, lightmaps as static scenery), with
-procedural tiling textures of the road kit; all paint (lines, zebras, stop lines, arrows, STOP / BUS) is decals from
-one generated atlas, drawn with the sprite decal pipelines (depth bias, lit, shadows). No shaders of its own.
+procedural tiling textures of the road kit. Lane lines are part of the carriageway texture: one texture per road type
+(and per open side: a branch or a bay drops the edge line there) with the centre line, lane lines, edge lines, bus and
+parking lines painted in; u runs across the carriageway, v along it (12 m per dash period). Local marks — zebras, stop
+lines, lane arrows, STOP, BUS — are decals from the paint atlas `engine/assets/roads/markings.png`
+(`tools/roads/make_markings.py`; a game overrides it with its own `roads/markings.png`), drawn with the sprite decal
+pipelines (depth bias, lit, shadows). No shaders of its own.
 
 ## Editor
 

@@ -5,6 +5,7 @@
 // them. Textures: the game's (road type "look.textures") or procedural tiles generated at init. No shaders of its own:
 // everything is drawn through Renderer3D::drawModel (PBR, shadows, lightmaps as static scenery).
 #pragma once
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -51,6 +52,8 @@ private:
     void buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt);
     void release(gfx::Device& dev);
     int propModel(gfx::Device& dev, const std::string& path);
+    int paintedMaterial(gfx::Device& dev, int type, int variant);   // carriageway texture with its lines, made on demand
+    std::map<std::pair<int, int>, int> painted_;
 
     gfx::Device* dev_ = nullptr;
     render::FileReader read_;

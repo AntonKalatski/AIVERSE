@@ -1,5 +1,6 @@
 #include "RtsRoadView.h"
 #include "RtsRoadKit.h"
+#include "../../../engine/platform/Platform.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -16,8 +17,9 @@ constexpr int kChunk = 32;          // cells per chunk side
 constexpr float kLift = 0.025f;     // world units over the terrain (no z-fighting with the ground)
 
 struct Acc {
-    std::vector<ModelVertex> v[RtsRoadView::kMatCount];
-    std::vector<uint32_t> i[RtsRoadView::kMatCount];
+    std::vector<std::vector<ModelVertex>> v;   // per material (the kit, then the painted road surfaces)
+    std::vector<std::vector<uint32_t>> i;
+    void need(int mat) { if (int(v.size()) <= mat) { v.resize(size_t(mat) + 1); i.resize(size_t(mat) + 1); } }
     bool empty() const { for (auto& x : i) if (!x.empty()) return false; return true; }
 };
 
@@ -55,9 +57,10 @@ bool inGaps(const std::vector<std::pair<Fixed, Fixed>>& g, float s) {
 // Builds the triangles of a network into chunks.
 class Mesher {
 public:
+    using Painted = std::function<int(int type, int variant)>;   // material of a type's painted carriageway, -1: none
     Mesher(const std::vector<RoadTypeDef>& types, const RoadNetwork& n, const RoadGeometry& g, float cm,
-           const std::function<float(float, float)>& ground, bool singleChunk)
-        : T_(types), N_(n), G_(g), cm_(cm), ground_(ground), single_(singleChunk) {}
+           const std::function<float(float, float)>& ground, bool singleChunk, Painted painted = {})
+        : T_(types), N_(n), G_(g), cm_(cm), ground_(ground), single_(singleChunk), painted_(std::move(painted)) {}
 
     std::map<int64_t, Acc> chunks;
     struct Prop { std::string shape, model; mat4 xf; };
@@ -67,6 +70,66 @@ public:
     void build() {
         for (size_t i = 0; i < N_.edges.size(); ++i) edge(int(i));
         for (auto& J : G_.junctions) if (!J.split) junction(J);
+        joints();
+    }
+
+    // Two roads meeting at a node at an angle: fill the wedge on the outer side of the bend (carriageway at road
+    // level, sidewalk / shoulder at its height with a curb face), so the surfaces meet without a gap.
+    void joints() {
+        std::vector<std::vector<std::pair<int, int>>> at(N_.nodes.size());
+        for (size_t i = 0; i < N_.edges.size(); ++i) {
+            at[size_t(N_.nodeIndex(N_.edges[i].a))].push_back({int(i), 0});
+            at[size_t(N_.nodeIndex(N_.edges[i].b))].push_back({int(i), 1});
+        }
+        for (size_t ni = 0; ni < at.size(); ++ni) {
+            if (at[ni].size() != 2 || G_.nodeJunction[ni] >= 0) continue;
+            struct Arm { Pt P; float sgn; float cwR, cwL, outR, outL, hR, hL; int walkR, walkL; bool walkRraised, walkLraised; };
+            Arm arm[2];
+            bool ok = true;
+            for (int k = 0; k < 2; ++k) {
+                const auto [ei, end] = at[ni][size_t(k)];
+                const RoadEdge& E = N_.edges[size_t(ei)];
+                const RoadEdgeGeom& g = G_.edges[size_t(ei)];
+                if (g.pts.size() < 2) { ok = false; break; }
+                // at the node the road already has the other road's cross-section if it narrows there
+                const RoadTypeDef& t = g.wearInto[size_t(end)] >= 0 ? T_[size_t(g.wearInto[size_t(end)])] : T_[size_t(E.typeIndex)];
+                const int fs = g.wearInto[size_t(end)] >= 0 ? 1 : (E.reversed ? -1 : 1);
+                Arm& a = arm[k];
+                a.P = sample(g, end == 0 ? 0.0f : f(g.length));
+                a.sgn = end == 0 ? 1.0f : -1.0f;   // leaving-frame offset -> edge-frame offset
+                // leaving right = edge right at end a, edge left at end b
+                const int er = end == 0 ? 1 : -1;
+                const RoadSideDef& SR = (er * fs) > 0 ? t.right : t.left;
+                const RoadSideDef& SL = (-er * fs) > 0 ? t.right : t.left;
+                a.cwR = f(t.carriageway(er * fs)); a.cwL = f(t.carriageway(-er * fs));
+                a.outR = a.cwR + f(SR.shoulder + SR.sidewalk); a.outL = a.cwL + f(SL.shoulder + SL.sidewalk);
+                a.hR = sidewalkHeight(SR); a.hL = sidewalkHeight(SL);
+                a.walkR = SR.sidewalk.raw > 0 ? surfaceMat(SR.sidewalkSurface) : surfaceMat(SR.shoulderSurface);
+                a.walkL = SL.sidewalk.raw > 0 ? surfaceMat(SL.sidewalkSurface) : surfaceMat(SL.shoulderSurface);
+                a.walkRraised = a.hR > 0; a.walkLraised = a.hL > 0;
+            }
+            if (!ok) continue;
+            const int road = surfaceMat(T_[size_t(N_.edges[size_t(at[ni][0].first)].typeIndex)].surface);
+            const float um = 1.0f / (4.0f / cm_);
+            auto P = [&](const Arm& a, float leavingOff, float h) { return this->at(a.P, a.sgn * leavingOff, h); };
+            // region between arm i's right side and arm j's left side, both ways round
+            for (int k = 0; k < 2; ++k) {
+                const Arm& A = arm[k];
+                const Arm& B = arm[1 - k];
+                const float3 c = this->at(A.P, 0, 0);
+                const float3 a0 = P(A, A.cwR, 0), b0 = P(B, -B.cwL, 0);
+                tri(road, c, a0, b0, {c.x * um, c.z * um}, {a0.x * um, a0.z * um}, {b0.x * um, b0.z * um}, {0, 1, 0});
+                if (A.outR > A.cwR + 1e-3f && B.outL > B.cwL + 1e-3f) {
+                    const float h = std::min(A.hR, B.hL);
+                    const float3 a1 = P(A, A.cwR, h), b1 = P(B, -B.cwL, h), a2 = P(A, A.outR, h), b2 = P(B, -B.outL, h);
+                    quad(A.walkR, a1, a2, b2, b1, {a1.x * um, a1.z * um}, {a2.x * um, a2.z * um}, {b2.x * um, b2.z * um}, {b1.x * um, b1.z * um}, {0, 1, 0});
+                    if (h > 0) {
+                        const float3 out = normalize((a0 + b0) * 0.5f - c);
+                        quad(RtsRoadView::kCurb, a0, a1, b1, b0, {0, 0}, {0, 1}, {1, 1}, {1, 0}, -out);
+                    }
+                }
+            }
+        }
     }
 
 private:
@@ -76,6 +139,7 @@ private:
     float cm_;
     const std::function<float(float, float)>& ground_;
     bool single_;
+    Painted painted_;
 
     float wy(float metres) const { return metres / cm_; }   // metres -> world units
     float gnd(float x, float z) const { return ground_ ? ground_(x, z) : 0.0f; }
@@ -92,8 +156,9 @@ private:
         if (dot(nrm, hint) < 0) { std::swap(b, c); std::swap(ub, uc); nrm = -nrm; }
         nrm = normalize(nrm);
         Acc& A = acc(a);
-        auto& V = A.v[mat];
-        auto& I = A.i[mat];
+        A.need(mat);
+        auto& V = A.v[size_t(mat)];
+        auto& I = A.i[size_t(mat)];
         const uint32_t base = uint32_t(V.size());
         for (auto [p, uv] : {std::pair{a, ua}, std::pair{b, ub}, std::pair{c, uc}}) {
             ModelVertex mv;
@@ -137,6 +202,32 @@ private:
         float3 q = p.c + p.n * off;
         q.y = p.ground ? gnd(q.x, q.z) + kLift + wy(hMetres) : p.y + wy(hMetres);
         return q;
+    }
+
+    // A road that runs on as a narrower one: over its last stretch every point of the cross-section moves toward
+    // the matching point of the other road (median -> its median, carriageway edge -> its edge, outer edge -> its
+    // outer edge), so the two meet without a step and a median closes to nothing.
+    float narrowMap(const RoadTypeDef& t, const RoadEdgeGeom& g, int fs, float off, float s) const {
+        float out = off;
+        for (int end = 0; end < 2; ++end) {
+            if (g.wear[size_t(end)].raw <= 0 || g.wearInto[size_t(end)] < 0) continue;
+            const float d = end == 0 ? s : f(g.length) - s, L = f(g.wear[size_t(end)]);
+            if (d >= L) continue;
+            float u = 1 - d / L;
+            u = u * u * (3 - 2 * u);
+            const RoadTypeDef& into = T_[size_t(g.wearInto[size_t(end)])];
+            const int sd = off < 0 ? -1 : 1;
+            const RoadSideDef& S = (sd * fs) > 0 ? t.right : t.left;
+            const RoadSideDef& Si = sd > 0 ? into.right : into.left;
+            const float a[4] = {0, f(t.median) * 0.5f, f(t.carriageway(sd * fs)), f(t.carriageway(sd * fs) + S.shoulder + S.sidewalk)};
+            const float b[4] = {0, f(into.median) * 0.5f, f(into.carriageway(sd)), f(into.carriageway(sd) + Si.shoulder + Si.sidewalk)};
+            const float x = std::fabs(off);
+            float y = b[3] + (x - a[3]);
+            for (int k = 0; k < 3; ++k)
+                if (x <= a[k + 1] + 1e-5f) { const float span = a[k + 1] - a[k]; y = span > 1e-5f ? b[k] + (b[k + 1] - b[k]) * (x - a[k]) / span : b[k + 1]; break; }
+            out = off + (float(sd) * y - off) * u;
+        }
+        return out;
     }
 
     struct Prof { float off, h; int mat; int role = 0; };   // mat: of the segment ending at this point (-1: none)
@@ -222,6 +313,15 @@ private:
             std::vector<Prof> pr;
             const float swL = f(L.sidewalk), swR = f(R.sidewalk);
             const int road = wearAt(sm) > 0.08f ? RtsRoadView::kAsphaltWorn : roadMat;
+            // the carriageway with its lines painted in (a texture per type and open side); plain where the road
+            // wears out or narrows
+            int carr = road;
+            if (painted_ && road == roadMat && narrowAt(sm) >= 0.999f) {
+                const bool openR = gapR || inBay(g, 1, sm), openL = gapL || inBay(g, -1, sm);
+                const int variant = fs > 0 ? (openR ? 1 : 0) | (openL ? 2 : 0) : (openL ? 1 : 0) | (openR ? 2 : 0);
+                const int m = painted_(E.typeIndex, variant);
+                if (m >= 0) carr = m;
+            }
             if (!gapL && L.sidewalk.raw > 0) { pr.push_back({-(cwl + f(L.shoulder) + swL), hsL, -1, 2}); pr.push_back({-(cwl + f(L.shoulder)), hsL, surfaceMat(L.sidewalkSurface), 1}); }
             if (!gapL && hsL > 0 && !pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, RtsRoadView::kCurb, 1});
             if (!gapL && L.shoulder.raw > 0) { if (pr.empty()) pr.push_back({-(cwl + f(L.shoulder)), 0, -1, 1}); pr.push_back({-cwl, 0, surfaceMat(L.shoulderSurface), 1}); }
@@ -232,12 +332,12 @@ private:
                 // a crossing cuts through the median at road level, paved (no grass, no curb under the zebra)
                 const bool cut = inGaps2(zebra, sm);
                 const float h = cut ? 0.0f : hm;
-                pr.push_back({-m, 0, road, 0});
+                pr.push_back({-m, 0, carr, 0});
                 if (h > 0) pr.push_back({-m, h, RtsRoadView::kCurb, 0});
                 pr.push_back({m, h, cut ? RtsRoadView::kConcrete : surfaceMat(t.medianSurface), 0});
                 if (h > 0) pr.push_back({m, 0, RtsRoadView::kCurb, 0});
             }
-            pr.push_back({cwr, 0, road, 0});
+            pr.push_back({cwr, 0, carr, 0});
             pr.push_back({cwr, 0, road, 1});
             if (!gapR && R.shoulder.raw > 0) pr.push_back({cwr + f(R.shoulder), 0, surfaceMat(R.shoulderSurface), 1});
             if (!gapR && R.sidewalk.raw > 0) {
@@ -254,7 +354,7 @@ private:
                 const float spare = std::max(0.0f, (sd < 0 ? swL : swR) - minWalk);
                 return p.off + float(sd) * (p.role == 1 ? w : std::max(0.0f, w - spare));
             };
-            auto offAt = [&](const Prof& p, const Pt& P) { return offBay(p, P) * narrowAt(P.s); };
+            auto offAt = [&](const Prof& p, const Pt& P) { return narrowMap(t, g, fs, offBay(p, P), P.s); };
             for (size_t q = 1; q < pr.size(); ++q) {
                 const Prof& p0 = pr[q - 1];
                 const Prof& p1 = pr[q];
@@ -266,6 +366,13 @@ private:
                 const float3 a0 = at(A, oa0, p0.h), a1 = at(A, oa1, p1.h), b0 = at(B, ob0, p0.h), b1 = at(B, ob1, p1.h);
                 float3 hint{0, 1, 0};
                 if (face) hint = A.n * (p1.h < p0.h ? 1.0f : -1.0f);   // curb faces look at the lower side
+                if (p1.mat == carr && carr != road) {   // painted carriageway: u across the type's carriageway, v per dash period
+                    const float tl = f(t.carriageway(-1)), tw = std::max(0.01f, tl + f(t.carriageway(1)));
+                    const float ua0 = (float(fs) * oa0 + tl) / tw, ua1 = (float(fs) * oa1 + tl) / tw, ub0 = (float(fs) * ob0 + tl) / tw, ub1 = (float(fs) * ob1 + tl) / tw;
+                    const float pv = cm_ / roadkit::kRoadPaintPeriod;
+                    quad(p1.mat, a0, a1, b1, b0, {ua0, sa * pv}, {ua1, sa * pv}, {ub1, sb * pv}, {ub0, sb * pv}, hint);
+                    continue;
+                }
                 const float va = sa * um, vb = sb * um;
                 const float u0 = face ? 0.0f : oa0 * um, u1 = face ? wy(std::fabs(p1.h - p0.h)) * um : oa1 * um;
                 quad(p1.mat, a0, a1, b1, b0, {u0, va}, {u1, va}, {u1, vb}, {u0, vb}, hint);
@@ -460,47 +567,28 @@ private:
             s = e;
         }
     }
+    // paint that is not part of the carriageway texture: BUS along bus lanes, bus stop bays
     void markings(const RoadTypeDef& t, const RoadEdgeGeom& g, int fs, float s0, float s1, const std::function<bool(float)>& tunnel) {
-        if (t.surface == RoadSurface::Gravel || t.surface == RoadSurface::Dirt || t.surface == RoadSurface::Grass) return;
+        if (t.unpaved()) return;
         auto none = [&](float s) { return tunnel(s); };
-        const bool both = !t.forward.empty() && !t.backward.empty();
         const float med = f(t.median) * 0.5f;
-        if (both && t.median.raw == 0) {
-            switch (t.centre) {
-            case RoadMarking::Dashed: line(g, s0, s1, 0, 0.15f, 3, 6, RtsRoadView::kWhite, none); break;
-            case RoadMarking::Solid: line(g, s0, s1, 0, 0.15f, 1, 0, RtsRoadView::kWhite, none); break;
-            case RoadMarking::Double: line(g, s0, s1, -0.15f / cm_, 0.12f, 1, 0, RtsRoadView::kWhite, none); line(g, s0, s1, 0.15f / cm_, 0.12f, 1, 0, RtsRoadView::kWhite, none); break;
-            case RoadMarking::Yellow: line(g, s0, s1, -0.12f / cm_, 0.12f, 1, 0, RtsRoadView::kYellow, none); line(g, s0, s1, 0.12f / cm_, 0.12f, 1, 0, RtsRoadView::kYellow, none); break;
-            default: break;
-            }
-        }
-        if (!t.laneLines) return;
         for (int dir : {1, -1}) {
             const auto& lanes = t.lanesOf(dir);
             const float sgn = float(dir * fs);
             float off = med;
             for (size_t k = 0; k < lanes.size(); ++k) {
-                if (k == 0 && (!both || t.median.raw > 0)) line(g, s0, s1, sgn * (off + 0.1f / cm_), 0.12f, 1, 0, both ? RtsRoadView::kYellow : RtsRoadView::kWhite, none);
                 off += f(lanes[k].width);
-                if (lanes[k].use == RoadLaneUse::Bus)   // BUS painted along bus lanes
+                if (lanes[k].use == RoadLaneUse::Bus)
                     for (float sb = s0 + 8.0f / cm_; sb + 3.0f / cm_ < s1; sb += 50.0f / cm_)
                         if (!none(sb)) paint(g, sb, sb + 3.0f / cm_, sgn * (off - f(lanes[k].width) * 0.5f), f(lanes[k].width) * 0.75f, roadkit::kMarkBus, paintColor(RtsRoadView::kWhite), dir * fs);
-                const bool last = k + 1 == lanes.size();
-                const bool parkingNext = !last && lanes[k + 1].use == RoadLaneUse::Parking;
-                const bool bus = lanes[k].use == RoadLaneUse::Bus || (!last && lanes[k + 1].use == RoadLaneUse::Bus);
-                if (!last) line(g, s0, s1, sgn * off, bus ? 0.25f : 0.12f, parkingNext ? 1.0f : bus ? 1.0f : 3.0f, parkingNext ? 1.0f : bus ? 0.0f : 9.0f, RtsRoadView::kWhite, none);
-                else if (lanes[k].use != RoadLaneUse::Parking) {   // edge line, open where a branch leaves / joins
-                    const auto& gaps = g.gaps[sgn > 0 ? 1 : 0];
-                    const int sd = sgn > 0 ? 1 : -1;
-                    line(g, s0, s1, sgn * (off - 0.15f / cm_), 0.12f, 1, 0, RtsRoadView::kWhite, [&](float s) { return none(s) || inGaps(gaps, s) || inBay(g, sd, s); });
-                    // bus stop bays: a dashed line along the lane, BUS in the middle of the bay
-                    for (auto& b : g.bays) {
-                        if (b.side != sd) continue;
-                        line(g, f(b.s0), f(b.s3), sgn * (off - 0.15f / cm_), 0.2f, 1, 1, RtsRoadView::kWhite, none);
-                        const float mid = (f(b.s1) + f(b.s2)) * 0.5f, len = std::min(3.0f / cm_, (f(b.s2) - f(b.s1)) * 0.8f);
-                        paint(g, mid - len * 0.5f, mid + len * 0.5f, sgn * (off + f(b.width) * 0.5f), f(b.width) * 0.7f, roadkit::kMarkBus, paintColor(RtsRoadView::kYellow), dir * fs);
-                    }
-                }
+            }
+            if (lanes.empty()) continue;
+            const int sd = sgn > 0 ? 1 : -1;
+            for (auto& b : g.bays) {   // a dashed line along the lane, BUS in the middle of the bay
+                if (b.side != sd) continue;
+                line(g, f(b.s0), f(b.s3), sgn * (off - 0.15f / cm_), 0.2f, 1, 1, RtsRoadView::kWhite, none);
+                const float mid = (f(b.s1) + f(b.s2)) * 0.5f, len = std::min(3.0f / cm_, (f(b.s2) - f(b.s1)) * 0.8f);
+                paint(g, mid - len * 0.5f, mid + len * 0.5f, sgn * (off + f(b.width) * 0.5f), f(b.width) * 0.7f, roadkit::kMarkBus, paintColor(RtsRoadView::kYellow), dir * fs);
             }
         }
     }
@@ -604,7 +692,11 @@ private:
                     const bool paved = side == 2 ? (t.medianSurface != RoadSurface::Grass && t.medianSurface != RoadSurface::Dirt)
                                                  : [&] { const RoadSideDef& S = (side * fs) > 0 ? t.right : t.left;
                                                          return S.sidewalk.raw > 0 && S.sidewalkSurface != RoadSurface::Grass && S.sidewalkSurface != RoadSurface::Dirt; }();
-                    if (pd.shape == "tree" && pd.model.empty() && paved) props.push_back({"tree_pit", {}, m});
+                    if (pd.shape == "tree" && pd.model.empty() && paved) {   // the pit sits on the paving itself (props stand kLift lower)
+                        mat4 pm = m;
+                        pm.at(1, 3) = pos.y + 0.002f;
+                        props.push_back({"tree_pit", {}, pm});
+                    }
                 }
             }
         }
@@ -835,7 +927,11 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
     // road paint: decals (lines, zebras, arrows, text) from one generated atlas
     if (!decalBatch_.init(dev)) warnings_.push_back("road paint: decal pipeline: " + dev.lastError());
     paintTex_.init(dev);
-    paint_ = paintTex_.addGenerated("builtin:road-paint", 1024, 1024, roadkit::markingAtlas(256), false);
+    // the paint atlas: the game's roads/markings.png, else the engine's (tools/roads/make_markings.py), else drawn here
+    std::string probe;
+    for (const char* path : {"roads/markings.png", "engine/roads/markings.png"})
+        if (platform::readContentFile(path, probe)) { paint_ = paintTex_.resolve(path, false, "", true); if (paint_.valid()) break; }
+    if (!paint_.valid()) paint_ = paintTex_.addGenerated("builtin:road-paint", 1024, 1024, roadkit::markingAtlas(256), false);
     if (hasNet_) {   // new types: the network's type indices change
         try { net_ = parseRoadNetwork(netJson_, types_); }
         catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
@@ -857,6 +953,7 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
     propModels_.clear();
     for (auto& img : images_) if (img.tex.valid()) { dev.destroyTexture(img.tex); img.tex = {}; }
     images_.clear();
+    painted_.clear();
     if (dev_) { decalBatch_.shutdown(); paintTex_.shutdown(); }
     paint_ = {};
     dev_ = nullptr;
@@ -870,6 +967,26 @@ void RtsRoadView::setMap(const Json& map) {
     netJson_ = map["roadNetwork"];
     try { net_ = parseRoadNetwork(netJson_, types_); }
     catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
+}
+
+int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
+    if (type < 0 || size_t(type) >= types_.size() || !roadkit::roadSurfacePainted(types_[size_t(type)])) return -1;
+    const auto key = std::pair{type, variant};
+    if (auto it = painted_.find(key); it != painted_.end()) return it->second;
+    Model holder;
+    const int img = addImage(dev, holder, roadkit::roadSurface(types_[size_t(type)], variant));
+    int mat = -1;
+    if (img >= 0) {
+        images_.push_back(std::move(holder.images[size_t(img)]));
+        images_.back().borrowedTexture = false;
+        Material m = roadkit::material(kAsphalt);
+        m.name = "road_paint_" + types_[size_t(type)].id;
+        m.baseTex = int(images_.size() - 1);
+        materials_.push_back(m);
+        mat = int(materials_.size() - 1);
+    }
+    painted_[key] = mat;
+    return mat;
 }
 
 int RtsRoadView::propModel(gfx::Device& dev, const std::string& path) {
@@ -893,22 +1010,22 @@ std::unique_ptr<Model> toModel(const std::string& name, Acc& a, const std::vecto
     for (auto& img : images) { Image b; b.name = img.name; b.tex = img.tex; b.borrowedTexture = true; b.repeat = true; b.width = img.width; b.height = img.height; m->images.push_back(b); }
     Node root; root.name = "roads"; root.mesh = 0;
     MeshDef md; md.name = name;
-    for (int k = 0; k < RtsRoadView::kMatCount; ++k) {
-        if (a.i[k].empty()) continue;
+    for (int k = 0; k < int(a.i.size()); ++k) {
+        if (a.i[size_t(k)].empty()) continue;
         Primitive p;
         p.firstIndex = uint32_t(m->indices.size());
-        p.indexCount = uint32_t(a.i[k].size());
+        p.indexCount = uint32_t(a.i[size_t(k)].size());
         p.firstVertex = uint32_t(m->vertices.size());
-        p.vertexCount = uint32_t(a.v[k].size());
+        p.vertexCount = uint32_t(a.v[size_t(k)].size());
         p.material = k;
         const uint32_t base = uint32_t(m->vertices.size());
         float3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
-        for (auto& v : a.v[k]) {
+        for (auto& v : a.v[size_t(k)]) {
             lo = {std::min(lo.x, v.pos.x), std::min(lo.y, v.pos.y), std::min(lo.z, v.pos.z)};
             hi = {std::max(hi.x, v.pos.x), std::max(hi.y, v.pos.y), std::max(hi.z, v.pos.z)};
             m->vertices.push_back(v);
         }
-        for (uint32_t i : a.i[k]) m->indices.push_back(base + i);
+        for (uint32_t i : a.i[size_t(k)]) m->indices.push_back(base + i);
         // smooth shading over curved decks and draped roads: average the normals of upward faces that share a corner
         {
             std::map<std::tuple<int64_t, int64_t, int64_t>, float3> acc;
@@ -939,10 +1056,11 @@ void addShapes(Acc& a, const std::string& shape, const mat4& xf, float worldPerM
     for (auto& t : it->second) {
         float3 p[3] = {xf.transformPoint(t.a), xf.transformPoint(t.b), xf.transformPoint(t.c)};
         float3 n = normalize(cross(p[1] - p[0], p[2] - p[0]));
-        auto& V = a.v[t.mat];
+        a.need(t.mat);
+        auto& V = a.v[size_t(t.mat)];
         const uint32_t base = uint32_t(V.size());
         for (auto& q : p) { ModelVertex mv; mv.pos = q; mv.nrm = n; mv.uv = {q.x + q.z, q.y}; V.push_back(mv); }
-        a.i[t.mat].push_back(base); a.i[t.mat].push_back(base + 1); a.i[t.mat].push_back(base + 2);
+        a.i[size_t(t.mat)].push_back(base); a.i[size_t(t.mat)].push_back(base + 1); a.i[size_t(t.mat)].push_back(base + 2);
     }
 }
 
@@ -956,7 +1074,7 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
     const float cm = cellMeters_;
     const RoadGround ground = [&](Vec2 p) { return Fixed::fromRaw(int64_t(std::llround(double(heightAt(f(p.x), f(p.y)) * cm) * 65536.0))); };
     geom_ = buildRoadGeometry(net_, types_, heightAt ? ground : RoadGround{});
-    Mesher mesh(types_, net_, geom_, cm, heightAt, false);
+    Mesher mesh(types_, net_, geom_, cm, heightAt, false, [this, &dev](int type, int variant) { return paintedMaterial(dev, type, variant); });
     mesh.build();
     std::map<std::string, std::vector<roadkit::Tri>> shapes;
     for (auto& p : mesh.props) {
@@ -983,7 +1101,7 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
         const float cm = cellMeters_;
         const RoadGround ground = [&](Vec2 p) { return Fixed::fromRaw(int64_t(std::llround(double(heightAt(f(p.x), f(p.y)) * cm) * 65536.0))); };
         RoadGeometry g = buildRoadGeometry(ghost_.net, types_, heightAt ? ground : RoadGround{});
-        Mesher mesh(types_, ghost_.net, g, cm, heightAt, true);
+        Mesher mesh(types_, ghost_.net, g, cm, heightAt, true, [this, &dev](int type, int variant) { return paintedMaterial(dev, type, variant); });
         mesh.build();
         std::map<std::string, std::vector<roadkit::Tri>> shapes;
         for (auto& p : mesh.props) if (p.model.empty()) addShapes(mesh.chunks[0], p.shape, p.xf, 1.0f / cm, shapes);

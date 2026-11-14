@@ -6,6 +6,7 @@
 #include <vector>
 #include "../../../engine/render/Math3D.h"
 #include "../../../engine/render/Model.h"
+#include "../RtsRoadNet.h"
 
 namespace aiverse::game::roadkit {
 
@@ -15,6 +16,14 @@ render::Image texture(int mat, int size = 256);
 render::Material material(int mat);
 
 struct Tri { int mat; render::float3 a, b, c; };
+
+// The carriageway texture of a road type with its markings painted in: u runs across the whole carriageway (type
+// frame: 0 at the left edge of the backward lanes, 1 at the right edge of the forward lanes, the median included),
+// v along the road, one period of the dash pattern (kRoadPaintPeriod metres) per texture height.
+// variant bits: 1 = no right edge line, 2 = no left edge line (a branch or a bus stop bay opens that side).
+inline constexpr float kRoadPaintPeriod = 12.0f;
+render::Image roadSurface(const RoadTypeDef& t, int variant);
+bool roadSurfacePainted(const RoadTypeDef& t);   // the type has lines worth a texture of its own
 
 // Road paint decals: one atlas of white marks (tinted per quad) in a 4 x 4 grid. Arrows and text point to v = 0.
 enum Mark : int { kMarkLine = 0, kMarkArrowS, kMarkArrowL, kMarkArrowR, kMarkArrowSL, kMarkArrowSR, kMarkStop, kMarkBus, kMarkArrowLR, kMarkCount };

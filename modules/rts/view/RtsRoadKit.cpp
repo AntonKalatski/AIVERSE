@@ -203,6 +203,82 @@ std::vector<uint32_t> markingAtlas(int cell) {
     return px;
 }
 
+bool roadSurfacePainted(const RoadTypeDef& t) {
+    if (t.forward.empty() && t.backward.empty()) return false;
+    if (t.surface != RoadSurface::Asphalt && t.surface != RoadSurface::Concrete) return false;
+    return t.laneLines || t.centre != RoadMarking::None;
+}
+
+Image roadSurface(const RoadTypeDef& t, int variant) {
+    Image img;
+    const float wl = float(t.carriageway(-1).toDouble()), wr = float(t.carriageway(1).toDouble());   // cells
+    const float total = wl + wr;
+    const int W = std::clamp(int(total * 64.0f), 64, 512), H = 256;
+    img.name = "#road-surface-" + t.id + "-" + std::to_string(variant);
+    img.width = W; img.height = H;
+    img.rgba.resize(size_t(W) * size_t(H) * 4);
+    // lines: (centre offset in cells from the left edge, half width in cells, dash on / period in [0,1] of v, colour)
+    struct L { float u, hw, on, phase; Rgb c; };
+    std::vector<L> lines;
+    const Rgb white{0.80f, 0.80f, 0.78f}, yellow{0.82f, 0.55f, 0.08f};
+    // cells per metre of this type, from the standard 3.5 m lane: lane width is stored in cells already, so a line
+    // width in metres needs the scale; take it from the data's metres (lane widths are 2.5..5 m in practice)
+    const float lane = t.forward.empty() ? float(t.backward[0].width.toDouble()) : float(t.forward[0].width.toDouble());
+    const float perM = lane / 3.5f;   // cells per metre, close enough for paint widths
+    const float hwThin = 0.06f * perM, hwWide = 0.125f * perM, dash = 3.0f / kRoadPaintPeriod;
+    const float med = float(t.median.toDouble()) * 0.5f;
+    const bool both = !t.forward.empty() && !t.backward.empty();
+    const float c0 = wl;   // the centre line in texture cells
+    if (both && t.median.raw == 0) {
+        switch (t.centre) {
+        case RoadMarking::Dashed: lines.push_back({c0, hwThin * 1.2f, dash, 0, white}); break;
+        case RoadMarking::Solid: lines.push_back({c0, hwThin * 1.2f, 1, 0, white}); break;
+        case RoadMarking::Double: lines.push_back({c0 - 0.15f * perM, hwThin, 1, 0, white}); lines.push_back({c0 + 0.15f * perM, hwThin, 1, 0, white}); break;
+        case RoadMarking::Yellow: lines.push_back({c0 - 0.12f * perM, hwThin, 1, 0, yellow}); lines.push_back({c0 + 0.12f * perM, hwThin, 1, 0, yellow}); break;
+        default: break;
+        }
+    }
+    if (t.laneLines)
+        for (int dir : {1, -1}) {
+            const auto& v = t.lanesOf(dir);
+            float off = med;
+            for (size_t k = 0; k < v.size(); ++k) {
+                if (k == 0 && (!both || t.median.raw > 0)) lines.push_back({c0 + float(dir) * (off + 0.1f * perM), hwThin, 1, 0, both ? yellow : white});
+                off += float(v[k].width.toDouble());
+                const bool last = k + 1 == v.size();
+                const bool parkingNext = !last && v[k + 1].use == RoadLaneUse::Parking;
+                const bool bus = v[k].use == RoadLaneUse::Bus || (!last && v[k + 1].use == RoadLaneUse::Bus);
+                if (!last) lines.push_back({c0 + float(dir) * off, bus ? hwWide : hwThin, parkingNext ? 0.5f : bus ? 1.0f : dash, 0, white});
+                else if (v[k].use != RoadLaneUse::Parking) {
+                    const bool open = dir > 0 ? (variant & 1) : (variant & 2);
+                    if (!open) lines.push_back({c0 + float(dir) * (off - 0.15f * perM), hwThin, 1, 0, white});
+                }
+            }
+        }
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const float fx = float(x), fy = float(y);
+            // asphalt, seamless along v (the texture repeats along the road)
+            const float n = fbm(fx, fy, H, 8, 11), g = rnd(x % H, y, 3);
+            const float a = 0.085f + (n - 0.5f) * 0.05f + (g > 0.93f ? 0.05f : g < 0.05f ? -0.03f : 0.0f);
+            Rgb c{a, a, a * 1.02f};
+            const float u = (fx + 0.5f) / float(W) * total, v = (fy + 0.5f) / float(H);
+            const float px = total / float(W);   // cells per pixel: antialiasing width
+            for (auto& l : lines) {
+                const float d = std::fabs(u - l.u) - l.hw;
+                float cov = std::clamp(0.5f - d / px, 0.0f, 1.0f);
+                if (l.on < 1) { const float ph = std::fmod(v + l.phase, 1.0f); if (ph > l.on) cov = 0; }
+                if (cov <= 0) continue;
+                const float wear = 0.8f + 0.2f * fbm(fx, fy, H, 16, 77);
+                c = mix(c, l.c, cov * wear);
+            }
+            uint8_t* p = &img.rgba[(size_t(y) * size_t(W) + size_t(x)) * 4];
+            p[0] = q(std::pow(c.r, 1 / 2.2f)); p[1] = q(std::pow(c.g, 1 / 2.2f)); p[2] = q(std::pow(c.b, 1 / 2.2f)); p[3] = 255;
+        }
+    img.repeat = true;
+    return img;
+}
+
 Material material(int mat) {
     using V = RtsRoadView;
     Material m;
@@ -292,13 +368,13 @@ void shape(const std::string& id, float s, std::vector<Tri>& out) {
         sphere(out, V::kLeaves, {0, 4.4f * s, 0}, {2.0f * s, 1.9f * s, 2.0f * s}, 5, 9);
         sphere(out, V::kLeaves, {0.6f * s, 5.6f * s, 0.3f * s}, {1.3f * s, 1.2f * s, 1.3f * s}, 4, 8);
     } else if (id == "tree_pit") {   // a tree pit in a paved sidewalk: soil and grass inside a low stone edge, 1.8 m square
-        const float h = 0.9f * s, e = 0.12f * s, top = 0.08f * s;
+        const float h = 0.9f * s, e = 0.14f * s, top = 0.10f * s;
         box(out, V::kCurb, {-h, 0, -h}, {h, top, -h + e});
         box(out, V::kCurb, {-h, 0, h - e}, {h, top, h});
         box(out, V::kCurb, {-h, 0, -h + e}, {-h + e, top, h - e});
         box(out, V::kCurb, {h - e, 0, -h + e}, {h, top, h - e});
-        box(out, V::kSoil, {-h + e, 0, -h + e}, {h - e, 0.03f * s, h - e});
-        for (int i = 0; i < 7; ++i) sphere(out, V::kLeaves, {(-0.55f + 0.18f * float(i)) * s, 0.04f * s, ((i % 3) - 1) * 0.35f * s}, {0.16f * s, 0.06f * s, 0.16f * s}, 2, 5);
+        box(out, V::kSoil, {-h + e, 0, -h + e}, {h - e, 0.05f * s, h - e});
+        for (int i = 0; i < 7; ++i) sphere(out, V::kLeaves, {(-0.55f + 0.18f * float(i)) * s, 0.06f * s, ((i % 3) - 1) * 0.35f * s}, {0.16f * s, 0.07f * s, 0.16f * s}, 2, 5);
     } else if (id == "bush") {
         sphere(out, V::kLeaves, {0, 0.55f * s, 0}, {0.9f * s, 0.65f * s, 0.9f * s}, 4, 8);
     } else if (id == "flowerbed") {
