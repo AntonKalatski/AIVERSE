@@ -2,6 +2,7 @@
 // helpers here are shared by the Scene tool («Дороги-сплайны», EditorRoadTool.cpp) and the MCP operations
 // road_types, road_type_set, road_network, road_add, road_node_set, road_edge_set, road_split, road_delete.
 #pragma once
+#include <functional>
 #include <string>
 #include <vector>
 #include "Workspace.h"
@@ -52,6 +53,13 @@ struct AddSpec {
 };
 // Adds one edge (and its end nodes). Returns the new edge id; throws std::runtime_error with a readable message.
 int32_t addEdge(RoadNetwork& n, const std::vector<RoadTypeDef>& types, const AddSpec& spec);
+// Dirt and gravel roads do not ford rivers: where edge `id` (an unpaved one) crosses water its stretch over the
+// water and `approachMetres` either side becomes an asphalt bridge ("rural_bridge", raised over the water), so the
+// road runs dirt -> asphalt -> bridge -> asphalt -> dirt. Returns how many bridges were made.
+int bridgeWater(RoadNetwork& n, const std::vector<RoadTypeDef>& types, int32_t id, const std::function<bool(Vec2)>& water,
+                Fixed cellMetres, Fixed approachMetres = Fixed::fromInt(16));
+// the map's water cells ('~') as a predicate over map cell coordinates
+std::function<bool(Vec2)> waterOf(const MapDoc& doc);
 void deleteEdge(RoadNetwork& n, int32_t id);                     // and nodes left without edges
 void deleteNode(RoadNetwork& n, int32_t id);                     // with its edges
 void moveNode(RoadNetwork& n, int32_t id, Vec2 p, Fixed y);      // the neighbouring control points follow

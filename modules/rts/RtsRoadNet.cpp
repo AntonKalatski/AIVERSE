@@ -516,7 +516,10 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
 
     for (size_t ni = 0; ni < n.nodes.size(); ++ni) {
         auto& A = arms[ni];
-        if (A.size() < 3) {
+        // two roads meeting at a sharp bend (over 35 degrees off straight) get a junction box: fillets and kerb
+        // corners round the bend instead of two cross-sections overlapping
+        const bool sharp = A.size() == 2 && A[0].d.dot(A[1].d) > -Fixed::fromRatio(82, 100);
+        if (A.size() < 3 && !sharp) {
             if (A.size() == 2) {   // one road runs on as another: an unpaved one only out of a narrow paved road
                 const RoadTypeDef& t0 = types[size_t(n.edges[size_t(A[0].edge)].typeIndex)];
                 const RoadTypeDef& t1 = types[size_t(n.edges[size_t(A[1].edge)].typeIndex)];
@@ -532,11 +535,17 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
                     }
                     RoadEdgeGeom& g = G.edges[size_t(pa.edge)];
                     g.wear[size_t(pa.end)] = fxMin(Fixed::fromInt(15) / cellMetres, g.length * Fixed::fromRatio(2, 5));
+                    // the asphalt only breaks up on the ground: never on a bridge deck or in a tunnel
+                    for (auto& sp : g.spans) {
+                        const Fixed room = pa.end == 0 ? sp.s0 : g.length - sp.s1;
+                        if (room > Fixed{}) g.wear[size_t(pa.end)] = fxMin(g.wear[size_t(pa.end)], room);
+                    }
                     g.wearInto[size_t(pa.end)] = n.edges[size_t(A[size_t(1 - k)].edge)].typeIndex;
                     g.worn[size_t(pa.end)] = true;
                 }
-                // two paved roads of different widths: the wider one narrows to the other over its last stretch
-                if (!t0.unpaved() && !t1.unpaved() && t0.id != t1.id) {
+                // two roads of different widths, both paved or both not: the wider one narrows to the other over
+                // its last stretch
+                if (t0.unpaved() == t1.unpaved() && t0.id != t1.id) {
                     const Fixed w0 = t0.carriageway(1) + t0.carriageway(-1), w1 = t1.carriageway(1) + t1.carriageway(-1);
                     if (w0 != w1) {
                         const size_t wide = w0 > w1 ? 0 : 1;
@@ -681,6 +690,7 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
             std::vector<Vec2> strip;
             for (size_t q = 0; q < inner.size(); ++q) { strip.push_back(inner[q]); strip.push_back(outer[q]); }
             J.corners.push_back(std::move(strip));
+            J.cornerArms.push_back({int(i), int(k)});
         }
         G.nodeJunction[ni] = int32_t(G.junctions.size());
         G.junctions.push_back(std::move(J));

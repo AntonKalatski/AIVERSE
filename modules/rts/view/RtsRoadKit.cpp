@@ -223,9 +223,15 @@ std::vector<uint32_t> vergeAtlas(int cell) {
                 // the two), the outer edge thins out into the ground
                 const float rag = fbm(fy * 0.5f, 3.0f, cell, 4, 151 + slot), crumb = fbm(fx, fy, cell, 16, 161 + slot);
                 const float innerEdge = 0.01f + 0.035f * rag;
-                const float outer = 0.62f + 0.22f * fbm(fy * 0.5f, 9.0f, cell, 4, 171 + slot);
+                // the outer edge: torn, bites of grass into it and clumps of it out in the grass (large and small
+                // wobbles along the road plus fine noise across)
+                const float outer = 0.42f + 0.30f * fbm(fy * 0.5f, 9.0f, cell, 4, 171 + slot) + 0.18f * (fbm(fx * 0.5f, fy, cell, 12, 175 + slot) - 0.5f)
+                                    + 0.06f * (fbm(fx, fy, cell, 24, 177 + slot) - 0.5f);
                 float a = std::clamp((u - innerEdge) / 0.025f + (crumb - 0.5f) * 1.2f, 0.0f, 1.0f);
-                a *= std::clamp(1.0f - (u - outer) / (1.0f - outer), 0.0f, 1.0f) * (u > outer ? (0.6f + 0.8f * crumb) : 1.0f);
+                float out = std::clamp(1.0f - (u - outer) / 0.08f, 0.0f, 1.0f);
+                const float clump = fbm(fx, fy, cell, 20, 179 + slot);
+                if (u > outer && u < outer + 0.25f && clump > 0.66f) out = std::max(out, std::clamp((clump - 0.66f) / 0.05f, 0.0f, 1.0f) * (1.0f - (u - outer) / 0.25f));
+                a *= out;
                 put(slot, x, y, c, a);
             }
     // slot 3: asphalt breaking up into dirt, v 0 (still whole) .. 1 (the dirt road's own surface), u across the
@@ -242,10 +248,10 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             // the dirt road's colour (decals are lit a little darker than meshes: brighter to match)
             const float dv = (0.26f + (fbm(fx, fy, cell, 4, 41) - 0.5f) * 0.16f + (g - 0.5f) * 0.06f) * 1.45f;
             Rgb c{dv * 1.05f, dv * 0.84f, dv * 0.62f};
-            if (g > 0.985f) c = Rgb{0.40f, 0.38f, 0.34f};                              // grit
+            if (g > 0.993f) c = Rgb{0.40f, 0.38f, 0.34f};                              // grit
             // the broken edge of the asphalt: a dark rim where it cracked off, crumbs of it left on the dirt
             if (k > -0.035f && k <= 0.0f) { c = Rgb{0.045f, 0.042f, 0.04f}; a = std::max(a, 0.75f * (1.0f + k / 0.035f)); }
-            else if (a > 0 && v < 0.85f && rnd(x / 2, y / 2, 407) > 0.975f) c = Rgb{0.08f, 0.08f, 0.082f};
+            else if (a > 0 && v < 0.6f && rnd(x / 2, y / 2, 407) > 0.99f) c = Rgb{0.08f, 0.08f, 0.082f};
             // fine cracks in the asphalt that is still there
             if (a < 0.5f && std::fabs(fbm(fx, fy, cell, 12, 409) - 0.5f) < 0.008f + 0.01f * vv) { c = Rgb{0.04f, 0.037f, 0.035f}; a = std::max(a, 0.8f * std::clamp(v * 3.0f, 0.0f, 1.0f)); }
             put(3, x, y, c, a);
@@ -256,7 +262,7 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             const float fx = float(x), fy = float(y), u = (fx + 0.5f) / float(cell);
             const float d = (u - 0.5f) / 0.5f;
             const float a = std::exp(-d * d * 3.0f) * (0.6f + 0.8f * fbm(fx, fy, cell, 4, 411)) * (rnd(x, y, 413) > 0.93f ? 0.4f : 1.0f);
-            const float v = 0.058f + (fbm(fx, fy, cell, 8, 415) - 0.5f) * 0.01f;
+            const float v = 0.20f + (fbm(fx, fy, cell, 8, 415) - 0.5f) * 0.03f;   // tinted down by the vertex colour
             put(4, x, y, Rgb{v, v, v * 1.02f}, a);
         }
     return px;
@@ -264,14 +270,93 @@ std::vector<uint32_t> vergeAtlas(int cell) {
 
 bool roadSurfacePainted(const RoadTypeDef& t) {
     if (t.forward.empty() && t.backward.empty()) return false;
-    if (t.surface != RoadSurface::Asphalt && t.surface != RoadSurface::Concrete) return false;
-    return t.drivable();   // lines or not: the wheel tracks
+    if (t.surface != RoadSurface::Asphalt && t.surface != RoadSurface::Concrete && t.surface != RoadSurface::Dirt && t.surface != RoadSurface::Gravel) return false;
+    return t.drivable();   // lines or not: the wheel tracks (ruts on dirt and gravel)
 }
 
 float paintMargin(const RoadTypeDef& t) {
     const auto& v = t.forward.empty() ? t.backward : t.forward;
     return v.empty() ? 0.5f : float(v.back().width.toDouble());
 }
+
+namespace {
+// a dirt or gravel road: ruts worn by the wheels (darker, packed, damp at the bottom, a ridge of pushed-out soil
+// along their outer edges), the crown between them looser; one pair down the middle (traffic both ways shares
+// it on a narrow unpaved road), faint ones where each lane runs; a strip of grass between the ruts on a one-lane
+// track; puddles here and there in the ruts
+Image unpavedSurface(const RoadTypeDef& t, Image img, float total, float M, float span) {
+    const int W = img.width, H = img.height;
+    const bool gravel = t.surface == RoadSurface::Gravel;
+    const float lane = t.forward.empty() ? float(t.backward[0].width.toDouble()) : float(t.forward[0].width.toDouble());
+    const float perM = lane / 3.0f;
+    const float c0 = float(t.carriageway(-1).toDouble());
+    struct Rut { float u, depth; };
+    std::vector<Rut> ruts;
+    const float gauge = 0.80f * perM;
+    const bool oneLane = t.lanes(1) + t.lanes(-1) <= 1;
+    ruts.push_back({c0 - gauge, 1.0f});
+    ruts.push_back({c0 + gauge, 1.0f});
+    if (!oneLane)
+        for (int dir : {1, -1}) {   // where cars keep to their side to pass each other
+            float off = float(t.median.toDouble()) * 0.5f;
+            for (auto& l : t.lanesOf(dir)) {
+                const float w = float(l.width.toDouble()), cU = c0 + float(dir) * (off + w * 0.5f);
+                off += w;
+                ruts.push_back({cU - gauge, 0.35f});
+                ruts.push_back({cU + gauge, 0.35f});
+            }
+        }
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < W; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float u = (fx + 0.5f) / float(W) * span - M;
+            const float g = rnd(x, y, gravel ? 13 : 17), n = fbm(fx, fy, H, gravel ? 32 : 4, gravel ? 31 : 41);
+            Rgb c;
+            if (gravel) { const float v = 0.30f + (n - 0.5f) * 0.2f + (g - 0.5f) * 0.14f; c = {v * 1.02f, v * 0.97f, v * 0.88f}; }
+            else { const float v = 0.26f + (n - 0.5f) * 0.16f + (g - 0.5f) * 0.06f; c = {v * 1.05f, v * 0.84f, v * 0.62f}; }
+            const float wander = (fbm(7.0f, fy, H, 2, 291) - 0.5f) * 0.35f * perM;
+            float rut = 0, ridge = 0;
+            for (auto& r : ruts) {
+                const float d = (u - r.u - wander) / (0.34f * perM);
+                rut = std::max(rut, r.depth * std::exp(-d * d * 1.2f));
+                const float e = (std::fabs(d) - 1.55f) / 0.45f;   // the soil pushed out to both sides
+                ridge = std::max(ridge, r.depth * std::exp(-e * e));
+            }
+            const float patch = 0.7f + 0.6f * fbm(fx, fy, H, 4, 293);
+            rut = std::clamp(rut * patch, 0.0f, 1.0f);
+            // packed and damp in the ruts: darker, the grit pressed in (no bright stones), a little smoother
+            const float packed = gravel ? 0.30f : 0.24f;
+            Rgb bottom = gravel ? Rgb{packed * 0.95f, packed * 0.88f, packed * 0.78f} : Rgb{packed * 0.98f, packed * 0.74f, packed * 0.52f};
+            bottom = mix(bottom, Rgb{0, 0, 0}, 0.26f + (fbm(fx, fy, H, 8, 295) - 0.5f) * 0.2f);
+            c = mix(c, bottom, rut * 0.75f);
+            c = mix(c, Rgb{c.r * 1.12f, c.g * 1.12f, c.b * 1.12f}, ridge * 0.6f * (1 - rut));
+            if (gravel && ridge > 0.3f && g > 0.9f) c = Rgb{0.42f, 0.40f, 0.36f};   // loose stones thrown to the side
+            // the crown: grass on a one-lane track, a few tufts elsewhere
+            const float crown = std::fabs(u - c0 - wander) / (0.45f * perM);
+            const float tuft = fbm(fx, fy, H, 16, 297);
+            float grass = 0;
+            if (oneLane) grass = std::clamp((1.0f - crown) * 2.2f + (tuft - 0.5f) * 1.6f, 0.0f, 1.0f);
+            else grass = std::clamp((tuft - 0.78f) * 4.0f, 0.0f, 1.0f) * (1 - rut) * (1 - std::clamp(crown, 0.0f, 1.0f) * 0.0f);
+            // and toward the edges the verge's grass reaches in a little
+            const float edge = std::min(u, total - u) / perM;
+            grass = std::max(grass, std::clamp((0.45f - edge) / 0.45f + (tuft - 0.5f) * 1.2f, 0.0f, 1.0f) * (1 - rut));
+            if (grass > 0) {
+                const float gv = 0.22f + (fbm(fx, fy, H, 8, 51) - 0.5f) * 0.12f + (rnd(x, y, 19) - 0.5f) * 0.08f;
+                c = mix(c, Rgb{gv * 0.62f, gv * 1.05f, gv * 0.42f}, grass);
+            }
+            // puddles: still water in the deepest stretches of the ruts
+            const float pud = fbm(fx * 0.6f, fy, H, 3, 299);
+            if (!gravel && rut > 0.7f && pud > 0.70f) {
+                const float k = std::clamp((pud - 0.70f) / 0.04f, 0.0f, 1.0f) * std::clamp((rut - 0.7f) / 0.1f, 0.0f, 1.0f);
+                c = mix(c, Rgb{0.07f, 0.075f, 0.08f}, k * 0.85f);
+            }
+            uint8_t* p = &img.rgba[(size_t(y) * size_t(W) + size_t(x)) * 4];
+            p[0] = q(std::pow(std::clamp(c.r, 0.0f, 1.0f), 1 / 2.2f)); p[1] = q(std::pow(std::clamp(c.g, 0.0f, 1.0f), 1 / 2.2f)); p[2] = q(std::pow(std::clamp(c.b, 0.0f, 1.0f), 1 / 2.2f)); p[3] = 255;
+        }
+    img.repeat = true;
+    return img;
+}
+} // namespace
 
 Image roadSurface(const RoadTypeDef& t, int variant) {
     Image img;
@@ -281,6 +366,7 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
     img.name = "#road-surface-" + t.id + "-" + std::to_string(variant);
     img.width = W; img.height = H;
     img.rgba.resize(size_t(W) * size_t(H) * 4);
+    if (t.unpaved()) return unpavedSurface(t, std::move(img), total, M, span);
     // lines: (centre offset in cells from the left edge, half width in cells, dash on / period in [0,1] of v, colour)
     struct L { float u, hw, on, phase; Rgb c; };
     std::vector<L> lines;
@@ -329,6 +415,7 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
     std::vector<Track> tracks;
     std::vector<float> oil;
     for (int dir : {1, -1}) {
+        if (variant & 8) break;   // no tracks either: decals draw them (they converge where the road narrows)
         float off = med;
         for (auto& l : t.lanesOf(dir)) {
             const float w = float(l.width.toDouble()), cU = c0 + float(dir) * (off + w * 0.5f);
@@ -367,7 +454,7 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
             {   // dust and grime washed against the curbs (and the median's curbs): a brownish band with a ragged edge,
                 // bits of grit and leaves in the gutter
                 float d = std::min(std::fabs(u), std::fabs(u - total));
-                if (t.median.raw > 0 && t.look["median"].getBool("curb", false)) d = std::min(d, std::fabs(std::fabs(u - c0) - med));
+                if (!(variant & 4) && t.median.raw > 0 && t.look["median"].getBool("curb", false)) d = std::min(d, std::fabs(std::fabs(u - c0) - med));
                 const float dm = d / perM;   // metres from the curb
                 const float rag = 0.25f + 0.2f * fbm(fx * 0.3f, fy, H, 4, 181);
                 const float grime = std::exp(-dm / rag) * (0.55f + 0.7f * fbm(fx, fy, H, 8, 183));

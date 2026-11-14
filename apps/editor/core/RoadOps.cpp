@@ -220,6 +220,68 @@ int32_t addEdge(RoadNetwork& n, const std::vector<RoadTypeDef>& types, const Add
     return e.id;
 }
 
+std::function<bool(Vec2)> waterOf(const MapDoc& doc) {
+    const auto& d = doc.data;
+    return [&d](Vec2 p) {
+        const int x = int(std::floor(p.x.toDouble())), z = int(std::floor(p.y.toDouble()));
+        return d.inside(x, z) && d.cells[d.idx(x, z)] == '~';
+    };
+}
+
+int bridgeWater(RoadNetwork& n, const std::vector<RoadTypeDef>& types, int32_t id, const std::function<bool(Vec2)>& water,
+                Fixed cellMetres, Fixed approachMetres) {
+    const int bi = findRoadType(types, "rural_bridge");
+    if (bi < 0 || !water) return 0;
+    int made = 0;
+    for (int guard = 0; guard < 8; ++guard) {
+        const int ei = n.edgeIndex(id);
+        if (ei < 0) break;
+        const RoadEdge& e = n.edges[size_t(ei)];
+        if (!types[size_t(e.typeIndex)].unpaved() || !types[size_t(e.typeIndex)].drivable()) break;
+        Vec2 A, c1, c2, B;
+        ends(n, e, A, c1, c2, B);
+        constexpr int N = 128;
+        std::vector<Fixed> len(N + 1);
+        int w0 = -1, w1 = -1;
+        Vec2 prev = A;
+        for (int i = 0; i <= N; ++i) {
+            const Vec2 p = roadBezier(A, c1, c2, B, Fixed::fromRatio(i, N));
+            len[size_t(i)] = i ? len[size_t(i - 1)] + (p - prev).length() : Fixed{};
+            prev = p;
+            if (water(p)) { if (w0 < 0) w0 = i; w1 = i; }
+            else if (w0 >= 0) break;   // the first crossing; the rest of the edge is looked at after the split
+        }
+        if (w0 < 0) break;
+        const Fixed total = len[N], m = approachMetres / cellMetres, minPiece = Fixed::fromInt(1);
+        auto tAt = [&](Fixed L) {
+            if (L <= Fixed{}) return Fixed{};
+            if (L >= total) return kOne;
+            for (int i = 1; i <= N; ++i)
+                if (len[size_t(i)] >= L) {
+                    const Fixed seg = len[size_t(i)] - len[size_t(i - 1)];
+                    const Fixed k = seg > Fixed{} ? (L - len[size_t(i - 1)]) / seg : Fixed{};
+                    return (Fixed::fromInt(i - 1) + k) / Fixed::fromInt(N);
+                }
+            return kOne;
+        };
+        Fixed La = len[size_t(w0)] - m, Lb = len[size_t(w1)] + m;
+        if (La < minPiece) La = Fixed{};                 // no dirt stub shorter than a cell
+        if (total - Lb < minPiece) Lb = total;
+        const Fixed ta = tAt(La), tb = tAt(Lb);
+        int32_t bridge = id, rest = -1;
+        if (tb < kOne) { splitEdge(n, ei, tb); rest = n.edges.back().id; }
+        if (ta > Fixed{}) { splitEdge(n, n.edgeIndex(id), tb < kOne ? ta / tb : ta); bridge = n.edges.back().id; }
+        RoadEdge& br = n.edges[size_t(n.edgeIndex(bridge))];
+        br.type = "rural_bridge"; br.typeIndex = bi;
+        br.y1 = br.y2 = Fixed::fromRatio(22, 10);   // an arch over the water, on the ground at both ends
+        br.reversed = false;
+        ++made;
+        if (rest < 0) break;
+        id = rest;
+    }
+    return made;
+}
+
 void deleteEdge(RoadNetwork& n, int32_t id) {
     const int i = n.edgeIndex(id);
     if (i < 0) throw std::runtime_error("no road edge " + std::to_string(id));
@@ -413,6 +475,7 @@ void registerRoadOps(Workspace& ws) {
                 if (s.attachA.edge >= 0) { s.a.kind = roads::Snap::Edge; s.a.edge = s.attachA.edge; s.a.t = roads::nearestT(n, s.attachA.edge, s.a.p); }
                 if (s.attachB.edge >= 0) { s.b.kind = roads::Snap::Edge; s.b.edge = s.attachB.edge; s.b.t = roads::nearestT(n, s.attachB.edge, s.b.p); }
                 made.push_back(roads::addEdge(n, T, s));
+                roads::bridgeWater(n, T, made.back(), roads::waterOf(w->map), roadCellMeters(w->project.rulesJson["roadTypes"]));
             };
             if (curve == "bezier") {
                 if (pts.size() != 4) throw std::runtime_error("curve \"bezier\": points [a, c1, c2, b]");

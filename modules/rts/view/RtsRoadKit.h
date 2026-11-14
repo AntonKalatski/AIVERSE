@@ -20,7 +20,7 @@ struct Tri { int mat; render::float3 a, b, c; };
 // The carriageway texture of a road type with its markings painted in: u runs across the whole carriageway (type
 // frame: 0 at the left edge of the backward lanes, 1 at the right edge of the forward lanes, the median included),
 // v along the road, one period of the dash pattern (kRoadPaintPeriod metres) per texture height.
-// variant bits: 1 = no right edge line, 2 = no left edge line (a branch or a bus stop bay opens that side). 4 = no lines at all (tracks and grime only).
+// variant bits: 1 = no right edge line, 2 = no left edge line (a branch or a bus stop bay opens that side). 4 = no lines at all, 8 = no wheel tracks.
 inline constexpr float kRoadPaintPeriod = 12.0f;
 render::Image roadSurface(const RoadTypeDef& t, int variant);
 // the texture reaches this far (cells) past each carriageway edge (plain asphalt: bus stop bays, tapers)

@@ -189,6 +189,7 @@ struct RoadJunctionGeom {
     std::vector<int8_t> armEnd;              // which end of the edge touches the node (0 a, 1 b)
     std::vector<Vec2> outline;               // carriageway outline (closed polygon), fillets at the corners
     std::vector<std::vector<Vec2>> corners;  // sidewalk corner strips between neighbouring arms (inner curve, outer curve interleaved)
+    std::vector<std::pair<int, int>> cornerArms;   // per corner: the arm (index into arms) whose right side it starts from, the next one's
     bool signal = false;                     // three or more driven arms
     bool split = false;                      // a branch leaves lanes here: no junction box, the parent runs through
 };

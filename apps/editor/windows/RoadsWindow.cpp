@@ -209,10 +209,12 @@ private:
         try {
             RoadNetwork n = net_;
             const int32_t id = roads::addEdge(n, types_, spec);
+            const int bridges = roads::bridgeWater(n, types_, id, roads::waterOf(ed.doc()), roadCellMeters(ed.ws().project.rulesJson["roadTypes"]));
             parseRoadNetwork(roadNetworkToJson(n), types_);
             roads::write(ed.doc(), n);
             ed.doc().touched();
-            ed.status = "Дорога добавлена: " + (typeOf(type_) ? typeOf(type_)->name : type_);
+            ed.status = "Дорога добавлена: " + (typeOf(type_) ? typeOf(type_)->name : type_) +
+                        (bridges > 0 ? " (через воду — асфальтовый мост)" : "");
             refresh(ed);
             // chain on from the end
             const RoadEdge& e = net_.edges[size_t(net_.edgeIndex(id))];

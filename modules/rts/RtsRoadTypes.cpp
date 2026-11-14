@@ -77,6 +77,8 @@ const char* kBuiltin = R"JSON({
                "lanes": {"forward": 1, "backward": 1, "width": 3}, "sides": {"shoulder": 0.8, "shoulderSurface": "grass"}},
   "dirt_road": {"extends": "_rural", "name": "Грунтовка", "surface": "dirt", "speed": 30, "centre": "none", "laneLines": false,
                "lanes": {"forward": 1, "backward": 1, "width": 2.8}, "sides": {"shoulder": 0.6, "shoulderSurface": "grass"}},
+  "rural_bridge": {"extends": "_rural", "name": "Мост загородный", "speed": 50, "centre": "none", "laneLines": false,
+               "lanes": {"forward": 1, "backward": 1, "width": 3}, "sides": {"shoulder": 0.5, "shoulderSurface": "asphalt", "barrier": "guardrail"}},
   "farm_track": {"extends": "_rural", "name": "Полевая дорога", "surface": "dirt", "speed": 20, "centre": "none", "laneLines": false,
                "lanes": {"forward": 1, "backward": 0, "width": 3}, "sides": {"shoulder": 0.5, "shoulderSurface": "grass"}},
 
