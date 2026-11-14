@@ -275,6 +275,25 @@ several gangs at once, robbers as passengers the player can see in the car, a hi
 | `trafficWalkField / trafficWalkPath` | breadth-first sidewalk distances and paths |
 | `trafficWalkRoute(w, h, walk, start, goal, search, out, maxNodes)` | shortest sidewalk route over the whole map (A*, reusable work arrays) |
 
+## Spline roads
+
+With `"roads": {"network": true}` (or no `tiles`) and a map `roadNetwork` (docs/roads.md) the network comes from the
+spline roads instead of road tiles (`modules/rts/RtsTrafficRoads.cpp`):
+
+- every drivable edge is a curved piece: its centre line between the junction cuts, lanes per direction from its road
+  type (one-way roads have lanes one way only), the type's lane width and median; along runs over the curve, across
+  is the offset from the centre line;
+- every node two or more drivable roads meet at is a junction; its arms get the four sides (west / east / north /
+  south) by their directions, rotated to fit the arms best (four arms at most; signal phases pair the opposite
+  sides); signals where the road geometry has them (three or more driven arms);
+- cars turn through a junction on a curve through the point where the way in and the way out meet; a U-turn and a
+  dead end work as on tiles; bus stops, services, trips and gangs use the same pieces;
+- the sidewalk mask is the network's sidewalks and shoulders; bridge and tunnel spans are decks of the driving
+  module.
+
+Not yet on spline roads: pedestrian crossing strips (people keep to their sidewalk), lane choice by the lanes a
+branch leaves from (a car may take a ramp from any lane), islands / roundabouts, five or more arms at one node.
+
 ## Not done yet
 
 A persistent population (homes, jobs, shifts, schools, shops that open with their keeper), money, gangs and

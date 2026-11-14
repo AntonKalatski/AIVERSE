@@ -136,6 +136,7 @@ struct TrafficCitizen {
 struct TrafficRules {
     bool enabled = false;
     std::string roadTiles;                   // map tile characters that are road
+    bool roadNetwork = false;                // roads.network: the map's spline roads ("roadNetwork") are the roads
     lib::genre::TrafficNetConfig net;
     // cars
     std::vector<TrafficWeighted> cars;       // vehicle types (must be "driving" vehicles), by weight

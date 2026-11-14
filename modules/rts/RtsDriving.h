@@ -88,7 +88,8 @@ public:
     const DrivingRules& rules() const { return rules_; }
     static DrivingRules parse(const Json& j, const std::vector<std::string>& typeIds);   // throws readable errors
     void setup(Simulation& sim, RtsModule& m, const Json& rulesJson);
-    void loadMap(Simulation& sim, const Json& map);      // map "decks"; throws readable errors
+    // map "decks" and the bridges / tunnels of its spline roads ("roadNetwork", rules "roadTypes"); throws readable errors
+    void loadMap(Simulation& sim, const Json& map, const Json& roadTypes = Json());
     bool command(Simulation& sim, const Command& cmd);   // true: kCmdTopDownEnter handled
     void tick(Simulation& sim);                          // after the top-down heroes moved
     void hash(Simulation& sim, Hasher& h) const;

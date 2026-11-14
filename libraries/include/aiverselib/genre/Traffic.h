@@ -41,7 +41,18 @@ struct TrafficPiece {
     int across0 = 0, across1 = 0;          // cells across, inclusive
     int lanes = 0;                         // driving lanes per direction (0: too narrow for traffic)
     std::array<int, 2> junction{-1, -1};   // junction at the low (along0 - 1) / high (along1 + 1) end, -1: none
-    Fixed centre() const { return Fixed::fromRatio(across0 + across1 + 1, 2); }
+    // Curved piece (a spline road, built by the owner from its own road graph): `line` is the centre line from
+    // along 0 to along `len` (`at`: distance at each point); along runs over [0, len], across is the signed offset
+    // from the centre line (positive: right of the +along direction), so centre() is 0. axis is the main direction
+    // of its chord (signal phases of junctions use the arm's side instead). Grid pieces leave `line` empty.
+    std::vector<Vec2> line;
+    std::vector<Fixed> at;
+    Fixed len{};
+    Fixed laneW{}, median{};               // lane width (0: the net's), cells between the two directions
+    std::array<int8_t, 2> side{-1, -1};    // the junction side at end 0 / 1 (kTrafficWest..)
+    std::array<int8_t, 2> dirLanes{-1, -1};   // driving lanes going -along / +along (-1: `lanes` both ways)
+    bool curved() const { return !line.empty(); }
+    Fixed centre() const { return curved() ? Fixed{} : Fixed::fromRatio(across0 + across1 + 1, 2); }
     int width() const { return across1 - across0 + 1; }
     int length() const { return along1 - along0 + 1; }
 };
@@ -63,25 +74,68 @@ struct TrafficNet {
 };
 
 namespace trafficDetail {
+inline Vec2 normalised(Vec2 v) { const Fixed l = v.length(); return l.raw > 0 ? v / l : Vec2{}; }
+inline Fixed cross(Vec2 a, Vec2 b) { return a.x * b.y - a.y * b.x; }
+// curved pieces: segment index for an along value, point and unit tangent there
+inline size_t curveSeg(const TrafficPiece& p, Fixed along) {
+    size_t lo = 0, hi = p.at.size() - 1;
+    while (hi - lo > 1) { const size_t m = (lo + hi) / 2; (p.at[m] <= along ? lo : hi) = m; }
+    return lo;
+}
+inline Vec2 curveTangent(const TrafficPiece& p, Fixed along) {
+    if (p.line.size() < 2) return {Fixed::fromInt(1), {}};
+    const size_t i = curveSeg(p, along);
+    return normalised(p.line[i + 1] - p.line[i]);
+}
+inline Vec2 curvePoint(const TrafficPiece& p, Fixed along) {
+    if (p.line.size() < 2) return p.line.empty() ? Vec2{} : p.line[0];
+    along = fxClamp(along, Fixed{}, p.len);
+    const size_t i = curveSeg(p, along);
+    const Fixed span = p.at[i + 1] - p.at[i];
+    const Fixed t = span.raw > 0 ? (along - p.at[i]) / span : Fixed{};
+    return p.line[i] + (p.line[i + 1] - p.line[i]) * t;
+}
 inline Vec2 at(const TrafficPiece& p, Fixed along, Fixed across) {
+    if (p.curved()) { const Vec2 t = curveTangent(p, along); return curvePoint(p, along) + Vec2{-t.y, t.x} * across; }
     return p.axis == TrafficAxis::X ? Vec2{along, across} : Vec2{across, along};
 }
 inline Vec2 axisDir(TrafficAxis a, int dir) { const Fixed s = Fixed::fromInt(dir); return a == TrafficAxis::X ? Vec2{s, {}} : Vec2{{}, s}; }
-inline Vec2 normalised(Vec2 v) { const Fixed l = v.length(); return l.raw > 0 ? v / l : Vec2{}; }
-inline Fixed cross(Vec2 a, Vec2 b) { return a.x * b.y - a.y * b.x; }
 } // namespace trafficDetail
+
+// Direction of travel `dir` (+1 / -1 along) on the piece at `along` (grid pieces: the axis).
+inline Vec2 trafficDir(const TrafficPiece& p, Fixed along, int dir) {
+    if (!p.curved()) return trafficDetail::axisDir(p.axis, dir);
+    const Vec2 t = trafficDetail::curveTangent(p, along);
+    return dir > 0 ? t : Vec2{-t.x, -t.y};
+}
+// Driving lanes going `dir` (+1 / -1 along).
+inline int trafficLanes(const TrafficPiece& p, int dir) {
+    const int8_t v = p.dirLanes[dir > 0 ? 1 : 0];
+    return v >= 0 ? int(v) : p.lanes;
+}
 
 // Side of junction j that piece p (attached at its `end`: 0 low, 1 high) touches: the piece's low end touches the
 // junction's high side and the other way round.
 inline int trafficSideOf(const TrafficPiece& p, int end) {
+    if (p.curved()) return p.side[size_t(end)];
     if (p.axis == TrafficAxis::X) return end == 0 ? kTrafficEast : kTrafficWest;
     return end == 0 ? kTrafficSouth : kTrafficNorth;
 }
 // Direction (+1 / -1 along the piece axis) of traffic leaving a junction through `side`.
 inline int trafficExitDir(int side) { return (side == kTrafficEast || side == kTrafficSouth) ? 1 : -1; }
+// Signal axis of traffic arriving at junction end `end` of the piece (grid: the piece axis; curved: the arm's side).
+inline TrafficAxis trafficApproachAxis(const TrafficPiece& p, int end) {
+    if (!p.curved()) return p.axis;
+    return p.side[size_t(end)] >= 0 && p.side[size_t(end)] < 2 ? TrafficAxis::X : TrafficAxis::Z;
+}
 
 // Across coordinate of lane k (0 = next to the centre line) for traffic moving `dir` (+1 / -1) along the piece.
 inline Fixed trafficLaneAcross(const TrafficNet& n, const TrafficPiece& p, int dir, int k) {
+    if (p.curved()) {
+        const Fixed lw = p.laneW.raw > 0 ? p.laneW : n.cfg.laneWidth;
+        const Fixed off = p.median / 2 + lw * k + lw / 2;
+        return n.cfg.leftHand ? -off * dir : off * dir;
+    }
     const Fixed off = n.cfg.laneWidth * k + n.cfg.laneWidth / 2;
     int s = p.axis == TrafficAxis::X ? dir : -dir;   // right of +x is +z, right of +z is -x (z grows down the screen)
     if (n.cfg.leftHand) s = -s;
@@ -92,10 +146,60 @@ inline Vec2 trafficLanePoint(const TrafficNet& n, const TrafficPiece& p, int dir
     return trafficDetail::at(p, along, trafficLaneAcross(n, p, dir, k));
 }
 // Along coordinate where lane traffic moving `dir` enters the piece (start) / leaves it (end).
-inline Fixed trafficPieceStart(const TrafficPiece& p, int dir) { return Fixed::fromInt(dir > 0 ? p.along0 : p.along1 + 1); }
-inline Fixed trafficPieceEnd(const TrafficPiece& p, int dir) { return Fixed::fromInt(dir > 0 ? p.along1 + 1 : p.along0); }
-inline Fixed trafficAlongOf(const TrafficPiece& p, Vec2 q) { return p.axis == TrafficAxis::X ? q.x : q.y; }
-inline Fixed trafficAcrossOf(const TrafficPiece& p, Vec2 q) { return p.axis == TrafficAxis::X ? q.y : q.x; }
+inline Fixed trafficPieceStart(const TrafficPiece& p, int dir) {
+    if (p.curved()) return dir > 0 ? Fixed{} : p.len;
+    return Fixed::fromInt(dir > 0 ? p.along0 : p.along1 + 1);
+}
+inline Fixed trafficPieceEnd(const TrafficPiece& p, int dir) {
+    if (p.curved()) return dir > 0 ? p.len : Fixed{};
+    return Fixed::fromInt(dir > 0 ? p.along1 + 1 : p.along0);
+}
+namespace trafficDetail {
+// curved pieces: nearest point of the centre line: along and signed across
+inline void curveProject(const TrafficPiece& p, Vec2 q, Fixed& along, Fixed& across) {
+    along = {}; across = {};
+    Fixed best{};
+    bool have = false;
+    for (size_t i = 0; i + 1 < p.line.size(); ++i) {
+        const Vec2 a = p.line[i], d = p.line[i + 1] - a;
+        const Fixed L2 = d.lengthSq();
+        const Fixed t = L2.raw > 0 ? fxClamp((q - a).dot(d) / L2, Fixed{}, Fixed::fromInt(1)) : Fixed{};
+        const Vec2 c = a + d * t;
+        const Fixed dist = (q - c).lengthSq();
+        if (!have || dist < best) {
+            have = true; best = dist;
+            along = p.at[i] + (p.at[i + 1] - p.at[i]) * t;
+            const Vec2 tn = normalised(d);
+            across = (q - c).dot(Vec2{-tn.y, tn.x});
+        }
+    }
+}
+} // namespace trafficDetail
+inline Fixed trafficAlongOf(const TrafficPiece& p, Vec2 q) {
+    if (p.curved()) { Fixed a, c; trafficDetail::curveProject(p, q, a, c); return a; }
+    return p.axis == TrafficAxis::X ? q.x : q.y;
+}
+inline Fixed trafficAcrossOf(const TrafficPiece& p, Vec2 q) {
+    if (p.curved()) { Fixed a, c; trafficDetail::curveProject(p, q, a, c); return c; }
+    return p.axis == TrafficAxis::X ? q.y : q.x;
+}
+// Points of lane (dir, k) of a curved piece from `from` to its end, about one cell apart (neither end included), for
+// a route to follow the curve; empty for grid pieces (their lanes are straight).
+inline std::vector<Vec2> trafficLaneCurve(const TrafficNet& n, const TrafficPiece& p, int dir, int k, Fixed from) {
+    std::vector<Vec2> out;
+    if (!p.curved()) return out;
+    const Fixed end = dir > 0 ? p.len : Fixed{}, step = Fixed::fromInt(dir);
+    for (Fixed a = from + step; dir > 0 ? a < end - Fixed::fromRatio(1, 2) : a > end + Fixed::fromRatio(1, 2); a += step)
+        out.push_back(trafficLanePoint(n, p, dir, k, a));
+    return out;
+}
+// Direction leaving junction j through `side` along the piece attached there (+1 / -1 along it).
+inline int trafficExitDirAt(const TrafficNet& n, int j, int side) {
+    const int q = j >= 0 && size_t(j) < n.junctions.size() ? n.junctions[size_t(j)].piece[size_t(side)] : -1;
+    if (q < 0 || !n.pieces[size_t(q)].curved()) return trafficExitDir(side);
+    const TrafficPiece& p = n.pieces[size_t(q)];
+    return p.junction[0] == j && p.side[0] == side ? 1 : -1;
+}
 
 // Builds the network. `road` has w * h cells (row-major, non-zero = road). Deterministic: row-major scans.
 inline TrafficNet buildTrafficNet(int w, int h, const std::vector<uint8_t>& road, const TrafficNetConfig& cfg) {

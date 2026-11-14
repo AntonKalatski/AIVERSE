@@ -23,6 +23,7 @@ extern "C" {
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsCampaign.h"   // agent-mech
 #include "modules/rts/RtsModule.h"
+#include "modules/rts/RtsRoadNet.h"   // agent-roads
 #include "modules/rts/RtsScriptIeee.h"
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/RtsSphere.h"

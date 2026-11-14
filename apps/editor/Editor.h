@@ -350,6 +350,7 @@ private:
 
     struct Flash { float x0, z0, x1, z1; double until, length; };
     std::vector<Flash> flashes_;
+    uint64_t roadHash_ = 0;   // spline roads: network + ground the view's meshes were built from
     bool sceneFlying_ = false;
     render::float3 sceneGoal_{};
 

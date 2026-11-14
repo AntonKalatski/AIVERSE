@@ -19,6 +19,7 @@ float RtsView::heightAt(const MapGrid& g, float x, float z) const {
 }
 
 void RtsView::setTerrainDetail(const Json& map) {
+    setRoadMap(map);
     terrain::DetailSurface d;
     std::vector<uint8_t> splat;
     std::string err;

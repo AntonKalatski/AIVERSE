@@ -1,4 +1,5 @@
 #include "RtsView.h"
+#include "RtsRoadView.h"
 #include "../../../engine/data/JsonCompose.h"
 #include "../RtsModule.h"
 #include "../RtsArsenal.h"
@@ -18,6 +19,10 @@ using namespace render;
 namespace {
 float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble()), float(v.z.toDouble())}; }
 } // namespace
+
+RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()) {}
+RtsView::~RtsView() = default;
+void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); }
 
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
@@ -44,6 +49,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         // overlays: built-ins + rules "overlays" + game.json "overlays" (by id)
         overlays_.init(rules, rj["overlays"], game["overlays"], contentBase_);
         overlays_.initGpu(dev);
+        roads_->init(dev, rj["roadTypes"], read_);
     }
     if (!models_.count("shape:generic")) buildShapes(dev);
     if (twoD_) { twoD_->shutdown(dev); twoD_.reset(); }
@@ -106,6 +112,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     if (twoD_) twoD_->shutdown(dev);
     twoD_.reset();
     groundFx_.shutdown(dev);
+    roads_->shutdown(dev);
     paintLayers_.shutdown();
     groundCanvas_.shutdown();
     planetGroundFx_.shutdown(dev);
@@ -226,6 +233,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if (hasTerrain_ && !tiles) terrain_.draw(r, grid, vision, groundFx_.drawsDig());
     if (hasTerrain_ && tiles) terrain_.drawWater(r);
     if (!tiles) groundFx_.draw(r, s, time, vision, grid, *this);
+    if (roads_->active()) roads_->draw(r, [this, &grid](float x, float z) { return heightAt(grid, x, z); });
     paintLayers_.draw(r, *dev_, s.paintLayers, grid, *this, vision, time, s.viewer);
     if (tiles || !groundFx_.drawsLinks())
         for (auto& [a, b] : s.roads) r.quadXZ(a, b, 0.5f, rgba(196, 164, 112, 235), 0.04f);
@@ -239,8 +247,21 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     effects_.clear();
     handleEvents(s);
     for (auto& b : shadowDraws_) b.verts.clear();
+    // objects the spline roads stand in for (roadNetwork.replaces: tags or type id prefixes) are not drawn
+    std::vector<uint8_t> replacedByRoads;
+    if (roads_->active() && !roads_->replaces().empty() && rules_) {
+        replacedByRoads.assign(rules_->types.size(), 0);
+        uint64_t mask = 0;
+        for (const auto& name : roads_->replaces()) mask |= rules_->tagMask(name);
+        for (size_t t = 0; t < rules_->types.size(); ++t) {
+            bool hit = (rules_->types[t].tags & mask) != 0;
+            for (const auto& name : roads_->replaces()) if (!hit && rules_->types[t].id.rfind(name, 0) == 0) hit = true;
+            replacedByRoads[t] = hit;
+        }
+    }
     for (size_t i = 0; i < s.objects.size(); ++i) {
         const SceneObject& o = s.objects[i];
+        if (!o.isProjectile && o.type < replacedByRoads.size() && replacedByRoads[o.type]) continue;
         if (o.isProjectile) {
             if (o.visible && o.entity.valid()) drawProjectile(r, o.entity.packed(), o, dt);
             else if (o.visible) r.drawMesh(projectile_, mat4::translate(o.pos), {1, 0.95f, 0.8f, 1}, kDrawUnlit);

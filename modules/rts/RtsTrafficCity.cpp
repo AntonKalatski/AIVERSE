@@ -291,7 +291,7 @@ void Traffic::incidents(Simulation& sim, TrafficStore& st) {
             if (ir.wreck != UINT16_MAX && gs.grid.passableAt(v3(h.pos), kLayerGround)) {
                 wreck = m_->spawn(sim, ir.wreck, 0, v3(h.pos));
                 int32_t piece; Fixed along;
-                if (wreck.valid() && roadSpot(h.pos, 1, piece, along)) w.get<Unit>(wreck).facing = v3(tl::trafficDetail::axisDir(net_.pieces[size_t(piece)].axis, 1));
+                if (wreck.valid() && roadSpot(h.pos, 1, piece, along)) w.get<Unit>(wreck).facing = v3(tl::trafficDir(net_.pieces[size_t(piece)], along, 1));
             }
             if (ir.fire != UINT16_MAX) {
                 const Entity fire = m_->spawn(sim, ir.fire, 0, v3(h.pos));
@@ -465,7 +465,7 @@ bool Traffic::dispatch(Simulation& sim, TrafficStore& st, TrafficIncident& inc, 
     for (auto& s : stations_[size_t(si)]) {
         const auto& piece=net_.pieces[size_t(s.piece)];
         const Vec2 gate=tl::trafficLanePoint(net_,piece,s.dir,0,s.along);
-        const Vec2 direction=tl::trafficDetail::axisDir(piece.axis,s.dir);
+        const Vec2 direction=tl::trafficDir(piece,s.along,s.dir);
         bool available=true;
         gs.hash.query(v3(gate),Fixed::fromInt(5),[&](Entity o){
             const auto* u=w.tryGet<Unit>(o);
@@ -481,7 +481,7 @@ bool Traffic::dispatch(Simulation& sim, TrafficStore& st, TrafficIncident& inc, 
     if (from) {   // out of the station gate
         const auto& P = net_.pieces[size_t(from->piece)];
         const uint16_t type = pick(sim, sv.types);
-        const Vec2 pos = tl::trafficLanePoint(net_, P, from->dir, 0, from->along), dir = tl::trafficDetail::axisDir(P.axis, from->dir);
+        const Vec2 pos = tl::trafficLanePoint(net_, P, from->dir, 0, from->along), dir = tl::trafficDir(P, from->along, from->dir);
         const Fixed body = m_->rules().types[type].radius;
         bool clear = true;
         gs.hash.query(v3(pos), Fixed::fromInt(3) + body, [&](Entity o) {
@@ -499,7 +499,8 @@ bool Traffic::dispatch(Simulation& sim, TrafficStore& st, TrafficIncident& inc, 
         c.cruise = sv.speedMin + (sv.speedMax - sv.speedMin) * sim.rng().unit();
         c.tailPiece = from->piece; c.tailDir = from->dir; c.tailLane = 0;
         c.route.push_back({pos, -1, 0, 0});
-        c.route.push_back({tl::trafficLanePoint(net_, P, from->dir, 0, tl::trafficPieceEnd(P, from->dir)), int32_t(P.junction[from->dir > 0 ? 1 : 0]), uint8_t(P.axis), 0});
+        for (const Vec2& q : tl::trafficLaneCurve(net_, P, from->dir, 0, from->along)) c.route.push_back({q, -1, 0, 0});
+        c.route.push_back({tl::trafficLanePoint(net_, P, from->dir, 0, tl::trafficPieceEnd(P, from->dir)), int32_t(P.junction[from->dir > 0 ? 1 : 0]), uint8_t(tl::trafficApproachAxis(P, from->dir > 0 ? 1 : 0)), 0});
         c.wp = 1;
         c.service = int8_t(si);
         c.homePiece = from->piece; c.homeAlong = from->along;

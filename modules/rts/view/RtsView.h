@@ -129,11 +129,17 @@ struct ViewEffect {
     float intensity = 1;
 };
 
+class RtsRoadView;
+
 class RtsView {
     friend class ::kingston::TowHost;
     friend class ::kingston::BulletFxHost;
     friend struct ::kingston::CabinResidentDraw;
 public:
+    RtsView();
+    ~RtsView();
+    RtsView(const RtsView&) = delete;
+    RtsView& operator=(const RtsView&) = delete;
     // reader: content files (models, textures); default platform::readContentFile.
     bool init(gfx::Device& dev, const Rules& rules, render::FileReader reader = {});
     // Clients defer type assets until a map uses them; editor/model viewers remain eager.
@@ -176,6 +182,10 @@ public:
     void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) { terrain_.setDetail(d, splat); }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
+    // spline roads (map "roadNetwork", docs/roads.md): set with the map (setTerrainDetail(map) does it too)
+    void setRoadMap(const Json& map);
+    RtsRoadView& roads() { return *roads_; }
+    const RtsRoadView& roads() const { return *roads_; }
     // ImGui: bars, counts. ox/oy: top-left of the view on screen; drawList: ImDrawList* (default: background list)
     void drawOverlays(const render::RTSCamera& cam, const RtsScene& s, float viewW, float viewH, float ox = 0, float oy = 0, void* drawList = nullptr);
     // view.draw triangles of the view scripts (ViewCanvas.h), after drawOverlays
@@ -495,6 +505,7 @@ private:
         animDt = dt;
         return age + dt;
     }
+    std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
     RtsGroundFx groundFx_;   // territory, diggable rock, lanes, roads (RtsGroundFx.cpp)
     FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
     RtsOverlays overlays_;   // data-driven overlays (RtsOverlays.cpp)

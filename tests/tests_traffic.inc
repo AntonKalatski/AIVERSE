@@ -1089,3 +1089,108 @@ TEST(traffic_gang_robber_is_detained_by_a_custody_patrol) {
     for (auto& c : tstore(*sim).cars) busy = busy || (c.service >= 0 && c.call == call);
     CHECK(!open && !busy && !w.alive(suspect));   // handed over at the station: the call is closed, the patrol is free
 }
+
+// ---------------------------------------------------------------- spline roads (agent-roads, docs/roads.md)
+namespace {
+std::string splineTrafficMap() {
+    std::string terrain;
+    for (int z = 0; z < 48; ++z) terrain += std::string(z ? "," : "") + "\"" + std::string(48, '.') + "\"";
+    // a signalised crossroads in the middle, four curved roads round it joining the arms' ends
+    const char* net = R"("roadNetwork": {"nodes": [{"id": 1, "x": 24, "z": 24}, {"id": 2, "x": 24, "z": 6}, {"id": 3, "x": 42, "z": 24},
+        {"id": 4, "x": 24, "z": 42}, {"id": 5, "x": 6, "z": 24}],
+      "edges": [{"id": 1, "a": 1, "b": 2, "type": "street_2"}, {"id": 2, "a": 1, "b": 3, "type": "street_2"},
+        {"id": 3, "a": 1, "b": 4, "type": "street_2"}, {"id": 4, "a": 1, "b": 5, "type": "street_2"},
+        {"id": 5, "a": 2, "b": 3, "type": "street_2", "c1": [36, 6], "c2": [42, 12]},
+        {"id": 6, "a": 3, "b": 4, "type": "street_2", "c1": [42, 36], "c2": [36, 42]},
+        {"id": 7, "a": 4, "b": 5, "type": "street_2", "c1": [12, 42], "c2": [6, 36]},
+        {"id": 8, "a": 5, "b": 2, "type": "street_2", "c1": [6, 12], "c2": [12, 6]}]})";
+    return std::string(R"({"size":[48,48],"players":[{"name":"A","team":1},{"name":"City","team":2}],"terrain":{"rows":[)") + terrain +
+           "]}," + net + R"(,"entities":[{"type":"guy","owner":1,"pos":[28.5,28.5]},{"type":"dummy","owner":2,"pos":[30.5,30.5]}]})";
+}
+std::string splineTrafficRules() {
+    std::string r = kTrafficRules;
+    auto sub = [&](const std::string& a, const std::string& b) { const size_t at = r.find(a); if (at == std::string::npos) throw std::runtime_error(a); r.replace(at, a.size(), b); };
+    sub(R"("roads": {"tiles": "a"},)", R"("roads": {"network": true, "laneWidth": 0.875},)");
+    sub(R"("pedestrians": {"walk": "p", "types": {"ped": 1}, "max": 10,)", R"("pedestrians": {"types": {}, "max": 0,)");
+    sub(R"("victory": "noUnits",)", R"("victory": "noUnits", "roadTypes": {"cellMeters": 4},)");
+    return r;
+}
+} // namespace
+
+TEST(traffic_drives_spline_roads) {
+    const std::string rules = splineTrafficRules(), map = splineTrafficMap();
+    auto sim = makeSimJson(rules, map, 5);
+    const auto& net = trf(*sim).net();
+    // eight curved pieces, five junctions (four arms in the middle, three at each end), signals where three meet
+    CHECK(net.pieces.size() == 8 && net.junctions.size() == 5);
+    int signals = 0, curved = 0;
+    for (auto& j : net.junctions) signals += j.signal;
+    for (auto& p : net.pieces) curved += p.curved() && p.lanes == 1 && p.len > Fixed::fromInt(8);
+    CHECK(signals == 5 && curved == 8);
+    for (auto& j : net.junctions) {   // every arm knows its side and the side knows the arm
+        for (int sd = 0; sd < 4; ++sd) {
+            const int q = j.piece[size_t(sd)];
+            if (q < 0) continue;
+            const auto& p = net.pieces[size_t(q)];
+            CHECK(p.side[0] == sd || p.side[1] == sd);
+        }
+    }
+    run(*sim, 3.0);
+    CHECK(tstore(*sim).cars.size() >= 3);
+    auto& w = sim->world();
+    std::map<uint32_t, Fixed> travelled;
+    std::map<uint32_t, Vec3> last;
+    int samples = 0, onRoad = 0;
+    for (int i = 0; i < 60 * int(sim->tickRate()); ++i) {
+        sim->step();
+        for (auto& c : tstore(*sim).cars) {
+            const Vec3 p = w.get<Transform>(c.e).pos;
+            if (last.count(c.e.index)) travelled[c.e.index] += (p - last[c.e.index]).length();
+            last[c.e.index] = p;
+            ++samples;
+            const bool on = trf(*sim).onRoad({p.x, p.z});
+            onRoad += on;
+        }
+    }
+    int moving = 0;
+    for (auto& [e, d] : travelled) moving += d > Fixed::fromInt(15);
+    CHECK(moving >= 3);
+    CHECK(samples > 0 && onRoad * 10 >= samples * 9);   // they keep to the curved roads
+    CHECK(!tstore(*sim).lights.empty());
+    // the same city twice is the same city; saves round-trip
+    auto a = makeSimJson(rules, map, 5), b = makeSimJson(rules, map, 5);
+    run(*a, 20); run(*b, 20);
+    CHECK(a->checksum() == b->checksum());
+    std::string err;
+    auto c = makeSimJson(rules, map, 5);
+    CHECK(c->deserialize(a->serialize(), &err));
+    run(*a, 5); run(*c, 5);
+    CHECK(a->checksum() == c->checksum());
+}
+
+TEST(road_network_geometry_and_decks) {
+    const auto types = game::loadRoadTypes(Json::parse(R"({"cellMeters": 4})"));
+    CHECK(types.size() >= 27 && game::findRoadType(types, "dirt_road") >= 0 && game::findRoadType(types, "highway_ramp") >= 0);
+    // a bridge: the middle control points high over the ground
+    const auto net = game::parseRoadNetwork(Json::parse(R"({"nodes": [{"id": 1, "x": 0, "z": 10}, {"id": 2, "x": 40, "z": 10}],
+        "edges": [{"id": 1, "a": 1, "b": 2, "type": "rural_2", "c1": [13, 10, 6], "c2": [27, 10, 6]}]})"), types);
+    const auto g = game::buildRoadGeometry(net, types);
+    CHECK(g.edges.size() == 1 && g.edges[0].spans.size() == 1 && !g.edges[0].spans[0].tunnel);
+    // level where it meets the ground, highest in the middle
+    CHECK(fxAbs(g.edges[0].pts.front().e) < Fixed::fromRatio(1, 10) && game::roadSampleAt(g.edges[0], Fixed::fromInt(20)).e > Fixed::fromInt(5));
+    const Json decks = game::roadDecks(net, types, g);
+    CHECK(decks.size() == 1 && decks[size_t(0)]["path"].size() > 4);
+    // an unpaved road may not run on from a four-lane road
+    const auto bad = game::parseRoadNetwork(Json::parse(R"({"nodes": [{"id": 1, "x": 0, "z": 0}, {"id": 2, "x": 20, "z": 0}, {"id": 3, "x": 40, "z": 0}],
+        "edges": [{"id": 1, "a": 1, "b": 2, "type": "avenue_4"}, {"id": 2, "a": 2, "b": 3, "type": "dirt_road"}]})"), types);
+    bool refused = false;
+    for (auto& s : game::buildRoadGeometry(bad, types).issues) refused |= s.find("cannot run on from") != std::string::npos;
+    CHECK(refused);
+    // bad data has readable errors
+    auto fails = [&](const char* j, const char* what) {
+        try { game::parseRoadNetwork(Json::parse(j), types); } catch (const std::exception& e) { return std::string(e.what()).find(what) != std::string::npos; }
+        return false;
+    };
+    CHECK(fails(R"({"nodes": [{"id": 1, "x": 0, "z": 0}], "edges": [{"id": 1, "a": 1, "b": 9, "type": "street_2"}]})", "node ids"));
+    CHECK(fails(R"({"nodes": [{"id": 1, "x": 0, "z": 0}, {"id": 2, "x": 5, "z": 0}], "edges": [{"id": 1, "a": 1, "b": 2, "type": "nope"}]})", "unknown road type"));
+}

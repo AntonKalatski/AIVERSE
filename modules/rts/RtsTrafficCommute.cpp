@@ -377,7 +377,7 @@ void Traffic::setupLines() {
             const int inSide = tl::trafficSideOf(P, dir > 0 ? 1 : 0);
             const int out = exitToward(J, inSide, piece, L.via[leg]);
             if (out != inSide) piece = net_.junctions[size_t(J)].piece[size_t(out)];
-            dir = tl::trafficExitDir(out);
+            dir = tl::trafficExitDirAt(net_, J, out);
         }
         L.path.assign(walk.begin() + long(loopFrom), walk.end());
         for (auto& stp : L.path)
@@ -395,7 +395,7 @@ bool Traffic::kerbFree(Simulation& sim, int32_t piece, int dir, Fixed a, Entity 
     if (P.lanes <= 0 || a < Fixed::fromInt(P.along0 + 1) || a > Fixed::fromInt(P.along1)) return false;
     World& w = sim.world();
     GameState& gs = m_->state(sim);
-    const Vec2 pt = tl::trafficLanePoint(net_, P, dir, P.lanes, a), along = tl::trafficDetail::axisDir(P.axis, dir);
+    const Vec2 pt = tl::trafficLanePoint(net_, P, dir, tl::trafficLanes(P, dir), a), along = tl::trafficDir(P, a, dir);
     if (!onRoad(pt) || !gs.grid.passableAt(v3(pt), kLayerGround)) return false;
     const auto& vars=gs.trig.vars;auto gateX=vars.find("tow_gate_x"),gateZ=vars.find("tow_gate_z");
     if(gateX!=vars.end()&&gateZ!=vars.end()&&gateX->second.raw>0&&pt.x>gateX->second&&pt.x<gateX->second+Fixed::fromInt(3)&&fxAbs(pt.y-gateZ->second)<Fixed::fromInt(3))return false;
@@ -443,9 +443,9 @@ void Traffic::keepCar(Simulation& sim, TrafficStore& st, TrafficCitizen& c, cons
     Fixed along;
     if (!kerbSpot(sim, pl, pl.dir, along, kNullEntity, nullptr, Fixed{})) return;
     const auto& P = net_.pieces[size_t(pl.piece)];
-    const Entity e = m_->spawn(sim, c.carType, rules_.carOwner, v3(tl::trafficLanePoint(net_, P, pl.dir, P.lanes, along)));
+    const Entity e = m_->spawn(sim, c.carType, rules_.carOwner, v3(tl::trafficLanePoint(net_, P, pl.dir, tl::trafficLanes(P, pl.dir), along)));
     if (!e.valid()) return;
-    w.get<Unit>(e).facing = v3(tl::trafficDetail::axisDir(P.axis, pl.dir));
+    w.get<Unit>(e).facing = v3(tl::trafficDir(P, along, pl.dir));
     c.car = e;
     ++parked;
 }
@@ -483,9 +483,9 @@ bool Traffic::spawnTrip(Simulation& sim, TrafficStore& st, int32_t id, Vec2 at) 
     const Place& pl = places_[size_t(to)];
     const auto& P = net_.pieces[size_t(pi)];
     const Vec2 here = tl::trafficLanePoint(net_, P, 1, 0, along);
-    const Fixed toward = pi == pl.piece ? pl.along - along : tl::trafficDetail::axisDir(P.axis, 1).dot(pl.pos - here);
-    const int s = toward.raw >= 0 ? 1 : -1, k = int(uint32_t(id) % uint32_t(P.lanes));
-    const Vec2 pos = tl::trafficLanePoint(net_, P, s, k, along), dir = tl::trafficDetail::axisDir(P.axis, s);
+    const Fixed toward = pi == pl.piece ? pl.along - along : tl::trafficDir(P, along, 1).dot(pl.pos - here);
+    const int s = toward.raw >= 0 ? 1 : -1, k = int(uint32_t(id) % uint32_t(std::max(1, tl::trafficLanes(P, toward.raw >= 0 ? 1 : -1))));
+    const Vec2 pos = tl::trafficLanePoint(net_, P, s, k, along), dir = tl::trafficDir(P, along, s);
     if (!gs.grid.passableAt(v3(pos), kLayerGround)) return false;
     const Fixed body = m_->rules().types[c.carType].radius;
     bool clear = true;
@@ -507,7 +507,8 @@ bool Traffic::spawnTrip(Simulation& sim, TrafficStore& st, int32_t id, Vec2 at) 
     t.cruise = rules_.speedMin + (rules_.speedMax - rules_.speedMin) * sim.rng().unit();
     t.tailPiece = pi; t.tailDir = int8_t(s); t.tailLane = uint8_t(k);
     t.route.push_back({pos, -1, 0, 0});
-    t.route.push_back({tl::trafficLanePoint(net_, P, s, k, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(P.axis), 0});
+    for (const Vec2& q : tl::trafficLaneCurve(net_, P, s, k, along)) t.route.push_back({q, -1, 0, 0});
+    t.route.push_back({tl::trafficLanePoint(net_, P, s, k, tl::trafficPieceEnd(P, s)), int32_t(P.junction[s > 0 ? 1 : 0]), uint8_t(tl::trafficApproachAxis(P, s > 0 ? 1 : 0)), 0});
     t.wp = 1;
     drv->adopt(sim, e, t.cruise * Fixed::fromRatio(3, 4));
     insertSorted(st.cars, std::move(t));
@@ -524,11 +525,11 @@ Fixed Traffic::tripShift(Simulation& sim, const TrafficCar& c, Vec2 pos, Vec2 fw
     const int cell = gs.grid.cellOf(v3(pos));
     if (cell < 0 || size_t(cell) >= net_.pieceAt.size() || net_.pieceAt[size_t(cell)] != c.destPiece) return Fixed{};
     const auto& P = net_.pieces[size_t(c.destPiece)];
-    const int s = tl::trafficDetail::axisDir(P.axis, 1).dot(fwd).raw >= 0 ? 1 : -1;
+    const int s = tl::trafficDir(P, tl::trafficAlongOf(P, pos), 1).dot(fwd).raw >= 0 ? 1 : -1;
     const Fixed d = (c.destAlong - tl::trafficAlongOf(P, pos)) * s;
     if (d > Fixed::fromInt(5) || d < -kOne) return Fixed{};
     const bool taken = !kerbFree(sim, c.destPiece, s, c.destAlong, c.e);
-    return taken ? Fixed{} : fxAbs(tl::trafficLaneAcross(net_, P, s, P.lanes) - tl::trafficAcrossOf(P, target));
+    return taken ? Fixed{} : fxAbs(tl::trafficLaneAcross(net_, P, s, tl::trafficLanes(P, s)) - tl::trafficAcrossOf(P, target));
 }
 
 // The cars on a trip: at the address the driver gets out on the kerb side and walks to the door. The car stays at
@@ -551,7 +552,7 @@ void Traffic::trips(Simulation& sim, TrafficStore& st) {
         if (!here) { c.dwellUntil = 0; continue; }
         const auto& P = net_.pieces[size_t(c.destPiece)];
         const Vec3 f = w.get<Unit>(c.e).facing;
-        const int s = tl::trafficDetail::axisDir(P.axis, 1).dot(Vec2{f.x, f.z}).raw >= 0 ? 1 : -1;
+        const int s = tl::trafficDir(P, tl::trafficAlongOf(P, pos), 1).dot(Vec2{f.x, f.z}).raw >= 0 ? 1 : -1;
         if (sim.tick() % 10 == 0) {   // on his street: the free spot of the kerb nearest to the door that is still ahead
             const TrafficCitizen& who = st.citizens[size_t(id)];
             const int dest = destOf(who);
@@ -573,7 +574,7 @@ void Traffic::trips(Simulation& sim, TrafficStore& st) {
             c.dwellUntil = 0;
             if (next >= 0 && places_[size_t(next)].piece >= 0) { c.destPiece = places_[size_t(next)].piece; c.destAlong = places_[size_t(next)].along; continue; }
         }
-        const Fixed kerbAcross = tl::trafficLaneAcross(net_, P, s, P.lanes);
+        const Fixed kerbAcross = tl::trafficLaneAcross(net_, P, s, tl::trafficLanes(P, s));
         // beside the car, clear of its body
         const Fixed out = (kerbAcross >= P.centre() ? kOne : -kOne) * (m_->rules().types[w.get<Unit>(c.e).type].radius + Fixed::fromRatio(1, 4));
         Vec3 spot = v3(tl::trafficDetail::at(P, tl::trafficAlongOf(P, pos), tl::trafficAcrossOf(P, pos) + out));
