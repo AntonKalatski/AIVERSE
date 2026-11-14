@@ -351,6 +351,7 @@ private:
     i18n::Localization loc_;
     i18n::GameLanguages langs_;
     std::vector<std::string> langNames_;
+    Json mapCamera_;                             // the running map's "camera" block (top-down camera override)
     std::string forcedLanguage_;
 
     // online play

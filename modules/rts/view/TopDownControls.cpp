@@ -84,7 +84,47 @@ void ring(ViewDrawBatch& b, float cx, float cy, float r, float w, uint32_t col) 
 
 // ================================================================= config
 
-TopDownControlConfig parseTopDownControls(const Json& g, const std::vector<std::string>& heroAbilities) {
+void readTopDownCamera(const Json& cj, TopDownCameraConfig& cam) {
+    if (!cj.isObject()) return;
+    auto num = [&](const char* k, float& v) { v = float(cj[k].toDouble(v)); };
+    num("pitch", cam.pitch); num("yaw", cam.yaw); num("distance", cam.distance);
+    num("minDistance", cam.minDistance); num("maxDistance", cam.maxDistance);
+    num("smoothing", cam.smoothing); num("lookAhead", cam.lookAhead); num("aimLookAhead", cam.aimLookAhead);
+    num("lookAheadSmoothing", cam.lookAheadSmoothing); num("margin", cam.margin);
+    num("velocityLookAhead", cam.velocityLookAhead); num("maxLookAhead", cam.maxLookAhead);
+    num("fov", cam.fov);
+    if (const Json& sz = cj["speedZoom"]; sz.isObject()) {
+        cam.speedFrom = std::max(0.0f, float(sz["from"].toDouble(0)));
+        cam.speedTo = float(sz["to"].toDouble(0));
+        cam.speedDistance = float(sz["distance"].toDouble(cam.distance));
+        cam.speedSmoothing = std::max(0.0f, float(sz["smoothing"].toDouble(cam.speedSmoothing)));
+    }
+    cam.lockOffsetIfNoInput = cj.getBool("lockOffsetIfNoInput", cam.lockOffsetIfNoInput);
+    cam.bounds = cj.getBool("bounds", cam.bounds);
+    cam.fogFollow = cj.getBool("fogFollow", cam.fogFollow);
+    if (cj.has("projection")) {
+        const std::string pr = cj.getStr("projection");
+        cam.projection = pr == "ortho" ? TopDownCameraConfig::Projection::Ortho
+                       : pr == "perspective" ? TopDownCameraConfig::Projection::Perspective : TopDownCameraConfig::Projection::Keep;
+    }
+}
+
+void finishTopDownCamera(TopDownCameraConfig& cam) {
+    cam.velocityLookAhead = std::max(0.0f, cam.velocityLookAhead);
+    cam.maxLookAhead = std::max(0.0f, cam.maxLookAhead);
+    cam.pitch = std::clamp(cam.pitch, 5.0f, 90.0f);
+    cam.yaw = std::remainder(cam.yaw, 360.0f);
+    cam.fov = cam.fov > 0 ? std::clamp(cam.fov, 1.0f, 120.0f) : 0.0f;
+    cam.minDistance = std::max(1.0f, std::min(cam.minDistance, cam.distance));
+    cam.maxDistance = std::max(cam.maxDistance, cam.distance);
+}
+
+void topDownClipPlanes(render::RTSCamera& cam) {
+    cam.zNear = std::max(0.5f, cam.distance * 0.02f);    // 0.5 up to 25 units (the engine default), 6.4 at 320
+    cam.zFar = std::max(1000.0f, cam.distance * 4.0f);
+}
+
+TopDownControlConfig parseTopDownControls(const Json& g, const std::vector<std::string>& heroAbilities, const Json& mapCamera) {
     TopDownControlConfig c;
     const Json& j = g["topDown"];
     if (!j.isObject()) return c;
@@ -130,35 +170,18 @@ TopDownControlConfig parseTopDownControls(const Json& g, const std::vector<std::
         b.radius = std::max(12.0f, float(bj["radius"].toDouble(b.radius)));
         c.buttons.push_back(b);
     }
-    const Json& cj = j["camera"];
-    auto num = [&](const char* k, float& v) { v = float(cj[k].toDouble(v)); };
-    num("pitch", c.camera.pitch); num("yaw", c.camera.yaw); num("distance", c.camera.distance);
-    num("minDistance", c.camera.minDistance); num("maxDistance", c.camera.maxDistance);
-    num("smoothing", c.camera.smoothing); num("lookAhead", c.camera.lookAhead); num("aimLookAhead", c.camera.aimLookAhead);
-    num("lookAheadSmoothing", c.camera.lookAheadSmoothing); num("margin", c.camera.margin);
-    num("velocityLookAhead", c.camera.velocityLookAhead); num("maxLookAhead", c.camera.maxLookAhead);
-    if (const Json& sz = cj["speedZoom"]; sz.isObject()) {
-        c.camera.speedFrom = std::max(0.0f, float(sz["from"].toDouble(0)));
-        c.camera.speedTo = float(sz["to"].toDouble(0));
-        c.camera.speedDistance = float(sz["distance"].toDouble(c.camera.distance));
-        c.camera.speedSmoothing = std::max(0.0f, float(sz["smoothing"].toDouble(c.camera.speedSmoothing)));
-    }
-    c.camera.velocityLookAhead = std::max(0.0f, c.camera.velocityLookAhead);
-    c.camera.maxLookAhead = std::max(0.0f, c.camera.maxLookAhead);
-    c.camera.lockOffsetIfNoInput = cj.getBool("lockOffsetIfNoInput", c.camera.lockOffsetIfNoInput);
-    c.camera.bounds = cj.getBool("bounds", c.camera.bounds);
-    c.camera.pitch = std::clamp(c.camera.pitch, 5.0f, 90.0f);
-    c.camera.minDistance = std::max(1.0f, std::min(c.camera.minDistance, c.camera.distance));
-    c.camera.maxDistance = std::max(c.camera.maxDistance, c.camera.distance);
+    readTopDownCamera(j["camera"], c.camera);
+    if (mapCamera.isObject()) readTopDownCamera(mapCamera, c.camera);   // the map's own framing on top
+    finishTopDownCamera(c.camera);
     return c;
 }
 
-void TopDownControls::configure(const Json& gameJson, const TopDownRules& rules, const Rules& rts) {
+void TopDownControls::configure(const Json& gameJson, const TopDownRules& rules, const Rules& rts, const Json& mapCamera) {
     rules_ = rules;
     std::vector<std::string> abilities;
     if (rules.enabled && !rules.heroTypes.empty() && rules.heroTypes[0] < rts.types.size())
         for (auto& a : rts.types[rules.heroTypes[0]].abilities) abilities.push_back(a.id);
-    cfg_ = parseTopDownControls(gameJson, abilities);
+    cfg_ = parseTopDownControls(gameJson, abilities, mapCamera);
     move_.configure(cfg_.move);
     aim_.configure(cfg_.aim);
     buttonPointers_.assign(cfg_.buttons.size(), -1);
@@ -527,6 +550,17 @@ void TopDownControls::updateCamera(render::RTSCamera& cam, render::float3 hero, 
     cam.minDistance = c.minDistance + zoomAdd_; cam.maxDistance = c.maxDistance + zoomAdd_;
     cam.yaw = current.yaw * kPi / 180;
     cam.pitch = current.pitch * kPi / 180;
+    if (c.fov > 0) cam.fovY = c.fov * kPi / 180;
+    if (c.projection != TopDownCameraConfig::Projection::Keep) cam.ortho = c.projection == TopDownCameraConfig::Projection::Ortho;
+    topDownClipPlanes(cam);
+}
+
+float TopDownControls::fogScale() const {
+    const TopDownCameraConfig& c = cfg_.camera;
+    if (!c.fogFollow || c.fov <= 0) return 1;
+    // fog over the same ground as a 43-degree lens (the default) at the distance that frames it alike
+    const float s = std::tan(c.fov * kPi / 360) / std::tan(43.0f * kPi / 360);
+    return std::clamp(s, 0.02f, 4.0f);
 }
 
 // ================================================================= drawing

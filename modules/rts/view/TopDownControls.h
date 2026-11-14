@@ -62,7 +62,18 @@ struct TopDownCameraConfig {
     float maxLookAhead = 0;          // world units for the whole look-ahead offset (0: no limit)
     bool bounds = true;              // keep the focus inside the map
     float margin = 0;                // world units kept from the map edge by the focus
+    // lens: vertical field of view in degrees (0: keep the client camera's, 43 by default). Narrow lenses far away
+    // (20 at 300+ units) frame like a telephoto; near / far clip planes follow the distance either way.
+    float fov = 0;
+    enum class Projection { Keep, Perspective, Ortho } projection = Projection::Keep;   // "projection": "ortho"
+    bool fogFollow = true;           // with a fov: distance fog as a 43-degree camera framing the same view sees it
 };
+// Reads the keys of one "camera" block onto c (absent keys keep their value): game.json topDown.camera, then the
+// map's "camera" block on top. finishTopDownCamera clamps the result.
+void readTopDownCamera(const Json& cj, TopDownCameraConfig& c);
+void finishTopDownCamera(TopDownCameraConfig& c);
+// Clip planes for a camera at this distance: near grows with it (depth precision far away), far stays past the view.
+void topDownClipPlanes(render::RTSCamera& cam);
 
 // game.json topDown "aimAssist": the stick's aim bends toward the target nearest to it (client side: the sim gets an
 // ordinary aim angle), per input source. Absent: off.
@@ -89,7 +100,8 @@ struct TopDownControlConfig {
 };
 
 // game.json "topDown" (absent: enabled = false). Ability ids resolve against `heroAbilities` (missing ids: -1).
-TopDownControlConfig parseTopDownControls(const Json& gameJson, const std::vector<std::string>& heroAbilities);
+// mapCamera: the map's "camera" block (keys of topDown.camera: pitch, yaw, distance, fov, ...), null: none
+TopDownControlConfig parseTopDownControls(const Json& gameJson, const std::vector<std::string>& heroAbilities, const Json& mapCamera = Json());
 
 class VirtualStick {
 public:
@@ -154,7 +166,7 @@ struct TopDownFrameInput {
 
 class TopDownControls {
 public:
-    void configure(const Json& gameJson, const TopDownRules& rules, const Rules& rts);
+    void configure(const Json& gameJson, const TopDownRules& rules, const Rules& rts, const Json& mapCamera = Json());
     bool active() const { return cfg_.enabled && rules_.enabled; }
     const TopDownControlConfig& config() const { return cfg_; }
     bool touchUi(bool touchDevice) const {
@@ -195,6 +207,8 @@ public:
     // only the velocity look-ahead moves the focus. The host sets it every frame before updateCamera.
     void setStickLookAhead(bool on) { stickLook_ = on; }
     float heroSpeed() const { return speed_; }   // smoothed, world units / s (speed camera)
+    // Multiplier for the distance fog density (Renderer3D::setFogScale): 1 without a configured fov.
+    float fogScale() const;
 
     // Screen-canvas triangles of the sticks and buttons; ready[i] in [0, 1] = ability button i charge (1 ready).
     std::vector<ViewDrawBatch> draw(float screenW, float screenH, const std::vector<float>& ready) const;

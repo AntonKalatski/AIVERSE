@@ -236,6 +236,7 @@ void GameClient::leaveNetMatch() {
     city_.reset(); sim_.reset();
     bots_.clear();
     selection_.clear();
+        mapCamera_ = map["camera"];   // per-map top-down framing (topDownConfigure)
     netMatch_ = false;
     spectator_ = prevSpectator_;
     human_ = 1;

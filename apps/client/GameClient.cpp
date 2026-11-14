@@ -256,6 +256,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
     try {
         map = Json::parse(text);
         game::mergeInitialVars(map, initialVars);
+        mapCamera_ = map["camera"];   // per-map top-down framing (topDownConfigure)
         if (!startRuleSets_.empty()) {   // game.start {ruleSets}: only sets the rules define (agent-bw-meta)
             Json sets = map["ruleSets"].isArray() ? map["ruleSets"] : Json::array();
             for (auto& id : startRuleSets_) if (rulesJson_["ruleSets"][id].isArray()) sets.push(Json::string(id));
@@ -1034,8 +1035,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         r3d_.render(pass, &postFx_);
         fx_.render(r3d_.lighting);
         r3d_.resolvePostFx();   // post effects (if any) under the HUD
+        const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
+        if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
+            if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
+        r3d_.lighting.fogDensity = fogBase;
         topDownDraw();
     } else {
         pass.clearColor[0] = 0.10f; pass.clearColor[1] = 0.12f; pass.clearColor[2] = 0.14f;
