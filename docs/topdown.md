@@ -185,7 +185,24 @@ and faster) with its own `smoothing`; the player's wheel / pinch zoom stays unde
 look-ahead offset. At the wheel the stick look-ahead is off (the stick is pedals, not a direction). A jump of more
 than 8 units between frames (respawn) is not speed. Test: `topdown_speed_camera_zooms_out_and_looks_ahead`.
 
-Sticks: `floating` appears where the finger lands inside `area` (normalized screen rect) and follows a finger that
+**Lens** (`fov`, `projection`). `fov` is the vertical field of view in degrees (absent: the client camera's 43°).
+Telephoto framings work: `"fov": 20` at `"distance": 320` shows about the ground a 43° lens shows at ~140. The
+near / far clip planes follow the distance (near = max(0.5, distance / 50), far = max(1000, distance * 4)), the
+shadow map is fitted to the ground the camera sees (so it shrinks with a narrow lens), and with a `fov` the distance
+fog is scaled by tan(fov / 2) / tan(21.5°) — the fog a 43° lens framing the same ground would show (`"fogFollow":
+false` keeps the authored density). `yaw` is any angle (180: the camera stands north of the hero and looks south;
+sticks and keys stay screen-relative). `"projection": "ortho"` draws orthographically with the same framing
+(`"perspective"` forces perspective; absent: whatever the game's camera has). Test:
+`topdown_camera_fov_far_yaw_ortho_and_map_override`.
+
+**Per-map camera.** A map's top-level `"camera"` block overrides `topDown.camera` key by key for that map
+(`pitch`, `yaw`, `distance`, `minDistance`, `maxDistance`, `fov`, `projection`, `smoothing`, look-ahead, bounds...):
+
+```json
+"camera": {"distance": 116.6, "pitch": 57.8, "fov": 20}
+```
+
+ inside `area` (normalized screen rect) and follows a finger that
 runs past 1.5 radii; `fixed` sits at `center`. Buttons: `tap` (default) casts on touch; `aim` sends press on touch,
 then the drag away from the button aims it (direction, distance = drag / `dragRadius` of the range) and lifting the
 finger casts (a drag shorter than a third of the button: along the aim); `hold` sends press / release (hold

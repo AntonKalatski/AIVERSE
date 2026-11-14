@@ -256,6 +256,7 @@ add_library(aiverse_net STATIC
     engine/net/BattleProtocol.cpp
     engine/net/SimNet.cpp
     engine/net/SecureUdp.cpp
+    engine/net/BattleJoin.cpp
     third_party/monocypher/monocypher.c)
 set_source_files_properties(third_party/monocypher/monocypher.c PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w,-w>")
 target_link_libraries(aiverse_net PUBLIC aiverse_engine)
@@ -528,6 +529,10 @@ option(AIVERSE_PRECOMPILE_METAL "Precompile macOS client Metal shaders after lin
 set(AIVERSE_METAL_CONTENT_DIR "" CACHE PATH "Resolved loose content override for native client shader capture")
 set(AIVERSE_METAL_CAPTURE_MAP "0" CACHE STRING "Map index for build-time Metal variant capture")
 
+# OFF: the client is not packaged with a copy of the content (the editor's per-project build: it runs the client on
+# the project folder through AIVERSE_CONTENT, and the build dir lives inside that folder).
+option(AIVERSE_CLIENT_BUNDLE_CONTENT "Copy the game content next to / into the client executable" ON)
+
 function(aiverse_package_app target)
     aiverse_package_notices(${target})
     # the editor's project file (<Title>.aiverse, legacy .aiverse) is not game content: dropped from loose dev bundles
@@ -576,7 +581,7 @@ function(aiverse_package_app target)
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${res_dir}/content"
                 COMMAND ${CMAKE_COMMAND} -E copy "${AIVERSE_CONTENT_PACK}" "${res_dir}/content/content.rpak"
                 COMMENT "Bundling content pack")
-        else()
+        elseif(AIVERSE_CLIENT_BUNDLE_CONTENT)
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${res_dir}"
                 COMMAND ${CMAKE_COMMAND} -E copy_directory "${AIVERSE_CONTENT_DIR}" "${res_dir}/content"
@@ -619,7 +624,7 @@ function(aiverse_package_app target)
                 COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/content"
                 COMMAND ${CMAKE_COMMAND} -E copy "${AIVERSE_CONTENT_PACK}" "$<TARGET_FILE_DIR:${target}>/content/content.rpak"
                 COMMENT "Copying content pack next to the executable")
-        else()
+        elseif(AIVERSE_CLIENT_BUNDLE_CONTENT)
             add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_directory "${AIVERSE_CONTENT_DIR}" "$<TARGET_FILE_DIR:${target}>/content"
                 COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${target}>/content/Builds" "$<TARGET_FILE_DIR:${target}>/content/logs" ${_aiverse_rm_exe}   # project outputs, .aiverse
@@ -709,6 +714,7 @@ if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
     apps/editor/core/SimTools.cpp apps/editor/core/ScenarioOps.cpp apps/editor/core/SchemaOps.cpp apps/editor/core/PruneOps.cpp apps/editor/core/CampaignOps.cpp apps/editor/core/StrategicOps.cpp
     apps/editor/core/ToolchainOps.cpp apps/editor/core/WorldInspect.cpp)   # scenario_run, rules_lint, rules_schema keys
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_game)
+    target_link_libraries(aiverse_editor_core PUBLIC aiverse_i18n)   # editor messages (editorText)
     target_link_libraries(aiverse_editor_core PUBLIC aiverse_postfx_data)   # postfx_* ops (postfx agent)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/PostFxOps.cpp)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/LightBakeOps.cpp)   # lightbake_* ops (agent-lightbake)
@@ -1683,6 +1689,7 @@ foreach(t aiverse_client main aiverse_editor)
 endforeach()
 if(TARGET aiverse_tests)
     target_link_libraries(aiverse_tests PRIVATE aiverse_spine)
+    target_sources(aiverse_tests PRIVATE apps/client/ClientServices.cpp)   # UI Lua services tables (plugins.on)
 endif()
 # Gamepads (engine/platform/Gamepad.h): common state + one backend per platform.
 if(TARGET aiverse_runtime)
@@ -1708,6 +1715,11 @@ endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)   # UI.Windows audio bank importer (synthetic data, no game files)
     add_test(NAME uiwindows_audio_importer COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/importers/fmod/test_import_audio.py)
 endif()
+# The project's native modules (<content>/native, modules/rts/native/Build.cmake) after every engine target, so a
+# module's CMake may link aiverse_net / aiverse_grpc / aiverse_plugins / server libraries and call
+# aiverse_protobuf_generate (docs/native-modules.md § Engine libraries); before the Windows manifest pass below.
+aiverse_native_configure()
+
 # Windows: every executable gets platform/windows/utf8.manifest (activeCodePage UTF-8). Paths in the
 # engine are UTF-8 std::strings; without it the narrow CRT/STL file APIs use the legacy ANSI code page
 # and a project in a folder like "Моя стратегия" cannot be opened. MSVC merges .manifest sources into

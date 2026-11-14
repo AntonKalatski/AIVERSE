@@ -1251,6 +1251,7 @@ void Workspace::registerCoreOps() {
         for (auto& i : issues) {
             Json j = Json::object();
             j.set("error", Json::fromBool(i.error)); j.set("text", str(i.text));
+            if (!i.key.empty()) j.set("key", str(i.key));
             if (i.entity >= 0) j.set("entity", Json::number(int64_t(i.entity)));
             arr.push(j);
         }

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 #include "engine/data/Json.h"
+#include "engine/i18n/Localization.h"
 #include "modules/rts/RtsData.h"
 
 namespace aiverse::editor {
@@ -101,7 +102,25 @@ struct MapData {
     int level(int x, int y) const { return inside(x, y) ? levels[idx(x, y)] : 0; }
 };
 
-struct Issue { bool error = true; std::string text; int entity = -1; };
+struct Issue {
+    bool error = true;
+    std::string text;
+    int entity = -1;
+    std::string key;   // i18n key of text (may be empty)
+    Issue() = default;
+    Issue(bool e, std::string t, int ent = -1, std::string k = {}) : error(e), text(std::move(t)), entity(ent), key(std::move(k)) {}
+};
+
+// Editor messages through the engine string tables (engine/assets/lang/<language>.json, "editor.*" keys).
+// The editor UI speaks Russian (English fallback); setEditorLanguage is called once the engine checkout is known
+// (editor, aiversemcp). Without it, or for a missing key, `fallback` is used.
+void setEditorLanguage(const std::string& langDir, const std::string& language = "ru");
+std::string editorText(const char* key, const std::string& fallback, const i18n::Args& args = {});
+
+// A map with one real player is still playable when something else plays against it: a raid (rules or map
+// `raid`), hostile creeps (owner 255 / -1), a `monsters` or `waves` player, encounters, map waves / triggers or
+// simulation scripts. Used by MapDoc::validate.
+bool singlePlayerPlayable(const MapData& d, const Json& rulesJson);
 
 // Maps whose corner grid is larger than this are saved with terrain.cornersFile (raw int16 LE next to the
 // map) instead of an inline "corners" array; smaller maps keep the inline array.

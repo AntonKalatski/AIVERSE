@@ -29,6 +29,7 @@
 #include "engine/render/TextureCache.h"
 #include "ClientSplash.h"
 #include "GameClient.h"
+#include "StartPlayers.h"
 #include "modules/rts/view/EncounterDecals.h"   // boss encounters: ground marks
 #include "engine/platform/ContentReader.h"
 #include "RegionSettings.h"
@@ -256,6 +257,12 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
     try {
         map = Json::parse(text);
         game::mergeInitialVars(map, initialVars);
+        mapCamera_ = map["camera"];   // per-map top-down framing (topDownConfigure)
+        {   // game.start {players = {...}, deck = {...}}: per-seat start data into players[slot - 1]
+            const Json players = startPlayers_, deck = startDeck_;
+            startPlayers_ = startDeck_ = Json();
+            if (std::string pe = mergeStartPlayers(map, players, human_, deck); !pe.empty()) throw std::runtime_error(pe);
+        }
         if (!startRuleSets_.empty()) {   // game.start {ruleSets}: only sets the rules define (agent-bw-meta)
             Json sets = map["ruleSets"].isArray() ? map["ruleSets"] : Json::array();
             for (auto& id : startRuleSets_) if (rulesJson_["ruleSets"][id].isArray()) sets.push(Json::string(id));
@@ -535,6 +542,9 @@ void GameClient::event(const Event& e) {
     // mobile apps go quiet in the background; desktop keeps playing when the window loses focus
     if (e.type == EventType::FocusLost && platform::isTouchDevice()) audio_.setPaused(true);
     if (e.type == EventType::FocusGained) audio_.setPaused(false);
+    // hosted battles on phones: away in the background (nobody waits for our input), back with a reconnect if long
+    if (battle_ && net_ && e.type == EventType::FocusLost && platform::isTouchDevice()) net_->suspend(net::nowMs());
+    if (battle_ && net_ && e.type == EventType::FocusGained && net_->suspended()) net_->resume(net::nowMs());
     if (e.type == EventType::Resized) luaEmit("resize", Json());   // UI scripts: safe area, layout
     if (howtoOpen_ && e.type == EventType::KeyDown && e.key == Key::Escape) { howtoOpen_ = false; return; }
     // the game's own screens (ui/lib/meta.lua): Esc / Android back goes through ui.back()
@@ -1031,8 +1041,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
         drawToolPreview();
+        const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
+        if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
+            if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
         r3d_.render(pass, &postFx_);
         fx_.render(r3d_.lighting);
+        r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePostFx();   // post effects (if any) under the HUD
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);

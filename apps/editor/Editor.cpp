@@ -77,8 +77,9 @@ void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
 void Editor::init(gfx::Device& dev) {
     dev_ = &dev;
     ws_.engineDir = opt_.engineDir;
+    editor::setEditorLanguage(ws_.engineDir + "/engine/assets/lang");   // editor messages (map checks)
     ws_.buildTool = opt_.buildTool;
-    ws_.gameExe = opt_.gameExe;
+    ws_.gameExe = !opt_.ownGameExe.empty() ? opt_.ownGameExe : opt_.gameExe;   // the per-project build has its own client (modules)
     ws_.clock = [this] { return time_; };
     std::string font = opt_.engineDir + "/engine/assets/fonts/ui.ttf";
     std::error_code fec;

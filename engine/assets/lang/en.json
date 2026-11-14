@@ -369,6 +369,7 @@
   "controls": {"region_send": "Ready to send", "region_hint": "Drag from your zones to a target.", "region_preview": "Send {count}", "region_invalid": "No route / cancel"},
   "controls.region_ratio": "Send: {ratio}% · Right drag: pan map",
   "hud.choose_target": "Choose a point on the map · Right click or Esc to cancel",
+  "editor.map.need_players": "At least 2 players are needed (or a single-player map: a raid, hostile creeps, waves, monsters or scripts)",
   "editor.build.fix_atlas_sizes": "Fix texture sizes",
   "editor.build.resize_plan": "Build size: longest side up to {size} px",
   "editor.build.resize_help": "Reduce oversized textures for the selected platform and recalculate. Image detail will be reduced; source files stay unchanged.",

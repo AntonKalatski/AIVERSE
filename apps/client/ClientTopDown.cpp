@@ -26,7 +26,7 @@ void GameClient::topDownConfigure() {
     tdInput_ = {};
     const TopDown* td = sim_ ? mod().topDown() : nullptr;
     if (!td || !td->active()) { topDown_ = {}; tdPredict_.reset(); return; }
-    topDown_.configure(manifest_, td->rules(), mod().rules());
+    topDown_.configure(manifest_, td->rules(), mod().rules(), mapCamera_);   // game.json topDown.camera + the map's "camera"
     {   // game.json topDown.prediction (render only)
         const Json& pj = manifest_["topDown"]["prediction"];
         TopDownPredictionConfig pc;
