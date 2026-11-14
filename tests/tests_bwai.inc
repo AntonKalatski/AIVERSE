@@ -218,6 +218,10 @@ TEST(bwai_bunkerwars_expert_beats_ashley) {
     if (!gameDir || !*gameDir) { std::printf("  skipped: AIVERSE_BW_GAME_DIR is not set\n"); return; }
     const std::string game = gameDir;
     Json rules = Json::parseFile(game + "/rules.json");
+    if (rules.has("nativeModules") && rules["nativeModules"].size() > 0) {   // the game's own C++ is not in this binary
+        std::printf("  skipped: the game needs its native modules (build with -DAIVERSE_CONTENT_DIR; its tests live in the game)\n");
+        return;
+    }
     rules.set("ai", Json::parse(R"({"controller":"bw"})"));
     rules.find("lanes")->set("groups", Json::fromBool(true));
     for (int side = 0; side < 2; ++side) {
