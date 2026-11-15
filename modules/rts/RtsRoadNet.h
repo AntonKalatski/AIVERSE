@@ -123,6 +123,15 @@ struct RoadBay {
     bool inside = false;                     // parking: marked inside the carriageway along the kerb ("inside": true), no bay
 };
 
+// An entrance from the road into a yard: the kerb and the sidewalk come down to the road over a short flare, an
+// apron of asphalt crosses the sidewalk and runs `depth` metres on into the plot. Map: edge "driveways":
+// [{"at": 0..1, "side": 1 | -1, "width": metres (3.5), "depth": metres (6)}].
+struct RoadDriveway {
+    Fixed at{};
+    int8_t side = 1;
+    Fixed width = Fixed::fromRatio(7, 2);
+    Fixed depth = Fixed::fromInt(6);
+};
 struct RoadEdge {
     int32_t id = 0;
     int32_t a = 0, b = 0;                    // node ids
@@ -134,6 +143,7 @@ struct RoadEdge {
     std::array<RoadAttach, 2> attach{};      // end a (0) / end b (1)
     bool reversed = false;                   // the type's forward lanes drive b -> a (one-way roads drawn backwards)
     std::vector<RoadBay> bays;               // bus stop bays
+    std::vector<RoadDriveway> driveways;     // entrances into the yards behind the sidewalk ("driveways")
 };
 
 struct RoadNetwork {
@@ -166,6 +176,8 @@ struct RoadSample {
 struct RoadSpan { Fixed s0{}, s1{}; bool tunnel = false; };
 
 // a bay in cells along the edge: widening over [s0, s1], full width over [s1, s2], narrowing over [s2, s3]
+struct RoadDrivewayGeom { Fixed s{}; int8_t side = 1; Fixed half{}; Fixed flare{}; Fixed depth{}; };  // cells along / deep
+
 struct RoadBayGeom { Fixed s0{}, s1{}, s2{}, s3{}; int8_t side = 1; Fixed width{}; bool shelter = true; bool parking = false; bool inLane = false; Fixed laneWidth{}; Fixed stall{}; };
 // inLane: a parking zone on a road with a parking lane on that side: the spaces are marked in the lane (width 0, no
 // bay), laneWidth = that lane's width
@@ -178,6 +190,7 @@ struct RoadEdgeGeom {
     std::array<std::vector<std::pair<Fixed, Fixed>>, 2> gaps;   // left (0) / right (1) side: [s0, s1) where a branch leaves
     std::vector<RoadSpan> spans;
     std::vector<RoadBayGeom> bays;
+    std::vector<RoadDrivewayGeom> driveways;
     // a paved road that runs on as an unpaved one: its last stretch at that end wears out (broken asphalt) and
     // narrows to the unpaved road's width. Length in cells (0: none) and the unpaved neighbour's type index.
     // Also any road that runs on as a narrower one tapers to its width there (worn = false: no wear, only the taper).

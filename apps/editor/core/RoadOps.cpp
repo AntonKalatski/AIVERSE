@@ -613,6 +613,48 @@ void registerRoadOps(Workspace& ws) {
             }
             return summary(n, T, buildRoadGeometry(n, T));
         });
+    add("road_driveway_set",
+        "Driveway (\"заезд во двор\") on a road edge: the kerb and sidewalk come down over short flares, an asphalt "
+        "apron crosses the sidewalk and runs on into the yard. 'edge' id; 'at' (0..1) or 'point' [x, z] (its nearest "
+        "place, and the side it is on); 'side' 1 right / -1 left of a -> b; 'width' metres (default 3.5); 'depth' "
+        "metres into the yard behind the sidewalk (default 6). 'remove': true deletes the driveway nearest to 'at' / 'point'.",
+        R"({"properties": {"edge": {"type": "integer"}, "at": {"type": "number"}, "point": {"type": "array"}, "side": {"type": "integer"},
+            "width": {"type": "number"}, "depth": {"type": "number"}, "remove": {"type": "boolean"}}, "required": ["edge"]})",
+        [w, commit](const Json& p) {
+            needProject(*w);
+            const auto T = roads::types(*w);
+            RoadNetwork n = roads::read(w->map, T);
+            const int ei = n.edgeIndex(int32_t(p.getInt("edge", -1)));
+            if (ei < 0) throw std::runtime_error("no road edge " + std::to_string(p.getInt("edge", -1)));
+            const RoadGeometry g = buildRoadGeometry(n, T);
+            Fixed at = p.getFx("at", Fixed::fromRatio(1, 2));
+            int side = int(p.getInt("side", 1));
+            if (p.has("point")) {
+                Fixed along, lat;
+                roadProject(g.edges[size_t(ei)], pt(p["point"], "point"), along, lat);
+                at = g.edges[size_t(ei)].length.raw > 0 ? along / g.edges[size_t(ei)].length : Fixed::fromRatio(1, 2);
+                if (!p.has("side")) side = lat < Fixed{} ? -1 : 1;
+            }
+            w->map.beginEdit();
+            RoadEdge& e = n.edges[size_t(ei)];
+            if (p.getBool("remove", false)) {
+                int best = -1;
+                for (size_t k = 0; k < e.driveways.size(); ++k)
+                    if (best < 0 || fxAbs(e.driveways[k].at - at) < fxAbs(e.driveways[size_t(best)].at - at)) best = int(k);
+                if (best < 0) throw std::runtime_error("this edge has no driveways");
+                e.driveways.erase(e.driveways.begin() + best);
+                commit(n, T, "Заезд удалён");
+            } else {
+                RoadDriveway d;
+                d.at = fxClamp(at, Fixed{}, Fixed::fromInt(1));
+                d.side = int8_t(side < 0 ? -1 : 1);
+                d.width = p.getFx("width", d.width);
+                d.depth = p.getFx("depth", d.depth);
+                e.driveways.push_back(d);
+                commit(n, T, "Заезд во двор");
+            }
+            return summary(n, T, buildRoadGeometry(n, T));
+        });
     add("road_split",
         "Split a road edge into two at a point ('at' [x, z]) or Bezier parameter 't' (0..1); returns the new node.",
         R"({"properties": {"edge": {"type": "integer"}, "at": {"type": "array"}, "t": {"type": "number"}}, "required": ["edge"]})",

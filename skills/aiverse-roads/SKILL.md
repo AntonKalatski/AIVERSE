@@ -27,13 +27,14 @@ Format and behaviour: `docs/roads.md`; traffic on the network: `docs/traffic.md`
 }
 ```
 - Map cells; `h` in metres over the ground (bridge above 1.5, tunnel below -2.5; the deck follows a smooth curve, pillars come by themselves). A node where every road meets; two roads bending more than 35° get a junction box.
+- `driveways`: `[{"at", "side", "width": 3.5, "depth": 6}]` — an entrance into the yard: the kerb comes down, an apron of the roads' asphalt (grime along its edges, kerb stones on both sides) crosses the sidewalk; edge and solid centre lines break there, no props stand in it. Editor: mode «Заезд», op `road_driveway_set`. A generator places them where no tree, lamp or other object stands on the apron.
 - `parking`: a bay cut into the sidewalk; `"inside": true` marks the spaces in the kerb lane; a type with a `Parking` lane gets them in that lane.
 - `replaces`: tags or type id prefixes of a game's old baked road surfaces; the view does not draw them while the network is shown. `signals: false`: the game puts up its own traffic lights. Unknown keys survive editing in the editor.
 - Rules the geometry enforces: a dirt / gravel road cannot continue a road of more than 2 lanes (only join at a junction, or follow a 1–2 lane road: asphalt → broken asphalt → dirt is drawn by itself); widths change by narrowing over the last stretch (kerbs come down when the next road has none). The editor turns the stretch of an unpaved road over water into an asphalt `rural_bridge`.
 
 ## 3. Laying roads
-- Editor window «Дороги» (group World): Прямая / Кривая / Свободная / Правка / Остановка / Удалить / Парковка; point height PageUp/PageDown; draw from single lanes; 15° snap; type builder.
-- MCP: `road_types`, `road_type_set`, `road_network`, `road_add` (straight / smooth / bezier, fromLanes / toLanes), `road_node_set`, `road_edge_set`, `road_stop_set` (`parking: true` for a parking zone), `road_split`, `road_delete`.
+- Editor window «Дороги» (group World): Прямая / Кривая / Свободная / Правка / Остановка / Удалить / Парковка / Заезд; point height PageUp/PageDown; draw from single lanes; 15° snap; type builder.
+- MCP: `road_types`, `road_type_set`, `road_network`, `road_add` (straight / smooth / bezier, fromLanes / toLanes), `road_node_set`, `road_edge_set`, `road_stop_set` (`parking: true` for a parking zone), `road_driveway_set`, `road_split`, `road_delete`.
 - A whole city by script: generate `nodes` / `edges` (one node per junction and road end; merge ends within ~1 cell; split lines where they cross; fit Bezier through polylines), keep the game's own bridge / tunnel models (`decks`) and end roads at their mouths. A game's pipeline lives in the game's repository, not here.
 
 ## 4. Tiles in step with the network
