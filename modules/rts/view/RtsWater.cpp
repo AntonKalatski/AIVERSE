@@ -90,7 +90,7 @@ std::vector<ShoreType> builtins() {
 // Catmull-Rom through the points, sampled about every `step` cells
 std::vector<std::array<float, 3>> smooth(const std::vector<std::array<float, 3>>& p, float step) {
     std::vector<std::array<float, 3>> out;
-    if (p.size() < 2) return p;
+    if (p.size() < 2) { out.assign(p.begin(), p.end()); return out; }   // not `return p`: GCC 13 -O2 warns (-Warray-bounds, false positive)
     for (size_t i = 0; i + 1 < p.size(); ++i) {
         const auto& p0 = p[i ? i - 1 : 0]; const auto& p1 = p[i]; const auto& p2 = p[i + 1]; const auto& p3 = p[std::min(i + 2, p.size() - 1)];
         const float len = std::hypot(p2[0] - p1[0], p2[1] - p1[1]);
