@@ -164,9 +164,42 @@ private:
         const uint32_t base = uint32_t(V.size());
         const float3 P[4] = {p0, p1, p2, p3};
         const float2 T[4] = {t0, t1, t2, t3};
-        for (int k = 0; k < 4; ++k) { ModelVertex v; v.pos = P[k]; v.nrm = n; v.uv = T[k]; v.color = (col2 && (k == 1 || k == 2)) ? col2 : col; V.push_back(v); }
+        for (int k = 0; k < 4; ++k) {
+            ModelVertex v; v.pos = P[k]; v.nrm = n; v.uv = T[k]; v.color = (col2 && (k == 1 || k == 2)) ? col2 : col;
+            if (col == 0xffffffffu && !col2) v.color = tint(mat, P[k]);
+            V.push_back(v);
+        }
         for (uint32_t k : {0u, 1u, 2u, 0u, 2u, 3u}) a.i[size_t(mat)].push_back(base + k);
     }
+    // vertex colour by world position: the rock gets slow light / dark / warm patches over tens of metres (the
+    // texture's repeats stop lining up), sand and soil darken under the water to meet the lake bed without an edge
+    uint32_t tint(int mat, float3 p) const {
+        auto n3 = [](float x, float y, float z, int seed) {
+            const int xi = int(std::floor(x)), yi = int(std::floor(y)), zi = int(std::floor(z));
+            const float fx = x - float(xi), fy = y - float(yi), fz = z - float(zi);
+            const float u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+            auto h = [&](int a, int b, int c) { return hash01(a + seed * 131, b * 7 + c * 13, c + seed); };
+            auto lx = [&](int b, int c) { return h(xi, b, c) + (h(xi + 1, b, c) - h(xi, b, c)) * u; };
+            auto ly = [&](int c) { return lx(yi, c) + (lx(yi + 1, c) - lx(yi, c)) * v; };
+            return ly(zi) + (ly(zi + 1) - ly(zi)) * w;
+        };
+        const float mx = p.x / m_, my = p.y / m_, mz = p.z / m_;   // metres
+        if (mat == RtsShoreView::kRock) {
+            const float big = n3(mx / 23, my / 9, mz / 23, 3), mid = n3(mx / 6, my / 3, mz / 6, 5), strata = 0.5f + 0.5f * std::sin(my * 1.7f + mid * 3.0f);
+            const float k = 0.62f + 0.55f * big + 0.18f * (mid - 0.5f) + 0.08f * (strata - 0.5f);
+            const float warm = n3(mx / 40, 0, mz / 40, 9);
+            return rgba8(k * (1.0f + 0.10f * warm), k * (1.0f + 0.03f * warm), k * (1.0f - 0.08f * warm));
+        }
+        if (mat == RtsShoreView::kSand || mat == RV::kSoil) {
+            const float depth = std::max(0.0f, wy_ - p.y) / m_;              // metres under the surface
+            const float k = 1.0f - 0.55f * std::clamp(depth / 1.6f, 0.0f, 1.0f);
+            const float wet = depth > 0 ? 1.0f : std::clamp(1.0f - (p.y - wy_) / m_ / 0.35f, 0.0f, 1.0f);   // wet sand at the waterline
+            const float g = k * (1.0f - 0.18f * wet) * (0.92f + 0.16f * n3(mx / 9, 0, mz / 9, 4));
+            return rgba8(g * 0.97f, g, g * 1.02f);
+        }
+        return 0xffffffffu;
+    }
+
     // a box at `c` (world), size (world) along the frame t (x), up (y), n (z)
     void box(Acc& a, int mat, float3 c, float3 t, float3 n, float sx, float sy, float sz) {
         const float3 up{0, 1, 0};
@@ -213,11 +246,13 @@ private:
     void loft(const Station& a, const std::vector<PP>& A, const Station& b, const std::vector<PP>& B) {
         if (A.size() != B.size() || A.size() < 2) return;
         Acc& acc = chunkAt((a.x + b.x) * 0.5f, (a.z + b.z) * 0.5f);
-        const float u0 = a.s / 4, u1 = b.s / 4;   // texture every 4 m along
         float va = 0, vb = 0;
         for (size_t k = 0; k + 1 < A.size(); ++k) {
+            // metres per texture repeat: rock and sand cover more ground per tile (less visible repetition)
+            const float tile = A[k].mat == RtsShoreView::kRock ? 11.0f : A[k].mat == RtsShoreView::kSand ? 7.0f : 4.0f;
+            const float u0 = a.s / tile, u1 = b.s / tile;
             const float3 p0 = at(a, A[k].d, A[k].y), p1 = at(a, A[k + 1].d, A[k + 1].y), q0 = at(b, B[k].d, B[k].y), q1 = at(b, B[k + 1].d, B[k + 1].y);
-            const float la = length(p1 - p0) / m_ / 4, lb = length(q1 - q0) / m_ / 4;
+            const float la = length(p1 - p0) / m_ / tile, lb = length(q1 - q0) / m_ / tile;
             if (la < 1e-5f && lb < 1e-5f) continue;
             quad(acc, A[k].mat, p0, q0, q1, p1, {u0, va}, {u1, vb}, {u1, vb + lb}, {u0, va + la});
             va += la; vb += lb;
@@ -297,9 +332,10 @@ private:
         const int sand = surfaceMat(t.sandSurface);
         auto over = [&](float d) { return std::max(groundAt(st, d), wy_) + lift; };
         if (natural)   // a muddy slope from the water up to the ground; the terrain's own grass carries on behind it
-            return {{-1.8f * m_, wy_ - 0.9f * m_, sand}, {0, wy_ + 0.004f, sand}, {W * 0.35f, over(W * 0.35f), sand},
+            return {{-1.0f * m_, wy_ - 0.14f * m_, sand}, {0, wy_ + 0.004f, sand}, {W * 0.35f, over(W * 0.35f), sand},
                     {W * 0.7f, over(W * 0.7f), sand}, {W * 0.7f + 0.6f * m_, groundAt(st, W * 0.7f + 0.6f * m_) - 0.06f * m_, sand}};
-        return {{-4.0f * m_, wy_ - 0.8f * m_, sand}, {0, wy_ + 0.004f, sand}, {W * 0.15f, over(W * 0.15f), sand}, {W * 0.4f, over(W * 0.4f), sand},
+        // under the water the sand only dips a little: the lake bed of the terrain carries on, so no slab shows through
+        return {{-1.2f * m_, wy_ - 0.15f * m_, sand}, {0, wy_ + 0.004f, sand}, {W * 0.15f, over(W * 0.15f), sand}, {W * 0.4f, over(W * 0.4f), sand},
                 {W * 0.7f, over(W * 0.7f), sand}, {W, over(W), sand}, {W + 0.8f * m_, groundAt(st, W + 0.8f * m_) - 0.05f * m_, sand}};
     }
 
@@ -321,7 +357,8 @@ private:
             }
         };
         std::vector<PP> last = section(st[0]);
-        if (prev >= 0 && T_.list[size_t(prev)].kind != t.kind) cap(st[0], last, true);
+        const bool walls = t.kind == ShoreKind::Embankment || t.kind == ShoreKind::Cliff;   // beaches just end
+        if (walls && prev >= 0 && T_.list[size_t(prev)].kind != t.kind) cap(st[0], last, true);
         // a flight of steps down into the water every `stairs` metres of quay (a gap in the railing there)
         std::vector<float> stairAt;
         if (t.kind == ShoreKind::Embankment && t.stairs > 0)
@@ -331,8 +368,8 @@ private:
             std::vector<PP> cur = section(st[i]);
             const Station& a = st[i - 1]; const Station& b = st[i];
             if (a.open || b.open) {   // a mouth: no shore here; close the shore where it stops / starts again
-                if (!a.open && b.open) cap(a, last, false);
-                if (a.open && !b.open) cap(b, cur, true);
+                if (walls && !a.open && b.open) cap(a, last, false);
+                if (walls && a.open && !b.open) cap(b, cur, true);
                 last = std::move(cur);
                 continue;
             }
@@ -348,10 +385,10 @@ private:
                 }
             }
             if (t.kind == ShoreKind::Cliff && t.foam) foamStrip(a, b, -2.6f * m_, 0.1f * m_, 0.55f);
-            if (t.kind == ShoreKind::Beach && t.surf) { foamStrip(a, b, -2.2f * m_, 0.3f * m_, 0.45f); foamStrip(a, b, -6.5f * m_, -4.8f * m_, 0.2f); }
+            if (t.kind == ShoreKind::Beach && t.surf) { foamStrip(a, b, -1.6f * m_, 0.25f * m_, 0.35f); }
             last = std::move(cur);
         }
-        if (next >= 0 && T_.list[size_t(next)].kind != t.kind) cap(st.back(), last, false);
+        if (walls && next >= 0 && T_.list[size_t(next)].kind != t.kind) cap(st.back(), last, false);
         flip_ = false;   // boxes and shapes build their own frames
         details(bank, B, seg, t, st, stairAt, prev, next);
     }
@@ -551,7 +588,7 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
             if (read_ && read_(it->second, bytes) && decodeImage(bytes, img)) { img.repeat = true; img.name = it->second; }
             else { warnings_.push_back("shore texture '" + it->second + "': cannot read"); img = Image{}; }
         }
-        if (img.rgba.empty() && !img.compressed) img = m < RV::kMatCount ? roadkit::texture(m) : (m == kStone || m == kRock || m == kSand || m == kFoam ? texture(m) : Image{});
+        if (img.rgba.empty() && !img.compressed) img = m < RV::kMatCount ? roadkit::texture(m) : (m == kStone || m == kRock || m == kSand || m == kFoam ? texture(m, m == kRock ? 512 : 256) : Image{});
         const int tex = (!img.rgba.empty() || img.compressed) ? addImage(dev, kit, std::move(img)) : -1;
         Material mt = m < RV::kMatCount ? roadkit::material(m) : material(m);
         if (m != kFoam) { mt.alpha = AlphaMode::Opaque; mt.transparent = false; }   // the road kit's verge grass is blended; shores are solid
