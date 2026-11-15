@@ -463,6 +463,8 @@ void Editor::syncGrid() {
         auto mix = [&h](const void* p, size_t n) { const auto* b = static_cast<const unsigned char*>(p); for (size_t i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ull; } };
         const std::string rn = d.extra["roadNetwork"].dump(0);
         mix(rn.data(), rn.size());
+        const std::string wn = d.extra["waterNetwork"].dump(0);   // water shores (docs/water.md)
+        mix(wn.data(), wn.size());
         mix(d.heights.data(), d.heights.size() * sizeof(int16_t));
         mix(d.levels.data(), d.levels.size());
         mix(d.corners.data(), d.corners.size() * sizeof(int16_t));

@@ -11,6 +11,8 @@ the heights of the spline points, branches that leave chosen lanes of another ro
 | Editor window «Дороги» (Мир) | `apps/editor/windows/RoadsWindow.cpp` |
 | Edit helpers + MCP | `apps/editor/core/RoadOps.{h,cpp}` |
 
+Water (straits, rivers, the sea with embankments, cliffs and beaches) is drawn the same way: `docs/water.md`.
+
 ## Road types (rules `roadTypes`)
 
 Values are metres (km/h for `speed`); `cellMeters` (default 4) turns them into map cells. The built-in library is
