@@ -393,18 +393,31 @@ void main() {
     vec4 albedo = u_color * v_col;
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
     vec3 n = normalize(v_nrm);
-    // Kingston open-water ripples v1
-    // Open water is below the road film (.045); rain pools keep their own look.
-    if (u_params.y >= 0.85 && v_wpos.y < 0.04 && n.y > 0.9) {
-        float wx = v_wpos.x, wz = v_wpos.z;
+    // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
+    // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
+    // aliases into stripes; slow large patches of darker / lighter water.
+    bool openWater = u_params.y >= 0.85 && v_wpos.y < 0.04 && n.y > 0.9;
+    if (openWater) {
+        vec2 p = v_wpos.xz;
         float wt = (l_cloud.x + l_cloud.y) * 20.0;
-        float a = wx * 1.8 + wz * 0.8 + wt;
-        float b = wx * -1.1 + wz * 2.3 - wt * 1.3;
-        float c = wx * 4.7 + wz * 3.1 + wt * 1.8;
-        n = normalize(vec3(-0.10*cos(a) + 0.055*cos(b) - 0.025*cos(c),
-                              1.0, -0.045*cos(a) - 0.11*cos(b) - 0.018*cos(c)));
-        // Gentle colour variation follows the same waves, without white painted stripes.
-        base *= 0.90 + 0.13*sin(a) + 0.08*sin(b);
+        float fade = clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0);
+        const vec4 wv[6] = vec4[6](vec4(0.951, 0.309, 0.61, 0.060), vec4(-0.454, 0.891, 0.97, 0.045), vec4(0.588, -0.809, 1.63, 0.036),
+                                   vec4(-0.978, -0.208, 2.71, 0.026), vec4(0.139, 0.990, 4.37, 0.018), vec4(0.743, 0.669, 6.91, 0.012));
+        vec2 g = vec2(0.0);
+        for (int i = 0; i < 6; ++i) {
+            float ph = dot(p, wv[i].xy) * wv[i].z + wt * sqrt(wv[i].z) * 1.3;
+            g += wv[i].xy * (wv[i].z * wv[i].w * cos(ph));
+        }
+        vec2 q = p * 0.9 + vec2(wt * 0.11, -wt * 0.07);
+        vec2 qi = floor(q), qf = fract(q), qu = qf * qf * (3.0 - 2.0 * qf);
+        float h00 = fract(sin(dot(qi, vec2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(qi + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5);
+        float h01 = fract(sin(dot(qi + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5);
+        vec2 dn = vec2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
+        g += dn * 0.09;
+        n = normalize(vec3(-g.x * fade, 1.0, -g.y * fade));
+        vec2 m = p * 0.021 + vec2(wt * 0.004, 0.0);
+        float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
+        base *= 0.84 + 0.22 * patches;
     }
     vec3 L = normalize(u_sunDir.xyz);
     vec3 V = normalize(u_camPos.xyz - v_wpos);
@@ -418,6 +431,7 @@ void main() {
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(n, H), 0.0), 40.0) * u_params.y;
     if (u_params.y >= 0.85 && v_wpos.y >= 0.04) spec = pow(max(dot(n, H), 0.0), 180.0) * 0.04;
+    if (openWater) spec = pow(max(dot(n, H), 0.0), 260.0) * 1.4 + pow(max(dot(n, H), 0.0), 30.0) * 0.06;   // sun glitter
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
@@ -465,18 +479,31 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float4 albedo = u.color * in.col;
     float3 base = rtsDecodeScene(albedo.rgb);
     float3 n = normalize(in.nrm);
-    // Kingston open-water ripples v1
-    // Open water is below the road film (.045); rain pools keep their own look.
-    if (u.params.y >= 0.85 && in.wpos.y < 0.04 && n.y > 0.9) {
-        float wx = in.wpos.x, wz = in.wpos.z;
+    // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
+    // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
+    // aliases into stripes; slow large patches of darker / lighter water.
+    bool openWater = u.params.y >= 0.85 && in.wpos.y < 0.04 && n.y > 0.9;
+    if (openWater) {
+        float2 p = in.wpos.xz;
         float wt = (l.cloud.x + l.cloud.y) * 20.0;
-        float a = wx * 1.8 + wz * 0.8 + wt;
-        float b = wx * -1.1 + wz * 2.3 - wt * 1.3;
-        float c = wx * 4.7 + wz * 3.1 + wt * 1.8;
-        n = normalize(float3(-0.10*cos(a) + 0.055*cos(b) - 0.025*cos(c),
-                              1.0, -0.045*cos(a) - 0.11*cos(b) - 0.018*cos(c)));
-        // Gentle colour variation follows the same waves, without white painted stripes.
-        base *= 0.90 + 0.13*sin(a) + 0.08*sin(b);
+        float fade = clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0);
+        const float4 wv[6] = {float4(0.951, 0.309, 0.61, 0.060), float4(-0.454, 0.891, 0.97, 0.045), float4(0.588, -0.809, 1.63, 0.036),
+                                   float4(-0.978, -0.208, 2.71, 0.026), float4(0.139, 0.990, 4.37, 0.018), float4(0.743, 0.669, 6.91, 0.012)};
+        float2 g = float2(0.0);
+        for (int i = 0; i < 6; ++i) {
+            float ph = dot(p, wv[i].xy) * wv[i].z + wt * sqrt(wv[i].z) * 1.3;
+            g += wv[i].xy * (wv[i].z * wv[i].w * cos(ph));
+        }
+        float2 q = p * 0.9 + float2(wt * 0.11, -wt * 0.07);
+        float2 qi = floor(q), qf = fract(q), qu = qf * qf * (3.0 - 2.0 * qf);
+        float h00 = fract(sin(dot(qi, float2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(qi + float2(1, 0), float2(127.1, 311.7))) * 43758.5);
+        float h01 = fract(sin(dot(qi + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + float2(1, 1), float2(127.1, 311.7))) * 43758.5);
+        float2 dn = float2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
+        g += dn * 0.09;
+        n = normalize(float3(-g.x * fade, 1.0, -g.y * fade));
+        float2 m = p * 0.021 + float2(wt * 0.004, 0.0);
+        float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
+        base *= 0.84 + 0.22 * patches;
     }
     float3 L = normalize(f.sunDir.xyz);
     float3 V = normalize(f.camPos.xyz - in.wpos);
@@ -489,6 +516,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float3 H = normalize(L + V);
     float spec = pow(max(dot(n, H), 0.0), 40.0) * u.params.y;
     if (u.params.y >= 0.85 && in.wpos.y >= 0.04) spec = pow(max(dot(n, H), 0.0), 180.0) * 0.04;
+    if (openWater) spec = pow(max(dot(n, H), 0.0), 260.0) * 1.4 + pow(max(dot(n, H), 0.0), 30.0) * 0.06;   // sun glitter
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;

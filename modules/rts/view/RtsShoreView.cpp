@@ -200,6 +200,62 @@ private:
         return 0xffffffffu;
     }
 
+    // a weathered stone: an icosphere (80 faces) squashed, turned and pushed in and out by noise; smooth normals
+    void boulder(Acc& a, float3 c, float rx, float ry, float rz, float yaw, int seed) {
+        const float t = (1.0f + std::sqrt(5.0f)) * 0.5f;
+        std::vector<float3> v{{-1, t, 0}, {1, t, 0}, {-1, -t, 0}, {1, -t, 0}, {0, -1, t}, {0, 1, t}, {0, -1, -t}, {0, 1, -t},
+                              {t, 0, -1}, {t, 0, 1}, {-t, 0, -1}, {-t, 0, 1}};
+        std::vector<std::array<int, 3>> f{{0, 11, 5}, {0, 5, 1}, {0, 1, 7}, {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4}, {11, 10, 2}, {10, 7, 6}, {7, 1, 8},
+                                         {3, 9, 4}, {3, 4, 2}, {3, 2, 6}, {3, 6, 8}, {3, 8, 9}, {4, 9, 5}, {2, 4, 11}, {6, 2, 10}, {8, 6, 7}, {9, 8, 1}};
+        for (auto& q : v) q = normalize(q);
+        std::map<std::pair<int, int>, int> mid;
+        auto split = [&](int i, int j) {
+            const auto key = std::minmax(i, j);
+            auto it = mid.find(key);
+            if (it != mid.end()) return it->second;
+            v.push_back(normalize((v[size_t(i)] + v[size_t(j)]) * 0.5f));
+            return mid[key] = int(v.size()) - 1;
+        };
+        std::vector<std::array<int, 3>> g;
+        for (auto& tr : f) {
+            const int ab = split(tr[0], tr[1]), bc = split(tr[1], tr[2]), ca = split(tr[2], tr[0]);
+            g.push_back({tr[0], ab, ca}); g.push_back({tr[1], bc, ab}); g.push_back({tr[2], ca, bc}); g.push_back({ab, bc, ca});
+        }
+        const float cs = std::cos(yaw), sn = std::sin(yaw);
+        std::vector<float3> P(v.size());
+        for (size_t i = 0; i < v.size(); ++i) {
+            const float3 q = v[i];
+            // lumps and flat facets: noise over the direction, a few planes cut off
+            float k = 0.78f + 0.32f * hash01(int(std::lround(q.x * 7)) + seed, int(std::lround(q.y * 7)), int(std::lround(q.z * 7)) + seed * 3);
+            if (q.y < -0.35f) k *= 0.85f;   // a flatter underside
+            const float x = q.x * rx * k, y = q.y * ry * k, z = q.z * rz * k;
+            P[i] = {c.x + x * cs - z * sn, c.y + y, c.z + x * sn + z * cs};
+        }
+        std::vector<float3> N(v.size(), float3{0, 0, 0});
+        for (auto& tr : g) {
+            const float3 n = cross(P[size_t(tr[1])] - P[size_t(tr[0])], P[size_t(tr[2])] - P[size_t(tr[0])]);
+            for (int k : tr) N[size_t(k)] += n;
+        }
+        const int mat = RtsShoreView::kRock;
+        a.need(mat);
+        auto& V = a.v[size_t(mat)];
+        const uint32_t base = uint32_t(V.size());
+        for (size_t i = 0; i < P.size(); ++i) {
+            ModelVertex mv; mv.pos = P[i]; mv.nrm = normalize(N[i]);
+            mv.uv = {(P[i].x + P[i].z) / m_ / 3.0f, P[i].y / m_ / 3.0f};
+            mv.color = tint(mat, P[i]);
+            V.push_back(mv);
+        }
+        for (auto& tr : g) {
+            const float3 n = cross(P[size_t(tr[1])] - P[size_t(tr[0])], P[size_t(tr[2])] - P[size_t(tr[0])]);
+            const float3 out = P[size_t(tr[0])] - c;
+            const bool ccw = n.x * out.x + n.y * out.y + n.z * out.z >= 0;
+            a.i[size_t(mat)].push_back(base + uint32_t(tr[0]));
+            a.i[size_t(mat)].push_back(base + uint32_t(ccw ? tr[1] : tr[2]));
+            a.i[size_t(mat)].push_back(base + uint32_t(ccw ? tr[2] : tr[1]));
+        }
+    }
+
     // a box at `c` (world), size (world) along the frame t (x), up (y), n (z)
     void box(Acc& a, int mat, float3 c, float3 t, float3 n, float sx, float sy, float sz) {
         const float3 up{0, 1, 0};
@@ -444,13 +500,17 @@ private:
                 if (r < 0.35f) continue;
                 const Station p = stationAt(bank, s);
                 if (p.open) continue;
-                const float size = (0.9f + hash01(B.id, int(s * 10), 17) * 1.6f) * m_;
-                const float d = -(0.4f + hash01(B.id, int(s * 10), 19) * 2.2f) * m_;
-                const float a = hash01(B.id, int(s * 10), 23) * kPi;
-                const float3 n{p.nx, 0, p.nz};
-                const float3 tt = float3{std::cos(a) * p.nz - std::sin(a) * p.nx, 0, -std::cos(a) * p.nx - std::sin(a) * p.nz};
-                box(chunkAt(p.x, p.z), RtsShoreView::kRock, at(p, d, wy_ - size * 0.45f), tt, normalize(cross(tt, float3{0, 1, 0})) * -1.0f + n * 0.0f,
-                    size, size * (0.7f + r * 0.4f), size * 0.8f);
+                // a cluster of one to three stones, half in the water
+                const int count = 1 + int(hash01(B.id, int(s * 10), 29) * 2.99f);
+                for (int k = 0; k < count; ++k) {
+                    const int key = int(s * 10) * 7 + k;
+                    const float size = (0.5f + hash01(B.id, key, 17) * (k ? 0.7f : 1.3f)) * m_;
+                    const float d = -(0.3f + hash01(B.id, key, 19) * 2.4f) * m_;
+                    const float along = (hash01(B.id, key, 31) - 0.5f) * 2.4f * m_;
+                    const float3 c = at(p, d, wy_ - size * (0.25f + 0.3f * hash01(B.id, key, 37))) + float3{p.nz, 0, -p.nx} * along;
+                    boulder(chunkAt(p.x, p.z), c, size, size * (0.55f + r * 0.35f), size * (0.7f + 0.3f * hash01(B.id, key, 41)),
+                            hash01(B.id, key, 23) * 2 * kPi, B.id * 1000 + key);
+                }
             }
         }
         // props
@@ -481,7 +541,7 @@ private:
                 else if (pd.shape == "lounger") { box(chunkAt(pos.x, pos.z), RtsShoreView::kPaint, pos + tt * (0.9f * m_), n, tt, 0.65f * m_, 0.32f * m_, 1.9f * m_);
                                                   box(chunkAt(pos.x, pos.z), RtsShoreView::kPaint, pos - tt * (0.9f * m_), n, tt, 0.65f * m_, 0.32f * m_, 1.9f * m_); }
                 else if (pd.shape == "lifeguard") tower(pos, tt, n);
-                else if (pd.shape == "boulder") box(chunkAt(pos.x, pos.z), RtsShoreView::kRock, pos, tt, n, 1.4f * m_, 1.0f * m_, 1.2f * m_);
+                else if (pd.shape == "boulder") boulder(chunkAt(pos.x, pos.z), pos + float3{0, 0.4f * m_, 0}, 0.8f * m_ * pd.scale, 0.55f * m_ * pd.scale, 0.7f * m_ * pd.scale, s, int(s * 10));
                 else props.push_back({pd.shape, "", frame(pos, tt, n, pd.scale)});
             }
         }
