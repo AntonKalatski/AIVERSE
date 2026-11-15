@@ -1163,6 +1163,16 @@ TEST(traffic_drives_spline_roads) {
     CHECK(moving >= 3);
     CHECK(samples > 0 && onRoad * 10 >= samples * 9);   // they keep to the curved roads
     CHECK(!tstore(*sim).lights.empty());
+    for (auto& l : tstore(*sim).lights) {   // signal poles stand at the kerb, not in the lanes of any road
+        const Vec3 p = w.get<Transform>(l.e).pos;
+        for (auto& pc : net.pieces) {
+            Fixed along, across;
+            tl::trafficDetail::curveProject(pc, {p.x, p.z}, along, across);
+            if (along.raw <= 0 || along >= pc.len) continue;   // past its ends: the junction box
+            const int side = across.raw >= 0 ? 1 : -1;
+            CHECK(fxAbs(across) > fxAbs(tl::trafficKerbAcross(net, pc, side)) - Fixed::fromRatio(1, 2));
+        }
+    }
     // the same city twice is the same city; saves round-trip
     auto a = makeSimJson(rules, map, 5), b = makeSimJson(rules, map, 5);
     run(*a, 20); run(*b, 20);
