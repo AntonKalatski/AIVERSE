@@ -270,7 +270,9 @@ TrafficRules Traffic::parse(const Json& j, const std::vector<std::string>& ids, 
     const Json& p = j["pedestrians"];
     r.walkTiles = p.getStr("walk");
     r.people = weighted(p["types"], "traffic.pedestrians.types");
-    if (!r.people.empty() && r.walkTiles.empty()) throw std::runtime_error("traffic.pedestrians.walk: the map tile characters of sidewalk cells");
+    // (on spline roads the sidewalks come from the road network; tile maps name their sidewalk characters)
+    if (!r.people.empty() && r.walkTiles.empty() && !(r.roadNetwork || r.roadTiles.empty()))
+        throw std::runtime_error("traffic.pedestrians.walk: the map tile characters of sidewalk cells");
     r.maxPeople = integer(p, "max", r.people.empty() ? 0 : r.maxPeople, 0, 1024, "traffic.pedestrians");
     r.peopleOwner = uint8_t(integer(p, "owner", 0, 0, 255, "traffic.pedestrians"));
     r.peopleMin = number(p, "spawnMin", r.peopleMin, "traffic.pedestrians", false);
@@ -359,7 +361,48 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
     strips_.clear();
     for (size_t pi = 0; pi < net_.pieces.size(); ++pi) {
         const auto& p = net_.pieces[pi];
-        if (p.curved()) continue;   // spline roads: no crossing strips yet (people keep to their sidewalks)
+        if (p.curved()) {
+            // spline roads: the crossing lies where the road view paints the zebra, the first cell of the arm off a
+            // junction of three or more arms; its cells are the arm's own road cells there, and it has to join the
+            // sidewalks on both sides (4-neighbours walkable beyond the road), else it is left out
+            for (int end = 0; end < 2; ++end) {
+                const int J = p.junction[size_t(end)];
+                if (J < 0 || net_.junctions[size_t(J)].arms() < 3 || p.len < Fixed::fromInt(2)) continue;
+                const int sd = tl::trafficSideOf(p, end);
+                std::vector<int> cells;
+                int x0 = w, z0 = h, x1 = -1, z1 = -1;
+                for (auto& q : p.line) { x0 = std::min(x0, int(q.x.floorInt())); x1 = std::max(x1, int(q.x.floorInt())); z0 = std::min(z0, int(q.y.floorInt())); z1 = std::max(z1, int(q.y.floorInt())); }
+                x0 = std::max(0, x0 - 4); z0 = std::max(0, z0 - 4); x1 = std::min(w - 1, x1 + 4); z1 = std::min(h - 1, z1 + 4);
+                for (int z = z0; z <= z1; ++z)
+                    for (int x = x0; x <= x1; ++x) {
+                        const int cc = z * w + x;
+                        if (net_.pieceAt[size_t(cc)] != int(pi) || stripAt_[size_t(cc)] >= 0) continue;
+                        const Vec2 c{Fixed::fromInt(x) + kHalf, Fixed::fromInt(z) + kHalf};
+                        const Fixed a = tl::trafficAlongOf(p, c), d = end == 0 ? a : p.len - a;
+                        if (d >= Fixed{} && d < kUnit) cells.push_back(cc);
+                    }
+                if (cells.empty()) continue;
+                // the two kerbs: walkable cells next to the strip on its two sides across the road
+                bool lo = false, hi = false;
+                for (int cc : cells) {
+                    const int x = cc % w, z = cc / w;
+                    const int nb[4][2] = {{x - 1, z}, {x + 1, z}, {x, z - 1}, {x, z + 1}};
+                    for (auto& q : nb) {
+                        if (q[0] < 0 || q[1] < 0 || q[0] >= w || q[1] >= h) continue;
+                        const int nc = q[1] * w + q[0];
+                        if (!side[size_t(nc)] || net_.pieceAt[size_t(nc)] >= 0 || net_.junctionAt[size_t(nc)] >= 0) continue;
+                        const Fixed across = tl::trafficAcrossOf(p, Vec2{Fixed::fromInt(q[0]) + kHalf, Fixed::fromInt(q[1]) + kHalf});
+                        (across < Fixed{} ? lo : hi) = true;
+                    }
+                }
+                if (!lo || !hi) continue;
+                const int id = int(strips_.size());
+                const uint8_t axis = uint8_t(sd == tl::kTrafficWest || sd == tl::kTrafficEast ? tl::TrafficAxis::X : tl::TrafficAxis::Z);
+                strips_.push_back({int32_t(pi), int32_t(J), axis});
+                for (int cc : cells) { stripAt_[size_t(cc)] = int32_t(id); walk_[size_t(cc)] = 1; }
+            }
+            continue;
+        }
         for (int end = 0; end < 2; ++end) {
             if (p.junction[size_t(end)] < 0 || p.length() < 2) continue;
             const int a = end == 0 ? p.along0 : p.along1;
@@ -506,7 +549,11 @@ int Traffic::junctionAt(Fixed x, Fixed z) const {
 }
 
 bool Traffic::stripAtEnd(const tl::TrafficPiece& p, int end) const {
-    if (p.curved()) return false;   // spline roads: no crossing strips yet
+    if (p.curved()) {   // spline roads: a strip of this piece next to that junction
+        const int J = p.junction[size_t(end)];
+        for (auto& st : strips_) if (st.junction == J && size_t(st.piece) < net_.pieces.size() && &net_.pieces[size_t(st.piece)] == &p) return true;
+        return false;
+    }
     const int a = end == 0 ? p.along0 : p.along1;
     const int cell = p.axis == tl::TrafficAxis::X ? p.across0 * net_.w + a : a * net_.w + p.across0;
     return stripAt(cell) >= 0;

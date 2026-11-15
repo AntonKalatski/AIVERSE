@@ -177,6 +177,31 @@ tl::TrafficNet buildTrafficNetFromRoads(int w, int h, const RoadNetwork& n, cons
     // sidewalks for the pedestrians
     const std::vector<uint8_t> cover = rasterizeRoads(n, types, G, w, h);
     for (size_t i = 0; i < N; ++i) sidewalk[i] = cover[i] == 2 ? 1 : 0;
+    // A sidewalk narrower than a cell rarely covers a cell centre: walk its middle line and mark the cells it
+    // passes, so a pedestrian path stays continuous along every street that has one.
+    const Fixed step = Fixed::fromRatio(1, 4);
+    for (size_t i = 0; i < n.edges.size(); ++i) {
+        const RoadTypeDef& t = types[size_t(n.edges[i].typeIndex)];
+        const RoadEdgeGeom& g = G.edges[i];
+        const int fs = n.edges[i].reversed ? -1 : 1;
+        for (int sg = -1; sg <= 1; sg += 2) {
+            const RoadSideDef& side = sg * fs > 0 ? t.right : t.left;
+            if (side.sidewalk <= Fixed{}) continue;
+            const Fixed lat = Fixed::fromInt(sg) * (t.halfWidth(sg * fs) - side.sidewalk / Fixed::fromInt(2));
+            for (Fixed s = g.trim0; s <= g.length - g.trim1; s += step) {
+                bool off = false;
+                for (auto& sp : g.spans) off = off || (s >= sp.s0 && s < sp.s1);
+                if (off) continue;
+                const RoadSample q = roadSampleAt(g, s);
+                const Vec2 nrm = roadNormal(q.t);
+                const Vec2 pt{q.p.x + nrm.x * lat, q.p.y + nrm.y * lat};
+                const int cx = int(pt.x.floorInt()), cz = int(pt.y.floorInt());
+                if (cx < 0 || cz < 0 || cx >= w || cz >= h) continue;
+                const size_t c = size_t(cz) * size_t(w) + size_t(cx);
+                if (cover[c] == 0 || cover[c] == 2) sidewalk[c] = 1;
+            }
+        }
+    }
     return net;
 }
 

@@ -1261,3 +1261,29 @@ TEST(traffic_long_vehicles_keep_to_their_side_after_turns) {
         CHECK(wrong * 100 <= all);   // at most 1 %
     }
 }
+
+TEST(traffic_spline_roads_have_crossings_people_use) {
+    std::string rules = splineTrafficRules();
+    rules = trafficRulesWith2(rules, R"("pedestrians": {"types": {}, "max": 0,)", R"("pedestrians": {"types": {"ped": 1}, "max": 16,)");
+    auto sim = makeSimJson(rules, splineTrafficMap(), 5);
+    const auto& net = trf(*sim).net();
+    // a strip at the zebra of every arm of a junction of three or more arms, joining the sidewalks on both sides
+    std::set<int> strips;
+    for (int c = 0; c < net.w * net.h; ++c) if (trf(*sim).stripAt(c) >= 0) { strips.insert(trf(*sim).stripAt(c)); CHECK(net.pieceAt[size_t(c)] >= 0); }
+    CHECK(strips.size() >= 8);
+    auto& w = sim->world();
+    std::set<uint32_t> crossed;
+    for (int i = 0; i < 120 * int(sim->tickRate()); ++i) {
+        sim->step();
+        for (auto& p : tstore(*sim).people) {
+            if (!w.alive(p.e) || p.panic) continue;
+            const Vec3 q = w.get<Transform>(p.e).pos;
+            const int cell = int(q.z.floorInt()) * net.w + int(q.x.floorInt());
+            if (cell < 0 || cell >= net.w * net.h) continue;
+            const int s = trf(*sim).stripAt(cell);
+            if (s < 0) continue;
+            crossed.insert(p.e.index);
+        }
+    }
+    CHECK(crossed.size() >= 3);   // people get across the roads
+}

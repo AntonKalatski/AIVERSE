@@ -193,6 +193,30 @@ inline std::vector<Vec2> trafficLaneCurve(const TrafficNet& n, const TrafficPiec
         out.push_back(trafficLanePoint(n, p, dir, k, a));
     return out;
 }
+// Points of lane (dir, k) strictly between along `from` and `to` (travelling dir), about one cell apart and at least
+// half a cell from both ends; empty for grid pieces. For a route that stops part way along a curved piece.
+inline std::vector<Vec2> trafficLaneBetween(const TrafficNet& n, const TrafficPiece& p, int dir, int k, Fixed from, Fixed to) {
+    std::vector<Vec2> out;
+    if (!p.curved()) return out;
+    const Fixed step = Fixed::fromInt(dir), half = Fixed::fromRatio(1, 2);
+    for (Fixed a = from + step; dir > 0 ? a < to - half : a > to + half; a += step) out.push_back(trafficLanePoint(n, p, dir, k, a));
+    return out;
+}
+// Length of the piece in cells (grid: cells along, curved: the centre line).
+inline Fixed trafficPieceLength(const TrafficPiece& p) { return p.curved() ? p.len : Fixed::fromInt(p.length()); }
+// A point half a cell beyond the carriageway edge at `along`, on the high (`side` > 0, larger across) or low side:
+// where a bin, a stop sign or a waiting pedestrian stands next to the road.
+inline Fixed trafficKerbAcross(const TrafficNet& n, const TrafficPiece& p, int side) {
+    if (!p.curved()) return side > 0 ? Fixed::fromInt(p.across1 + 1) + Fixed::fromRatio(1, 2) : Fixed::fromInt(p.across0) - Fixed::fromRatio(1, 2);
+    const Fixed lw = p.laneW.raw > 0 ? p.laneW : n.cfg.laneWidth;
+    // the lanes on this side are the ones moving +along (right-hand traffic) when side > 0
+    const int dir = (side > 0) != n.cfg.leftHand ? 1 : -1;
+    const Fixed edge = p.median / 2 + lw * trafficLanes(p, dir) + Fixed::fromRatio(1, 2);
+    return side > 0 ? edge : -edge;
+}
+inline Vec2 trafficKerbPoint(const TrafficNet& n, const TrafficPiece& p, Fixed along, int side) {
+    return trafficDetail::at(p, along, trafficKerbAcross(n, p, side));
+}
 // Direction leaving junction j through `side` along the piece attached there (+1 / -1 along it).
 inline int trafficExitDirAt(const TrafficNet& n, int j, int side) {
     const int q = j >= 0 && size_t(j) < n.junctions.size() ? n.junctions[size_t(j)].piece[size_t(side)] : -1;

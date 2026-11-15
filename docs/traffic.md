@@ -291,10 +291,17 @@ spline roads instead of road tiles (`modules/rts/RtsTrafficRoads.cpp`):
   sides); signals where the road geometry has them (three or more driven arms);
 - cars turn through a junction on a curve through the point where the way in and the way out meet; a U-turn and a
   dead end work as on tiles; bus stops, services, trips and gangs use the same pieces;
-- the sidewalk mask is the network's sidewalks and shoulders; bridge and tunnel spans are decks of the driving
-  module.
+- the sidewalk mask is the network's sidewalks and shoulders, plus every cell the middle line of a sidewalk passes
+  through (a sidewalk narrower than a cell still makes one connected path); bridge and tunnel spans are decks of the
+  driving module;
+- crossing strips: at every junction of three or more arms the first cell of the piece (along 0..1 from the cut)
+  is a strip when sidewalk cells touch it on both sides; people cross there on "walk" as on tiles;
+- helpers for modules that work on any piece (`aiverselib/genre/Traffic.h`): `trafficPieceLength`,
+  `trafficLaneBetween` (lane points between two along values, so a route follows a curve), `trafficKerbPoint` /
+  `trafficKerbAcross` (half a cell beyond the carriageway edge: bins, stops, waiting people),
+  `trafficApproachAxis` (signal axis at a piece end).
 
-Not yet on spline roads: pedestrian crossing strips (people keep to their sidewalk), lane choice by the lanes a
+Not yet on spline roads: lane choice by the lanes a
 branch leaves from (a car may take a ramp from any lane), islands / roundabouts, five or more arms at one node.
 
 ## Not done yet
