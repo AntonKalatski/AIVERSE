@@ -22,8 +22,11 @@ by a game's native module without the RTS module. Tests: `aiverse_tests traffic_
   between the green / yellow / red types (give each a `view.light` glow of its colour; no `upgraded` event).
 - **Cars.** Traffic cars are ordinary `driving` vehicles (types listed in `cars.types` must be in
   `driving.vehicles`) without a driver: this module is their driver. Every tick it keeps a route of lane points and
-  turn curves (quadratic Bezier through the junction; the exit is chosen by `straight` / `turn` weights, U-turn at
-  dead ends), steers by pure pursuit (projection on the route plus a speed-dependent look-ahead) and sets the target
+  turn curves (quadratic Bezier through the junction, never tighter than the car's own steering lock allows at turning
+  speed: a long vehicle swings wide into the box; the exit is chosen by `straight` / `turn` weights, U-turn at
+  dead ends), steers by pure pursuit (projection on the route plus a speed-dependent look-ahead; a wheeled car steers by
+  its rear axle with a look-ahead of at least 1.6 wheelbases, so a long bus or truck follows the line instead of
+  cutting the corner and swinging out of its lane after it) and sets the target
   speed from its cruise speed (`speed` range), turns (`turnSpeed`), the next stop line (red: stop; yellow: stop if it
   comfortably can at `decel`) and the nearest body ahead on the road along its path (cars, people, the hero, parked
   cars, wrecks; people get a wider berth). The pedals go into the same vehicle controller the hero drives with, so

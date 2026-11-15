@@ -290,6 +290,12 @@ std::string trafficRulesWith(const std::string& from, const std::string& to) {
     rules.replace(at, from.size(), to);
     return rules;
 }
+std::string trafficRulesWith2(std::string rules, const std::string& from, const std::string& to) {
+    const size_t at = rules.find(from);
+    if (at == std::string::npos) throw std::runtime_error("trafficRulesWith2: '" + from + "' not found");
+    rules.replace(at, from.size(), to);
+    return rules;
+}
 } // namespace
 
 TEST(traffic_buses_call_at_stops_and_emergency_vehicles_run) {
@@ -1193,4 +1199,65 @@ TEST(road_network_geometry_and_decks) {
     };
     CHECK(fails(R"({"nodes": [{"id": 1, "x": 0, "z": 0}], "edges": [{"id": 1, "a": 1, "b": 9, "type": "street_2"}]})", "node ids"));
     CHECK(fails(R"({"nodes": [{"id": 1, "x": 0, "z": 0}, {"id": 2, "x": 5, "z": 0}], "edges": [{"id": 1, "a": 1, "b": 2, "type": "nope"}]})", "unknown road type"));
+}
+
+namespace {
+// GTA-like long vehicles: a 12 m bus (wheels 2.7 m before / behind the centre, 45 degrees of steering lock, a slow
+// steering rack) and the test's sedans
+std::string trafficLongRules(const char* types) {
+    std::string rules = trafficRulesWith(R"("vehicles": {"sedan": {"length": 1.1, "width": 0.45, "wheeled": {"massMilli": 1200000}}})",
+        R"("vehicles": {"sedan": {"length": 1.1, "width": 0.45, "wheeled": {"massMilli": 1200000}},
+                       "bus": {"length": 3, "width": 0.65, "wheeled": {"massMilli": 11500000, "maxSteerMilli": 125, "steerRateMilli": 320,
+                         "steerFalloffSpeedMilli": 30000, "frictionMilli": 1800, "torque": [[900, 715], [4500, 1100], [7000, 847]], "brakeForce": 124097,
+                         "wheels": [{"offsetMilli": [-1000, 0, -2700], "radiusMilli": 500, "driven": true, "braked": true, "handbrake": true},
+                                    {"offsetMilli": [1000, 0, -2700], "radiusMilli": 500, "driven": true, "braked": true, "handbrake": true},
+                                    {"offsetMilli": [-1000, 0, 2700], "radiusMilli": 500, "steered": true, "braked": true},
+                                    {"offsetMilli": [1000, 0, 2700], "radiusMilli": 500, "steered": true, "braked": true}]}}})");
+    rules = trafficRulesWith2(rules, R"("cars": {"types": ["sedan"], "max": 6,)", std::string(R"("cars": {"types": )") + types + R"(, "max": 6, "turn": 4,)");
+    rules = trafficRulesWith2(rules, R"("sedan": {"health": {"max": 400}, "move": {"speed": 0, "radius": 0.5}, "sight": 2},)",
+        R"("sedan": {"health": {"max": 400}, "move": {"speed": 0, "radius": 0.5}, "sight": 2},
+           "bus": {"health": {"max": 900}, "move": {"speed": 0, "radius": 0.8}, "sight": 2},)");
+    return rules;
+}
+// moving ticks a car's centre spends on the far side of a straight road's centre line, and all moving ticks
+std::pair<int, int> trafficWrongSide(Simulation& sim, int seconds) {
+    auto& w = sim.world();
+    const auto& net = trf(sim).net();
+    int wrong = 0, all = 0;
+    for (int i = 0; i < seconds * int(sim.tickRate()); ++i) {
+        sim.step();
+        for (auto& c : tstore(sim).cars) {
+            if (mod(sim).driving()->speed(sim, c.e) < Fixed::fromInt(1)) continue;
+            const Vec3 p = w.get<Transform>(c.e).pos;
+            const int x = int(p.x.floorInt()), z = int(p.z.floorInt());
+            if (x < 0 || z < 0 || x >= net.w || z >= net.h) continue;
+            const int pi = net.pieceAt[size_t(z * net.w + x)];
+            if (pi < 0) continue;
+            const auto& P = net.pieces[size_t(pi)];
+            if (P.curved() || P.lanes <= 0) continue;
+            const int along = P.axis == tl::TrafficAxis::X ? x : z;
+            if (along <= P.along0 || along >= P.along1) continue;   // not in the cell next to a junction box
+            const Vec3 f = w.get<game::Unit>(c.e).facing;
+            const Fixed fa = P.axis == tl::TrafficAxis::X ? f.x : f.z;
+            if (fxAbs(fa) < Fixed::fromRatio(7, 10)) continue;   // still turning
+            const int dir = fa > Fixed{} ? 1 : -1;
+            const Fixed across = P.axis == tl::TrafficAxis::X ? p.z : p.x;
+            const Fixed want = tl::trafficLaneAcross(net, P, dir, 0) - P.centre();
+            ++all;
+            if ((across - P.centre()) * (want > Fixed{} ? 1 : -1) < -Fixed::fromRatio(1, 10)) ++wrong;
+        }
+    }
+    return {wrong, all};
+}
+} // namespace
+
+TEST(traffic_long_vehicles_keep_to_their_side_after_turns) {
+    for (const char* types : {R"(["bus"])", R"(["sedan"])"}) {
+        auto sim = makeSimJson(trafficLongRules(types), trafficMap(kTrafficHero), 11);
+        run(*sim, 3.0);
+        const auto [wrong, all] = trafficWrongSide(*sim, 120);
+        std::printf("  %s: %d of %d moving ticks on the wrong side\n", types, wrong, all);
+        CHECK(all > 2000);
+        CHECK(wrong * 100 <= all);   // at most 1 %
+    }
 }

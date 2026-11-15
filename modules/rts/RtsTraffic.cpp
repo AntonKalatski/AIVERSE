@@ -58,6 +58,65 @@ Fixed segDistSq(Vec2 p, Vec2 a, Vec2 b) {
     t = fxClamp(t, Fixed{}, kUnit);
     return (p - (a + ab * t)).lengthSq();
 }
+// A wheeled car's axles (cells): the rear axle's offset along the car from its centre (negative: behind it) and the
+// wheelbase, with the steering lock of its controller; a zero wheelbase for anything not on wheels. Traffic steers by
+// the rear axle (pure pursuit, the way a long vehicle actually follows a line) and plans its turns no tighter than the
+// car can drive them, so long vehicles do not swing out of their lane after a corner.
+struct Axles { Fixed rear{}, base{}, maxSteer{}, falloff{}; };
+Axles axlesOf(const DrivingVehicleType* vt, Fixed mpc) {
+    Axles a;
+    if (!vt || vt->def.kind != lib::genre::VehicleKind::Wheeled || mpc.raw <= 0 || vt->def.wheeled.wheels.empty()) return a;
+    const auto& wc = vt->def.wheeled;
+    Fixed front = wc.wheels[0].offset.z, rear = front;
+    for (auto& w : wc.wheels) { front = fxMax(front, w.offset.z); rear = fxMin(rear, w.offset.z); }
+    if (front <= rear) return a;
+    a.rear = rear / mpc;
+    a.base = (front - rear) / mpc;
+    a.maxSteer = wc.maxSteer;
+    a.falloff = wc.steerFalloffSpeed;
+    return a;
+}
+// the steering lock (turns) at `speed` m/s, as the wheeled controller limits it
+Fixed steerLock(const Axles& a, Fixed speed) {
+    return a.falloff.raw > 0 ? a.maxSteer * a.falloff / (a.falloff + fxAbs(speed)) : a.maxSteer;
+}
+// the tightest radius (cells) the rear axle can drive at `speed` m/s
+Fixed minTurnRadius(const Axles& a, Fixed speed) {
+    const Fixed lock = steerLock(a, speed);
+    const Fixed sn = fxSinTurns(lock), cs = fxCosTurns(lock);
+    if (sn <= Fixed::fromRatio(1, 100)) return Fixed::fromInt(1000);
+    return a.base * cs / sn;
+}
+// the tightest radius (cells) along the quadratic Bezier e -> c (control) -> x
+Fixed curveMinRadius(Vec2 e, Vec2 c, Vec2 x) {
+    constexpr int n = 12;
+    Vec2 p[n + 1];
+    for (int i = 0; i <= n; ++i) {
+        const Fixed t = Fixed::fromRatio(i, n), u = kUnit - t;
+        p[i] = e * (u * u) + c * (u * t * 2) + x * (t * t);
+    }
+    Fixed best = Fixed::fromInt(1000);
+    for (int i = 1; i < n; ++i) {
+        const Vec2 a = p[i] - p[i - 1], b = p[i + 1] - p[i], d = p[i + 1] - p[i - 1];
+        const Fixed cr = fxAbs(lib::genre::trafficDetail::cross(a, d));
+        if (cr.raw <= 0) continue;
+        best = fxMin(best, a.length() * b.length() * d.length() / (cr * 2));
+    }
+    return best;
+}
+// A turn a long vehicle can follow: when the curve E -> C -> X is tighter than `need`, its control point moves away
+// from the inside of the corner (the vehicle swings wide into the junction box, as drivers of long vehicles do)
+// until the curve is wide enough, at most as far as the shorter leg is long.
+Vec2 widenTurn(Vec2 e, Vec2 c, Vec2 x, Fixed need) {
+    if (need.raw <= 0 || curveMinRadius(e, c, x) >= need) return c;
+    const Vec2 din = lib::genre::trafficDetail::normalised(c - e), dout = lib::genre::trafficDetail::normalised(x - c);
+    const Vec2 out = lib::genre::trafficDetail::normalised(din - dout);
+    if (out.lengthSq().raw == 0) return c;
+    const Fixed lim = fxMin((c - e).length(), (x - c).length());
+    for (Fixed t = Fixed::fromRatio(1, 8); t <= lim; t += Fixed::fromRatio(1, 8))
+        if (curveMinRadius(e, c + out * t, x) >= need) return c + out * t;
+    return c + out * lim;
+}
 template <class T> T* byEntity(std::vector<T>& v, Entity e) {
     auto it = std::lower_bound(v.begin(), v.end(), e.index, [](const T& x, uint32_t i) { return x.e.index < i; });
     return it != v.end() && it->e == e ? &*it : nullptr;
@@ -710,6 +769,20 @@ void Traffic::updateLights(Simulation& sim, TrafficStore& st) {
 // ----------------------------------------------------------------- cars
 
 void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
+    // how tight a turn this car can follow at turning speed (with a margin for its slow steering rack)
+    Fixed needR{};
+    if (Driving* drv = m_->driving(); drv && sim.world().alive(c.e) && sim.world().has<Unit>(c.e)) {
+        const uint16_t ty = sim.world().get<Unit>(c.e).type;
+        for (auto& t : drv->rules().vehicles)
+            if (t.type == ty) {
+                const Axles ax = axlesOf(&t, mpc_);
+                if (ax.base.raw > 0) {
+                    const Fixed ts = t.length / 2 > Fixed::fromRatio(4, 5) ? fxMin(rules_.turnSpeed, Fixed::fromRatio(5, 2)) : rules_.turnSpeed;
+                    needR = minTurnRadius(ax, ts) * Fixed::fromRatio(5, 4);
+                }
+                break;
+            }
+    }
     for (int guard = 0; guard < 4 && c.route.size() < size_t(c.wp) + 6; ++guard) {
         if (c.tailPiece < 0 || size_t(c.tailPiece) >= net_.pieces.size()) return;
         const auto& P = net_.pieces[size_t(c.tailPiece)];
@@ -778,15 +851,15 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
         } else if (!P.curved() && !QP.curved() && QP.axis == P.axis) {
             pts.push_back(X);
         } else if (!P.curved() && !QP.curved()) {
-            const Vec2 C = P.axis == tl::TrafficAxis::X ? Vec2{X.x, E.y} : Vec2{E.x, X.y};
-            tl::trafficCurve(E, C, X, 4, pts);
+            const Vec2 C = widenTurn(E, P.axis == tl::TrafficAxis::X ? Vec2{X.x, E.y} : Vec2{E.x, X.y}, X, needR);
+            tl::trafficCurve(E, C, X, 6, pts);
         } else {   // spline roads: the curve through the point where the way in and the way out meet
             const Vec2 din = tl::trafficDir(P, tl::trafficPieceEnd(P, s), s), dout = tl::trafficDir(QP, tl::trafficPieceStart(QP, s2), s2);
             const Fixed den = tl::trafficDetail::cross(din, dout);
             Vec2 C = (E + X) * kHalf;
             if (fxAbs(den) > Fixed::fromRatio(1, 20)) {
                 const Fixed u = tl::trafficDetail::cross(X - E, dout) / den;
-                if (u > Fixed{} && u < (X - E).length() * 2) C = E + din * u;
+                if (u > Fixed{} && u < (X - E).length() * 2) C = widenTurn(E, E + din * u, X, needR);
             }
             tl::trafficCurve(E, C, X, 6, pts);
         }
@@ -1096,6 +1169,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
     const Fixed vc = fxMax(v, Fixed{}) / mpc_;   // cells/s
     const Fixed look = fireResponse && c.ignore.valid() && sim.tick()<c.ignoreUntil ? Fixed::fromRatio(3,5) : (fireResponse?fxMax(Fixed::fromRatio(6,5),halfLen*3):Fixed::fromRatio(6,5)) + vc*Fixed::fromRatio(1,5);
     Vec2 target = tl::trafficPursuit(pos, pts, look);
+    const Vec2 target0 = target;   // what follows may move it (sirens, the kerb, round a parked car)
     Vec2 dirRef = tl::trafficDetail::normalised(target - pos);
     if (dirRef.lengthSq().raw == 0) dirRef = fwd;
     // sirens: an emergency vehicle rides the centre line. Whoever drives the same way ahead of it keeps going, close
@@ -1383,6 +1457,24 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
         if(safe)want=fxMax(want,Fixed::fromRatio(1,2));
     }}
     c.input = tl::trafficDriverInput(rules_.driver, yaw, v, pos, target, want);
+    // a wheeled car steers by its rear axle (pure pursuit): the point `ld` ahead of the rear axle on the route sets
+    // the curvature, the steering angle for it is atan(2 * wheelbase * sin(alpha) / ld). Pointing the middle of a
+    // long body at a point close ahead cuts corners and then overshoots out of the lane.
+    const Axles ax = axlesOf(vt, mpc_);
+    // (only following its route at speed: pulling round a parked car, to the kerb or out of the way of a siren, at a
+    // crawl, it steers straight at its point as before)
+    if (ax.base.raw > 0 && v > Fixed::fromRatio(4, 5) && target == target0 && !(fireResponse && c.ignore.valid() && sim.tick() < c.ignoreUntil)) {
+        const Vec2 rearP = pos + fwd * ax.rear;
+        const Fixed ld = fxMax(look - ax.rear, ax.base * Fixed::fromRatio(8, 5));
+        const Vec2 tgt = tl::trafficPursuit(rearP, pts, ld);
+        const Vec2 d = tgt - rearP;
+        if (d.lengthSq().raw > 0) {
+            const Fixed alpha = lib::genre::vehicleDetail::wrap(fxAtan2Turns(d.x, d.y) - yaw);
+            const Fixed delta = fxAtan2Turns(ax.base * fxSinTurns(alpha) * 2, d.length());
+            const Fixed lock = steerLock(ax, v);
+            if (lock.raw > 0) c.input.steer = fxClamp(delta / lock, -kUnit, kUnit);
+        }
+    }
 }
 
 // People near the stop who are standing about get on, others get off onto the sidewalk next to it.
