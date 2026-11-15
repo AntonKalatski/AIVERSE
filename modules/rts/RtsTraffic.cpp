@@ -1143,7 +1143,7 @@ void Traffic::cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& f
             const bool depotBus = rules_.busDepot && c.kind == kTrafficBus && c.service < 0;   // depot buses run citywide
             const Vec2 p = v2(w.get<Transform>(c.e).pos);
             const Fixed d2 = nearestSq(foci, p);
-            const bool stuckAway = (c.stopped > sim.tickRate() * 30 || (c.task == kTaskNone && c.anchorTick && sim.tick() - c.anchorTick > sim.tickRate() * 90)) && d2 > rules_.spawnMin * rules_.spawnMin;
+            const bool stuckAway = c.stopped > sim.tickRate() * 30 && d2 > rules_.spawnMin * rules_.spawnMin;
             const bool lostAway = c.lostSince && sim.tick() - c.lostSince > sim.tickRate() * 5 && d2 > rules_.spawnMin * rules_.spawnMin;
             // a depot bus wedged or off the road out of sight is towed in: its driver brings the next one out of the depot
             if ((!depotBus && d2 > rules_.despawn * rules_.despawn) || stuckAway || lostAway) { tripGone(sim, st, c); if (c.kind == kTrafficBus) busGone(sim, st, c.e); silentRemove(sim, c.e); }
