@@ -1,4 +1,4 @@
-// AppMetrica iOS SDK (AppMetricaAnalytics 5.16) → the engine's "analytics" protocol (docs/plugins.md).
+// AppMetrica iOS SDK (AppMetricaAnalytics 6.7; YandexMobileAds 8.6 pins AppMetricaAdSupport ~> 6.7) → the engine's "analytics" protocol (docs/plugins.md).
 // Same config and event mapping as the Android plugin (structuredEvents off: only "event" calls).
 #import <AppMetricaCore/AppMetricaCore.h>
 #import "engine/platform/apple/AiversePlugin.h"

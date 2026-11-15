@@ -328,7 +328,15 @@ std::unique_ptr<Simulation> sim(const std::string& entities, bool withModule = t
     s->setup(Json::parse(r), Json::parse(modes_t::map({1, 2}, entities, R"(,"probeKey":42)")));
     return s;
 }
-int garrison(Simulation& s, int x, int z) { return s.world().get<game::Garrison>(modes_t::at(s, x, z)).count; }
+// the garrisoned building at (x, z): modes_t::at may return a unit that just walked out of it (no Garrison;
+// reading one through get<> was undefined and differed between platforms)
+int garrison(Simulation& s, int x, int z) {
+    int count = -1;
+    s.world().each<game::Garrison, Transform>([&](Entity, game::Garrison& g, Transform& t) {
+        if (dist2DTest(t.pos, Vec3{Fixed::fromInt(x), Fixed{}, Fixed::fromInt(z)}) < Fixed::fromInt(2)) count = g.count;
+    });
+    return count;
+}
 } // namespace hooks_t
 
 TEST(native_hooks_command_garrison_upgrade_cast) {
@@ -354,9 +362,6 @@ TEST(native_hooks_command_garrison_upgrade_cast) {
     c.units = {at(*sim, 5, 5)};
     sim->submit(c);
     run(*sim, 0.2);
-    if (hooks_t::garrison(*sim, 5, 5) != village0 - 2)   // diagnostic: macOS CI differed here
-        std::printf("  village garrison %d -> %d, sends %lld, tick %u\n", village0, hooks_t::garrison(*sim, 5, 5),
-                    (long long)st.values.at("sends"), unsigned(sim->tick()));
     CHECK(hooks_t::garrison(*sim, 5, 5) == village0 - 2);
     run(*sim, 6);
     CHECK(st.values.at("assaults") == 2 && st.values.at("defendersLost") == 2);   // kEvAssault per unit

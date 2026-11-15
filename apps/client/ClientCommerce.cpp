@@ -153,7 +153,6 @@ bool GameClient::commerceKey(Key key) {
 void GameClient::commerceTop(std::vector<UiItem>& top) {
     game::Commerce* c = sim_ ? mod().commerce() : nullptr;
     if (!c || !c->active() || spectator_) return;
-    const auto& st = *c->store(*sim_);
     const game::CommerceAccount* mineAcc = c->account(*sim_, human_);
     if (!mineAcc) return;
     const game::CommerceAccount& acc = *mineAcc;

@@ -103,6 +103,21 @@ struct ScratchGuard {
     ~ScratchGuard() { std::error_code ec; if (!p.empty()) fs::remove_all(p, ec); }
 };
 
+#if defined(_WIN32)
+// Is `py -3` the Python 3 launcher here? Probed once per process.
+bool pyLauncherWorks() {
+    static const int ok = [] {
+        std::fflush(nullptr);
+        std::FILE* p = AIVERSE_POPEN("\"py -3 -c \"print(3)\" 2>NUL\"", "r");
+        if (!p) return 0;
+        char buf[64] = {};
+        const size_t n = std::fread(buf, 1, sizeof buf - 1, p);
+        return AIVERSE_PCLOSE(p) == 0 && n > 0 && buf[0] == '3' ? 1 : 0;
+    }();
+    return ok != 0;
+}
+#endif
+
 // One protocol call: `<command...> <method> <request.json>`, response = JSON on stdout.
 bool call(const UnpackerInfo& u, const std::string& method, const std::string& requestJson, Json& response, std::string* err) {
     if (u.command.empty()) return fail(err, u.name + ": no command in manifest");
@@ -243,6 +258,11 @@ bool UnpackerRegistry::loadManifest(const std::string& manifestPath, std::string
         u.command.push_back(a);
     }
     if (u.command.empty()) return bad("missing \"command\"");
+#if defined(_WIN32)
+    // "py -3" needs the Python launcher; some installs (CI toolcaches, the Store) have only python.exe
+    if (u.command.size() >= 2 && u.command[0] == "py" && u.command[1] == "-3" && !pyLauncherWorks())
+        u.command.erase(u.command.begin(), u.command.begin() + 2), u.command.insert(u.command.begin(), "python");
+#endif
     if (u.extensions.empty() && u.magic.empty()) return bad("needs \"extensions\" or \"magic\" to be detectable");
     auto it = std::find_if(list_.begin(), list_.end(), [&](const UnpackerInfo& x) { return x.name == u.name; });
     if (it != list_.end()) *it = u; // later search dirs override

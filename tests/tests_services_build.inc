@@ -46,7 +46,7 @@ TEST(aiversebuild_ios_sdk_plugins_plist_and_skadnetwork) {
     CHECK(cm.find("plugins/att/ios/AiverseAttPlugin.mm") != std::string::npos);
     CHECK(cm.find("\"AppTrackingTransparency\"") != std::string::npos);
     const std::string pods = build::podfile(set, "15.0");
-    CHECK(pods.find("pod 'GA-SDK-IOS', '~> 5.1'") != std::string::npos && pods.find("pod 'FBSDKCoreKit', '~> 18.0'") != std::string::npos);
+    CHECK(pods.find("pod 'GA-SDK-IOS', '~> 5.0'") != std::string::npos && pods.find("pod 'FBSDKCoreKit', '~> 18.0'") != std::string::npos);
 
     // only what is listed: GameAnalytics alone brings no tracking prompt, no ad network ids, no Facebook keys
     build::PluginSet ga = build::loadPlugins(engine, out / "project", game, "ios", "gameanalytics");
