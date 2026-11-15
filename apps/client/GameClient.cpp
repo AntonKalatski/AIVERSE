@@ -1070,7 +1070,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     if (!startupReported_ && !mapLoading_) {
         startupReported_ = true;
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - startupStarted_).count();
-        std::fprintf(stderr, "[loading] first %s frame in %.1f ms\n", sim_ ? "map" : "menu", ms);
+        std::printf("[loading] first %s frame in %.1f ms\n", sim_ ? "map" : "menu", ms);
         if (std::getenv("AIVERSE_BENCH_STARTUP")) platform::requestQuit();
     }
 }

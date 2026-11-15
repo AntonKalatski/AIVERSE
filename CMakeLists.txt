@@ -566,7 +566,10 @@ function(aiverse_package_app target)
                 XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
                 XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
                 XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
-                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${AIVERSE_APPLE_TEAM_ID}")
+                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${AIVERSE_APPLE_TEAM_ID}"
+                # CocoaPods' aggregate Pods_<target>.framework is built into PODS_CONFIGURATION_BUILD_DIR, but this
+                # target's BUILT_PRODUCTS_DIR is CMake's own folder: the linker has to be told where to look
+                XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS "$(inherited) $(PODS_CONFIGURATION_BUILD_DIR)")
             set(res_dir "$<TARGET_BUNDLE_DIR:${target}>")
         else()
             set_target_properties(${target} PROPERTIES
