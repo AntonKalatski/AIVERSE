@@ -5,6 +5,7 @@
 // sidewalks. Fixed math only: the same network on every machine.
 #include "RtsTrafficRoads.h"
 #include <algorithm>
+#include <array>
 #include "../../engine/core/FixedMath.h"
 
 namespace aiverse::game {
@@ -67,7 +68,8 @@ std::vector<int> assignSides(const std::vector<Fixed>& ang) {
 } // namespace
 
 tl::TrafficNet buildTrafficNetFromRoads(int w, int h, const RoadNetwork& n, const std::vector<RoadTypeDef>& types,
-                                        const RoadGeometry& G, const tl::TrafficNetConfig& cfg, std::vector<uint8_t>& sidewalk) {
+                                        const RoadGeometry& G, const tl::TrafficNetConfig& cfg, std::vector<uint8_t>& sidewalk,
+                                        const std::vector<std::vector<Vec2>>& decks) {
     tl::TrafficNet net;
     net.w = w; net.h = h; net.cfg = cfg;
     const size_t N = size_t(std::max(0, w)) * size_t(std::max(0, h));
@@ -90,6 +92,39 @@ tl::TrafficNet buildTrafficNetFromRoads(int w, int h, const RoadNetwork& n, cons
             arms[size_t(n.nodeIndex(end == 0 ? n.edges[i].a : n.edges[i].b))].push_back({int(i), end, fxAtan2Turns(d.y, d.x)});
         }
     }
+
+    // decks whose mouths meet the road network: one more arm at the node next to each mouth (an open road end or a
+    // junction on the bank), edge index n.edges.size() + link
+    struct DeckLink { size_t deck; int edge; std::array<size_t, 2> node; };
+    std::vector<DeckLink> links;
+    {
+        const Fixed reach = Fixed::fromRatio(13, 2);   // a mouth set back from the junction it starts at
+        auto nodeAt = [&](Vec2 mouth, size_t& out) {
+            bool have = false;
+            Fixed best{};
+            for (size_t ni = 0; ni < n.nodes.size(); ++ni) {
+                if (arms[ni].empty()) continue;
+                const Fixed d = (n.nodes[ni].p - mouth).length();
+                if (d <= reach && (!have || d < best)) { have = true; best = d; out = ni; }
+            }
+            return have;
+        };
+        for (size_t di = 0; di < decks.size(); ++di) {
+            const auto& path = decks[di];
+            if (path.size() < 2) continue;
+            size_t a = 0, b = 0;
+            if (!nodeAt(path.front(), a) || !nodeAt(path.back(), b) || a == b) continue;
+            const int le = int(n.edges.size() + links.size());
+            links.push_back({di, arms[a][0].edge, {a, b}});
+            const Vec2 da = path.front() - n.nodes[a].p, db = path.back() - n.nodes[b].p;
+            const Vec2 ta = da.lengthSq() > Fixed::fromRatio(1, 16) ? da : path[1] - path[0];
+            const Vec2 tb = db.lengthSq() > Fixed::fromRatio(1, 16) ? db : path[path.size() - 2] - path.back();
+            arms[a].push_back({le, 0, fxAtan2Turns(ta.y, ta.x)});
+            arms[b].push_back({le, 1, fxAtan2Turns(tb.y, tb.x)});
+        }
+    }
+    pieceOf.resize(n.edges.size() + links.size(), -1);
+    auto edgeId = [&](int e) { return size_t(e) < n.edges.size() ? int64_t(n.edges[size_t(e)].id) : int64_t(INT32_MAX) + e; };
 
     // pieces: the trimmed centre lines
     for (size_t i = 0; i < n.edges.size(); ++i) {
@@ -134,11 +169,50 @@ tl::TrafficNet buildTrafficNetFromRoads(int w, int h, const RoadNetwork& n, cons
         for (auto& poly : polys) roadFillPolygon(poly, w, h, [&](int c) { if (net.pieceAt[size_t(c)] < 0) net.pieceAt[size_t(c)] = id; });
     }
 
+    // deck pieces: the road end, the deck's centre line, the other road end; lanes of the road at the first end
+    for (size_t li = 0; li < links.size(); ++li) {
+        const DeckLink& L = links[li];
+        const RoadEdge& e = n.edges[size_t(L.edge)];
+        const RoadTypeDef& t = types[size_t(e.typeIndex)];
+        tl::TrafficPiece p;
+        std::vector<Vec2> pts{n.nodes[L.node[0]].p};
+        for (auto& q : decks[L.deck]) pts.push_back(q);
+        pts.push_back(n.nodes[L.node[1]].p);
+        for (auto& q : pts) {
+            if (!p.line.empty() && (q - p.line.back()).lengthSq() < Fixed::fromRatio(1, 64)) continue;
+            p.at.push_back(p.line.empty() ? Fixed{} : p.at.back() + (q - p.line.back()).length());
+            p.line.push_back(q);
+        }
+        if (p.line.size() < 2) continue;
+        p.len = p.at.back();
+        const Vec2 chord = p.line.back() - p.line.front();
+        p.axis = fxAbs(chord.x) >= fxAbs(chord.y) ? tl::TrafficAxis::X : tl::TrafficAxis::Z;
+        p.along1 = std::max(0, int((p.len - Fixed::fromRatio(1, 1024)).floorInt()));
+        const int lanes = std::max(drivingLanes(t, 1), drivingLanes(t, -1));
+        p.dirLanes = {int8_t(lanes), int8_t(lanes)};
+        p.lanes = lanes;
+        const auto& ls = t.forward.empty() ? t.backward : t.forward;
+        p.laneW = ls.empty() ? cfg.laneWidth : ls[0].width;
+        p.median = t.median;
+        const Fixed half = p.median / 2 + p.laneW * lanes;
+        p.across1 = std::max(0, int((half * 2 + Fixed::fromRatio(1, 2)).floorInt()) - 1);
+        pieceOf[n.edges.size() + li] = int(net.pieces.size());
+        const int32_t id = int32_t(net.pieces.size());
+        for (size_t k = 0; k + 1 < p.line.size(); ++k) {
+            const Vec2 a = p.line[k], b = p.line[k + 1], d = b - a;
+            const Fixed l = d.length();
+            if (l.raw <= 0) continue;
+            const Vec2 nr = Vec2{-d.y, d.x} / l * (half + Fixed::fromRatio(1, 2));
+            roadFillPolygon({a + nr, b + nr, b - nr, a - nr}, w, h, [&](int c) { if (net.pieceAt[size_t(c)] < 0) net.pieceAt[size_t(c)] = id; });
+        }
+        net.pieces.push_back(std::move(p));
+    }
+
     // junctions: every node two or more drivable roads meet at
     for (size_t ni = 0; ni < n.nodes.size(); ++ni) {
         auto& A = arms[ni];
         if (A.size() < 2) continue;
-        std::sort(A.begin(), A.end(), [&](const Arm& x, const Arm& y) { return x.angle != y.angle ? x.angle < y.angle : n.edges[size_t(x.edge)].id < n.edges[size_t(y.edge)].id; });
+        std::sort(A.begin(), A.end(), [&](const Arm& x, const Arm& y) { return x.angle != y.angle ? x.angle < y.angle : edgeId(x.edge) < edgeId(y.edge); });
         std::vector<Fixed> ang;
         for (auto& a : A) ang.push_back(a.angle);
         const std::vector<int> sides = assignSides(ang);

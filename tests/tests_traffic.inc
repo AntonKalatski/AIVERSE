@@ -1287,3 +1287,41 @@ TEST(traffic_spline_roads_have_crossings_people_use) {
     }
     CHECK(crossed.size() >= 3);   // people get across the roads
 }
+
+TEST(traffic_spline_roads_join_through_decks) {
+    // the east arm of the crossroads stops at a bridge's mouths: the deck between the two open road ends is a piece
+    std::string map = splineTrafficMap();
+    auto sub = [&](const std::string& a, const std::string& b) { const size_t at = map.find(a); if (at == std::string::npos) throw std::runtime_error(a); map.replace(at, a.size(), b); };
+    sub(R"({"id": 5, "x": 6, "z": 24}],)", R"({"id": 5, "x": 6, "z": 24}, {"id": 6, "x": 31, "z": 24}, {"id": 7, "x": 37, "z": 24}],)");
+    sub(R"({"id": 2, "a": 1, "b": 3, "type": "street_2"},)", R"({"id": 2, "a": 1, "b": 6, "type": "street_2"}, {"id": 9, "a": 7, "b": 3, "type": "street_2"},)");
+    sub(R"(,"entities":[)", R"(,"decks":[{"id":"bridge","width":2,"path":[[31,24],[32.5,24,2],[35.5,24,2],[37,24]]}],"entities":[)");
+    auto sim = makeSimJson(splineTrafficRules(), map, 5);
+    const auto& net = trf(*sim).net();
+    CHECK(net.pieces.size() == 10 && net.junctions.size() == 7);   // two 2-arm junctions at the mouths
+    // one network: every junction reachable from the first
+    std::vector<int> seen(net.junctions.size(), 0), queue{0};
+    seen[0] = 1;
+    for (size_t q = 0; q < queue.size(); ++q)
+        for (int pi : net.junctions[size_t(queue[q])].piece) {
+            if (pi < 0) continue;
+            for (int j : net.pieces[size_t(pi)].junction) if (j >= 0 && !seen[size_t(j)]) { seen[size_t(j)] = 1; queue.push_back(j); }
+        }
+    CHECK(queue.size() == net.junctions.size());
+    int deck = -1;
+    for (size_t i = 0; i < net.pieces.size(); ++i) if (net.pieces[i].curved() && net.pieces[i].line.size() >= 4) {
+        const Vec2 a = net.pieces[i].line.front(), b = net.pieces[i].line.back();
+        if (a.x == Fixed::fromInt(31) && b.x == Fixed::fromInt(37)) deck = int(i);
+    }
+    CHECK(deck >= 0);
+    // cars drive over it
+    auto& w = sim->world();
+    int over = 0;
+    for (int i = 0; i < 90 * int(sim->tickRate()); ++i) {
+        sim->step();
+        for (auto& c : tstore(*sim).cars) {
+            const Vec3 p = w.get<Transform>(c.e).pos;
+            over += p.x > Fixed::fromInt(32) && p.x < Fixed::fromInt(36) && fxAbs(p.z - Fixed::fromInt(24)) < Fixed::fromInt(2);
+        }
+    }
+    CHECK(over > 0);
+}

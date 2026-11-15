@@ -330,7 +330,14 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
         const std::vector<RoadTypeDef> types = loadRoadTypes(rulesJson["roadTypes"]);
         const RoadNetwork roads = parseRoadNetwork(rn, types);
         const RoadGeometry geom = buildRoadGeometry(roads, types);
-        net_ = buildTrafficNetFromRoads(w, h, roads, types, geom, rules_.net, side);
+        std::vector<std::vector<Vec2>> decks;   // bridges / tunnels (docs/driving.md § Levels) join the roads at their mouths
+        for (const Json& d : map["decks"].items()) {
+            std::vector<Vec2> path;
+            for (const Json& q : d["path"].items())
+                if (q.isArray() && q.size() >= 2) path.push_back({q[0].fx(), q[1].fx()});
+            if (path.size() >= 2) decks.push_back(std::move(path));
+        }
+        net_ = buildTrafficNetFromRoads(w, h, roads, types, geom, rules_.net, side, decks);
         for (size_t i = 0; i < road.size(); ++i) road[i] = net_.pieceAt[i] >= 0 || net_.junctionAt[i] >= 0;
     } else {
         // masks from the map's tile characters

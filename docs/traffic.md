@@ -294,6 +294,9 @@ spline roads instead of road tiles (`modules/rts/RtsTrafficRoads.cpp`):
 - the sidewalk mask is the network's sidewalks and shoulders, plus every cell the middle line of a sidewalk passes
   through (a sidewalk narrower than a cell still makes one connected path); bridge and tunnel spans are decks of the
   driving module;
+- bridges and tunnels (map `decks`, docs/driving.md § Levels) join the roads that stop at their mouths: a deck whose
+  two mouths each have a node of a drivable road within 6.5 cells (an open road end or a junction on the bank)
+  becomes a piece from that node over the deck's centre line to the other one, with the lanes of a road at the first;
 - crossing strips: at every junction of three or more arms the first cell of the piece (along 0..1 from the cut)
   is a strip when sidewalk cells touch it on both sides; people cross there on "walk" as on tiles;
 - helpers for modules that work on any piece (`aiverselib/genre/Traffic.h`): `trafficPieceLength`,
