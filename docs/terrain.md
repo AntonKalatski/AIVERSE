@@ -111,7 +111,8 @@ detail. The detail surface is a visual heightmap with `k` samples per cell, deco
 - texture sides capped at 4096 (WebGL2 / GLES3 safe); quality: Low tier caps k at 2, samples capped at 4097² desktop
   / 2049² mobile (`detailScaleFor`);
 - `RtsView::heightAt` samples the detail surface (same triangles as the mesh), so units, overlays and fog follow it;
-  water bodies sit at the detail shore and extend one cell under the bank (organic lake outlines).
+  water bodies sit at the detail shore and extend one cell under the bank (organic lake outlines). Straits, rivers and
+  the sea from splines with their shores (embankments, cliffs, beaches): `docs/water.md`.
 
 **Consistency with the simulation**: heightfield maps - the editor keeps corners = detail at the corners (sculpt and
 import), so the sim surface is the bilinear of the drawn one at cell scale. Levels maps - the sim is unchanged;

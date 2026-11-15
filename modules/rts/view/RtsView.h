@@ -130,6 +130,7 @@ struct ViewEffect {
 };
 
 class RtsRoadView;
+class RtsShoreView;
 
 class RtsView {
     friend class ::kingston::TowHost;
@@ -186,6 +187,8 @@ public:
     void setRoadMap(const Json& map);
     RtsRoadView& roads() { return *roads_; }
     const RtsRoadView& roads() const { return *roads_; }
+    RtsShoreView& shores() { return *shores_; }
+    const RtsShoreView& shores() const { return *shores_; }
     // ImGui: bars, counts. ox/oy: top-left of the view on screen; drawList: ImDrawList* (default: background list)
     void drawOverlays(const render::RTSCamera& cam, const RtsScene& s, float viewW, float viewH, float ox = 0, float oy = 0, void* drawList = nullptr);
     // view.draw triangles of the view scripts (ViewCanvas.h), after drawOverlays
@@ -509,6 +512,7 @@ private:
         return age + dt;
     }
     std::unique_ptr<RtsRoadView> roads_;   // spline roads: map roadNetwork (RtsRoadView.cpp)
+    std::unique_ptr<RtsShoreView> shores_; // water shores: map waterNetwork (RtsShoreView.cpp, docs/water.md)
     RtsGroundFx groundFx_;   // territory, diggable rock, lanes, roads (RtsGroundFx.cpp)
     FogOfWar fog_;           // fog of war look + sheet (RtsFog.cpp)
     RtsOverlays overlays_;   // data-driven overlays (RtsOverlays.cpp)

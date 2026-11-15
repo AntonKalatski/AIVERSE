@@ -68,6 +68,8 @@ void Editor::pollAgentLink() {
                 if (args.has("distance")) sceneCam.distance = std::clamp(float(args["distance"].toDouble()), sceneCam.minDistance, sceneCam.maxDistance);
                 sceneFlying_ = false;
             }
+            if (args.has("pitch")) sceneCam.pitch = std::clamp(float(args["pitch"].toDouble()), 10.0f, 89.0f) * 0.0174533f;   // degrees over the horizon
+            if (args.has("yaw")) sceneCam.yaw = float(args["yaw"].toDouble()) * 0.0174533f;
             shots_.push_back({m.client, id.integer(), args.getStr("window", args.has("device") ? "game" : "all"), Json::object()});
             ws_.log("agent", "Скриншот редактора");
             continue;
@@ -164,7 +166,7 @@ void Editor::registerGuiOps() {
         r.set("occluderTriangles",Json::number(int64_t(s.occluderTriangles)));
         r.set("drawCalls",Json::number(int64_t(r3d_.drawCalls()))); return r;
     });
-    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); with 'device' the Game window shows that device first. Returns a PNG image.",
+    add("view_screenshot", "Screenshot of the editor (window: 'all' | 'scene' | 'game'); with 'device' the Game window shows that device first; x, z, distance, pitch, yaw (degrees) place the Scene camera. Returns a PNG image.",
         R"({"properties": {"window": {"type": "string", "enum": ["all", "scene", "game"]}, "device": {"type": "string"}, "x": {"type": "number"}, "z": {"type": "number"}, "distance": {"type": "number"}}})",
         [](const Json&) -> Json { throw std::runtime_error("screenshots are answered asynchronously by the editor link"); });
     add("view_focus", "Move the Scene camera to look at x,z (optional distance).",

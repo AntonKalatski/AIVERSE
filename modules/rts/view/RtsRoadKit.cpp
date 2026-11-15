@@ -277,6 +277,65 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             const float v = (0.26f + (n - 0.5f) * 0.16f + (g - 0.5f) * 0.06f) * 1.435f;
             put(5, x, y, Rgb{v * 1.05f * 1.12f, v * 0.84f * 1.26f, v * 0.62f * 1.24f}, 1.0f);
         }
+    // slot 6: plain white, solid (the wet film over the road surfaces: the vertex colour is the whole look)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) put(6, x, y, Rgb{1, 1, 1}, 1.0f);
+    // slot 7: a puddle, filling the cell: an irregular, lobed pool (no circle), shallow at the rim (a feathered,
+    // darker wet edge where the water thins out), the sky's light in the middle with a soft sheen across it;
+    // white-ish so the vertex colour tints it (asphalt water, muddy water)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float dx = (fx + 0.5f) / float(cell) * 2 - 1, dy = (fy + 0.5f) / float(cell) * 2 - 1;
+            const float r = std::sqrt(dx * dx + dy * dy), ang = std::atan2(dy, dx);
+            // the shore: a few lobes plus noise along the angle (seamless around the circle)
+            const float ca = std::cos(ang), sa = std::sin(ang);
+            const float lobes = 0.10f * std::sin(ang * 3 + 0.7f) + 0.06f * std::sin(ang * 5 + 2.1f) + 0.04f * std::sin(ang * 7 + 4.0f);
+            const float wob = (fbm((ca + 1) * float(cell) * 0.25f, (sa + 1) * float(cell) * 0.25f, cell, 4, 701) - 0.5f) * 0.22f;
+            const float shore = 0.80f + lobes + wob;
+            const float d = (shore - r) / 0.16f;   // > 0 inside, 1 a little way in
+            if (d <= -1) { put(7, x, y, Rgb{0, 0, 0}, 0); continue; }
+            const float water = std::clamp(d, 0.0f, 1.0f);
+            const float rim = std::clamp(d + 1, 0.0f, 1.0f) * (1 - water);   // the wet band outside the water
+            const float sheen = 0.5f + 0.5f * fbm(fx, fy, cell, 3, 709);
+            // standing water reads darker than the wet road around it, with the sky's sheen drifting across
+            // (linear: the asphalt itself is about 0.05 in this space)
+            Rgb c{0.030f + 0.040f * sheen * sheen, 0.036f + 0.048f * sheen * sheen, 0.046f + 0.062f * sheen * sheen};
+            // the sky caught in the water: a soft, broken band of light across the pool
+            const float band = std::exp(-std::pow((dx * 0.8f + dy * 0.6f + (sheen - 0.5f) * 0.5f) / 0.28f, 2.0f));
+            c = mix(c, Rgb{0.15f, 0.17f, 0.21f}, band * 0.55f * std::clamp(d, 0.0f, 1.0f));
+            c = mix(c, Rgb{0.028f, 0.028f, 0.030f}, std::clamp(1 - d * 1.6f, 0.0f, 1.0f) * 0.5f);   // shallow toward the shore
+            const float a = water * 0.9f + rim * 0.30f;
+            put(7, x, y, rim > water ? Rgb{0.022f, 0.022f, 0.024f} : c, a);
+        }
+    // slot 8: a patch of newer asphalt, filling the cell: a little darker and finer than the road's, its cut edge
+    // sealed with a band of tar that wanders a little (the cell is stretched over the patch: the band stays thin)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float u = (fx + 0.5f) / float(cell), v = (fy + 0.5f) / float(cell);
+            const float g = rnd(x, y, 811), n = fbm(fx, fy, cell, 16, 813);
+            const float e = std::min(std::min(u, 1 - u), std::min(v, 1 - v));   // to the cut
+            const float seal = 0.035f + 0.02f * fbm(fx, fy, cell, 8, 817);
+            const float tone = 0.098f + (n - 0.5f) * 0.02f + (g - 0.5f) * 0.014f;   // the road asphalt renders at about 0.12 here
+            Rgb c{tone, tone, tone * 1.04f};
+            if (e < seal) c = Rgb{0.045f, 0.045f, 0.048f};   // tar along the cut
+            const float a = std::clamp(e / 0.008f, 0.0f, 1.0f) * 0.95f;
+            put(8, x, y, c, a);
+        }
+    // slot 9: a crack: u across (a dark, broken line in the middle with crumbled shoulders), v along (tiles)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float u = (fx + 0.5f) / float(cell);
+            const float wob = (fbm(3.0f, fy, cell, 8, 911) - 0.5f) * 0.25f;
+            const float w = 0.14f + 0.14f * fbm(5.0f, fy, cell, 6, 913);   // the crack opens and closes along its length
+            const float d = std::fabs(u - 0.5f - wob);
+            const float core = std::clamp((w - d) / 0.05f, 0.0f, 1.0f);
+            const float crumb = std::clamp((w * 2.2f - d) / (w * 1.2f), 0.0f, 1.0f) * (rnd(x, y, 917) > 0.6f ? 0.5f : 0.15f);
+            const float a = std::max(core * 0.9f, crumb) * (fbm(7.0f, fy, cell, 12, 919) > 0.25f ? 1.0f : 0.25f);
+            put(9, x, y, Rgb{0.030f, 0.030f, 0.032f}, a * 0.85f);
+        }
     return px;
 }
 

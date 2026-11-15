@@ -11,6 +11,8 @@ the heights of the spline points, branches that leave chosen lanes of another ro
 | Editor window «Дороги» (Мир) | `apps/editor/windows/RoadsWindow.cpp` |
 | Edit helpers + MCP | `apps/editor/core/RoadOps.{h,cpp}` |
 
+Water (straits, rivers, the sea with embankments, cliffs and beaches) is drawn the same way: `docs/water.md`.
+
 ## Road types (rules `roadTypes`)
 
 Values are metres (km/h for `speed`); `cellMeters` (default 4) turns them into map cells. The built-in library is
@@ -100,6 +102,32 @@ parking lines painted in; u runs across the carriageway, v along it (12 m per da
 lines, lane arrows, STOP, BUS — are decals from the paint atlas `engine/assets/roads/markings.png`
 (`tools/roads/make_markings.py`; a game overrides it with its own `roads/markings.png`), drawn with the sprite decal
 pipelines (depth bias, lit, shadows). No shaders of its own.
+
+### Wet roads and puddles
+
+Rain is the game's: its weather calls `RtsView::roads().setWeather(wet, puddles)` every frame (both 0..1). `wet`
+darkens every road surface — carriageways, junction boxes; wet dirt turns a darker brown, wet asphalt a cooler grey —
+except in tunnels. `puddles` fills the puddle spots of the network: in the gutters along kerbs (sparser on roads
+without kerbs), now and then in a lane's wheel track, in the ruts of dirt and gravel roads (sometimes one broad pool
+over both ruts) and in the corners of junction boxes (a broad pool or two in a dirt box). None on bridge decks, in
+tunnels or on driveways. Every spot has its own level it appears at and grows from there, so a shower fills them
+one by one and drying shrinks them in the reverse order. The spots are hashed from the edge / node ids: the same
+puddles in every run and on every client. Both layers are decals (the verge atlas' film and puddle slots); the meshes
+are remade only when a level changes by 1/32.
+
+A map without weather can fix the look: `"roadNetwork": {"weather": {"wet": 1, "puddles": 0.6}, ...}` (a game's
+`setWeather` overrides it). A game that draws its own reflective water reads the spots,
+`RtsRoadView::puddleSpots()` (centre on the road surface, long axis, full length / width, the level it starts at,
+dirt or not), and sizes them with `RtsRoadView::puddleScale(spot, puddles)`.
+
+### Worn asphalt
+
+Asphalt and concrete roads wear: patches of newer asphalt across a lane (darker, the cut sealed with tar), now and
+then a trench patch along a kerb or a strip right across the carriageway, cracks along the kerbs and the open edges
+(not along a bay's edge), transverse cracks across the carriageway and webs of cracks in the lanes; junction boxes get
+a web or two and sometimes a patch. Hashed from the edge / node ids: the same in every run. All decals under the paint
+(lines are drawn over a patch) and under the wet film. The road type's `look.wear` sets how much: 0 none, 1 the
+default, up to 3 (the spacing divides by it). Dirt and gravel roads have their ruts instead.
 
 ## Editor
 
