@@ -902,6 +902,9 @@ if(AIVERSE_BUILD_TESTS)
     target_compile_definitions(aiverse_remote_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME aiverse_remote_tests COMMAND aiverse_remote_tests)
     add_executable(aiverse_tests tests/tests.cpp)
+    if(MSVC)   # tests.cpp holds thousands of tests: more sections than a default COFF object allows
+        target_compile_options(aiverse_tests PRIVATE /bigobj)
+    endif()
     target_link_libraries(aiverse_tests PRIVATE aiverse_game aiverse_i18n aiverse_pack_writer aiverse_models)
     target_link_libraries(aiverse_tests PRIVATE aiverse_postfx_data)   # postfx agent
     target_link_libraries(aiverse_tests PRIVATE aiverse_game aiverse_game_audio aiverse_audiopack)

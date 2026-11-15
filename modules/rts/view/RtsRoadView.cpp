@@ -612,7 +612,6 @@ private:
     // shorter than that: v stays inside the cell)
     void crackLine(const std::vector<float3>& pts, float hw, float v0) {
         const float tile = 4.0f / cm_;
-        float along = 0;
         uint32_t seg = uint32_t(std::lround(v0 * 1000.0f));
         for (size_t i = 0; i + 1 < pts.size(); ++i) {
             const float3 a = pts[i], b = pts[i + 1];
@@ -621,7 +620,6 @@ private:
             const float3 n{-dz / L * hw, 0, dx / L * hw};
             // each piece its own stretch of the crack texture: the crack opens, closes and breaks off along it
             const float span = std::min(0.9f, L / tile), va = 0.005f + (0.99f - span) * hash01(seg++, 77u), vb = va + span;
-            along += L;
             const float3 q[4] = {b - n, b + n, a + n, a - n};
             const float2 uv[4] = {{0, vb}, {1, vb}, {1, va}, {0, va}};
             slotQuad(roadkit::kVergeCrackSlot, q, uv, 0xffffffffu, 0.0018f);

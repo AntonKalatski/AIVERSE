@@ -410,8 +410,6 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         worldMatrices(m, st.pose, st.world);
         // foot IK: plant two-bone legs on the terrain under each foot (ramps, cliffs, slopes)
         if (grid && grid->w > 0 && !ch.legs.empty() && (!moving || locomotionSpeed >= 0.f) && !st.graph.hasContacts()) {
-            const float scale = L.scale, ground = heightAt(*grid, o.pos.x, o.pos.z);
-            const mat4 toWorld = mat4::translate({o.pos.x, ground, o.pos.z}) * mat4::rotateY(st.yaw) * mat4::scale({scale, scale, scale}) * ch.fix;
             auto support=animationEnvironment(o,st,ch,*grid);
             const mat4 contactWorld=support->modelToWorld;
             const mat4 toModel = contactWorld.inverse();
