@@ -90,6 +90,11 @@ struct RtsScene {
     std::map<uint64_t, render::mat4> entityFrames; // optional final frames supplied by a native presentation host
     std::vector<std::pair<render::float3, render::float3>> roads;
     std::vector<render::float3> moveMarkers;
+    // View-only facing history per unit (sceneFromSim): the facing of the last two simulation ticks, so a
+    // turning unit (a steered car) rotates smoothly between ticks like its position does. Not simulation state.
+    struct FacingTrack { uint32_t tick = 0; uint32_t seen = 0; render::float3 prev{}, cur{}; };
+    std::unordered_map<uint64_t, FacingTrack> facingTracks;
+    uint32_t facingFrame = 0;
     // events of the last simulation tick (attacks, hits, deaths, spawns) for animations; `tick`
     // tells the view whether they are new
     std::vector<SimEvent> events;
