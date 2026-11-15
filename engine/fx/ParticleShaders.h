@@ -41,7 +41,8 @@ uniform lowp sampler2D tex0;
 in mediump vec2 v_uv;
 in lowp vec4 v_col;
 out lowp vec4 o_color;
-layout(std140) uniform U0 { mat4 u_viewProj; vec4 u_fog; vec4 u_camPos; vec4 u_params; };
+// highp like the vertex stage: GLSL ES links a block only when its members have the same precision in both
+layout(std140) uniform U0 { highp mat4 u_viewProj; highp vec4 u_fog; highp vec4 u_camPos; highp vec4 u_params; };
 void main() {
     vec4 c = texture(tex0, v_uv) * v_col;
 #if AIVERSE_HDR

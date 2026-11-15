@@ -104,11 +104,12 @@ struct ScratchGuard {
 };
 
 #if defined(_WIN32)
-// Is `py -3` the Python 3 launcher here? Probed once per process.
-bool pyLauncherWorks() {
+// Is `python` on PATH a Python 3? Then manifests' `py -3` (the launcher, missing or a plain python.exe in some
+// installs: CI toolcaches, the Store) is replaced by it. Probed once per process.
+bool pythonIs3() {
     static const int ok = [] {
         std::fflush(nullptr);
-        std::FILE* p = AIVERSE_POPEN("\"py -3 -c \"print(3)\" 2>NUL\"", "r");
+        std::FILE* p = AIVERSE_POPEN("python -c \"import sys; print(sys.version_info[0])\" 2>NUL", "r");
         if (!p) return 0;
         char buf[64] = {};
         const size_t n = std::fread(buf, 1, sizeof buf - 1, p);
@@ -259,8 +260,7 @@ bool UnpackerRegistry::loadManifest(const std::string& manifestPath, std::string
     }
     if (u.command.empty()) return bad("missing \"command\"");
 #if defined(_WIN32)
-    // "py -3" needs the Python launcher; some installs (CI toolcaches, the Store) have only python.exe
-    if (u.command.size() >= 2 && u.command[0] == "py" && u.command[1] == "-3" && !pyLauncherWorks())
+    if (u.command.size() >= 2 && u.command[0] == "py" && u.command[1] == "-3" && pythonIs3())
         u.command.erase(u.command.begin(), u.command.begin() + 2), u.command.insert(u.command.begin(), "python");
 #endif
     if (u.extensions.empty() && u.magic.empty()) return bad("needs \"extensions\" or \"magic\" to be detectable");
