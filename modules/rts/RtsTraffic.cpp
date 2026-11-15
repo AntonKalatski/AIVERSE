@@ -1471,7 +1471,9 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
             const bool parked = oc ? !oc->driver.valid() : (m_->rules().types[w.get<Unit>(blocker).type].speed.raw == 0);
             bool straight = net_.junctionAt[size_t(gs.grid.cellOf(v3(pos)))] < 0;
             for (size_t i = c.wp; i < c.route.size() && i < size_t(c.wp) + 2; ++i) straight = straight && !c.route[i].turn;
-            if ((parked || (fireResponse || responsePriority)) && (straight || (fireResponse || responsePriority))) {   // a parked car, a wreck, a prop in the lane: drive round it on the side of the centre line
+            // a wreck or a prop is gone round anywhere, a junction included (it will not move); a parked car only on a straight
+            const bool wreck = !oc && m_->rules().types[w.get<Unit>(blocker).type].speed.raw == 0;
+            if ((parked || (fireResponse || responsePriority)) && (straight || wreck || (fireResponse || responsePriority))) {   // a parked car, a wreck, a prop in the lane: drive round it on the side of the centre line
                 const Vec2 bp = v2(w.get<Transform>(blocker).pos);
                 Vec2 left = rightOnScreen(dirRef) * -kUnit;
                 if (rules_.net.leftHand) left = left * -kUnit;
