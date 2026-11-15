@@ -670,12 +670,21 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
             const Fixed R = fxMax(fxMax(a.hwR - a.cwR, b.hwL - b.cwL), kOne) + kHalf;   // corner radius: the sidewalk plus a margin
             radius[i] = R;
             (void)sa;
+            // a dirt or gravel road running into a paved one: no kerb fillet flaring out round it; the paved road's
+            // sidewalk runs on to the dirt road's edge and ends square there, the dirt road starts behind it
+            const bool ua = types[size_t(n.edges[size_t(a.edge)].typeIndex)].unpaved(), ub = types[size_t(n.edges[size_t(b.edge)].typeIndex)].unpaved();
+            Fixed Ra = R, Rb = R;
+            if (ua != ub && a.drivable && b.drivable) {
+                const Fixed tight = Fixed::fromRatio(1, 4) / cellMetres;
+                if (ua) { Ra = fxMax(b.hwL - b.cwL, tight); Rb = tight; }
+                else { Rb = fxMax(a.hwR - a.cwR, tight); Ra = tight; }
+            }
             Fixed u, v;
             const Vec2 pa = J.centre + roadNormal(a.d) * a.cwR, pb = J.centre - roadNormal(b.d) * b.cwL;
             if (intersect(pa, a.d, pb, b.d, u, v)) {
                 if (u > Fixed{} && v > Fixed{} && u < Fixed::fromInt(60) && v < Fixed::fromInt(60)) {
-                    trim[i] = fxMax(trim[i], u + R);
-                    trim[(i + 1) % m] = fxMax(trim[(i + 1) % m], v + R);
+                    trim[i] = fxMax(trim[i], u + Ra);
+                    trim[(i + 1) % m] = fxMax(trim[(i + 1) % m], v + Rb);
                 }
             }
         }

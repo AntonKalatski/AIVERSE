@@ -284,14 +284,24 @@ private:
     struct Prof { float off, h; int mat; int role = 0; };   // mat: of the segment ending at this point (-1: none)
 
     // stretches of an edge under the zebra crossings at its signalised ends
+    // a zebra at this end of the edge: a signalised junction there, and room for it (on a stretch too short for a
+    // crossing at both ends only the a end gets one, so two never lie side by side)
+    bool zebraAt(int ei, const RoadEdgeGeom& g, int end) const {
+        const RoadEdge& E = N_.edges[size_t(ei)];
+        auto signal = [&](int e) {
+            const int ni = N_.nodeIndex(e == 0 ? E.a : E.b);
+            const int ji = ni >= 0 ? G_.nodeJunction[size_t(ni)] : -1;
+            return ji >= 0 && G_.junctions[size_t(ji)].signal && !G_.junctions[size_t(ji)].split;
+        };
+        if (!signal(end)) return false;
+        const float room = f(g.length - g.trim0 - g.trim1);
+        return !(end == 1 && signal(0) && room < 2 * 3.8f / cm_ + 2.0f / cm_);
+    }
     std::vector<std::pair<float, float>> zebras(int ei, const RoadTypeDef& t, const RoadEdgeGeom& g) const {
         std::vector<std::pair<float, float>> out;
         if (!t.crossings || (t.forward.empty() && t.backward.empty())) return out;
-        const RoadEdge& E = N_.edges[size_t(ei)];
         for (int end = 0; end < 2; ++end) {
-            const int ni = N_.nodeIndex(end == 0 ? E.a : E.b);
-            const int ji = ni >= 0 ? G_.nodeJunction[size_t(ni)] : -1;
-            if (ji < 0 || !G_.junctions[size_t(ji)].signal) continue;
+            if (!zebraAt(ei, g, end)) continue;
             const float trim = f(end == 0 ? g.trim0 : g.trim1), a = 0.3f / cm_, b = a + 3.0f / cm_;
             out.push_back(end == 0 ? std::pair{trim + a, trim + b} : std::pair{f(g.length) - trim - b, f(g.length) - trim - a});
         }
@@ -762,6 +772,86 @@ private:
         }
     }
 
+    // where a dirt or gravel road runs into a junction box of its own kind the two textures would meet in a line
+    // across the road: a patch of the dirt road's own surface (the wear slot's dirt end) laid over the seam, fading
+    // out into the box and, quicker, into the road (the box's ruts are decals drawn on top of it)
+    static constexpr float kSeamBox = 2.5f, kSeamRoad = 1.2f;   // metres the patch reaches each way
+    template <class H>
+    void seamFeather(int ei, int end, bool paved, const H& h, int boxMat, float um) {
+        const RoadEdge& E = N_.edges[size_t(ei)];
+        const RoadTypeDef& t = T_[size_t(E.typeIndex)];
+        const RoadEdgeGeom& g = G_.edges[size_t(ei)];
+        if (!t.unpaved() || !t.drivable() || g.pts.size() < 2) return;
+        const float m = 0.10f / cm_;
+        const float l = -f(t.carriageway(-1)) - m, r = f(t.carriageway(1)) + m;
+        const float tr = end == 0 ? f(g.trim0) : f(g.length - g.trim1);
+        const float sg = end == 0 ? 1.0f : -1.0f;   // into the road
+        // a paved box: its asphalt runs on onto the dirt, breaking up (v of the wear slot: whole .. gone), from a
+        // metre inside the box where it fades in over the box's own asphalt
+        // (paved: the box's asphalt runs on as a tongue over the dirt, in the box's own material and world-mapped
+        // texture so no edge shows, and the wear slot over it lets the dirt through more and more)
+        const float xb = (paved ? 0.0f : kSeamBox) / cm_, xr = (paved ? 4.0f : kSeamRoad) / cm_;
+        const int slot = paved ? roadkit::kVergeWearSlot : roadkit::kVergeDirtSlot;
+        const float u0 = float(slot) / float(roadkit::kVergeSlots) + 0.002f, u1 = float(slot + 1) / float(roadkit::kVergeSlots) - 0.002f;
+        const float w = r - l;
+        auto alpha = [&](float d) {
+            if (paved) return 1.0f;
+            float u = d < 0 ? 1 + d / xb : 1 - d / xr;
+            const float c = std::clamp(u, 0.0f, 1.0f); return c * c * (3 - 2 * c);
+        };
+        auto vAt = [&](float s, float d) {
+            if (paved) { const float u = std::clamp(d / xr, 0.0f, 1.0f); return 0.02f + 0.978f * (0.6f * u * u * (3 - 2 * u) + 0.4f * u); }
+            (void)s; return 0.01f + (d + xb) / w * 0.98f;   // square texels (the slot spans the width); within one tile: the atlas does not wrap
+        };
+        const uint32_t tint = paved ? 0xffffffu : t.surface == RoadSurface::Gravel ? 0xd8d8d8u : 0xe6e6e6u;
+        const int n = 12;
+        for (int k = 0; k < n; ++k) {
+            const float da = -xb + (xb + xr) * float(k) / float(n), db = -xb + (xb + xr) * float(k + 1) / float(n);
+            const float sa = std::clamp(tr + sg * da, 0.0f, f(g.length)), sb = std::clamp(tr + sg * db, 0.0f, f(g.length));
+            const Pt A = sample(g, sa), B = sample(g, sb);
+            float3 c[4] = {at(B, l, 0), at(B, r, 0), at(A, r, 0), at(A, l, 0)};
+            // inside the box on its surface, out on the road on the road's
+            for (int q = 0; q < 4; ++q) if ((q < 2 ? db : da) < 0) c[q].y = h(c[q].x, c[q].z, 0);
+            if (paved) {
+                float3 e[4];
+                for (int q = 0; q < 4; ++q) { e[q] = c[q]; e[q].y += 0.004f; }
+                auto w = [&](float3 v) { return float2{v.x * um, v.z * um}; };
+                quad(boxMat, e[3], e[2], e[1], e[0], w(e[3]), w(e[2]), w(e[1]), w(e[0]), {0, 1, 0});
+            }
+            const float2 uv[4] = {{u0, vAt(sb, db)}, {u1, vAt(sb, db)}, {u1, vAt(sa, da)}, {u0, vAt(sa, da)}};
+            const float al[4] = {alpha(db), alpha(db), alpha(da), alpha(da)};
+            for (int q = 0; q < 4; ++q) {
+                render::SpriteVertex v;
+                v.pos = c[q]; v.pos.y += 0.011f;
+                v.uv = uv[q]; v.color = (tint & 0xffffffu) | uint32_t(al[q] * 255.0f + 0.5f) << 24; v.team = 0;
+                v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+                verges.push_back(v);
+            }
+        }
+        if (!paved) return;
+        // the tongue's end under a patch of the dirt road's own surface fading out onto the road
+        const float p0 = xr - 1.0f / cm_, p1 = xr + 1.5f / cm_;
+        const float su0 = float(roadkit::kVergeDirtSlot) / float(roadkit::kVergeSlots) + 0.002f, su1 = float(roadkit::kVergeDirtSlot + 1) / float(roadkit::kVergeSlots) - 0.002f;
+        auto pa = [&](float d) { const float u = d < xr ? (d - p0) / (xr - p0) : 1 - (d - xr) / (p1 - xr); const float c = std::clamp(u, 0.0f, 1.0f); return c * c * (3 - 2 * c); };
+        const uint32_t dt = t.surface == RoadSurface::Gravel ? 0xd8d8d8u : 0xe6e6e6u;
+        for (int k = 0; k < 8; ++k) {
+            const float da = p0 + (p1 - p0) * float(k) / 8.0f, db = p0 + (p1 - p0) * float(k + 1) / 8.0f;
+            const float sa = std::clamp(tr + sg * da, 0.0f, f(g.length)), sb = std::clamp(tr + sg * db, 0.0f, f(g.length));
+            const Pt A = sample(g, sa), B = sample(g, sb);
+            const float3 c[4] = {at(B, l, 0), at(B, r, 0), at(A, r, 0), at(A, l, 0)};
+            const float va = 0.01f + (da - p0) / w * 0.98f, vb = 0.01f + (db - p0) / w * 0.98f;
+            const float2 uv[4] = {{su0, vb}, {su1, vb}, {su1, va}, {su0, va}};
+            const float al[4] = {pa(db), pa(db), pa(da), pa(da)};
+            for (int q = 0; q < 4; ++q) {
+                render::SpriteVertex v;
+                v.pos = c[q]; v.pos.y += 0.012f;
+                v.uv = uv[q]; v.color = dt | uint32_t(al[q] * 255.0f + 0.5f) << 24; v.team = 0;
+                v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+                verges.push_back(v);
+            }
+        }
+    }
+
     // the first metres of a dirt road that a paved one wears out into: the broken-asphalt decal at its fullest and
     // the wheel tracks run on over it and fade, so the end of the paved road leaves no edge across the dirt
     void dirtLeadIn(int ei, const RoadTypeDef& t, const RoadEdgeGeom& g, const Pt& A, const Pt& B) {
@@ -769,15 +859,22 @@ private:
         const RoadEdge& E = N_.edges[size_t(ei)];
         const float X = 3.0f / cm_;
         for (int end = 0; end < 2; ++end) {
-            const float da = end == 0 ? A.s : f(g.length) - A.s, db = end == 0 ? B.s : f(g.length) - B.s;
+            // measured from where the road shows: a junction box covers the end up to the trim
+            const float tr = end == 0 ? f(g.trim0) : f(g.trim1);
+            const float da = (end == 0 ? A.s : f(g.length) - A.s) - tr, db = (end == 0 ? B.s : f(g.length) - B.s) - tr;
             if (std::min(da, db) >= X) continue;
             const int32_t node = end == 0 ? E.a : E.b;
-            bool fromPaved = false;
-            for (size_t k = 0; k < N_.edges.size() && !fromPaved; ++k) {
+            bool fromPaved = false, fromBox = false;
+            for (size_t k = 0; k < N_.edges.size() && !(fromPaved && !fromBox); ++k) {
                 if (int(k) == ei) continue;
                 const RoadEdge& o = N_.edges[k];
-                for (int oe = 0; oe < 2; ++oe)
-                    if ((oe == 0 ? o.a : o.b) == node && G_.edges[k].worn[size_t(oe)]) fromPaved = true;
+                for (int oe = 0; oe < 2; ++oe) {
+                    if ((oe == 0 ? o.a : o.b) != node) continue;
+                    // a paved road worn out into this one, or a paved junction this dirt road runs into
+                    const RoadTypeDef& ot = T_[size_t(o.typeIndex)];
+                    if (G_.edges[k].worn[size_t(oe)]) fromPaved = true;
+                    else if (ot.drivable() && !ot.unpaved()) fromBox = true;   // seamFeather() does that one
+                }
             }
             if (!fromPaved) continue;
             auto fade = [&](float d) { const float u = std::clamp(1 - d / X, 0.0f, 1.0f); return u * u * (3 - 2 * u); };
@@ -788,7 +885,13 @@ private:
             const float3 c[4] = {at(B, l, 0), at(B, r, 0), at(A, r, 0), at(A, l, 0)};
             // v in the fully broken-up band of the slot, running back and forth along the road (no stretched rows)
             auto vv = [&](float s) { const float q = s * cm_ / 3.0f; const float fr = q - std::floor(q); return 0.90f + 0.096f * std::fabs(2 * fr - 1); };
-            const float va = vv(A.s), vb = vv(B.s);
+            float va = vv(A.s), vb = vv(B.s);
+            if (fromBox) {
+                // out of a paved junction box: the asphalt runs on a little way breaking up (v: whole .. the dirt's own
+                // surface), so the box's edge is no straight line across the dirt
+                auto ramp = [&](float d) { const float u = std::clamp(d / X, 0.0f, 1.0f); return 0.30f + 0.70f * u * u * (3 - 2 * u); };
+                va = ramp(da); vb = ramp(db);
+            }
             const float2 uv[4] = {{u0, vb}, {u1, vb}, {u1, va}, {u0, va}};
             const float al[4] = {fb, fb, fa, fa};
             for (int k = 0; k < 4; ++k) {
@@ -1167,7 +1270,7 @@ private:
             auto sAt = [&](float d) { return end == 0 ? trim + d : f(g.length) - trim - d; };
             const float cwl = f(t.carriageway(-fs)), cwr = f(t.carriageway(fs));
             float d = 0.3f / cm_;
-            if (J.signal && t.crossings && paints) {   // zebra: stripes along the road across the whole carriageway
+            if (J.signal && t.crossings && paints && zebraAt(ei, g, end)) {   // zebra: stripes along the road across the whole carriageway
                 const float len = 3.0f / cm_;
                 const float med = f(t.median) * 0.5f;
                 for (float o = -cwl + 0.3f / cm_; o < cwr - 0.3f / cm_; o += 1.0f / cm_)
@@ -1318,7 +1421,6 @@ private:
         for (auto& p : J.outline) { cx += f(p.x); cz += f(p.y); }
         cx /= float(J.outline.size()); cz /= float(J.outline.size());
         const float um = 1.0f / (4.0f / cm_) * (mat == RtsRoadView::kAsphalt ? 0.25f : 1.0f);
-        (void)um;
         const float3 c{cx, h(cx, cz, 0), cz};
         for (size_t i = 0; i < J.outline.size(); ++i) {
             const Vec2 a = J.outline[i], b = J.outline[(i + 1) % J.outline.size()];
@@ -1364,6 +1466,9 @@ private:
                 arc += seg;
             }
         }
+        // dirt arms: their seam with the box blended away, under the box's ruts
+        for (size_t k = 0; k < J.arms.size(); ++k)
+            seamFeather(J.arms[k], J.armEnd[k], mat != RtsRoadView::kDirt && mat != RtsRoadView::kGravel, h, mat, um);
         junctionTracks(J, h);   // paved or dirt: the box carries the tracks / ruts of the roads it joins
     }
 
@@ -1391,8 +1496,10 @@ private:
             if (t.unpaved()) {   // a dirt or gravel road: its one pair of ruts down the middle, both ways
                 a.dirt = true;
                 a.perM = 0.80f * f(firstLanes[0].width) / 3.0f / 0.82f;   // the texture's rut gauge
-                a.out.push_back(Lane{P.c, a.leave, 0});   // the ruts run on the centre line
-                a.in.push_back(Lane{P.c, a.leave * -1.0f, 0});
+                // the ruts run on the centre line, from a little way out on the road (where the seam patch fades)
+                const Pt Q = sample(g, end == 0 ? f(g.trim0) + kSeamRoad / cm_ : f(g.length - g.trim1) - kSeamRoad / cm_);
+                a.out.push_back(Lane{Q.c, a.leave, 0});
+                a.in.push_back(Lane{Q.c, a.leave * -1.0f, 0});
                 arms.push_back(a);
                 continue;
             }
@@ -1417,7 +1524,7 @@ private:
             if (len < 1e-3f) return;
             const float3 p1 = p0 + d0 * (len * 0.4f), p2 = p3 - d3 * (len * 0.4f);
             auto bz = [&](float u) { const float v = 1 - u; return p0 * (v * v * v) + p1 * (3 * v * v * u) + p2 * (3 * v * u * u) + p3 * (u * u * u); };
-            const int n = std::max(2, int(std::ceil(len / 0.4f)));
+            const int n = std::max(2, int(std::ceil(len / 0.12f)));
             // asphalt grey, or the brown the paved roads' tracks turn as they run into a dirt road's ruts
             auto colAt = [&](float u) {
                 const float k = dirt0 + (dirt1 - dirt0) * u;
@@ -1438,7 +1545,15 @@ private:
                     };
                     const float3 nA = nrm(ua), nB = nrm(ub);
                     const float um = (ua + ub) * 0.5f, perM = perM0 + (perM1 - perM0) * um;
-                    const uint32_t col = colAt(um);
+                    uint32_t col = colAt(um);
+                    {   // out on a dirt road the ruts fade in under the seam patch, where the road's own take over
+                        const float F = kSeamRoad / cm_;
+                        float k = 1;
+                        if (dirt0 > 0.5f) k = std::min(k, (along + 0.5f * std::hypot(B.x - A.x, B.z - A.z)) / F);
+                        if (dirt1 > 0.5f) k = std::min(k, (len - along) / F);
+                        k = std::clamp(k, 0.0f, 1.0f);
+                        col = (col & 0xffffffu) | uint32_t(float(col >> 24) * k + 0.5f) << 24;
+                    }
                     const float ga = float(side) * gauge * perM, hw = w * 0.5f * perM;
                     const float seg = std::hypot(B.x - A.x, B.z - A.z);
                     const float va = along / per, vb = (along + seg) / per;
@@ -1447,7 +1562,7 @@ private:
                     const float2 uv[4] = {{u0, vb}, {u1, vb}, {u1, va}, {u0, va}};
                     for (int q = 0; q < 4; ++q) {
                         render::SpriteVertex v;
-                        v.pos = c[q]; v.pos.y = h(c[q].x, c[q].z, 0) + 0.002f;
+                        v.pos = c[q]; v.pos.y = h(c[q].x, c[q].z, 0) + 0.014f;
                         v.uv = uv[q]; v.color = col; v.team = 0;
                         v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
                         verges.push_back(v);
@@ -1469,7 +1584,7 @@ private:
                 if (A.dirt && B.dirt && j < i) continue;
                 const float d0 = A.dirt ? 1.0f : 0.0f, d1 = B.dirt ? 1.0f : 0.0f;
                 if (A.dirt || B.dirt) {   // into or out of a dirt road: every lane to its ruts down the middle
-                    const float alpha = straight > 0.6f || arms.size() == 2 ? kTrackAlpha : kTrackAlpha * 0.8f;
+                    const float alpha = straight > 0.6f || arms.size() == 2 ? kTrackAlpha : kTrackAlpha * 0.6f;
                     if (straight <= -0.6f && arms.size() > 2) continue;
                     if (A.dirt && B.dirt) { path(A.in[0].p, A.in[0].dir, B.out[0].p, B.out[0].dir, alpha, A.perM, B.perM, 1, 1); continue; }
                     // a paved arm: straight on every lane merges into / spreads from the ruts; a turn only from the

@@ -103,13 +103,16 @@ Image texture(int mat, int size) {
             }
             case V::kGravel: {
                 const float g = rnd(x, y, 13), n = fbm(fx, fy, size, 32, 31);
-                const float v = 0.30f + (n - 0.5f) * 0.2f + (g - 0.5f) * 0.14f;
+                // a touch darker than the gravel road's own texture base: its ridges and grit lift that one, so the
+                // junction boxes match the roads running into them
+                const float v = (0.30f + (n - 0.5f) * 0.2f + (g - 0.5f) * 0.14f) * 0.86f;
                 c = {v * 1.02f, v * 0.97f, v * 0.88f};
                 break;
             }
             case V::kDirt: case V::kSoil: {
                 const float n = fbm(fx, fy, size, 4, 41), g = rnd(x, y, 17);
-                const float v = (mat == V::kSoil ? 0.12f : 0.26f) + (n - 0.5f) * 0.16f + (g - 0.5f) * 0.06f;
+                // dirt a touch darker than the dirt road's texture base (see gravel): the boxes match the roads
+                const float v = ((mat == V::kSoil ? 0.12f : 0.26f) + (n - 0.5f) * 0.16f + (g - 0.5f) * 0.06f) * (mat == V::kSoil ? 1.0f : 0.86f);
                 c = {v * 1.05f, v * 0.84f, v * 0.62f};
                 break;
             }
@@ -264,6 +267,15 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             const float a = std::exp(-d * d * 3.0f) * (0.6f + 0.8f * fbm(fx, fy, cell, 4, 411)) * (rnd(x, y, 413) > 0.93f ? 0.4f : 1.0f);
             const float v = 0.20f + (fbm(fx, fy, cell, 8, 415) - 0.5f) * 0.03f;   // tinted down by the vertex colour
             put(4, x, y, Rgb{v, v, v * 1.02f}, a);
+        }
+    // slot 5: the dirt road's own surface, solid and tiling both ways (laid over the seam where a dirt road meets
+    // its junction box); a little lighter than the road texture, the vertex colour tints it down to match
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float n = fbm(fx, fy, cell, 4, 41), g = rnd(x, y, 17);
+            const float v = (0.26f + (n - 0.5f) * 0.16f + (g - 0.5f) * 0.06f) * 1.435f;
+            put(5, x, y, Rgb{v * 1.05f * 1.12f, v * 0.84f * 1.26f, v * 0.62f * 1.24f}, 1.0f);
         }
     return px;
 }
