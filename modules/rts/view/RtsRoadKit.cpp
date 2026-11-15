@@ -277,6 +277,37 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             const float v = (0.26f + (n - 0.5f) * 0.16f + (g - 0.5f) * 0.06f) * 1.435f;
             put(5, x, y, Rgb{v * 1.05f * 1.12f, v * 0.84f * 1.26f, v * 0.62f * 1.24f}, 1.0f);
         }
+    // slot 6: plain white, solid (the wet film over the road surfaces: the vertex colour is the whole look)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) put(6, x, y, Rgb{1, 1, 1}, 1.0f);
+    // slot 7: a puddle, filling the cell: an irregular, lobed pool (no circle), shallow at the rim (a feathered,
+    // darker wet edge where the water thins out), the sky's light in the middle with a soft sheen across it;
+    // white-ish so the vertex colour tints it (asphalt water, muddy water)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float dx = (fx + 0.5f) / float(cell) * 2 - 1, dy = (fy + 0.5f) / float(cell) * 2 - 1;
+            const float r = std::sqrt(dx * dx + dy * dy), ang = std::atan2(dy, dx);
+            // the shore: a few lobes plus noise along the angle (seamless around the circle)
+            const float ca = std::cos(ang), sa = std::sin(ang);
+            const float lobes = 0.10f * std::sin(ang * 3 + 0.7f) + 0.06f * std::sin(ang * 5 + 2.1f) + 0.04f * std::sin(ang * 7 + 4.0f);
+            const float wob = (fbm((ca + 1) * float(cell) * 0.25f, (sa + 1) * float(cell) * 0.25f, cell, 4, 701) - 0.5f) * 0.22f;
+            const float shore = 0.80f + lobes + wob;
+            const float d = (shore - r) / 0.16f;   // > 0 inside, 1 a little way in
+            if (d <= -1) { put(7, x, y, Rgb{0, 0, 0}, 0); continue; }
+            const float water = std::clamp(d, 0.0f, 1.0f);
+            const float rim = std::clamp(d + 1, 0.0f, 1.0f) * (1 - water);   // the wet band outside the water
+            const float sheen = 0.5f + 0.5f * fbm(fx, fy, cell, 3, 709);
+            // standing water reads darker than the wet road around it, with the sky's sheen drifting across
+            // (linear: the asphalt itself is about 0.05 in this space)
+            Rgb c{0.030f + 0.040f * sheen * sheen, 0.036f + 0.048f * sheen * sheen, 0.046f + 0.062f * sheen * sheen};
+            // the sky caught in the water: a soft, broken band of light across the pool
+            const float band = std::exp(-std::pow((dx * 0.8f + dy * 0.6f + (sheen - 0.5f) * 0.5f) / 0.28f, 2.0f));
+            c = mix(c, Rgb{0.15f, 0.17f, 0.21f}, band * 0.55f * std::clamp(d, 0.0f, 1.0f));
+            c = mix(c, Rgb{0.028f, 0.028f, 0.030f}, std::clamp(1 - d * 1.6f, 0.0f, 1.0f) * 0.5f);   // shallow toward the shore
+            const float a = water * 0.9f + rim * 0.30f;
+            put(7, x, y, rim > water ? Rgb{0.022f, 0.022f, 0.024f} : c, a);
+        }
     return px;
 }
 

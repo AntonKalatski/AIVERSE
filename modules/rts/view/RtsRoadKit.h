@@ -28,8 +28,8 @@ float paintMargin(const RoadTypeDef& t);
 // Verges of roads without a curb: one strip texture per surface (gravel, grass, dirt side by side, 256 x 256 each),
 // u across (0: over the asphalt edge, ragged; 1: faded into the ground), v along (tiles every kVergePeriod metres).
 inline constexpr float kVergePeriod = 6.0f;
-inline constexpr int kVergeSlots = 6;        // gravel, grass, dirt verges; asphalt wearing into dirt; a wheel track; dirt road surface
-inline constexpr int kVergeWearSlot = 3, kVergeTrackSlot = 4, kVergeDirtSlot = 5;
+inline constexpr int kVergeSlots = 8;        // gravel, grass, dirt verges; asphalt wearing into dirt; a wheel track; dirt road surface; plain white (wet film); a puddle
+inline constexpr int kVergeWearSlot = 3, kVergeTrackSlot = 4, kVergeDirtSlot = 5, kVergeFilmSlot = 6, kVergePuddleSlot = 7;
 std::vector<uint32_t> vergeAtlas(int cell);
 inline int vergeSlot(RoadSurface s) { return s == RoadSurface::Grass ? 1 : s == RoadSurface::Dirt ? 2 : 0; }
 bool roadSurfacePainted(const RoadTypeDef& t);   // the type has lines worth a texture of its own

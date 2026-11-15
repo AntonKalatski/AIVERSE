@@ -103,6 +103,23 @@ lines, lane arrows, STOP, BUS — are decals from the paint atlas `engine/assets
 (`tools/roads/make_markings.py`; a game overrides it with its own `roads/markings.png`), drawn with the sprite decal
 pipelines (depth bias, lit, shadows). No shaders of its own.
 
+### Wet roads and puddles
+
+Rain is the game's: its weather calls `RtsView::roads().setWeather(wet, puddles)` every frame (both 0..1). `wet`
+darkens every road surface — carriageways, junction boxes; wet dirt turns a darker brown, wet asphalt a cooler grey —
+except in tunnels. `puddles` fills the puddle spots of the network: in the gutters along kerbs (sparser on roads
+without kerbs), now and then in a lane's wheel track, in the ruts of dirt and gravel roads (sometimes one broad pool
+over both ruts) and in the corners of junction boxes (a broad pool or two in a dirt box). None on bridge decks, in
+tunnels or on driveways. Every spot has its own level it appears at and grows from there, so a shower fills them
+one by one and drying shrinks them in the reverse order. The spots are hashed from the edge / node ids: the same
+puddles in every run and on every client. Both layers are decals (the verge atlas' film and puddle slots); the meshes
+are remade only when a level changes by 1/32.
+
+A map without weather can fix the look: `"roadNetwork": {"weather": {"wet": 1, "puddles": 0.6}, ...}` (a game's
+`setWeather` overrides it). A game that draws its own reflective water reads the spots,
+`RtsRoadView::puddleSpots()` (centre on the road surface, long axis, full length / width, the level it starts at,
+dirt or not), and sizes them with `RtsRoadView::puddleScale(spot, puddles)`.
+
 ## Editor
 
 Window «Дороги» (menu Мир): «Рисовать в «Сцене»», modes Прямая / Кривая (a control point) / Свободная (continues the

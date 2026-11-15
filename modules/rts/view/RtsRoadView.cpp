@@ -88,6 +88,8 @@ public:
     std::vector<Prop> props;
     std::vector<render::SpriteVertex> decals;   // road paint (4 vertices per quad)
     std::vector<render::SpriteVertex> verges;   // soft verges (4 vertices per quad)
+    std::vector<render::SpriteVertex> film;     // the road surfaces once more, for the wet film (white, alpha 1)
+    std::vector<RtsRoadView::PuddleSpot> spots; // where puddles gather
 
     void build() {
         for (size_t i = 0; i < N_.edges.size(); ++i) edge(int(i));
@@ -492,6 +494,11 @@ private:
                 const float3 a0 = at(A, oa0, p0.h * hk(p0, A)), a1 = at(A, oa1, p1.h * hk(p1, A)), b0 = at(B, ob0, p0.h * hk(p0, B)), b1 = at(B, ob1, p1.h * hk(p1, B));
                 float3 hint{0, 1, 0};
                 if (face) hint = A.n * (p1.h < p0.h ? 1.0f : -1.0f);   // curb faces look at the lower side
+                // the wet film over every driven surface: the carriageway with its bays and parking pockets, worn
+                // asphalt; not on sidewalks, kerbs, shoulders, nor in tunnels
+                if (!face && t.drivable() && std::min(A.e, B.e) > -0.5f && p1.h <= 1e-4f && p0.h <= 1e-4f &&
+                    (p1.mat == carr || p1.mat == road || p1.mat == RtsRoadView::kAsphalt || p1.mat == RtsRoadView::kAsphaltWorn))
+                    filmQuad(b0, b1, a1, a0, t.unpaved());
                 if (p1.mat == carr && carr != road) {   // painted carriageway: u across the type's carriageway, v per dash period
                     const float M = roadkit::paintMargin(t), tl = f(t.carriageway(-1)) + M, tw = std::max(0.01f, f(t.carriageway(-1)) + f(t.carriageway(1)) + 2 * M);
                     // where the road narrows the texture is not squeezed (its grain would change): each point keeps
@@ -586,6 +593,87 @@ private:
         propsOf(ei, t, g, fs, s0, s1, worn);
         shelters(t, g, fs);
         crossings(ei, t, g, fs);
+        puddlesOf(ei, t, g, fs, s0, s1);
+    }
+
+    static uint32_t hashU(uint32_t a, uint32_t b) {
+        uint32_t h = a * 0x9E3779B1u ^ (b + 0x7F4A7C15u + (a << 6) + (a >> 2));
+        h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12; h *= 0x297A2D39u; h ^= h >> 15;
+        return h;
+    }
+    static float hash01(uint32_t a, uint32_t b) { return float(hashU(a, b) & 0xffffff) / float(0x1000000); }
+    void filmQuad(float3 a, float3 b, float3 c, float3 d, bool dirt = false) {
+        const float u0 = float(roadkit::kVergeFilmSlot) / float(roadkit::kVergeSlots) + 0.01f, u1 = float(roadkit::kVergeFilmSlot + 1) / float(roadkit::kVergeSlots) - 0.01f;
+        const float3 q[4] = {a, b, c, d};
+        const float2 uv[4] = {{u0, 0.1f}, {u1, 0.1f}, {u1, 0.9f}, {u0, 0.9f}};
+        for (int k = 0; k < 4; ++k) {
+            render::SpriteVertex v;
+            v.pos = q[k]; v.pos.y += 0.0012f;
+            v.uv = uv[k]; v.color = dirt ? 0xff1d2a3au : 0xff403a36u; v.team = 0;   // wet dirt: darker, browner; asphalt: cooler
+            v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+            film.push_back(v);
+        }
+    }
+    // the puddle spots of one edge, the same every run (hashed from the edge id and the station): in the gutters
+    // along kerbs, in the wheel tracks, in the ruts of a dirt road; none on bridges' slopes or in tunnels
+    void puddlesOf(int ei, const RoadTypeDef& t, const RoadEdgeGeom& g, int fs, float s0, float s1) {
+        if (!t.drivable()) return;
+        const RoadEdge& E = N_.edges[size_t(ei)];
+        const uint32_t id = uint32_t(E.id) * 7919u + 13u;
+        const auto& lanes0 = t.forward.empty() ? t.backward : t.forward;
+        if (lanes0.empty()) return;
+        const float m = 1.0f / cm_;   // a metre
+        const float laneW = f(lanes0[0].width);
+        auto add = [&](float s, float off, float len, float wid, float from, uint32_t k) {
+            if (s - len * 0.5f < s0 + 0.5f * m || s + len * 0.5f > s1 - 0.5f * m) return;
+            const Pt P = sample(g, s);
+            if (P.e < -0.5f || std::fabs(P.e) > 0.5f) return;   // tunnels, and decks: they drain
+            for (auto& d : g.driveways) if (std::fabs(f(d.s) - s) < f(d.half) + f(d.flare) + len * 0.5f) return;
+            RtsRoadView::PuddleSpot p;
+            p.c = at(P, off, 0);
+            p.dir = {P.t.x, P.t.z};
+            const float tw = 0.85f + 0.3f * hash01(id, k * 5 + 4);
+            p.len = len; p.width = wid * tw;
+            p.from = from;
+            p.dirt = t.unpaved();
+            spots.push_back(p);
+        };
+        uint32_t k = 0;
+        if (t.unpaved()) {
+            // ruts: every 4..10 m one, now and then a broad one over both ruts
+            const float gauge = 0.80f * laneW / 3.0f;
+            for (float s = s0 + (2 + 6 * hash01(id, 1)) * m; s < s1; s += (4 + 6 * hash01(id, k * 5 + 2)) * m, ++k) {
+                const bool broad = hash01(id, k * 5 + 3) < 0.25f;
+                const float side = hash01(id, k * 5 + 1) < 0.5f ? -1.0f : 1.0f;
+                add(s, broad ? 0.0f : side * gauge, (2.5f + 3.5f * hash01(id, k * 5)) * m, (broad ? 3.2f : 1.6f) * m,
+                    0.75f * hash01(id, k * 5 + 6), k);
+            }
+            return;
+        }
+        // gutters: along each side with a kerb (water runs to the edge), every 7..16 m
+        for (int sd : {-1, 1}) {
+            const int ts = sd * fs;
+            const RoadSideDef& S = ts > 0 ? t.right : t.left;
+            const bool kerb = S.curb == RoadCurb::Low || S.curb == RoadCurb::High || S.curb == RoadCurb::Sloped;
+            const float edge = f(t.carriageway(ts));
+            const float step = kerb ? 7.0f : 14.0f, var = kerb ? 9.0f : 12.0f;
+            for (float s = s0 + (3 + step * hash01(id, 100 + sd)) * m; s < s1; s += (step + var * hash01(id, 200 + k)) * m, ++k) {
+                const float wid = (1.6f + 1.0f * hash01(id, 300 + k)) * m;
+                add(s, float(sd) * (edge - wid * 0.4f), (4.0f + 5.0f * hash01(id, 400 + k)) * m, wid, 0.7f * hash01(id, 500 + k), 1000 + k);
+            }
+        }
+        // wheel tracks: now and then a short one in a lane's track, later in the shower than the gutters
+        for (float s = s0 + (5 + 10 * hash01(id, 600)) * m; s < s1; s += (12 + 18 * hash01(id, 700 + k)) * m, ++k) {
+            const int dir = hash01(id, 800 + k) < 0.5f ? 1 : -1;
+            const int n = t.lanes(dir);
+            if (n == 0) continue;
+            const int lane = int(hash01(id, 900 + k) * float(n)) % n;
+            float off = f(t.median) * 0.5f, c = 0;
+            int li = 0;
+            for (auto& l : t.lanesOf(dir)) { const float w = f(l.width); if (li++ == lane) { c = off + w * 0.5f; break; } off += w; }
+            const float gauge = 0.82f * laneW / 3.5f * (hash01(id, 1000 + k) < 0.5f ? -1.0f : 1.0f);
+            add(s, float(dir * fs) * c + gauge, (2.5f + 2.0f * hash01(id, 1100 + k)) * m, (1.0f + 0.6f * hash01(id, 1200 + k)) * m, 0.3f + 0.6f * hash01(id, 1300 + k), 2000 + k);
+        }
     }
 
     bool inCut(int ei, float x, float z) const {
@@ -939,6 +1027,7 @@ private:
                 const float3 up{0, 1, 0};
                 tri(m, a0, a1, b1, uvOf(x0, o0, a0), uvOf(x0, o1, a1), uvOf(x1, o1, b1), up);
                 tri(m, a0, b1, b0, uvOf(x0, o0, a0), uvOf(x1, o1, b1), uvOf(x1, o0, b0), up);
+                filmQuad(a0, a1, b1, b0);   // a driveway gets as wet as the road
             }
         }
         // kerb stones along both edges, from the road to the end in the yard
@@ -1426,7 +1515,9 @@ private:
             const Vec2 a = J.outline[i], b = J.outline[(i + 1) % J.outline.size()];
             const float3 pa{f(a.x), h(f(a.x), f(a.y), 0), f(a.y)}, pb{f(b.x), h(f(b.x), f(b.y), 0), f(b.y)};
             tri(mat, c, pa, pb, {cx * um, cz * um}, {pa.x * um, pa.z * um}, {pb.x * um, pb.z * um}, {0, 1, 0});
+            filmQuad(c, pa, pb, pb, mat == RtsRoadView::kDirt || mat == RtsRoadView::kGravel);   // a triangle: the last two corners the same
         }
+        junctionPuddles(J, h, float3{cx, h(cx, cz, 0), cz}, mat == RtsRoadView::kDirt || mat == RtsRoadView::kGravel);
         // sidewalk corners: a raised strip and the curb face along the inner curve
         const float umw = 1.0f / (4.0f / cm_);
         for (size_t ci = 0; ci < J.corners.size(); ++ci) {
@@ -1470,6 +1561,46 @@ private:
         for (size_t k = 0; k < J.arms.size(); ++k)
             seamFeather(J.arms[k], J.armEnd[k], mat != RtsRoadView::kDirt && mat != RtsRoadView::kGravel, h, mat, um);
         junctionTracks(J, h);   // paved or dirt: the box carries the tracks / ruts of the roads it joins
+    }
+
+    // puddles in a junction box: in the corners where the kerb turns (the gutter's low point), on a dirt box one or
+    // two broad ones toward the middle
+    template <class H>
+    void junctionPuddles(const RoadJunctionGeom& J, const H& h, float3 centre, bool dirt) {
+        const uint32_t id = uint32_t(J.node) * 104729u + 7u;
+        const float m = 1.0f / cm_;
+        auto add = [&](float3 c, float2 dir, float len, float wid, float from) {
+            RtsRoadView::PuddleSpot p;
+            p.c = float3{c.x, h(c.x, c.z, 0), c.z};
+            p.dir = dir; p.len = len; p.width = wid; p.from = from; p.dirt = dirt;
+            spots.push_back(p);
+        };
+        if (dirt) {
+            const int n = 1 + int(hash01(id, 1) * 2);
+            for (int k = 0; k < n; ++k) {
+                const float a = 6.2832f * hash01(id, 10 + uint32_t(k)), r = (0.5f + 1.5f * hash01(id, 20 + uint32_t(k))) * m;
+                add(centre + float3{std::cos(a) * r, 0, std::sin(a) * r}, {std::cos(a + 1.2f), std::sin(a + 1.2f)},
+                    (2.5f + 2.0f * hash01(id, 30 + uint32_t(k))) * m, (1.4f + 0.8f * hash01(id, 40 + uint32_t(k))) * m, 0.6f * hash01(id, 50 + uint32_t(k)));
+            }
+            return;
+        }
+        for (size_t ci = 0; ci < J.corners.size(); ++ci) {
+            const auto& strip = J.corners[ci];
+            if (strip.size() < 6 || hash01(id, 100 + uint32_t(ci)) < 0.35f) continue;   // not every corner holds water
+            const size_t q = (strip.size() / 2 / 2) * 2;   // the inner curve's middle point
+            const Vec2 a = strip[q - 2], b = strip[q + 2], mid = strip[q];
+            float2 dir{f(b.x - a.x), f(b.y - a.y)};
+            const float L = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+            if (L < 1e-4f) continue;
+            dir = {dir.x / L, dir.y / L};
+            // into the box from the kerb
+            float3 in{f(mid.x) - centre.x, 0, f(mid.y) - centre.z};
+            const float il = std::sqrt(in.x * in.x + in.z * in.z);
+            if (il < 1e-4f) continue;
+            const float wid = (1.6f + 1.0f * hash01(id, 200 + uint32_t(ci))) * m;
+            add(float3{f(mid.x), 0, f(mid.y)} - in * ((wid * 0.5f + 0.15f * m) / il), dir, (3.5f + 3.0f * hash01(id, 300 + uint32_t(ci))) * m, wid,
+                0.65f * hash01(id, 400 + uint32_t(ci)));
+        }
     }
 
     // wheel tracks across a junction: through every lane straight on, and from the outer lanes round the turns, so
@@ -1660,6 +1791,10 @@ void RtsRoadView::release(gfx::Device& dev) {
     if (decalMesh_.vb.valid()) decalBatch_.destroyMesh(dev, decalMesh_);
     if (vergeMesh_.vb.valid()) decalBatch_.destroyMesh(dev, vergeMesh_);
     decalMesh_ = {}; vergeMesh_ = {};
+    if (filmMesh_.vb.valid()) decalBatch_.destroyMesh(dev, filmMesh_);
+    if (puddleMesh_.vb.valid()) decalBatch_.destroyMesh(dev, puddleMesh_);
+    filmMesh_ = {}; puddleMesh_ = {};
+    wetStep_ = puddleStep_ = -1;
     for (auto& c : chunks_) if (c.model) releaseModel(dev, *c.model);
     chunks_.clear();
     props_.clear();
@@ -1686,6 +1821,10 @@ void RtsRoadView::setMap(const Json& map) {
     netJson_ = map["roadNetwork"];
     replaces_.clear();
     for (auto& v : netJson_["replaces"].items()) if (v.isString()) replaces_.push_back(v.str());
+    const Json& w = netJson_["weather"];   // a fixed rain look for the map (the game's weather overrides it)
+    mapWet_ = w.isObject() ? std::clamp(float(w["wet"].toDouble()), 0.0f, 1.0f) : 0.0f;
+    mapPuddles_ = w.isObject() ? std::clamp(float(w["puddles"].toDouble()), 0.0f, 1.0f) : 0.0f;
+    if (!weatherSet_) { wet_ = mapWet_; puddles_ = mapPuddles_; }
     try { net_ = parseRoadNetwork(netJson_, types_); }
     catch (const std::exception& e) { warnings_.push_back(e.what()); net_ = RoadNetwork{}; }
 }
@@ -1819,6 +1958,8 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
     }
     if (!mesh.decals.empty()) decalMesh_ = decalBatch_.buildMesh(dev, mesh.decals);
     if (!mesh.verges.empty()) vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
+    film_ = std::move(mesh.film);
+    spots_ = std::move(mesh.spots);
     for (auto& [key, a] : mesh.chunks) {
         if (a.empty()) continue;
         auto m = toModel("roads", a, images_, materials_);
@@ -1846,23 +1987,83 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
     } catch (const std::exception&) { ghostModel_.reset(); }
 }
 
+void RtsRoadView::setWeather(float wet, float puddles) {
+    weatherSet_ = true;
+    wet_ = std::clamp(wet, 0.0f, 1.0f);
+    puddles_ = std::clamp(puddles, 0.0f, 1.0f);
+}
+
+float RtsRoadView::puddleScale(const PuddleSpot& p, float puddles) {
+    if (puddles <= p.from) return 0.0f;
+    return std::sqrt(std::clamp((puddles - p.from) / std::max(1.0f - p.from, 0.05f), 0.0f, 1.0f));   // grows fast, then slowly
+}
+
+void RtsRoadView::buildWeather(gfx::Device& dev) {
+    const int ws = int(std::lround(wet_ * 32)), ps = int(std::lround(puddles_ * 32));
+    if (ws != wetStep_) {
+        wetStep_ = ws;
+        if (filmMesh_.vb.valid()) decalBatch_.destroyMesh(dev, filmMesh_);
+        filmMesh_ = {};
+        if (ws > 0 && !film_.empty()) {
+            // wet asphalt / dirt: darker and a little cooler (the sky's colour in the water film)
+            std::vector<SpriteVertex> v = film_;
+            const uint32_t a = uint32_t(std::lround(0.55f * float(ws) / 32.0f * 255.0f));
+            for (auto& x : v) x.color = (x.color & 0xffffffu) | (a << 24);
+            filmMesh_ = decalBatch_.buildMesh(dev, v);
+        }
+    }
+    if (ps != puddleStep_) {
+        puddleStep_ = ps;
+        if (puddleMesh_.vb.valid()) decalBatch_.destroyMesh(dev, puddleMesh_);
+        puddleMesh_ = {};
+        const float level = float(ps) / 32.0f;
+        std::vector<SpriteVertex> v;
+        const float u0 = float(roadkit::kVergePuddleSlot) / float(roadkit::kVergeSlots) + 0.001f, u1 = float(roadkit::kVergePuddleSlot + 1) / float(roadkit::kVergeSlots) - 0.001f;
+        for (size_t i = 0; i < spots_.size() && ps > 0; ++i) {
+            const PuddleSpot& p = spots_[i];
+            const float k = puddleScale(p, level);
+            if (k <= 0.02f) continue;
+            const float3 dl{p.dir.x * p.len * 0.5f * k, 0, p.dir.y * p.len * 0.5f * k}, dw{-p.dir.y * p.width * 0.5f * k, 0, p.dir.x * p.width * 0.5f * k};
+            float3 c = p.c;
+            c.y += 0.0025f;
+            const float3 q[4] = {c - dl - dw, c + dl - dw, c + dl + dw, c - dl + dw};
+            // a different part of the round pool for every spot: flip / swap the texture's axes
+            const bool fu = (i & 1) != 0, fv = (i & 2) != 0;
+            const float a0 = fu ? u1 : u0, a1 = fu ? u0 : u1, b0 = fv ? 1.0f : 0.0f, b1 = fv ? 0.0f : 1.0f;
+            const float2 uv[4] = {{a0, b0}, {a1, b0}, {a1, b1}, {a0, b1}};
+            const uint32_t alpha = uint32_t(std::lround(std::min(1.0f, 0.35f + k) * 255.0f));
+            const uint32_t tint = p.dirt ? 0xd2e2f0u : 0xffffffu;   // muddy water on dirt (abgr)
+            for (int c4 = 0; c4 < 4; ++c4) {
+                SpriteVertex x;
+                x.pos = q[c4]; x.uv = uv[c4]; x.color = tint | (alpha << 24); x.team = 0;
+                x.rpos = {x.pos.x, x.pos.y, x.pos.z, 0};
+                v.push_back(x);
+            }
+        }
+        if (!v.empty()) puddleMesh_ = decalBatch_.buildMesh(dev, v);
+    }
+}
+
 void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& heightAt) {
     if (!dev_) return;
     if (dirty_) rebuild(*dev_, heightAt);
     if (ghostDirty_) buildGhost(*dev_, heightAt);
+    buildWeather(*dev_);
     for (auto& c : chunks_) {
         ModelDraw d;
         d.model = c.model.get();
         d.flags = kDrawStatic;
         r.drawModel(d);
     }
-    if ((decalMesh_.vb.valid() && paint_.valid()) || (vergeMesh_.vb.valid() && verge_.valid())) {
+    if ((decalMesh_.vb.valid() && paint_.valid()) || (vergeMesh_.vb.valid() && verge_.valid()) || filmMesh_.vb.valid() || puddleMesh_.vb.valid()) {
         r.drawCustom([this, &r](gfx::Device& d) {
             SpriteLighting lighting;
             lighting.bind = [&r] { r.bindLitFrame(); };
             lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
             if (vergeMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, vergeMesh_, verge_.tex, r.viewProj(), &lighting, true);   // under the paint
+            if (filmMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, filmMesh_, verge_.tex, r.viewProj(), &lighting, true);   // wet: under the paint
             if (decalMesh_.vb.valid() && paint_.valid()) decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
+            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, puddleMesh_, verge_.tex, r.viewProj(), &lighting, true);   // water over the lines
         });
     }
     for (auto& p : props_) {

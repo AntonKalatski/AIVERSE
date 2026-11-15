@@ -39,6 +39,25 @@ public:
     const RoadGeometry& geometry() const { return geom_; }
     float cellMeters() const { return cellMeters_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
+    // Rain on the roads (docs/roads.md § Wet roads and puddles): wet 0..1 darkens every road surface (carriageways,
+    // junctions, driveways; not in tunnels), puddles 0..1 fills the puddle spots: along the kerbs, in the wheel
+    // tracks, in the ruts of dirt roads and in the corners of junctions; each spot has its own level it appears at
+    // and grows from there, so a shower fills them one by one and drying shrinks them back. The game's weather
+    // sets both every frame; a map can fix them with roadNetwork "weather": {"wet": .., "puddles": ..}.
+    void setWeather(float wet, float puddles);
+    float wet() const { return wet_; }
+    float puddles() const { return puddles_; }
+    struct PuddleSpot {
+        render::float3 c;                        // centre on the road surface (world units)
+        render::float2 dir{1, 0};                // long axis (unit, xz)
+        float len = 1, width = 1;                // full size (world units)
+        float from = 0;                          // puddles level it starts to show at
+        bool dirt = false;                       // on a dirt / gravel road (muddy water)
+    };
+    // every spot of the network, for a game that draws its own (reflective) water in them
+    const std::vector<PuddleSpot>& puddleSpots() const { return spots_; }
+    // a spot's size at a puddles level: 0 below its `from`, 1 at puddles 1
+    static float puddleScale(const PuddleSpot& p, float puddles);
     // editor preview: one edge drawn as a translucent ribbon (not part of the network)
     struct Ghost { bool on = false; RoadNetwork net; bool ok = true; };
     void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
@@ -81,6 +100,15 @@ private:
     render::TextureCache paintTex_;
     render::TextureRef paint_, verge_;
     render::SpriteMesh decalMesh_, vergeMesh_;
+    // rain: the road surfaces as one film (alpha set by wet) and the puddle spots; meshes remade when the levels
+    // change by a step (1/32), not every frame
+    void buildWeather(gfx::Device& dev);
+    std::vector<render::SpriteVertex> film_;
+    std::vector<PuddleSpot> spots_;
+    render::SpriteMesh filmMesh_, puddleMesh_;
+    float wet_ = 0, puddles_ = 0, mapWet_ = 0, mapPuddles_ = 0;
+    bool weatherSet_ = false;
+    int wetStep_ = -1, puddleStep_ = -1;
 };
 
 } // namespace aiverse::game
