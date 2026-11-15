@@ -1257,6 +1257,23 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
     std::vector<Vec2> pts;   // the last point passed, then the ones ahead
     pts.push_back(c.wp > 0 ? c.route[c.wp - 1].p : pos);
     for (size_t i = c.wp; i < c.route.size() && pts.size() < 9; ++i) pts.push_back(c.route[i].p);
+    // a wide vehicle (a lorry, a bus) in a narrow lane of a spline road keeps to the right of it, wheels near the kerb,
+    // so two of them meeting pass each other instead of brushing mirrors over the centre line
+    if (vt && !fireResponse) {
+        const int hc = m_->state(sim).grid.cellOf(v3(pos));
+        const int pi = hc >= 0 && size_t(hc) < net_.pieceAt.size() ? net_.pieceAt[size_t(hc)] : -1;
+        if (pi >= 0 && net_.pieces[size_t(pi)].curved()) {
+            const Fixed lw = net_.pieces[size_t(pi)].laneW;
+            if (lw.raw > 0 && vt->width * 4 > lw * 3) {
+                const Fixed bias = fxMin(fxMax((lw - vt->width) / 2, Fixed{}) + Fixed::fromRatio(1, 10), Fixed::fromRatio(1, 5));
+                for (size_t i = 0; i + 1 < pts.size(); ++i) {
+                    const Vec2 d = tl::trafficDetail::normalised(pts[i + 1] - pts[i]);
+                    if (d.lengthSq().raw) pts[i] = pts[i] + rightOnScreen(d) * bias;
+                }
+                if (pts.size() >= 2) { const Vec2 d = tl::trafficDetail::normalised(pts.back() - pts[pts.size() - 2]); if (d.lengthSq().raw) pts.back() = pts.back() + rightOnScreen(d) * bias; }
+            }
+        }
+    }
     const Fixed vc = fxMax(v, Fixed{}) / mpc_;   // cells/s
     const Fixed look = fireResponse && c.ignore.valid() && sim.tick()<c.ignoreUntil ? Fixed::fromRatio(3,5) : (fireResponse?fxMax(Fixed::fromRatio(6,5),halfLen*3):Fixed::fromRatio(6,5)) + vc*Fixed::fromRatio(1,5);
     Vec2 target = tl::trafficPursuit(pos, pts, look);

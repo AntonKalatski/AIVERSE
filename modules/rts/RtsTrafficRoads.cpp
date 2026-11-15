@@ -253,7 +253,19 @@ tl::TrafficNet buildTrafficNetFromRoads(int w, int h, const RoadNetwork& n, cons
     }
     // sidewalks for the pedestrians
     const std::vector<uint8_t> cover = rasterizeRoads(n, types, G, w, h);
-    for (size_t i = 0; i < N; ++i) sidewalk[i] = cover[i] == 2 ? 1 : 0;
+    // the verge of a road without a sidewalk (country lanes, shoulders) is no place to walk along: the sidewalk
+    // cells are those of roads that have one (with a cell of slack for their junction corners)
+    std::vector<uint8_t> walked(N, 0);
+    for (size_t i = 0; i < n.edges.size(); ++i) {
+        const RoadTypeDef& t = types[size_t(n.edges[i].typeIndex)];
+        if (t.left.sidewalk <= Fixed{} && t.right.sidewalk <= Fixed{}) continue;
+        const RoadEdgeGeom& g = G.edges[i];
+        const int fs = n.edges[i].reversed ? -1 : 1;
+        std::vector<std::vector<Vec2>> polys;
+        roadStripPolygons(g, Fixed{}, g.length, -t.halfWidth(-fs) - Fixed::fromInt(1), t.halfWidth(fs) + Fixed::fromInt(1), polys);
+        for (auto& poly : polys) roadFillPolygon(poly, w, h, [&](int c) { walked[size_t(c)] = 1; });
+    }
+    for (size_t i = 0; i < N; ++i) sidewalk[i] = cover[i] == 2 && walked[i] ? 1 : 0;
     // A sidewalk narrower than a cell rarely covers a cell centre: walk its middle line and mark the cells it
     // passes, so a pedestrian path stays continuous along every street that has one.
     const Fixed step = Fixed::fromRatio(1, 4);
