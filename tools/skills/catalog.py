@@ -54,6 +54,7 @@ ALIASES = {
  'aiverse-sports-rules':'sport football soccer hockey basketball ball goal pass shot tackle foul penalty formation спорт футбол хоккей мяч гол пас удар отбор фол пенальти расстановк',
  'aiverse-match-progression':'perk modifier xp experience level levelup offer reroll summon ally deck loadout pickup magnet перк модификатор опыт уровень прокачк призыв союзник колод лут магнит',
  'aiverse-physical-interactions':'carry pickup throw push pull rope joint door lock key platform elevator breakable debris destructible переноск подня брос толка тянут верев канат двер замок ключ платформ лифт разруш обломк',
+ 'aiverse-roads':'road roads spline street avenue junction crossing bridge tunnel parking bay highway rural дорог сплайн улиц проспект перекрест переход мост тоннел парковк карман шоссе грунтовк',
  'aiverse-boss-encounters':'boss telegraph windup cone slam phase enrage adds rotation status stun burn slow mob wander hunt flee swarm босс телеграф замах конус фаз ярост призыв ротаци статус оглушен горен замедлен моб блужд охот бегств рой',
 }
 
@@ -79,6 +80,9 @@ def generate():
     for name,description in [('meta-game','Choose meta-game recipes'),('meta-compose','Compose a selected meta project'),('aiverse-orchestrator','Find skills and resolve minimal library dependencies')]:
         entries.append(dict(id=name,package=None,path=f'skills/{name}/SKILL.md',domain='workflow',summary=description,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='tools/skills/catalog.py'))
+    entries.append(dict(id='aiverse-roads',package=None,path='skills/aiverse-roads/SKILL.md',domain='gameplay',
+        summary='Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks',
+        side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='modules/rts/RtsRoadNet.cpp'))
     for entry in entries:entry['keywords']=ALIASES.get(entry['id'],'').split()
     return dict(schema=1,skills=sorted(entries,key=lambda e:e['id']))
 
