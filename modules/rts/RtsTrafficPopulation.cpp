@@ -72,6 +72,7 @@ void Traffic::parsePopulation(const Json& j, TrafficRules& r, const std::vector<
             k.lives = int(std::clamp<int64_t>(v.getInt("lives", 0), 0, 100000));
             k.jobs = int(std::clamp<int64_t>(v.getInt("jobs", 0), 0, 100000));
             k.children = int(std::clamp<int64_t>(v.getInt("children", 0), 0, 100000));
+            k.liveWithin = int(std::clamp<int64_t>(v.getInt("liveWithin", 0), 0, 100000));
             if (const Json& sh = v["shifts"]; sh.isArray())
                 for (size_t i = 0; i < sh.size(); ++i) {
                     const std::string at = where + ".kinds." + id + ".shifts[" + std::to_string(i) + "]";
@@ -159,11 +160,11 @@ void Traffic::populate(Simulation& sim, TrafficStore& st) {
     std::vector<Slot> serviceJobs;
     for(size_t i=0;i<places_.size();++i){
         const auto& kind=pr.kinds[places_[i].kind];
-        if(kind.id!="tow_depot")continue;
+        if(kind.id!="tow_depot"&&kind.liveWithin<=0)continue;
         for(size_t shift=0;shift<kind.shifts.size();++shift)
             for(int j=0;j<kind.jobs;++j)serviceJobs.push_back({int32_t(i),uint8_t(shift)});
     }
-    jobs.erase(std::remove_if(jobs.begin(),jobs.end(),[&](const Slot& slot){return pr.kinds[places_[size_t(slot.place)].kind].id=="tow_depot";}),jobs.end());
+    jobs.erase(std::remove_if(jobs.begin(),jobs.end(),[&](const Slot& slot){const auto& k=pr.kinds[places_[size_t(slot.place)].kind];return k.id=="tow_depot"||k.liveWithin>0;}),jobs.end());
     jobs.insert(jobs.begin(),serviceJobs.begin(),serviceJobs.end());
     const int n = std::min<int>(pr.count, int(beds.size()));
     st.citizens.resize(size_t(n));
@@ -177,6 +178,24 @@ void Traffic::populate(Simulation& sim, TrafficStore& st) {
         const int roll = int(sim.rng().below(100));
         c.commute = roll < pr.carShare ? kCommuteCar : roll < pr.carShare + pr.busShare ? kCommuteBus : kCommuteWalk;
         if (c.commute == kCommuteCar) c.carType = pick(sim, pr.carTypes);
+    }
+    // workers who must live near their work (bus drivers by the depot): they swap homes with a neighbour of the
+    // workplace whose own work has no such need, and walk to work
+    for (auto& c : st.citizens) {
+        if (c.work < 0) continue;
+        const int within = pr.kinds[places_[size_t(c.work)].kind].liveWithin;
+        if (within <= 0) continue;
+        const Vec2 at = places_[size_t(c.work)].pos;
+        const Fixed r2 = Fixed::fromInt(within) * Fixed::fromInt(within);
+        c.commute = kCommuteWalk;
+        if ((places_[size_t(c.home)].pos - at).lengthSq() <= r2) continue;
+        TrafficCitizen* best = nullptr; Fixed bestD{};
+        for (auto& o : st.citizens) {
+            if (&o == &c || (o.work >= 0 && pr.kinds[places_[size_t(o.work)].kind].liveWithin > 0)) continue;
+            const Fixed d = (places_[size_t(o.home)].pos - at).lengthSq();
+            if (d <= r2 && (!best || d < bestD)) { best = &o; bestD = d; }
+        }
+        if (best) std::swap(c.home, best->home);
     }
     // children: a working parent with a day shift who walks or drives takes his to the nearest school with room
     std::vector<int32_t> room(places_.size(), 0);

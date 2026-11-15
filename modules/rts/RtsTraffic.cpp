@@ -233,6 +233,16 @@ TrafficRules Traffic::parse(const Json& j, const std::vector<std::string>& ids, 
         }
         if (r.lineDefs.size() > 64) throw std::runtime_error("traffic.buses.lines: at most 64");
     }
+    if (const Json& dp = b["depot"]; dp.isArray()) {
+        if (dp.size() < 2) throw std::runtime_error("traffic.buses.depot: [x, z]");
+        r.busDepots.push_back({dp[0].fx(), dp[1].fx()});
+    }
+    if (const Json& ds = b["depots"]; ds.isArray())
+        for (size_t i = 0; i < ds.size(); ++i) {
+            if (!ds[i].isArray() || ds[i].size() < 2) throw std::runtime_error("traffic.buses.depots[" + std::to_string(i) + "]: [x, z]");
+            r.busDepots.push_back({ds[i][0].fx(), ds[i][1].fx()});
+        }
+    if (!r.busDepots.empty()) { r.busDepot = true; r.busCrew = b.getStr("crew", ""); }
     if (!r.buses.empty() && r.busMax.raw <= 0) throw std::runtime_error("traffic.buses.speed: must be positive");
 
     const Json& em = j["emergency"];
@@ -642,7 +652,7 @@ void Traffic::hash(Simulation& sim, Hasher& h) const {
         h.u32(uint32_t(c.crew.size()));
         for (Entity m : c.crew) h.u64(m.packed());
         h.u32(c.wp); h.i32(c.tailPiece); h.i32(c.tailDir); h.u32(c.tailLane); h.fx(c.cruise);
-        h.u32(c.stopped); h.u64(c.blocker.packed()); h.u64(c.ignore.packed()); h.u32(c.ignoreUntil); h.u32(c.reverseUntil); h.u32(c.lostSince);
+        h.u32(c.stopped); h.u64(c.blocker.packed()); h.u64(c.ignore.packed()); h.u32(c.ignoreUntil); h.u32(c.reverseUntil); h.u32(c.lostSince); h.fx(c.anchor.x); h.fx(c.anchor.y); h.u32(c.anchorTick);
         h.u32(uint32_t(c.route.size()));
         for (auto& p : c.route) { h.fx(p.p.x); h.fx(p.p.y); h.i32(p.junction); h.u32(uint32_t(p.axis) | uint32_t(p.turn) << 8); }
     }
@@ -692,7 +702,7 @@ void Traffic::hash(Simulation& sim, Hasher& h) const {
 void io(Archive& a, TrafficWaypoint& p) { a(p.p.x, p.p.y, p.junction, p.axis, p.turn); }
 void io(Archive& a, TrafficCar& c) {
     a(c.service, c.task, c.call, c.taskUntil, c.destPiece, c.homePiece, c.destAlong, c.homeAlong, c.crew, c.citizen, c.line, c.lineLeg);
-    a(c.e, c.kind, c.lastStop, c.dwellUntil, c.route, c.wp, c.tailPiece, c.tailDir, c.tailLane, c.cruise, c.stopped, c.blocker, c.ignore, c.ignoreUntil, c.reverseUntil, c.lostSince);
+    a(c.e, c.kind, c.lastStop, c.dwellUntil, c.route, c.wp, c.tailPiece, c.tailDir, c.tailLane, c.cruise, c.stopped, c.blocker, c.ignore, c.ignoreUntil, c.reverseUntil, c.lostSince, c.anchor.x, c.anchor.y, c.anchorTick);
 }
 void io(Archive& a, TrafficPerson& p) { a(p.e, p.state, p.path, p.idx, p.legEnd, p.leg, p.legPt, p.until, p.moved, p.side, p.hp, p.lastPos, p.panic, p.citizen, p.goal); }
 void io(Archive& a, TrafficCitizen& c) { a(c.type, c.home, c.work, c.shift, c.state, c.e, c.from.x, c.from.y, c.left, c.eta, c.commute, c.leg, c.carType, c.car, c.stopA, c.stopB, c.line, c.school, c.via); }
@@ -1013,7 +1023,8 @@ bool Traffic::spawnCar(Simulation& sim, TrafficStore& st, const std::vector<Vec2
                 if (line < 0 || count < bestCount) { line = int(li); bestCount = count; }
             }
             const auto& path = lines_[size_t(line)].path;
-            onLine = &path[sim.rng().below(uint32_t(path.size()))];
+            onLine = rules_.busDepot ? depotStep(line) : &path[sim.rng().below(uint32_t(path.size()))];
+            if (!onLine) onLine = &path[sim.rng().below(uint32_t(path.size()))];
             const auto& LP = net_.pieces[size_t(onLine->piece)];
             if (LP.length() < 3) continue;
             const int a = sim.rng().range(LP.along0 + 1, LP.along1 - 1);
@@ -1048,7 +1059,7 @@ bool Traffic::spawnCar(Simulation& sim, TrafficStore& st, const std::vector<Vec2
         const int k = kind == kTrafficBus ? nl - 1 : int(sim.rng().below(uint32_t(nl)));   // buses keep to the kerb
         const Fixed along = Fixed::fromInt(ac) + Fixed::fromRatio(int(sim.rng().below(8)), 8);
         const Vec2 pos = tl::trafficLanePoint(net_, P, s, k, along);
-        if (!foci.empty()) {
+        if (!foci.empty() && !(onLine && rules_.busDepot)) {   // a depot's bus comes out at the depot, seen or not
             const Fixed d2 = nearestSq(foci, pos);
             if (d2 < minDist * minDist || d2 > rules_.spawnMax * rules_.spawnMax) continue;
         }
@@ -1129,11 +1140,13 @@ void Traffic::cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& f
     if (!foci.empty())
         for (auto& c : st.cars) {
             if (c.task != kTaskNone && c.task != kTaskTrip) continue;   // on call: it gets there wherever the heroes are
+            const bool depotBus = rules_.busDepot && c.kind == kTrafficBus && c.service < 0;   // depot buses run citywide
             const Vec2 p = v2(w.get<Transform>(c.e).pos);
             const Fixed d2 = nearestSq(foci, p);
-            const bool stuckAway = c.stopped > sim.tickRate() * 30 && d2 > rules_.spawnMin * rules_.spawnMin;
+            const bool stuckAway = (c.stopped > sim.tickRate() * 30 || (c.task == kTaskNone && c.anchorTick && sim.tick() - c.anchorTick > sim.tickRate() * 90)) && d2 > rules_.spawnMin * rules_.spawnMin;
             const bool lostAway = c.lostSince && sim.tick() - c.lostSince > sim.tickRate() * 5 && d2 > rules_.spawnMin * rules_.spawnMin;
-            if (d2 > rules_.despawn * rules_.despawn || stuckAway || lostAway) { tripGone(sim, st, c); if (c.kind == kTrafficBus) busGone(sim, st, c.e); silentRemove(sim, c.e); }
+            // a depot bus wedged or off the road out of sight is towed in: its driver brings the next one out of the depot
+            if ((!depotBus && d2 > rules_.despawn * rules_.despawn) || stuckAway || lostAway) { tripGone(sim, st, c); if (c.kind == kTrafficBus) busGone(sim, st, c.e); silentRemove(sim, c.e); }
         }
     for (size_t i = 0; i < st.cars.size();) {
         if (w.get<Unit>(st.cars[i].e).hp.raw <= 0) { dropCall(sim, st, st.cars[i]); st.cars.erase(st.cars.begin() + long(i)); continue; }
@@ -1153,7 +1166,31 @@ void Traffic::cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& f
     if (!st.placed || sim.tick() % 5 == 0)
         while (budget-- > 0 && count[kTrafficCar] < rules_.maxCars)
             if (spawnCar(sim, st, foci, minDist, kTrafficCar)) ++count[kTrafficCar];
-    if ((!st.placed || sim.tick() % 20 == 0) && count[kTrafficBus] < rules_.maxBuses) spawnCar(sim, st, foci, minDist, kTrafficBus);
+    int busLimit = rules_.maxBuses;
+    if (rules_.busDepot) {
+        const int drivers = busDrivers(st);
+        if (drivers >= 0) busLimit = std::min(busLimit, drivers);
+        m_->state(sim).trig.vars["traffic_bus_drivers"] = Fixed::fromInt(drivers);
+        m_->state(sim).trig.vars["traffic_buses"] = Fixed::fromInt(count[kTrafficBus]);
+        // a driver's shift is over: the first bus past the depot goes in (its riders get off there)
+        if (count[kTrafficBus] > busLimit && sim.tick() % 20 == 0)
+            for (size_t i = 0; i < st.cars.size(); ++i) {
+                TrafficCar& c = st.cars[i];
+                if (c.kind != kTrafficBus || c.service >= 0 || c.line < 0) continue;
+                const BusLine::Step* ds = depotStep(c.line);
+                if (!ds) continue;
+                const auto& P = net_.pieces[size_t(ds->piece)];
+                const Vec2 at = v2(w.get<Transform>(c.e).pos);
+                const Fixed reach = Fixed::fromInt(int(P.length()) / 2 + 2);
+                const Vec2 mid = tl::trafficLanePoint(net_, P, ds->dir, 0, (Fixed::fromInt(P.along0) + Fixed::fromInt(P.along1)) / 2);
+                if ((at - mid).lengthSq() > reach * reach) continue;
+                tripGone(sim, st, c); busGone(sim, st, c.e); silentRemove(sim, c.e);
+                st.cars.erase(st.cars.begin() + long(i));
+                --count[kTrafficBus];
+                break;
+            }
+    }
+    if ((!st.placed || sim.tick() % 20 == 0) && count[kTrafficBus] < busLimit) spawnCar(sim, st, foci, minDist, kTrafficBus);
     if (rules_.maxEmergency > 0 && !rules_.emergency.empty()) {   // a call-out now and then
         auto draw = [&] { return sim.tick() + std::max<uint32_t>(1, ticksOf(rules_.emIntervalMin + (rules_.emIntervalMax - rules_.emIntervalMin) * sim.rng().unit(), sim.tickRate())); };
         if (st.nextEmergency == 0) st.nextEmergency = draw();
@@ -1340,7 +1377,8 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
                     passengers(sim, st, *it, c);
                     want = Fixed{};
                 } else want = fxMin(want, tl::trafficStopSpeed(fxMax(d - Fixed::fromRatio(15, 100), Fixed{}) * mpc_, rules_.decel));
-                if (d < Fixed::fromInt(3)) heldBySignal = true;
+                // pulling in to the stop is no standstill; standing short of it (wedged against a parked car) is
+                if (d < Fixed::fromInt(3) && (v > Fixed::fromRatio(1, 5) || d < Fixed::fromRatio(35, 100))) heldBySignal = true;
                 break;
             }
         }
@@ -1399,6 +1437,7 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
     // waiting: deadlock breaks and detours
     const bool standing = v < Fixed::fromRatio(1, 2) && (!heldBySignal || ((fireResponse || responsePriority) && blocker.valid()));
     c.stopped = standing ? c.stopped + 1 : 0;
+    if (c.anchorTick == 0 || (pos - c.anchor).lengthSq() > Fixed::fromRatio(9, 4) || sim.tick() < c.dwellUntil) { c.anchor = pos; c.anchorTick = sim.tick(); }
     c.blocker = standing ? blocker : kNullEntity;
     if (standing && blocker.valid() && c.stopped > sim.tickRate() * 2) {
         TrafficCar* other = byEntity(st.cars, blocker);
@@ -1931,6 +1970,33 @@ void Traffic::people(Simulation& sim, TrafficStore& st, const std::vector<Vec2>&
         }
         }
     }
+}
+
+// ----------------------------------------------------------------- bus depot
+
+int Traffic::busDrivers(TrafficStore& st) const {
+    if (rules_.busCrew.empty()) return -1;
+    int kind = -1;
+    for (size_t k = 0; k < rules_.population.kinds.size(); ++k) if (rules_.population.kinds[k].id == rules_.busCrew) kind = int(k);
+    if (kind < 0) return -1;
+    int n = 0;
+    for (const auto& c : st.citizens)
+        if (c.state == kCitizenWork && c.work >= 0 && size_t(c.work) < places_.size() && places_[size_t(c.work)].kind == kind) ++n;
+    return n;
+}
+
+const Traffic::BusLine::Step* Traffic::depotStep(int line) const {
+    if (!rules_.busDepot || line < 0 || size_t(line) >= lines_.size()) return nullptr;
+    const BusLine::Step* best = nullptr; Fixed bestD{};
+    for (const auto& s : lines_[size_t(line)].path) {
+        const auto& P = net_.pieces[size_t(s.piece)];
+        if (P.length() < 3) continue;
+        const Vec2 mid = tl::trafficLanePoint(net_, P, s.dir, 0, (Fixed::fromInt(P.along0) + Fixed::fromInt(P.along1)) / 2);
+        Fixed d{};bool first = true;
+        for (const Vec2& dp : rules_.busDepots) { const Fixed q = (mid - dp).lengthSq(); if (first || q < d) { d = q; first = false; } }
+        if (!best || d < bestD) { best = &s; bestD = d; }
+    }
+    return best;
 }
 
 } // namespace aiverse::game

@@ -150,7 +150,10 @@ tl::TrafficNet buildTrafficNetFromRoads(int w, int h, const RoadNetwork& n, cons
         p.along0 = 0;
         p.along1 = std::max(0, int((p.len - Fixed::fromRatio(1, 1024)).floorInt()));
         const int fs = e.reversed ? -1 : 1;
-        const int fwd = drivingLanes(t, fs), bwd = drivingLanes(t, -fs);   // +along = a -> b
+        // rules `parkingLanes`: as on a road of tiles, the outer lanes of a side are left to parked cars, but a side
+        // always keeps one lane to drive in
+        auto driven = [&](int k) { return k - std::min(cfg.parkingLanes, std::max(0, k - 1)); };
+        const int fwd = driven(drivingLanes(t, fs)), bwd = driven(drivingLanes(t, -fs));   // +along = a -> b
         p.dirLanes = {int8_t(bwd), int8_t(fwd)};
         p.lanes = std::max(fwd, bwd);
         const auto& lanes = t.forward.empty() ? t.backward : t.forward;
