@@ -123,6 +123,16 @@ A map without weather can fix the look: `"roadNetwork": {"weather": {"wet": 1, "
 `RtsRoadView::puddleSpots()` (centre on the road surface, long axis, full length / width, the level it starts at,
 dirt or not), and sizes them with `RtsRoadView::puddleScale(spot, puddles)`.
 
+### Surface for wheels
+
+The carriageway is drawn a little over the ground, kerbs and raised sidewalks higher still. `RtsRoadView::surfaceAt`
+(and `RtsView::groundAt`, which falls back to the ground) returns the drawn top of the road surfaces: carriageways,
+kerbs, sidewalks, junctions, medians, driveways, verges and low embankments, sampled 8 times per cell and interpolated,
+so a kerb is a short ramp a wheel rolls up. Barriers, poles, signal heads, pillars and props are not part of it, nor
+are decks higher than a bridge clearance (the simulation's driving decks carry those). Moving ground units are drawn
+on it; a game that draws its own vehicles samples it under each wheel to tilt the body and drop single wheels.
+Presentation only: the simulation does not read it.
+
 ### Worn asphalt
 
 Asphalt and concrete roads wear: patches of newer asphalt across a lane (darker, the cut sealed with tar), now and

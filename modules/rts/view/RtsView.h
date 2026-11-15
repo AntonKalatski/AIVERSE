@@ -209,6 +209,10 @@ public:
     static render::float4 playerColor(int player);
     float selectionRadius(uint16_t type) const;
     float heightAt(const MapGrid& grid, float x, float z) const;
+    // What feet and wheels stand on: the drawn spline-road surface where there is one (asphalt over the ground,
+    // kerbs, raised sidewalks, junctions), otherwise the ground (heightAt). Moving units are drawn at it; a game that
+    // draws its own vehicles samples it under each wheel (docs/roads.md § Surface for wheels).
+    float groundAt(const MapGrid& grid, float x, float z) const;
     // Where a drawn unit's shots leave its model: the look's "muzzle" (node + offset) in world space and the unit's
     // facing; false when the unit is not drawn yet or its model has no muzzle (effects then use the simulation point).
     bool muzzleOf(Entity e, render::float3& pos, render::float3& dir) const;

@@ -285,7 +285,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         st.last = o;
         if (!o.visible) continue;
         const TypeLook& L = looks_[o.type];
-        const float ground = heightAt(grid, o.pos.x, o.pos.z);
+        const float ground = !rules_->types[o.type].structure && !L.air ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z);
         animate(st, o, dt, &grid);
         drawObject(r, st, o, ground, 1.0f);
         EntityFxValues fx;

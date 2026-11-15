@@ -3,6 +3,7 @@
 #include "../RtsModule.h"
 #include "RtsTerrainSurface.h"
 #include "RtsView.h"
+#include "RtsRoadView.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -16,6 +17,11 @@ using namespace render;
 float RtsView::heightAt(const MapGrid& g, float x, float z) const {
     if (terrain_.detailActive()) return terrain_.surfaceAt(g, x, z);   // the sub-cell detail surface that is drawn
     return terrain::heightAt(g, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f, x, z);
+}
+
+float RtsView::groundAt(const MapGrid& g, float x, float z) const {
+    const float h = heightAt(g, x, z);
+    return roads_ && roads_->hasSurface() ? roads_->surfaceAt(x, z, h) : h;
 }
 
 void RtsView::setTerrainDetail(const Json& map) {
