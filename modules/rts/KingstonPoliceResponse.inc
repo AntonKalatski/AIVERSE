@@ -52,6 +52,8 @@ if(sv.answers==kIncidentCrime && inc && (c.task==kTaskCrewOut||c.task==kTaskWork
    if(dead){auto&tr=w.get<Transform>(prisoner);tr.prevPos=tr.pos;tr.pos=leader;w.get<Unit>(prisoner).facing=w.get<Unit>(lead).facing;}
    else move(prisoner,leader-w.get<Unit>(lead).facing*Fixed::fromRatio(2,5));
    for(size_t i=1;i<c.crew.size();++i)move(c.crew[i],leader-w.get<Unit>(lead).facing*Fixed::fromRatio(4,5));
+   // a walk that cannot finish (someone in the way, the door cell off the walkable sidewalk) ends at the door anyway
+   if(elapsed>=sim.tickRate()*12&&!dead){auto&lt=w.get<Transform>(lead);lt.prevPos=lt.pos=goal;auto&pt=w.get<Transform>(prisoner);pt.prevPos=pt.pos=goal-w.get<Unit>(lead).facing*Fixed::fromRatio(2,5);}
    if(close(lead,goal,Fixed::fromRatio(3,10))&&close(prisoner,goal,Fixed::fromRatio(9,10))){m_->stopMoving(sim,lead);m_->stopMoving(sim,prisoner);phase(state==2?3:7);playerPhase(state==2?3:5);}
   }else if(state==3){
    c.task=kTaskWorking;vars["police_door_"+std::to_string(c.e.packed())]=kOne;
