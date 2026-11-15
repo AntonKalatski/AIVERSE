@@ -69,6 +69,7 @@ struct TrafficPlaceKind {
     int lives = 0;                           // residents per place
     int jobs = 0;                            // workers per shift
     int children = 0;                        // a school / kindergarten: children it takes
+    int liveWithin = 0;                      // > 0: its workers (always hired first) live within this many cells and walk
     std::vector<std::pair<int, int>> shifts; // minutes of the day [from, to); to < from: over midnight
 };
 struct TrafficPopulationRules {
@@ -161,6 +162,12 @@ struct TrafficRules {
     struct LineDef { std::string id; std::vector<Vec2> via; };
     std::vector<LineDef> lineDefs;           // "lines": [{"id", "via": [[x, z], ...]}]
     int autoLines = 4;                       // "lines": N: that many lines laid out over the road network (0: buses roam)
+    // a bus depot ("depot": [x, z]): buses run citywide all the time (not only near the heroes), come out on their
+    // line where it passes nearest the depot and go back in there; "crew": the population kind of the depot, whose
+    // workers on shift are the drivers: as many buses as drivers at work (up to "max")
+    bool busDepot = false;
+    std::vector<Vec2> busDepots;             // "depot": [x, z] or "depots": [[x, z], ...]: each line uses its nearest
+    std::string busCrew;
     // emergency vehicles: fast, through red lights, the other traffic pulls over
     std::vector<TrafficWeighted> emergency;
     int maxEmergency = 0;
@@ -230,6 +237,8 @@ struct TrafficCar {
     uint32_t reverseUntil = 0;               // backing off something it is wedged against
     uint32_t ignoreUntil = 0;
     uint32_t lostSince = 0;                  // off every road since this tick (0: on the road)
+    Vec2 anchor{};                           // where it last made headway (more than a cell and a half)
+    uint32_t anchorTick = 0;                 // ... and when: no headway for long is a wedge that backing off does not clear
     lib::genre::VehicleInput input;          // planned this tick (derived: recomputed before the vehicle steps)
 };
 
@@ -396,6 +405,8 @@ private:
     void gangs(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& foci);
     void gangEnd(Simulation& sim, TrafficStore& st, uint8_t state, bool paid);
     void busGone(Simulation& sim, TrafficStore& st, Entity bus);
+    int busDrivers(TrafficStore& st) const;           // depot: drivers at work now (-1: no depot crew rule)
+    const BusLine::Step* depotStep(int line) const;   // depot: the step of the line nearest the depot
     // cars
     void cars(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& foci);
     bool spawnCar(Simulation& sim, TrafficStore& st, const std::vector<Vec2>& foci, Fixed minDist, uint8_t kind, int service = -1, Entity* out = nullptr);
