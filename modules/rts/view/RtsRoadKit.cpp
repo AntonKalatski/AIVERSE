@@ -303,7 +303,7 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             Rgb c{0.030f + 0.040f * sheen * sheen, 0.036f + 0.048f * sheen * sheen, 0.046f + 0.062f * sheen * sheen};
             // the sky caught in the water: a soft, broken band of light across the pool
             const float band = std::exp(-std::pow((dx * 0.8f + dy * 0.6f + (sheen - 0.5f) * 0.5f) / 0.28f, 2.0f));
-            c = mix(c, Rgb{0.15f, 0.17f, 0.21f}, band * 0.55f * std::clamp(d, 0.0f, 1.0f));
+            c = mix(c, Rgb{0.15f, 0.17f, 0.21f}, band * 0.12f * std::clamp(d, 0.0f, 1.0f));   // a hint only: the water shader reflects the real sky
             c = mix(c, Rgb{0.028f, 0.028f, 0.030f}, std::clamp(1 - d * 1.6f, 0.0f, 1.0f) * 0.5f);   // shallow toward the shore
             const float a = water * 0.9f + rim * 0.30f;
             put(7, x, y, rim > water ? Rgb{0.022f, 0.022f, 0.024f} : c, a);

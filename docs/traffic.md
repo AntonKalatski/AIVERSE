@@ -173,9 +173,12 @@ team is hostile to the heroes' to fight them. Service keys default to `range` 90
   shift ends the first bus past its depot goes in (riders get off), when the next shift arrives buses come out.
   Lua vars `traffic_bus_drivers`, `traffic_buses`. A place kind with `liveWithin: N` (cells) hires first, and its
   workers live within N cells of their workplace (homes are swapped with other citizens) and walk to work.
-- **Wedged cars.** A driven car (or bus) out of the heroes' sight that has made no headway (1.5 cells) for 90 s is
-  taken away like one that stood still for 30 s; a depot bus is replaced from its depot. Spline roads keep the
-  outer `parkingLanes` of a side with two or more lanes for parked cars, as roads of tiles do.
+- Spline roads keep the outer `parkingLanes` of a side with two or more lanes for parked cars, as roads of tiles do.
+- **Junctions on spline roads.** A car without an address (no trip, no call, no bus line) never turns into a dead
+  end: a piece toward an open end, or into a junction whose other arms all lead only into dead ends (peeled from the
+  leaves), unless every way on is one. A car that has not reached the stop line waits there while the lane it would
+  leave the junction by is held up just past it (don't block the box). Nobody parks within about a car's length of a
+  junction (2 cells from the box, 1 before it): the crossing is there and turning cars cut the corner.
 - **Shops.** `Traffic::present(place)` / `work.open` in Lua: a workplace is open while one of its workers is in. A
   shop with one keeper opens when he arrives and shuts when he leaves.
 - **Hurt citizens** stay themselves: knocked down, the citizen is in hospital (the ambulance's, see above), then

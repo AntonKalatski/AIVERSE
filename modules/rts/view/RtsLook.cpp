@@ -198,6 +198,9 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
     const Json& v = t.view;
     L.structure = t.structure;
     L.air = t.layer & kLayerAir;
+    // a flyer gets a shadow blob to read its height by; a prop that only uses the air layer to stay out of the way
+    // (it never moves: a stop marker, a support) gets none - it showed as a black ring on the ground
+    L.flyer = L.air && t.speed.raw > 0;
     L.scale = num(v["scale"], 1);
     const Json& c = v["color"];
     L.tint = c.size() >= 3 ? float4{srgb(num(c[0], 1)), srgb(num(c[1], 1)), srgb(num(c[2], 1)), 1} : float4{1, 1, 1, 1};

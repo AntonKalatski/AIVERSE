@@ -90,6 +90,11 @@ struct RtsScene {
     std::map<uint64_t, render::mat4> entityFrames; // optional final frames supplied by a native presentation host
     std::vector<std::pair<render::float3, render::float3>> roads;
     std::vector<render::float3> moveMarkers;
+    // View-only facing history per unit (sceneFromSim): the facing of the last two simulation ticks, so a
+    // turning unit (a steered car) rotates smoothly between ticks like its position does. Not simulation state.
+    struct FacingTrack { uint32_t tick = 0; uint32_t seen = 0; render::float3 prev{}, cur{}; };
+    std::unordered_map<uint64_t, FacingTrack> facingTracks;
+    uint32_t facingFrame = 0;
     // events of the last simulation tick (attacks, hits, deaths, spawns) for animations; `tick`
     // tells the view whether they are new
     std::vector<SimEvent> events;
@@ -204,6 +209,10 @@ public:
     static render::float4 playerColor(int player);
     float selectionRadius(uint16_t type) const;
     float heightAt(const MapGrid& grid, float x, float z) const;
+    // What feet and wheels stand on: the drawn spline-road surface where there is one (asphalt over the ground,
+    // kerbs, raised sidewalks, junctions), otherwise the ground (heightAt). Moving units are drawn at it; a game that
+    // draws its own vehicles samples it under each wheel (docs/roads.md § Surface for wheels).
+    float groundAt(const MapGrid& grid, float x, float z) const;
     // Where a drawn unit's shots leave its model: the look's "muzzle" (node + offset) in world space and the unit's
     // facing; false when the unit is not drawn yet or its model has no muzzle (effects then use the simulation point).
     bool muzzleOf(Entity e, render::float3& pos, render::float3& dir) const;
@@ -355,7 +364,7 @@ private:
         std::vector<Stage> stages;                // construction / damage replacements
         float scale = 1;
         render::float4 tint{1, 1, 1, 1};          // linear
-        bool air = false, structure = false, shape = true;
+        bool air = false, flyer = false, structure = false, shape = true;
         float sx = 1, sz = 1;                     // shapes: footprint scaling
         bool tracer = false;                      // optional visual bullets for attack events
         std::vector<float> projectileScale;       // "projectileScale": size of the projectile ball by weapon index (missing: 1; 0: not drawn)

@@ -389,10 +389,13 @@ void Traffic::setupLines() {
 
 // ----------------------------------------------------------------- by car
 
-// Is the parking lane of side `dir` free at `a` (nothing but `self` within a car's length of it)?
+// Is the parking lane of side `dir` free at `a` (nothing but `self` within a car's length of it)? Nobody parks
+// within about a car's length of a junction: the crossing is there, and a turning car cuts the corner through the kerb lane.
 bool Traffic::kerbFree(Simulation& sim, int32_t piece, int dir, Fixed a, Entity self) const {
     const auto& P = net_.pieces[size_t(piece)];
-    if (P.lanes <= 0 || a < Fixed::fromInt(P.along0 + 1) || a > Fixed::fromInt(P.along1)) return false;
+    const Fixed lo = Fixed::fromInt(P.along0) + (P.junction[0] >= 0 ? Fixed::fromInt(2) : kOne);
+    const Fixed hi = Fixed::fromInt(P.along1) - (P.junction[1] >= 0 ? kOne : Fixed{});
+    if (P.lanes <= 0 || a < lo || a > hi) return false;
     World& w = sim.world();
     GameState& gs = m_->state(sim);
     const Vec2 pt = tl::trafficLanePoint(net_, P, dir, tl::trafficLanes(P, dir), a), along = tl::trafficDir(P, a, dir);

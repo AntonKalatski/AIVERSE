@@ -436,6 +436,7 @@ private:
     bool walkTo(Simulation& sim, TrafficPerson& p, int goalCell);
     int sidewalkNear(Vec2 p, int radius, bool mainFirst = false) const;
     bool kerbFree(Simulation& sim, int32_t piece, int dir, Fixed along, Entity self) const;
+    bool exitBlocked(Simulation& sim, const TrafficCar& c, size_t i, Fixed halfLen) const;
     bool kerbSpot(Simulation& sim, const Place& pl, int dir, Fixed& along, Entity self, const Fixed* from, Fixed ahead) const;
     void keepCar(Simulation& sim, TrafficStore& st, TrafficCitizen& c, const std::vector<Vec2>& foci, int& parked);
     bool startTrip(Simulation& sim, TrafficStore& st, int32_t id, Entity car);          // out of the parking lane
@@ -467,6 +468,7 @@ private:
     std::vector<std::vector<Station>> stations_;   // per service
     std::vector<Vec2> lots_;
     std::vector<Ring> ring_;                 // per junction: the way round its island (roundabouts, monuments)
+    std::vector<uint8_t> deadEnd_;           // per piece * 2 + end: driving toward that end leads only into dead ends
     struct Occupied { int32_t junction; uint16_t count; bool longOne; };
     std::vector<Occupied> occupied_;         // island junctions with traffic inside this tick, ascending (derived)
     std::vector<Siren> sirens_;              // emergency vehicles this tick (derived)

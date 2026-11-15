@@ -285,13 +285,13 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         st.last = o;
         if (!o.visible) continue;
         const TypeLook& L = looks_[o.type];
-        const float ground = heightAt(grid, o.pos.x, o.pos.z);
+        const float ground = !rules_->types[o.type].structure && !L.air ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z);
         animate(st, o, dt, &grid);
         drawObject(r, st, o, ground, 1.0f);
         EntityFxValues fx;
         const bool hasFx = fxFor(o, fx);
         if (!L.shadow.image.empty()) addGroundShadow(L, st, o.pos, ground, hasFx ? &fx : nullptr);
-        if (L.air && L.shadow.image.empty()) { // ground shadow blob helps reading the height (unless the type has its own)
+        if (L.flyer && L.shadow.image.empty()) { // ground shadow blob helps reading the height (unless the type has its own)
             const float k = hasFx ? fx.v[EntityFxValues::kShadowScale] : 1.0f, a = hasFx ? std::clamp(fx.opacity() * fx.v[EntityFxValues::kShadow], 0.0f, 1.0f) : 1.0f;
             if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
         }
@@ -383,6 +383,9 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
     out.roads.clear();
     out.events = sim.events();
     out.tick = sim.tick();
+    if (++out.facingFrame % 256 == 0)   // forget the facing of units gone from the scene
+        for (auto it = out.facingTracks.begin(); it != out.facingTracks.end();)
+            it = out.facingFrame - it->second.seen > 256 ? out.facingTracks.erase(it) : std::next(it);
     out.viewer = viewer;
     out.lanes = R.lanes.enabled ? &gs.lanes : nullptr;
     out.laneSignature = gs.laneSignature;
@@ -410,6 +413,16 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         float3 a = toF(t.prevPos), b = toF(t.pos);
         so.pos = lerp(a, b, alpha);
         so.facing = toF(u.facing);
+        {   // interpolate the facing between the last two ticks (t.prevPos -> t.pos has the same alpha)
+            auto [it, fresh] = out.facingTracks.try_emplace(e.packed());
+            RtsScene::FacingTrack& ft = it->second;
+            if (fresh || t.prevPos == t.pos && ft.tick != sim.tick()) { ft.prev = ft.cur = so.facing; }   // new, or teleported / standing
+            else if (ft.tick != sim.tick()) { ft.prev = ft.cur; ft.cur = so.facing; }
+            ft.tick = sim.tick(); ft.seen = out.facingFrame;
+            const float3 f{ft.prev.x + (ft.cur.x - ft.prev.x) * alpha, ft.prev.y + (ft.cur.y - ft.prev.y) * alpha, ft.prev.z + (ft.cur.z - ft.prev.z) * alpha};
+            const float fl = std::sqrt(f.x * f.x + f.z * f.z);
+            if (fl > 1e-3f && ft.prev.x * ft.cur.x + ft.prev.z * ft.cur.z > 0) so.facing = {f.x / fl, f.y, f.z / fl};   // a flip over 90 degrees snaps
+        }
         const UnitType& ut = R.types[u.type];
         if (ut.view.getBool("teamFromTerritory", false)) {
             const int x = int(t.pos.x.floorInt()), z = int(t.pos.z.floorInt());

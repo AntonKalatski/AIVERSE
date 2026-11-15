@@ -31,8 +31,8 @@ bool QualityGovernor::stepDown() {
     else if (shadows_ == 3) shadows_ = 2;
     else if (shadows_ == 2) shadows_ = 1;
     else if (lights_ == 2) lights_ = 1;
-    else if (shadows_ == 1) shadows_ = 0;
-    else if (lights_ == 1) lights_ = 0;
+    // shadows stay on (low): without them the world looks flat, and they rarely are what a frame is waiting for
+    // lights stay on (low) as well: a night city without headlights and street lamps is unreadable
     else return false;
     ++down_;
     return true;
@@ -69,9 +69,9 @@ bool QualityGovernor::update(double dt) {
     slowWindows_ = slowShare > 0.5f ? slowWindows_ + 1 : 0;
     fastTime_ = slowShare < 0.03f ? fastTime_ + kWindow : 0;
     if (slowWindows_ >= 2 && stepDown()) { slowWindows_ = 0; sinceChange_ = 0; fastTime_ = 0; return true; }
-    // one step back after a long smooth stretch (the heavy fight is over); only once per match,
-    // otherwise a borderline device would oscillate
-    if (down_ > 0 && ups_ == 0 && fastTime_ >= kRecover && stepUp()) { sinceChange_ = 0; fastTime_ = 0; return true; }
+    // a step back after a long smooth stretch (the heavy fight is over); each further one waits twice as long, so a
+    // borderline device does not oscillate, yet a busy minute does not cost the rest of the session
+    if (down_ > ups_ && fastTime_ >= kRecover * double(1 << std::min(ups_, 4)) && stepUp()) { sinceChange_ = 0; fastTime_ = 0; return true; }
     return false;
 }
 

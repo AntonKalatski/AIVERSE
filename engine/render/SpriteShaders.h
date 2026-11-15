@@ -160,6 +160,90 @@ fragment float4 fs_main(VOut in [[stage_in]], constant SU0& u [[buffer(1)]], con
 }
 )";
 
+// Standing water decals (SpriteBatch::drawMesh(..., kSpriteWater)): puddles on roads. The sheet's alpha is the
+// pool's shape, its colour the water's own dark tint; on top the water mirrors what the lit shader's water mirrors:
+// the sky (by the angle), the sun and the lights (sharp highlights, the light map's pools glittering on small
+// ripples) and, when the High light tier has drawn the planar reflection this frame, the cars, buildings and lamp
+// glows in it (LightShaders.h waterReflect; the reflection plane is the water level, puddles lie within 0.04 of it).
+//   same vertices / U0 / U1 / U2 / tex0..tex2 as the lit sprites; tex3: the planar reflection (black: none)
+inline const char* kSpriteWaterFS =
+    AIVERSE_GLSL_SPRITE_LIT_U0 AIVERSE_GLSL_FRAME AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS AIVERSE_GLSL_WATER_REFLECT("tex3")
+    R"(
+uniform sampler2D tex2;
+in vec2 v_uv;
+in vec4 v_col;
+in vec4 v_team;
+in vec4 v_rpos;
+out vec4 o_color;
+void main() {
+    vec4 t = texture(tex2, v_uv);
+    float a = t.a * v_col.a;
+    if (a < u_sp.x) discard;
+    vec3 p = v_rpos.xyz;
+    // small ripples drifting with the wind (the cloud offset), stronger where the pool is deep
+    vec3 n = normalize(vec3(sin(p.z * 19.0 + l_cloud.x * 13.0) * 0.03, 1.0, sin(p.x * 17.0 - l_cloud.y * 11.0) * 0.03));
+    vec3 V = normalize(u_camPos.xyz - p);
+    vec3 L = normalize(u_sunDir.xyz);
+    float sh = u_sp.y > 0.5 ? shadowAt(p, vec3(0.0, 1.0, 0.0)) : 1.0;
+    sh *= cloudShade(p);
+    vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
+    vec3 sky = rtsDecodeScene(u_skyColor.rgb);
+    vec3 base = rtsDecodeScene(t.rgb * v_col.rgb);
+    float fres = 0.10 + 0.55 * pow(1.0 - max(dot(n, V), 0.0), 4.0);
+    vec3 H = normalize(L + V);
+    vec3 col = base * (sky + sun * max(L.y, 0.0) * sh) * 0.35;         // the bed seen through the water
+    col += sky * fres * 0.55;                                          // the sky
+    col += sun * sh * (pow(max(dot(n, H), 0.0), 220.0) * 2.0 + pow(max(dot(n, H), 0.0), 40.0) * 0.08);
+    col += dynamicLight(p, n, V, 0.95) * 0.7;                          // lamps: highlights and glitter
+    float dist = length(u_camPos.xyz - p);
+    col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
+    col = rtsToneScene(col, u_skyColor.w > 0.5);
+    vec3 outc = waterReflect(rtsEncodeScene(col), vec3(p.x, 0.0, p.z), n, V, 0.95);
+    o_color = vec4(outc, a);
+}
+)";
+
+inline const char* kSpriteWaterMSL =
+    "#include <metal_stdlib>\nusing namespace metal;\n"
+    "struct SU0 { float4x4 viewProj; float4 sp; float4 ref; };\n"
+    AIVERSE_MSL_FRAME AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_WATER_REFLECT
+    R"(
+struct VIn { float3 pos [[attribute(0)]]; float2 uv [[attribute(1)]]; float4 col [[attribute(2)]]; float4 team [[attribute(3)]]; float4 rpos [[attribute(4)]]; };
+struct VOut { float4 pos [[position]]; float2 uv; float4 col; float4 team; float4 rpos; };
+vertex VOut vs_main(VIn in [[stage_in]], constant SU0& u [[buffer(1)]]) {
+    VOut o; o.pos = u.viewProj * float4(in.pos, 1.0); o.uv = in.uv; o.col = in.col; o.team = in.team; o.rpos = in.rpos; return o;
+}
+fragment float4 fs_main(VOut in [[stage_in]], constant SU0& u [[buffer(1)]], constant U1& f [[buffer(2)]],
+                        depth2d<float> tex0 [[texture(0)]], sampler s0 [[sampler(0)]],
+                        constant LightU& l [[buffer(3)]], texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]],
+                        texture2d<float> tex2 [[texture(2)]], sampler s2 [[sampler(2)]],
+                        texture2d<float> tex3 [[texture(3)]], sampler s3 [[sampler(3)]]) {
+    float4 t = tex2.sample(s2, in.uv);
+    float a = t.a * in.col.a;
+    if (a < u.sp.x) discard_fragment();
+    float3 p = in.rpos.xyz;
+    float3 n = normalize(float3(sin(p.z * 19.0 + l.cloud.x * 13.0) * 0.03, 1.0, sin(p.x * 17.0 - l.cloud.y * 11.0) * 0.03));
+    float3 V = normalize(f.camPos.xyz - p);
+    float3 L = normalize(f.sunDir.xyz);
+    float sh = u.sp.y > 0.5 ? shadowAt(f, p, float3(0.0, 1.0, 0.0), in.pos.xy, tex0, s0) : 1.0;
+    sh *= cloudShade(l, p);
+    float3 sun = rtsDecodeScene(f.sunColor.rgb) * f.sunDir.w;
+    float3 sky = rtsDecodeScene(f.skyColor.rgb);
+    float3 base = rtsDecodeScene(t.rgb * in.col.rgb);
+    float fres = 0.10 + 0.55 * pow(1.0 - max(dot(n, V), 0.0), 4.0);
+    float3 H = normalize(L + V);
+    float3 col = base * (sky + sun * max(L.y, 0.0) * sh) * 0.35;
+    col += sky * fres * 0.55;
+    col += sun * sh * (pow(max(dot(n, H), 0.0), 220.0) * 2.0 + pow(max(dot(n, H), 0.0), 40.0) * 0.08);
+    col += dynamicLight(l, tex1, s1, p, n, V, 0.95) * 0.7;
+    float dist = length(f.camPos.xyz - p);
+    col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
+    col = rtsToneScene(col, f.skyColor.w > 0.5);
+    float3 outc = waterReflect(l, tex3, s3, in.pos.xy, rtsEncodeScene(col), float3(p.x, 0.0, p.z), n, V, 0.95);
+    return float4(outc, a);
+}
+)";
+
 // Shadow caster: depth only, alpha-tested against the sheet (same vertex layout as the sprites).
 inline const char* kSpriteCasterVS = R"(
 layout(std140) uniform U0 { mat4 u_viewProj; vec4 u_params; };

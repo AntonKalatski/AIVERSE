@@ -113,12 +113,25 @@ over both ruts) and in the corners of junction boxes (a broad pool or two in a d
 tunnels or on driveways. Every spot has its own level it appears at and grows from there, so a shower fills them
 one by one and drying shrinks them in the reverse order. The spots are hashed from the edge / node ids: the same
 puddles in every run and on every client. Both layers are decals (the verge atlas' film and puddle slots); the meshes
-are remade only when a level changes by 1/32.
+are remade only when a level changes by 1/32. Puddles are drawn as water (`SpriteBatch::drawWater`, shader
+`kSpriteWaterFS`): the atlas gives the pool's shape and its dark tint, on top the sky by the view angle, the sun's
+glint, the lights' highlights and glitter, and on the High light tier the planar reflection of cars, buildings and
+lamp glows (the water reflection of the map; a map without water bodies has none, the rest stays).
 
 A map without weather can fix the look: `"roadNetwork": {"weather": {"wet": 1, "puddles": 0.6}, ...}` (a game's
 `setWeather` overrides it). A game that draws its own reflective water reads the spots,
 `RtsRoadView::puddleSpots()` (centre on the road surface, long axis, full length / width, the level it starts at,
 dirt or not), and sizes them with `RtsRoadView::puddleScale(spot, puddles)`.
+
+### Surface for wheels
+
+The carriageway is drawn a little over the ground, kerbs and raised sidewalks higher still. `RtsRoadView::surfaceAt`
+(and `RtsView::groundAt`, which falls back to the ground) returns the drawn top of the road surfaces: carriageways,
+kerbs, sidewalks, junctions, medians, driveways, verges and low embankments, sampled 8 times per cell and interpolated,
+so a kerb is a short ramp a wheel rolls up. Barriers, poles, signal heads, pillars and props are not part of it, nor
+are decks higher than a bridge clearance (the simulation's driving decks carry those). Moving ground units are drawn
+on it; a game that draws its own vehicles samples it under each wheel to tilt the body and drop single wheels.
+Presentation only: the simulation does not read it.
 
 ### Worn asphalt
 

@@ -5341,8 +5341,8 @@ TEST(lighting_quality_governor) {
     CHECK(g.shadows() == 3 && g.lights() == 3 && g.stepsDown() == 0);
     feed(g, 40, 7);                                // heavy fight: first step drops per-pixel lights
     CHECK(g.lights() == 2 && g.shadows() == 3);
-    feed(g, 60, 60);                               // still too slow: all the way down, lights last
-    CHECK(g.shadows() == 0 && g.lights() == 0);
+    feed(g, 60, 60);                               // still too slow: all the way down, but shadows and lights stay on (low)
+    CHECK(g.shadows() == 1 && g.lights() == 1);
     // a phone capped at 30 fps from the start is not "slowing down"
     QualityGovernor capped;
     capped.reset(2, 2);
@@ -5353,7 +5353,7 @@ TEST(lighting_quality_governor) {
     feed(locked, 16.7, 2);
     locked.lock();
     CHECK(feed(locked, 50, 30) == 0 && locked.shadows() == 3);
-    // after the fight one step comes back, once
+    // after the fight steps come back: the next one after twice as long
     QualityGovernor rec;
     rec.reset(2, 2);
     feed(rec, 16.7, 2);
@@ -5362,8 +5362,10 @@ TEST(lighting_quality_governor) {
     CHECK(afterDrop < 4);
     feed(rec, 16.7, 45);
     CHECK(rec.shadows() + rec.lights() == afterDrop + 1);
-    feed(rec, 16.7, 60);
+    feed(rec, 16.7, 20);
     CHECK(rec.shadows() + rec.lights() == afterDrop + 1);
+    feed(rec, 16.7, 60);
+    CHECK(rec.shadows() + rec.lights() == std::min(afterDrop + 2, 4));
 }
 
 // ---------------- Native plugins bridge, store and ads services (platforms agent) ----------------
