@@ -1325,3 +1325,31 @@ TEST(traffic_spline_roads_join_through_decks) {
     }
     CHECK(over > 0);
 }
+
+TEST(traffic_cars_without_business_keep_out_of_dead_ends) {
+    // a dead-end street (and a short one branching off it: the whole branch is dead) off the west arm
+    std::string map = splineTrafficMap();
+    auto sub = [&](const std::string& a, const std::string& b) { const size_t at = map.find(a); if (at == std::string::npos) throw std::runtime_error(a); map.replace(at, a.size(), b); };
+    sub(R"({"id": 5, "x": 6, "z": 24}],)", R"({"id": 5, "x": 6, "z": 24}, {"id": 6, "x": 15, "z": 24}, {"id": 7, "x": 15, "z": 36}, {"id": 8, "x": 10, "z": 36}],)");
+    sub(R"({"id": 4, "a": 1, "b": 5, "type": "street_2"},)", R"({"id": 4, "a": 1, "b": 6, "type": "street_2"}, {"id": 9, "a": 6, "b": 5, "type": "street_2"},
+        {"id": 10, "a": 6, "b": 7, "type": "street_2"}, {"id": 11, "a": 7, "b": 8, "type": "street_2"},)");
+    auto sim = makeSimJson(splineTrafficRules(), map, 5);
+    auto& w = sim->world();
+    const auto& net = trf(*sim).net();
+    // well inside the branch: south of the junction box, west of the ring road on the east
+    auto inBranch = [&](Vec3 p) { return p.z > Fixed::fromInt(29) && p.z < Fixed::fromInt(35) && p.x > Fixed::fromInt(13) && p.x < Fixed::fromInt(17); };
+    std::map<uint32_t, bool> was;
+    int entered = 0, cars = 0;
+    for (int i = 0; i < 150 * int(sim->tickRate()); ++i) {
+        sim->step();
+        for (auto& c : tstore(*sim).cars) {
+            const bool now = inBranch(w.get<Transform>(c.e).pos);
+            auto it = was.find(c.e.packed());
+            if (it != was.end() && !it->second && now) ++entered;
+            was[c.e.packed()] = now;
+        }
+        cars = std::max(cars, int(tstore(*sim).cars.size()));
+    }
+    CHECK(cars >= 3);
+    CHECK(entered == 0);
+}

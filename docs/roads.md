@@ -113,7 +113,10 @@ over both ruts) and in the corners of junction boxes (a broad pool or two in a d
 tunnels or on driveways. Every spot has its own level it appears at and grows from there, so a shower fills them
 one by one and drying shrinks them in the reverse order. The spots are hashed from the edge / node ids: the same
 puddles in every run and on every client. Both layers are decals (the verge atlas' film and puddle slots); the meshes
-are remade only when a level changes by 1/32.
+are remade only when a level changes by 1/32. Puddles are drawn as water (`SpriteBatch::drawWater`, shader
+`kSpriteWaterFS`): the atlas gives the pool's shape and its dark tint, on top the sky by the view angle, the sun's
+glint, the lights' highlights and glitter, and on the High light tier the planar reflection of cars, buildings and
+lamp glows (the water reflection of the map; a map without water bodies has none, the rest stays).
 
 A map without weather can fix the look: `"roadNetwork": {"weather": {"wet": 1, "puddles": 0.6}, ...}` (a game's
 `setWeather` overrides it). A game that draws its own reflective water reads the spots,

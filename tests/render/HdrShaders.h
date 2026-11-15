@@ -15,6 +15,7 @@ inline bool checkHdrShaders(gfx::Device& device) {
     const Source sources[]={
         {"sprite",kSpriteVS,kSpriteFS,kSpriteMSL,""},
         {"lit sprite",kSpriteLitVS,kSpriteLitFS,kSpriteLitMSL,""},
+        {"water sprite",kSpriteLitVS,kSpriteWaterFS,kSpriteWaterMSL,""},
         {"particle",fx::shaders::kParticleVS,fx::shaders::kParticleFS,fx::shaders::kParticleMSL,""},
         {"multiply particle",fx::shaders::kParticleVS,fx::shaders::kParticleMulFS,fx::shaders::kParticleMulMSL,""},
         {"terrain low",kTerrainVS,kTerrainFS,kTerrainMSL,"#define TERRAIN_TIER 0\n#define TERRAIN_DETAIL 0\n"},
@@ -32,7 +33,7 @@ inline bool checkHdrShaders(gfx::Device& device) {
         if(!shader.valid()) {std::fprintf(stderr,"%s (%s): %s\n",source.name,hdr?"HDR":"LDR",device.lastError().c_str());return false;}
         device.destroyShader(shader);
     }
-    std::puts("Scene shaders: 22 GLSL/MSL variants PASS");
+    std::puts("Scene shaders: 24 GLSL/MSL variants PASS");
     return true;
 }
 }

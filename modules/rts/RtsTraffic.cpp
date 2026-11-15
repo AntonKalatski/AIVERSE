@@ -443,6 +443,28 @@ void Traffic::setup(Simulation& sim, RtsModule& m, const Json& rulesJson, const 
     }
     // junctions with an island in the middle (a monument, a roundabout): traffic goes round it
     ring_.assign(net_.junctions.size(), {});
+    // dead ends: toward an open end, or into a junction whose every other driven arm leads only into dead ends
+    // (peeled from the leaves until nothing changes). Cars without an address never turn into them.
+    deadEnd_.assign(net_.pieces.size() * 2, 0);
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (size_t pi = 0; pi < net_.pieces.size(); ++pi)
+            for (int end = 0; end < 2; ++end) {
+                if (deadEnd_[pi * 2 + size_t(end)] || net_.pieces[pi].lanes <= 0) continue;
+                const int J = net_.pieces[pi].junction[size_t(end)];
+                bool dead = J < 0;
+                if (!dead) {
+                    dead = true;
+                    for (int q : net_.junctions[size_t(J)].piece) {
+                        if (q < 0 || q == int(pi) || net_.pieces[size_t(q)].lanes <= 0) continue;
+                        const auto& Q = net_.pieces[size_t(q)];
+                        const int far = Q.junction[0] == J ? 1 : 0;   // leaving J along q goes toward its other end
+                        if (!deadEnd_[size_t(q) * 2 + size_t(far)]) { dead = false; break; }
+                    }
+                }
+                if (dead) { deadEnd_[pi * 2 + size_t(end)] = 1; changed = true; }
+            }
+    }
     for (size_t i = 0; i < net_.junctions.size() && !splines; ++i) {   // spline junctions have no box of cells to look into
         const auto& jn = net_.junctions[i];
         int ix0 = INT32_MAX, iz0 = INT32_MAX, ix1 = -1, iz1 = -1;
@@ -563,6 +585,31 @@ int Traffic::junctionAt(Fixed x, Fixed z) const {
         if (best < 0 || d < bd) { best = int(i); bd = d; }
     }
     return best;
+}
+
+// Is the lane a car takes out of the junction at route point `i` held up just past the box: a car (driven or
+// parked, not this one) standing or crawling within its own length plus one cell of the first lane point after the
+// turn, in that lane (not the kerb lane beside it)?
+bool Traffic::exitBlocked(Simulation& sim, const TrafficCar& c, size_t i, Fixed halfLen) const {
+    size_t n = i + 1;
+    while (n < c.route.size() && c.route[n].turn) ++n;
+    if (n + 1 >= c.route.size()) return false;
+    const Vec2 e = c.route[n].p, dir = tl::trafficDetail::normalised(c.route[n + 1].p - e);
+    if (dir.lengthSq().raw <= 0) return false;
+    World& w = sim.world();
+    Driving* drv = m_->driving();
+    auto* ds = drv ? drv->store(sim) : nullptr;
+    if (!ds) return false;
+    for (const auto& o : ds->cars) {
+        if (o.e == c.e) continue;
+        auto* u = w.tryGet<Unit>(o.e);
+        if (!u || u->hp.raw <= 0 || (u->flags & kUnitOffMap)) continue;
+        const Vec2 rel = v2(w.get<Transform>(o.e).pos) - e;
+        const Fixed ahead = rel.dot(dir), side = tl::trafficDetail::cross(dir, rel);
+        if (ahead < -kHalf || ahead > halfLen * 2 + kUnit || fxAbs(side) > Fixed::fromRatio(2, 5)) continue;
+        if (fxAbs(tl::vehicleForwardSpeed(o.st)) < Fixed::fromInt(1)) return true;
+    }
+    return false;
 }
 
 bool Traffic::stripAtEnd(const tl::TrafficPiece& p, int end) const {
@@ -857,7 +904,7 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
         int Q = c.tailPiece, s2 = -s;
         if (J < 0) {   // dead end / map edge: turn around on the road
             const int k2 = std::min(k, std::max(P.lanes - 1, 0));
-            const Fixed back = Fixed::fromInt(std::min(2, P.length()));
+            const Fixed back = fxMin(Fixed::fromInt(2), tl::trafficPieceLength(P));
             const Vec2 X = tl::trafficLanePoint(net_, P, s2, k2, tl::trafficPieceEnd(P, s) - Fixed::fromInt(s) * back);
             const Vec2 C = (E + X) * kHalf + tl::trafficDir(P, tl::trafficPieceEnd(P, s), s) * Fixed::fromRatio(1, 2);
             tl::trafficCurve(E, C, X, 5, pts);
@@ -888,8 +935,18 @@ void Traffic::extendRoute(Simulation& sim, TrafficCar& c) {
             for (size_t n = 0; n < via.size() && via[c.lineLeg % via.size()] == c.tailPiece; ++n) c.lineLeg = uint16_t((c.lineLeg + 1) % via.size());
             exitSide = exitToward(J, inSide, c.tailPiece, via[c.lineLeg % via.size()]);
         } else if (total > 0) {
-            int r = int(sim.rng().below(uint32_t(total)));
-            for (int sd = 0; sd < 4; ++sd) { if (cand[sd] < 0) continue; if (r < wgt[sd]) { exitSide = sd; break; } r -= wgt[sd]; }
+            // nobody drives into a dead end without business there (unless every way on is one)
+            int liveTotal = 0;
+            int liveW[4] = {0, 0, 0, 0};
+            for (int sd = 0; sd < 4; ++sd) {
+                if (cand[sd] < 0) continue;
+                const int toward = tl::trafficExitDirAt(net_, J, sd) > 0 ? 1 : 0;
+                if (!deadEnd_.empty() && deadEnd_[size_t(cand[sd]) * 2 + size_t(toward)]) continue;
+                liveW[sd] = wgt[sd]; liveTotal += wgt[sd];
+            }
+            const int* w = liveTotal > 0 ? liveW : wgt;
+            int r = int(sim.rng().below(uint32_t(liveTotal > 0 ? liveTotal : total)));
+            for (int sd = 0; sd < 4; ++sd) { if (cand[sd] < 0 || w[sd] <= 0) continue; if (r < w[sd]) { exitSide = sd; break; } r -= w[sd]; }
         }
         Q = exitSide == inSide ? c.tailPiece : cand[exitSide];
         const auto& QP = net_.pieces[size_t(Q)];
@@ -1346,6 +1403,9 @@ void Traffic::plan(Simulation& sim, TrafficStore& st, TrafficCar& c) {
             const Fixed strip = lineCell >= 0 && stripAt(lineCell) >= 0 ? kUnit : Fixed{};
             const Fixed stopAt = dist - halfLen - Fixed::fromRatio(1, 5) - strip;
             bool stop = (L == tl::TrafficLight::Red && !escort) || yielding || leftYield;
+            // don't block the box: a car that has not reached the line waits there while the lane it leaves the
+            // junction by is held up just past it (a queue, a breakdown), so the cross traffic still gets through
+            if (!stop && !priorityCar && stopAt > -halfLen && exitBlocked(sim, c, i, halfLen)) stop = true;
             if (L == tl::TrafficLight::Yellow) {   // stop when it comfortably can, else go through
                 const Fixed need = v * v / (rules_.decel * 2) / mpc_;
                 stop = (stopAt > need && !escort) || yielding || leftYield;

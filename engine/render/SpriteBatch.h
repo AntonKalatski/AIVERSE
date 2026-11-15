@@ -32,6 +32,7 @@ struct SpriteLighting {
     std::function<void()> bind;
     float3 ref{1, 1, 1};
     bool receiveShadows = true;
+    std::function<void(int slot)> bindReflection;   // water decals: the planar reflection into `slot` (black: none)
 }; 
 
 struct SpriteMesh {          // static quads (4 vertices each), e.g. a tile map
@@ -67,6 +68,10 @@ public:
     void destroyMesh(gfx::Device& dev, SpriteMesh& m);
     // decal: drawn with the decal pipelines (depth bias toward the camera: paint on a surface, e.g. road markings)
     void drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting* lighting = nullptr, bool decal = false);
+    // Standing water decals (puddles): the sheet's alpha is the pool, its colour the water's tint; sky, sun, lights
+    // and the planar reflection on top (SpriteShaders.h kSpriteWaterFS). Needs `lighting`; without the water
+    // pipeline (a failed shader) it draws as a lit decal.
+    void drawWater(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting& lighting);
 
 private:
     struct Quad { gfx::TextureHandle tex; int layer; float key; uint32_t seq; uint32_t flags; SpriteVertex v[4]; };
@@ -75,8 +80,8 @@ private:
     void setUniforms(gfx::Device& dev, const mat4& viewProj, bool lit, const SpriteLighting* lighting);
 
     gfx::Device* dev_ = nullptr;
-    gfx::ShaderHandle shader_, litShader_, casterShader_;
-    gfx::PipelineHandle blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_;
+    gfx::ShaderHandle shader_, litShader_, casterShader_, waterShader_;
+    gfx::PipelineHandle blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_, waterPipe_;
     gfx::BufferHandle vb_, ib_, casterVb_;
     std::vector<Caster> casters_;
     std::vector<SpriteVertex> casterVerts_;

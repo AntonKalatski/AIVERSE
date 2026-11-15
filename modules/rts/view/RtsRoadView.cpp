@@ -2232,10 +2232,11 @@ void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& 
             SpriteLighting lighting;
             lighting.bind = [&r] { r.bindLitFrame(); };
             lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
+            lighting.bindReflection = [&r](int slot) { r.lights.bind(2, 1, slot); };
             if (vergeMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, vergeMesh_, verge_.tex, r.viewProj(), &lighting, true);   // under the paint
             if (filmMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, filmMesh_, verge_.tex, r.viewProj(), &lighting, true);   // wet: under the paint
             if (decalMesh_.vb.valid() && paint_.valid()) decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
-            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, puddleMesh_, verge_.tex, r.viewProj(), &lighting, true);   // water over the lines
+            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawWater(d, puddleMesh_, verge_.tex, r.viewProj(), lighting);   // water over the lines
         });
     }
     for (auto& p : props_) {
