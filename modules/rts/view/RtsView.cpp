@@ -291,7 +291,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         EntityFxValues fx;
         const bool hasFx = fxFor(o, fx);
         if (!L.shadow.image.empty()) addGroundShadow(L, st, o.pos, ground, hasFx ? &fx : nullptr);
-        if (L.air && L.shadow.image.empty()) { // ground shadow blob helps reading the height (unless the type has its own)
+        if (L.flyer && L.shadow.image.empty()) { // ground shadow blob helps reading the height (unless the type has its own)
             const float k = hasFx ? fx.v[EntityFxValues::kShadowScale] : 1.0f, a = hasFx ? std::clamp(fx.opacity() * fx.v[EntityFxValues::kShadow], 0.0f, 1.0f) : 1.0f;
             if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
         }

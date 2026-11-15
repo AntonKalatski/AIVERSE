@@ -360,7 +360,7 @@ private:
         std::vector<Stage> stages;                // construction / damage replacements
         float scale = 1;
         render::float4 tint{1, 1, 1, 1};          // linear
-        bool air = false, structure = false, shape = true;
+        bool air = false, flyer = false, structure = false, shape = true;
         float sx = 1, sz = 1;                     // shapes: footprint scaling
         bool tracer = false;                      // optional visual bullets for attack events
         std::vector<float> projectileScale;       // "projectileScale": size of the projectile ball by weapon index (missing: 1; 0: not drawn)
