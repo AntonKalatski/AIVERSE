@@ -379,7 +379,7 @@ Image roadSurface(const RoadTypeDef& t, int variant) {
     const float med = float(t.median.toDouble()) * 0.5f;
     const bool both = !t.forward.empty() && !t.backward.empty();
     const float c0 = wl;   // the centre line in texture cells
-    if (both && t.median.raw == 0) {
+    if (both && t.median.raw == 0 && !(variant & 16)) {   // 16: a driveway crosses here, the solid centre line breaks
         // American style: the line between the two directions is always yellow (dashed: passing allowed; double
         // solid on wider roads); lines between lanes of one direction and the right edges are white
         switch (t.centre) {

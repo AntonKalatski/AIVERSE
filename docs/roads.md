@@ -82,6 +82,14 @@ Built-in types: city — `street_2`, `street_2_parking`, `street_2_trees`, `aven
   (broken asphalt) — or join any road at a junction; from a wider road it is refused.
 - `stops`: bus stop bays — the kerb moves out by the kerb lane's width (or `width`) over `length` with `taper` at
   both ends; the sidewalk keeps at least 1.5 m; a shelter stands behind the bay, BUS is painted in it.
+- `parking`: parking zones `{"at", "side", "length": 24, "taper": 5, "width": 2.5, "stall": 6}` (metres) — a bay
+  cut into the sidewalk with the spaces marked across it; in the parking lane where the road type has one on that
+  side; `"inside": true` marks the spaces inside the kerb lane (no bay).
+- `driveways`: entrances into the yards `{"at", "side", "width": 3.5, "depth": 6}` — the kerb and the sidewalk come
+  down over 1.5 m flares, an asphalt apron crosses the sidewalk and runs `depth` metres on into the plot; the edge
+  line on that side and the solid centre line break there; no props stand in it.
+- Network keys: `replaces` — tags or type id prefixes of the game's own baked road surfaces, not drawn while the
+  network is shown; `signals: false` — the game puts up its own traffic lights. Other keys are kept as they are.
 
 ## Look
 

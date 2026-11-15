@@ -44,6 +44,7 @@ public:
     void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
 
     // materials of the road kit (index into the chunk models' material lists)
+    static constexpr int kDrivewaySurface = -2;   // paintedMaterial: a driveway apron (variant: width, 1/1000 cell)
     enum Mat : int { kAsphalt = 0, kConcrete, kCobble, kPaving, kGravel, kDirt, kGrass, kCurb, kWhite, kYellow, kMetal,
                      kWood, kLeaves, kBark, kGlow, kSoil, kBridge, kHedge, kDark, kSignalRed, kSignalAmber, kSignalGreen, kSign, kGlass, kAsphaltWorn, kMatCount };
 

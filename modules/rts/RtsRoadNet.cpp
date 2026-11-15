@@ -176,6 +176,24 @@ RoadNetwork parseRoadNetwork(const Json& j, const std::vector<RoadTypeDef>& type
         e.attach[0] = attachOf(v["attachA"], where + ".attachA");
         e.attach[1] = attachOf(v["attachB"], where + ".attachB");
         e.reversed = v.getBool("reversed", false);
+        {
+            const Json& dw = v["driveways"];
+            if (!dw.isNull() && !dw.isArray()) throw std::runtime_error(where + ".driveways: a list of entrances into the yards");
+            for (size_t k = 0; k < dw.size(); ++k) {
+                const Json& d = dw[k];
+                const std::string w = where + ".driveways[" + std::to_string(k) + "]";
+                RoadDriveway r;
+                r.at = d.getFx("at", Fixed::fromRatio(1, 2));
+                if (r.at < Fixed{} || r.at > Fixed::fromInt(1)) throw std::runtime_error(w + ".at: 0..1 along the edge");
+                const int side = d.getInt("side", 1);
+                if (side != 1 && side != -1) throw std::runtime_error(w + ".side: 1 (right of a -> b) or -1");
+                r.side = int8_t(side);
+                r.width = d.getFx("width", r.width);
+                r.depth = d.getFx("depth", r.depth);
+                if (r.width <= Fixed{} || r.depth < Fixed{}) throw std::runtime_error(w + ": width must be positive, depth not negative");
+                e.driveways.push_back(r);
+            }
+        }
         for (const char* key : {"stops", "parking"}) {
         const bool parking = std::string(key) == "parking";
         const Json& bays = v[key];
@@ -253,6 +271,18 @@ Json roadNetworkToJson(const RoadNetwork& n) {
         if (e.attach[0].edge >= 0) v.set("attachA", attachJson(e.attach[0]));
         if (e.attach[1].edge >= 0) v.set("attachB", attachJson(e.attach[1]));
         if (e.reversed) v.set("reversed", Json::fromBool(true));
+        if (!e.driveways.empty()) {
+            Json dw = Json::array();
+            for (auto& d : e.driveways) {
+                Json o = Json::object();
+                o.set("at", Json::number(d.at));
+                o.set("side", Json::number(Fixed::fromInt(d.side)));
+                if (d.width != Fixed::fromRatio(7, 2)) o.set("width", Json::number(d.width));
+                if (d.depth != Fixed::fromInt(6)) o.set("depth", Json::number(d.depth));
+                dw.push(o);
+            }
+            v.set("driveways", dw);
+        }
         if (!e.bays.empty()) {
             Json a = Json::array(), pk = Json::array();
             for (auto& b : e.bays) {
@@ -807,6 +837,17 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
             if (bg.inLane) { bg.s0 = bg.s1 = fxMax(mid - half, g.trim0); bg.s2 = bg.s3 = fxMin(mid + half, g.length - g.trim1); }
             if (bg.s2 <= bg.s1) { G.issues.push_back("edge " + std::to_string(e.id) + (b.parking ? ": too short for its parking zone" : ": too short for its bus stop bay")); continue; }
             g.bays.push_back(bg);
+        }
+        for (auto& d : e.driveways) {
+            RoadDrivewayGeom dg;
+            dg.side = d.side;
+            dg.half = d.width / cellMetres / 2;
+            dg.flare = Fixed::fromRatio(3, 2) / cellMetres;
+            dg.depth = d.depth / cellMetres;
+            const Fixed lo = g.trim0 + dg.half + dg.flare, hi = g.length - g.trim1 - dg.half - dg.flare;
+            if (hi < lo) { G.issues.push_back("edge " + std::to_string(e.id) + ": too short for its driveway"); continue; }
+            dg.s = fxClamp(g.length * d.at, lo, hi);
+            g.driveways.push_back(dg);
         }
     }
     // too steep for a road: say where (the editor shows it; a bridge needs a longer run for its height)
