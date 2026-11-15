@@ -5,7 +5,7 @@
 // Slow = a frame longer than 1.35x the best frame seen (the display's refresh, e.g. 16.7 ms) and
 // over 18 ms. A device that is capped at 30 fps from the start keeps its tiers (it is not slowing
 // down). Steps, cheapest loss first: lights High->Medium, shadows High->Medium, shadows ->Low,
-// lights ->Low, lights ->Off; shadows never go below Low. After a long fast period steps are given back (each
+// lights ->Low; neither shadows nor lights go below Low. After a long fast period steps are given back (each
 // next one after twice as long).
 // A manual choice by the player (lock()) stops it. AIVERSE_ADAPTIVE=off disables it,
 // AIVERSE_ADAPTIVE_FAKE_MS=<ms> adds load to every frame (testing).

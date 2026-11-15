@@ -5341,8 +5341,8 @@ TEST(lighting_quality_governor) {
     CHECK(g.shadows() == 3 && g.lights() == 3 && g.stepsDown() == 0);
     feed(g, 40, 7);                                // heavy fight: first step drops per-pixel lights
     CHECK(g.lights() == 2 && g.shadows() == 3);
-    feed(g, 60, 60);                               // still too slow: all the way down, but shadows stay on (low)
-    CHECK(g.shadows() == 1 && g.lights() == 0);
+    feed(g, 60, 60);                               // still too slow: all the way down, but shadows and lights stay on (low)
+    CHECK(g.shadows() == 1 && g.lights() == 1);
     // a phone capped at 30 fps from the start is not "slowing down"
     QualityGovernor capped;
     capped.reset(2, 2);

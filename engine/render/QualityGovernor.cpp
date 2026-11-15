@@ -32,7 +32,7 @@ bool QualityGovernor::stepDown() {
     else if (shadows_ == 2) shadows_ = 1;
     else if (lights_ == 2) lights_ = 1;
     // shadows stay on (low): without them the world looks flat, and they rarely are what a frame is waiting for
-    else if (lights_ == 1) lights_ = 0;
+    // lights stay on (low) as well: a night city without headlights and street lamps is unreadable
     else return false;
     ++down_;
     return true;
