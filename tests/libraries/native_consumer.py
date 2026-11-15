@@ -35,6 +35,7 @@ with tempfile.TemporaryDirectory(prefix='rts-native-libraries-') as temp:
         shutil.copytree(ROOT/directory,exported/directory)
     shutil.copytree(ROOT/'apps/client',exported/'apps/client')
     shutil.copy2(ROOT/'CMakeLists.txt',exported/'CMakeLists.txt')
+    shutil.copy2(ROOT/'LICENSE',exported/'LICENSE')   # exportSources copies it: the notices step reads it
     shutil.copytree(project/'native',exported/'native')
     # Original project is removed; content/native fallback must use the exported module.
     shutil.rmtree(project)

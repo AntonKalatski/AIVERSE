@@ -1,6 +1,6 @@
 {
   "name": "gameanalytics",
-  "description": "GameAnalytics (Android SDK 7.2, iOS SDK 5.1, JavaScript SDK 5.0): design, progression, resource and business events, custom dimensions, global custom fields, consent (event submission). Protocol: analytics (docs/plugins.md). Config: gameKey / secretKey (per platform, from the GameAnalytics game settings), build, currencies, itemTypes, dimensions01..03, infoLog, verboseLog, errorReporting, customEvents.",
+  "description": "GameAnalytics (Android SDK 7.2, iOS SDK 5.0 from CocoaPods (5.1 transaction validation when linked), JavaScript SDK 5.0): design, progression, resource and business events, custom dimensions, global custom fields, consent (event submission). Protocol: analytics (docs/plugins.md). Config: gameKey / secretKey (per platform, from the GameAnalytics game settings), build, currencies, itemTypes, dimensions01..03, infoLog, verboseLog, errorReporting, customEvents.",
   "provides": ["analytics"],
   "android": {
     "java": "android/java",
@@ -11,7 +11,7 @@
   "ios": {
     "sources": ["ios/*.mm"],
     "classes": { "gameanalytics": "AiverseGameAnalyticsPlugin" },
-    "pods": ["pod 'GA-SDK-IOS', '~> 5.1'"],
+    "pods": ["pod 'GA-SDK-IOS', '~> 5.0'"],
     "frameworks": ["AdSupport", "SystemConfiguration"]
   },
   "web": {
