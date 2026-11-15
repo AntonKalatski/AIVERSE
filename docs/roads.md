@@ -120,6 +120,15 @@ A map without weather can fix the look: `"roadNetwork": {"weather": {"wet": 1, "
 `RtsRoadView::puddleSpots()` (centre on the road surface, long axis, full length / width, the level it starts at,
 dirt or not), and sizes them with `RtsRoadView::puddleScale(spot, puddles)`.
 
+### Worn asphalt
+
+Asphalt and concrete roads wear: patches of newer asphalt across a lane (darker, the cut sealed with tar), now and
+then a trench patch along a kerb or a strip right across the carriageway, cracks along the kerbs and the open edges
+(not along a bay's edge), transverse cracks across the carriageway and webs of cracks in the lanes; junction boxes get
+a web or two and sometimes a patch. Hashed from the edge / node ids: the same in every run. All decals under the paint
+(lines are drawn over a patch) and under the wet film. The road type's `look.wear` sets how much: 0 none, 1 the
+default, up to 3 (the spacing divides by it). Dirt and gravel roads have their ruts instead.
+
 ## Editor
 
 Window «Дороги» (menu Мир): «Рисовать в «Сцене»», modes Прямая / Кривая (a control point) / Свободная (continues the

@@ -594,6 +594,137 @@ private:
         shelters(t, g, fs);
         crossings(ei, t, g, fs);
         puddlesOf(ei, t, g, fs, s0, s1);
+        wearOf(ei, t, g, fs, s0, s1);
+    }
+
+    // one decal quad from a verge atlas slot (corners in order; uv across u0..u1 of the slot, v as given)
+    void slotQuad(int slot, const float3 (&q)[4], const float2 (&uv)[4], uint32_t col, float lift) {
+        const float su = 1.0f / float(roadkit::kVergeSlots), s0 = float(slot) * su;
+        for (int k = 0; k < 4; ++k) {
+            render::SpriteVertex v;
+            v.pos = q[k]; v.pos.y += lift;
+            v.uv = {s0 + (0.004f + 0.992f * uv[k].x) * su, uv[k].y}; v.color = col; v.team = 0;
+            v.rpos = {v.pos.x, v.pos.y, v.pos.z, 0};
+            verges.push_back(v);
+        }
+    }
+    // a crack along a polyline on the road surface: `hw` half wide, the texture along it 10 m per tile (a crack is
+    // shorter than that: v stays inside the cell)
+    void crackLine(const std::vector<float3>& pts, float hw, float v0) {
+        const float tile = 4.0f / cm_;
+        float along = 0;
+        uint32_t seg = uint32_t(std::lround(v0 * 1000.0f));
+        for (size_t i = 0; i + 1 < pts.size(); ++i) {
+            const float3 a = pts[i], b = pts[i + 1];
+            const float dx = b.x - a.x, dz = b.z - a.z, L = std::sqrt(dx * dx + dz * dz);
+            if (L < 1e-5f) continue;
+            const float3 n{-dz / L * hw, 0, dx / L * hw};
+            // each piece its own stretch of the crack texture: the crack opens, closes and breaks off along it
+            const float span = std::min(0.9f, L / tile), va = 0.005f + (0.99f - span) * hash01(seg++, 77u), vb = va + span;
+            along += L;
+            const float3 q[4] = {b - n, b + n, a + n, a - n};
+            const float2 uv[4] = {{0, vb}, {1, vb}, {1, va}, {0, va}};
+            slotQuad(roadkit::kVergeCrackSlot, q, uv, 0xffffffffu, 0.0018f);
+        }
+    }
+    void patchRect(const float3 (&q)[4], float tone) {
+        const float2 uv[4] = {{0, 0.004f}, {1, 0.004f}, {1, 0.996f}, {0, 0.996f}};
+        const uint32_t c = uint32_t(std::lround(255 * tone));
+        slotQuad(roadkit::kVergePatchSlot, q, uv, c | c << 8 | c << 16 | 0xff000000u, 0.0014f);
+    }
+    // worn asphalt (type look "wear": 0 none, 1 the default, up to 3): patches of newer asphalt across a lane, long
+    // trench patches along a kerb, cracks along the kerbs / edges, across the carriageway and webs in the lanes. The
+    // same in every run: hashed from the edge id and the station
+    void wearOf(int ei, const RoadTypeDef& t, const RoadEdgeGeom& g, int fs, float s0, float s1) {
+        if (!t.drivable() || t.unpaved() || (t.surface != RoadSurface::Asphalt && t.surface != RoadSurface::Concrete)) return;
+        const float wear = std::clamp(float(t.look.getFx("wear", Fixed::fromInt(1)).toDouble()), 0.0f, 3.0f);
+        if (wear <= 0) return;
+        const RoadEdge& E = N_.edges[size_t(ei)];
+        const uint32_t id = uint32_t(E.id) * 6151u + 101u;
+        const float m = 1.0f / cm_;
+        const float cwl = f(t.carriageway(-fs)), cwr = f(t.carriageway(fs));
+        auto onRoad = [&](float s) {
+            if (s < s0 + 0.6f * m || s > s1 - 0.6f * m) return false;
+            const Pt P = sample(g, s);
+            if (P.e < -0.5f) return false;   // not in tunnels
+            for (auto& d : g.driveways) if (std::fabs(f(d.s) - s) < f(d.half) + f(d.flare)) return false;
+            return true;
+        };
+        auto pointAt = [&](float s, float off) { return at(sample(g, std::clamp(s, s0, s1)), off, 0); };
+        uint32_t k = 0;
+        const float every = 1.0f / wear;
+        // patches: across one lane, every 20..60 m; now and then a trench along the kerb or right across the road
+        for (float s = s0 + (6 + 20 * hash01(id, 1)) * m * every; s < s1; s += (12 + 23 * hash01(id, 10 + k)) * m * every, ++k) {
+            if (!onRoad(s)) continue;
+            const float r = hash01(id, 20 + k);
+            const Pt P = sample(g, s);
+            float off0, off1, len;
+            if (r < 0.65f) {   // a lane patch
+                const float w = cwl + cwr, a = -cwl + w * (0.1f + 0.5f * hash01(id, 30 + k));
+                off0 = a; off1 = std::min(cwr - 0.2f * m, a + (0.8f + 1.4f * hash01(id, 40 + k)) * m);
+                len = (0.8f + 2.0f * hash01(id, 50 + k)) * m;
+            } else if (r < 0.85f) {   // a trench along a kerb (a pipe laid under the gutter)
+                const int sd = hash01(id, 60 + k) < 0.5f ? -1 : 1;
+                const float edge = sd < 0 ? -cwl : cwr;
+                off0 = edge - float(sd) * (0.3f + 0.8f * hash01(id, 70 + k)) * m; off1 = off0 - float(sd) * 0.7f * m;
+                if (off0 > off1) std::swap(off0, off1);
+                len = (4.0f + 6.0f * hash01(id, 80 + k)) * m;
+            } else {   // right across the carriageway
+                off0 = -cwl + 0.15f * m; off1 = cwr - 0.15f * m;
+                len = (0.6f + 0.5f * hash01(id, 90 + k)) * m;
+            }
+            if (!onRoad(s - len * 0.5f) || !onRoad(s + len * 0.5f)) continue;
+            const Pt A = sample(g, s - len * 0.5f), B = sample(g, s + len * 0.5f);
+            const float3 q[4] = {at(B, off0, 0), at(B, off1, 0), at(A, off1, 0), at(A, off0, 0)};
+            (void)P;
+            patchRect(q, 0.85f + 0.15f * hash01(id, 95 + k));
+        }
+        // cracks along the edges: kerbs and the open edges of country roads, 3..10 m, wandering a little
+        for (int sd : {-1, 1}) {
+            const float edge = sd < 0 ? -cwl : cwr;
+            for (float s = s0 + (4 + 12 * hash01(id, 200 + uint32_t(sd + 1))) * m * every; s < s1; s += (6 + 12 * hash01(id, 300 + k)) * m * every, ++k) {
+                const float L = (3 + 7 * hash01(id, 400 + k)) * m;
+                if (!onRoad(s) || !onRoad(s + L)) continue;
+                const float in = (0.25f + 0.35f * hash01(id, 500 + k)) * m;
+                auto bay = [&](float q) { return roadBayWidth(g, sd, Fixed::fromRaw(int64_t(std::llround(double(q) * 65536.0)))).raw > 0; };
+                if (bay(s) || bay(s + L)) continue;   // a bay's own edge, not the kerb's
+                std::vector<float3> pts;
+                const int n = std::max(2, int(L / (0.5f * m)));
+                for (int i = 0; i <= n; ++i) {
+                    const float q = float(i) / float(n);
+                    const float wob = (hash01(id * 31u + k, uint32_t(i)) - 0.5f) * 0.12f * m;
+                    pts.push_back(pointAt(s + L * q, edge - float(sd) * (in + wob)));
+                }
+                crackLine(pts, 0.08f * m, 0.6f * hash01(id, 600 + k));
+            }
+        }
+        // across the carriageway: a transverse crack every 30..80 m (cold winters), and webs in the lanes
+        for (float s = s0 + (10 + 30 * hash01(id, 700)) * m * every; s < s1; s += (20 + 30 * hash01(id, 800 + k)) * m * every, ++k) {
+            if (!onRoad(s)) continue;
+            std::vector<float3> pts;
+            const float a = -cwl + 0.2f * m, b = cwr - 0.2f * m;
+            const int n = std::max(2, int((b - a) / (0.4f * m)));
+            float ds = 0;
+            for (int i = 0; i <= n; ++i) {
+                ds += (hash01(id * 17u + k, uint32_t(i)) - 0.5f) * 0.25f * m;
+                pts.push_back(pointAt(s + ds, a + (b - a) * float(i) / float(n)));
+            }
+            crackLine(pts, 0.07f * m, 0.7f * hash01(id, 900 + k));
+        }
+        for (float s = s0 + (8 + 20 * hash01(id, 1000)) * m * every; s < s1; s += (10 + 12 * hash01(id, 1100 + k)) * m * every, ++k) {
+            if (!onRoad(s)) continue;
+            float ps = s, po = -cwl + (cwl + cwr) * (0.15f + 0.7f * hash01(id, 1200 + k));
+            std::vector<float3> pts{pointAt(ps, po)};
+            const int n = 4 + int(hash01(id, 1300 + k) * 4);
+            float ang = 6.2832f * hash01(id, 1400 + k);
+            for (int i = 0; i < n; ++i) {
+                ang += (hash01(id * 13u + k, uint32_t(i)) - 0.5f) * 1.6f;
+                const float L = (0.3f + 0.4f * hash01(id * 7u + k, uint32_t(i))) * m;
+                ps += std::cos(ang) * L; po = std::clamp(po + std::sin(ang) * L, -cwl + 0.2f * m, cwr - 0.2f * m);
+                pts.push_back(pointAt(ps, po));
+            }
+            crackLine(pts, 0.06f * m, 0.8f * hash01(id, 1500 + k));
+        }
     }
 
     static uint32_t hashU(uint32_t a, uint32_t b) {
@@ -1518,6 +1649,7 @@ private:
             filmQuad(c, pa, pb, pb, mat == RtsRoadView::kDirt || mat == RtsRoadView::kGravel);   // a triangle: the last two corners the same
         }
         junctionPuddles(J, h, float3{cx, h(cx, cz, 0), cz}, mat == RtsRoadView::kDirt || mat == RtsRoadView::kGravel);
+        if (mat == RtsRoadView::kAsphalt || mat == RtsRoadView::kConcrete) junctionWear(J, h, cx, cz);
         // sidewalk corners: a raised strip and the curb face along the inner curve
         const float umw = 1.0f / (4.0f / cm_);
         for (size_t ci = 0; ci < J.corners.size(); ++ci) {
@@ -1561,6 +1693,46 @@ private:
         for (size_t k = 0; k < J.arms.size(); ++k)
             seamFeather(J.arms[k], J.armEnd[k], mat != RtsRoadView::kDirt && mat != RtsRoadView::kGravel, h, mat, um);
         junctionTracks(J, h);   // paved or dirt: the box carries the tracks / ruts of the roads it joins
+    }
+
+    // a junction box wears like its roads: a web crack or two, sometimes a patch where a lane was dug up
+    template <class H>
+    void junctionWear(const RoadJunctionGeom& J, const H& h, float cx, float cz) {
+        float wear = 0;
+        for (int e : J.arms) wear = std::max(wear, float(T_[size_t(N_.edges[size_t(e)].typeIndex)].look.getFx("wear", Fixed::fromInt(1)).toDouble()));
+        if (wear <= 0) return;
+        const uint32_t id = uint32_t(J.node) * 2654435761u + 17u;
+        const float m = 1.0f / cm_;
+        float rad = 1e9f;   // the box's inner reach from the centre
+        for (auto& p : J.outline) rad = std::min(rad, std::hypot(f(p.x) - cx, f(p.y) - cz));
+        rad *= 0.8f;
+        auto P = [&](float x, float z) { return float3{x, h(x, z, 0), z}; };
+        const int webs = int(hash01(id, 1) * 2.5f * std::min(wear, 2.0f));
+        for (int w = 0; w < webs; ++w) {
+            const float a = 6.2832f * hash01(id, 10 + uint32_t(w)), r = rad * hash01(id, 20 + uint32_t(w));
+            float x = cx + std::cos(a) * r, z = cz + std::sin(a) * r, ang = 6.2832f * hash01(id, 30 + uint32_t(w));
+            std::vector<float3> pts{P(x, z)};
+            for (int i = 0; i < 5; ++i) {
+                ang += (hash01(id * 3u + uint32_t(w), uint32_t(i)) - 0.5f) * 1.6f;
+                const float L = (0.3f + 0.4f * hash01(id * 5u + uint32_t(w), uint32_t(i))) * m;
+                const float nx = x + std::cos(ang) * L, nz = z + std::sin(ang) * L;
+                if (std::hypot(nx - cx, nz - cz) > rad) break;
+                x = nx; z = nz;
+                pts.push_back(P(x, z));
+            }
+            crackLine(pts, 0.06f * m, 0.8f * hash01(id, 40 + uint32_t(w)));
+        }
+        if (hash01(id, 50) < 0.3f * wear) {   // a patch, square to the first arm
+            const RoadEdgeGeom& g = G_.edges[size_t(J.arms[0])];
+            const Pt A = sample(g, J.armEnd[0] == 0 ? 0.0f : f(g.length));
+            const float a = (hash01(id, 60) - 0.5f) * rad, b = (hash01(id, 70) - 0.5f) * rad;
+            const float3 c{cx + A.t.x * a + A.n.x * b, 0, cz + A.t.z * a + A.n.z * b};
+            const float hl = (0.6f + 1.0f * hash01(id, 80)) * m, hw = (0.5f + 0.6f * hash01(id, 90)) * m;
+            const float3 tl{A.t.x * hl, 0, A.t.z * hl}, nw{A.n.x * hw, 0, A.n.z * hw};
+            const float3 q[4] = {P(c.x + tl.x - nw.x, c.z + tl.z - nw.z), P(c.x + tl.x + nw.x, c.z + tl.z + nw.z),
+                                 P(c.x - tl.x + nw.x, c.z - tl.z + nw.z), P(c.x - tl.x - nw.x, c.z - tl.z - nw.z)};
+            patchRect(q, 0.9f);
+        }
     }
 
     // puddles in a junction box: in the corners where the kerb turns (the gutter's low point), on a dirt box one or

@@ -308,6 +308,34 @@ std::vector<uint32_t> vergeAtlas(int cell) {
             const float a = water * 0.9f + rim * 0.30f;
             put(7, x, y, rim > water ? Rgb{0.022f, 0.022f, 0.024f} : c, a);
         }
+    // slot 8: a patch of newer asphalt, filling the cell: a little darker and finer than the road's, its cut edge
+    // sealed with a band of tar that wanders a little (the cell is stretched over the patch: the band stays thin)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float u = (fx + 0.5f) / float(cell), v = (fy + 0.5f) / float(cell);
+            const float g = rnd(x, y, 811), n = fbm(fx, fy, cell, 16, 813);
+            const float e = std::min(std::min(u, 1 - u), std::min(v, 1 - v));   // to the cut
+            const float seal = 0.035f + 0.02f * fbm(fx, fy, cell, 8, 817);
+            const float tone = 0.098f + (n - 0.5f) * 0.02f + (g - 0.5f) * 0.014f;   // the road asphalt renders at about 0.12 here
+            Rgb c{tone, tone, tone * 1.04f};
+            if (e < seal) c = Rgb{0.045f, 0.045f, 0.048f};   // tar along the cut
+            const float a = std::clamp(e / 0.008f, 0.0f, 1.0f) * 0.95f;
+            put(8, x, y, c, a);
+        }
+    // slot 9: a crack: u across (a dark, broken line in the middle with crumbled shoulders), v along (tiles)
+    for (int y = 0; y < H; ++y)
+        for (int x = 0; x < cell; ++x) {
+            const float fx = float(x), fy = float(y);
+            const float u = (fx + 0.5f) / float(cell);
+            const float wob = (fbm(3.0f, fy, cell, 8, 911) - 0.5f) * 0.25f;
+            const float w = 0.14f + 0.14f * fbm(5.0f, fy, cell, 6, 913);   // the crack opens and closes along its length
+            const float d = std::fabs(u - 0.5f - wob);
+            const float core = std::clamp((w - d) / 0.05f, 0.0f, 1.0f);
+            const float crumb = std::clamp((w * 2.2f - d) / (w * 1.2f), 0.0f, 1.0f) * (rnd(x, y, 917) > 0.6f ? 0.5f : 0.15f);
+            const float a = std::max(core * 0.9f, crumb) * (fbm(7.0f, fy, cell, 12, 919) > 0.25f ? 1.0f : 0.25f);
+            put(9, x, y, Rgb{0.030f, 0.030f, 0.032f}, a * 0.85f);
+        }
     return px;
 }
 
