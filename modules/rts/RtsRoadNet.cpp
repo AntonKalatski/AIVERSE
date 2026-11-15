@@ -820,6 +820,35 @@ RoadGeometry buildRoadGeometry(const RoadNetwork& n, const std::vector<RoadTypeD
                 if (hit) c.clear();   // the corner is under the branch: no curb there
             }
     }
+    // an arm meets its junction box at the box's height: under the box and over the first metres past it the
+    // road is held at the node's height and only then rises or falls into its own profile (a bridge or a ramp
+    // that starts at a junction otherwise leaves its deck end standing over the box with a gap under it)
+    for (auto& J : G.junctions) {
+        if (J.split) continue;
+        for (size_t k = 0; k < J.arms.size(); ++k) {
+            RoadEdgeGeom& g = G.edges[size_t(J.arms[k])];
+            if (g.pts.size() < 2) continue;
+            const int end = J.armEnd[k];
+            const RoadSample& at = end == 0 ? g.pts.front() : g.pts.back();
+            const Fixed y0 = at.y, e0 = at.e;
+            const Fixed trim = end == 0 ? g.trim0 : g.trim1;
+            // the run-out: long enough for an easy grade (6 %) to the highest point the road reaches, at least
+            // 12 m, at most a little under half the edge (its other end may hold to a junction too)
+            Fixed rise{};
+            for (auto& r : g.pts) rise = fxMax(rise, fxAbs(r.y - y0));
+            Fixed L = fxMax(rise / Fixed::fromRatio(6, 100), Fixed::fromInt(12)) / cellMetres;
+            L = fxMax(fxMin(L, (g.length - trim) * Fixed::fromRatio(45, 100)), Fixed{});
+            for (auto& r : g.pts) {
+                const Fixed d = end == 0 ? r.s : g.length - r.s;
+                if (d >= trim + L) continue;
+                Fixed u = L > Fixed{} ? (d - trim) / L : kOne;
+                if (u < Fixed{}) u = Fixed{};
+                const Fixed w = u * u * (Fixed::fromInt(3) - u * 2);   // 0 at the box .. 1 on the road's own profile
+                r.y = y0 + (r.y - y0) * w;
+                r.e = e0 + (r.e - e0) * w;
+            }
+        }
+    }
     for (auto& g : G.edges) spansOf(g);
     // bus stop bays in cells
     for (size_t i = 0; i < n.edges.size(); ++i) {
