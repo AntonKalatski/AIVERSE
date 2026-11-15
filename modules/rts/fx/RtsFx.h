@@ -72,8 +72,11 @@ public:
     void detach();   // also stops attached effects
 
     // Once per frame after the simulation advanced and the scene was built: plays effects for the
-    // events since the last call, keeps projectile trails and "damaged" loops on their objects.
-    void update(Simulation& sim, const std::vector<SceneObject>* scene);
+    // events since the last call, keeps projectile trails and "damaged" loops on their objects. With an attack
+    // origin (setAttackOriginFn: the shooter's muzzle) the attack effect plays there and a projectile's trail starts
+    // there, then glides onto the simulated path across the ground within ~0.3 s (dt: frame time) and keeps the
+    // muzzle's height, like RtsView draws the projectile.
+    void update(Simulation& sim, const std::vector<SceneObject>* scene, float dt = 1.0f / 60);
 
     int played() const { return played_; }
     int rejected() const { return rejected_; }   // curved worlds: events the place function did not show
@@ -88,7 +91,7 @@ private:
         std::vector<Binding> abilities;
     };
     struct Collector;
-    struct Attached { fx::FxHandle h; uint32_t frame; bool clear = false; };
+    struct Attached { fx::FxHandle h; uint32_t frame; bool clear = false; fx::float3 offset{}; };
 
     Binding resolve(const Json& v, const std::string& where);
     const Binding& lookup(int type, FxCue c) const;

@@ -42,6 +42,7 @@ void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& 
     bridge_.setHeightFn([&view, &grid](float x, float z) { return view.heightAt(grid, x, z); });
     ps_.setGroundHeight([&view, &grid](float x, float z) { return view.heightAt(grid, x, z); });   // "collision" module
     bridge_.setPlayerColorFn([](int p) { return game::RtsView::playerColor(p); });
+    bridge_.setAttackOriginFn([&view](Entity e, fx::float3& pos, fx::float3& dir) { return view.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     bridge_.attach(sim, viewer);
     attached_ = true;
 }
@@ -72,7 +73,7 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
 void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
                       int fbW, int fbH, float dt) {
     ps_.setView(cam, viewProj, fbW, fbH);
-    if (attached_ && dt > 0) bridge_.update(sim, &scene.objects);
+    if (attached_ && dt > 0) bridge_.update(sim, &scene.objects, dt);
     ps_.update(dt);
     static const bool dbg = std::getenv("AIVERSE_FX_DEBUG") != nullptr;
     static int frames = 0;

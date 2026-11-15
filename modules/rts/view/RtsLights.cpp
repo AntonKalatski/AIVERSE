@@ -39,7 +39,12 @@ void RtsLights::consumeEvents(const RtsScene& s, double time, const std::vector<
         case kEvAttack: if (int t = type(e.a); t >= 0) {
             const auto& weapons=rules_->types[size_t(t)].weapons;
             const bool muzzleFx=std::any_of(weapons.begin(),weapons.end(),[](const auto& w){return w.id=="pistol"||w.id=="service_pistol"||w.id=="smg"||w.id=="shotgun"||w.id=="rocket";});
-            if(!muzzleFx)spawn(types_[size_t(t)].attack,p,0.8f);
+            if(muzzleFx)break;
+            float3 at, dir;
+            if (view.muzzleOf(e.a, at, dir)) {   // the model's muzzle: the flash lights the gun, not the body
+                const Flash& f = types_[size_t(t)].attack;
+                if (f.on && f.radius > 0 && seen(at)) active_.push_back({at, f.color, f.radius, f.intensity, float(time), std::max(f.time, 0.03f), std::max(f.halo, 0.0f)});
+            } else spawn(types_[size_t(t)].attack,p,0.8f);
         } break;
         case kEvHit:    if (int t = type(e.b); t >= 0) spawn(types_[size_t(t)].hit, p, 0.5f); break;
         case kEvDied:

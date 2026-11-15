@@ -25,7 +25,7 @@ void Editor::tickFx(const render::RTSCamera& cam, int w, int h, const std::vecto
     fxTime_ = time_;
     gameFx_.setView(cam, r3d_.viewProj(), w, h);
     gameFx_.setLightDir(r3d_.lighting.sunDir);
-    if (playing() && dt > 0) gameFxBridge_.update(*sim_, objects);
+    if (playing() && dt > 0) gameFxBridge_.update(*sim_, objects, dt);
     if (fxFrozen_) dt = 0;
     if (fxPreview_.loop && !fxPreview_.name.empty() && !gameFx_.playing(fxPreview_.h) && time_ >= fxPreview_.next && dt > 0) {
         fxPreview_.h = gameFx_.play(fxPreview_.name, fxPreview_.pos, {0, 1, 0}, fxPreview_.scale, fxPreview_.tint);

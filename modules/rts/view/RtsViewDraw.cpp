@@ -16,6 +16,22 @@ float3 RtsView::nodeWorldPos(const EntityAnim& st, const ModelChoice& ch, int no
     return st.drawn.transformPoint(local);
 }
 
+bool RtsView::muzzleOf(Entity e, float3& pos, float3& dir) const {
+    if (!e.valid()) return false;
+    auto it = anims_.find(e.packed());
+    if (it == anims_.end() || !it->second.initialized || it->second.dead || it->second.type >= looks_.size()) return false;
+    const EntityAnim& s = it->second;
+    const TypeLook& L = looks_[s.type];
+    if (s.choice < 0 || size_t(s.choice) >= L.models.size()) return false;
+    const ModelChoice& ch = L.models[size_t(s.choice)];
+    if (ch.muzzle < 0) return false;
+    pos = nodeWorldPos(s, ch, ch.muzzle, ch.muzzleOffset);
+    const float3 f = s.last.facing;
+    const float fl = std::sqrt(f.x * f.x + f.z * f.z);
+    dir = fl > 1e-4f ? float3{f.x / fl, 0, f.z / fl} : float3{0, 0, 1};
+    return true;
+}
+
 void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, float ground, float alpha, const float4* tintOverride, const mat4* placement) {
     const UnitType& t = rules_->types[o.type];
     const TypeLook& L = looks_[o.type];
@@ -209,12 +225,15 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
             if (ch.muzzle >= 0) {
                 const float3 muzzle = nodeWorldPos(s, ch, ch.muzzle, ch.muzzleOffset);
                 ps.launch = muzzle - o.pos;
-                if (length(ps.launch) > 3) ps.launch = {0, 0, 0}; // stale pose (teleport): do not fly from afar
+                if (length(ps.launch) > 8) ps.launch = {0, 0, 0}; // stale pose (teleport): do not fly from afar
             }
             events_.push_back({"launch", o.source, s.type, s.last.owner, o.pos + ps.launch});
         }
     } else {
-        ps.launch = ps.launch * std::exp(-dt * 7.0f); // converge onto the simulated path
+        // converge onto the simulated path across the ground; the height stays: a shot flies at the height of the
+        // muzzle it left (the simulation moves projectiles just above the ground)
+        const float k = std::exp(-dt * 7.0f);
+        ps.launch = {ps.launch.x * k, ps.launch.y, ps.launch.z * k};
     }
     float size = 1;
     if (o.shooterType < looks_.size()) {

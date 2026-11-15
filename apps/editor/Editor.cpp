@@ -518,6 +518,10 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         o.type = uint16_t(t);
         o.owner = e.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(e.owner, 0, 16));
         o.pos = {e.x, 0, e.z};
+        if (e.extra.has("facing")) {   // degrees clockwise from north (-z), as RtsModule spawns it: 0 north, 90 east, 180 south
+            const float a = float(e.extra["facing"].toDouble()) * 3.14159265f / 180.0f;
+            o.facing = {std::sin(a), 0, -std::cos(a)};
+        }
         if (d.planet()) { // body-local surface point of "at"
             int body; float3 local;
             if (!planetLocal(e.at, body, local)) continue;
@@ -785,6 +789,7 @@ void Editor::startPlay(int humanSlot) {
     fxFrozen_ = false;
     gameFxBridge_.setHeightFn([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : 0.0f; });
     gameFxBridge_.setPlayerColorFn([](int p) { return game::RtsView::playerColor(p); });
+    gameFxBridge_.setAttackOriginFn([this](Entity e, fx::float3& pos, fx::float3& dir) { return view_.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     gameFxBridge_.attach(*sim_, uint8_t(human_));
     fxTime_ = -1;
     bots_.clear();

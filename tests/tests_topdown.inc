@@ -181,6 +181,26 @@ TEST(topdown_retarget_nearest_with_margin_and_keep) {
     }
 }
 
+TEST(topdown_face_target_while_walking) {
+    // aim.faceTarget: auto-firing while walking east at a dummy to the south, the hero keeps facing the dummy
+    // (strafes) instead of turning back to the walk between the shots
+    std::string rules = kTopDownRules;
+    auto set = [&rules](const std::string& from, const std::string& to) { rules.replace(rules.find(from), from.size(), to); };
+    set("\"aim\": {\"snapCone\": 15}", "\"aim\": {\"snapCone\": 15, \"faceTarget\": true}");
+    set("\"whileMoving\": false", "\"whileMoving\": true");
+    auto sim = makeSimJson(rules, topDownMap(R"({"type":"drone","owner":1,"pos":[4.5,6.5]},{"type":"dummy","owner":2,"pos":[6.5,10.5]})", false));
+    Entity dummy = findType(*sim, "dummy", 2);
+    steer(*sim, 1, kEast);
+    for (int i = 0; i < 6; ++i) {
+        run(*sim, 0.1);
+        CHECK(pilot(*sim, 1).target == dummy);
+        const Vec3 f = sim->world().get<game::Unit>(mod(*sim).topDown()->heroOf(*sim, 1)).facing;
+        const Vec3 to = tdPos(*sim, dummy) - tdPos(*sim, mod(*sim).topDown()->heroOf(*sim, 1));
+        if (i >= 2) CHECK(f.dot(to / to.length()) > Fixed::fromRatio(95, 100));   // after the first turn (turnRate)
+    }
+    CHECK(tdPos(*sim, mod(*sim).topDown()->heroOf(*sim, 1)).x > Fixed::fromRatio(55, 10));   // it did walk east
+}
+
 TEST(topdown_aim_snaps_inside_the_cone) {
     // near enemy 40 degrees off the aim, far enemy 5 degrees off: the aim snaps to the far one
     auto sim = makeSimJson(kTopDownRules, topDownMap(R"({"type":"drone","owner":1,"pos":[4.5,8.5]},
