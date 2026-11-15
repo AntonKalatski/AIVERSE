@@ -24,7 +24,9 @@ Sample: `templates/topdown_arena` ("Scrapyard Arena").
   stays on passable cells, cliffs need `canStep`, a blocked axis is dropped so heroes slide along walls; sub-steps
   of a quarter cell. `move.collideUnits` pushes the hero out of other ground (or air) bodies; structures block
   through the grid. Other units' local avoidance (ORCA) treats heroes as moving obstacles. Facing follows the aim,
-  else the movement, limited by `move.turnRate` (degrees / s).
+  else (`aim.faceTarget`, off by default) the auto-fire target, else the movement, limited by `move.turnRate`
+  (degrees / s). Drone Fall turns faceTarget on: the hero walks and shoots sideways with its strafe clips instead of
+  turning to the target on every shot and back to the walk in between.
 - **Targeting (Drone Fall rules, as data).** With an aim (aim stick, right stick, held mouse) the hero fires at the
   nearest valid target inside `aim.snapCone` (15 degrees) around the aim, also while moving. Without an aim,
   `autoFire` picks the nearest valid target in weapon range (`range` overrides) inside `cone` around the facing:
@@ -110,7 +112,7 @@ Vehicles the hero drives: rules `driving`, docs/driving.md.
   "heroes": ["drone"], "respawn": 8,
   "move": {"accel": 36, "decel": 54, "turnRate": 720, "collideUnits": true},
   "input": {"sectors": 45, "magnitudeSteps": 1, "deadzone": 0.05},
-  "aim": {"snapCone": 15, "fires": true, "range": 0, "freeFire": true},
+  "aim": {"snapCone": 15, "fires": true, "range": 0, "freeFire": true, "faceTarget": false},
   "abilities": {"hold": ["laser"], "rootWhileCasting": false},
   "squad": {"types": ["guard"], "size": 4, "radius": 2.5, "tolerance": 0.5, "rotate": true, "fireWhileMoving": false, "repath": 0.25},
   "escape": {"duration": 5, "cooldown": 30, "pause": true},

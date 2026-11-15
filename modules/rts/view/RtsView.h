@@ -201,6 +201,9 @@ public:
     static render::float4 playerColor(int player);
     float selectionRadius(uint16_t type) const;
     float heightAt(const MapGrid& grid, float x, float z) const;
+    // Where a drawn unit's shots leave its model: the look's "muzzle" (node + offset) in world space and the unit's
+    // facing; false when the unit is not drawn yet or its model has no muzzle (effects then use the simulation point).
+    bool muzzleOf(Entity e, render::float3& pos, render::float3& dir) const;
     // Problems found while loading view blocks ("type 'knight': models/knight.glb: file not found").
     const std::vector<std::string>& warnings() const { return warnings_; }
     const render::Model* modelOf(uint16_t type, size_t choice = 0) const;

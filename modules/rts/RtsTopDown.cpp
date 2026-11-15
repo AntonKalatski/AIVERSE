@@ -69,6 +69,7 @@ TopDownRules TopDown::parse(const Json& j, const std::vector<std::string>& ids) 
         r.aimFires = aim.getBool("fires", true);
         r.aimRange = nonNegative(aim, "range", Fixed{}, "topDown.aim");
         r.freeFire = aim.getBool("freeFire", false);
+        r.faceTarget = aim.getBool("faceTarget", false);
     }
     if (const Json& ab = j["abilities"]; ab.isObject()) {
         const Json& hold = ab["hold"];
@@ -845,9 +846,16 @@ void TopDown::moveHero(Simulation& sim, TopDownPilot& p) {
     tr.pos = pos;
     if (auto* mb = w.tryGet<Mobile>(e)) { mb->moving = false; mb->vel = p.vel; }
 
-    // facing: the aim, else the way it moves; turnRate limits the turn per tick
+    // facing: the aim, else (aim.faceTarget) the auto-fire target, else the way it moves; turnRate limits the turn
+    // per tick. Without faceTarget a hero that walks and shoots sideways turns to the target on every shot and back
+    // to the walk in between: the body (and the strafe blend of its legs) twitches.
     Vec3 want{};
     if (p.input.aim) want = direction(p.input.aimAngle);
+    else if (rules_.faceTarget && p.target.valid() && w.alive(p.target) && w.has<Transform>(p.target)) {
+        want = w.get<Transform>(p.target).pos - tr.pos;
+        want.y = Fixed{};
+        if (want.x.raw == 0 && want.z.raw == 0 && p.vel.length() > rules_.movingSpeed) want = p.vel;
+    }
     else if (p.vel.length() > rules_.movingSpeed) want = p.vel;
     if (stunned || (want.x.raw == 0 && want.z.raw == 0)) return;
     const int32_t goal = angleOf(want);

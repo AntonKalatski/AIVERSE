@@ -48,6 +48,7 @@ struct TopDownRules {
     // manual aim
     Fixed snapCos{};                      // cos(snapCone): aim snaps to the nearest target inside the cone
     bool snapOn = true, aimFires = true;
+    bool faceTarget = false;   // aim.faceTarget: without manual aim the hero faces its auto-fire target, not the way it walks
     Fixed aimRange{};                     // 0: weapon range
     // auto-fire
     bool autoFire = true, fireWhileMoving = false, lineOfFire = true, preferArmed = false;
