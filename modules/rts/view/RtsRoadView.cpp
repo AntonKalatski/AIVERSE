@@ -1364,7 +1364,7 @@ private:
                 arc += seg;
             }
         }
-        if (mat == RtsRoadView::kAsphalt || mat == RtsRoadView::kConcrete) junctionTracks(J, h);
+        junctionTracks(J, h);   // paved or dirt: the box carries the tracks / ruts of the roads it joins
     }
 
     // wheel tracks across a junction: through every lane straight on, and from the outer lanes round the turns, so
@@ -1372,7 +1372,7 @@ private:
     template <class H>
     void junctionTracks(const RoadJunctionGeom& J, const H& h) {
         struct Lane { float3 p, dir; float off; };   // p: the lane's centre where the arm meets the box; dir: driving
-        struct Arm { std::vector<Lane> in, out; float3 leave; float perM; };
+        struct Arm { std::vector<Lane> in, out; float3 leave; float perM; bool dirt = false; };
         std::vector<Arm> arms;
         for (size_t i = 0; i < J.arms.size(); ++i) {
             const int ei = J.arms[i], end = J.armEnd[i];
@@ -1380,7 +1380,7 @@ private:
             const RoadEdgeGeom& g = G_.edges[size_t(ei)];
             const RoadTypeDef& t = T_[size_t(E.typeIndex)];
             Arm a;
-            if (g.pts.size() < 2 || !t.drivable() || t.unpaved()) { arms.push_back(a); continue; }
+            if (g.pts.size() < 2 || !t.drivable()) { arms.push_back(a); continue; }
             const Pt P = sample(g, end == 0 ? f(g.trim0) : f(g.length - g.trim1));
             const float sg = end == 0 ? 1.0f : -1.0f;
             a.leave = P.t * sg;
@@ -1388,6 +1388,14 @@ private:
             const int fs = E.reversed ? -1 : 1, outDir = (end == 0 ? 1 : -1) * fs;
             const auto& firstLanes = t.forward.empty() ? t.backward : t.forward;
             a.perM = f(firstLanes[0].width) / 3.5f;
+            if (t.unpaved()) {   // a dirt or gravel road: its one pair of ruts down the middle, both ways
+                a.dirt = true;
+                a.perM = 0.80f * f(firstLanes[0].width) / 3.0f / 0.82f;   // the texture's rut gauge
+                a.out.push_back(Lane{P.c, a.leave, 0});   // the ruts run on the centre line
+                a.in.push_back(Lane{P.c, a.leave * -1.0f, 0});
+                arms.push_back(a);
+                continue;
+            }
             for (int which = 0; which < 2; ++which) {   // 0 out, 1 in
                 const int dir = which == 0 ? outDir : -outDir;
                 float off = f(t.median) * 0.5f;
@@ -1404,13 +1412,17 @@ private:
         }
         const float w = 0.32f * 4.0f, gauge = 0.82f;   // the same width as along the roads   // metres: a track's decal width, half the wheel base
         const float u0 = float(roadkit::kVergeTrackSlot) / float(roadkit::kVergeSlots) + 0.002f, u1 = float(roadkit::kVergeTrackSlot + 1) / float(roadkit::kVergeSlots) - 0.002f;
-        auto path = [&](float3 p0, float3 d0, float3 p3, float3 d3, float alpha, float perM) {
+        auto path = [&](float3 p0, float3 d0, float3 p3, float3 d3, float alpha, float perM0, float perM1, float dirt0, float dirt1) {
             const float len = std::hypot(p3.x - p0.x, p3.z - p0.z);
             if (len < 1e-3f) return;
             const float3 p1 = p0 + d0 * (len * 0.4f), p2 = p3 - d3 * (len * 0.4f);
             auto bz = [&](float u) { const float v = 1 - u; return p0 * (v * v * v) + p1 * (3 * v * v * u) + p2 * (3 * v * u * u) + p3 * (u * u * u); };
             const int n = std::max(2, int(std::ceil(len / 0.4f)));
-            const uint32_t col = trackColor(0.55f, 0.55f, 0.55f, alpha);
+            // asphalt grey, or the brown the paved roads' tracks turn as they run into a dirt road's ruts
+            auto colAt = [&](float u) {
+                const float k = dirt0 + (dirt1 - dirt0) * u;
+                return trackColor(0.55f + (0.875f - 0.55f) * k, 0.55f + (0.79f - 0.55f) * k, 0.55f + (0.67f - 0.55f) * k, alpha * (1 + 0.35f * k));   // the ruts a little deeper
+            };
             const float per = roadkit::kRoadPaintPeriod / 3.0f / cm_;   // the track texture repeats every 4 m
             for (int side : {-1, 1}) {
                 float along = 0;
@@ -1425,6 +1437,8 @@ private:
                         return float3{-tt.z, 0, tt.x};
                     };
                     const float3 nA = nrm(ua), nB = nrm(ub);
+                    const float um = (ua + ub) * 0.5f, perM = perM0 + (perM1 - perM0) * um;
+                    const uint32_t col = colAt(um);
                     const float ga = float(side) * gauge * perM, hw = w * 0.5f * perM;
                     const float seg = std::hypot(B.x - A.x, B.z - A.z);
                     const float va = along / per, vb = (along + seg) / per;
@@ -1451,10 +1465,29 @@ private:
                 const Arm& B = arms[j];
                 const float3 din = A.in[0].dir, dout = B.leave;
                 const float straight = din.x * dout.x + din.z * dout.z, cross = din.x * dout.z - din.z * dout.x;
+                // dirt to dirt: one pair of ruts serves both ways, so each pair of arms once
+                if (A.dirt && B.dirt && j < i) continue;
+                const float d0 = A.dirt ? 1.0f : 0.0f, d1 = B.dirt ? 1.0f : 0.0f;
+                if (A.dirt || B.dirt) {   // into or out of a dirt road: every lane to its ruts down the middle
+                    const float alpha = straight > 0.6f || arms.size() == 2 ? kTrackAlpha : kTrackAlpha * 0.8f;
+                    if (straight <= -0.6f && arms.size() > 2) continue;
+                    if (A.dirt && B.dirt) { path(A.in[0].p, A.in[0].dir, B.out[0].p, B.out[0].dir, alpha, A.perM, B.perM, 1, 1); continue; }
+                    // a paved arm: straight on every lane merges into / spreads from the ruts; a turn only from the
+                    // outer lane (right) or the inner one (left), as on paved junctions
+                    const bool right = cross > 0, straightOn = straight > 0.6f || arms.size() == 2;
+                    if (B.dirt) {
+                        if (straightOn) for (auto& l : A.in) path(l.p, l.dir, B.out[0].p, B.out[0].dir, alpha, A.perM, B.perM, d0, d1);
+                        else { const Lane& l = right ? A.in.back() : A.in.front(); path(l.p, l.dir, B.out[0].p, B.out[0].dir, alpha, A.perM, B.perM, d0, d1); }
+                    } else {
+                        if (straightOn) for (auto& l : B.out) path(A.in[0].p, A.in[0].dir, l.p, l.dir, alpha, A.perM, B.perM, d0, d1);
+                        else { const Lane& l = right ? B.out.back() : B.out.front(); path(A.in[0].p, A.in[0].dir, l.p, l.dir, alpha, A.perM, B.perM, d0, d1); }
+                    }
+                    continue;
+                }
                 if (straight > 0.6f || arms.size() == 2) {   // straight on (or round a bend): lane k to lane k
                     for (size_t k = 0; k < A.in.size(); ++k) {
                         const Lane& o = B.out[std::min(k, B.out.size() - 1)];
-                        path(A.in[k].p, A.in[k].dir, o.p, o.dir, kTrackAlpha, A.perM);
+                        path(A.in[k].p, A.in[k].dir, o.p, o.dir, kTrackAlpha, A.perM, A.perM, 0, 0);
                     }
                 } else if (straight > -0.6f) {
                     // a right turn (right of a heading t is (-t.z, t.x): cross > 0) from the outer lane into the
@@ -1462,7 +1495,7 @@ private:
                     const bool right = cross > 0;
                     const Lane& a = right ? A.in.back() : A.in.front();
                     const Lane& b = right ? B.out.back() : B.out.front();
-                    path(a.p, a.dir, b.p, b.dir, kTrackAlpha * 0.7f, A.perM);
+                    path(a.p, a.dir, b.p, b.dir, kTrackAlpha * 0.7f, A.perM, A.perM, 0, 0);
                 }
             }
         }
