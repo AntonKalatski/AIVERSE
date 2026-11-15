@@ -569,7 +569,11 @@ function(aiverse_package_app target)
                 XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${AIVERSE_APPLE_TEAM_ID}"
                 # CocoaPods' aggregate Pods_<target>.framework is built into PODS_CONFIGURATION_BUILD_DIR, but this
                 # target's BUILT_PRODUCTS_DIR is CMake's own folder: the linker has to be told where to look
-                XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS "$(inherited) $(PODS_CONFIGURATION_BUILD_DIR)")
+                XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS "$(inherited) $(PODS_CONFIGURATION_BUILD_DIR)"
+                # static Swift pods (ad SDKs) pull swiftCompatibility* from the default toolchain; this app has no
+                # Swift sources, and TOOLCHAIN_DIR may name another toolchain (Xcode 26: the Metal toolchain)
+                XCODE_ATTRIBUTE_LIBRARY_SEARCH_PATHS "$(inherited) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(SDKROOT)/usr/lib/swift"
+                XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "$(inherited) /usr/lib/swift @executable_path/Frameworks")
             set(res_dir "$<TARGET_BUNDLE_DIR:${target}>")
         else()
             set_target_properties(${target} PROPERTIES

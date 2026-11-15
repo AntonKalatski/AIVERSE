@@ -416,7 +416,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         {   // interpolate the facing between the last two ticks (t.prevPos -> t.pos has the same alpha)
             auto [it, fresh] = out.facingTracks.try_emplace(e.packed());
             RtsScene::FacingTrack& ft = it->second;
-            if (fresh || t.prevPos == t.pos && ft.tick != sim.tick()) { ft.prev = ft.cur = so.facing; }   // new, or teleported / standing
+            if (fresh || (t.prevPos == t.pos && ft.tick != sim.tick())) { ft.prev = ft.cur = so.facing; }   // new, or teleported / standing
             else if (ft.tick != sim.tick()) { ft.prev = ft.cur; ft.cur = so.facing; }
             ft.tick = sim.tick(); ft.seen = out.facingFrame;
             const float3 f{ft.prev.x + (ft.cur.x - ft.prev.x) * alpha, ft.prev.y + (ft.cur.y - ft.prev.y) * alpha, ft.prev.z + (ft.cur.z - ft.prev.z) * alpha};
