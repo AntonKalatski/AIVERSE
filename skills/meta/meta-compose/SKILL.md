@@ -3,6 +3,8 @@ name: meta-compose
 description: Generate a complete or selected AIVERSE meta layer from reusable C++ policies, validated JSON and existing browser screens, with minimal agent context.
 ---
 
+Reference: `docs/meta-composition.md` (project generation, compact agent context).
+
 1. Inspect existing `<project>/meta` before generating. For a new project run
    `python3 tools/meta/kits.py plan --features economy,social,client,ui`.
    Use `--preset full` when all policy groups are requested; presets also include

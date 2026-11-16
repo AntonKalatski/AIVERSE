@@ -36,6 +36,8 @@ Use before any feasibility estimate, gap list, genre plan or claim such as "the 
 | Bots and navigation | `docs/bots.md`, `skills/world/aiverse-navmesh` (layered AABB navmesh, rebuilt on change, not streamed) | "only 2D A*/HPA*" |
 | Geometry, LOD, models | `docs/geometry.md`, `docs/autolod.md`, `docs/models.md` (includes MagicaVoxel `.vox` models) | |
 | Saves | `skills/core/aiverse-save-migrations`, `docs/native-modules.md` | "no state serialization" |
+| Terrain, water, cities | `skills/world/aiverse-terrain`, `skills/world/aiverse-water`, `skills/world/aiverse-city-planner` | "terrain is fixed cells only" |
+| Visual extras | `skills/visuals/aiverse-cloth`, `skills/visuals/aiverse-cables`, `skills/visuals/aiverse-modeling`, `skills/visuals/aiverse-paint-layers` | "needs an external DCC or physics engine" |
 
 ## Steps
 
