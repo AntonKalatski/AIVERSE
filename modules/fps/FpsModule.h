@@ -5,9 +5,16 @@
 #include "FpsSystems.h"
 #include "engine/world/CollisionStream.h"
 #include "libraries/include/aiverselib/genre/Melee.h"
+#include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
+#include "libraries/include/aiverselib/systems/Gear.h"
+#include "libraries/include/aiverselib/systems/BuildingGen.h"
+#include "libraries/include/aiverselib/genre/VehicleData.h"
+#include <optional>
 
 namespace aiverse::fps {
 constexpr uint16_t kInputCommand=1;
+constexpr uint32_t kBuildingColliderBase=0x40000000;
+constexpr uint32_t kRotatedColliderBase=0x50000000;   // triangles of map colliders with a "yaw" (12 per box)   // collider ids of map `buildings` (building-gen)
 enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096 };
 constexpr uint32_t kButtonBits=8191;
 constexpr uint32_t selectWeapon(uint32_t index) { return (index+1)<<5; }
@@ -51,6 +58,18 @@ struct Config {
     Vec3 zoneCenter{};Fixed zoneRadius=2000_fx,zoneEndRadius=10_fx;
     int32_t zoneDamage=5;
     bool friendlyFire=false;
+    // Opt-in `fps.royale` (battle-royale package; a map's own `royale` block replaces it): phased zone, air
+    // insertion, bombardment, supply drops and standings. `crate` = items of a landed supply drop.
+    std::optional<lib::genre::RoyaleRules> royale;
+    std::vector<Item> crate;
+    // Opt-in `fps.gear` (gear-tiers package): tiered helmets / vests / backpacks as loot type 200 + id.
+    lib::systems::GearCatalog gear;
+    // Opt-in `fps.vehicleTypes` (vehicle-controllers JSON): map vehicles with a `type` drive with the package's
+    // controller and seats (driver, passengers, gunners); vehicles without one keep the legacy arcade car.
+    std::optional<lib::genre::VehicleDefinitions> vehicleTypes;
+    // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
+    // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
+    Json bots;
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -77,12 +96,38 @@ struct Actor {
 
     bool operator==(const Actor&) const = default;
 };
+// Battle-royale run (saved from FPS save version 8; empty when fps.royale is absent). Slot i-1 indexes divers / credit.
+struct RoyaleRun {
+    bool enabled=false;
+    lib::genre::SafeZoneState zone;lib::genre::BombardmentState bombardment;lib::genre::SupplyDropState drops;
+    lib::genre::InsertionFlight flight;std::vector<lib::genre::SkydiverState> divers;lib::genre::RoyaleStandings standings;
+    std::vector<uint8_t> lastAttacker,lastWeapon;
+    std::vector<lib::genre::KillFeedEvent> feed;   // the last 6 kill-feed lines for the HUD
+    bool operator==(const RoyaleRun&)const=default;
+};
+// What one client needs to draw the battle royale (zone ring + timer, carrier, own phase, counts, hazards).
+struct RoyaleView {
+    bool enabled=false;uint8_t stage=0,phase=0,divePhase=3;uint32_t ticksLeft=0;uint16_t alive=0,teamsIn=0,placement=0,kills=0;
+    lib::genre::RoyaleCircle circle,target;Vec3 carrier{};bool bombardment=false;lib::genre::RoyaleCircle bombArea;std::vector<Vec3> crates;
+    std::vector<lib::genre::KillFeedEvent> feed;bool finished=false,doorOpen=false,outside=false;int32_t winner=0;uint16_t teams=0;
+    bool operator==(const RoyaleView&)const=default;
+};
+void io(Archive&,RoyaleView&);
+// One typed vehicle (FPS save version 9): controller and seat state of the vehicle with id `vehicle`.
+struct VehicleRun {
+    uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
+    std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
+};
 struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
 struct State {
     std::vector<Actor> actors;
     std::deque<HistoryFrame> history;
     uint32_t round=1; int32_t winner=0;
     uint32_t nextObject=1;std::vector<Projectile> projectiles;std::vector<Loot> loot;std::vector<Vehicle> vehicles;RoundState match;
+    RoyaleRun royale;
+    std::vector<lib::systems::GearLoadout> gear;   // per slot when fps.gear is set (FPS save version 9)
+    std::vector<VehicleRun> vehicleRuns;
+    std::vector<std::string> botStates;   // lib::bots::saveFps bytes per slot when fps.bots is set (save version 9)
 
 };
 Config readConfig(const Json& rules);
@@ -94,6 +139,7 @@ void moveActor(Actor& actor,const Input& input,const MotorConfig& config,const w
 void io(Archive&,Input&);
 void io(Archive&,Actor&);
 Fixed stanceHeight(const Actor&,const MotorConfig&);
+struct BotHost;   // FpsBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
 class Module final : public GameModule {
 public:
     std::string name() const override { return "fps"; }
@@ -108,6 +154,7 @@ public:
     bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
+    RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
     void shoot(Simulation&,Actor&);
@@ -121,6 +168,23 @@ private:
     void action(Simulation&,Actor&,Action,uint32_t);
     void tickMelee(Simulation&,Actor&,const Input&);
     void finishRound(Simulation&,int32_t);
+    void setupRoyale(Simulation&,const Json&,State&);
+    bool skydive(Simulation&,Actor&);
+    void tickRoyale(Simulation&);
+    void settleRoyale(Simulation&);
+    void steerRoyaleBot(Simulation&,Actor&);
+    Fixed groundBelow(Vec3) const;
+    std::vector<Loot> buildMapBuildings(const Json& map);
+    void setupVehicles(Simulation&,const Json&,State&);
+    void tickVehicles(Simulation&);
+    bool vehicleInteract(Simulation&,Actor&);
+    VehicleRun* vehicleRun(State&,uint32_t vehicle) const;
+    bool canFireFromVehicle(State&,const Actor&) const;
+    void setupBots(Simulation&,const Json&,State&);
+    bool thinkBot(Simulation&,Actor&);
+    std::shared_ptr<BotHost> botHost_;
+    struct BuildingRegion{world::Bounds bounds;Vec3 door{};std::vector<std::pair<Vec3,Vec3>> stairs,halls;};
+    std::vector<BuildingRegion> buildingRegions_;   // generated buildings: footprint (+margin), door, stair flights
     std::vector<world::Bounds> ladders_,sites_;
     std::map<uint32_t,Fixed> penetrable_;
     std::vector<Vehicle> initialVehicles_;

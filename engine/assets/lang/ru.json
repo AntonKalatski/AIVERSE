@@ -1,6 +1,22 @@
 // Строки движка и клиента (меню, HUD, панель команд). Ключи — см. engine/i18n/README.md.
 // Игра может переопределить любую строку в своём lang/ru.json.
 {
+  "fps.royale.waiting": "Зона начнётся через {time}",
+  "fps.royale.wait": "Фаза {phase}: зона сузится через {time}",
+  "fps.royale.shrink": "Фаза {phase}: зона сужается ({time})",
+  "fps.royale.closed": "Зона закрылась",
+  "fps.royale.counts": "Живых: {alive}  Команд: {teams}  Убийств: {kills}",
+  "fps.royale.jump": "Пробел: прыжок",
+  "fps.royale.doorClosed": "Дверь скоро откроется",
+  "fps.royale.freefall": "Пробел: раскрыть парашют   Shift: пикировать",
+  "fps.royale.outside": "Вы вне зоны!",
+  "fps.royale.feed.knocked": "Игрок {actor} сбил с ног игрока {victim}",
+  "fps.royale.feed.eliminated": "Игрок {actor} выбил игрока {victim}",
+  "fps.royale.feed.revived": "Игрок {actor} поднял игрока {victim}",
+  "fps.royale.feed.teamOut": "Команда {victim} выбыла ({place} место)",
+  "fps.royale.feed.environment": "Игрок {victim} выбыл",
+  "fps.royale.winner": "Победа! Первое место",
+  "fps.royale.placed": "{place} место из {teams}",
   "fps.systems.status": "Броня: {armor}  Деньги: {money}",
   "fps.downed": "Вы нокаутированы — ждите союзника",
   "fps.dead": "Вы погибли",

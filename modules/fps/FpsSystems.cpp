@@ -11,9 +11,9 @@ Vec3 position(const Json& j) {
 bool near(Vec3 a,Vec3 b,Fixed radius){return (a-b).lengthSq()<=radius*radius;}
 bool inside(Vec3 p,const world::Bounds& b){return p.x>=b.min.x&&p.x<=b.max.x&&p.y>=b.min.y&&p.y<=b.max.y&&p.z>=b.min.z&&p.z<=b.max.z;}
 std::optional<lib::gameplay::ItemType> item(int64_t id){if(id<1||id>9)return {};return lib::gameplay::ItemType{id,20,1,0};}
-bool bag(Actor& actor,int32_t type,int32_t count) {
+bool bag(Actor& actor,int32_t type,int32_t count,size_t slots=12) {
     std::vector<lib::gameplay::ItemStack> items;for(auto i:actor.bag)items.push_back({i.type,i.count});
-    auto result=count>0?lib::gameplay::addItem(items,{12,100},{type,count},item):lib::gameplay::removeItem(items,{type,-count});
+    auto result=count>0?lib::gameplay::addItem(items,{slots,100},{type,count},item):lib::gameplay::removeItem(items,{type,-count});
     if(!result)return false;
     actor.bag.clear();
     for(auto i:items)actor.bag.push_back({int32_t(i.type),int32_t(i.count)});
@@ -45,9 +45,10 @@ void Module::setupSystems(Simulation& sim,const Json& map,State& s) {
     array("loot",256);array("vehicles",32);
     for(const auto& j:map["loot"].items()) {
         auto type=j.getInt("type"),count=j.getInt("count",1);
-        if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(config_.weapons.size())))||count<1||count>20)throw JsonError("fps loot: invalid type or count");
+        if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(config_.weapons.size()))||(type>=200&&config_.gear.contains(type-200)))||count<1||count>20)throw JsonError("fps loot: invalid type or count");
         Loot l{s.nextObject++,position(j["pos"]),int32_t(type),int32_t(count)};
-        if(type>=100){l.count=1;l.ammo=config_.weapons[size_t(type-100)].magazine;l.reserve=config_.weapons[size_t(type-100)].reserve;}
+        if(type>=200){l.count=1;l.ammo=int32_t(config_.gear.at(type-200).durability);}
+        else if(type>=100){l.count=1;l.ammo=config_.weapons[size_t(type-100)].magazine;l.reserve=config_.weapons[size_t(type-100)].reserve;}
         s.loot.push_back(l);
     }
     for(const auto& j:map["vehicles"].items()) {
@@ -62,8 +63,13 @@ void Module::damage(Simulation& sim,uint8_t source,Actor& target,int32_t amount,
     auto& s=state(sim);if(target.health<=0||amount<=0)return;
     Actor* attacker=source&&source<=s.actors.size()?&s.actors[source-1]:nullptr;
     if(attacker&&source!=target.slot&&!config_.friendlyFire&&attacker->team==target.team)return;
-    if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
+    if(!config_.gear.empty()){   // gear-tiers: helmets cover zone 1 (head shots), everything else hits zone 2
+        if(auto hit=lib::systems::absorbHit(config_.gear,s.gear[target.slot-1],head?1u:2u,amount)){
+            amount=int32_t(hit->damage);for(auto slot:hit->broken)sim.emit({9,target.slot,{},{},int64_t(slot),target.pos});
+        }
+    }else if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
     target.lastDamage=sim.tick();target.activeAction=Action::None;target.actionUntil=0;
+    if(s.royale.enabled&&attacker&&source!=target.slot){s.royale.lastAttacker[target.slot-1]=source;s.royale.lastWeapon[target.slot-1]=uint8_t(attacker->weaponIndex+1);}
     if(attacker)++attacker->hits;
     if(config_.systems.enabled&&config_.systems.knockdown&&!target.downed&&amount>=target.health) {
         bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;
@@ -76,6 +82,7 @@ void Module::damage(Simulation& sim,uint8_t source,Actor& target,int32_t amount,
     if(config_.systems.enabled){
         if(s.match.carrier==target.slot){s.match.carrier=0;s.match.bombPos=target.pos;}
         if(s.loot.size()<256&&(target.owned&(1u<<target.weaponIndex)))s.loot.push_back({s.nextObject++,target.pos,100+target.weaponIndex,1,target.ammo,target.reserve,target.attachments[target.weaponIndex]});
+        if(!s.gear.empty()){for(const auto& [slot,piece]:s.gear[target.slot-1].slots)if(s.loot.size()<256)s.loot.push_back({s.nextObject++,target.pos,int32_t(200+piece.def),1,int32_t(piece.durability)});s.gear[target.slot-1]={};}
         for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;
         target.vehicle=0;
     }
@@ -155,6 +162,7 @@ void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
         return;
     }
     if(kind!=Action::Interact)return;
+    if(a.vehicle&&vehicleInteract(sim,a))return;
     if(a.vehicle){for(auto& v:s.vehicles)if(v.id==a.vehicle){Actor exit=a;exit.pos=v.pos+Vec3{2_fx,Fixed::fromRatio(1,10),{}};exit.vehicle=0;auto box=actorBounds(exit,config_.motor);box.min.y+=Fixed::fromRatio(1,100);if(collision_.blocked(box))return;a.pos=exit.pos;v.driver=0;a.vehicle=0;}return;}
     if(a.climbing){a.climbing=false;return;}
     auto accessible=[&](Vec3 p){return near(a.pos,p,c.interactRange)&&!collision_.cast(a.pos+Vec3{{},1_fx,{}},p-a.pos).hit;};
@@ -164,13 +172,20 @@ void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
     }
     for(auto& target:s.actors)if(target.downed&&target.team==a.team&&accessible(target.pos)){begin(Action::Interact,c.reviveTicks,target.slot);return;}
     for(auto it=s.loot.begin();it!=s.loot.end();++it)if(accessible(it->pos)) {
-        if(it->type>=100){auto index=uint32_t(it->type-100);if(a.owned&(1u<<index))continue;a.owned|=uint8_t(1u<<index);a.storedAmmo[index]=it->ammo;a.storedReserve[index]=it->reserve;a.attachments[index]=it->attachments;if(a.weaponIndex==index){a.ammo=it->ammo;a.reserve=it->reserve;}}
+        if(it->type>=100&&it->type<200){auto index=uint32_t(it->type-100);if(a.owned&(1u<<index))continue;a.owned|=uint8_t(1u<<index);a.storedAmmo[index]=it->ammo;a.storedReserve[index]=it->reserve;a.attachments[index]=it->attachments;if(a.weaponIndex==index){a.ammo=it->ammo;a.reserve=it->reserve;}}
         else if(it->type==2){a.armor=100;}
         else if(it->type==9){a.reserve=std::min(100000,a.reserve+30*it->count);}
-        else if(!bag(a,it->type,it->count))continue;
+        else if(it->type>=200){
+            if(s.gear.empty())continue;auto& loadout=s.gear[a.slot-1];
+            lib::systems::GearPiece piece{it->type-200,it->ammo};
+            auto previous=lib::systems::equipGear(config_.gear,loadout,piece);if(!previous)continue;
+            if(previous->def){it->type=int32_t(200+previous->def);it->ammo=int32_t(previous->durability);it->count=1;return;}   // swap in place
+        }
+        else if(!bag(a,it->type,it->count,size_t(std::min<int64_t>(24,12+(s.gear.empty()?0:lib::systems::gearCapacity(config_.gear,s.gear[a.slot-1]))))))continue;
         s.loot.erase(it);return;
     }
-    for(auto& v:s.vehicles)if(v.health>0&&!v.driver&&accessible(v.pos)){v.driver=a.slot;a.vehicle=v.id;a.pos=v.pos;return;}
+    if(vehicleInteract(sim,a))return;
+    for(auto& v:s.vehicles)if(v.health>0&&!v.driver&&!vehicleRun(s,v.id)&&accessible(v.pos)){v.driver=a.slot;a.vehicle=v.id;a.pos=v.pos;return;}
     for(auto ladder:ladders_)if(inside(a.pos,ladder)){a.climbing=true;return;}
 }
 void Module::actorSystems(Simulation& sim,Actor& a,Input& input) {
@@ -196,11 +211,11 @@ void Module::actorSystems(Simulation& sim,Actor& a,Input& input) {
         }
     }
     if(a.climbing){bool in=false;for(auto ladder:ladders_)in|=inside(a.pos,ladder);if(!in)a.climbing=false;}
-    if(a.vehicle)for(auto& v:s.vehicles)if(v.id==a.vehicle) {
+    if(a.vehicle&&!vehicleRun(s,a.vehicle))for(auto& v:s.vehicles)if(v.id==a.vehicle) {
         if(!frozen){v.yaw+=Fixed::fromRatio(input.right,1000)*sim.dt()/4;auto delta=direction(v.yaw,{})*v.speed*Fixed::fromRatio(input.forward,1000)*sim.dt();auto hit=collision_.cast(v.pos+Vec3{{},1_fx,{}},delta,{1_fx,1_fx,2_fx});v.pos+=delta*(hit.hit?fxMax(Fixed{},hit.fraction-Fixed::fromRatio(1,100)):1_fx);v.pos.x=fxClamp(v.pos.x,-config_.worldLimit,config_.worldLimit);v.pos.z=fxClamp(v.pos.z,-config_.worldLimit,config_.worldLimit);v.velocity=delta/sim.dt();}
         a.pos=v.pos+Vec3{{},1_fx,{}};a.velocity=v.velocity;
     }
-    if(frozen||a.downed||a.vehicle){input.buttons&=uint32_t(Prone);if(frozen||a.vehicle)input.forward=input.right=0;}
+    if(frozen||a.downed||a.vehicle){if(frozen||a.downed||!canFireFromVehicle(s,a))input.buttons&=uint32_t(Prone);else input.buttons&=uint32_t(Fire|Aim|Reload|WeaponMask);if(frozen||a.vehicle)input.forward=input.right=0;}   // passengers / gunners may shoot
 }
 void Module::finishRound(Simulation& sim,int32_t team) {
     auto& s=state(sim);if(s.match.end)return;s.match.winner=team;s.match.end=sim.tick()+config_.tickRate*3;

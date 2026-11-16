@@ -1,4 +1,9 @@
 {
+  "include": [
+    "rules/royale.json",
+    "rules/gear.json",
+    "rules/vehicles.json"
+  ],
   "fps": {
     "tickRate": 30,
     "snapshotRate": 10,
@@ -8,17 +13,6 @@
     "interestRadius": 500,
     "rewindTicks": 6,
     "roundTicks": 54000,
-    "zone": {
-      "center": [
-        0,
-        0,
-        0
-      ],
-      "radius": 4000,
-      "endRadius": 10,
-      "startTick": 1800,
-      "durationTicks": 36000
-    },
     "weapons": [
       {
         "nameKey": "fps.weapon.pistol",
@@ -90,6 +84,10 @@
       "enabled": true,
       "knockdown": true,
       "startArmor": 0
+    },
+    "bots": {
+      "preset": "normal",
+      "sightRange": 120
     }
   }
 }

@@ -2,6 +2,7 @@
 #include "engine/net/authority/Session.h"
 #include "modules/fps/Project.h"
 #include "modules/fps/view/FirstPersonCamera.h"
+#include "RoyaleHud.h"
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"
@@ -177,7 +178,7 @@ struct App {
         }
         Vec3 extent{600_fx,600_fx,600_fx};
         for(auto id:geometry.query({actor.pos-extent,actor.pos+extent})) {
-            if(chunks.enabled()&&id!=1)continue;
+            if(chunks.enabled()&&id!=1&&id<fps::kBuildingColliderBase)continue;   // generated buildings are not in the chunk files
             const auto& b=geometry.colliders().at(id).bounds;
             // Draw relative to the observer before converting coordinates to floating point.
             auto base=Vec3{(b.min.x+b.max.x)/2,b.min.y,(b.min.z+b.max.z)/2};
@@ -200,6 +201,8 @@ struct App {
             else box(projectile.pos,{0.15f,0.15f,0.15f},projectile.kind?render::float4{0.2f,0.3f,0.15f,1}:render::float4{1,0.8f,0.2f,1});
         }
         if(client->snapshot().match.planted)box(client->snapshot().match.bombPos,{0.4f,0.3f,0.3f},{1,0.2f,0.1f,1});
+        fps::view::drawZoneWall(renderer,cube,client->snapshot().royale,actor.pos,origin,visual);
+        for(const auto& c:client->snapshot().royale.crates)box(c,{1.2f,1.2f,1.2f},{0.95f,0.6f,0.1f,1});
         gfx::PassDesc pass;pass.clearColor[0]=0.2f;pass.clearColor[1]=0.28f;pass.clearColor[2]=0.36f;renderer.render(pass);
         ImGui::SetNextWindowPos({16,16});ImGui::SetNextWindowBgAlpha(0.65f);
         ImGui::Begin("##fps",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
@@ -246,6 +249,7 @@ struct App {
         }
         for(const auto& cloud:client->snapshot().projectiles)if(cloud.kind==4&&(actor.pos-cloud.pos).lengthSq()<config.systems.smokeRadius*config.systems.smokeRadius)draw->AddRectFilled({0,0},{w,h},IM_COL32(165,170,175,250));
         if(actor.blindUntil>client->snapshot().tick){auto remain=actor.blindUntil-client->snapshot().tick;auto alpha=int(std::min(1.0,double(remain)/std::max(1u,config.systems.flashTicks))*255);draw->AddRectFilled({0,0},{w,h},IM_COL32(255,255,255,alpha));}
+        fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
         gui.render();device.endPass();device.endFrame();
     }
     void shutdown(gfx::Device& device){if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}

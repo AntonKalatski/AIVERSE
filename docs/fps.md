@@ -2,7 +2,7 @@
 
 FPS projects use `game.json` with `module: "fps"` and `genre: "fps"`. Choose FPS in
 New Project: `fps_training` (stationary targets), `fps_arena` (5 vs 5 bots), or
-`fps_survival` (100 slots, sparse large world). The editor launches a separate FPS client.
+`fps_survival` (100 slots, sparse large world, battle royale with air insertion and a phased zone). The editor launches a separate FPS client.
 Existing copied projects are not overwritten when engine templates change.
 
 ## Controls and weapons
@@ -59,8 +59,8 @@ The first three binaries are under `<build>/modules/fps/`.
 <build>/aiverse_headless --project templates/fps_arena --seed 3 --verify-restore-at 1 --verify-restore-ticks 20
 ```
 
-Client and server require identical content and protocol. Weapon support uses FPS
-save version 7 (version 3 and 6 saves still load); earlier experimental FPS saves and older peers
+Client and server require identical content and protocol. The current FPS save version is 9
+(gear and battle royale; versions 3, 6 and 7 still load); earlier experimental FPS saves and older peers
 are rejected. RTS save/protocol versions are unchanged.
 
 ## Scope
@@ -69,8 +69,10 @@ Offline loopback, listen host and dedicated reference server share the authorita
 simulation. It has bounded input queues, movement prediction/reconciliation, snapshots,
 interest filtering and bounded hitscan rewind. UDP latest snapshots use fragmentation;
 WebSocket uses its reliable transport. Production authentication, matchmaking, admission,
-reconnect, anti-cheat operations, snapshot deltas and WAN capacity qualification remain
-separate work. A 100-client loopback test is not evidence of production PUBG capacity.
+reconnect, anti-cheat operations and WAN capacity qualification remain separate work.
+Snapshots travel as deltas against the newest snapshot the client acknowledged (its input `viewTick`)
+through the [snapshot-delta](../skills/network/aiverse-snapshot-delta/SKILL.md) package (protocol 5);
+`Server::snapshotStats()` reports packets, bytes and the full-snapshot equivalent. A 100-client loopback test is not evidence of production PUBG capacity.
 
 Large-world support uses sparse static AABB collision, relative render origins and
 budgeted loading of presentation box chunks through the generic
@@ -89,6 +91,89 @@ Ricochet, Fly Through and scalar modifiers. This works independently of `mechani
 `flight.gravity` defaults to `bulletGravity`. Authoritative 3D sweeps, actor-life hit history,
 material penetration, save/rollback and existing snapshot presentation are supported.
 See [projectile programs](projectile-programs.md) for the JSON schema and trajectory semantics.
+
+## Battle royale (opt-in)
+
+`fps.royale` (mode `battleRoyale`) runs the [battle-royale package](genre-packages.md#battle-royale-battle-royale-010)
+on the FPS actors; a map's own `royale` block replaces the rules block. The JSON is the package format
+(`examples/libraries/genre/royale/royale.json`): `bounds`, `zone` phases, optional `flight`, `drop`, `bombardment`,
+`supplyDrops`, `standings`. `fps.crate` lists the items a landed supply drop spawns (item IDs as in `loot`; default
+armor, two medkits, magazine, ammo). Without the block the legacy linear `zone` keeps working. `templates/fps_survival`
+uses it (`rules/royale.json`).
+
+| Piece | Behavior | Limits |
+|---|---|---|
+| Insertion | With `flight` every actor starts in the carrier on a seeded path; Jump leaves (door open after `doorOpen` ticks, eject at the end), Jump again opens the chute above `minDeployHeight`, Sprint dives, movement steers; the chute opens itself at `autoDeployHeight`; landing hands the actor to the motor. Ground height = collision cast down | No carrier model / camera; fallback bots jump at seeded points and steer to their spawn |
+| Zone | Seeded nested circles, wait / shrink, per-phase damage to landed actors outside | Damage goes through armor like any hit |
+| Bombardment | Shells hit landed actors in the blast circle unless collision is above their head (roof) | No explosion falloff |
+| Supply drops | Crates announced inside the next circle; `fps.crate` items spawn as loot on landing | Crate is not a physical object |
+| Standings | Downs, knocks (`mechanics.knockdown`), revives and outs are mirrored into the standings each tick; a team with nobody standing has its knocked members finished; the standings decide the winner (or a draw when the last teams fall on the same tick) | Kill credit = last enemy who damaged the victim |
+
+Snapshots carry `RoyaleView` (current and next circle, stage timer, own skydive phase, carrier position, players
+and teams left, own placement and kills, bombardment area, up to 8 falling crates); the client keeps the server pose
+while skydiving. SimEvents: 5 = kill feed (`player` = actor, `value` = victim | kind << 8), 6 = zone stage
+(`value` = phase | kind << 8, `pos` = target centre), 7 = supply drop (`value` = id | kind << 16, `pos` = point),
+8 = shell impact (`value` = damage). FPS save version 8 stores the run (versions 3, 6 and 7 still load for games
+without `fps.royale` / `fps.gear`); snapshot protocol 5 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
+The client (`apps/fps/RoyaleHud.h`) draws the zone wall near the viewer, landed crates, a minimap (current and next
+circle, bombardment, crates, carrier, own position and facing), the phase timer with players / teams / kills, jump /
+parachute hints, an outside-the-zone warning, the kill feed (`RoyaleView::feed`, the last six lines) and the result
+banner; strings are `fps.royale.*` in engine/assets/lang. Checked on a screenshot during the flight (Linux, Mesa
+software GL); the zone wall and the banner have not been looked at on screen yet.
+
+## Typed vehicles (opt-in)
+
+`fps.vehicleTypes` (requires `mechanics.enabled`) holds [vehicle-controllers](../skills/gameplay/aiverse-vehicle-controllers/SKILL.md)
+definitions (`examples/libraries/genre/vehicles-sports/vehicles.json` format: wheeled / tracked / hover / flight
+controller, damage zones, seats). A map vehicle with `"type": id` (and optional `"yaw"` in turns) drives with that
+controller: the driver's forward / back become throttle / brake (reverse when stopped), right steers, Jump is the
+handbrake, pitch drives flight; the ground height under it comes from collision, static walls stop it through the
+package's collision response, and a hard crash damages it. Interact enters the nearest typed vehicle within 6 m
+(driver seat first, then the next free seat) and leaves it at the first clear exit point when it is slow enough.
+Passengers and gunners keep Fire / Aim / Reload / weapon keys; the driver does not shoot. Knocked, killed or
+thrown-out occupants are ejected; a destroyed vehicle kills everyone inside. Vehicles without `type` keep the
+legacy car. FPS save version 9 stores controller and seat state. `templates/fps_survival` has ten four-seat cars
+(`rules/vehicles.json`). Test: `typedVehicles` in `tests/fps/tests.cpp`.
+
+## Generated buildings (opt-in)
+
+Map `buildings` lists [building-gen](../skills/world/aiverse-building-gen/SKILL.md) houses:
+`{"pos":[x,y,z],"yaw":0..3,"seed":n,"building":{"width":12,"depth":10,"floors":2,...},"loot":[item types]}`.
+At setup each becomes static collision boxes (ids from `kBuildingColliderBase`; slabs, walls with a door and
+windows, a partition, switchback stairs, roof) sized for the FPS motor (radius, height, step height), and its loot
+lies on the generated room spots (requires `mechanics.enabled`). The client draws them also on chunked maps.
+`templates/fps_survival` has 25 houses of one to three floors. Test: `buildings` in `tests/fps/tests.cpp` (walk in
+through the door, climb a floor with the real motor).
+
+## Library bots (opt-in)
+
+`fps.bots` holds [bots-fps](../skills/ai/aiverse-bots-fps/SKILL.md) settings (`{"preset":"normal","sightRange":120}`).
+Map players with `"bot": true` then run that controller inside the authoritative tick instead of the reference
+fallback bot: perception, reaction, bounded aim, reload, retreat and the battle-royale zone (the announced circle).
+On top of it the module adds goals: wanted loot within 25 m (weapons it lacks, better gear, medkits, ammo) and
+Interact when in reach, Heal when hurt and out of combat, and a point inside the next circle otherwise. Navigation:
+one navmesh per generated building (0.5 m cells, built at setup from collision) plus straight steering in the open;
+a goal inside a building outside the bot's region goes through its door, other floors through the stair flights
+(the navmesh reaches the flight's hall point, the bot walks the flight straight). Bot state is saved (FPS save
+version 9) and hashed. `templates/fps_survival` uses it. Tests: `houseBots`, `upstairsBot`, `houseNavigation`.
+
+## Rotated colliders
+
+A map collider with `"yaw"` (turns) is `{"id","center","half","yaw"}`: a box turned about +Y, stored as its 12
+surface triangles (`engine/world/OrientedBox.h`), so casts, the motor and hits use the exact turned box. Its
+collision ids are allocated from `kRotatedColliderBase`; the navmesh treats it by its bounding box. Test:
+`rotatedColliders`.
+
+## Gear (opt-in)
+
+`fps.gear` (requires `mechanics.enabled`) is a [gear-tiers](../skills/gameplay/aiverse-gear-tiers/SKILL.md) catalog:
+pieces with `id` 1..55, `slot`, `tier`, `durability`, `reduction` / `wear` (milli), `zones` (1 = head shots,
+2 = every other hit) and `capacity` (extra inventory stacks, up to 24 in total). Loot type `200 + id` is a gear piece
+(map `loot`, `fps.crate`); Interact equips it and the replaced piece takes its place on the ground with its
+durability. With a catalog the gear replaces the legacy flat armor absorption. Broken pieces emit SimEvent 9
+(`player` = wearer, `value` = slot); dying drops every worn piece. The own loadout travels in snapshots
+(`Snapshot::gear`); FPS save version 9 stores loadouts. `templates/fps_survival` ships three helmet, vest and
+backpack levels (`rules/gear.json`) spread near the spawns and in supply crates.
 
 ## Close combat (opt-in)
 
@@ -134,7 +219,7 @@ arena, survival and tactical templates enable this block.
 | Medical | Delayed consumable healing, movement/fire/damage cancellation, teammate knockdown, bleeding and revive | Knockdown requires a living teammate |
 | Tactical rounds | Freeze/buy phase, spawn buy zone, money, plant/defuse timers, dropped bomb recovery, score, round restart | Team 1 attacks; team 2 defends; no halftime or overtime; loadout resets each round |
 | Movement | Prone with ceiling clearance, explicit ladder regions, checked short-obstacle vault | Axis-aligned collision; vault is a discrete move, not a root-motion animation |
-| Vehicles | Driver admission, exclusive control, steering, swept static collision, safe exit and weapon damage | Single-seat arcade vehicle on flat ground; no suspension, passengers or dynamic vehicle collisions |
+| Vehicles | Legacy: driver admission, exclusive control, steering, swept static collision, safe exit and weapon damage. Typed (`fps.vehicleTypes`, below): package controllers, seats with passengers and gunners | Legacy car: single seat on flat ground. Typed: no suspension geometry, no vehicle-vehicle collisions |
 | Audio | Synthesized original shot/reload/footstep sounds through the engine audio service; remote shot attenuation and simple cover volume reduction | Placeholder sound design; own-player footsteps only |
 
 `fps_tactical` / **Breach Protocol** is a separate bomb-mode example. Existing copied
@@ -174,8 +259,7 @@ positive cost; absent means impenetrable. Item IDs: 1 medkit, 2 armor, 3 frag,
 4 smoke, 5 flash, 6 scope, 7 suppressor, 8 magazine, 9 ammo; 100–103 are weapons.
 Bounds: 256 projectiles, 256 loot objects, 32 vehicles, 12 inventory stacks.
 Snapshots carry at most 128 nearby projectiles and loot objects, plus 32 vehicles;
-latest-message transport is bounded to 128 KiB. This is still full snapshots, not
-production bandwidth optimization.
+latest-message transport is bounded to 128 KiB. Snapshots are delta-compressed (above); interest filtering still decides what is sent.
 
 All new outcome-affecting fields, objects and timers are saved and hashed.
 `tests/fps/systems.inc` covers inventory, attachments, cancellation, vehicles,

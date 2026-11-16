@@ -1,0 +1,102 @@
+// `fps.bots`: map players with "bot": true run the bots-fps controller (libraries/.../bots/Fps.h) inside the
+// authoritative tick instead of the reference fallback bot. Navigation: a navmesh per generated building
+// (doors, stairs, floors) plus straight steering in the open; outside a building a goal inside it is
+// replaced by its door. Goals besides fighting: the battle-royale zone (inside the controller), wanted
+// loot nearby (weapons not owned, better gear, medkits / ammo), healing when hurt and out of combat.
+// Bot state is saved and hashed (FpsState bytes); meshes are derived from collision at setup.
+#include "FpsModule.h"
+#include "libraries/include/aiverselib/bots/Fps.h"
+#include "libraries/include/aiverselib/bots/Persistence.h"
+#include <algorithm>
+namespace aiverse::fps {
+struct BotHost { lib::bots::FpsConfig config;std::vector<lib::bots::NavMesh> meshes; };
+void Module::setupBots(Simulation&,const Json&,State& s) {
+    botHost_.reset();s.botStates.clear();if(config_.bots.isNull())return;
+    auto host=std::make_shared<BotHost>();host->config=lib::bots::fpsConfig(config_.bots);
+    for(const auto& region:buildingRegions_){
+        lib::bots::NavBuildConfig c;c.bounds=region.bounds;c.cellSize=Fixed::fromRatio(1,2);
+        c.radius=config_.motor.radius;c.height=config_.motor.height;c.stepHeight=config_.motor.stepHeight;
+        auto built=lib::bots::buildNavMesh(collision_,c);if(!built.mesh)throw JsonError("fps.bots: "+built.error);
+        host->meshes.push_back(std::move(*built.mesh));
+    }
+    botHost_=host;s.botStates.assign(s.actors.size(),lib::bots::saveFps({}));
+}
+namespace {
+bool insideXZ(const world::Bounds& b,Vec3 p){return p.x>=b.min.x&&p.x<=b.max.x&&p.z>=b.min.z&&p.z<=b.max.z&&p.y>=b.min.y&&p.y<=b.max.y;}
+}
+bool Module::thinkBot(Simulation& sim,Actor& a) {
+    if(!botHost_)return false;
+    auto& s=state(sim);auto now=sim.tick();const auto& host=*botHost_;
+    lib::bots::FpsState bot;if(!lib::bots::loadFps(s.botStates[a.slot-1],bot))bot={};
+    // Objective: wanted loot within 25 m (closest), else a point inside the next circle (spread by slot).
+    std::optional<Vec3> objective;const Loot* want=nullptr;Fixed best=625_fx;
+    for(const auto& l:s.loot){
+        auto d=(l.pos-a.pos).lengthSq();if(d>best)continue;bool useful=false;
+        if(l.type>=200){if(!s.gear.empty()){lib::systems::GearPiece piece{l.type-200,l.ammo};auto it=config_.gear.find(piece.def);
+            if(it!=config_.gear.end()){auto cur=s.gear[a.slot-1].slots.find(it->second.slot);useful=lib::systems::betterGear(config_.gear,piece,cur==s.gear[a.slot-1].slots.end()?nullptr:&cur->second);}}}
+        else if(l.type>=100)useful=!(a.owned&(1u<<uint32_t(l.type-100)));
+        else useful=l.type==1||l.type==9||(l.type==2&&a.armor<50);
+        if(useful){best=d;want=&l;}
+    }
+    if(want)objective=want->pos;
+    else if(s.royale.enabled){auto t=lib::genre::safeZoneTarget(config_.royale->zone,s.royale.zone);
+        auto turn=Fixed::fromRatio(int64_t(a.slot)*37%100,100);auto r=t.radius*Fixed::fromRatio(int64_t(a.slot)%5+1,8);
+        objective=Vec3{t.center.x+fxSinTurns(turn)*r,a.pos.y,t.center.y+fxCosTurns(turn)*r};}
+    // Navigation: the building mesh the bot stands in; a goal inside another building goes through its door.
+    // The navmesh covers each floor; flights of stairs are crossed by walking straight from one end to the other.
+    const lib::bots::NavMesh* mesh=nullptr;const BuildingRegion* region=nullptr;
+    for(size_t i=0;i<buildingRegions_.size();++i)if(insideXZ(buildingRegions_[i].bounds,a.pos)){mesh=&host.meshes[i];region=&buildingRegions_[i];}
+    if(objective&&!mesh)for(const auto& r:buildingRegions_)if(insideXZ(r.bounds,*objective)){objective=r.door;break;}
+    // Still on a flight (between its ends, inside its lane): finish it toward the objective's height first.
+    if(objective&&region)for(const auto& [bottom,top]:region->stairs){
+        if(a.pos.y<bottom.y-Fixed::fromRatio(1,10)||a.pos.y>top.y+Fixed::fromRatio(1,10))continue;
+        auto lane=top-bottom;lane.y={};auto along=a.pos-bottom;along.y={};auto t=along.dot(lane)/lane.lengthSq();
+        if(t<=Fixed::fromRatio(1,20)||t>=Fixed::fromRatio(19,20))continue;   // at an end: back on the floor's navmesh
+        auto off=bottom+lane*t-a.pos;off.y={};if(off.length()>Fixed::fromRatio(6,10))continue;
+        auto d=(objective->y>=a.pos.y?top:bottom)-a.pos;auto yaw=fxAtan2Turns(d.x,d.z);if(yaw<Fixed{})yaw+=1_fx;
+        Input step;step.yaw=yaw;step.forward=1000;step.viewTick=now;a.input=step;a.lastInputTick=now;return true;
+    }
+    if(objective&&region&&insideXZ(region->bounds,*objective)&&fxAbs(objective->y-a.pos.y)>Fixed::fromRatio(1,2)){
+        bool up=objective->y>a.pos.y;
+        for(size_t k=0;k<region->stairs.size();++k){const auto& [bottom,top]=region->stairs[k];
+            auto from=up?bottom:top,to=up?top:bottom;if(fxAbs(from.y-a.pos.y)>Fixed::fromRatio(1,2)&&!(a.pos.y>bottom.y&&a.pos.y<top.y))continue;
+            auto lane=(to-from);lane.y={};auto along=(a.pos-from);along.y={};auto t=lane.lengthSq().raw?along.dot(lane)/lane.lengthSq():Fixed{};
+            auto offLane=(from+lane*fxClamp(t,Fixed{},1_fx)-a.pos);offLane.y={};
+            bool onFlight=t>=-Fixed::fromRatio(1,10)&&t<=1_fx&&offLane.length()<Fixed::fromRatio(1,2);
+            // The navmesh reaches a hall point beside the stairwell (clear of the walls); from there walk straight to
+            // the first step and up / down the flight.
+            auto hall=up?region->halls[k].first:region->halls[k].second;
+            auto toFrom=(from-a.pos).xz().length();
+            if(onFlight||toFrom<Fixed::fromRatio(3,10)||(hall-a.pos).xz().length()<Fixed::fromRatio(5,10)||toFrom<(hall-from).xz().length()){
+                auto target=onFlight||toFrom<Fixed::fromRatio(3,10)?to:from;auto d=target-a.pos;auto yaw=fxAtan2Turns(d.x,d.z);if(yaw<Fixed{})yaw+=1_fx;
+                Input step;step.yaw=yaw;step.forward=1000;step.viewTick=now;a.input=step;a.lastInputTick=now;return true;
+            }
+            objective=hall;break;
+        }
+    }
+    // On the landing strip of a flight's end (narrow, next to the stairwell hole): walk to that end's hall first.
+    if(region)for(size_t k=0;k<region->stairs.size();++k){
+        const auto& [bottom,top]=region->stairs[k];
+        for(int e=0;e<2;++e){
+            auto end=e?top:bottom,other=e?bottom:top;auto hall=e?region->halls[k].second:region->halls[k].first;
+            if(fxAbs(end.y-a.pos.y)>Fixed::fromRatio(3,10))continue;
+            auto out=end-other;out.y={};auto n=fxNormalize(out);auto rel=a.pos-end;rel.y={};
+            auto along=rel.dot(n),side=rel.x*n.z-rel.z*n.x;
+            if(along< -Fixed::fromRatio(1,2)||along>Fixed::fromRatio(12,10)||fxAbs(side)>Fixed::fromRatio(8,10))continue;
+            auto d=hall-a.pos;d.y={};if(d.length()<Fixed::fromRatio(3,10))continue;
+            auto yaw=fxAtan2Turns(d.x,d.z);if(yaw<Fixed{})yaw+=1_fx;
+            Input step;step.yaw=yaw;step.forward=1000;step.viewTick=now;a.input=step;a.lastInputTick=now;return true;
+        }
+    }
+    auto command=lib::bots::fpsCommand(sim,*this,a.slot,host.config,{},bot,objective,mesh);
+    if(!command)return true;   // keep the previous input this tick
+    Input input;if(!decodeInput(*command,input))return true;
+    // Pick up when the wanted item is in reach; heal when hurt and nobody is in sight.
+    if(want&&(want->pos-a.pos).length()<=config_.systems.interactRange-Fixed::fromRatio(1,2)&&!(input.buttons&Fire))input.action=Action::Interact;
+    else if(config_.systems.enabled&&a.health<60&&bot.decision!=lib::bots::FpsDecision::Engage&&a.activeAction==Action::None)
+        for(auto item:a.bag)if(item.type==1){input.action=Action::Heal;input.forward=input.right=0;break;}
+    input.sequence=0;a.input=input;a.lastInputTick=now;
+    s.botStates[a.slot-1]=lib::bots::saveFps(bot);
+    return true;
+}
+}

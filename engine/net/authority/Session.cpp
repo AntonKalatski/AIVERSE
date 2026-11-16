@@ -4,13 +4,13 @@
 namespace aiverse::net::authority {
 namespace {
 constexpr uint32_t magic=0x46505331;
-enum class Message:uint8_t { Hello=1,Input=2,Snapshot=3 };
+enum class Message:uint8_t { Hello=1,Input=2,Snapshot=3,SnapshotDelta=4 };
 Bytes bytes(const std::string& s){return Bytes(s.begin(),s.end());}
 std::string string(const Bytes& b){return std::string(b.begin(),b.end());}
 void header(Archive& a,Message& type) {uint32_t m=magic,v=kProtocol;a(m,v,type);if(m!=magic||v!=kProtocol)a.fail();}
 Bytes inputPacket(fps::Input input){std::string s;Archive a(&s);Message type=Message::Input;header(a,type);a(input);return bytes(s);}
 bool validActor(const fps::Actor& a) {
-    if(a.weaponIndex>=4||a.bag.size()>12||a.armor<0||a.armor>100||a.money<0||a.money>16000||a.owned>15)return false;
+    if(a.weaponIndex>=4||a.bag.size()>24||a.armor<0||a.armor>100||a.money<0||a.money>16000||a.owned>15)return false;
     for(int i=0;i<4;++i)if(a.storedAmmo[i]<0||a.storedAmmo[i]>1500||a.storedReserve[i]<0||a.storedReserve[i]>100000)return false;
     for(auto item:a.bag)if(item.type<1||item.type>9||item.count<1||item.count>20)return false;
     return a.slot>0&&a.slot<=200&&a.team>0&&a.health>=0&&a.health<=100&&a.ammo>=0&&a.ammo<=1500&&a.reserve>=0&&a.reserve<=100000&&
@@ -22,7 +22,7 @@ Bytes encodeSnapshot(const Snapshot& snapshot) {
     std::string s;Archive a(&s);Message type=Message::Snapshot;header(a,type);
     auto copy=snapshot;uint32_t count=uint32_t(copy.actors.size());a(copy.tick,copy.ack,copy.localSlot,copy.winner,count);
     for(auto& actor:copy.actors)a(actor);
-    a(copy.projectiles,copy.loot,copy.vehicles,copy.match,copy.round);
+    a(copy.projectiles,copy.loot,copy.vehicles,copy.match,copy.round,copy.royale,copy.gear);
     return bytes(s);
 }
 bool decodeSnapshot(const Bytes& b,Snapshot& out) {
@@ -35,8 +35,8 @@ bool decodeSnapshot(const Bytes& b,Snapshot& out) {
         fps::Actor actor;a(actor);if(!a.ok()||!validActor(actor)||actor.slot<=previous)return false;
         previous=actor.slot;own|=actor.slot==v.localSlot;v.actors.push_back(actor);
     }
-    a(v.projectiles,v.loot,v.vehicles,v.match,v.round);
-    if(!a.ok()||v.projectiles.size()>128||v.loot.size()>128||v.vehicles.size()>32)return false;
+    a(v.projectiles,v.loot,v.vehicles,v.match,v.round,v.royale,v.gear);
+    if(!a.ok()||v.projectiles.size()>128||v.loot.size()>128||v.vehicles.size()>32||v.royale.crates.size()>8||v.royale.feed.size()>6||v.royale.divePhase>3||v.gear.slots.size()>lib::systems::kGearMaxSlots)return false;
     auto position=[](Vec3 p){return fxAbs(p.x)<=100000_fx&&fxAbs(p.y)<=100000_fx&&fxAbs(p.z)<=100000_fx;};
     for(const auto& p:v.projectiles)if(p.kind>4||p.weapon>=4||p.owner>200||p.piercedCount>8||!position(p.pos))return false;
     for(const auto& l:v.loot)if(!position(l.pos)||l.count<1||l.count>20)return false;
@@ -45,12 +45,40 @@ bool decodeSnapshot(const Bytes& b,Snapshot& out) {
     out=std::move(v);
     return true;
 }
+namespace {
+constexpr uint32_t kGlobals=0,kActor=1u<<28,kProjectile=2u<<28,kLoot=3u<<28,kVehicle=4u<<28,kIdMask=(1u<<28)-1;
+template<class T> std::string record(T value){std::string out;Archive a(&out);a(value);return out;}
+}
+lib::delta::RecordSet snapshotRecords(const Snapshot& snapshot) {
+    lib::delta::RecordSet r;auto c=snapshot;
+    {std::string g;Archive a(&g);a(c.tick,c.ack,c.localSlot,c.winner,c.match,c.round,c.royale,c.gear);r[kGlobals]=std::move(g);}
+    for(const auto& actor:c.actors)r[kActor|actor.slot]=record(actor);
+    for(const auto& p:c.projectiles)r[kProjectile|(p.id&kIdMask)]=record(p);
+    for(const auto& l:c.loot)r[kLoot|(l.id&kIdMask)]=record(l);
+    for(const auto& v:c.vehicles)r[kVehicle|(v.id&kIdMask)]=record(v);
+    return r;
+}
+bool recordsSnapshot(const lib::delta::RecordSet& records,Snapshot& out) {
+    // Rebuild the classic packet and reuse its validation so both paths accept exactly the same snapshots.
+    Snapshot v;auto g=records.find(kGlobals);if(g==records.end())return false;
+    {Archive a(g->second);a(v.tick,v.ack,v.localSlot,v.winner,v.match,v.round,v.royale,v.gear);if(!a.ok()||a.remaining())return false;}
+    for(const auto& [id,bytes]:records){
+        if(id==kGlobals)continue;Archive a(bytes);auto kind=id&~kIdMask;
+        if(kind==kActor){fps::Actor x;a(x);v.actors.push_back(x);}
+        else if(kind==kProjectile){fps::Projectile x;a(x);v.projectiles.push_back(x);}
+        else if(kind==kLoot){fps::Loot x;a(x);v.loot.push_back(x);}
+        else if(kind==kVehicle){fps::Vehicle x;a(x);v.vehicles.push_back(x);}
+        else return false;
+        if(!a.ok()||a.remaining())return false;
+    }
+    return decodeSnapshot(encodeSnapshot(v),out);
+}
 Server::Server(const Json& rules,const Json& map,uint64_t seed,world::AssetReader reader):
     simulation_({seed,fps::readConfig(rules).tickRate,0,false},std::make_unique<fps::Module>()),content_(contentId(rules,map)) {simulation_.setup(rules,map);if(map["world"].getBool("async")){if(!reader)throw JsonError("world: server content reader required");module().setContentReader(std::move(reader));}}
 bool Server::occupied(uint8_t slot) const {for(const auto& p:peers_)if(p.slot==slot&&p.conn->state()!=ConnState::Closed)return true;return false;}
 bool Server::attach(uint8_t slot,std::unique_ptr<Conn> conn) {
     if(!conn||slot==0||slot>module().state(simulation_).actors.size()||occupied(slot))return false;
-    peers_.push_back({slot,std::move(conn),{},module().state(simulation_).actors[slot-1].lastSequence,false,0});return true;
+    Peer peer;peer.slot=slot;peer.conn=std::move(conn);peer.lastReceived=module().state(simulation_).actors[slot-1].lastSequence;peers_.push_back(std::move(peer));return true;
 }
 void Server::poll(uint64_t now) {
     for(auto& p:peers_) {
@@ -67,6 +95,7 @@ void Server::poll(uint64_t now) {
                 p.ready=true;continue;
             }
             fps::Input input;a(input);
+            if(p.ready&&type==Message::Input&&a.ok()&&!a.remaining()&&input.viewTick<=simulation_.tick())p.delta.acknowledge(input.viewTick);
             fps::Input validated;
             if(!p.ready||type!=Message::Input||!a.ok()||a.remaining()||!fps::decodeInput(fps::command(p.slot,input),validated)||
                input.sequence<=p.lastReceived||uint64_t(input.sequence)>uint64_t(p.lastReceived)+256||
@@ -108,10 +137,14 @@ void Server::broadcast() {
             s.actors.push_back(actor);
         }
         const auto& state=module().state(simulation_);
-        s.round=state.round;s.match=state.match;
+        s.round=state.round;s.match=state.match;s.royale=module().royaleView(simulation_,p.slot);if(!state.gear.empty())s.gear=state.gear[p.slot-1];
         auto nearby=[&](const auto& objects,auto& out,size_t limit){for(const auto& object:objects)if(out.size()<limit&&(object.pos-own.pos).lengthSq()<=radius*radius)out.push_back(object);};
         nearby(state.projectiles,s.projectiles,128);nearby(state.loot,s.loot,128);nearby(state.vehicles,s.vehicles,32);
-        p.conn->sendLatest(encodeSnapshot(s));
+        auto records=snapshotRecords(s);uint64_t full=0;for(const auto& [id,bytes]:records)full+=bytes.size()+5;
+        std::string packet;Archive a(&packet);Message type=Message::SnapshotDelta;header(a,type);
+        auto delta=p.delta.encode(s.tick,std::move(records));if(delta.empty())continue;packet+=delta;
+        stats_.packets++;stats_.bytes+=packet.size();stats_.fullBytes+=full;stats_.fullPackets+=p.delta.lastWasFull();
+        p.conn->sendLatest(bytes(packet));
     }
 }
 Client::Client(const Json& rules,const Json& map,std::unique_ptr<Conn> conn,world::AssetReader reader):config_(fps::readConfig(rules)),conn_(std::move(conn)),content_(contentId(rules,map)) {
@@ -131,6 +164,7 @@ void Client::predict(const fps::Input& input) {
     const auto radius=config_.motor.sprintSpeed/Fixed::fromInt(config_.tickRate)+8_fx;
     Vec3 extent{radius,radius,radius};
     if(streamedCollision_&&!streamedCollision_->covers({predicted_.pos-extent,predicted_.pos+extent}))return;
+    if(latest_.royale.enabled&&latest_.royale.divePhase!=3)return;   // skydive is server-driven: keep the authoritative pose
     fps::moveActor(predicted_,input,config_.motor,collision_,Fixed::fromRatio(1,config_.tickRate),config_.worldLimit);
 }
 void Client::poll(uint64_t now) {
@@ -140,7 +174,12 @@ void Client::poll(uint64_t now) {
     }
     Bytes packet;
     for(int count=0;count<64&&conn_->recv(packet);++count) {
-        Snapshot s;if(!decodeSnapshot(packet,s)|| (ready_&&(s.tick<=latest_.tick||s.localSlot!=latest_.localSlot||s.ack<latest_.ack)))continue;
+        Snapshot s;
+        auto data=string(packet);bool ok=false;
+        {Archive a(data);Message type{};header(a,type);
+         if(a.ok()&&type==Message::SnapshotDelta&&data.size()>=9&&data.size()<=131072){auto records=delta_.decode(std::string_view(data).substr(9));ok=records&&recordsSnapshot(*records,s);}
+         else ok=decodeSnapshot(packet,s);}
+        if(!ok|| (ready_&&(s.tick<=latest_.tick||s.localSlot!=latest_.localSlot||s.ack<latest_.ack)))continue;
         if(ready_&&s.ack>sequence_)continue;
         latest_=std::move(s);
         auto own=std::find_if(latest_.actors.begin(),latest_.actors.end(),[&](const auto& p){return p.slot==latest_.localSlot;});

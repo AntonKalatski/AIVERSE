@@ -1,4 +1,5 @@
 #include "engine/net/authority/Session.h"
+#include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
 #include "engine/audio/Audio.h"
 #include <chrono>
@@ -73,6 +74,8 @@ void stress(Json rules,Json map) {
         server.poll(now);server.step();
     }
     for(const auto& c:clients){CHECK(c->ready());CHECK(c->snapshot().ack>200);CHECK(c->snapshot().actors.size()<10);}
+    const auto& stats=server.snapshotStats();CHECK(stats.packets>1000&&stats.bytes*2<stats.fullBytes&&stats.fullPackets<stats.packets/10);
+    std::printf("snapshot deltas: %llu packets, %llu bytes vs %llu full (%llu sent full)\n",(unsigned long long)stats.packets,(unsigned long long)stats.bytes,(unsigned long long)stats.fullBytes,(unsigned long long)stats.fullPackets);
     CHECK(server.simulation().executedCommands().empty());
     auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     std::printf("100 clients / 300 ticks / sparse 16 km world: %lld ms (debug/local loopback, not WAN capacity)\n",(long long)elapsed);
@@ -154,7 +157,11 @@ void network(Json rules,Json map) {
     for(const auto& a:client.snapshot().actors)CHECK(a.slot!=2);
 }
 }
+#include "royale.inc"
+#include "gear.inc"
+#include "vehicles.inc"
+#include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }

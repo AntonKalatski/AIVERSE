@@ -1,6 +1,22 @@
 // Engine and client strings (menu, HUD, command card). English is the base language: every other
 // table is checked against this one (aiverse_i18n check). A game can override any key in lang/<tag>.json.
 {
+  "fps.royale.waiting": "The zone starts in {time}",
+  "fps.royale.wait": "Phase {phase}: the zone shrinks in {time}",
+  "fps.royale.shrink": "Phase {phase}: the zone is shrinking ({time})",
+  "fps.royale.closed": "The zone has closed",
+  "fps.royale.counts": "Alive: {alive}  Teams: {teams}  Kills: {kills}",
+  "fps.royale.jump": "Space: jump",
+  "fps.royale.doorClosed": "The door opens soon",
+  "fps.royale.freefall": "Space: open the parachute   Shift: dive",
+  "fps.royale.outside": "You are outside the zone!",
+  "fps.royale.feed.knocked": "Player {actor} knocked down player {victim}",
+  "fps.royale.feed.eliminated": "Player {actor} eliminated player {victim}",
+  "fps.royale.feed.revived": "Player {actor} revived player {victim}",
+  "fps.royale.feed.teamOut": "Team {victim} is out (place {place})",
+  "fps.royale.feed.environment": "Player {victim} is out",
+  "fps.royale.winner": "Winner! First place",
+  "fps.royale.placed": "Place {place} of {teams}",
   "fps.systems.status": "Armor: {armor}  Money: {money}",
   "fps.downed": "Downed — wait for a teammate",
   "fps.dead": "You are dead",
