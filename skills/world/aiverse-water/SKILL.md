@@ -1,17 +1,32 @@
 ---
 name: aiverse-water
-description: Add or change spline water in an AIVERSE map - straits, rivers, the open sea, with embankments, cliffs, beaches and natural banks chosen automatically or by hand - through the water_* MCP ops or the editor window «Вода»; a game supplies only models and textures.
+description: Add or change AIVERSE spline water - straits, rivers, the open sea - with shore types (embankment, cliff, beach, natural), bridges from spline roads and the «Вода» window; the game supplies only models and textures.
 ---
 
-# water
+# Spline water
 
-Behaviour and format: `docs/water.md` (read it fully). Code: `modules/rts/view/RtsWater.*` (data, built-in shore types, auto shores, cells; float, editor and view only), `modules/rts/view/RtsShoreView.*` (meshes, props, foam), `apps/editor/core/WaterOps.*` (ops, baking), `apps/editor/windows/WaterWindow.cpp`. Tests: `tests/tests_water.inc` (`aiverse_tests water_`).
+Use for any water body drawn as a spline: a strait or river (centre line with width per point) or an open sea
+(shore line edge to edge). Cell water painted with `~` rows stays in `skills/world/aiverse-terrain`.
 
-1. The simulation never reads `waterNetwork`: every op bakes it into the map's cells (`~` water, `#` under cliffs, the map's tile chars when `tiles` names them) and keeps the old cells in `baked`. Paths, naval units, bridges and checksums see ordinary cells.
-2. Bodies: `strait` / `river` with `points: [[x, z, width_m], ...]` (Catmull-Rom, may leave the map), `sea` with `side` and a `shore` line edge to edge. `shores`: `"auto"` or `{side, from, to, type}` in metres along the bank.
-3. Shore types (rules `shoreTypes`, like `roadTypes`): built-in `embankment`, `embankment_stone`, `cliff`, `beach`, `bank`; a game retunes by id or adds its own (`kind` / `extends`), and gives `textures` and prop `model`s. Nothing else belongs in the game: no water generators in its scripts.
-4. Ops: `water_types`, `water_network`, `water_set`, `water_delete`, `water_shores`, `water_bake` (after editing roads or rules). Read `landParts` / `separatedLand` in the answer: land split without a bridge is a warning.
-5. Auto shores: straits get embankments both sides; rivers get embankments only where the city comes within 40 m; the sea mixes embankments, cliffs (headlands, map edges) and beaches. Pieces shorter than 30 m merge into a neighbour.
-6. Check: `aiverse_tests water_`, then screenshots (`view_screenshot` with `window: scene`) of both banks of a strait, a river mouth, cliffs, a beach; fix seams before reporting. Model packs follow AGENTS.md "Model packs: every texture once".
+Authority: `docs/water.md`; roads that become bridges: `docs/roads.md`, `skills/world/aiverse-roads`.
 
-Not done: wall modules from game models along the bank, waves, water at several heights, drawing a body with the mouse. Runtime library: none (engine module).
+1. Shore types live in rules `shoreTypes` (embankment, cliff, beach, natural: models, textures, props).
+   A game provides only models and textures; do not write per-game code.
+2. Bodies live in the map `waterNetwork`. List with `water_types` / `water_network`; add or replace a body with
+   `water_set {body}`, delete with `water_delete {id}`.
+3. Shores are cut automatically; override one stretch with `water_shores {id, side, from, to, type}` or reset with
+   `water_shores {id, reset: true}`.
+4. `water_bake` (every change bakes too) returns water / cliff cells, shore metres per bank, `landParts` and a
+   warning when land falls apart without a bridge - fix it with a spline-road bridge, not by painting cells.
+5. Editor: window «Вода» (`apps/editor/windows/WaterWindow.cpp`). Tests: `tests/tests_water.inc`.
+6. Check with `view_screenshot` from several angles and a bot / traffic run that crosses the bridges.
+
+Pitfalls already hit: faces of a bank whose land lies on the other hand of the point order are flipped (check new
+geometry on both banks); water cells are taken with 0.75 cell of slack, so a promenade is never narrower than 1.5 cells;
+land surfaces follow the ground with a lift or the terrain grass pokes through the sand; when testing connectivity
+stamp diagonal road samples 3 x 3 (they break 4-connectivity). A game gives only `shoreTypes` textures and models
+(its own `rules/water.json` through `include`, written with `tools/rules/rules_io.py`).
+
+Not yet (from the doc): wall / parapet modules repeated along the bank, waves, water bodies at different heights.
+
+Workflow recipe over existing engine code and MCP tools; no runtime library.

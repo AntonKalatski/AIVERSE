@@ -24,6 +24,11 @@ use the CLI below, which is the same importer.
    `tools/<game>/`); the engine gets only generic mechanics and hooks without game names.
 7. Imported numbers: cooldown and build times are seconds; `fireRate` is approximate; check source player numbering.
 
+8. Unity UI screens (uGUI / UI.Windows) and Unity Localization tables: `python3 tools/importers/unity_ui/import.py
+   --source <UnityProject | Assets> --out <game>` (`docs/unity-ui-import.md`), then `ui_validate` and `ui_preview`;
+   self-test `tools/importers/unity_ui/test_import.py`. UI.Windows audio banks: `python3
+   tools/importers/fmod/import_audio.py --unity <UnityProject>/Assets --out <game>` (`docs/uiwindows-audio-import.md`).
+
 Report coverage honestly: items resolved / approximated / dropped, art and platforms not done.
 
 Runtime library: none. The importer lives in `tools/importers/port`.
