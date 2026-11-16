@@ -177,7 +177,7 @@ struct App {
         }
         Vec3 extent{600_fx,600_fx,600_fx};
         for(auto id:geometry.query({actor.pos-extent,actor.pos+extent})) {
-            if(chunks.enabled()&&id!=1)continue;
+            if(chunks.enabled()&&id!=1&&id<fps::kBuildingColliderBase)continue;   // generated buildings are not in the chunk files
             const auto& b=geometry.colliders().at(id).bounds;
             // Draw relative to the observer before converting coordinates to floating point.
             auto base=Vec3{(b.min.x+b.max.x)/2,b.min.y,(b.min.z+b.max.z)/2};

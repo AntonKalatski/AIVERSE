@@ -131,6 +131,16 @@ thrown-out occupants are ejected; a destroyed vehicle kills everyone inside. Veh
 legacy car. FPS save version 9 stores controller and seat state. `templates/fps_survival` has ten four-seat cars
 (`rules/vehicles.json`). Test: `typedVehicles` in `tests/fps/tests.cpp`.
 
+## Generated buildings (opt-in)
+
+Map `buildings` lists [building-gen](../skills/world/aiverse-building-gen/SKILL.md) houses:
+`{"pos":[x,y,z],"yaw":0..3,"seed":n,"building":{"width":12,"depth":10,"floors":2,...},"loot":[item types]}`.
+At setup each becomes static collision boxes (ids from `kBuildingColliderBase`; slabs, walls with a door and
+windows, a partition, switchback stairs, roof) sized for the FPS motor (radius, height, step height), and its loot
+lies on the generated room spots (requires `mechanics.enabled`). The client draws them also on chunked maps.
+`templates/fps_survival` has 25 houses of one to three floors. Test: `buildings` in `tests/fps/tests.cpp` (walk in
+through the door, climb a floor with the real motor).
+
 ## Gear (opt-in)
 
 `fps.gear` (requires `mechanics.enabled`) is a [gear-tiers](../skills/gameplay/aiverse-gear-tiers/SKILL.md) catalog:

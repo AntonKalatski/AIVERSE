@@ -1496,6 +1496,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_library_encounter_tests PRIVATE AIVERSE::lib_boss_encounters)
     add_test(NAME library_encounters COMMAND aiverse_library_encounter_tests ${PROJECT_SOURCE_DIR})
 endif()
+# building-gen (procedural enterable buildings from boxes).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_library_building_tests tests/libraries/building_tests.cpp)
+    target_link_libraries(aiverse_library_building_tests PRIVATE AIVERSE::lib_building_gen)
+    add_test(NAME library_building_gen COMMAND aiverse_library_building_tests)
+endif()
 # gear-tiers (protective gear slots, absorption, wear, capacity).
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_library_gear_tests tests/libraries/gear_tests.cpp)

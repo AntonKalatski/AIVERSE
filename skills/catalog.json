@@ -467,6 +467,44 @@
       "keywords": []
     },
     {
+      "id": "aiverse-building-gen",
+      "package": "building-gen",
+      "path": "skills/world/aiverse-building-gen/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Procedural enterable buildings from axis-aligned boxes: 1..10 floors, slabs, outer walls with a seeded door side and windows, interior partition with a doorway, switchback stairwell with slab holes, roof, loot spots, door points; quarter-turn yaw; validated against the agent size and step height",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_building_gen",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/BuildingGen.h",
+      "keywords": [
+        "building",
+        "house",
+        "procedural",
+        "interior",
+        "floors",
+        "stairs",
+        "stairwell",
+        "door",
+        "window",
+        "room",
+        "enterable",
+        "здание",
+        "дом",
+        "процедурн",
+        "этаж",
+        "лестниц",
+        "дверь",
+        "окно",
+        "комнат",
+        "интерьер"
+      ]
+    },
+    {
       "id": "aiverse-camera",
       "package": "camera",
       "path": "skills/ui/aiverse-camera/SKILL.md",

@@ -184,6 +184,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         auto id=integer(b,"id",0,1,UINT32_MAX);
         if(collision_.colliders().contains(uint32_t(id))||!collision_.add({uint32_t(id),{vector(b["min"]),vector(b["max"])}}))throw JsonError("fps.collider: invalid or duplicate box");
     }
+    auto buildingLoot=buildMapBuildings(map);
     const auto& spawns=map["spawns"];
     if(!spawns.isArray()||spawns.size()<sim.players().size())throw JsonError("fps.spawns: one spawn per player required");
     State s;
@@ -198,6 +199,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         s.actors.push_back(a);spawns_.push_back(a.pos);bots_.push_back(map["players"][i].getBool("bot",false));
     }
     setupSystems(sim,map,s);
+    if(config_.systems.enabled)for(auto l:buildingLoot)if(s.loot.size()<256){l.id=s.nextObject++;s.loot.push_back(l);}
     setupRoyale(sim,map,s);
     if(!config_.gear.empty())s.gear.assign(s.actors.size(),{});
     setupVehicles(sim,map,s);

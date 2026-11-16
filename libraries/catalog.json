@@ -1127,6 +1127,27 @@
       ]
     },
     {
+      "id": "building-gen",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/BuildingGen.h",
+      "skill": "skills/world/aiverse-building-gen/SKILL.md",
+      "summary": "Procedural enterable buildings from axis-aligned boxes: 1..10 floors, slabs, outer walls with a seeded door side and windows, interior partition with a doorway, switchback stairwell with slab holes, roof, loot spots, door points; quarter-turn yaw; validated against the agent size and step height",
+      "notes": "Fixed math, deterministic per definition + seed. Output boxes go into the owner's static collision (FPS map `buildings`, AABB navmesh, cover maps). Agent radius / height / max step rise come from the owner's motor; generateBuilding returns nullopt when the doorway, stairwell or windows do not fit. No meshes, materials, rotated walls or furniture.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_building_gen",
+      "dependencies": [
+        "tests/libraries/building_tests.cpp",
+        "tests/fps/buildings.inc"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
       "id": "bot-matches",
       "version": "0.1.0",
       "layer": "tools",

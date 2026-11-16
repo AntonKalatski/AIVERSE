@@ -7,11 +7,13 @@
 #include "libraries/include/aiverselib/genre/Melee.h"
 #include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
 #include "libraries/include/aiverselib/systems/Gear.h"
+#include "libraries/include/aiverselib/systems/BuildingGen.h"
 #include "libraries/include/aiverselib/genre/VehicleData.h"
 #include <optional>
 
 namespace aiverse::fps {
 constexpr uint16_t kInputCommand=1;
+constexpr uint32_t kBuildingColliderBase=0x40000000;   // collider ids of map `buildings` (building-gen)
 enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096 };
 constexpr uint32_t kButtonBits=8191;
 constexpr uint32_t selectWeapon(uint32_t index) { return (index+1)<<5; }
@@ -164,6 +166,7 @@ private:
     void settleRoyale(Simulation&);
     void steerRoyaleBot(Simulation&,Actor&);
     Fixed groundBelow(Vec3) const;
+    std::vector<Loot> buildMapBuildings(const Json& map);
     void setupVehicles(Simulation&,const Json&,State&);
     void tickVehicles(Simulation&);
     bool vehicleInteract(Simulation&,Actor&);
