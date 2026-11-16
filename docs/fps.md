@@ -2,7 +2,7 @@
 
 FPS projects use `game.json` with `module: "fps"` and `genre: "fps"`. Choose FPS in
 New Project: `fps_training` (stationary targets), `fps_arena` (5 vs 5 bots), or
-`fps_survival` (100 slots, sparse large world). The editor launches a separate FPS client.
+`fps_survival` (100 slots, sparse large world, battle royale with air insertion and a phased zone). The editor launches a separate FPS client.
 Existing copied projects are not overwritten when engine templates change.
 
 ## Controls and weapons
@@ -59,8 +59,8 @@ The first three binaries are under `<build>/modules/fps/`.
 <build>/aiverse_headless --project templates/fps_arena --seed 3 --verify-restore-at 1 --verify-restore-ticks 20
 ```
 
-Client and server require identical content and protocol. Weapon support uses FPS
-save version 7 (version 3 and 6 saves still load); earlier experimental FPS saves and older peers
+Client and server require identical content and protocol. The current FPS save version is 8
+(battle royale; versions 3, 6 and 7 still load); earlier experimental FPS saves and older peers
 are rejected. RTS save/protocol versions are unchanged.
 
 ## Scope
@@ -89,6 +89,31 @@ Ricochet, Fly Through and scalar modifiers. This works independently of `mechani
 `flight.gravity` defaults to `bulletGravity`. Authoritative 3D sweeps, actor-life hit history,
 material penetration, save/rollback and existing snapshot presentation are supported.
 See [projectile programs](projectile-programs.md) for the JSON schema and trajectory semantics.
+
+## Battle royale (opt-in)
+
+`fps.royale` (mode `battleRoyale`) runs the [battle-royale package](genre-packages.md#battle-royale-battle-royale-010)
+on the FPS actors; a map's own `royale` block replaces the rules block. The JSON is the package format
+(`examples/libraries/genre/royale/royale.json`): `bounds`, `zone` phases, optional `flight`, `drop`, `bombardment`,
+`supplyDrops`, `standings`. `fps.crate` lists the items a landed supply drop spawns (item IDs as in `loot`; default
+armor, two medkits, magazine, ammo). Without the block the legacy linear `zone` keeps working. `templates/fps_survival`
+uses it (`rules/royale.json`).
+
+| Piece | Behavior | Limits |
+|---|---|---|
+| Insertion | With `flight` every actor starts in the carrier on a seeded path; Jump leaves (door open after `doorOpen` ticks, eject at the end), Jump again opens the chute above `minDeployHeight`, Sprint dives, movement steers; the chute opens itself at `autoDeployHeight`; landing hands the actor to the motor. Ground height = collision cast down | No carrier model / camera; fallback bots jump at seeded points and steer to their spawn |
+| Zone | Seeded nested circles, wait / shrink, per-phase damage to landed actors outside | Damage goes through armor like any hit |
+| Bombardment | Shells hit landed actors in the blast circle unless collision is above their head (roof) | No explosion falloff |
+| Supply drops | Crates announced inside the next circle; `fps.crate` items spawn as loot on landing | Crate is not a physical object |
+| Standings | Downs, knocks (`mechanics.knockdown`), revives and outs are mirrored into the standings each tick; a team with nobody standing has its knocked members finished; the standings decide the winner (or a draw when the last teams fall on the same tick) | Kill credit = last enemy who damaged the victim |
+
+Snapshots carry `RoyaleView` (current and next circle, stage timer, own skydive phase, carrier position, players
+and teams left, own placement and kills, bombardment area, up to 8 falling crates); the client keeps the server pose
+while skydiving. SimEvents: 5 = kill feed (`player` = actor, `value` = victim | kind << 8), 6 = zone stage
+(`value` = phase | kind << 8, `pos` = target centre), 7 = supply drop (`value` = id | kind << 16, `pos` = point),
+8 = shell impact (`value` = damage). FPS save version 8 stores the run (versions 3, 6 and 7 still load for games
+without `fps.royale`); snapshot protocol 4 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
+The HUD (zone ring, minimap, kill feed, placement screen) is not drawn yet.
 
 ## Close combat (opt-in)
 

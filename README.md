@@ -80,7 +80,7 @@ you. AIVERSE ships the mechanics themselves — and makes the game something an 
 | **Multiplayer means endless desyncs.** One `float` is enough for a match on an iPhone and an Android phone to drift apart. | The simulation is bit-identical everywhere: fixed-point instead of floats, its own RNG, checksums. CI compares matches across Linux x64/ARM64, Windows and macOS on every push. Only commands go over the network; there is rollback lockstep and a server with matchmaking and replay-based verdicts. |
 | **Mobile GPUs are weak, yet the game must look good.** | Every expensive feature — shadows, particles, terrain, post-effects — has quality tiers and adapts to the GPU, from old Mali and Adreno to Apple Silicon. |
 | **Shipping on every platform is a project of its own.** Signing, icons, store and ads SDKs. | `aiversebuild` makes an .app, an Xcode project, Gradle/APK, web and .exe in one command. Icons and splash screens are generated. Plugins for the App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin and more — a build carries only the ones the game selects. |
-| **Every new game starts from zero.** | 30+ playable templates, genre kits with acceptance checklists, 160 skills for agents. A new game starts from a working one. |
+| **Every new game starts from zero.** | 30+ playable templates, genre kits with acceptance checklists, 161 skills for agents. A new game starts from a working one. |
 | **Meta and LiveOps get rewritten in every project.** | `aiverse::meta`: shop, currencies, quests, passes, daily rewards, energy, clans, tournaments, chests with pity — configured in JSON. |
 
 ---
@@ -93,7 +93,7 @@ from the mechanics libraries — each one deterministic, tested, with save/resto
 | Genre | What the engine provides |
 |---|---|
 | **RTS, tower defense, capture games** | Full `rts` module: units and buildings from data, A\* / HPA\* / flow fields for armies of thousands of units on maps up to 2048², economy, construction, fog of war, AI, terrain and planets, 26 templates |
-| **FPS and TPS** | Full `fps` module: client and authoritative server, large streamed worlds up to 100 players, bots, 4 templates; `weapon-policies` (recoil, ballistics, penetration), `match-rules` (rounds, payload, bomb/defuse, extraction) |
+| **FPS and TPS** | Full `fps` module: client and authoritative server, large streamed worlds up to 100 players, bots, 4 templates; `weapon-policies` (recoil, ballistics, penetration), `match-rules` (rounds, payload, bomb/defuse, extraction), `battle-royale` (phased zone, air drop, knockdowns, placements) |
 | **Action, fighting, soulslike** | `combat-actions`, `melee-combat`: hitboxes and hurtboxes, combos and cancel windows, dodge i-frames, parry, poise, lock-on; `genre-bots` for opponents |
 | **Platformer, metroidvania** | `character-locomotion`: coyote time, jump buffer, ledges, ladders, swimming, climbing, mantling; `zone-graph`: ability gates, checkpoints and softlock proofs |
 | **Stealth, immersive sim** | `stealth-senses`: sight cones, hearing, suspicion and alerts, searches, disguises; `physical-interactions`: carrying, throwing, ropes, doors, platforms, breakables |
@@ -219,7 +219,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 - Unity-style docking editor: scene, inspector, terrain, effects, lighting, UI, play test and device simulator
 - `aiversemcp` — MCP server for agents
 - **Make a game** wizard
-- 160 skills for agents and genre kits with acceptance checklists
+- 161 skills for agents and genre kits with acceptance checklists
 - Importers for assets of classic games from your own copy
 
 </td>

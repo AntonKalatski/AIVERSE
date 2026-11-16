@@ -81,7 +81,7 @@ AIVERSE liefert die Mechaniken selbst – und macht das Spiel zu etwas, an dem e
 | **Multiplayer heißt endlose Desyncs.** Ein einziges `float` genügt, damit ein Match zwischen iPhone und Android auseinanderläuft. | Die Simulation ist überall bitgenau identisch: Festkomma statt Gleitkomma, eigener Zufallsgenerator, Prüfsummen. Die CI vergleicht bei jedem Push Matches auf Linux x64/ARM64, Windows und macOS. Über das Netz gehen nur Befehle; es gibt Lockstep mit Rollback und einen Server mit Matchmaking und Entscheidungen anhand von Replays. |
 | **Mobile GPUs sind schwach, das Spiel soll trotzdem gut aussehen.** | Jede teure Funktion – Schatten, Partikel, Terrain, Post-Effekte – hat Qualitätsstufen und passt sich der GPU an, von alten Mali- und Adreno-Chips bis Apple Silicon. |
 | **Die Veröffentlichung auf allen Plattformen ist ein eigenes Projekt.** Signaturen, Icons, Store- und Werbe-SDKs. | `aiversebuild` erzeugt mit einem Befehl eine .app, ein Xcode-Projekt, Gradle/APK, Web und .exe. Icons und Startbildschirme werden generiert. Plugins für App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin und mehr – ein Build enthält nur die, die das Spiel auswählt. |
-| **Jedes neue Spiel beginnt bei null.** | Über 30 spielbare Vorlagen, Genre-Kits mit Abnahme-Checklisten, 160 Skills für Agenten. Ein neues Spiel beginnt mit einem, das bereits funktioniert. |
+| **Jedes neue Spiel beginnt bei null.** | Über 30 spielbare Vorlagen, Genre-Kits mit Abnahme-Checklisten, 161 Skills für Agenten. Ein neues Spiel beginnt mit einem, das bereits funktioniert. |
 | **Meta und LiveOps werden in jedem Projekt neu geschrieben.** | `aiverse::meta`: Shop, Währungen, Quests, Pässe, tägliche Belohnungen, Energie, Clans, Turniere, Truhen mit Pity-System – in JSON konfiguriert. |
 
 ---
@@ -95,7 +95,7 @@ validierbarer Konfiguration.
 | Genre | Was die Engine bietet |
 |---|---|
 | **RTS, Tower Defense, Eroberungsspiele** | Vollständiges `rts`-Modul: datengetriebene Einheiten und Gebäude, A\* / HPA\* / Flow Fields für Armeen aus Tausenden Einheiten auf Karten bis 2048², Wirtschaft, Bau, Nebel des Krieges, KI, Terrain und Planeten, 26 Vorlagen |
-| **FPS und TPS** | Vollständiges `fps`-Modul: Client und autoritativer Server, große gestreamte Welten für bis zu 100 Spieler, Bots, 4 Vorlagen; `weapon-policies` (Rückstoß, Ballistik, Durchschlag), `match-rules` (Runden, Payload, Bombe, Extraktion) |
+| **FPS und TPS** | Vollständiges `fps`-Modul: Client und autoritativer Server, große gestreamte Welten für bis zu 100 Spieler, Bots, 4 Vorlagen; `weapon-policies` (Rückstoß, Ballistik, Durchschlag), `match-rules` (Runden, Payload, Bombe, Extraktion), `battle-royale` (Zone in Phasen, Absprung, Niederschläge, Platzierungen) |
 | **Action, Fighting, Soulslike** | `combat-actions`, `melee-combat`: Hitboxen und Hurtboxen, Kombos und Abbruchfenster, Unverwundbarkeit beim Ausweichen, Parade, Haltung, Zielerfassung; `genre-bots` für Gegner |
 | **Plattformer, Metroidvania** | `character-locomotion`: Coyote Time, Sprungpuffer, Kanten, Leitern, Schwimmen, Klettern, Überklettern; `zone-graph`: Fähigkeitssperren, Checkpoints und Nachweis, dass es keine Sackgassen gibt |
 | **Stealth, Immersive Sim** | `stealth-senses`: Sichtkegel, Gehör, Verdacht und Alarm, Suche, Verkleidung; `physical-interactions`: Tragen, Werfen, Seile, Türen, Plattformen, zerstörbare Objekte |
@@ -221,7 +221,7 @@ Jede Vorlage ist ein vollständig spielbares Spiel mit Bots. Im Editor öffnen u
 - Andockbarer Editor im Unity-Stil: Szene, Inspector, Terrain, Effekte, Beleuchtung, UI, Testspiel und Gerätesimulator
 - `aiversemcp` – MCP-Server für Agenten
 - Assistent **Spiel erstellen**
-- 160 Skills für Agenten und Genre-Kits mit Abnahme-Checklisten
+- 161 Skills für Agenten und Genre-Kits mit Abnahme-Checklisten
 - Importer für Assets klassischer Spiele aus Ihrer eigenen Kopie
 
 </td>

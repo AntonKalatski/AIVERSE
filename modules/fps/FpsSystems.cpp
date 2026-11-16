@@ -64,6 +64,7 @@ void Module::damage(Simulation& sim,uint8_t source,Actor& target,int32_t amount,
     if(attacker&&source!=target.slot&&!config_.friendlyFire&&attacker->team==target.team)return;
     if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
     target.lastDamage=sim.tick();target.activeAction=Action::None;target.actionUntil=0;
+    if(s.royale.enabled&&attacker&&source!=target.slot){s.royale.lastAttacker[target.slot-1]=source;s.royale.lastWeapon[target.slot-1]=uint8_t(attacker->weaponIndex+1);}
     if(attacker)++attacker->hits;
     if(config_.systems.enabled&&config_.systems.knockdown&&!target.downed&&amount>=target.health) {
         bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;

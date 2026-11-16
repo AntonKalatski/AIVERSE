@@ -22,6 +22,13 @@ void meleeIo(Archive& a,Actor& p) {
     a(p.melee.attack,p.melee.queued,p.melee.started,p.melee.queuedAt,p.melee.lastTick,p.melee.initialized,p.melee.hitTargets,
       p.parryUntil,p.staggerUntil,p.lockTarget,p.blockHeld,p.meleeHasTip,p.meleeTip);
 }
+void royaleIo(Archive& a,RoyaleRun& r) {
+    using lib::genre::io;
+    a(r.enabled);if(!r.enabled)return;
+    io(a,r.zone);io(a,r.bombardment);io(a,r.drops);io(a,r.flight);
+    uint32_t n=a.count(r.divers.size());if(n>256){a.fail();return;}if(!a.writing())r.divers.resize(n);for(auto& d:r.divers)io(a,d);
+    io(a,r.standings);a(r.lastAttacker,r.lastWeapon);
+}
 void stateIo(Archive& a,State& s,bool programs=false,bool melee=false) {
     a(s.round,s.winner,s.actors,s.nextObject,s.projectiles,s.loot,s.vehicles,s.match);
     uint32_t n=a.count(s.history.size());
@@ -98,6 +105,18 @@ Config readConfig(const Json& root) {
     c.zoneStart=uint32_t(integer(z,"startTick",1800,0,10000000));
     c.zoneDuration=uint32_t(integer(z,"durationTicks",7200,1,10000000));
     c.zoneDamage=int32_t(integer(z,"damagePerSecond",5,1,100));
+    if(j.has("royale")){
+        if(c.mode!="battleRoyale")throw JsonError("fps.royale: requires fps.mode \"battleRoyale\"");
+        c.royale=lib::genre::readRoyale(j["royale"],"fps.royale");
+    }
+    if(j.has("crate")){
+        if(!j["crate"].isArray()||j["crate"].size()>16)throw JsonError("fps.crate: expected at most 16 items");
+        for(const auto& item:j["crate"].items()){
+            auto type=integer(item,"type",0,1,103),count=integer(item,"count",1,1,20);
+            if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(c.weapons.size()))))throw JsonError("fps.crate: invalid item type "+std::to_string(type));
+            c.crate.push_back({int32_t(type),int32_t(count)});
+        }
+    }else if(c.royale)c.crate={{2,1},{1,2},{8,1},{9,3}};
     const auto& systems=j["mechanics"];auto& mcfg=c.systems;
     mcfg.enabled=systems.getBool("enabled",false);mcfg.knockdown=systems.getBool("knockdown",false);
     mcfg.startArmor=int32_t(integer(systems,"startArmor",0,0,100));
@@ -165,6 +184,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         s.actors.push_back(a);spawns_.push_back(a.pos);bots_.push_back(map["players"][i].getBool("bot",false));
     }
     setupSystems(sim,map,s);
+    setupRoyale(sim,map,s);
     meleeAttacks_.clear();
     if(config_.melee.enabled){
         const auto& m=config_.melee;auto total=m.windup+m.active+m.recovery;
@@ -222,6 +242,7 @@ void Module::tick(Simulation& sim) {
     auto& s=state(sim);if(s.winner)return;
     tickProjectilePrograms(sim);
     if(config_.systems.enabled)tickSystems(sim);
+    tickRoyale(sim);
     if(s.winner)return;
     s.history.push_back({sim.tick(),s.actors});
     while(s.history.size()>size_t(config_.rewindTicks)+1)s.history.pop_front();
@@ -232,8 +253,9 @@ void Module::tick(Simulation& sim) {
                 a=Actor{};a.slot=slot;a.team=team;a.kills=kills;a.lastSequence=seq;
                 a.armor=config_.systems.startArmor;a.money=config_.systems.startMoney;
                 a.life=life+1;a.pos=spawns_[slot-1];equipInitial(a);
-            } else continue;
+            } else {skydive(sim,a);continue;}   // a body in the air keeps falling (battle royale)
         }
+        if(skydive(sim,a))continue;
         if(bots_[a.slot-1]&&a.lastSequence==0) {
             const Actor* target=nullptr;Fixed nearest=config_.weapons[a.weaponIndex].range*config_.weapons[a.weaponIndex].range;
             for(const auto& candidate:s.actors)if(candidate.health>0&&!candidate.downed&&candidate.team!=a.team) {
@@ -251,6 +273,7 @@ void Module::tick(Simulation& sim) {
                 a.input.forward=nearest>100_fx?700:0;a.input.right=((sim.tick()/90+a.slot)%2)?350:-350;
                 a.input.buttons=a.ammo?((config_.weapons[a.weaponIndex].automatic||(!a.fireHeld&&sim.tick()>=a.nextFire))?Fire:0u):Reload;
             }
+            steerRoyaleBot(sim,a);
         }
         auto input=a.input;
         if(sim.tick()-a.lastInputTick>config_.inputTimeout){input.forward=input.right=0;input.buttons=0;input.action=Action::None;}
@@ -276,14 +299,15 @@ void Module::tick(Simulation& sim) {
         if(trigger&&!a.downed&&!a.vehicle&&a.activeAction==Action::None&&!a.blockHeld&&sim.tick()>=a.staggerUntil&&(a.owned&(1u<<a.weaponIndex))&&(weapon.automatic||!a.fireHeld)&&!a.reloadUntil&&a.ammo>0&&sim.tick()>=a.nextFire&&sim.tick()>=a.switchUntil)shoot(sim,a);
         a.fireHeld=trigger;
         if(a.pos.y< -100_fx){a.health=0;a.respawnAt=sim.tick()+config_.respawnTicks;}
-        if(config_.mode=="battleRoyale"&&sim.tick()>=config_.zoneStart&&sim.tick()%config_.tickRate==0) {
+        if(config_.mode=="battleRoyale"&&!config_.royale&&sim.tick()>=config_.zoneStart&&sim.tick()%config_.tickRate==0) {
             auto t=Fixed::fromRatio(std::min(sim.tick()-config_.zoneStart,config_.zoneDuration),config_.zoneDuration);
             auto radius=config_.zoneRadius+(config_.zoneEndRadius-config_.zoneRadius)*t;
             if((a.pos-config_.zoneCenter).xz().lengthSq()>radius*radius)a.health=std::max(0,a.health-config_.zoneDamage);
         }
     }
     if(config_.mode=="bomb")return;
-    if(config_.mode!="deathmatch") {
+    if(config_.royale){settleRoyale(sim);if(s.winner)return;}
+    else if(config_.mode!="deathmatch") {
         std::set<uint8_t> teams;for(const auto& a:s.actors)if(a.health>0&&!a.downed)teams.insert(a.team);
         if(teams.size()<=1)s.winner=teams.empty()?-1:*teams.begin();
     }
@@ -299,11 +323,21 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
     hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,state(sim));hash.str(bytes);
     if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:state(sim).actors)meleeIo(m,actor);hash.str(extra);}
     for(auto& p:state(sim).projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
+    if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
-    uint32_t version=7;uint64_t content=contentHash_;archive(version,content);
-    if((version!=3&&version!=6&&version!=7)||content!=contentHash_)return false;
+    uint32_t version=8;uint64_t content=contentHash_;archive(version,content);
+    if((version!=3&&version<6)||version>8||content!=contentHash_)return false;
     State copy=state(sim);stateIo(archive,copy,version>=6,version>=7);
+    if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
+    if(copy.royale.enabled!=bool(config_.royale))return false;
+    if(copy.royale.enabled){
+        using namespace lib::genre;const auto& r=copy.royale;auto n=spawns_.size();
+        if(!valid(r.zone)||!valid(r.bombardment)||!valid(r.drops)||!valid(r.flight)||!valid(r.standings)||r.lastAttacker.size()!=n||r.lastWeapon.size()!=n||
+           (r.divers.size()!=n&&!(r.divers.empty()&&!config_.royale->flight))||r.standings.players.size()!=n)return false;
+        for(const auto& d:r.divers)if(!valid(d))return false;
+        for(auto x:r.lastAttacker)if(x>n)return false;
+    }
     if(version<7){auto reset=[](Actor& p){p.melee={};p.parryUntil=p.staggerUntil=0;p.lockTarget=0;p.blockHeld=p.meleeHasTip=false;p.meleeTip={};};
         for(auto& p:copy.actors)reset(p);
         for(auto& f:copy.history)for(auto& p:f.actors)reset(p);}

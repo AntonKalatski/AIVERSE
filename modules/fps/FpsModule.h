@@ -5,6 +5,8 @@
 #include "FpsSystems.h"
 #include "engine/world/CollisionStream.h"
 #include "libraries/include/aiverselib/genre/Melee.h"
+#include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
+#include <optional>
 
 namespace aiverse::fps {
 constexpr uint16_t kInputCommand=1;
@@ -51,6 +53,10 @@ struct Config {
     Vec3 zoneCenter{};Fixed zoneRadius=2000_fx,zoneEndRadius=10_fx;
     int32_t zoneDamage=5;
     bool friendlyFire=false;
+    // Opt-in `fps.royale` (battle-royale package; a map's own `royale` block replaces it): phased zone, air
+    // insertion, bombardment, supply drops and standings. `crate` = items of a landed supply drop.
+    std::optional<lib::genre::RoyaleRules> royale;
+    std::vector<Item> crate;
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -77,12 +83,28 @@ struct Actor {
 
     bool operator==(const Actor&) const = default;
 };
+// Battle-royale run (saved from FPS save version 8; empty when fps.royale is absent). Slot i-1 indexes divers / credit.
+struct RoyaleRun {
+    bool enabled=false;
+    lib::genre::SafeZoneState zone;lib::genre::BombardmentState bombardment;lib::genre::SupplyDropState drops;
+    lib::genre::InsertionFlight flight;std::vector<lib::genre::SkydiverState> divers;lib::genre::RoyaleStandings standings;
+    std::vector<uint8_t> lastAttacker,lastWeapon;
+    bool operator==(const RoyaleRun&)const=default;
+};
+// What one client needs to draw the battle royale (zone ring + timer, carrier, own phase, counts, hazards).
+struct RoyaleView {
+    bool enabled=false;uint8_t stage=0,phase=0,divePhase=3;uint32_t ticksLeft=0;uint16_t alive=0,teamsIn=0,placement=0,kills=0;
+    lib::genre::RoyaleCircle circle,target;Vec3 carrier{};bool bombardment=false;lib::genre::RoyaleCircle bombArea;std::vector<Vec3> crates;
+    bool operator==(const RoyaleView&)const=default;
+};
+void io(Archive&,RoyaleView&);
 struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
 struct State {
     std::vector<Actor> actors;
     std::deque<HistoryFrame> history;
     uint32_t round=1; int32_t winner=0;
     uint32_t nextObject=1;std::vector<Projectile> projectiles;std::vector<Loot> loot;std::vector<Vehicle> vehicles;RoundState match;
+    RoyaleRun royale;
 
 };
 Config readConfig(const Json& rules);
@@ -108,6 +130,7 @@ public:
     bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
+    RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
     void shoot(Simulation&,Actor&);
@@ -121,6 +144,12 @@ private:
     void action(Simulation&,Actor&,Action,uint32_t);
     void tickMelee(Simulation&,Actor&,const Input&);
     void finishRound(Simulation&,int32_t);
+    void setupRoyale(Simulation&,const Json&,State&);
+    bool skydive(Simulation&,Actor&);
+    void tickRoyale(Simulation&);
+    void settleRoyale(Simulation&);
+    void steerRoyaleBot(Simulation&,Actor&);
+    Fixed groundBelow(Vec3) const;
     std::vector<world::Bounds> ladders_,sites_;
     std::map<uint32_t,Fixed> penetrable_;
     std::vector<Vehicle> initialVehicles_;
