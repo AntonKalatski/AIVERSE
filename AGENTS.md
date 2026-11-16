@@ -191,6 +191,11 @@ Several agents work at the same time. **Each agent works in its own branch/workt
 its area. Need to change a file outside your area? Keep the change minimal, additive, and say so in
 the commit message; prefer adding a new file over editing a shared one.
 
+**Branch names:** `feature/aiv<number>_<feature_name>` — `<number>` is the task number,
+`<feature_name>` is short snake_case (e.g. `feature/aiv142_city_traffic`). Do not name new branches
+`agent-...` or `codex/...`; those in the area table below are existing branches and keep their names.
+The worktree folder follows the branch: `.worktrees/feature/aiv142_city_traffic`.
+
 | Area | Paths | Owner |
 |---|---|---|
 | Simulation & mechanics, AI, triggers | `engine/core`, `engine/sim`, `modules/rts/*.{h,cpp}` | main agent |

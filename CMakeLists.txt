@@ -1615,7 +1615,8 @@ endif()
 # Library aiverse_place (server, client logic, bots, SimNet load harness); executable aiverse_place
 # (target aiverse_place_app): serve / bots / load everywhere, the graphical client on desktop builds.
 if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
-    add_library(aiverse_place STATIC apps/place/PlaceProtocol.cpp apps/place/PlaceServer.cpp apps/place/PlaceClient.cpp apps/place/PlaceSim.cpp)
+    add_library(aiverse_place STATIC apps/place/PlaceProtocol.cpp apps/place/PlaceServer.cpp apps/place/PlaceClient.cpp apps/place/PlaceSim.cpp
+                apps/place/PlaceAdmission.cpp apps/place/PlaceLink.cpp)
     target_link_libraries(aiverse_place PUBLIC aiverse_net_replica AIVERSE::physics)
     target_include_directories(aiverse_place PUBLIC ${PROJECT_SOURCE_DIR})
     option(AIVERSE_BUILD_PLACE_CLIENT "Build the graphical client into aiverse_place" ${AIVERSE_BUILD_CLIENT})
@@ -1639,6 +1640,13 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
             target_compile_options(aiverse_place_tests PRIVATE -Wall -Wextra)
         endif()
         add_test(NAME place COMMAND aiverse_place_tests ${PROJECT_SOURCE_DIR}/examples/place/scene.json)
+        # Place hosting: tickets, gate, reconnect, suspend, WebSocket (agent-place-secure, docs/replica.md § Place hosting)
+        add_executable(aiverse_place_secure_tests tests/place/place_secure_tests.cpp)
+        target_link_libraries(aiverse_place_secure_tests PRIVATE aiverse_place)
+        if(NOT MSVC)
+            target_compile_options(aiverse_place_secure_tests PRIVATE -Wall -Wextra)
+        endif()
+        add_test(NAME place_secure COMMAND aiverse_place_secure_tests)
     endif()
 endif()
 
