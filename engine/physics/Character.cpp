@@ -43,7 +43,14 @@ bool collectPlanes(b3ShapeId shape, const b3PlaneResult* r, int n, void* c) {
     auto* x = static_cast<CollectCtx*>(c);
     if (!accept(shape, x->self)) return true;
     b3BodyId body = b3Shape_GetBody(shape);
-    for (int i = 0; i < n && x->planes->count < kMaxPlanes; ++i) x->planes->hit[x->planes->count++] = {r[i].plane, r[i].point, body};
+    const bool dynamic = b3Body_GetType(body) == b3_dynamicBody;
+    for (int i = 0; i < n && x->planes->count < kMaxPlanes; ++i) {
+        // Dynamic bodies have no contacts with the character proxy, so one can come to rest overlapping the
+        // capsule from above (a box dropped on a head). Its downward planes would press the character into
+        // the ground every step until it falls through: a character is never crushed by dynamic bodies.
+        if (dynamic && r[i].plane.normal.y < -0.3f) continue;
+        x->planes->hit[x->planes->count++] = {r[i].plane, r[i].point, body};
+    }
     return x->planes->count < kMaxPlanes;
 }
 bool castFilter(b3ShapeId shape, void* c) { return accept(shape, *static_cast<BodyHandle*>(c)); }

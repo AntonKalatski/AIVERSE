@@ -436,6 +436,24 @@ int main(int argc, char** argv) {
         require(std::abs(w.state.velocity.x - 2) < 0.05f, "jump inherits platform velocity " + fmt(w.state.velocity));
     });
 
+    test("a box dropped on a character's head does not press it through the ground", [] {
+        Scene s;
+        ground(s, 40);
+        Walker w;
+        w.proxy = s.createCharacter(w.params, {0, 0, 0});
+        settle(s, w);
+        // The proxy has no contacts with bodies: the box sinks into the capsule and rests on the ground there.
+        s.create(box({0, 3, 0}, {0.8f, 0.8f, 0.8f}));
+        for (int i = 0; i < 240; ++i) {
+            hostTick(s, {&w}, {});
+            require(w.state.position.y > -0.02f, "pressed into the ground at tick " + std::to_string(i) + ": " + fmt(w.state.position));
+        }
+        CharacterInput in;
+        in.moveZ = 1;
+        for (int i = 0; i < 60; ++i) hostTick(s, {&w}, in);
+        require(w.state.position.z < -2 && std::abs(w.state.position.y) < 0.02f, "walks out from under it " + fmt(w.state.position));
+    });
+
     test("character pushes dynamic boxes with a bounded impulse", [] {
         Scene s;
         ground(s);
