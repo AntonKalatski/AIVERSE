@@ -365,7 +365,7 @@ Corrections over 1 cm per reconcile (test `prediction_near_dynamic_obstacles`, S
 | Case | Static copy only (before) | Prediction world |
 |---|---|---|
 | (a) walker on open ground | 0 %, mean 2.6 mm | 0 %, mean 2.7 mm |
-| (b) 15 bots pushing piles | 16.7 %, mean 5.9 cm | 15.7-16.8 %, mean 2.5-3.0 cm (stand-ins only: 19 %, 4.4 cm) |
+| (b) 15 bots pushing piles | 16.7 %, mean 5.9 cm | 14-17 %, mean 2.5-3.0 cm (stand-ins only: 18-19 %, 4.2-4.4 cm) |
 | (c) rider on a 3 m/s platform | 70.5 %, mean 13 cm | 0 %, mean 2.1 mm, max 7 mm |
 | one bot pushing piles alone | | 1.7 %, mean 3.5 mm |
 | `load`, 16 bots | 16.9 %, mean 5.0 cm | 15.4 %, mean 2.9 cm |
