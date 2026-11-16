@@ -37,9 +37,17 @@ public:
         // image first (like the Game window): the screen overlays renderScene adds (bars, labels) stay on top of it
         vp_.image(ed.device(), avail.x, avail.y);
         // Diagnostic rendering is scoped to Scene, never leaked into the Game tab.
-        ed.renderer().setStudioDebugMode(studioDebugMode_);
+        auto& renderer = ed.renderer();
+        renderer.setStudioDebugMode(studioDebugMode_);
+        renderer.setModelInstancingEnabled(sceneInstancing_);
+        renderer.setModelCullingEnabled(sceneCulling_);
+        renderer.setInstanceLimit(uint32_t(sceneInstanceLimit_));
         ed.renderScene(vp_, ed.sceneCam, !ed.playing());
-        ed.renderer().setStudioDebugMode(0);
+        // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
+        renderer.setStudioDebugMode(0);
+        renderer.setModelInstancingEnabled(true);
+        renderer.setModelCullingEnabled(true);
+        renderer.setInstanceLimit(0);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
         if(ed.ws().project.isFps()) {
@@ -121,6 +129,27 @@ private:
                                                          i >= 2 ? "Диагностика моделей; terrain и callback renderers могут оставаться без раскраски" : "Обычный материал и освещение");
             }
             ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Batching##scene")) ImGui::OpenPopup("##scene_batching");
+        if (ImGui::BeginPopup("##scene_batching")) {
+            ImGui::TextUnformatted("Scene model batching");
+            ImGui::Separator();
+            ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
+            ImGui::Checkbox("Model culling", &sceneCulling_);
+            ImGui::SetNextItemWidth(180.0f);
+            ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
+                sceneInstanceLimit_ == 0 ? "Auto" : "%d");
+            ImGui::Separator();
+            ImGui::Text("Renderer draws (all passes): %u", ed.renderer().drawCalls());
+            const auto& profile = ed.renderer().profile();
+            ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
+            ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
+            if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
+            ImGui::Separator();
+            ImGui::TextDisabled("Static/model material merge is decided at upload.");
+            ImGui::TextWrapped("Use per-asset batching policy before upload; changing an uploaded model requires reload.");
+            ImGui::EndPopup();
         }
         ImGui::SameLine();
         if (ui::toolButton(ICON_EYE, "Отладочные gizmo")) ImGui::OpenPopup("##studio_gizmos");
@@ -605,6 +634,8 @@ private:
     Viewport vp_;
     bool looking_ = false, panning_ = false, dragging_ = false, painting_ = false, areaDrag_ = false;
     int studioDebugMode_ = 0;
+    bool sceneInstancing_ = true, sceneCulling_ = true;
+    int sceneInstanceLimit_ = 0;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;
