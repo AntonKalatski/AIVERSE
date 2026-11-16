@@ -112,6 +112,7 @@ void Module::settleRoyale(Simulation& sim) {
     }
     if(!outs.empty())if(auto e=reportOutTogether(cfg,run.standings,outs,now))feed.insert(feed.end(),e->begin(),e->end());
     for(const auto& e:feed){
+        run.feed.push_back(e);if(run.feed.size()>6)run.feed.erase(run.feed.begin());
         if(e.kind==KillFeedKind::Knocked||e.kind==KillFeedKind::Eliminated||e.kind==KillFeedKind::Revived)
             sim.emit({5,uint8_t(e.actor),{},{},e.subject|int64_t(uint8_t(e.kind))<<8,s.actors[size_t(e.subject-1)].pos});
         else sim.emit({5,0,{},{},e.subject|int64_t(uint8_t(e.kind))<<8,{}});
@@ -124,7 +125,8 @@ void Module::settleRoyale(Simulation& sim) {
 void io(Archive& a,RoyaleView& v){
     a(v.enabled);if(!v.enabled)return;
     a(v.stage,v.phase,v.divePhase,v.ticksLeft,v.alive,v.teamsIn,v.placement,v.kills,v.circle.center.x,v.circle.center.y,v.circle.radius,
-      v.target.center.x,v.target.center.y,v.target.radius,v.carrier,v.bombardment,v.bombArea.center.x,v.bombArea.center.y,v.bombArea.radius,v.crates);
+      v.target.center.x,v.target.center.y,v.target.radius,v.carrier,v.bombardment,v.bombArea.center.x,v.bombArea.center.y,v.bombArea.radius,v.crates,
+      v.feed,v.finished,v.doorOpen,v.outside,v.winner,v.teams);
 }
 RoyaleView Module::royaleView(Simulation& sim,uint8_t slot) const {
     RoyaleView v;const auto& run=state(sim).royale;if(!run.enabled||!slot||slot>run.lastAttacker.size())return v;
@@ -136,6 +138,8 @@ RoyaleView Module::royaleView(Simulation& sim,uint8_t slot) const {
     v.teamsIn=uint16_t(royaleTeamsIn(run.standings));
     const auto& own=run.standings.players.at(slot);v.kills=uint16_t(own.kills);v.placement=uint16_t(run.standings.teams.at(own.team).placement);
     v.bombardment=run.bombardment.stage==BombardmentStage::Warned||run.bombardment.stage==BombardmentStage::Active;v.bombArea=run.bombardment.area;
+    v.feed=run.feed;v.finished=run.standings.finished;v.winner=int32_t(run.standings.winner);v.teams=uint16_t(run.standings.teams.size());
+    v.outside=!insideCircle(v.circle,state(sim).actors[slot-1].pos);if(r.flight)v.doorOpen=insertionDoorOpen(*r.flight,run.flight,now);
     if(r.supplyDrops)for(const auto& f:run.drops.falling)if(v.crates.size()<8)v.crates.push_back(supplyDropPosition(*r.supplyDrops,f,now,groundBelow({f.point.x,1000_fx,f.point.y})));
     return v;
 }

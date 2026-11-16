@@ -102,12 +102,14 @@ struct RoyaleRun {
     lib::genre::SafeZoneState zone;lib::genre::BombardmentState bombardment;lib::genre::SupplyDropState drops;
     lib::genre::InsertionFlight flight;std::vector<lib::genre::SkydiverState> divers;lib::genre::RoyaleStandings standings;
     std::vector<uint8_t> lastAttacker,lastWeapon;
+    std::vector<lib::genre::KillFeedEvent> feed;   // the last 6 kill-feed lines for the HUD
     bool operator==(const RoyaleRun&)const=default;
 };
 // What one client needs to draw the battle royale (zone ring + timer, carrier, own phase, counts, hazards).
 struct RoyaleView {
     bool enabled=false;uint8_t stage=0,phase=0,divePhase=3;uint32_t ticksLeft=0;uint16_t alive=0,teamsIn=0,placement=0,kills=0;
     lib::genre::RoyaleCircle circle,target;Vec3 carrier{};bool bombardment=false;lib::genre::RoyaleCircle bombArea;std::vector<Vec3> crates;
+    std::vector<lib::genre::KillFeedEvent> feed;bool finished=false,doorOpen=false,outside=false;int32_t winner=0;uint16_t teams=0;
     bool operator==(const RoyaleView&)const=default;
 };
 void io(Archive&,RoyaleView&);

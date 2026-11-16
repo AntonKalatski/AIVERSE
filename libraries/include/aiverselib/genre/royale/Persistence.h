@@ -21,6 +21,7 @@ inline void io(Archive& a,SupplyDropState& s){a(s.dropped,s.lastTick,s.falling,s
 inline void io(Archive& a,InsertionFlight& s){a(s.start,s.end,s.startTick,s.durationTicks,s.initialized);}
 inline void io(Archive& a,SkydiverState& s){a(s.phase,s.position,s.velocity,s.phaseTick,s.lastTick,s.initialized);}
 inline void io(Archive& a,RoyaleCompetitor& c){a(c.team,c.life,c.kills,c.knocks,c.revives,c.outTick,c.damage,c.knockedBy,c.knockedWeapon);}
+inline void io(Archive& a,KillFeedEvent& e){a(e.kind,e.subject,e.actor,e.value,e.tick);}
 inline void io(Archive& a,RoyaleTeamStanding& t){a(t.placement,t.outTick);}
 inline void io(Archive& a,RoyaleStandings& s){a(s.players,s.teams,s.winner,s.started,s.finished,s.lastTick);}
 inline void io(Archive& a,RoyaleLobbyState& s){a(s.stage,s.opened,s.countdownFrom,s.lastTick,s.initialized);}

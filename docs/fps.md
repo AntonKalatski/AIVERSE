@@ -115,7 +115,11 @@ while skydiving. SimEvents: 5 = kill feed (`player` = actor, `value` = victim | 
 (`value` = phase | kind << 8, `pos` = target centre), 7 = supply drop (`value` = id | kind << 16, `pos` = point),
 8 = shell impact (`value` = damage). FPS save version 8 stores the run (versions 3, 6 and 7 still load for games
 without `fps.royale` / `fps.gear`); snapshot protocol 5 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
-The HUD (zone ring, minimap, kill feed, placement screen) is not drawn yet.
+The client (`apps/fps/RoyaleHud.h`) draws the zone wall near the viewer, landed crates, a minimap (current and next
+circle, bombardment, crates, carrier, own position and facing), the phase timer with players / teams / kills, jump /
+parachute hints, an outside-the-zone warning, the kill feed (`RoyaleView::feed`, the last six lines) and the result
+banner; strings are `fps.royale.*` in engine/assets/lang. Checked on a screenshot during the flight (Linux, Mesa
+software GL); the zone wall and the banner have not been looked at on screen yet.
 
 ## Typed vehicles (opt-in)
 

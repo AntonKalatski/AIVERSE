@@ -36,7 +36,7 @@ bool decodeSnapshot(const Bytes& b,Snapshot& out) {
         previous=actor.slot;own|=actor.slot==v.localSlot;v.actors.push_back(actor);
     }
     a(v.projectiles,v.loot,v.vehicles,v.match,v.round,v.royale,v.gear);
-    if(!a.ok()||v.projectiles.size()>128||v.loot.size()>128||v.vehicles.size()>32||v.royale.crates.size()>8||v.royale.divePhase>3||v.gear.slots.size()>lib::systems::kGearMaxSlots)return false;
+    if(!a.ok()||v.projectiles.size()>128||v.loot.size()>128||v.vehicles.size()>32||v.royale.crates.size()>8||v.royale.feed.size()>6||v.royale.divePhase>3||v.gear.slots.size()>lib::systems::kGearMaxSlots)return false;
     auto position=[](Vec3 p){return fxAbs(p.x)<=100000_fx&&fxAbs(p.y)<=100000_fx&&fxAbs(p.z)<=100000_fx;};
     for(const auto& p:v.projectiles)if(p.kind>4||p.weapon>=4||p.owner>200||p.piercedCount>8||!position(p.pos))return false;
     for(const auto& l:v.loot)if(!position(l.pos)||l.count<1||l.count>20)return false;

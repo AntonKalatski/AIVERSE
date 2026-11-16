@@ -29,6 +29,7 @@ void royaleIo(Archive& a,RoyaleRun& r) {
     io(a,r.zone);io(a,r.bombardment);io(a,r.drops);io(a,r.flight);
     uint32_t n=a.count(r.divers.size());if(n>256){a.fail();return;}if(!a.writing())r.divers.resize(n);for(auto& d:r.divers)io(a,d);
     io(a,r.standings);a(r.lastAttacker,r.lastWeapon);
+    uint32_t feed=a.count(r.feed.size());if(feed>6){a.fail();return;}if(!a.writing())r.feed.resize(feed);for(auto& e:r.feed)lib::genre::io(a,e);
 }
 }
 void ioVehicleRuns(Archive&,std::vector<VehicleRun>&);
