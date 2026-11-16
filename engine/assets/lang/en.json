@@ -561,13 +561,26 @@
 },
 "place": {
   "title": "AIVERSE Place: physics sandbox",
-  "connecting": "Connecting to the server...",
-  "disconnected": "Disconnected from the server",
   "world": "Players: {players}   Bodies: {bodies}",
-  "network": "RTT {rtt} ms   Snapshots {snapshots}/s   In {kb} KB/s",
+  "network": "RTT {rtt} ms (ping {ping} ms, incl. waiting for the server tick)   Snapshots {snapshots}/s   In {kb} KB/s",
   "prediction": "Prediction correction: last {last} mm, mean {mean} mm, {count} over 1 cm",
   "spawnDenied": "Box spawns refused by the server: {count}",
   "controls": "WASD move, mouse look, Space jump, Shift run, E push, F spawn a box, wheel zoom, Esc release the mouse",
-  "clickToPlay": "Click to play (Esc releases the mouse)"
+  "clickToPlay": "Click to play (Esc releases the mouse)",
+  "link.connecting": "Connecting to the server...",
+  "link.playing": "Connected",
+  "link.unstable": "Connection unstable: waiting for the server...",
+  "link.reconnecting": "Connection lost. Reconnecting... (attempt {attempt}, next in {seconds} s)",
+  "link.suspended": "Paused",
+  "link.rejected": "The server did not let you in: {reason}",
+  "link.replaced": "You joined from another window or device; this one has stopped",
+  "link.resumed": "Reconnected: your character was kept",
+  "reject.0": "unknown reason",
+  "reject.1": "the ticket is invalid or expired",
+  "reject.2": "the server needs a ticket",
+  "reject.3": "the ticket is for another server",
+  "reject.4": "too many connection attempts",
+  "reject.5": "incompatible client",
+  "reject.6": "no answer in time"
 }
 }
