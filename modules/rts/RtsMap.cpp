@@ -216,6 +216,7 @@ bool MapGrid::canStep(int x0, int y0, int x1, int y1, uint8_t layer) const {
 
 void MapGrid::block(int x0, int y0, int fw, int fh, int delta) {
     ++flowStamp_;   // flow fields revalidate (RtsFlowField.cpp)
+    navDirty(x0 - 1, y0 - 1, x0 + fw, y0 + fh);   // the cells and their links to the ring around them
     for (int y = y0; y < y0 + fh; ++y) for (int x = x0; x < x0 + fw; ++x) if (inside(x, y)) flowTouch(index(x, y));
     for (int y = y0; y < y0 + fh; ++y)
         for (int x = x0; x < x0 + fw; ++x)
@@ -237,6 +238,7 @@ void MapGrid::block(int x0, int y0, int fw, int fh, int delta) {
 
 void MapGrid::cellChanged(int x, int y) {
     clearanceDirty = true;
+    navDirty(x - 1, y - 1, x + 1, y + 1);
     ++flowStamp_;
     if (inside(x, y)) flowTouch(index(x, y));
     if (surf && inside(x, y)) markSphereDirty(index(x, y));
@@ -359,6 +361,13 @@ bool MapGrid::findPath(Vec3 from, Vec3 to, uint8_t layer, std::vector<Vec3>& out
     }
     if (sx == gx && sy == gy) { out.push_back(to); return true; }
     if (goalOk && lineWalkable(sx, sy, gx, gy, layer)) { out.push_back(to); return true; }
+
+    // navigation mesh (opt-in): any-angle path through merged rectangles; what it can't answer goes to the grid search
+    if (navMesh && goalOk && !pathSoft_) {
+        if (navPath(from, to, sx, sy, layer, maxNodes, clear, out)) { ++navStats[0]; return true; }
+        ++navStats[1];
+        out.clear();
+    }
 
     std::vector<int> cells;
     bool found = false, routed = false;
@@ -502,6 +511,61 @@ void SpatialHash::insert(Entity e, Vec3 p) {
     auto& b = buckets[size_t(y * w + x)];
     if (b.empty()) used.push_back(y * w + x);
     b.push_back(e);
+}
+
+} // namespace aiverse::game
+
+// ---- navigation mesh (engine/nav) over the grid of one path layer ----
+namespace aiverse::game {
+namespace {
+struct GridNavSource final : nav::Source {
+    const MapGrid& g;
+    uint8_t layer;
+    GridNavSource(const MapGrid& grid, uint8_t l) : g(grid), layer(l) {}
+    void spans(int32_t x, int32_t z, std::vector<nav::Span>& out) const override {
+        if (g.passable(x, z, layer)) out.push_back({});
+    }
+    bool link(int32_t x0, int32_t z0, uint32_t, int32_t x1, int32_t z1, uint32_t) const override {
+        return g.canStep(x0, z0, x1, z1, layer) && g.canStep(x1, z1, x0, z0, layer);   // cliffs / ramps, both ways
+    }
+};
+}
+
+nav::Mesh& MapGrid::navFor(uint8_t layer) {
+    NavLayer* n = nullptr;
+    for (auto& l : nav_) if (l.layer == layer) n = &l;
+    const GridNavSource src(*this, layer);
+    if (!n) {
+        nav_.push_back({layer, {}});
+        n = &nav_.back();
+        nav::Config c;
+        c.width = w; c.depth = h;
+        c.tile = 32;
+        n->mesh.build(src, c);
+    } else if (n->mesh.dirty()) n->mesh.refresh(src);
+    return n->mesh;
+}
+
+const nav::Mesh* MapGrid::navMeshFor(uint8_t layer) {
+    if (!navMesh || surf || w <= 0 || h <= 0) return nullptr;
+    return &navFor(layer);
+}
+
+bool MapGrid::navPath(Vec3 from, Vec3 to, int sx, int sy, uint8_t layer, int maxNodes, int clear, std::vector<Vec3>& out) {
+    const nav::Mesh& m = navFor(layer);
+    nav::Query q;
+    q.margin = Fixed::fromRatio(1, 2) * int64_t(1 + clear);   // keep bodies off wall corners (cells of clearance)
+    q.yTolerance = Fixed::fromInt(1 << 20);                    // one surface per cell: heights don't matter
+    q.maxVisits = size_t(std::max(1, maxNodes));
+    Vec3 a = cellX(from.x) == sx && cellY(from.z) == sy ? from : cellCenter(sx, sy);   // start moved off a blocked cell
+    a.y = Fixed{};
+    Vec3 b = to;
+    b.y = Fixed{};
+    std::vector<Vec3> pts;
+    if (!m.findPath(a, b, q, pts)) return false;
+    for (size_t i = 1; i + 1 < pts.size(); ++i) out.push_back({pts[i].x, Fixed{}, pts[i].z});
+    out.push_back(to);
+    return true;
 }
 
 } // namespace aiverse::game

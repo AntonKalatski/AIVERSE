@@ -1,4 +1,4 @@
-# Pathfinding — A*, HPA*, flow fields
+# Pathfinding — A*, HPA*, navigation mesh, flow fields
 
 All pathing is deterministic integer code in `modules/rts` (no floats, ties by cell index / entity index). Costs are
 10 per straight and 14 per diagonal step; a diagonal is legal only when both orthogonal detours are (no corner cutting);
@@ -12,9 +12,30 @@ face seams and cube corners (7 neighbours) are ordinary steps.
 | A* | `MapGrid::astarCells` (flat), `astarSphere` (planets) | every short path; long paths on small maps; refinement of HPA* routes |
 | HPA* | `RtsHpa.cpp` (flat, maps >= 256x256), `RtsHpaSphere.cpp` (planet bodies >= 65,536 cells) | one unit's long trip: entrance graph of 16x16 clusters, then A* between consecutive waypoints |
 | flow fields | `RtsFlowField.cpp` | many units to one goal: group orders >= `movement.flowField.minGroup`, map / lane waves with `waves: true` |
+| navigation mesh | `engine/nav/NavMesh.h` (genre-independent), `MapGrid::navPath` | opt-in `movement.pathfinding: "navmesh"`: one unit's path on flat maps, any angle (docs/navmesh.md) |
 
 `MapGrid::findPath` picks A* or HPA* (string pulling on top). Flow fields are opt-in per game or map
 (docs/game-format.md "Movement and bodies"); without `movement.flowField` nothing changes.
+
+## Navigation mesh (`movement.pathfinding: "navmesh"`)
+
+`MapGrid::findPath` first asks the layer's navigation mesh (flat maps, goal passable, not a surround-allies search):
+
+- **Source.** `GridNavSource` in `RtsMap.cpp`: a cell is a span when `passable(x, y, layer)`; two orthogonal cells link
+  when `canStep` allows both directions (cliff levels, ramps, slope classes). The mesh itself (`engine/nav`) knows no
+  RTS types - the FPS bots feed the same mesh from AABB collision.
+- **Mesh.** Linked cells merge greedily into rectangles inside 32x32 tiles; portals between rectangles mark wall
+  corners. One mesh per path layer, built at match start (`prepareNavMesh`), derived like HPA* (never hashed).
+- **Updates.** `block` / `cellChanged` mark the touched tiles (plus a one-cell ring) dirty; the next query rebuilds only
+  those tiles and the portals around them. The result equals a fresh build (tested), so saves (`invalidatePathing`)
+  and incremental play agree.
+- **Search.** A* over rectangles (crossing point of each portal = where the straight line to the goal meets it,
+  clamped), then a funnel; corners keep `0.5 * (1 + clearance)` from wall corners along portals and step off walls
+  that run along a portal line. `maxNodes` bounds the rectangles expanded.
+- **Fallback.** Start or goal off the mesh, no connection within the budget, `soft` paths: the grid search runs as
+  before, so unreachable goals still end at the closest reachable cell. `MapGrid::navStats` counts answers / fallbacks.
+- **Measured** (`engine/nav` alone, VM, random obstacles): 256x256 build 4 ms, 1024x1024 build 86 ms, rebuild after a
+  3x3 structure 0.3 ms, path query 0.05 ms (256²) / 0.7 ms (1024²); paths ~7% shorter than octile grid paths.
 
 ## Flow fields
 
