@@ -19,7 +19,7 @@ namespace aiverse::lib::runtime {
 struct DenseKeys {
     std::string prefix, suffix;
     std::vector<std::string> keys;
-    explicit DenseKeys(std::string_view p, std::string_view s = {}) : prefix(p), suffix(s) {}
+    DenseKeys(std::string_view p, std::string_view s = {}) : prefix(p), suffix(s) {}
     const std::string& operator()(std::size_t id) {
         if (id >= keys.size()) keys.resize(id + 1);
         auto& k = keys[id];
@@ -34,7 +34,7 @@ struct SparseKeys {
     std::string prefix, suffix;
     std::size_t limit = 65536;
     std::unordered_map<std::uint64_t, std::string> keys;
-    explicit SparseKeys(std::string_view p, std::string_view s = {}, std::size_t cap = 65536) : prefix(p), suffix(s), limit(cap) {}
+    SparseKeys(std::string_view p, std::string_view s = {}, std::size_t cap = 65536) : prefix(p), suffix(s), limit(cap) {}
     const std::string& operator()(std::uint64_t id) {
         if (keys.size() > limit) keys.clear();
         auto [it, fresh] = keys.try_emplace(id);
