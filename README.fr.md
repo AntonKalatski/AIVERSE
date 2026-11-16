@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -83,7 +83,7 @@ travailler sur le jeu.
 | **Le multijoueur, c’est des désynchronisations sans fin.** Un seul `float` suffit pour qu’une partie entre un iPhone et un Android diverge. | La simulation est identique au bit près partout : virgule fixe au lieu de flottants, générateur aléatoire propre, sommes de contrôle. La CI compare les parties sur Linux x64/ARM64, Windows et macOS à chaque push. Seules les commandes transitent sur le réseau ; il y a un lockstep avec rollback et un serveur avec matchmaking et verdict par replay. |
 | **Les GPU mobiles sont faibles, mais le jeu doit être beau.** | Chaque fonction coûteuse — ombres, particules, terrain, post-traitement — a des niveaux de qualité et s’adapte au GPU, des vieux Mali et Adreno jusqu’à Apple Silicon. |
 | **Sortir sur toutes les plateformes est un projet à part entière.** Signatures, icônes, SDK des stores et de la publicité. | `aiversebuild` produit en une commande un .app, un projet Xcode, Gradle/APK, web et .exe. Icônes et écrans de démarrage sont générés. Plugins pour l’App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin et d’autres — un build n’embarque que ceux que le jeu choisit. |
-| **Chaque nouveau jeu repart de zéro.** | Plus de 30 modèles jouables, des kits de genre avec listes de recette, 185 compétences pour les agents. Un nouveau jeu part d’un jeu qui fonctionne déjà. |
+| **Chaque nouveau jeu repart de zéro.** | Plus de 30 modèles jouables, des kits de genre avec listes de recette, 195 compétences pour les agents. Un nouveau jeu part d’un jeu qui fonctionne déjà. |
 | **La méta et le LiveOps sont réécrits dans chaque projet.** | `aiverse::meta` : boutique, monnaies, quêtes, passes, récompenses quotidiennes, énergie, clans, tournois, coffres avec garantie — configurés en JSON. |
 
 ---
@@ -207,7 +207,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 <td width="50%" valign="top">
 
 **Graphismes et audio**
-- RHI maison : Metal, GLES3 / WebGL2, GL 3.3
+- RHI maison : Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, en option)
 - PBR, glTF/OBJ, animation squelettique et procédurale, câbles procéduraux, rendu des entités en hiérarchie
 - Ombres, lumières dynamiques, nuit, post-traitement, Shader Graph
 - Particules avec les modules du ParticleSystem d’Unity et importateur depuis Unity
@@ -223,7 +223,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 - Éditeur à fenêtres ancrables façon Unity : scène, inspecteur, terrain, effets, éclairage, UI, partie de test et simulateur d’appareils
 - `aiversemcp` — serveur MCP pour les agents
 - Assistant **Créer un jeu**
-- 185 compétences pour les agents et kits de genre avec listes de recette
+- 195 compétences pour les agents et kits de genre avec listes de recette
 - Importateurs de ressources de jeux classiques depuis votre propre copie
 
 </td>
@@ -281,7 +281,7 @@ carte hivernale, vérifie l’équilibrage de trois factions avec des bots et co
 
 Le moteur est en développement actif. Ce qui a été vérifié :
 
-- ✅ **Linux** : client, éditeur, tests, parties entre bots ; sommes de contrôle identiques sur x64 et ARM64
+- ✅ **Linux** : client, éditeur, tests, parties entre bots ; sommes de contrôle identiques sur x64 et ARM64 ; le client sur Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal** : compilation, tests, jeu ; `aiversebuild` → .app et un projet iOS avec build pour le simulateur
 - ✅ **Web** : une partie tourne dans Chromium headless (WebGL2)
 - ✅ **Windows** : .exe compilé en croisé avec MinGW, exécuté sous Wine

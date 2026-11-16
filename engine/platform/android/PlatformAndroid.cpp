@@ -2,7 +2,12 @@
 // Content is packed into the APK under assets/content and read through AAssetManager.
 #include "../PlatformCommon.h"
 #include "../Plugins.h"
+#include "../GraphicsSettings.h"
 #include "../../gfx/Gfx.h"
+#if defined(AIVERSE_WITH_VULKAN)
+#include "../../gfx/vulkan/Vulkan.h"
+#endif
+#include <android/native_window.h>
 
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -33,6 +38,7 @@ EGLSurface g_surf = EGL_NO_SURFACE;
 EGLConfig g_cfg = nullptr;
 std::unique_ptr<gfx::Device> g_device;
 bool g_inited = false;
+bool g_vulkan = false;   // g_device is the Vulkan backend: no EGL, the swapchain follows the native window
 
 // ---- on-screen keyboard (AiverseActivity.java). Java calls arrive on the UI thread; they are queued
 // and dispatched on the game thread, which owns the UI and the sim.
@@ -125,6 +131,27 @@ void onCmd(android_app* app, int32_t cmd) {
     auto& S = state();
     switch (cmd) {
     case APP_CMD_INIT_WINDOW:
+#if defined(AIVERSE_WITH_VULKAN)
+        if (app->window && (g_vulkan || (!g_device && wantVulkan(S.cfg)))) {   // GraphicsSettings.h
+            gfx::VulkanWindow vw;
+            vw.kind = gfx::VulkanWindow::Kind::Android;
+            vw.window = uint64_t(reinterpret_cast<uintptr_t>(app->window));
+            if (g_device) gfx::vulkanSetWindow(*g_device, &vw);
+            else {
+                std::string err;
+                g_device = gfx::createVulkanDevice(vw, &err);
+                if (g_device) { g_vulkan = true; if (S.cb.init) S.cb.init(*g_device); }
+                else __android_log_print(ANDROID_LOG_WARN, "AIVERSE", "[gfx] %s, using OpenGL ES", err.c_str());
+            }
+            if (g_vulkan) {
+                S.fbW = ANativeWindow_getWidth(app->window); S.fbH = ANativeWindow_getHeight(app->window);
+                S.winW = float(S.fbW) / S.scale; S.winH = float(S.fbH) / S.scale;
+                g_inited = true;
+                Event e; e.type = EventType::Resized; detail::dispatch(e);
+                break;
+            }
+        }
+#endif
         if (app->window && initEGL()) {
             if (!g_device) {
                 g_device = gfx::createGLDevice(gfx::Backend::GLES3);
@@ -134,7 +161,11 @@ void onCmd(android_app* app, int32_t cmd) {
             Event e; e.type = EventType::Resized; detail::dispatch(e);
         }
         break;
-    case APP_CMD_TERM_WINDOW: termSurface(); g_inited = false; g_clock.reset(); break;
+    case APP_CMD_TERM_WINDOW:
+#if defined(AIVERSE_WITH_VULKAN)
+        if (g_vulkan && g_device) gfx::vulkanSetWindow(*g_device, nullptr);
+#endif
+        termSurface(); g_inited = false; g_clock.reset(); break;
     case APP_CMD_GAINED_FOCUS: { Event e; e.type = EventType::FocusGained; detail::dispatch(e); break; }
     case APP_CMD_LOST_FOCUS: { Event e; e.type = EventType::FocusLost; detail::dispatch(e); break; }
     case APP_CMD_DESTROY: S.quit = true; break;
@@ -473,6 +504,8 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
     int32_t density = AConfiguration_getDensity(conf);
     AConfiguration_delete(conf);
     S.scale = density > 0 ? float(density) / 160.0f : 1.0f;
+    // game data: only the RHI backend matters here (game.json "graphics"); the window is the whole screen
+    if (S.cb.configure) { AppConfig c = S.cfg; S.cb.configure(c); S.cfg.graphics = c.graphics; }
 
     g_app->onAppCmd = onCmd;
     g_app->onInputEvent = onInput;
@@ -487,8 +520,11 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
         if (g_device) drainTextQueue();
         if (!g_inited || S.quit) continue;
         EGLint w = 0, h = 0;
-        eglQuerySurface(g_dpy, g_surf, EGL_WIDTH, &w);
-        eglQuerySurface(g_dpy, g_surf, EGL_HEIGHT, &h);
+        if (g_vulkan) { w = ANativeWindow_getWidth(g_app->window); h = ANativeWindow_getHeight(g_app->window); }
+        else {
+            eglQuerySurface(g_dpy, g_surf, EGL_WIDTH, &w);
+            eglQuerySurface(g_dpy, g_surf, EGL_HEIGHT, &h);
+        }
         if (w != S.fbW || h != S.fbH) {
             S.fbW = w; S.fbH = h; S.winW = float(w) / S.scale; S.winH = float(h) / S.scale;
             Event e; e.type = EventType::Resized; detail::dispatch(e);
@@ -497,7 +533,7 @@ int run(const AppConfig& cfg, AppCallbacks cb) {
         g_device->beginFrame(S.fbW, S.fbH);
         if (S.cb.frame) S.cb.frame(*g_device, dt);
         g_device->endFrame();
-        eglSwapBuffers(g_dpy, g_surf);
+        if (!g_vulkan) eglSwapBuffers(g_dpy, g_surf);
     }
     if (S.cb.shutdown) S.cb.shutdown();
     g_device.reset();

@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -81,7 +81,7 @@ you. AIVERSE ships the mechanics themselves — and makes the game something an 
 | **Multiplayer means endless desyncs.** One `float` is enough for a match on an iPhone and an Android phone to drift apart. | The simulation is bit-identical everywhere: fixed-point instead of floats, its own RNG, checksums. CI compares matches across Linux x64/ARM64, Windows and macOS on every push. Only commands go over the network; there is rollback lockstep and a server with matchmaking and replay-based verdicts. |
 | **Mobile GPUs are weak, yet the game must look good.** | Every expensive feature — shadows, particles, terrain, post-effects — has quality tiers and adapts to the GPU, from old Mali and Adreno to Apple Silicon. |
 | **Shipping on every platform is a project of its own.** Signing, icons, store and ads SDKs. | `aiversebuild` makes an .app, an Xcode project, Gradle/APK, web and .exe in one command. Icons and splash screens are generated. Plugins for the App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin and more — a build carries only the ones the game selects. |
-| **Every new game starts from zero.** | 30+ playable templates, genre kits with acceptance checklists, 185 skills for agents. A new game starts from a working one. |
+| **Every new game starts from zero.** | 30+ playable templates, genre kits with acceptance checklists, 195 skills for agents. A new game starts from a working one. |
 | **Meta and LiveOps get rewritten in every project.** | `aiverse::meta`: shop, currencies, quests, passes, daily rewards, energy, clans, tournaments, chests with pity — configured in JSON. |
 
 ---
@@ -204,7 +204,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 <td width="50%" valign="top">
 
 **Graphics and audio**
-- Own RHI: Metal, GLES3 / WebGL2, GL 3.3
+- Own RHI: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opt-in)
 - PBR, glTF/OBJ, skeletal and procedural animation, procedural cables, parented entity rendering
 - Shadows, dynamic lights, night, post-effects, Shader Graph
 - Particles with Unity ParticleSystem modules and an importer from Unity
@@ -220,7 +220,7 @@ Every template is a fully playable game with bots. Open it in the editor and sta
 - Unity-style docking editor: scene, inspector, terrain, effects, lighting, UI, play test and device simulator
 - `aiversemcp` — MCP server for agents
 - **Make a game** wizard
-- 185 skills for agents and genre kits with acceptance checklists
+- 195 skills for agents and genre kits with acceptance checklists
 - Importers for assets of classic games from your own copy
 
 </td>
@@ -278,7 +278,7 @@ the balance of three factions with bots and build a web version."*
 
 The engine is under active development. What has been verified:
 
-- ✅ **Linux**: client, editor, tests, bot matches; identical checksums on x64 and ARM64
+- ✅ **Linux**: client, editor, tests, bot matches; identical checksums on x64 and ARM64; the client on Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal**: build, tests, game; `aiversebuild` → .app and an iOS project with a simulator build
 - ✅ **Web**: a match runs in headless Chromium (WebGL2)
 - ✅ **Windows**: .exe cross-built with MinGW, run under Wine

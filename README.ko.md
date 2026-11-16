@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -79,7 +79,7 @@
 | **멀티플레이는 끝없는 동기화 오류입니다.** `float` 하나만으로 iPhone과 Android의 경기가 어긋나기 시작합니다. | 시뮬레이션은 어디서나 비트 단위로 동일합니다. 부동소수점 대신 고정소수점, 자체 난수 생성기, 체크섬. CI가 푸시할 때마다 Linux x64/ARM64, Windows, macOS의 경기를 비교합니다. 네트워크로는 명령만 전송되며, 롤백 락스텝과 매치메이킹 및 리플레이 판정을 갖춘 서버가 있습니다. |
 | **모바일 GPU는 약하지만 게임은 아름다워야 합니다.** | 그림자, 파티클, 지형, 포스트 이펙트 등 비용이 큰 모든 기능에는 품질 단계가 있으며, 오래된 Mali와 Adreno부터 Apple Silicon까지 GPU에 맞춰 자동 조정됩니다. |
 | **모든 플랫폼 출시는 그 자체로 하나의 프로젝트입니다.** 서명, 아이콘, 스토어와 광고 SDK. | `aiversebuild` 명령 하나로 .app, Xcode 프로젝트, Gradle/APK, 웹, .exe를 만듭니다. 아이콘과 스플래시 화면은 자동 생성됩니다. App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin 등의 플러그인이 있으며, 빌드에는 게임이 선택한 것만 들어갑니다. |
-| **새 게임은 매번 처음부터 시작합니다.** | 30개 이상의 플레이 가능한 템플릿, 인수 체크리스트가 포함된 장르 키트, 에이전트용 스킬 185개. 새 게임은 이미 돌아가는 게임에서 출발합니다. |
+| **새 게임은 매번 처음부터 시작합니다.** | 30개 이상의 플레이 가능한 템플릿, 인수 체크리스트가 포함된 장르 키트, 에이전트용 스킬 195개. 새 게임은 이미 돌아가는 게임에서 출발합니다. |
 | **메타와 LiveOps는 프로젝트마다 다시 작성됩니다.** | `aiverse::meta`: 상점, 재화, 퀘스트, 패스, 일일 보상, 에너지, 클랜, 토너먼트, 천장이 있는 상자 — JSON으로 설정합니다. |
 
 ---
@@ -201,7 +201,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 <td width="50%" valign="top">
 
 **그래픽과 사운드**
-- 자체 RHI: Metal, GLES3 / WebGL2, GL 3.3
+- 자체 RHI: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, 선택 사항)
 - PBR, glTF/OBJ, 스켈레탈 및 절차적 애니메이션, 절차적 케이블, 부모·자식 엔티티 렌더링
 - 그림자, 동적 조명, 밤, 포스트 이펙트, Shader Graph
 - Unity ParticleSystem 모듈을 지원하는 파티클과 Unity 임포터
@@ -217,7 +217,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 - Unity 스타일 도킹 에디터: 씬, 인스펙터, 지형, 이펙트, 조명, UI, 테스트 플레이, 기기 시뮬레이터
 - `aiversemcp` — 에이전트용 MCP 서버
 - **"게임 만들기"** 마법사
-- 에이전트용 스킬 185개와 인수 체크리스트가 있는 장르 키트
+- 에이전트용 스킬 195개와 인수 체크리스트가 있는 장르 키트
 - 직접 소유한 사본에서 고전 게임 에셋을 가져오는 임포터
 
 </td>
@@ -275,7 +275,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 
 엔진은 활발히 개발 중입니다. 검증된 항목:
 
-- ✅ **Linux**: 클라이언트, 에디터, 테스트, 봇 대전. x64와 ARM64에서 체크섬 일치
+- ✅ **Linux**: 클라이언트, 에디터, 테스트, 봇 대전. x64와 ARM64에서 체크섬 일치. 클라이언트는 Vulkan(Mesa lavapipe)에서도 동작
 - ✅ **macOS / Metal**: 빌드, 테스트, 게임. `aiversebuild` → .app 및 시뮬레이터 빌드가 포함된 iOS 프로젝트
 - ✅ **웹**: 헤드리스 Chromium(WebGL2)에서 경기 실행
 - ✅ **Windows**: MinGW로 크로스 빌드한 .exe를 Wine에서 실행

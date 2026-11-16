@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -78,7 +78,7 @@
 | **多人游戏意味着无尽的不同步。** 一个 `float` 就足以让 iPhone 和 Android 上的对局分道扬镳。 | 模拟在所有平台上逐位一致：用定点数代替浮点、自有随机数生成器、校验和。CI 在每次推送时比对 Linux x64/ARM64、Windows 和 macOS 上的对局。网络上只传输指令；支持带回滚的锁步，以及带匹配和录像裁决的服务器。 |
 | **移动端 GPU 很弱，但游戏必须好看。** | 每个高开销功能——阴影、粒子、地形、后处理——都有画质等级并自动适配 GPU，从老旧的 Mali、Adreno 到 Apple Silicon。 |
 | **多平台发布本身就是一个项目。** 签名、图标、商店和广告 SDK。 | `aiversebuild` 一条命令生成 .app、Xcode 项目、Gradle/APK、Web 和 .exe。图标和启动画面自动生成。提供 App Store、Google Play、RuStore、Yandex Games、Steam、AdMob、AppLovin 等插件——构建中只包含游戏选用的那些。 |
-| **每款新游戏都从零开始。** | 30+ 个可玩模板、带验收清单的类型套件、185 个智能体技能。新游戏从一个能运行的游戏开始。 |
+| **每款新游戏都从零开始。** | 30+ 个可玩模板、带验收清单的类型套件、195 个智能体技能。新游戏从一个能运行的游戏开始。 |
 | **元游戏和 LiveOps 在每个项目里都要重写。** | `aiverse::meta`：商店、货币、任务、通行证、每日奖励、体力、公会、锦标赛、带保底的宝箱——用 JSON 配置。 |
 
 ---
@@ -199,7 +199,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 <td width="50%" valign="top">
 
 **画面与音频**
-- 自研 RHI：Metal、GLES3 / WebGL2、GL 3.3
+- 自研 RHI：Metal、GLES3 / WebGL2、GL 3.3、Vulkan（Windows / Linux / Android，可选）
 - PBR、glTF/OBJ、骨骼与程序化动画、程序化线缆、父子实体渲染
 - 阴影、动态光源、夜晚、后处理、Shader Graph
 - 支持 Unity ParticleSystem 模块的粒子系统及 Unity 导入器
@@ -215,7 +215,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 - Unity 风格的可停靠编辑器：场景、检视器、地形、特效、光照、UI、试玩和设备模拟器
 - `aiversemcp`——面向智能体的 MCP 服务器
 - **“制作游戏”**向导
-- 185 个智能体技能和带验收清单的类型套件
+- 195 个智能体技能和带验收清单的类型套件
 - 从你自己的正版副本导入经典游戏资源
 
 </td>
@@ -272,7 +272,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 
 引擎正在积极开发中。已验证：
 
-- ✅ **Linux**：客户端、编辑器、测试、机器人对战；x64 和 ARM64 上校验和一致
+- ✅ **Linux**：客户端、编辑器、测试、机器人对战；x64 和 ARM64 上校验和一致；客户端也可在 Vulkan（Mesa lavapipe）上运行
 - ✅ **macOS / Metal**：构建、测试、游戏；`aiversebuild` → .app 和可在模拟器构建的 iOS 项目
 - ✅ **Web**：对局可在无头 Chromium（WebGL2）中运行
 - ✅ **Windows**：通过 MinGW 交叉编译的 .exe，在 Wine 下运行

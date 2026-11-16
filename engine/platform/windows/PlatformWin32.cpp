@@ -1,10 +1,15 @@
 // Windows: Win32 window + WGL OpenGL 3.3 core (GL backend). A D3D11 backend can replace WGL later
 // without touching anything above the RHI.
 #include "../PlatformCommon.h"
+#include "../GraphicsSettings.h"
 #include "../../gfx/Gfx.h"
+#if defined(AIVERSE_WITH_VULKAN)
+#include "../../gfx/vulkan/Vulkan.h"
+#endif
 #include "../../gfx/gl/GLApi.h"
 
 #include <shellapi.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -298,12 +303,25 @@ int run(const AppConfig& cfgIn, AppCallbacks cb) {
     g_hwnd = CreateWindowExW(0, wc.lpszClassName, widen(cfg.title).c_str(), style, CW_USEDEFAULT, CW_USEDEFAULT,
                              r.right - r.left, r.bottom - r.top, nullptr, nullptr, inst, nullptr);
     g_hdc = GetDC(g_hwnd);
-    if (!createGLContext()) { MessageBoxW(nullptr, L"OpenGL 3.3 is required", L"AIVERSE", MB_ICONERROR); return 1; }
+    std::unique_ptr<gfx::Device> device;
+#if defined(AIVERSE_WITH_VULKAN)
+    if (wantVulkan(cfg)) {   // GraphicsSettings.h; GL when the machine has no Vulkan
+        gfx::VulkanWindow vw;
+        vw.kind = gfx::VulkanWindow::Kind::Win32;
+        vw.display = inst;
+        vw.window = uint64_t(reinterpret_cast<uintptr_t>(g_hwnd));
+        std::string err;
+        device = gfx::createVulkanDevice(vw, &err);
+        if (!device) std::fprintf(stderr, "[gfx] %s, using OpenGL\n", err.c_str());
+    }
+#endif
+    const bool vulkan = device != nullptr;
+    if (!vulkan && !createGLContext()) { MessageBoxW(nullptr, L"OpenGL 3.3 is required", L"AIVERSE", MB_ICONERROR); return 1; }
     ShowWindow(g_hwnd, cfg.windowMode == AppConfig::WindowMode::Maximized && cfg.resizable ? SW_SHOWMAXIMIZED : SW_SHOW);
     if (cfg.windowMode == AppConfig::WindowMode::Fullscreen) detail::applyFullscreen(true);
     updateSize();
 
-    auto device = gfx::createGLDevice(gfx::Backend::GL33);
+    if (!vulkan) device = gfx::createGLDevice(gfx::Backend::GL33);
     if (S.cb.init) S.cb.init(*device);
     // CI hooks (same as Linux): AIVERSE_SCREENSHOT=out.ppm AIVERSE_EXIT_AFTER_FRAMES=N
     const detail::CaptureRequest capture = detail::captureRequestFromEnv();
@@ -318,23 +336,31 @@ int run(const AppConfig& cfgIn, AppCallbacks cb) {
         if (S.quit) break;
         if (IsIconic(g_hwnd) || S.fbW <= 0 || S.fbH <= 0) { Sleep(16); clock.reset(); continue; }
         double dt = clock.tick(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (vulkan && capture.active() && frameNo + 1 >= capture.frames && !capture.path.empty()) {
+            const std::string path = capture.path;   // Vulkan: read back inside endFrame (top-down rows)
+            device->captureNextFrame([path](int w, int h, std::vector<uint8_t> px) {
+                const size_t row = size_t(w) * 4;
+                std::vector<uint8_t> up(px.size());
+                for (int y = 0; y < h; ++y) std::copy_n(px.data() + size_t(h - 1 - y) * row, row, up.data() + size_t(y) * row);
+                detail::writePPM(path, w, h, up.data());
+            });
+        }
         device->beginFrame(S.fbW, S.fbH);
         if (S.cb.frame) S.cb.frame(*device, dt);
         device->endFrame();
         if (capture.active() && ++frameNo >= capture.frames) {
-            if (!capture.path.empty()) {
+            if (!capture.path.empty() && !vulkan) {
                 std::vector<unsigned char> px(size_t(S.fbW) * size_t(S.fbH) * 4);
                 glReadPixels(0, 0, S.fbW, S.fbH, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
                 detail::writePPM(capture.path, S.fbW, S.fbH, px.data());
             }
             S.quit = true;
         }
-        SwapBuffers(g_hdc);
+        if (!vulkan) SwapBuffers(g_hdc);
     }
     if (S.cb.shutdown) S.cb.shutdown();
     device.reset();
-    wglMakeCurrent(nullptr, nullptr);
-    wglDeleteContext(g_rc);
+    if (!vulkan) { wglMakeCurrent(nullptr, nullptr); wglDeleteContext(g_rc); }
     ReleaseDC(g_hwnd, g_hdc);
     DestroyWindow(g_hwnd);
     return 0;

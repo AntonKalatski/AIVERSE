@@ -468,6 +468,28 @@ else()
     list(APPEND AIVERSE_RUNTIME_SRC engine/platform/linux/PlatformLinux.cpp engine/gfx/gl/GfxGL.cpp)
 endif()
 
+# Vulkan RHI backend next to GL (Windows, Linux, Android): opt-in at run time (AIVERSE_GFX=vulkan, --gfx vulkan,
+# game.json "graphics"), GL stays the default and the fallback. The loader is opened at run time; shaders are
+# the engine's GLSL compiled to SPIR-V with the vendored glslang (third_party/glslang). docs/vulkan.md
+set(_aiverse_vulkan_default OFF)
+if(AIVERSE_PLATFORM MATCHES "^(windows|linux|android)$")
+    set(_aiverse_vulkan_default ON)
+endif()
+option(AIVERSE_VULKAN "Build the Vulkan RHI backend (Windows, Linux, Android)" ${_aiverse_vulkan_default})
+if(AIVERSE_VULKAN)
+    add_subdirectory(third_party/glslang)
+    add_library(aiverse_gfx_vulkan STATIC engine/gfx/vulkan/VkApi.cpp engine/gfx/vulkan/VkShaderCompiler.cpp engine/gfx/vulkan/VkSurface.cpp
+        engine/gfx/vulkan/GfxVulkan.cpp engine/gfx/vulkan/VkResources.cpp engine/gfx/vulkan/VkDraw.cpp)
+    target_include_directories(aiverse_gfx_vulkan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan/include)
+    target_compile_definitions(aiverse_gfx_vulkan PUBLIC AIVERSE_WITH_VULKAN=1)
+    target_link_libraries(aiverse_gfx_vulkan PRIVATE aiverse_glslang PUBLIC ${CMAKE_DL_LIBS})
+    if(AIVERSE_BUILD_TESTS)   # offscreen device; skips without a Vulkan driver (CI: Mesa lavapipe)
+        add_executable(aiverse_vulkan_tests tests/render/vulkan_tests.cpp)
+        target_link_libraries(aiverse_vulkan_tests PRIVATE aiverse_gfx_vulkan)
+        add_test(NAME vulkan_backend COMMAND aiverse_vulkan_tests)
+    endif()
+endif()
+
 # The platform files define main(); they are compiled into each executable through an OBJECT
 # library so that the entry point lands in the final binary on every toolchain.
 # Native plugins bridge + store/ads/analytics/privacy services (engine/platform/Plugins.h, engine/services). No window
@@ -494,6 +516,9 @@ if(AIVERSE_MOCK_PLUGINS)
 endif()
 
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
+if(AIVERSE_VULKAN)
+    target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
+endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
 if(APPLE)
@@ -1029,7 +1054,7 @@ if(TARGET aiverse_render2d)
     target_link_libraries(aiverse_render2d PUBLIC aiverse_atlas)  # TextureCache resolves atlased sprites
 endif()
 if(AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS)
-    add_library(aiverse_atlas_builder STATIC tools/atlas/AtlasPacker.cpp tools/atlas/AtlasBuild.cpp)
+    add_library(aiverse_atlas_builder STATIC tools/atlas/AtlasPacker.cpp tools/atlas/AtlasMesh.cpp tools/atlas/AtlasBuild.cpp)
     target_include_directories(aiverse_atlas_builder PRIVATE third_party/stb_image_write)
     target_link_libraries(aiverse_atlas_builder PUBLIC aiverse_atlas aiverse_pack_writer)
     foreach(t aiversebuild assetpipe aiverse_tests)
@@ -1443,6 +1468,7 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+add_subdirectory(modules/voxel)
 
 # Opt-in end-to-end reusable library host, excluded from normal builds.
 option(AIVERSE_BUILD_LIBRARY_SHOWCASE "Build native library integration showcase" OFF)
@@ -1519,6 +1545,19 @@ endif()
 if(AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_TOOLS)
     add_executable(aiverse_encounter tools/libraries/encounter_main.cpp)
     target_link_libraries(aiverse_encounter PRIVATE AIVERSE::lib_boss_encounters)
+endif()
+# voxel packages (world, light, mesh, gen, ticks, nav, replication): tests + headless check/benchmark (docs/voxel.md).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_library_voxel_tests tests/libraries/voxel_tests.cpp)
+    target_link_libraries(aiverse_library_voxel_tests PRIVATE AIVERSE::lib_voxel_world AIVERSE::lib_voxel_light AIVERSE::lib_voxel_mesh AIVERSE::lib_voxel_gen AIVERSE::lib_voxel_ticks AIVERSE::lib_voxel_nav AIVERSE::lib_voxel_replication)
+    add_test(NAME library_voxel COMMAND aiverse_library_voxel_tests)
+endif()
+if(AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_TOOLS)
+    add_executable(aiverse_voxel tools/libraries/voxel_main.cpp)
+    target_link_libraries(aiverse_voxel PRIVATE AIVERSE::lib_voxel_world AIVERSE::lib_voxel_light AIVERSE::lib_voxel_mesh AIVERSE::lib_voxel_gen AIVERSE::lib_voxel_ticks AIVERSE::lib_voxel_nav AIVERSE::lib_voxel_replication)
+    if(AIVERSE_BUILD_TESTS)
+        add_test(NAME voxel_headless COMMAND aiverse_voxel --content ${PROJECT_SOURCE_DIR}/examples/libraries/voxel --radius 3 --edits 500 --verify)
+    endif()
 endif()
 # match-progression (perks, xp, offers, pickups, summons, battle deck): tests + headless run.
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_world)
@@ -1621,7 +1660,8 @@ endif()
 # Library aiverse_place (server, client logic, bots, SimNet load harness); executable aiverse_place
 # (target aiverse_place_app): serve / bots / load everywhere, the graphical client on desktop builds.
 if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
-    add_library(aiverse_place STATIC apps/place/PlaceProtocol.cpp apps/place/PlaceServer.cpp apps/place/PlaceClient.cpp apps/place/PlaceSim.cpp)
+    add_library(aiverse_place STATIC apps/place/PlaceProtocol.cpp apps/place/PlaceServer.cpp apps/place/PlaceClient.cpp apps/place/PlacePredict.cpp apps/place/PlaceSim.cpp
+                apps/place/PlaceAdmission.cpp apps/place/PlaceLink.cpp)
     target_link_libraries(aiverse_place PUBLIC aiverse_net_replica AIVERSE::physics)
     target_include_directories(aiverse_place PUBLIC ${PROJECT_SOURCE_DIR})
     option(AIVERSE_BUILD_PLACE_CLIENT "Build the graphical client into aiverse_place" ${AIVERSE_BUILD_CLIENT})
@@ -1645,6 +1685,13 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
             target_compile_options(aiverse_place_tests PRIVATE -Wall -Wextra)
         endif()
         add_test(NAME place COMMAND aiverse_place_tests ${PROJECT_SOURCE_DIR}/examples/place/scene.json)
+        # Place hosting: tickets, gate, reconnect, suspend, WebSocket (agent-place-secure, docs/replica.md § Place hosting)
+        add_executable(aiverse_place_secure_tests tests/place/place_secure_tests.cpp)
+        target_link_libraries(aiverse_place_secure_tests PRIVATE aiverse_place)
+        if(NOT MSVC)
+            target_compile_options(aiverse_place_secure_tests PRIVATE -Wall -Wextra)
+        endif()
+        add_test(NAME place_secure COMMAND aiverse_place_secure_tests)
     endif()
 endif()
 

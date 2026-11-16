@@ -89,6 +89,8 @@ private:
     // projected decal: the rect origin + [0,lenU] * aU + [0,lenV] * aV (XZ) cut from the ground
     void decal(const render::TextureRef& tex, render::float4 uv, render::float3 origin, render::float3 aU, float lenU, render::float3 aV, float lenV,
                uint32_t color, uint32_t team, int layer, float key, uint32_t flags);
+    void decalShape(const render::TextureRef& tex, render::float4 uv, render::float3 origin, render::float3 aU, float lenU, render::float3 aV, float lenV,
+               uint32_t color, uint32_t team, int layer, float key, uint32_t flags);
 
     std::string base_;
     render::TextureCache textures_;

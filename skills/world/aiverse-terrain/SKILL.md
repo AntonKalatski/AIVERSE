@@ -28,7 +28,7 @@ Authority: `docs/terrain.md` (contract and branches), `docs/game-format.md` (key
 Invariants: the view never writes simulation layers; the terrain mesh is not rebuilt during play (editor edits
 rebuild dirty chunks only); old maps without a `terrain` block keep pixels and checksums.
 
-Limits: one surface height per cell column (no overhangs, caves or voxels - gap W2 in
-`docs/genre-implementation.json`); runtime terrain deformation beyond digging/craters is not supported.
+Limits: one surface height per cell column (no overhangs or caves; block worlds are the voxel packages,
+`skills/world/aiverse-voxel-world`); runtime terrain deformation beyond digging/craters is not supported.
 
 Workflow recipe over existing engine code and MCP tools; no runtime library.

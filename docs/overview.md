@@ -13,7 +13,7 @@ engine/
   sim/       deterministic simulation, commands, replays
   net/authority/ authoritative network sessions for FPS
   world/     spatial structures and chunked world streaming
-  gfx/       RHI + Metal and GL (ES3/WebGL2/GL3.3) backends, render to texture
+  gfx/       RHI + Metal, GL (ES3/WebGL2/GL3.3) and Vulkan (opt-in, docs/vulkan.md) backends, render to texture
   render/    3D rendering: lighting, shadows (shadow map + PCF), fog, tone mapping; Dear ImGui over the RHI;
              glTF/OBJ models, PBR materials, skeletal and procedural animation
   platform/  window/input/loop: macos, ios, android, web, windows, linux
@@ -554,6 +554,9 @@ an ms/frame estimate and warnings about heavy effects. Details: `docs/postfx.md`
 ## Verified / not verified
 
 - ✅ Linux: client, editor, tests; Windows .exe (MinGW cross-build, run under Wine).
+- ✅ Vulkan backend on Linux (Mesa lavapipe): every template renders as on GL, offscreen backend test; Windows
+  MinGW build under Wine (winevulkan over lavapipe).
+- ⏳ Vulkan on real GPUs, MSVC and Android (not built) — docs/vulkan.md § Verification.
 - ✅ macOS: build, tests, running the game on Metal; aiversebuild → .app and an iOS project (+ simulator build).
 - ✅ Web: builds (Emscripten 3.1.50), a match runs in headless Chromium (WebGL2/SwiftShader).
 - ⏳ Android: the Gradle project is generated; the APK and an emulator run are in CI (job `android`), not built locally.

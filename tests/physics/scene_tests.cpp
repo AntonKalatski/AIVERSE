@@ -503,6 +503,84 @@ int main(int argc, char** argv) {
         require(s.raycast({0, 1, 5}, {0, 0, -20}, {.ignore = a.proxy}).body == b.proxy, "ray ignores the shooter");
     });
 
+    test("characters spawned inside each other are pushed apart", [] {
+        Scene s;
+        ground(s);
+        // Partly overlapping, and three at exactly the same point (no separating direction to start from).
+        Walker a, b, c, d, e;
+        a.state.position = {0, 0, 0};
+        b.state.position = {0.2f, 0, 0.1f};
+        c.state.position = d.state.position = e.state.position = {5, 0, 5};
+        std::vector<Walker*> all{&a, &b, &c, &d, &e};
+        for (auto* w : all) w->proxy = s.createCharacter(w->params, w->state.position);
+        for (int i = 0; i < 90; ++i) hostTick(s, all, {});
+        auto apart = [](const Walker& x, const Walker& y) {
+            float dx = x.state.position.x - y.state.position.x, dz = x.state.position.z - y.state.position.z;
+            return std::sqrt(dx * dx + dz * dz);
+        };
+        float minGap = 2 * a.params.radius - 0.02f;
+        require(apart(a, b) >= minGap, "a / b " + std::to_string(apart(a, b)));
+        require(apart(c, d) >= minGap && apart(c, e) >= minGap && apart(d, e) >= minGap,
+                "c / d / e " + std::to_string(apart(c, d)) + " " + std::to_string(apart(c, e)) + " " + std::to_string(apart(d, e)));
+        for (auto* w : all) require(w->state.grounded && std::abs(w->state.position.y) < 0.02f, "still on the ground " + fmt(w->state.position));
+        // Pushed apart gently, not launched: they stay near where they spawned.
+        require(dist(a.state.position, {0, 0, 0}) < 1 && dist(c.state.position, {5, 0, 5}) < 1, "moved little " + fmt(a.state.position) + fmt(c.state.position));
+    });
+
+    test("a rotating kinematic platform carries the rider around and turns its yaw", [] {
+        Scene s;
+        ground(s);
+        auto plat = s.create(box({0, 1.75f, 0}, {8, 0.5f, 8}, Motion::Kinematic)); // top at 2
+        Walker w;
+        w.state.position = {2, 2.2f, 0};
+        settle(s, w, 60);
+        require(w.state.ground == plat, "on the platform");
+        s.setAngularVelocity(plat, {0, 1, 0});
+        float yaw = 0;
+        for (int i = 0; i < 90; ++i) {
+            CharacterInput in;
+            in.yaw = yaw;
+            hostTick(s, {&w}, in);
+            yaw += w.state.groundTurn;   // the game folds the turn into its look yaw (next input)
+        }
+        float t = 90 * s.dt();           // 1.5 rad turned
+        b3Vec3 want{2 * std::cos(t), 2, -2 * std::sin(t)};
+        float r = std::sqrt(w.state.position.x * w.state.position.x + w.state.position.z * w.state.position.z);
+        require(std::abs(r - 2) < 0.03f, "radius kept " + std::to_string(r));
+        require(dist(w.state.position, want) < 0.08f, "carried around to " + fmt(w.state.position) + " want " + fmt(want));
+        require(std::abs(yaw - t) < 0.03f && std::abs(w.state.yaw - t) < 0.03f, "yaw turned " + std::to_string(yaw) + " / " + std::to_string(w.state.yaw));
+    });
+
+    test("sensor end events for destroyed bodies and sensors", [] {
+        Scene s;
+        ground(s);
+        auto zd = box({0, 1, 0}, {4, 2, 4}, Motion::Static);
+        zd.sensor = true;
+        auto zone = s.create(zd);
+        auto ball = [&](b3Vec3 p) { BodyDesc d; d.shape = ShapeKind::Sphere; d.radius = 0.3f; d.position = p; return s.create(d); };
+        auto a = ball({0, 1, 0}), b = ball({1, 1, 1});
+        Walker w;
+        w.proxy = s.createCharacter(w.params, {-1, 0, -1});
+        int begins = 0;
+        for (int i = 0; i < 10; ++i) { s.step(); for (auto& e : s.sensorEvents()) begins += e.begin && e.sensor == zone; }
+        require(begins == 3, "three visitors inside, got " + std::to_string(begins));
+        auto ends = [&](BodyHandle sensor, BodyHandle visitor) {
+            int n = 0;
+            for (auto& e : s.sensorEvents()) n += !e.begin && e.sensor == sensor && e.visitor == visitor;
+            return n;
+        };
+        s.destroy(a);
+        s.step();
+        require(ends(zone, a) == 1, "end for the destroyed visitor, once");
+        for (int i = 0; i < 5; ++i) { s.step(); require(ends(zone, a) == 0, "no repeat"); }
+        // A destroyed sensor ends the overlaps of everything inside it.
+        s.destroy(zone);
+        s.step();
+        require(ends(zone, b) == 1 && ends(zone, w.proxy) == 1, "ends for the visitors of a destroyed sensor");
+        s.step();
+        require(s.sensorEvents().empty(), "nothing more");
+    });
+
     test("prediction parity: full scene vs static-only copy", [] {
         auto json = Json::parse(R"({"tickRate":60,"bodies":[
             {"id":"ground","motion":"static","position":[0,-0.5,0],"size":[80,1,80]},

@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -82,7 +82,7 @@ A AIVERSE entrega as próprias mecânicas — e permite que um agente trabalhe n
 | **Multiplayer significa dessincronização sem fim.** Basta um `float` para uma partida entre um iPhone e um Android sair de sincronia. | A simulação é idêntica bit a bit em todo lugar: ponto fixo em vez de ponto flutuante, gerador aleatório próprio, checksums. A CI compara partidas em Linux x64/ARM64, Windows e macOS a cada push. Só comandos trafegam pela rede; há lockstep com rollback e um servidor com matchmaking e veredito por replay. |
 | **GPUs móveis são fracas, mas o jogo precisa ser bonito.** | Todo recurso caro — sombras, partículas, terreno, pós-processamento — tem níveis de qualidade e se adapta à GPU, das antigas Mali e Adreno ao Apple Silicon. |
 | **Lançar em todas as plataformas é um projeto à parte.** Assinaturas, ícones, SDKs de lojas e anúncios. | O `aiversebuild` gera .app, projeto Xcode, Gradle/APK, web e .exe com um único comando. Ícones e telas de abertura são gerados automaticamente. Plugins para App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin e outros — o build leva só os que o jogo escolher. |
-| **Todo jogo novo começa do zero.** | Mais de 30 templates jogáveis, kits de gênero com checklists de aceitação e 185 skills para agentes. Um jogo novo começa a partir de um que já funciona. |
+| **Todo jogo novo começa do zero.** | Mais de 30 templates jogáveis, kits de gênero com checklists de aceitação e 195 skills para agentes. Um jogo novo começa a partir de um que já funciona. |
 | **Meta e LiveOps são reescritos em cada projeto.** | `aiverse::meta`: loja, moedas, missões, passes, recompensas diárias, energia, clãs, torneios, baús com garantia — configurados em JSON. |
 
 ---
@@ -206,7 +206,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 <td width="50%" valign="top">
 
 **Gráficos e áudio**
-- RHI próprio: Metal, GLES3 / WebGL2, GL 3.3
+- RHI próprio: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opcional)
 - PBR, glTF/OBJ, animação esquelética e procedural, cabos procedurais, renderização de entidades com hierarquia
 - Sombras, luzes dinâmicas, noite, pós-processamento, Shader Graph
 - Partículas com os módulos do Unity ParticleSystem e importador do Unity
@@ -222,7 +222,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 - Editor com janelas encaixáveis no estilo Unity: cena, inspetor, terreno, efeitos, iluminação, UI, teste de jogo e simulador de dispositivos
 - `aiversemcp` — servidor MCP para agentes
 - Assistente **Criar um jogo**
-- 185 skills para agentes e kits de gênero com checklists de aceitação
+- 195 skills para agentes e kits de gênero com checklists de aceitação
 - Importadores de assets de jogos clássicos a partir da sua própria cópia
 
 </td>
@@ -280,7 +280,7 @@ inverno, confira com bots o balanceamento de três facções e gere uma versão 
 
 A engine está em desenvolvimento ativo. O que já foi verificado:
 
-- ✅ **Linux**: cliente, editor, testes, partidas entre bots; checksums idênticos em x64 e ARM64
+- ✅ **Linux**: cliente, editor, testes, partidas entre bots; checksums idênticos em x64 e ARM64; o cliente em Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal**: build, testes, jogo; `aiversebuild` → .app e projeto iOS com build para o simulador
 - ✅ **Web**: uma partida roda no Chromium headless (WebGL2)
 - ✅ **Windows**: .exe compilado de forma cruzada com MinGW, executado no Wine

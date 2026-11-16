@@ -1,0 +1,11 @@
+{"voxelGen":{"seed":20261116,"seaLevel":62,"baseHeight":68,"heightAmplitude":28,"heightScale":160,"octaves":5,"bedrockY":-64,
+ "stone":"stone","water":"water","bedrock":"bedrock",
+ "caves":{"scale":24,"minY":-60,"maxY":110,"threshold":40000},"biomeScale":384,"tree":{"minHeight":4,"maxHeight":6},
+ "biomes":[
+  {"name":"forest","upTo":450,"surface":"grass","filler":"dirt","shore":"sand","trees":6,"log":"log","leaves":"leaves","plants":20,"plant":"tallgrass"},
+  {"name":"plains","upTo":750,"surface":"grass","filler":"dirt","shore":"sand","trees":1,"log":"log","leaves":"leaves","plants":40,"plant":"tallgrass"},
+  {"name":"desert","upTo":1000,"surface":"sand","filler":"sand","fillerDepth":5,"heightOffset":-3}],
+ "ores":[
+  {"block":"coal_ore","minY":0,"maxY":128,"veins":12,"size":12},
+  {"block":"iron_ore","minY":-48,"maxY":64,"veins":8,"size":8},
+  {"block":"gravel","minY":-60,"maxY":96,"veins":6,"size":24}]}}

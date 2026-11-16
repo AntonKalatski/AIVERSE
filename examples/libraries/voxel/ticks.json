@@ -1,0 +1,2 @@
+{"voxelTicks":{"randomTicksPerChunk":3,"maxUpdatesPerStep":4096,"fallTicks":2,
+ "reactions":[{"fluid":"lava","touching":"water","source":"obsidian","flowing":"cobblestone"}]}}

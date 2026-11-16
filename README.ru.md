@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/платформы-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/рендер-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/рендер-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI--агенты-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/лицензия-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -80,7 +80,7 @@ MCP-сервер, через которые с проектом работает
 | **Мультиплеер = вечные рассинхроны.** Достаточно одного `float`, чтобы матч на iPhone и Android разошёлся. | Симуляция побитово одинакова везде: fixed-point вместо float, свой RNG, контрольные суммы. CI на каждом push сверяет матчи на Linux x64/ARM64, Windows и macOS. По сети идут только команды, есть lockstep с откатами, сервер с матчмейкингом и вердиктом по реплею. |
 | **Мобильные GPU слабые, а игра должна быть красивой.** | Каждая дорогая функция — тени, частицы, рельеф, постэффекты — имеет уровни качества и сама подстраивается под GPU: от старых Mali и Adreno до Apple Silicon. |
 | **Выпустить игру на все платформы — отдельный проект.** Подписи, иконки, SDK сторов и рекламы. | `aiversebuild` одной командой делает .app, проект Xcode, Gradle/APK, web и .exe. Иконки и заставки генерируются. Плагины App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin и других — в билд попадают только выбранные. |
-| **Каждая новая игра начинается с нуля.** | 30+ играбельных шаблонов, жанровые наборы с чек-листами приёмки, 185 навыков для агентов. Новая игра начинается с работающей. |
+| **Каждая новая игра начинается с нуля.** | 30+ играбельных шаблонов, жанровые наборы с чек-листами приёмки, 195 навыков для агентов. Новая игра начинается с работающей. |
 | **Мета и LiveOps переписываются в каждом проекте.** | `aiverse::meta`: магазин, валюты, задания, пассы, ежедневные награды, энергия, кланы, турниры, сундуки с pity — настраивается JSON-ом. |
 
 ---
@@ -204,7 +204,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 <td width="50%" valign="top">
 
 **Картинка и звук**
-- Свой RHI: Metal, GLES3 / WebGL2, GL 3.3
+- Свой RHI: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, по выбору)
 - PBR, glTF/OBJ, скелетная и процедурная анимация, процедурные провода, отрисовка вложенных объектов
 - Тени, динамический свет, ночь, постэффекты, Shader Graph
 - Частицы с модулями Unity ParticleSystem и импорт из Unity
@@ -220,7 +220,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 - Редактор с окнами, как в Unity: сцена, инспектор, рельеф, эффекты, свет, UI, тестовая игра и симулятор устройств
 - `aiversemcp` — MCP-сервер для агентов
 - Мастер «Сделать игру»
-- 185 навыков для агентов и жанровые наборы с чек-листами приёмки
+- 195 навыков для агентов и жанровые наборы с чек-листами приёмки
 - Импорт ресурсов старых игр из вашей собственной копии
 
 </td>
@@ -278,7 +278,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 
 Движок активно развивается. Что проверено:
 
-- ✅ **Linux**: клиент, редактор, тесты, матчи ботов; одинаковые контрольные суммы на x64 и ARM64
+- ✅ **Linux**: клиент, редактор, тесты, матчи ботов; одинаковые контрольные суммы на x64 и ARM64; клиент на Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal**: сборка, тесты, игра; `aiversebuild` → .app и проект iOS со сборкой для симулятора
 - ✅ **Web**: матч запускается в headless Chromium (WebGL2)
 - ✅ **Windows**: .exe кросс-сборкой MinGW, запуск под Wine

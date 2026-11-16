@@ -53,12 +53,11 @@ Use before any feasibility estimate, gap list, genre plan or claim such as "the 
 
 ## Worked example: voxel sandbox (Minecraft-like), main at 2026-11-16
 
-Exists: streamed chunk worlds with budgets and async loading (`docs/large-worlds.md`), first-person
-authoritative FPS runtime with prediction and interest filtering (`docs/fps.md`), persistent city server
-(`docs/city-server.md`), locomotion modes, inventory/crafting, survival/ecology, Box3D, 2D grid fields,
-navmesh, `.vox` model import. Missing (tracked): W2 mutable volumetric world (voxel chunk data, meshing,
-mutable collision/navigation, light, saving edits) and W1 persistent large world (authoritative streaming of
-mutable state, regional saves) - both `planned`; FPS chunk collision is immutable and hashed; snapshots have no
-delta compression; fields and navmesh are not volumetric. Re-check these statuses before reusing the example.
+Exists: streamed chunk worlds (`docs/large-worlds.md`), first-person authoritative FPS runtime (`docs/fps.md`),
+persistent city server (`docs/city-server.md`), locomotion modes, inventory/crafting, survival/ecology, Box3D,
+and the voxel packages (`docs/voxel.md`, `skills/workflow/aiverse-voxel-game`): block world with saves and regions,
+light, meshes, generation, fluids, mob paths, streaming to clients. Missing (W1 / W2 `partial`): renderer upload
+of voxel meshes, an FPS host on voxel collision, voxel messages inside `engine/net`, inventory UI, structures (W3).
+Re-check these statuses before reusing the example.
 
 Workflow recipe over existing docs and catalogs; no runtime library.

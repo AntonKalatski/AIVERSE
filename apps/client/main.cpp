@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "engine/platform/GraphicsSettings.h"
 #include "engine/platform/WindowSettings.h"
 #include "ClientSplash.h"
 #include "GameClient.h"
@@ -52,6 +53,8 @@ int aiverseMain(int argc, char** argv) {
             if (std::sscanf(argv[++i], "%dx%d", &w, &h) == 2 && w > 0 && h > 0) { cfg.width = w; cfg.height = h; sizeFromArgs = true; }
         }
         if (a == "--map" && i + 1 < argc) autostartMap = size_t(std::stoul(argv[++i]));
+        // --gfx vulkan|gl: RHI backend on Windows, Linux, Android (game.json "graphics", GraphicsSettings.h)
+        if (a == "--gfx" && i + 1 < argc) cfg.graphics = argv[++i];
     }
     if (!previewScreen.empty()) {   // Lua long strings: the JSON goes in verbatim
         auto lng = [](const std::string& t) { return "[==[" + t + "]==]"; };
@@ -74,7 +77,9 @@ int aiverseMain(int argc, char** argv) {
         std::string text;
         if (!platform::readContentFile("game.json", text)) return;
         try {
-            const Json window = Json::parse(text)["window"];
+            const Json game = Json::parse(text);
+            platform::applyGraphicsSettings(c, game["graphics"], platform::name());
+            const Json& window = game["window"];
             const bool capture = std::getenv("AIVERSE_EXIT_AFTER_FRAMES") != nullptr;
             platform::applyWindowSettings(c, window, platform::name(), sizeFromArgs || capture);
             if (capture || sizeFromArgs) c.windowMode = platform::AppConfig::WindowMode::Windowed;
