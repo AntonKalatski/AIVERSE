@@ -2109,7 +2109,7 @@
         "tests/libraries/city_tests.cpp"
       ],
       "id": "city-traffic",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "layer": "simulation",
       "status": "cpp-subsystem",
       "source": "libraries/include/aiverselib/genre/Traffic.h",
