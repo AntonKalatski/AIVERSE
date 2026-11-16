@@ -595,11 +595,18 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     std::vector<gfx::DrawIndexedIndirectCommand> commands;
     commands.reserve(count);
     uint64_t triangles = 0;
-    for (uint32_t n = 0; n < count; ++n) {
+    // Consecutive instances of one primitive form ONE indirect command.
+    // Subsequent primitives share the same U0 data block; firstInstance
+    // selects their transform/instance parameters in the vertex shader.
+    for (uint32_t n = 0; n < count;) {
         const auto& part = modelItems_[items[n]];
-        commands.push_back({part.indexCount, 1, part.firstIndex, 0, n});
-        triangles += part.indexCount / 3;
+        uint32_t end = n + 1;
+        while (end < count && modelItems_[items[end]].prim == part.prim) ++end;
+        commands.push_back({part.indexCount, end - n, part.firstIndex, 0, n});
+        triangles += uint64_t(part.indexCount / 3) * (end - n);
+        n = end;
     }
+    if (commands.size() < 2) return false; // conventional instancing is cheaper
     if (!drawModelBatch(items, count, phase, false)) return true; // pipeline warming: no fallback draw
     if (!indirectCommands_.valid()) {
         gfx::BufferDesc d;
@@ -620,7 +627,7 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     lastItem_ = &modelItems_[items[count - 1]];
     modelStats_.triangles += triangles;
     ++modelStats_.multiDrawSubmissions;
-    modelStats_.indirectCommands += count;
+    modelStats_.indirectCommands += commands.size();
     ++drawCalls_;
     ++profile_.draws[size_t(phase)];
     profile_.instances[size_t(phase)] += count;
@@ -728,8 +735,7 @@ void Renderer3D::renderModels(int phase) {
                 // through firstInstance into the shared instance uniform array.
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
-                return first.model == y.model && first.prim != y.prim &&
-                    first.geometryPrimitive != y.geometryPrimitive &&
+                return first.model == y.model &&
                     !first.model->geometry && first.gi == 0 && y.gi == 0 &&
                     !first.materialRole && !y.materialRole &&
                     !first.shadowRole && !y.shadowRole &&
