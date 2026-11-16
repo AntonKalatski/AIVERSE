@@ -622,6 +622,8 @@ adapter. Validate kits, native linking, client retries and selected UI screens.
 
 ## Adding and updating repository skills
 
+- Write every skill in English: frontmatter `name`/`description` and the body. This applies to
+  repository skills and to skills proposed to the user's account. Russian only in quoted UI strings.
 - Store each recipe in `skills/<name>/SKILL.md`; match the frontmatter name to the
   directory. Use `aiverse-*` for shared gameplay, `rts-*` only for RTS-specific
   behavior, and `meta-*` for meta-game policies. Do not add recipes under `docs/`.
