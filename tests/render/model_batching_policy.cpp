@@ -3,7 +3,7 @@
 #include "engine/render/Model.h"
 #include "engine/render/ModelMerge.h"
 #include <cstdlib>
-#define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\\n", #x, __LINE__); std::exit(1); } } while (0)
+#define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
 #include <string>
 
@@ -72,9 +72,9 @@ int main() {
     CHECK(skip.nodes.size() == 1);
     // The same policy must load from a model-sidecar in any game or editor.
     const std::string obj =
-        "o shell\\n"
-        "v 0 0 0\\nv 1 0 0\\nv 0 1 0\\n"
-        "f 1 2 3\\n";
+        "o shell\n"
+        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+        "f 1 2 3\n";
     const auto read = [&](const std::string& path, std::string& out) {
         if (path == "fixture.obj") { out = obj; return true; }
         if (path == "fixture.obj.batching.json") {
