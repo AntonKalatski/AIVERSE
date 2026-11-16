@@ -9,6 +9,7 @@
 #include "../../engine/data/Json.h"
 #include "../../engine/core/ECS.h"
 #include "../../engine/core/Fixed.h"
+#include "../../engine/nav/NavMesh.h"
 #include "RtsSurface.h"
 #include <memory>
 
@@ -182,7 +183,7 @@ struct MapGrid {
     Vec3 cellCenter(int x, int y) const { if (surf) return surf->cellCenter(index(x, y)); return {Fixed::fromInt(x) + Fixed::fromRatio(1, 2), Fixed{}, Fixed::fromInt(y) + Fixed::fromRatio(1, 2)}; }
     void block(int x0, int y0, int fw, int fh, int delta);
     void cellChanged(int x, int y);  // terrain of a cell changed at runtime (digging): refresh derived pathing data
-    void invalidatePathing() { clearanceDirty = true; for (auto& G : hpa_) { std::fill(G.dirty.begin(), G.dirty.end(), uint8_t(1)); G.anyDirty = true; } }   // after loading a save
+    void invalidatePathing() { clearanceDirty = true; for (auto& G : hpa_) { std::fill(G.dirty.begin(), G.dirty.end(), uint8_t(1)); G.anyDirty = true; } for (auto& n : nav_) n.mesh.markAllDirty(); }   // after loading a save
     bool areaBuildable(int x0, int y0, int fw, int fh) const;  // ground, no-build-free, unblocked, flat
     // clearance: cells needed around the path for a body of that size (0 = any walkable cell); narrower
     // cells cost more instead of being forbidden. soft: also route around cells marked in `soft`.
@@ -194,6 +195,14 @@ struct MapGrid {
     int hpaMinCells = 256 * 256;
     bool bigMap() const { return !surf && w * h >= hpaMinCells; }
     int hpaStats[2] = {};  // queries answered by HPA*, fallbacks to plain A* (diagnostics only)
+    // Navigation mesh (engine/nav, rules / map movement.pathfinding: "navmesh"; flat maps): passable cells of a path
+    // layer merged into rectangles, A* over them + funnel = any-angle paths. Derived from the grid like HPA* (never
+    // hashed; block / cellChanged mark tiles dirty, the next query refreshes them). Searches it can't answer (start or
+    // goal off the mesh, no connection within the budget, `soft` surround paths) fall back to the grid search.
+    bool navMesh = false;
+    int navStats[2] = {};  // queries answered by the navmesh, fallbacks to the grid (diagnostics only)
+    void prepareNavMesh(uint8_t layer) { if (navMesh && !surf) navFor(layer); }   // build at load, not mid-match
+    const nav::Mesh* navMeshFor(uint8_t layer);   // tests / tools: the layer's mesh, refreshed (null on planets / off)
     // ---- flow fields (RtsFlowField.cpp). Index results are valid until the next flowHousekeeping().
     int flowFind(int goalCell, int radius, uint8_t layer, int clear) const;   // clear is ignored for hierarchical fields
     bool flowHierFor(int cell) const;                   // fields toward this goal cell are hierarchical (HPA* map / body)
@@ -302,6 +311,11 @@ private:
     // Backward Dijkstra (cost of reaching the seeds) inside cluster c (c < 0: the whole grid).
     void flowLocal(int c, const std::vector<std::pair<int32_t, uint32_t>>& seeds, uint8_t layer, int clear, std::vector<uint32_t>& val) const;
     std::vector<SphereHpaGraph> sphereHpa_;
+    struct NavLayer { uint8_t layer = 0; nav::Mesh mesh; };
+    std::vector<NavLayer> nav_;
+    nav::Mesh& navFor(uint8_t layer);
+    void navDirty(int x0, int y0, int x1, int y1) { for (auto& n : nav_) n.mesh.markDirty(x0, y0, x1, y1); }
+    bool navPath(Vec3 from, Vec3 to, int sx, int sy, uint8_t layer, int maxNodes, int clear, std::vector<Vec3>& out);
     int pathClear_ = 0;
     bool pathSoft_ = false;
     int pathEndA_ = -1, pathEndB_ = -1;
