@@ -34,17 +34,17 @@
 ## Скриншоты
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <img src="docs/images/readme/sponza.jpg" alt="Sponza" width="860"><br>
   <sub>Sponza: PBR, тени, ambient occlusion</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <img src="docs/images/readme/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
   <sub>Лучи света в дымке: выкл / вкл</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <img src="docs/images/readme/city-roads.jpg" alt="City" width="860"><br>
   <sub>Город, собранный агентом по навыкам <code>aiverse-roads</code> и <code>aiverse-city-blocks</code>: сплайновые дороги, переходы, кварталы</sub>
 </p>
 

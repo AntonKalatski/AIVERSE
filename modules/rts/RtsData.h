@@ -236,6 +236,8 @@ struct UnitType {
     // larva-style parallel production
     int chargesMax = 0;
     Fixed chargeInterval{};
+    int16_t warpField = -1;      // warpIn.field: trains with kCmdAtPoint appear at a point inside an own field of this id
+    Fixed warpTime{};            // warpIn.time: seconds the warping unit stays under construction
     // placement
     uint16_t placeOn = kNoType;                // must be built on top of this type (geyser, metal spot)
     bool takesOverNode = false;                // inherits the node's resource (refinery)
@@ -529,7 +531,8 @@ struct MovementRules { bool rvo = true; bool separation = true; int neighbors = 
                        FlowFieldRules flow;
                        bool blockedGoalNearest = false;   // movement.blockedGoals: "nearest" (vs "search")
                        bool airOverRock = true;           // false: fliers are confined to open cells (ground / water) - no flying over undug rock / '#'
-                       int planetHpaCells = 256 * 256; };   // planets: HPA* on bodies with >= this many cells (0 = all)
+                       int planetHpaCells = 256 * 256;    // planets: HPA* on bodies with >= this many cells (0 = all)
+                       Fixed magicBox{}; };               // movement.magicBox: a group within this radius of its centre keeps its shape on a move (StarCraft II); 0 = off
 
 // Mushroom Wars 2 style lanes: generated spline paths between garrison buildings.
 struct LaneRules { bool enabled = false; int left = 0, right = 0; Fixed spacing = Fixed::fromRatio(35, 100); };
@@ -564,6 +567,7 @@ struct Rules {
     bool scriptedAI = false;                  // external RtsAI must yield to the game's controller
     bool bwAI = false;                        // ai.controller "bw": Bunker Wars bots (RtsBwAI.h, agent-bw-ai)
     MechRules mech;                           // agent-mech rules (RtsMechData.h)
+    bool overkill = false;                    // targeting.overkill: auto-targeting skips enemies already doomed by shots in flight (StarCraft II)
     std::vector<ResourceDef> resources;
     std::vector<std::string> tagNames;
     std::vector<std::string> armorTypes, damageTypes;

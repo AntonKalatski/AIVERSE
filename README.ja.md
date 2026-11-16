@@ -34,17 +34,17 @@
 ## スクリーンショット
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <img src="docs/images/readme/sponza.jpg" alt="Sponza" width="860"><br>
   <sub>Sponza：PBR、影、アンビエントオクルージョン</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <img src="docs/images/readme/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
   <sub>霧の中の光芒：オフ / オン</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <img src="docs/images/readme/city-roads.jpg" alt="City" width="860"><br>
   <sub>エージェントが <code>aiverse-roads</code> と <code>aiverse-city-blocks</code> スキルで作った街：スプライン道路、横断歩道、街区</sub>
 </p>
 

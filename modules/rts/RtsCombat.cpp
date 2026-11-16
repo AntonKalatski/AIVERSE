@@ -3,6 +3,7 @@
 // wrecks, depleted extractors).
 #include "RtsInternal.h"
 #include <algorithm>
+#include <map>
 
 namespace aiverse::game {
 using namespace detail;
@@ -12,6 +13,19 @@ using namespace detail;
 void RtsModule::sysTargeting(Simulation& sim) {
     World& w = sim.world();
     GameState& gs = state(sim);
+    // targeting.overkill: damage already flying at each unit (projectiles in flight, by entity index)
+    std::map<uint32_t, Fixed> incoming;
+    if (rules_.overkill)
+        w.each<Projectile>([&](Entity, Projectile& p) { if (p.target.valid() && p.effList < 0) incoming[p.target.index] += p.damage; });
+    auto doomed = [&](Entity t) {
+        if (!rules_.overkill) return false;
+        auto it = incoming.find(t.index);
+        if (it == incoming.end()) return false;
+        const Unit& tu = w.get<Unit>(t);
+        Fixed left = tu.hp;
+        if (auto* sh = w.tryGet<Shield>(t)) left += sh->value;
+        return it->second >= left;
+    };
     w.each<Combat, Unit, Owner, Transform>([&](Entity e, Combat& c, Unit& u, Owner& o, Transform& tr) {
         if (o.player == 0 || (u.flags & (kUnitUnderConstruction | kUnitDisabled | kUnitInHand | kUnitPossessed))) return;
         if (mechOn(sim) && !mechCanAcquire(sim, e)) { if (c.autoTarget && w.alive(c.target)) { c.target = kNullEntity; if (!w.has<Orders>(e) || w.get<Orders>(e).queue.empty()) stopMoving(sim, e); } return; }   // agent-mech
@@ -27,7 +41,10 @@ void RtsModule::sysTargeting(Simulation& sim) {
         if (auto* gd = w.tryGet<Guard>(e); gd && gd->returning) return;
         if (w.alive(c.target) && w.has<Unit>(c.target)) {
             if (!c.autoTarget) return;
-            if (dist2D(w.get<Transform>(c.target).pos, tr.pos) <= stat(sim, e, Stat::Sight) + kOne) return;
+            if (dist2D(w.get<Transform>(c.target).pos, tr.pos) <= stat(sim, e, Stat::Sight) + kOne && !doomed(c.target)) {
+                if (rules_.overkill && !t.weapons.empty()) incoming[c.target.index] += t.weapons[0].damage;   // its next shot is spoken for
+                return;
+            }
         }
         uint8_t layers = 0;
         for (auto& wd : t.weapons) layers |= wd.targets;
@@ -53,11 +70,13 @@ void RtsModule::sysTargeting(Simulation& sim) {
             // high ground hides units from those below unless revealed (any ally vision of that cell)
             // (heightfield: vision already follows line of sight, so the target must simply be in sight)
             if (rules_.heights.blockVision && !(ct.layer & kLayerAir) && (hf || levelAt(sim, cp) > myLevel) && !isVisible(sim, o.player, cp)) return;
+            if (doomed(cand)) return;   // targeting.overkill: shots in flight already kill it
             if (ct.weapons.empty()) d += Fixed::fromInt(4); // prefer things that can shoot back
             if (!best.valid() || d < bestD) { best = cand; bestD = d; }
         });
         c.target = best;
         c.autoTarget = true;
+        if (rules_.overkill && best.valid() && !t.weapons.empty()) incoming[best.index] += t.weapons[0].damage;   // later choosers this pass see it
     });
 }
 
