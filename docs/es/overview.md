@@ -700,7 +700,7 @@ rollback y guardado del estado; Lua y C++ trabajan juntos. Tras cambiar el C++ h
 `aiverse::meta`: tienda/ofertas/fabricación configurables, monedas y objetos, misiones y pases, recompensas diarias, energía,
 correo, clasificaciones, chats y segmentos. Disponible para el código nativo del proyecto sin Lua/GPU; las definiciones son
 JSON, no hace falta volver a generar los algoritmos. Inicio: `python3 tools/meta/scaffold.py --preset mobile --out <project>`.
-Documentación: [meta-game.md](../meta-game.md); para agentes, `skills/meta-game/SKILL.md`. Las políticas locales funcionan sin
+Documentación: [meta-game.md](../meta-game.md); para agentes, `skills/meta/meta-game/SKILL.md`. Las políticas locales funcionan sin
 servidor; la comunicación entre dispositivos y las clasificaciones globales requieren un backend real. Un servicio en la nube
 listo no forma parte del paquete.
 

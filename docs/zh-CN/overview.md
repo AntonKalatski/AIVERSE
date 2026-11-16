@@ -610,7 +610,7 @@ glTF 模型和动画、音频、网络（锁步）、数据驱动的技能和增
 
 `aiverse::meta` —— 可配置的商店/礼包/合成、货币和道具、任务和通行证、每日奖励、体力、邮件、排行榜、聊天和用户分群。项目的原生代码无需
 Lua/GPU 即可使用；定义写成 JSON，无需重新生成算法。开始：`python3 tools/meta/scaffold.py --preset mobile --out <project>`。文档：
-[meta-game.md](../meta-game.md)；智能体请看 `skills/meta-game/SKILL.md`。本地策略无需服务器即可运行；设备间通信和全局排行榜需要真实的后端。
+[meta-game.md](../meta-game.md)；智能体请看 `skills/meta/meta-game/SKILL.md`。本地策略无需服务器即可运行；设备间通信和全局排行榜需要真实的后端。
 包中不含现成的云服务。
 
 `full --with-ui` 预设增加了好友/公会、实例收藏、装备、合成升级、订阅和锦标赛联赛。`aiverse::meta::Service` 以原子方式执行操作；

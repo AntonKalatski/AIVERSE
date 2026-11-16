@@ -643,7 +643,7 @@ Lua 외에도 프로젝트에 `native/CMakeLists.txt`와 C++20 모듈을 넣을 
 `aiverse::meta` — 설정 가능한 상점/오퍼/제작, 통화와 아이템, 퀘스트와 패스, 일일 보상, 에너지, 우편함, 순위표, 채팅, 세그먼트. Lua/GPU 없이
 프로젝트의 네이티브 코드에서 쓸 수 있고, 정의는 JSON이므로 알고리즘을 다시 생성할 필요가 없습니다. 시작:
 `python3 tools/meta/scaffold.py --preset mobile --out <project>`. 문서: [meta-game.md](../meta-game.md). 에이전트용은
-`skills/meta-game/SKILL.md`. 로컬 정책은 서버 없이 동작하지만, 기기 간 통신이나 전역 순위표에는 실제 백엔드가 필요합니다. 완성된 클라우드
+`skills/meta/meta-game/SKILL.md`. 로컬 정책은 서버 없이 동작하지만, 기기 간 통신이나 전역 순위표에는 실제 백엔드가 필요합니다. 완성된 클라우드
 서비스는 패키지에 포함되지 않습니다.
 
 프리셋 `full --with-ui`는 친구/클랜, 인스턴스 컬렉션, 장비, 합성, 구독, 토너먼트 리그를 추가합니다. `aiverse::meta::Service`는 작업을

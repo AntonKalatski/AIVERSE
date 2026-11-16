@@ -63,7 +63,7 @@ def plan(requested,side="both"):
     screen_features=list(selected)
     if side=='client':selected=sorted(set(['client']+[key for key in selected if key=='ui']))
     elif side=='server':selected=[key for key in selected if key not in ('client','ui')]
-    entries={key:dict(skill=f'skills/{skill}/SKILL.md',source=source) for key,_,skill,source in PACKAGES}
+    entries={key:dict(skill=f'skills/meta/{skill}/SKILL.md',source=source) for key,_,skill,source in PACKAGES}
     return dict(version=2,side=side,serverModules=[key for key in selected if key in MODULES] if side!="client" else [],requested=sorted(set(requested)),resolved=selected,
                 recipes={key:entries[key] for key in selected},
                 screens=definitions(screen_features)['economy']['metadata']['metaScreens'])

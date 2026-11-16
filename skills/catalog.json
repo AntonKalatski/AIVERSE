@@ -4,7 +4,7 @@
     {
       "id": "aiverse-abilities",
       "package": "abilities",
-      "path": "skills/aiverse-abilities/SKILL.md",
+      "path": "skills/gameplay/aiverse-abilities/SKILL.md",
       "domain": "gameplay",
       "summary": "Target/range/resource checks and optional native cast/cooldown lifecycle",
       "side": "simulation",
@@ -21,7 +21,7 @@
     {
       "id": "aiverse-action-sequences",
       "package": "action-sequences",
-      "path": "skills/aiverse-action-sequences/SKILL.md",
+      "path": "skills/gameplay/aiverse-action-sequences/SKILL.md",
       "domain": "gameplay",
       "summary": "Tick-based multi-stage actions with timeout and cancellation cleanup",
       "side": "simulation",
@@ -34,9 +34,32 @@
       "keywords": []
     },
     {
+      "id": "aiverse-agent-branch",
+      "package": null,
+      "path": "skills/workflow/aiverse-agent-branch/SKILL.md",
+      "domain": "workflow",
+      "summary": "Agent branch and worktree workflow: merge main, area, builds, commits",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "AGENTS.md",
+      "keywords": [
+        "agent",
+        "branch",
+        "worktree",
+        "commit",
+        "merge",
+        "агент",
+        "ветк",
+        "коммит"
+      ]
+    },
+    {
       "id": "aiverse-ai-perception",
       "package": "ai-perception",
-      "path": "skills/aiverse-ai-perception/SKILL.md",
+      "path": "skills/ai/aiverse-ai-perception/SKILL.md",
       "domain": "gameplay",
       "summary": "Bounded observation memory, expiration and threat selection",
       "side": "simulation",
@@ -51,7 +74,7 @@
     {
       "id": "aiverse-app-lifecycle",
       "package": "app-lifecycle",
-      "path": "skills/aiverse-app-lifecycle/SKILL.md",
+      "path": "skills/ui/aiverse-app-lifecycle/SKILL.md",
       "domain": "gameplay",
       "summary": "Application state transitions and stale loading completion rejection",
       "side": "presentation",
@@ -66,7 +89,7 @@
     {
       "id": "aiverse-attribute-modifiers",
       "package": "attribute-modifiers",
-      "path": "skills/aiverse-attribute-modifiers/SKILL.md",
+      "path": "skills/gameplay/aiverse-attribute-modifiers/SKILL.md",
       "domain": "gameplay",
       "summary": "Authoritative effective stat snapshots through existing modifiers",
       "side": "simulation",
@@ -83,7 +106,7 @@
     {
       "id": "aiverse-balance-lab",
       "package": "balance-lab",
-      "path": "skills/aiverse-balance-lab/SKILL.md",
+      "path": "skills/verification/aiverse-balance-lab/SKILL.md",
       "domain": "gameplay",
       "summary": "Mirrored round-robin cases and aggregate faction outcomes",
       "side": "tools",
@@ -98,7 +121,7 @@
     {
       "id": "aiverse-behavior",
       "package": "behavior",
-      "path": "skills/aiverse-behavior/SKILL.md",
+      "path": "skills/ai/aiverse-behavior/SKILL.md",
       "domain": "gameplay",
       "summary": "FSM transitions and utility selection",
       "side": "simulation",
@@ -113,7 +136,7 @@
     {
       "id": "aiverse-big-numbers",
       "package": "big-numbers",
-      "path": "skills/aiverse-big-numbers/SKILL.md",
+      "path": "skills/core/aiverse-big-numbers/SKILL.md",
       "domain": "gameplay",
       "summary": "Exact bounded arbitrary-precision nonnegative integers",
       "side": "simulation",
@@ -128,7 +151,7 @@
     {
       "id": "aiverse-boss-encounters",
       "package": "boss-encounters",
-      "path": "skills/aiverse-boss-encounters/SKILL.md",
+      "path": "skills/gameplay/aiverse-boss-encounters/SKILL.md",
       "domain": "gameplay",
       "summary": "Telegraphed area attacks (windup/active/recovery, circle/cone/line/ring fixed-point hit tests, periodic and sweeping strikes, falloff, statuses on the strike tick, progress-telegraph view records and ground decals), slow/root/stun/burn status instances with stacking and immunity, boss phases by HP or time with range-band/sequence/weighted attack patterns, enrage and add waves, encounter windows with personal requests and archetype rotation, and mob wander/hunt/flee/leash/swarm behaviour",
       "side": "simulation",
@@ -183,7 +206,7 @@
     {
       "id": "aiverse-bot-matches",
       "package": "bot-matches",
-      "path": "skills/aiverse-bot-matches/SKILL.md",
+      "path": "skills/ai/aiverse-bot-matches/SKILL.md",
       "domain": "gameplay",
       "summary": "Actual RTS/FPS bot matches, decision counters and restoration regression tests",
       "side": "tools",
@@ -196,9 +219,72 @@
       "keywords": []
     },
     {
+      "id": "aiverse-bots-configure",
+      "package": null,
+      "path": "skills/ai/aiverse-bots-configure/SKILL.md",
+      "domain": "workflow",
+      "summary": "Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/ai-controllers.md",
+      "keywords": [
+        "bot",
+        "bots",
+        "ai",
+        "computer",
+        "opponent",
+        "rules.ai",
+        "difficulty",
+        "style",
+        "personality",
+        "scripted",
+        "director",
+        "бот",
+        "боты",
+        "ии",
+        "компьютер",
+        "противник",
+        "сложност",
+        "стиль",
+        "характер"
+      ]
+    },
+    {
+      "id": "aiverse-bots-debug",
+      "package": null,
+      "path": "skills/ai/aiverse-bots-debug/SKILL.md",
+      "domain": "workflow",
+      "summary": "Diagnose bots that do not play and teach RtsAI a new mechanic",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "modules/rts/RtsMechAI.cpp",
+      "keywords": [
+        "bot",
+        "bots",
+        "debug",
+        "stuck",
+        "idle",
+        "commands",
+        "mechanic",
+        "teach",
+        "бот",
+        "боты",
+        "отладк",
+        "застрял",
+        "команд",
+        "механик"
+      ]
+    },
+    {
       "id": "aiverse-bots-fps",
       "package": "bots-fps",
-      "path": "skills/aiverse-bots-fps/SKILL.md",
+      "path": "skills/ai/aiverse-bots-fps/SKILL.md",
       "domain": "gameplay",
       "summary": "Command-driven FPS bots with perception, reaction, aiming, reload, retreat, zone and patrol",
       "side": "simulation",
@@ -221,9 +307,37 @@
       ]
     },
     {
+      "id": "aiverse-bots-tune",
+      "package": null,
+      "path": "skills/ai/aiverse-bots-tune/SKILL.md",
+      "domain": "workflow",
+      "summary": "Bot strength tuning with bot batches and a sweep over every map",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "modules/rts/RtsAI.cpp",
+      "keywords": [
+        "bot",
+        "bots",
+        "tune",
+        "strength",
+        "winrate",
+        "sweep",
+        "balance_batch",
+        "бот",
+        "боты",
+        "сила",
+        "винрейт",
+        "прогон",
+        "карт"
+      ]
+    },
+    {
       "id": "aiverse-bounded-memory",
       "package": "bounded-memory",
-      "path": "skills/aiverse-bounded-memory/SKILL.md",
+      "path": "skills/core/aiverse-bounded-memory/SKILL.md",
       "domain": "gameplay",
       "summary": "Fixed-capacity scratch buffers and generational slot pools",
       "side": "simulation",
@@ -238,7 +352,7 @@
     {
       "id": "aiverse-camera",
       "package": "camera",
-      "path": "skills/aiverse-camera/SKILL.md",
+      "path": "skills/ui/aiverse-camera/SKILL.md",
       "domain": "gameplay",
       "summary": "RTS/follow/orbit target controls, limits, smoothing and strategic icon threshold",
       "side": "presentation",
@@ -254,9 +368,35 @@
       ]
     },
     {
+      "id": "aiverse-campaign",
+      "package": null,
+      "path": "skills/workflow/aiverse-campaign/SKILL.md",
+      "domain": "workflow",
+      "summary": "Campaign mission chain, objectives, dialogs, camera, carry-over, campaign_run",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "modules/rts/RtsCampaign.h",
+      "keywords": [
+        "campaign",
+        "mission",
+        "briefing",
+        "objective",
+        "dialog",
+        "cutscene",
+        "кампани",
+        "мисси",
+        "брифинг",
+        "цел",
+        "диалог"
+      ]
+    },
+    {
       "id": "aiverse-card-games",
       "package": "card-games",
-      "path": "skills/aiverse-card-games/SKILL.md",
+      "path": "skills/genres/aiverse-card-games/SKILL.md",
       "domain": "gameplay",
       "summary": "Card and board game rules: data-defined cards (units/spells/instants with targets and ordered effects: damage, heal, draw, energy, buff, counter, reveal, mill) and rule variants (hand/health/energy curve, draw per turn, first-player skip, fatigue, overdraw burn, board limit, turn limit, separate combat phase, rush, partial/full mulligan); seeded deck shuffles, draw/mulligan, phases, legal action generation, LIFO effect stack with priority passing, counters and fizzling on invalid targets, guard attacks, per-seat hidden information with a non-leaking cardViewFor projection and redacted/reveal events",
       "side": "simulation",
@@ -299,7 +439,7 @@
     {
       "id": "aiverse-card-runtime",
       "package": "card-runtime",
-      "path": "skills/aiverse-card-runtime/SKILL.md",
+      "path": "skills/genres/aiverse-card-runtime/SKILL.md",
       "domain": "gameplay",
       "summary": "Card zones, priority stack and private views",
       "side": "simulation",
@@ -319,7 +459,7 @@
     {
       "id": "aiverse-cards-turns-bots",
       "package": "cards-turns-bots",
-      "path": "skills/aiverse-cards-turns-bots/SKILL.md",
+      "path": "skills/ai/aiverse-cards-turns-bots/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic turn and card bots that see only their own view: a tactics turn planner scoring reachable destinations, attacks and overwatch (expected damage, kill chance, seen threats, cover, objective advance) under a bounded search budget, and a card evaluator scoring legal actions with real-rules simulation on a view-rebuilt state and bounded lookahead",
       "side": "simulation",
@@ -356,7 +496,7 @@
     {
       "id": "aiverse-change-planner",
       "package": "change-planner",
-      "path": "skills/aiverse-change-planner/SKILL.md",
+      "path": "skills/workflow/aiverse-change-planner/SKILL.md",
       "domain": "gameplay",
       "summary": "Dependency-ordered change recipes and verification checklist",
       "side": "tools",
@@ -373,7 +513,7 @@
     {
       "id": "aiverse-character-locomotion",
       "package": "character-locomotion",
-      "path": "skills/aiverse-character-locomotion/SKILL.md",
+      "path": "skills/gameplay/aiverse-character-locomotion/SKILL.md",
       "domain": "gameplay",
       "summary": "Fixed character movement policy: ground/air acceleration, jump buffer, coyote time, slopes, ledges, ladders, swimming, climbing and mantle/vault modes",
       "side": "simulation",
@@ -390,7 +530,7 @@
     {
       "id": "aiverse-cinematic-gameplay",
       "package": "cinematic-gameplay",
-      "path": "skills/aiverse-cinematic-gameplay/SKILL.md",
+      "path": "skills/gameplay/aiverse-cinematic-gameplay/SKILL.md",
       "domain": "gameplay",
       "summary": "Authoritative scene flow: integer-ratio time-scale domains (world/player/ui/cinematic) with stacked priority requests, exact accumulators, hit-stop/slow-motion presets; scene timelines of dialogue/animation/camera/sound/event cues with play/pause/skip/seek; sync waits on host-reported line/marker/in-position facts with timeouts; QTE press/mash/hold/sequence judged on input ticks with difficulty and accessibility; interaction staging with marks, teleport fallback and input locks; checkpoint requests and resume at sync points; narrative cue triggers",
       "side": "simulation",
@@ -425,7 +565,7 @@
     {
       "id": "aiverse-collections",
       "package": "collections",
-      "path": "skills/aiverse-collections/SKILL.md",
+      "path": "skills/core/aiverse-collections/SKILL.md",
       "domain": "gameplay",
       "summary": "FIFO queue and stable top-K",
       "side": "simulation",
@@ -440,7 +580,7 @@
     {
       "id": "aiverse-combat-actions",
       "package": "combat-actions",
-      "path": "skills/aiverse-combat-actions/SKILL.md",
+      "path": "skills/gameplay/aiverse-combat-actions/SKILL.md",
       "domain": "gameplay",
       "summary": "Frame-keyed hitboxes/hurtboxes (sphere/capsule/box), dodge invulnerability, directional guard and perfect parry, poise/stagger and lock-on targeting composed over melee-combat",
       "side": "simulation",
@@ -472,7 +612,7 @@
     {
       "id": "aiverse-configuration",
       "package": "configuration",
-      "path": "skills/aiverse-configuration/SKILL.md",
+      "path": "skills/core/aiverse-configuration/SKILL.md",
       "domain": "gameplay",
       "summary": "Generated C++ settings, JSON Schema, defaults and strict config parsing",
       "side": "tools",
@@ -487,7 +627,7 @@
     {
       "id": "aiverse-construction",
       "package": "construction",
-      "path": "skills/aiverse-construction/SKILL.md",
+      "path": "skills/gameplay/aiverse-construction/SKILL.md",
       "domain": "gameplay",
       "summary": "Placement checks, resource explanations, refunds and native construction commands",
       "side": "simulation",
@@ -504,7 +644,7 @@
     {
       "id": "aiverse-content-mods",
       "package": "content-mods",
-      "path": "skills/aiverse-content-mods/SKILL.md",
+      "path": "skills/workflow/aiverse-content-mods/SKILL.md",
       "domain": "gameplay",
       "summary": "Versioned dependency resolution, conflicts and deterministic mod order",
       "side": "tools",
@@ -521,7 +661,7 @@
     {
       "id": "aiverse-content-pipeline",
       "package": "content-pipeline",
-      "path": "skills/aiverse-content-pipeline/SKILL.md",
+      "path": "skills/workflow/aiverse-content-pipeline/SKILL.md",
       "domain": "gameplay",
       "summary": "Content budgets, PNG dimensions, localization consistency and existing conversion tool orchestration",
       "side": "tools",
@@ -536,7 +676,7 @@
     {
       "id": "aiverse-decision-explanations",
       "package": "decision-explanations",
-      "path": "skills/aiverse-decision-explanations/SKILL.md",
+      "path": "skills/ai/aiverse-decision-explanations/SKILL.md",
       "domain": "gameplay",
       "summary": "Bounded structured decision facts using existing reason codes",
       "side": "presentation",
@@ -553,7 +693,7 @@
     {
       "id": "aiverse-diagnostics",
       "package": "diagnostics",
-      "path": "skills/aiverse-diagnostics/SKILL.md",
+      "path": "skills/core/aiverse-diagnostics/SKILL.md",
       "domain": "gameplay",
       "summary": "Structured refusal codes, values and bounded decision traces",
       "side": "tools",
@@ -568,7 +708,7 @@
     {
       "id": "aiverse-feedback",
       "package": "feedback",
-      "path": "skills/aiverse-feedback/SKILL.md",
+      "path": "skills/ui/aiverse-feedback/SKILL.md",
       "domain": "gameplay",
       "summary": "Event-to-sound/particle/animation/notification/camera actions with cooldowns",
       "side": "presentation",
@@ -581,9 +721,57 @@
       "keywords": []
     },
     {
+      "id": "aiverse-fx",
+      "package": null,
+      "path": "skills/visuals/aiverse-fx/SKILL.md",
+      "domain": "workflow",
+      "summary": "Visual effects from templates or Unity prefabs, tuning, event binding, preview",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/particles.md",
+      "keywords": [
+        "fx",
+        "effect",
+        "particles",
+        "explosion",
+        "эффект",
+        "частиц",
+        "взрыв"
+      ]
+    },
+    {
+      "id": "aiverse-game-screens",
+      "package": null,
+      "path": "skills/ui/aiverse-game-screens/SKILL.md",
+      "domain": "workflow",
+      "summary": "Game screens and HUD with RmlUi and Lua, validation, phone previews",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/ui-scripting.md",
+      "keywords": [
+        "ui",
+        "screen",
+        "menu",
+        "hud",
+        "shop",
+        "rml",
+        "интерфейс",
+        "экран",
+        "меню",
+        "худ",
+        "магазин"
+      ]
+    },
+    {
       "id": "aiverse-game-verification",
       "package": "game-verification",
-      "path": "skills/aiverse-game-verification/SKILL.md",
+      "path": "skills/verification/aiverse-game-verification/SKILL.md",
       "domain": "gameplay",
       "summary": "Headless seed checks, snapshot/serialized restore gates and machine-readable reports",
       "side": "tools",
@@ -598,7 +786,7 @@
     {
       "id": "aiverse-genre-bots",
       "package": "genre-bots",
-      "path": "skills/aiverse-genre-bots/SKILL.md",
+      "path": "skills/ai/aiverse-genre-bots/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic genre bot policies: melee spacing/attack timing/dodge-parry/lock-on, shooter aim/lead/burst/reload/overheat/cover, squad roles with formations and an objective choice hook",
       "side": "simulation",
@@ -639,7 +827,7 @@
     {
       "id": "aiverse-genre-kits",
       "package": "genre-kits",
-      "path": "skills/aiverse-genre-kits/SKILL.md",
+      "path": "skills/genres/aiverse-genre-kits/SKILL.md",
       "domain": "gameplay",
       "summary": "Reusable capability and acceptance recipes for sixteen genres",
       "side": "tools",
@@ -654,7 +842,7 @@
     {
       "id": "aiverse-geometry",
       "package": "geometry",
-      "path": "skills/aiverse-geometry/SKILL.md",
+      "path": "skills/world/aiverse-geometry/SKILL.md",
       "domain": "gameplay",
       "summary": "Rigid mesh clusters, static scenery HLOD, CPU occlusion and offline baked surface proxies",
       "side": "presentation",
@@ -669,7 +857,7 @@
     {
       "id": "aiverse-graphs",
       "package": "graphs",
-      "path": "skills/aiverse-graphs/SKILL.md",
+      "path": "skills/core/aiverse-graphs/SKILL.md",
       "domain": "gameplay",
       "summary": "BFS and topological ordering",
       "side": "simulation",
@@ -684,7 +872,7 @@
     {
       "id": "aiverse-grid",
       "package": "grid",
-      "path": "skills/aiverse-grid/SKILL.md",
+      "path": "skills/core/aiverse-grid/SKILL.md",
       "domain": "gameplay",
       "summary": "Four-neighbor multi-source distance fields",
       "side": "simulation",
@@ -699,7 +887,7 @@
     {
       "id": "aiverse-grid-puzzles",
       "package": "grid-puzzles",
-      "path": "skills/aiverse-grid-puzzles/SKILL.md",
+      "path": "skills/genres/aiverse-grid-puzzles/SKILL.md",
       "domain": "gameplay",
       "summary": "Sokoban moves, undo/redo, simple-deadlock cells and freeze deadlocks, BFS and A* solvers with node budgets, hints",
       "side": "simulation",
@@ -718,7 +906,7 @@
     {
       "id": "aiverse-hot-reload",
       "package": "hot-reload",
-      "path": "skills/aiverse-hot-reload/SKILL.md",
+      "path": "skills/core/aiverse-hot-reload/SKILL.md",
       "domain": "gameplay",
       "summary": "Stage and atomically activate validated host settings",
       "side": "presentation",
@@ -733,7 +921,7 @@
     {
       "id": "aiverse-input",
       "package": "input",
-      "path": "skills/aiverse-input/SKILL.md",
+      "path": "skills/ui/aiverse-input/SKILL.md",
       "domain": "gameplay",
       "summary": "Context and priority input routing, axis deadzones, selection, control groups and drag gestures",
       "side": "presentation",
@@ -748,7 +936,7 @@
     {
       "id": "aiverse-inventory",
       "package": "inventory",
-      "path": "skills/aiverse-inventory/SKILL.md",
+      "path": "skills/gameplay/aiverse-inventory/SKILL.md",
       "domain": "gameplay",
       "summary": "Stacked inventory, weight/slot limits, atomic transfer, equipment and crafting",
       "side": "simulation",
@@ -765,7 +953,7 @@
     {
       "id": "aiverse-library-showcase",
       "package": "library-showcase",
-      "path": "skills/aiverse-library-showcase/SKILL.md",
+      "path": "skills/workflow/aiverse-library-showcase/SKILL.md",
       "domain": "gameplay",
       "summary": "End-to-end real RTS simulation, RmlUi, save and meta reward example",
       "side": "presentation",
@@ -780,7 +968,7 @@
     {
       "id": "aiverse-library-upgrades",
       "package": "library-upgrades",
-      "path": "skills/aiverse-library-upgrades/SKILL.md",
+      "path": "skills/workflow/aiverse-library-upgrades/SKILL.md",
       "domain": "gameplay",
       "summary": "Read-only package upgrade plan from lock hashes",
       "side": "tools",
@@ -795,7 +983,7 @@
     {
       "id": "aiverse-logistics",
       "package": "logistics",
-      "path": "skills/aiverse-logistics/SKILL.md",
+      "path": "skills/gameplay/aiverse-logistics/SKILL.md",
       "domain": "gameplay",
       "summary": "Atomic integer recipe consumption",
       "side": "simulation",
@@ -808,9 +996,38 @@
       "keywords": []
     },
     {
+      "id": "aiverse-look",
+      "package": null,
+      "path": "skills/visuals/aiverse-look/SKILL.md",
+      "domain": "workflow",
+      "summary": "Lighting, post effects with phone cost, materials, model view blocks, screenshots",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/postfx.md",
+      "keywords": [
+        "look",
+        "lighting",
+        "light",
+        "postfx",
+        "bloom",
+        "material",
+        "texture",
+        "visual",
+        "свет",
+        "освещен",
+        "постэффект",
+        "материал",
+        "текстур",
+        "вид"
+      ]
+    },
+    {
       "id": "aiverse-loot-tables",
       "package": "loot-tables",
-      "path": "skills/aiverse-loot-tables/SKILL.md",
+      "path": "skills/gameplay/aiverse-loot-tables/SKILL.md",
       "domain": "gameplay",
       "summary": "Weighted loot with exclusions and a guaranteed rare threshold",
       "side": "simulation",
@@ -825,9 +1042,81 @@
       "keywords": []
     },
     {
+      "id": "aiverse-lua-gameplay",
+      "package": null,
+      "path": "skills/workflow/aiverse-lua-gameplay/SKILL.md",
+      "domain": "workflow",
+      "summary": "Simulation Lua gameplay with determinism and per-tick budget rules",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/scripting.md",
+      "keywords": [
+        "lua",
+        "script",
+        "scripting",
+        "mechanic",
+        "луа",
+        "скрипт",
+        "механик"
+      ]
+    },
+    {
+      "id": "aiverse-main-merge",
+      "package": null,
+      "path": "skills/workflow/aiverse-main-merge/SKILL.md",
+      "domain": "workflow",
+      "summary": "MAIN merge of agent branches with full test and checksum gates",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "AGENTS.md",
+      "keywords": [
+        "main",
+        "merge",
+        "integrate",
+        "checksums",
+        "мердж",
+        "слияни",
+        "интеграц"
+      ]
+    },
+    {
+      "id": "aiverse-map-build",
+      "package": null,
+      "path": "skills/world/aiverse-map-build/SKILL.md",
+      "domain": "workflow",
+      "summary": "Build a playable map: generation or painting, starts, symmetry, validation, bot check",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "tools/mcp/main.cpp",
+      "keywords": [
+        "map",
+        "level",
+        "generate",
+        "terrain",
+        "start",
+        "symmetry",
+        "карта",
+        "карты",
+        "уровень",
+        "генерац",
+        "рельеф",
+        "старт",
+        "симметр"
+      ]
+    },
+    {
       "id": "aiverse-match-bridge",
       "package": "match-bridge",
-      "path": "skills/aiverse-match-bridge/SKILL.md",
+      "path": "skills/meta/aiverse-match-bridge/SKILL.md",
       "domain": "gameplay",
       "summary": "Authoritative match result to idempotent meta transaction",
       "side": "presentation",
@@ -842,7 +1131,7 @@
     {
       "id": "aiverse-match-progression",
       "package": "match-progression",
-      "path": "skills/aiverse-match-progression/SKILL.md",
+      "path": "skills/gameplay/aiverse-match-progression/SKILL.md",
       "domain": "gameplay",
       "summary": "In-match progression: perk/modifier packages with an ordered Set/Add/Multiply stat pipeline (incoming/outgoing damage, speed, fire interval, max health rescale), hero/player xp with a level table or curve, seeded level-up offers of N alternatives (recruit a deck slot, slot perk, player perk, explicit picks, rerolls, revisions), stacking limits, prerequisites, exclusions and upgrade chains, xp orb pickups (radius, magnet, homing attraction, orb budget), summon circles, charges and summoned ally lifecycle, and the pre-match battle deck with limits from the match start payload",
       "side": "simulation",
@@ -887,7 +1176,7 @@
     {
       "id": "aiverse-match-rules",
       "package": "match-rules",
-      "path": "skills/aiverse-match-rules/SKILL.md",
+      "path": "skills/gameplay/aiverse-match-rules/SKILL.md",
       "domain": "gameplay",
       "summary": "Team score events, rounds, overtime, draws and objective modes: capture/hold zones and king of the hill, payload, elimination with lives and respawn waves, extraction, bomb/defuse, ordered route gates, contested overtime clock and spectator transitions",
       "side": "simulation",
@@ -904,7 +1193,7 @@
     {
       "id": "aiverse-math",
       "package": "math",
-      "path": "skills/aiverse-math/SKILL.md",
+      "path": "skills/core/aiverse-math/SKILL.md",
       "domain": "gameplay",
       "summary": "Fixed arithmetic, vectors and trigonometry",
       "side": "simulation",
@@ -919,7 +1208,7 @@
     {
       "id": "aiverse-melee-combat",
       "package": "melee-combat",
-      "path": "skills/aiverse-melee-combat/SKILL.md",
+      "path": "skills/gameplay/aiverse-melee-combat/SKILL.md",
       "domain": "gameplay",
       "summary": "Custom melee timing, buffered combos, active-window hit deduplication and defense outcomes",
       "side": "simulation",
@@ -934,7 +1223,7 @@
     {
       "id": "aiverse-narrative-graphs",
       "package": "narrative-graphs",
-      "path": "skills/aiverse-narrative-graphs/SKILL.md",
+      "path": "skills/gameplay/aiverse-narrative-graphs/SKILL.md",
       "domain": "gameplay",
       "summary": "Localized narrative graphs with conditional choices and atomic fact transactions; 0.2.0 social scenes: typed int/bool/enum facts with persistent world state, per-character affinity/trust/fear meters, per-character knowledge and reveals, AND/OR/NOT conditions, one-shot flags, chapter/act state, deferred consequences (N ticks or scenes later), speakers/participants, cinematic CueRequest events, prioritized ambient barks with cooldowns and visual-novel backlog/skip-read/auto-advance",
       "side": "simulation",
@@ -970,7 +1259,7 @@
     {
       "id": "aiverse-native-scaffold",
       "package": "native-scaffold",
-      "path": "skills/aiverse-native-scaffold/SKILL.md",
+      "path": "skills/core/aiverse-native-scaffold/SKILL.md",
       "domain": "gameplay",
       "summary": "Generate a registered external native C++ module",
       "side": "tools",
@@ -985,7 +1274,7 @@
     {
       "id": "aiverse-navmesh",
       "package": "navmesh",
-      "path": "skills/aiverse-navmesh/SKILL.md",
+      "path": "skills/world/aiverse-navmesh/SKILL.md",
       "domain": "gameplay",
       "summary": "Automatic deterministic layered AABB navigation mesh with clearance, erosion and bounded routing",
       "side": "simulation",
@@ -1004,7 +1293,7 @@
     {
       "id": "aiverse-network-session",
       "package": "network-session",
-      "path": "skills/aiverse-network-session/SKILL.md",
+      "path": "skills/network/aiverse-network-session/SKILL.md",
       "domain": "gameplay",
       "summary": "Transport-independent lobby, reconnect and ordered delivery policy",
       "side": "presentation",
@@ -1017,9 +1306,31 @@
       "keywords": []
     },
     {
+      "id": "aiverse-new-mechanic",
+      "package": null,
+      "path": "skills/workflow/aiverse-new-mechanic/SKILL.md",
+      "domain": "workflow",
+      "summary": "End-to-end engine mechanic: branch, data, code, tests, AI, docs, prototype, checksums",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/game-format.md",
+      "keywords": [
+        "mechanic",
+        "feature",
+        "engine",
+        "branch",
+        "механик",
+        "фича",
+        "движок"
+      ]
+    },
+    {
       "id": "aiverse-object-interactions",
       "package": "object-interactions",
-      "path": "skills/aiverse-object-interactions/SKILL.md",
+      "path": "skills/gameplay/aiverse-object-interactions/SKILL.md",
       "domain": "gameplay",
       "summary": "Stable action previews plus native built-in interaction commands",
       "side": "simulation",
@@ -1037,7 +1348,7 @@
     {
       "id": "aiverse-objectives",
       "package": "objectives",
-      "path": "skills/aiverse-objectives/SKILL.md",
+      "path": "skills/gameplay/aiverse-objectives/SKILL.md",
       "domain": "gameplay",
       "summary": "Event counters and one-shot completion",
       "side": "simulation",
@@ -1052,7 +1363,7 @@
     {
       "id": "aiverse-offline-production",
       "package": "offline-production",
-      "path": "skills/aiverse-offline-production/SKILL.md",
+      "path": "skills/gameplay/aiverse-offline-production/SKILL.md",
       "domain": "gameplay",
       "summary": "Exact fast-forward for affine production chains",
       "side": "simulation",
@@ -1069,7 +1380,7 @@
     {
       "id": "aiverse-orchestrator",
       "package": null,
-      "path": "skills/aiverse-orchestrator/SKILL.md",
+      "path": "skills/workflow/aiverse-orchestrator/SKILL.md",
       "domain": "workflow",
       "summary": "Find skills and resolve minimal library dependencies",
       "side": "tools",
@@ -1090,7 +1401,7 @@
     {
       "id": "aiverse-performance-budgets",
       "package": "performance-budgets",
-      "path": "skills/aiverse-performance-budgets/SKILL.md",
+      "path": "skills/verification/aiverse-performance-budgets/SKILL.md",
       "domain": "gameplay",
       "summary": "Nearest-rank p95, peak limits and baseline regression checks",
       "side": "tools",
@@ -1105,7 +1416,7 @@
     {
       "id": "aiverse-physical-interactions",
       "package": "physical-interactions",
-      "path": "skills/aiverse-physical-interactions/SKILL.md",
+      "path": "skills/gameplay/aiverse-physical-interactions/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic kinematic physical interactions: pick up/carry (hold point, mass limit, speed penalty, drop when blocked), charged throws with arc preview from the same integrator and swept landing, push/pull on a grid or free with friction/mass resistance and blocking, XPBD ropes/joints with a fixed iteration count, attach/detach and breaking force, hinged/sliding doors with locks, keys, one-way rules, timing and auto-reverse, waypoint moving platforms with per-rider carry deltas, breakable objects with damage types, thresholds, stages and debris requests",
       "side": "simulation",
@@ -1155,7 +1466,7 @@
     {
       "id": "aiverse-physics",
       "package": "physics",
-      "path": "skills/aiverse-physics/SKILL.md",
+      "path": "skills/gameplay/aiverse-physics/SKILL.md",
       "domain": "gameplay",
       "summary": "Optional Box3D rigid-body physics: scene wrapper, native collisions, sensors, queries, joints, motors and snapshots",
       "side": "presentation",
@@ -1185,7 +1496,7 @@
     {
       "id": "aiverse-play-scenarios",
       "package": "play-scenarios",
-      "path": "skills/aiverse-play-scenarios/SKILL.md",
+      "path": "skills/verification/aiverse-play-scenarios/SKILL.md",
       "domain": "gameplay",
       "summary": "Tick-indexed actions and assertions for automated play",
       "side": "tools",
@@ -1198,9 +1509,31 @@
       "keywords": []
     },
     {
+      "id": "aiverse-port-game",
+      "package": null,
+      "path": "skills/workflow/aiverse-port-game/SKILL.md",
+      "domain": "workflow",
+      "summary": "Port Unity or Godot projects: scan, import, resolve report items, verify",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/engine-import.md",
+      "keywords": [
+        "port",
+        "import",
+        "unity",
+        "godot",
+        "перенос",
+        "импорт",
+        "порт"
+      ]
+    },
+    {
       "id": "aiverse-presentation",
       "package": "presentation",
-      "path": "skills/aiverse-presentation/SKILL.md",
+      "path": "skills/ui/aiverse-presentation/SKILL.md",
       "domain": "gameplay",
       "summary": "Smoothstep, lerp and timeline progress",
       "side": "presentation",
@@ -1215,7 +1548,7 @@
     {
       "id": "aiverse-production-networks",
       "package": "production-networks",
-      "path": "skills/aiverse-production-networks/SKILL.md",
+      "path": "skills/gameplay/aiverse-production-networks/SKILL.md",
       "domain": "gameplay",
       "summary": "Atomic recipes and bounded one-hop transport",
       "side": "simulation",
@@ -1232,7 +1565,7 @@
     {
       "id": "aiverse-progression",
       "package": "progression",
-      "path": "skills/aiverse-progression/SKILL.md",
+      "path": "skills/gameplay/aiverse-progression/SKILL.md",
       "domain": "gameplay",
       "summary": "Weighted selection and level thresholds",
       "side": "simulation",
@@ -1247,7 +1580,7 @@
     {
       "id": "aiverse-progression-curves",
       "package": "progression-curves",
-      "path": "skills/aiverse-progression-curves/SKILL.md",
+      "path": "skills/gameplay/aiverse-progression-curves/SKILL.md",
       "domain": "gameplay",
       "summary": "Nonnegative integer step/linear progression tables and CLI preview",
       "side": "simulation",
@@ -1262,7 +1595,7 @@
     {
       "id": "aiverse-project-recipes",
       "package": "project-recipes",
-      "path": "skills/aiverse-project-recipes/SKILL.md",
+      "path": "skills/workflow/aiverse-project-recipes/SKILL.md",
       "domain": "gameplay",
       "summary": "Plan and validated application of resource/building/ability/faction changes",
       "side": "tools",
@@ -1277,7 +1610,7 @@
     {
       "id": "aiverse-puzzle-machine",
       "package": "puzzle-machine",
-      "path": "skills/aiverse-puzzle-machine/SKILL.md",
+      "path": "skills/genres/aiverse-puzzle-machine/SKILL.md",
       "domain": "gameplay",
       "summary": "Bounded deterministic integer VM for programming puzzles",
       "side": "simulation",
@@ -1292,7 +1625,7 @@
     {
       "id": "aiverse-puzzle-solvers",
       "package": "puzzle-solvers",
-      "path": "skills/aiverse-puzzle-solvers/SKILL.md",
+      "path": "skills/genres/aiverse-puzzle-solvers/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic puzzle rules and bounded solvers: match-3 (swap validation, line/L/T detection, special pieces from data rules, gravity + seeded refill, ordered cascades, no-move detection, shuffles that always leave a legal move, goals, hints); flood fill and region counting, color-flood game with IDA*, rotatable pipe/wire connectivity with leak checks; N-puzzle parity, always-solvable shuffles and IDA*, sliding blocks of any rectangle size (BFS), polyomino packing with rotations/flips (exact-cover backtracking, solution counting); Sokoban sessions over grid-puzzles (deadlocks, A*, undo); generic CSP over small grids (AllDifferent/Sum/Count/Runs as data: sudoku, nonogram) with propagation, bounded backtracking and uniqueness checks; puzzle bot playing through player commands",
       "side": "simulation",
@@ -1337,7 +1670,7 @@
     {
       "id": "aiverse-reference-validation",
       "package": "reference-validation",
-      "path": "skills/aiverse-reference-validation/SKILL.md",
+      "path": "skills/verification/aiverse-reference-validation/SKILL.md",
       "domain": "gameplay",
       "summary": "Validate ID, file and localization/content references",
       "side": "tools",
@@ -1350,9 +1683,37 @@
       "keywords": []
     },
     {
+      "id": "aiverse-release-build",
+      "package": null,
+      "path": "skills/workflow/aiverse-release-build/SKILL.md",
+      "domain": "workflow",
+      "summary": "Platform packaging: branding, toolchains, size estimate, build and status",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/overview.md",
+      "keywords": [
+        "build",
+        "release",
+        "platform",
+        "android",
+        "ios",
+        "web",
+        "windows",
+        "macos",
+        "linux",
+        "package",
+        "сборк",
+        "релиз",
+        "платформ"
+      ]
+    },
+    {
       "id": "aiverse-reservations",
       "package": "reservations",
-      "path": "skills/aiverse-reservations/SKILL.md",
+      "path": "skills/gameplay/aiverse-reservations/SKILL.md",
       "domain": "gameplay",
       "summary": "Transactional reservation, release and consumption of custom capacities",
       "side": "simulation",
@@ -1367,7 +1728,7 @@
     {
       "id": "aiverse-rhythm-timing",
       "package": "rhythm-timing",
-      "path": "skills/aiverse-rhythm-timing/SKILL.md",
+      "path": "skills/genres/aiverse-rhythm-timing/SKILL.md",
       "domain": "gameplay",
       "summary": "Integer tempo maps and frame-independent tap/hold judgement",
       "side": "simulation",
@@ -1385,7 +1746,7 @@
     {
       "id": "aiverse-roads",
       "package": null,
-      "path": "skills/aiverse-roads/SKILL.md",
+      "path": "skills/world/aiverse-roads/SKILL.md",
       "domain": "gameplay",
       "summary": "Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks",
       "side": "tools",
@@ -1425,7 +1786,7 @@
     {
       "id": "aiverse-rules",
       "package": "rules",
-      "path": "skills/aiverse-rules/SKILL.md",
+      "path": "skills/core/aiverse-rules/SKILL.md",
       "domain": "gameplay",
       "summary": "Ordered all/any predicates",
       "side": "simulation",
@@ -1440,7 +1801,7 @@
     {
       "id": "aiverse-run-graph",
       "package": "run-graph",
-      "path": "skills/aiverse-run-graph/SKILL.md",
+      "path": "skills/gameplay/aiverse-run-graph/SKILL.md",
       "domain": "gameplay",
       "summary": "Connected seeded runs, encounter budgets and persistent reward lifecycle",
       "side": "simulation",
@@ -1458,7 +1819,7 @@
     {
       "id": "aiverse-save-migrations",
       "package": "save-migrations",
-      "path": "skills/aiverse-save-migrations/SKILL.md",
+      "path": "skills/core/aiverse-save-migrations/SKILL.md",
       "domain": "gameplay",
       "summary": "Transactional versioned state migrations plus checksummed JSON backup tools",
       "side": "simulation",
@@ -1475,7 +1836,7 @@
     {
       "id": "aiverse-screens",
       "package": "screens",
-      "path": "skills/aiverse-screens/SKILL.md",
+      "path": "skills/ui/aiverse-screens/SKILL.md",
       "domain": "gameplay",
       "summary": "Configurable screen rows, modal routing and RmlUi binding",
       "side": "presentation",
@@ -1492,7 +1853,7 @@
     {
       "id": "aiverse-session-admission",
       "package": "session-admission",
-      "path": "skills/aiverse-session-admission/SKILL.md",
+      "path": "skills/network/aiverse-session-admission/SKILL.md",
       "domain": "gameplay",
       "summary": "Host-only Conn admission with audience-bound identity, expiry and revocation",
       "side": "presentation",
@@ -1509,7 +1870,7 @@
     {
       "id": "aiverse-settlement-production",
       "package": "settlement-production",
-      "path": "skills/aiverse-settlement-production/SKILL.md",
+      "path": "skills/genres/aiverse-settlement-production/SKILL.md",
       "domain": "gameplay",
       "summary": "Colony simulation policies: colonist needs with decay, thresholds and mood bands (breaks, work speed), hour-block schedules (work/sleep/leisure), job preferences 1..4 with deterministic assignment (lib::claim, stable tie-break, stock reservations per stockpile), production recipes at workstations with bills and power requirements, haul jobs between stockpiles, construction and gathering orders, disaster alerts (fire/flood/raid) with response jobs and priority overrides/preemption, power and fluid graphs (producers/consumers/storage per connected component, deterministic brownout shedding by priority with hysteresis), and a colony planner bot that issues player-equivalent commands",
       "side": "simulation",
@@ -1569,7 +1930,7 @@
     {
       "id": "aiverse-sports-rules",
       "package": "sports-rules",
-      "path": "skills/aiverse-sports-rules/SKILL.md",
+      "path": "skills/genres/aiverse-sports-rules/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic ball-sport rules: possession with pickup radius and possession lock, tackles contested with the passed RNG, passes with receiver leading and shots with power and seeded accuracy error, interception at the closest approach along the ball path, goals, out of bounds and generic restarts (kickoff, throw-in, corner, goal kick, free kick, penalty, face-off), walls/rebound fields, periods with running/stopped/added-stoppage clocks and golden-goal overtime, fouls from contact rules; role-based formations with stable slot assignment; positioning bot (formation slots, press/mark/chase, keeper line, pass/shot choice)",
       "side": "simulation",
@@ -1613,7 +1974,7 @@
     {
       "id": "aiverse-squads",
       "package": "squads",
-      "path": "skills/aiverse-squads/SKILL.md",
+      "path": "skills/gameplay/aiverse-squads/SKILL.md",
       "domain": "gameplay",
       "summary": "Leader election, role ordering, formation slots and native group commands",
       "side": "simulation",
@@ -1631,7 +1992,7 @@
     {
       "id": "aiverse-state-diff",
       "package": "state-diff",
-      "path": "skills/aiverse-state-diff/SKILL.md",
+      "path": "skills/verification/aiverse-state-diff/SKILL.md",
       "domain": "gameplay",
       "summary": "Locate the first differing native field and trace tick",
       "side": "tools",
@@ -1646,7 +2007,7 @@
     {
       "id": "aiverse-status-effects",
       "package": "status-effects",
-      "path": "skills/aiverse-status-effects/SKILL.md",
+      "path": "skills/gameplay/aiverse-status-effects/SKILL.md",
       "domain": "gameplay",
       "summary": "Status snapshots and validated entry to the existing status engine",
       "side": "simulation",
@@ -1663,7 +2024,7 @@
     {
       "id": "aiverse-stealth-senses",
       "package": "stealth-senses",
-      "path": "skills/aiverse-stealth-senses/SKILL.md",
+      "path": "skills/gameplay/aiverse-stealth-senses/SKILL.md",
       "domain": "gameplay",
       "summary": "Per-agent stealth perception: sight cones with near/peripheral ranges and owner multipliers, hearing with occlusion and noise budgets, footprint/scent trails, suspicion meters with Unaware/Suspicious/Searching/Alert thresholds, delayed ally alerts with shared last known positions, deterministic search points, disguises and hiding spots",
       "side": "simulation",
@@ -1700,7 +2061,7 @@
     {
       "id": "aiverse-survival-ecology",
       "package": "survival-ecology",
-      "path": "skills/aiverse-survival-ecology/SKILL.md",
+      "path": "skills/genres/aiverse-survival-ecology/SKILL.md",
       "domain": "gameplay",
       "summary": "Survival and ecology policies: body model (core temperature from owner environment, clothing insulation/windproofing/waterproofing, shelter and heat sources, wetness, hunger/thirst/stamina interplay, condition and death) with weather modifiers for bodies, solar/wind power, growth and animal activity; population ecosystems per species per region (logistic growth, carrying capacity, saturating predation, starvation, migration, integer accumulators); animal behavior states wander/graze/flee/hunt/sleep from stealth-senses PerceivedTarget records; renewable resource nodes with depletion and regrowth timers",
       "side": "simulation",
@@ -1760,7 +2121,7 @@
     {
       "id": "aiverse-tactics-grid",
       "package": "tactics-grid",
-      "path": "skills/aiverse-tactics-grid/SKILL.md",
+      "path": "skills/genres/aiverse-tactics-grid/SKILL.md",
       "domain": "gameplay",
       "summary": "Turn strategy on square/hex grids: weighted 8-way/hex movement with deterministic reachable sets and paths, half/full cover from the owner grid with a flank angle, integer line of fire and shot previews (hit chance milli), action points, per-round initiative with speed modifiers and stable-id ties, delay, overwatch reservations firing reaction shots, per-team visibility projection, and WeGo simultaneous resolution (collected orders, lockstep movement with contested-cell/swap rules, simultaneous fire)",
       "side": "simulation",
@@ -1805,7 +2166,7 @@
     {
       "id": "aiverse-tag-conditions",
       "package": "tag-conditions",
-      "path": "skills/aiverse-tag-conditions/SKILL.md",
+      "path": "skills/core/aiverse-tag-conditions/SKILL.md",
       "domain": "gameplay",
       "summary": "All/any/none tag filters and bounded-value conditions",
       "side": "simulation",
@@ -1820,7 +2181,7 @@
     {
       "id": "aiverse-tasks",
       "package": "tasks",
-      "path": "skills/aiverse-tasks/SKILL.md",
+      "path": "skills/gameplay/aiverse-tasks/SKILL.md",
       "domain": "gameplay",
       "summary": "Priority task claiming and worker release",
       "side": "simulation",
@@ -1835,7 +2196,7 @@
     {
       "id": "aiverse-themes",
       "package": "themes",
-      "path": "skills/aiverse-themes/SKILL.md",
+      "path": "skills/ui/aiverse-themes/SKILL.md",
       "domain": "gameplay",
       "summary": "Safe-area layouts, density clamp and validated theme tokens",
       "side": "presentation",
@@ -1850,7 +2211,7 @@
     {
       "id": "aiverse-turn-scheduler",
       "package": "turn-scheduler",
-      "path": "skills/aiverse-turn-scheduler/SKILL.md",
+      "path": "skills/gameplay/aiverse-turn-scheduler/SKILL.md",
       "domain": "gameplay",
       "summary": "Initiative, AP and nested reaction scheduling",
       "side": "simulation",
@@ -1869,7 +2230,7 @@
     {
       "id": "aiverse-tutorial",
       "package": "tutorial",
-      "path": "skills/aiverse-tutorial/SKILL.md",
+      "path": "skills/gameplay/aiverse-tutorial/SKILL.md",
       "domain": "gameplay",
       "summary": "Event-driven tutorial stages, counters, branches, skip and hard/soft action gating",
       "side": "simulation",
@@ -1886,7 +2247,7 @@
     {
       "id": "aiverse-typed-commands",
       "package": "typed-commands",
-      "path": "skills/aiverse-typed-commands/SKILL.md",
+      "path": "skills/core/aiverse-typed-commands/SKILL.md",
       "domain": "gameplay",
       "summary": "Generate typed native Command encoders and dispatch",
       "side": "tools",
@@ -1901,7 +2262,7 @@
     {
       "id": "aiverse-typed-state",
       "package": "typed-state",
-      "path": "skills/aiverse-typed-state/SKILL.md",
+      "path": "skills/core/aiverse-typed-state/SKILL.md",
       "domain": "gameplay",
       "summary": "Generate typed NativeState access and transactional migrations",
       "side": "tools",
@@ -1916,7 +2277,7 @@
     {
       "id": "aiverse-ui-binding",
       "package": "ui-binding",
-      "path": "skills/aiverse-ui-binding/SKILL.md",
+      "path": "skills/ui/aiverse-ui-binding/SKILL.md",
       "domain": "gameplay",
       "summary": "Snapshot UI bindings, escaped values and bounded action queues",
       "side": "presentation",
@@ -1931,7 +2292,7 @@
     {
       "id": "aiverse-ui-patterns",
       "package": "ui-patterns",
-      "path": "skills/aiverse-ui-patterns/SKILL.md",
+      "path": "skills/ui/aiverse-ui-patterns/SKILL.md",
       "domain": "gameplay",
       "summary": "Existing UI templates",
       "side": "presentation",
@@ -1944,9 +2305,38 @@
       "keywords": []
     },
     {
+      "id": "aiverse-unit-balance",
+      "package": null,
+      "path": "skills/workflow/aiverse-unit-balance/SKILL.md",
+      "domain": "workflow",
+      "summary": "Unit and faction balance: stats, duels, counter matrix, rules edits, bot batches",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "apps/editor/core/BalanceOps.cpp",
+      "keywords": [
+        "balance",
+        "unit",
+        "units",
+        "faction",
+        "counter",
+        "duel",
+        "matrix",
+        "баланс",
+        "юнит",
+        "юниты",
+        "фракци",
+        "контр",
+        "дуэл",
+        "матриц"
+      ]
+    },
+    {
       "id": "aiverse-vehicle-controllers",
       "package": "vehicle-controllers",
-      "path": "skills/aiverse-vehicle-controllers/SKILL.md",
+      "path": "skills/gameplay/aiverse-vehicle-controllers/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic kinematic vehicle controllers: wheeled arcade-sim (torque curve, auto/manual gears with shift time, per-wheel traction with slip/grip curves, weight transfer, handbrake, drift), tracked differential steering, hover altitude hold with drift damping, arcade flight with banked turns and stall; damage zones with per-zone performance penalties and critical disable; driver/passenger/gunner seats with validated enter/exit/switch/eject and owner-checked exit points; ordered checkpoints, laps, race positions, wrong-way detection and respawn at the last checkpoint; race bot (racing line, corner braking, overtaking lanes, rubber band)",
       "side": "simulation",
@@ -1993,7 +2383,7 @@
     {
       "id": "aiverse-verification",
       "package": "verification",
-      "path": "skills/aiverse-verification/SKILL.md",
+      "path": "skills/verification/aiverse-verification/SKILL.md",
       "domain": "gameplay",
       "summary": "Existing snapshot restoration verification",
       "side": "tools",
@@ -2008,7 +2398,7 @@
     {
       "id": "aiverse-weapon-policies",
       "package": "weapon-policies",
-      "path": "skills/aiverse-weapon-policies/SKILL.md",
+      "path": "skills/gameplay/aiverse-weapon-policies/SKILL.md",
       "domain": "gameplay",
       "summary": "Seeded spread, recoil, swept projectiles with ricochets, material penetration, radial explosions, ammo feeds/overheat, charge tiers, attachment stacking and ballistic aim/lead solving",
       "side": "simulation",
@@ -2025,7 +2415,7 @@
     {
       "id": "aiverse-work-budget",
       "package": "work-budget",
-      "path": "skills/aiverse-work-budget/SKILL.md",
+      "path": "skills/core/aiverse-work-budget/SKILL.md",
       "domain": "gameplay",
       "summary": "Deterministic round-robin work with operation budgets",
       "side": "simulation",
@@ -2040,7 +2430,7 @@
     {
       "id": "aiverse-zone-graph",
       "package": "zone-graph",
-      "path": "skills/aiverse-zone-graph/SKILL.md",
+      "path": "skills/gameplay/aiverse-zone-graph/SKILL.md",
       "domain": "gameplay",
       "summary": "Permanent ability gates, checkpoints and exhaustive softlock proofs",
       "side": "simulation",
@@ -2057,7 +2447,7 @@
     {
       "id": "meta-ads",
       "package": "ads",
-      "path": "skills/meta-ads/SKILL.md",
+      "path": "skills/meta/meta-ads/SKILL.md",
       "domain": "meta",
       "summary": "rewarded ads tickets caps cooldown server callbacks",
       "side": "server",
@@ -2077,7 +2467,7 @@
     {
       "id": "meta-albums",
       "package": "albums",
-      "path": "skills/meta-albums/SKILL.md",
+      "path": "skills/meta/meta-albums/SKILL.md",
       "domain": "meta",
       "summary": "seasonal collections albums duplicate trades",
       "side": "server",
@@ -2100,7 +2490,7 @@
     {
       "id": "meta-async-pvp",
       "package": "async-pvp",
-      "path": "skills/meta-async-pvp/SKILL.md",
+      "path": "skills/meta/meta-async-pvp/SKILL.md",
       "domain": "meta",
       "summary": "asynchronous PvP defense snapshots raids revenge shields",
       "side": "server",
@@ -2122,7 +2512,7 @@
     {
       "id": "meta-backend",
       "package": "backend",
-      "path": "skills/meta-backend/SKILL.md",
+      "path": "skills/meta/meta-backend/SKILL.md",
       "domain": "meta",
       "summary": "backend HTTP SQLite authentication persistence entitlements subscription native transport",
       "side": "server",
@@ -2143,7 +2533,7 @@
     {
       "id": "meta-clans",
       "package": "clans",
-      "path": "skills/meta-clans/SKILL.md",
+      "path": "skills/meta/meta-clans/SKILL.md",
       "domain": "meta",
       "summary": "friends requests clan roles donations goals",
       "side": "server",
@@ -2164,7 +2554,7 @@
     {
       "id": "meta-client",
       "package": "client",
-      "path": "skills/meta-client/SKILL.md",
+      "path": "skills/meta/meta-client/SKILL.md",
       "domain": "meta",
       "summary": "native host UI durable outbox retry restart backend requests",
       "side": "client",
@@ -2184,7 +2574,7 @@
     {
       "id": "meta-compose",
       "package": null,
-      "path": "skills/meta-compose/SKILL.md",
+      "path": "skills/meta/meta-compose/SKILL.md",
       "domain": "workflow",
       "summary": "Compose a selected meta project",
       "side": "tools",
@@ -2198,7 +2588,7 @@
     {
       "id": "meta-database",
       "package": "database",
-      "path": "skills/meta-database/SKILL.md",
+      "path": "skills/meta/meta-database/SKILL.md",
       "domain": "meta",
       "summary": "server SQLite schema migrations sessions atomic snapshot CAS",
       "side": "database",
@@ -2222,7 +2612,7 @@
     {
       "id": "meta-economy",
       "package": "economy",
-      "path": "skills/meta-economy/SKILL.md",
+      "path": "skills/meta/meta-economy/SKILL.md",
       "domain": "meta",
       "summary": "shop offers currencies crafting rewards payments",
       "side": "server",
@@ -2247,7 +2637,7 @@
     {
       "id": "meta-events",
       "package": "events",
-      "path": "skills/meta-events/SKILL.md",
+      "path": "skills/meta/meta-events/SKILL.md",
       "domain": "meta",
       "summary": "global personal events phases late joins catchup event currencies",
       "side": "server",
@@ -2267,7 +2657,7 @@
     {
       "id": "meta-game",
       "package": null,
-      "path": "skills/meta-game/SKILL.md",
+      "path": "skills/meta/meta-game/SKILL.md",
       "domain": "workflow",
       "summary": "Choose meta-game recipes",
       "side": "tools",
@@ -2281,7 +2671,7 @@
     {
       "id": "meta-items",
       "package": "items",
-      "path": "skills/meta-items/SKILL.md",
+      "path": "skills/meta/meta-items/SKILL.md",
       "domain": "meta",
       "summary": "collection instance equipment upgrade merge salvage",
       "side": "server",
@@ -2302,7 +2692,7 @@
     {
       "id": "meta-jobs",
       "package": "jobs",
-      "path": "skills/meta-jobs/SKILL.md",
+      "path": "skills/meta/meta-jobs/SKILL.md",
       "domain": "meta",
       "summary": "crafting construction queues timed slots speedups cancellation",
       "side": "server",
@@ -2323,7 +2713,7 @@
     {
       "id": "meta-loot",
       "package": "loot",
-      "path": "skills/meta-loot/SKILL.md",
+      "path": "skills/meta/meta-loot/SKILL.md",
       "domain": "meta",
       "summary": "nested chests weighted rewards pity duplicate protection",
       "side": "server",
@@ -2344,7 +2734,7 @@
     {
       "id": "meta-matchmaking",
       "package": "matchmaking",
-      "path": "skills/meta-matchmaking/SKILL.md",
+      "path": "skills/meta/meta-matchmaking/SKILL.md",
       "domain": "meta",
       "summary": "party matchmaking regions widening queues backfill leave penalties",
       "side": "server",
@@ -2364,7 +2754,7 @@
     {
       "id": "meta-notifications",
       "package": "notifications",
-      "path": "skills/meta-notifications/SKILL.md",
+      "path": "skills/meta/meta-notifications/SKILL.md",
       "domain": "meta",
       "summary": "notification badges grouped priorities reminders read state",
       "side": "server",
@@ -2384,7 +2774,7 @@
     {
       "id": "meta-offer-chains",
       "package": "offer-chains",
-      "path": "skills/meta-offer-chains/SKILL.md",
+      "path": "skills/meta/meta-offer-chains/SKILL.md",
       "domain": "meta",
       "summary": "offer chains accept dismiss transitions impression frequency",
       "side": "server",
@@ -2403,7 +2793,7 @@
     {
       "id": "meta-offline",
       "package": "offline",
-      "path": "skills/meta-offline/SKILL.md",
+      "path": "skills/meta/meta-offline/SKILL.md",
       "domain": "meta",
       "summary": "offline income capped accrual rate tiers checkpoints",
       "side": "server",
@@ -2424,7 +2814,7 @@
     {
       "id": "meta-progression",
       "package": "progression",
-      "path": "skills/meta-progression/SKILL.md",
+      "path": "skills/meta/meta-progression/SKILL.md",
       "domain": "meta",
       "summary": "quests achievements pass daily energy inbox",
       "side": "server",
@@ -2450,7 +2840,7 @@
     {
       "id": "meta-quests",
       "package": "quests",
-      "path": "skills/meta-quests/SKILL.md",
+      "path": "skills/meta/meta-quests/SKILL.md",
       "domain": "meta",
       "summary": "compound quests all any goals daily variants reroll branching",
       "side": "server",
@@ -2470,7 +2860,7 @@
     {
       "id": "meta-ratings",
       "package": "ratings",
-      "path": "skills/meta-ratings/SKILL.md",
+      "path": "skills/meta/meta-ratings/SKILL.md",
       "domain": "meta",
       "summary": "Elo Glicko2 ranked periods provisional teams streaks leavers",
       "side": "server",
@@ -2491,7 +2881,7 @@
     {
       "id": "meta-referrals",
       "package": "referrals",
-      "path": "skills/meta-referrals/SKILL.md",
+      "path": "skills/meta/meta-referrals/SKILL.md",
       "domain": "meta",
       "summary": "referral invites milestone rewards promo codes",
       "side": "server",
@@ -2512,7 +2902,7 @@
     {
       "id": "meta-research",
       "package": "research",
-      "path": "skills/meta-research/SKILL.md",
+      "path": "skills/meta/meta-research/SKILL.md",
       "domain": "meta",
       "summary": "research trees dependencies exclusive branches prestige",
       "side": "server",
@@ -2533,7 +2923,7 @@
     {
       "id": "meta-server",
       "package": "server",
-      "path": "skills/meta-server/SKILL.md",
+      "path": "skills/meta/meta-server/SKILL.md",
       "domain": "meta",
       "summary": "authoritative server policies permissions transactions service modules",
       "side": "server",
@@ -2553,7 +2943,7 @@
     {
       "id": "meta-social",
       "package": "social",
-      "path": "skills/meta-social/SKILL.md",
+      "path": "skills/meta/meta-social/SKILL.md",
       "domain": "meta",
       "summary": "leaderboards ranking chat moderation",
       "side": "server",
@@ -2578,7 +2968,7 @@
     {
       "id": "meta-tournaments",
       "package": "tournaments",
-      "path": "skills/meta-tournaments/SKILL.md",
+      "path": "skills/meta/meta-tournaments/SKILL.md",
       "domain": "meta",
       "summary": "tournament league cohorts seasons promotion rewards",
       "side": "server",
@@ -2599,7 +2989,7 @@
     {
       "id": "meta-ui",
       "package": "ui",
-      "path": "skills/meta-ui/SKILL.md",
+      "path": "skills/meta/meta-ui/SKILL.md",
       "domain": "meta",
       "summary": "screens shop chat leaderboard inbox UI themes localization",
       "side": "client",
@@ -2620,7 +3010,7 @@
     {
       "id": "meta-wars",
       "package": "wars",
-      "path": "skills/meta-wars/SKILL.md",
+      "path": "skills/meta/meta-wars/SKILL.md",
       "domain": "meta",
       "summary": "clan wars roster pairing contributions settlement rewards",
       "side": "server",
@@ -2639,7 +3029,7 @@
     {
       "id": "rts-bots-rts",
       "package": "bots-rts",
-      "path": "skills/rts-bots-rts/SKILL.md",
+      "path": "skills/ai/rts-bots-rts/SKILL.md",
       "domain": "gameplay",
       "summary": "RTS bot profiles and transactional checkpoints over the existing RtsAI",
       "side": "simulation",
@@ -2659,7 +3049,7 @@
     {
       "id": "rts-generation",
       "package": "generation",
-      "path": "skills/rts-generation/SKILL.md",
+      "path": "skills/world/rts-generation/SKILL.md",
       "domain": "gameplay",
       "summary": "Existing deterministic map generator",
       "side": "simulation",
@@ -2674,7 +3064,7 @@
     {
       "id": "rts-navigation",
       "package": "navigation",
-      "path": "skills/rts-navigation/SKILL.md",
+      "path": "skills/world/rts-navigation/SKILL.md",
       "domain": "gameplay",
       "summary": "Existing pathfinding and flow fields",
       "side": "simulation",
@@ -2689,7 +3079,7 @@
     {
       "id": "rts-spatial",
       "package": "spatial",
-      "path": "skills/rts-spatial/SKILL.md",
+      "path": "skills/world/rts-spatial/SKILL.md",
       "domain": "gameplay",
       "summary": "Existing game spatial queries",
       "side": "simulation",

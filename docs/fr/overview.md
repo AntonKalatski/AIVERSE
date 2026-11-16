@@ -713,7 +713,7 @@ et l’éditeur doivent être recompilés. [API, exemple et instructions de comp
 énergie, courrier, classements, chats et segments. Disponible pour le code natif du projet sans Lua/GPU ; les définitions
 sont en JSON, les algorithmes n’ont pas besoin d’être régénérés. Démarrage :
 `python3 tools/meta/scaffold.py --preset mobile --out <project>`. Documentation : [meta-game.md](../meta-game.md) ; pour les
-agents — `skills/meta-game/SKILL.md`. Les politiques locales fonctionnent sans serveur ; la communication entre appareils et
+agents — `skills/meta/meta-game/SKILL.md`. Les politiques locales fonctionnent sans serveur ; la communication entre appareils et
 les classements mondiaux nécessitent un vrai backend. Un service cloud prêt à l’emploi ne fait pas partie du paquet.
 
 Le preset `full --with-ui` ajoute amis/clans, une collection d’instances, l’équipement, la fusion, les abonnements et les

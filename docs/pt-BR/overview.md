@@ -695,7 +695,7 @@ suportados; Lua e C++ funcionam juntos. Depois de mudar o C++, é preciso recomp
 `aiverse::meta` — loja/ofertas/criação configuráveis, moedas e itens, missões e passes, recompensas diárias, energia, correio,
 rankings, chats e segmentos. Disponível para o código nativo do projeto sem Lua/GPU; as definições são JSON, os algoritmos não
 precisam ser gerados de novo. Início: `python3 tools/meta/scaffold.py --preset mobile --out <project>`. Documentação:
-[meta-game.md](../meta-game.md); para agentes — `skills/meta-game/SKILL.md`. As políticas locais funcionam sem servidor; a
+[meta-game.md](../meta-game.md); para agentes — `skills/meta/meta-game/SKILL.md`. As políticas locais funcionam sem servidor; a
 comunicação entre aparelhos e rankings globais exigem um backend real. Um serviço de nuvem pronto não faz parte do pacote.
 
 O preset `full --with-ui` adiciona amigos/clãs, uma coleção de instâncias, equipamento, fusão, assinaturas e ligas de torneio.

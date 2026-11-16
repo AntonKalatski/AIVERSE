@@ -44,7 +44,7 @@ def main():
     parser.add_argument('--project', type=Path)
     parser.add_argument('--section', default='', help='dot path within describe example; reduces output')
     args = parser.parse_args()
-    entries = [dict(id=k, version=VERSION, summary=summary, skill=f'skills/{skill}/SKILL.md', source=source)
+    entries = [dict(id=k, version=VERSION, summary=summary, skill=f'skills/meta/{skill}/SKILL.md', source=source)
                for k, summary, skill, source in PACKAGES]
     if args.command in ('list', 'search'):
         print(json.dumps([p for p in entries if args.query.lower() in json.dumps(p).lower()], indent=2))
@@ -96,7 +96,7 @@ def main():
     for root in ['engine/meta', 'tools/meta', 'examples/meta/ui']:
         files.update(p for p in (ROOT/root).rglob('*') if p.is_file() and '__pycache__' not in p.parts)
     files.update(ROOT/p['skill'] for p in entries)
-    files.update([ROOT/'engine/data/Json.h', ROOT/'engine/data/Json.cpp', ROOT/'engine/core/Fixed.h', ROOT/'engine/core/Fixed.cpp', ROOT/'docs/meta-liveops.md', ROOT/'examples/meta/liveops.json', ROOT/'libraries/include/aiverselib/Progression.h', ROOT/'libraries/include/aiverselib/systems/Loot.h', ROOT/'libraries/include/aiverselib/Graphs.h', ROOT/'docs/meta-service.md', ROOT/'docs/meta-game.md', ROOT/'skills/meta-game/SKILL.md', ROOT/'skills/meta-game/references/catalog.md'])
+    files.update([ROOT/'engine/data/Json.h', ROOT/'engine/data/Json.cpp', ROOT/'engine/core/Fixed.h', ROOT/'engine/core/Fixed.cpp', ROOT/'docs/meta-liveops.md', ROOT/'examples/meta/liveops.json', ROOT/'libraries/include/aiverselib/Progression.h', ROOT/'libraries/include/aiverselib/systems/Loot.h', ROOT/'libraries/include/aiverselib/Graphs.h', ROOT/'docs/meta-service.md', ROOT/'docs/meta-game.md', ROOT/'skills/meta/meta-game/SKILL.md', ROOT/'skills/meta/meta-game/references/catalog.md'])
     pin = {'version': VERSION, 'files': {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes().replace(b'\r\n', b'\n')).hexdigest() for p in sorted(files)}}
     destination = args.project/'meta/package.lock.json'
     old = json.loads(destination.read_text()) if destination.exists() else None

@@ -1,6 +1,6 @@
 # AIVERSE shared C++20 libraries
 
-Catalog: `libraries/catalog.json`. Repository AI instructions: `skills/*/SKILL.md`. These instructions are not
+Catalog: `libraries/catalog.json`. Repository AI instructions: `skills/<category>/<skill>/SKILL.md`. These instructions are not
 installed personal skills of any assistant. The packages do not depend on Lua.
 
 ## Using them from a game's native code

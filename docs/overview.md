@@ -702,7 +702,7 @@ rebuilt. [API, example and build instructions](native-modules.md).
 `aiverse::meta` — configurable shop/offers/crafting, currencies and items, quests and passes, daily rewards, energy,
 mail, leaderboards, chats and segments. Available to the project's native code without Lua/GPU; definitions are JSON,
 so the algorithms don't need to be generated again. Start: `python3 tools/meta/scaffold.py --preset mobile --out <project>`.
-Documentation: [meta-game.md](meta-game.md); for agents — `skills/meta-game/SKILL.md`. Local policies work without a
+Documentation: [meta-game.md](meta-game.md); for agents — `skills/meta/meta-game/SKILL.md`. Local policies work without a
 server; communication between devices and global leaderboards need a real backend. A ready cloud service is not part
 of the package.
 

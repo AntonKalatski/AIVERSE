@@ -193,7 +193,7 @@ rendered UI remain outside this verification.
 
 Header `genre/CombatActions.h` (+ `CombatConfigured.h` settings adapters, `CombatData.h` hitbox JSON).
 Target `AIVERSE::lib_combat_actions` (depends on `lib_melee_combat`, `aiverse_engine`); native OBJECT
-modules call `aiverse_native_use_libraries(target combat-actions)`. Skill: `skills/aiverse-combat-actions`.
+modules call `aiverse_native_use_libraries(target combat-actions)`. Skill: `skills/gameplay/aiverse-combat-actions`.
 
 **Shapes and hits:** Fixed metres; yaw in turns around +Y (yaw 0 faces +Z, +X is right). `CombatShape` is a
 sphere (centre a), capsule (segment a..b) or box (centre a, half extents, yaw-only rotation, radius 0).
@@ -406,7 +406,7 @@ build, `aiverse_tests`, native module export, headless matches, clang/MSVC, plat
 Headers `genre/Senses.h` (policy), `genre/SensesConfigured.h` (settings adapters), `genre/SensesData.h`
 (disguise/hiding JSON) and `genre/SensesPersistence.h` (save/load, hashing). Target `AIVERSE::lib_stealth_senses`
 (depends on `aiverse_engine`); native OBJECT modules call `aiverse_native_use_libraries(target stealth-senses)`.
-Skill: `skills/aiverse-stealth-senses`. This is a generic per-agent perception policy for guards, monsters and
+Skill: `skills/gameplay/aiverse-stealth-senses`. This is a generic per-agent perception policy for guards, monsters and
 bots; RTS fog of war stays in `modules/rts` (RtsVision). Long-term memory/threat ranking can compose `ai-perception`.
 
 **Tick.** `stepSenses(config, defs, state, tick, input, los, occlusion)` once per authoritative tick, strictly
@@ -500,7 +500,7 @@ Headers under `bots/`: `GenreCommon.h` (difficulty, perception record, target pi
 `ObjectivePolicy.h`, `SquadRoles.h`, `GenreBotPersistence.h`, umbrella `GenreBots.h`, settings adapters
 `GenreBotConfig.h`. Target `AIVERSE::lib_genre_bots` (depends on `combat-actions`, `weapon-policies`,
 `configuration`); native OBJECT modules call `aiverse_native_use_libraries(target genre-bots)`. Skill:
-`skills/aiverse-genre-bots`. Namespace `aiverse::lib::bots`; the policies are independent of genre labels.
+`skills/ai/aiverse-genre-bots`. Namespace `aiverse::lib::bots`; the policies are independent of genre labels.
 
 **Contract.** Each policy is a pure decision step: one call per bot (or squad) per strictly increasing tick
 (repeated/backwards ticks and invalid input return nullopt with state untouched). It reads an owner-supplied
@@ -778,7 +778,7 @@ Headers under `genre/`: `PhysicalInteractions.h` (umbrella + `InteractionDefinit
 `InteractionConfig.h`, settings adapter `InteractionConfigured.h`, JSON `InteractionData.h`, records
 `InteractionPersistence.h`. Target `AIVERSE::lib_physical_interactions` (depends on `configuration`, `aiverse_engine`,
 `aiverse_world`); native OBJECT modules call `aiverse_native_use_libraries(target physical-interactions)`. Skill:
-`skills/aiverse-physical-interactions`. Separate from `object-interactions` (action menus and built-in engine
+`skills/gameplay/aiverse-physical-interactions`. Separate from `object-interactions` (action menus and built-in engine
 interaction commands): a preview there never authorizes these mutations.
 
 **Determinism and network model.** These policies are the authoritative gameplay state for interactions. They use
@@ -888,7 +888,7 @@ Headers `genre/CinematicTime.h` (time-scale domains), `genre/CinematicQte.h` (QT
 `genre/Cinematic.h`, `genre/CinematicData.h` (scene JSON), `genre/CinematicConfigured.h` (settings adapters) and
 `genre/CinematicPersistence.h` (save/load, hashing). Target `AIVERSE::lib_cinematic_gameplay` (depends on
 `aiverse_engine`); native OBJECT modules call `aiverse_native_use_libraries(target cinematic-gameplay)`. Skill:
-`skills/aiverse-cinematic-gameplay`. Composes with the animation system (clips/markers are referenced by ID and
+`skills/gameplay/aiverse-cinematic-gameplay`. Composes with the animation system (clips/markers are referenced by ID and
 reported back; `docs/animation-graphs.md` stays the playback owner) and with `narrative-graphs` (cue triggers).
 
 **Determinism model.** Authoritative, saved and hashed: time-scale requests and per-domain accumulators
@@ -1168,7 +1168,7 @@ Headers `genre/VehicleControllers.h` (controllers), `genre/VehicleDamage.h` (dam
 (seats), `genre/RaceCourse.h` (checkpoints, laps, positions), `bots/RaceBot.h` (race bot), umbrella `genre/Vehicles.h`,
 `genre/VehicleData.h` (JSON), `genre/VehicleConfigured.h` (settings adapters), `genre/VehiclePersistence.h` (records,
 hashing). Target `AIVERSE::lib_vehicle_controllers` (depends on `match-rules`, `configuration`, `aiverse_engine`); native
-OBJECT modules call `aiverse_native_use_libraries(target vehicle-controllers)`. Skill: `skills/aiverse-vehicle-controllers`.
+OBJECT modules call `aiverse_native_use_libraries(target vehicle-controllers)`. Skill: `skills/gameplay/aiverse-vehicle-controllers`.
 
 **Determinism and network model.** The controllers are kinematic, authoritative gameplay state: Fixed math, integer
 ticks, ascending-id order, no floating point and no physics backend in the loop. The collision owner reports contacts
@@ -1245,7 +1245,7 @@ states and per-tick reports; bind `vehicleDefinitionHash`, `raceCourseHash` and 
 
 Headers `genre/SportsRules.h` (rules), `genre/SportsFormation.h` (formations), `bots/SportsBot.h` (positioning bot),
 umbrella `genre/Sports.h`, `genre/SportsData.h`, `genre/SportsConfigured.h`, `genre/SportsPersistence.h`. Target
-`AIVERSE::lib_sports_rules` (depends on `configuration`, `aiverse_engine`). Skill: `skills/aiverse-sports-rules`.
+`AIVERSE::lib_sports_rules` (depends on `configuration`, `aiverse_engine`). Skill: `skills/genres/aiverse-sports-rules`.
 
 **Contract.** `stepSports(rules, field, state, tick, dt, players, actions, rng)` once per strictly increasing tick. The
 owner moves the bodies and reports every `SportsPlayer{id, team, position, velocity, tackle/control/accuracy skills,
@@ -1311,7 +1311,7 @@ helpers `colonyAddColonist/Stockpile/Workstation`, `colonySchedule`), `genre/Col
 `powerLink`, `powerComponents`), `genre/ColonyData.h` (JSON), `genre/ColonyConfigured.h` (`colony` settings),
 `genre/ColonyPersistence.h`, umbrella `genre/Colony.h`; bot `bots/ColonyPlanner.h` + `bots/ColonyPlannerData.h`.
 Target `AIVERSE::lib_settlement_production` (tasks, reservations, graphs, configuration, `aiverse_engine`); native OBJECT
-modules call `aiverse_native_use_libraries(target settlement-production)`. Skill: `skills/aiverse-settlement-production`.
+modules call `aiverse_native_use_libraries(target settlement-production)`. Skill: `skills/genres/aiverse-settlement-production`.
 
 **Authority split.** Authoritative, saved and hashed: colonists (needs, mood, band, activity, job, schedule, priorities,
 skills), stockpiles with their reservation books, workstations and bills, jobs (lib::Task + progress), alerts, id
@@ -1374,7 +1374,7 @@ Headers `genre/Survival.h` (body model, `survivalWeatherEffects`, `survivalMood`
 `genre/EcologyAnimals.h` (behavior), `genre/EcologyResources.h` (renewal), `genre/EcologyData.h` (JSON),
 `genre/SurvivalConfigured.h` (`survival` settings), `genre/SurvivalPersistence.h`, umbrella `genre/SurvivalEcology.h`.
 Target `AIVERSE::lib_survival_ecology` (stealth-senses for `PerceivedTarget`, configuration, `aiverse_engine`); native OBJECT
-modules call `aiverse_native_use_libraries(target survival-ecology)`. Skill: `skills/aiverse-survival-ecology`.
+modules call `aiverse_native_use_libraries(target survival-ecology)`. Skill: `skills/genres/aiverse-survival-ecology`.
 
 **Body model (`stepSurvival`).** Per body and tick: wetness (water sets it to full; precipitation on exposed bodies times
 (1 - waterproof); drying by `dryPerTick` plus warmth above comfort); felt temperature = air, shelter pulls it toward
@@ -1446,7 +1446,7 @@ Headers under `genre/`: `Telegraphs.h` (ground areas + telegraphed attacks), `St
 `BossSchedule.h`, `MobBehaviour.h`, `EncounterData.h` (JSON), `EncounterPersistence.h`, `TelegraphDecals.h`
 (presentation), `EncounterScenario.h` (headless reference fight). Target `AIVERSE::lib_boss_encounters` (depends on
 `combat-actions` for the yaw convention and `AttackPhase`); native OBJECT modules call
-`aiverse_native_use_libraries(target boss-encounters)`. Skill: `skills/aiverse-boss-encounters`. Tool:
+`aiverse_native_use_libraries(target boss-encounters)`. Skill: `skills/gameplay/aiverse-boss-encounters`. Tool:
 `aiverse_encounter validate|simulate <file>`. Built for the Drone Fall port (ME.BECS `DelayedAttackSystem`,
 `TelegraphSystem`, `BossAttackUtils`, `MobsHuntSystem`, `MobAvoidanceJob`, `BossRotationUtils`, personal boss
 requests); generic for any top-down action game.

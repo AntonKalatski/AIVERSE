@@ -701,7 +701,7 @@ gebaut werden. [API, Beispiel und Build-Anleitung](../native-modules.md).
 Belohnungen, Energie, Post, Ranglisten, Chats und Segmente. Für den nativen Code des Projekts ohne Lua/GPU verfügbar;
 Definitionen sind JSON, die Algorithmen müssen nicht erneut erzeugt werden. Start:
 `python3 tools/meta/scaffold.py --preset mobile --out <project>`. Dokumentation: [meta-game.md](../meta-game.md); für Agenten —
-`skills/meta-game/SKILL.md`. Lokale Richtlinien funktionieren ohne Server; Kommunikation zwischen Geräten und globale
+`skills/meta/meta-game/SKILL.md`. Lokale Richtlinien funktionieren ohne Server; Kommunikation zwischen Geräten und globale
 Ranglisten brauchen ein echtes Backend. Ein fertiger Cloud-Dienst ist nicht Teil des Pakets.
 
 Das Preset `full --with-ui` ergänzt Freunde/Clans, eine Instanzsammlung, Ausrüstung, Verschmelzen, Abonnements und

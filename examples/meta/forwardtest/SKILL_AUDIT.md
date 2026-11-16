@@ -1,6 +1,6 @@
 # Independent forward test of original skills
 
-Entry: `skills/aiverse-orchestrator/SKILL.md`. No engine/skill edits were made during this test.
+Entry: `skills/workflow/aiverse-orchestrator/SKILL.md`. No engine/skill edits were made during this test.
 
 1. `search "магазин чат лидерборд" --domain meta` correctly selects meta-economy and meta-social.
 2. `plan --skills meta-economy,meta-social --side both` omits meta-client, CLIENT CMake and client read path. Followed meta-server's explicit link to meta-client manually.

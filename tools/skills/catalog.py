@@ -9,6 +9,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT/'skills/catalog.json'
+# Category folders: skills/<category>/<skill>/SKILL.md (AGENTS.md 'Adding and updating repository skills').
+CATEGORIES = ('core','gameplay','genres','ai','world','ui','visuals','network','verification','meta','workflow')
 
 def load_meta():
     spec = importlib.util.spec_from_file_location('meta_catalog', ROOT/'tools/meta/catalog.py')
@@ -58,6 +60,47 @@ ALIASES = {
  'aiverse-boss-encounters':'boss telegraph windup cone slam phase enrage adds rotation status stun burn slow mob wander hunt flee swarm босс телеграф замах конус фаз ярост призыв ротаци статус оглушен горен замедлен моб блужд охот бегств рой',
 }
 
+# MCP and repository workflows (no runtime library): id, summary, source of truth.
+WORKFLOWS=[
+ ('aiverse-bots-configure','Computer player setup: rules.ai knobs, play styles, scripted director, strategic bots','docs/ai-controllers.md'),
+ ('aiverse-bots-tune','Bot strength tuning with bot batches and a sweep over every map','modules/rts/RtsAI.cpp'),
+ ('aiverse-bots-debug','Diagnose bots that do not play and teach RtsAI a new mechanic','modules/rts/RtsMechAI.cpp'),
+ ('aiverse-map-build','Build a playable map: generation or painting, starts, symmetry, validation, bot check','tools/mcp/main.cpp'),
+ ('aiverse-unit-balance','Unit and faction balance: stats, duels, counter matrix, rules edits, bot batches','apps/editor/core/BalanceOps.cpp'),
+ ('aiverse-lua-gameplay','Simulation Lua gameplay with determinism and per-tick budget rules','docs/scripting.md'),
+ ('aiverse-campaign','Campaign mission chain, objectives, dialogs, camera, carry-over, campaign_run','modules/rts/RtsCampaign.h'),
+ ('aiverse-new-mechanic','End-to-end engine mechanic: branch, data, code, tests, AI, docs, prototype, checksums','docs/game-format.md'),
+ ('aiverse-look','Lighting, post effects with phone cost, materials, model view blocks, screenshots','docs/postfx.md'),
+ ('aiverse-fx','Visual effects from templates or Unity prefabs, tuning, event binding, preview','docs/particles.md'),
+ ('aiverse-game-screens','Game screens and HUD with RmlUi and Lua, validation, phone previews','docs/ui-scripting.md'),
+ ('aiverse-release-build','Platform packaging: branding, toolchains, size estimate, build and status','docs/overview.md'),
+ ('aiverse-port-game','Port Unity or Godot projects: scan, import, resolve report items, verify','docs/engine-import.md'),
+ ('aiverse-agent-branch','Agent branch and worktree workflow: merge main, area, builds, commits','AGENTS.md'),
+ ('aiverse-main-merge','MAIN merge of agent branches with full test and checksum gates','AGENTS.md'),
+]
+WORKFLOW_ALIASES={
+ 'aiverse-bots-configure':'bot bots ai computer opponent rules.ai difficulty style personality scripted director бот боты ии компьютер противник сложност стиль характер',
+ 'aiverse-bots-tune':'bot bots tune strength winrate sweep balance_batch бот боты сила винрейт прогон карт',
+ 'aiverse-bots-debug':'bot bots debug stuck idle commands mechanic teach бот боты отладк застрял команд механик',
+ 'aiverse-map-build':'map level generate terrain start symmetry карта карты уровень генерац рельеф старт симметр',
+ 'aiverse-unit-balance':'balance unit units faction counter duel matrix баланс юнит юниты фракци контр дуэл матриц',
+ 'aiverse-lua-gameplay':'lua script scripting mechanic луа скрипт механик',
+ 'aiverse-campaign':'campaign mission briefing objective dialog cutscene кампани мисси брифинг цел диалог',
+ 'aiverse-new-mechanic':'mechanic feature engine branch механик фича движок',
+ 'aiverse-look':'look lighting light postfx bloom material texture visual свет освещен постэффект материал текстур вид',
+ 'aiverse-fx':'fx effect particles explosion эффект частиц взрыв',
+ 'aiverse-game-screens':'ui screen menu hud shop rml интерфейс экран меню худ магазин',
+ 'aiverse-release-build':'build release platform android ios web windows macos linux package сборк релиз платформ',
+ 'aiverse-port-game':'port import unity godot перенос импорт порт',
+ 'aiverse-agent-branch':'agent branch worktree commit merge агент ветк коммит',
+ 'aiverse-main-merge':'main merge integrate checksums мердж слияни интеграц',
+}
+
+def skill_path(skill):
+    hits=sorted((ROOT/'skills').glob(f'*/{skill}/SKILL.md'))
+    if len(hits)!=1:raise ValueError('skill folder not found exactly once: '+skill)
+    return hits[0].relative_to(ROOT).as_posix()
+
 def generate():
     entries=[]
     packages=json.loads((ROOT/'libraries/catalog.json').read_text(encoding='utf-8'))['packages']
@@ -73,29 +116,32 @@ def generate():
         definition=modules.get(key)
         deps=['meta-'+d for d in definition['dependencies']] if definition else {'database':['meta-server'],'ui':['meta-client'],'server':['meta-economy']}.get(key,[])
         target=definition['target'] if definition else {'client':'AIVERSE::meta_client','server':'AIVERSE::meta_server'}.get(key)
-        entries.append(dict(id=skill,package=key,path=f'skills/{skill}/SKILL.md',domain='meta',summary=summary,
+        entries.append(dict(id=skill,package=key,path=f'skills/meta/{skill}/SKILL.md',domain='meta',summary=summary,
             side='client' if key in ('client','ui') else 'database' if key=='database' else 'server',
             runtime='static' if target else 'assets' if key=='ui' else 'none',target=target,
             dependencies=deps,backendDependencies=[],source=source))
     for name,description in [('meta-game','Choose meta-game recipes'),('meta-compose','Compose a selected meta project'),('aiverse-orchestrator','Find skills and resolve minimal library dependencies')]:
-        entries.append(dict(id=name,package=None,path=f'skills/{name}/SKILL.md',domain='workflow',summary=description,
+        entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=description,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='tools/skills/catalog.py'))
-    entries.append(dict(id='aiverse-roads',package=None,path='skills/aiverse-roads/SKILL.md',domain='gameplay',
+    entries.append(dict(id='aiverse-roads',package=None,path='skills/world/aiverse-roads/SKILL.md',domain='gameplay',
         summary='Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks',
         side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='modules/rts/RtsRoadNet.cpp'))
-    for entry in entries:entry['keywords']=ALIASES.get(entry['id'],'').split()
+    for name,summary,source in WORKFLOWS:
+        entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=summary,
+            side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source=source))
+    for entry in entries:entry['keywords']=(ALIASES.get(entry['id'],'')+' '+WORKFLOW_ALIASES.get(entry['id'],'')).split()
     return dict(schema=1,skills=sorted(entries,key=lambda e:e['id']))
 
 def validate(data):
     entries=data['skills']; by_id={e['id']:e for e in entries}
     if len(by_id)!=len(entries):raise ValueError('duplicate skill id')
-    actual={p.relative_to(ROOT).as_posix() for p in (ROOT/'skills').glob('*/SKILL.md')}
+    actual={p.relative_to(ROOT).as_posix() for p in (ROOT/'skills').glob('*/*/SKILL.md')}
     registered={e['path'] for e in entries}
     if actual!=registered:raise ValueError('unregistered or missing skills: '+str(sorted(actual^registered)))
     targets=set()
     for e in entries:
         path=ROOT/e['path']
-        if path.resolve().parent.parent!=(ROOT/'skills').resolve():raise ValueError('skill path escapes catalog')
+        if path.resolve().parent.parent.parent!=(ROOT/'skills').resolve() or path.parent.parent.name not in CATEGORIES:raise ValueError('skill path escapes catalog or unknown category: '+e['path'])
         if f"\nname: {e['id']}\n" not in path.read_text(encoding='utf-8'):raise ValueError('frontmatter id: '+e['id'])
         if not (ROOT/e['source']).is_file():raise ValueError('missing source: '+e['source'])
         if e['runtime'] in ('static','header'):
