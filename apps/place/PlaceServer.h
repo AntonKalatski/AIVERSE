@@ -1,0 +1,95 @@
+// Authoritative place server: a physics::Scene loaded from a scene JSON, one kinematic character per client,
+// replicated with net::replica (docs/replica.md "First milestone"). One update() = one fixed tick.
+#pragma once
+#include <deque>
+#include <map>
+#include <memory>
+#include <vector>
+#include "apps/place/PlaceProtocol.h"
+#include "engine/physics/Scene.h"
+
+namespace aiverse::place {
+
+// Tuning read from the scene's optional "place" block (docs/replica.md § Place scene).
+struct PlaceConfig {
+    std::vector<b3Vec3> spawns{{0, 1, 0}};
+    float relevance = 200;            // replica radius of bodies and characters (m)
+    b3Vec3 boxSize{0.8f, 0.8f, 0.8f}; // spawn-box message
+    float spawnPerSecond = 2, spawnBurst = 3;
+    int maxSpawnedPerPlayer = 20, maxBodies = 4000;
+    float pushSpeed = 6, pushRadius = 1.2f, pushReach = 1.1f, pushMaxMass = 400;
+    int pushCooldownTicks = 18;
+    float killY = -40;
+    struct Mover { std::string body; b3Vec3 offset{0, 0, 0}; float period = 8; };
+    std::vector<Mover> movers;
+    static PlaceConfig read(const Json& scene);   // throws JsonError with the key in the message
+};
+
+struct PlaceServerStats {
+    uint64_t ticks = 0, inputs = 0, idleSteps = 0, pushes = 0, pushedBodies = 0, spawned = 0, spawnDenied = 0, badMessages = 0;
+    double tickMsSum = 0, tickMsWorst = 0;
+    uint64_t ticksTimedFrom = 0;
+    double tickMsAvg() const { return ticks > ticksTimedFrom ? tickMsSum / double(ticks - ticksTimedFrom) : 0; }
+};
+
+class PlaceServer {
+public:
+    explicit PlaceServer(const Json& scene, replica::ServerOptions options = {}, int workers = 1);
+    ~PlaceServer();
+    uint8_t attach(std::unique_ptr<net::Conn> connection) { return server_.attach(std::move(connection)); }
+    void update(uint64_t nowMs);      // poll, characters (input frames), movers, physics, fields, broadcast
+
+    replica::Server& replica() { return server_; }
+    const replica::Server& replica() const { return server_; }
+    physics::Scene& scene() { return *scene_; }
+    const Schema& schema() const { return schema_; }
+    const PlaceConfig& config() const { return config_; }
+    const PlaceServerStats& stats() const { return stats_; }
+    void resetTickTiming() { stats_.tickMsSum = 0; stats_.tickMsWorst = 0; stats_.ticksTimedFrom = stats_.ticks; }
+    // Replicated dynamic / kinematic bodies (scene + spawned), by replica id.
+    std::vector<replica::ObjectId> bodies() const;
+    physics::BodyHandle bodyHandle(replica::ObjectId id) const;
+    replica::ObjectId characterOf(uint8_t slot) const;
+    const physics::CharacterState* characterState(uint8_t slot) const;
+    size_t players() const { return players_.size(); }
+
+private:
+    struct Rep { physics::BodyHandle handle = physics::kNoBody; replica::ObjectId id = 0; bool awake = true; b3Vec3 start{}; b3Quat startRot{}; uint8_t spawnedBy = 0; };
+    struct Player {
+        replica::ObjectId object = 0;
+        physics::BodyHandle proxy = physics::kNoBody;
+        physics::CharacterState state;
+        uint64_t lastInputTick = 0, pushReadyTick = 0;
+        double spawnTokens = 0;
+        std::deque<physics::BodyHandle> spawned;
+    };
+    struct Mover { physics::BodyHandle handle; b3Vec3 start, offset; b3Quat rot; float period; };
+    void join(uint8_t slot);
+    void leave(uint8_t slot);
+    void input(uint8_t slot, const net::Bytes& frame);
+    void message(uint8_t slot, uint16_t channel, const net::Bytes& payload);
+    void step(Player& p, const physics::CharacterInput& in);
+    void push(Player& p);
+    void spawnBox(uint8_t slot, Player& p);
+    replica::ObjectId track(physics::BodyHandle h, const BodyLook& look, uint8_t spawnedBy);
+    void untrack(physics::BodyHandle h);
+    void syncBodies();
+    void syncCharacters();
+    void respawn(Player& p, uint8_t slot);
+
+    Schema schema_;
+    PlaceConfig config_;
+    physics::CharacterParams params_;
+    std::unique_ptr<physics::Scene> scene_;
+    replica::Server server_;
+    net::Bytes staticScene_;
+    std::vector<Rep> reps_;                                  // in creation order
+    std::map<physics::BodyHandle, size_t> repOf_;
+    std::map<uint8_t, Player> players_;
+    std::vector<Mover> movers_;
+    replica::ObjectId game_ = 0;
+    uint64_t tick_ = 0;
+    uint32_t colorSeed_ = 1;
+    PlaceServerStats stats_;
+};
+}
