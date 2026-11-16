@@ -144,6 +144,7 @@ struct Node {
     float3 s{1, 1, 1};
     int mesh = -1, skin = -1;
     int light = -1; // KHR_lights_punctual definition, attached to this node
+    bool runtimeMutable = false; // transform/visibility can be changed by a game or editor; protect subtree from static merge
     float weights[kMaxMorphTargets] = {}; // morph weights (from the node or its mesh)
 };
 
@@ -184,6 +185,15 @@ struct ModelLight {
 };
 
 struct Model {
+    // Engine-wide model batching contract. All loaders / editors / games use the same
+    // upload path, regardless of genre or asset naming. Rigid static merging is opt-in:
+    // a model containing gameplay-controlled nodes cannot safely infer mutability
+    // from its GLB alone. The default still prepares compatible material/shadow batches.
+    struct Batching {
+        bool mergeRigid = false;
+        float maxExtent = 20.0f;
+        std::vector<std::string> preserveNodes; // preserve node and its descendants by exact name
+    } batching;
     bool uploadPrepared = false;
     std::shared_ptr<GeometryData> geometry;
     std::string path;
