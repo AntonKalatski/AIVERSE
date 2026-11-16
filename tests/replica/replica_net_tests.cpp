@@ -182,4 +182,50 @@ TEST(owned_state_matches_last_applied_input_under_loss) {
     CHECK(stale == 0);
 }
 
+// Render clock over SimNet (docs/replica.md "Client side"): render time never runs backwards, its rate stays within
+// maxClockAdjust, and the buffer rarely runs dry (an underrun = render time passed the newest snapshot).
+TEST(render_clock_over_4g_and_bad) {
+    for (const char* preset : {"4g", "bad"}) {
+        for (int adaptive = 0; adaptive < 2; ++adaptive) {
+            uint64_t under = 0, snaps = 0, underMs = 0;
+            double minRate = 10, maxRate = 0, delay = 0, jitter = 0;
+            bool monotonic = true;
+            for (uint64_t seed = 1; seed <= 3; ++seed) {
+                ServerOptions so; so.defaultRadius = 5000;
+                SimWorld w(seed * 7, so);
+                ObjectId id = w.server.create(w.game.prop);
+                w.step = [&] { w.server.set(id, 0, vec(float(w.ticks % 6000) / 12, 0, 0)); };
+                w.server.onJoin = [&](uint8_t slot) { w.server.setViewers(slot, {{0, 0, 0}}); };
+                ClientOptions co; co.adaptiveDelay = adaptive != 0;
+                Client& c = w.add(preset, co);
+                for (int i = 0; i < 600 && !c.ready(); ++i) w.frame();
+                w.run(300);                                  // settle (adaptive delay follows the jitter)
+                const uint64_t u0 = c.stats().underruns, s0 = c.stats().snapshots, m0 = c.stats().underrunMs;
+                double prevR = c.renderTimeMs();
+                uint64_t prevNow = w.now;
+                for (int f = 0; f < 1800; ++f) {
+                    w.frame();
+                    const double r = c.renderTimeMs();
+                    monotonic &= r >= prevR;
+                    const double rate = (r - prevR) / double(w.now - prevNow);
+                    minRate = std::min(minRate, rate); maxRate = std::max(maxRate, rate);
+                    prevR = r; prevNow = w.now;
+                }
+                under += c.stats().underruns - u0;
+                underMs += c.stats().underrunMs - m0;
+                snaps += c.stats().snapshots - s0;
+                delay += c.interpolationDelayMs() / 3;
+                jitter += c.jitterMs() / 3;
+                CHECK(c.stats().clockSnaps == 0);
+            }
+            std::printf("    %s %s: delay %.0f ms, jitter %.1f ms, rate %.3f..%.3f, %llu underruns in 90 s (%.2f %% of the time, "
+                        "%llu snapshots)\n", preset, adaptive ? "adaptive" : "fixed 100 ms", delay, jitter, minRate, maxRate,
+                        (unsigned long long)under, double(underMs) / 900.0, (unsigned long long)snaps);
+            CHECK(monotonic);
+            CHECK(minRate >= 0.949 && maxRate <= 1.051);
+            if (std::string(preset) == "4g") CHECK(under <= (adaptive ? 20u : 45u));   // loss bursts of 4 packets
+        }
+    }
+}
+
 } // namespace rt

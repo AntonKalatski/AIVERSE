@@ -1,4 +1,10 @@
-// Replica client: hello, snapshot decode (hostile input), interpolation buffer, input frames (docs/replica.md).
+// Replica client: hello, snapshot decode (hostile input), interpolation buffer, render clock, input frames
+// (docs/replica.md).
+//
+// Render clock: every snapshot gives a transit sample (local arrival - server time of its tick). A leaky minimum
+// of them (a lower sample resets it, else it rises kTransitLeak ms per ms) is the fastest path and follows a
+// server whose clock runs up to that much slow; "newest server time" = now - that minimum. Render time chases
+// newest server time - delay by running at most maxClockAdjust fast or slow, so it is monotonic and smooth.
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -14,6 +20,11 @@ constexpr size_t kMaxHistory = 32;
 constexpr size_t kKeepFrames = 64;
 constexpr int kMaxMessagesPerPoll = 4096;
 constexpr uint32_t kAckKeepaliveMs = 50;
+constexpr double kTransitLeak = 0.04;     // the transit minimum rises this much per ms without a lower sample
+// Rate = 1 + Kp * error + Ki * integral(error), clamped to maxClockAdjust: critically damped (~2 s), and the
+// integral removes the steady error against a server clock that runs a few % slow or fast.
+constexpr double kClockGain = 1.0 / 1000;   // per ms of error (50 ms behind: 5 % fast)
+constexpr double kClockIntegral = 2.5e-7;   // per ms of error per ms
 
 float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
@@ -41,12 +52,13 @@ struct Client::Impl {
     struct Sample { double t; std::vector<Value> v; };   // v: snapshot fields in layout order
     struct Obj {
         ClassId cls = 0;
-        uint8_t owner = 0;
+        uint8_t owner = 0, gen = 0;
         std::vector<Value> v;                            // every field (reliable ones from the store)
+        std::vector<uint64_t> q;                         // quantized snapshot slots (delta baselines)
         std::deque<Sample> hist;
     };
-    struct Reliable { ClassId cls = 0; std::map<int, Value> v; };
-    struct Entry { ObjectId id; bool create; ClassId cls; uint64_t mask; size_t q; };
+    struct Reliable { ClassId cls = 0; uint8_t gen = 0; std::map<int, Value> v; };
+    struct Entry { ObjectId id; bool create; ClassId cls; uint8_t gen; uint64_t mask; size_t q; };
 
     Schema schema;
     Layout layout;
@@ -64,8 +76,15 @@ struct Client::Impl {
     uint64_t lastPacketAt = 0, now = 0;
     std::unordered_map<ObjectId, Obj> objs;
     std::unordered_map<ObjectId, Reliable> reliable;
-    double offset = 0, newestMs = 0;
-    bool haveOffset = false;
+    double newestMs = 0;
+    // clock
+    double transit = 0, transitAt = 0;               // leaky minimum of local arrival - server time, and when
+    double lastTransit = 0, jitter = 0, renderT = 0, delay = 0, rateI = 0;
+    double seqSeen = 0, seqLost = 0;                 // decaying counts of snapshot sequence numbers / gaps
+    bool haveClock = false, underrun = false;
+    uint64_t clockAt = 0;
+    std::deque<std::pair<uint32_t, uint64_t>> inputSentAt;   // first send time of recent input frames
+    uint32_t rttSample = 0;
     ClientStats stats;
     std::vector<Entry> entries;
     std::vector<uint64_t> qbuf;
@@ -73,10 +92,53 @@ struct Client::Impl {
 
     Impl(const Schema& s, std::unique_ptr<Conn> c, ClientOptions o) : schema(s), layout(s), opt(o), conn(std::move(c)) {
         opt.inputRedundancy = std::clamp(opt.inputRedundancy, 1, int(kMaxInputFramesPerPacket));
+        if (!(opt.maxClockAdjust >= 0)) opt.maxClockAdjust = 0;
+        opt.maxClockAdjust = std::min(opt.maxClockAdjust, 0.5f);
+        delay = double(opt.interpolationDelayMs);
     }
 
     double interval() const { return 1000.0 / std::max<uint16_t>(snapRate, 1); }
-    double renderTime() const { return double(now) - offset - double(opt.interpolationDelayMs); }
+    double loss() const { return seqSeen > 0 ? seqLost / seqSeen : 0; }
+    double renderTime() const { return renderT; }
+    double newestServerTime() const { return haveClock ? double(now) - transit : 0; }
+    uint32_t rtt() const { uint32_t r = conn ? conn->rttMs() : 0; return r ? r : rttSample; }
+
+    double targetDelay() const {
+        if (!opt.adaptiveDelay) return double(opt.interpolationDelayMs);
+        const double lo = opt.minDelayMs ? double(opt.minDelayMs) : interval();
+        const double hi = std::max(lo, double(opt.maxDelayMs));
+        return std::clamp((1.5 + std::min(1.0, loss() * 25)) * interval() + 4 * jitter, lo, hi);
+    }
+
+    void clockSample(double t) {
+        const double x = double(now) - t;
+        if (haveClock) jitter += (std::fabs(x - lastTransit) - jitter) / 16;   // RFC 3550 interarrival jitter
+        lastTransit = x;
+        if (!haveClock) { transit = x; transitAt = double(now); }
+        transit = std::min(x, transit + kTransitLeak * (double(now) - transitAt));
+        transitAt = double(now);
+        if (!haveClock) { haveClock = true; clockAt = now; delay = targetDelay(); renderT = newestServerTime() - delay; }
+    }
+
+    // Advances render time to `now`: rate 1 +- maxClockAdjust towards newest server time - delay.
+    void advanceClock() {
+        if (!haveClock) return;
+        const double dt = double(now - std::min(now, clockAt));
+        clockAt = now;
+        delay += (targetDelay() - delay) * std::min(1.0, dt / 1000.0);   // ~1 s to follow a new jitter level
+        const double target = newestServerTime() - delay;
+        const double err = target - (renderT + dt);
+        const double lim = double(opt.maxClockAdjust);
+        if (std::fabs(err) > double(opt.clockSnapMs)) { renderT = target; rateI = 0; ++stats.clockSnaps; }
+        else {
+            rateI = std::clamp(rateI + err * dt * kClockIntegral, -lim, lim);
+            renderT += dt * (1 + std::clamp(err * kClockGain + rateI, -lim, lim));
+        }
+        const bool under = haveSnapshot && renderT > newestMs;
+        if (under && !underrun) ++stats.underruns;
+        if (under) stats.underrunMs += uint64_t(dt);
+        underrun = under;
+    }
 
     void sendRaw(const Bytes& b, bool latest) {
         if (latest) conn->sendLatest(b); else conn->send(b);
@@ -96,24 +158,27 @@ struct Client::Impl {
         ByteReader r(m.data() + 1, m.size() - 1);
         ObjectId id = r.u32();
         ClassId cls = r.u16();
+        uint8_t gen = r.u8();
         uint8_t f = r.u8();
         if (!r.ok() || id == 0 || id >= kMaxObjectId || cls >= layout.classes.size() || f >= layout.classes[cls].fields.size() ||
             layout.classes[cls].fields[f].snapshot) { ++stats.dropped; return; }
         Value v;
         if (!readValue(r, layout.classes[cls].fields[f], v) || !r.atEnd()) { ++stats.dropped; return; }
         auto& rs = reliable[id];
-        if (rs.cls != cls) { rs.v.clear(); rs.cls = cls; }
+        if (rs.cls != cls || rs.gen != gen) { rs.v.clear(); rs.cls = cls; rs.gen = gen; }
         rs.v[f] = v;
         auto it = objs.find(id);
-        if (it != objs.end() && it->second.cls == cls) it->second.v[f] = v;
+        if (it != objs.end() && it->second.cls == cls && it->second.gen == gen) it->second.v[f] = v;
         if (self->onReliableChange) self->onReliableChange(id, f);
     }
 
     void handleForget(const Bytes& m) {
         ByteReader r(m.data() + 1, m.size() - 1);
         ObjectId id = r.u32();
+        uint8_t gen = r.u8();
         if (!r.ok() || !r.atEnd()) { ++stats.dropped; return; }
-        reliable.erase(id);
+        auto it = reliable.find(id);
+        if (it != reliable.end() && it->second.gen == gen) reliable.erase(it);   // a newer generation keeps its values
     }
 
     void handleRemote(const Bytes& m) {
@@ -155,13 +220,17 @@ struct Client::Impl {
             if (!br.ok() || !e.id) { ++stats.dropped; return; }
             prev = e.id;
             e.create = br.flag();
+            const Obj* base = nullptr;
             if (e.create) {
                 e.cls = ClassId(br.get(layout.classBits));
+                e.gen = uint8_t(br.get(kGenBits));
                 if (!br.ok() || e.cls >= layout.classes.size()) { ++stats.dropped; return; }
             } else {
                 auto it = objs.find(e.id);
                 if (it == objs.end() || std::binary_search(removed.begin(), removed.end(), e.id)) { ++stats.dropped; return; }
-                e.cls = it->second.cls;
+                base = &it->second;
+                e.cls = base->cls;
+                e.gen = base->gen;
             }
             const ClassLayout& L = layout.classes[e.cls];
             e.mask = e.create ? ~uint64_t(0) : br.get(L.maskBits);
@@ -171,7 +240,18 @@ struct Client::Impl {
                 if (!(e.mask & (uint64_t(1) << k))) continue;
                 if (k >= int(L.snapFields.size())) { qbuf[e.q + size_t(L.ownerSlot)] = br.get(8); continue; }
                 const FieldLayout& f = L.fields[size_t(L.snapFields[size_t(k)])];
-                for (int a = 0; a < f.comps; ++a) qbuf[e.q + size_t(f.slot + a)] = br.get(f.bits);
+                uint64_t* out = &qbuf[e.q + size_t(f.slot)];
+                if (base && f.delta && br.flag()) {
+                    // difference to the value we hold (the server only does this once our copy is confirmed)
+                    const int w = int(br.get(kDeltaWidthBits));
+                    for (int a = 0; a < f.comps; ++a) {
+                        const int64_t v = int64_t(base->q[size_t(f.slot + a)]) + unzigzag(br.get(w));
+                        if (v < 0 || uint64_t(v) > f.steps) { ++stats.dropped; return; }
+                        out[a] = uint64_t(v);
+                    }
+                    continue;
+                }
+                for (int a = 0; a < f.comps; ++a) out[a] = br.get(f.bits);
             }
             if (!br.ok()) { ++stats.dropped; return; }
             entries.push_back(e);
@@ -179,6 +259,11 @@ struct Client::Impl {
         if (br.remaining() >= 8) { ++stats.dropped; return; }        // trailing garbage
 
         // ---- apply
+        if (newest) {
+            const double gap = double(std::min<uint32_t>(seq - newest, 64));
+            seqSeen = seqSeen * 0.98 + gap;
+            seqLost = seqLost * 0.98 + gap - 1;
+        }
         if (newest && seq - newest <= 32) {
             const uint32_t d = seq - newest;
             ackBits = uint32_t((uint64_t(ackBits) << d) | (uint64_t(1) << (d - 1)));
@@ -191,10 +276,13 @@ struct Client::Impl {
         latestTick = tick;
         ++stats.snapshots;
         const double t = double(tick) * 1000.0 / tickRate;
-        const double sampleOffset = double(now) - t;
-        if (!haveOffset || sampleOffset < offset) offset = sampleOffset, haveOffset = true;
-        else offset += (sampleOffset - offset) * 0.05;   // slow drift: server ticks need not match our clock
+        clockSample(t);
         newestMs = t;
+        while (!inputSentAt.empty() && int32_t(inputSentAt.front().first - applied) < 0) inputSentAt.pop_front();
+        if (!inputSentAt.empty() && inputSentAt.front().first == applied) {
+            rttSample = uint32_t(std::min<uint64_t>(now - std::min(now, inputSentAt.front().second), 60000));
+            inputSentAt.pop_front();
+        }
 
         std::vector<std::pair<ObjectId, bool>> events;   // id, created (false: destroyed)
         for (ObjectId id : removed)
@@ -202,13 +290,21 @@ struct Client::Impl {
         for (auto& e : entries) {
             const ClassLayout& L = layout.classes[e.cls];
             auto it = objs.find(e.id);
-            if (e.create && it != objs.end() && it->second.cls != e.cls) { objs.erase(it); events.push_back({e.id, false}); it = objs.end(); }
+            if (e.create && it != objs.end() && (it->second.cls != e.cls || it->second.gen != e.gen)) {
+                objs.erase(it); events.push_back({e.id, false}); it = objs.end();
+            }
             if (it == objs.end()) {
                 Obj o;
                 o.cls = e.cls;
+                o.gen = e.gen;
                 o.v.assign(L.fields.size(), Value{});
+                o.q.assign(size_t(L.slots), 0);
                 auto rs = reliable.find(e.id);
-                if (rs != reliable.end() && rs->second.cls == e.cls) for (auto& [f, v] : rs->second.v) o.v[size_t(f)] = v;
+                if (rs != reliable.end()) {
+                    // values of the previous object behind this id (its Forget is late) are never shown
+                    if (rs->second.cls == e.cls && rs->second.gen == e.gen) for (auto& [f, v] : rs->second.v) o.v[size_t(f)] = v;
+                    else reliable.erase(rs);
+                }
                 it = objs.emplace(e.id, std::move(o)).first;
                 events.push_back({e.id, true});
             }
@@ -219,6 +315,7 @@ struct Client::Impl {
                 int fi = L.snapFields[size_t(k)];
                 const FieldLayout& f = L.fields[size_t(fi)];
                 dequantize(f, &qbuf[e.q + size_t(f.slot)], o.v[size_t(fi)]);
+                for (int a = 0; a < f.comps; ++a) o.q[size_t(f.slot + a)] = qbuf[e.q + size_t(f.slot + a)];
             }
             addSample(o, L, t);
         }
@@ -293,6 +390,7 @@ void Client::poll(uint64_t nowMs) {
         default: ++I.stats.dropped; break;
         }
     }
+    I.advanceClock();
     if (I.welcomed && !I.rejected && (I.unsent || I.ackDirty || nowMs - std::min(nowMs, I.lastPacketAt) >= kAckKeepaliveMs))
         I.sendInputPacket();
     if (!I.rejected) I.conn->update(nowMs);
@@ -306,6 +404,8 @@ uint32_t Client::sendInput(const Bytes& input) {
     auto& I = *impl_;
     uint32_t s = ++I.inputSeq;
     I.frames.push_back({s, input});
+    I.inputSentAt.push_back({s, I.now});
+    while (I.inputSentAt.size() > kKeepFrames) I.inputSentAt.pop_front();
     while (I.frames.size() > kKeepFrames) I.frames.pop_front();
     I.unsent = std::min(I.unsent + 1, I.frames.size());
     return s;
@@ -376,6 +476,13 @@ Value Client::sample(ObjectId id, int field) const {
 }
 
 uint32_t Client::latestTick() const { return impl_->latestTick; }
+double Client::serverTimeMs() const { return impl_->haveClock ? impl_->newestServerTime() + impl_->rtt() / 2.0 : 0; }
+double Client::renderTimeMs() const { return impl_->renderT; }
+double Client::renderTick() const { return impl_->renderT * impl_->tickRate / 1000.0; }
+double Client::jitterMs() const { return impl_->jitter; }
+double Client::snapshotLoss() const { return impl_->loss(); }
+double Client::interpolationDelayMs() const { return impl_->delay; }
+uint32_t Client::rttMs() const { return impl_->rtt(); }
 const ClientStats& Client::stats() const { return impl_->stats; }
 
 } // namespace aiverse::net::replica

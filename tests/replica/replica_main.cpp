@@ -11,12 +11,15 @@ std::vector<std::pair<const char*, std::function<void()>>>& registry() {
     return r;
 }
 
-static void bench(float radius, const char* label) {
+// `moving`: fraction of the objects that move (the rest rest after spawning, like sleeping physics bodies).
+// `latencyMs`: one-way loopback latency (0: acks arrive before the next snapshot).
+static void bench(float radius, const char* label, float moving = 1.0f, uint32_t latencyMs = 0) {
     using clk = std::chrono::steady_clock;
     ServerOptions so;
     so.defaultRadius = radius;
     so.cellSize = std::max(32.0f, radius / 2);
-    LoopWorld w(so, {}, {}, 0);
+    LoopbackOptions lo; lo.latencyMs = latencyMs;
+    LoopWorld w(so, lo, {}, 0);
     const int kClients = 64, kObjects = 2000;
     std::mt19937 rng(1);
     std::uniform_real_distribution<float> u(-1000, 1000);
@@ -30,12 +33,14 @@ static void bench(float radius, const char* label) {
     double stepSec = 0, bcastSec = 0, clientSec = 0, worstTick = 0;
     uint64_t measuredTicks = 0, bytes0 = 0, snaps0 = 0;
     const int warm = 120, total = 720;
+    const size_t movers = size_t(float(kObjects) * moving);
     for (int f = 0; f < total; ++f) {
         ++w.ticks;
         w.now = 1000 + w.ticks * 1000 / 60;
         auto t0 = clk::now();
         w.server.poll(w.now);
         for (size_t i = 0; i < ids.size(); ++i) {
+            if (i >= movers && i % 31 != 0 && f > 0) continue;   // at rest (viewer objects always move)
             auto& m = motion[i];
             m[2] += 0.01f * float(int(i % 5) - 2);
             m[0] = std::clamp(m[0] + std::cos(m[2]) * m[3] / 60, -1000.0f, 1000.0f);
@@ -67,8 +72,8 @@ static void bench(float radius, const char* label) {
     size_t seen = 0;
     for (auto& c : w.clients) seen += c->objects().size();
     const auto& st = w.server.stats();
-    std::printf("bench %s: %d clients, %d objects, radius %.0f, 60 Hz ticks, %d snapshots/s\n", label, kClients, kObjects, radius,
-                so.snapshotRate);
+    std::printf("bench %s: %d clients, %d objects (%.0f %% moving), radius %.0f, 60 Hz ticks, %d snapshots/s\n", label, kClients,
+                kObjects, double(moving) * 100, radius, so.snapshotRate);
     std::printf("  server broadcast: %.3f ms/tick avg, %.3f ms worst; poll + game set(): %.3f ms/tick\n", bcastSec / double(measuredTicks) * 1000,
                 worstTick * 1000, stepSec / double(measuredTicks) * 1000);
     std::printf("  per client: %.0f bytes/s (budget %d), %.0f objects in view, %.0f bytes/snapshot\n",
@@ -76,14 +81,23 @@ static void bench(float radius, const char* label) {
                 double(st.snapshotBytes - bytes0) / double(std::max<uint64_t>(1, st.snapshots - snaps0)));
     std::printf("  all 64 clients decoding: %.3f ms/tick; starved candidates: %llu\n", clientSec / double(measuredTicks) * 1000,
                 (unsigned long long)st.starved);
+    std::printf("  object updates per client per second: %.0f, %.1f bytes each; delta-coded fields %.0f %%; relevant objects looked at %.1f %%\n",
+                double(st.entries) / (double(total) / 60.0) / kClients, double(st.snapshotBytes) / double(std::max<uint64_t>(1, st.entries)),
+                100.0 * double(st.deltaFields) / double(std::max<uint64_t>(1, st.entries)),
+                100.0 * double(st.evaluated) / double(std::max<uint64_t>(1, st.relevant)));
 }
 } // namespace rt
 
 int main(int argc, char** argv) {
     if (argc > 1 && std::strcmp(argv[1], "--bench") == 0) {
-        rt::bench(128, "near (radius 128)");
-        rt::bench(400, "crowded (radius 400)");
-        rt::bench(4000, "everything relevant");
+        const char* only = argc > 2 ? argv[2] : "";
+        auto want = [&](const char* k) { return !*only || std::strstr(k, only); };
+        if (want("near")) rt::bench(128, "near (radius 128)");
+        if (want("crowded")) rt::bench(400, "crowded (radius 400)");
+        if (want("latency")) rt::bench(128, "near, 50 ms latency (RTT > snapshot interval)", 1.0f, 50);
+        if (want("all")) rt::bench(4000, "everything relevant");
+        if (want("rest")) rt::bench(4000, "everything relevant, 10 % + viewers moving (rest)", 0.1f);
+        if (want("still")) rt::bench(4000, "everything relevant, 1 % + viewers moving (still)", 0.01f);
         return 0;
     }
     const char* only = argc > 1 ? argv[1] : nullptr;
