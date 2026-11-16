@@ -21,6 +21,12 @@ Authority: `docs/water.md`; roads that become bridges: `docs/roads.md`, `skills/
 5. Editor: window «Вода» (`apps/editor/windows/WaterWindow.cpp`). Tests: `tests/tests_water.inc`.
 6. Check with `view_screenshot` from several angles and a bot / traffic run that crosses the bridges.
 
+Pitfalls already hit: faces of a bank whose land lies on the other hand of the point order are flipped (check new
+geometry on both banks); water cells are taken with 0.75 cell of slack, so a promenade is never narrower than 1.5 cells;
+land surfaces follow the ground with a lift or the terrain grass pokes through the sand; when testing connectivity
+stamp diagonal road samples 3 x 3 (they break 4-connectivity). A game gives only `shoreTypes` textures and models
+(its own `rules/water.json` through `include`, written with `tools/rules/rules_io.py`).
+
 Not yet (from the doc): wall / parapet modules repeated along the bank, waves, water bodies at different heights.
 
 Workflow recipe over existing engine code and MCP tools; no runtime library.
