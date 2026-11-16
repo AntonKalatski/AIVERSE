@@ -201,3 +201,13 @@ if(NOT MSVC)
     target_compile_options(aiverse_library_progression_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
 add_test(NAME library_progression COMMAND aiverse_library_progression_tests ${CMAKE_CURRENT_LIST_DIR}/../..)
+# City packages: world-calendar, weather-timeline, vehicle-fx, swept-shapes, derived-keys, city-traffic routes.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/core/Fixed.cpp")
+    add_executable(aiverse_library_city_tests city_tests.cpp ../../engine/core/Fixed.cpp)
+    # Include paths only: Fixed.cpp is compiled in, the package targets would also pull aiverse_engine.
+    target_link_libraries(aiverse_library_city_tests PRIVATE AIVERSE::gameplay_native)
+    if(NOT MSVC)
+        target_compile_options(aiverse_library_city_tests PRIVATE -Wall -Wextra -Werror -pedantic -Wno-misleading-indentation)
+    endif()
+    add_test(NAME library_city COMMAND aiverse_library_city_tests)
+endif()

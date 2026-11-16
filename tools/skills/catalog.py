@@ -20,6 +20,13 @@ def load_meta():
 
 # Search vocabulary is routing metadata, not another copy of skill instructions.
 ALIASES = {
+ 'aiverse-world-calendar':'calendar clock day week shift schedule routine needs errands календар часы день недел смен расписан распорядок потребност поручен',
+ 'aiverse-weather-timeline':'weather rain wind gust wet puddles sky погода дождь ветер лужи мокр небо',
+ 'aiverse-vehicle-fx':'headlight brake indicator hazard beacon siren lamp skid tyre marks фары стоп поворотник аварийк мигалк сирен следы шин',
+ 'aiverse-swept-shapes':'swept sweep crossing pedestrian collision slide wall broadphase переход пешеход столкновен скольжен стен',
+ 'aiverse-derived-keys':'cache keys trigger variables lookup performance кэш ключ переменн поиск производительн',
+ 'aiverse-city-traffic':'traffic cars lanes signals lights pedestrians bus police ambulance fire tow gangs population трафик машин полос светофор пешеход автобус полици скор пожар эвакуатор банд жител',
+ 'aiverse-rules-files':'rules include split rules_io правила разбить include',
  'aiverse-physics':'box3d physics rigid collider collision hinge weld sensor raycast физик коллайдер столкнов шарнир датчик',
  'meta-economy':'shop store offer currency wallet магазин оффер валют кошелек покупк',
  'meta-social':'leaderboard ranking chat лидeрборд лидерборд рейтинг таблица чат',
@@ -108,8 +115,14 @@ WORKFLOWS=[
  ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
+ ('aiverse-driving','Top-down hero at the wheel: rules driving, handling table, steering wheels, decks, autopilot','docs/driving.md'),
+ ('aiverse-city-server','Persistent city server: near-hero snapshots, tickets, seats, accounts, client mirror','docs/city-server.md'),
+ ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
+ 'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',
+ 'aiverse-autolod':'lod autolod meshoptimizer simplify levels detail упрощен уровни детализац',
  'aiverse-game-wizard':'wizard game_make whole game idea мастер сделать игру идея',
  'aiverse-tiles-2d':'2d tile tiles tileset sprite тайл тайлы тайлсет спрайт',
  'aiverse-planets':'planet planets orbit moon space планет орбит луна космос',

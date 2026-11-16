@@ -13088,6 +13088,7 @@ TEST(models_gltf_lod_metadata) {
 #include "tests_services_build.inc"   // aiversebuild iOS plugin step (agent-sdk-plugins)
 
 #include "tests_projectiles.inc"
+#include "tests_navmesh.inc"   // navigation mesh (engine/nav) + RTS movement.pathfinding
 #include "tests_vfx_tools.inc"   // agent-vfxgraph
 
 TEST(models_skinned_autolod_inherits_palette) {

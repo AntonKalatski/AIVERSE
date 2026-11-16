@@ -142,6 +142,10 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     g.sphereHpaMinCells = rules_.movement.planetHpaCells;
     g.flowMaxFields = rules_.movement.flow.maxFields;
     g.blockedGoalNearest = rules_.movement.blockedGoalNearest;
+    g.navMesh = rules_.movement.navMesh;
+    if (g.navMesh && !g.surf)   // navigation meshes are derived data: build them on the loading screen
+        for (auto& t : rules_.types)
+            if (t.speed.raw > 0 && (!(t.layer & kLayerAir) || g.airSolid)) g.prepareNavMesh(t.pathLayer);
     g.flowBudgetBytes = size_t(rules_.movement.flow.budgetMB) << 20;
     if (const char* f = std::getenv("AIVERSE_PLANET_HPA"); f && *f) g.sphereHpaMinCells = *f == '0' ? (1 << 30) : 0;
     if (g.surf)   // planets: bodies above the cell threshold (RtsHpaSphere.cpp)
@@ -298,6 +302,11 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         const std::string bg = map["movement"].getStr("blockedGoals");
         if (bg != "nearest" && bg != "search") throw std::runtime_error("map movement.blockedGoals: expected 'nearest' or 'search'");
         rules_.movement.blockedGoalNearest = bg == "nearest";
+    }
+    if (map["movement"].has("pathfinding")) {
+        const std::string pf = map["movement"].getStr("pathfinding");
+        if (pf != "grid" && pf != "navmesh") throw std::runtime_error("map movement.pathfinding: expected 'grid' or 'navmesh'");
+        rules_.movement.navMesh = pf == "navmesh";
     }
     if (map["movement"].has("flowField") && !map["movement"]["flowField"].isObject()) throw std::runtime_error("map movement.flowField: expected an object");
 
