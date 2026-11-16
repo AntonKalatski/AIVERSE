@@ -87,6 +87,34 @@
       "keywords": []
     },
     {
+      "id": "aiverse-assets-import",
+      "package": null,
+      "path": "skills/visuals/aiverse-assets-import/SKILL.md",
+      "domain": "workflow",
+      "summary": "Models, textures, sounds and animations: import, view blocks, Spine, Unity animation",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/models.md",
+      "keywords": [
+        "asset",
+        "model",
+        "models",
+        "texture",
+        "import",
+        "animation",
+        "spine",
+        "gltf",
+        "ассет",
+        "модел",
+        "текстур",
+        "импорт",
+        "анимац"
+      ]
+    },
+    {
       "id": "aiverse-attribute-modifiers",
       "package": "attribute-modifiers",
       "path": "skills/gameplay/aiverse-attribute-modifiers/SKILL.md",
@@ -102,6 +130,29 @@
       "requiresOwner": "aiverse_game",
       "source": "libraries/include/aiverselib/systems/EngineMechanics.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-audio",
+      "package": null,
+      "path": "skills/ui/aiverse-audio/SKILL.md",
+      "domain": "workflow",
+      "summary": "audio.json sounds, buses, music and event bindings, verified by recording the mix",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/game-format.md",
+      "keywords": [
+        "audio",
+        "sound",
+        "music",
+        "sfx",
+        "voice",
+        "звук",
+        "музык",
+        "озвучк"
+      ]
     },
     {
       "id": "aiverse-balance-lab",
@@ -691,6 +742,29 @@
       "keywords": []
     },
     {
+      "id": "aiverse-determinism-triage",
+      "package": null,
+      "path": "skills/verification/aiverse-determinism-triage/SKILL.md",
+      "domain": "workflow",
+      "summary": "Checksum mismatches: first differing tick and field, causes, fix and proof",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/native-toolkit.md",
+      "keywords": [
+        "determinism",
+        "desync",
+        "checksum",
+        "mismatch",
+        "детерминизм",
+        "рассинхрон",
+        "контрольн",
+        "сумм"
+      ]
+    },
+    {
       "id": "aiverse-diagnostics",
       "package": "diagnostics",
       "path": "skills/core/aiverse-diagnostics/SKILL.md",
@@ -704,6 +778,28 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/gameplay/Diagnostics.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-docs-upkeep",
+      "package": null,
+      "path": "skills/workflow/aiverse-docs-upkeep/SKILL.md",
+      "domain": "workflow",
+      "summary": "README and translations, translated docs, format sections, readme check",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "tools/readme/check.py",
+      "keywords": [
+        "docs",
+        "readme",
+        "documentation",
+        "translation",
+        "документац",
+        "ридми",
+        "перевод"
+      ]
     },
     {
       "id": "aiverse-feedback",
@@ -782,6 +878,30 @@
       "requiresOwner": null,
       "source": "tools/libraries/gameplay.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-game-wizard",
+      "package": null,
+      "path": "skills/workflow/aiverse-game-wizard/SKILL.md",
+      "domain": "workflow",
+      "summary": "Whole game from art and an idea with game_make, then bot, screen and phone checks",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/game-wizard.md",
+      "keywords": [
+        "wizard",
+        "game_make",
+        "whole",
+        "game",
+        "idea",
+        "мастер",
+        "сделать",
+        "игру",
+        "идея"
+      ]
     },
     {
       "id": "aiverse-genre-bots",
@@ -979,6 +1099,29 @@
       "requiresOwner": null,
       "source": "tools/libraries/project_checks.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-localization",
+      "package": null,
+      "path": "skills/ui/aiverse-localization/SKILL.md",
+      "domain": "workflow",
+      "summary": "Lang keys, translations, consistency checks, fonts and long strings on phones",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "engine/i18n/README.md",
+      "keywords": [
+        "localization",
+        "translation",
+        "language",
+        "lang",
+        "i18n",
+        "локализац",
+        "перевод",
+        "язык"
+      ]
     },
     {
       "id": "aiverse-logistics",
@@ -1221,6 +1364,33 @@
       "keywords": []
     },
     {
+      "id": "aiverse-mobile-perf",
+      "package": null,
+      "path": "skills/verification/aiverse-mobile-perf/SKILL.md",
+      "domain": "workflow",
+      "summary": "Phone budgets: frame and tick, post effects, LOD, lighting, Lua and simulation cost",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/lua-coverage.md",
+      "keywords": [
+        "performance",
+        "perf",
+        "fps",
+        "phone",
+        "mobile",
+        "budget",
+        "lod",
+        "производительн",
+        "фпс",
+        "телефон",
+        "мобильн",
+        "бюджет"
+      ]
+    },
+    {
       "id": "aiverse-narrative-graphs",
       "package": "narrative-graphs",
       "path": "skills/gameplay/aiverse-narrative-graphs/SKILL.md",
@@ -1378,6 +1548,32 @@
       "keywords": []
     },
     {
+      "id": "aiverse-online-battles",
+      "package": null,
+      "path": "skills/network/aiverse-online-battles/SKILL.md",
+      "domain": "workflow",
+      "summary": "Online PvP and PvE: rollback, tick rate, simulated mobile links, reconnect",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/battle-net.md",
+      "keywords": [
+        "online",
+        "network",
+        "pvp",
+        "pve",
+        "rollback",
+        "netcode",
+        "multiplayer",
+        "онлайн",
+        "сеть",
+        "мультиплеер",
+        "откат"
+      ]
+    },
+    {
       "id": "aiverse-orchestrator",
       "package": null,
       "path": "skills/workflow/aiverse-orchestrator/SKILL.md",
@@ -1494,6 +1690,30 @@
       ]
     },
     {
+      "id": "aiverse-planets",
+      "package": null,
+      "path": "skills/world/aiverse-planets/SKILL.md",
+      "domain": "workflow",
+      "summary": "Planet and orbit maps: bodies, generation presets, layouts, orbit fleets",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/planets.md",
+      "keywords": [
+        "planet",
+        "planets",
+        "orbit",
+        "moon",
+        "space",
+        "планет",
+        "орбит",
+        "луна",
+        "космос"
+      ]
+    },
+    {
       "id": "aiverse-play-scenarios",
       "package": "play-scenarios",
       "path": "skills/verification/aiverse-play-scenarios/SKILL.md",
@@ -1606,6 +1826,30 @@
       "requiresOwner": null,
       "source": "tools/libraries/gameplay.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-publish-builds",
+      "package": null,
+      "path": "skills/workflow/aiverse-publish-builds/SKILL.md",
+      "domain": "workflow",
+      "summary": "Editor packages for Windows and macOS on the builds branch (MAIN only)",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "tools/release/publish_builds.py",
+      "keywords": [
+        "publish",
+        "builds",
+        "branch",
+        "release",
+        "editor",
+        "zip",
+        "публикац",
+        "сборк",
+        "редактор"
+      ]
     },
     {
       "id": "aiverse-puzzle-machine",
@@ -1928,6 +2172,60 @@
       ]
     },
     {
+      "id": "aiverse-shader-graph",
+      "package": null,
+      "path": "skills/visuals/aiverse-shader-graph/SKILL.md",
+      "domain": "workflow",
+      "summary": "Shader Graph materials, post effects, particles and baked lighting with phone cost",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/shader-graph.md",
+      "keywords": [
+        "shader",
+        "graph",
+        "lightmap",
+        "bake",
+        "probe",
+        "gi",
+        "шейдер",
+        "граф",
+        "запекан",
+        "лайтмап"
+      ]
+    },
+    {
+      "id": "aiverse-special-modes",
+      "package": null,
+      "path": "skills/gameplay/aiverse-special-modes/SKILL.md",
+      "domain": "workflow",
+      "summary": "Top-down heroes, extraction raids and city traffic: data, samples, bots, checks",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/topdown.md",
+      "keywords": [
+        "topdown",
+        "twin-stick",
+        "hero",
+        "raid",
+        "extraction",
+        "traffic",
+        "cars",
+        "pedestrians",
+        "герой",
+        "рейд",
+        "эвакуац",
+        "трафик",
+        "машин",
+        "пешеход"
+      ]
+    },
+    {
       "id": "aiverse-sports-rules",
       "package": "sports-rules",
       "path": "skills/genres/aiverse-sports-rules/SKILL.md",
@@ -2056,6 +2354,32 @@
         "тревог",
         "маскиров",
         "укрыт"
+      ]
+    },
+    {
+      "id": "aiverse-strategic-campaign",
+      "package": null,
+      "path": "skills/gameplay/aiverse-strategic-campaign/SKILL.md",
+      "domain": "workflow",
+      "summary": "Strategic layer: regions, armies, turn orders, bot factions, spawned battles",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/game-format.md",
+      "keywords": [
+        "strategic",
+        "campaign",
+        "total",
+        "war",
+        "regions",
+        "turns",
+        "глобальн",
+        "стратегическ",
+        "карта",
+        "регион",
+        "ход"
       ]
     },
     {
@@ -2207,6 +2531,30 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/app/Theme.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-tiles-2d",
+      "package": null,
+      "path": "skills/world/aiverse-tiles-2d/SKILL.md",
+      "domain": "workflow",
+      "summary": "2D tile games: tilesets, tile layers, painting, sprites, atlases",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "tools/mcp/main.cpp",
+      "keywords": [
+        "2d",
+        "tile",
+        "tiles",
+        "tileset",
+        "sprite",
+        "тайл",
+        "тайлы",
+        "тайлсет",
+        "спрайт"
+      ]
     },
     {
       "id": "aiverse-turn-scheduler",
@@ -2394,6 +2742,30 @@
       "requiresOwner": null,
       "source": "tests/check_headless_restore.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-visual-qa",
+      "package": null,
+      "path": "skills/verification/aiverse-visual-qa/SKILL.md",
+      "domain": "workflow",
+      "summary": "Screenshot checks: editor, headless Xvfb, before/after, phone profiles, quality levels",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "AGENTS.md",
+      "keywords": [
+        "screenshot",
+        "visual",
+        "qa",
+        "xvfb",
+        "compare",
+        "скриншот",
+        "снимок",
+        "визуальн",
+        "проверк"
+      ]
     },
     {
       "id": "aiverse-weapon-policies",
