@@ -590,3 +590,55 @@ preparation; this is an asset audit, not a visible-frame or FPS measurement.
 
 For same-build editor/client A/B validation, `AIVERSE_AUTO_SHADOW_BATCHES=off` disables automatic
 preparation at upload. It does not remove batches already built by `mergeStaticPrimitives`.
+
+
+## Engine-wide batching policy for rigid meshes (experimental)
+
+AIVERSE now centralizes optional **rigid mesh compaction** in
+`render::prepareModelUpload()`, which both `uploadModel()` in game clients and
+the scene/model preview renderer call. It applies to the common `Model` representation
+regardless of input format or game genre; no car-specific naming is hard-coded.
+
+```cpp
+auto m = render::loadModel(path, reader);
+m->batching.mergeRigid = true;             // opt in for a known rigid asset
+m->batching.maxExtent = 20.0f;             // avoid large combined culling boxes
+m->batching.preserveNodes = {"door", "muzzle", "attachment"};
+m->nodes[controlledNode].runtimeMutable = true; // keeps this node + descendants
+render::uploadModel(device, *m);           // merge before material/shadow batching
+```
+
+Default `mergeRigid=false` is intentional: an imported asset does not describe
+which nodes a game, editor or native plugin will change at runtime. Auto-merging
+unknown nodes can freeze doors, destroy project-authored destructibility or alter
+selection/attachment semantics. Any transform/visibility/variant controlled from
+gameplay, an animation system or the editor must be protected by marking the node
+`runtimeMutable` or by listing its name in `preserveNodes`. Child nodes inherit
+protection from ancestors. This protection does **not** disable the existing
+within-mesh material batching, shadow batching, or renderer instancing.
+
+**Scope and restrictions:** cross-node rigid compaction supports only eligible
+non-animated meshes and material states; it retains incompatible or opaque-to-the-
+compiler structures unchanged. It declines skinned, morphed, variant and LOD models
+where the old `mergeStaticPrimitives()` cannot guarantee equivalent rendering.
+The same rules apply to cars, props, buildings, RTS units, FPS assets and editor
+model views. A game may move the *whole* model via its root world matrix; merged
+geometry then moves as one body. To move pieces separately, mark their nodes as
+mutable before upload.
+
+The test `model_batching_policy` checks that merging rigid geometry preserves
+the original node indices, parent chain, bind matrices and draw geometry for
+runtime-mutable subtrees:
+
+```sh
+cmake -S . -B build/test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/test --target aiverse_model_batching_policy_tests
+ctest --test-dir build/test -R model_batching_policy --output-on-failure
+```
+
+For performance comparisons use the Scene View draw-call visualization and GPU
+frame counters under identical rendering/lighting settings; reductions in
+`primitiveInstances` are estimates, not measured GPU draw calls. Enabling a policy
+changes CPU geometry and must happen **before upload**; changing it on an already
+uploaded model requires reloading its original geometry and re-uploading the GPU
+buffers rather than toggling a flag on the live model.
