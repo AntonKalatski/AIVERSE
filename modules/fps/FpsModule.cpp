@@ -112,8 +112,8 @@ Config readConfig(const Json& root) {
     if(j.has("crate")){
         if(!j["crate"].isArray()||j["crate"].size()>16)throw JsonError("fps.crate: expected at most 16 items");
         for(const auto& item:j["crate"].items()){
-            auto type=integer(item,"type",0,1,103),count=integer(item,"count",1,1,20);
-            if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(c.weapons.size()))))throw JsonError("fps.crate: invalid item type "+std::to_string(type));
+            auto type=integer(item,"type",0,1,255),count=integer(item,"count",1,1,20);
+            if(!((type>=1&&type<=9)||(type>=100&&type<100+int64_t(c.weapons.size()))||type>=200))throw JsonError("fps.crate: invalid item type "+std::to_string(type));
             c.crate.push_back({int32_t(type),int32_t(count)});
         }
     }else if(c.royale)c.crate={{2,1},{1,2},{8,1},{9,3}};
@@ -135,6 +135,12 @@ Config readConfig(const Json& root) {
     mcfg.smokeRadius=number(systems,"smokeRadius",6_fx,1_fx,20_fx);
     mcfg.flashRadius=number(systems,"flashRadius",20_fx,1_fx,50_fx);
     if(c.mode=="bomb"&&!mcfg.enabled)throw JsonError("fps bomb mode requires mechanics.enabled");
+    if(j.has("gear")){
+        if(!c.systems.enabled)throw JsonError("fps.gear: requires mechanics.enabled");
+        c.gear=lib::systems::readGearCatalog(j["gear"],"fps.gear");
+        for(const auto& [id,g]:c.gear)if(id>55)throw JsonError("fps.gear: ids must be 1..55 (loot type 200 + id)");
+    }
+    for(auto item:c.crate)if(item.type>=200&&!c.gear.contains(item.type-200))throw JsonError("fps.crate: unknown gear "+std::to_string(item.type-200));
     const auto& melee=j["melee"];auto& mel=c.melee;
     if(!melee.isNull()&&!melee.isObject())throw JsonError("fps.melee: expected object");
     mel.enabled=melee.getBool("enabled",false);
@@ -185,6 +191,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     }
     setupSystems(sim,map,s);
     setupRoyale(sim,map,s);
+    if(!config_.gear.empty())s.gear.assign(s.actors.size(),{});
     meleeAttacks_.clear();
     if(config_.melee.enabled){
         const auto& m=config_.melee;auto total=m.windup+m.active+m.recovery;
@@ -324,12 +331,16 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
     if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:state(sim).actors)meleeIo(m,actor);hash.str(extra);}
     for(auto& p:state(sim).projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
     if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
+    for(const auto& g:state(sim).gear)hash.u64(lib::systems::gearHash(g));
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
-    uint32_t version=8;uint64_t content=contentHash_;archive(version,content);
-    if((version!=3&&version<6)||version>8||content!=contentHash_)return false;
+    uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
+    if((version!=3&&version<6)||version>9||content!=contentHash_)return false;
     State copy=state(sim);stateIo(archive,copy,version>=6,version>=7);
     if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
+    if(version>=9){uint32_t n=archive.count(copy.gear.size());if(n>256){archive.fail();return false;}if(!archive.writing())copy.gear.resize(n);for(auto& g:copy.gear)lib::systems::io(archive,g);}else copy.gear.clear();
+    if(copy.gear.size()!=(config_.gear.empty()?0:spawns_.size()))return false;
+    for(const auto& g:copy.gear)if(!lib::systems::valid(config_.gear,g))return false;
     if(copy.royale.enabled!=bool(config_.royale))return false;
     if(copy.royale.enabled){
         using namespace lib::genre;const auto& r=copy.royale;auto n=spawns_.size();
@@ -343,7 +354,7 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
         for(auto& f:copy.history)for(auto& p:f.actors)reset(p);}
     if(!archive.ok()||copy.actors.size()!=spawns_.size())return false;
     auto valid=[&](const Actor& actor){
-        if(actor.weaponIndex>=config_.weapons.size()||actor.slot==0||actor.slot>spawns_.size()||actor.bag.size()>12||actor.actionTarget>spawns_.size()||uint32_t(actor.activeAction)>uint32_t(Action::Vault)||actor.owned>15||actor.armor<0||actor.armor>100||actor.health<0||actor.health>100||actor.money<0||actor.money>16000)return false;
+        if(actor.weaponIndex>=config_.weapons.size()||actor.slot==0||actor.slot>spawns_.size()||actor.bag.size()>24||actor.actionTarget>spawns_.size()||uint32_t(actor.activeAction)>uint32_t(Action::Vault)||actor.owned>15||actor.armor<0||actor.armor>100||actor.health<0||actor.health>100||actor.money<0||actor.money>16000)return false;
         for(auto item:actor.bag)if(item.type<1||item.type>9||item.count<1||item.count>20)return false;
         const auto& m=actor.melee;
         if(actor.lockTarget>spawns_.size()||m.attack<0||m.attack>1||m.queued<0||m.queued>1||m.started>m.lastTick||m.queuedAt>m.lastTick||m.hitTargets.size()>spawns_.size()||

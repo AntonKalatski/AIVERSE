@@ -970,6 +970,47 @@
       ]
     },
     {
+      "id": "aiverse-gear-tiers",
+      "package": "gear-tiers",
+      "path": "skills/gameplay/aiverse-gear-tiers/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Tiered protective gear for any genre: slot pieces (helmet, vest, shield, backpack) that absorb a share of damage to the zones they cover, wear with the absorbed damage, break, add carry capacity, replace each other on equip and compare for automatic pickups",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_gear_tiers",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/Gear.h",
+      "keywords": [
+        "gear",
+        "armor",
+        "helmet",
+        "vest",
+        "backpack",
+        "shield",
+        "tier",
+        "level",
+        "durability",
+        "wear",
+        "absorb",
+        "capacity",
+        "broken",
+        "броня",
+        "шлем",
+        "жилет",
+        "рюкзак",
+        "щит",
+        "уровень",
+        "прочность",
+        "износ",
+        "вместимость",
+        "экипировк"
+      ]
+    },
+    {
       "id": "aiverse-genre-bots",
       "package": "genre-bots",
       "path": "skills/ai/aiverse-genre-bots/SKILL.md",

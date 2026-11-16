@@ -1496,6 +1496,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_library_encounter_tests PRIVATE AIVERSE::lib_boss_encounters)
     add_test(NAME library_encounters COMMAND aiverse_library_encounter_tests ${PROJECT_SOURCE_DIR})
 endif()
+# gear-tiers (protective gear slots, absorption, wear, capacity).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_library_gear_tests tests/libraries/gear_tests.cpp)
+    target_link_libraries(aiverse_library_gear_tests PRIVATE AIVERSE::lib_gear_tiers)
+    add_test(NAME library_gear COMMAND aiverse_library_gear_tests)
+endif()
 # snapshot-delta (record diffs for authoritative snapshots).
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_library_delta_tests tests/libraries/delta_tests.cpp)

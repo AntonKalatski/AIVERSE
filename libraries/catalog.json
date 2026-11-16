@@ -344,6 +344,26 @@
       ]
     },
     {
+      "id": "gear-tiers",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/Gear.h",
+      "skill": "skills/gameplay/aiverse-gear-tiers/SKILL.md",
+      "summary": "Tiered protective gear for any genre: slot pieces (helmet, vest, shield, backpack) that absorb a share of damage to the zones they cover, wear with the absorbed damage, break, add carry capacity, replace each other on equip and compare for automatic pickups",
+      "notes": "Integer milli-shares, deterministic, bounded. The owner picks the hit zone bit, applies the returned damage and drops the replaced piece as loot with its durability. Persist GearLoadout with io (Archive) and fold gearHash into the checksum. Used by the FPS module (fps.gear). No visuals, no item database or inventory ownership beyond the slots.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_gear_tiers",
+      "dependencies": [
+        "tests/libraries/gear_tests.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
       "id": "squads",
       "version": "0.1.1",
       "layer": "simulation",

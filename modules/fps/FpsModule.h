@@ -6,6 +6,7 @@
 #include "engine/world/CollisionStream.h"
 #include "libraries/include/aiverselib/genre/Melee.h"
 #include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
+#include "libraries/include/aiverselib/systems/Gear.h"
 #include <optional>
 
 namespace aiverse::fps {
@@ -57,6 +58,8 @@ struct Config {
     // insertion, bombardment, supply drops and standings. `crate` = items of a landed supply drop.
     std::optional<lib::genre::RoyaleRules> royale;
     std::vector<Item> crate;
+    // Opt-in `fps.gear` (gear-tiers package): tiered helmets / vests / backpacks as loot type 200 + id.
+    lib::systems::GearCatalog gear;
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -105,6 +108,7 @@ struct State {
     uint32_t round=1; int32_t winner=0;
     uint32_t nextObject=1;std::vector<Projectile> projectiles;std::vector<Loot> loot;std::vector<Vehicle> vehicles;RoundState match;
     RoyaleRun royale;
+    std::vector<lib::systems::GearLoadout> gear;   // per slot when fps.gear is set (FPS save version 9)
 
 };
 Config readConfig(const Json& rules);

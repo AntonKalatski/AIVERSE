@@ -59,8 +59,8 @@ The first three binaries are under `<build>/modules/fps/`.
 <build>/aiverse_headless --project templates/fps_arena --seed 3 --verify-restore-at 1 --verify-restore-ticks 20
 ```
 
-Client and server require identical content and protocol. The current FPS save version is 8
-(battle royale; versions 3, 6 and 7 still load); earlier experimental FPS saves and older peers
+Client and server require identical content and protocol. The current FPS save version is 9
+(gear and battle royale; versions 3, 6 and 7 still load); earlier experimental FPS saves and older peers
 are rejected. RTS save/protocol versions are unchanged.
 
 ## Scope
@@ -114,8 +114,19 @@ and teams left, own placement and kills, bombardment area, up to 8 falling crate
 while skydiving. SimEvents: 5 = kill feed (`player` = actor, `value` = victim | kind << 8), 6 = zone stage
 (`value` = phase | kind << 8, `pos` = target centre), 7 = supply drop (`value` = id | kind << 16, `pos` = point),
 8 = shell impact (`value` = damage). FPS save version 8 stores the run (versions 3, 6 and 7 still load for games
-without `fps.royale`); snapshot protocol 5 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
+without `fps.royale` / `fps.gear`); snapshot protocol 5 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
 The HUD (zone ring, minimap, kill feed, placement screen) is not drawn yet.
+
+## Gear (opt-in)
+
+`fps.gear` (requires `mechanics.enabled`) is a [gear-tiers](../skills/gameplay/aiverse-gear-tiers/SKILL.md) catalog:
+pieces with `id` 1..55, `slot`, `tier`, `durability`, `reduction` / `wear` (milli), `zones` (1 = head shots,
+2 = every other hit) and `capacity` (extra inventory stacks, up to 24 in total). Loot type `200 + id` is a gear piece
+(map `loot`, `fps.crate`); Interact equips it and the replaced piece takes its place on the ground with its
+durability. With a catalog the gear replaces the legacy flat armor absorption. Broken pieces emit SimEvent 9
+(`player` = wearer, `value` = slot); dying drops every worn piece. The own loadout travels in snapshots
+(`Snapshot::gear`); FPS save version 9 stores loadouts. `templates/fps_survival` ships three helmet, vest and
+backpack levels (`rules/gear.json`) spread near the spawns and in supply crates.
 
 ## Close combat (opt-in)
 

@@ -2,7 +2,8 @@
 // insertion, phased safe zone, bombardment, supply drops and last-team-standing standings. The package
 // decides and reports; this file owns health, positions, loot and the winner. SimEvents:
 // 5 = kill feed (player = actor, value = victim | kind << 8), 6 = zone (value = phase | kind << 8),
-// 7 = supply drop (value = id | kind << 16, pos = point), 8 = shell impact (pos = centre, value = damage).
+// 7 = supply drop (value = id | kind << 16, pos = point), 8 = shell impact (pos = centre, value = damage);
+// 9 = gear piece broke (player = wearer, value = gear slot; FpsSystems damage).
 #include "FpsModule.h"
 #include "engine/core/FixedMath.h"
 #include <algorithm>
