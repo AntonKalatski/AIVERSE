@@ -13,6 +13,7 @@ mechanics; they do not silently replace existing FPS movement, RTS abilities/dam
 | stealth-senses | Sight cones (near/focus/peripheral) with owner light/cover/stance/visibility multipliers and LOS callback, hearing with occlusion callback and noise/query budgets, decaying footprint/scent markers, per observer-target suspicion meters (Unaware/Suspicious/Searching/Alert), delayed ally alerts sharing last known positions, deterministic search points with give-up, disguises, hiding spots (see [Stealth and senses](#stealth-and-senses-stealth-senses-010)) | Perception records and events only. Owner supplies poses, multipliers, raycasts/occlusion and search candidates and moves agents. Not RTS fog of war. No sound propagation, navmesh routes or presentation. |
 | physical-interactions | Pick up/carry (hold point, mass limit, carry speed penalty, drop when blocked), charged throws with an arc preview from the same integrator and swept landing, push/pull (free or grid, friction/mass resistance, cooperative pushing, blocking), XPBD ropes with a fixed iteration count, attach/detach and breaking force, hinged/sliding doors (locks/keys, one-way, timing, auto-reverse), waypoint moving platforms with per-rider carry deltas, breakables (damage types, thresholds, stages, debris requests) (see [Physical interactions](#physical-interactions-physical-interactions-010)) | Authoritative kinematic policies over owner collision (engine/world). Box3D stays presentation-only (debris). No rigid-body stacking, rotation of props/platforms, rope-world collision or rendering. |
 | match-rules | Warmup/live/overtime/intermission/finished, team score events, best-of rounds, draws and capture points. MatchObjectives.h (0.2.0): capture/hold zones with contest rules and decay, king of the hill, payload, elimination with lives/respawn waves, extraction, bomb/defuse, ordered route gates, contested overtime clock, spectator transitions (see [Match objectives](#match-objectives-match-rules-020)) | Native extension policies returning events/scores for the match owner; existing built-in victory modes stay owned by their modules. Presence, deaths, pickups and gate crossings come from the authoritative owner. No cart physics, bomb/HUD presentation or network spectating. |
+| battle-royale | Phased safe zone (seeded nested circles, wait/shrink, per-phase damage, authored centres), bombardment strikes inside the safe circle, supply drops, air insertion (seeded carrier path, door, forced eject, free fall / dive, manual and automatic parachute, landing), last-team-standing standings (knockdowns, revives, wipes finish knocked mates, kill credit, damage, shared same-tick placements, winner or draw, kill feed), pre-match lobby countdown with bot fill (see [Battle royale](#battle-royale-battle-royale-010)) | Owner reports downs/outs/revives/damage and the ground height under skydivers, decides who a shell or the zone hits, spawns crate loot and hands landed actors back to its motor; health, collision, HUD and bots stay with their owners. |
 | narrative-graphs | JSON/localization-key graphs, conditional choices, fact set/add transactions, visits, command deduplication and endings; 0.2.0 social scenes: typed facts, relationship meters, knowledge, AND/OR/NOT conditions, flags, chapters/acts, deferred consequences, speakers, cue requests, barks, VN backlog/skip-read/auto-advance (see [Narrative scenes](#narrative-scenes-narrative-graphs-020)) | Project UI/cinematics consume committed nodes, CueRequest records and bark lines. No scene playback, audio, QTE or online reward grant. |
 
 | narrative-graphs | JSON/localization-key graphs, conditional choices, fact set/add transactions, visits, command deduplication and endings | Project UI/cinematics consume committed nodes. No automatic scene playback, audio, QTE or online reward grant. |
@@ -52,7 +53,8 @@ block of eight here before using it.
 | 96..103 | card-games, tactics-grid, cards-turns-bots |
 | 104..111 | settlement-production, survival-ecology |
 | 112..119 | puzzle-solvers |
-| 120+ | free |
+| 120..127 | battle-royale (own `royaleSave` / `royaleLoad`, genre/royale/Persistence.h) |
+| 128+ | free |
 
 ## Native/host integration
 
@@ -1547,3 +1549,54 @@ HUD banners and network authority (wiring into RtsModule units: below).
 **RTS games** use the package through rules `encounters` (`modules/rts/RtsEncounters.*`): bosses, mobs, telegraphs
 and the schedule on real units with rules statuses, orders, flow fields, events, saves and checksums; see
 [encounters.md](encounters.md) and `templates/boss_arena`.
+
+## Battle royale (battle-royale 0.1.0)
+
+Headers in `libraries/include/aiverselib/genre/royale/` (the first package in its own folder, no aggregate
+includes): `SafeZone.h`, `Bombardment.h`, `SupplyDrops.h`, `Insertion.h`, `Standings.h`, `Lobby.h`, `Data.h`
+(JSON), `Persistence.h` (records), `BattleRoyale.h` (all). Target `AIVERSE::lib_battle_royale` (aiverse_engine only).
+Recipe: `skills/gameplay/aiverse-battle-royale/SKILL.md`; example data: `examples/libraries/genre/royale/royale.json`.
+
+**Safe zone.** `SafeZoneDef` = playable bounds, initial circle, start tick, `centerPull` (0 concentric .. 1 anywhere
+that fits) and up to 32 phases (`wait`, `shrink`, target `radius`, `damage` every `interval` ticks, optional authored
+`center`). Each phase is announced, waits, then shrinks linearly; the next centre is a seeded point in the disc of
+radius `(current - next) * centerPull` around the current centre, clamped to the bounds, so circles nest unless an
+authored centre or the clamp says otherwise. `stepSafeZone` crosses any number of stage boundaries in one call
+(zero waits / shrinks, coarse callers); `safeZoneCircle(tick)` interpolates, `safeZoneTarget` is the announced
+circle, `safeZoneTicksLeft` drives HUD timers, `safeZoneDamage(tick)` is the hit for an outside actor this tick.
+
+**Bombardment and supply drops.** `stepBombardment` warns `warningTicks` ahead, picks the area uniformly inside the
+current safe circle, then emits volleys of `Shell` circles with damage until `duration` ends; repeats every
+`interval` up to `maxStrikes`. `stepSupplyDrops` announces crates at seeded points inside a circle (usually the
+announced target, minus `edgeMargin`) every `interval`, lands them after `fall` ticks; `supplyDropPosition` gives
+the descent for views and hit tests.
+
+**Air insertion.** `planInsertionFlight` draws a heading over the full turn and a crossing point in the
+`crossRadius` disc around the bounds centre; the path starts and ends `margin` beyond the bounds at `altitude`.
+`stepSkydiver` moves one actor: Aboard follows the carrier, jumps when the door is open (`doorOpen` ticks after
+take-off) or is ejected at the end; Freefall approaches `fallSpeed` (or `diveFallSpeed` while diving) and steers
+toward `move * glideSpeed`; the chute opens on request above `minDeployHeight` (after `chuteDelay`) or by itself at
+`autoDeployHeight` above the reported ground; Parachute glides at `chuteSpeed` / `chuteFallSpeed`; Landed clamps to
+the ground. Units are metres per tick.
+
+**Standings.** Competitors join teams before `startRoyaleStandings`. `reportDown` knocks a victim while a teammate
+stands (with `knockdowns`), otherwise it is out; a knocked victim reported again is out. When no member of a team
+stands, its knocked members are finished (credited to their knocker with `finishKnocked`), the team takes placement
+`teams still in + 1`, earlier same-tick outs share the better place, and at one team left the match finishes with a
+winner. `reportOutTogether` settles several outs at once: if the last teams all go out there it is a draw
+(`winner = -1`). `reportRevive`, `reportDamage` (enemy damage only) and `royaleRanking` complete the table; every
+call returns kill-feed events (Knocked, Eliminated, Revived, TeamOut, Winner, Draw).
+
+**Lobby.** `stepRoyaleLobby` starts a countdown when `fillPlayers` joined or `maxWait` passed with `minPlayers`,
+cancels it when the count drops below `minPlayers`, and reports `botFill` seats on Started.
+
+**State and checks.** Record kinds 120..126 (120 SafeZoneState, 121 BombardmentState, 122 SupplyDropState,
+123 InsertionFlight, 124 SkydiverState, 125 RoyaleStandings, 126 RoyaleLobbyState); `hashRoyale` folds canonical bytes
+into checksums; bind `royaleDataHash` of the JSON. `tests/libraries/royale_tests.cpp` (`library_royale`) covers
+nesting and interpolation of circles, multi-stage steps, damage intervals, authored and concentric centres,
+bombardment and drop schedules, flight geometry, jump / dive / manual and automatic chutes / forced eject / landing,
+knock / revive / wipe / credit / tie / draw, lobby countdown and cancel, JSON errors, save/load of every state and
+golden hashes of the seeded circle and flight path (identical with the portable 64-bit multiply and on gcc / clang).
+
+**Not covered.** HUD, minimap and models; loot tables (spawn through the loot / inventory owner); zone-aware bot
+behaviour; vehicles; replication (the owner's snapshots carry the circles and phases).

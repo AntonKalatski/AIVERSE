@@ -1426,6 +1426,36 @@
       "packageDependencies": []
     },
     {
+      "id": "battle-royale",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/royale/BattleRoyale.h",
+      "skill": "skills/gameplay/aiverse-battle-royale/SKILL.md",
+      "summary": "Battle-royale / last-team-standing policies for any genre: phased safe zone with seeded nested circles, wait/shrink timers and per-phase damage; bombardment (red zone) strikes; supply drops; air insertion (seeded carrier path, door, forced eject) with free fall, dive, manual/auto parachute and landing; standings with knockdowns, revives, finishing knocked teammates on a wipe, kill credit, damage, shared same-tick placements, winner or draw and kill-feed events; pre-match lobby with countdown and bot fill",
+      "notes": "Read skills/gameplay/aiverse-battle-royale/SKILL.md. Every stepper is Fixed/integer, keeps its own PCG32 stream in its state, rejects repeated/backward ticks and invalid input with std::nullopt without mutation and returns events for the authoritative owner. The owner reports downs/outs/revives/damage, ground height under skydivers and which actors a shell or the zone hits; the package never reads health or collision. Persist with royaleSave/royaleLoad (record kinds 120..126) and hash with hashRoyale; bind royaleDataHash of the JSON (genre/royale/Data.h). Example: examples/libraries/genre/royale/royale.json. No rendering, HUD, loot sampling or bot behaviour.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_battle_royale",
+      "dependencies": [
+        "libraries/include/aiverselib/genre/royale/Common.h",
+        "libraries/include/aiverselib/genre/royale/SafeZone.h",
+        "libraries/include/aiverselib/genre/royale/Bombardment.h",
+        "libraries/include/aiverselib/genre/royale/SupplyDrops.h",
+        "libraries/include/aiverselib/genre/royale/Insertion.h",
+        "libraries/include/aiverselib/genre/royale/Standings.h",
+        "libraries/include/aiverselib/genre/royale/Lobby.h",
+        "libraries/include/aiverselib/genre/royale/Persistence.h",
+        "libraries/include/aiverselib/genre/royale/Data.h",
+        "examples/libraries/genre/royale/royale.json",
+        "tests/libraries/royale_tests.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
       "id": "narrative-graphs",
       "version": "0.2.0",
       "layer": "simulation",

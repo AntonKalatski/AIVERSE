@@ -1,0 +1,22 @@
+{
+  "bounds": {"min": [-4000, -4000], "max": [4000, 4000]},
+  "zone": {
+    "radius": 5700, "startTick": 3600, "centerPull": 1,
+    "phases": [
+      {"wait": 5400, "shrink": 5400, "radius": 2600, "damage": 1, "interval": 30},
+      {"wait": 3600, "shrink": 3600, "radius": 1300, "damage": 2, "interval": 30},
+      {"wait": 2700, "shrink": 2700, "radius": 650, "damage": 4, "interval": 30},
+      {"wait": 1800, "shrink": 1800, "radius": 300, "damage": 6, "interval": 30},
+      {"wait": 1200, "shrink": 1200, "radius": 120, "damage": 8, "interval": 30},
+      {"wait": 900, "shrink": 900, "radius": 40, "damage": 10, "interval": 15},
+      {"wait": 600, "shrink": 1200, "radius": 0, "damage": 12, "interval": 15}
+    ]
+  },
+  "flight": {"speed": 3, "altitude": 800, "margin": 300, "crossRadius": 1500, "doorOpen": 150, "exitCarry": 0.25},
+  "drop": {"autoDeployHeight": 150, "minDeployHeight": 40},
+  "bombardment": {"firstTick": 9000, "interval": 5400, "duration": 600, "radius": 150, "warning": 150,
+                  "shellInterval": 6, "shellsPerVolley": 2, "shellRadius": 8, "damage": 80},
+  "supplyDrops": {"firstTick": 7200, "interval": 7200, "maxDrops": 4, "fall": 600, "altitude": 300, "lootTable": 1},
+  "standings": {"knockdowns": true, "finishKnocked": true},
+  "lobby": {"minPlayers": 2, "fillPlayers": 100, "maxPlayers": 100, "maxWait": 1800, "countdown": 300}
+}
