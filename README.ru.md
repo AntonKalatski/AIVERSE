@@ -14,6 +14,7 @@
   <img alt="Rendering" src="https://img.shields.io/badge/рендер-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI--агенты-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/лицензия-MIT-2ea44f">
+  <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
 </p>
 
 <p align="center">
