@@ -40,6 +40,7 @@ public:
         auto& renderer = ed.renderer();
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setModelInstancingEnabled(sceneInstancing_);
+        renderer.setModelMultiDrawEnabled(sceneIndirect_);
         renderer.setModelCullingEnabled(sceneCulling_);
         // Pipeline layouts depend on instance limit. Apply only when the user changes
         // the control: resetting this after every Scene frame would recompile shaders.
@@ -51,6 +52,7 @@ public:
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
         renderer.setModelInstancingEnabled(true);
+        renderer.setModelMultiDrawEnabled(true);
         renderer.setModelCullingEnabled(true);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
@@ -140,6 +142,8 @@ private:
             ImGui::TextUnformatted("Scene model batching");
             ImGui::Separator();
             ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
+            ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
+            ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
             ImGui::Checkbox("Model culling", &sceneCulling_);
             ImGui::SetNextItemWidth(180.0f);
             if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
@@ -149,6 +153,9 @@ private:
             ImGui::Text("Renderer draws (all passes): %u", currentDraws);
             const auto& modelStats = ed.renderer().modelStats();
             ImGui::Text("Model instanced calls: %llu", (unsigned long long)modelStats.instancedDraws);
+            ImGui::Text("Indirect submissions: %llu (%llu commands)",
+                (unsigned long long)modelStats.multiDrawSubmissions,
+                (unsigned long long)modelStats.indirectCommands);
             ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
             if (ImGui::Button("Capture baseline##scene_batch")) baselineDraws_ = currentDraws;
             if (baselineDraws_ >= 0) {
@@ -650,7 +657,7 @@ private:
     Viewport vp_;
     bool looking_ = false, panning_ = false, dragging_ = false, painting_ = false, areaDrag_ = false;
     int studioDebugMode_ = 0;
-    bool sceneInstancing_ = true, sceneCulling_ = true;
+    bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
     int64_t baselineDraws_ = -1;
