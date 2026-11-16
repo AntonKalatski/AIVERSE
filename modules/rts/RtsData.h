@@ -530,6 +530,7 @@ struct FlowFieldRules {
 struct MovementRules { bool rvo = true; bool separation = true; int neighbors = 8; Fixed timeHorizon = Fixed::fromRatio(3, 2);
                        FlowFieldRules flow;
                        bool blockedGoalNearest = false;   // movement.blockedGoals: "nearest" (vs "search")
+                       bool navMesh = false;              // movement.pathfinding: "navmesh" (vs "grid"): engine/nav paths on flat maps
                        bool airOverRock = true;           // false: fliers are confined to open cells (ground / water) - no flying over undug rock / '#'
                        int planetHpaCells = 256 * 256;    // planets: HPA* on bodies with >= this many cells (0 = all)
                        Fixed magicBox{}; };               // movement.magicBox: a group within this radius of its centre keeps its shape on a move (StarCraft II); 0 = off

@@ -227,6 +227,12 @@ any tag in `deficitDisables`).
 - `movement.blockedGoals: "nearest"` (rules or map, default `"search"`): paths to a goal inside a structure or obstacle
   (attacking a building) end at the free cell around it nearest to the unit - much cheaper for hordes; different cells
   than the classic search, so it is opt-in (on in `templates/lastcolony/maps/horde_plain.json`).
+- `movement.pathfinding: "navmesh"` (rules or map, default `"grid"`): unit paths on flat maps come from the engine
+  navigation mesh (`engine/nav`, docs/navmesh.md): passable cells of each path layer merge into rectangles, A* runs over
+  them and a funnel pulls the corridor into an any-angle path (fewer waypoints, ~7% shorter than 8-direction grid paths,
+  cheap on 1024x1024 maps). Cliffs, ramps, slopes and structures are respected; searches it can't answer (start or goal
+  off the mesh, unreachable goals, surround-allies paths) use the grid search as before. Planets keep the grid / HPA*.
+  Different waypoints than the grid, so it is opt-in.
 - `movement.airOverRock: false` (default `true`): fliers are confined to open cells - ground and water - so they
   follow tunnels like everyone else instead of crossing undug rock and `#` (`MapGrid::airSolid`; their paths are
   searched like walkers', structures and units still don't block them). Dungeon games (`underlord`).
