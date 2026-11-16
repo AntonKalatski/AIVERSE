@@ -20,6 +20,13 @@ def load_meta():
 
 # Search vocabulary is routing metadata, not another copy of skill instructions.
 ALIASES = {
+ 'aiverse-voxel-world':'voxel voxels block blocks chunk chunks minecraft dig mine place raycast region save воксел блок чанк майнкрафт копат ставит регион',
+ 'aiverse-voxel-light':'voxel light skylight blocklight torch shadow flood свет освещен факел тень воксел',
+ 'aiverse-voxel-mesh':'voxel mesh meshing greedy ambient occlusion chunk render меш воксел затенен рендер чанк',
+ 'aiverse-voxel-gen':'voxel worldgen generator terrain biome cave ore tree seed infinite генерац биом пещер руда дерев бесконечн мир',
+ 'aiverse-voxel-ticks':'voxel fluid water lava flow sand gravity growth tick жидкост вода лава песок рост тик',
+ 'aiverse-voxel-nav':'voxel mob pathfinding spawn monster path моб путь спавн монстр воксел',
+ 'aiverse-voxel-replication':'voxel network multiplayer stream chunk server client replication сеть мультиплеер стрим чанк сервер реплик',
  'aiverse-physics':'box3d physics rigid collider collision hinge weld sensor raycast физик коллайдер столкнов шарнир датчик',
  'meta-economy':'shop store offer currency wallet магазин оффер валют кошелек покупк',
  'meta-social':'leaderboard ranking chat лидeрборд лидерборд рейтинг таблица чат',
@@ -105,6 +112,7 @@ WORKFLOWS=[
  ('aiverse-editor-extension','New editor windows, MCP window control, Hierarchy and inspector grouping','docs/editor-windows.md'),
  ('aiverse-modeling','In-engine model, rig and animation authoring through MCP and editor windows','docs/modeling.md'),
  ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
+ ('aiverse-voxel-game','Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps','docs/voxel.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
 ]
@@ -137,6 +145,7 @@ WORKFLOW_ALIASES={
  'aiverse-editor-extension':'editor window imgui hierarchy inspector details редактор окно иерарх инспектор',
  'aiverse-modeling':'modeling mesh model rig weights animation lod моделирован меш модел риг анимац',
  'rts-bunkerwars-skills':'bunker wars mushroom energy skills converter бункер скилл энерг конвертер',
+ 'aiverse-voxel-game':'minecraft voxel block sandbox survival craft mining майнкрафт воксел блок песочниц выживан крафт шахт',
  'aiverse-skill-authoring':'skill skills author add catalog audit скилл скиллы добав каталог аудит',
  'aiverse-publish-builds':'publish builds branch release editor zip публикац сборк редактор',
  'aiverse-bots-configure':'bot bots ai computer opponent rules.ai difficulty style personality scripted director бот боты ии компьютер противник сложност стиль характер',

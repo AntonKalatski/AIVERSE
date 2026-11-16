@@ -2000,6 +2000,171 @@
       "verifiedPlatforms": [],
       "runtime": "none",
       "cmakeTarget": null
+    },
+    {
+      "id": "voxel-world",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/voxel/VoxelWorld.h",
+      "skill": "skills/world/aiverse-voxel-world/SKILL.md",
+      "summary": "Mutable block world for Minecraft-like games: 16^3 chunks with block ids, metadata and derived light; block definitions from JSON (shapes, layers, opacity, emission, drops, fluids, falling, growth, textures); simulated edits with chunk revisions and an edit log; parking of edited chunks on unload; canonical palette+RLE chunk codec and checksummed region files; Fixed ray to the first block and axis-separated box movement against solid blocks; NativeState save record 120",
+      "notes": "Read docs/voxel.md. Simulation layer, integers and Fixed only, std::map order. Untouched chunks are regenerated from the seed, edited chunks are saved (resident) or parked (unloaded); after loadVoxelWorld the host makes the same chunks resident again before the next tick and then hash() matches. Light is derived: never hashed or saved. Unloaded chunks are solid for queries. Stream whole columns (voxel-light). Record kind 120 (120..127 reserved for voxel packages).",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_world",
+      "dependencies": [
+        "libraries/include/aiverselib/systems/voxel/VoxelTypes.h",
+        "libraries/include/aiverselib/systems/voxel/VoxelCodec.h",
+        "libraries/include/aiverselib/systems/voxel/VoxelQuery.h",
+        "libraries/include/aiverselib/systems/voxel/VoxelData.h",
+        "libraries/include/aiverselib/systems/voxel/VoxelPersistence.h",
+        "docs/voxel.md",
+        "examples/libraries/voxel/blocks.json",
+        "tests/libraries/voxel_tests.cpp",
+        "tools/libraries/voxel_main.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "voxel-light",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/voxellight/VoxelLight.h",
+      "skill": "skills/world/aiverse-voxel-light/SKILL.md",
+      "summary": "Sky and block light 0..15 for voxel worlds by breadth-first flood fill: straight full-strength sky columns, sideways loss by opacity, emitters, incremental removal and refill after each block edit, columns shaded by chunks loaded above, light level queries for spawning and growth",
+      "notes": "Deterministic (FIFO queues, fixed neighbour order) but derived: recompute after load with lightChunk / lightPending, then relightBlock(pos, oldBlock) after every VoxelWorld::set. Incremental result equals a full recompute (tested). Marks meshes that sample changed light dirty. Load whole columns so sky light is right. Measured on a dev VM: 0.33 ms per generated chunk, about 3 us per edit.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_light",
+      "dependencies": [
+        "docs/voxel.md",
+        "tests/libraries/voxel_tests.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "voxel-world"
+      ]
+    },
+    {
+      "id": "voxel-mesh",
+      "version": "0.1.0",
+      "layer": "presentation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/voxelmesh/VoxelMesh.h",
+      "skill": "skills/visuals/aiverse-voxel-mesh/SKILL.md",
+      "summary": "CPU chunk meshes for voxel worlds: hidden-face culling, greedy merging of equal faces, per-vertex ambient occlusion with anisotropy-safe diagonals, smooth sky/block light, opaque/cutout/translucent layers, cross plants with facing normals, fluids lowered by level, upright side textures in block UVs, back-to-front translucent sort; copyable 18^3 input for worker threads",
+      "notes": "Presentation only (floats). Build VoxelMeshInput on the owner thread, mesh anywhere, upload on the render thread. Positions are chunk-local: add the chunk origin relative to the camera origin in Fixed before converting (engine/world relativeTo). UVs are in blocks: texture arrays with repeat or fract() in the shader. Unloaded neighbours count as opaque by default. 0.11 ms per chunk average on a dev VM; vertex format is 28 bytes, not packed yet.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_mesh",
+      "dependencies": [
+        "docs/voxel.md",
+        "tests/libraries/voxel_tests.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "voxel-world"
+      ]
+    },
+    {
+      "id": "voxel-gen",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/voxelgen/VoxelGen.h",
+      "skill": "skills/world/aiverse-voxel-gen/SKILL.md",
+      "summary": "Deterministic per-chunk generator for infinite voxel worlds: integer value noise with fractal octaves for height, biomes by temperature noise (surface, filler, shore, height offset), 3D worm caves, ore veins as random walks, trees and plants, bedrock and sea; border-crossing features from per-origin random streams so any generation order gives identical chunks; JSON config by block names",
+      "notes": "Only integers and engine Random. A golden hash in tests/libraries/voxel_tests.cpp pins the output: change it only on purpose and note it in docs/voxel.md. Structures (villages, dungeons) are not generated yet (genre-implementation W3). 0.2 ms per chunk on a dev VM.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_gen",
+      "dependencies": [
+        "libraries/include/aiverselib/systems/voxelgen/VoxelGenData.h",
+        "examples/libraries/voxel/worldgen.json",
+        "docs/voxel.md"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "voxel-world"
+      ]
+    },
+    {
+      "id": "voxel-ticks",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/voxelticks/VoxelTicks.h",
+      "skill": "skills/world/aiverse-voxel-ticks/SKILL.md",
+      "summary": "Scheduled block updates for voxel worlds: flowing fluids with levels and falling columns, infinite sources, draining, fluid reactions (lava + water -> obsidian / cobblestone), falling blocks, random ticks for growth; deterministic queue (due tick, sequence), bounded updates per step, changes reported with old blocks for relighting; NativeState save record 121",
+      "notes": "Call notifyVoxelChange after every edit of the host (player digging, placing); stepVoxelTicks once per strictly increasing tick with the simulation Random; relight every reported change. Pass the set of active chunks to limit random ticks. Redstone-like logic is not included.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_ticks",
+      "dependencies": [
+        "libraries/include/aiverselib/systems/voxelticks/VoxelTicksData.h",
+        "libraries/include/aiverselib/systems/voxelticks/VoxelTicksPersistence.h",
+        "examples/libraries/voxel/ticks.json",
+        "docs/voxel.md"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "voxel-world"
+      ]
+    },
+    {
+      "id": "voxel-nav",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/bots/voxelnav/VoxelNav.h",
+      "skill": "skills/ai/aiverse-voxel-nav/SKILL.md",
+      "summary": "Mob navigation in mutable voxel worlds: A* over feet cells with step-up, bounded drops, swimming and optional diagonals without corner cutting, integer costs and positional ties, node budget; spawn spot search by light level (with night sky darkening), ground blocks and distance",
+      "notes": "No prebuilt mesh: every query sees the current blocks, so edits need no rebuild. Bound maxNodes per query and spread queries over ticks; cache paths and re-plan when a block on the path changes. Light comes from voxel-light. Measured: 52-step path over generated terrain in 22 ms with 20000 nodes on a dev VM - budget it.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_nav",
+      "dependencies": [
+        "docs/voxel.md",
+        "tests/libraries/voxel_tests.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "voxel-world"
+      ]
+    },
+    {
+      "id": "voxel-replication",
+      "version": "0.1.0",
+      "layer": "tools",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/net/voxel/VoxelReplication.h",
+      "skill": "skills/network/aiverse-voxel-replication/SKILL.md",
+      "summary": "Server-authoritative streaming of voxel worlds: per-client view (radius, vertical range), nearest-first chunk snapshots within byte and chunk budgets, unload notices, compact edit batches by chunk revision, automatic full resend on revision gaps or edit overflow, canonical message bytes and a client mirror that applies them",
+      "notes": "Host side only, never inside simulation ticks. Use with an authoritative server (engine/net authority or city server style), not lockstep. Send over a reliable ordered channel; drain VoxelWorld::edits after pumping every peer. The mirror needs voxel-light for inserted chunks and applied edits. Delta compression of snapshots is not added.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_voxel_replication",
+      "dependencies": [
+        "docs/voxel.md",
+        "tests/libraries/voxel_tests.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "voxel-world"
+      ]
     }
   ]
 }

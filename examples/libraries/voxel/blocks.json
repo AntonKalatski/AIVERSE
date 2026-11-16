@@ -1,0 +1,20 @@
+{"blocks":[
+ {"name":"stone","texture":1,"breakTicks":30,"drop":"cobblestone"},
+ {"name":"cobblestone","texture":2,"breakTicks":40},
+ {"name":"dirt","texture":3,"breakTicks":10,"growInto":"grass","growChance":40},
+ {"name":"grass","textures":{"side":4,"top":5,"bottom":3},"breakTicks":12,"drop":"dirt"},
+ {"name":"sand","texture":6,"breakTicks":10,"falls":true},
+ {"name":"gravel","texture":7,"breakTicks":12,"falls":true},
+ {"name":"water","fluid":1,"fluidSpread":7,"fluidTicks":5,"infiniteSource":true,"texture":8,"breakTicks":0,"dropsSelf":false},
+ {"name":"lava","fluid":2,"fluidSpread":3,"fluidTicks":30,"emission":15,"texture":9,"breakTicks":0,"dropsSelf":false},
+ {"name":"log","textures":{"side":10,"top":11},"breakTicks":40},
+ {"name":"planks","texture":12,"breakTicks":30},
+ {"name":"leaves","layer":"cutout","opacity":1,"texture":13,"breakTicks":4,"dropsSelf":false},
+ {"name":"glass","layer":"translucent","opacity":0,"texture":14,"breakTicks":6,"dropsSelf":false},
+ {"name":"tallgrass","shape":"cross","texture":15,"breakTicks":0,"dropsSelf":false},
+ {"name":"torch","shape":"cross","solid":false,"emission":14,"texture":16,"breakTicks":0},
+ {"name":"coal_ore","texture":17,"breakTicks":45},
+ {"name":"iron_ore","texture":18,"breakTicks":60},
+ {"name":"obsidian","texture":19,"breakTicks":1000},
+ {"name":"bedrock","texture":20,"unbreakable":true}
+]}

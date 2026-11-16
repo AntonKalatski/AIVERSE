@@ -3134,6 +3134,271 @@
       ]
     },
     {
+      "id": "aiverse-voxel-game",
+      "package": null,
+      "path": "skills/workflow/aiverse-voxel-game/SKILL.md",
+      "domain": "workflow",
+      "summary": "Minecraft-like game from the voxel packages and existing libraries: loop order, data, checks, gaps",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/voxel.md",
+      "keywords": [
+        "minecraft",
+        "voxel",
+        "block",
+        "sandbox",
+        "survival",
+        "craft",
+        "mining",
+        "майнкрафт",
+        "воксел",
+        "блок",
+        "песочниц",
+        "выживан",
+        "крафт",
+        "шахт"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-gen",
+      "package": "voxel-gen",
+      "path": "skills/world/aiverse-voxel-gen/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Deterministic per-chunk generator for infinite voxel worlds: integer value noise with fractal octaves for height, biomes by temperature noise (surface, filler, shore, height offset), 3D worm caves, ore veins as random walks, trees and plants, bedrock and sea; border-crossing features from per-origin random streams so any generation order gives identical chunks; JSON config by block names",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_gen",
+      "dependencies": [
+        "aiverse-voxel-world"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/voxelgen/VoxelGen.h",
+      "keywords": [
+        "voxel",
+        "worldgen",
+        "generator",
+        "terrain",
+        "biome",
+        "cave",
+        "ore",
+        "tree",
+        "seed",
+        "infinite",
+        "генерац",
+        "биом",
+        "пещер",
+        "руда",
+        "дерев",
+        "бесконечн",
+        "мир"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-light",
+      "package": "voxel-light",
+      "path": "skills/world/aiverse-voxel-light/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Sky and block light 0..15 for voxel worlds by breadth-first flood fill: straight full-strength sky columns, sideways loss by opacity, emitters, incremental removal and refill after each block edit, columns shaded by chunks loaded above, light level queries for spawning and growth",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_light",
+      "dependencies": [
+        "aiverse-voxel-world"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/voxellight/VoxelLight.h",
+      "keywords": [
+        "voxel",
+        "light",
+        "skylight",
+        "blocklight",
+        "torch",
+        "shadow",
+        "flood",
+        "свет",
+        "освещен",
+        "факел",
+        "тень",
+        "воксел"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-mesh",
+      "package": "voxel-mesh",
+      "path": "skills/visuals/aiverse-voxel-mesh/SKILL.md",
+      "domain": "gameplay",
+      "summary": "CPU chunk meshes for voxel worlds: hidden-face culling, greedy merging of equal faces, per-vertex ambient occlusion with anisotropy-safe diagonals, smooth sky/block light, opaque/cutout/translucent layers, cross plants with facing normals, fluids lowered by level, upright side textures in block UVs, back-to-front translucent sort; copyable 18^3 input for worker threads",
+      "side": "presentation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_mesh",
+      "dependencies": [
+        "aiverse-voxel-world"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/voxelmesh/VoxelMesh.h",
+      "keywords": [
+        "voxel",
+        "mesh",
+        "meshing",
+        "greedy",
+        "ambient",
+        "occlusion",
+        "chunk",
+        "render",
+        "меш",
+        "воксел",
+        "затенен",
+        "рендер",
+        "чанк"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-nav",
+      "package": "voxel-nav",
+      "path": "skills/ai/aiverse-voxel-nav/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Mob navigation in mutable voxel worlds: A* over feet cells with step-up, bounded drops, swimming and optional diagonals without corner cutting, integer costs and positional ties, node budget; spawn spot search by light level (with night sky darkening), ground blocks and distance",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_nav",
+      "dependencies": [
+        "aiverse-voxel-world"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/bots/voxelnav/VoxelNav.h",
+      "keywords": [
+        "voxel",
+        "mob",
+        "pathfinding",
+        "spawn",
+        "monster",
+        "path",
+        "моб",
+        "путь",
+        "спавн",
+        "монстр",
+        "воксел"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-replication",
+      "package": "voxel-replication",
+      "path": "skills/network/aiverse-voxel-replication/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Server-authoritative streaming of voxel worlds: per-client view (radius, vertical range), nearest-first chunk snapshots within byte and chunk budgets, unload notices, compact edit batches by chunk revision, automatic full resend on revision gaps or edit overflow, canonical message bytes and a client mirror that applies them",
+      "side": "tools",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_replication",
+      "dependencies": [
+        "aiverse-voxel-world"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/net/voxel/VoxelReplication.h",
+      "keywords": [
+        "voxel",
+        "network",
+        "multiplayer",
+        "stream",
+        "chunk",
+        "server",
+        "client",
+        "replication",
+        "сеть",
+        "мультиплеер",
+        "стрим",
+        "чанк",
+        "сервер",
+        "реплик"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-ticks",
+      "package": "voxel-ticks",
+      "path": "skills/world/aiverse-voxel-ticks/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Scheduled block updates for voxel worlds: flowing fluids with levels and falling columns, infinite sources, draining, fluid reactions (lava + water -> obsidian / cobblestone), falling blocks, random ticks for growth; deterministic queue (due tick, sequence), bounded updates per step, changes reported with old blocks for relighting; NativeState save record 121",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_ticks",
+      "dependencies": [
+        "aiverse-voxel-world"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/voxelticks/VoxelTicks.h",
+      "keywords": [
+        "voxel",
+        "fluid",
+        "water",
+        "lava",
+        "flow",
+        "sand",
+        "gravity",
+        "growth",
+        "tick",
+        "жидкост",
+        "вода",
+        "лава",
+        "песок",
+        "рост",
+        "тик"
+      ]
+    },
+    {
+      "id": "aiverse-voxel-world",
+      "package": "voxel-world",
+      "path": "skills/world/aiverse-voxel-world/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Mutable block world for Minecraft-like games: 16^3 chunks with block ids, metadata and derived light; block definitions from JSON (shapes, layers, opacity, emission, drops, fluids, falling, growth, textures); simulated edits with chunk revisions and an edit log; parking of edited chunks on unload; canonical palette+RLE chunk codec and checksummed region files; Fixed ray to the first block and axis-separated box movement against solid blocks; NativeState save record 120",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_voxel_world",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/systems/voxel/VoxelWorld.h",
+      "keywords": [
+        "voxel",
+        "voxels",
+        "block",
+        "blocks",
+        "chunk",
+        "chunks",
+        "minecraft",
+        "dig",
+        "mine",
+        "place",
+        "raycast",
+        "region",
+        "save",
+        "воксел",
+        "блок",
+        "чанк",
+        "майнкрафт",
+        "копат",
+        "ставит",
+        "регион"
+      ]
+    },
+    {
       "id": "aiverse-water",
       "package": null,
       "path": "skills/world/aiverse-water/SKILL.md",
