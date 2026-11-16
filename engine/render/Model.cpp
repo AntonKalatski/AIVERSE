@@ -416,13 +416,25 @@ void prepareModelUpload(Model& m) {
     // Geometry compaction is opt-in because arbitrary client-side pose changes cannot
     // be inferred from a static glTF/FBX hierarchy. An asset policy may declare
     // preserveNodes, and individual nodes can be tagged runtimeMutable.
+    const auto countPrimitives = [&]() {
+        size_t total = 0;
+        for (const auto& node : m.nodes)
+            if (node.mesh >= 0 && size_t(node.mesh) < m.meshes.size())
+                total += m.meshes[size_t(node.mesh)].primitives.size();
+        return total;
+    };
+    m.batching.primitivesBefore = countPrimitives();
+    m.batching.compacted = false;
+    m.batching.reason = m.batching.mergeRigid ? "" : "rigid compaction not enabled for asset";
     if (m.batching.mergeRigid) {
         ModelMergeOptions options;
         options.maxExtent = m.batching.maxExtent;
         options.keepNodes = m.batching.preserveNodes;
         const auto merged = mergeStaticPrimitives(m, options);
-        (void)merged;
+        m.batching.compacted = merged.merged;
+        m.batching.reason = merged.reason;
     }
+    m.batching.primitivesAfter = countPrimitives();
 
         const char* shadowBatches = std::getenv("AIVERSE_AUTO_SHADOW_BATCHES");
         if (!shadowBatches || std::string(shadowBatches) != "off") prepareShadowBatches(m);
