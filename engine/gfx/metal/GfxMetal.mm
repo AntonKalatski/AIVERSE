@@ -564,6 +564,7 @@ public:
         deliverBufferReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
+        indirectFrames_[frame_ % kFramesInFlight].clear(); // prior use of this slot has completed
         uniformPage_=uniformOffset_=0;
         layer_.drawableSize = CGSizeMake(w, h);
         drawable_ = [layer_ nextDrawable];
@@ -771,6 +772,52 @@ public:
                       instanceCount:std::max<uint32_t>(instances, 1) baseVertex:baseVertex baseInstance:0];
     }
 
+    bool supportsMultiDrawIndirect() const override {
+#if TARGET_OS_IPHONE
+        if (@available(iOS 14.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3];
+#else
+        if (@available(macOS 11.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3] || [device_ supportsFamily:MTLGPUFamilyMac2];
+#endif
+        return false;
+    }
+    bool drawIndexedIndirect(BufferHandle commands, size_t offset, uint32_t drawCount, uint32_t stride) override {
+        if (!supportsMultiDrawIndirect() || !enc_ || !pipelines_.get(pipelineId_) ||
+            !drawCount || stride < sizeof(DrawIndexedIndirectCommand) || (stride & 3u) ||
+            (offset & 3u)) return false;
+        auto* cmdBuffer = buffers_.get(commands.id);
+        auto* ib = buffers_.get(ibId_);
+        if (!cmdBuffer || !ib || cmdBuffer->storage ||
+            offset > cmdBuffer->size ||
+            size_t(drawCount - 1) * stride + sizeof(DrawIndexedIndirectCommand) > cmdBuffer->size - offset)
+            return false;
+        const id<MTLBuffer> indirectData = current(*cmdBuffer);
+        const id<MTLBuffer> indices = current(*ib);
+        MTLIndirectCommandBufferDescriptor* descriptor = [MTLIndirectCommandBufferDescriptor new];
+        descriptor.commandTypes = MTLIndirectCommandTypeDrawIndexed;
+        descriptor.inheritBuffers = YES;
+        descriptor.inheritPipelineState = YES;
+        descriptor.maxVertexBufferBindCount = 0;
+        descriptor.maxFragmentBufferBindCount = 0;
+        id<MTLIndirectCommandBuffer> icb = [device_ newIndirectCommandBufferWithDescriptor:descriptor
+            maxCommandCount:drawCount options:MTLResourceStorageModeShared];
+        if (!icb) return false;
+        const bool u32 = pipelines_.get(pipelineId_)->desc.indexType == IndexType::UInt32;
+        for (uint32_t i = 0; i < drawCount; ++i) {
+            DrawIndexedIndirectCommand args;
+            std::memcpy(&args, static_cast<const uint8_t*>(indirectData.contents) + offset + size_t(i) * stride, sizeof(args));
+            if (!args.indexCount || !args.instanceCount) continue;
+            id<MTLIndirectRenderCommand> command = [icb indirectRenderCommandAtIndex:i];
+            [command drawIndexedPrimitives:prim() indexCount:args.indexCount
+                indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16 indexBuffer:indices
+                indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * (u32 ? 4 : 2)
+                instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
+        }
+        [enc_ useResource:indices usage:MTLResourceUsageRead];
+        [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
+        indirectFrames_[frame_ % kFramesInFlight].push_back(icb);
+        return true;
+    }
+
 private:
     std::unique_ptr<MetalShaderAssets> shaderAssets_;
     CAMetalLayer* layer_;
@@ -786,6 +833,7 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
+    std::vector<id<MTLIndirectCommandBuffer>> indirectFrames_[kFramesInFlight];
     bool firstPass_ = true;
     bool screenReadable_ = false;   // setScreenReadable: drawables stay copyable (copyColor)
     bool hdrPass_ = false;
