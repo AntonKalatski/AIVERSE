@@ -597,10 +597,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     uint64_t triangles = 0;
     for (uint32_t n = 0; n < count; ++n) {
         const auto& part = modelItems_[items[n]];
-        commands.push_back({part.indexCount, 1, part.firstIndex, 0, 0});
+        commands.push_back({part.indexCount, 1, part.firstIndex, 0, n});
         triangles += part.indexCount / 3;
     }
-    if (!drawModelBatch(items, 1, phase, false)) return true; // pipeline warming: no fallback draw
+    if (!drawModelBatch(items, count, phase, false)) return true; // pipeline warming: no fallback draw
     if (!indirectCommands_.valid()) {
         gfx::BufferDesc d;
         d.type = gfx::BufferType::Indirect;
@@ -724,29 +724,30 @@ void Renderer3D::renderModels(int phase) {
         if (modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() && phase <= 1) {
             const auto& first = modelItems_[order_[i]];
             auto compatible = [&](const ModelItem& y) {
-                if (first.model != y.model || first.prim == y.prim ||
-                    !sameGpuMaterial(first, y) || first.geometryPrimitive == y.geometryPrimitive ||
-                    first.model->geometry || first.gi || y.gi ||
-                    first.materialRole || y.materialRole || first.shadowRole || y.shadowRole ||
-                    first.baked || y.baked || first.joints >= 0 || y.joints >= 0 ||
-                    first.morph >= 0 || y.morph >= 0 || first.paletteMaterials || y.paletteMaterials ||
-                    first.lodThreshold < 1 || y.lodThreshold < 1 || first.lodInvert || y.lodInvert ||
-                    first.flags != y.flags || first.tint.w < .99f || y.tint.w < .99f ||
-                    first.dissolve != y.dissolve || first.flash != y.flash ||
-                    first.teamGlow != y.teamGlow ||
-                    std::memcmp(first.world.m, y.world.m, sizeof(first.world.m)) != 0 ||
-                    std::memcmp(&first.tint, &y.tint, sizeof(first.tint)) != 0 ||
-                    std::memcmp(&first.team, &y.team, sizeof(first.team)) != 0 ||
-                    std::memcmp(&first.anim, &y.anim, sizeof(first.anim)) != 0 ||
-                    std::memcmp(&first.outline, &y.outline, sizeof(first.outline)) != 0)
-                    return false;
-                return true;
+                // Each indirect command selects its own world/tint/team/etc
+                // through firstInstance into the shared instance uniform array.
+                // Pipeline, geometry buffers, textures and material uniforms
+                // must remain compatible across the entire command group.
+                return first.model == y.model && first.prim != y.prim &&
+                    first.geometryPrimitive != y.geometryPrimitive &&
+                    !first.model->geometry && first.gi == 0 && y.gi == 0 &&
+                    !first.materialRole && !y.materialRole &&
+                    !first.shadowRole && !y.shadowRole &&
+                    !first.baked && !y.baked &&
+                    first.joints < 0 && y.joints < 0 &&
+                    first.morph < 0 && y.morph < 0 &&
+                    !first.paletteMaterials && !y.paletteMaterials &&
+                    (first.lodThreshold < 1 || first.lodInvert) ==
+                       (y.lodThreshold < 1 || y.lodInvert) &&
+                    first.flags == y.flags &&
+                    first.tint.w >= .99f && y.tint.w >= .99f &&
+                    equivalentGpuMaterial(*first.model, *first.mat, *y.model, *y.mat);
             };
             // Do not reorder translucent parts or geometry-cluster selections.
             if (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
                                 !transparentItem(first.flags))) {
                 size_t end = i + 1;
-                while (end < order_.size() && end - i < 256 &&
+                while (end < order_.size() && end - i < size_t(instanceLimit_) &&
                        compatible(modelItems_[order_[end]])) ++end;
                 if (end - i >= 2 &&
                     drawModelIndirectBatch(order_.data() + i, uint32_t(end - i), phase)) {
