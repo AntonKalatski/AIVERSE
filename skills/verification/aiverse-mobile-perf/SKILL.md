@@ -13,6 +13,9 @@ Budgets: simulation tick at 20 Hz has 50 ms for everything on phones (sim + rend
 4. Simulation: unit counts, pathing load, Lua work every tick (`docs/lua-coverage.md` table); measure with headless matches and CPU time, not wall time on a busy machine.
 5. Budgets in code: `skills/verification/aiverse-performance-budgets` (p95, peaks, baseline regressions).
 6. Rendering benchmarks: `docs/render-benchmarks.md`, results in `docs/benchmarks/`.
+6a. Start-up time: the client defers unit models and sprite sheets until a map is chosen
+   (`docs/startup-loading.md`, test `aiverse_deferred_loading_tests`); Metal shader precompile with
+   `tools/metal/precompile.py`.
 7. Report only measured numbers with device, build and scene; a target is not a result.
 
 Runtime library: none. Workflow over engine budgets and benchmarks.
