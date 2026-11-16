@@ -1,7 +1,10 @@
 # Replica: generic server-authoritative networking
 
 Status: **core done** (`agent-replica`): schema, quantization, delta snapshots, interest, budget, input,
-reliable fields, remote messages, interpolation, prediction helper, tests and benchmark. Physics
+reliable fields, remote messages, interpolation, prediction helper, tests and benchmark. Second round
+(`agent-replica-2`): change versions + incremental relevance (unchanged objects cost nothing), 3D interest,
+render clock with rate slewing and adaptive delay, object generations on id reuse, delta-coded numbers, a
+create-confirmation fix. Repository skill: `skills/network/aiverse-replica/SKILL.md`. Physics
 (`agent-replica-physics`) and the sandbox app (`agent-place`, first milestone done) are separate branches.
 Header contract: `engine/net/replica/Replica.h`; library `aiverse_net_replica` (links only `aiverse_net`: no
 game, physics, RTS or FPS code); tests `aiverse_replica_tests` (`tests/replica`, `--bench` for the benchmark).
@@ -24,16 +27,18 @@ The FPS and city hosts stay as they are; they can move onto replica later.
   transports fall back to reliable). Each one is a delta against the newest snapshot the client acked
   (acks ride on input packets); no ack yet = full state. Objects that left relevance or were destroyed are
   listed as removed. `String`/`Bytes`/`reliable` fields go through `Conn::send` on change.
-- **Interest**: a uniform grid (`cellSize`) of object positions (`positionField`); a client gets objects
-  within the class radius of any of its viewers, plus `alwaysRelevant` ones, plus what it owns.
-  `setVisibleTo` overrides per client (hidden information).
+- **Interest**: a uniform x/y/z grid (`cellSize`, `interest3d`) of object positions (`positionField`); a client
+  gets objects within the class radius (a sphere) of any of its viewers, plus `alwaysRelevant` ones, plus what it
+  owns. `setVisibleTo` overrides per client (hidden information). Incremental: only changed objects are re-tested
+  until a viewer moves.
 - **Budget**: `bytesPerSecond` per client. Candidates are sorted by accumulated priority
   (class priority × (1 + snapshots skipped)), distance-weighted; what does not fit waits for the next one.
 - **Input**: opaque frames with a sequence number, sent with redundancy (last N frames per packet);
   the server delivers them in order, at most `maxInputsPerTick`. Each snapshot carries the last applied
   sequence for that client.
-- **Interpolation**: remote objects are drawn `interpolationDelayMs` in the past between two snapshots;
-  `Quat` slerp, `Vec3`/`Float` lerp; no extrapolation beyond `extrapolateMs`.
+- **Interpolation**: remote objects are drawn at render time = estimated newest server time − delay
+  (`interpolationDelayMs`, or adaptive to jitter and loss); the render clock changes its rate by at most ±5 %
+  instead of jumping. `Quat` slerp, `Vec3`/`Float` lerp; no extrapolation beyond `extrapolateMs`.
 - **Prediction**: `Predictor<State, Input>`: the owner runs the same step as the server (character
   controller), reconciles on each snapshot, the correction is smoothed with `net/Smoothing.h`.
 - **Remote events**: `send(slot, channel, payload)` / `onMessage`, reliable, size- and rate-limited.
@@ -57,8 +62,9 @@ Value p = client.sample(id, 0);                   // interpolated, interpolation
 ```
 
 `set()` stores the value as given (`get()` returns it); what travels is its quantized form, so changes below the
-precision cost nothing. `positionField` positions are on the x/z plane for the interest grid (Y up); distance
-is 3D.
+precision cost nothing (and do not even wake the object up for any client). Relevance is a 3D sphere of the
+class radius around each viewer (Y up); `interest3d = false` keeps x/z grid columns (same result, more distance
+tests in tall worlds).
 
 ## Wire format
 
@@ -67,17 +73,19 @@ Every message starts with a type byte. Reliable messages use `Conn::send`, snaps
 
 | Message | Dir | Path | Content |
 |---|---|---|---|
-| Hello | c→s | reliable | magic, `kProtocol`, schema hash |
+| Hello | c→s | reliable | magic, `kProtocol` (2), schema hash |
 | Welcome / Reject | s→c | reliable | slot, tick rate, snapshot rate / reason (protocol, schema, full, timeout, kicked) |
 | Input | c→s | latest | newest snapshot seq + 32 ack bits, up to 32 input frames (first seq, u16 size + bytes each) |
 | Message / Remote | both | reliable | channel u16, u32 size + payload |
-| Field | s→c | reliable | object id, class, field, value (String / Bytes / `reliable` fields) |
-| Forget | s→c | reliable | object id: its removal was confirmed, drop its reliable values |
+| Field | s→c | reliable | object id, class, generation u8, field, value (String / Bytes / `reliable` fields) |
+| Forget | s→c | reliable | object id, generation u8: its removal was confirmed, drop that generation's reliable values |
 | Snapshot | s→c | latest | bit stream, below |
 
 Snapshot bit stream: `seq:32 tick:32 lastAppliedInput:32`, removed ids (count, delta-coded), then entries sorted by
-id: id delta, create flag, then either `class:classBits` + every snapshot field + owner, or a field mask
-(`fields + 1` bits, the last bit is the owner) + the masked fields. Numbers use `6 + width` bit varints.
+id: id delta, create flag, then either `class:classBits` + `generation:8` + every snapshot field + owner, or a
+field mask (`fields + 1` bits, the last bit is the owner) + the masked fields. In a mask entry every Int / Float /
+Vec3 field of 8+ bits starts with a delta flag: 1 = `width:5` + per component `zigzag(q - confirmed)` in `width`
+bits, 0 = the absolute value. Numbers use `6 + width` bit varints.
 Quantization: Bool 1 bit; Int `width(max - min)` bits (min = max = 0: 32-bit signed); Float / Vec3 axes
 `width(ceil((max - min) / precision))` bits, clamped, non-finite → min; Quat smallest-three (2 bits index +
 3 × `bits`, default 12 ≈ 0.1° worst case); owner 8 bits. Example: a Vec3 in ±2048 at 0.01 (19 bits per axis) +
@@ -91,20 +99,46 @@ the last value it sent and in which snapshot. That send resolves lazily to confi
 was acked, or it left the 32-snapshot history) or in flight. A field is written when its quantized value differs
 from the last send or that send was lost; values are absolute, so the client simply overwrites in sequence
 order and drops older snapshots. Unchanged fields in flight are not repeated: a lost one is repaired about one
-RTT later. An object is written as a full create until a snapshot carrying its create is confirmed; a removal is
+RTT later. An object is written as a full create until any snapshot carrying its create is confirmed (a 32-bit
+mask remembers which ones did: re-sending a create on change no longer postpones its confirmation); a removal is
 repeated until confirmed, then the server sends Forget and stops tracking. Object ids return to a FIFO free list
-only when no client tracks the object any more (every client confirmed its removal or left).
+only when no client tracks the object any more (every client confirmed its removal or left); every create bumps
+the id's 8-bit generation.
+
+**Delta-coded numbers.** When the field's last send is confirmed and no newer send exists, the client holds
+exactly that quantized value, so the server may write the difference (5-bit width + zigzag per component) when
+it is smaller. A position moving 6 u/s at 0.01 and 20 snapshots/s: 26 bits instead of 58. It applies when the
+RTT is below the snapshot interval (LAN), to objects that change every few snapshots, and to objects the budget
+starves (their last send was long ago and is confirmed); a steadily moving object on a link with RTT above the
+interval goes absolute (its last send is always still in flight).
+
+**Change versions.** Every quantized change stamps the object and the field with the broadcast epoch. A track
+remembers the epoch at which the client's copy equalled the object (`syncVer`) and whether every send is
+confirmed (`settled`); a settled track whose object has no newer version is not looked at. Per client a work
+list holds what may need sending (changed, unconfirmed, starved); a leaving list holds removals in progress.
 
 ### Interest, priority, budget
 
-A uniform x/z grid (`cellSize`) is rebuilt on broadcasts that send something. A client's relevant set: objects
-within the class `radius` (else `defaultRadius`) of any of its viewers (up to 16), with 15 % hysteresis before an
-object leaves; `alwaysRelevant` classes and classes without a `positionField`; objects it owns; `setVisibleTo`
-on = forced in, off = forced out (also for owned objects), `resetVisibility` returns to interest.
+A uniform grid (`cellSize`; x/y/z with `interest3d`, the default, else x/z columns) is built at most once per
+broadcast, only when a client needs a full pass; cells persist between broadcasts and the probed y layers are
+clamped to the occupied ones (a flat world probes one). A client's relevant set: objects within the class
+`radius` (else `defaultRadius`) of any of its viewers (up to 16), with 15 % hysteresis before an object leaves;
+`alwaysRelevant` classes and classes without a `positionField`; objects it owns; `setVisibleTo` on = forced in,
+off = forced out (also for owned objects), `resetVisibility` returns to interest.
+
+Relevance is incremental. `create`, `destroy`, a quantized change, `setOwner` and visibility changes append the
+id (once per epoch) to a change log; each snapshot re-tests only the logged ids for that client. A full grid pass
+runs when the client is new, a viewer moved more than 3.75 % of the smallest class radius since the last full
+pass (`setViewers` with the same points costs nothing), the log since the client's last snapshot is longer than
+what it tracks, or the client fell behind the trimmed log. Between full passes a moving viewer's relevance
+is late by at most that slack; changed objects are always exact.
+
 Each snapshot, every relevant object with something to send adds `priority / (1 + distance / radius)` to its
 accumulator; candidates go in accumulator order (owned objects first, they may use the whole
 `maxSnapshotBytes`) while they fit a token bucket of `bytesPerSecond` (burst: two snapshots' worth); sent ones
-reset to zero, the rest wait and rise. `ServerStats::starved` counts candidates that waited.
+reset to zero, the rest wait and rise. A few candidates (the budget likely fits all) are evaluated in work order;
+many (budget-bound) go through a heap that evaluates fields only for what it pops and stops when the smallest
+entry seen cannot fit or after 32 misses in a row. `ServerStats::starved` counts candidates that waited.
 
 ### Input
 
@@ -117,13 +151,24 @@ last delivered sequence for that client (`Client::lastAppliedInput`, `Predictor:
 ### Client side
 
 Snapshots are parsed completely before anything is applied: a malformed one is dropped (`ClientStats::dropped`).
-Each object keeps a short history (≤ 32 samples) stamped with server time (`tick * 1000 / tickRate`). Render time
-= local time − clock offset − `interpolationDelayMs`; the offset follows the fastest snapshot (minimum latency)
-and drifts slowly upward. `interpolate` Float / Vec3 lerp and Quat slerp between the two samples around render
-time; other fields step. An object absent from snapshots (unchanged or starved) holds its value until one
+Each object keeps a short history (≤ 32 samples) stamped with server time (`tick * 1000 / tickRate`) and its
+quantized slots (delta baselines). `interpolate` Float / Vec3 lerp and Quat slerp between the two samples around
+render time; other fields step. An object absent from snapshots (unchanged or starved) holds its value until one
 snapshot interval before its next sample. When snapshots stop, objects in the newest snapshot extrapolate along
-their last velocity for at most `extrapolateMs`, then hold. Reliable values live in a per-id store until Forget,
-so an object that leaves and comes back keeps its name without a resend.
+their last velocity for at most `extrapolateMs`, then hold. Reliable values live in a per-(id, generation) store
+until the Forget of that generation: a create of a newer generation never shows the previous object's reliable
+fields, even when its Forget is still stuck in the reliable stream.
+
+**Render clock.** Every snapshot gives a transit sample (arrival − server time of its tick). A leaky minimum of
+them (a lower sample resets it, else it rises 4 % of elapsed time) is the fastest path: newest server time = now
+− that minimum (`serverTimeMs()` adds RTT / 2). Render time (`renderTimeMs()`, `renderTick()`) chases newest
+server time − delay with rate `1 + clamp(Kp·error + Ki·∫error, ±maxClockAdjust)` (5 %; critically damped, ~2 s):
+monotonic, no jumps, and no steady error against a server clock running a few % slow; a target more than
+`clockSnapMs` (1 s) away is taken at once (`ClientStats::clockSnaps`). `jitterMs()` is the RFC 3550 inter-arrival
+jitter of the transit samples, `snapshotLoss()` the recent share of missing snapshot sequence numbers. With
+`adaptiveDelay` the delay follows `(1.5 + min(1, 25 × loss)) × interval + 4 × jitter` clamped to
+[`minDelayMs` (0: one interval), `maxDelayMs`], smoothed over ~1 s. `ClientStats::underruns` / `underrunMs`
+count render time passing the newest snapshot.
 
 ## Hostile peers
 
@@ -135,15 +180,45 @@ bit-flipped / extended real sessions, huge declared sizes, under ASan + UBSan.
 
 ## Numbers
 
-`aiverse_replica_tests --bench`: 64 loopback clients, 2000 objects moving (Vec3 ±2048 @ 0.01 + 10-bit Quat each,
-all changing every tick), 60 Hz ticks, 20 snapshots/s, default 48 KB/s budget; Release, g++ 11, one core of the
-4-core Linux VM; clients look from moving objects spread over a 2000 × 2000 area.
+`aiverse_replica_tests --bench [near|crowded|latency|all|rest|still]`: 64 loopback clients, 2000 objects
+(Vec3 ±2048 @ 0.01 + 10-bit Quat each; moving ones change every tick), 60 Hz ticks, 20 snapshots/s, default
+48 KB/s budget; Release, g++ 11, one core of the 4-core Linux aarch64 VM; clients look from moving objects
+spread over a 2000 × 2000 area (those 64 objects always move). Before = `main` at e1445cf5 built with the same
+bench driver; after = `agent-replica-2`.
 
-| Case | Objects in view | Server broadcast per tick (avg / worst) | Bytes per client per second | Client decode (64 clients) |
+| Case | In view | Broadcast per tick, before → after (avg / worst) | Bytes per client per second, before → after | Object updates / s per client (after) |
 |---|---|---|---|---|
-| radius 128 | 29 | 0.10 / 0.20 ms | 7.5 KB | 0.08 ms/tick |
-| radius 400 | 216 | 0.66 / 1.8 ms | 44.5 KB | 0.74 ms/tick |
-| everything relevant | 2000 | 3.2 / 6.5 ms | 47.9 KB (budget-bound, starvation-rotated) | 2.2 ms/tick |
+| radius 128, all moving | 29 | 0.09 / 0.27 → 0.13 / 0.30 ms | 7.5 → 5.0 KB (delta-coded positions) | 569, 8.8 B each |
+| radius 128, all moving, 50 ms latency | 29 | 0.09 / 0.23 → 0.10 / 0.21 ms | 8.4 → 7.5 KB (create fix; no deltas: RTT > interval) | 567, 13.1 B each |
+| radius 400, all moving | 216 | 0.62 / 0.91 → 0.63 / 0.95 ms | 44.5 (budget-bound, 428 k starved) → 33.7 KB (not bound, 462 starved) | 4207, 8.0 B each |
+| everything relevant, all moving | 2000 | 2.98 / 3.67 → 2.08 / 2.57 ms | 47.9 → 47.9 KB (budget-bound) | 5227 (~3000 before), 9.2 B each |
+| everything relevant, 13 % moving | 2000 | 1.29 / 1.64 → 0.63 / 0.86 ms | 47.9 (bound) → 39.8 KB (not bound) | 5060, 8.0 B each |
+| everything relevant, 4 % moving | 2000 | 0.97 / 1.25 → 0.22 / 0.53 ms | 20.7 → 13.7 KB | 1763, 8.8 B each |
+
+At rest an object costs nothing per client: `unchanged_objects_cost_nothing` (1000 relevant objects at rest:
+0 evaluations, 0 distance tests over 40 snapshots; 10 moving: 10.0 evaluations per snapshot). In the 4 % case
+the server looks at 4.9 % of the relevant objects per snapshot; what remains is the per-update cost (budget
+selection, writing) of the objects that move. Client decode for 64 clients: 0.08 / 0.73 / 2.7 / 1.1 / 0.39 ms per
+tick (unchanged except the budget-bound case, which now carries 1.7 × more updates per byte).
+
+3D interest (`interest_3d_towers_and_floors`: two towers of 20 floors × 40 objects, radius 30, floors 40 apart,
+a viewer climbing 9 floors one unit per tick, then crossing to the other tower): 10 360 distance tests with `interest3d`, 96 800 with x/z columns,
+same relevant sets.
+
+Render clock (`render_clock_*` tests), rate always within 0.96-1.03, render time never decreasing:
+
+| Link | Delay | Jitter estimate | Underruns in 90 s (time in underrun) |
+|---|---|---|---|
+| loopback 40 + 0-60 ms (ordered) | 100 ms | 20.9 ms | 0 in 30 s; server time estimate within 27 ms |
+| SimNet 4g, 3 seeds × 30 s | fixed 100 ms | 13.7 ms | 34 (2.2 %) |
+| SimNet 4g | adaptive → 177 ms | 13.7 ms | 8 (0.4 %) |
+| SimNet bad (20 % loss) | fixed 100 ms | 13.7 ms | 171 (10.4 %) |
+| SimNet bad | adaptive → 182 ms | 13.7 ms | 34 (1.9 %) |
+| loopback 30 ms, no jitter | adaptive → 75 ms | | 0 |
+
+A server ticking 3 % slower than real time: newest server time − render time stays 99-102 ms (delay 100) over
+60 s, no clock snaps (before: the offset followed the fastest snapshot and drifted, render time jumped forward on
+every new minimum).
 
 Input over the secure UDP transport on SimNet, 30 s of 60 Hz frames, 3 seeds, frames delivered (always in order):
 
@@ -162,14 +237,16 @@ Interpolation over 40 ± 20 ms: mean speed exact, worst single-frame speed error
 
 - One snapshot per client per interval, capped at `maxSnapshotBytes` (16 KB; the latest channel limit is 128 KB).
   Removals per snapshot ≤ 4096, objects < 2^24, classes ≤ 65535, fields per class ≤ 63, viewers ≤ 16, slots 1..255.
-- The interest grid is x/z only; vertical worlds (towers, space) get no culling on Y (distance is still 3D).
-- Broadcast cost is O(relevant objects) per due client: thousands of objects all relevant to 64 clients cost
-  ~3 ms per tick. Per-object dirty tracking (skip unchanged objects without comparing) is the next optimisation.
-- Reliable field values after a reused id may show the old object's values until Forget arrives (ordering of
-  the reliable channel vs snapshots); the client clears them when the class differs.
-- No compression beyond quantization and deltas (no delta-of-position against prediction, no entropy coding).
-- No client-side clock rate adjustment: render time follows the fastest snapshot; a server that ticks slower than
-  real time slowly increases the delay.
+- Broadcast cost is O(changed + unconfirmed objects) per due client, plus a full grid pass when a viewer moved
+  past the slack; a world where everything moves still costs O(relevant) per client (2 ms per tick for 2000 all
+  relevant to 64 clients, most of it budget selection and writing of what fits).
+- Relevance of objects at rest lags a moving viewer by at most 3.75 % of the smallest class radius.
+- Delta-coded numbers need a confirmed last send: a steadily moving object over a link with RTT above the
+  snapshot interval (4g at 20 snapshots/s, the place sandbox) goes absolute. A per-field baseline history (delta
+  against the newest confirmed of the last N sends) would cover it, at ~100 bytes per track and field.
+- No entropy coding, no delta against prediction (velocity), Quat fields always absolute.
+- Generations are 8 bits: a client whose reliable stream stalls across 256 reuses of one id could mix them.
+- The adaptive delay trades latency for fewer underruns (4g: 177 ms); `maxDelayMs` caps it.
 
 ## Header changes (agent-replica, from the original contract)
 
@@ -179,6 +256,16 @@ Interpolation over 40 ± 20 ms: mean speed exact, worst single-frame speed error
 - `ClientOptions::inputRedundancy` default 3 → 5 (measured above); `extrapolateMs` documented as "extrapolate
   only while snapshots are missing, then hold" (extrapolating objects that merely stopped overshoots).
 - `Server::set` documented: stores the value as given, compares quantized.
+
+## Header changes (agent-replica-2)
+
+Backward compatible at the source level (`apps/place` builds and passes unchanged); the wire is `kProtocol` 2.
+- `ServerOptions::interest3d` (default true).
+- `ServerStats`: `entries`, `creates`, `deltaFields`, `evaluated`, `relevant`, `interestChecks`.
+- `ClientOptions`: `maxClockAdjust`, `clockSnapMs`, `adaptiveDelay`, `minDelayMs`, `maxDelayMs`.
+- `ClientStats`: `underruns`, `underrunMs`, `clockSnaps`.
+- `Client::serverTimeMs()`, `renderTimeMs()`, `renderTick()`, `jitterMs()`, `snapshotLoss()`,
+  `interpolationDelayMs()`, `rttMs()`.
 
 ## Physics (agent-replica-physics, `engine/physics`)
 
