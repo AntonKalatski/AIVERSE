@@ -41,13 +41,17 @@ public:
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setModelInstancingEnabled(sceneInstancing_);
         renderer.setModelCullingEnabled(sceneCulling_);
-        renderer.setInstanceLimit(uint32_t(sceneInstanceLimit_));
+        // Pipeline layouts depend on instance limit. Apply only when the user changes
+        // the control: resetting this after every Scene frame would recompile shaders.
+        if (sceneInstanceLimitDirty_) {
+            renderer.setInstanceLimit(uint32_t(sceneInstanceLimit_));
+            sceneInstanceLimitDirty_ = false;
+        }
         ed.renderScene(vp_, ed.sceneCam, !ed.playing());
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
         renderer.setModelInstancingEnabled(true);
         renderer.setModelCullingEnabled(true);
-        renderer.setInstanceLimit(0);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
         if(ed.ws().project.isFps()) {
@@ -138,8 +142,8 @@ private:
             ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
             ImGui::Checkbox("Model culling", &sceneCulling_);
             ImGui::SetNextItemWidth(180.0f);
-            ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
-                sceneInstanceLimit_ == 0 ? "Auto" : "%d");
+            if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
+                sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
             ImGui::Separator();
             ImGui::Text("Renderer draws (all passes): %u", ed.renderer().drawCalls());
             const auto& profile = ed.renderer().profile();
@@ -147,7 +151,9 @@ private:
             ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
             if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
             ImGui::Separator();
+            ImGui::TextDisabled("Instance limit applies to the shared renderer (Scene and Game).");
             ImGui::TextDisabled("Static/model material merge is decided at upload.");
+            if (ImGui::Button("Reload models from asset policies")) ed.reloadRules();
             ImGui::TextWrapped("Use per-asset batching policy before upload; changing an uploaded model requires reload.");
             ImGui::EndPopup();
         }
@@ -636,6 +642,7 @@ private:
     int studioDebugMode_ = 0;
     bool sceneInstancing_ = true, sceneCulling_ = true;
     int sceneInstanceLimit_ = 0;
+    bool sceneInstanceLimitDirty_ = true;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;
