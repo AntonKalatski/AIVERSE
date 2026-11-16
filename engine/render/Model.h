@@ -193,6 +193,10 @@ struct Model {
         bool mergeRigid = false;
         float maxExtent = 20.0f;
         std::vector<std::string> preserveNodes; // preserve node and its descendants by exact name
+        // CPU-side instance counts, not GPU draw calls (shadows and instancing differ).
+        size_t primitivesBefore = 0, primitivesAfter = 0;
+        bool compacted = false;
+        std::string reason;
     } batching;
     bool uploadPrepared = false;
     std::shared_ptr<GeometryData> geometry;
