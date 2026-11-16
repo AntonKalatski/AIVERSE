@@ -92,8 +92,8 @@
       "status": "engine-reference",
       "source": "docs/pathfinding.md",
       "skill": "skills/world/rts-navigation/SKILL.md",
-      "summary": "Existing pathfinding and flow fields",
-      "notes": "Reuse movement commands; do not move entities from view scripts. Test blocked goals, arrival and planets separately.",
+      "summary": "Existing pathfinding, navigation mesh and flow fields",
+      "notes": "Reuse movement commands; do not move entities from view scripts. Grid A*/HPA* by default; movement.pathfinding navmesh uses the engine/nav mesh on flat maps (docs/navmesh.md). Test blocked goals, arrival and planets separately.",
       "verifiedPlatforms": [],
       "runtime": "none",
       "cmakeTarget": null
@@ -1083,20 +1083,22 @@
     },
     {
       "id": "navmesh",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "layer": "simulation",
       "status": "cpp-subsystem",
       "source": "libraries/include/aiverselib/bots/NavMesh.h",
       "skill": "skills/world/aiverse-navmesh/SKILL.md",
-      "summary": "Automatic deterministic layered AABB navigation mesh with clearance, erosion and bounded routing",
-      "notes": "Build immutable regional polygon meshes from current collision and motor dimensions. Rebuild on geometry changes. Bound cell/polygon/candidate/search budgets. No triangle/slope importer or cross-region streaming links. Use navPath/navStep, real motor tests and aiverse_navmesh exporter.",
+      "summary": "Automatic deterministic layered AABB navigation mesh with clearance, erosion and any-angle routing on the engine navmesh",
+      "notes": "FPS adapter over the genre-independent engine/nav mesh (docs/navmesh.md): collision spans merge into rectangles, A* + funnel give any-angle routes. Build immutable regional meshes from current collision and motor dimensions. Rebuild on geometry changes. Bound cell/polygon/candidate/search budgets. No triangle/slope importer or cross-region streaming links. Use navPath/navStep, real motor tests and aiverse_navmesh exporter.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_navmesh",
       "dependencies": [
         "docs/bots.md",
         "libraries/include/aiverselib/bots/NavMeshData.h",
         "tools/libraries/navmesh_main.cpp",
-        "engine/world/SpatialWorld.h"
+        "engine/world/SpatialWorld.h",
+        "engine/nav/NavMesh.h",
+        "docs/navmesh.md"
       ],
       "runtime": "header",
       "linkDependencies": [
