@@ -156,4 +156,30 @@ TEST(clients_converge_over_lossy_links) {
     CHECK(same && all);
 }
 
+// The owner reconciles its prediction against (owned state, lastAppliedInput) of one snapshot: the two must
+// match even when the snapshot that carried the last change was lost and the value has not changed since.
+TEST(owned_state_matches_last_applied_input_under_loss) {
+    SimWorld w(31);
+    ObjectId avatar = 0;
+    w.server.onJoin = [&](uint8_t slot) { avatar = w.server.create(w.game.player); w.server.setOwner(avatar, slot); };
+    // The state advances only with input (a character that moves per input frame): pos.x = last applied seq.
+    w.server.onInput = [&](uint8_t, uint32_t seq, const Bytes&) { w.server.set(avatar, w.game.pPos, vec(float(seq), 0, 0)); };
+    Client& c = w.add("bad");
+    for (int i = 0; i < 600 && !c.ready(); ++i) w.frame();
+    CHECK(c.ready());
+    uint32_t tick = 0;
+    int checked = 0, stale = 0;
+    for (int f = 0; f < 1800; ++f) {
+        if ((f / 20) % 3 != 2) c.sendInput(Bytes(4, 1));     // bursts of input with pauses (unchanged state)
+        w.frame();
+        if (c.latestTick() == tick || !c.lastAppliedInput()) continue;
+        tick = c.latestTick();
+        ++checked;
+        stale += c.latest(avatar, w.game.pPos).f[0] != float(c.lastAppliedInput());
+    }
+    std::printf("    %d snapshots checked, %d with a stale owned state\n", checked, stale);
+    CHECK(checked > 300);
+    CHECK(stale == 0);
+}
+
 } // namespace rt

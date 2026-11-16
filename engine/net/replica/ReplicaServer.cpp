@@ -373,6 +373,7 @@ struct Server::Impl {
             }
             uint8_t cst = t.cst;
             if (cst == kInFlight) { cst = resolve(p, t.cseq); t.cst = cst; }
+            const bool mine = o.owner == p.slot;
             uint64_t mask = 0;
             uint32_t bits = 0;
             bool create = cst == kPending || cst == kLost;
@@ -381,14 +382,15 @@ struct Server::Impl {
                     bool changed = slotsDiffer(L, o.q, t.sent, k);
                     if (cst == kInFlight) { if (changed) { create = true; break; } continue; }
                     uint8_t fs = fieldState(p, t, k);
-                    if (changed || fs == kLost || fs == kPending) { mask |= uint64_t(1) << k; bits += uint32_t(L.fieldBits(k)); }
+                    // The owner reconciles its prediction against this snapshot's lastApplied input: every field it
+                    // has not confirmed yet goes again, or a lost update would pair a stale value with a newer input.
+                    if (changed || fs == kLost || fs == kPending || (mine && fs == kInFlight)) { mask |= uint64_t(1) << k; bits += uint32_t(L.fieldBits(k)); }
                 }
             }
             if (create) bits = uint32_t(layout.classBits + L.fullBits);
             else if (!mask) continue;
             else bits += uint32_t(L.maskBits);
             bits += 1 + uint32_t(BitWriter::varBits(id));
-            const bool mine = o.owner == p.slot;
             float r = radiusOf(o.cls);
             t.acc += schema.cls(o.cls).priority * (1.0f / (1.0f + t.dist / r)) + 1e-6f;
             cands.push_back({id, bits, mask, create, mine ? 1e30f : t.acc});
