@@ -162,6 +162,7 @@ void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
         return;
     }
     if(kind!=Action::Interact)return;
+    if(a.vehicle&&vehicleInteract(sim,a))return;
     if(a.vehicle){for(auto& v:s.vehicles)if(v.id==a.vehicle){Actor exit=a;exit.pos=v.pos+Vec3{2_fx,Fixed::fromRatio(1,10),{}};exit.vehicle=0;auto box=actorBounds(exit,config_.motor);box.min.y+=Fixed::fromRatio(1,100);if(collision_.blocked(box))return;a.pos=exit.pos;v.driver=0;a.vehicle=0;}return;}
     if(a.climbing){a.climbing=false;return;}
     auto accessible=[&](Vec3 p){return near(a.pos,p,c.interactRange)&&!collision_.cast(a.pos+Vec3{{},1_fx,{}},p-a.pos).hit;};
@@ -183,7 +184,8 @@ void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
         else if(!bag(a,it->type,it->count,size_t(std::min<int64_t>(24,12+(s.gear.empty()?0:lib::systems::gearCapacity(config_.gear,s.gear[a.slot-1]))))))continue;
         s.loot.erase(it);return;
     }
-    for(auto& v:s.vehicles)if(v.health>0&&!v.driver&&accessible(v.pos)){v.driver=a.slot;a.vehicle=v.id;a.pos=v.pos;return;}
+    if(vehicleInteract(sim,a))return;
+    for(auto& v:s.vehicles)if(v.health>0&&!v.driver&&!vehicleRun(s,v.id)&&accessible(v.pos)){v.driver=a.slot;a.vehicle=v.id;a.pos=v.pos;return;}
     for(auto ladder:ladders_)if(inside(a.pos,ladder)){a.climbing=true;return;}
 }
 void Module::actorSystems(Simulation& sim,Actor& a,Input& input) {
@@ -209,11 +211,11 @@ void Module::actorSystems(Simulation& sim,Actor& a,Input& input) {
         }
     }
     if(a.climbing){bool in=false;for(auto ladder:ladders_)in|=inside(a.pos,ladder);if(!in)a.climbing=false;}
-    if(a.vehicle)for(auto& v:s.vehicles)if(v.id==a.vehicle) {
+    if(a.vehicle&&!vehicleRun(s,a.vehicle))for(auto& v:s.vehicles)if(v.id==a.vehicle) {
         if(!frozen){v.yaw+=Fixed::fromRatio(input.right,1000)*sim.dt()/4;auto delta=direction(v.yaw,{})*v.speed*Fixed::fromRatio(input.forward,1000)*sim.dt();auto hit=collision_.cast(v.pos+Vec3{{},1_fx,{}},delta,{1_fx,1_fx,2_fx});v.pos+=delta*(hit.hit?fxMax(Fixed{},hit.fraction-Fixed::fromRatio(1,100)):1_fx);v.pos.x=fxClamp(v.pos.x,-config_.worldLimit,config_.worldLimit);v.pos.z=fxClamp(v.pos.z,-config_.worldLimit,config_.worldLimit);v.velocity=delta/sim.dt();}
         a.pos=v.pos+Vec3{{},1_fx,{}};a.velocity=v.velocity;
     }
-    if(frozen||a.downed||a.vehicle){input.buttons&=uint32_t(Prone);if(frozen||a.vehicle)input.forward=input.right=0;}
+    if(frozen||a.downed||a.vehicle){if(frozen||a.downed||!canFireFromVehicle(s,a))input.buttons&=uint32_t(Prone);else input.buttons&=uint32_t(Fire|Aim|Reload|WeaponMask);if(frozen||a.vehicle)input.forward=input.right=0;}   // passengers / gunners may shoot
 }
 void Module::finishRound(Simulation& sim,int32_t team) {
     auto& s=state(sim);if(s.match.end)return;s.match.winner=team;s.match.end=sim.tick()+config_.tickRate*3;

@@ -1,7 +1,8 @@
 {
   "include": [
     "rules/royale.json",
-    "rules/gear.json"
+    "rules/gear.json",
+    "rules/vehicles.json"
   ],
   "fps": {
     "tickRate": 30,

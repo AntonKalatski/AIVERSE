@@ -29,6 +29,9 @@ void royaleIo(Archive& a,RoyaleRun& r) {
     uint32_t n=a.count(r.divers.size());if(n>256){a.fail();return;}if(!a.writing())r.divers.resize(n);for(auto& d:r.divers)io(a,d);
     io(a,r.standings);a(r.lastAttacker,r.lastWeapon);
 }
+}
+void ioVehicleRuns(Archive&,std::vector<VehicleRun>&);
+namespace {
 void stateIo(Archive& a,State& s,bool programs=false,bool melee=false) {
     a(s.round,s.winner,s.actors,s.nextObject,s.projectiles,s.loot,s.vehicles,s.match);
     uint32_t n=a.count(s.history.size());
@@ -141,6 +144,11 @@ Config readConfig(const Json& root) {
         for(const auto& [id,g]:c.gear)if(id>55)throw JsonError("fps.gear: ids must be 1..55 (loot type 200 + id)");
     }
     for(auto item:c.crate)if(item.type>=200&&!c.gear.contains(item.type-200))throw JsonError("fps.crate: unknown gear "+std::to_string(item.type-200));
+    if(j.has("vehicleTypes")){
+        if(!c.systems.enabled)throw JsonError("fps.vehicleTypes: requires mechanics.enabled");
+        c.vehicleTypes=lib::genre::readVehicleDefinitions(j["vehicleTypes"]);
+        for(const auto& [id,d]:c.vehicleTypes->vehicles)if(d.seats.seats.empty())throw JsonError("fps.vehicleTypes: vehicle "+std::to_string(id)+" needs seats");
+    }
     const auto& melee=j["melee"];auto& mel=c.melee;
     if(!melee.isNull()&&!melee.isObject())throw JsonError("fps.melee: expected object");
     mel.enabled=melee.getBool("enabled",false);
@@ -192,6 +200,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     setupSystems(sim,map,s);
     setupRoyale(sim,map,s);
     if(!config_.gear.empty())s.gear.assign(s.actors.size(),{});
+    setupVehicles(sim,map,s);
     meleeAttacks_.clear();
     if(config_.melee.enabled){
         const auto& m=config_.melee;auto total=m.windup+m.active+m.recovery;
@@ -303,7 +312,7 @@ void Module::tick(Simulation& sim) {
         }
         if((input.buttons&Reload)&&!a.reloadUntil&&a.ammo<capacity&&a.reserve>0)a.reloadUntil=sim.tick()+weapon.reloadTicks;
         bool trigger=(input.buttons&Fire)!=0;
-        if(trigger&&!a.downed&&!a.vehicle&&a.activeAction==Action::None&&!a.blockHeld&&sim.tick()>=a.staggerUntil&&(a.owned&(1u<<a.weaponIndex))&&(weapon.automatic||!a.fireHeld)&&!a.reloadUntil&&a.ammo>0&&sim.tick()>=a.nextFire&&sim.tick()>=a.switchUntil)shoot(sim,a);
+        if(trigger&&!a.downed&&(!a.vehicle||canFireFromVehicle(s,a))&&a.activeAction==Action::None&&!a.blockHeld&&sim.tick()>=a.staggerUntil&&(a.owned&(1u<<a.weaponIndex))&&(weapon.automatic||!a.fireHeld)&&!a.reloadUntil&&a.ammo>0&&sim.tick()>=a.nextFire&&sim.tick()>=a.switchUntil)shoot(sim,a);
         a.fireHeld=trigger;
         if(a.pos.y< -100_fx){a.health=0;a.respawnAt=sim.tick()+config_.respawnTicks;}
         if(config_.mode=="battleRoyale"&&!config_.royale&&sim.tick()>=config_.zoneStart&&sim.tick()%config_.tickRate==0) {
@@ -312,6 +321,7 @@ void Module::tick(Simulation& sim) {
             if((a.pos-config_.zoneCenter).xz().lengthSq()>radius*radius)a.health=std::max(0,a.health-config_.zoneDamage);
         }
     }
+    tickVehicles(sim);
     if(config_.mode=="bomb")return;
     if(config_.royale){settleRoyale(sim);if(s.winner)return;}
     else if(config_.mode!="deathmatch") {
@@ -332,6 +342,7 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
     for(auto& p:state(sim).projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
     if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
     for(const auto& g:state(sim).gear)hash.u64(lib::systems::gearHash(g));
+    if(!state(sim).vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,state(sim).vehicleRuns);hash.str(extra);}
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
@@ -339,6 +350,12 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     State copy=state(sim);stateIo(archive,copy,version>=6,version>=7);
     if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
     if(version>=9){uint32_t n=archive.count(copy.gear.size());if(n>256){archive.fail();return false;}if(!archive.writing())copy.gear.resize(n);for(auto& g:copy.gear)lib::systems::io(archive,g);}else copy.gear.clear();
+    if(version>=9)ioVehicleRuns(archive,copy.vehicleRuns);else copy.vehicleRuns.clear();
+    for(const auto& r:copy.vehicleRuns){
+        if(!config_.vehicleTypes||!config_.vehicleTypes->vehicles.contains(r.type)||!lib::genre::valid(r.controller)||!lib::genre::valid(r.seats))return false;
+        if(std::none_of(copy.vehicles.begin(),copy.vehicles.end(),[&](const Vehicle& v){return v.id==r.vehicle;}))return false;
+        for(auto [seat,actor]:r.seats.occupants){(void)seat;if(actor<1||actor>int64_t(spawns_.size()))return false;}
+    }
     if(copy.gear.size()!=(config_.gear.empty()?0:spawns_.size()))return false;
     for(const auto& g:copy.gear)if(!lib::systems::valid(config_.gear,g))return false;
     if(copy.royale.enabled!=bool(config_.royale))return false;

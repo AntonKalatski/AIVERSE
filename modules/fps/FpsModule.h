@@ -7,6 +7,7 @@
 #include "libraries/include/aiverselib/genre/Melee.h"
 #include "libraries/include/aiverselib/genre/royale/BattleRoyale.h"
 #include "libraries/include/aiverselib/systems/Gear.h"
+#include "libraries/include/aiverselib/genre/VehicleData.h"
 #include <optional>
 
 namespace aiverse::fps {
@@ -60,6 +61,9 @@ struct Config {
     std::vector<Item> crate;
     // Opt-in `fps.gear` (gear-tiers package): tiered helmets / vests / backpacks as loot type 200 + id.
     lib::systems::GearCatalog gear;
+    // Opt-in `fps.vehicleTypes` (vehicle-controllers JSON): map vehicles with a `type` drive with the package's
+    // controller and seats (driver, passengers, gunners); vehicles without one keep the legacy arcade car.
+    std::optional<lib::genre::VehicleDefinitions> vehicleTypes;
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -101,6 +105,11 @@ struct RoyaleView {
     bool operator==(const RoyaleView&)const=default;
 };
 void io(Archive&,RoyaleView&);
+// One typed vehicle (FPS save version 9): controller and seat state of the vehicle with id `vehicle`.
+struct VehicleRun {
+    uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
+    std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
+};
 struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
 struct State {
     std::vector<Actor> actors;
@@ -109,6 +118,7 @@ struct State {
     uint32_t nextObject=1;std::vector<Projectile> projectiles;std::vector<Loot> loot;std::vector<Vehicle> vehicles;RoundState match;
     RoyaleRun royale;
     std::vector<lib::systems::GearLoadout> gear;   // per slot when fps.gear is set (FPS save version 9)
+    std::vector<VehicleRun> vehicleRuns;
 
 };
 Config readConfig(const Json& rules);
@@ -154,6 +164,11 @@ private:
     void settleRoyale(Simulation&);
     void steerRoyaleBot(Simulation&,Actor&);
     Fixed groundBelow(Vec3) const;
+    void setupVehicles(Simulation&,const Json&,State&);
+    void tickVehicles(Simulation&);
+    bool vehicleInteract(Simulation&,Actor&);
+    VehicleRun* vehicleRun(State&,uint32_t vehicle) const;
+    bool canFireFromVehicle(State&,const Actor&) const;
     std::vector<world::Bounds> ladders_,sites_;
     std::map<uint32_t,Fixed> penetrable_;
     std::vector<Vehicle> initialVehicles_;

@@ -117,6 +117,20 @@ while skydiving. SimEvents: 5 = kill feed (`player` = actor, `value` = victim | 
 without `fps.royale` / `fps.gear`); snapshot protocol 5 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
 The HUD (zone ring, minimap, kill feed, placement screen) is not drawn yet.
 
+## Typed vehicles (opt-in)
+
+`fps.vehicleTypes` (requires `mechanics.enabled`) holds [vehicle-controllers](../skills/gameplay/aiverse-vehicle-controllers/SKILL.md)
+definitions (`examples/libraries/genre/vehicles-sports/vehicles.json` format: wheeled / tracked / hover / flight
+controller, damage zones, seats). A map vehicle with `"type": id` (and optional `"yaw"` in turns) drives with that
+controller: the driver's forward / back become throttle / brake (reverse when stopped), right steers, Jump is the
+handbrake, pitch drives flight; the ground height under it comes from collision, static walls stop it through the
+package's collision response, and a hard crash damages it. Interact enters the nearest typed vehicle within 6 m
+(driver seat first, then the next free seat) and leaves it at the first clear exit point when it is slow enough.
+Passengers and gunners keep Fire / Aim / Reload / weapon keys; the driver does not shoot. Knocked, killed or
+thrown-out occupants are ejected; a destroyed vehicle kills everyone inside. Vehicles without `type` keep the
+legacy car. FPS save version 9 stores controller and seat state. `templates/fps_survival` has ten four-seat cars
+(`rules/vehicles.json`). Test: `typedVehicles` in `tests/fps/tests.cpp`.
+
 ## Gear (opt-in)
 
 `fps.gear` (requires `mechanics.enabled`) is a [gear-tiers](../skills/gameplay/aiverse-gear-tiers/SKILL.md) catalog:
@@ -172,7 +186,7 @@ arena, survival and tactical templates enable this block.
 | Medical | Delayed consumable healing, movement/fire/damage cancellation, teammate knockdown, bleeding and revive | Knockdown requires a living teammate |
 | Tactical rounds | Freeze/buy phase, spawn buy zone, money, plant/defuse timers, dropped bomb recovery, score, round restart | Team 1 attacks; team 2 defends; no halftime or overtime; loadout resets each round |
 | Movement | Prone with ceiling clearance, explicit ladder regions, checked short-obstacle vault | Axis-aligned collision; vault is a discrete move, not a root-motion animation |
-| Vehicles | Driver admission, exclusive control, steering, swept static collision, safe exit and weapon damage | Single-seat arcade vehicle on flat ground; no suspension, passengers or dynamic vehicle collisions |
+| Vehicles | Legacy: driver admission, exclusive control, steering, swept static collision, safe exit and weapon damage. Typed (`fps.vehicleTypes`, below): package controllers, seats with passengers and gunners | Legacy car: single seat on flat ground. Typed: no suspension geometry, no vehicle-vehicle collisions |
 | Audio | Synthesized original shot/reload/footstep sounds through the engine audio service; remote shot attenuation and simple cover volume reduction | Placeholder sound design; own-player footsteps only |
 
 `fps_tactical` / **Breach Protocol** is a separate bomb-mode example. Existing copied

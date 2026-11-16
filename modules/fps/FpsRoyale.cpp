@@ -30,8 +30,10 @@ void Module::setupRoyale(Simulation& sim,const Json& map,State& s) {
     run.lastAttacker.assign(s.actors.size(),0);run.lastWeapon.assign(s.actors.size(),0);
 }
 Fixed Module::groundBelow(Vec3 p) const {
-    auto top=p+Vec3{{},1_fx,{}};auto hit=collision_.cast(top,Vec3{{},-(top.y+config_.worldLimit),{}});
-    return hit.hit?top.y-(top.y+config_.worldLimit)*hit.fraction:Fixed{};
+    // Short segments keep the hit fraction precise (Q16 fractions of a 100 km ray would be metres off).
+    constexpr auto step=256_fx;auto top=p+Vec3{{},1_fx,{}};
+    for(int i=0;i<1024&&top.y> -config_.worldLimit;++i,top.y-=step){auto hit=collision_.cast(top,{{},-step,{}});if(hit.hit)return top.y-step*hit.fraction;}
+    return Fixed{};
 }
 // Moves an actor that has not landed yet. Returns true while it is still in the air (skip the ground motor).
 bool Module::skydive(Simulation& sim,Actor& a) {
