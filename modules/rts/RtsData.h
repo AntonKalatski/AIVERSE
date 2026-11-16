@@ -177,6 +177,7 @@ struct UnitType {
     std::string id, name;
     uint64_t tags = 0;
     bool structure = false;
+    bool collider = false;          // "collider": map entities of this type are static circles, not units (RtsColliders.h)
     // health
     Fixed maxHp = Fixed::fromInt(100);
     Fixed armor{};

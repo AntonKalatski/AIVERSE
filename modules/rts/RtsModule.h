@@ -15,6 +15,7 @@
 #include "../../engine/sim/Simulation.h"
 #include "RtsData.h"
 #include "RtsMap.h"
+#include "RtsColliders.h"
 #include "RtsTriggers.h"
 #include "RtsScript.h"
 #include "RtsMech.h"
@@ -515,6 +516,7 @@ struct GameState {
     MapGrid grid;
     RoadGraph roads;
     SpatialHash hash;
+    StaticColliders colliders;               // map entities of "collider" types (RtsColliders.h); derived from the map
     bool roadsOnly = false;
     std::vector<std::vector<uint8_t>> vision; // per player per cell: 0 unexplored, 1 explored, 2 visible
     std::vector<std::vector<int32_t>> visibleCells; // per player: cells at 2 (derived, so fog reset is O(visible))

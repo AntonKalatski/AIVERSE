@@ -831,6 +831,22 @@ void RtsModule::sysMovement(Simulation& sim) {
                   ((cx == cx0 && cy == cy0) ? g.passable(cx, cy, t.pathLayer) || !g.passable(cx0, cy0, t.pathLayer) : g.canStep(cx0, cy0, cx, cy, t.pathLayer));
         if (ok) tr.pos = np;
     }
+    // static colliders (RtsColliders.h) never yield: whoever overlaps one is pushed out, capped like a push above
+    if (!gs.colliders.empty())
+        w.each<Mobile, Unit, Transform>([&](Entity e, Mobile&, Unit& u, Transform& tr) {
+            if (u.flags & kUnitOffMap) return;
+            if (rules_.lanes.enabled && w.has<LaneWalker>(e)) return;
+            const UnitType& t = rules_.types[u.type];
+            if ((t.layer & kLayerAir) && !g.airSolid) return;
+            Vec2 d = gs.colliders.pushOut(tr.pos.xz(), t.radius, t.layer, deadZone);
+            if (d.x.raw == 0 && d.y.raw == 0) return;
+            const Fixed len = d.length(), maxPush = anchored.size() > e.index && anchored[e.index] ? Fixed::fromRatio(1, 100) : t.speed * dt / 2 + Fixed::fromRatio(1, 50);
+            if (len > maxPush) d = d * (maxPush / len);
+            const Vec3 np{tr.pos.x + d.x, tr.pos.y, tr.pos.z + d.y};
+            int cx0, cy0, cx, cy; g.cellXY(tr.pos, cx0, cy0); g.cellXY(np, cx, cy);
+            const bool ok = (cx == cx0 && cy == cy0) ? g.passable(cx, cy, t.pathLayer) || !g.passable(cx0, cy0, t.pathLayer) : g.canStep(cx0, cy0, cx, cy, t.pathLayer);
+            if (ok) tr.pos = np;
+        });
     }
     // heightfield: everything stands on the surface (air units too: their flight height is presentation)
     if (g.hf)

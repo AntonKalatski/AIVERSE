@@ -465,6 +465,8 @@ Rules loadRules(const Json& j) {
         for (auto& st : tj["statuses"].items()) t.statuses.push_back(int16_t(ep.status(where + " statuses", st)));
         t.level = int(tj.getInt("level", 1));
         t.blocksLanes = tj.getBool("blocksLanes", false);
+        t.collider = tj.getBool("collider", false);
+        if (t.collider && (t.structure || t.radius.raw <= 0)) fail(where + " collider", "needs move.radius and no structure block");
         if (const Json& h = tj["hero"]; h.isObject()) {
             t.hero = true;
             t.unique = true;

@@ -271,6 +271,42 @@ void RtsModule::moveAgents(Simulation& sim) {
             Fixed resp = b.moving ? kHalf : kOne;   // standing units don't dodge: take the whole avoidance
             lines.push_back(orcaLine(a.p, a.v, a.r, b.p, b.v, b.r, invTH, invDt, resp));
         }
+        // static colliders (RtsColliders.h) on the swept path: obstacles that never move, so the walker takes the
+        // whole avoidance. The sweep (the "ray" along the wish over the time horizon, widened by both radii) skips
+        // the circles beside or behind the path; with none on it there is nothing to add.
+        if (!gs.colliders.empty() && !air) {
+            const Vec2 ray = a.pref * rules_.movement.timeHorizon;
+            const Fixed rayLenSq = ray.lengthSq();
+            int added = 0;
+            Fixed nearestAhead = Fixed::fromInt(-1);
+            Vec2 aside{};
+            gs.colliders.query(a.p, reach, a.layer, [&](size_t, const StaticColliders::Item& c) {
+                if (added >= K) return;
+                const Vec2 rel = c.p - a.p;
+                Fixed along = rayLenSq.raw > 0 ? rel.dot(ray) / rayLenSq : Fixed{};
+                along = fxClamp(along, Fixed{}, kOne);
+                const Vec2 off = rel - ray * along;
+                const Fixed clear = a.r + c.r + Fixed::fromRatio(1, 8);
+                if (off.lengthSq() > clear * clear) return;
+                lines.push_back(orcaLine(a.p, a.v, a.r, c.p, Vec2{}, c.r, invTH, invDt, kOne));
+                ++added;
+                // the nearest circle ahead decides the side to pass it on: away from its centre, the right-hand side
+                // when it is dead ahead (ORCA alone only slows a walker aimed at the centre of a static circle)
+                const Fixed ahead = rel.dot(dir);
+                if (ahead.raw <= 0 || (nearestAhead.raw >= 0 && ahead >= nearestAhead)) return;
+                nearestAhead = ahead;
+                const Vec2 lateral = rel - dir * ahead;   // from the path to the centre
+                const Fixed side = lateral.length();
+                const Vec2 away = side > Fixed::fromRatio(1, 64) ? Vec2{} - lateral / side : Vec2{dir.y, Fixed{} - dir.x};
+                aside = away * (a.speed * fxMax(Fixed{}, kOne - side / clear));
+            });
+            if (nearestAhead.raw > 0 && (aside.x.raw != 0 || aside.y.raw != 0)) {
+                const Fixed want = a.pref.length();
+                const Vec2 turned = a.pref + aside;
+                if (turned.lengthSq().raw > 0) a.pref = normalize(turned) * want;
+                a.nv = a.pref;
+            }
+        }
         if (lines.empty()) continue;
         Vec2 res;
         size_t fail = lp2(lines, a.speed, a.pref, false, res);
@@ -288,6 +324,8 @@ void RtsModule::moveAgents(Simulation& sim) {
         const bool ignoreGrid = ((t.layer & kLayerAir) && !g.airSolid) || (gs.roadsOnly && t.entersGarrison);
         Vec3 step{a.nv.x * dt, Fixed{}, a.nv.y * dt};
         auto ok = [&](Vec3 np) {
+            // never a step into a static collider; one already overlapping may step out
+            if (!gs.colliders.empty() && !ignoreGrid && gs.colliders.overlaps(np.xz(), a.r, a.layer) && !gs.colliders.overlaps(tr.pos.xz(), a.r, a.layer)) return false;
             for(const auto&v:vehicleBodies)if(v.e!=a.e){
                 // Let an already overlapping person escape; never take another step into a body.
                 if(!vehicleSegment(v,tr.pos.xz(),tr.pos.xz(),a.r)&&vehicleSegment(v,tr.pos.xz(),np.xz(),a.r))return false;
