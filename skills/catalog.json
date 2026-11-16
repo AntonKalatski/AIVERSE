@@ -401,6 +401,31 @@
       "keywords": []
     },
     {
+      "id": "aiverse-cables",
+      "package": null,
+      "path": "skills/visuals/aiverse-cables/SKILL.md",
+      "domain": "workflow",
+      "summary": "Procedural cable geometry: power lines, ropes, wire bundles with sag",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/cables.md",
+      "keywords": [
+        "cable",
+        "cables",
+        "wire",
+        "power",
+        "line",
+        "rope",
+        "трос",
+        "провод",
+        "кабель",
+        "лэп"
+      ]
+    },
+    {
       "id": "aiverse-camera",
       "package": "camera",
       "path": "skills/ui/aiverse-camera/SKILL.md",
@@ -442,6 +467,48 @@
         "брифинг",
         "цел",
         "диалог"
+      ]
+    },
+    {
+      "id": "aiverse-capability-audit",
+      "package": null,
+      "path": "skills/workflow/aiverse-capability-audit/SKILL.md",
+      "domain": "workflow",
+      "summary": "Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/genre-implementation.json",
+      "keywords": [
+        "capability",
+        "audit",
+        "gap",
+        "gaps",
+        "missing",
+        "feasibility",
+        "estimate",
+        "limits",
+        "can",
+        "engine",
+        "genre",
+        "minecraft",
+        "voxel",
+        "sandbox",
+        "чего",
+        "не",
+        "хватает",
+        "оценк",
+        "можно",
+        "ли",
+        "сделать",
+        "возможност",
+        "ограничен",
+        "пробел",
+        "жанр",
+        "движок",
+        "умеет"
       ]
     },
     {
@@ -614,6 +681,92 @@
       ]
     },
     {
+      "id": "aiverse-city-economy",
+      "package": null,
+      "path": "skills/gameplay/aiverse-city-economy/SKILL.md",
+      "domain": "workflow",
+      "summary": "City-game commerce, careers and the top-down hero arsenal",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/commerce.md",
+      "keywords": [
+        "commerce",
+        "business",
+        "bank",
+        "loan",
+        "career",
+        "rank",
+        "perk",
+        "arsenal",
+        "weapon",
+        "ammo",
+        "money",
+        "бизнес",
+        "банк",
+        "кредит",
+        "карьер",
+        "ранг",
+        "оружие",
+        "патрон",
+        "деньг"
+      ]
+    },
+    {
+      "id": "aiverse-city-planner",
+      "package": null,
+      "path": "skills/world/aiverse-city-planner/SKILL.md",
+      "domain": "workflow",
+      "summary": "Procedural city maps with the city / metropolis generator preset",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/city-planner.md",
+      "keywords": [
+        "city",
+        "town",
+        "streets",
+        "blocks",
+        "district",
+        "generator",
+        "gta",
+        "город",
+        "улиц",
+        "квартал",
+        "генератор"
+      ]
+    },
+    {
+      "id": "aiverse-cloth",
+      "package": null,
+      "path": "skills/visuals/aiverse-cloth/SKILL.md",
+      "domain": "workflow",
+      "summary": "Optional XPBD visual cloth: CPU/GPU solver, render, pins, colliders, wind, LOD",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/cloth.md",
+      "keywords": [
+        "cloth",
+        "flag",
+        "cape",
+        "curtain",
+        "sail",
+        "xpbd",
+        "ткань",
+        "флаг",
+        "плащ",
+        "занавес",
+        "парус"
+      ]
+    },
+    {
       "id": "aiverse-collections",
       "package": "collections",
       "path": "skills/core/aiverse-collections/SKILL.md",
@@ -725,6 +878,31 @@
       "keywords": []
     },
     {
+      "id": "aiverse-controls",
+      "package": null,
+      "path": "skills/ui/aiverse-controls/SKILL.md",
+      "domain": "workflow",
+      "summary": "Client gamepad and region swipe controls in game.json",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/gamepad.md",
+      "keywords": [
+        "gamepad",
+        "controller",
+        "joystick",
+        "swipe",
+        "region",
+        "controls",
+        "геймпад",
+        "джойстик",
+        "свайп",
+        "управлен"
+      ]
+    },
+    {
       "id": "aiverse-decision-explanations",
       "package": "decision-explanations",
       "path": "skills/ai/aiverse-decision-explanations/SKILL.md",
@@ -799,6 +977,31 @@
         "документац",
         "ридми",
         "перевод"
+      ]
+    },
+    {
+      "id": "aiverse-editor-extension",
+      "package": null,
+      "path": "skills/workflow/aiverse-editor-extension/SKILL.md",
+      "domain": "workflow",
+      "summary": "New editor windows, MCP window control, Hierarchy and inspector grouping",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/editor-windows.md",
+      "keywords": [
+        "editor",
+        "window",
+        "imgui",
+        "hierarchy",
+        "inspector",
+        "details",
+        "редактор",
+        "окно",
+        "иерарх",
+        "инспектор"
       ]
     },
     {
@@ -1391,6 +1594,33 @@
       ]
     },
     {
+      "id": "aiverse-modeling",
+      "package": null,
+      "path": "skills/visuals/aiverse-modeling/SKILL.md",
+      "domain": "workflow",
+      "summary": "In-engine model, rig and animation authoring through MCP and editor windows",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/modeling.md",
+      "keywords": [
+        "modeling",
+        "mesh",
+        "model",
+        "rig",
+        "weights",
+        "animation",
+        "lod",
+        "моделирован",
+        "меш",
+        "модел",
+        "риг",
+        "анимац"
+      ]
+    },
+    {
       "id": "aiverse-narrative-graphs",
       "package": "narrative-graphs",
       "path": "skills/gameplay/aiverse-narrative-graphs/SKILL.md",
@@ -1592,6 +1822,32 @@
         "скилл",
         "каталог",
         "оркестратор"
+      ]
+    },
+    {
+      "id": "aiverse-paint-layers",
+      "package": null,
+      "path": "skills/visuals/aiverse-paint-layers/SKILL.md",
+      "domain": "workflow",
+      "summary": "View Lua render-texture canvases and ground paint layers",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/render-texture.md",
+      "keywords": [
+        "render",
+        "texture",
+        "canvas",
+        "paint",
+        "trail",
+        "mask",
+        "decal",
+        "холст",
+        "рисован",
+        "след",
+        "маск"
       ]
     },
     {
@@ -1826,6 +2082,35 @@
       "requiresOwner": null,
       "source": "tools/libraries/gameplay.py",
       "keywords": []
+    },
+    {
+      "id": "aiverse-projectile-programs",
+      "package": null,
+      "path": "skills/gameplay/aiverse-projectile-programs/SKILL.md",
+      "domain": "workflow",
+      "summary": "Ordered projectile flight programs: pierce, split, ricochet, arcs for RTS and FPS",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/projectile-programs.md",
+      "keywords": [
+        "projectile",
+        "pierce",
+        "split",
+        "fork",
+        "ricochet",
+        "chain",
+        "arc",
+        "homing",
+        "снаряд",
+        "пробит",
+        "рикошет",
+        "разделен",
+        "дуга",
+        "самонавод"
+      ]
     },
     {
       "id": "aiverse-publish-builds",
@@ -2093,6 +2378,33 @@
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/app/Screens.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-script-hud",
+      "package": null,
+      "path": "skills/ui/aiverse-script-hud/SKILL.md",
+      "domain": "workflow",
+      "summary": "Data-only HUD bindings: scriptHud panels, world counters, entity actions",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/script-hud.md",
+      "keywords": [
+        "hud",
+        "panel",
+        "counter",
+        "label",
+        "binding",
+        "entity",
+        "action",
+        "худ",
+        "панел",
+        "счётчик",
+        "подпис",
+        "кнопк"
+      ]
     },
     {
       "id": "aiverse-session-admission",
@@ -2544,6 +2856,34 @@
       "keywords": []
     },
     {
+      "id": "aiverse-terrain",
+      "package": null,
+      "path": "skills/world/aiverse-terrain/SKILL.md",
+      "domain": "workflow",
+      "summary": "Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/terrain.md",
+      "keywords": [
+        "terrain",
+        "relief",
+        "heightfield",
+        "heightmap",
+        "sculpt",
+        "cliff",
+        "detail",
+        "splat",
+        "рельеф",
+        "высот",
+        "скульпт",
+        "обрыв",
+        "ландшафт"
+      ]
+    },
+    {
       "id": "aiverse-themes",
       "package": "themes",
       "path": "skills/ui/aiverse-themes/SKILL.md",
@@ -2791,6 +3131,36 @@
         "снимок",
         "визуальн",
         "проверк"
+      ]
+    },
+    {
+      "id": "aiverse-water",
+      "package": null,
+      "path": "skills/world/aiverse-water/SKILL.md",
+      "domain": "workflow",
+      "summary": "Spline straits, rivers and open sea with shore types, bridges and the water window",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/water.md",
+      "keywords": [
+        "water",
+        "river",
+        "strait",
+        "sea",
+        "shore",
+        "beach",
+        "cliff",
+        "embankment",
+        "вода",
+        "река",
+        "пролив",
+        "море",
+        "берег",
+        "пляж",
+        "набережн"
       ]
     },
     {
@@ -3442,6 +3812,31 @@
         "bot",
         "ртс",
         "бот"
+      ]
+    },
+    {
+      "id": "rts-bunkerwars-skills",
+      "package": null,
+      "path": "skills/gameplay/rts-bunkerwars-skills/SKILL.md",
+      "domain": "workflow",
+      "summary": "Convert Bunker Wars energy skills into rules player abilities",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/bunkerwars-skills.md",
+      "keywords": [
+        "bunker",
+        "wars",
+        "mushroom",
+        "energy",
+        "skills",
+        "converter",
+        "бункер",
+        "скилл",
+        "энерг",
+        "конвертер"
       ]
     },
     {
