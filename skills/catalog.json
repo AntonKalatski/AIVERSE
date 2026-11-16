@@ -2432,6 +2432,37 @@
       ]
     },
     {
+      "id": "aiverse-replica",
+      "package": null,
+      "path": "skills/network/aiverse-replica/SKILL.md",
+      "domain": "workflow",
+      "summary": "Generic server-authoritative replication: schema, delta snapshots, interest, budget, prediction, clock",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/replica.md",
+      "keywords": [
+        "replica",
+        "replication",
+        "server",
+        "authoritative",
+        "snapshot",
+        "delta",
+        "interest",
+        "budget",
+        "prediction",
+        "interpolation",
+        "schema",
+        "репликация",
+        "сервер",
+        "авторитетный",
+        "снапшот",
+        "предсказание"
+      ]
+    },
+    {
       "id": "aiverse-reservations",
       "package": "reservations",
       "path": "skills/gameplay/aiverse-reservations/SKILL.md",

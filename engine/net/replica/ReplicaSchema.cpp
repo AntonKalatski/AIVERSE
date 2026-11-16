@@ -139,6 +139,9 @@ Layout::Layout(const Schema& schema) {
             case FieldKind::String: case FieldKind::Bytes: f.bits = 0; f.comps = 0; break;
             }
             if (f.snapshot) {
+                f.snap = int(L.snapFields.size());
+                f.delta = (d.kind == FieldKind::Int || d.kind == FieldKind::Float || d.kind == FieldKind::Vec3) && f.bits >= 8 &&
+                          f.bits <= 62;
                 f.slot = slot; slot += f.comps;
                 L.snapFields.push_back(int(i));
                 L.fullBits += f.bits * f.comps;
