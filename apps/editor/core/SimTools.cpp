@@ -202,7 +202,7 @@ const char* commandSchemaProps() {
         "type": {"type": "string"}, "tech": {"type": "string"}, "ability": {"type": "string"}, "room": {"type": "string"}, "stance": {"type": "string"},
         "phase": {"type": "string"}, "dir": {"description": "conveyors: e / s / w / n; topdown_ability: [x, z] stick direction"}, "distance": {"type": "number"}, "escape": {"type": "boolean"},
         "player_ability": {"type": "string"}, "percent": {"type": "integer"}, "param": {"type": "integer"},
-        "rect": {"type": "array", "items": {"type": "integer"}}, "extra": {"type": "integer"}, "queue": {"type": "boolean"},
+        "rect": {"type": "array", "items": {"type": "integer"}}, "extra": {"type": "integer"}, "queue": {"type": "boolean"}, "atPoint": {"type": "boolean"},
         "id": {"type": "string", "description": "script: rules commands id"}, "args": {"type": "object", "description": "script: arguments by name"},
         "move": {"type": "array", "items": {"type": "number"}, "description": "topdown: stick vector [x, z]"},
         "aim": {"type": "array", "items": {"type": "number"}, "description": "topdown: aim direction [x, z]"}, "fire": {"type": "boolean"},
@@ -228,6 +228,7 @@ Command commandFromJson(const SimRefs& refs, const Json& p, uint8_t defPlayer) {
         c.point = refs.sim.world().get<Transform>(c.target).pos;
     c.param = p["param"].integer(0);
     if (p.getBool("queue")) c.flags |= kCmdQueue;
+    if (p.getBool("atPoint")) c.flags |= kCmdAtPoint;   // train: warp in at `point` (type warpIn)
     auto need = [](int idx, const std::string& what, const std::string& id) {
         if (idx < 0) throw std::runtime_error("unknown " + what + " '" + id + "'");
         return idx;

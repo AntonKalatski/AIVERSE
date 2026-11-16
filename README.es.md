@@ -34,17 +34,17 @@
 ## Capturas
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <img src="docs/images/readme/sponza.jpg" alt="Sponza" width="860"><br>
   <sub>Sponza: PBR, sombras, oclusión ambiental</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <img src="docs/images/readme/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
   <sub>Rayos de luz en la niebla: apagado / encendido</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <img src="docs/images/readme/city-roads.jpg" alt="City" width="860"><br>
   <sub>Ciudad creada por un agente con las skills <code>aiverse-roads</code> y <code>aiverse-city-blocks</code>: carreteras spline, pasos de peatones, manzanas</sub>
 </p>
 

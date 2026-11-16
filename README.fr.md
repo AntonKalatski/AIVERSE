@@ -34,17 +34,17 @@
 ## Captures d'écran
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <img src="docs/images/readme/sponza.jpg" alt="Sponza" width="860"><br>
   <sub>Sponza : PBR, ombres, occlusion ambiante</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <img src="docs/images/readme/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
   <sub>Rayons de lumière dans la brume : désactivé / activé</sub>
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <img src="docs/images/readme/city-roads.jpg" alt="City" width="860"><br>
   <sub>Ville construite par un agent avec les skills <code>aiverse-roads</code> et <code>aiverse-city-blocks</code> : routes spline, passages piétons, pâtés de maisons</sub>
 </p>
 
