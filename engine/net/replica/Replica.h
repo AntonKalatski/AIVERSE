@@ -88,9 +88,11 @@ struct ServerOptions {
     float cellSize = 32;            // interest grid
     int maxSnapshotBytes = 16000;   // hard cap of one snapshot (LatestChannel limit is 128 KiB)
     int history = 32;               // snapshots kept per client for delta baselines
-    int maxInputsPerTick = 4;       // input frames accepted per client per tick (the rest are dropped)
-    size_t maxInputBytes = 256;
+    int maxInputsPerTick = 4;       // input frames accepted per client per tick (the rest wait, then are dropped)
+    int inputGapTicks = 3;          // a missing input frame is skipped after this many ticks of waiting
+    size_t maxInputBytes = 256;     // a packet with a larger frame is rejected whole
     size_t maxMessageBytes = 8192;
+    int maxMessagesPerSecond = 30;  // remote messages per client (burst: twice this); the rest are dropped
     uint32_t helloTimeoutMs = 5000;
 };
 
@@ -105,10 +107,14 @@ public:
     ObjectId create(ClassId cls);
     void destroy(ObjectId id);
     bool exists(ObjectId id) const;
-    void set(ObjectId id, int field, const Value& v);       // marks the field dirty only when it changed
+    // Stores the value as given (get() returns it); snapshots carry its quantized form, so a change below
+    // the field's precision costs nothing. Unknown ids / fields are ignored.
+    void set(ObjectId id, int field, const Value& v);
     const Value& get(ObjectId id, int field) const;
     void setOwner(ObjectId id, uint8_t slot);               // 0 = nobody; the owner gets ownedState for prediction
     void setVisibleTo(ObjectId id, uint8_t slot, bool on);  // per-client override (hidden info); default: by interest
+    void resetVisibility(ObjectId id, uint8_t slot = 0);    // back to interest (slot 0: every override)
+    uint8_t ownerOf(ObjectId id) const;
 
     // ---- clients
     // The host authenticates `connection` before handing it over. Returns the slot (1..255), 0 when full.
@@ -141,8 +147,13 @@ private:
 // ---------------------------------------------------------------- client
 struct ClientOptions {
     uint32_t interpolationDelayMs = 100;   // render remote objects this far in the past
-    uint32_t extrapolateMs = 250;          // beyond the newest snapshot, hold (no wild extrapolation)
-    int inputRedundancy = 3;               // each input packet repeats the last N frames (loss)
+    // When snapshots stop (loss burst) and render time passes the newest one, interpolated Float / Vec3 fields
+    // of objects in that newest snapshot continue along their last velocity for at most this long, then hold.
+    // Objects missing from a snapshot that covers render time hold (they did not change, or were starved).
+    uint32_t extrapolateMs = 250;
+    // Each input packet repeats the last N frames: covers loss, and the latest channel keeping only the newest
+    // packet when two arrive between server polls. 5 survives the SimNet "bad" preset's 5-packet bursts mostly.
+    int inputRedundancy = 5;
 };
 
 struct ClientStats { uint64_t snapshots = 0, bytesIn = 0, bytesOut = 0, dropped = 0; };

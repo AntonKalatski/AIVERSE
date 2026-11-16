@@ -266,6 +266,20 @@ elseif(EMSCRIPTEN)
     target_link_options(aiverse_net PUBLIC -lwebsocket.js)
 endif()
 
+# Replica: generic server-authoritative replication (agent-replica, docs/replica.md). No game, physics or genre deps.
+add_library(aiverse_net_replica STATIC
+    engine/net/replica/ReplicaSchema.cpp
+    engine/net/replica/ReplicaServer.cpp
+    engine/net/replica/ReplicaClient.cpp)
+target_link_libraries(aiverse_net_replica PUBLIC aiverse_net)
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    enable_testing()
+    file(GLOB AIVERSE_REPLICA_TEST_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tests/replica/*.cpp)
+    add_executable(aiverse_replica_tests ${AIVERSE_REPLICA_TEST_SOURCES})
+    target_link_libraries(aiverse_replica_tests PRIVATE aiverse_net_replica)
+    add_test(NAME aiverse_replica_tests COMMAND aiverse_replica_tests)
+endif()
+
 # gRPC client + protobuf codegen (agent-grpc, docs/grpc.md). Libraries are opt-in (EXCLUDE_FROM_ALL);
 # tests / probe build on desktop.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/engine/grpc/CMakeLists.txt")
