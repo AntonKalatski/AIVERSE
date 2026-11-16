@@ -106,12 +106,13 @@ and rebuilt mesh in the host save envelope. Do not reuse future state after simu
 
 ## Automatic navmesh
 
-`buildNavMesh(collision, config)` builds actual rectangular walkable polygons, adjacency and connected
-components, with separate layers for stacked floors. It uses the FPS world's authoritative AABB
-colliders: floors and roofs supply horizontal surface candidates. The configured radius erodes edges
-and narrow passages; height rejects ceilings; stepHeight controls traversal between neighboring levels.
-Exact rectangle-union support checks prevent bridging floor holes or missing seams between floor boxes.
-Body sweeps check transitions. Vertices use Fixed and construction order is deterministic.
+`buildNavMesh(collision, config)` samples the FPS world's authoritative AABB colliders into walkable floor spans and
+hands them to the genre-independent engine navigation mesh (`engine/nav`, docs/navmesh.md), which merges them into
+rectangular polygons with portals, adjacency and connected components; stacked floors stay separate layers. Floors
+and roofs supply horizontal surface candidates. The configured radius erodes edges and narrow passages; height
+rejects ceilings; stepHeight controls traversal between neighbouring levels. Exact rectangle-union support checks
+prevent bridging floor holes or missing seams between floor boxes. Body sweeps check every link. Vertices use Fixed
+and construction order is deterministic.
 
 ```cpp
 using namespace aiverse::lib::bots;
@@ -127,15 +128,15 @@ auto command = fpsCommand(sim, module, slot, fpsConfig(settings), {}, botState, 
 if (command) sim.submit(*command);
 ```
 
-`navPath` returns the cell corridor with exact endpoints, `navStep` supplies the next movement target.
-BFS chooses the fewest connected cells with deterministic ordering. Routes never shortcut across holes.
-A query fails for outside/off-mesh endpoints, disconnected regions, changed collision or exhausted
-visit budget. Rebuild after collision changes; a hash prevents silently using stale geometry. Meshes
-are derived immutable data, so saves rebuild them from the same pinned source rather than retaining
-pointers. Host tools may export polygons with `navMeshJson` for inspection.
+`navPath` returns an any-angle route: the exact start, the corners of the funnel through the polygon corridor
+(A* over polygons, then string pulling), the exact goal. `navStep` supplies the next corner. Routes never shortcut
+across holes: every segment stays inside walkable polygons. A query fails for outside/off-mesh endpoints,
+disconnected regions, changed collision or exhausted visit budget. Rebuild after collision changes; a hash prevents
+silently using stale geometry. Meshes are derived immutable data, so saves rebuild them from the same pinned source
+rather than retaining pointers. Host tools may export polygons with `navMeshJson` for inspection.
 
 This is a conservative raster polygon mesh for **horizontal AABB surfaces**, not a Recast triangle
-importer. Cell size controls accuracy; narrow legal passages may disappear if the resolution is too
+importer. The RTS module uses the same engine mesh over map cells (docs/pathfinding.md). Cell size controls accuracy; narrow legal passages may disappear if the resolution is too
 coarse. Boundary strips smaller than one full cell are omitted. Slopes, triangle collision, jumping,
 climbing, off-mesh links and streaming connections between independently baked regions are not yet
 implemented. Do not claim those capabilities based on the word navmesh.
