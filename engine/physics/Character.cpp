@@ -299,7 +299,12 @@ void stepCharacter(b3WorldId world, const CharacterParams& p, CharacterState& st
         b3Vec3 p2 = slide(q, p1, walk, Mode::Walk, cosMax, s2, [](const PlaneHit&, b3Vec3) {});
         b3Vec3 down{0, -(p1.y - start.y) - kSkin, 0};
         b3Vec3 p3 = add(p2, scale(down, cast(q, p2, down)));
-        if (lenXZ(sub(p3, start)) > gotXZ + 1e-4f && probe(q, p3, cosMax).found) {
+        // Only a real climb counts: ending higher and further along the walk. A lifted pass that merely slides
+        // further along an obstacle's face (a box being pushed) must not win, or the choice flips on millimetres
+        // and keeps the full walking speed against the obstacle.
+        b3Vec3 dir = scale(walk, 1 / wantXZ);
+        float gotAlong = dot(sub(pos, start), {dir.x, 0, dir.z}), stepAlong = dot(sub(p3, start), {dir.x, 0, dir.z});
+        if (p3.y > pos.y + 0.01f && stepAlong > gotAlong + 1e-4f && probe(q, p3, cosMax).found) {
             pos = p3;
             vh = {st.velocity.x + dv.x, 0, st.velocity.z + dv.z}; // the step does not stop the walk
         }
