@@ -348,7 +348,7 @@ Two fixes in the layers below came out of this milestone (separate commits for r
 Limits: the client predicts against static geometry only: walking into boxes, other characters or onto the
 moving platform is corrected by reconcile (smoothed, visible as a short slide when pushing piles); a server
 that skips a lost input frame (all redundant copies lost) costs one corrected step; the client uses input
-redundancy 8 (~4 KB/s up); no interest culling on Y. (Tickets, encryption, reconnect and the frame-rate bound
+redundancy 8 (~4 KB/s up); interest is 3D (`interest3d`, on by default). (Tickets, encryption, reconnect and the frame-rate bound
 snapshot rate are solved in § Place hosting.) Verified on Linux (tests, load, real UDP, client rendered under Xvfb + Mesa);
 macOS / Windows client builds, the WebSocket path and web / mobile are not verified. Not built for the web
 (SecureUdp and listeners are native).

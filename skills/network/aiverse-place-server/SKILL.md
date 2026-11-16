@@ -9,7 +9,7 @@ Use when a game world is simulated by one server process and clients only send i
 replicates (physics sandbox, social hub, small persistent room): the `aiverse_place` host on `net::replica`.
 Not for lockstep RTS matches (`skills/network/aiverse-online-battles`) or the city mirror
 (`skills/network/aiverse-city-server`). How the replication itself works (schemas, interest, prediction):
-`docs/replica.md` and `engine/net/replica/Replica.h`. Generic admission policies for other hosts: `skills/network/aiverse-session-admission`.
+`skills/network/aiverse-replica`. Generic admission policies for other hosts: `skills/network/aiverse-session-admission`.
 
 Reference: `docs/replica.md` § Place hosting (flags, security model, numbers, limits) and § First milestone (scene
 format, how the sandbox plays). Code: `apps/place/PlaceAdmission.h` (tickets, `PlaceGate`), `apps/place/PlaceServer.h`
