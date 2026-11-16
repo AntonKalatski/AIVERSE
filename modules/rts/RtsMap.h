@@ -194,14 +194,23 @@ struct MapGrid {
     // Big maps (w*h >= hpaMinCells): long paths go through the HPA* graph and are refined with A*.
     int hpaMinCells = 256 * 256;
     bool bigMap() const { return !surf && w * h >= hpaMinCells; }
+    bool flatHierarchy() const { return !surf && (bigMap() || pathMode == kPathHybrid); }   // HPA* graph in use (flow fields)
     int hpaStats[2] = {};  // queries answered by HPA*, fallbacks to plain A* (diagnostics only)
-    // Navigation mesh (engine/nav, rules / map movement.pathfinding: "navmesh"; flat maps): passable cells of a path
-    // layer merged into rectangles, A* over them + funnel = any-angle paths. Derived from the grid like HPA* (never
-    // hashed; block / cellChanged mark tiles dirty, the next query refreshes them). Searches it can't answer (start or
-    // goal off the mesh, no connection within the budget, `soft` surround paths) fall back to the grid search.
-    bool navMesh = false;
-    int navStats[2] = {};  // queries answered by the navmesh, fallbacks to the grid (diagnostics only)
-    void prepareNavMesh(uint8_t layer) { if (navMesh && !surf) navFor(layer); }   // build at load, not mid-match
+    // Path modes (rules / map movement.pathfinding; flat maps; planets always use the grid / HPA*):
+    //  grid    - A* / HPA* on cells (default);
+    //  navmesh - engine/nav: passable cells of a path layer merged into rectangles, A* over them + funnel = any-angle;
+    //  hybrid  - one portal graph for the whole map (the HPA* clusters, also used by flow fields at any map size) and a
+    //            solver per cluster: open clusters keep navmesh rectangles, maze clusters (more than hybridMazeRatio
+    //            rectangles per cell) are left to grid A*; legs are joined and string-pulled across clusters.
+    // Meshes are derived from the grid like HPA* (never hashed; block / cellChanged mark tiles dirty, the next query
+    // refreshes them). Searches a mesh can't answer (start or goal off it, no connection within the budget, `soft`
+    // surround paths) fall back to the grid search.
+    enum PathMode : uint8_t { kPathGrid = 0, kPathNavMesh = 1, kPathHybrid = 2 };
+    uint8_t pathMode = kPathGrid;
+    Fixed hybridMazeRatio = Fixed::fromRatio(15, 100);
+    int navStats[2] = {};  // queries answered by the navmesh / hybrid, fallbacks to the grid (diagnostics only)
+    void setPathMode(uint8_t mode) { if (mode != pathMode) { pathMode = mode; nav_.clear(); } }
+    void prepareNavMesh(uint8_t layer) { if (pathMode != kPathGrid && !surf) navFor(layer); if (pathMode == kPathHybrid && !surf) hpaRefresh(hpaFor(layer)); }   // build at load, not mid-match
     const nav::Mesh* navMeshFor(uint8_t layer);   // tests / tools: the layer's mesh, refreshed (null on planets / off)
     // ---- flow fields (RtsFlowField.cpp). Index results are valid until the next flowHousekeeping().
     int flowFind(int goalCell, int radius, uint8_t layer, int clear) const;   // clear is ignored for hierarchical fields
@@ -313,9 +322,12 @@ private:
     std::vector<SphereHpaGraph> sphereHpa_;
     struct NavLayer { uint8_t layer = 0; nav::Mesh mesh; };
     std::vector<NavLayer> nav_;
+    bool hybridNoRoute_ = false;   // this query: the hybrid's HPA* route found nothing (the same graph would not either)
     nav::Mesh& navFor(uint8_t layer);
     void navDirty(int x0, int y0, int x1, int y1) { for (auto& n : nav_) n.mesh.markDirty(x0, y0, x1, y1); }
     bool navPath(Vec3 from, Vec3 to, int sx, int sy, uint8_t layer, int maxNodes, int clear, std::vector<Vec3>& out);
+    bool hybridPath(Vec3 from, Vec3 to, int sx, int sy, int gx, int gy, uint8_t layer, int maxNodes, int clear, std::vector<Vec3>& out);
+    bool hpaRoute(int sx, int sy, int gx, int gy, uint8_t layer, std::vector<int>& way);   // abstract waypoints (cells)
     int pathClear_ = 0;
     bool pathSoft_ = false;
     int pathEndA_ = -1, pathEndB_ = -1;

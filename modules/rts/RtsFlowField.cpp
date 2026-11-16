@@ -30,7 +30,7 @@ size_t MapGrid::flowBytes() const {
 
 // ---------------------------------------------------------------- topology helpers
 
-bool MapGrid::flowHierFor(int cell) const { return surf ? sphereHpaBody(surf->bodyOfCell(cell)) : bigMap(); }
+bool MapGrid::flowHierFor(int cell) const { return surf ? sphereHpaBody(surf->bodyOfCell(cell)) : flatHierarchy(); }
 
 int MapGrid::flowClusterCount() const {
     if (surf) return sphereTopo_ ? int(sphereTopo_->clusters.size()) : 0;

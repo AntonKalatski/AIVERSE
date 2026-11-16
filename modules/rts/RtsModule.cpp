@@ -137,8 +137,9 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     g.sphereHpaMinCells = rules_.movement.planetHpaCells;
     g.flowMaxFields = rules_.movement.flow.maxFields;
     g.blockedGoalNearest = rules_.movement.blockedGoalNearest;
-    g.navMesh = rules_.movement.navMesh;
-    if (g.navMesh && !g.surf)   // navigation meshes are derived data: build them on the loading screen
+    g.hybridMazeRatio = rules_.movement.hybridMazeRatio;
+    g.setPathMode(rules_.movement.pathMode);
+    if (g.pathMode != game::MapGrid::kPathGrid && !g.surf)   // navigation meshes are derived data: build them on the loading screen
         for (auto& t : rules_.types)
             if (t.speed.raw > 0 && (!(t.layer & kLayerAir) || g.airSolid)) g.prepareNavMesh(t.pathLayer);
     g.flowBudgetBytes = size_t(rules_.movement.flow.budgetMB) << 20;
@@ -300,8 +301,11 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
     }
     if (map["movement"].has("pathfinding")) {
         const std::string pf = map["movement"].getStr("pathfinding");
-        if (pf != "grid" && pf != "navmesh") throw std::runtime_error("map movement.pathfinding: expected 'grid' or 'navmesh'");
-        rules_.movement.navMesh = pf == "navmesh";
+        if (pf != "grid" && pf != "navmesh" && pf != "hybrid") throw std::runtime_error("map movement.pathfinding: expected 'grid', 'navmesh' or 'hybrid'");
+        rules_.movement.pathMode = uint8_t(pf == "navmesh" ? 1 : pf == "hybrid" ? 2 : 0);
+    }
+    if (const Json& hy = map["movement"]["hybrid"]; hy.isObject()) {
+        rules_.movement.hybridMazeRatio = fxClamp(hy.getFx("mazeRatio", rules_.movement.hybridMazeRatio), Fixed::fromRatio(1, 100), Fixed::fromInt(1));
     }
     if (map["movement"].has("flowField") && !map["movement"]["flowField"].isObject()) throw std::runtime_error("map movement.flowField: expected an object");
 

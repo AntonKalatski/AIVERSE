@@ -13,6 +13,7 @@ Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 - Layer: **simulation**. Current coverage: Existing pathfinding and flow fields.
 - Read `docs/pathfinding.md` as the current API authority. No Lua implementation is required.
 - Any-angle paths: rules or map `movement.pathfinding: "navmesh"` (flat maps) uses the genre-independent `engine/nav` mesh (`docs/navmesh.md`); grid A*/HPA* stay the fallback and the default.
+- Big or mixed maps: `movement.pathfinding: "hybrid"` (HPA* cluster graph, navmesh in open clusters, grid A* in maze clusters, flow fields on the same graph). Measure a map with `aiverse_headless --bench-nav N` before choosing.
 - Reuse movement commands; do not move entities from view scripts. Test blocked goals, arrival and planets separately.
 - Use the existing C++ engine API documented in the source above. This reference entry is not a standalone library target.
 - Use `examples/native/libraries` as a compiling project-local example.

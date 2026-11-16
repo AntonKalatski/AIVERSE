@@ -799,9 +799,12 @@ Rules loadRules(const Json& j) {
         }
         if (mv.has("pathfinding")) {
             const std::string pf = mv.getStr("pathfinding");
-            if (pf != "grid" && pf != "navmesh") fail("movement.pathfinding", "expected 'grid' or 'navmesh', got '" + pf + "'");
-            r.movement.navMesh = pf == "navmesh";
+            if (pf != "grid" && pf != "navmesh" && pf != "hybrid") fail("movement.pathfinding", "expected 'grid', 'navmesh' or 'hybrid', got '" + pf + "'");
+            r.movement.pathMode = uint8_t(pf == "navmesh" ? 1 : pf == "hybrid" ? 2 : 0);
         }
+        if (const Json& hy = mv["hybrid"]; hy.isObject()) {
+            r.movement.hybridMazeRatio = fxClamp(hy.getFx("mazeRatio", r.movement.hybridMazeRatio), Fixed::fromRatio(1, 100), Fixed::fromInt(1));
+        } else if (mv.has("hybrid")) fail("movement.hybrid", "expected an object");
         if (const Json& ff = mv["flowField"]; ff.isObject()) {
             loadFlowFieldRules(ff, r.movement.flow, "movement.flowField");
         } else if (mv.has("flowField")) fail("movement.flowField", "expected an object");

@@ -21,6 +21,20 @@ static bool crossesWall(const CharGrid& g, const std::vector<Vec3>& path) {
         }
     return false;
 }
+// Same for an RTS grid path that starts at `from` (points strictly inside an impassable cell).
+static bool crossesCells(const game::MapGrid& g, Vec3 from, const std::vector<Vec3>& path) {
+    Vec3 prev = from;
+    for (const Vec3& w : path) {
+        for (int s = 1; s < 256; ++s) {
+            const Vec3 p = prev + (w - prev) * Fixed::fromRatio(s, 256);
+            const int64_t fx = p.x.raw & 0xFFFF, fz = p.z.raw & 0xFFFF;
+            if (fx < 8 || fx > 0xFFFF - 8 || fz < 8 || fz > 0xFFFF - 8) continue;
+            if (!g.passable(int(p.x.floorInt()), int(p.z.floorInt()), game::kLayerGround)) return true;
+        }
+        prev = w;
+    }
+    return false;
+}
 }
 
 TEST(navmesh_core_paths_rectangles_and_refresh) {
@@ -64,6 +78,7 @@ TEST(navmesh_core_random_mazes_never_cross_walls) {
     uint32_t seed = 7;
     auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
     int found = 0;
+    Fixed rectLen, bestLen;
     for (int maze = 0; maze < 3; ++maze) {
         CharGrid g;
         g.w = g.h = 64;
@@ -81,9 +96,17 @@ TEST(navmesh_core_random_mazes_never_cross_walls) {
             ++found;
             CHECK(!crossesWall(g, path));
             CHECK(path.front() == navAt(2 * sx + 1, 2 * sz + 1) && path.back() == navAt(2 * gx + 1, 2 * gz + 1));
+            // the portal-point search: same reachability, never through walls, not longer on the whole
+            nav::Query best = q;
+            best.bestCorridor = true;
+            std::vector<Vec3> bp;
+            CHECK(m.findPath(navAt(2 * sx + 1, 2 * sz + 1), navAt(2 * gx + 1, 2 * gz + 1), best, bp) && !crossesWall(g, bp));
+            for (size_t i = 1; i < path.size(); ++i) rectLen += (path[i] - path[i - 1]).xz().length();
+            for (size_t i = 1; i < bp.size(); ++i) bestLen += (bp[i] - bp[i - 1]).xz().length();
         }
     }
     CHECK(found > 150);
+    CHECK(bestLen <= rectLen);
 }
 
 TEST(navmesh_rts_grid_paths) {
@@ -91,7 +114,7 @@ TEST(navmesh_rts_grid_paths) {
     game::MapGrid g;
     g.init(40, 30);
     for (int y = 0; y < 26; ++y) g.flags[size_t(g.index(20, y))] = game::kCellWater;   // water wall with a gap at the bottom
-    g.navMesh = true;
+    g.setPathMode(game::MapGrid::kPathNavMesh);
     std::vector<Vec3> path, grid;
     const Vec3 from = g.cellCenter(5, 5), to = g.cellCenter(35, 5);
     CHECK(g.findPath(from, to, game::kLayerGround, path));
@@ -100,9 +123,9 @@ TEST(navmesh_rts_grid_paths) {
     bool gap = false;
     for (auto& p : path) if (p.z >= Fixed::fromInt(26)) gap = true;
     CHECK(gap);
-    g.navMesh = false;
+    g.setPathMode(game::MapGrid::kPathGrid);
     CHECK(g.findPath(from, to, game::kLayerGround, grid));
-    g.navMesh = true;
+    g.setPathMode(game::MapGrid::kPathNavMesh);
     // a structure closes the gap: the next query sees it (incremental), the unit's path falls back to the grid search
     g.block(20, 26, 1, 4, +1);
     CHECK(!g.findPath(from, to, game::kLayerGround, path));
@@ -118,7 +141,7 @@ TEST(navmesh_rts_grid_paths) {
     c.init(20, 20);
     for (int y = 0; y < 20; ++y) for (int x = 10; x < 20; ++x) c.level[size_t(c.index(x, y))] = 1;
     c.flags[size_t(c.index(10, 15))] |= game::kCellRamp;
-    c.navMesh = true;
+    c.setPathMode(game::MapGrid::kPathNavMesh);
     CHECK(c.findPath(c.cellCenter(3, 3), c.cellCenter(16, 3), game::kLayerGround, path) && c.navStats[0] == 1);
     bool ramp = false;   // a corner next to the ramp cell (10, 15)
     for (auto& p : path) if (p.z >= Fixed::fromInt(14) && p.z <= Fixed::fromInt(17) && p.x >= Fixed::fromInt(9) && p.x <= Fixed::fromInt(12)) ramp = true;
@@ -128,11 +151,12 @@ TEST(navmesh_rts_grid_paths) {
 TEST(navmesh_rts_matches_deterministic) {
     // whole bot matches with navmesh paths: deterministic, and the navmesh answers the searches
     for (auto [game, map] : {std::pair{kSkirmish, std::string("maps/valley.json")}, std::pair{std::string(AIVERSE_SOURCE_DIR) + "/templates/frostcrown", std::string("maps/frozen_pass.json")}}) {
+      for (const char* mode : {"navmesh", "hybrid"}) {
         auto run = [&](int* answered) {
             SimConfig cfg; cfg.seed = 4;
             auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
             Json rules = Json::parseFile(game + "/rules.json");
-            rules.member("movement").set("pathfinding", Json::string("navmesh"));
+            rules.member("movement").set("pathfinding", Json::string(mode));
             sim->setup(rules, Json::parseFile(game + "/" + map));
             std::vector<game::RtsAI> bots;
             for (auto& p : sim->players()) bots.emplace_back(p.slot, 4);
@@ -144,5 +168,74 @@ TEST(navmesh_rts_matches_deterministic) {
         const uint64_t a = run(&answered), b = run(nullptr);
         CHECK(a == b);
         CHECK(answered > 0);
+      }
     }
+}
+
+TEST(navmesh_core_tile_classification) {
+    // maxRectRatio: maze tiles keep no rectangles (coarse); open tiles merge as usual; classes follow edits
+    using namespace navtest;
+    CharGrid g;
+    g.w = 32; g.h = 16;
+    for (int z = 0; z < 16; ++z) {
+        std::string row;
+        for (int x = 0; x < 32; ++x) row += x >= 16 && (x % 2 == 1 || z % 2 == 1) && (x + z) % 3 ? '#' : '.';   // right tile: lattice
+        g.rows.push_back(row);
+    }
+    nav::Config c; c.width = 32; c.depth = 16; c.tile = 16; c.maxRectRatio = Fixed::fromRatio(1, 4);
+    nav::Mesh m;
+    CHECK(m.build(g, c));
+    CHECK(m.tileCount() == 2 && !m.tileInfo(0).coarse && m.tileInfo(1).coarse);
+    CHECK(!m.coarseAt(3, 3) && m.coarseAt(20, 3) && m.coarseAt(40, 3));
+    CHECK(m.tileInfo(1).merged * 4 > m.tileInfo(1).spans);
+    std::vector<Vec3> path;
+    CHECK(!m.locate(navAt(41, 7)) && m.locate(navAt(7, 7)));
+    for (auto& r : g.rows) for (int x = 16; x < 32; ++x) r[size_t(x)] = '.';   // the maze is cleared: open again
+    m.markDirty(16, 0, 31, 15);
+    CHECK(m.refresh(g) && !m.tileInfo(1).coarse && m.findPath(navAt(3, 3), navAt(61, 29), nav::Query{}, path) && path.size() == 2);
+}
+
+TEST(navmesh_rts_hybrid_paths) {
+    // movement.pathfinding "hybrid": HPA* portal graph over the clusters, navmesh in open clusters, grid A* in mazes
+    game::MapGrid g;
+    g.init(96, 64);
+    uint32_t seed = 11;
+    auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
+    for (int y = 0; y < 64; ++y)
+        for (int x = 48; x < 96; ++x)
+            if (rnd() % 100 < 30) g.flags[size_t(g.index(x, y))] = game::kCellWater;   // east half: maze
+    for (int y = 10; y < 54; ++y) g.flags[size_t(g.index(30, y))] = game::kCellWater;   // a wall in the open half
+    g.setPathMode(game::MapGrid::kPathHybrid);
+    const nav::Mesh* m = g.navMeshFor(game::kLayerGround);
+    CHECK(m && m->tileSize() == game::HpaGraph::kC);
+    int coarse = 0, open = 0;
+    for (size_t i = 0; i < m->tileCount(); ++i) (m->tileInfo(i).coarse ? coarse : open)++;
+    CHECK(coarse >= 8 && open >= 8 && m->coarseAt(80, 30) && !m->coarseAt(10, 30));
+    game::MapGrid ref = g;   // same cells, grid search
+    ref.setPathMode(game::MapGrid::kPathGrid);
+    int both = 0, mismatch = 0;
+    std::vector<Vec3> p, q;
+    for (int t = 0; t < 150; ++t) {
+        const int sx = int(rnd() % 96), sy = int(rnd() % 64), gx = int(rnd() % 96), gy = int(rnd() % 64);
+        if (!g.passable(sx, sy, game::kLayerGround) || !g.passable(gx, gy, game::kLayerGround)) continue;
+        const bool a = g.findPath(g.cellCenter(sx, sy), g.cellCenter(gx, gy), game::kLayerGround, p, 40000);
+        const bool b = ref.findPath(ref.cellCenter(sx, sy), ref.cellCenter(gx, gy), game::kLayerGround, q, 40000);
+        if (a != b) ++mismatch;
+        if (!a) continue;
+        ++both;
+        // every leg stays out of wall cells (touching a wall edge or corner is allowed: corners of the navmesh legs)
+        CHECK(!navtest::crossesCells(g, g.cellCenter(sx, sy), p));
+        CHECK(p.back() == g.cellCenter(gx, gy));
+    }
+    CHECK(both > 60 && mismatch == 0);
+    CHECK(g.navStats[0] > 0);
+    // a long trip across both halves goes through the portal graph and is deterministic after invalidation
+    const Vec3 s = g.cellCenter(2, 2);
+    int gx = 93, gy = 60;
+    g.nearestPassable(gx, gy, game::kLayerGround);
+    CHECK(g.findPath(s, g.cellCenter(gx, gy), game::kLayerGround, p));
+    g.invalidatePathing();
+    CHECK(g.findPath(s, g.cellCenter(gx, gy), game::kLayerGround, q) && p == q);
+    // flow fields use the same cluster graph on this (small) map
+    CHECK(g.flowHierFor(g.index(gx, gy)) && !ref.flowHierFor(ref.index(gx, gy)));
 }
