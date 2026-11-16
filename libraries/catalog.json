@@ -2000,6 +2000,141 @@
       "verifiedPlatforms": [],
       "runtime": "none",
       "cmakeTarget": null
+    },
+    {
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [],
+      "dependencies": [
+        "tests/libraries/city_tests.cpp"
+      ],
+      "id": "world-calendar",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/Calendar.h",
+      "skill": "skills/gameplay/aiverse-world-calendar/SKILL.md",
+      "summary": "Game clock from simulation ticks: day / minute / weekday, inverse tick lookup, work shifts over midnight, fixed and rotating (staggered) work weeks, minutes until the next shift, waking hours with rest after night shifts, needs as time since last met (per-mille urgency, most urgent pick), seeded daily errands with per-day and concurrent caps",
+      "notes": "Integers only; every query is a pure function of the tick and saved values. Persist only satisfied minutes and DailyErrands (NativeState). planDailyErrands draws in population order with the simulation RNG (below/range) once per day; call markStarted only for errands really started, markSkipped for those given up. minutesUntilShift returns -1 when nobody works within the horizon. Not a scheduler of entities: the owner moves people.",
+      "cmakeTarget": "AIVERSE::lib_world_calendar"
+    },
+    {
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [],
+      "dependencies": [
+        "tests/libraries/city_tests.cpp"
+      ],
+      "id": "weather-timeline",
+      "version": "0.1.0",
+      "layer": "presentation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/systems/WeatherTimeline.h",
+      "skill": "skills/visuals/aiverse-weather-timeline/SKILL.md",
+      "summary": "Presentation weather as a pure function of simulation time: seeded showers and wind gusts per time slot with fade envelopes, wet ground and puddles that soak and dry, optional wet opening, shower chance, day phase for the sky",
+      "notes": "double/float presentation only: never feed back into simulation (gameplay weather is the map environment, docs/game-format.md). No state, so pause / seek / restore need no cache. Default config reproduces the city sample game formula exactly (test). Drive shader wetness, rain particles, wind sway and sound from the sample.",
+      "cmakeTarget": "AIVERSE::lib_weather_timeline"
+    },
+    {
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [],
+      "dependencies": [
+        "libraries/include/aiverselib/genre/vehicle-fx/TyreTrails.h",
+        "tests/libraries/city_tests.cpp"
+      ],
+      "id": "vehicle-fx",
+      "version": "0.1.0",
+      "layer": "presentation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/vehicle-fx/VehicleLights.h",
+      "skill": "skills/visuals/aiverse-vehicle-fx/SKILL.md",
+      "summary": "Vehicle look helpers: lamp channels by model part name (headlight, tail, brake with hold after hard deceleration, reverse, indicators / hazards blink, beacon double-flash strobe left/right out of phase, roof sign, destination board) and tyre marks (slip detection, bounded fading trail segments per wheel, wheel contact points)",
+      "notes": "Presentation only, float, no renderer dependency: the client samples simulation state each frame and draws emissive levels / trail quads itself. TyreTrails keeps an ordered wheel map; call keepOnly with the wheels sampled this frame. Lamp levels are 0/1; smooth them in the view if wanted.",
+      "cmakeTarget": "AIVERSE::lib_vehicle_fx"
+    },
+    {
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [],
+      "dependencies": [
+        "tests/libraries/city_tests.cpp"
+      ],
+      "id": "swept-shapes",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-foundation",
+      "source": "libraries/include/aiverselib/SweptShapes.h",
+      "skill": "skills/core/aiverse-swept-shapes/SKILL.md",
+      "summary": "Fixed-point swept tests: circle versus moving oriented box with entry/exit window (pedestrian crossing danger), axis-aligned box slide of short walker moves (walls, furniture), conservative polyline bounds broad phase",
+      "notes": "Fixed only, no state. Grow boxes by the walker radius with inflate before slideMove; slideMove clamps x first, then z. polylineBounds of an empty line is invalid and touches everything (a broad phase never rejects what it cannot judge). Exact narrow-phase tests stay with the owner.",
+      "cmakeTarget": "AIVERSE::lib_swept_shapes"
+    },
+    {
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [],
+      "dependencies": [
+        "tests/libraries/city_tests.cpp"
+      ],
+      "id": "derived-keys",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/runtime/DerivedKeys.h",
+      "skill": "skills/core/aiverse-derived-keys/SKILL.md",
+      "summary": "Caches for derived lookups of native modules: per-id key strings \"<prefix><id><suffix>\" (dense and bounded sparse) and per-id node pointers into string-keyed maps invalidated by the map erase/insert counters",
+      "notes": "Never saved, hashed or rolled back; results must equal a plain lookup. NodeCache only for node-based maps exposing erasures()/inserts(); a load or rebuild must bump erasures. One cache per thread/owner (thread_local is fine). SparseKeys uses an unordered map for lookups only, never iterated.",
+      "cmakeTarget": "AIVERSE::lib_derived_keys"
+    },
+    {
+      "verifiedPlatforms": [],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "vehicle-controllers"
+      ],
+      "dependencies": [
+        "libraries/include/aiverselib/genre/traffic/TrafficRoutes.h",
+        "docs/traffic.md",
+        "tests/libraries/city_tests.cpp"
+      ],
+      "id": "city-traffic",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/Traffic.h",
+      "skill": "skills/gameplay/aiverse-city-traffic/SKILL.md",
+      "summary": "City traffic kernels: road network from a cell mask or curved spline pieces, lanes, junction turns, signal phases and pedestrian walk windows, bot driver pedals, sidewalk walker paths; routes for large/emergency vehicles (wide-street exit choice, bounded local detour around a blockage)",
+      "notes": "Header kernels used by modules/rts/RtsTraffic (rules traffic, docs/traffic.md) and usable from a native module without the RTS module. Fixed / integers and the immutable net only. trafficWideExit always allows the first and the last piece so stations on narrow streets stay reachable; trafficLocalDetour is bounded by its lattice and must be followed by the normal collision checks.",
+      "cmakeTarget": "AIVERSE::lib_city_traffic"
+    },
+    {
+      "id": "rules-files",
+      "version": "0.1.0",
+      "layer": "tools",
+      "status": "tool-workflow",
+      "source": "tools/rules/rules_io.py",
+      "skill": "skills/workflow/aiverse-rules-files/SKILL.md",
+      "summary": "Python tools for split rules.json: compose includes like the engine, write every top-level key and member back to the file it came from, path-like rules_file for old scripts, and split_rules that cuts rules.json into topic and type files by a per-game plan without changing the composed document",
+      "notes": "Import scripts and installers read and write rules only through rules_io.load/save or rules_io.rules_file; open() on rules.json sees only the root file. split_rules keeps the order of types (part of a game), asserts the composed document is unchanged, and reads <project>/rules-split.json (ownFile, typeLimitKB, prefixes). C++ readers use readComposedJson (engine/data/JsonCompose.h).",
+      "verifiedPlatforms": [],
+      "dependencies": [
+        "tools/rules/split_rules.py",
+        "tools/rules/test_rules.py",
+        "docs/game-format.md"
+      ],
+      "runtime": "none",
+      "cmakeTarget": null
     }
   ]
 }
