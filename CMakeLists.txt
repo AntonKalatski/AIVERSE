@@ -1781,3 +1781,8 @@ if(AIVERSE_BUILD_HDR_TESTS AND AIVERSE_DESKTOP)
     add_executable(aiverse_material_batches tests/render/material_batches.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_material_batches PRIVATE aiverse_runtime)
 endif()
+
+# Split rules files from Python tools: rules_io (read / write back) and split_rules.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME rules_files COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/rules/test_rules.py)
+endif()
