@@ -22,6 +22,10 @@
       "path": "third_party/fonts/noto-symbols2/LICENSE.txt"
     },
     {
+      "name": "third_party/glslang",
+      "path": "third_party/glslang/LICENSE.txt"
+    },
+    {
       "name": "third_party/imgui",
       "path": "third_party/imgui/LICENSE.txt"
     },
@@ -64,6 +68,10 @@
     {
       "name": "third_party/ufbx",
       "path": "third_party/ufbx/LICENSE"
+    },
+    {
+      "name": "third_party/vulkan",
+      "path": "third_party/vulkan/LICENSE.txt"
     },
     {
       "name": "third_party/vorbis",

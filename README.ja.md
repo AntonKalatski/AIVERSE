@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -204,7 +204,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 <td width="50%" valign="top">
 
 **グラフィックとサウンド**
-- 独自 RHI：Metal、GLES3 / WebGL2、GL 3.3
+- 独自 RHI：Metal、GLES3 / WebGL2、GL 3.3、Vulkan（Windows / Linux / Android、選択制）
 - PBR、glTF/OBJ、スケルタル/プロシージャルアニメーション、プロシージャルケーブル、親子エンティティの描画
 - 影、動的ライト、夜、ポストエフェクト、Shader Graph
 - Unity ParticleSystem のモジュールに対応したパーティクルと Unity からのインポーター
@@ -278,7 +278,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 
 エンジンは活発に開発中です。検証済みの項目：
 
-- ✅ **Linux**：クライアント、エディター、テスト、ボット対戦。x64 と ARM64 でチェックサムが一致
+- ✅ **Linux**：クライアント、エディター、テスト、ボット対戦。x64 と ARM64 でチェックサムが一致。クライアントは Vulkan（Mesa lavapipe）でも動作
 - ✅ **macOS / Metal**：ビルド、テスト、ゲーム。`aiversebuild` → .app とシミュレーター向けビルド付きの iOS プロジェクト
 - ✅ **Web**：ヘッドレス Chromium（WebGL2）で対戦が動作
 - ✅ **Windows**：MinGW でクロスビルドした .exe を Wine で実行

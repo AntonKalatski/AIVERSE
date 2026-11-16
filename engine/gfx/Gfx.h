@@ -2,7 +2,9 @@
 //
 //   Backends:  Metal        -> macOS, iOS
 //              OpenGL ES 3  -> Android, Web (WebGL2), Linux (dev/CI via EGL)
-//              OpenGL 3.3   -> Windows (WGL)  [D3D11 backend planned]
+//              OpenGL 3.3   -> Windows (WGL)
+//              Vulkan       -> Windows, Linux, Android on request (AIVERSE_GFX / game.json "graphics"),
+//                              same GL conventions and GLSL sources (vulkan/Vulkan.h, docs/vulkan.md)
 //
 // Conventions shared by every backend:
 //   * pixel coordinates (viewport/scissor) have their origin in the TOP-LEFT corner;
@@ -38,7 +40,7 @@ using ShaderHandle = Handle<struct ShaderTag>;
 using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
-enum class Backend { Metal, GLES3, GL33 };
+enum class Backend { Metal, GLES3, GL33, Vulkan };
 enum class BufferType { Vertex, Index, Storage };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,

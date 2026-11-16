@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -206,7 +206,7 @@ Cada template é um jogo totalmente jogável com bots. Abra no editor e comece a
 <td width="50%" valign="top">
 
 **Gráficos e áudio**
-- RHI próprio: Metal, GLES3 / WebGL2, GL 3.3
+- RHI próprio: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opcional)
 - PBR, glTF/OBJ, animação esquelética e procedural, cabos procedurais, renderização de entidades com hierarquia
 - Sombras, luzes dinâmicas, noite, pós-processamento, Shader Graph
 - Partículas com os módulos do Unity ParticleSystem e importador do Unity
@@ -280,7 +280,7 @@ inverno, confira com bots o balanceamento de três facções e gere uma versão 
 
 A engine está em desenvolvimento ativo. O que já foi verificado:
 
-- ✅ **Linux**: cliente, editor, testes, partidas entre bots; checksums idênticos em x64 e ARM64
+- ✅ **Linux**: cliente, editor, testes, partidas entre bots; checksums idênticos em x64 e ARM64; o cliente em Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal**: build, testes, jogo; `aiversebuild` → .app e projeto iOS com build para o simulador
 - ✅ **Web**: uma partida roda no Chromium headless (WebGL2)
 - ✅ **Windows**: .exe compilado de forma cruzada com MinGW, executado no Wine

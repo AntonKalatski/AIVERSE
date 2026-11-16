@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/платформы-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/рендер-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/рендер-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI--агенты-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/лицензия-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -204,7 +204,7 @@ python3 tools/importers/port/aiverse_port.py /path/to/UnityProject --out /path/t
 <td width="50%" valign="top">
 
 **Картинка и звук**
-- Свой RHI: Metal, GLES3 / WebGL2, GL 3.3
+- Свой RHI: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, по выбору)
 - PBR, glTF/OBJ, скелетная и процедурная анимация, процедурные провода, отрисовка вложенных объектов
 - Тени, динамический свет, ночь, постэффекты, Shader Graph
 - Частицы с модулями Unity ParticleSystem и импорт из Unity
@@ -278,7 +278,7 @@ claude mcp add aiverse -- /path/to/aiversemcp --engine /path/to/AIVERSE
 
 Движок активно развивается. Что проверено:
 
-- ✅ **Linux**: клиент, редактор, тесты, матчи ботов; одинаковые контрольные суммы на x64 и ARM64
+- ✅ **Linux**: клиент, редактор, тесты, матчи ботов; одинаковые контрольные суммы на x64 и ARM64; клиент на Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal**: сборка, тесты, игра; `aiversebuild` → .app и проект iOS со сборкой для симулятора
 - ✅ **Web**: матч запускается в headless Chromium (WebGL2)
 - ✅ **Windows**: .exe кросс-сборкой MinGW, запуск под Wine

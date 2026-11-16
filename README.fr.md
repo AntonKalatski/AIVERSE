@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -207,7 +207,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 <td width="50%" valign="top">
 
 **Graphismes et audio**
-- RHI maison : Metal, GLES3 / WebGL2, GL 3.3
+- RHI maison : Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, en option)
 - PBR, glTF/OBJ, animation squelettique et procédurale, câbles procéduraux, rendu des entités en hiérarchie
 - Ombres, lumières dynamiques, nuit, post-traitement, Shader Graph
 - Particules avec les modules du ParticleSystem d’Unity et importateur depuis Unity
@@ -281,7 +281,7 @@ carte hivernale, vérifie l’équilibrage de trois factions avec des bots et co
 
 Le moteur est en développement actif. Ce qui a été vérifié :
 
-- ✅ **Linux** : client, éditeur, tests, parties entre bots ; sommes de contrôle identiques sur x64 et ARM64
+- ✅ **Linux** : client, éditeur, tests, parties entre bots ; sommes de contrôle identiques sur x64 et ARM64 ; le client sur Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal** : compilation, tests, jeu ; `aiversebuild` → .app et un projet iOS avec build pour le simulateur
 - ✅ **Web** : une partie tourne dans Chromium headless (WebGL2)
 - ✅ **Windows** : .exe compilé en croisé avec MinGW, exécuté sous Wine

@@ -468,6 +468,28 @@ else()
     list(APPEND AIVERSE_RUNTIME_SRC engine/platform/linux/PlatformLinux.cpp engine/gfx/gl/GfxGL.cpp)
 endif()
 
+# Vulkan RHI backend next to GL (Windows, Linux, Android): opt-in at run time (AIVERSE_GFX=vulkan, --gfx vulkan,
+# game.json "graphics"), GL stays the default and the fallback. The loader is opened at run time; shaders are
+# the engine's GLSL compiled to SPIR-V with the vendored glslang (third_party/glslang). docs/vulkan.md
+set(_aiverse_vulkan_default OFF)
+if(AIVERSE_PLATFORM MATCHES "^(windows|linux|android)$")
+    set(_aiverse_vulkan_default ON)
+endif()
+option(AIVERSE_VULKAN "Build the Vulkan RHI backend (Windows, Linux, Android)" ${_aiverse_vulkan_default})
+if(AIVERSE_VULKAN)
+    add_subdirectory(third_party/glslang)
+    add_library(aiverse_gfx_vulkan STATIC engine/gfx/vulkan/VkApi.cpp engine/gfx/vulkan/VkShaderCompiler.cpp engine/gfx/vulkan/VkSurface.cpp
+        engine/gfx/vulkan/GfxVulkan.cpp engine/gfx/vulkan/VkResources.cpp engine/gfx/vulkan/VkDraw.cpp)
+    target_include_directories(aiverse_gfx_vulkan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/third_party/vulkan/include)
+    target_compile_definitions(aiverse_gfx_vulkan PUBLIC AIVERSE_WITH_VULKAN=1)
+    target_link_libraries(aiverse_gfx_vulkan PRIVATE aiverse_glslang PUBLIC ${CMAKE_DL_LIBS})
+    if(AIVERSE_BUILD_TESTS)   # offscreen device; skips without a Vulkan driver (CI: Mesa lavapipe)
+        add_executable(aiverse_vulkan_tests tests/render/vulkan_tests.cpp)
+        target_link_libraries(aiverse_vulkan_tests PRIVATE aiverse_gfx_vulkan)
+        add_test(NAME vulkan_backend COMMAND aiverse_vulkan_tests)
+    endif()
+endif()
+
 # The platform files define main(); they are compiled into each executable through an OBJECT
 # library so that the entry point lands in the final binary on every toolchain.
 # Native plugins bridge + store/ads/analytics/privacy services (engine/platform/Plugins.h, engine/services). No window
@@ -494,6 +516,9 @@ if(AIVERSE_MOCK_PLUGINS)
 endif()
 
 add_library(aiverse_runtime OBJECT ${AIVERSE_RUNTIME_SRC})
+if(AIVERSE_VULKAN)
+    target_link_libraries(aiverse_runtime PUBLIC aiverse_gfx_vulkan)
+endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
 if(APPLE)
