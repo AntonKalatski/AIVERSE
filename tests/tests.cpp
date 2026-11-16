@@ -2226,7 +2226,7 @@ TEST(atlas_maxrects_no_overlap_bounds_padding) {
     }
     PackSettings s;
     s.maxPage = 64;
-    CHECK(!packRects({PackItem{100, 10, false, "", "big"}}, s).ok); // too large -> readable error
+    CHECK(!packRects({PackItem{100, 10, false, "", "big", {}}}, s).ok); // too large -> readable error
 }
 
 TEST(atlas_build_is_deterministic) {
@@ -14552,3 +14552,4 @@ TEST(view_scripts_read_live_game_data_of_neutral_props) {
     for (int i = 0; i < 5; ++i) ref.step();
     CHECK(ref.checksum() == sim.checksum());
 }
+#include "tests_atlas_tight.inc"   // atlas meshes, tight packing, framed sheets (atlas agent)

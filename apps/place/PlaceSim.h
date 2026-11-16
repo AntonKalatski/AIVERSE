@@ -36,6 +36,7 @@ private:
 struct SimEntry {
     std::unique_ptr<PlaceClient> client;
     std::unique_ptr<Bot> bot;
+    std::function<Input(PlaceClient&)> script;   // tests: drives the client instead of the bot
     uint64_t joinedAtMs = 0;
 };
 

@@ -35,6 +35,27 @@ struct SpriteLighting {
     std::function<void(int slot)> bindReflection;   // water decals: the planar reflection into `slot` (black: none)
 }; 
 
+// What is drawn of a sprite over the logical uv rect (u0, v0, u1, v1) of its image: a convex
+// polygon in rect parameters (a, b: 0..1 from the rect's first corner along u and along v, so a
+// mirrored rect mirrors the polygon) and the affine map from (a, b) to texture uv. A plain
+// texture: the whole rect. An atlased sprite (TextureCache::resolveSprite): the trimmed content or
+// mesh of the frame under the rect's centre, on its page, clipped to the rect. Place corner k of
+// the polygon at bilinear(quad corners, ab[k]).
+constexpr int kMaxSpriteShape = 40;
+struct SpriteShape {
+    gfx::TextureHandle tex;
+    int count = 0;
+    float2 ab[kMaxSpriteShape];
+    float m[6] = {1, 0, 0, 0, 1, 0};   // u = m0 a + m1 b + m2, v = m3 a + m4 b + m5
+    float2 uv(float2 p) const { return {m[0] * p.x + m[1] * p.y + m[2], m[3] * p.x + m[4] * p.y + m[5]}; }
+};
+bool spriteShape(const TextureRef& t, float4 uv, SpriteShape& out);   // false: nothing to draw
+// point at rect parameters (a, b) of the quad TL, TR, BR, BL
+inline float3 bilinear(const float3 (&c)[4], float2 ab) {
+    const float3 top = c[0] + (c[1] - c[0]) * ab.x, bot = c[3] + (c[2] - c[3]) * ab.x;
+    return top + (bot - top) * ab.y;
+}
+
 struct SpriteMesh {          // static quads (4 vertices each), e.g. a tile map
     gfx::BufferHandle vb;
     uint32_t quads = 0;
@@ -47,7 +68,8 @@ public:
 
     void begin() { quads_.clear(); verts_.clear(); casters_.clear(); }
     // Corners in order top-left, top-right, bottom-right, bottom-left (as seen on screen);
-    // uv = logical rect (u0, v0, u1, v1) inside `tex` (mapped through TextureRef, so atlases work).
+    // uv = logical rect (u0, v0, u1, v1) inside `tex` (mapped through TextureRef, so atlases work;
+    // an atlased sprite draws its spriteShape).
     // Sorted by layer, then sortKey (smaller first = further back), then submission order.
     void quad(const TextureRef& tex, const float3 (&corners)[4], float4 uv, uint32_t color, uint32_t team, int layer, float sortKey);
     // Full control: per-corner texture-space uv and receive points (rpos), SpriteQuadFlags.
@@ -55,8 +77,11 @@ public:
     void quadEx(gfx::TextureHandle tex, const SpriteVertex (&v)[4], int layer, float sortKey, uint32_t flags);
     // `lighting` is required when any quad is flagged kSpriteLit (otherwise those draw unlit).
     void flush(gfx::Device& dev, const mat4& viewProj, const SpriteLighting* lighting = nullptr);
+    // Convex polygon (fan around v[0]), queued as quads like quadEx (one sort position).
+    void polygon(gfx::TextureHandle tex, const SpriteVertex* v, int n, int layer, float sortKey, uint32_t flags);
     // shadow casters (texture-space uv, alpha-tested at 0.5)
     void caster(gfx::TextureHandle tex, const float3 (&corners)[4], const float2 (&uv)[4]);
+    void casterPolygon(gfx::TextureHandle tex, const float3* corners, const float2* uv, int n);
     size_t casterCount() const { return casters_.size(); }
     void flushCasters(gfx::Device& dev, const mat4& lightViewProj);   // inside the shadow pass
     size_t size() const { return quads_.size(); }

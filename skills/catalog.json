@@ -2248,7 +2248,47 @@
         "коллайдер",
         "столкнов",
         "шарнир",
-        "датчик"
+        "датчик",
+        "character",
+        "controller",
+        "kinematic",
+        "capsule",
+        "prediction",
+        "platform",
+        "push",
+        "персонаж",
+        "предсказание"
+      ]
+    },
+    {
+      "id": "aiverse-place-server",
+      "package": null,
+      "path": "skills/network/aiverse-place-server/SKILL.md",
+      "domain": "workflow",
+      "summary": "Server-authoritative place hosting: tickets, encrypted UDP, WebSocket gate, reconnect, bots",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/replica.md",
+      "keywords": [
+        "place",
+        "server",
+        "host",
+        "hosting",
+        "tickets",
+        "secure",
+        "udp",
+        "websocket",
+        "wss",
+        "reconnect",
+        "bots",
+        "replica",
+        "сервер",
+        "хостинг",
+        "билет",
+        "переподключение"
       ]
     },
     {
@@ -2543,6 +2583,37 @@
         "сборк",
         "релиз",
         "платформ"
+      ]
+    },
+    {
+      "id": "aiverse-replica",
+      "package": null,
+      "path": "skills/network/aiverse-replica/SKILL.md",
+      "domain": "workflow",
+      "summary": "Generic server-authoritative replication: schema, delta snapshots, interest, budget, prediction, clock",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/replica.md",
+      "keywords": [
+        "replica",
+        "replication",
+        "server",
+        "authoritative",
+        "snapshot",
+        "delta",
+        "interest",
+        "budget",
+        "prediction",
+        "interpolation",
+        "schema",
+        "репликация",
+        "сервер",
+        "авторитетный",
+        "снапшот",
+        "предсказание"
       ]
     },
     {

@@ -8,6 +8,9 @@
 //
 // Whether the build atlased the file or shipped it as a plain PNG/JPG/TGA is invisible to the
 // caller: an unatlased file becomes its own texture with uv = full rect, no trim, not rotated.
+// A region with a mesh (t->mesh) must be drawn as that polygon (content pixels, map them with
+// mapUV after adding offsetX / offsetY): a "tight" page holds other images inside its rectangle.
+// A framed sheet (split into frames by the build) comes back rebuilt as its own texture.
 // Batch by `texture` (equal handles = same page = no texture switch). Pages and loose textures
 // are created on first use and live until clear() / destruction.
 //
@@ -32,6 +35,7 @@ struct TextureRef {
     bool rotated = false;                    // informational: uv already accounts for it
     bool opaque = false;                     // page/texture has no transparent pixels
     int page = -1;                           // atlas page index, -1 = standalone texture
+    const std::vector<float>* mesh = nullptr; // convex polygon in content pixels (x y ...), or none: the rectangle
 };
 
 // Texture uv of a point given in ORIGINAL image pixels (handles trim and rotation; exact inside

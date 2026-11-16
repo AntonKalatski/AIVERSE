@@ -14,6 +14,12 @@ constexpr size_t kMaxStringBytes = 4096;
 constexpr uint32_t kMaxObjectId = 1u << 24;
 constexpr uint32_t kMaxListCount = 1u << 16;
 constexpr uint32_t kMaxInputFramesPerPacket = 32;
+constexpr int kGenBits = 8;               // object generation on creates, Field and Forget
+constexpr int kDeltaWidthBits = 5;        // width of each component of a delta-coded field (0..31)
+
+// Signed difference <-> small unsigned (0, -1, 1, -2 ... -> 0, 1, 2, 3 ...).
+inline uint64_t zigzag(int64_t v) { return (uint64_t(v) << 1) ^ uint64_t(v >> 63); }
+inline int64_t unzigzag(uint64_t v) { return int64_t(v >> 1) ^ -int64_t(v & 1); }
 
 enum class Msg : uint8_t {
     // client -> server
@@ -91,6 +97,10 @@ struct FieldLayout {
     int comps = 1;              // quantized slots (Vec3: 3)
     int bits = 0;               // bits per slot
     int slot = 0;               // offset into the object's slot array
+    int snap = -1;              // index in ClassLayout::snapFields (-1: reliable path)
+    // Int / Float / Vec3 of 8+ bits: in a delta entry a flag bit says "difference to the value the client
+    // confirmed" (5-bit width + zigzag per component) instead of the absolute value.
+    bool delta = false;
     double min = 0, max = 0, precision = 0;
     int64_t imin = 0;           // Int
     uint64_t steps = 0;         // Int / Float / Vec3: largest quantized value
@@ -104,7 +114,7 @@ struct ClassLayout {
     int ownerSlot = 0;              // last slot: owner (8 bits), a pseudo-field after snapFields
     int maskBits = 0;               // snapFields.size() + 1
     int fullBits = 0;               // all snapshot fields + owner
-    int fieldBits(int snapIndex) const;   // snapIndex == snapFields.size(): the owner
+    int fieldBits(int snapIndex) const;   // absolute; snapIndex == snapFields.size(): the owner (no delta flag)
 };
 
 struct Layout {

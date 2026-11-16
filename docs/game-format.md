@@ -1747,7 +1747,37 @@ frame uvs map linearly onto the atlas region. Inside a group, images of one fold
 frames, one faction) stay on the same page whenever they fit; pages are shrunk to the smallest size
 that holds them. Per-file keys: `group`/`atlasGroup`, `noAtlas`, `wrap`, `kind`, `rotate` (allow a
 90° turn, off by default so facings never rotate), `trim`, `mips`, `splitAlpha`, `padding`,
-`extrude`; the same keys (except `group`) work per group in `groups`.
+`extrude`, `mesh`, `tight`, `frames`, `meshVertices`; the same keys (except `group`) work per group
+in `groups`.
+
+**Meshes, tight packing, framed sheets** (all off by default, colour images only):
+
+```json
+"files": { "sprites/*": { "frames": true, "tight": true, "rotate": true, "meshVertices": 8 } }
+```
+
+- `mesh` — a convex polygon around the visible pixels (alpha ≠ 0) of each trimmed image, at most
+  about `meshVertices` corners (4..32, default 8), conservative (every visible pixel is inside),
+  kept only when it saves at least ~12% of the rectangle. Sprites are drawn as that polygon: less
+  overdraw on mostly transparent images.
+- `tight` (implies `mesh`) — pack by those polygons instead of rectangles: an image may sit in the
+  empty corner of another one's rectangle (`padding` still separates the shapes; the texels a
+  polygon touches plus `max(extrude, 1)` around it belong to its image). The rectangle layout is
+  computed too and kept when it is not larger, so pages never grow (typically 15–20% smaller pages
+  for diagonal / round sprites, little for sprites that fill their rectangles). The page of a tight
+  group is only correct when drawn through the meshes. Off in groups with `mips`. Costs build time:
+  about a second per 500 unique frames (bit-row search), rectangles take milliseconds.
+- `frames` — a sprite sheet (`"sheet"` + `"frame": [w, h]` in the game's JSON, `h` = `w` when
+  omitted, no `frame` = the whole image) is split into its frames, each trimmed, rotated, meshed
+  and packed on its own. A sheet used with different frame sizes, or whose frame size does not
+  divide it, is kept whole (and untrimmed, with a build warning).
+
+Who draws what: the 2D sprite renderer (`sprite` blocks, `Rts2DView`) draws trimmed, rotated,
+meshed and framed images straight from the pages (`TextureCache::resolveSprite` +
+`SpriteBatch::spriteShape`: billboards, upright and ground sprites, decals on uneven ground, sun
+shadow casters). Every other consumer (`TextureCache::resolve`, the UI, particles, overlays) gets
+such an image rebuilt as its own texture (through the mesh), as before — correct, but without the
+page's savings; images that are on a page as they are still resolve to the page.
 
 **In the pack.** Atlased images are removed; `_atlas/` is reserved and holds the pages
 (`_atlas/<group>-<n>.rtex`) and `_atlas/atlas.json`:
@@ -1757,6 +1787,12 @@ that holds them. Per-file keys: `group`/`atlasGroup`, `noAtlas`, `wrap`, `kind`,
   "pages": [ { "file": "_atlas/units-0.rtex", "group": "units", "w": 1016, "h": 864, "alpha": true, "mips": false } ],
   "textures": { "units/orc/grunt/walk_0.png": [0, 3, 3, 30, 38, 33, 29, 96, 96, 0] } }
 ```
+
+Optional, when used: `"meshes": { "<path>": [x0, y0, x1, y1, ...] }` — the convex mesh in content
+pixels × 16 (1/16 pixel grid, original orientation, origin at the trimmed content's top-left), and
+`"sheets": { "<sheet>": [cols, rows, sourceW, sourceH] }` — a framed sheet whose frame `i`
+(row-major) is the texture entry `"<sheet>#<i>"` (its `sourceW x sourceH` = one frame, offsets
+inside the frame).
 
 Texture entry: `[page, x, y, w, h, offsetX, offsetY, sourceW, sourceH, rotated]` — integer pixels.
 `(x, y, w, h)` is the trimmed content in the page (when `rotated` = 1 it occupies `h x w` turned 90°
@@ -1773,6 +1809,8 @@ const atlas::TextureRef* t = lib.get("units/orc/grunt/walk_0.png");   // nullptr
 // quad: t->w x t->h source pixels at (t->offsetX, t->offsetY) from the original image's top-left
 // (pivot in original pixels: pos - pivot + offset); UVs t->uv = TL, TR, BR, BL (rotation applied);
 // t->texture equal for images on one page -> batch by it; t->opaque -> draw without blending.
+// t->mesh != nullptr: draw that polygon (content pixels; + offset, map with mapUV), never the quad.
+// A framed sheet comes back rebuilt as its own texture.
 ```
 
 `atlas::mapUV(*t, px, py, u, v)` maps a point in original-image pixels to the texture (trim and
@@ -1780,14 +1818,18 @@ rotation included) — e.g. frame corners of a sheet. For a renderer that alread
 rect (`u0 + (u1 - u0) * lu`), the rect of an atlased sheet is `t->uv[0..1]` .. `t->uv[4..5]`.
 The 2D sprite/tile renderer's `render::TextureCache::resolve()` already understands atlases:
 an atlased image resolves to the page texture + its rect (sprite sheets are never trimmed, so
-frame uvs stay exact); a trimmed or rotated image is rebuilt as a standalone texture.
+frame uvs stay exact); a trimmed, rotated, meshed or framed image is rebuilt as a standalone texture.
+`resolveSprite(path, nearest, base, frameW, frameH)` returns it on its page instead
+(`TextureRef::sprite`: frames with region, mesh and page texture) for renderers that draw
+`render::spriteShape(ref, uvRect, shape)` — a convex polygon in rect parameters plus the affine map
+to page uv (`SpriteBatch::quad` / `polygon` / `casterPolygon`).
 Plain (non-atlased) images come back the same way (own texture, full UVs, no trim). CPU pixels of
 an original image: `lib.loadImage(path, img)` or `atlas::ImageSource` (the UI uses it, so RmlUi
 `<img src>` and decorators keep working with atlased files).
 
 **Build report.** `aiversebuild` prints atlas statistics and writes `size-report.json` next to
 `size-report.txt` (`<out>/<target>/`): `pack` {rawBytes, packBytes, entries, duplicates, top[]} and
-`atlas` {enabled, profile, maxPage, candidates, atlased, duplicates, pages, occupancyPercent,
+`atlas` {enabled, profile, maxPage, candidates, atlased (frames of framed sheets count one by one), framedSheets, duplicates, pages, occupancyPercent,
 sourceBytes, atlasBytes, storedBytes, bytesSaved, gpuBytesBefore, gpuBytesAfter,
 textureBindsBefore, textureBindsAfter, groups[] {group, textures, unique, pages,
 occupancyPercent}, excluded[] {path, reason}}. Preview: `assetpipe atlas --profile web -o <dir>
