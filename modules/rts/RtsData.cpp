@@ -797,6 +797,11 @@ Rules loadRules(const Json& j) {
             if (bg != "nearest" && bg != "search") fail("movement.blockedGoals", "expected 'nearest' or 'search', got '" + bg + "'");
             r.movement.blockedGoalNearest = bg == "nearest";
         }
+        if (mv.has("pathfinding")) {
+            const std::string pf = mv.getStr("pathfinding");
+            if (pf != "grid" && pf != "navmesh") fail("movement.pathfinding", "expected 'grid' or 'navmesh', got '" + pf + "'");
+            r.movement.navMesh = pf == "navmesh";
+        }
         if (const Json& ff = mv["flowField"]; ff.isObject()) {
             loadFlowFieldRules(ff, r.movement.flow, "movement.flowField");
         } else if (mv.has("flowField")) fail("movement.flowField", "expected an object");
