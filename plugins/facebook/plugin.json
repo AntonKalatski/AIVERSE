@@ -20,7 +20,7 @@
     "sources": ["ios/*.mm"],
     "classes": { "facebook": "AiverseFacebookPlugin" },
     "pods": ["pod 'FBSDKCoreKit', '~> 18.0'"],
-    "frameworks": ["AdSupport", "AppTrackingTransparency"],
+    "frameworks": ["AdSupport", "AppTrackingTransparency", "SafariServices", "AuthenticationServices"],
     "plist": [
       "<key>FacebookAppID</key><string>${appId}</string>",
       "<key>FacebookClientToken</key><string>${clientToken}</string>",

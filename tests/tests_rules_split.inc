@@ -155,6 +155,7 @@ TEST(rules_extends_inherits_entries) {
     CHECK(botChecksum(based, map, 900) == botChecksum(whole, map, 900));
 }
 
+#ifdef AIVERSE_TESTS_EDITOR_CORE   // the editor tests need apps/editor/core (Workspace)
 TEST(rules_split_editor_saves_back) {
     using namespace rules_split;
     Dir d("editor");
@@ -227,3 +228,4 @@ TEST(rules_prune_drops_engine_defaults) {
     CHECK(!after.has("sellRefund") && !after.has("maxQueue") && after.getInt("supplyCap") == 100);
     CHECK(ws.project.rules.findType("footman") >= 0 && after["types"].size() == r["types"].size());
 }
+#endif

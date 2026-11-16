@@ -14428,6 +14428,7 @@ TEST(model_merge_static_primitives) {
 #include "tests_water.inc"     // water from splines: shores, baking (docs/water.md)
 #include "tests_city_net.inc"  // the city server (agent-gta2)
 #include "tests_rules_split.inc"   // rules.json include / extends (engine/data/JsonCompose.h)
+#include "tests_colliders.inc"     // static colliders: type "collider" (modules/rts/RtsColliders.h)
 
 // ---------------------------------------------------------------- UI Lua plugins.on (apps/client/ClientServices.cpp)
 #include "apps/client/ClientServices.h"

@@ -1,4 +1,4 @@
-// GameAnalytics iOS SDK (GA-SDK-IOS 5.1) → the engine's "analytics" protocol (docs/plugins.md).
+// GameAnalytics iOS SDK (GA-SDK-IOS 5.0 from CocoaPods; 5.1 APIs used when linked) → the engine's "analytics" protocol (docs/plugins.md).
 // Same config as the Android plugin; configure* calls must come before initializeWithGameKey.
 #import <GameAnalytics/GameAnalytics.h>
 #import "engine/platform/apple/AiversePlugin.h"
@@ -66,10 +66,14 @@ static NSDictionary* AiverseGAFields(id v) {
         NSString* cart = [args[@"cartType"] length] ? args[@"cartType"] : @"shop";
         NSDictionary* receipt = [args[@"receipt"] isKindOfClass:NSDictionary.class] ? args[@"receipt"] : @{};
         NSString* tx = [receipt[@"transactionId"] isKindOfClass:NSString.class] ? receipt[@"transactionId"] : @"";
-        if (tx.length) // validated through the App Store Server API (SDK 5.1)
-            [GameAnalytics addBusinessEventWithCurrency:args[@"currency"] amount:cents itemType:args[@"itemType"] itemId:args[@"itemId"]
-                                               cartType:cart transactionId:tx customFields:fields];
-        else
+        // SDK 5.1 validates by transaction id (App Store Server API); it ships only through Swift Package Manager.
+        // CocoaPods stops at 5.0.2, so the call is made only when the linked SDK has it.
+        SEL byTx = NSSelectorFromString(@"addBusinessEventWithCurrency:amount:itemType:itemId:cartType:transactionId:customFields:");
+        if (tx.length && [GameAnalytics respondsToSelector:byTx]) {
+            using Fn = void (*)(id, SEL, NSString*, NSInteger, NSString*, NSString*, NSString*, NSString*, NSDictionary*);
+            ((Fn)[GameAnalytics methodForSelector:byTx])(GameAnalytics.class, byTx, args[@"currency"], cents, args[@"itemType"],
+                                                        args[@"itemId"], cart, tx, fields);
+        } else
             [GameAnalytics addBusinessEventWithCurrency:args[@"currency"] amount:cents itemType:args[@"itemType"] itemId:args[@"itemId"]
                                                cartType:cart receipt:nil customFields:fields];
     } else {

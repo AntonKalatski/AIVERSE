@@ -103,6 +103,22 @@ struct ScratchGuard {
     ~ScratchGuard() { std::error_code ec; if (!p.empty()) fs::remove_all(p, ec); }
 };
 
+#if defined(_WIN32)
+// Is `python` on PATH a Python 3? Then manifests' `py -3` (the launcher, missing or a plain python.exe in some
+// installs: CI toolcaches, the Store) is replaced by it. Probed once per process.
+bool pythonIs3() {
+    static const int ok = [] {
+        std::fflush(nullptr);
+        std::FILE* p = AIVERSE_POPEN("python -c \"import sys; print(sys.version_info[0])\" 2>NUL", "r");
+        if (!p) return 0;
+        char buf[64] = {};
+        const size_t n = std::fread(buf, 1, sizeof buf - 1, p);
+        return AIVERSE_PCLOSE(p) == 0 && n > 0 && buf[0] == '3' ? 1 : 0;
+    }();
+    return ok != 0;
+}
+#endif
+
 // One protocol call: `<command...> <method> <request.json>`, response = JSON on stdout.
 bool call(const UnpackerInfo& u, const std::string& method, const std::string& requestJson, Json& response, std::string* err) {
     if (u.command.empty()) return fail(err, u.name + ": no command in manifest");
@@ -243,6 +259,10 @@ bool UnpackerRegistry::loadManifest(const std::string& manifestPath, std::string
         u.command.push_back(a);
     }
     if (u.command.empty()) return bad("missing \"command\"");
+#if defined(_WIN32)
+    if (u.command.size() >= 2 && u.command[0] == "py" && u.command[1] == "-3" && pythonIs3())
+        u.command.erase(u.command.begin(), u.command.begin() + 2), u.command.insert(u.command.begin(), "python");
+#endif
     if (u.extensions.empty() && u.magic.empty()) return bad("needs \"extensions\" or \"magic\" to be detectable");
     auto it = std::find_if(list_.begin(), list_.end(), [&](const UnpackerInfo& x) { return x.name == u.name; });
     if (it != list_.end()) *it = u; // later search dirs override

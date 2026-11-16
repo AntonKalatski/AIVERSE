@@ -697,6 +697,22 @@ bool Driving::collide(Simulation& sim, DrivingStore& st, size_t index, Vec3& pos
             hit = true;
         }
     }
+    // static colliders (RtsColliders.h): solid like the bodies above that never move (bollards, benches, beds)
+    if (!gs.colliders.empty() && c.deck < 0)
+        gs.colliders.query(pos.xz(), half + r, kLayerGround, [&](size_t, const StaticColliders::Item& o) {
+            Fixed deepest{};
+            Vec3 normal{};
+            for (Fixed off : offs) {
+                const Vec3 dv = flat(pos + f * off - Vec3{o.p.x, Fixed{}, o.p.y});
+                const Fixed dist = dv.length(), minD = r + o.r;
+                if (dist >= minD) continue;
+                if (minD - dist > deepest) { deepest = minD - dist; normal = dist.raw > 0 ? dv / dist : Vec3{} - f; }
+            }
+            if (deepest.raw <= 0) return;
+            pos += normal * deepest;
+            crash = fxMax(crash, vl::vehicleResolveCollision(c.st, c.st.position, normal, rules_.restitution));
+            hit = true;
+        });
     if (crash > rules_.crashMinSpeed) hurt.push_back({c.e, (crash - rules_.crashMinSpeed) * rules_.crashDamage, kNullEntity, 0});
     for (auto& h : hurt)
         if (h.dmg.raw > 0 && w.alive(h.e) && w.get<Unit>(h.e).hp.raw > 0) m_->dealDamage(sim, h.e, h.dmg, 0, h.by, h.owner);

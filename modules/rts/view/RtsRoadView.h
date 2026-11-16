@@ -5,6 +5,8 @@
 // them. Textures: the game's (road type "look.textures") or procedural tiles generated at init. No shaders of its own:
 // everything is drawn through Renderer3D::drawModel (PBR, shadows, lightmaps as static scenery).
 #pragma once
+#include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -58,6 +60,13 @@ public:
     const std::vector<PuddleSpot>& puddleSpots() const { return spots_; }
     // a spot's size at a puddles level: 0 below its `from`, 1 at puddles 1
     static float puddleScale(const PuddleSpot& p, float puddles);
+    // The drawn top of the road surfaces at (x, z), world units: carriageways (which lie a little over the ground),
+    // kerbs and raised sidewalks, junctions, medians, driveways, verges, low embankments. Barriers, poles, signals and
+    // props don't count, nor do decks higher than a bridge clearance over the ground (the simulation's decks carry
+    // those). Sampled every half cell / 8 and interpolated, so a kerb is a short ramp a wheel climbs; `terrain` (the
+    // ground there) is used where no road surface lies. Presentation only (docs/roads.md § Surface for wheels).
+    float surfaceAt(float x, float z, float terrain) const;
+    bool hasSurface() const { return !surface_.empty(); }
     // editor preview: one edge drawn as a translucent ribbon (not part of the network)
     struct Ghost { bool on = false; RoadNetwork net; bool ok = true; };
     void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
@@ -88,6 +97,12 @@ private:
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
     std::vector<Chunk> chunks_;
+    // standable road surface: tiles of 8x8 cells, kSurfRes samples per cell, height * 2048 (INT16_MIN: none)
+    static constexpr int kSurfTile = 8, kSurfRes = 8, kSurfSide = kSurfTile * kSurfRes;
+    struct SurfTile { int16_t h[kSurfSide * kSurfSide]; };
+    std::map<int64_t, SurfTile> surface_;
+    void rasterSurface(const std::vector<render::float3>& tris, const std::function<float(float, float)>& heightAt);
+    float surfaceSample(int sx, int sz, bool& ok) const;
     std::vector<PropModel> propModels_;
     std::vector<PropInstance> props_;
     std::vector<render::Image> images_;          // the kit's textures (copied into every chunk model, shared GPU handles)

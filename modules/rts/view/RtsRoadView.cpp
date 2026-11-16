@@ -2,6 +2,7 @@
 #include "RtsRoadKit.h"
 #include "../../../engine/platform/Platform.h"
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <map>
 #include <tuple>
@@ -90,6 +91,7 @@ public:
     std::vector<render::SpriteVertex> verges;   // soft verges (4 vertices per quad)
     std::vector<render::SpriteVertex> film;     // the road surfaces once more, for the wet film (white, alpha 1)
     std::vector<RtsRoadView::PuddleSpot> spots; // where puddles gather
+    std::vector<float3> surf;                   // upward faces that wheels and feet stand on (3 corners each)
 
     void build() {
         for (size_t i = 0; i < N_.edges.size(); ++i) edge(int(i));
@@ -200,12 +202,24 @@ private:
         const int64_t cx = int64_t(std::floor(p.x / float(kChunk))), cz = int64_t(std::floor(p.z / float(kChunk)));
         return chunks[(cx << 32) ^ (cz & 0xffffffff)];
     }
+    // barriers, poles, signal heads, deck pillars: drawn, but nothing drives or walks on them
+    int bare_ = 0;
+    struct Bare { int& n; explicit Bare(int& c) : n(c) { ++n; } ~Bare() { --n; } };
+    static bool standable(int mat) {
+        using V = RtsRoadView;
+        switch (mat) {
+        case V::kMetal: case V::kWood: case V::kLeaves: case V::kBark: case V::kGlow: case V::kHedge: case V::kDark:
+        case V::kSignalRed: case V::kSignalAmber: case V::kSignalGreen: case V::kSign: case V::kGlass: return false;
+        default: return true;
+        }
+    }
     // triangle with a flat normal turned toward `hint` (up for surfaces, outwards for faces)
     void tri(int mat, float3 a, float3 b, float3 c, float2 ua, float2 ub, float2 uc, float3 hint) {
         float3 nrm = cross(b - a, c - a);
         if (dot(nrm, nrm) < 1e-14f) return;
         if (dot(nrm, hint) < 0) { std::swap(b, c); std::swap(ub, uc); nrm = -nrm; }
         nrm = normalize(nrm);
+        if (!bare_ && nrm.y > 0.3f && standable(mat)) { surf.push_back(a); surf.push_back(b); surf.push_back(c); }
         Acc& A = acc(a);
         A.need(mat);
         auto& V = A.v[size_t(mat)];
@@ -225,6 +239,7 @@ private:
         tri(mat, a, c, d, ua, uc, ud, hint);
     }
     void box(int mat, float3 c, float3 ax, float3 ay, float3 az) {   // centre, half axes
+        Bare bare(bare_);
         const float3 p[8] = {c - ax - ay - az, c + ax - ay - az, c + ax + ay - az, c - ax + ay - az,
                              c - ax - ay + az, c + ax - ay + az, c + ax + ay + az, c - ax + ay + az};
         const float2 u0{0, 0}, u1{1, 0}, u2{1, 1}, u3{0, 1};
@@ -612,7 +627,6 @@ private:
     // shorter than that: v stays inside the cell)
     void crackLine(const std::vector<float3>& pts, float hw, float v0) {
         const float tile = 4.0f / cm_;
-        float along = 0;
         uint32_t seg = uint32_t(std::lround(v0 * 1000.0f));
         for (size_t i = 0; i + 1 < pts.size(); ++i) {
             const float3 a = pts[i], b = pts[i + 1];
@@ -621,7 +635,6 @@ private:
             const float3 n{-dz / L * hw, 0, dx / L * hw};
             // each piece its own stretch of the crack texture: the crack opens, closes and breaks off along it
             const float span = std::min(0.9f, L / tile), va = 0.005f + (0.99f - span) * hash01(seg++, 77u), vb = va + span;
-            along += L;
             const float3 q[4] = {b - n, b + n, a + n, a - n};
             const float2 uv[4] = {{0, vb}, {1, vb}, {1, va}, {0, va}};
             slotQuad(roadkit::kVergeCrackSlot, q, uv, 0xffffffffu, 0.0018f);
@@ -854,6 +867,7 @@ private:
     }
 
     void barrierSeg(RoadBarrier b, const Pt& A, const Pt& B, float off, float h, float outward, float height) {
+        Bare bare(bare_);
         // pulled in a little from the edge so it stands on the sidewalk / shoulder
         const float in = outward == 0 ? 0.0f : 0.06f * outward;
         const float o = off - in;
@@ -1314,6 +1328,7 @@ private:
     }
 
     void pillars(const RoadTypeDef& t, const RoadEdgeGeom& g, int fs, float s0, float s1) {
+        Bare bare(bare_);
         const float cwl = f(t.carriageway(-fs)), cwr = f(t.carriageway(fs));
         for (auto& sp : g.spans) {
             if (sp.tunnel) continue;
@@ -1342,6 +1357,7 @@ private:
     }
 
     void portals(const RoadTypeDef& t, const RoadEdgeGeom& g, int fs, float s0, float s1) {
+        Bare bare(bare_);
         const float cwl = f(t.carriageway(-fs)), cwr = f(t.carriageway(fs));
         for (auto& sp : g.spans) {
             if (!sp.tunnel) continue;
@@ -1554,6 +1570,7 @@ private:
     // traffic signal for the lanes that drive into the junction: a pole at their kerb, a mast arm over them with a head
     // per lane, and a pedestrian head on the pole
     void signal(const RoadTypeDef& t, const Pt& P, int inDir, int tdir, float facing) {
+        Bare bare(bare_);
         const float sg = float(inDir);
         const RoadSideDef& S = tdir > 0 ? t.right : t.left;
         const float kerb = f(t.carriageway(tdir)) + f(S.shoulder) + 0.5f / cm_;
@@ -1959,6 +1976,70 @@ void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reade
     }
 }
 
+namespace {
+constexpr float kSurfScale = 2048.0f;
+int64_t surfKey(int tx, int tz) { return (int64_t(tx) << 32) ^ (int64_t(tz) & 0xffffffff); }
+int floorDiv(int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); }
+} // namespace
+
+void RtsRoadView::rasterSurface(const std::vector<float3>& tris, const std::function<float(float, float)>& heightAt) {
+    surface_.clear();
+    // decks higher than a bridge's clearance are the simulation's (driving decks); kerbs and low embankments count
+    const float limit = (f(kRoadBridgeAbove) + 0.5f) / cellMeters_;
+    const float step = 1.0f / float(kSurfRes);
+    for (size_t t = 0; t + 2 < tris.size(); t += 3) {
+        const float3 a = tris[t], b = tris[t + 1], c = tris[t + 2];
+        const float det = (b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z);
+        if (std::fabs(det) < 1e-9f) continue;
+        const int x0 = int(std::floor(std::min({a.x, b.x, c.x}) / step - 0.5f)), x1 = int(std::ceil(std::max({a.x, b.x, c.x}) / step - 0.5f));
+        const int z0 = int(std::floor(std::min({a.z, b.z, c.z}) / step - 0.5f)), z1 = int(std::ceil(std::max({a.z, b.z, c.z}) / step - 0.5f));
+        if (x1 - x0 > 4096 || z1 - z0 > 4096) continue;
+        for (int sz = z0; sz <= z1; ++sz)
+            for (int sx = x0; sx <= x1; ++sx) {
+                const float px = (float(sx) + 0.5f) * step, pz = (float(sz) + 0.5f) * step;
+                const float u = ((b.x - px) * (c.z - pz) - (c.x - px) * (b.z - pz)) / det;
+                const float v = ((c.x - px) * (a.z - pz) - (a.x - px) * (c.z - pz)) / det;
+                const float w = 1.0f - u - v;
+                constexpr float e = -1e-4f;
+                if (u < e || v < e || w < e) continue;
+                const float h = a.y * u + b.y * v + c.y * w;
+                if (heightAt && h - heightAt(px, pz) > limit) continue;
+                const int tx = floorDiv(sx, kSurfSide), tz = floorDiv(sz, kSurfSide);
+                auto [it, fresh] = surface_.try_emplace(surfKey(tx, tz));
+                if (fresh) std::fill(std::begin(it->second.h), std::end(it->second.h), INT16_MIN);
+                int16_t& cell = it->second.h[size_t(sz - tz * kSurfSide) * kSurfSide + size_t(sx - tx * kSurfSide)];
+                const int16_t q = int16_t(std::clamp(std::lround(h * kSurfScale), long(INT16_MIN + 1), long(INT16_MAX)));
+                if (cell == INT16_MIN || q > cell) cell = q;
+            }
+    }
+}
+
+float RtsRoadView::surfaceSample(int sx, int sz, bool& ok) const {
+    const int tx = floorDiv(sx, kSurfSide), tz = floorDiv(sz, kSurfSide);
+    auto it = surface_.find(surfKey(tx, tz));
+    if (it == surface_.end()) { ok = false; return 0; }
+    const int16_t q = it->second.h[size_t(sz - tz * kSurfSide) * kSurfSide + size_t(sx - tx * kSurfSide)];
+    ok = q != INT16_MIN;
+    return float(q) / kSurfScale;
+}
+
+float RtsRoadView::surfaceAt(float x, float z, float terrain) const {
+    if (surface_.empty()) return terrain;
+    const float gx = x * float(kSurfRes) - 0.5f, gz = z * float(kSurfRes) - 0.5f;
+    const int sx = int(std::floor(gx)), sz = int(std::floor(gz));
+    const float fx = gx - float(sx), fz = gz - float(sz);
+    float h[4];
+    int found = 0;
+    for (int k = 0; k < 4; ++k) {
+        bool ok = false;
+        h[k] = surfaceSample(sx + (k & 1), sz + (k >> 1), ok);
+        if (ok) ++found; else h[k] = terrain;
+    }
+    if (!found) return terrain;
+    const float top = (h[0] * (1 - fx) + h[1] * fx) * (1 - fz) + (h[2] * (1 - fx) + h[3] * fx) * fz;
+    return top;
+}
+
 void RtsRoadView::release(gfx::Device& dev) {
     if (decalMesh_.vb.valid()) decalBatch_.destroyMesh(dev, decalMesh_);
     if (vergeMesh_.vb.valid()) decalBatch_.destroyMesh(dev, vergeMesh_);
@@ -1969,6 +2050,7 @@ void RtsRoadView::release(gfx::Device& dev) {
     wetStep_ = puddleStep_ = -1;
     for (auto& c : chunks_) if (c.model) releaseModel(dev, *c.model);
     chunks_.clear();
+    surface_.clear();
     props_.clear();
     if (ghostModel_) { releaseModel(dev, *ghostModel_); ghostModel_.reset(); }
 }
@@ -2132,6 +2214,7 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
     if (!mesh.verges.empty()) vergeMesh_ = decalBatch_.buildMesh(dev, mesh.verges);
     film_ = std::move(mesh.film);
     spots_ = std::move(mesh.spots);
+    rasterSurface(mesh.surf, heightAt);
     for (auto& [key, a] : mesh.chunks) {
         if (a.empty()) continue;
         auto m = toModel("roads", a, images_, materials_);
@@ -2232,10 +2315,11 @@ void RtsRoadView::draw(Renderer3D& r, const std::function<float(float, float)>& 
             SpriteLighting lighting;
             lighting.bind = [&r] { r.bindLitFrame(); };
             lighting.receiveShadows = r.shadowQuality() >= ShadowQuality::Medium;
+            lighting.bindReflection = [&r](int slot) { r.lights.bind(2, 1, slot); };
             if (vergeMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, vergeMesh_, verge_.tex, r.viewProj(), &lighting, true);   // under the paint
             if (filmMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, filmMesh_, verge_.tex, r.viewProj(), &lighting, true);   // wet: under the paint
             if (decalMesh_.vb.valid() && paint_.valid()) decalBatch_.drawMesh(d, decalMesh_, paint_.tex, r.viewProj(), &lighting, true);
-            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawMesh(d, puddleMesh_, verge_.tex, r.viewProj(), &lighting, true);   // water over the lines
+            if (puddleMesh_.vb.valid() && verge_.valid()) decalBatch_.drawWater(d, puddleMesh_, verge_.tex, r.viewProj(), lighting);   // water over the lines
         });
     }
     for (auto& p : props_) {

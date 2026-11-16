@@ -16,7 +16,7 @@ using namespace render;
 std::shared_ptr<const AnimationEnvironment> RtsView::animationEnvironment(const SceneObject& o,const EntityAnim& st,const ModelChoice& ch,const MapGrid& grid){
     auto environment=std::make_shared<AnimationEnvironment>();const auto& look=looks_[o.type];
     EntityFxValues fx;bool hasFx=fxFor(o,fx);float lift=hasFx?fx.v[EntityFxValues::kLift]:0;
-    auto pos=float3{o.pos.x,heightAt(grid,o.pos.x,o.pos.z)+(look.air?look.flyHeight:0)+lift,o.pos.z};
+    auto pos=float3{o.pos.x,(!look.structure&&!look.air?groundAt(grid,o.pos.x,o.pos.z):heightAt(grid,o.pos.x,o.pos.z))+(look.air?look.flyHeight:0)+lift,o.pos.z};
     auto tilt=hasFx?mat4::rotateZ(-fx.v[EntityFxValues::kPitch]*.017453292f)*mat4::rotateX(-fx.v[EntityFxValues::kRoll]*.017453292f):mat4{};
     float grow=look.structure&&look.construction==Construction::Grow?std::clamp(o.build,.15f,1.f):1;
     environment->modelToWorld=mat4::translate(pos)*mat4::rotateY(st.yaw)*tilt*mat4::scale({look.scale,look.scale*grow,look.scale});
@@ -27,7 +27,7 @@ std::shared_ptr<const AnimationEnvironment> RtsView::animationEnvironment(const 
     for(const auto& b:animationObstacles_){if(b.object==&o||(o.entity.valid()&&b.entity==o.entity))continue;auto nearest=float3{std::clamp(queryCenter.x,b.lo.x,b.hi.x),std::clamp(queryCenter.y,b.lo.y,b.hi.y),std::clamp(queryCenter.z,b.lo.z,b.hi.z)};
         if(length(nearest-queryCenter)>reach)continue;boxes.push_back(b);}
     std::stable_sort(boxes.begin(),boxes.end(),[&](const auto& a,const auto& b){return length((a.lo+a.hi)*.5f-queryCenter)<length((b.lo+b.hi)*.5f-queryCenter);});if(boxes.size()>64)boxes.resize(64);
-    auto ground=[this,&grid](float3 p){return heightAt(grid,p.x,p.z);};
+    auto ground=[this,&grid](float3 p){return groundAt(grid,p.x,p.z);};
     auto normal=[ground](float3 p){constexpr float e=.03f;return normalize(float3{ground(p+float3{-e,0,0})-ground(p+float3{e,0,0}),2*e,ground(p+float3{0,0,-e})-ground(p+float3{0,0,e})});};
     environment->sphereContact=[boxes,ground,normal](float3 center,float radius,IKHit& hit){
         bool found=ikSpherePlane(center,radius,{center.x,ground(center),center.z},normal(center),hit);if(found)hit.surface=1;
@@ -410,8 +410,6 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         worldMatrices(m, st.pose, st.world);
         // foot IK: plant two-bone legs on the terrain under each foot (ramps, cliffs, slopes)
         if (grid && grid->w > 0 && !ch.legs.empty() && (!moving || locomotionSpeed >= 0.f) && !st.graph.hasContacts()) {
-            const float scale = L.scale, ground = heightAt(*grid, o.pos.x, o.pos.z);
-            const mat4 toWorld = mat4::translate({o.pos.x, ground, o.pos.z}) * mat4::rotateY(st.yaw) * mat4::scale({scale, scale, scale}) * ch.fix;
             auto support=animationEnvironment(o,st,ch,*grid);
             const mat4 contactWorld=support->modelToWorld;
             const mat4 toModel = contactWorld.inverse();

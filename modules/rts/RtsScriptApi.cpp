@@ -181,7 +181,16 @@ std::vector<Entity> query(Vm& vm, const Filter& f) {
             for (int x = x0; x <= x1; ++x)
                 for (Entity e : sp.buckets[size_t(y * sp.w + x)]) test(e, w.get<Unit>(e), w.get<Owner>(e), w.get<Transform>(e));
     } else {
-        w.each<Unit, Owner, Transform>(test);
+        // the cheap tests on the dense Unit pool first; owner and position only for the units that pass them
+        // (same result: every match needs all three components, and the list is sorted below)
+        w.each<Unit>([&](Entity e, Unit& u) {
+            if (u.hp.raw <= 0 || (u.flags & kUnitOffMap)) return;
+            if (f.type >= 0 && u.type != f.type) return;
+            if (f.tags && !(R.types[u.type].tags & f.tags)) return;
+            Owner* o = w.tryGet<Owner>(e);
+            Transform* t = o ? w.tryGet<Transform>(e) : nullptr;
+            if (t) test(e, u, *o, *t);
+        });
     }
     std::sort(out.begin(), out.end(), [](Entity a, Entity b) { return a.index < b.index; });
     if (f.byDist) {

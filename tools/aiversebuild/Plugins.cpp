@@ -244,13 +244,25 @@ fs::path writePluginsCMake(const PluginSet& set, const fs::path& dir) {
             }
             for (auto& [k, v] : native["classes"].obj) classes += "<key>" + k + "</key><string>" + v.str() + "</string>";
         }
+        std::set<fs::path> sourceDirs;
         for (auto& pat : patterns)
             for (const fs::path& f : globFiles(l.dir, pat)) {
                 fs::path rel = fs::path("plugins") / l.name / fs::relative(f, l.dir);
                 fs::create_directories((dir / rel).parent_path());
                 aiverse::pack::copyFileReplaceOrThrow(f, dir / rel);
                 sources.push_back("${CMAKE_CURRENT_LIST_DIR}/" + rel.generic_string());
+                sourceDirs.insert(f.parent_path());
             }
+        // the plugin's own headers next to its sources (#include "X.h" from the copied .cpp): copied, not compiled
+        for (const fs::path& d : sourceDirs) {
+            std::error_code ec;
+            for (const auto& e : fs::directory_iterator(d, ec)) {
+                const std::string ext = e.path().extension().string();
+                if (!e.is_regular_file() || (ext != ".h" && ext != ".hpp" && ext != ".inc")) continue;
+                const fs::path rel = fs::path("plugins") / l.name / fs::relative(e.path(), l.dir);
+                aiverse::pack::copyFileReplaceOrThrow(e.path(), dir / rel);
+            }
+        }
     }
     // Top-level Info.plist keys must be unique: the first plugin wins, the others are reported.
     std::string plistXml;

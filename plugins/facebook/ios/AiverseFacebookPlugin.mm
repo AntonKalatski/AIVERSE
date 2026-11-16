@@ -3,6 +3,10 @@
 // Since SDK 17 the advertiser tracking flag follows ATTrackingManager by itself: the "att" plugin's
 // prompt is what enables IDFA-based attribution, nothing to set here.
 #import <UIKit/UIKit.h>
+// FBSDKCoreKit-Swift.h names SFSafariViewControllerDelegate / ASWebAuthenticationPresentationContextProviding without
+// importing their frameworks (Objective-C++ has no module auto-import there): import them first
+#import <SafariServices/SafariServices.h>
+#import <AuthenticationServices/AuthenticationServices.h>
 #import <FBSDKCoreKit/FBSDKCoreKit.h>
 #import <FBSDKCoreKit/FBSDKCoreKit-Swift.h>   // Swift classes: FBSDKApplicationDelegate, FBSDKSettings
 #import "engine/platform/apple/AiversePlugin.h"

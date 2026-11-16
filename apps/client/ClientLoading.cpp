@@ -82,15 +82,15 @@ void GameClient::updateBackgroundLoading() {
             if (typeAssetLoader_) typeAssetLoader_(type);
             backgroundTypes_.erase(std::remove(backgroundTypes_.begin(), backgroundTypes_.end(), type), backgroundTypes_.end());
             backgroundType_ = -1;
-            if (backgroundTypes_.empty()) std::fprintf(stderr,"[streaming] map types ready tick=%u stalls=%zu textures=%zu gpuTextures=%zu\n",unsigned(sim_->tick()),loadingStalls_,view_.textureCache()->decodedCount(),view_.textureCache()->gpuCount());
+            if (backgroundTypes_.empty()) std::printf("[streaming] map types ready tick=%u stalls=%zu textures=%zu gpuTextures=%zu\n",unsigned(sim_->tick()),loadingStalls_,view_.textureCache()->decodedCount(),view_.textureCache()->gpuCount());
             if (std::chrono::steady_clock::now() >= deadline) return;
         }
     }
     const size_t before = view_.pendingModelVariants();
-    if (before && !backgroundRemaining_) std::fprintf(stderr, "[streaming] background variants queued=%zu\n", before);
+    if (before && !backgroundRemaining_) std::printf("[streaming] background variants queued=%zu\n", before);
     view_.streamModelVariants(2.0);
     const size_t after = view_.pendingModelVariants();
-    if (before && !after) std::fprintf(stderr, "[streaming] all model variants ready at tick=%u\n", unsigned(sim_->tick()));
+    if (before && !after) std::printf("[streaming] all model variants ready at tick=%u\n", unsigned(sim_->tick()));
     backgroundRemaining_ = after;
 }
 
@@ -110,7 +110,7 @@ bool GameClient::ensureLocalAssets() {
     const float requiredRadius = visibleRadius(cam_);
     for (const auto& o : scene_.objects) if (!o.isProjectile && !view_.typeLoaded(o.type) && assetDistance(o) < requiredRadius) {
         ++loadingStalls_;
-        std::fprintf(stderr,"[streaming] local readiness wait tick=%u type=%u distance=%.2f\n",unsigned(sim_->tick()),unsigned(o.type),assetDistance(o));
+        std::printf("[streaming] local readiness wait tick=%u type=%u distance=%.2f\n",unsigned(sim_->tick()),unsigned(o.type),assetDistance(o));
         beginMapLoading();
         return mapLoading_;
     }
@@ -146,13 +146,13 @@ void GameClient::beginMapLoading() {
     loadingStarted_ = std::chrono::steady_clock::now();
     mapLoading_ = !loadingTypes_.empty() || !warmingTypes_.empty();
     loadingPrimed_ = false;
-    std::fprintf(stderr,"[streaming] initial=%zu background=%zu radius=%.1f focus=%.1f,%.1f\n",loadingTypes_.size(),backgroundTypes_.size(),assetRadius(),cam_.target.x,cam_.target.z);
+    std::printf("[streaming] initial=%zu background=%zu radius=%.1f focus=%.1f,%.1f\n",loadingTypes_.size(),backgroundTypes_.size(),assetRadius(),cam_.target.x,cam_.target.z);
     if (!mapLoading_) return;
     loadingSplash_.shutdown();
     Json block = manifest_["splash"];
     if (!block.isObject()) block = splash::defaultBlock();
     loadingSplash_.init(*dev_, block, [](const std::string& path, std::string& out) { return platform::readContentFile(path, out); });
-    std::fprintf(stderr, "[loading] map=%s types=%zu/%zu\n", maps_[mapIndex_].file.c_str(), loadingTypes_.size(), rules_.types.size());
+    std::printf("[loading] map=%s types=%zu/%zu\n", maps_[mapIndex_].file.c_str(), loadingTypes_.size(), rules_.types.size());
 }
 
 void GameClient::frameMapLoading(gfx::Device& dev, double dt) {
@@ -171,7 +171,7 @@ void GameClient::frameMapLoading(gfx::Device& dev, double dt) {
             if (typeAssetLoader_) typeAssetLoader_(type);
             if (std::getenv("AIVERSE_LOAD_TRACE")) {
                 const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
-                std::fprintf(stderr, "[loading] type=%u resource=%s ms=%.2f\n", unsigned(type), view_.typeResource(type).c_str(), ms);
+                std::printf("[loading] type=%u resource=%s ms=%.2f\n", unsigned(type), view_.typeResource(type).c_str(), ms);
             }
             if (std::chrono::steady_clock::now() >= deadline) break;
         }
@@ -194,7 +194,7 @@ void GameClient::frameMapLoading(gfx::Device& dev, double dt) {
     drawLoadingStatus(dev, dt, loadingSplash_.shownProgress(), label);
     if (shadersReady && loadingCursor_ == loadingTypes_.size() && loadingSplash_.imagesLoaded() && loadingSplash_.shownProgress() >= 0.98f) {
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - loadingStarted_).count();
-        std::fprintf(stderr, "[loading] map assets ready in %.1f ms (%zu types)\n", ms, loadingTypes_.size());
+        std::printf("[loading] map assets ready in %.1f ms (%zu types)\n", ms, loadingTypes_.size());
         loadingSplash_.shutdown();
         mapLoading_ = false; mapJustLoaded_ = true;
     }

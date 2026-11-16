@@ -56,9 +56,9 @@ they register only when listed or with `AIVERSE_MOCK_PLUGINS=1`). CI checks this
 | `admob` | Android, iOS | ads | Google Mobile Ads (Android 25.5, iOS 13.11) |
 | `applovin` | Android, iOS | ads | AppLovin MAX 13.6.3 (mediation) |
 | `ironsource` | Android, iOS | ads | ironSource / Unity LevelPlay 9.5 (mediation, ad-unit API) |
-| `gameanalytics` | Android, iOS, Web | analytics | GameAnalytics (Android 7.2.1, iOS GA-SDK-IOS 5.1, JS 5.0.0) |
+| `gameanalytics` | Android, iOS, Web | analytics | GameAnalytics (Android 7.2.1, iOS GA-SDK-IOS 5.0 (CocoaPods; 5.1 transaction-id validation is used when that SDK is linked), JS 5.0.0) |
 | `facebook` | Android, iOS | analytics | Meta / Facebook SDK 18 (app events, install attribution, deferred app links; no login / share) |
-| `appmetrica` | Android, iOS | analytics | AppMetrica (Android 8.0.0, iOS 5.16.0 — the versions Drone Fall ships) |
+| `appmetrica` | Android, iOS | analytics | AppMetrica (Android 8.0.0, iOS 6.7 — the line YandexMobileAds 8.6 requires, so both plugins build together) |
 | `att` | iOS | privacy | App Tracking Transparency (prompt, status, `NSUserTrackingUsageDescription`, SKAdNetwork ids) |
 | `appsflyer` | Android, iOS | analytics + links | AppsFlyer 6.15.2 (attribution, events, revenue, GDPR consent, OneLink / deferred deep links) |
 | `push` | Android, iOS | push | Firebase Cloud Messaging 24.1 + local notifications (Android), UserNotifications + APNs (iOS) |

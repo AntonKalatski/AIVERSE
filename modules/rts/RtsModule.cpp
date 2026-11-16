@@ -359,6 +359,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
     }
 
     // placed entities
+    gs.colliders.clear();
     std::vector<std::pair<std::string, Entity>> ids;
     std::vector<Entity> placed;
     for (auto& ej : map["entities"].items()) {
@@ -367,6 +368,12 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         int owner = int(ej.getInt("owner", 0));
         if (owner == -1) owner = kHostileNeutral;
         if ((owner < 0 || owner > int(np)) && owner != kHostileNeutral) throw std::runtime_error("map entity: owner out of range");
+        if (rules_.types[size_t(t)].collider) {   // a static circle, not a unit (RtsColliders.h)
+            const UnitType& ct = rules_.types[size_t(t)];
+            gs.colliders.add(mapPos(sim, ej.has("at") ? ej["at"] : ej["pos"]).xz(), ct.radius, ct.layer);
+            placed.push_back(kNullEntity);
+            continue;
+        }
         Entity e = spawn(sim, uint16_t(t), uint8_t(owner), mapPos(sim, ej.has("at") ? ej["at"] : ej["pos"]));
         placed.push_back(e);
         if (ej.has("facing")) {   // degrees, clockwise on screen from north (-z): 0 north, 90 east, 180 south, 270 west
@@ -387,6 +394,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         gs.roads.adj[size_t(ia)].push_back(uint16_t(ib));
         gs.roads.adj[size_t(ib)].push_back(uint16_t(ia));
     }
+    gs.colliders.build(gs.grid.w, gs.grid.h);
     setupRoutes(sim, map, placed);   // map "routes" / "screen" (RtsRoutes.cpp)
 
     // starting regions: explicit list, else regions containing the player's structures/start
@@ -445,6 +453,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
             ++k;
             if (!ej.has("inventory")) continue;
             Entity e = placed[k - 1];
+            if (!e.valid()) throw std::runtime_error("map entity: 'inventory' on a collider");
             auto* inv = w.tryGet<Inventory>(e);
             if (!inv) throw std::runtime_error("map entity: 'inventory' on a type without one");
             for (auto& [rid, v] : ej["inventory"].members()) {

@@ -59,6 +59,11 @@ bool SpriteBatch::init(gfx::Device& dev) {
         litPipe_ = dev.createPipeline(lp);
         lp.depthBiasConstant = -4.0f; lp.depthBiasSlope = -1.5f; lp.label = "sprite lit decal";
         litDecalPipe_ = dev.createPipeline(lp);
+        gfx::ShaderDesc ws = ls;
+        ws.glslFragment = shaders::kSpriteWaterFS; ws.msl = shaders::kSpriteWaterMSL;
+        ws.textureSlots = 4; ws.label = "sprite water";
+        waterShader_ = dev.createShader(ws);
+        if (waterShader_.valid()) { lp.shader = waterShader_; lp.label = "sprite water decal"; waterPipe_ = dev.createPipeline(lp); }
     }
     gfx::ShaderDesc cs;
     cs.glslVertex = shaders::kSpriteCasterVS; cs.glslFragment = shaders::kSpriteCasterFS; cs.msl = shaders::kSpriteCasterMSL;
@@ -98,9 +103,9 @@ bool SpriteBatch::init(gfx::Device& dev) {
 void SpriteBatch::shutdown() {
     if (!dev_) return;
     dev_->destroyBuffer(vb_); dev_->destroyBuffer(ib_); dev_->destroyBuffer(casterVb_);
-    for (auto p : {blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_})
+    for (auto p : {blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_, waterPipe_})
         if (p.valid()) dev_->destroyPipeline(p);
-    for (auto sh : {shader_, litShader_, casterShader_}) if (sh.valid()) dev_->destroyShader(sh);
+    for (auto sh : {shader_, litShader_, casterShader_, waterShader_}) if (sh.valid()) dev_->destroyShader(sh);
     dev_ = nullptr;
 }
 
@@ -244,6 +249,16 @@ void SpriteBatch::drawMesh(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHa
     dev.setPipeline(lit ? (decal ? litDecalPipe_ : litGroundPipe_) : (decal ? decalPipe_ : groundPipe_));
     setUniforms(dev, viewProj, lit, lighting);
     dev.setTexture(lit ? 2 : 0, tex);
+    drawRange(dev, m.vb, 0, m.quads);
+}
+
+void SpriteBatch::drawWater(gfx::Device& dev, const SpriteMesh& m, gfx::TextureHandle tex, const mat4& viewProj, const SpriteLighting& lighting) {
+    if (!waterPipe_.valid() || !lighting.bind) { drawMesh(dev, m, tex, viewProj, &lighting, true); return; }
+    if (!m.vb.valid() || !tex.valid()) return;
+    dev.setPipeline(waterPipe_);
+    setUniforms(dev, viewProj, true, &lighting);
+    dev.setTexture(2, tex);
+    if (lighting.bindReflection) lighting.bindReflection(3);
     drawRange(dev, m.vb, 0, m.quads);
 }
 

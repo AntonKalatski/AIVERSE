@@ -249,6 +249,7 @@ any tag in `deficitDisables`).
 |---|---|
 | `structure` | `{"footprint": [w, h], "on": "geyser", "takesOverNode": true, "terrain": "rock"\|"creep"\|"any", "extendsBase": true}` — `on`: must be built exactly on an object of that type (refinery on a geyser, TA extractor on a metal spot); `takesOverNode` inherits its resource |
 | `invulnerable` | can't be damaged (trees, mines, decorations) |
+| `collider` | `true`: map entities of this type are static circles (`move.radius`, the type's layer), not units: no ECS cost, no model. Walkers treat them as ORCA obstacles and never step into one, separation pushes overlapping units out, top-down heroes and cars are stopped by them like any body that never moves. For thousands of invisible bollards / benches / flower beds. Needs `move.radius`, no `structure`; not for things scripts query or damage (`modules/rts/RtsColliders.h`) |
 | `energy` | `{"max": 200, "regen": 0.5, "start": 50}` — mana for abilities |
 | `abilities` | list, see "Abilities" |
 | `hero` | `{"levels": [200, 500, 900], "perLevel": [{"stat": "maxHp", "add": 50}, {"stat": "damage", "add": 0.1}]}` — gains xp from kills nearby; unique per player |

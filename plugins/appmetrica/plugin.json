@@ -1,6 +1,6 @@
 {
   "name": "appmetrica",
-  "description": "AppMetrica (Yandex) analytics, Android SDK 8.0 / iOS SDK 5.16: custom events with JSON parameters, user profile id, data sending consent, events buffer flush. Protocol: analytics (docs/plugins.md). Config: apiKey (per platform), locationTracking, firstActivationAsUpdate, logs.",
+  "description": "AppMetrica (Yandex) analytics, Android SDK 8.0 / iOS SDK 6.7 (the line YandexMobileAds 8.6 needs): custom events with JSON parameters, user profile id, data sending consent, events buffer flush. Protocol: analytics (docs/plugins.md). Config: apiKey (per platform), locationTracking, firstActivationAsUpdate, logs.",
   "provides": ["analytics"],
   "android": {
     "java": "android/java",
@@ -10,6 +10,6 @@
   "ios": {
     "sources": ["ios/*.mm"],
     "classes": { "appmetrica": "AiverseAppMetricaPlugin" },
-    "pods": ["pod 'AppMetricaAnalytics', '5.16.0'"]
+    "pods": ["pod 'AppMetricaAnalytics', '~> 6.7'"]
   }
 }

@@ -45,6 +45,7 @@ exported.mkdir()
 for directory in re.findall(r'"([^"]+)"',match.group(1)):shutil.copytree(ROOT/directory,exported/directory)
 shutil.copytree(ROOT/'apps/client',exported/'apps/client')
 shutil.copy2(ROOT/'CMakeLists.txt',exported/'CMakeLists.txt')
+shutil.copy2(ROOT/'LICENSE',exported/'LICENSE')   # exportSources copies it: the notices step reads it
 shutil.copytree(game/'native',exported/'native')
 content=WORK/'relocated-game'
 if content.exists():shutil.rmtree(content)

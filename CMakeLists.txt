@@ -566,7 +566,14 @@ function(aiverse_package_app target)
                 XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
                 XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
                 XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
-                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${AIVERSE_APPLE_TEAM_ID}")
+                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${AIVERSE_APPLE_TEAM_ID}"
+                # CocoaPods' aggregate Pods_<target>.framework is built into PODS_CONFIGURATION_BUILD_DIR, but this
+                # target's BUILT_PRODUCTS_DIR is CMake's own folder: the linker has to be told where to look
+                XCODE_ATTRIBUTE_FRAMEWORK_SEARCH_PATHS "$(inherited) $(PODS_CONFIGURATION_BUILD_DIR)"
+                # static Swift pods (ad SDKs) pull swiftCompatibility* from the default toolchain; this app has no
+                # Swift sources, and TOOLCHAIN_DIR may name another toolchain (Xcode 26: the Metal toolchain)
+                XCODE_ATTRIBUTE_LIBRARY_SEARCH_PATHS "$(inherited) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(SDKROOT)/usr/lib/swift"
+                XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "$(inherited) /usr/lib/swift @executable_path/Frameworks")
             set(res_dir "$<TARGET_BUNDLE_DIR:${target}>")
         else()
             set_target_properties(${target} PROPERTIES
@@ -902,6 +909,9 @@ if(AIVERSE_BUILD_TESTS)
     target_compile_definitions(aiverse_remote_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME aiverse_remote_tests COMMAND aiverse_remote_tests)
     add_executable(aiverse_tests tests/tests.cpp)
+    if(MSVC)   # tests.cpp holds thousands of tests: more sections than a default COFF object allows
+        target_compile_options(aiverse_tests PRIVATE /bigobj)
+    endif()
     target_link_libraries(aiverse_tests PRIVATE aiverse_game aiverse_i18n aiverse_pack_writer aiverse_models)
     target_link_libraries(aiverse_tests PRIVATE aiverse_postfx_data)   # postfx agent
     target_link_libraries(aiverse_tests PRIVATE aiverse_game aiverse_game_audio aiverse_audiopack)

@@ -245,6 +245,13 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      # Current ad SDKs (ironSource 9.5) are built with Swift 6.2 and need Xcode 26 to link: use the newest
+      # Xcode on the image (the default may be an older one)
+      - name: Select the newest Xcode
+        run: |
+          x=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$x/Contents/Developer"
+          xcodebuild -version
       - name: Xcode project + CocoaPods + simulator build with all iOS plugins
         run: |
           cmake -S . -B build/host -DCMAKE_BUILD_TYPE=Release -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_EDITOR=OFF -DAIVERSE_BUILD_TESTS=OFF -DAIVERSE_BUILD_HEADLESS=OFF

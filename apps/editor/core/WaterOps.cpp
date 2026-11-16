@@ -259,7 +259,7 @@ void registerWaterOps(Workspace& ws) {
         });
     add("water_delete", "Removes a water body by id and bakes the map again (its cells get back what was there).",
         R"({"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]})",
-        [w, need, read, commit](const Json& p) {
+        [need, read, commit](const Json& p) {
             need();
             Network n = read();
             const int at = n.index(int(p.getInt("id")));
@@ -302,7 +302,7 @@ void registerWaterOps(Workspace& ws) {
         });
     add("water_bake", "Bakes the map's water again (after the roads, the rules or the map changed): cells, auto shores, "
         "and a check that the land is one piece (spline road bridges join parts).",
-        "{}", [w, need, read, commit](const Json&) {
+        "{}", [need, read, commit](const Json&) {
             need();
             return commit(read(), "Вода: пересчитать");
         });
