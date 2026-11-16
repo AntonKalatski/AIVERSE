@@ -15,7 +15,7 @@ Done criteria come from the project mechanics plan; all of them apply.
 6. AI: the bot uses the mechanic at least basically (`skills/ai/aiverse-bots-debug` part B).
 7. UI control (UI agent area) and view (models/particles) if the mechanic needs them; visual changes checked on a screenshot.
 8. Docs: section in `docs/game-format.md`, a "Recipes" line, `rules_schema` help.
-9. Proof: a prototype game in `games/` built only through MCP, no code edits.
+9. Proof: a prototype game built only through MCP, no code edits - a separate project outside the engine repo (AGENTS.md section 3: games stay out of the engine repo).
 10. Regression: build without warnings, `aiverse_tests`, CI `determinism`, headless matches of every `templates/` game with unchanged checksums.
 11. Commit to your branch; MAIN merges (`skills/workflow/aiverse-main-merge`).
 

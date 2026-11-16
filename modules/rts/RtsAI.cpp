@@ -43,11 +43,11 @@ void RtsAI::update(Simulation& sim) {
     }
     auto* pi = sim.player(player_);
     if (!pi || !pi->alive || sim.result() != 0 || sim.tick() < next_) return;
+    applyRulesConfig(*m);   // before the interval: map players[i].ai may set thinkTicks (same after a load)
     uint32_t think = cfg_.thinkTicks;
     if (Raid* raid = m->raid(); raid && raid->active())   // a raid hero dodges: it re-steers every few ticks
         if (TopDown* td = m->topDown(); td && td->active() && td->heroOf(sim, player_).valid()) think = std::min<uint32_t>(think, 3);
     next_ = sim.tick() + think + rng_.below(think / 2 + 1);
-    applyRulesConfig(*m);
     auto* gs = sim.world().resource<GameState>();
     if (m->rules().mech.turns && !mechTurnAI(sim, *m)) return;   // agent-mech TB: act only on its own turn
     if (std::find(gs->wavePlayers.begin(), gs->wavePlayers.end(), player_) != gs->wavePlayers.end()) return; // scripted side

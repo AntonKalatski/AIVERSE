@@ -11402,6 +11402,58 @@ TEST(aiverse_scripted_ai_controller) {
     CHECK(!builtin->executedCommands().empty());
 }
 
+TEST(ai_map_player_presets) {   // map players[i].ai: per-slot preset + knobs (skills/ai/aiverse-bots-configure)
+    for (const char* p : {"easy", "normal", "hard", "rush", "defender", "economist", "typo"}) {
+        game::AIConfig c;
+        CHECK(game::applyAIPreset(c, p) == game::isAIPreset(p));
+    }
+    auto rejects = [](const char* j) {
+        try { game::parseAIPlayerRules(Json::parse(j), "map players[0].ai"); } catch (const std::exception& e) { return std::string(e.what()).find("players[0].ai") != std::string::npos; }
+        return false;
+    };
+    CHECK(rejects(R"({"preset":"turtle"})")); CHECK(rejects(R"({"speed":3})")); CHECK(rejects(R"({"firstAttackArmy":0})"));
+    CHECK(rejects(R"({"thinkTicks":0})")); CHECK(rejects(R"({"aggression":9})")); CHECK(rejects("3"));
+    auto pr = game::parseAIPlayerRules(Json::parse(R"({"preset":"rush","towers":2,"thinkTicks":7,"aggression":1.5})"), "x");
+    CHECK(pr.set && pr.preset == "rush" && pr.knobs.towers == 2 && pr.thinkTicks == 7 && pr.aggressionMilli == 1500);
+    CHECK(!game::parseAIPlayerRules(Json::parse("true"), "x").set);   // importer marker "ai": true stays valid
+    // a rush slot plays differently from the default, deterministically, and continues identically after a load
+    auto map = Json::parseFile(kSkirmish + "/maps/valley.json");
+    auto rules = Json::parseFile(kSkirmish + "/rules.json");
+    auto rushMap = map;
+    rushMap.find("players")->at(0).set("ai", Json::parse(R"({"preset":"rush","firstAttackArmy":3})"));
+    auto play = [&](const Json& m, uint32_t ticks, std::string* save = nullptr, std::vector<std::string>* bots = nullptr) {
+        SimConfig cfg; cfg.seed = 3;
+        auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
+        sim->setup(rules, m);
+        std::vector<game::RtsAI> ai;
+        for (auto& p : sim->players()) ai.emplace_back(p.slot, 3);
+        for (uint32_t i = 0; i < ticks; ++i) { for (auto& b : ai) b.update(*sim); sim->step(); }
+        if (save) { *save = sim->serialize(); for (auto& b : ai) bots->push_back(b.saveState()); }
+        return std::make_pair(std::move(sim), std::move(ai));
+    };
+    auto [base, baseAi] = play(map, 2400);
+    auto [rush, rushAi] = play(rushMap, 2400);
+    auto [rush2, rush2Ai] = play(rushMap, 2400);
+    CHECK(mod(*rush).aiPlayer(1) && mod(*rush).aiPlayer(1)->preset == "rush" && !mod(*base).aiPlayer(1)->set);
+    CHECK(rush->checksum() == rush2->checksum());
+    CHECK(rush->checksum() != base->checksum());
+    std::string bytes; std::vector<std::string> botStates;
+    auto [cont, contAi] = play(rushMap, 1200, &bytes, &botStates);
+    SimConfig cfg; cfg.seed = 3;
+    Simulation loaded(cfg, std::make_unique<game::RtsModule>());
+    loaded.setup(rules, rushMap);
+    std::string err;
+    CHECK(loaded.deserialize(bytes, &err));
+    std::vector<game::RtsAI> loadedAi;
+    for (size_t i = 0; i < contAi.size(); ++i) { loadedAi.emplace_back(contAi[i].player(), 3); CHECK(loadedAi.back().loadState(botStates[i])); }
+    for (int i = 0; i < 1200; ++i) {
+        for (auto& b : contAi) b.update(*cont); cont->step();
+        for (auto& b : loadedAi) b.update(loaded); loaded.step();
+    }
+    CHECK(loaded.checksum() == cont->checksum());
+    CHECK(cont->checksum() == rush->checksum());
+}
+
 TEST(script_hud_resource_progress) {
     auto sim=makeSimJson(R"({"types":{"unit":{"hp":10}}})",R"({"size":[4,4],"players":[{},{}]})",3);
     const auto manifest=Json::parse(R"({"scriptHud":[{"items":[{"progressVar":"gold_{player}","progressMaxVar":"price_{player}"},{"progressVar":"fraction_{player}"}]}]})");
@@ -13673,6 +13725,29 @@ TEST(planet_detail_grid_seams_and_height) {
     aiverse::game::loadPlanetDetailFiles(w, map, [](const std::string& f, std::string& out) { out.assign(size_t(6 * 9 * 9 * 2), '\0'); return f == "maps/x.r16"; }, &warn);
     CHECK(w.bodies[0].detail.size() == size_t(6 * 9 * 9) && warn.empty());
 }
+
+#ifdef AIVERSE_TESTS_EDITOR_CORE
+#include "apps/editor/core/Workspace.h"
+TEST(editor_player_set_ai_slot) {   // MCP player_set {ai}: validated like the loader, kept in the map, {} clears
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / ("aiverse_ai_slot_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    fs::create_directories(root);
+    fs::copy(kSkirmish, root / "skirmish", fs::copy_options::recursive);
+    editor::Workspace ws;
+    ws.engineDir = AIVERSE_SOURCE_DIR;
+    std::string err;
+    CHECK(ws.openGame((root / "skirmish").string(), &err));
+    CHECK(!ws.call("map_open", Json::parse(R"({"file": "maps/valley.json"})")).has("error"));
+    CHECK(!ws.call("player_set", Json::parse(R"({"player": 2, "ai": {"preset": "rush", "towers": 0}})")).has("error"));
+    CHECK(ws.map.toJson()["players"][1]["ai"].getStr("preset") == "rush");
+    CHECK(ws.call("player_set", Json::parse(R"({"player": 2, "ai": {"preset": "turtle"}})")).has("error"));
+    CHECK(ws.map.toJson()["players"][1]["ai"].getStr("preset") == "rush");
+    CHECK(!ws.call("map_validate", Json::object()).has("error"));
+    CHECK(!ws.call("player_set", Json::parse(R"({"player": 2, "ai": {}})")).has("error"));
+    CHECK(!ws.map.toJson()["players"][1].has("ai"));
+    fs::remove_all(root);
+}
+#endif
 
 #ifdef AIVERSE_TESTS_EDITOR_CORE
 #include "apps/editor/core/PlanetOps.h"

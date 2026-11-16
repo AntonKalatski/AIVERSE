@@ -46,7 +46,9 @@ Use `RtsBot(player, seed, settings)` with a project-owned JSON object:
 
 Presets: `easy`, `normal`, `hard`, `rush`, `defender`, `economist`. Overrides include worker count,
 wave sizes/growth, aggression, towers and scouts. Unknown keys and out-of-range values fail loading.
-Existing `rules.ai` overrides still win when RtsAI applies its data configuration.
+Existing `rules.ai` overrides still win when RtsAI applies its data configuration. The preset table is the engine's
+(`game::applyAIPreset`, `RtsAI.h`); games can also pick a preset per slot in data with map `players[i].ai`
+(`docs/game-format.md` "Maps"), which RtsAI applies after `rules.ai`.
 The adapter reuses the engine's economy, construction, production, research, combat, garrison,
 terrain and planet tactics instead of implementing another strategy AI. Not every mechanic exists
 in every game's data. Scripted AI remains the owner when the rules request it.

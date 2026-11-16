@@ -1208,9 +1208,11 @@ void Workspace::registerCoreOps() {
             r.set("summary", str(added ? "Дорога добавлена" : "Дорога удалена"));
             return r;
         });
-    add("player_set", "Change player N (1-based): name, team, faction, start [x,z] (faction start units spawn there), waves (scripted side), resources {id: amount}.",
+    add("player_set", "Change player N (1-based): name, team, faction, start [x,z] (faction start units spawn there), waves (scripted side), resources {id: amount}, "
+        "ai {preset: easy|normal|hard|rush|defender|economist, thinkTicks, aggression, any rules ai knob} for this slot's computer player ({} clears it).",
         R"({"properties": {"player": {"type": "integer"}, "name": {"type": "string"}, "team": {"type": "integer"}, "faction": {"type": "string"},
-            "start": {"type": "array", "items": {"type": "number"}}, "waves": {"type": "boolean"}, "resources": {"type": "object"}}, "required": ["player"]})",
+            "start": {"type": "array", "items": {"type": "number"}}, "waves": {"type": "boolean"}, "resources": {"type": "object"},
+            "ai": {"type": "object"}}, "required": ["player"]})",
         [this](const Json& p) {
             int n = pi(p, "player");
             map.beginEdit();
@@ -1223,6 +1225,10 @@ void Workspace::registerCoreOps() {
             if (p.has("faction")) pl.faction = ps(p, "faction");
             if (p.has("start")) { pl.hasStart = true; pl.startX = float(p["start"][0].toDouble()); pl.startZ = float(p["start"][1].toDouble()); }
             if (p.has("waves")) pl.waves = p.getBool("waves");
+            if (p.has("ai")) {   // validated like the loader does (map players[i].ai)
+                game::parseAIPlayerRules(p["ai"], "players[" + std::to_string(n - 1) + "].ai");
+                if (p["ai"].isObject() && p["ai"].members().empty()) pl.extra.erase("ai"); else pl.extra.set("ai", p["ai"]);
+            }
             for (auto& [k, v] : p["resources"].members()) {
                 bool found = false;
                 for (auto& [rid, val] : pl.resources) if (rid == k) { val = float(v.toDouble()); found = true; }

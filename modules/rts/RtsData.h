@@ -426,6 +426,20 @@ struct AIRules {
     int terrain = -1;                         // 0 / 1
 };
 
+// Per-slot computer player (map players[i].ai): a preset (RtsAI.h applyAIPreset) plus the rules "ai" knobs and
+// thinkTicks / aggression. Applied after rules "ai": defaults -> rules ai -> slot preset -> slot keys.
+struct AIPlayerRules {
+    bool set = false;
+    std::string preset;                       // easy normal hard rush defender economist ("" = none)
+    AIRules knobs;
+    int thinkTicks = -1;                      // 1..3600
+    int aggressionMilli = -1;                 // 100..4000 (1000 = 1.0)
+};
+// Parses rules "ai" knobs into `out` (errors name `where`.<key>); used by the rules block and map players[i].ai.
+void parseAIKnobs(const class Json& a, AIRules& out, const std::string& where);
+AIPlayerRules parseAIPlayerRules(const class Json& j, const std::string& where);
+bool isAIPreset(const std::string& name);   // names accepted by applyAIPreset (RtsAI.h)
+
 // Terrain model (rules "terrain" block; visual keys there belong to the view and are ignored here).
 //   levels (default): cliff levels + ramps, exactly the classic behaviour; flat: levels ignored (all 0);
 //   heightfield: map corners drive surface height, slope passability, uphill speed, line of sight.

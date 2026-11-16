@@ -2197,6 +2197,32 @@
       ]
     },
     {
+      "id": "aiverse-skill-authoring",
+      "package": null,
+      "path": "skills/workflow/aiverse-skill-authoring/SKILL.md",
+      "domain": "workflow",
+      "summary": "Add or change a repository skill with its code, registration, catalog and audit",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "tools/skills/audit.py",
+      "keywords": [
+        "skill",
+        "skills",
+        "author",
+        "add",
+        "catalog",
+        "audit",
+        "скилл",
+        "скиллы",
+        "добав",
+        "каталог",
+        "аудит"
+      ]
+    },
+    {
       "id": "aiverse-special-modes",
       "package": null,
       "path": "skills/gameplay/aiverse-special-modes/SKILL.md",

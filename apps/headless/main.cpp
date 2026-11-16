@@ -83,6 +83,7 @@ struct Args {
     uint32_t restoreAt = 0, restoreTicks = 100; // bounded forward interval, then both restoration paths
     int benchPaths = 0;   // >0: time that many path queries (HPA* vs plain A*) and exit
     int benchBody = -1;
+    std::string checksumLog; // --checksum-log FILE: "tick checksum" every checksum interval (tools/determinism/diff.py)
     std::string tickTimes;  // --tick-times FILE: wall time of every simulation step, "tick microseconds" per line
     bool profile = false;   // --profile: per-system wall time at the end of the match
     int benchGroup = 0;   // >0: spawn that many units of player 1, order them to one far goal, time movement (--bench-flow on|off)
@@ -483,6 +484,12 @@ static int play(const Args& a) {
     if (res > 0) for (auto& p : sim.players()) if (p.team == res && p.alive) { winner = p.name; break; }
     std::printf("Result: winner=%s  %.0f game-s  commands=%zu  sim=%.0f ms (%.0fx realtime)\n", winner.c_str(),
                 double(sim.tick()) / sim.tickRate(), rep.commands.size(), ms, double(sim.tick()) / sim.tickRate() * 1000.0 / (ms > 0 ? ms : 1));
+    {   // per-slot activity (tools/bots/sweep.py): a bot slot with commands=0 never played
+        std::vector<size_t> perSlot(sim.players().size() + 1, 0);
+        for (auto& c : rep.commands) if (c.player < perSlot.size()) ++perSlot[c.player];
+        for (auto& p : sim.players())
+            std::printf("Player: slot=%d name=%s team=%d alive=%d commands=%zu\n", int(p.slot), p.name.c_str(), int(p.team), int(p.alive), perSlot[p.slot]);
+    }
     std::printf("Events: spawned=%d died=%d attacks=%d trained=%d built=%d gathered=%d captured=%d\n",
                 ev[game::kEvSpawned], ev[game::kEvDied], ev[game::kEvAttack], ev[game::kEvTrainDone], ev[game::kEvBuildDone],
                 ev[game::kEvGathered], ev[game::kEvCaptured]);
@@ -509,6 +516,13 @@ static int play(const Args& a) {
     if (!a.tickTimes.empty()) {
         std::ofstream f(a.tickTimes);
         for (auto& [t, us] : stepTimes) f << t << ' ' << us << '\n';
+    }
+    if (!a.checksumLog.empty()) {
+        std::ofstream f(a.checksumLog);
+        f << "# tickRate " << sim.tickRate() << '\n';
+        char line[48];
+        for (auto& [t, h] : rep.checksums) { std::snprintf(line, sizeof line, "%u %016llx\n", t, (unsigned long long)h); f << line; }
+        std::snprintf(line, sizeof line, "%u %016llx\n", rep.endTick, (unsigned long long)rep.finalChecksum); f << line;
     }
     std::printf("Checksum: %016llx\n", (unsigned long long)rep.finalChecksum);
     if (!a.record.empty()) {
@@ -566,6 +580,7 @@ int main(int argc, char** argv) {
         else if (k == "--quiet") a.quiet = true;
         else if (k == "--profile") a.profile = true;
         else if (k == "--tick-times") a.tickTimes = next();
+        else if (k == "--checksum-log") a.checksumLog = next();
         else if (k == "--dump") a.dump = true;
         else if (k == "--bench-paths") a.benchPaths = std::stoi(next());
         else if (k == "--bench-body") a.benchBody = std::stoi(next());
@@ -583,7 +598,7 @@ int main(int argc, char** argv) {
         else if (k == "--symmetry") a.symmetry = next();
         else if (k == "--gen-params") a.genParams = next();
         else if (k == "--gen-out") a.genOut = next();
-        else { std::printf("usage: aiverse_headless --project DIR [--map FILE] [--seed N] [--record F] [--save F --save-at S] [--load F] [--tick-times F] [--verify-restore-at S --verify-restore-ticks N] [--generate PRESET [--players N] [--symmetry S] [--gen-params JSON] [--gen-out F]] | --replay F\n"); return 2; }
+        else { std::printf("usage: aiverse_headless --project DIR [--map FILE] [--seed N] [--record F] [--save F --save-at S] [--load F] [--tick-times F] [--checksum-log F] [--verify-restore-at S --verify-restore-ticks N] [--generate PRESET [--players N] [--symmetry S] [--gen-params JSON] [--gen-out F]] | --replay F\n"); return 2; }
     }
     if (a.verifyRestore && (!a.replay.empty() || a.benchPaths>0 || a.benchGroup>0 || a.maxSeconds==0)) { std::fprintf(stderr,"restore verification requires a normal match\n");return 2; }
     try {

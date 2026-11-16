@@ -299,6 +299,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
     // players
     const size_t np = sim.players().size();
     gs.players.assign(np + 1, {});
+    aiPlayers_.assign(np + 1, {});   // map players[i].ai (immutable; not simulation state)
     for (size_t p = 0; p <= np; ++p) {
         auto& e = gs.players[p];
         const size_t nr = rules_.resources.size();
@@ -318,6 +319,7 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
             }
             e.faction = pj.getStr("faction", rules_.factions.empty() ? "" : rules_.factions[0].id);
             if (pj.getBool("waves", false)) gs.wavePlayers.push_back(uint8_t(p));
+            if (pj.has("ai")) aiPlayers_[p] = parseAIPlayerRules(pj["ai"], "map players[" + std::to_string(p - 1) + "].ai");
         }
         recomputeMods(sim, uint8_t(p));
     }

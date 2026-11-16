@@ -603,6 +603,8 @@ public:
     Fixed modesLevelStat(Simulation& sim, uint8_t player, uint16_t type, Stat s, Fixed& mul) const;
 
     const Rules& rules() const { return rules_; }
+    // map players[i].ai of slot p (preset / knobs for RtsAI), nullptr when out of range
+    const AIPlayerRules* aiPlayer(uint8_t p) const { return p < aiPlayers_.size() ? &aiPlayers_[p] : nullptr; }
     const TriggerSet& triggers() const { return triggers_; }
     ScriptEngine* scripts() const { return script_.get(); }   // the Lua VM (standard library + game scripts)
     GridFields* gridFields() const { return fields_.get(); }  // grid fields (RtsGridFields.h); null before setup
@@ -1035,6 +1037,7 @@ private:
     void grantKill(Simulation& sim, Entity victim, uint8_t killer);
 
     Rules rules_;
+    std::vector<AIPlayerRules> aiPlayers_;   // by slot, from map players[i].ai (setup)
     TriggerSet triggers_;
     struct SlotClaim { uint64_t target = 0; int slot = 0; uint64_t claimer = 0; };
     std::vector<SlotClaim> slotClaims_;   // rebuilt every tick from Combat slots (derived, not state)

@@ -345,6 +345,14 @@ Map players choose a faction and a `start` point; start objects spawn there.
 
 ## Maps
 
+Per-slot computer player: `players[i].ai` = `{"preset": "rush", "firstAttackArmy": 3, ...}` - a preset (`easy`,
+`normal`, `hard`, `rush`, `defender`, `economist`), then any rules `ai` knob (`workersPerBase`, `firstAttackArmy`,
+`armyGrowth`, `maxAttackArmy`, `towers`, `scouts`, `invasionSize`, `climbWeight`, `exposureWeight`,
+`escalateSeconds`, `terrain`) plus `thinkTicks` (1..3600, reaction time) and `aggression` (0.1..4). Order: bot
+defaults, rules `ai`, the slot's preset, the slot's keys. `"ai": true` (a computer slot marker written by importers) means no overrides. Unknown keys and out-of-range
+values fail loading with `map players[i].ai...`. Only decisions change, never stats; maps without it play exactly as before. MCP:
+`player_set {player, ai}`.
+
 ```json
 {
   "name": "River Valley", "size": [64, 48],
@@ -2726,6 +2734,8 @@ knobs in rules `ai` (above). What it does with the terrain:
 - **Planets**: an orbit fleet (`invasionSize` + 2 per invasion) transfers together to the body with enemy
   structures and fights there until the body is clear, then the next body; more orbital yards when the enemy can be
   reached only through orbit; towers that hit the orbit when attacks come from there.
+- **Per-slot styles**: map `players[i].ai` (see "Maps") gives one slot a preset and its own knobs; applied before
+  the first think (and again identically after a load), so `thinkTicks` from the slot is used from the start.
 - **Save states**: `RtsAI::saveState()` / `loadState()` (headless `--save F` writes `F.ai` next to the sim state,
   `--load F` reads it): a restored bot plays on exactly like the saved one.
 

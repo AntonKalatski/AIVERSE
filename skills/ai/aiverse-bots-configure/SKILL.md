@@ -34,13 +34,15 @@ All optional; `RtsData.cpp` range-checks them and fails loading with `ai.<key>`.
 
 Edit with `rules_merge {"ai": {...}}`, read the `rules_lint` part of the answer. Never invent keys (`rules_schema` with `part: "keys"`).
 
-## 2. Play styles
+## 2. Per-slot styles and difficulty (map `players[i].ai`)
 
-`rules.ai` is one block per game: JSON cannot give slots different personalities. A style is a knob set (starting points, verify with `skills/ai/aiverse-bots-tune`):
-- rush: `firstAttackArmy` 3-5, `armyGrowth` 2, `workersPerBase` 8-10, `towers` 0;
-- defender: `towers` 3-4, `firstAttackArmy` 12+, larger `escalateSeconds`;
-- economist: `workersPerBase` 18-24, `firstAttackArmy` 12, `maxAttackArmy` 30+.
-Per-slot styles/difficulties exist only in a native host (`RtsBot` presets `easy normal hard rush defender economist`, `docs/bots.md`); `rules.ai` still overrides them. Difficulty changes decisions only, never stats.
+Engine code: `parseAIPlayerRules` (`modules/rts/RtsData.cpp`), `applyAIPreset` and the slot step of `RtsAI::applyRulesConfig` (`modules/rts/RtsAITactics.cpp`); test `ai_map_player_presets` in `tests/tests.cpp`.
+- `player_set {player: 2, ai: {"preset": "rush", "firstAttackArmy": 3}}` (or edit the map JSON). `ai: {}` clears it.
+- Presets: `easy`, `normal`, `hard`, `rush`, `defender`, `economist` - the same table as the native `RtsBot` (`docs/bots.md`).
+- Keys after the preset: every rules `ai` knob above, `thinkTicks` (1..3600, reaction time), `aggression` (0.1..4).
+- Order: bot defaults -> rules `ai` -> slot preset -> slot keys. Errors name `map players[i].ai.<key>`.
+- Difficulty changes decisions only, never damage, health, resources or fire rate.
+- Prove the styles differ: `match_run` / `tools/bots/sweep.py` on the same seeds with and without the slot block - first attack time, match length, worker count.
 
 ## 3. Custom director (`controller: scripted`)
 
@@ -59,4 +61,4 @@ Per-slot styles/difficulties exist only in a native host (`RtsBot` presets `easy
 
 `rules_lint` clean, `map_validate` clean; `match_run` on every map: commands issued, winner before the limit (or an honest draw by limit); same seed -> same checksum; save/load (`--save`/`--load`, `.ai` file) plays on identically. Report knobs, seeds, match count, what is unverified.
 
-Runtime library: none. Workflow over the engine MCP and existing `RtsAI`.
+Code: per-slot presets in `modules/rts` (map `players[i].ai`), editor `player_set {ai}`. No separate library target.

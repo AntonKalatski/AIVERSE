@@ -25,7 +25,7 @@ A mechanic is done only when the AI can use it at least basically.
 2. Code in its own file next to `modules/rts/RtsMechAI.cpp` (or `RtsAI<Mechanic>.cpp`); only a hook in `RtsAI.cpp`. Patterns: `RtsAI.h`, `RtsAITactics.cpp`, `RtsAIFidelity.cpp`.
 3. Ordinary commands via `sim.submit`; integer/Fixed; the bot's own RNG; new state goes into `RtsAI::saveState` with a version bump and old saves still load.
 4. Active only when the mechanic is in the game's data - old games keep their checksums.
-5. Proof: `scenario_run` with bots and pass/fail (mechanic used within N s), a test in `tests/tests.cpp`, a prototype game built through MCP only.
+5. Proof: `scenario_run` with bots and pass/fail (mechanic used within N s), a test in `tests/tests.cpp`, a prototype game built through MCP only (its own project, outside the engine repo).
 6. Regression: `aiverse_tests`, headless matches of all `templates/` with unchanged checksums, mid-match save/load.
 7. A line in `docs/game-format.md` "Computer player".
 

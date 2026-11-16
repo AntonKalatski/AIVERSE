@@ -8,6 +8,55 @@
 
 namespace aiverse::game {
 
+void parseAIKnobs(const Json& a, AIRules& out, const std::string& where) {
+    auto num = [&](const char* k, int& dst, int lo, int hi) {
+        if (!a.has(k)) return;
+        const int64_t v = a.getInt(k, -1);
+        if (v < lo || v > hi) throw std::runtime_error(where + "." + k + ": expected " + std::to_string(lo) + ".." + std::to_string(hi));
+        dst = int(v);
+    };
+    num("workersPerBase", out.workersPerBase, 0, 200); num("firstAttackArmy", out.firstAttackArmy, 1, 500);
+    num("armyGrowth", out.armyGrowth, 0, 100); num("maxAttackArmy", out.maxAttackArmy, 1, 1000);
+    num("towers", out.towers, 0, 16); num("scouts", out.scouts, 0, 8); num("invasionSize", out.invasionSize, 1, 200);
+    num("climbWeight", out.climbWeight, 0, 1000); num("exposureWeight", out.exposureWeight, 0, 1000);
+    num("escalateSeconds", out.escalateSeconds, 30, 36000);
+    if (a.has("terrain")) out.terrain = a.getBool("terrain", true) ? 1 : 0;
+}
+
+bool isAIPreset(const std::string& name) {
+    for (const char* p : {"easy", "normal", "hard", "rush", "defender", "economist"}) if (name == p) return true;
+    return false;
+}
+
+AIPlayerRules parseAIPlayerRules(const Json& j, const std::string& where) {
+    if (j.type() == Json::Type::Bool) return {};   // "ai": true marks a computer slot (importers): no overrides
+    if (!j.isObject()) throw std::runtime_error(where + ": expected an object (or true)");
+    static const char* const kKeys[] = {"preset", "thinkTicks", "aggression", "workersPerBase", "firstAttackArmy", "armyGrowth",
+        "maxAttackArmy", "towers", "scouts", "invasionSize", "climbWeight", "exposureWeight", "escalateSeconds", "terrain"};
+    for (auto& [k, v] : j.members()) {
+        (void)v;
+        if (std::find_if(std::begin(kKeys), std::end(kKeys), [&](const char* x) { return k == x; }) == std::end(kKeys))
+            throw std::runtime_error(where + ": unknown key '" + k + "' (preset, thinkTicks, aggression or a rules \"ai\" knob)");
+    }
+    AIPlayerRules r;
+    r.set = true;
+    r.preset = j.getStr("preset", "");
+    if (!r.preset.empty() && !isAIPreset(r.preset))
+        throw std::runtime_error(where + ".preset: unknown preset '" + r.preset + "' (easy, normal, hard, rush, defender, economist)");
+    parseAIKnobs(j, r.knobs, where);
+    if (j.has("thinkTicks")) {
+        const int64_t v = j.getInt("thinkTicks", -1);
+        if (v < 1 || v > 3600) throw std::runtime_error(where + ".thinkTicks: expected 1..3600");
+        r.thinkTicks = int(v);
+    }
+    if (j.has("aggression")) {
+        const int64_t v = j["aggression"].fx().raw * 1000 / Fixed::fromInt(1).raw;
+        if (v < 100 || v > 4000) throw std::runtime_error(where + ".aggression: expected 0.1..4");
+        r.aggressionMilli = int(v);
+    }
+    return r;
+}
+
 namespace {
 const Fixed kFxOne = Fixed::fromInt(1);
 [[noreturn]] void fail(const std::string& where, const std::string& what) { throw std::runtime_error(where + ": " + what); }
@@ -171,20 +220,7 @@ Rules loadRules(const Json& j) {
         r.heights.damagePerLevel = h.getFx("damagePerLevel");
     }
 
-    if (const Json& a = j["ai"]; a.isObject()) {   // computer player knobs (agent-ai-terrain)
-        auto num = [&](const char* k, int& out, int lo, int hi) {
-            if (!a.has(k)) return;
-            const int64_t v = a.getInt(k, -1);
-            if (v < lo || v > hi) throw std::runtime_error(std::string("ai.") + k + ": expected " + std::to_string(lo) + ".." + std::to_string(hi));
-            out = int(v);
-        };
-        num("workersPerBase", r.ai.workersPerBase, 0, 200); num("firstAttackArmy", r.ai.firstAttackArmy, 1, 500);
-        num("armyGrowth", r.ai.armyGrowth, 0, 100); num("maxAttackArmy", r.ai.maxAttackArmy, 1, 1000);
-        num("towers", r.ai.towers, 0, 16); num("scouts", r.ai.scouts, 0, 8); num("invasionSize", r.ai.invasionSize, 1, 200);
-        num("climbWeight", r.ai.climbWeight, 0, 1000); num("exposureWeight", r.ai.exposureWeight, 0, 1000);
-        num("escalateSeconds", r.ai.escalateSeconds, 30, 36000);
-        if (a.has("terrain")) r.ai.terrain = a.getBool("terrain", true) ? 1 : 0;
-    }
+    if (const Json& a = j["ai"]; a.isObject()) parseAIKnobs(a, r.ai, "ai");   // computer player knobs (agent-ai-terrain)
     if (const Json& tr = j["terrain"]; tr.isObject()) { // other keys of the block are visual (view)
         std::string model = tr.getStr("model", "levels");
         if (model == "levels") r.terrain.model = TerrainModel::Levels;

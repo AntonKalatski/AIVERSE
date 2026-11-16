@@ -5,12 +5,7 @@ namespace aiverse::lib::bots {
 inline game::AIConfig rtsConfig(const Json& j) {
     keys(j,{"preset","thinkTicks","workersPerBase","firstAttackArmy","armyGrowth","maxAttackArmy","aggression","towers","scouts"});
     game::AIConfig c;auto p=preset(j);
-    if(p=="easy"){c.thinkTicks=30;c.workersPerBase=10;c.firstAttackArmy=12;c.aggression=Fixed::fromRatio(3,4);}
-    else if(p=="hard"){c.thinkTicks=5;c.workersPerBase=18;c.firstAttackArmy=6;c.maxAttackArmy=24;}
-    else if(p=="rush"){c.thinkTicks=6;c.firstAttackArmy=4;c.armyGrowth=2;c.aggression=Fixed::fromRatio(3,2);}
-    else if(p=="defender"){c.firstAttackArmy=14;c.maxAttackArmy=24;c.towers=3;c.aggression=Fixed::fromRatio(3,4);}
-    else if(p=="economist"){c.workersPerBase=22;c.firstAttackArmy=16;c.maxAttackArmy=28;}
-    else if(p!="normal")throw JsonError("bots.preset: unknown RTS preset '"+p+"'");
+    if(!game::applyAIPreset(c,p))throw JsonError("bots.preset: unknown RTS preset '"+p+"'");   // same table as map players[i].ai
     c.thinkTicks=uint32_t(integer(j,"thinkTicks",c.thinkTicks,1,3600));
     c.workersPerBase=int(integer(j,"workersPerBase",c.workersPerBase,1,100));
     c.firstAttackArmy=int(integer(j,"firstAttackArmy",c.firstAttackArmy,1,1000));

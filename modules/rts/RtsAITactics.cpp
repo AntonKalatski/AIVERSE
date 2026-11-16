@@ -41,6 +41,16 @@ Fixed bestRange(const UnitType& t) {
 }
 } // namespace
 
+bool applyAIPreset(AIConfig& c, const std::string& p) {
+    if (p == "easy") { c.thinkTicks = 30; c.workersPerBase = 10; c.firstAttackArmy = 12; c.aggression = Fixed::fromRatio(3, 4); }
+    else if (p == "hard") { c.thinkTicks = 5; c.workersPerBase = 18; c.firstAttackArmy = 6; c.maxAttackArmy = 24; }
+    else if (p == "rush") { c.thinkTicks = 6; c.firstAttackArmy = 4; c.armyGrowth = 2; c.aggression = Fixed::fromRatio(3, 2); }
+    else if (p == "defender") { c.firstAttackArmy = 14; c.maxAttackArmy = 24; c.towers = 3; c.aggression = Fixed::fromRatio(3, 4); }
+    else if (p == "economist") { c.workersPerBase = 22; c.firstAttackArmy = 16; c.maxAttackArmy = 28; }
+    else if (p != "normal") return false;
+    return true;
+}
+
 void RtsAI::applyRulesConfig(RtsModule& m) {
     if (configured_) return;
     configured_ = true;
@@ -67,6 +77,25 @@ void RtsAI::applyRulesConfig(RtsModule& m) {
     if (a.exposureWeight >= 0) cfg_.exposureWeight = a.exposureWeight;
     if (a.escalateSeconds >= 0) cfg_.escalateSeconds = uint32_t(a.escalateSeconds);
     if (a.terrain >= 0) cfg_.terrain = a.terrain != 0;
+    // map players[i].ai (immutable map data, re-applied identically after a load): preset, then the slot's own keys
+    if (const AIPlayerRules* s = m.aiPlayer(player_); s && s->set) {
+        if (!s->preset.empty()) applyAIPreset(cfg_, s->preset);
+        const AIRules& k = s->knobs;
+        if (k.workersPerBase >= 0) cfg_.workersPerBase = k.workersPerBase;
+        if (k.firstAttackArmy >= 0) cfg_.firstAttackArmy = k.firstAttackArmy;
+        if (k.armyGrowth >= 0) cfg_.armyGrowth = k.armyGrowth;
+        if (k.maxAttackArmy >= 0) cfg_.maxAttackArmy = k.maxAttackArmy;
+        if (k.towers >= 0) cfg_.towers = k.towers;
+        if (k.scouts >= 0) cfg_.scouts = k.scouts;
+        if (k.invasionSize >= 0) cfg_.invasionSize = k.invasionSize;
+        if (k.climbWeight >= 0) cfg_.climbWeight = k.climbWeight;
+        if (k.exposureWeight >= 0) cfg_.exposureWeight = k.exposureWeight;
+        if (k.escalateSeconds >= 0) cfg_.escalateSeconds = uint32_t(k.escalateSeconds);
+        if (k.terrain >= 0) cfg_.terrain = k.terrain != 0;
+        if (s->thinkTicks > 0) cfg_.thinkTicks = uint32_t(s->thinkTicks);
+        if (s->aggressionMilli > 0) cfg_.aggression = Fixed::fromRatio(s->aggressionMilli, 1000);
+        cfg_.maxAttackArmy = std::max(cfg_.maxAttackArmy, cfg_.firstAttackArmy);
+    }
 }
 
 void RtsAI::ensureTerrain(Simulation& sim, RtsModule& m) {

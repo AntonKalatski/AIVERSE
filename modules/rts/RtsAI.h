@@ -28,6 +28,9 @@ struct AIConfig {
     uint32_t escalateSeconds = 300; // no enemy structure destroyed for this long: escalate (bigger waves, siege, economy targets)
     int invasionSize = 6;         // planets: orbit units gathered before an invasion of another body
 };
+// Bot presets (map players[i].ai.preset, aiverselib bots-rts settings): changes only the fields the preset names.
+// False for an unknown name (isAIPreset in RtsData.h lists the same names).
+bool applyAIPreset(AIConfig& c, const std::string& name);
 struct AITerrain;
 class BwAI;
 // Copyable owner of a Bunker Wars controller (rules ai.controller "bw", RtsBwAI.h): copies of a bot diverge.
