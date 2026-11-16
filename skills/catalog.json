@@ -2103,7 +2103,16 @@
         "коллайдер",
         "столкнов",
         "шарнир",
-        "датчик"
+        "датчик",
+        "character",
+        "controller",
+        "kinematic",
+        "capsule",
+        "prediction",
+        "platform",
+        "push",
+        "персонаж",
+        "предсказание"
       ]
     },
     {

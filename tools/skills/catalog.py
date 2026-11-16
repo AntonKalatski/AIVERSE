@@ -27,7 +27,7 @@ ALIASES = {
  'aiverse-derived-keys':'cache keys trigger variables lookup performance кэш ключ переменн поиск производительн',
  'aiverse-city-traffic':'traffic cars lanes signals lights pedestrians bus police ambulance fire tow gangs population трафик машин полос светофор пешеход автобус полици скор пожар эвакуатор банд жител',
  'aiverse-rules-files':'rules include split rules_io правила разбить include',
- 'aiverse-physics':'box3d physics rigid collider collision hinge weld sensor raycast физик коллайдер столкнов шарнир датчик',
+ 'aiverse-physics':'box3d physics rigid collider collision hinge weld sensor raycast физик коллайдер столкнов шарнир датчик character controller kinematic capsule prediction platform push персонаж предсказание',
  'meta-economy':'shop store offer currency wallet магазин оффер валют кошелек покупк',
  'meta-social':'leaderboard ranking chat лидeрборд лидерборд рейтинг таблица чат',
  'meta-progression':'daily energy battlepass achievement ежеднев энерг достижен боевой пропуск',
