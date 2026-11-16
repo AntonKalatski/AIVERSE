@@ -284,10 +284,16 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         EntityAnim& st = stateFor(key, o);
         st.last = o;
         if (!o.visible) {
-            if (o.blip) {   // radar contact: a pulsing dot where the unit is, no model (its type is unknown to the viewer)
+            if (o.blip) {   // radar contact: a filled dot with a ring where the unit is, no model (the viewer doesn't know its type)
                 const float gy = groundAt(grid, o.pos.x, o.pos.z) + 0.06f;
-                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.35f, rgba(255, 70, 50, 230), 12, gy);
-                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.6f, rgba(255, 70, 50, 110), 16, gy);
+                constexpr int kSeg = 12;
+                const float rd = 0.32f;
+                for (int k = 0; k < kSeg; ++k) {
+                    const float a0 = 6.2831853f * float(k) / kSeg, a1 = 6.2831853f * float(k + 1) / kSeg;
+                    r.triangle({o.pos.x, gy, o.pos.z}, {o.pos.x + rd * std::cos(a0), gy, o.pos.z + rd * std::sin(a0)},
+                               {o.pos.x + rd * std::cos(a1), gy, o.pos.z + rd * std::sin(a1)}, rgba(255, 60, 40, 220));
+                }
+                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.6f, rgba(255, 70, 50, 150), 16, gy);
             }
             continue;
         }
