@@ -1423,6 +1423,7 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+add_subdirectory(modules/voxel)
 
 # Opt-in end-to-end reusable library host, excluded from normal builds.
 option(AIVERSE_BUILD_LIBRARY_SHOWCASE "Build native library integration showcase" OFF)

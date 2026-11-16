@@ -4,7 +4,8 @@
 // Keys: name, solid (true), replaceable (false), shape cube|cross|fluid|none, layer opaque|cutout|translucent|none,
 // opacity 0..15 (15; 0 for non-opaque layers), emission 0..15, breakTicks, unbreakable, drop (name), dropsSelf,
 // dropCount, texture (all faces) | textures [6] | {"side","top","bottom"}, fluid 1..15, fluidSpread 0..7,
-// fluidTicks, infiniteSource, falls, growInto (name), growChance 0..4096 (per 4096 random ticks).
+// fluidTicks, infiniteSource, falls, growInto (name), growChance 0..4096 (per 4096 random ticks),
+// color "#rrggbb" | {"side","top","bottom"} (untextured view colour per face), alpha 0..255 (view opacity).
 // Errors: JsonError("blocks[2].opacity: 0..15").
 #include "VoxelTypes.h"
 #include "engine/data/Json.h"
@@ -42,6 +43,14 @@ inline BlockRegistry readBlockRegistry(const Json& root){
             for(auto v:{side,top,bottom})if(v<0||v>65535)throw JsonError(at+".textures: 0..65535");
             d.textures={static_cast<std::uint16_t>(side),static_cast<std::uint16_t>(side),static_cast<std::uint16_t>(bottom),static_cast<std::uint16_t>(top),static_cast<std::uint16_t>(side),static_cast<std::uint16_t>(side)};}
         else{auto v=num("texture",0,0,65535);d.textures.fill(static_cast<std::uint16_t>(v));}
+        auto hex=[&](const Json& v,std::uint32_t def)->std::uint32_t{if(v.isNull())return def;auto t=v.str();
+            if(t.size()!=7||t[0]!='#')throw JsonError(at+".color: \"#rrggbb\"");std::uint32_t c=0;
+            for(std::size_t k=1;k<7;++k){char ch=t[k];int n=ch>='0'&&ch<='9'?ch-'0':ch>='a'&&ch<='f'?ch-'a'+10:ch>='A'&&ch<='F'?ch-'A'+10:-1;if(n<0)throw JsonError(at+".color: \"#rrggbb\"");c=c*16+static_cast<std::uint32_t>(n);}
+            return c;};
+        const auto& col=j["color"];
+        if(col.isObject()){auto side=hex(col["side"],0x808080),top=hex(col["top"],side),bottom=hex(col["bottom"],side);d.colors={side,side,bottom,top,side,side};}
+        else d.colors.fill(hex(col,0x808080));
+        d.alpha=static_cast<std::uint8_t>(num("alpha",d.layer==RenderLayer::Translucent?180:255,0,255));
         if(!out.add(d))throw JsonError(at+".name: duplicate '"+d.name+"' or more than "+std::to_string(kMaxBlockTypes)+" blocks");
     }
     auto resolve=[&](const std::vector<std::pair<std::string,std::string>>& links,bool drop){

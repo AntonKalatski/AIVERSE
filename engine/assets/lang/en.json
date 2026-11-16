@@ -69,6 +69,10 @@
   "fps.editor.noProject": "Choose an FPS template in New Project.",
 
   "fps.status": "Health: {health}   Ammo: {ammo} / {reserve}   Server tick: {tick}",
+  "voxel.connecting": "Connecting to the world...",
+  "voxel.disconnected": "Disconnected from the server",
+  "voxel.dead": "You died - respawning...",
+  "voxel.controls": "Click to play. WASD move, Space jump / swim, Shift sprint, Ctrl sneak, left mouse dig or hit, right mouse place, 1-9 or wheel pick a block, F3 debug, Esc release the mouse.",
   "fps.worldLoading": "Loading world…",
   "fps.controls": "LMB: fire / capture mouse; 1–4: weapon; R: reload; WASD: move; Shift: sprint; Ctrl: crouch; Space: jump; Esc: release.",
   "fps.connecting": "Connecting to authority...",

@@ -7,7 +7,7 @@
 // (or fract() in the shader for an atlas). Safe on a worker thread over a copied neighbourhood (VoxelMeshInput).
 #include "aiverselib/systems/voxel/VoxelWorld.h"
 namespace aiverse::lib::systems {
-struct VoxelVertex{float x=0,y=0,z=0,u=0,v=0;std::uint16_t texture=0;std::int8_t nx=0,ny=0,nz=0;std::uint8_t ao=3,sky=15,block=0;};
+struct VoxelVertex{float x=0,y=0,z=0,u=0,v=0;std::uint16_t texture=0,blockId=0;std::int8_t nx=0,ny=0,nz=0;std::uint8_t ao=3,sky=15,block=0;};
 struct VoxelMeshLayer{std::vector<VoxelVertex> vertices;std::vector<std::uint32_t> indices;std::size_t quads()const{return indices.size()/6;}};
 enum VoxelLayerIndex{kVoxelOpaque=0,kVoxelCutout=1,kVoxelTranslucent=2};
 struct VoxelChunkMesh{ChunkPos chunk;std::uint32_t revision=0;std::array<VoxelMeshLayer,3> layers;bool empty()const{return layers[0].indices.empty()&&layers[1].indices.empty()&&layers[2].indices.empty();}};
@@ -29,8 +29,8 @@ inline VoxelMeshInput voxelMeshInput(const VoxelWorld& w,ChunkPos c){
     return in;
 }
 namespace voxel_mesh_detail{
-struct Face{bool on=false;std::uint16_t texture=0;std::uint8_t layer=0;std::array<std::uint8_t,4> ao{},sky{},block{};
-    bool operator==(const Face& o)const{return on==o.on&&texture==o.texture&&layer==o.layer&&ao==o.ao&&sky==o.sky&&block==o.block;}};
+struct Face{bool on=false;std::uint16_t texture=0,id=0;std::uint8_t layer=0;std::array<std::uint8_t,4> ao{},sky{},block{};
+    bool operator==(const Face& o)const{return on==o.on&&texture==o.texture&&id==o.id&&layer==o.layer&&ao==o.ao&&sky==o.sky&&block==o.block;}};
 struct Corner{float p[3]={0,0,0},uv[2]={0,0};std::uint8_t ao=3,sky=15,block=0;};
 inline int layerOf(RenderLayer l){return l==RenderLayer::Opaque?kVoxelOpaque:l==RenderLayer::Cutout?kVoxelCutout:kVoxelTranslucent;}
 struct Ctx{
@@ -48,10 +48,10 @@ struct Ctx{
 };
 // Emits one quad. Corners are given counter-clockwise for the positive face; `reverse` flips the winding for
 // negative faces. The diagonal is chosen by AO so occlusion gradients do not show a seam.
-inline void emit(VoxelMeshLayer& L,std::array<Corner,4> cs,bool reverse,std::uint16_t tex,const int* n){
+inline void emit(VoxelMeshLayer& L,std::array<Corner,4> cs,bool reverse,std::uint16_t tex,const int* n,std::uint16_t id=0){
     if(reverse)std::reverse(cs.begin(),cs.end());
     auto base=static_cast<std::uint32_t>(L.vertices.size());
-    for(const auto& c:cs){VoxelVertex v;v.x=c.p[0];v.y=c.p[1];v.z=c.p[2];v.u=c.uv[0];v.v=c.uv[1];v.texture=tex;
+    for(const auto& c:cs){VoxelVertex v;v.x=c.p[0];v.y=c.p[1];v.z=c.p[2];v.u=c.uv[0];v.v=c.uv[1];v.texture=tex;v.blockId=id;
         v.nx=static_cast<std::int8_t>(n[0]);v.ny=static_cast<std::int8_t>(n[1]);v.nz=static_cast<std::int8_t>(n[2]);v.ao=c.ao;v.sky=c.sky;v.block=c.block;L.vertices.push_back(v);}
     if(cs[0].ao+cs[2].ao<cs[1].ao+cs[3].ao)L.indices.insert(L.indices.end(),{base+1,base+2,base+3,base+1,base+3,base});
     else L.indices.insert(L.indices.end(),{base,base+1,base+2,base,base+2,base+3});
@@ -81,7 +81,7 @@ inline VoxelChunkMesh meshChunk(const VoxelMeshInput& in,const BlockRegistry& r,
                 if(d.shape!=BlockShape::Cube&&d.shape!=BlockShape::Fluid)continue;
                 int q[3]={p[0]+n[0],p[1]+n[1],p[2]+n[2]};
                 if(c.hides(d,q[0],q[1],q[2]))continue;
-                Face face;face.on=true;face.texture=d.textures[static_cast<std::size_t>(f)];
+                Face face;face.on=true;face.texture=d.textures[static_cast<std::size_t>(f)];face.id=d.id;
                 face.layer=static_cast<std::uint8_t>(d.shape==BlockShape::Fluid?kVoxelTranslucent:layerOf(d.layer));
                 auto front=c.lightAt(q[0],q[1],q[2]);
                 for(int k=0;k<4;++k){
@@ -102,7 +102,7 @@ inline VoxelChunkMesh meshChunk(const VoxelMeshInput& in,const BlockRegistry& r,
                     float top=full?1.f:(lvl==0?14.f/16.f:(14.f-1.5f*static_cast<float>(lvl))/16.f);
                     auto cs=corners(a,s,slice,i,j,1,1,face);
                     for(auto& cc:cs)cc.p[1]=static_cast<float>(p[1])+(cc.p[1]-static_cast<float>(p[1]))*top;
-                    emit(out.layers[kVoxelTranslucent],cs,s<0,face.texture,n);
+                    emit(out.layers[kVoxelTranslucent],cs,s<0,face.texture,n,d.id);
                     continue;
                 }
                 mask[static_cast<std::size_t>(j*16+i)]=face;
@@ -113,7 +113,7 @@ inline VoxelChunkMesh meshChunk(const VoxelMeshInput& in,const BlockRegistry& r,
                 if(o.greedy){while(i+w<16&&mask[static_cast<std::size_t>(j*16+i+w)]==m)++w;
                     for(bool grow=true;grow&&j+h<16;){for(int k=0;k<w;++k)if(!(mask[static_cast<std::size_t>((j+h)*16+i+k)]==m)){grow=false;break;}if(grow)++h;}}
                 for(int y=0;y<h;++y)for(int x=0;x<w;++x)mask[static_cast<std::size_t>((j+y)*16+i+x)].on=false;
-                emit(out.layers[m.layer],corners(a,s,slice,i,j,w,h,m),s<0,m.texture,n);
+                emit(out.layers[m.layer],corners(a,s,slice,i,j,w,h,m),s<0,m.texture,n,m.id);
                 i+=w;
             }
         }
@@ -129,7 +129,7 @@ inline VoxelChunkMesh meshChunk(const VoxelMeshInput& in,const BlockRegistry& r,
                 cc.p[0]=diag[dI][end][0];cc.p[2]=diag[dI][end][1];cc.p[1]=Y+(k>=2?1.f:0.f);cc.uv[0]=uvs[k][0];cc.uv[1]=uvs[k][1];cc.sky=skyLight(l);cc.block=blockLight(l);}
             // Facing normal of this quad (unnormalised direction; the shader normalises).
             float ax=cs[1].p[0]-cs[0].p[0],az=cs[1].p[2]-cs[0].p[2];int nrm[3]={az>0?-1:az<0?1:0,0,ax>0?1:ax<0?-1:0};
-            emit(out.layers[static_cast<std::size_t>(layerOf(d.layer))],cs,false,d.textures[0],nrm);
+            emit(out.layers[static_cast<std::size_t>(layerOf(d.layer))],cs,false,d.textures[0],nrm,d.id);
         }
     }
     return out;

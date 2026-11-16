@@ -44,6 +44,8 @@ struct BlockDef{
     bool falls=false;         // sand / gravel
     BlockId growInto=kAir;std::uint32_t growChance=0; // per 4096 random ticks
     std::array<std::uint16_t,6> textures{};            // texture layer per face, -X +X -Y +Y -Z +Z
+    std::array<std::uint32_t,6> colors{0x808080,0x808080,0x808080,0x808080,0x808080,0x808080}; // 0xRRGGBB per face (untextured view)
+    std::uint8_t alpha=255;                            // view opacity of translucent blocks
 };
 inline BlockDef voxelAirDef(){BlockDef a;a.name="air";a.solid=false;a.replaceable=true;a.shape=BlockShape::None;a.layer=RenderLayer::None;a.opacity=0;a.breakTicks=0;a.dropsSelf=false;a.dropCount=0;return a;}
 inline bool occludes(const BlockDef& d){return d.shape==BlockShape::Cube&&d.layer==RenderLayer::Opaque;}

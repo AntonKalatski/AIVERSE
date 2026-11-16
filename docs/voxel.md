@@ -3,8 +3,8 @@
 Seven header packages for Minecraft-like games: a mutable world of 16x16x16 block chunks, its light, meshes,
 generation, block updates, mob navigation and network streaming. They close the core of gap W2 in
 `docs/genre-implementation.json` (mutable volumetric world) and part of W1 (regional saves, streaming of mutable
-state). They are libraries: a game wires them in its native module and client; the engine renderer, the FPS
-host and `engine/net` do not use them yet (see "Not done").
+state). A playable game on top of them is the `voxel` module (`modules/voxel`, template `templates/voxel_sandbox`,
+section "The game" below).
 
 | Package | Header | Layer | Skill |
 |---|---|---|---|
@@ -80,20 +80,38 @@ Simulation packages use integers, `Fixed` and the engine `Random` only, `std::ma
 neighbour order. The generator is pinned by a golden hash in `tests/libraries/voxel_tests.cpp`: a change of the
 algorithm changes every unsaved chunk of existing worlds, so it must be deliberate and recorded here.
 
+## The game: `modules/voxel` (template `templates/voxel_sandbox`)
+
+A playable sandbox on top of the packages: `game.json` `"module": "voxel"`.
+
+| Part | Where | What |
+|---|---|---|
+| Simulation | `modules/voxel/VoxelGame.h` | players (walk, sprint, sneak without falling off edges, swim, automatic step up one block, fall damage), digging with break time and drops into a 9-slot hotbar, placing (not into bodies), torches and light, fluids and falling blocks, day and night (`dayTicks`), mobs that spawn in the dark, chase players along voxel paths, attack and burn in daylight, respawn, column streaming around players with parking of edited chunks, hash and save (`Simulation::serialize`) |
+| Session | `modules/voxel/VoxelSession.h` | authoritative server and client over any `net::Conn`: hello with content id, inputs, snapshots (own player in full, nearby players and mobs), chunk streaming and edits through voxel-replication, client prediction by replaying unacked inputs on the mirror world |
+| Client | `apps/voxel/client.cpp`, `modules/voxel/view/VoxelView.h` | chunk meshes through `Renderer3D` (unlit, vertex colours from block `color`, face shade, AO, sky light scaled by daylight, warm block light; translucent water), fog and sky colour by time of day, mobs and players as boxes, block outline, crosshair, hotbar, health, break progress, F3 debug |
+| Server | `apps/voxel/server.cpp` | `aiverse_voxel_server --project templates/voxel_sandbox [--port 27200]`: UDP 27200, WebSocket 27201 |
+| Tests | `tests/voxel/game_tests.cpp` | determinism, walking, digging and building, torch light, save and identical continuation, night mobs, loopback session (mirror equals server, prediction, edits, wrong content rejected) |
+
+Run: `aiverse_voxel_client` (single player with a local server), `aiverse_voxel_client --listen` (friends connect with
+`--connect udp://<host>:27200`), `aiverse_voxel_server` for a dedicated world. Rules: `blocks`, `voxelGen`, `voxelTicks`
+and `voxelGame` (tick rate, radii, reach, creative, day length, mobs, start items, vertical chunk range) in `rules.json`.
+
 ## Not done
 
-- Engine wiring: GPU upload and shaders for voxel meshes in the renderer (texture arrays for block art), an FPS
-  host that collides with `voxelMoveBox` instead of static chunk collision, voxel messages inside `engine/net`
-  authority sessions, client prediction of digging.
-- Packed vertex format (28 bytes now), LOD for distant chunks, snapshot compression.
-- Structures generation (W3), rivers; redstone-like signals; 3D fire; flying / climbing mobs, doors in paths.
-- UI: hotbar and drag-and-drop inventory (`skills/gameplay/aiverse-inventory` holds the rules).
+- Textures: blocks are drawn with their `color`; texture arrays for block art and the `textures` layers are not
+  used by the client yet. Mobs and players are boxes (no models, no animation).
+- No dropped item entities (drops go straight into the hotbar), no crafting screen or inventory beyond the hotbar
+  (`skills/gameplay/aiverse-inventory` holds the rules), no hunger.
+- The client was compile-checked on Linux only; it has not been run on macOS / Windows / phones / web here. Touch
+  and gamepad controls are not mapped. The editor's New Project list does not offer the template yet.
+- Packed vertex format, LOD for distant chunks, snapshot compression; structures (W3), rivers; redstone-like
+  signals; 3D fire; flying / climbing mobs, doors in paths.
 
 ## Checks
 
 ```sh
 g++ -std=c++20 -O2 -Ilibraries/include -I. tests/libraries/voxel_tests.cpp engine/data/Json.cpp engine/core/Fixed.cpp -o /tmp/voxel_tests && /tmp/voxel_tests
-cmake --build <build> --target aiverse_library_voxel_tests aiverse_voxel
-ctest --test-dir <build> -R '^(library_voxel|voxel_headless)$' --output-on-failure
+cmake --build <build> --target aiverse_library_voxel_tests aiverse_voxel aiverse_voxel_game_tests aiverse_voxel_server aiverse_voxel_client
+ctest --test-dir <build> -R '^(library_voxel|voxel_headless|voxel_game|voxel_server)$' --output-on-failure
 <build>/aiverse_voxel --content examples/libraries/voxel --radius 6 --verify
 ```

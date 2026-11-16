@@ -21,19 +21,21 @@ Use when the request is a block-building / mining / survival game. Packages and 
 | Client meshes | `skills/visuals/aiverse-voxel-mesh` |
 | Saves | voxel-world record 120, voxel-ticks record 121, plus the libraries' own records |
 
+A working reference game exists: module `modules/voxel` (simulation `modules/voxel/VoxelGame.h`, session
+`modules/voxel/VoxelSession.h`), client `apps/voxel/client.cpp`, server `apps/voxel/server.cpp`, template
+`templates/voxel_sandbox`. Start a new game by copying the template and changing `rules.json`; change the module
+only for new rules. Reference: `docs/voxel.md` ("The game").
+
 Steps:
-1. Start from `examples/libraries/voxel` (blocks, worldgen, ticks) and measure with
-   `aiverse_voxel --content <dir> --radius 6 --verify` before writing game code.
-2. Write the game as a native module (`docs/native-modules.md`); keep all voxel state in the module's state and
-   save it through NativeState (records above). Use the simulation Random only.
-3. Multiplayer: an authoritative server (`docs/fps.md` authority path or `docs/city-server.md` style), not
-   lockstep - clients do not simulate the whole world.
-4. Check: library tests, `aiverse_voxel --verify`, headless restore of the game, screenshots on desktop and a
-   low-end phone profile (`skills/verification/aiverse-mobile-perf`).
+1. Copy `templates/voxel_sandbox`; edit `blocks` (with `color`), `voxelGen`, `voxelTicks`, `voxelGame`.
+2. Measure the content with `aiverse_voxel --content <dir with blocks.json, worldgen.json, ticks.json> --verify`
+   and run `aiverse_voxel_game_tests <engine root>` after module changes.
+3. Play: `aiverse_voxel_client --project <dir>`; multiplayer `--listen` / `--connect`, or `aiverse_voxel_server`.
+4. Check: tests, a dedicated server run (`aiverse_voxel_server --ticks N` prints the checksum), screenshots on
+   desktop and a phone profile (`skills/verification/aiverse-visual-qa`, `skills/verification/aiverse-mobile-perf`).
 
-Still missing in the engine (track in `docs/genre-implementation.json` W1/W2): GPU upload and shaders for voxel
-meshes in the renderer, an FPS-module host that uses voxel collision instead of static chunk collision, wiring
-of replication messages into `engine/net`, hotbar / inventory drag-and-drop UI, texture array import for block
-art, compression of snapshots, structures generation (W3).
+Still missing (W1/W2 in `docs/genre-implementation.json`, list in `docs/voxel.md` "Not done"): block textures,
+models for mobs and players, dropped items, crafting UI, touch and gamepad mapping, editor template entry,
+structures generation (W3), snapshot compression.
 
-Workflow recipe over the voxel packages and existing libraries; no runtime library of its own.
+Workflow recipe over the voxel packages, the voxel module and existing libraries; no runtime library of its own.
