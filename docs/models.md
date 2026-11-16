@@ -642,3 +642,38 @@ frame counters under identical rendering/lighting settings; reductions in
 changes CPU geometry and must happen **before upload**; changing it on an already
 uploaded model requires reloading its original geometry and re-uploading the GPU
 buffers rather than toggling a flag on the live model.
+
+
+### Asset-side policies and Scene inspection
+
+A project can enable rigid compaction for **any imported model format**, without
+writing game-specific C++ code. Place `<model file>.batching.json` next to the model
+(e.g. `models/building.glb.batching.json`):
+
+```json
+{
+  "mergeRigid": true,
+  "maxExtent": 20,
+  "preserveNodes": ["attachment_socket"],
+  "mutableNodes": ["door_hinge", "rotating_fan"]
+}
+```
+
+`preserveNodes` keeps meshes on named nodes and their descendants, and
+`mutableNodes` tags the same protected subtrees as runtime controlled.
+Use a declared protected node for **any** transformation or visibility changed
+by a native module, animation, script, tool or the editor. Do not guess
+immutability from names. Missing mutable node names produce a loader error
+rather than silently merging the wrong subtree.
+
+The editor Scene toolbar now has **Batching**, with GPU Instancing, culling,
+and instance-limit controls and a live draw-count panel. Its **Draw Calls**
+visualization colours model draw submissions with the existing GPU debug shader.
+For policy changes made on disk, click **Reload models from asset policies**;
+a GPU-uploaded mesh cannot be safely unmerged without reloading source geometry.
+
+The current controls do **not** constitute automatic cross-object static
+batching, nor do they implement indirect MultiDraw. Import compaction is
+opt-in and per-model; instance grouping and material/shadow batching remain
+the existing engine functionality. These distinctions are important when
+comparing GPU draws in the Scene profiler.
