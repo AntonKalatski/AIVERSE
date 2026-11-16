@@ -2,6 +2,7 @@
 // sorting and the per-draw uniform blocks. See ModelShaders.h for the uniform layouts.
 #include "Renderer3D.h"
 #include "ModelMerge.h"
+#include "GpuMaterialState.h"
 #include "ModelShaders.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
@@ -670,45 +671,7 @@ void Renderer3D::renderModels(int phase) {
     // per-entity Material copies with identical GPU state. Compare all shader,
     // pipeline, uniform and sampled texture state instead of Material*.
     auto sameGpuMaterial = [&](const ModelItem& x, const ModelItem& y) {
-        const Material& a = *x.mat, &b = *y.mat;
-        const auto graphEqual = [&]() {
-            if (a.shaderGraph == b.shaderGraph) return true;
-            if (!a.shaderGraph || !b.shaderGraph) return false;
-            const auto& g = *a.shaderGraph;
-            const auto& h = *b.shaderGraph;
-            return g.domain == h.domain && g.vertexGlsl == h.vertexGlsl &&
-                   g.vertexMsl == h.vertexMsl && g.glsl == h.glsl &&
-                   g.msl == h.msl && g.outputs == h.outputs &&
-                   g.textures == h.textures && g.minQuality == h.minQuality;
-        };
-        if (!graphEqual()) return false;
-        // Both models may reference a different image slot for the *same* GPU
-        // texture. Compare actual resource handles, not texture indices.
-        auto tex = [](const ModelItem& it, int slot) -> uint32_t {
-            return slot >= 0 && size_t(slot) < it.model->images.size()
-                ? it.model->images[size_t(slot)].tex.id : 0;
-        };
-        const auto state = [](const Material& m) {
-            return std::tie(m.shading, m.alpha, m.alphaCutoff, m.doubleSided,
-                m.vertexOcclusion, m.backOcclusion, m.vertexColors,
-                m.castShadow, m.receiveShadow, m.transparent,
-                m.team, m.teamStrength, m.normalScale, m.occlusionStrength,
-                m.baseColor.x, m.baseColor.y, m.baseColor.z, m.baseColor.w,
-                m.metallic, m.roughness, m.emissive.x, m.emissive.y,
-                m.emissive.z, m.emissiveStrength, m.uvOffset.x,
-                m.uvOffset.y, m.uvScale.x, m.uvScale.y, m.uvRotation,
-                m.fixedLight.x, m.fixedLight.y, m.fixedLight.z, m.fixedLight.w,
-                m.fixedShade.x, m.fixedShade.y);
-        };
-        if (state(a) != state(b)) return false;
-        const int ta[] = {a.baseTex,a.mrTex,a.normalTex,a.occlusionTex,a.emissiveTex,a.teamTex};
-        const int tb[] = {b.baseTex,b.mrTex,b.normalTex,b.occlusionTex,b.emissiveTex,b.teamTex};
-        for (size_t i = 0; i < 6; ++i) if (tex(x, ta[i]) != tex(y, tb[i])) return false;
-        if (a.shaderGraph) {
-            for (size_t i = 0; i < a.shaderGraph->textures.size() && i < 4; ++i)
-                if (tex(x, a.graphTextures[i]) != tex(y, b.graphTextures[i])) return false;
-        }
-        return true;
+        return equivalentGpuMaterial(*x.model, *x.mat, *y.model, *y.mat);
     };
     // Group only unique material instances, then reuse the ID for every draw.
     // This avoids quadratic work over thousands of instances of one material.
