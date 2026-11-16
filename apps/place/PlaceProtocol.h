@@ -38,7 +38,10 @@ enum Channel : uint16_t {
     kChannelSpawnBox = 2,   // c->s: spawn a box in front of my character (rate-limited)
     kChannelSpawnDenied = 3,// s->c: the last spawn request was refused (rate limit / cap)
     kChannelPing = 4,       // both: u64 client time, echoed by the server (RTT on the HUD)
+    kChannelNotice = 5,     // s->c: u8 notice (kNotice*), place hosting (PlaceServer::attach)
 };
+constexpr uint8_t kNoticeReplaced = 1;   // the same player connected again elsewhere: do not reconnect
+constexpr uint8_t kNoticeResumed = 2;    // this connection took over the player's kept character
 
 // One input frame: the 5-byte CharacterInput + one byte of place actions. Hostile bytes never fail.
 constexpr uint8_t kActionPush = 1;

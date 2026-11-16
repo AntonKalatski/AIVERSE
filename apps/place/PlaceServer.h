@@ -1,7 +1,10 @@
 // Authoritative place server: a physics::Scene loaded from a scene JSON, one kinematic character per client,
 // replicated with net::replica (docs/replica.md "First milestone"). One update() = one fixed tick.
 #pragma once
+#include <algorithm>
 #include <deque>
+#include <functional>
+#include <string>
 #include <map>
 #include <memory>
 #include <vector>
@@ -28,6 +31,7 @@ struct PlaceConfig {
 struct PlaceServerStats {
     uint64_t inputUnderruns = 0, inputCatchUps = 0;   // input buffer ran empty / applied two in a tick
     uint64_t ticks = 0, inputs = 0, idleSteps = 0, pushes = 0, pushedBodies = 0, spawned = 0, spawnDenied = 0, badMessages = 0;
+    uint64_t joined = 0, resumed = 0, replaced = 0, expired = 0, contested = 0;   // reconnect window (PlaceServer::attach)
     double tickMsSum = 0, tickMsWorst = 0;
     uint64_t ticksTimedFrom = 0;
     double tickMsAvg() const { return ticks > ticksTimedFrom ? tickMsSum / double(ticks - ticksTimedFrom) : 0; }
@@ -37,7 +41,19 @@ class PlaceServer {
 public:
     explicit PlaceServer(const Json& scene, replica::ServerOptions options = {}, int workers = 1);
     ~PlaceServer();
-    uint8_t attach(std::unique_ptr<net::Conn> connection) { return server_.attach(std::move(connection)); }
+    // The host admitted `connection` (SecureListener ticket, PlaceGate hello) as `player`. A player id already in the
+    // place is taken over: the older connection gets kNoticeReplaced and is kicked half a second later (newest wins),
+    // the new one keeps the character. An empty id is an anonymous player without reconnect (tests, loopback).
+    // Returns 0 when the replica is full or the id is contested (see admits).
+    uint8_t attach(std::unique_ptr<net::Conn> connection, const std::string& player = "");
+    // False while `player` is contested: taken over 3 times within 60 s (one ticket on two devices that both keep
+    // reconnecting); then refused for 60 s. Hosts also call it before a handshake (SecureServerConfig::admit).
+    bool admits(const std::string& player) const;
+    // A player whose connection dropped keeps the character this long (it stands; the same player id re-attaches to
+    // it with its position and velocity). 0: the character leaves with the connection.
+    void setReconnectSeconds(double s) { reconnectTicks_ = uint64_t(std::max(0.0, s) * scene_->tickRate()); }
+    // Host log of joins, reconnects and expiries (one line each, no trailing newline).
+    std::function<void(const std::string&)> onEvent;
     void update(uint64_t nowMs);      // poll, characters (input frames), movers, physics, fields, broadcast
 
     replica::Server& replica() { return server_; }
@@ -52,11 +68,18 @@ public:
     physics::BodyHandle bodyHandle(replica::ObjectId id) const;
     replica::ObjectId characterOf(uint8_t slot) const;
     const physics::CharacterState* characterState(uint8_t slot) const;
-    size_t players() const { return players_.size(); }
+    size_t players() const { return players_.size(); }   // connected
+    size_t away() const { return away_.size(); }          // dropped, character kept for a reconnect
+    const std::string& playerOf(uint8_t slot) const;
+    replica::ObjectId characterOfPlayer(const std::string& player) const;   // connected or away
+    const physics::CharacterState* characterStateOf(const std::string& player) const;
 
 private:
     struct Rep { physics::BodyHandle handle = physics::kNoBody; replica::ObjectId id = 0; bool awake = true; b3Vec3 start{}; b3Quat startRot{}; uint8_t spawnedBy = 0; };
     struct Player {
+        std::string id;
+        uint8_t slot = 0;
+        uint64_t awayUntilTick = 0;
         replica::ObjectId object = 0;
         physics::BodyHandle proxy = physics::kNoBody;
         physics::CharacterState state;
@@ -72,6 +95,10 @@ private:
     struct Mover { physics::BodyHandle handle; b3Vec3 start, offset; b3Quat rot; float period; };
     void join(uint8_t slot);
     void leave(uint8_t slot);
+    void expire();
+    void keepStanding(Player& p);
+    void destroyPlayer(Player& p);
+    std::string describe(const Player& p, const std::string& what) const;
     void input(uint8_t slot, uint32_t seq, const net::Bytes& frame);
     void apply(Player& p, const Input& in);
     void message(uint8_t slot, uint16_t channel, const net::Bytes& payload);
@@ -93,6 +120,11 @@ private:
     std::vector<Rep> reps_;                                  // in creation order
     std::map<physics::BodyHandle, size_t> repOf_;
     std::map<uint8_t, Player> players_;
+    std::map<std::string, Player> away_;                     // by player id
+    std::map<uint8_t, std::string> attached_;                // slot -> player id until join
+    std::map<uint8_t, uint64_t> kicking_;                    // replaced slots -> kick at tick
+    std::map<std::string, std::deque<uint64_t>> takeovers_;  // player id -> ticks of recent takeovers
+    uint64_t reconnectTicks_ = 0;
     std::vector<Mover> movers_;
     replica::ObjectId game_ = 0;
     uint64_t tick_ = 0;

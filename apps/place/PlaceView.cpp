@@ -1,12 +1,19 @@
 // Graphical place client: draws the replicated bodies and characters through Renderer3D (the physics
 // sandbox's approach), third-person camera, WASD + mouse look, HUD through ImGui (strings from i18n).
+// The network runs on its own thread at the fixed tick (PlaceLink: poll every 2 ms, input + prediction at the scene
+// tick rate), so a slow frame neither loses snapshots (the latest channel keeps only the newest packet between polls)
+// nor delays input; the render thread reads the client under the same mutex.
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <map>
+#include <mutex>
 #include <set>
-#include "apps/place/PlaceClient.h"
+#include <thread>
+#include "apps/place/PlaceLink.h"
 #include "engine/i18n/Localization.h"
 #include "engine/platform/EngineDir.h"
 #include "engine/platform/Platform.h"
@@ -25,7 +32,12 @@ float4 colorOf(int64_t rgb, float k = 1) {
 std::string fixed1(double v) { char b[32]; std::snprintf(b, sizeof b, "%.1f", v); return b; }
 
 struct View {
-    std::unique_ptr<PlaceClient> client;
+    std::unique_ptr<PlaceLink> link;
+    std::mutex mutex;               // guards link (and everything reached through it), shared, latches
+    std::thread net;
+    std::atomic<bool> quit{false};
+    Input shared;                   // the render thread's current controls, sampled at each tick
+    bool pushLatch = false, spawnLatch = false, suspendOnFocus = false;
     Renderer3D renderer;
     ImGuiLayer gui;
     i18n::Localization loc;
@@ -36,7 +48,37 @@ struct View {
     std::set<platform::Key> keys;
     float yaw = 0, pitch = 0.35f, distance = 6;
     bool pushQueued = false, haveYaw = false;
-    double acc = 0;
+    float groundTurn = 0;           // yaw a rotating platform turned the character by, not yet in `yaw` (mutex)
+    uint64_t resumedUntil = 0;
+
+    void netLoop() {
+        double next = double(net::nowMs());
+        while (!quit) {
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                uint64_t now = net::nowMs();
+                PlaceClient* any = link->view();
+                double step = 1000.0 * (any ? any->dt() : 1.0f / 60);
+                if (double(now) >= next) {
+                    Input in = shared;
+                    in.move.yaw += groundTurn;
+                    if (pushLatch) { in.actions |= kActionPush; pushLatch = false; }
+                    link->update(now, in);
+                    if (PlaceClient* c = link->client()) {
+                        groundTurn += c->takeGroundTurn();   // rotating platforms turn the view
+                        if (spawnLatch) c->spawnBox();
+                        c->advanceSmoothing(float(step));
+                    }
+                    spawnLatch = false;
+                    next += step;
+                    if (double(now) - next > 250) next = double(now);   // stalled (debugger, sleep): no burst of ticks
+                } else {
+                    link->poll(now);
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
 
     const Mesh& capsule(float r, float hh) {
         auto key = std::make_pair(int(std::lround(r * 100)), int(std::lround(hh * 100)));
@@ -78,13 +120,17 @@ struct View {
         using E = platform::EventType;
         using K = platform::Key;
         gui.handleEvent(e);
-        if (e.type == E::FocusLost) releaseInput();
+        if (e.type == E::FocusLost) {
+            releaseInput();
+            if (suspendOnFocus) { std::lock_guard<std::mutex> lock(mutex); link->suspend(net::nowMs()); }
+        }
+        if (e.type == E::FocusGained && suspendOnFocus) { std::lock_guard<std::mutex> lock(mutex); link->resume(net::nowMs()); }
         if (e.type == E::KeyDown) {
             if (e.key == K::Escape) { releaseInput(); return; }
             if (!platform::pointerLocked()) return;
             keys.insert(e.key);
             if (!e.repeat && e.key == K::E) pushQueued = true;
-            if (!e.repeat && e.key == K::F && client->ready()) client->spawnBox();
+            if (!e.repeat && e.key == K::F) { std::lock_guard<std::mutex> lock(mutex); spawnLatch = true; }
         }
         if (e.type == E::KeyUp) keys.erase(e.key);
         if (e.type == E::MouseDown && e.button == 0 && !platform::pointerLocked()) platform::setPointerLock(true);
@@ -108,18 +154,32 @@ struct View {
     }
 
     void frame(gfx::Device& d, double dt) {
-        uint64_t now = net::nowMs();
-        client->poll(now);
-        if (!haveYaw && client->ready()) { yaw = client->predicted().yaw; haveYaw = true; }
-        acc += std::min(dt, 0.25);
-        const double step = client->dt();
-        int budget = 8;
-        while (acc >= step && budget--) { client->update(now, input()); acc -= step; yaw += client->takeGroundTurn(); }   // rotating platforms turn the view
-        if (budget < 0) acc = 0;
-        client->advanceSmoothing(float(dt * 1000));
-
         d.beginFrame(platform::framebufferWidth(), platform::framebufferHeight());
         gui.newFrame(dt);
+        std::unique_lock<std::mutex> lock(mutex);
+        {
+            yaw += groundTurn;
+            groundTurn = 0;
+            Input in = input();
+            if (in.actions & kActionPush) pushLatch = true;
+            in.actions = 0;
+            shared = in;
+        }
+        PlaceClient* client = link->view();
+        if (client && !haveYaw && client->ready()) { yaw = client->predicted().yaw; haveYaw = true; }
+        gfx::PassDesc pass;
+        pass.clearColor[0] = 0.52f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.80f;
+        if (!client) {   // nothing received yet: sky and the HUD
+            hud(nullptr, 0, 0);
+            lock.unlock();
+            RTSCamera cam;
+            renderer.beginScene(cam, d.framebufferWidth(), d.framebufferHeight());
+            renderer.render(pass);
+            gui.render();
+            d.endPass();
+            d.endFrame();
+            return;
+        }
         auto& r = client->replica();
         const auto& params = client->params();
         b3Vec3 me = client->drawPosition(), view = client->cameraPosition();
@@ -175,26 +235,41 @@ struct View {
                                   colorOf(0x202830));
             }
         }
-        gfx::PassDesc pass;
-        pass.clearColor[0] = 0.52f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.80f;
+        hud(client, bodies, players);
+        lock.unlock();
         renderer.render(pass);
-        hud(bodies, players);
         gui.render();
         d.endPass();
         d.endFrame();
     }
 
-    void hud(size_t bodies, size_t players) {
-        const auto& s = client->stats();
+    void hud(PlaceClient* client, size_t bodies, size_t players) {
         ImGui::SetNextWindowPos({12, 12});
         ImGui::SetNextWindowBgAlpha(0.6f);
         ImGui::Begin("##place", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs);
         ImGui::TextUnformatted(loc.tr("place.title").c_str());
-        if (!client->connected()) ImGui::TextUnformatted(loc.tr("place.disconnected").c_str());
-        else if (!client->ready()) ImGui::TextUnformatted(loc.tr("place.connecting").c_str());
-        else {
+        uint64_t now = net::nowMs();
+        LinkStatus st = link->status();
+        if (link->resumedCharacter() && st == LinkStatus::Playing && link->reconnects() && !resumedUntil) resumedUntil = now + 6000;
+        if (st != LinkStatus::Playing) resumedUntil = 0;
+        if (st != LinkStatus::Playing) {
+            i18n::Args args;
+            args.num("attempt", int64_t(link->attempts()));
+            args.str("seconds", fixed1(double(link->retryAt() > now ? link->retryAt() - now : 0) / 1000.0));
+            args.str("reason", loc.tr(std::string("place.reject.") + std::to_string(int(link->rejectReason()))));
+            ImGui::PushStyleColor(ImGuiCol_Text, st == LinkStatus::Unstable ? ImVec4(1, 0.85f, 0.3f, 1) : ImVec4(1, 0.5f, 0.4f, 1));
+            const bool waiting = st == LinkStatus::Reconnecting && !link->dialing();
+            ImGui::TextUnformatted(loc.tr(waiting ? "place.link.waiting" : linkStatusKey(st), args).c_str());
+            ImGui::PopStyleColor();
+        } else if (resumedUntil > now) {
+            ImGui::TextUnformatted(loc.tr("place.link.resumed").c_str());
+        }
+        if (client && client->ready()) {
+            const auto& s = client->stats();
             ImGui::TextUnformatted(loc.tr("place.world", i18n::Args().num("players", int64_t(players)).num("bodies", int64_t(bodies))).c_str());
-            ImGui::TextUnformatted(loc.tr("place.network", i18n::Args().num("rtt", s.rttMs).num("snapshots", std::lround(s.snapshotsPerSecond))
+            uint32_t best = link->bestPingMs();
+            ImGui::TextUnformatted(loc.tr("place.network", i18n::Args().num("rtt", best ? best : s.rttMs).num("ping", s.rttMs)
+                                                                .num("snapshots", std::lround(s.snapshotsPerSecond))
                                                                 .str("kb", fixed1(s.bytesInPerSecond / 1000.0)))
                                        .c_str());
             double mean = s.reconciles ? s.sumCorrection / double(s.reconciles) : 0;
@@ -217,18 +292,20 @@ struct View {
         for (auto& [k, m] : capsules) destroy(m);
         gui.shutdown();
         renderer.shutdown();
-        client.reset();
+        quit = true;
+        if (net.joinable()) net.join();
+        link.reset();
     }
 };
 View view;
 }
 
-int runPlaceClient(const std::string& address, const std::string& language, const char* argv0) {
-    auto conn = net::connectTo(address);
-    if (!conn) throw std::runtime_error("invalid server address " + address);
+int runPlaceClient(LinkConfig config, const std::string& language, bool suspendOnFocus, const char* argv0) {
     std::filesystem::current_path(platform::resolveEngineDir(AIVERSE_SOURCE_DIR, argv0));
-    view.client = std::make_unique<PlaceClient>(std::move(conn));
+    view.link = std::make_unique<PlaceLink>(std::move(config));
     view.language = language;
+    view.suspendOnFocus = suspendOnFocus;
+    view.net = std::thread([] { view.netLoop(); });
     platform::AppConfig cfg;
     cfg.title = "AIVERSE Place";
     cfg.width = 1280;
@@ -238,5 +315,8 @@ int runPlaceClient(const std::string& address, const std::string& language, cons
     cb.frame = [](gfx::Device& d, double dt) { view.frame(d, dt); };
     cb.event = [](const platform::Event& e) { view.event(e); };
     cb.shutdown = [] { view.shutdown(); };
-    return platform::run(cfg, cb);
+    int rc = platform::run(cfg, cb);
+    view.quit = true;
+    if (view.net.joinable()) view.net.join();
+    return rc;
 }

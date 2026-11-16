@@ -14,14 +14,29 @@
 #include <vector>
 #include "../gfx/Gfx.h"
 
-namespace aiverse::atlas { class ImageSource; }
+#include "engine/atlas/AtlasFormat.h"
 
 namespace aiverse::render {
+
+// An atlased image drawn straight from its pages (TextureCache::resolveSprite): per frame of the
+// frame grid (cols x rows over the logical image; 1 x 1 for a whole image) its region (trim,
+// rotation, mesh) and page texture. Only renderers that draw shapes (SpriteBatch::spriteShape)
+// can use it: the region's rectangle may hold other images.
+struct AtlasFrame {
+    gfx::TextureHandle tex;
+    atlas::Region region;
+    int pageW = 1, pageH = 1;
+};
+struct AtlasSprite {
+    int cols = 1, rows = 1;
+    std::vector<AtlasFrame> frames;   // row-major
+};
 
 struct TextureRef {
     gfx::TextureHandle tex;
     float u0 = 0, v0 = 0, u1 = 1, v1 = 1;  // rect of the logical image inside `tex`
     int width = 0, height = 0;             // logical image size in pixels (before any atlas trim)
+    const AtlasSprite* sprite = nullptr;   // resolveSprite: draw through the frames, u0..v1 are unused
     bool valid() const { return tex.valid() && width > 0 && height > 0; }
     // logical uv (0..1 over the image) -> texture uv
     float u(float lu) const { return u0 + (u1 - u0) * lu; }
@@ -36,6 +51,12 @@ public:
     // `tiling`: a repeating world-space texture (terrain splat layers): never taken from an atlas
     // page (wrap needs its own texture), created with repeat + mipmaps.
     TextureRef resolve(const std::string& path, bool nearest = true, const std::string& base = "", bool tiling = false);
+    // For shape-drawing renderers (sprites through SpriteBatch): an image the build trimmed,
+    // rotated, meshed or split into frames is drawn from its atlas page (TextureRef::sprite) instead
+    // of being rebuilt as its own texture. frameW / frameH: the renderer's frame grid (0 = image
+    // width / frameW, as the sprite blocks read "frame"); a framed sheet whose frames differ from it
+    // comes back as resolve() does. Images on a page as they are resolve() unchanged.
+    TextureRef resolveSprite(const std::string& path, bool nearest, const std::string& base, int frameW, int frameH);
     // Procedural texture registered under a logical name (e.g. "builtin:shadow").
     TextureRef addGenerated(const std::string& name, int w, int h, const std::vector<uint32_t>& rgba, bool nearest);
     const std::string& lastError() const { return error_; }
@@ -44,7 +65,10 @@ private:
     // Build-time texture atlases (engine/atlas): images packed into a page resolve to the page +
     // their rect; trimmed/rotated ones (never sprite sheets) are rebuilt as standalone textures.
     bool resolveAtlased(const std::string& path, bool nearest, const std::string& base, TextureRef& out);
+    void useAtlas(const std::string& base);
+    gfx::TextureHandle atlasPage(int page, bool nearest, const std::string& base);
     std::shared_ptr<atlas::ImageSource> atlas_;
+    std::map<std::string, std::unique_ptr<AtlasSprite>> sprites_;
     std::string atlasBase_;             // base the manifest was loaded for
     std::map<std::string, gfx::TextureHandle> atlasPages_;
     gfx::Device* dev_ = nullptr;

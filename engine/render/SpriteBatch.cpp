@@ -1,6 +1,7 @@
 #include "SpriteBatch.h"
 #include "SpriteShaders.h"
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace aiverse::render {
@@ -114,8 +115,100 @@ void SpriteBatch::appendQuad(std::vector<SpriteVertex>& out, const TextureRef& t
     for (int i = 0; i < 4; ++i) out.push_back({c[i], st[i], color, 0, {c[i].x, c[i].y, c[i].z, 0}});
 }
 
+namespace {
+// Sutherland-Hodgman against the half-plane dot(n, p) <= d
+int clipHalf(const float2* in, int n, float2 nrm, float d, float2* out) {
+    int k = 0;
+    for (int i = 0; i < n; ++i) {
+        const float2 p = in[i], q = in[(i + 1) % n];
+        const float vp = d - (nrm.x * p.x + nrm.y * p.y), vq = d - (nrm.x * q.x + nrm.y * q.y);
+        if (vp >= 0 && k < kMaxSpriteShape) out[k++] = p;
+        if ((vp >= 0) != (vq >= 0) && k < kMaxSpriteShape) { const float t = vp / (vp - vq); out[k++] = {p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t}; }
+    }
+    return k;
+}
+} // namespace
+
+bool spriteShape(const TextureRef& t, float4 uv, SpriteShape& o) {
+    o.tex = t.tex;
+    if (!t.sprite) {
+        o.count = 4;
+        o.ab[0] = {0, 0}; o.ab[1] = {1, 0}; o.ab[2] = {1, 1}; o.ab[3] = {0, 1};
+        const float du = t.u(uv.z) - t.u(uv.x), dv = t.v(uv.w) - t.v(uv.y);
+        const float m[6] = {du, 0, t.u(uv.x), 0, dv, t.v(uv.y)};
+        for (int i = 0; i < 6; ++i) o.m[i] = m[i];
+        return true;
+    }
+    const AtlasSprite& s = *t.sprite;
+    const float W = float(t.width), H = float(t.height);
+    if (W <= 0 || H <= 0 || uv.z == uv.x || uv.w == uv.y) return false;
+    // the frame under the rect's centre
+    const int col = std::clamp(int(std::floor((uv.x + uv.z) * 0.5f * float(s.cols))), 0, s.cols - 1);
+    const int row = std::clamp(int(std::floor((uv.y + uv.w) * 0.5f * float(s.rows))), 0, s.rows - 1);
+    const AtlasFrame& f = s.frames[size_t(row * s.cols + col)];
+    const atlas::Region& r = f.region;
+    o.tex = f.tex;
+    // content pixels -> rect parameters: logical px = cell origin + offset + content
+    const float ox = float(col) * W / float(s.cols) + float(r.offsetX), oy = float(row) * H / float(s.rows) + float(r.offsetY);
+    auto toAB = [&](float cx, float cy) { return float2{((ox + cx) / W - uv.x) / (uv.z - uv.x), ((oy + cy) / H - uv.y) / (uv.w - uv.y)}; };
+    float2 a[kMaxSpriteShape], b[kMaxSpriteShape];
+    int n = 0;
+    if (r.mesh.empty()) {
+        const float rw = float(r.w), rh = float(r.h);
+        a[0] = toAB(0, 0); a[1] = toAB(rw, 0); a[2] = toAB(rw, rh); a[3] = toAB(0, rh);
+        n = 4;
+    } else {
+        for (size_t i = 0; i + 1 < r.mesh.size() && n < kMaxSpriteShape; i += 2) a[n++] = toAB(r.mesh[i], r.mesh[i + 1]);
+    }
+    // only the part inside the rect (a sub-rect of one frame, a half-open grid)
+    n = clipHalf(a, n, {-1, 0}, 0, b);
+    n = clipHalf(b, n, {1, 0}, 1, a);
+    n = clipHalf(a, n, {0, -1}, 0, b);
+    n = clipHalf(b, n, {0, 1}, 1, a);
+    if (n < 3) return false;
+    for (int i = 0; i < n; ++i) o.ab[i] = a[i];
+    o.count = n;
+    // affine (a, b) -> page uv from three points (content pixels are affine in a and b)
+    auto contentOf = [&](float pa, float pb) { return float2{(uv.x + (uv.z - uv.x) * pa) * W - ox, (uv.y + (uv.w - uv.y) * pb) * H - oy}; };
+    float u[3], v[3];
+    const float2 p3[3] = {contentOf(0, 0), contentOf(1, 0), contentOf(0, 1)};
+    for (int i = 0; i < 3; ++i) atlas::regionPointUV(r, p3[i].x, p3[i].y, f.pageW, f.pageH, u[i], v[i]);
+    const float m[6] = {u[1] - u[0], u[2] - u[0], u[0], v[1] - v[0], v[2] - v[0], v[0]};
+    for (int i = 0; i < 6; ++i) o.m[i] = m[i];
+    return true;
+}
+
+void SpriteBatch::polygon(gfx::TextureHandle tex, const SpriteVertex* v, int n, int layer, float sortKey, uint32_t flags) {
+    if (!tex.valid() || n < 3) return;
+    for (int i = 1; i + 1 < n; i += 2) {   // quad (0, i, i+1, i+2) = triangles (0, i, i+1) + (0, i+1, i+2)
+        const SpriteVertex q[4] = {v[0], v[i], v[i + 1], i + 2 < n ? v[i + 2] : v[i + 1]};
+        quadEx(tex, q, layer, sortKey, flags);
+    }
+}
+
+void SpriteBatch::casterPolygon(gfx::TextureHandle tex, const float3* c, const float2* uv, int n) {
+    if (!tex.valid() || n < 3) return;
+    for (int i = 1; i + 1 < n; i += 2) {
+        const int k = i + 2 < n ? i + 2 : i + 1;
+        const float3 q[4] = {c[0], c[i], c[i + 1], c[k]};
+        const float2 st[4] = {uv[0], uv[i], uv[i + 1], uv[k]};
+        caster(tex, q, st);
+    }
+}
+
 void SpriteBatch::quad(const TextureRef& t, const float3 (&c)[4], float4 uv, uint32_t color, uint32_t team, int layer, float sortKey) {
     if (!t.valid()) return;
+    if (t.sprite) {
+        SpriteShape sh;
+        if (!spriteShape(t, uv, sh)) return;
+        SpriteVertex v[kMaxSpriteShape];
+        for (int i = 0; i < sh.count; ++i) {
+            const float3 p = bilinear(c, sh.ab[i]);
+            v[i] = {p, sh.uv(sh.ab[i]), color, team, {p.x, p.y, p.z, 0}};
+        }
+        polygon(sh.tex, v, sh.count, layer, sortKey, 0);
+        return;
+    }
     Quad q;
     q.tex = t.tex; q.layer = layer; q.key = sortKey; q.seq = uint32_t(quads_.size()); q.flags = 0;
     const float2 st[4] = {{t.u(uv.x), t.v(uv.y)}, {t.u(uv.z), t.v(uv.y)}, {t.u(uv.z), t.v(uv.w)}, {t.u(uv.x), t.v(uv.w)}};

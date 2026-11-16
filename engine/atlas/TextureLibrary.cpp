@@ -63,10 +63,12 @@ const TextureRef* TextureLibrary::get(const std::string& path) {
         ref.rotated = r->rotated;
         ref.opaque = !pg.alpha;
         ref.page = r->page;
+        if (!r->mesh.empty()) ref.mesh = &r->mesh;
     } else {
         std::string bytes;
         Image img;
-        if (read_(path, bytes) && (isRtex(bytes) ? decodeRtex(bytes, img) : decodeImageFile(bytes, img))) {
+        const bool sheet = manifest().findSheet(path) != nullptr;
+        if (sheet ? images_.load(path, img) : read_(path, bytes) && (isRtex(bytes) ? decodeRtex(bytes, img) : decodeImageFile(bytes, img))) {
             gfx::TextureDesc td;
             td.width = img.width;
             td.height = img.height;

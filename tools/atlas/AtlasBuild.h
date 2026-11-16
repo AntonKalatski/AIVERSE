@@ -33,6 +33,11 @@ struct FileProps {
     std::string kind = "color";   // color | normal | mask
     bool noAtlas = false, repeat = false, rotate = false, mips = false, trim = true, splitAlpha = false;
     int padding = -1, extrude = -1; // -1 = profile default
+    // mesh: draw a convex polygon around the visible pixels (AtlasMesh.h); tight: pack by those
+    // polygons (implies mesh); frames: split sprite sheets into frames, each trimmed / rotated /
+    // meshed on its own (only renderers that read the manifest's frames use them directly)
+    bool mesh = false, tight = false, frames = false;
+    int meshVertices = 8;
 };
 
 struct AtlasConfig {
@@ -45,10 +50,12 @@ struct AtlasConfig {
     std::string pageFormat = "rtex"; // rtex | png
     Json groups = Json::object(); // per-group overrides
     Json files = Json::object();  // glob -> props, in file order, later rules override earlier
-    // Images used as frame-grid sprite sheets ("sheet": "<path>" anywhere in the game's JSON):
-    // renderers address frames by linear uv over the whole image, so they are never trimmed or
-    // rotated. applyAtlas fills it from the pack inputs.
-    std::set<std::string> sheets;
+    // Images used as frame-grid sprite sheets ("sheet": "<path>" anywhere in the game's JSON) ->
+    // frame size from the same object's "frame": [w, h] ({0, 0}: no "frame", the whole image is one
+    // frame; {-1, -1}: used with different frame sizes). Renderers address frames by linear uv
+    // over the whole image, so sheets are never trimmed or rotated, unless "frames" splits them
+    // into frames. applyAtlas fills it from the pack inputs.
+    std::map<std::string, std::pair<int, int>> sheets;
     // Parses game.json["atlas"] for one profile; throws std::runtime_error with a readable message.
     static AtlasConfig fromGame(const Json& gameJson, const std::string& profile);
     FileProps classify(const std::string& packPath) const;
@@ -68,6 +75,7 @@ struct AtlasStats {
     std::string profile;
     int maxPage = 0;
     int candidates = 0, atlased = 0, duplicates = 0, pages = 0;
+    int atlasedSheets = 0;           // framed sheets among `atlased` inputs (split into frames)
     uint64_t sourceBytes = 0;        // original files replaced by the atlas
     uint64_t pageBytes = 0;          // page files + manifest, uncompressed
     uint64_t storedBytes = 0;        // page files + manifest as stored in the pack (after write)
@@ -99,8 +107,8 @@ bool applyAtlas(pack::PackWriter& w, const AtlasConfig& cfg, AtlasStats& stats, 
 void finishStats(AtlasStats& stats, const pack::WriteStats& ws);
 
 bool isImagePath(const std::string& path);
-// Collects every string value of a "sheet" key (recursively) into `out`.
-void collectSheets(const Json& j, std::set<std::string>& out);
+// Collects every string value of a "sheet" key (recursively) with its object's "frame" size.
+void collectSheets(const Json& j, std::map<std::string, std::pair<int, int>>& out);
 void scanSheets(const pack::PackWriter& w, AtlasConfig& cfg);   // over the writer's .json inputs
 std::string encodePng(const Image& img);
 
