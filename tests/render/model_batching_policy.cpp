@@ -2,6 +2,7 @@
 // This is intentionally independent from any particular project/genre.
 #include "engine/render/Model.h"
 #include "engine/render/ModelMerge.h"
+#include "engine/render/GpuMaterialState.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -90,6 +91,28 @@ int main() {
     CHECK(imported->findNode("shell") >= 0);
     CHECK(imported->nodes[size_t(imported->findNode("shell"))].runtimeMutable);
     CHECK(!imported->uploadPrepared);
+    // Distinct material objects with identical GPU state must batch together.
+    // Changing an effective uniform or sampled texture must split the batch.
+    Model gpuA, gpuB;
+    gpuA.materials.resize(1);
+    gpuB.materials.resize(1);
+    CHECK(&gpuA.materials[0] != &gpuB.materials[0]);
+    CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.materials[0].roughness = .25f;
+    CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.materials[0].roughness = gpuA.materials[0].roughness;
+    gpuA.images.resize(1); gpuB.images.resize(1);
+    gpuA.images[0].tex.id = 101;
+    gpuB.images[0].tex.id = 101;
+    gpuA.materials[0].baseTex = 0; gpuB.materials[0].baseTex = 0;
+    CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.images[0].tex.id = 202;
+    CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    gpuB.images[0].tex.id = 101;
+    gpuA.materials[0].shaderGraph = std::make_shared<graph::Program>();
+    gpuB.materials[0].shaderGraph = std::make_shared<graph::Program>();
+    gpuA.materials[0].shaderGraph = std::make_shared<const graph::Program>(*gpuA.materials[0].shaderGraph);
+    CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
     std::puts("engine model batching policy: PASS");
     return 0;
 }
