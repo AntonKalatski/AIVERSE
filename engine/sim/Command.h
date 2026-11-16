@@ -12,6 +12,7 @@ namespace aiverse {
 enum CommandFlags : uint8_t {
     kCmdQueue = 1 << 0, // shift-queue: append instead of replacing current orders
     kCmdHasArgs = 1 << 1, // `args` present on the wire (set by writeCommand when args is not empty)
+    kCmdAtPoint = 1 << 2, // train: warp the unit in at `point` (producer type warpIn) instead of queueing it
 };
 
 struct Command {
