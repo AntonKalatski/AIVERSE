@@ -1770,6 +1770,25 @@
       "packageDependencies": []
     },
     {
+      "id": "snapshot-delta",
+      "version": "0.1.0",
+      "layer": "presentation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/net/SnapshotDelta.h",
+      "skill": "skills/network/aiverse-snapshot-delta/SKILL.md",
+      "summary": "Delta compression of authoritative snapshots for any game: stable record IDs, removed / new / changed records, XOR runs against an acknowledged baseline, per-peer sender history and receiver history over lossy latest-only channels",
+      "notes": "Host-side networking, not simulation. The server converts its snapshot to a RecordSet (0 = globals, kind bits | entity id), DeltaSender::encode per peer with increasing sequences, acknowledge() from the client's ack (FPS: input viewTick); DeltaReceiver::decode on the client. Lost packets fall back to older acknowledged baselines or a full snapshot. Decoding is bounded and rejects malformed or unknown-baseline packets; validate the rebuilt snapshot as before. Used by the FPS authority session (protocol 5). No encryption, reliability or bandwidth scheduling.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_snapshot_delta",
+      "dependencies": [
+        "tests/libraries/delta_tests.cpp",
+        "engine/net/authority/Session.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": []
+    },
+    {
       "id": "physical-interactions",
       "version": "0.1.0",
       "layer": "simulation",

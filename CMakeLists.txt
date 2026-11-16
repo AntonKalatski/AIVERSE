@@ -1496,6 +1496,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_library_encounter_tests PRIVATE AIVERSE::lib_boss_encounters)
     add_test(NAME library_encounters COMMAND aiverse_library_encounter_tests ${PROJECT_SOURCE_DIR})
 endif()
+# snapshot-delta (record diffs for authoritative snapshots).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_library_delta_tests tests/libraries/delta_tests.cpp)
+    target_link_libraries(aiverse_library_delta_tests PRIVATE AIVERSE::lib_snapshot_delta)
+    add_test(NAME library_snapshot_delta COMMAND aiverse_library_delta_tests)
+endif()
 # battle-royale (safe zone phases, bombardment, supply drops, air insertion, standings, lobby).
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_library_royale_tests tests/libraries/royale_tests.cpp)

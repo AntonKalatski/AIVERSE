@@ -1,10 +1,11 @@
 #pragma once
 #include "engine/net/Conn.h"
 #include "modules/fps/FpsModule.h"
+#include "libraries/include/aiverselib/net/SnapshotDelta.h"
 #include <deque>
 
 namespace aiverse::net::authority {
-constexpr uint32_t kProtocol=4;
+constexpr uint32_t kProtocol=5;
 uint64_t contentId(const Json& rules,const Json& map);
 struct Snapshot {
     uint32_t tick=0,ack=0;uint8_t localSlot=0;int32_t winner=0;
@@ -14,6 +15,11 @@ struct Snapshot {
 };
 Bytes encodeSnapshot(const Snapshot& snapshot);
 bool decodeSnapshot(const Bytes&,Snapshot& out);
+// Snapshot <-> stable records (0 = globals, kind << 28 | id: actors by slot, projectiles / loot / vehicles by id)
+// for snapshot-delta. Servers send deltas against the newest snapshot the client acknowledged (its input viewTick).
+lib::delta::RecordSet snapshotRecords(const Snapshot& snapshot);
+bool recordsSnapshot(const lib::delta::RecordSet& records,Snapshot& out);
+struct SnapshotStats{uint64_t packets=0,bytes=0,fullBytes=0,fullPackets=0;};
 // Conn binding is the identity boundary: a client never sends a player slot or position.
 // Production hosts must authenticate/admit the connection before attach().
 class Server {
@@ -27,10 +33,12 @@ public:
     fps::Module& module(){return static_cast<fps::Module&>(simulation_.module());}
     bool occupied(uint8_t slot) const;
     uint64_t rejected()const{return rejected_;}
+    const SnapshotStats& snapshotStats()const{return stats_;}
 private:
-    struct Peer { uint8_t slot=0;std::unique_ptr<Conn> conn;std::deque<fps::Input> inputs;uint32_t lastReceived=0;bool ready=false;uint64_t born=0; };
+    struct Peer { uint8_t slot=0;std::unique_ptr<Conn> conn;std::deque<fps::Input> inputs;uint32_t lastReceived=0;bool ready=false;uint64_t born=0;lib::delta::DeltaSender delta; };
     Simulation simulation_;
     uint64_t content_=0,rejected_=0;
+    SnapshotStats stats_;
     std::vector<Peer> peers_;
 };
 class Client {
@@ -56,6 +64,7 @@ private:
     uint32_t sequence_=0;
     bool ready_=false,sentHello_=false;
     uint64_t content_=0;
+    lib::delta::DeltaReceiver delta_;
     std::unique_ptr<world::CollisionStream> streamedCollision_;
     void predict(const fps::Input&);
 };

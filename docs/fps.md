@@ -69,8 +69,10 @@ Offline loopback, listen host and dedicated reference server share the authorita
 simulation. It has bounded input queues, movement prediction/reconciliation, snapshots,
 interest filtering and bounded hitscan rewind. UDP latest snapshots use fragmentation;
 WebSocket uses its reliable transport. Production authentication, matchmaking, admission,
-reconnect, anti-cheat operations, snapshot deltas and WAN capacity qualification remain
-separate work. A 100-client loopback test is not evidence of production PUBG capacity.
+reconnect, anti-cheat operations and WAN capacity qualification remain separate work.
+Snapshots travel as deltas against the newest snapshot the client acknowledged (its input `viewTick`)
+through the [snapshot-delta](../skills/network/aiverse-snapshot-delta/SKILL.md) package (protocol 5);
+`Server::snapshotStats()` reports packets, bytes and the full-snapshot equivalent. A 100-client loopback test is not evidence of production PUBG capacity.
 
 Large-world support uses sparse static AABB collision, relative render origins and
 budgeted loading of presentation box chunks through the generic
@@ -112,7 +114,7 @@ and teams left, own placement and kills, bombardment area, up to 8 falling crate
 while skydiving. SimEvents: 5 = kill feed (`player` = actor, `value` = victim | kind << 8), 6 = zone stage
 (`value` = phase | kind << 8, `pos` = target centre), 7 = supply drop (`value` = id | kind << 16, `pos` = point),
 8 = shell impact (`value` = damage). FPS save version 8 stores the run (versions 3, 6 and 7 still load for games
-without `fps.royale`); snapshot protocol 4 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
+without `fps.royale`); snapshot protocol 5 (older peers are rejected). Test: `royale` in `tests/fps/tests.cpp`.
 The HUD (zone ring, minimap, kill feed, placement screen) is not drawn yet.
 
 ## Close combat (opt-in)
@@ -199,8 +201,7 @@ positive cost; absent means impenetrable. Item IDs: 1 medkit, 2 armor, 3 frag,
 4 smoke, 5 flash, 6 scope, 7 suppressor, 8 magazine, 9 ammo; 100–103 are weapons.
 Bounds: 256 projectiles, 256 loot objects, 32 vehicles, 12 inventory stacks.
 Snapshots carry at most 128 nearby projectiles and loot objects, plus 32 vehicles;
-latest-message transport is bounded to 128 KiB. This is still full snapshots, not
-production bandwidth optimization.
+latest-message transport is bounded to 128 KiB. Snapshots are delta-compressed (above); interest filtering still decides what is sent.
 
 All new outcome-affecting fields, objects and timers are saved and hashed.
 `tests/fps/systems.inc` covers inventory, attachments, cancellation, vehicles,

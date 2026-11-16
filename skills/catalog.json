@@ -2289,6 +2289,37 @@
       ]
     },
     {
+      "id": "aiverse-snapshot-delta",
+      "package": "snapshot-delta",
+      "path": "skills/network/aiverse-snapshot-delta/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Delta compression of authoritative snapshots for any game: stable record IDs, removed / new / changed records, XOR runs against an acknowledged baseline, per-peer sender history and receiver history over lossy latest-only channels",
+      "side": "presentation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_snapshot_delta",
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/net/SnapshotDelta.h",
+      "keywords": [
+        "snapshot",
+        "delta",
+        "compression",
+        "baseline",
+        "ack",
+        "bandwidth",
+        "netcode",
+        "replication",
+        "diff",
+        "дельта",
+        "снапшот",
+        "сжатие",
+        "трафик",
+        "канал",
+        "репликац"
+      ]
+    },
+    {
       "id": "aiverse-special-modes",
       "package": null,
       "path": "skills/gameplay/aiverse-special-modes/SKILL.md",

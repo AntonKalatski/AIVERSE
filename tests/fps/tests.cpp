@@ -73,6 +73,8 @@ void stress(Json rules,Json map) {
         server.poll(now);server.step();
     }
     for(const auto& c:clients){CHECK(c->ready());CHECK(c->snapshot().ack>200);CHECK(c->snapshot().actors.size()<10);}
+    const auto& stats=server.snapshotStats();CHECK(stats.packets>1000&&stats.bytes*2<stats.fullBytes&&stats.fullPackets<stats.packets/10);
+    std::printf("snapshot deltas: %llu packets, %llu bytes vs %llu full (%llu sent full)\n",(unsigned long long)stats.packets,(unsigned long long)stats.bytes,(unsigned long long)stats.fullBytes,(unsigned long long)stats.fullPackets);
     CHECK(server.simulation().executedCommands().empty());
     auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     std::printf("100 clients / 300 ticks / sparse 16 km world: %lld ms (debug/local loopback, not WAN capacity)\n",(long long)elapsed);

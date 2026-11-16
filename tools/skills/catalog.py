@@ -57,6 +57,7 @@ ALIASES = {
  'aiverse-match-progression':'perk modifier xp experience level levelup offer reroll summon ally deck loadout pickup magnet перк модификатор опыт уровень прокачк призыв союзник колод лут магнит',
  'aiverse-physical-interactions':'carry pickup throw push pull rope joint door lock key platform elevator breakable debris destructible переноск подня брос толка тянут верев канат двер замок ключ платформ лифт разруш обломк',
  'aiverse-roads':'road roads spline street avenue junction crossing bridge tunnel parking bay highway rural дорог сплайн улиц проспект перекрест переход мост тоннел парковк карман шоссе грунтовк',
+ 'aiverse-snapshot-delta':'snapshot delta compression baseline ack bandwidth netcode replication diff дельта снапшот сжатие трафик канал репликац',
  'aiverse-battle-royale':'battle royale last standing shrinking zone circle storm safe zone phase red zone bombardment airdrop supply drop plane jump skydive parachute knockdown knock revive placement killfeed lobby countdown королевская битва зона сужающ круг фаз красн бомбардир аирдроп сброс самолет прыжок парашют нокдаун нокнут поднять место киллфид лобби отсчет',
  'aiverse-boss-encounters':'boss telegraph windup cone slam phase enrage adds rotation status stun burn slow mob wander hunt flee swarm босс телеграф замах конус фаз ярост призыв ротаци статус оглушен горен замедлен моб блужд охот бегств рой',
 }
