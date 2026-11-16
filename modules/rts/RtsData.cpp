@@ -219,6 +219,8 @@ Rules loadRules(const Json& j) {
         r.heights.rangePerLevel = h.getFx("rangePerLevel");
         r.heights.damagePerLevel = h.getFx("damagePerLevel");
     }
+    if (const Json& tg = j["targeting"]; tg.isObject()) r.overkill = tg.getBool("overkill", false);
+    else if (j.has("targeting")) throw std::runtime_error("targeting: expected an object");
 
     if (const Json& a = j["ai"]; a.isObject()) parseAIKnobs(a, r.ai, "ai");   // computer player knobs (agent-ai-terrain)
     if (const Json& tr = j["terrain"]; tr.isObject()) { // other keys of the block are visual (view)
@@ -552,6 +554,11 @@ Rules loadRules(const Json& j) {
             t.chargesMax = int(c.getInt("max", 3));
             t.chargeInterval = c.getFx("interval", Fixed::fromInt(10));
         }
+        if (const Json& wi = tj["warpIn"]; wi.isObject()) {
+            t.warpField = int16_t(std::clamp<int64_t>(wi.getInt("field", 0), 0, 255));
+            t.warpTime = wi.getFx("time", Fixed::fromInt(5));
+            if (t.warpTime.raw < 0) throw std::runtime_error(where + ": warpIn.time must be >= 0");
+        } else if (tj.has("warpIn")) throw std::runtime_error(where + ": warpIn: expected an object");
         t.creepRadius = int(tj.getInt("creep", 0));
         if (const Json& fs = tj["fieldSpawner"]; fs.isObject()) {
             t.fieldSpawnRes = int16_t(resRef(where + " fieldSpawner", fs.getStr("resource")));
@@ -780,10 +787,20 @@ Rules loadRules(const Json& j) {
         r.movement.timeHorizon = mv.getFx("timeHorizon", r.movement.timeHorizon);
         r.movement.planetHpaCells = int(std::clamp<int64_t>(mv.getInt("planetHpaCells", r.movement.planetHpaCells), 0, int64_t(1) << 30));
         r.movement.airOverRock = mv.getBool("airOverRock", true);
+        if (const Json& mb = mv["magicBox"]; !mb.isNull() && !mb.isNumber()) r.movement.magicBox = mb.boolean(false) ? Fixed::fromInt(8) : Fixed{};
+        else if (mv.has("magicBox")) {
+            r.movement.magicBox = mv.getFx("magicBox");
+            if (r.movement.magicBox.raw < 0) fail("movement.magicBox", "expected true / false or a radius >= 0");
+        }
         if (mv.has("blockedGoals")) {
             const std::string bg = mv.getStr("blockedGoals");
             if (bg != "nearest" && bg != "search") fail("movement.blockedGoals", "expected 'nearest' or 'search', got '" + bg + "'");
             r.movement.blockedGoalNearest = bg == "nearest";
+        }
+        if (mv.has("pathfinding")) {
+            const std::string pf = mv.getStr("pathfinding");
+            if (pf != "grid" && pf != "navmesh") fail("movement.pathfinding", "expected 'grid' or 'navmesh', got '" + pf + "'");
+            r.movement.navMesh = pf == "navmesh";
         }
         if (const Json& ff = mv["flowField"]; ff.isObject()) {
             loadFlowFieldRules(ff, r.movement.flow, "movement.flowField");

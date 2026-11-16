@@ -162,3 +162,23 @@ The subsequent strategy extension adds zone softlock proofs, rhythm timing, seed
 each with its catalog skill and native restore scenario. Host-only [session admission and local network
 acceptance](local-network.md) supplies `AIVERSE::session` / `aiverse_native_use_session` and real HTTP/UDP acceptance
 tests.
+
+## City batch (from the top-down city sample work)
+
+Generic pieces that a city game used to keep in its own `native/` are packages now:
+
+| package | header | what |
+|---|---|---|
+| `world-calendar` | `systems/Calendar.h` | days / weekdays / minutes from ticks, shifts over midnight, rotating work weeks, waking hours, needs as time since last met, daily errands with caps |
+| `weather-timeline` | `systems/WeatherTimeline.h` | presentation: seeded showers and gusts, wet ground and puddles as a pure function of time, day phase |
+| `vehicle-fx` | `genre/vehicle-fx/VehicleLights.h`, `TyreTrails.h` | presentation: lamp channels (brake hold, indicators, beacon strobe, roof sign), tyre marks |
+| `swept-shapes` | `SweptShapes.h` | Fixed swept circle vs moving box (crossing danger), walker slide along boxes, polyline broad phase |
+| `derived-keys` | `runtime/DerivedKeys.h` | per-id key strings and node-pointer caches for string-keyed state maps (never saved or hashed) |
+| `city-traffic` | `genre/Traffic.h`, `genre/traffic/TrafficRoutes.h` | catalog entry for the traffic kernels plus wide-street exits and bounded local detours for large vehicles |
+| `rules-files` | `tools/rules/rules_io.py`, `split_rules.py` | Python read / write-back of split rules.json and a plan-driven splitter |
+
+Tests: `tests/libraries/city_tests.cpp` (CTest `library_city`), `tools/rules/test_rules.py` (CTest `rules_files`).
+Still game-shaped in the engine and meant to become data or project code: `modules/rts/Kingston*` and `modules/rts/kingston/`
+(type ids and trigger variable names of one game). `kingston/FireResponseRoute.h` / `FireResponseDetour.h` are now
+`trafficWideExit` / `trafficLocalDetour`, `KingstonPedestrianCrossingPolicy.h` is `sweptBoxCircle`, `kingston/DeckBroadphase.h`
+is `polylineBounds`; switching those call sites belongs to the traffic / driving owners.

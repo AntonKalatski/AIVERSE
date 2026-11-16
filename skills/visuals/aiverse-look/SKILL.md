@@ -15,6 +15,10 @@ Always look at the result: `view_focus` + `view_screenshot` after every step.
 6. Fog of war look: `rules_merge {path: "fogOfWar"}` (mode, colour, style, softness, lineOfSight).
 7. Phone check: `device_set` + `view_screenshot {window: game}` on a low-end device profile.
 
+8. HDR pipeline: `postfx.hdr` = `auto` / `on` / `off` in game.json or the map (`AIVERSE_HDR` overrides);
+   costs and limits in `docs/hdr.md`. Temporal stability and flicker checks on heavy scenes: `docs/taa-stability.md`
+   (`tools/renderbench/temporal_noise.py`). These are rendering, not output to HDR10/EDR displays.
+
 Report: what changed, screenshots compared, per-frame costs from the warnings.
 
 Runtime library: none. Workflow over the engine MCP view tools.

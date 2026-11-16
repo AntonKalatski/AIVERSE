@@ -137,6 +137,10 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     g.sphereHpaMinCells = rules_.movement.planetHpaCells;
     g.flowMaxFields = rules_.movement.flow.maxFields;
     g.blockedGoalNearest = rules_.movement.blockedGoalNearest;
+    g.navMesh = rules_.movement.navMesh;
+    if (g.navMesh && !g.surf)   // navigation meshes are derived data: build them on the loading screen
+        for (auto& t : rules_.types)
+            if (t.speed.raw > 0 && (!(t.layer & kLayerAir) || g.airSolid)) g.prepareNavMesh(t.pathLayer);
     g.flowBudgetBytes = size_t(rules_.movement.flow.budgetMB) << 20;
     if (const char* f = std::getenv("AIVERSE_PLANET_HPA"); f && *f) g.sphereHpaMinCells = *f == '0' ? (1 << 30) : 0;
     if (g.surf)   // planets: bodies above the cell threshold (RtsHpaSphere.cpp)
@@ -293,6 +297,11 @@ void RtsModule::setupMap(Simulation& sim, const Json& map) {
         const std::string bg = map["movement"].getStr("blockedGoals");
         if (bg != "nearest" && bg != "search") throw std::runtime_error("map movement.blockedGoals: expected 'nearest' or 'search'");
         rules_.movement.blockedGoalNearest = bg == "nearest";
+    }
+    if (map["movement"].has("pathfinding")) {
+        const std::string pf = map["movement"].getStr("pathfinding");
+        if (pf != "grid" && pf != "navmesh") throw std::runtime_error("map movement.pathfinding: expected 'grid' or 'navmesh'");
+        rules_.movement.navMesh = pf == "navmesh";
     }
     if (map["movement"].has("flowField") && !map["movement"]["flowField"].isObject()) throw std::runtime_error("map movement.flowField: expected an object");
 
@@ -1121,7 +1130,26 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
     const bool armyBlock = rules_.mech.armyBlock && cmd.type == kCmdAttack && !w.alive(cmd.target) && movers > 24;
     const bool flowGroup = rules_.movement.flow.minGroup > 0 && movers >= rules_.movement.flow.minGroup && !armyBlock &&
                            (cmd.type == kCmdMove || cmd.type == kCmdAttack || cmd.type == kCmdPatrol || cmd.type == kCmdSmart);
-    if (cmd.type == kCmdAttack && !w.alive(cmd.target) && movers >= 3 && !flowGroup) {
+    // magic box (rules movement.magicBox, StarCraft II): a compact group ordered to a point outside itself keeps its
+    // shape - every unit goes to the goal plus its offset from the group centre. A spread group, or a goal inside the
+    // group, converges as before. Ground and air are boxed separately; flow-field groups keep the shared field.
+    std::vector<std::pair<Entity, Vec3>> boxed;
+    if (rules_.movement.magicBox.raw > 0 && movers >= 2 && !flowGroup && !armyBlock && !w.alive(cmd.target) &&
+        (cmd.type == kCmdMove || cmd.type == kCmdAttack)) {
+        for (int air = 0; air < 2; ++air) {
+            std::vector<Entity> ms;
+            Vec3 c{};
+            for (Entity e : sel)
+                if (w.has<Mobile>(e) && ((rules_.types[w.get<Unit>(e).type].layer & kLayerAir) != 0) == (air != 0)) { ms.push_back(e); c += w.get<Transform>(e).pos; }
+            if (ms.size() < 2) continue;
+            c = flat(c / Fixed::fromInt(int64_t(ms.size())));
+            Fixed spread{};
+            for (Entity e : ms) spread = fxMax(spread, dist2D(w.get<Transform>(e).pos, c));
+            if (spread > rules_.movement.magicBox || dist2D(target, c) <= spread) continue;
+            for (Entity e : ms) boxed.push_back({e, flat(target + (w.get<Transform>(e).pos - c))});
+        }
+    }
+    if (cmd.type == kCmdAttack && !w.alive(cmd.target) && movers >= 3 && !flowGroup && boxed.empty()) {
         Vec3 c{};
         Fixed maxR{};
         std::vector<Entity> ms;
@@ -1164,10 +1192,12 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
         switch (cmd.type) {
         case kCmdMove:
             o.type = OrderType::Move; o.target = kNullEntity; o.param = movers;
+            for (auto& [be, bp] : boxed) if (be == e) { o.point = bp; o.param = 1; }
             issue(sim, e, o, queue); break;
         case kCmdAttack:
             o.type = o.target.valid() ? OrderType::Attack : OrderType::AttackMove; o.param = movers;
             for (auto& [ae, ap] : arc) if (ae == e) { o.point = ap; o.param = 1; }
+            for (auto& [be, bp] : boxed) if (be == e) { o.point = bp; o.param = 1; }
             if (t.weapons.empty()) { o.type = OrderType::Move; o.target = kNullEntity; }
             issue(sim, e, o, queue); break;
         case kCmdPatrol:
@@ -1204,6 +1234,9 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
             if (script_ && (script_->hooks() & ScriptEngine::kHookTrain) && !script_->allowTrain(sim, cmd.player, ut, e)) break;   // can_train
             if (prod->ready != kNoType && rules_.types[ut].structure) break; // place the finished one first
             if (t.chargesMax > 0 && prod->charges <= 0) break;
+            const bool warp = (cmd.flags & kCmdAtPoint) && t.warpField >= 0 && !rules_.types[ut].structure && rules_.types[ut].trainFrom == kNoType;
+            if (warp && (rules_.costModel != CostModel::Upfront || !inField(sim, cmd.player, t.warpField, flat(cmd.point), rules_.types[ut]) ||
+                         !state(sim).grid.passableAt(cmd.point, rules_.types[ut].layer) || !isVisible(sim, cmd.player, cmd.point))) break;
             Entity recruit;
             if (rules_.types[ut].trainFrom != kNoType) {
                 // made from an idle own unit standing near the producer (recruit + goods)
@@ -1224,6 +1257,18 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
                 break;
             }
             if (t.chargesMax > 0) --prod->charges;
+            if (warp) {   // warp-in (type warpIn): the unit appears at the point and finishes there in warpIn.time
+                const UnitType& nt = rules_.types[ut];
+                Entity s = spawn(sim, ut, cmd.player, flat(cmd.point), true);
+                auto& c = w.get<Construction>(s);
+                c.selfBuild = true;
+                c.paid = kOne;
+                c.progress = nt.buildTime.raw > 0 ? fxMax(Fixed{}, kOne - t.warpTime / nt.buildTime) : Fixed{};
+                w.get<Unit>(s).hp = fxMax(kOne, nt.maxHp / 10 + nt.maxHp * c.progress * Fixed::fromRatio(9, 10));
+                gs.players[cmd.player].typeCountAll[ut]++;
+                sim.emit({kEvTrainStarted, cmd.player, e, s, ut, flat(cmd.point)});
+                break;
+            }
             prod->queue.push_back({int32_t(ut), Fixed{}, Fixed{}, false, timeMult});
             gs.players[cmd.player].typeCountAll[ut]++;
             sim.emit({kEvTrainStarted, cmd.player, e, kNullEntity, ut, w.get<Transform>(e).pos});

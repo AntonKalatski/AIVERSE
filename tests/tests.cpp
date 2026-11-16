@@ -9577,6 +9577,7 @@ TEST(pack_file_copy_into_existing) {
 
 
 #include "tests_mech.inc"   // agent-mech
+#include "tests_sc2.inc"    // agent-sc2: magic box, overkill targeting, warp-in
 
 // ---- post-processing data (postfx agent): parsing, map overrides, cost model, presets
 #include "engine/render/PostFxData.h"
@@ -13085,6 +13086,7 @@ TEST(models_gltf_lod_metadata) {
 #include "tests_services_build.inc"   // aiversebuild iOS plugin step (agent-sdk-plugins)
 
 #include "tests_projectiles.inc"
+#include "tests_navmesh.inc"   // navigation mesh (engine/nav) + RTS movement.pathfinding
 #include "tests_vfx_tools.inc"   // agent-vfxgraph
 
 TEST(models_skinned_autolod_inherits_palette) {
