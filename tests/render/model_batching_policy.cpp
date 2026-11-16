@@ -70,6 +70,26 @@ int main() {
     skip.finalize();
     prepareModelUpload(skip);
     CHECK(skip.nodes.size() == 1);
+    // The same policy must load from a model-sidecar in any game or editor.
+    const std::string obj =
+        "o shell\\n"
+        "v 0 0 0\\nv 1 0 0\\nv 0 1 0\\n"
+        "f 1 2 3\\n";
+    const auto read = [&](const std::string& path, std::string& out) {
+        if (path == "fixture.obj") { out = obj; return true; }
+        if (path == "fixture.obj.batching.json") {
+            out = R"({"mergeRigid":true,"maxExtent":12,"preserveNodes":["shell"],"mutableNodes":["shell"]})";
+            return true;
+        }
+        return false;
+    };
+    auto imported = loadModel("fixture.obj", read);
+    CHECK(imported->batching.mergeRigid);
+    CHECK(imported->batching.maxExtent == 12.0f);
+    CHECK(imported->batching.preserveNodes.size() == 1);
+    CHECK(imported->findNode("shell") >= 0);
+    CHECK(imported->nodes[size_t(imported->findNode("shell"))].runtimeMutable);
+    CHECK(!imported->uploadPrepared);
     std::puts("engine model batching policy: PASS");
     return 0;
 }
