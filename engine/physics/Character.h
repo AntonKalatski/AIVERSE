@@ -30,6 +30,9 @@ struct CharacterState {
     float yaw = 0;
     bool grounded = false;
     BodyHandle ground = kNoBody;       // Scene handle of the walkable surface (output only)
+    // Output: yaw the ground turned the character by this step (a rotating platform); yaw = input yaw + this.
+    // Input yaw is absolute, so the game adds it to its look yaw for the next input frame.
+    float groundTurn = 0;
 };
 
 // moveX = strafe right, moveZ = forward, both in [-1, 1] relative to yaw. yaw = 0 looks along -Z,

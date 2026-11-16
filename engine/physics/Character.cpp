@@ -21,7 +21,10 @@ bool finite(float x, float limit) { return std::isfinite(x) && std::abs(x) <= li
 bool finite(b3Vec3 v, float limit) { return finite(v.x, limit) && finite(v.y, limit) && finite(v.z, limit); }
 bool inRange(float x, float lo, float hi) { return std::isfinite(x) && x >= lo && x <= hi; }
 
-struct PlaneHit { b3Plane plane; b3Vec3 point; b3BodyId body; };
+// `dynamic`: by the shape's filter category (kCategoryDynamic), not the body type, so a client's kinematic
+// stand-ins of server-driven bodies (prediction proxies) behave like the dynamic bodies they stand for.
+struct PlaneHit { b3Plane plane; b3Vec3 point; b3BodyId body; bool dynamic; };
+bool dynamicShape(b3ShapeId shape) { return (b3Shape_GetFilter(shape).categoryBits & kCategoryDynamic) != 0; }
 struct Planes { PlaneHit hit[kMaxPlanes]; int count = 0; };
 struct Solved { b3CollisionPlane plane[kMaxPlanes]; int count = 0; };
 
@@ -38,18 +41,33 @@ bool accept(b3ShapeId shape, BodyHandle self) {
     return self == kNoBody || Scene::handleOf(b3Shape_GetBody(shape)) != self;
 }
 
-struct CollectCtx { Planes* planes; BodyHandle self; };
+constexpr float kDepenetration = 0.01f; // per plane solve (a step runs up to ~6): ~3 m/s apart, no launch
+
+struct CollectCtx { Planes* planes; BodyHandle self; b3Vec3 pos; };
 bool collectPlanes(b3ShapeId shape, const b3PlaneResult* r, int n, void* c) {
     auto* x = static_cast<CollectCtx*>(c);
     if (!accept(shape, x->self)) return true;
     b3BodyId body = b3Shape_GetBody(shape);
-    const bool dynamic = b3Body_GetType(body) == b3_dynamicBody;
+    const bool dynamic = dynamicShape(shape);
+    const bool character = (b3Shape_GetFilter(shape).categoryBits & kCategoryCharacter) != 0;
+    b3Vec3 axis = sub(b3Body_GetPosition(body), x->pos);   // a character proxy's origin is its feet
     for (int i = 0; i < n && x->planes->count < kMaxPlanes; ++i) {
+        b3Plane plane = r[i].plane;
+        if (character) {
+            // Characters spawned or pushed inside each other separate gradually: the penetration resolved per
+            // solve is capped. On a shared axis the capsules give no separating direction; use one fixed by
+            // the own handle (golden angle: two characters never share it).
+            if (lenXZ(axis) < 0.02f && std::abs(axis.y) < 0.5f) {
+                float a = float(x->self & 0xFFFFu) * 2.3999632f + float(x->self >> 16) * 0.7f;
+                plane = {{std::cos(a), 0, std::sin(a)}, kDepenetration};
+            }
+            plane.offset = std::min(plane.offset, kDepenetration);
+        }
         // Dynamic bodies have no contacts with the character proxy, so one can come to rest overlapping the
         // capsule from above (a box dropped on a head). Its downward planes would press the character into
         // the ground every step until it falls through: a character is never crushed by dynamic bodies.
-        if (dynamic && r[i].plane.normal.y < -0.3f) continue;
-        x->planes->hit[x->planes->count++] = {r[i].plane, r[i].point, body};
+        if (dynamic && plane.normal.y < -0.3f) continue;
+        x->planes->hit[x->planes->count++] = {plane, r[i].point, body, dynamic};
     }
     return x->planes->count < kMaxPlanes;
 }
@@ -57,7 +75,7 @@ bool castFilter(b3ShapeId shape, void* c) { return accept(shape, *static_cast<Bo
 
 void collide(const Query& q, b3Vec3 pos, const b3Capsule& capsule, Planes& out) {
     out.count = 0;
-    CollectCtx ctx{&out, q.self};
+    CollectCtx ctx{&out, q.self, pos};
     b3World_CollideMover(q.world, pos, &capsule, q.filter, collectPlanes, &ctx);
 }
 
@@ -188,6 +206,7 @@ CharacterInput CharacterInput::unpack(const uint8_t* data, size_t size) {
 void stepCharacter(b3WorldId world, const CharacterParams& p, CharacterState& st, const CharacterInput& in, float dt, Pushes* out,
                    BodyHandle self) {
     if (out) out->clear();
+    st.groundTurn = 0;
     if (!b3World_IsValid(world) || !validParams(p) || !finite(st.position, kMaxCoord) || !inRange(dt, 1e-5f, 0.1f)) {
         st.velocity = {0, 0, 0};
         return;
@@ -200,9 +219,22 @@ void stepCharacter(b3WorldId world, const CharacterParams& p, CharacterState& st
     // Ground at the start: walkable surface and its velocity (moving platforms carry the character).
     Ground g0 = probe(q, start, cosMax);
     bool grounded = g0.found;
-    b3Vec3 platform{0, 0, 0};
-    if (grounded && b3Body_GetType(g0.body) != b3_staticBody) platform = b3Body_GetWorldPointVelocity(g0.body, g0.point);
-    if (!finite(platform, 1000)) platform = {0, 0, 0};
+    b3Vec3 platform{0, 0, 0}, spinCarry{0, 0, 0};
+    float turn = 0;
+    if (grounded && b3Body_GetType(g0.body) != b3_staticBody) {
+        platform = b3Body_GetWorldPointVelocity(g0.body, g0.point);
+        b3Vec3 w = b3Body_GetAngularVelocity(g0.body);
+        float wl = std::sqrt(dot(w, w));
+        if (finite(w, 100) && wl * dt > 1e-6f) {
+            // Rotating ground: carry the feet along the arc (the point velocity alone drifts outwards) and turn
+            // the yaw with the ground's spin about +Y.
+            b3Vec3 c = b3Body_GetWorldCenter(g0.body), v = b3Body_GetLinearVelocity(g0.body);
+            b3Vec3 r = b3RotateVector(b3MakeQuatFromAxisAngle(scale(w, 1 / wl), wl * dt), sub(start, c));
+            spinCarry = sub(add(add(c, scale(v, dt)), r), start);
+            turn = w.y * dt;
+        }
+    }
+    if (!finite(platform, 1000) || !finite(spinCarry, 100)) { platform = {0, 0, 0}; spinCarry = {0, 0, 0}; turn = 0; }
 
     // Wanted horizontal velocity from the input, relative to yaw.
     float yaw = std::isfinite(in.yaw) ? in.yaw : 0.0f;
@@ -233,12 +265,12 @@ void stepCharacter(b3WorldId world, const CharacterParams& p, CharacterState& st
     float fall = 0;
     if (!grounded) { fall = (vy - 0.5f * p.gravity * dt) * dt; vy -= p.gravity * dt; }
     else vy = 0;
-    const b3Vec3 carry = grounded ? scale(platform, dt) : b3Vec3{0, 0, 0};
+    const b3Vec3 carry = !grounded ? b3Vec3{0, 0, 0} : turn != 0 ? spinCarry : scale(platform, dt);
 
     // Pass 1: walk (horizontal velocity + platform carry); steep surfaces act as walls.
     std::vector<Push> pushes;
     auto onPlane = [&](const PlaneHit& h, b3Vec3 n) {
-        if (!out || b3Body_GetType(h.body) != b3_dynamicBody) return;
+        if (!out || !h.dynamic) return;
         float nl = lenXZ(n);
         if (nl < 0.3f) return;
         b3Vec3 dir{-n.x / nl, 0, -n.z / nl};
@@ -314,6 +346,8 @@ void stepCharacter(b3WorldId world, const CharacterParams& p, CharacterState& st
     st.velocity = finite(v, 1000) ? v : b3Vec3{0, 0, 0};
     st.grounded = g1.found;
     st.ground = g1.found ? Scene::handleOf(g1.body) : kNoBody;
+    st.groundTurn = grounded ? turn : 0;
+    st.yaw = yaw + st.groundTurn;
     if (out) {
         std::sort(pushes.begin(), pushes.end(), [](const Push& a, const Push& b) { return a.body < b.body; });
         *out = std::move(pushes);
