@@ -13,6 +13,8 @@
 #include <cstring>
 #include <string>
 #include <chrono>
+#include <unordered_map>
+#include <tuple>
 
 namespace aiverse::render {
 
@@ -619,6 +621,68 @@ void Renderer3D::renderModels(int phase) {
     }
     if(profiling_){auto now=std::chrono::steady_clock::now();profile_.selectMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(now-started).count();started=now;}
     if (order_.empty()) return;
+    // Material identity is NOT a batching key. Editor/game code routinely creates
+    // per-entity Material copies with identical GPU state. Compare all shader,
+    // pipeline, uniform and sampled texture state instead of Material*.
+    auto sameGpuMaterial = [&](const ModelItem& x, const ModelItem& y) {
+        const Material& a = *x.mat, &b = *y.mat;
+        const auto graphEqual = [&]() {
+            if (a.shaderGraph == b.shaderGraph) return true;
+            if (!a.shaderGraph || !b.shaderGraph) return false;
+            const auto& g = *a.shaderGraph;
+            const auto& h = *b.shaderGraph;
+            return g.domain == h.domain && g.vertexGlsl == h.vertexGlsl &&
+                   g.vertexMsl == h.vertexMsl && g.glsl == h.glsl &&
+                   g.msl == h.msl && g.outputs == h.outputs &&
+                   g.textures == h.textures && g.minQuality == h.minQuality;
+        };
+        if (!graphEqual()) return false;
+        // Both models may reference a different image slot for the *same* GPU
+        // texture. Compare actual resource handles, not texture indices.
+        auto tex = [](const ModelItem& it, int slot) -> uint32_t {
+            return slot >= 0 && size_t(slot) < it.model->images.size()
+                ? it.model->images[size_t(slot)].tex.id : 0;
+        };
+        const auto state = [](const Material& m) {
+            return std::tie(m.shading, m.alpha, m.alphaCutoff, m.doubleSided,
+                m.vertexOcclusion, m.backOcclusion, m.vertexColors,
+                m.castShadow, m.receiveShadow, m.transparent,
+                m.team, m.teamStrength, m.normalScale, m.occlusionStrength,
+                m.baseColor.x, m.baseColor.y, m.baseColor.z, m.baseColor.w,
+                m.metallic, m.roughness, m.emissive.x, m.emissive.y,
+                m.emissive.z, m.emissiveStrength, m.uvOffset.x,
+                m.uvOffset.y, m.uvScale.x, m.uvScale.y, m.uvRotation,
+                m.fixedLight.x, m.fixedLight.y, m.fixedLight.z, m.fixedLight.w,
+                m.fixedShade.x, m.fixedShade.y);
+        };
+        if (state(a) != state(b)) return false;
+        const int ta[] = {a.baseTex,a.mrTex,a.normalTex,a.occlusionTex,a.emissiveTex,a.teamTex};
+        const int tb[] = {b.baseTex,b.mrTex,b.normalTex,b.occlusionTex,b.emissiveTex,b.teamTex};
+        for (size_t i = 0; i < 6; ++i) if (tex(x, ta[i]) != tex(y, tb[i])) return false;
+        if (a.shaderGraph) {
+            for (size_t i = 0; i < a.shaderGraph->textures.size() && i < 4; ++i)
+                if (tex(x, a.graphTextures[i]) != tex(y, b.graphTextures[i])) return false;
+        }
+        return true;
+    };
+    // Group only unique material instances, then reuse the ID for every draw.
+    // This avoids quadratic work over thousands of instances of one material.
+    std::vector<uint32_t> materialGroup(modelItems_.size(), 0);
+    std::vector<uint32_t> representatives;
+    std::unordered_map<const Material*,uint32_t> identicalPointers;
+    for (uint32_t i : order_) {
+        const auto& item = modelItems_[i];
+        const auto cached = identicalPointers.find(item.mat);
+        if (cached != identicalPointers.end()) {
+            materialGroup[i] = cached->second; continue;
+        }
+        uint32_t id = uint32_t(representatives.size());
+        for (uint32_t j = 0; j < representatives.size(); ++j)
+            if (sameGpuMaterial(item, modelItems_[representatives[j]])) { id = j; break; }
+        if (id == representatives.size()) representatives.push_back(i);
+        identicalPointers.emplace(item.mat, id);
+        materialGroup[i] = id;
+    }
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
@@ -626,7 +690,7 @@ void Renderer3D::renderModels(int phase) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
-            if (x.mat != y.mat) return x.mat < y.mat;
+            if (materialGroup[a] != materialGroup[b]) return materialGroup[a] < materialGroup[b];
             if (x.prim != y.prim) return x.prim < y.prim;
             if (x.gi != y.gi) return x.gi < y.gi;
             if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
@@ -641,7 +705,7 @@ void Renderer3D::renderModels(int phase) {
     auto sameBatch = [&](const ModelItem& x, const ModelItem& y) {
         if((x.lodThreshold<1 || x.lodInvert)!=(y.lodThreshold<1 || y.lodInvert))return false;
         const bool bx = x.mat->alpha == AlphaMode::Blend || x.tint.w < 0.99f, by = y.mat->alpha == AlphaMode::Blend || y.tint.w < 0.99f;
-        return x.paletteMaterials == y.paletteMaterials && x.prim == y.prim && x.mat == y.mat && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
+        return x.paletteMaterials == y.paletteMaterials && x.prim == y.prim && sameGpuMaterial(x, y) && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
                (x.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal)) == (y.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal));
     };
     for (size_t i = 0; i < order_.size();) {
