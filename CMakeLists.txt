@@ -1615,7 +1615,7 @@ endif()
 # Library aiverse_place (server, client logic, bots, SimNet load harness); executable aiverse_place
 # (target aiverse_place_app): serve / bots / load everywhere, the graphical client on desktop builds.
 if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
-    add_library(aiverse_place STATIC apps/place/PlaceProtocol.cpp apps/place/PlaceServer.cpp apps/place/PlaceClient.cpp apps/place/PlaceSim.cpp)
+    add_library(aiverse_place STATIC apps/place/PlaceProtocol.cpp apps/place/PlaceServer.cpp apps/place/PlaceClient.cpp apps/place/PlacePredict.cpp apps/place/PlaceSim.cpp)
     target_link_libraries(aiverse_place PUBLIC aiverse_net_replica AIVERSE::physics)
     target_include_directories(aiverse_place PUBLIC ${PROJECT_SOURCE_DIR})
     option(AIVERSE_BUILD_PLACE_CLIENT "Build the graphical client into aiverse_place" ${AIVERSE_BUILD_CLIENT})

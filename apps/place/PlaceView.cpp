@@ -114,7 +114,7 @@ struct View {
         acc += std::min(dt, 0.25);
         const double step = client->dt();
         int budget = 8;
-        while (acc >= step && budget--) { client->update(now, input()); acc -= step; }
+        while (acc >= step && budget--) { client->update(now, input()); acc -= step; yaw += client->takeGroundTurn(); }   // rotating platforms turn the view
         if (budget < 0) acc = 0;
         client->advanceSmoothing(float(dt * 1000));
 
@@ -122,9 +122,9 @@ struct View {
         gui.newFrame(dt);
         auto& r = client->replica();
         const auto& params = client->params();
-        b3Vec3 me = client->drawPosition();
+        b3Vec3 me = client->drawPosition(), view = client->cameraPosition();
         RTSCamera cam;
-        cam.target = {me.x, me.y + params.height * 0.85f, me.z};
+        cam.target = {view.x, view.y + params.height * 0.85f, view.z};
         cam.distance = distance;
         cam.pitch = pitch;
         cam.yaw = yaw;

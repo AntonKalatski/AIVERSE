@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <fstream>
 #include <functional>
 #include <iterator>
@@ -229,8 +230,7 @@ TEST(spawn_box_messages_work_and_are_rate_limited) {
 }
 
 TEST(prediction_correction_small_on_static_ground) {
-    // Dynamic bodies are not in the client's static copy (docs: walking into them is corrected by reconcile),
-    // so this walker starts far from the boxes and circles on open ground.
+    // A walker far from the boxes circling on open ground: only quantization is left to correct.
     Json scene = smallScene();
     Json place = scene["place"];
     place.set("spawns", Json::parse("[[-20, 0.05, -20]]"));
@@ -257,6 +257,135 @@ TEST(prediction_correction_small_on_static_ground) {
     CHECK(s.reconciles > 200);
     CHECK(s.maxCorrection < 0.02f);
     CHECK(s.corrections == 0);
+}
+
+namespace {
+struct Share {
+    uint64_t reconciles = 0, corrections = 0;
+    double sum = 0;
+    float max = 0;
+    void add(const PlaceClientStats& s, const PlaceClientStats& from = {}) {
+        reconciles += s.reconciles - from.reconciles;
+        corrections += s.corrections - from.corrections;
+        sum += s.sumCorrection - from.sumCorrection;
+        max = std::max(max, s.maxCorrection);
+    }
+    double percent() const { return reconciles ? 100.0 * double(corrections) / double(reconciles) : 0; }
+    double mean() const { return reconciles ? sum / double(reconciles) : 0; }
+    void print(const char* what) const {
+        std::printf("    %-26s %6llu reconciles, %5.2f %% over 1 cm, mean %.4f m, max %.3f m\n", what, (unsigned long long)reconciles, percent(), mean(), max);
+    }
+};
+// A low kinematic platform (walkable from the ground by the step-up) shuttling 8 m along X, a box pile beside it.
+Json riderScene() {
+    std::string bodies = R"({"id": "ground", "motion": "static", "position": [0, -0.5, 0], "size": [80, 1, 80]},
+        {"id": "platform", "motion": "kinematic", "position": [0, 0.125, -6], "size": [4, 0.25, 4], "color": [0.9, 0.6, 0.2]})";
+    for (int i = 0; i < 12; ++i)
+        bodies += ",{\"id\": \"b" + std::to_string(i) + "\", \"position\": [" + std::to_string(-6 + (i % 3) * 0.75) + ", " +
+                  std::to_string(0.35 + (i / 6) * 0.7) + ", " + std::to_string(-6 + (i / 3 % 2) * 0.75) + "], \"size\": [0.7, 0.7, 0.7], \"density\": 200}";
+    return Json::parse(R"({"tickRate": 60, "substeps": 4, "place": {"spawns": [[0, 0.05, 0]],
+        "movers": [{"body": "platform", "offset": [8, 0, 0], "period": 8}]}, "bodies": [)" + bodies + "]}");
+}
+}
+
+// Prediction near bodies and other characters (docs/replica.md § Prediction against bodies): a walker on open
+// ground, bots pushing piles all the time (example scene, 4g), a rider standing / walking / jumping on a moving
+// platform. Prints the share of reconciles that corrected the prediction by more than 1 cm, for the full
+// prediction world and for kinematic stand-ins only, and how fast the drawn position moves from corrections.
+TEST(prediction_near_dynamic_obstacles) {
+    auto pushers = [&](bool simulate, Share& walker, Share& bots, float& visible99, float& visibleMax) {
+        SimPlace sim(exampleScene(), 21);
+        for (int i = 0; i < 15; ++i) sim.add("4g", std::make_unique<Bot>(uint32_t(300 + i)));
+        sim.add("4g", std::make_unique<Bot>(7, std::vector<b3Vec3>{{37, 0, 27}, {43, 0, 27}, {43, 0, 33}, {37, 0, 33}}));
+        for (auto& e : sim.clients) e.client->simulateBodies = e.client->stepOthers = simulate;
+        // Correction motion of the camera per frame: camera position minus predicted.
+        std::vector<float> visible;
+        std::vector<b3Vec3> lastOffset(15);
+        std::vector<uint64_t> lastReconciles(15);
+        for (int f = 0; f < 30 * 60; ++f) {
+            sim.frame();
+            for (size_t i = 0; i < 15; ++i) {
+                auto& c = *sim.clients[i].client;
+                if (!c.ready()) continue;
+                b3Vec3 d = c.cameraPosition(), p = c.predicted().position;
+                b3Vec3 off{d.x - p.x, d.y - p.y, d.z - p.z};
+                // A reconcile frame moves the offset by the correction itself (the drawn position stays): skip it.
+                if (f > 60 && c.stats().reconciles == lastReconciles[i]) visible.push_back(dist(off, lastOffset[i]));
+                lastOffset[i] = off;
+                lastReconciles[i] = c.stats().reconciles;
+            }
+        }
+        for (size_t i = 0; i < 15; ++i) bots.add(sim.clients[i].client->stats());
+        walker.add(sim.clients.back().client->stats());
+        std::sort(visible.begin(), visible.end());
+        visible99 = visible.empty() ? 0 : visible[visible.size() * 99 / 100];
+        visibleMax = visible.empty() ? 0 : visible.back();
+        auto& ss = sim.server.stats();
+        std::printf("    server input buffer: %llu inputs, %llu underruns, %llu catch-ups\n", (unsigned long long)ss.inputs,
+                    (unsigned long long)ss.inputUnderruns, (unsigned long long)ss.inputCatchUps);
+        CHECK(ss.inputUnderruns + ss.inputCatchUps < ss.inputs / 100);
+    };
+    Share walker, bots, walkerK, botsK;
+    float v99 = 0, vMax = 0, v99K = 0, vMaxK = 0;
+    pushers(true, walker, bots, v99, vMax);
+    pushers(false, walkerK, botsK, v99K, vMaxK);
+
+    auto rider = [&](bool simulate) {
+        Share out;
+        Json scene = riderScene();
+        SimPlace sim(scene, 5);
+        PlaceClient& c = sim.add("4g", nullptr);
+        c.simulateBodies = c.stepOthers = simulate;
+        const auto platform = sim.server.scene().find("platform");
+        bool aboard = false;
+        PlaceClientStats from;
+        int t = 0;
+        sim.clients.back().script = [&](PlaceClient& cl) {
+            Input in;
+            if (!cl.ready()) return in;
+            ++t;
+            // Decisions from the server's state: what the bot does must not depend on the prediction it measures.
+            const auto* st = sim.server.characterState(cl.replica().slot());
+            if (!st) return in;
+            auto p = st->position;
+            auto q = sim.server.scene().position(platform);
+            float dx = q.x - p.x, dz = q.z - p.z;
+            bool on = st->ground == platform;
+            if (on && !aboard) { aboard = true; from = cl.stats(); }
+            if (!aboard || (!on && dx * dx + dz * dz > 1.5f * 1.5f && st->grounded)) {
+                in.move.yaw = std::atan2(-dx, -dz);   // walk (back) onto the platform
+                in.move.moveZ = 1;
+                return in;
+            }
+            int phase = (t / 120) % 3;              // stand, walk a circle, jump in place
+            in.move.yaw = float(t) * 0.03f;
+            if (phase == 1) { in.move.moveZ = 0.5f; if (dx * dx + dz * dz > 1.0f) { in.move.yaw = std::atan2(-dx, -dz); in.move.moveZ = 0.6f; } }
+            if (phase == 2) in.move.jump = t % 50 == 0;
+            return in;
+        };
+        sim.run(40);
+        CHECK(aboard);
+        // The client's prediction world has the platform where the server has it (exactly, from the tick).
+        auto* cp = c.staticScene();
+        CHECK(cp && cp->find("platform") != physics::kNoBody);
+        b3Vec3 at = moverPosition({0, 0.125f, -6}, {8, 0, 0}, 8, sim.server.replica().serverTick(), sim.server.scene().dt());
+        CHECK(dist(at, sim.server.scene().position(platform)) < 1e-4f);
+        out.add(c.stats(), from);
+        out.max = c.stats().maxCorrection;
+        return out;
+    };
+    Share ride = rider(true);
+    walker.print("walker on open ground:");
+    bots.print("15 bots pushing piles:");
+    ride.print("platform rider:");
+    walkerK.print("  stand-ins only, walker:");
+    botsK.print("  stand-ins only, bots:");
+    std::printf("    camera correction motion per frame: 99th percentile %.4f m, max %.3f m (stand-ins only %.4f / %.3f)\n", v99, vMax, v99K, vMaxK);
+    CHECK(walker.corrections <= 3);
+    CHECK(ride.percent() < 3);
+    CHECK(bots.mean() < 0.035);           // was 0.059 m against the static copy only
+    CHECK(bots.percent() < botsK.percent() + 1);
+    CHECK(v99 < 0.05f && v99 < v99K);     // the camera glides corrections in (150 ms half-life), no jumps
 }
 
 TEST(malformed_input_and_messages_never_crash_the_server) {
