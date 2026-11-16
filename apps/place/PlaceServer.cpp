@@ -2,7 +2,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 
 namespace aiverse::place {
@@ -158,26 +160,153 @@ void PlaceServer::respawn(Player& p, uint8_t slot) {
     scene_->moveCharacter(p.proxy, p.state, true);
 }
 
+bool PlaceServer::admits(const std::string& player) const {
+    auto it = takeovers_.find(player);
+    if (it == takeovers_.end() || it->second.size() < 3) return true;
+    const uint64_t window = uint64_t(scene_->tickRate()) * 60;
+    return tick_ - it->second.back() >= window;
+}
+
+uint8_t PlaceServer::attach(std::unique_ptr<net::Conn> connection, const std::string& player) {
+    if (!connection) return 0;
+    if (!player.empty()) {
+        if (!admits(player)) { ++stats_.contested; connection->close(); return 0; }
+        // Newest wins: the old connection may be half dead (Wi-Fi handover, a phone that slept), or the player
+        // opened a second client. Either way the character moves to the new link (join takes it over).
+        bool taken = false;
+        for (auto& [slot, p] : players_)
+            if (p.id == player && !kicking_.count(slot)) {
+                server_.send(slot, kChannelNotice, {kNoticeReplaced});
+                kicking_[slot] = tick_ + uint64_t(scene_->tickRate() / 2);   // let the notice arrive first
+                taken = true;
+            }
+        for (auto it = attached_.begin(); it != attached_.end();) {   // not welcomed yet: nothing to tell
+            if (it->second != player) { ++it; continue; }
+            uint8_t slot = it->first;
+            it = attached_.erase(it);
+            server_.kick(slot);
+            taken = true;
+        }
+        if (taken) {
+            ++stats_.replaced;
+            auto& t = takeovers_[player];
+            t.push_back(tick_);
+            const uint64_t window = uint64_t(scene_->tickRate()) * 60;
+            while (t.size() > 3 || (!t.empty() && tick_ - t.front() >= window)) t.pop_front();
+        }
+    }
+    uint8_t slot = server_.attach(std::move(connection));
+    if (slot) attached_[slot] = player;
+    return slot;
+}
+
+const std::string& PlaceServer::playerOf(uint8_t slot) const {
+    static const std::string none;
+    auto it = players_.find(slot);
+    return it == players_.end() ? none : it->second.id;
+}
+
+replica::ObjectId PlaceServer::characterOfPlayer(const std::string& player) const {
+    for (auto& [slot, p] : players_) if (p.id == player) return p.object;
+    auto it = away_.find(player);
+    return it == away_.end() ? 0 : it->second.object;
+}
+
+const physics::CharacterState* PlaceServer::characterStateOf(const std::string& player) const {
+    for (auto& [slot, p] : players_) if (p.id == player) return &p.state;
+    auto it = away_.find(player);
+    return it == away_.end() ? nullptr : &it->second.state;
+}
+
+std::string PlaceServer::describe(const Player& p, const std::string& what) const {
+    char at[96];
+    std::snprintf(at, sizeof at, " at (%.2f, %.2f, %.2f)", p.state.position.x, p.state.position.y, p.state.position.z);
+    return "player " + (p.id.empty() ? std::string("(anonymous)") : p.id) + " " + what + at;
+}
+
 void PlaceServer::join(uint8_t slot) {
+    std::string id;
+    if (auto it = attached_.find(slot); it != attached_.end()) { id = it->second; attached_.erase(it); }
+    Player* kept = nullptr;
+    std::optional<Player> moving;
+    if (!id.empty()) {
+        if (auto it = away_.find(id); it != away_.end()) { moving = std::move(it->second); away_.erase(it); }
+        else for (auto pit = players_.begin(); pit != players_.end(); ++pit)
+            if (pit->second.id == id && pit->first != slot) { moving = std::move(pit->second); players_.erase(pit); break; }   // taken over
+        if (moving) kept = &*moving;
+    }
+    if (kept) {
+        // Reconnect: the kept character (position, velocity, spawned boxes) changes owner to the new slot.
+        Player p = std::move(*kept);
+        p.slot = slot;
+        p.awayUntilTick = 0;
+        p.lastInputTick = tick_;
+        server_.setOwner(p.object, slot);
+        players_[slot] = std::move(p);
+        ++stats_.resumed;
+        if (onEvent) onEvent(describe(players_[slot], "back on slot " + std::to_string(slot) + ", same character"));
+        server_.send(slot, kChannelScene, staticScene_);
+        server_.send(slot, kChannelNotice, {kNoticeResumed});
+        return;
+    }
     Player p;
+    p.id = id;
+    p.slot = slot;
     p.proxy = scene_->createCharacter(params_, {0, 0, 0}, slot);
     p.object = server_.create(schema_.character);
     p.spawnTokens = config_.spawnBurst;
     p.lastInputTick = tick_;
     respawn(p, slot);
     server_.setOwner(p.object, slot);
-    server_.set(p.object, Schema::kCharName, text("Player " + std::to_string(slot)));
+    server_.set(p.object, Schema::kCharName, text(id.empty() ? "Player " + std::to_string(slot) : id));
     server_.set(p.object, Schema::kCharColor, integer(kPalette[slot % (sizeof(kPalette) / sizeof(kPalette[0]))]));
     players_[slot] = std::move(p);
+    ++stats_.joined;
+    if (onEvent) onEvent(describe(players_[slot], "joined on slot " + std::to_string(slot)));
     server_.send(slot, kChannelScene, staticScene_);
 }
 
+void PlaceServer::destroyPlayer(Player& p) {
+    server_.destroy(p.object);
+    scene_->destroy(p.proxy);   // boxes it spawned stay in the world
+}
+
 void PlaceServer::leave(uint8_t slot) {
+    attached_.erase(slot);
+    kicking_.erase(slot);
     auto it = players_.find(slot);
     if (it == players_.end()) return;
-    server_.destroy(it->second.object);
-    scene_->destroy(it->second.proxy);
-    players_.erase(it);   // boxes it spawned stay in the world
+    Player& p = it->second;
+    if (!p.id.empty() && reconnectTicks_) {
+        // Keep the character: nobody owns it now, it stands (idle steps: gravity, platforms) until the player is back.
+        server_.setOwner(p.object, 0);
+        p.awayUntilTick = tick_ + reconnectTicks_;
+        p.slot = 0;
+        if (onEvent) onEvent(describe(p, "dropped, character kept " + std::to_string(reconnectTicks_ / uint64_t(scene_->tickRate())) + " s"));
+        auto [old, fresh] = away_.try_emplace(p.id);
+        if (!fresh) destroyPlayer(old->second);   // cannot happen (one connection per id), but never leak
+        old->second = std::move(p);
+    } else {
+        destroyPlayer(p);
+    }
+    players_.erase(it);
+}
+
+void PlaceServer::expire() {
+    for (auto it = away_.begin(); it != away_.end();) {
+        if (tick_ < it->second.awayUntilTick) { ++it; continue; }
+        if (onEvent) onEvent(describe(it->second, "did not come back: character removed"));
+        destroyPlayer(it->second);
+        ++stats_.expired;
+        it = away_.erase(it);
+    }
+}
+
+void PlaceServer::keepStanding(Player& p) {
+    // A client that stopped sending (or dropped) still falls and rides platforms (its prediction reconciles later).
+    if (tick_ - p.lastInputTick >= 60) { step(p, {}); ++stats_.idleSteps; }
+    if (p.state.position.y < config_.killY) respawn(p, p.slot);
+    scene_->moveCharacter(p.proxy, p.state);
 }
 
 void PlaceServer::step(Player& p, const physics::CharacterInput& in) {
@@ -272,11 +401,18 @@ void PlaceServer::syncBodies() {
     }
     for (BodyHandle h : fallen) {
         for (auto& [slot, p] : players_) p.spawned.erase(std::remove(p.spawned.begin(), p.spawned.end(), h), p.spawned.end());
+        for (auto& [id, p] : away_) p.spawned.erase(std::remove(p.spawned.begin(), p.spawned.end(), h), p.spawned.end());
         untrack(h);
     }
 }
 
 void PlaceServer::syncCharacters() {
+    for (auto& [id, p] : away_) {
+        const auto& st = p.state;
+        server_.set(p.object, Schema::kCharPos, vec3(st.position.x, st.position.y, st.position.z));
+        server_.set(p.object, Schema::kCharVelocity, vec3(st.velocity.x, st.velocity.y, st.velocity.z));
+        server_.set(p.object, Schema::kCharGrounded, integer(st.grounded));
+    }
     for (auto& [slot, p] : players_) {
         const auto& st = p.state;
         server_.set(p.object, Schema::kCharPos, vec3(st.position.x, st.position.y, st.position.z));
@@ -290,12 +426,17 @@ void PlaceServer::syncCharacters() {
 void PlaceServer::update(uint64_t nowMs) {
     auto t0 = std::chrono::steady_clock::now();
     server_.poll(nowMs);                 // input frames step their characters (onInput), messages
+    for (auto it = kicking_.begin(); it != kicking_.end();) {
+        if (tick_ < it->second) { ++it; continue; }
+        uint8_t slot = it->first;
+        it = kicking_.erase(it);
+        server_.kick(slot);
+    }
     const float dt = scene_->dt();
+    expire();
+    for (auto& [id, p] : away_) keepStanding(p);
     for (auto& [slot, p] : players_) {
-        // A client that stopped sending still falls and rides platforms (its prediction reconciles later).
-        if (tick_ - p.lastInputTick >= 60) { step(p, {}); ++stats_.idleSteps; }
-        if (p.state.position.y < config_.killY) respawn(p, slot);
-        scene_->moveCharacter(p.proxy, p.state);
+        keepStanding(p);
         p.spawnTokens = std::min<double>(config_.spawnBurst, p.spawnTokens + config_.spawnPerSecond * dt);
     }
     for (const auto& m : movers_) {
