@@ -30,6 +30,31 @@ Basis basisOf(const RTSCamera& cam) {
     return b;
 }
 
+// Sutherland-Hodgman of `p` (n points) by a convex polygon of either winding; returns the size.
+int clipConvex(const float2* p, int n, const float2* c, int m, float2* out) {
+    float area = 0;
+    for (int i = 0; i < m; ++i) area += c[i].x * c[(i + 1) % m].y - c[(i + 1) % m].x * c[i].y;
+    const float sgn = area >= 0 ? 1.0f : -1.0f;
+    float2 a[kMaxSpriteShape], b[kMaxSpriteShape];
+    int k = std::min(n, kMaxSpriteShape);
+    for (int i = 0; i < k; ++i) a[i] = p[i];
+    for (int e = 0; e < m && k > 0; ++e) {
+        const float2 e0 = c[e], e1 = c[(e + 1) % m];
+        auto side = [&](float2 q) { return sgn * ((e1.x - e0.x) * (q.y - e0.y) - (e1.y - e0.y) * (q.x - e0.x)); };   // >= 0 inside
+        int j = 0;
+        for (int i = 0; i < k; ++i) {
+            const float2 q0 = a[i], q1 = a[(i + 1) % k];
+            const float s0 = side(q0), s1 = side(q1);
+            if (s0 >= 0 && j < kMaxSpriteShape) b[j++] = q0;
+            if ((s0 >= 0) != (s1 >= 0) && j < kMaxSpriteShape) { const float t = s0 / (s0 - s1); b[j++] = {q0.x + (q1.x - q0.x) * t, q0.y + (q1.y - q0.y) * t}; }
+        }
+        k = j;
+        for (int i = 0; i < k; ++i) a[i] = b[i];
+    }
+    for (int i = 0; i < k; ++i) out[i] = a[i];
+    return k;
+}
+
 void spriteCorners(const SpriteLook& L, const Basis& B, float3 ground, float3 (&c)[4], float& key) {
     float3 R = B.right, U = B.up;
     if (L.mode == SpriteLook::Upright) U = {0, 1, 0};
@@ -87,7 +112,8 @@ void Rts2DView::loadLook(SpriteLook& L, const UnitType& t, const Json& s) {
     L.sheet = s.getStr("sheet");
     if (L.sheet.empty()) return;
     L.nearest = s.getStr("filter", "nearest") != "linear";
-    L.tex = textures_.resolve(L.sheet, L.nearest, base_);
+    // atlased sprites are drawn from their pages (trimmed / rotated / meshed frames: spriteShape)
+    L.tex = textures_.resolveSprite(L.sheet, L.nearest, base_, int(s["frame"][0].integer(0)), int(s["frame"][1].integer(0)));
     if (!L.tex.valid()) return;
     L.frameW = int(s["frame"][0].integer(L.tex.width));
     L.frameH = int(s["frame"][1].integer(L.frameW));
@@ -188,6 +214,10 @@ void Rts2DView::decal(const TextureRef& tex, float4 uv, float3 o, float3 aU, flo
     for (auto& p : q) { minX = std::min(minX, p.x); maxX = std::max(maxX, p.x); minZ = std::min(minZ, p.z); maxZ = std::max(maxZ, p.z); }
     surfTris_.clear();
     surfaceTriangles(surface_, minX, minZ, maxX, maxZ, surfTris_);
+    if (tex.sprite) {   // atlased sprite: its shape (trimmed content / mesh) on the ground
+        decalShape(tex, uv, o, aU, lenU, aV, lenV, color, team, layer, key, flags);
+        return;
+    }
     auto vert = [&](float3 p) {
         const float3 d{p.x - o.x, 0, p.z - o.z};
         const float lu = dot(d, aU) / lenU, lv = dot(d, aV) / lenV;
@@ -222,6 +252,55 @@ void Rts2DView::decal(const TextureRef& tex, float4 uv, float3 o, float3 aU, flo
             const SpriteVertex v[4] = {v0, v1, v2, v2};   // triangle = quad with a repeated corner
             batch_.quadEx(tex.tex, v, layer, key, flags | kSpriteDecal);
         }
+    }
+}
+
+void Rts2DView::decalShape(const TextureRef& tex, float4 uv, float3 o, float3 aU, float lenU, float3 aV, float lenV,
+                           uint32_t color, uint32_t team, int layer, float key, uint32_t flags) {
+    SpriteShape sh;
+    if (!spriteShape(tex, uv, sh)) return;
+    auto at = [&](float2 ab) { return o + aU * (lenU * ab.x) + aV * (lenV * ab.y); };
+    auto vert = [&](float3 p, float2 ab) {
+        SpriteVertex v;
+        v.pos = p; v.uv = sh.uv(ab); v.color = color; v.team = team; v.rpos = {p.x, p.y, p.z, 0};
+        return v;
+    };
+    auto planeY = [](const float3& p0, const float3& n, float x, float z) { return p0.y - (n.x * (x - p0.x) + n.z * (z - p0.z)) / n.y; };
+    SpriteVertex v[kMaxSpriteShape];
+    if (surfTris_.size() >= 3) {   // one plane under the whole rect: the shape as one polygon
+        const float3 p0 = surfTris_[0], n = cross(surfTris_[1] - p0, surfTris_[2] - p0);
+        bool planar = std::fabs(n.y) > 1e-6f;
+        for (size_t i = 3; planar && i < surfTris_.size(); ++i) planar = std::fabs(dot(surfTris_[i] - p0, n)) <= 1e-5f * std::fabs(n.y);
+        if (planar) {
+            for (int k = 0; k < sh.count; ++k) {
+                float3 p = at(sh.ab[k]);
+                p.y = planeY(p0, n, p.x, p.z);
+                v[k] = vert(p, sh.ab[k]);
+            }
+            batch_.polygon(sh.tex, v, sh.count, layer, key, flags | kSpriteDecal);
+            return;
+        }
+    }
+    // uneven ground: every surface triangle cut to the rect, then to the shape
+    for (size_t i = 0; i + 2 < surfTris_.size(); i += 3) {
+        const float3 tri[3] = {surfTris_[i], surfTris_[i + 1], surfTris_[i + 2]};
+        const float3 n = cross(tri[1] - tri[0], tri[2] - tri[0]);
+        if (std::fabs(n.y) <= 1e-6f) continue;
+        float3 poly[8];
+        const int np = clipToRect(tri, o, aU, lenU, aV, lenV, poly);
+        if (np < 3) continue;
+        float2 ab[8], cut[kMaxSpriteShape];
+        for (int k = 0; k < np; ++k) {
+            const float3 d{poly[k].x - o.x, 0, poly[k].z - o.z};
+            ab[k] = {dot(d, aU) / lenU, dot(d, aV) / lenV};
+        }
+        const int nc = clipConvex(ab, np, sh.ab, sh.count, cut);
+        for (int k = 0; k < nc; ++k) {
+            float3 p = at(cut[k]);
+            p.y = planeY(tri[0], n, p.x, p.z);
+            v[k] = vert(p, cut[k]);
+        }
+        batch_.polygon(sh.tex, v, nc, layer, key, flags | kSpriteDecal);
     }
 }
 
@@ -273,16 +352,26 @@ void Rts2DView::emit(const SpriteLook& L, float3 ground, float3 facing, int act,
         const float lead = L.shadow.castDepth > 0 ? -0.25f : 0.0f;
         float3 cc[4];
         casterAt(offF + lead, cc);
-        const float2 st[4] = {{L.tex.u(uv.x), L.tex.v(uv.y)}, {L.tex.u(uv.z), L.tex.v(uv.y)}, {L.tex.u(uv.z), L.tex.v(uv.w)}, {L.tex.u(uv.x), L.tex.v(uv.w)}};
-        SpriteVertex v[4];
-        for (int i = 0; i < 4; ++i) v[i] = {c[i], st[i], tint, team, {cc[i].x, cc[i].y, cc[i].z, 0.15f}};
-        batch_.quadEx(L.tex.tex, v, layer, key, litFlag);
+        // the drawn shape: the whole frame, or an atlased frame's trimmed content / mesh (spriteShape)
+        SpriteShape sh;
+        if (!spriteShape(L.tex, uv, sh)) sh.count = 0;
+        SpriteVertex v[kMaxSpriteShape];
+        float3 cp[kMaxSpriteShape];
+        float2 st[kMaxSpriteShape];
+        for (int i = 0; i < sh.count; ++i) {
+            const float3 rp = bilinear(cc, sh.ab[i]);
+            st[i] = sh.uv(sh.ab[i]);
+            v[i] = {bilinear(c, sh.ab[i]), st[i], tint, team, {rp.x, rp.y, rp.z, 0.15f}};
+            cp[i] = rp;
+        }
+        batch_.polygon(sh.tex, v, sh.count, layer, key, litFlag);
         if (sd.cast && fade >= 1 && quality_ != ShadowQuality::Off) {
-            batch_.caster(L.tex.tex, cc, st);
+            batch_.casterPolygon(sh.tex, cp, st, sh.count);
             if (L.shadow.castDepth > 0) {   // back plane: the footprint casts as a box
                 float3 cb[4];
                 casterAt(offF + lead - L.shadow.castDepth, cb);
-                batch_.caster(L.tex.tex, cb, st);
+                for (int i = 0; i < sh.count; ++i) cp[i] = bilinear(cb, sh.ab[i]);
+                batch_.casterPolygon(sh.tex, cp, st, sh.count);
             }
         }
     }

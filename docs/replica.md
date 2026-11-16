@@ -290,10 +290,10 @@ Status: **done** (`agent-place`). `apps/place` (library `aiverse_place`, executa
 cmake -S . -B build/.temp/place -G Ninja -DCMAKE_BUILD_TYPE=Release -DAIVERSE_ENABLE_PHYSICS=ON   # Mac: + -DCMAKE_OSX_ARCHITECTURES=arm64
 cmake --build build/.temp/place --target aiverse_place_app aiverse_place_tests
 ctest --test-dir build/.temp/place -R '^place$' --output-on-failure
-# play (run from the repository root)
-build/.temp/place/aiverse_place serve --scene examples/place/scene.json --port 27300 [--ws-port 27301]
-build/.temp/place/aiverse_place client --connect 127.0.0.1:27300 [--lang ru]     # more windows = more players
-build/.temp/place/aiverse_place bots --connect 127.0.0.1:27300 --count 8 --seconds 120
+# play on one machine, dev mode (run from the repository root; production hosting: § Place hosting below)
+build/.temp/place/aiverse_place serve --scene examples/place/scene.json --port 27300 --insecure [--ws-port 27301]
+build/.temp/place/aiverse_place client --connect 127.0.0.1:27300 --insecure [--player me] [--lang ru]   # more windows = more players
+build/.temp/place/aiverse_place bots --connect 127.0.0.1:27300 --insecure --count 8 --seconds 120
 build/.temp/place/aiverse_place load --clients 16 --seconds 30 --profile 4g --late 20   # one process, SimNet
 ```
 
@@ -348,15 +348,96 @@ Two fixes in the layers below came out of this milestone (separate commits for r
 Limits: the client predicts against static geometry only: walking into boxes, other characters or onto the
 moving platform is corrected by reconcile (smoothed, visible as a short slide when pushing piles); a server
 that skips a lost input frame (all redundant copies lost) costs one corrected step; the client uses input
-redundancy 8 (~4 KB/s up). Plain UDP / WebSocket without tickets or encryption in `serve` (tests and `load` use
-`SecureUdp` tickets); no reconnect; no interest culling on Y; snapshot rate in the HUD drops with the frame
-rate (one poll per frame). Verified on Linux (tests, load, real UDP, client rendered under Xvfb + Mesa);
+redundancy 8 (~4 KB/s up); no interest culling on Y. (Tickets, encryption, reconnect and the frame-rate bound
+snapshot rate are solved in § Place hosting.) Verified on Linux (tests, load, real UDP, client rendered under Xvfb + Mesa);
 macOS / Windows client builds, the WebSocket path and web / mobile are not verified. Not built for the web
 (SecureUdp and listeners are native).
+
+## Place hosting (agent-place-secure)
+
+Status: **done** for one server process. Code: `apps/place/PlaceAdmission.*` (tickets, `PlaceGate`),
+`PlaceServer::attach(conn, player)` (reconnect window, newest wins), `apps/place/PlaceLink.*` (client connection
+with reconnect), `apps/place/main.cpp` (`serve`, `ticket`, `keygen`, `client`, `bots`). Tests: CTest `place_secure`
+(`tests/place/place_secure_tests.cpp`). Recipe: `skills/network/aiverse-place-server`.
+
+```sh
+# build: as above (Mac: cmake ... -DAIVERSE_ENABLE_PHYSICS=ON -DCMAKE_OSX_ARCHITECTURES=arm64; the client opens a window)
+P=build/.temp/place/aiverse_place
+$P keygen > place.key && chmod 600 place.key                      # 32-byte server key, hex; keep it off the command line
+$P serve --scene examples/place/scene.json --key-file place.key --port 27300 --ws-port 27301 --reconnect-seconds 30
+$P ticket --key-file place.key --player alice --seconds 3600 --server game.example.com:27300 > alice.ticket
+$P client --ticket-file alice.ticket                               # encrypted UDP to the ticket's server
+$P client --connect ws://127.0.0.1:27301 --ticket-file alice.ticket # WebSocket (wss:// through a TLS proxy)
+$P bots --connect 127.0.0.1:27300 --key-file place.key --count 8 --seconds 120 --drop-at 20 --drop-count 2
+$P bots --connect 127.0.0.1:27300 --tickets tickets.txt --count 8  # one ticket per line, issued elsewhere
+```
+
+| Flag | Meaning |
+|---|---|
+| `serve --key HEX64` / `--key-file F` | tickets required; UDP is `SecureUdp` (encrypted, authenticated) |
+| `serve --insecure` | plain UDP; without a key everyone enters as a guest (`guest-<name>`); dev only, logged as a warning |
+| `serve --ws-port N` | also accept WebSocket (ws://); tickets go through the PlaceGate |
+| `serve --reconnect-seconds S` | a dropped player's character waits this long (default 30; 0 = leaves at once) |
+| `client` / `bots --ticket T`, `--ticket-file F`, `--tickets F` | the player's ticket (`aivt1.` text, a secret) |
+| `client --player NAME`, `bots --prefix P` | guest name for a keyless `--insecure` server |
+| `client --suspend-on-focus-loss` | app lifecycle like battles (mobile builds) |
+| `bots --key-file F` | test convenience: bots issue their own tickets `<prefix>-<n>` (never give clients the key) |
+| `bots --drop-at S --drop-count K` | drop K bots' links at S s: they reconnect and get their characters back |
+
+`serve` without `--key` and without `--insecure` refuses to start.
+
+**Security model.**
+- Identity is the ticket: `net::MatchTicket` (player id, expiry, session keys) sealed with the 32-byte server key
+  (XChaCha20-Poly1305), match id `kPlaceMatch`. A login service that shares the key issues them; `aiverse_place
+  ticket` is the test issuer. The expiry also bounds reconnects with the ticket: give it the session length.
+- UDP: `SecureListener` opens the ticket, the client proves it holds the keys, then everything is encrypted with
+  per-handshake keys and a replay window; NAT rebinding moves the session (docs/battle-net.md § Secure transport).
+  Rejected tickets get no answer (no oracle): such a client just keeps retrying with backoff.
+- WebSocket / plain UDP: `PlaceGate` runs on the raw stream before the replica sees it. Hello = sealed part (+ guest
+  name); the server opens it and sends a random 32-byte challenge; the client answers `BLAKE2b(c2s key, label |
+  challenge)`. A copied sealed part alone gets nobody in, but the stream itself is not encrypted: on the Internet
+  terminate TLS in a proxy (nginx / Caddy `wss://` -> `ws://127.0.0.1:N`). Rejections carry a reason
+  (invalid / expired ticket, ticket needed, wrong server, rate limit, malformed hello, timeout).
+- Limits: hellos 2/s per source address (burst 6), at most 256 pending, 5 s to finish; SecureUdp handshakes 1/s
+  per player id (burst 5), 256 half-open; replica limits for inputs and messages as before.
+- Same player twice: **newest wins**. The older connection gets `kNoticeReplaced` (its client stops and says why)
+  and is kicked 0.5 s later; the character moves to the new connection. Over SecureUdp the listener closes the
+  older session silently (the notice cannot reach it), so a ticket used on two devices would bounce: after 3
+  takeovers in 60 s the id is refused for 60 s (`PlaceServer::admits`) and the current holder keeps playing.
+
+**Reconnect.** When a connection drops (bye, silence 10 s on SecureUdp, a kick), the character stays for
+`--reconnect-seconds`: nobody owns it, it receives no input (after a second it is stepped with neutral input:
+it stands, falls, rides platforms), its spawned boxes stay. The same player id attaching again gets the same
+replica object: `setOwner(object, newSlot)` with the kept position and velocity, the scene again, and
+`kNoticeResumed`. After the window the character is removed. The client (`PlaceLink`) treats closed, rejected,
+kicked or 4 s without snapshots as lost, draws the last world under a "reconnecting" line and dials again after
+0.5, 1, 2, 4, 8 s (+-25 % jitter); `suspend()` / `resume()` follow battles (after more than 3 s away resume dials
+at once). The server logs `player X dropped, character kept 30 s at (...)` / `back on slot N, same character`.
+
+**Client polling.** The graphical client runs the network on its own thread: poll every 2 ms, input and
+prediction at the scene tick rate, independent of the frame rate (the latest channel keeps only the newest
+packet between polls, so one poll per frame lost snapshots at low FPS). The HUD shows RTT as the best ping of
+the last 5 s and the raw ping, which includes waiting for the server's 60 Hz tick (up to 17 ms) because the
+server reads messages once per tick.
+
+**Measured** (Linux aarch64 VM, Release): `serve --key-file` + 8 bots with tickets over SecureUdp + 1 over
+WebSocket + a bot killed with `kill -9` and restarted 6 s later: all 20.0 snapshots/s, ping 5-18 ms, server
+tick 0.3-1.3 ms avg with 10 players; `--drop-at 20 --drop-count 2` and the restarted bot came back to the same
+characters (`resumed 3`), a forged and an expired ticket over WebSocket were refused (`bad ticket 2`); a bot
+that never came back was removed after 30 s. Graphical client under Xvfb at ~6 FPS (software GL): 20
+snapshots/s on the HUD; server frozen (SIGSTOP) for 12 s: "Connection lost. Reconnecting...", then
+"Reconnected: your character was kept". Tests: SimNet 10 s blackout -> same character, walking on from where
+it stood; reconnect window expiry; ticket reuse; suspend / resume; native `ws://` client end to end.
+
+**Still missing.** Orchestration (allocating place servers, health checks, draining, restarts: one process,
+no persistence of the world or the kept characters across a restart), accounts / login service issuing tickets
+(the key is shared out of band; `aiverse_place ticket` is a test tool), a WebSocket-over-TLS listener in the
+engine (use a proxy), browser clients (the place is not built for the web), protection of plain ws:// against an
+on-path attacker (who can read and take over the stream after admission; TLS solves it), per-account rate limits across servers, spectators. macOS / Windows
+client builds and real mobile suspend are not verified here.
 
 ## Later
 
 Lua server scripts and client local scripts with remote events (sandboxed, CPU/memory limits); character
-models with animation parameters as fields; place server process with tickets (`MatchTicket`, `SecureUdp`)
-and orchestration; editor template + "play with N clients"; network ownership of physics bodies near a
+models with animation parameters as fields; place server orchestration (tickets and the process: § Place hosting); editor template + "play with N clients"; network ownership of physics bodies near a
 client; moving the FPS and city hosts onto replica.
