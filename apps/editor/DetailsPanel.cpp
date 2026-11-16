@@ -398,7 +398,16 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
     if (sec.have < withData_) std::snprintf(label, sizeof label, "%s  (%zu из %zu)###%s", title, sec.have, withData_, id);
     else std::snprintf(label, sizeof label, "%s###%s", title, id);
     if (!filter_.empty()) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
-    if (!ImGui::CollapsingHeader(label, sec.open ? ImGuiTreeNodeFlags_DefaultOpen : 0)) return;
+    // Studio component card: subtle raised background and a generous hit area.
+    // Keep the original ImGui header ID so saved collapse state is preserved.
+    const auto& studio = EditorTheme::current();
+    ImGui::PushStyleColor(ImGuiCol_Header, studio.panelRaised);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, studio.frameHover);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
+    const bool expanded = ImGui::CollapsingHeader(label, sec.open ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+    if (!expanded) { ImGui::Spacing(); return; }
     if (ImGui::BeginPopupContextItem()) {
         if (ui::menuItem(ICON_BRACES, "Копировать раздел как JSON")) ImGui::SetClipboardText(merged.dump().c_str());
         ImGui::EndPopup();
@@ -406,6 +415,7 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
     const std::string sectionFilter = filter_;
     if (!filter_.empty() && (ui::contains(title, filter_) || ui::contains(id, filter_))) filter_.clear();   // the section matched: all of it
     ImGui::PushID(id);
+    ImGui::Indent(8.0f);
     if (ImGui::BeginTable("##props", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthStretch, 0.45f);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch, 0.55f);
@@ -413,7 +423,9 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
         else property(ed, "значение", merged, sec.id);
         ImGui::EndTable();
     }
+    ImGui::Unindent(8.0f);
     ImGui::PopID();
+    ImGui::Spacing();
     filter_ = sectionFilter;
 }
 

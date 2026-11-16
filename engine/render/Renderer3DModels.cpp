@@ -21,6 +21,7 @@ struct MaterialUniforms { float base[4]; float emissive[4]; float pbr[4]; float 
 constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec4 per joint
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
+constexpr uint32_t kKeyDrawCallView = 32768; // editor draw-call diagnostic shader permutation
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -113,9 +114,12 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool twoSided = !outline && it.mat->doubleSided;
     const bool giPhase = phase == 1 || phase == 2;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
-    const uint32_t shaderKey = (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
+    const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
+                                    ? uint32_t(studioDebugMode_) << 17 : 0u;
+    const uint32_t shaderKey = studioShaderBits | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
+                               ((drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2)) ? kKeyDrawCallView : 0u) |
                                (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) | (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u);
@@ -146,6 +150,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (materialPalette) defs += "#define MATERIAL_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
         if (outline) defs += "#define OUTLINE 1\n";
+        if (shaderKey & kKeyDrawCallView) defs += "#define DRAW_CALL_VIEW 1\n";
+        if (studioShaderBits) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
         if (lightmap || probes) defs += "#define AIVERSE_GIQ " + std::to_string(bakedQuality_ == BakedQuality::Low ? 1 : 2) + "\n";
@@ -478,13 +484,18 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
         if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
     }
     // Upload the whole instance block declared by this backend's shader variant.
+    const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
+    const float4 callColour = colourDraw ? drawCallDebugColor(++debugMainDrawId_) : float4{1, 1, 1, 1};
     const uint32_t slots = instanced ? instanceLimit_ : 1u;
     instData_.assign(size_t(slots) * 36, 0.0f);
     for (uint32_t i = 0; i < count; ++i) {
         const ModelItem& x = modelItems_[items[i]];
         float* d = instData_.data() + size_t(i) * 36;
         std::memcpy(d, x.world.m, 16 * sizeof(float));
-        d[16] = x.tint.x; d[17] = x.tint.y; d[18] = x.tint.z; d[19] = phase == 0 && (x.flags & kDrawKeepShadow) ? 1.f : x.tint.w;
+        d[16] = colourDraw ? callColour.x : x.tint.x;
+        d[17] = colourDraw ? callColour.y : x.tint.y;
+        d[18] = colourDraw ? callColour.z : x.tint.z;
+        d[19] = phase == 0 && (x.flags & kDrawKeepShadow) ? 1.f : x.tint.w;
         if (phase == 3) { d[20] = x.outline.x; d[21] = x.outline.y; d[22] = x.outline.z; d[23] = 0; }
         else { d[20] = x.team.x; d[21] = x.team.y; d[22] = x.team.z; d[23] = x.flash; }
         d[24] = (x.mat->receiveShadow && !(x.flags & kDrawNoReceiveShadow)) ? 1.0f : 0.0f;

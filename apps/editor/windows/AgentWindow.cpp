@@ -15,6 +15,7 @@ public:
     const char* group() const override { return "service"; }
     int order() const override { return 1; }
     const char* dockArea() const override { return "bottom"; }
+    bool openByDefault() const override { return false; }
 
     void draw(Editor& ed) override {
         auto& ws = ed.ws();

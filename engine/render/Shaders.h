@@ -390,6 +390,14 @@ out vec4 o_color;
 float shadowFactor(vec3 n) { return u_params.z < 0.5 ? 1.0 : min(shadowAt(v_wpos, n), terrainShadow(v_wpos)); }
 
 void main() {
+    // Studio draw-call visualizer bypasses all PBR, shadows and texture shading.
+    if (u_params.x > 9.5) {
+        int mode = int(u_params.x - 10.0 + 0.5);
+        if (mode == 2) { o_color = vec4(normalize(v_nrm) * .5 + .5, 1.0); return; }
+        if (mode == 4) { float d = clamp(length(u_camPos.xyz - v_wpos) / 100.0, 0.0, 1.0); o_color = vec4(vec3(d), 1.0); return; }
+        if (mode == 9) { o_color = vec4(fract(abs(v_wpos) * .05), 1.0); return; }
+    }
+    if (u_params.x > 1.5 && u_params.x < 9.5) { o_color = vec4(rtsEncodeScene(u_color.rgb), 1.0); return; }
     vec4 albedo = u_color * v_col;
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
     vec3 n = normalize(v_nrm);
@@ -476,6 +484,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                         texture2d<float> tex3 [[texture(3)]], sampler s3 [[sampler(3)]],
                         texture2d<float> tex4 [[texture(4)]], sampler s4 [[sampler(4)]],
                         depth2d<float> tex5 [[texture(5)]], sampler s5 [[sampler(5)]]) {
+    if (u.params.x > 9.5) {
+        int mode = int(u.params.x - 10.0 + .5);
+        if (mode == 2) return float4(normalize(in.nrm) * .5 + .5, 1.0);
+        if (mode == 4) { float d = clamp(length(f.camPos.xyz - in.wpos) / 100.0, 0.0, 1.0); return float4(float3(d), 1.0); }
+        if (mode == 9) return float4(fract(abs(in.wpos) * .05), 1.0);
+    }
+    if (u.params.x > 1.5 && u.params.x < 9.5) return float4(rtsEncodeScene(u.color.rgb), 1.0);
     float4 albedo = u.color * in.col;
     float3 base = rtsDecodeScene(albedo.rgb);
     float3 n = normalize(in.nrm);

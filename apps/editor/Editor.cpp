@@ -1,6 +1,7 @@
 // Editor: lifecycle, docking layout, menus, documents, play-test and viewport rendering.
 // Window contents live in apps/editor/windows/*.cpp; the agent link in EditorAgent.cpp.
 #include "Editor.h"
+#include "windows/StudioContextMenus.h"
 #include "core/SimTools.h"
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
@@ -154,6 +155,7 @@ void Editor::shutdown() {
     gameFx_.shutdown();
     fxTextures_.shutdown();
     windows_.clear(); // windows release their viewports in their destructors via update()? keep simple: textures die with the device
+    if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
     postFx_.shutdown();
     if(fpsPreviewMesh_.vb.valid())dev_->destroyBuffer(fpsPreviewMesh_.vb);
@@ -370,17 +372,80 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
         }
         return best;
     }
+    // Nearest 3D bounds along the view ray: roof in front wins over a ground hit.
+    float3 rayOrigin{}, rayDirection{};
+    if (cam.screenRay(sx - vp.originX, sy - vp.originY, vp.pointsW, vp.pointsH, rayOrigin, rayDirection)) {
+        const auto& candidates = ws_.map.data.entities;
+        float closest = 1.0e30f;
+        int picked = -1;
+        auto slab = [](float origin, float direction, float lo, float hi, float& nearT, float& farT) {
+            if (std::fabs(direction) < 0.000001f) return origin >= lo && origin <= hi;
+            const float a = (lo - origin) / direction, b = (hi - origin) / direction;
+            nearT = std::max(nearT, std::min(a, b));
+            farT = std::min(farT, std::max(a, b));
+            return nearT <= farT;
+        };
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            const auto& entity = candidates[i];
+            if (objectHidden(entity.owner, entity.type) || objectLocked(entity.owner, entity.type)) continue;
+            const int ti = rules().findType(entity.type);
+            const auto& allTypes = rules().types;
+            const bool structure = ti >= 0 && allTypes[size_t(ti)].structure;
+            const float radius = ti >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(ti)) : .6f;
+            const float halfX = structure ? std::max(.5f, float(allTypes[size_t(ti)].footprintW) * .5f) : std::max(.35f, radius);
+            const float halfZ = structure ? std::max(.5f, float(allTypes[size_t(ti)].footprintH) * .5f) : std::max(.35f, radius);
+            const float baseY = const_cast<game::RtsView&>(view_).heightAt(editGrid(), entity.x, entity.z);
+            const float topY = baseY + (structure ? std::max(2.f, radius * 2.f) : std::max(.9f, radius * 2.f));
+            float nearT = 0.f, farT = closest;
+            if (!slab(rayOrigin.x, rayDirection.x, entity.x - halfX, entity.x + halfX, nearT, farT) ||
+                !slab(rayOrigin.y, rayDirection.y, baseY, topY, nearT, farT) ||
+                !slab(rayOrigin.z, rayDirection.z, entity.z - halfZ, entity.z + halfZ, nearT, farT)) continue;
+            if (nearT < closest) { closest = nearT; picked = int(i); }
+        }
+        if (picked >= 0) return picked;
+    }
+    // Use visual, screen-space picking before the legacy ground hit-test. A ground
+    // ray can land behind a roof on angled cameras and select a neighbouring unit.
+    // Pixel-sized hit areas remain usable when zoomed out, while footprints scale
+    // with the viewport. Only real map entities participate here.
+    const auto& d = ws_.map.data;
+    const float px = sx - vp.originX, py = sy - vp.originY;
+    int nearestScreen = -1;
+    float bestScore = 1e9f;
+    for (size_t i = 0; i < d.entities.size(); ++i) {
+        const auto& e = d.entities[i];
+        if (objectHidden(e.owner, e.type) || objectLocked(e.owner, e.type)) continue;
+        const int t = rules().findType(e.type);
+        const float radius = t >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(t)) + 0.2f : 0.6f;
+        const float groundY = const_cast<game::RtsView&>(view_).heightAt(editGrid(), e.x, e.z);
+        float2 at, edge, top;
+        if (!cam.worldToScreen({e.x, groundY, e.z}, vp.pointsW, vp.pointsH, at)) continue;
+        if (!cam.worldToScreen({e.x + radius, groundY, e.z}, vp.pointsW, vp.pointsH, edge)) continue;
+        const float height = (t >= 0 && rules().types[size_t(t)].structure) ? 2.0f : 0.8f;
+        const bool hasTop = cam.worldToScreen({e.x, groundY + height, e.z}, vp.pointsW, vp.pointsH, top);
+        const float hitRadius = std::clamp(std::hypot(edge.x - at.x, edge.y - at.y), 9.0f, 110.0f);
+        // Test from base to approximate roof/upper silhouette, not just ground position.
+        const float dx = px - at.x, dy = py - at.y;
+        const float tx = hasTop ? top.x - at.x : 0.0f;
+        const float ty = hasTop ? top.y - at.y : 0.0f;
+        const float len2 = tx * tx + ty * ty;
+        const float along = len2 > 0.01f ? std::clamp((dx * tx + dy * ty) / len2, 0.0f, 1.0f) : 0.0f;
+        const float dist = std::hypot(dx - along * tx, dy - along * ty);
+        const float score = dist / hitRadius;
+        if (score <= 1.0f && score < bestScore) { bestScore = score; nearestScreen = int(i); }
+    }
+    if (nearestScreen >= 0) return nearestScreen;
+    // Fallback for low-angle/special rendering modes where projection can fail.
     float x, z;
     if (!groundAt(vp, cam, sx, sy, x, z)) return -1;
     int best = -1;
     float bestD = 1e9f;
-    const auto& d = ws_.map.data;
     for (size_t i = 0; i < d.entities.size(); ++i) {
         const auto& e = d.entities[i];
         if (objectHidden(e.owner, e.type) || objectLocked(e.owner, e.type)) continue;
-        int t = rules().findType(e.type);
-        float r = t >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(t)) + 0.2f : 0.6f;
-        float dd = std::hypot(x - e.x, z - e.z);
+        const int t = rules().findType(e.type);
+        const float r = t >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(t)) + 0.2f : 0.6f;
+        const float dd = std::hypot(x - e.x, z - e.z);
         if (dd < r && dd < bestD) { best = int(i); bestD = dd; }
     }
     return best;
@@ -637,8 +702,9 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.13f; pass.clearColor[1] = 0.15f; pass.clearColor[2] = 0.17f;
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
-    r3d_.render(pass, postFxInScene ? &postFx_ : nullptr);
-    gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+    // Accurate diagnostic colours must not pass through post-processing.
+    r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &postFx_ : nullptr));
+    if (!r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePostFx();
     dev_->endPass();
     view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
@@ -897,12 +963,13 @@ void Editor::drawDockspace() {
         ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
         ImGui::DockBuilderSetNodeSize(dock, size);
         ImGuiID center = dock;
-        ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.18f, nullptr, &center);
-        ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.32f, nullptr, &center);
-        // the Inspector stays visible on top; rules and the world / look tool windows share the tabs under it
-        ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.62f, nullptr, &right);
-        ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.27f, nullptr, &center);
-        ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.45f, nullptr, &left);
+        // AIVERSE Studio: wide scene, slim hierarchy, compact asset shelf and dominant inspector.
+        // Existing dockable window IDs and persistence remain intact.
+        ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.16f, nullptr, &center);
+        ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.24f, nullptr, &center);
+        ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.16f, nullptr, &right);
+        ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.20f, nullptr, &center);
+        ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.40f, nullptr, &left);
         for (auto& w : windows_) {
             std::string a = w->dockArea();
             ImGuiID node = a == "left" ? left : a == "left-bottom" ? leftBottom : a == "right-bottom" ? rightBottom : a == "bottom" ? bottom : a == "center" ? center : right;
@@ -963,7 +1030,10 @@ void Editor::frame(gfx::Device& dev, double dt) {
                         if (ImGuiWindow* ow = ImGui::FindWindowByName(o->imguiName()); ow && ow->DockId) { ImGui::SetNextWindowDockID(ow->DockId, ImGuiCond_FirstUseEver); ImGui::SetNextWindowFocus(); break; }
             bool visible = ImGui::Begin(w->imguiName(), &w->open, w->flags());
             if (w->zeroPadding()) ImGui::PopStyleVar();
-            if (visible) w->draw(*this);
+            if (visible) {
+                w->draw(*this);
+                StudioContextMenus::get().drawWindowFallback(*this, w->id());
+            }
             ImGui::End();
         }
         if (pendingFocusFrames_ > 0 && --pendingFocusFrames_ == 0)

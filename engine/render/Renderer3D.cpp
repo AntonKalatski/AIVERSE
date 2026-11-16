@@ -284,6 +284,21 @@ void Renderer3D::resolvePostFx() {
     hdrFrame_ = false;
 }
 
+// Distinct, stable high-contrast colour for each draw call. Instanced draws
+// intentionally consume one ID, not one ID per instance.
+float4 Renderer3D::drawCallDebugColor(uint32_t drawId) {
+    const float h = std::fmod(float(drawId) * 0.61803398875f, 1.0f) * 6.0f;
+    const float x = 0.76f * (1.0f - std::fabs(std::fmod(h, 2.0f) - 1.0f));
+    float r = 0, g = 0, b = 0;
+    if (h < 1) { r = .76f; g = x; }
+    else if (h < 2) { r = x; g = .76f; }
+    else if (h < 3) { g = .76f; b = x; }
+    else if (h < 4) { g = x; b = .76f; }
+    else if (h < 5) { r = x; b = .76f; }
+    else { r = .76f; b = x; }
+    return {r + .17f, g + .17f, b + .17f, 1.0f};
+}
+
 void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     drawCalls_ = 0;
     prepareOcclusion();
@@ -324,6 +339,8 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     hdrFrame_ = post_ && post_->linearScene();
     lights.setLinearScene(hdrFrame_);
     renderReflection();
+    // Exclude shadow, probe and reflection passes from the visible-colour ID range.
+    debugMainDrawId_ = 0;
     // trace tier + water: the opaque scene goes into colour + depth textures first (SSR reads them),
     // then it is blitted (with depth) into the main pass and the rest is drawn on top
     bool capture = modelReflections_ && hdrFrame_ && traceActive();
@@ -348,6 +365,13 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         u.params[1] = it.specular;
         u.params[2] = (it.flags & kDrawNoReceiveShadow) ? 0.f : 1.f;
         u.params[3] = it.emissive;
+        if (studioDebugMode_ == 2 || studioDebugMode_ == 4 || studioDebugMode_ == 9)
+            u.params[0] = 10.0f + float(studioDebugMode_);
+        if (drawCallDebug_) {
+            const float4 c = drawCallDebugColor(++debugMainDrawId_);
+            u.color[0] = c.x; u.color[1] = c.y; u.color[2] = c.z; u.color[3] = 1.0f;
+            u.params[0] = 2.0f; // solid diagnostic output in GLSL and Metal
+        }
         dev_->setUniforms(0, &u, sizeof u);
         dev_->setVertexBuffer(it.mesh->vb);
         dev_->setIndexBuffer(it.mesh->ib);

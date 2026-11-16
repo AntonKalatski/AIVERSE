@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include "../Editor.h"
+#include "StudioContextMenus.h"
+#include "StudioLuaExtensions.h"
 #include "../EditorGenreUi.h"
 #include "../core/PlanetOps.h"
 #include "../EditorUtil.h"
@@ -34,15 +36,50 @@ public:
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
         // image first (like the Game window): the screen overlays renderScene adds (bars, labels) stay on top of it
         vp_.image(ed.device(), avail.x, avail.y);
+        // Diagnostic rendering is scoped to Scene, never leaked into the Game tab.
+        ed.renderer().setStudioDebugMode(studioDebugMode_);
         ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+        ed.renderer().setStudioDebugMode(0);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
         if(ed.ws().project.isFps()) {
-            ImGuiIO& io=ImGui::GetIO();
-            if(vp_.hovered&&io.MouseWheel!=0)ed.sceneCam.distance=std::clamp(ed.sceneCam.distance*std::pow(0.85f,io.MouseWheel),1.0f,2000.0f);
-            if(vp_.hovered&&ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {ed.sceneCam.yaw-=io.MouseDelta.x*0.005f;ed.sceneCam.pitch=std::clamp(ed.sceneCam.pitch+io.MouseDelta.y*0.005f,0.05f,1.5f);}
-            if(vp_.hovered&&ImGui::IsMouseDragging(ImGuiMouseButton_Middle)){ed.sceneCam.target.x-=io.MouseDelta.x*ed.sceneCam.distance*0.002f;ed.sceneCam.target.z-=io.MouseDelta.y*ed.sceneCam.distance*0.002f;}
-        } else {if (ImGui::IsWindowFocused() || vp_.hovered) input(ed);hud(ed);}
+            ImGuiIO& io = ImGui::GetIO();
+            const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
+            if (vp_.hovered && io.MouseWheel != 0)
+                ed.sceneCam.distance = std::clamp(ed.sceneCam.distance * std::pow(0.85f, io.MouseWheel), 1.0f, 2000.0f);
+            if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Right)) {
+                ed.sceneCam.yaw -= io.MouseDelta.x * 0.005f;
+                ed.sceneCam.pitch = std::clamp(ed.sceneCam.pitch + io.MouseDelta.y * 0.005f, 0.05f, 1.5f);
+            }
+            if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+                const float s = ed.sceneCam.distance * 0.002f;
+                const float3 right{std::cos(ed.sceneCam.yaw), 0, -std::sin(ed.sceneCam.yaw)};
+                const float3 forward{-std::sin(ed.sceneCam.yaw), 0, -std::cos(ed.sceneCam.yaw)};
+                ed.sceneCam.target += right * (-io.MouseDelta.x * s) + forward * (io.MouseDelta.y * s);
+            }
+            // FPS preview also uses the editor free camera: no RMB hold required for WASD.
+            if (navigation && !io.WantTextInput && !io.KeyCtrl && !io.KeySuper) {
+                const float speed = ed.sceneCam.distance * 0.9f * io.DeltaTime * (io.KeyShift ? 3.0f : 1.0f);
+                const float3 right{std::cos(ed.sceneCam.yaw), 0, -std::sin(ed.sceneCam.yaw)};
+                const float3 forward{-std::sin(ed.sceneCam.yaw), 0, -std::cos(ed.sceneCam.yaw)};
+                if (ImGui::IsKeyDown(ImGuiKey_W)) ed.sceneCam.target += forward * speed;
+                if (ImGui::IsKeyDown(ImGuiKey_S)) ed.sceneCam.target += forward * -speed;
+                if (ImGui::IsKeyDown(ImGuiKey_D)) ed.sceneCam.target += right * speed;
+                if (ImGui::IsKeyDown(ImGuiKey_A)) ed.sceneCam.target += right * -speed;
+                if (ImGui::IsKeyDown(ImGuiKey_Q)) ed.sceneCam.target.y -= speed;
+                if (ImGui::IsKeyDown(ImGuiKey_E)) ed.sceneCam.target.y += speed;
+                if (ImGui::IsKeyPressed(ImGuiKey_F, false)) ed.fitScene();
+            }
+        } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);hud(ed);}
+        StudioLuaExtensions::get().drawScene(ed, vp_);
+        // Shift+RMB opens custom scene actions. Ordinary RMB still navigates.
+        if (StudioContextMenus::get().available(ed) && vp_.hovered &&
+            ImGui::GetIO().KeyShift && ImGui::IsMouseReleased(ImGuiMouseButton_Right))
+            ImGui::OpenPopup("##aiverse_scene_context");
+        if (ImGui::BeginPopup("##aiverse_scene_context")) {
+            StudioContextMenus::get().draw(ed, "scene");
+            ImGui::EndPopup();
+        }
     }
 
 private:
@@ -52,8 +89,11 @@ private:
                                       ICON_STARTS, ICON_ROADS, ICON_ERASER};
         static_assert(sizeof names / sizeof *names == size_t(Tool::Count) && sizeof icons / sizeof *icons == size_t(Tool::Count));
         const float bottom = ui::beginToolbar();
+        // On narrow viewports expose additional tools from a popup rather than
+        // clipping the toolbar. All tools remain available by shortcuts 1..0.
+        const bool compact = ImGui::GetContentRegionAvail().x < 760.0f;
         ui::beginSegment();
-        for (int i = 0; i < int(Tool::Count); ++i) {
+        for (int i = 0; i < (compact ? 5 : int(Tool::Count)); ++i) {
             if (i == 1 || i == 10) { ui::endSegment(); ImGui::SameLine(0, 8); ui::beginSegment(); } // select | edit tools | eraser
             else if (i) ImGui::SameLine();
             char tip[64];
@@ -61,6 +101,42 @@ private:
             if (ui::toolButton(icons[i], tip, ed.tool == Tool(i))) { ed.tool = Tool(i); ed.roadStart = -1; }
         }
         ui::endSegment();
+        if (compact) {
+            ImGui::SameLine(0, 5);
+            if (ui::toolButton(ICON_MORE, "Другие инструменты")) ImGui::OpenPopup("##scene_more_tools");
+            if (ImGui::BeginPopup("##scene_more_tools")) {
+                for (int i = 5; i < int(Tool::Count); ++i)
+                    if (ImGui::MenuItem(names[i], nullptr, ed.tool == Tool(i))) { ed.tool = Tool(i); ed.roadStart = -1; }
+                ImGui::EndPopup();
+            }
+        }
+        ui::toolbarDivider();
+        // Studio visual diagnostics: actual built-in GPU shader views.
+        static const char* studioModes[] = {"Shaded", "Draw Calls", "Normals", "UV", "Depth", "Albedo", "Roughness", "Metallic", "Emissive", "World Position"};
+        ImGui::SetNextItemWidth(155.0f);
+        if (ImGui::BeginCombo("##sceneVisualisation", studioModes[studioDebugMode_])) {
+            for (int i = 0; i < 10; ++i) {
+                if (ImGui::Selectable(studioModes[i], studioDebugMode_ == i)) studioDebugMode_ = i;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(i == 1 ? "Каждый встроенный GPU draw batch — свой цвет (instancing сохраняется)" :
+                                                         i >= 2 ? "Диагностика моделей; terrain и callback renderers могут оставаться без раскраски" : "Обычный материал и освещение");
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        if (ui::toolButton(ICON_EYE, "Отладочные gizmo")) ImGui::OpenPopup("##studio_gizmos");
+        if (ImGui::BeginPopup("##studio_gizmos")) {
+            ImGui::TextDisabled("Scene overlays");
+            ImGui::Checkbox("Границы объектов", &studioDrawBounds_);
+            ImGui::Checkbox("Оси мира", &studioDrawAxes_);
+            ImGui::Checkbox("Выделение", &studioDrawSelection_);
+            ImGui::Separator();
+            ImGui::TextDisabled("RTS debugging");
+            ImGui::Checkbox("Уровни и рампы", &ed.showLevels);
+            ImGui::Checkbox("Регионы", &ed.showRegions);
+            ImGui::Checkbox("Триггерные зоны", &ed.showAreas);
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
         ui::toolbarDivider();
         if (ui::toolButton(ICON_FIT, "Вся карта (F)")) ed.fitScene();
         ImGui::SameLine();
@@ -85,6 +161,12 @@ private:
         ImGui::SameLine(0, 12);
         ImGui::AlignTextToFramePadding();
         if (int(ed.tool) < int(Tool::Count)) ImGui::TextDisabled("%s", names[int(ed.tool)]);
+        ImGui::SameLine(); ImGui::TextDisabled("·");
+        ImGui::SameLine(); ImGui::TextDisabled("Grid 1м");
+        ImGui::SameLine(); ImGui::TextDisabled("·");
+        ImGui::SameLine(); ImGui::TextDisabled(ed.snap ? "Snap ON" : "Snap OFF");
+        ImGui::SameLine(); ImGui::TextDisabled("·");
+        ImGui::SameLine(); ImGui::TextDisabled("%zu объектов", ed.doc().data.entities.size());
         ui::endToolbar(bottom);
     }
 
@@ -207,14 +289,21 @@ private:
         if (looking_) {
             cam.yaw -= io.MouseDelta.x * 0.006f;
             cam.pitch = std::clamp(cam.pitch + io.MouseDelta.y * 0.005f, 0.15f, 1.53f);
-            float speed = cam.distance * 0.9f * io.DeltaTime * (io.KeyShift ? 3.0f : 1.0f);
-            float3 fwd{-std::sin(cam.yaw), 0, -std::cos(cam.yaw)}, right{std::cos(cam.yaw), 0, -std::sin(cam.yaw)};
+        }
+        // Free fly: WASD/QE move the camera target while Scene is focused/hovered.
+        // Right mouse remains orbit/look, middle mouse pans, Shift increases speed.
+        const bool cameraKeys = !io.WantTextInput && !io.KeyCtrl && !io.KeySuper &&
+                                (vp_.hovered || (ImGui::IsWindowFocused() && looking_));
+        if (cameraKeys) {
+            const float speed = cam.distance * 0.9f * io.DeltaTime * (io.KeyShift ? 3.0f : 1.0f);
+            const float3 fwd{-std::sin(cam.yaw), 0, -std::cos(cam.yaw)};
+            const float3 right{std::cos(cam.yaw), 0, -std::sin(cam.yaw)};
             if (ImGui::IsKeyDown(ImGuiKey_W)) cam.target += fwd * speed;
             if (ImGui::IsKeyDown(ImGuiKey_S)) cam.target += fwd * -speed;
             if (ImGui::IsKeyDown(ImGuiKey_D)) cam.target += right * speed;
             if (ImGui::IsKeyDown(ImGuiKey_A)) cam.target += right * -speed;
-            if (ImGui::IsKeyDown(ImGuiKey_E)) cam.distance = std::min(cam.maxDistance, cam.distance * (1 + io.DeltaTime));
-            if (ImGui::IsKeyDown(ImGuiKey_Q)) cam.distance = std::max(cam.minDistance, cam.distance * (1 - io.DeltaTime));
+            if (ImGui::IsKeyDown(ImGuiKey_Q)) cam.target.y -= speed;
+            if (ImGui::IsKeyDown(ImGuiKey_E)) cam.target.y += speed;
         }
         if (panning_) {
             float x0, z0, x1, z1;
@@ -267,12 +356,12 @@ private:
             keepSetClick_ = keepSet && ed.selected().size() > 1;
             clicked_ = picked;
             dragMoved_ = false;
-            if (n >= 0 && picked.kind == Selection::Entity && ed.isSelected(picked) && !io.KeyCtrl && !io.KeySuper && !io.KeyShift) {
-                doc.beginEdit();
+            if (ground && n >= 0 && picked.kind == Selection::Entity && ed.isSelected(picked) && !io.KeyCtrl && !io.KeySuper && !io.KeyShift) {
                 dragging_ = true;
                 dragOffX_ = d.entities[size_t(n)].x - x;
                 dragOffZ_ = d.entities[size_t(n)].z - z;
                 if (io.KeyAlt) { // Alt+drag copies
+                    doc.beginEdit();
                     DocEntity copy = d.entities[size_t(n)];
                     copy.id.clear();
                     d.entities.push_back(copy);
@@ -338,6 +427,7 @@ private:
             int t = ed.rules().findType(e.type);
             const float dx = ed.snapCoord(x + dragOffX_, t) - e.x, dz = ed.snapCoord(z + dragOffZ_, t) - e.z;
             if (dx != 0 || dz != 0) {
+                if (!dragMoved_ && !io.KeyAlt) doc.beginEdit();
                 dragMoved_ = true;
                 std::vector<int> idx;
                 for (int i : ed.selectedEntities()) if (!ed.objectLocked(d.entities[size_t(i)].owner, d.entities[size_t(i)].type) || i == sel) idx.push_back(i);
@@ -387,6 +477,24 @@ private:
     // brush circle, placement ghost and help text over the viewport
     void hud(Editor& ed) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
+        // Project actual selections from the shared Selection model. A click in
+        // Scene, Hierarchy or Inspector therefore receives the same feedback.
+        if (!ed.planetMap() && studioDrawSelection_) {
+            dl->PushClipRect(ImVec2(vp_.originX, vp_.originY),
+                             ImVec2(vp_.originX + vp_.pointsW, vp_.originY + vp_.pointsH), true);
+            for (const Selection& sel : ed.selected()) {
+                float wx, wz;
+                if (!ed.selectionPos(sel, wx, wz)) continue;
+                const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+                float2 p;
+                if (!ed.sceneCam.worldToScreen({wx, wy, wz}, vp_.pointsW, vp_.pointsH, p)) continue;
+                const ImVec2 c(vp_.originX + p.x, vp_.originY + p.y);
+                dl->AddCircle(c, 12.0f, IM_COL32(88, 174, 255, 230), 32, 2.0f);
+                dl->AddCircleFilled(c, 2.5f, IM_COL32(170, 219, 255, 255));
+            }
+            dl->PopClipRect();
+        }
+        if (!ed.planetMap()) studioOverlays(ed, dl);
         float x, z;
         if (ed.planetMap()) { // body / face / cell under the cursor
             int body; float3 local;
@@ -445,6 +553,46 @@ private:
             ui::viewportLabel(dl, ImVec2(vp_.originX + 12, vp_.originY + 10), ICON_PLAY "  Идёт тест — правка отключена (F5 — стоп)", ImVec4(1, 0.9f, 0.47f, 1));
     }
 
+    // Studio diagnostics share the Scene's projection and do not change the map or simulation.
+    void studioOverlays(Editor& ed, ImDrawList* dl) {
+        if (!studioDrawBounds_ && !studioDrawAxes_) return;
+        const auto& cam = ed.sceneCam;
+        auto project = [&](render::float3 xyz, ImVec2& result) {
+            render::float2 xy;
+            if (!cam.worldToScreen(xyz, vp_.pointsW, vp_.pointsH, xy)) return false;
+            result = ImVec2(vp_.originX + xy.x, vp_.originY + xy.y);
+            return true;
+        };
+        dl->PushClipRect(ImVec2(vp_.originX, vp_.originY),
+                         ImVec2(vp_.originX + vp_.pointsW, vp_.originY + vp_.pointsH), true);
+        if (studioDrawAxes_) {
+            ImVec2 a,b;
+            if (project({0,0,0},a)) {
+                if (project({4,0,0},b)) dl->AddLine(a,b,IM_COL32(234,96,96,255),2);
+                if (project({0,4,0},b)) dl->AddLine(a,b,IM_COL32(105,206,119,255),2);
+                if (project({0,0,4},b)) dl->AddLine(a,b,IM_COL32(105,154,239,255),2);
+            }
+        }
+        if (studioDrawBounds_) {
+            const auto& entities = ed.doc().data.entities;
+            for (size_t i=0; i<entities.size(); ++i) {
+                const auto& e = entities[i];
+                const int ti = ed.rules().findType(e.type);
+                const bool structure = ti>=0 && ed.rules().types[size_t(ti)].structure;
+                const float rx = structure ? std::max(.5f, float(ed.rules().types[size_t(ti)].footprintW)*.5f) : .5f;
+                const float rz = structure ? std::max(.5f, float(ed.rules().types[size_t(ti)].footprintH)*.5f) : .5f;
+                const float ground = ed.view().heightAt(ed.editGrid(), e.x, e.z);
+                const float height = structure ? 2.5f : 1.0f;
+                ImVec2 corners[8]; bool ok[8];
+                for (int j=0;j<8;++j) ok[j]=project({e.x+((j&1)?rx:-rx), ground+((j&2)?height:0.f), e.z+((j&4)?rz:-rz)},corners[j]);
+                const ImU32 color=ed.isSelected(Selection{Selection::Entity,int(i),{}}) ? IM_COL32(85,175,255,240) : IM_COL32(149,167,191,165);
+                for (int j=0;j<8;++j) for (int bit : {1,2,4}) if (!(j&bit) && ok[j] && ok[j|bit])
+                    dl->AddLine(corners[j],corners[j|bit],color,1.25f);
+            }
+        }
+        dl->PopClipRect();
+    }
+
     // Click selection: Ctrl / Cmd toggles, Shift adds, a plain click selects one (nothing: clears).
     static void pickSelect(Editor& ed, const Selection& s, const ImGuiIO& io) {
         if (io.KeyCtrl || io.KeySuper) { if (s.kind != Selection::None) ed.selectToggle(s); }
@@ -456,6 +604,10 @@ private:
     bool keepSetClick_ = false, dragMoved_ = false;
     Viewport vp_;
     bool looking_ = false, panning_ = false, dragging_ = false, painting_ = false, areaDrag_ = false;
+    int studioDebugMode_ = 0;
+    bool studioDrawBounds_ = false;
+    bool studioDrawAxes_ = false;
+    bool studioDrawSelection_ = true;
     float dragOffX_ = 0, dragOffZ_ = 0, areaX0_ = 0, areaZ0_ = 0, hoverX_ = 0, hoverY_ = 0;
 };
 

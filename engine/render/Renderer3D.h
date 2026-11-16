@@ -248,6 +248,13 @@ public:
     int sceneWidth() const { return sceneW_; }
     int sceneHeight() const { return sceneH_; }
     uint32_t drawCalls() const { return drawCalls_; }
+    // Studio Scene diagnostic: true colours each main-pass GPU draw submission.
+    // One instanced batch is one colour. This does not change gameplay or simulation.
+    void setDrawCallDebug(bool enabled) { drawCallDebug_ = enabled; }
+    bool drawCallDebug() const { return drawCallDebug_; }
+    // Scene-only visualization. 0: shaded, 1: draw calls, 2..9: GPU material/geometry views.
+    void setStudioDebugMode(int mode) { studioDebugMode_ = mode; drawCallDebug_ = mode == 1; }
+    int studioDebugMode() const { return studioDebugMode_; }
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
     const ModelRenderStats& modelStats() const { return modelStats_; }
@@ -344,6 +351,10 @@ private:
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
     uint32_t drawCalls_ = 0;
+    bool drawCallDebug_ = false;
+    int studioDebugMode_ = 0;
+    uint32_t debugMainDrawId_ = 0;
+    static float4 drawCallDebugColor(uint32_t drawId);
     int sceneW_ = 0, sceneH_ = 0;
     PostProcess* post_ = nullptr;      // set by render() when the hook is active, cleared by resolvePostFx()
     gfx::PassDesc postOut_;

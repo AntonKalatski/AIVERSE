@@ -27,6 +27,7 @@ public:
     const char* group() const override { return "scene"; }
     int order() const override { return 1; }
     const char* dockArea() const override { return "center"; }
+    bool openByDefault() const override { return false; }
     bool zeroPadding() const override { return true; }
     ImGuiWindowFlags flags() const override { return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse; }
 

@@ -33,6 +33,7 @@ public:
     const char* group() const override { return "scene"; }
     int order() const override { return 0; }
     const char* dockArea() const override { return "left-bottom"; }
+    bool openByDefault() const override { return false; }
 
     void draw(Editor& ed) override {
         if(ed.ws().project.isFps()) {

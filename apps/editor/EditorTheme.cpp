@@ -158,9 +158,10 @@ void EditorTheme::apply() {
     const ImVec4 acc = kAccents[accent_].color;
     Palette& p = pal_;
     if (dark) {
-        p.appBg = hex(0x0F1012); p.canvas = hex(0x222327); p.panel = hex(0x18191C); p.panelRaised = hex(0x202125); p.tabBar = hex(0x131416);
-        p.frame = hex(0x232428); p.frameHover = hex(0x2B2C31); p.border = hex(0x2A2B30); p.separator = hex(0x26272C);
-        p.text = hex(0xE2E4E9); p.textDim = hex(0x8A8F99); p.hover = ImVec4(1, 1, 1, 0.06f);
+        // AIVERSE Studio: deeper graphite/slate layering for a cleaner studio-like feel.
+        p.appBg = hex(0x10161D); p.canvas = hex(0x24313A); p.panel = hex(0x181F28); p.panelRaised = hex(0x232C37); p.tabBar = hex(0x141B23);
+        p.frame = hex(0x2B3543); p.frameHover = hex(0x394A60); p.border = hex(0x2F3948); p.separator = hex(0x27313E);
+        p.text = hex(0xE7EDF5); p.textDim = hex(0x9EADBF); p.hover = ImVec4(1, 1, 1, 0.06f);
         p.success = hex(0x34D399); p.warning = hex(0xFBBF24); p.danger = hex(0xF87171);
         p.accentHover = mix(acc, ImVec4(1, 1, 1, 1), 0.15f);
     } else {
@@ -175,16 +176,16 @@ void EditorTheme::apply() {
 
     ImGuiStyle s; // from defaults, so switching themes never accumulates
     s.FontSizeBase = kUiSize;
-    s.WindowPadding = ImVec2(10, 10);
-    s.FramePadding = ImVec2(8, 5);
-    s.ItemSpacing = ImVec2(8, 6);
+    s.WindowPadding = ImVec2(12, 12);
+    s.FramePadding = ImVec2(9, 6);
+    s.ItemSpacing = ImVec2(8, 7);
     s.ItemInnerSpacing = ImVec2(6, 4);
     s.CellPadding = ImVec2(6, 4);
     s.IndentSpacing = 16;
     s.ScrollbarSize = 10; s.ScrollbarRounding = 6; s.ScrollbarPadding = 2;
     s.GrabMinSize = 4; s.GrabRounding = 2;   // thin slider grab: the value text stays readable over it
-    s.WindowRounding = 6; s.ChildRounding = 6; s.FrameRounding = 5; s.PopupRounding = 6;
-    s.TabRounding = 5; s.MenuItemRounding = 4; s.ImageRounding = 0;
+    s.WindowRounding = 7; s.ChildRounding = 7; s.FrameRounding = 6; s.PopupRounding = 7;
+    s.TabRounding = 6; s.MenuItemRounding = 5; s.ImageRounding = 0;
     s.WindowBorderSize = 1; s.ChildBorderSize = 1; s.PopupBorderSize = 1;
     s.FrameBorderSize = dark ? 0 : 1;
     s.TabBorderSize = 0; s.TabBarBorderSize = 1; s.TabBarOverlineSize = 2;
@@ -223,9 +224,9 @@ void EditorTheme::apply() {
     c[ImGuiCol_CheckboxSelectedBg] = p.frame;
     c[ImGuiCol_SliderGrab] = acc;
     c[ImGuiCol_SliderGrabActive] = p.accentHover;
-    c[ImGuiCol_Button] = dark ? hex(0x26272C) : hex(0xFFFFFF);
-    c[ImGuiCol_ButtonHovered] = dark ? hex(0x303137) : hex(0xF0F1F4);
-    c[ImGuiCol_ButtonActive] = dark ? hex(0x393A41) : hex(0xE3E5EA);
+    c[ImGuiCol_Button] = dark ? hex(0x2A3443) : hex(0xFFFFFF);
+    c[ImGuiCol_ButtonHovered] = dark ? hex(0x36475D) : hex(0xF0F1F4);
+    c[ImGuiCol_ButtonActive] = dark ? hex(0x405572) : hex(0xE3E5EA);
     c[ImGuiCol_Header] = alpha(acc, dark ? 0.24f : 0.16f);
     c[ImGuiCol_HeaderHovered] = dark ? ImVec4(1, 1, 1, 0.07f) : ImVec4(0, 0, 0, 0.05f);
     c[ImGuiCol_HeaderActive] = alpha(acc, dark ? 0.34f : 0.24f);
@@ -237,7 +238,7 @@ void EditorTheme::apply() {
     c[ImGuiCol_ResizeGripActive] = alpha(acc, 0.8f);
     c[ImGuiCol_InputTextCursor] = acc;
     c[ImGuiCol_Tab] = p.tabBar;
-    c[ImGuiCol_TabHovered] = dark ? hex(0x1F2024) : hex(0xF4F5F7);
+    c[ImGuiCol_TabHovered] = dark ? hex(0x263244) : hex(0xF4F5F7);
     c[ImGuiCol_TabSelected] = p.panel;
     c[ImGuiCol_TabSelectedOverline] = acc;
     c[ImGuiCol_TabDimmed] = p.tabBar;

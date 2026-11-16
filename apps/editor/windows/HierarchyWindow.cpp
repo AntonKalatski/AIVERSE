@@ -12,6 +12,7 @@
 #include <map>
 #include <set>
 #include "../Editor.h"
+#include "StudioContextMenus.h"
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
@@ -71,13 +72,20 @@ public:
         bool data = !ed.worldConfig().labelKey.empty() || !filter_.empty();
         for (auto& k : groupingKeys(ed)) data = data || k.rfind("data:", 0) == 0;
         ed.wantWorld(data);
+        // Studio scene heading. The hierarchy is a live view, not a mock tree.
+        ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
+        ImGui::SameLine();
+        ImGui::TextDisabled("· %zu", ed.doc().data.entities.size());
+        ImGui::Spacing();
         toolbar(ed);
         statusLine(ed);
         rebuild(ed);
+        ImGui::Separator();
+        ImGui::Spacing();
         ImGui::BeginChild("##tree", ImVec2(0, 0), ImGuiChildFlags_None);
         focused_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
         reveal(ed);
-        const float rowH = ImGui::GetFontSize() + 6;
+        const float rowH = ImGui::GetFontSize() + 8;
         if (scrollTo_ >= 0) {
             const float y = float(scrollTo_) * rowH, h = ImGui::GetWindowHeight();
             if (y < ImGui::GetScrollY() || y + rowH > ImGui::GetScrollY() + h) ImGui::SetScrollY(std::max(0.0f, y - h * 0.4f));
@@ -90,7 +98,11 @@ public:
         clip.End();
         if (ed.doc().data.entities.empty() && ed.world().rows.empty() && ed.doc().data.players.empty())
             ui::emptyStateHere(ICON_HIERARCHY, "Карта пуста", "Инструмент «Объекты» ставит юниты и здания.");
-        if (ImGui::BeginPopupContextWindow("##ctx", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) { addMenu(ed); ImGui::EndPopup(); }
+        if (ImGui::BeginPopupContextWindow("##ctx", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+            addMenu(ed);
+            StudioContextMenus::get().draw(ed, "hierarchy");
+            ImGui::EndPopup();
+        }
         if (focused_) keys(ed);
         ImGui::EndChild();
     }
@@ -593,7 +605,11 @@ private:
             else if (expandable) toggle(r.key);
             else if (!r.members.empty()) focusMembers(ed, r.members);
         }
-        if (ImGui::BeginPopupContextItem("##rowctx")) { rowMenu(ed, r); ImGui::EndPopup(); }
+        if (ImGui::BeginPopupContextItem("##rowctx")) {
+            rowMenu(ed, r);
+            StudioContextMenus::get().draw(ed, "hierarchy", r.label.c_str());
+            ImGui::EndPopup();
+        }
         // content: arrow, icon / dot, label (ellipsis), eye / lock, count
         ImDrawList* dl = ImGui::GetWindowDrawList();
         if (focused_ && i == anchor_ && !sel)   // keyboard cursor on a row that selects nothing (a group)

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "../Editor.h"
+#include "StudioContextMenus.h"
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 
@@ -105,6 +106,7 @@ private:
                 ed.openMap(ws.mapsDir() + "/" + m);
             if (ImGui::BeginPopupContextItem()) {
                 if (ui::menuItem(ICON_FOLDER_OPEN, "Открыть")) ed.openMap(ws.mapsDir() + "/" + m);
+                StudioContextMenus::get().draw(ed, "project.map", m.c_str());
                 ImGui::EndPopup();
             }
         }

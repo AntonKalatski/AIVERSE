@@ -233,6 +233,30 @@ float modelNoise3(vec3 x) {
 }
 
 void main() {
+#if defined(STUDIO_DEBUG_VIEW)
+#if STUDIO_DEBUG_VIEW == 2
+    o_color = vec4(normalize(v_nrm) * .5 + .5, 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 3
+    o_color = vec4(fract(v_uv), 0.0, 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 4
+    float depthView = clamp(length(u_camPos.xyz - v_wpos) / 100.0, 0.0, 1.0);
+    o_color = vec4(vec3(depthView), 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 5
+    o_color = vec4(PALETTE_BASE.rgb * texture(tex1, v_uv).rgb, 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 6
+    o_color = vec4(vec3(PALETTE_PBR.y), 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 7
+    o_color = vec4(vec3(PALETTE_PBR.x), 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 8
+    o_color = vec4(m_emissive.rgb, 1.0); return;
+#elif STUDIO_DEBUG_VIEW == 9
+    o_color = vec4(fract(abs(v_wpos) * .05), 1.0); return;
+#endif
+#endif
+#if defined(DRAW_CALL_VIEW)
+    o_color = vec4(rtsEncodeScene(v_tint.rgb), 1.0);
+    return;
+#endif
 #if defined(LODFADE)
     ivec2 lp=ivec2(floor(gl_FragCoord.xy)) & ivec2(3);
     int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);
@@ -603,6 +627,29 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex10 [[texture(10)]], sampler s10 [[sampler(10)]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]] GI_FARGS) {
+#if defined(STUDIO_DEBUG_VIEW)
+#if STUDIO_DEBUG_VIEW == 2
+    return float4(normalize(in.nrm) * .5 + .5, 1.0);
+#elif STUDIO_DEBUG_VIEW == 3
+    return float4(fract(in.uv), 0.0, 1.0);
+#elif STUDIO_DEBUG_VIEW == 4
+    float depthView = clamp(length(f.camPos.xyz - in.wpos) / 100.0, 0.0, 1.0);
+    return float4(float3(depthView), 1.0);
+#elif STUDIO_DEBUG_VIEW == 5
+    return float4(sourceMaterial.base.rgb * tex1.sample(s1, in.uv).rgb, 1.0);
+#elif STUDIO_DEBUG_VIEW == 6
+    return float4(float3(sourceMaterial.pbr.y), 1.0);
+#elif STUDIO_DEBUG_VIEW == 7
+    return float4(float3(sourceMaterial.pbr.x), 1.0);
+#elif STUDIO_DEBUG_VIEW == 8
+    return float4(sourceMaterial.emissive.rgb, 1.0);
+#elif STUDIO_DEBUG_VIEW == 9
+    return float4(fract(abs(in.wpos) * .05), 1.0);
+#endif
+#endif
+#if defined(DRAW_CALL_VIEW)
+    return float4(rtsEncodeScene(in.tint.rgb), 1.0);
+#endif
     MU2 m = sourceMaterial;
 #if defined(MATERIAL_PALETTE)
     m.base = materials[in.material * 2];

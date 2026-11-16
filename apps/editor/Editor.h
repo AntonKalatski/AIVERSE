@@ -307,6 +307,7 @@ private:
     Options opt_;
     Workspace ws_;
     gfx::Device* dev_ = nullptr;
+    gfx::TextureHandle studioLogo_{}; // editor brand mark
     render::ImGuiLayer ui_;
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;

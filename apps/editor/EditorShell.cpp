@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <filesystem>
 #include "Editor.h"
+#include "tools/branding/BrandImage.h"
 #include "EditorGenreUi.h"
 #include "core/Projects.h"
 #include "EditorUtil.h"
@@ -99,7 +100,26 @@ void Editor::drawMenuBar() {
     ImGui::PopStyleVar();
     if (!bar) return;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 6));
-    ImGui::TextColored(theme_.palette().accent, ICON_CASTLE);
+    // Product wordmark in the top-left corner. The existing platform app icons
+    // (apps/editor/branding) remain the application window/taskbar logo.
+    // Original AIVERSE PNG icon; fallback if the source branding folder
+    // is absent (e.g. a compact standalone editor distribution).
+    if (!studioLogo_.valid() && dev_) {
+        branding::Image png;
+        if (branding::loadImageFile(opt_.engineDir + "/apps/editor/branding/icon_1024.png", png) && png.width > 0) {
+            const auto small = branding::resize(png, 32, 32);
+            gfx::TextureDesc desc;
+            desc.width = small.width; desc.height = small.height;
+            desc.data = small.rgba.data(); desc.label = "AIVERSE Studio logo";
+            studioLogo_ = dev_->createTexture(desc);
+        }
+    }
+    if (studioLogo_.valid()) ImGui::Image(ImTextureRef(ImTextureID(studioLogo_.id)), ImVec2(22, 22));
+    else ImGui::TextColored(theme_.palette().accent, ICON_CASTLE);
+    ImGui::SameLine(0, 5);
+    if (theme_.headingFont()) ImGui::PushFont(theme_.headingFont(), EditorTheme::kHeadingSize);
+    ImGui::TextUnformatted("AIVERSE");
+    if (theme_.headingFont()) ImGui::PopFont();
     ImGui::PopStyleVar();
     // ---- Файл: project + map documents
     if (ImGui::BeginMenu("Файл")) {
@@ -262,6 +282,39 @@ void Editor::drawMenuBar() {
     }
     drawTopBarControls();
     ImGui::EndMainMenuBar();
+
+    // Quick command palette: search any registered dock window or run a common action.
+    // The existing editor commands are called rather than duplicated.
+    static char commandFilter[160] = {};
+    const ImGuiIO& io = ImGui::GetIO();
+    if ((io.KeyCtrl || io.KeySuper) && ImGui::IsKeyPressed(ImGuiKey_K, false)) {
+        commandFilter[0] = 0;
+        ImGui::OpenPopup("##aiverse_command_palette");
+    }
+    ImGui::SetNextWindowSize(ImVec2(500, 0), ImGuiCond_Appearing);
+    if (ImGui::BeginPopup("##aiverse_command_palette", ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextDisabled(ICON_SEARCH "  Команды и окна  ·  Cmd/Ctrl+K");
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##command_query", "Найти окно или действие…", commandFilter, sizeof(commandFilter));
+        ImGui::Separator();
+        auto action = [&](const char* label, const char* icon, const char* key, auto&& callback) {
+            if (ui::contains(label, commandFilter) || ui::contains(key, commandFilter)) {
+                std::string text = std::string(icon) + "  " + label;
+                if (ImGui::Selectable(text.c_str())) { callback(); ImGui::CloseCurrentPopup(); }
+            }
+        };
+        action("Сохранить карту", ICON_SAVE, "save", [&] { if (!doc().path.empty()) saveMap(doc().path); });
+        action("Показать всю карту", ICON_FIT, "fit", [&] { fitScene(); focusWindow("scene"); });
+        action("Сбросить раскладку", ICON_LAYOUT, "reset layout", [&] { for (auto& w : windows_) w->open = w->openByDefault(); resetLayout_ = true; });
+        for (auto& w : windows_) {
+            if (ui::contains(w->title(), commandFilter) || ui::contains(w->id(), commandFilter)) {
+                const std::string label = std::string(w->icon() ? w->icon() : windowIconFor(w->id())) + "  " + w->title();
+                if (ImGui::Selectable(label.c_str())) { focusWindow(w->id()); ImGui::CloseCurrentPopup(); }
+            }
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void Editor::drawTopBarControls() {

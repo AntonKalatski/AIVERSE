@@ -2,6 +2,7 @@
 // trigger, map, or a rules item (type / resource / tech / faction) with block templates.
 #include <algorithm>
 #include "../Editor.h"
+#include "LuaCustomInspector.h"
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 #include "../DetailsPanel.h"
@@ -66,8 +67,21 @@ public:
         }
         Selection& s = ed.selection;
         if (!(s == lastSel_)) { message_.clear(); lastSel_ = s; }
+        // Studio Inspector header, with a direct jump to the scene and map properties.
+        // The existing detail renderer and edit operations stay authoritative.
+        ImGui::TextDisabled(ICON_INSPECTOR "  PROPERTIES");
+        if (s.kind != Selection::None) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton(ICON_SCENE "##inspectScene")) ed.focusWindow("scene");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Перейти к сцене");
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton(ICON_REGIONS "##inspectMap")) ed.select({Selection::MapProps, -1, {}});
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Свойства карты");
+        ImGui::Separator();
+        ImGui::Spacing();
         switch (s.kind) {
-            case Selection::Entity: case Selection::Live: details_.draw(ed); break;   // «Детали»: one or many world objects
+            case Selection::Entity: case Selection::Live: details_.draw(ed); customLua_.draw(ed); break;   // «Детали»: one or many world objects
             case Selection::MapBlock: mapJson(ed, s.key, ICON_BRACES, s.key, "Блок карты (JSON)"); break;
             case Selection::Road: road(ed); break;
             case Selection::Body: body(ed); break;
@@ -91,6 +105,7 @@ public:
     }
 
 private:
+    LuaCustomInspector customLua_;
     static std::string ownerName(Editor& ed, int owner) {
         auto& d = ed.doc().data;
         return owner == 0 ? "Нейтральный" : owner < 0 ? "Враждебные монстры" : owner <= int(d.players.size()) ? d.players[size_t(owner - 1)].name : "?";
