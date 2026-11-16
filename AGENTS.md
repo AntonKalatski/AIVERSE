@@ -636,7 +636,8 @@ adapter. Validate kits, native linking, client retries and selected UI screens.
   MCP / process recipes without a runtime library are registered in `WORKFLOWS` of
   `tools/skills/catalog.py`; run `python3 tools/skills/catalog.py generate` after any change and
   `python3 tools/skills/audit.py --strict` (referenced paths and MCP tool names must exist). A skill that
-  needs behaviour the engine lacks ships that code with tests; recipe: `skills/workflow/aiverse-skill-authoring`. Use `aiverse-*` for shared gameplay, `rts-*` only for RTS-specific
+  needs behaviour the engine lacks ships that code with tests; recipe: `skills/workflow/aiverse-skill-authoring`
+  (a code skill = library + tests registered in both CMake trees + catalog entry + SKILL.md, in one change). Use `aiverse-*` for shared gameplay, `rts-*` only for RTS-specific
   behavior, and `meta-*` for meta-game policies. Do not add recipes under `docs/`.
 - Before adding a recipe, search the existing catalogs. Extend the existing owner
   instead of creating a duplicate algorithm or overlapping skill. Register gameplay
