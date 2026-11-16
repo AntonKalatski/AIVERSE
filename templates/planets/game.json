@@ -2,7 +2,7 @@
 {
   "description": "Планета и луна, орбиты, перелёты.",
   "name": "Planets",
-  "id": "com.rtsengine.planets",
+  "id": "com.aiverse.planets",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

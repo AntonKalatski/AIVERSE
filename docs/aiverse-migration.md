@@ -4,7 +4,7 @@
 
 | Раньше | Теперь |
 |---|---|
-| RTSEngine / CMake `RTSEngine::` | AIVERSE / `AIVERSE::` |
+| AIVERSE / CMake `AIVERSE::` | AIVERSE / `AIVERSE::` |
 | C++ `rts::` | `aiverse::` |
 | CMake targets/functions `rts_*` | `aiverse_*` |
 | CMake options, macros, environment `RTS_*` | `AIVERSE_*` |
@@ -28,11 +28,11 @@ JSON `module: "rts"`, форматы ресурсов, сохранений и �
 Идентификаторы навыков `rts-*` остаются стабильными ссылками каталога.
 
 Новые пользовательские данные и инструменты размещаются в `~/.aiverse`.
-Редактор использует прежний `~/.rtsengine/projects.json`, если нового реестра ещё нет;
-сборщик аналогично подхватывает существующий `~/.rtsengine/toolchains`.
+Редактор использует прежний `~/.aiverse/projects.json`, если нового реестра ещё нет;
+сборщик аналогично подхватывает существующий `~/.aiverse/toolchains`.
 Папки проектов не переименовываются автоматически.
 
 Новые архивы имеют имя `AIVERSE-<version>-<commit>-<platform>.zip` и корень `AIVERSE/`.
-Публикатор продолжает читать старые архивы RTSEngine. Поле `rtsmcp` в `index.json`
+Публикатор продолжает читать старые архивы AIVERSE. Поле `rtsmcp` в `index.json`
 сохранено для клиентов загрузчика; у новых архивов оно указывает на `aiversemcp`.
 Git remote и уже опубликованные URL не переименовываются этой миграцией.

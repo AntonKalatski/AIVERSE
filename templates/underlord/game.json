@@ -2,7 +2,7 @@
 {
   "description": "Как Dungeon Keeper: копать, комнаты, монстры.",
   "name": "Underlord",
-  "id": "com.rtsengine.underlord",
+  "id": "com.aiverse.underlord",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

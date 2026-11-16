@@ -1,7 +1,7 @@
 {
   "description": "2D-тайлы как Dune II / Red Alert.",
   "name": "Crystal Dunes",
-  "id": "com.rtsengine.crystaldunes",
+  "id": "com.aiverse.crystaldunes",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

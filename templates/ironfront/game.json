@@ -2,7 +2,7 @@
 {
   "description": "Как Red Alert: MCV, руда, сайдбар.",
   "name": "Iron Front",
-  "id": "com.rtsengine.ironfront",
+  "id": "com.aiverse.ironfront",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

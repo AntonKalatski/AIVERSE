@@ -1,7 +1,7 @@
 // Scripting sample: Iron and Gold (skirmish) + Lua mechanics in scripts/ (docs/scripting.md).
 {
   "name": "Iron and Gold: Scripted",
-  "id": "com.rtsengine.scripted",
+  "id": "com.aiverse.scripted",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

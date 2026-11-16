@@ -2,7 +2,7 @@
 // game's UI Lua (docs/progression.md § UI) and the top-down controls of topdown_arena.
 {
   "name": "Perk Arena",
-  "id": "com.rtsengine.perkarena",
+  "id": "com.aiverse.perkarena",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

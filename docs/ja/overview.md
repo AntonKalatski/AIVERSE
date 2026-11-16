@@ -603,7 +603,7 @@ aiversemcp が自分の隣でエンジンを探すようになったコミット
 `xattr -dr com.apple.quarantine ~/aiverse/AIVERSE`。
 
 エンジンを自分でダウンロードするプログラムは、README ではなくブランチのルートにある **`index.json`**
-（`https://raw.githubusercontent.com/chromealex/AIVERSE/builds/index.json`）を読みます。以下は過去の RTSEngine のエントリの例です。新しい
+（`https://raw.githubusercontent.com/chromealex/AIVERSE/builds/index.json`）を読みます。以下は過去の AIVERSE のエントリの例です。新しい
 ビルドではパスに AIVERSE が含まれ、キー `rtsmcp` は維持されます：
 
 ```json
@@ -617,14 +617,14 @@ aiversemcp が自分の隣でエンジンを探すようになったコミット
       "arch": "arm64",
       "version": "0.2.0",
       "commit": "77126fa9",
-      "file": "macos/RTSEngine-0.2.0-77126fa9-macos.zip",
-      "url": "https://raw.githubusercontent.com/chromealex/AIVERSE/builds/macos/RTSEngine-0.2.0-77126fa9-macos.zip",
+      "file": "macos/AIVERSE-0.2.0-77126fa9-macos.zip",
+      "url": "https://raw.githubusercontent.com/chromealex/AIVERSE/builds/macos/AIVERSE-0.2.0-77126fa9-macos.zip",
       "size": 43055202,
       "sha256": "c08044fd5a13648016f4d0f2184edb6054d338a814c2b2de2caab09b4cf4513d",
-      "root": "RTSEngine",
-      "rtsmcp": "RTSEngine/bin/rtsmcp",
-      "editor": "RTSEngine/bin/RTSEditor.app",
-      "headless": "RTSEngine/bin/rts_headless"
+      "root": "AIVERSE",
+      "rtsmcp": "AIVERSE/bin/rtsmcp",
+      "editor": "AIVERSE/bin/RTSEditor.app",
+      "headless": "AIVERSE/bin/rts_headless"
     }
   ]
 }

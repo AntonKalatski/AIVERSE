@@ -1,5 +1,5 @@
 {
-  "id": "com.rtsengine.fps_arena",
+  "id": "com.aiverse.fps_arena",
   "name": "Crossfire Arena",
   "description": "Командная арена 5 на 5: укрытия, боты и сетевой матч.",
   "module": "fps",

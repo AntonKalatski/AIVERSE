@@ -3,7 +3,7 @@
 {
   "name": "Extraction Raid",
   "description": "Extraction raid sample: containers, raid inventory, objectives, extraction points and receipts (docs/raid.md).",
-  "id": "com.rtsengine.extraction",
+  "id": "com.aiverse.extraction",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

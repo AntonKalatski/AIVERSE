@@ -2,7 +2,7 @@
 {
   "description": "Как Northgard: захват регионов за еду.",
   "name": "Clan Lands",
-  "id": "com.rtsengine.clanlands",
+  "id": "com.aiverse.clanlands",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

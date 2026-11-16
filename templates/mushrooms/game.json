@@ -2,7 +2,7 @@
 {
   "description": "Как Mushroom Wars: гарнизоны и дороги.",
   "name": "Mushroom Clash",
-  "id": "com.rtsengine.mushroomclash",
+  "id": "com.aiverse.mushroomclash",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

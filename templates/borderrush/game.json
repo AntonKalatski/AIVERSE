@@ -2,7 +2,7 @@
 {
   "description": "Как State.io: войска сами захватывают клетки.",
   "name": "Border Rush",
-  "id": "com.rtsengine.borderrush",
+  "id": "com.aiverse.borderrush",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",
