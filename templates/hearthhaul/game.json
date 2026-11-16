@@ -2,7 +2,7 @@
 {
   "description": "Как Knights and Merchants: товары и дороги.",
   "name": "Hearth and Haul",
-  "id": "com.rtsengine.hearthhaul",
+  "id": "com.aiverse.hearthhaul",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

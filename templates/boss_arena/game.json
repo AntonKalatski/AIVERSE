@@ -1,7 +1,7 @@
 // Boss fight sample: rules "topDown" (hero) + rules "encounters" (boss, telegraphs, statuses, mobs); see docs/encounters.md.
 {
   "name": "Golem Pit",
-  "id": "com.rtsengine.golempit",
+  "id": "com.aiverse.golempit",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

@@ -636,7 +636,7 @@ pode ficar em quarentena: `xattr -dr com.apple.quarantine ~/aiverse/AIVERSE`.
 
 Programas que baixam a engine sozinhos leem o **`index.json`** na raiz da branch
 (`https://raw.githubusercontent.com/chromealex/AIVERSE/builds/index.json`), não o README. Abaixo, um exemplo de entrada histórica
-do RTSEngine; nos builds novos os caminhos contêm AIVERSE e a chave `rtsmcp` é mantida:
+do AIVERSE; nos builds novos os caminhos contêm AIVERSE e a chave `rtsmcp` é mantida:
 
 ```json
 {
@@ -649,14 +649,14 @@ do RTSEngine; nos builds novos os caminhos contêm AIVERSE e a chave `rtsmcp` é
       "arch": "arm64",
       "version": "0.2.0",
       "commit": "77126fa9",
-      "file": "macos/RTSEngine-0.2.0-77126fa9-macos.zip",
-      "url": "https://raw.githubusercontent.com/chromealex/AIVERSE/builds/macos/RTSEngine-0.2.0-77126fa9-macos.zip",
+      "file": "macos/AIVERSE-0.2.0-77126fa9-macos.zip",
+      "url": "https://raw.githubusercontent.com/chromealex/AIVERSE/builds/macos/AIVERSE-0.2.0-77126fa9-macos.zip",
       "size": 43055202,
       "sha256": "c08044fd5a13648016f4d0f2184edb6054d338a814c2b2de2caab09b4cf4513d",
-      "root": "RTSEngine",
-      "rtsmcp": "RTSEngine/bin/rtsmcp",
-      "editor": "RTSEngine/bin/RTSEditor.app",
-      "headless": "RTSEngine/bin/rts_headless"
+      "root": "AIVERSE",
+      "rtsmcp": "AIVERSE/bin/rtsmcp",
+      "editor": "AIVERSE/bin/RTSEditor.app",
+      "headless": "AIVERSE/bin/rts_headless"
     }
   ]
 }

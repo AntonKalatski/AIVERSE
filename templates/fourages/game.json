@@ -2,7 +2,7 @@
 {
   "description": "Как Age of Empires II: 4 ресурса и эпохи.",
   "name": "Four Ages",
-  "id": "com.rtsengine.fourages",
+  "id": "com.aiverse.fourages",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

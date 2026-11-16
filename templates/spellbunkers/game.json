@@ -2,7 +2,7 @@
 {
   "description": "Spore Lanes + книга заклинаний (Bunker Wars).",
   "name": "Spell Bunkers",
-  "id": "com.rtsengine.spellbunkers",
+  "id": "com.aiverse.spellbunkers",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

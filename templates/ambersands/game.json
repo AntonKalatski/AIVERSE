@@ -2,7 +2,7 @@
 {
   "description": "Как Dune II: спайс, ветряки, червь в песках.",
   "name": "Amber Sands",
-  "id": "com.rtsengine.ambersands",
+  "id": "com.aiverse.ambersands",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

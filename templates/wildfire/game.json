@@ -2,7 +2,7 @@
 {
   "name": "Wildfire",
   "description": "Grid fields sample: forest fires and creep (docs/fields.md).",
-  "id": "com.rtsengine.wildfire",
+  "id": "com.aiverse.wildfire",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

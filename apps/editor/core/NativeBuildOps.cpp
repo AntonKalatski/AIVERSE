@@ -29,7 +29,7 @@ std::string findOnPath(const std::string& name) {
     for (const char* d : {"/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"}) dirs.push_back(d);
     if (const char* h = std::getenv("HOME")) {
         dirs.push_back(fs::path(h) / ".aiverse" / "toolchains" / "py" / "bin");
-        dirs.push_back(fs::path(h) / ".rtsengine" / "toolchains" / "py" / "bin"); // existing installations
+        dirs.push_back(fs::path(h) / ".aiverse" / "toolchains" / "py" / "bin"); // existing installations
         dirs.push_back(fs::path(h) / ".local" / "bin");
     }
     std::error_code ec;

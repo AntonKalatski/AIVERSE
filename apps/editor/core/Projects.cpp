@@ -56,7 +56,7 @@ std::string canonical(const std::string& dir) {
 bool skipped(const fs::path& rel) {
     const std::string top = rel.begin() == rel.end() ? std::string() : rel.begin()->string();
     if (std::distance(rel.begin(), rel.end()) == 1 && isProjectFilePath(top)) return true;   // the new project gets its own
-    return top == "Builds" || top == "dist" || top == "logs" || top == "Logs" || top == ".aiverse" || top == ".rtsengine";
+    return top == "Builds" || top == "dist" || top == "logs" || top == "Logs" || top == ".aiverse" || top == ".aiverse";
 }
 
 const char* kEmptyRules = R"({
@@ -106,7 +106,7 @@ std::vector<TemplateInfo> listTemplates(const std::string& engineDir) {
 
 std::string projectsRegistry() {
     const auto current = home() / ".aiverse" / "projects.json";
-    const auto legacy = home() / ".rtsengine" / "projects.json";
+    const auto legacy = home() / ".aiverse" / "projects.json";
     std::error_code ec;
     if (!fs::exists(current, ec) && fs::exists(legacy, ec)) return legacy.string();
     return current.string();

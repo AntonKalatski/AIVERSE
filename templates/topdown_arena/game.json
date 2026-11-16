@@ -1,7 +1,7 @@
 // Top-down sample: rules "topDown" (simulation) + game.json "topDown" (client controls and camera).
 {
   "name": "Scrapyard Arena",
-  "id": "com.rtsengine.scrapyardarena",
+  "id": "com.aiverse.scrapyardarena",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

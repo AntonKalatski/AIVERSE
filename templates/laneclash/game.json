@@ -2,7 +2,7 @@
 {
   "description": "Лайн-баттлер: спавнеры и волны.",
   "name": "Lane Clash",
-  "id": "com.rtsengine.laneclash",
+  "id": "com.aiverse.laneclash",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

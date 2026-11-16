@@ -41,7 +41,7 @@ ToolEnv ToolEnv::current() {
 fs::path toolchainsDir(const ToolEnv& env) {
     if (std::string d = env.var("AIVERSE_TOOLCHAINS_DIR"); !d.empty()) return d;
     const auto current = env.home / ".aiverse" / "toolchains";
-    const auto legacy = env.home / ".rtsengine" / "toolchains";
+    const auto legacy = env.home / ".aiverse" / "toolchains";
     std::error_code ec;
     if (!fs::exists(current, ec) && fs::exists(legacy, ec)) return legacy;
     return current;

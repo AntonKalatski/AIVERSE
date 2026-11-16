@@ -1,5 +1,5 @@
 {
-  "id": "com.rtsengine.fps_training",
+  "id": "com.aiverse.fps_training",
   "name": "Aim Lab",
   "description": "Тренировочный тир: мишени, стрельба, перезарядка и полоса препятствий.",
   "module": "fps",

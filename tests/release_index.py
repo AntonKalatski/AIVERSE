@@ -16,7 +16,7 @@ class ReleaseIndexTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             packages = []
-            for brand, prefix, mcp in [('RTSEngine', 'rts', 'rtsmcp'), ('AIVERSE', 'aiverse', 'aiversemcp')]:
+            for brand, prefix, mcp in [('AIVERSE', 'rts', 'rtsmcp'), ('AIVERSE', 'aiverse', 'aiversemcp')]:
                 rel = f'linux/{brand}-0.2.0-12345678-linux.zip'
                 archive = root / rel
                 archive.parent.mkdir(exist_ok=True)

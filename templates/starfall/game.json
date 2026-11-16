@@ -2,7 +2,7 @@
 {
   "description": "Как StarCraft: три расы, разные стройки.",
   "name": "Starfall Sectors",
-  "id": "com.rtsengine.starfall",
+  "id": "com.aiverse.starfall",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

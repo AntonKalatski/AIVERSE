@@ -2,7 +2,7 @@
 {
   "description": "Классика Warcraft/RA: база, армия, башни.",
   "name": "Iron and Gold",
-  "id": "com.rtsengine.ironandgold",
+  "id": "com.aiverse.ironandgold",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

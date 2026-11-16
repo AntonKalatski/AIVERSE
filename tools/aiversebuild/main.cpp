@@ -195,7 +195,7 @@ void copyDir(const fs::path& from, const fs::path& to) {
     fs::create_directories(to, ec);
     for (auto it = fs::directory_iterator(from, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
         const std::string name = it->path().filename().string();
-        if (name == "Builds" || name == "dist" || name == "logs" || name == "Logs" || name == ".aiverse" || name == ".rtsengine") continue;
+        if (name == "Builds" || name == "dist" || name == "logs" || name == "Logs" || name == ".aiverse" || name == ".aiverse") continue;
         if (it->path().extension() == ".aiverse" || it->path().extension() == ".rtsproj") continue;   // editor project file (current / legacy)
         std::error_code e2;
         const bool ok = it->is_directory(e2) ? aiverse::pack::copyTree(it->path(), to / name, e2) : aiverse::pack::copyFileReplace(it->path(), to / name, e2);
@@ -444,7 +444,7 @@ fs::path contentPack(Options& o) {
     rules.add("models/source/*"); // editor authoring source/history; games consume exported GLB
     rules.add("native/*"); // compiled game modules are source code, not runtime data (root only: "native/" would match any folder named native, e.g. models/native)
     rules.add("unpackers/"); // the game's own unpacker plugins are build tools, not content
-    for (const char* d : {"Builds/", "Logs/", "logs/", "dist/", ".aiverse/", ".rtsengine/"}) rules.add(d);   // project outputs and editor state
+    for (const char* d : {"Builds/", "Logs/", "logs/", "dist/", ".aiverse/", ".aiverse/"}) rules.add(d);   // project outputs and editor state
     rules.add("*.aiverse");   // the editor's project file (double-click target), not game content
     rules.add("*.rtsproj");   // its name before the AIVERSE rename
     std::vector<std::string> notes;

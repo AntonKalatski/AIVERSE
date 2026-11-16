@@ -2,7 +2,7 @@
 {
   "description": "Mushroom Wars 2: уровни, кузницы, мораль, герои.",
   "name": "Shroom Wars",
-  "id": "com.rtsengine.shroomwars",
+  "id": "com.aiverse.shroomwars",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

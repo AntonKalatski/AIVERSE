@@ -2,7 +2,7 @@
 {
   "description": "Как Warcraft III: герои, крипы, рельеф.",
   "name": "Frost Crown",
-  "id": "com.rtsengine.frostcrown",
+  "id": "com.aiverse.frostcrown",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

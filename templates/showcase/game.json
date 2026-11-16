@@ -3,7 +3,7 @@
 {
   "description": "Iron and Gold с 3D-моделями и анимацией.",
   "name": "Model Showcase",
-  "id": "com.rtsengine.showcase",
+  "id": "com.aiverse.showcase",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

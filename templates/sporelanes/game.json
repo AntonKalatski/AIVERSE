@@ -2,7 +2,7 @@
 {
   "description": "Как Mushroom Wars 2: колонны по линиям.",
   "name": "Spore Lanes",
-  "id": "com.rtsengine.sporelanes",
+  "id": "com.aiverse.sporelanes",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

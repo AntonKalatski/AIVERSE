@@ -61,7 +61,7 @@ Open items:
 ## Previous checkpoint
 
 Branch: `codex/sponza-full`. Worktree on the author's machine:
-`/Users/aleksandrfeer/Projects/RTSEngine/.worktrees/linear-hdr`.
+`/Users/aleksandrfeer/Projects/AIVERSE/.worktrees/linear-hdr`.
 The user requested that all work be pushed for another agent to continue.
 This is a continuation checkpoint, **not a claim that the visual defects are resolved**.
 

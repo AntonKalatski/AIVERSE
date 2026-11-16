@@ -2,7 +2,7 @@
 {
   "description": "Как Total Annihilation: потоки ресурсов.",
   "name": "Metal Tide",
-  "id": "com.rtsengine.metaltide",
+  "id": "com.aiverse.metaltide",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

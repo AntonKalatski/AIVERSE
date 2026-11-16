@@ -2,7 +2,7 @@
 {
   "description": "Как They Are Billions: выжить в волнах.",
   "name": "Last Colony",
-  "id": "com.rtsengine.lastcolony",
+  "id": "com.aiverse.lastcolony",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

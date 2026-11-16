@@ -11,7 +11,7 @@ index d2c6c8bb..b1092b84 100644
  
  If your task is not in this table, the user's first message to you defines your area: write it
 @@ -219,3 +220,111 @@ themselves (`engine/platform/EngineDir.h`), so the unpacked folder runs anywhere
- The version is `project(RTSEngine VERSION x.y.z)` in CMakeLists.txt + the short commit hash; bump the
+ The version is `project(AIVERSE VERSION x.y.z)` in CMakeLists.txt + the short commit hash; bump the
  version for releases worth naming. Only publish builds whose tests and template matches passed.
  Other agents don't publish; they say in their report that a republish is due.
 +
@@ -35,7 +35,7 @@ index d2c6c8bb..b1092b84 100644
 +`python3 tests/libraries/native_consumer.py`.
 +Integration changes to simulation still require the full tests and all template matches from §4.
 +
-+Native game projects consume foundation libraries via `RTSEngine::libraries` after
++Native game projects consume foundation libraries via `AIVERSE::libraries` after
 +`rts_native_module(...)`; include `<rtslib/Name.h>`. This target must exist before project
 +native CMake code executes. Keep `libraries/` in rtsbuild source exports. No Lua dependency
 +or engine-source edit is required for a game to consume these headers. Do not store mutable
@@ -47,7 +47,7 @@ index d2c6c8bb..b1092b84 100644
 +Before implementing controls, cameras, construction UX, abilities, inventory/equipment,
 +squad controls, feedback, tutorials, save migrations, diagnostics, content workflows or
 +acceptance gates, consult `docs/gameplay-packages.md` and the catalog's `cpp-subsystem` /
-+`tool-workflow` entries. Use `RTSEngine::gameplay_native` for native command adapters.
++`tool-workflow` entries. Use `AIVERSE::gameplay_native` for native command adapters.
 +Existing engine mechanics remain authoritative: custom preview/helper state must not
 +become a second source of truth for built-in costs, cooldowns, inventories or navigation.
 +`libraries/spec/gameplay.json` owns settings; regenerate C++ types, schema and reference
@@ -142,13 +142,13 @@ index 8d3af38d..d7b15792 100644
 +# Reusable algorithms are public to external native game modules as well as engine code.
 +if(RTS_BUILD_TESTS)
 +    add_executable(rts_library_tests tests/libraries/tests.cpp)
-+    target_link_libraries(rts_library_tests PRIVATE RTSEngine::libraries)
++    target_link_libraries(rts_library_tests PRIVATE AIVERSE::libraries)
 +    add_test(NAME rts_library_tests COMMAND rts_library_tests)
 +endif()
 +
 +if(RTS_BUILD_TESTS)
 +    add_executable(rts_gameplay_tests tests/libraries/gameplay_tests.cpp)
-+    target_link_libraries(rts_gameplay_tests PRIVATE RTSEngine::gameplay_native rts_engine)
++    target_link_libraries(rts_gameplay_tests PRIVATE AIVERSE::gameplay_native rts_engine)
 +    add_test(NAME rts_gameplay_tests COMMAND rts_gameplay_tests)
 +    find_package(Python3 COMPONENTS Interpreter QUIET)
 +    if(Python3_Interpreter_FOUND)
@@ -160,17 +160,17 @@ index 8d3af38d..d7b15792 100644
 +# Reusable application packages: host policies remain independent of the simulation.
 +if(RTS_BUILD_TESTS)
 +    add_executable(rts_app_tests tests/libraries/app_tests.cpp)
-+    target_link_libraries(rts_app_tests PRIVATE RTSEngine::libraries)
++    target_link_libraries(rts_app_tests PRIVATE AIVERSE::libraries)
 +    add_test(NAME rts_app_tests COMMAND rts_app_tests)
 +    if(TARGET rts::meta)
 +        add_executable(rts_app_meta_tests tests/libraries/app_meta_tests.cpp)
-+        target_link_libraries(rts_app_meta_tests PRIVATE RTSEngine::libraries rts::meta)
++        target_link_libraries(rts_app_meta_tests PRIVATE AIVERSE::libraries rts::meta)
 +        add_test(NAME rts_app_meta_tests COMMAND rts_app_meta_tests)
 +    endif()
 +endif()
 +if(RTS_BUILD_TOOLS)
 +    add_executable(rts_app_tools tools/libraries/app_main.cpp)
-+    target_link_libraries(rts_app_tools PRIVATE RTSEngine::gameplay_native rts_engine)
++    target_link_libraries(rts_app_tools PRIVATE AIVERSE::gameplay_native rts_engine)
 +endif()
 +
 +# Opt-in end-to-end reusable library host, excluded from normal builds.
@@ -181,51 +181,51 @@ index 8d3af38d..d7b15792 100644
 +    endif()
 +    add_executable(rts_library_showcase examples/libraries/showcase/main.cpp $<TARGET_OBJECTS:rts_runtime>)
 +    target_compile_definitions(rts_library_showcase PRIVATE RTS_LIBRARY_ENGINE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
-+    target_link_libraries(rts_library_showcase PRIVATE rts_runtime rts_game_view rts_ui rts_i18n rts::meta RTSEngine::gameplay_native)
++    target_link_libraries(rts_library_showcase PRIVATE rts_runtime rts_game_view rts_ui rts_i18n rts::meta AIVERSE::gameplay_native)
 +endif()
 +if(RTS_BUILD_TESTS)
 +    add_executable(rts_runtime_library_tests tests/libraries/runtime_tests.cpp)
-+    target_link_libraries(rts_runtime_library_tests PRIVATE RTSEngine::gameplay_native rts_engine)
++    target_link_libraries(rts_runtime_library_tests PRIVATE AIVERSE::gameplay_native rts_engine)
 +    add_test(NAME rts_runtime_library_tests COMMAND rts_runtime_library_tests)
 +endif()
 +if(RTS_BUILD_TESTS)
 +    add_executable(rts_systems_tests tests/libraries/systems_tests.cpp)
-+    target_link_libraries(rts_systems_tests PRIVATE RTSEngine::libraries)
++    target_link_libraries(rts_systems_tests PRIVATE AIVERSE::libraries)
 +    add_test(NAME rts_systems_tests COMMAND rts_systems_tests)
 +    add_executable(rts_systems_engine_tests tests/libraries/systems_engine_tests.cpp)
-+    target_link_libraries(rts_systems_engine_tests PRIVATE RTSEngine::gameplay_native rts_game)
++    target_link_libraries(rts_systems_engine_tests PRIVATE AIVERSE::gameplay_native rts_game)
 +    add_test(NAME rts_systems_engine_tests COMMAND rts_systems_engine_tests)
 +endif()
 +
 +# Reusable bot adapters: real engine integration, isolated from the reference FPS bot.
 +if(RTS_BUILD_TESTS)
 +    add_executable(rts_library_rts_bot_tests tests/libraries/bots/rts_tests.cpp)
-+    target_link_libraries(rts_library_rts_bot_tests PRIVATE RTSEngine::rts_bots)
++    target_link_libraries(rts_library_rts_bot_tests PRIVATE AIVERSE::rts_bots)
 +    add_test(NAME library_rts_bots COMMAND rts_library_rts_bot_tests ${PROJECT_SOURCE_DIR}/templates/skirmish)
 +endif()
 +if(TARGET rts_fps AND (RTS_BUILD_TESTS OR RTS_BUILD_TOOLS))
 +    add_executable(rts_bot_match examples/libraries/bots/main.cpp)
-+    target_link_libraries(rts_bot_match PRIVATE RTSEngine::rts_bots RTSEngine::fps_bots)
++    target_link_libraries(rts_bot_match PRIVATE AIVERSE::rts_bots AIVERSE::fps_bots)
 +endif()
 +if(RTS_BUILD_TESTS AND TARGET rts_fps)
 +    add_executable(rts_library_fps_bot_tests tests/libraries/bots/fps_tests.cpp)
-+    target_link_libraries(rts_library_fps_bot_tests PRIVATE RTSEngine::fps_bots)
++    target_link_libraries(rts_library_fps_bot_tests PRIVATE AIVERSE::fps_bots)
 +    add_test(NAME library_fps_bots COMMAND rts_library_fps_bot_tests)
 +endif()
 +
 +if(TARGET rts_fps AND (RTS_BUILD_TESTS OR RTS_BUILD_TOOLS))
 +    add_executable(rts_navmesh tools/libraries/navmesh_main.cpp)
-+    target_link_libraries(rts_navmesh PRIVATE RTSEngine::fps_bots)
++    target_link_libraries(rts_navmesh PRIVATE AIVERSE::fps_bots)
 +endif()
 +if(RTS_BUILD_TESTS AND TARGET rts_fps)
 +    add_executable(rts_library_navmesh_tests tests/libraries/bots/navmesh_tests.cpp)
-+    target_link_libraries(rts_library_navmesh_tests PRIVATE RTSEngine::fps_bots)
++    target_link_libraries(rts_library_navmesh_tests PRIVATE AIVERSE::fps_bots)
 +    add_test(NAME library_navmesh COMMAND rts_library_navmesh_tests)
 +endif()
 +
 +if(RTS_BUILD_TESTS AND TARGET rts_world)
 +    add_executable(rts_library_genre_tests tests/libraries/genre_tests.cpp)
-+    target_link_libraries(rts_library_genre_tests PRIVATE RTSEngine::genre)
++    target_link_libraries(rts_library_genre_tests PRIVATE AIVERSE::genre)
 +    add_test(NAME library_genre COMMAND rts_library_genre_tests ${PROJECT_SOURCE_DIR})
 +endif()
 diff --git a/docs/ai-skills/rts-abilities/SKILL.md b/docs/ai-skills/rts-abilities/SKILL.md
@@ -236,7 +236,7 @@ index 00000000..daf8edbc
 @@ -0,0 +1,34 @@
 +---
 +name: rts-abilities
-+description: Reuse RTSEngine abilities for target/range/resource checks and optional native cast/cooldown lifecycle in C++ native game projects.
++description: Reuse AIVERSE abilities for target/range/resource checks and optional native cast/cooldown lifecycle in C++ native game projects.
 +---
 +
 +# abilities
@@ -248,7 +248,7 @@ index 00000000..daf8edbc
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. For built-in abilities send abilityCommand and use engine cooldown/effects. Use AbilityState only for custom native mechanics, and persist all fields. Charge custom resource costs transactionally only after validation.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -276,7 +276,7 @@ index 00000000..56535b11
 @@ -0,0 +1,20 @@
 +---
 +name: rts-action-sequences
-+description: Reuse RTSEngine C++ tick-based multi-stage actions with timeout and cancellation cleanup for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ tick-based multi-stage actions with timeout and cancellation cleanup for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# action-sequences
@@ -290,8 +290,8 @@ index 00000000..56535b11
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-ai-perception/SKILL.md b/docs/ai-skills/rts-ai-perception/SKILL.md
@@ -302,7 +302,7 @@ index 00000000..0c40d8e0
 @@ -0,0 +1,20 @@
 +---
 +name: rts-ai-perception
-+description: Reuse RTSEngine C++ bounded observation memory, expiration and threat selection for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ bounded observation memory, expiration and threat selection for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# ai-perception
@@ -316,8 +316,8 @@ index 00000000..0c40d8e0
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-app-lifecycle/SKILL.md b/docs/ai-skills/rts-app-lifecycle/SKILL.md
@@ -328,7 +328,7 @@ index 00000000..b2523cbb
 @@ -0,0 +1,18 @@
 +---
 +name: rts-app-lifecycle
-+description: Reuse RTSEngine C++ application state transitions and stale loading completion rejection when implementing app-lifecycle in an external native game project or host tool.
++description: Reuse AIVERSE C++ application state transitions and stale loading completion rejection when implementing app-lifecycle in an external native game project or host tool.
 +---
 +
 +# app-lifecycle
@@ -336,7 +336,7 @@ index 00000000..b2523cbb
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Lifecycle.h` and the matching catalog entry.
 +
 +1. Use Lifecycle.send for explicit events. Capture generation before async load and call loaded(ticket). Host owns cancellation and resource cleanup. Pausing local UI must not stop a shared multiplayer simulation.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin app-lifecycle --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -352,7 +352,7 @@ index 00000000..87706f42
 @@ -0,0 +1,20 @@
 +---
 +name: rts-attribute-modifiers
-+description: Reuse RTSEngine C++ authoritative effective stat snapshots through existing modifiers for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ authoritative effective stat snapshots through existing modifiers for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# attribute-modifiers
@@ -366,8 +366,8 @@ index 00000000..87706f42
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-balance-lab/SKILL.md b/docs/ai-skills/rts-balance-lab/SKILL.md
@@ -378,7 +378,7 @@ index 00000000..f6a996b0
 @@ -0,0 +1,18 @@
 +---
 +name: rts-balance-lab
-+description: Reuse RTSEngine C++ mirrored round-robin cases and aggregate faction outcomes when implementing balance-lab in an external native game project or host tool.
++description: Reuse AIVERSE C++ mirrored round-robin cases and aggregate faction outcomes when implementing balance-lab in an external native game project or host tool.
 +---
 +
 +# balance-lab
@@ -386,7 +386,7 @@ index 00000000..f6a996b0
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Balance.h` and the matching catalog entry.
 +
 +1. Use roundRobin with identical seed lists and swapped starts. Record actual player-to-faction mapping. Use addSample only for completed matches/draws; keep time limits separate. Run playlab.py against prepared project variations; report sample counts and seeds, not unsupported confidence claims.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin balance-lab --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -402,10 +402,10 @@ index 00000000..8b9f0e92
 @@ -0,0 +1,38 @@
 +---
 +name: rts-behavior
-+description: Use RTSEngine C++ behavior capabilities for fsm transitions and utility selection, including native modules of external game projects.
++description: Use AIVERSE C++ behavior capabilities for fsm transitions and utility selection, including native modules of external game projects.
 +---
 +
-+# RTSEngine behavior
++# AIVERSE behavior
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -415,7 +415,7 @@ index 00000000..8b9f0e92
 +- Layer: **simulation**. Current coverage: FSM transitions and utility selection.
 +- Read `libraries/include/rtslib/Behavior.h` as the current API authority. No Lua implementation is required.
 +- Save current NativeState explicitly. Definitions are immutable. Utility ties choose smaller ID. BT/GOAP remain planned.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Behavior.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Behavior.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin behavior --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -446,7 +446,7 @@ index 00000000..89ce3e64
 @@ -0,0 +1,16 @@
 +---
 +name: rts-bot-matches
-+description: Run real RTS and FPS bot matches and verify fresh restoration or automatic navigation changes in RTSEngine.
++description: Run real RTS and FPS bot matches and verify fresh restoration or automatic navigation changes in AIVERSE.
 +---
 +
 +# Bot match verification
@@ -468,14 +468,14 @@ index 00000000..19be37a3
 @@ -0,0 +1,14 @@
 +---
 +name: rts-bots-fps
-+description: Reuse RTSEngine command-driven fps bots with perception, reaction, aiming, reload, retreat, zone and patrol in native C++ projects when implementing game bots or navigation.
++description: Reuse AIVERSE command-driven fps bots with perception, reaction, aiming, reload, retreat, zone and patrol in native C++ projects when implementing game bots or navigation.
 +---
 +
 +# bots-fps
 +
 +1. Read `docs/bots.md` and this catalog entry. Read `libraries/include/rtslib/bots/Fps.h` for exact APIs.
 +2. Run on one authoritative host with map bot:false for owned slots. Use fpsCommand then sim.submit; never mutate actors. Persist FpsState with the simulation. Supply generated navmesh or authored waypoint graph; no bomb, loot or vehicle mechanics are implied.
-+3. Link `RTSEngine::fps_bots` from an executable host target. For registered OBJECT native modules use `rts_native_use_bots(rts_native_<id> RTS FPS)` with only the needed genres to avoid circular linkage. Use `examples/native/libraries/BotConsumer.cpp` for include/persistence access and `examples/libraries/bots/main.cpp` for actual host scheduling.
++3. Link `AIVERSE::fps_bots` from an executable host target. For registered OBJECT native modules use `rts_native_use_bots(rts_native_<id> RTS FPS)` with only the needed genres to avoid circular linkage. Use `examples/native/libraries/BotConsumer.cpp` for include/persistence access and `examples/libraries/bots/main.cpp` for actual host scheduling.
 +4. Keep configurations immutable and validate JSON at load. Store dynamic state explicitly; save and restore it with simulation before producing further commands. Never retain future state after rollback.
 +5. Keep sim Fixed/integer-only. Stable ties and deterministic operation budgets must not depend on wall time. Feed commands through the existing authority/network route.
 +6. Run `python3 tools/libraries/catalog.py check`, `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, root bot/navmesh tests and representative real matches. If changing engine simulation run full checks and all templates.
@@ -488,14 +488,14 @@ index 00000000..adc7cd6f
 @@ -0,0 +1,14 @@
 +---
 +name: rts-bots-rts
-+description: Reuse RTSEngine rts bot profiles and transactional checkpoints over the existing rtsai in native C++ projects when implementing game bots or navigation.
++description: Reuse AIVERSE rts bot profiles and transactional checkpoints over the existing rtsai in native C++ projects when implementing game bots or navigation.
 +---
 +
 +# bots-rts
 +
 +1. Read `docs/bots.md` and this catalog entry. Read `libraries/include/rtslib/bots/Rts.h` for exact APIs.
 +2. Use existing RtsAI for economy, build/research, combat, garrisons and terrain/planet play. Host calls update before sim.step. rules.ai may override profiles. Preserve the legacy knowledge policy; do not claim fog-fairness. Save bot state with simulation; exact player/seed/settings must match.
-+3. Link `RTSEngine::rts_bots` from an executable host target. For registered OBJECT native modules use `rts_native_use_bots(rts_native_<id> RTS FPS)` with only the needed genres to avoid circular linkage. Use `examples/native/libraries/BotConsumer.cpp` for include/persistence access and `examples/libraries/bots/main.cpp` for actual host scheduling.
++3. Link `AIVERSE::rts_bots` from an executable host target. For registered OBJECT native modules use `rts_native_use_bots(rts_native_<id> RTS FPS)` with only the needed genres to avoid circular linkage. Use `examples/native/libraries/BotConsumer.cpp` for include/persistence access and `examples/libraries/bots/main.cpp` for actual host scheduling.
 +4. Keep configurations immutable and validate JSON at load. Store dynamic state explicitly; save and restore it with simulation before producing further commands. Never retain future state after rollback.
 +5. Keep sim Fixed/integer-only. Stable ties and deterministic operation budgets must not depend on wall time. Feed commands through the existing authority/network route.
 +6. Run `python3 tools/libraries/catalog.py check`, `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, root bot/navmesh tests and representative real matches. If changing engine simulation run full checks and all templates.
@@ -508,7 +508,7 @@ index 00000000..d3d9f405
 @@ -0,0 +1,19 @@
 +---
 +name: rts-bounded-memory
-+description: Reuse RTSEngine fixed-capacity scratch buffers and generational slot pools when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE fixed-capacity scratch buffers and generational slot pools when working on native game projects and reusable engine tooling.
 +---
 +
 +# bounded-memory
@@ -521,8 +521,8 @@ index 00000000..d3d9f405
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-camera/SKILL.md b/docs/ai-skills/rts-camera/SKILL.md
@@ -533,7 +533,7 @@ index 00000000..7461e281
 @@ -0,0 +1,34 @@
 +---
 +name: rts-camera
-+description: Reuse RTSEngine camera for rts/follow/orbit target controls, limits, smoothing and strategic icon threshold in C++ native game projects.
++description: Reuse AIVERSE camera for rts/follow/orbit target controls, limits, smoothing and strategic icon threshold in C++ native game projects.
 +---
 +
 +# camera
@@ -545,7 +545,7 @@ index 00000000..7461e281
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Use delta time only in presentation. Apply resulting Pose to the existing client/editor camera. World-to-sphere mapping remains the planet camera responsibility.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -573,7 +573,7 @@ index 00000000..ff5022d8
 @@ -0,0 +1,18 @@
 +---
 +name: rts-change-planner
-+description: Reuse RTSEngine C++ dependency-ordered change recipes and verification checklist when implementing change-planner in an external native game project or host tool.
++description: Reuse AIVERSE C++ dependency-ordered change recipes and verification checklist when implementing change-planner in an external native game project or host tool.
 +---
 +
 +# change-planner
@@ -581,7 +581,7 @@ index 00000000..ff5022d8
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Planner.h` and the matching catalog entry.
 +
 +1. Describe explicit ChangeRecipe dependencies/files/checks and call planChanges. Unknown IDs and cycles fail. Review actual file diffs; the planner does not infer semantics or edit files. Apply supported rule mutations with existing gameplay.py recipe/apply and its stale-base checks.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin change-planner --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -597,7 +597,7 @@ index 00000000..faaf30f0
 @@ -0,0 +1,14 @@
 +---
 +name: rts-character-locomotion
-+description: Reuse RTSEngine fixed character movement policy with ground/air acceleration, jump buffer and coyote time when building native C++ games across genres.
++description: Reuse AIVERSE fixed character movement policy with ground/air acceleration, jump buffer and coyote time when building native C++ games across genres.
 +---
 +
 +# character-locomotion
@@ -605,7 +605,7 @@ index 00000000..faaf30f0
 +1. Read `docs/genre-packages.md` and the catalog entry. Inspect `libraries/include/rtslib/genre/Locomotion.h` for exact runtime behavior.
 +2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
 +3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
-+4. Host executables link RTSEngine::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
++4. Host executables link AIVERSE::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
 +5. Route external actions as Commands, validate ownership/resources/targets, and consume policy outcomes in the authoritative owner. Presentation only reads committed state. Use sim.rng for spread, integer ticks and Fixed arithmetic.
 +6. Persist state with genre::save/load and storeBytes/loadBytes in a separate NativeState key. Bind configuration/definition versions in the save envelope. Do not put mutable state on a NativeModule instance or keep future state after rollback.
 +7. Run catalog/generator checks, tests/libraries/run.py, native_consumer.py and rts_library_genre_tests. Add real project replay/collision/UI checks for integration changes. Report policies separately from fully wired genre gameplay and list platform gaps.
@@ -617,10 +617,10 @@ index 00000000..355760fe
 @@ -0,0 +1,38 @@
 +---
 +name: rts-collections
-+description: Use RTSEngine C++ collections capabilities for fifo queue and stable top-k, including native modules of external game projects.
++description: Use AIVERSE C++ collections capabilities for fifo queue and stable top-k, including native modules of external game projects.
 +---
 +
-+# RTSEngine collections
++# AIVERSE collections
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -630,7 +630,7 @@ index 00000000..355760fe
 +- Layer: **simulation**. Current coverage: FIFO queue and stable top-K.
 +- Read `libraries/include/rtslib/Collections.h` as the current API authority. No Lua implementation is required.
 +- Store queue under NativeState. top ties preserve input order; sort entity inputs by index.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Collections.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Collections.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin collections --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -661,7 +661,7 @@ index 00000000..ef568649
 @@ -0,0 +1,39 @@
 +---
 +name: rts-configuration
-+description: Reuse RTSEngine configuration for generated c++ settings, json schema, defaults and strict config parsing in C++ native game projects.
++description: Reuse AIVERSE configuration for generated c++ settings, json schema, defaults and strict config parsing in C++ native game projects.
 +---
 +
 +# configuration
@@ -673,7 +673,7 @@ index 00000000..ef568649
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Edit libraries/spec/gameplay.json and regenerate. C++ loader and CLI reject unknown fields, wrong types and cross-field violations. Do not edit generated files by hand.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -706,7 +706,7 @@ index 00000000..1603e765
 @@ -0,0 +1,34 @@
 +---
 +name: rts-construction
-+description: Reuse RTSEngine construction for placement checks, resource explanations, refunds and native construction commands in C++ native game projects.
++description: Reuse AIVERSE construction for placement checks, resource explanations, refunds and native construction commands in C++ native game projects.
 +---
 +
 +# construction
@@ -718,7 +718,7 @@ index 00000000..1603e765
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Call checkPlacement with authoritative map/territory/slope queries. Render its Decision as preview, then submit buildCommand. The engine must revalidate the command at execution time; previews never reserve or debit resources.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -746,7 +746,7 @@ index 00000000..64ee35e4
 @@ -0,0 +1,18 @@
 +---
 +name: rts-content-mods
-+description: Reuse RTSEngine C++ versioned dependency resolution, conflicts and deterministic mod order when implementing content-mods in an external native game project or host tool.
++description: Reuse AIVERSE C++ versioned dependency resolution, conflicts and deterministic mod order when implementing content-mods in an external native game project or host tool.
 +---
 +
 +# content-mods
@@ -754,7 +754,7 @@ index 00000000..64ee35e4
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Content.h` and the matching catalog entry.
 +
 +1. Build ContentPackage records from trusted manifests, then resolveContent. Digest is required metadata, not computed or verified here; verify actual bytes through catalog pins/content tooling before mounting. Mount in returned order with explicit override rules. Never execute untrusted scripts or use manifest paths without validation.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin content-mods --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -770,7 +770,7 @@ index 00000000..0e7e22cc
 @@ -0,0 +1,34 @@
 +---
 +name: rts-content-pipeline
-+description: Reuse RTSEngine content-pipeline for content budgets, png dimensions, localization consistency and existing conversion tool orchestration in C++ native game projects.
++description: Reuse AIVERSE content-pipeline for content budgets, png dimensions, localization consistency and existing conversion tool orchestration in C++ native game projects.
 +---
 +
 +# content-pipeline
@@ -810,7 +810,7 @@ index 00000000..5e627c73
 @@ -0,0 +1,20 @@
 +---
 +name: rts-decision-explanations
-+description: Reuse RTSEngine C++ bounded structured decision facts using existing reason codes for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ bounded structured decision facts using existing reason codes for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# decision-explanations
@@ -824,8 +824,8 @@ index 00000000..5e627c73
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-diagnostics/SKILL.md b/docs/ai-skills/rts-diagnostics/SKILL.md
@@ -836,7 +836,7 @@ index 00000000..3f596a85
 @@ -0,0 +1,34 @@
 +---
 +name: rts-diagnostics
-+description: Reuse RTSEngine diagnostics for structured refusal codes, values and bounded decision traces in C++ native game projects.
++description: Reuse AIVERSE diagnostics for structured refusal codes, values and bounded decision traces in C++ native game projects.
 +---
 +
 +# diagnostics
@@ -848,7 +848,7 @@ index 00000000..3f596a85
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Use reasonKey with Localization::tr; pass subject/required/available as parameters. Traces are diagnostic outputs only; never depend on trace capacity for simulation outcomes.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -876,7 +876,7 @@ index 00000000..3f4e05b2
 @@ -0,0 +1,34 @@
 +---
 +name: rts-feedback
-+description: Reuse RTSEngine feedback for event-to-sound/particle/animation/notification/camera actions with cooldowns in C++ native game projects.
++description: Reuse AIVERSE feedback for event-to-sound/particle/animation/notification/camera actions with cooldowns in C++ native game projects.
 +---
 +
 +# feedback
@@ -888,7 +888,7 @@ index 00000000..3f4e05b2
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Bind dispatch callbacks to existing presentation services. Use only accepted sim events; clear FeedbackState after rollback/seek and never feed it into gameplay logic.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -916,7 +916,7 @@ index 00000000..052b588d
 @@ -0,0 +1,34 @@
 +---
 +name: rts-game-verification
-+description: Reuse RTSEngine game-verification for headless seed checks, snapshot/serialized restore gates and machine-readable reports in C++ native game projects.
++description: Reuse AIVERSE game-verification for headless seed checks, snapshot/serialized restore gates and machine-readable reports in C++ native game projects.
 +---
 +
 +# game-verification
@@ -956,10 +956,10 @@ index 00000000..5ce05a4c
 @@ -0,0 +1,38 @@
 +---
 +name: rts-generation
-+description: Use RTSEngine C++ generation capabilities for existing deterministic map generator, including native modules of external game projects.
++description: Use AIVERSE C++ generation capabilities for existing deterministic map generator, including native modules of external game projects.
 +---
 +
-+# RTSEngine generation
++# AIVERSE generation
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1000,7 +1000,7 @@ index 00000000..ba5ff5c5
 @@ -0,0 +1,18 @@
 +---
 +name: rts-genre-kits
-+description: Reuse RTSEngine C++ reusable capability and acceptance recipes for four genres when implementing genre-kits in an external native game project or host tool.
++description: Reuse AIVERSE C++ reusable capability and acceptance recipes for four genres when implementing genre-kits in an external native game project or host tool.
 +---
 +
 +# genre-kits
@@ -1008,7 +1008,7 @@ index 00000000..ba5ff5c5
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Genre.h` and the matching catalog entry.
 +
 +1. Use genreKit to select existing library packages and acceptance scenarios. Configure engine rules and templates before adding code. Kits are composition recipes, not complete generated games. Implement the named acceptance scenarios for the actual project and verify them.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin genre-kits --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -1024,10 +1024,10 @@ index 00000000..a0f05445
 @@ -0,0 +1,38 @@
 +---
 +name: rts-graphs
-+description: Use RTSEngine C++ graphs capabilities for bfs and topological ordering, including native modules of external game projects.
++description: Use AIVERSE C++ graphs capabilities for bfs and topological ordering, including native modules of external game projects.
 +---
 +
-+# RTSEngine graphs
++# AIVERSE graphs
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1037,7 +1037,7 @@ index 00000000..a0f05445
 +- Layer: **simulation**. Current coverage: BFS and topological ordering.
 +- Read `libraries/include/rtslib/Graphs.h` as the current API authority. No Lua implementation is required.
 +- Use dense IDs. Test unreachable nodes, cycles and duplicate edges. Weighted search and flows remain planned.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Graphs.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Graphs.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin graphs --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1068,10 +1068,10 @@ index 00000000..e31b6746
 @@ -0,0 +1,38 @@
 +---
 +name: rts-grid
-+description: Use RTSEngine C++ grid capabilities for four-neighbor multi-source distance fields, including native modules of external game projects.
++description: Use AIVERSE C++ grid capabilities for four-neighbor multi-source distance fields, including native modules of external game projects.
 +---
 +
-+# RTSEngine grid
++# AIVERSE grid
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1081,7 +1081,7 @@ index 00000000..e31b6746
 +- Layer: **simulation**. Current coverage: Four-neighbor multi-source distance fields.
 +- Read `libraries/include/rtslib/Grid.h` as the current API authority. No Lua implementation is required.
 +- Use row-major IDs. False/nil cells are blocked. Bound work and cache under NativeState. Test borders and unreachable cells.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Grid.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Grid.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin grid --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1112,7 +1112,7 @@ index 00000000..ccefccec
 @@ -0,0 +1,19 @@
 +---
 +name: rts-hot-reload
-+description: Reuse RTSEngine stage and atomically activate validated host settings when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE stage and atomically activate validated host settings when working on native game projects and reusable engine tooling.
 +---
 +
 +# hot-reload
@@ -1125,8 +1125,8 @@ index 00000000..ccefccec
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-input/SKILL.md b/docs/ai-skills/rts-input/SKILL.md
@@ -1137,7 +1137,7 @@ index 00000000..95c78e2d
 @@ -0,0 +1,34 @@
 +---
 +name: rts-input
-+description: Reuse RTSEngine input for context and priority input routing, axis deadzones, selection, control groups and drag gestures in C++ native game projects.
++description: Reuse AIVERSE input for context and priority input routing, axis deadzones, selection, control groups and drag gestures in C++ native game projects.
 +---
 +
 +# input
@@ -1149,7 +1149,7 @@ index 00000000..95c78e2d
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Use normalized platform input. Resolve UI/modal context before game context; send resulting gameplay actions as commands. Store selection/control groups in local presentation state.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -1177,7 +1177,7 @@ index 00000000..f95f3a99
 @@ -0,0 +1,34 @@
 +---
 +name: rts-inventory
-+description: Reuse RTSEngine inventory for stacked inventory, weight/slot limits, atomic transfer, equipment and crafting in C++ native game projects.
++description: Reuse AIVERSE inventory for stacked inventory, weight/slot limits, atomic transfer, equipment and crafting in C++ native game projects.
 +---
 +
 +# inventory
@@ -1189,7 +1189,7 @@ index 00000000..f95f3a99
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Prefer built-in engine item mechanics for existing item types. For custom native inventories validate item definitions, provide stable IDs, serialize each stack/equipment field, and require ownership checks in commands.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -1217,7 +1217,7 @@ index 00000000..e02012b5
 @@ -0,0 +1,19 @@
 +---
 +name: rts-library-showcase
-+description: Reuse RTSEngine end-to-end real rts simulation, rmlui, save and meta reward example when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE end-to-end real rts simulation, rmlui, save and meta reward example when working on native game projects and reusable engine tooling.
 +---
 +
 +# library-showcase
@@ -1230,8 +1230,8 @@ index 00000000..e02012b5
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-library-upgrades/SKILL.md b/docs/ai-skills/rts-library-upgrades/SKILL.md
@@ -1242,7 +1242,7 @@ index 00000000..eceff854
 @@ -0,0 +1,19 @@
 +---
 +name: rts-library-upgrades
-+description: Reuse RTSEngine read-only package upgrade plan from lock hashes when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE read-only package upgrade plan from lock hashes when working on native game projects and reusable engine tooling.
 +---
 +
 +# library-upgrades
@@ -1255,8 +1255,8 @@ index 00000000..eceff854
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-logistics/SKILL.md b/docs/ai-skills/rts-logistics/SKILL.md
@@ -1267,10 +1267,10 @@ index 00000000..cfddcc2f
 @@ -0,0 +1,38 @@
 +---
 +name: rts-logistics
-+description: Use RTSEngine C++ logistics capabilities for atomic integer recipe consumption, including native modules of external game projects.
++description: Use AIVERSE C++ logistics capabilities for atomic integer recipe consumption, including native modules of external game projects.
 +---
 +
-+# RTSEngine logistics
++# AIVERSE logistics
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1280,7 +1280,7 @@ index 00000000..cfddcc2f
 +- Layer: **simulation**. Current coverage: Atomic integer recipe consumption.
 +- Read `libraries/include/rtslib/Logistics.h` as the current API authority. No Lua implementation is required.
 +- Use unique resource strings and nonnegative integer amounts. Duplicate ingredients are summed. This operates on caller stock, not engine resources; never create a competing economy.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Logistics.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Logistics.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin logistics --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1311,7 +1311,7 @@ index 00000000..54a2fea3
 @@ -0,0 +1,20 @@
 +---
 +name: rts-loot-tables
-+description: Reuse RTSEngine C++ weighted loot with exclusions and a guaranteed rare threshold for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ weighted loot with exclusions and a guaranteed rare threshold for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# loot-tables
@@ -1325,8 +1325,8 @@ index 00000000..54a2fea3
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-match-bridge/SKILL.md b/docs/ai-skills/rts-match-bridge/SKILL.md
@@ -1337,7 +1337,7 @@ index 00000000..4f923831
 @@ -0,0 +1,18 @@
 +---
 +name: rts-match-bridge
-+description: Reuse RTSEngine C++ authoritative match result to idempotent meta transaction when implementing match-bridge in an external native game project or host tool.
++description: Reuse AIVERSE C++ authoritative match result to idempotent meta transaction when implementing match-bridge in an external native game project or host tool.
 +---
 +
 +# match-bridge
@@ -1345,7 +1345,7 @@ index 00000000..4f923831
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/MatchBridge.h` and the matching catalog entry.
 +
 +1. Use grantMatch with rts::meta::Economy after authoritative completion. Link rts::meta and provide durable Commit CAS. Keep a stable unique match id across retries. Never call from predicted finishes, replay seeks or sim ticks. Nullopt is invalid envelope; inspect meta Result for conflict/denial.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin match-bridge --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -1361,7 +1361,7 @@ index 00000000..5231e8fb
 @@ -0,0 +1,14 @@
 +---
 +name: rts-match-rules
-+description: Reuse RTSEngine team score events, rounds, overtime, draws and contested capture policies when building native C++ games across genres.
++description: Reuse AIVERSE team score events, rounds, overtime, draws and contested capture policies when building native C++ games across genres.
 +---
 +
 +# match-rules
@@ -1369,7 +1369,7 @@ index 00000000..5231e8fb
 +1. Read `docs/genre-packages.md` and the catalog entry. Inspect `libraries/include/rtslib/genre/Match.h` for exact runtime behavior.
 +2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
 +3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
-+4. Host executables link RTSEngine::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
++4. Host executables link AIVERSE::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
 +5. Route external actions as Commands, validate ownership/resources/targets, and consume policy outcomes in the authoritative owner. Presentation only reads committed state. Use sim.rng for spread, integer ticks and Fixed arithmetic.
 +6. Persist state with genre::save/load and storeBytes/loadBytes in a separate NativeState key. Bind configuration/definition versions in the save envelope. Do not put mutable state on a NativeModule instance or keep future state after rollback.
 +7. Run catalog/generator checks, tests/libraries/run.py, native_consumer.py and rts_library_genre_tests. Add real project replay/collision/UI checks for integration changes. Report policies separately from fully wired genre gameplay and list platform gaps.
@@ -1381,10 +1381,10 @@ index 00000000..8e4f4eeb
 @@ -0,0 +1,38 @@
 +---
 +name: rts-math
-+description: Use RTSEngine C++ math capabilities for fixed arithmetic, vectors and trigonometry, including native modules of external game projects.
++description: Use AIVERSE C++ math capabilities for fixed arithmetic, vectors and trigonometry, including native modules of external game projects.
 +---
 +
-+# RTSEngine math
++# AIVERSE math
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1425,7 +1425,7 @@ index 00000000..6b924876
 @@ -0,0 +1,14 @@
 +---
 +name: rts-melee-combat
-+description: Reuse RTSEngine custom melee timing, buffered combos, active-window hit deduplication and defense outcomes when building native C++ games across genres.
++description: Reuse AIVERSE custom melee timing, buffered combos, active-window hit deduplication and defense outcomes when building native C++ games across genres.
 +---
 +
 +# melee-combat
@@ -1433,7 +1433,7 @@ index 00000000..6b924876
 +1. Read `docs/genre-packages.md` and the catalog entry. Inspect `libraries/include/rtslib/genre/Melee.h` for exact runtime behavior.
 +2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
 +3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
-+4. Host executables link RTSEngine::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
++4. Host executables link AIVERSE::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
 +5. Route external actions as Commands, validate ownership/resources/targets, and consume policy outcomes in the authoritative owner. Presentation only reads committed state. Use sim.rng for spread, integer ticks and Fixed arithmetic.
 +6. Persist state with genre::save/load and storeBytes/loadBytes in a separate NativeState key. Bind configuration/definition versions in the save envelope. Do not put mutable state on a NativeModule instance or keep future state after rollback.
 +7. Run catalog/generator checks, tests/libraries/run.py, native_consumer.py and rts_library_genre_tests. Add real project replay/collision/UI checks for integration changes. Report policies separately from fully wired genre gameplay and list platform gaps.
@@ -1445,7 +1445,7 @@ index 00000000..c1fda134
 @@ -0,0 +1,14 @@
 +---
 +name: rts-narrative-graphs
-+description: Reuse RTSEngine localized narrative graphs with conditional choices and atomic fact transactions when building native C++ games across genres.
++description: Reuse AIVERSE localized narrative graphs with conditional choices and atomic fact transactions when building native C++ games across genres.
 +---
 +
 +# narrative-graphs
@@ -1453,7 +1453,7 @@ index 00000000..c1fda134
 +1. Read `docs/genre-packages.md` and the catalog entry. Inspect `libraries/include/rtslib/genre/Narrative.h` for exact runtime behavior.
 +2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
 +3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
-+4. Host executables link RTSEngine::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
++4. Host executables link AIVERSE::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
 +5. Route external actions as Commands, validate ownership/resources/targets, and consume policy outcomes in the authoritative owner. Presentation only reads committed state. Use sim.rng for spread, integer ticks and Fixed arithmetic.
 +6. Persist state with genre::save/load and storeBytes/loadBytes in a separate NativeState key. Bind configuration/definition versions in the save envelope. Do not put mutable state on a NativeModule instance or keep future state after rollback.
 +7. Run catalog/generator checks, tests/libraries/run.py, native_consumer.py and rts_library_genre_tests. Add real project replay/collision/UI checks for integration changes. Report policies separately from fully wired genre gameplay and list platform gaps.
@@ -1465,7 +1465,7 @@ index 00000000..d2f6c6f1
 @@ -0,0 +1,19 @@
 +---
 +name: rts-native-scaffold
-+description: Reuse RTSEngine generate a registered external native c++ module when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE generate a registered external native c++ module when working on native game projects and reusable engine tooling.
 +---
 +
 +# native-scaffold
@@ -1478,8 +1478,8 @@ index 00000000..d2f6c6f1
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-navigation/SKILL.md b/docs/ai-skills/rts-navigation/SKILL.md
@@ -1490,10 +1490,10 @@ index 00000000..d6d2aee1
 @@ -0,0 +1,38 @@
 +---
 +name: rts-navigation
-+description: Use RTSEngine C++ navigation capabilities for existing pathfinding and flow fields, including native modules of external game projects.
++description: Use AIVERSE C++ navigation capabilities for existing pathfinding and flow fields, including native modules of external game projects.
 +---
 +
-+# RTSEngine navigation
++# AIVERSE navigation
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1534,14 +1534,14 @@ index 00000000..52ffccd4
 @@ -0,0 +1,14 @@
 +---
 +name: rts-navmesh
-+description: Reuse RTSEngine automatic deterministic layered aabb navigation mesh with clearance, erosion and bounded routing in native C++ projects when implementing game bots or navigation.
++description: Reuse AIVERSE automatic deterministic layered aabb navigation mesh with clearance, erosion and bounded routing in native C++ projects when implementing game bots or navigation.
 +---
 +
 +# navmesh
 +
 +1. Read `docs/bots.md` and this catalog entry. Read `libraries/include/rtslib/bots/NavMesh.h` for exact APIs.
 +2. Build immutable regional polygon meshes from current collision and motor dimensions. Rebuild on geometry changes. Bound cell/polygon/candidate/search budgets. No triangle/slope importer or cross-region streaming links. Use navPath/navStep, real motor tests and rts_navmesh exporter.
-+3. Link `RTSEngine::navmesh` from an executable host target; registered OBJECT native modules call `rts_native_use_bots(rts_native_<id> NAVMESH)` so backend dependencies propagate to the game. Use `examples/native/libraries/BotConsumer.cpp` for include/persistence access and `examples/libraries/bots/main.cpp` for actual host scheduling.
++3. Link `AIVERSE::navmesh` from an executable host target; registered OBJECT native modules call `rts_native_use_bots(rts_native_<id> NAVMESH)` so backend dependencies propagate to the game. Use `examples/native/libraries/BotConsumer.cpp` for include/persistence access and `examples/libraries/bots/main.cpp` for actual host scheduling.
 +4. Keep configurations immutable and validate JSON at load. Store dynamic state explicitly; save and restore it with simulation before producing further commands. Never retain future state after rollback.
 +5. Keep sim Fixed/integer-only. Stable ties and deterministic operation budgets must not depend on wall time. Feed commands through the existing authority/network route.
 +6. Run `python3 tools/libraries/catalog.py check`, `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, root bot/navmesh tests and representative real matches. If changing engine simulation run full checks and all templates.
@@ -1554,7 +1554,7 @@ index 00000000..1907ffbf
 @@ -0,0 +1,18 @@
 +---
 +name: rts-network-session
-+description: Reuse RTSEngine C++ transport-independent lobby, reconnect and ordered delivery policy when implementing network-session in an external native game project or host tool.
++description: Reuse AIVERSE C++ transport-independent lobby, reconnect and ordered delivery policy when implementing network-session in an external native game project or host tool.
 +---
 +
 +# network-session
@@ -1562,7 +1562,7 @@ index 00000000..1907ffbf
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Session.h` and the matching catalog entry.
 +
 +1. Provide transport/authentication outside this package. Use epoch on each async callback; retain sequence across reconnect and reset on a new session. Content hashes must come from verified manifests. accept is for ordered message streams, not out-of-order UDP or multiple peer channels. Do not present this as a server or netcode implementation.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin network-session --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -1578,7 +1578,7 @@ index 00000000..ebe4da35
 @@ -0,0 +1,20 @@
 +---
 +name: rts-object-interactions
-+description: Reuse RTSEngine C++ stable action previews plus native built-in interaction commands for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ stable action previews plus native built-in interaction commands for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# object-interactions
@@ -1592,8 +1592,8 @@ index 00000000..ebe4da35
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-objectives/SKILL.md b/docs/ai-skills/rts-objectives/SKILL.md
@@ -1604,10 +1604,10 @@ index 00000000..53b86161
 @@ -0,0 +1,38 @@
 +---
 +name: rts-objectives
-+description: Use RTSEngine C++ objectives capabilities for event counters and one-shot completion, including native modules of external game projects.
++description: Use AIVERSE C++ objectives capabilities for event counters and one-shot completion, including native modules of external game projects.
 +---
 +
-+# RTSEngine objectives
++# AIVERSE objectives
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1617,7 +1617,7 @@ index 00000000..53b86161
 +- Layer: **simulation**. Current coverage: Event counters and one-shot completion.
 +- Read `libraries/include/rtslib/Objectives.h` as the current API authority. No Lua implementation is required.
 +- Use unique goal IDs and positive integer targets. Save progress. Emit completion only on threshold crossing. Branching dialogue remains planned.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Objectives.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Objectives.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin objectives --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1648,7 +1648,7 @@ index 00000000..ff5200e9
 @@ -0,0 +1,18 @@
 +---
 +name: rts-performance-budgets
-+description: Reuse RTSEngine C++ nearest-rank p95, peak limits and baseline regression checks when implementing performance-budgets in an external native game project or host tool.
++description: Reuse AIVERSE C++ nearest-rank p95, peak limits and baseline regression checks when implementing performance-budgets in an external native game project or host tool.
 +---
 +
 +# performance-budgets
@@ -1656,7 +1656,7 @@ index 00000000..ff5200e9
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Performance.h` and the matching catalog entry.
 +
 +1. Collect timing outside sim after warm-up on the same hardware/build/quality. Samples and budgets must share units. Use summarize and checkBudget; insufficient samples fail. Never let timing metrics affect deterministic gameplay. Report peak and sample count as well as p95.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin performance-budgets --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -1672,7 +1672,7 @@ index 00000000..877418ca
 @@ -0,0 +1,18 @@
 +---
 +name: rts-play-scenarios
-+description: Reuse RTSEngine C++ tick-indexed actions and assertions for automated play when implementing play-scenarios in an external native game project or host tool.
++description: Reuse AIVERSE C++ tick-indexed actions and assertions for automated play when implementing play-scenarios in an external native game project or host tool.
 +---
 +
 +# play-scenarios
@@ -1680,7 +1680,7 @@ index 00000000..877418ca
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Scenario.h` and the matching catalog entry.
 +
 +1. Validate Scenario once before running. Advance at every exact tick; emit normal Commands via callback and supply authoritative metric snapshots. Missing metrics and skipped ticks fail. Reset the runner for each run; do not reuse it after rollback without restoring cursor state.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin play-scenarios --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -1696,10 +1696,10 @@ index 00000000..3faedd6b
 @@ -0,0 +1,38 @@
 +---
 +name: rts-presentation
-+description: Use RTSEngine C++ presentation capabilities for smoothstep, lerp and timeline progress, including native modules of external game projects.
++description: Use AIVERSE C++ presentation capabilities for smoothstep, lerp and timeline progress, including native modules of external game projects.
 +---
 +
-+# RTSEngine presentation
++# AIVERSE presentation
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1709,7 +1709,7 @@ index 00000000..3faedd6b
 +- Layer: **presentation**. Current coverage: Smoothstep, lerp and timeline progress.
 +- Read `libraries/include/rtslib/Presentation.h` as the current API authority. No Lua implementation is required.
 +- Use view scripts only. Zero duration completes at start. Read sim events and never write simulation NativeState.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Presentation.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Presentation.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin presentation --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1740,7 +1740,7 @@ index 00000000..f474b5c4
 @@ -0,0 +1,20 @@
 +---
 +name: rts-progression-curves
-+description: Reuse RTSEngine C++ nonnegative integer step/linear progression tables and cli preview for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ nonnegative integer step/linear progression tables and cli preview for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# progression-curves
@@ -1754,8 +1754,8 @@ index 00000000..f474b5c4
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-progression/SKILL.md b/docs/ai-skills/rts-progression/SKILL.md
@@ -1766,10 +1766,10 @@ index 00000000..adfed72d
 @@ -0,0 +1,38 @@
 +---
 +name: rts-progression
-+description: Use RTSEngine C++ progression capabilities for weighted selection and level thresholds, including native modules of external game projects.
++description: Use AIVERSE C++ progression capabilities for weighted selection and level thresholds, including native modules of external game projects.
 +---
 +
-+# RTSEngine progression
++# AIVERSE progression
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1779,7 +1779,7 @@ index 00000000..adfed72d
 +- Layer: **simulation**. Current coverage: Weighted selection and level thresholds.
 +- Read `libraries/include/rtslib/Progression.h` as the current API authority. No Lua implementation is required.
 +- Supply simulation RNG as draw(total), integer 1..total. Zero total returns nil. Test zero weights and endpoints. For pity/exclusions use the loot-tables package (systems/Loot.h); for interpolated progression use progression-curves.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Progression.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Progression.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin progression --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1810,7 +1810,7 @@ index 00000000..cfcb03bc
 @@ -0,0 +1,34 @@
 +---
 +name: rts-project-recipes
-+description: Reuse RTSEngine project-recipes for plan and validated application of resource/building/ability/faction changes in C++ native game projects.
++description: Reuse AIVERSE project-recipes for plan and validated application of resource/building/ability/faction changes in C++ native game projects.
 +---
 +
 +# project-recipes
@@ -1850,7 +1850,7 @@ index 00000000..820082dc
 @@ -0,0 +1,19 @@
 +---
 +name: rts-reference-validation
-+description: Reuse RTSEngine validate id, file and localization/content references when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE validate id, file and localization/content references when working on native game projects and reusable engine tooling.
 +---
 +
 +# reference-validation
@@ -1863,8 +1863,8 @@ index 00000000..820082dc
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-reservations/SKILL.md b/docs/ai-skills/rts-reservations/SKILL.md
@@ -1875,7 +1875,7 @@ index 00000000..948ff48a
 @@ -0,0 +1,20 @@
 +---
 +name: rts-reservations
-+description: Reuse RTSEngine C++ transactional reservation, release and consumption of custom capacities for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ transactional reservation, release and consumption of custom capacities for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# reservations
@@ -1889,8 +1889,8 @@ index 00000000..948ff48a
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-rules/SKILL.md b/docs/ai-skills/rts-rules/SKILL.md
@@ -1901,10 +1901,10 @@ index 00000000..acf6ac8f
 @@ -0,0 +1,38 @@
 +---
 +name: rts-rules
-+description: Use RTSEngine C++ rules capabilities for ordered all/any predicates, including native modules of external game projects.
++description: Use AIVERSE C++ rules capabilities for ordered all/any predicates, including native modules of external game projects.
 +---
 +
-+# RTSEngine rules
++# AIVERSE rules
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -1914,7 +1914,7 @@ index 00000000..acf6ac8f
 +- Layer: **simulation**. Current coverage: Ordered all/any predicates.
 +- Read `libraries/include/rtslib/Rules.h` as the current API authority. No Lua implementation is required.
 +- Keep functions in immutable definitions, never persistent NativeState. Empty all is true; empty any false. Formula parser remains planned.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Rules.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Rules.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin rules --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -1945,7 +1945,7 @@ index 00000000..632c9433
 @@ -0,0 +1,34 @@
 +---
 +name: rts-save-migrations
-+description: Reuse RTSEngine save-migrations for transactional versioned state migrations plus checksummed json backup tools in C++ native game projects.
++description: Reuse AIVERSE save-migrations for transactional versioned state migrations plus checksummed json backup tools in C++ native game projects.
 +---
 +
 +# save-migrations
@@ -1957,7 +1957,7 @@ index 00000000..632c9433
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Migrate on import/load before installing state. Engine nativeModules VERSION compatibility is distinct: this API cannot force an incompatible engine save to load. Use gameplay.py save/restore for JSON envelopes only.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -1985,7 +1985,7 @@ index 00000000..47b24d21
 @@ -0,0 +1,18 @@
 +---
 +name: rts-screens
-+description: Reuse RTSEngine C++ configurable screen rows, modal routing and rmlui binding when implementing screens in an external native game project or host tool.
++description: Reuse AIVERSE C++ configurable screen rows, modal routing and rmlui binding when implementing screens in an external native game project or host tool.
 +---
 +
 +# screens
@@ -1993,7 +1993,7 @@ index 00000000..47b24d21
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Screens.h` and the matching catalog entry.
 +
 +1. Use Screen/ScreenStack and the RmlScreenBinding adapter. Supply rows for HUD, building, units, inventory, technology, pause and results. Destroy bindings before document roots. Revalidate action ownership and affordability in the sim. Rendering needs host integration and screenshot QA.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin screens --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -2009,10 +2009,10 @@ index 00000000..a9978b1e
 @@ -0,0 +1,38 @@
 +---
 +name: rts-spatial
-+description: Use RTSEngine C++ spatial capabilities for existing game spatial queries, including native modules of external game projects.
++description: Use AIVERSE C++ spatial capabilities for existing game spatial queries, including native modules of external game projects.
 +---
 +
-+# RTSEngine spatial
++# AIVERSE spatial
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -2053,7 +2053,7 @@ index 00000000..342f29a8
 @@ -0,0 +1,34 @@
 +---
 +name: rts-squads
-+description: Reuse RTSEngine squads for leader election, role ordering, formation slots and native group commands in C++ native game projects.
++description: Reuse AIVERSE squads for leader election, role ordering, formation slots and native group commands in C++ native game projects.
 +---
 +
 +# squads
@@ -2065,7 +2065,7 @@ index 00000000..342f29a8
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Use formationCommand for engine formations; use formationSlots for custom planning only. Sort/tie-break by entity ID. Feed desired slots to navigation rather than teleporting units.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -2093,7 +2093,7 @@ index 00000000..f1305da7
 @@ -0,0 +1,19 @@
 +---
 +name: rts-state-diff
-+description: Reuse RTSEngine locate the first differing native field and trace tick when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE locate the first differing native field and trace tick when working on native game projects and reusable engine tooling.
 +---
 +
 +# state-diff
@@ -2106,8 +2106,8 @@ index 00000000..f1305da7
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-status-effects/SKILL.md b/docs/ai-skills/rts-status-effects/SKILL.md
@@ -2118,7 +2118,7 @@ index 00000000..8823d13e
 @@ -0,0 +1,20 @@
 +---
 +name: rts-status-effects
-+description: Reuse RTSEngine C++ status snapshots and validated entry to the existing status engine for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ status snapshots and validated entry to the existing status engine for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# status-effects
@@ -2132,8 +2132,8 @@ index 00000000..8823d13e
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-tag-conditions/SKILL.md b/docs/ai-skills/rts-tag-conditions/SKILL.md
@@ -2144,7 +2144,7 @@ index 00000000..9757c28e
 @@ -0,0 +1,20 @@
 +---
 +name: rts-tag-conditions
-+description: Reuse RTSEngine C++ all/any/none tag filters and bounded-value conditions for native game projects instead of generating duplicate gameplay algorithms.
++description: Reuse AIVERSE C++ all/any/none tag filters and bounded-value conditions for native game projects instead of generating duplicate gameplay algorithms.
 +---
 +
 +# tag-conditions
@@ -2158,8 +2158,8 @@ index 00000000..9757c28e
 +5. Follow `examples/native/libraries/SystemsConsumer.cpp`, `tests/libraries/systems_tests.cpp` and `systems_engine_tests.cpp`.
 +6. Run catalog/generator checks, library tests, engine integration tests and external native/export tests. Verify rollback for game-specific integration; do not mutate ECS while iterating.
 +
-+Pure policies link `RTSEngine::libraries`; EngineMechanics/Persistence adapters require
-+`RTSEngine::gameplay_native` and the normal game host. Commands remain the only external
++Pure policies link `AIVERSE::libraries`; EngineMechanics/Persistence adapters require
++`AIVERSE::gameplay_native` and the normal game host. Commands remain the only external
 +simulation input. Presentation previews cannot authorize mutations. Keep docs, versions,
 +examples and tests synchronized; describe exact coverage instead of claiming a full new engine.
 diff --git a/docs/ai-skills/rts-tasks/SKILL.md b/docs/ai-skills/rts-tasks/SKILL.md
@@ -2170,10 +2170,10 @@ index 00000000..de32c1ca
 @@ -0,0 +1,38 @@
 +---
 +name: rts-tasks
-+description: Use RTSEngine C++ tasks capabilities for priority task claiming and worker release, including native modules of external game projects.
++description: Use AIVERSE C++ tasks capabilities for priority task claiming and worker release, including native modules of external game projects.
 +---
 +
-+# RTSEngine tasks
++# AIVERSE tasks
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -2183,7 +2183,7 @@ index 00000000..de32c1ca
 +- Layer: **simulation**. Current coverage: Priority task claiming and worker release.
 +- Read `libraries/include/rtslib/Tasks.h` as the current API authority. No Lua implementation is required.
 +- Use unique task IDs and numeric priority. Set status pending initially. Release dead workers; validate ownership before finishing. Dependencies remain planned.
-+- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE RTSEngine::libraries)`. Include `<rtslib/Tasks.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
++- Call `rts_native_module(...)` in the external game native/CMakeLists.txt, then `target_link_libraries(rts_native_<id> PRIVATE AIVERSE::libraries)`. Include `<rtslib/Tasks.h>`. The engine defines the target before loading game modules; do not add a second libraries subdirectory.
 +- Use `examples/native/libraries` as a compiling project-local example.
 +- Pin with `python3 tools/libraries/catalog.py pin tasks --project /absolute/game` for C++ foundation entries; verify with the same command using `verify` before upgrading.
 +- Do not copy algorithms into the game. Extend the common library if a reusable operation is missing.
@@ -2214,7 +2214,7 @@ index 00000000..49f0dc8c
 @@ -0,0 +1,18 @@
 +---
 +name: rts-themes
-+description: Reuse RTSEngine C++ safe-area layouts, density clamp and validated theme tokens when implementing themes in an external native game project or host tool.
++description: Reuse AIVERSE C++ safe-area layouts, density clamp and validated theme tokens when implementing themes in an external native game project or host tool.
 +---
 +
 +# themes
@@ -2222,7 +2222,7 @@ index 00000000..49f0dc8c
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Theme.h` and the matching catalog entry.
 +
 +1. Use layout with framebuffer or dp units consistently; never mix them. Apply safe insets from the platform. themeStyles emits RmlUi RCSS dp units. Resolve translations before markup. Test portrait/landscape and large text.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin themes --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -2238,7 +2238,7 @@ index 00000000..639f3aa8
 @@ -0,0 +1,34 @@
 +---
 +name: rts-tutorial
-+description: Reuse RTSEngine tutorial for event-driven tutorial stages, counters, branches, skip and hard/soft action gating in C++ native game projects.
++description: Reuse AIVERSE tutorial for event-driven tutorial stages, counters, branches, skip and hard/soft action gating in C++ native game projects.
 +---
 +
 +# tutorial
@@ -2250,7 +2250,7 @@ index 00000000..639f3aa8
 +
 +1. Identify whether the existing engine mechanic already owns this behavior. Configure it first.
 +2. Validate immutable steps at load. Persist step/progress/complete in NativeState. Hard gating must also validate commands, not only hide UI. Highlight is a host UI target ID, not a renderer.
-+3. Link RTSEngine::libraries for pure headers. Link RTSEngine::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE RTSEngine::gameplay_native).
++3. Link AIVERSE::libraries for pure headers. Link AIVERSE::gameplay_native for NativeCommands.h; after rts_native_module, use target_link_libraries(rts_native_ID PRIVATE AIVERSE::gameplay_native).
 +4. Load project-native settings from config using readGameplaySettings; copy validated persistent parameters into NativeState at setup. Presentation state stays separate.
 +5. Use `examples/native/libraries` and `tests/libraries/gameplay_tests.cpp` as compiling examples.
 +6. Verify with the commands below and report the exact implemented coverage and unverified platforms.
@@ -2278,7 +2278,7 @@ index 00000000..f49837b7
 @@ -0,0 +1,19 @@
 +---
 +name: rts-typed-commands
-+description: Reuse RTSEngine generate typed native command encoders and dispatch when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE generate typed native command encoders and dispatch when working on native game projects and reusable engine tooling.
 +---
 +
 +# typed-commands
@@ -2291,8 +2291,8 @@ index 00000000..f49837b7
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-typed-state/SKILL.md b/docs/ai-skills/rts-typed-state/SKILL.md
@@ -2303,7 +2303,7 @@ index 00000000..0a194369
 @@ -0,0 +1,19 @@
 +---
 +name: rts-typed-state
-+description: Reuse RTSEngine generate typed nativestate access and transactional migrations when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE generate typed nativestate access and transactional migrations when working on native game projects and reusable engine tooling.
 +---
 +
 +# typed-state
@@ -2316,8 +2316,8 @@ index 00000000..0a194369
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/ai-skills/rts-ui-binding/SKILL.md b/docs/ai-skills/rts-ui-binding/SKILL.md
@@ -2328,7 +2328,7 @@ index 00000000..adf819b1
 @@ -0,0 +1,18 @@
 +---
 +name: rts-ui-binding
-+description: Reuse RTSEngine C++ snapshot ui bindings, escaped values and bounded action queues when implementing ui-binding in an external native game project or host tool.
++description: Reuse AIVERSE C++ snapshot ui bindings, escaped values and bounded action queues when implementing ui-binding in an external native game project or host tool.
 +---
 +
 +# ui-binding
@@ -2336,7 +2336,7 @@ index 00000000..adf819b1
 +Read `docs/application-packages.md`, `libraries/include/rtslib/app/Binding.h` and the matching catalog entry.
 +
 +1. Use BindingModel.set/drain on a read-only snapshot. Invalidate after document reload or language change. Dispatch Actions through host Command routing. Do not retain simulation references.
-+2. Link `RTSEngine::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `RTSEngine::gameplay_native` only for engine Command adapters.
++2. Link `AIVERSE::libraries` from the project's native target; keep host presentation and tools outside NativeModule tick callbacks. Use `AIVERSE::gameplay_native` only for engine Command adapters.
 +3. Follow `examples/libraries/app` and `tests/libraries/app_tests.cpp` for compiling API usage. For rewards also read `tests/libraries/app_meta_tests.cpp` and `skills/meta-game/SKILL.md`.
 +4. Pin with `python3 tools/libraries/catalog.py pin ui-binding --project /absolute/project`. Check the pin on upgrades; never copy a fork into the game.
 +5. Run `python3 tests/libraries/run.py`, `python3 tests/libraries/native_consumer.py`, `python3 tools/libraries/catalog.py check`. Run `python3 tests/libraries/app_tools.py --binary /absolute/rts_app_tools` for tool workflows.
@@ -2352,10 +2352,10 @@ index 00000000..121f183e
 @@ -0,0 +1,38 @@
 +---
 +name: rts-ui-patterns
-+description: Use RTSEngine C++ ui-patterns capabilities for existing ui templates, including native modules of external game projects.
++description: Use AIVERSE C++ ui-patterns capabilities for existing ui templates, including native modules of external game projects.
 +---
 +
-+# RTSEngine ui-patterns
++# AIVERSE ui-patterns
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -2396,10 +2396,10 @@ index 00000000..d575a896
 @@ -0,0 +1,38 @@
 +---
 +name: rts-verification
-+description: Use RTSEngine C++ verification capabilities for existing snapshot restoration verification, including native modules of external game projects.
++description: Use AIVERSE C++ verification capabilities for existing snapshot restoration verification, including native modules of external game projects.
 +---
 +
-+# RTSEngine verification
++# AIVERSE verification
 +
 +Resolve paths relative to the engine root. Read `libraries/catalog.json`,
 +`docs/libraries.md` and `docs/native-modules.md` before integration.
@@ -2440,7 +2440,7 @@ index 00000000..45d7c226
 @@ -0,0 +1,14 @@
 +---
 +name: rts-weapon-policies
-+description: Reuse RTSEngine seeded spread, recoil recovery and swept projectiles with bounded ricochets when building native C++ games across genres.
++description: Reuse AIVERSE seeded spread, recoil recovery and swept projectiles with bounded ricochets when building native C++ games across genres.
 +---
 +
 +# weapon-policies
@@ -2448,7 +2448,7 @@ index 00000000..45d7c226
 +1. Read `docs/genre-packages.md` and the catalog entry. Inspect `libraries/include/rtslib/genre/Weapons.h` for exact runtime behavior.
 +2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
 +3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
-+4. Host executables link RTSEngine::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
++4. Host executables link AIVERSE::genre. Registered native OBJECT modules call rts_native_use_genre(rts_native_<id>) to propagate collision dependencies without a circular game link. Follow examples/native/libraries/GenreConsumer.cpp.
 +5. Route external actions as Commands, validate ownership/resources/targets, and consume policy outcomes in the authoritative owner. Presentation only reads committed state. Use sim.rng for spread, integer ticks and Fixed arithmetic.
 +6. Persist state with genre::save/load and storeBytes/loadBytes in a separate NativeState key. Bind configuration/definition versions in the save envelope. Do not put mutable state on a NativeModule instance or keep future state after rollback.
 +7. Run catalog/generator checks, tests/libraries/run.py, native_consumer.py and rts_library_genre_tests. Add real project replay/collision/UI checks for integration changes. Report policies separately from fully wired genre gameplay and list platform gaps.
@@ -2460,7 +2460,7 @@ index 00000000..b8b4d41a
 @@ -0,0 +1,19 @@
 +---
 +name: rts-work-budget
-+description: Reuse RTSEngine deterministic round-robin work with operation budgets when working on native game projects and reusable engine tooling.
++description: Reuse AIVERSE deterministic round-robin work with operation budgets when working on native game projects and reusable engine tooling.
 +---
 +
 +# work-budget
@@ -2473,8 +2473,8 @@ index 00000000..b8b4d41a
 +4. Run `python3 tests/libraries/toolkit_tools.py`, `python3 tests/libraries/run.py` and `python3 tools/libraries/catalog.py check`. For native integration also run `tests/libraries/native_consumer.py`.
 +5. Preserve deterministic state, ordered iteration and normal Command routing. Re-run restoration tests when integrating gameplay state.
 +
-+Headers link through `RTSEngine::libraries`; engine adapters/generated modules use
-+`RTSEngine::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
++Headers link through `AIVERSE::libraries`; engine adapters/generated modules use
++`AIVERSE::gameplay_native`. Keep host clocks, UI and hot reload outside simulation.
 +Report exact tested coverage and platform limitations. Do not claim generated scaffolds
 +contain the project's gameplay behavior or that a generic reference selector is a complete schema.
 diff --git a/docs/application-packages.md b/docs/application-packages.md
@@ -2493,13 +2493,13 @@ index 00000000..3c195ae3
 +
 +```cmake
 +rts_native_module(ID my_game VERSION 1 ENTRY createMyGame SOURCES MyGame.cpp)
-+target_link_libraries(rts_native_my_game PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_native_my_game PRIVATE AIVERSE::libraries)
 +```
 +
 +Include `<rtslib/app/Binding.h>` etc. `libraries/` is included in source exports. The native consumer
 +example compiles these APIs from an external project and after relocation. Application UI/session
 +objects belong in the presentation host, **not** persistent NativeModule members or sim callbacks.
-+For gameplay command creation use the existing `RTSEngine::gameplay_native` adapter.
++For gameplay command creation use the existing `AIVERSE::gameplay_native` adapter.
 +
 +| Catalog ID | Header / API | Configuration and coverage |
 +|---|---|---|
@@ -2628,9 +2628,9 @@ index 00000000..15aa9861
 +
 +| Package | Coverage | Target |
 +|---|---|---|
-+| bots-rts | Full existing RtsAI through a project-local configuration/restore adapter | RTSEngine::rts_bots |
-+| bots-fps | Perception, remembered target, reaction, bounded aim, firing/reload, retreat, patrol, safe-zone movement | RTSEngine::fps_bots |
-+| navmesh | Automatic layered polygon mesh from static AABB collision; agent clearance/erosion, step links, connected regions, bounded routes | RTSEngine::navmesh |
++| bots-rts | Full existing RtsAI through a project-local configuration/restore adapter | AIVERSE::rts_bots |
++| bots-fps | Perception, remembered target, reaction, bounded aim, firing/reload, retreat, patrol, safe-zone movement | AIVERSE::fps_bots |
++| navmesh | Automatic layered polygon mesh from static AABB collision; agent clearance/erosion, step links, connected regions, bounded routes | AIVERSE::navmesh |
 +| bot-matches | Headless actual-engine match runner and deterministic restoration scenarios | rts_bot_match |
 +
 +Public headers live in `libraries/include/rtslib/bots`. No Lua or project-specific engine edits are
@@ -2800,10 +2800,10 @@ index 00000000..06bf56f1
 +
 +```cmake
 +rts_native_module(ID my_game VERSION 1 ENTRY createMyGame SOURCES MyGame.cpp)
-+target_link_libraries(rts_native_my_game PRIVATE RTSEngine::gameplay_native)
++target_link_libraries(rts_native_my_game PRIVATE AIVERSE::gameplay_native)
 +```
 +
-+Чистые компоненты можно подключать через `RTSEngine::libraries`; `gameplay_native`
++Чистые компоненты можно подключать через `AIVERSE::libraries`; `gameplay_native`
 +добавляет пути для адаптера штатных Command. Ни одна библиотека не требует Lua.
 +Оба target объявлены до загрузки native проекта и доступны после source export.
 +
@@ -3079,8 +3079,8 @@ index 00000000..50cfbf72
 +
 +## Native linking and state
 +
-+Pure policies link `RTSEngine::libraries`. EngineMechanics and Persistence include engine APIs and
-+use `RTSEngine::gameplay_native` in a normal native game target. No edit to engine source is required
++Pure policies link `AIVERSE::libraries`. EngineMechanics and Persistence include engine APIs and
++use `AIVERSE::gameplay_native` in a normal native game target. No edit to engine source is required
 +for a project to include these headers; the source exporter includes `libraries/`.
 +
 +`systems/Persistence.h` stores reservation books, sequence cursors, pity counters and perception
@@ -3283,10 +3283,10 @@ index 00000000..05a0ceee
 +## Native/host integration
 +
 +Include `<rtslib/genre/Configured.h>`, the needed policy header and `genre/Persistence.h`.
-+Executable hosts link `RTSEngine::genre`; registered OBJECT modules call
++Executable hosts link `AIVERSE::genre`; registered OBJECT modules call
 +`rts_native_use_genre(rts_native_<id>)` after `rts_native_module(...)`. The helper puts collision
 +backend dependencies on the owning rts_game target, avoiding object-library linkage cycles.
-+For header-only policies without projectile collision, `RTSEngine::gameplay_native` is sufficient.
++For header-only policies without projectile collision, `AIVERSE::gameplay_native` is sufficient.
 +
 +See `examples/native/libraries/GenreConsumer.cpp` for validated settings and NativeState storage.
 +The library_demo native module now initializes these records in setup (module VERSION 3).
@@ -3375,7 +3375,7 @@ index 00000000..ceb23d25
 --- /dev/null
 +++ b/docs/libraries.md
 @@ -0,0 +1,161 @@
-+# Общие C++20 библиотеки RTSEngine
++# Общие C++20 библиотеки AIVERSE
 +
 +Каталог: `libraries/catalog.json`. Репозиторные инструкции AI:
 +`docs/ai-skills/rts-*/SKILL.md`. Эти инструкции не являются установленными персональными
@@ -3387,7 +3387,7 @@ index 00000000..ceb23d25
 +
 +```cmake
 +rts_native_module(ID my_game VERSION 1 ENTRY createMyGame SOURCES MyGame.cpp)
-+target_link_libraries(rts_native_my_game PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_native_my_game PRIVATE AIVERSE::libraries)
 +```
 +
 +В `<project>/native/MyGame.cpp`:
@@ -3424,8 +3424,8 @@ index 00000000..ceb23d25
 +Для отдельной утилиты вне движка:
 +
 +```cmake
-+add_subdirectory(/path/to/RTSEngine/libraries rts-libraries)
-+target_link_libraries(my_tool PRIVATE RTSEngine::libraries)
++add_subdirectory(/path/to/AIVERSE/libraries rts-libraries)
++target_link_libraries(my_tool PRIVATE AIVERSE::libraries)
 +```
 +
 +В игровом native проекте повторно add_subdirectory вызывать не нужно.
@@ -3551,7 +3551,7 @@ index b16d3523..924bcd05 100644
 +
 +```cmake
 +rts_native_module(ID my_game VERSION 1 ENTRY createMyGame SOURCES MyGame.cpp)
-+target_link_libraries(rts_native_my_game PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_native_my_game PRIVATE AIVERSE::libraries)
 +```
 +
 +Используйте `#include <rtslib/Graphs.h>` (и другие headers из `libraries/include/rtslib`).
@@ -3583,7 +3583,7 @@ index 00000000..c63412ad
 +Output must not already exist. For updates generate beside the old module and review the diff;
 +never overwrite custom Module.cpp handlers. Output includes:
 +
-+- `CMakeLists.txt`: registered object module linked to `RTSEngine::gameplay_native`.
++- `CMakeLists.txt`: registered object module linked to `AIVERSE::gameplay_native`.
 +- `State.h`: typed fields, checked load/store, initial values and transactional migrations.
 +- `Commands.h`: typed action payloads, checked encode/decode and dispatch to the host handler.
 +- `Module.cpp`: setup and factory; game-specific command behavior is deliberately supplied by the project.
@@ -3627,7 +3627,7 @@ index 00000000..c63412ad
 +| work-budget | `runtime/WorkBudget.h` | Sorted unique work IDs, round-robin bounded operation count, caller-owned cursor/progress. One callback must have bounded cost; it must not mutate the span/cursor. |
 +| state-diff | `runtime/StateDiff.h` | First differing scalar/array entry in NativeState-compatible ordered containers, including missing fields. |
 +
-+Link `RTSEngine::libraries`. Store gameplay-relevant pool state, handles, work cursors and counters
++Link `AIVERSE::libraries`. Store gameplay-relevant pool state, handles, work cursors and counters
 +through the engine's persistent state mechanisms; these classes do not automatically register
 +serialization/hashing. Scratch-only data can be rebuilt. Hot reload and file watchers must not
 +change simulation outcomes based on local wall time. Deterministic gameplay updates require
@@ -3663,7 +3663,7 @@ index 00000000..c63412ad
 +python3 tools/libraries/project_checks.py desync --input expected.json --other actual.json
 +```
 +
-+Use `runtime/NativeTrace.h` with `RTSEngine::gameplay_native` and `rts_engine` to export a tick and named NativeState pointers as a canonical JSON row. Collect rows into an array from matching ticks in both runs.
++Use `runtime/NativeTrace.h` with `AIVERSE::gameplay_native` and `rts_engine` to export a tick and named NativeState pointers as a canonical JSON row. Collect rows into an array from matching ticks in both runs.
 +
 +Export matching canonical snapshots from both runs. The report identifies the first differing
 +tick and JSON path (module and field), values, or mismatched coverage. Tick order must increase.
@@ -3792,7 +3792,7 @@ index 00000000..fee61a1c
 +set(RTS_ENGINE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../.." CACHE PATH "Engine source/export root")
 +add_subdirectory("${RTS_ENGINE_ROOT}/libraries" libraries)
 +add_executable(rts_app_example main.cpp)
-+target_link_libraries(rts_app_example PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_app_example PRIVATE AIVERSE::libraries)
 diff --git a/examples/libraries/app/balance.json b/examples/libraries/app/balance.json
 new file mode 100644
 index 00000000..c6630716
@@ -4604,7 +4604,7 @@ index 00000000..c7d6b376
 +            platform::setHostedView(nullptr);return app.finished?0:1;
 +        }catch(const std::exception& e){std::cerr<<e.what()<<'\n';platform::setHostedView(nullptr);return 1;}
 +    }
-+    gfx::Device* device=nullptr;platform::AppConfig config;config.title="RTSEngine library showcase";config.width=1280;config.height=800;
++    gfx::Device* device=nullptr;platform::AppConfig config;config.title="AIVERSE library showcase";config.width=1280;config.height=800;
 +    platform::AppCallbacks callbacks;
 +    callbacks.init=[&](gfx::Device& d){device=&d;try{app.setup(d);}catch(const std::exception& e){std::cerr<<e.what()<<'\n';++app.failures;platform::requestQuit();}};
 +    callbacks.frame=[&](gfx::Device& d,double){try{app.frame(d);}catch(const std::exception& e){std::cerr<<e.what()<<'\n';++app.failures;platform::requestQuit();}};
@@ -4724,7 +4724,7 @@ index 00000000..97bf31c8
 +++ b/examples/native/libraries/CMakeLists.txt
 @@ -0,0 +1,4 @@
 +rts_native_module(ID library_demo VERSION 3 ENTRY createLibraryDemo SOURCES LibraryDemo.cpp AppConsumer.cpp ToolkitConsumer.cpp SystemsConsumer.cpp BotConsumer.cpp GenreConsumer.cpp)
-+target_link_libraries(rts_native_library_demo PRIVATE RTSEngine::gameplay_native)
++target_link_libraries(rts_native_library_demo PRIVATE AIVERSE::gameplay_native)
 +rts_native_use_bots(rts_native_library_demo RTS FPS)
 +rts_native_use_genre(rts_native_library_demo)
 diff --git a/examples/native/libraries/GenreConsumer.cpp b/examples/native/libraries/GenreConsumer.cpp
@@ -4895,26 +4895,26 @@ index 00000000..564d5660
 @@ -0,0 +1,51 @@
 +# Public header-only algorithms: usable by native project modules and standalone hosts.
 +add_library(rts_libraries INTERFACE)
-+add_library(RTSEngine::libraries ALIAS rts_libraries)
++add_library(AIVERSE::libraries ALIAS rts_libraries)
 +target_compile_features(rts_libraries INTERFACE cxx_std_20)
 +target_include_directories(rts_libraries INTERFACE "${CMAKE_CURRENT_LIST_DIR}/include")
 +# Optional engine adapter includes native Command types. Pure gameplay headers remain standalone.
 +add_library(rts_gameplay_native INTERFACE)
-+add_library(RTSEngine::gameplay_native ALIAS rts_gameplay_native)
-+target_link_libraries(rts_gameplay_native INTERFACE RTSEngine::libraries)
++add_library(AIVERSE::gameplay_native ALIAS rts_gameplay_native)
++target_link_libraries(rts_gameplay_native INTERFACE AIVERSE::libraries)
 +target_include_directories(rts_gameplay_native INTERFACE "${CMAKE_CURRENT_LIST_DIR}/..")
 +
 +# Genre bot adapters are available before an external game's native/CMakeLists.txt executes.
 +add_library(rts_rts_bots INTERFACE)
-+add_library(RTSEngine::rts_bots ALIAS rts_rts_bots)
-+target_link_libraries(rts_rts_bots INTERFACE RTSEngine::gameplay_native rts_game)
++add_library(AIVERSE::rts_bots ALIAS rts_rts_bots)
++target_link_libraries(rts_rts_bots INTERFACE AIVERSE::gameplay_native rts_game)
 +add_library(rts_fps_bots INTERFACE)
-+add_library(RTSEngine::fps_bots ALIAS rts_fps_bots)
-+target_link_libraries(rts_fps_bots INTERFACE RTSEngine::gameplay_native rts_fps)
++add_library(AIVERSE::fps_bots ALIAS rts_fps_bots)
++target_link_libraries(rts_fps_bots INTERFACE AIVERSE::gameplay_native rts_fps)
 +
 +add_library(rts_navmesh_library INTERFACE)
-+add_library(RTSEngine::navmesh ALIAS rts_navmesh_library)
-+target_link_libraries(rts_navmesh_library INTERFACE RTSEngine::gameplay_native rts_world)
++add_library(AIVERSE::navmesh ALIAS rts_navmesh_library)
++target_link_libraries(rts_navmesh_library INTERFACE AIVERSE::gameplay_native rts_world)
 +
 +# OBJECT native modules are inserted with TARGET_OBJECTS: their PRIVATE link requirements do not
 +# propagate. Put backend libraries on the owning game target, avoiding a native -> rts_game cycle.
@@ -4922,7 +4922,7 @@ index 00000000..564d5660
 +    if(NOT TARGET ${target} OR NOT TARGET rts_game)
 +        message(FATAL_ERROR "rts_native_use_bots requires a registered native target")
 +    endif()
-+    target_link_libraries(${target} PRIVATE RTSEngine::gameplay_native)
++    target_link_libraries(${target} PRIVATE AIVERSE::gameplay_native)
 +    foreach(genre IN LISTS ARGN)
 +        if(genre STREQUAL "FPS")
 +            target_link_libraries(rts_game PUBLIC rts_fps)
@@ -4935,13 +4935,13 @@ index 00000000..564d5660
 +endfunction()
 +
 +add_library(rts_genre_library INTERFACE)
-+add_library(RTSEngine::genre ALIAS rts_genre_library)
-+target_link_libraries(rts_genre_library INTERFACE RTSEngine::gameplay_native rts_world)
++add_library(AIVERSE::genre ALIAS rts_genre_library)
++target_link_libraries(rts_genre_library INTERFACE AIVERSE::gameplay_native rts_world)
 +function(rts_native_use_genre target)
 +    if(NOT TARGET ${target} OR NOT TARGET rts_game)
 +        message(FATAL_ERROR "rts_native_use_genre requires a registered native target")
 +    endif()
-+    target_link_libraries(${target} PRIVATE RTSEngine::gameplay_native)
++    target_link_libraries(${target} PRIVATE AIVERSE::gameplay_native)
 +    target_link_libraries(rts_game PUBLIC rts_world)
 +endfunction()
 diff --git a/libraries/adapters/rmlui/ScreenBinding.h b/libraries/adapters/rmlui/ScreenBinding.h
@@ -5025,7 +5025,7 @@ index 00000000..35f96753
 +      "summary": "FIFO queue and stable top-K",
 +      "notes": "Store queue under NativeState. top ties preserve input order; sort entity inputs by index.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "graphs",
@@ -5037,7 +5037,7 @@ index 00000000..35f96753
 +      "summary": "BFS and topological ordering",
 +      "notes": "Use dense IDs. Test unreachable nodes, cycles and duplicate edges. Weighted search and flows remain planned.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "spatial",
@@ -5060,7 +5060,7 @@ index 00000000..35f96753
 +      "summary": "Four-neighbor multi-source distance fields",
 +      "notes": "Use row-major IDs. Zero cells are blocked. Bound work and cache under NativeState. Test borders and unreachable cells.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "navigation",
@@ -5083,7 +5083,7 @@ index 00000000..35f96753
 +      "summary": "FSM transitions and utility selection",
 +      "notes": "Persist current state explicitly. Definitions are immutable. Utility ties choose smaller ID. BT/GOAP remain planned.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "tasks",
@@ -5095,7 +5095,7 @@ index 00000000..35f96753
 +      "summary": "Priority task claiming and worker release",
 +      "notes": "Use unique task IDs and numeric priority. Set status pending initially. Release dead workers; validate ownership before finishing. Dependencies remain planned.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "logistics",
@@ -5107,7 +5107,7 @@ index 00000000..35f96753
 +      "summary": "Atomic integer recipe consumption",
 +      "notes": "Use resource indices and nonnegative integer amounts. Duplicate ingredients are summed. This operates on caller stock, not engine resources; never create a competing economy.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "rules",
@@ -5119,7 +5119,7 @@ index 00000000..35f96753
 +      "summary": "Ordered all/any predicates",
 +      "notes": "Keep functions in immutable definitions, never persistent NativeState. Empty all is true; empty any false. Formula parser remains planned.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "progression",
@@ -5131,7 +5131,7 @@ index 00000000..35f96753
 +      "summary": "Weighted selection and level thresholds",
 +      "notes": "Supply simulation RNG as draw(total), integer 1..total. Zero total returns nullopt. Test zero weights and endpoints. Pity systems remain planned.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "objectives",
@@ -5143,7 +5143,7 @@ index 00000000..35f96753
 +      "summary": "Event counters and one-shot completion",
 +      "notes": "Use unique goal IDs and positive integer targets. Save progress. Emit completion only on threshold crossing. Branching dialogue remains planned.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "generation",
@@ -5166,7 +5166,7 @@ index 00000000..35f96753
 +      "summary": "Smoothstep, lerp and timeline progress",
 +      "notes": "Use presentation C++ only. Zero duration completes at start. Read sim events and never write simulation NativeState.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "ui-patterns",
@@ -5200,7 +5200,7 @@ index 00000000..35f96753
 +      "summary": "Context and priority input routing, axis deadzones, selection, control groups and drag gestures",
 +      "notes": "Use normalized platform input. Resolve UI/modal context before game context; send resulting gameplay actions as commands. Store selection/control groups in local presentation state.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5216,7 +5216,7 @@ index 00000000..35f96753
 +      "summary": "RTS/follow/orbit target controls, limits, smoothing and strategic icon threshold",
 +      "notes": "Use delta time only in presentation. Apply resulting Pose to the existing client/editor camera. World-to-sphere mapping remains the planet camera responsibility.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5232,7 +5232,7 @@ index 00000000..35f96753
 +      "summary": "Placement checks, resource explanations, refunds and native construction commands",
 +      "notes": "Call checkPlacement with authoritative map/territory/slope queries. Render its Decision as preview, then submit buildCommand. The engine must revalidate the command at execution time; previews never reserve or debit resources.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5248,7 +5248,7 @@ index 00000000..35f96753
 +      "summary": "Target/range/resource checks and optional native cast/cooldown lifecycle",
 +      "notes": "For built-in abilities send abilityCommand and use engine cooldown/effects. Use AbilityState only for custom native mechanics, and persist all fields. Charge custom resource costs transactionally only after validation.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5264,7 +5264,7 @@ index 00000000..35f96753
 +      "summary": "Stacked inventory, weight/slot limits, atomic transfer, equipment and crafting",
 +      "notes": "Prefer built-in engine item mechanics for existing item types. For custom native inventories validate item definitions, provide stable IDs, serialize each stack/equipment field, and require ownership checks in commands.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5280,7 +5280,7 @@ index 00000000..35f96753
 +      "summary": "Leader election, role ordering, formation slots and native group commands",
 +      "notes": "Use formationCommand for engine formations; use formationSlots for custom planning only. Sort/tie-break by entity ID. Feed desired slots to navigation rather than teleporting units.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5296,7 +5296,7 @@ index 00000000..35f96753
 +      "summary": "Event-to-sound/particle/animation/notification/camera actions with cooldowns",
 +      "notes": "Bind dispatch callbacks to existing presentation services. Use only accepted sim events; clear FeedbackState after rollback/seek and never feed it into gameplay logic.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5312,7 +5312,7 @@ index 00000000..35f96753
 +      "summary": "Event-driven tutorial stages, counters, branches, skip and hard/soft action gating",
 +      "notes": "Validate immutable steps at load. Persist step/progress/complete in NativeState. Hard gating must also validate commands, not only hide UI. Highlight is a host UI target ID, not a renderer.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5328,7 +5328,7 @@ index 00000000..35f96753
 +      "summary": "Transactional versioned state migrations plus checksummed JSON backup tools",
 +      "notes": "Migrate on import/load before installing state. Engine nativeModules VERSION compatibility is distinct: this API cannot force an incompatible engine save to load. Use gameplay.py save/restore for JSON envelopes only.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5344,7 +5344,7 @@ index 00000000..35f96753
 +      "summary": "Structured refusal codes, values and bounded decision traces",
 +      "notes": "Use reasonKey with Localization::tr; pass subject/required/available as parameters. Traces are diagnostic outputs only; never depend on trace capacity for simulation outcomes.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5405,7 +5405,7 @@ index 00000000..35f96753
 +      "summary": "Generated C++ settings, JSON Schema, defaults and strict config parsing",
 +      "notes": "Edit libraries/spec/gameplay.json and regenerate. C++ loader and CLI reject unknown fields, wrong types and cross-field violations. Do not edit generated files by hand.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/spec/gameplay.json",
 +        "libraries/include/rtslib/gameplay/Configuration.h"
@@ -5421,7 +5421,7 @@ index 00000000..35f96753
 +      "summary": "Snapshot UI bindings, escaped values and bounded action queues",
 +      "notes": "Use BindingModel.set/drain on a read-only snapshot. Invalidate after document reload or language change. Dispatch Actions through host Command routing. Do not retain simulation references.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "screens",
@@ -5433,7 +5433,7 @@ index 00000000..35f96753
 +      "summary": "Configurable screen rows, modal routing and RmlUi binding",
 +      "notes": "Use Screen/ScreenStack and the RmlScreenBinding adapter. Supply rows for HUD, building, units, inventory, technology, pause and results. Destroy bindings before document roots. Revalidate action ownership and affordability in the sim. Rendering needs host integration and screenshot QA.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/adapters/rmlui/ScreenBinding.h"
 +      ]
@@ -5448,7 +5448,7 @@ index 00000000..35f96753
 +      "summary": "Safe-area layouts, density clamp and validated theme tokens",
 +      "notes": "Use layout with framebuffer or dp units consistently; never mix them. Apply safe insets from the platform. themeStyles emits RmlUi RCSS dp units. Resolve translations before markup. Test portrait/landscape and large text.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "match-bridge",
@@ -5460,7 +5460,7 @@ index 00000000..35f96753
 +      "summary": "Authoritative match result to idempotent meta transaction",
 +      "notes": "Use grantMatch with rts::meta::Economy after authoritative completion. Link rts::meta and provide durable Commit CAS. Keep a stable unique match id across retries. Never call from predicted finishes, replay seeks or sim ticks. Nullopt is invalid envelope; inspect meta Result for conflict/denial.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "app-lifecycle",
@@ -5472,7 +5472,7 @@ index 00000000..35f96753
 +      "summary": "Application state transitions and stale loading completion rejection",
 +      "notes": "Use Lifecycle.send for explicit events. Capture generation before async load and call loaded(ticket). Host owns cancellation and resource cleanup. Pausing local UI must not stop a shared multiplayer simulation.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "network-session",
@@ -5484,7 +5484,7 @@ index 00000000..35f96753
 +      "summary": "Transport-independent lobby, reconnect and ordered delivery policy",
 +      "notes": "Provide transport/authentication outside this package. Use epoch on each async callback; retain sequence across reconnect and reset on a new session. Content hashes must come from verified manifests. accept is for ordered message streams, not out-of-order UDP or multiple peer channels. Do not present this as a server or netcode implementation.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "content-mods",
@@ -5496,7 +5496,7 @@ index 00000000..35f96753
 +      "summary": "Versioned dependency resolution, conflicts and deterministic mod order",
 +      "notes": "Build ContentPackage records from trusted manifests, then resolveContent. Digest is required metadata, not computed or verified here; verify actual bytes through catalog pins/content tooling before mounting. Mount in returned order with explicit override rules. Never execute untrusted scripts or use manifest paths without validation.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "balance-lab",
@@ -5508,7 +5508,7 @@ index 00000000..35f96753
 +      "summary": "Mirrored round-robin cases and aggregate faction outcomes",
 +      "notes": "Use roundRobin with identical seed lists and swapped starts. Record actual player-to-faction mapping. Use addSample only for completed matches/draws; keep time limits separate. Run playlab.py against prepared project variations; report sample counts and seeds, not unsupported confidence claims.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "play-scenarios",
@@ -5520,7 +5520,7 @@ index 00000000..35f96753
 +      "summary": "Tick-indexed actions and assertions for automated play",
 +      "notes": "Validate Scenario once before running. Advance at every exact tick; emit normal Commands via callback and supply authoritative metric snapshots. Missing metrics and skipped ticks fail. Reset the runner for each run; do not reuse it after rollback without restoring cursor state.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "performance-budgets",
@@ -5532,7 +5532,7 @@ index 00000000..35f96753
 +      "summary": "Nearest-rank p95, peak limits and baseline regression checks",
 +      "notes": "Collect timing outside sim after warm-up on the same hardware/build/quality. Samples and budgets must share units. Use summarize and checkBudget; insufficient samples fail. Never let timing metrics affect deterministic gameplay. Report peak and sample count as well as p95.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "genre-kits",
@@ -5544,7 +5544,7 @@ index 00000000..35f96753
 +      "summary": "Reusable capability and acceptance recipes for four genres",
 +      "notes": "Use genreKit to select existing library packages and acceptance scenarios. Configure engine rules and templates before adding code. Kits are composition recipes, not complete generated games. Implement the named acceptance scenarios for the actual project and verify them.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "change-planner",
@@ -5556,7 +5556,7 @@ index 00000000..35f96753
 +      "summary": "Dependency-ordered change recipes and verification checklist",
 +      "notes": "Describe explicit ChangeRecipe dependencies/files/checks and call planChanges. Unknown IDs and cycles fail. Review actual file diffs; the planner does not infer semantics or edit files. Apply supported rule mutations with existing gameplay.py recipe/apply and its stale-base checks.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "native-scaffold",
@@ -5612,7 +5612,7 @@ index 00000000..35f96753
 +      "summary": "Stage and atomically activate validated host settings",
 +      "notes": "Stage with parser returning optional settings and a validator. Commit only at a safe point using expected revision. Failed staging clears pending data and preserves live settings. Handle parser exceptions in the host. Never hot-reload deterministic gameplay state using a filesystem clock; replicate gameplay changes through Commands.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "bounded-memory",
@@ -5624,7 +5624,7 @@ index 00000000..35f96753
 +      "summary": "Fixed-capacity scratch buffers and generational slot pools",
 +      "notes": "Choose capacity from a documented budget; handle full buffers/pools explicitly. Stale or released handles fail. Slot indices are allocated in deterministic order. Capacity bounds objects, not heap memory inside T. Use fixed-size element types in hot paths. Persist pool/handle state through NativeState if it affects outcomes.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "work-budget",
@@ -5636,7 +5636,7 @@ index 00000000..35f96753
 +      "summary": "Deterministic round-robin work with operation budgets",
 +      "notes": "Keep WorkItems sorted by unique ID. Each callback performs one bounded operation without modifying the items span or cursor. Persist completed counters and WorkCursor for rollback. Failed callback must leave its own output untouched. Never budget by elapsed wall time or use unordered iteration.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "state-diff",
@@ -5651,7 +5651,7 @@ index 00000000..35f96753
 +      "dependencies": [
 +        "libraries/include/rtslib/runtime/NativeTrace.h"
 +      ],
-+      "cmakeTarget": "RTSEngine::libraries"
++      "cmakeTarget": "AIVERSE::libraries"
 +    },
 +    {
 +      "id": "library-upgrades",
@@ -5685,7 +5685,7 @@ index 00000000..35f96753
 +      "summary": "Authoritative effective stat snapshots through existing modifiers",
 +      "notes": "Call effectiveStats after checking the entity. Configure existing StatMod/tech/level/status rules; never evaluate a parallel modifier stack. The snapshot returns final values, not an invented per-source breakdown. Missing units and invalid stats fail.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::gameplay_native",
++      "cmakeTarget": "AIVERSE::gameplay_native",
 +      "dependencies": []
 +    },
 +    {
@@ -5698,7 +5698,7 @@ index 00000000..35f96753
 +      "summary": "Status snapshots and validated entry to the existing status engine",
 +      "notes": "Use statuses for copies of active stacks/expiry/source data. applyStatus is a simulation-only hook after authority checks, outside ECS iteration. True means valid invocation, not proof a status bypassed immunity. Engine statuses own refresh, stacks, periods, flags and hashing.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::gameplay_native",
++      "cmakeTarget": "AIVERSE::gameplay_native",
 +      "dependencies": []
 +    },
 +    {
@@ -5711,7 +5711,7 @@ index 00000000..35f96753
 +      "summary": "All/any/none tag filters and bounded-value conditions",
 +      "notes": "Resolve type tags using Rules.tagMask; reject unknown names with resolveTags. Keep type tags separate from status/dispel tags. Missing condition inputs fail closed. Built-in EffectDef target filters remain authoritative.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": []
 +    },
 +    {
@@ -5724,7 +5724,7 @@ index 00000000..35f96753
 +      "summary": "Stable action previews plus native built-in interaction commands",
 +      "notes": "Use interactions for sorted preview options and disabled reasons. Build actual Smart/PickItem/UseItem/Load/ToggleLock Commands with EngineMechanics.interactionCommand, then submit through Simulation. For ToggleLock actor is the selected gate; PickItem uses point. Custom actions use generated native commands and revalidate at execution.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/include/rtslib/systems/EngineMechanics.h"
 +      ]
@@ -5739,7 +5739,7 @@ index 00000000..35f96753
 +      "summary": "Transactional reservation, release and consumption of custom capacities",
 +      "notes": "Use ticket and owner IDs > 0. Repeating an identical live reservation is Duplicate; conflicting payload/owner fails. Commit validates aggregate capacity before changing stock; release does not consume. Keep built-in Inventory.reserved under its existing owner. Persist tickets with Persistence.h; handle cancellation and owner destruction.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/include/rtslib/systems/Persistence.h"
 +      ]
@@ -5754,7 +5754,7 @@ index 00000000..35f96753
 +      "summary": "Tick-based multi-stage actions with timeout and cancellation cleanup",
 +      "notes": "Advance once per increasing tick. begin false must have no side effects; poll is read-only; cleanup is called once for each entered stage on completion/cancel/failure. One stage transition per call bounds work. Implement navigation through existing commands; persist sequence state. Couple reservations to stage cleanup.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/include/rtslib/systems/Persistence.h"
 +      ]
@@ -5769,7 +5769,7 @@ index 00000000..35f96753
 +      "summary": "Weighted loot with exclusions and a guaranteed rare threshold",
 +      "notes": "Reuse weighted selection through rollLoot. Draw must return an integer in [1,total]; use rollSimLoot to consume sim.rng with a validated uint32 total. Guarantee N forces eligible rare loot on attempt N after N-1 misses. Impossible guarantees fail without drawing. Persist pity state and validate/exclude before sampling; reward granting remains separate.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/include/rtslib/systems/Persistence.h",
 +        "libraries/include/rtslib/systems/Configured.h"
@@ -5785,7 +5785,7 @@ index 00000000..35f96753
 +      "summary": "Nonnegative integer step/linear progression tables and CLI preview",
 +      "notes": "Author strictly increasing nonnegative x and nonnegative y. Endpoints clamp; linear rounding is toward the left value, including descending segments. Unsafe intermediate products return failure. Use rts_app_tools curve to preview exact runtime results; use engine/meta progression owners for built-in experience/rewards.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "tools/libraries/app_main.cpp"
 +      ]
@@ -5800,7 +5800,7 @@ index 00000000..35f96753
 +      "summary": "Bounded observation memory, expiration and threat selection",
 +      "notes": "Feed only visibility-authorized observations; never enumerate hidden enemies into memory. Keep known positions after lost sight until tick TTL expires. Highest threat ties by smaller entity ID; capacity evicts oldest, then smaller ID, and rejects older incoming observations. Use stable packed IDs and clear destroyed targets only when knowledge permits. Persist via Persistence.h.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/include/rtslib/systems/Persistence.h",
 +        "libraries/include/rtslib/systems/Configured.h"
@@ -5816,7 +5816,7 @@ index 00000000..35f96753
 +      "summary": "Bounded structured decision facts using existing reason codes",
 +      "notes": "Collect facts from the actual authoritative calculation, including localization key/subject/required/actual/reason. explain keeps the first failure even when fact output is truncated. Do not infer damage/modifier explanations from guessed formulas. Send display-only reports to UI/debug consumers; keep diagnostics out of state hashes unless they drive behavior.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::libraries",
++      "cmakeTarget": "AIVERSE::libraries",
 +      "dependencies": [
 +        "libraries/include/rtslib/systems/Configured.h"
 +      ]
@@ -5831,7 +5831,7 @@ index 00000000..35f96753
 +      "summary": "RTS bot profiles and transactional checkpoints over the existing RtsAI",
 +      "notes": "Use existing RtsAI for economy, build/research, combat, garrisons and terrain/planet play. Host calls update before sim.step. rules.ai may override profiles. Preserve the legacy knowledge policy; do not claim fog-fairness. Save bot state with simulation; exact player/seed/settings must match.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::rts_bots",
++      "cmakeTarget": "AIVERSE::rts_bots",
 +      "dependencies": [
 +        "docs/bots.md",
 +        "modules/rts/RtsAI.h",
@@ -5848,7 +5848,7 @@ index 00000000..35f96753
 +      "summary": "Command-driven FPS bots with perception, reaction, aiming, reload, retreat, zone and patrol",
 +      "notes": "Run on one authoritative host with map bot:false for owned slots. Use fpsCommand then sim.submit; never mutate actors. Persist FpsState with the simulation. Supply generated navmesh or authored waypoint graph; no bomb, loot or vehicle mechanics are implied.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::fps_bots",
++      "cmakeTarget": "AIVERSE::fps_bots",
 +      "dependencies": [
 +        "docs/bots.md",
 +        "libraries/include/rtslib/bots/Persistence.h",
@@ -5866,7 +5866,7 @@ index 00000000..35f96753
 +      "summary": "Automatic deterministic layered AABB navigation mesh with clearance, erosion and bounded routing",
 +      "notes": "Build immutable regional polygon meshes from current collision and motor dimensions. Rebuild on geometry changes. Bound cell/polygon/candidate/search budgets. No triangle/slope importer or cross-region streaming links. Use navPath/navStep, real motor tests and rts_navmesh exporter.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::navmesh",
++      "cmakeTarget": "AIVERSE::navmesh",
 +      "dependencies": [
 +        "docs/bots.md",
 +        "libraries/include/rtslib/bots/NavMeshData.h",
@@ -5895,7 +5895,7 @@ index 00000000..35f96753
 +      "summary": "Fixed character movement policy with ground/air acceleration, jump buffer and coyote time",
 +      "notes": "Read docs/genre-packages.md for exact coverage and authority boundaries. Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::genre",
++      "cmakeTarget": "AIVERSE::genre",
 +      "dependencies": [
 +        "libraries/include/rtslib/genre/Configured.h",
 +        "libraries/include/rtslib/genre/Persistence.h",
@@ -5913,7 +5913,7 @@ index 00000000..35f96753
 +      "summary": "Custom melee timing, buffered combos, active-window hit deduplication and defense outcomes",
 +      "notes": "Read docs/genre-packages.md for exact coverage and authority boundaries. Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::genre",
++      "cmakeTarget": "AIVERSE::genre",
 +      "dependencies": [
 +        "libraries/include/rtslib/genre/Configured.h",
 +        "libraries/include/rtslib/genre/Persistence.h",
@@ -5931,7 +5931,7 @@ index 00000000..35f96753
 +      "summary": "Seeded spread, recoil recovery and swept projectiles with bounded ricochets",
 +      "notes": "Read docs/genre-packages.md for exact coverage and authority boundaries. Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::genre",
++      "cmakeTarget": "AIVERSE::genre",
 +      "dependencies": [
 +        "libraries/include/rtslib/genre/Configured.h",
 +        "libraries/include/rtslib/genre/Persistence.h",
@@ -5949,7 +5949,7 @@ index 00000000..35f96753
 +      "summary": "Team score events, rounds, overtime, draws and contested capture policies",
 +      "notes": "Read docs/genre-packages.md for exact coverage and authority boundaries. Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::genre",
++      "cmakeTarget": "AIVERSE::genre",
 +      "dependencies": [
 +        "libraries/include/rtslib/genre/Configured.h",
 +        "libraries/include/rtslib/genre/Persistence.h",
@@ -5967,7 +5967,7 @@ index 00000000..35f96753
 +      "summary": "Localized narrative graphs with conditional choices and atomic fact transactions",
 +      "notes": "Read docs/genre-packages.md for exact coverage and authority boundaries. Policies do not automatically replace existing engine movement/combat/victory or wire presentation. Persist versioned state and bind immutable definitions. Use actual native/host owners for commands, collision and damage.",
 +      "verifiedPlatforms": [],
-+      "cmakeTarget": "RTSEngine::genre",
++      "cmakeTarget": "AIVERSE::genre",
 +      "dependencies": [
 +        "libraries/include/rtslib/genre/Configured.h",
 +        "libraries/include/rtslib/genre/Persistence.h",
@@ -9729,7 +9729,7 @@ index 00000000..2e74ddde
 @@ -0,0 +1,562 @@
 +{
 +  "$schema": "https://json-schema.org/draft/2020-12/schema",
-+  "title": "RTSEngine gameplay configuration",
++  "title": "AIVERSE gameplay configuration",
 +  "type": "object",
 +  "additionalProperties": false,
 +  "required": [
@@ -10358,7 +10358,7 @@ index 00000000..b9e9409e
 +enable_testing()
 +add_subdirectory(../../libraries libraries)
 +add_executable(rts_library_tests tests.cpp)
-+target_link_libraries(rts_library_tests PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_library_tests PRIVATE AIVERSE::libraries)
 +if(MSVC)
 +    target_compile_options(rts_library_tests PRIVATE /W4 /WX)
 +else()
@@ -10366,7 +10366,7 @@ index 00000000..b9e9409e
 +endif()
 +add_test(NAME rts_library_tests COMMAND rts_library_tests)
 +add_executable(rts_gameplay_tests gameplay_tests.cpp ../../engine/data/Json.cpp ../../engine/core/Fixed.cpp)
-+target_link_libraries(rts_gameplay_tests PRIVATE RTSEngine::gameplay_native)
++target_link_libraries(rts_gameplay_tests PRIVATE AIVERSE::gameplay_native)
 +if(MSVC)
 +    target_compile_options(rts_gameplay_tests PRIVATE /W4 /WX)
 +else()
@@ -10374,7 +10374,7 @@ index 00000000..b9e9409e
 +endif()
 +add_test(NAME rts_gameplay_tests COMMAND rts_gameplay_tests)
 +add_executable(rts_app_tests app_tests.cpp)
-+target_link_libraries(rts_app_tests PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_app_tests PRIVATE AIVERSE::libraries)
 +if(MSVC)
 +    target_compile_options(rts_app_tests PRIVATE /W4 /WX)
 +else()
@@ -10383,25 +10383,25 @@ index 00000000..b9e9409e
 +add_test(NAME rts_app_tests COMMAND rts_app_tests)
 +if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/meta/Meta.cpp")
 +    add_executable(rts_app_meta_tests app_meta_tests.cpp ../../engine/meta/Meta.cpp ../../engine/meta/MetaData.cpp ../../engine/data/Json.cpp ../../engine/core/Fixed.cpp)
-+    target_link_libraries(rts_app_meta_tests PRIVATE RTSEngine::gameplay_native)
++    target_link_libraries(rts_app_meta_tests PRIVATE AIVERSE::gameplay_native)
 +    add_test(NAME rts_app_meta_tests COMMAND rts_app_meta_tests)
 +endif()
 +add_library(rts_app_rml_compile OBJECT rml_binding_compile.cpp)
-+target_link_libraries(rts_app_rml_compile PRIVATE RTSEngine::gameplay_native)
++target_link_libraries(rts_app_rml_compile PRIVATE AIVERSE::gameplay_native)
 +target_include_directories(rts_app_rml_compile PRIVATE ../../third_party/rmlui/Include)
 +add_executable(rts_app_tools ../../tools/libraries/app_main.cpp ../../engine/data/Json.cpp ../../engine/core/Fixed.cpp)
-+target_link_libraries(rts_app_tools PRIVATE RTSEngine::gameplay_native)
++target_link_libraries(rts_app_tools PRIVATE AIVERSE::gameplay_native)
 +if(NOT MSVC)
 +    target_compile_options(rts_app_tools PRIVATE -Wall -Wextra -Werror -pedantic)
 +endif()
 +add_executable(rts_runtime_library_tests runtime_tests.cpp ../../engine/data/Json.cpp ../../engine/core/Fixed.cpp)
-+target_link_libraries(rts_runtime_library_tests PRIVATE RTSEngine::gameplay_native)
++target_link_libraries(rts_runtime_library_tests PRIVATE AIVERSE::gameplay_native)
 +if(NOT MSVC)
 +    target_compile_options(rts_runtime_library_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 +endif()
 +add_test(NAME rts_runtime_library_tests COMMAND rts_runtime_library_tests)
 +add_executable(rts_systems_tests systems_tests.cpp)
-+target_link_libraries(rts_systems_tests PRIVATE RTSEngine::libraries)
++target_link_libraries(rts_systems_tests PRIVATE AIVERSE::libraries)
 +if(NOT MSVC)
 +    target_compile_options(rts_systems_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 +endif()
@@ -10412,7 +10412,7 @@ index 00000000..b9e9409e
 +        ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp
 +        ../../engine/sim/Simulation.cpp ../../modules/fps/FpsModule.cpp ../../modules/fps/FpsMotor.cpp
 +        ../../engine/world/SpatialWorld.cpp)
-+    target_link_libraries(rts_library_fps_bot_tests PRIVATE RTSEngine::gameplay_native)
++    target_link_libraries(rts_library_fps_bot_tests PRIVATE AIVERSE::gameplay_native)
 +    if(NOT MSVC)
 +        target_compile_options(rts_library_fps_bot_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 +    endif()
@@ -10424,7 +10424,7 @@ index 00000000..b9e9409e
 +        ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp
 +        ../../engine/sim/Simulation.cpp ../../modules/fps/FpsModule.cpp ../../modules/fps/FpsMotor.cpp
 +        ../../engine/world/SpatialWorld.cpp)
-+    target_link_libraries(rts_library_navmesh_tests PRIVATE RTSEngine::gameplay_native)
++    target_link_libraries(rts_library_navmesh_tests PRIVATE AIVERSE::gameplay_native)
 +    if(NOT MSVC)
 +        target_compile_options(rts_library_navmesh_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 +    endif()
@@ -10434,7 +10434,7 @@ index 00000000..b9e9409e
 +if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/world/SpatialWorld.cpp")
 +    add_executable(rts_library_genre_tests genre_tests.cpp
 +        ../../engine/core/Fixed.cpp ../../engine/core/FixedMath.cpp ../../engine/data/Json.cpp ../../engine/world/SpatialWorld.cpp)
-+    target_link_libraries(rts_library_genre_tests PRIVATE RTSEngine::gameplay_native)
++    target_link_libraries(rts_library_genre_tests PRIVATE AIVERSE::gameplay_native)
 +    if(NOT MSVC)
 +        target_compile_options(rts_library_genre_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 +    endif()
@@ -10902,7 +10902,7 @@ index 00000000..cbbbc8f2
 +        run(['cmake','-S',str(engine),'-B',str(build_dir),'-DRTS_CONTENT_DIR='+str(content),*flags])
 +        run(['cmake','--build',str(build_dir),'--target','rts_native_library_demo','--parallel','2'])
 +    build(ROOT,project,tmp/'build-external')
-+    print('External game native module compiled with RTSEngine::libraries')
++    print('External game native module compiled with AIVERSE::libraries')
 +    # Use the real source-export directory list, so removing libraries from it breaks this test.
 +    code=(ROOT/'tools/rtsbuild/main.cpp').read_text()
 +    body=code.split('void exportSources(',1)[1].split('// Native plugins',1)[0]
@@ -11385,7 +11385,7 @@ index 00000000..b764cfdb
 +    temp_path=lock_path.with_suffix('.json.tmp')
 +    temp_path.write_text(json.dumps(lock,indent=2,sort_keys=True)+'\n')
 +    temp_path.replace(lock_path)
-+    print(f"Pinned {p['id']} {p['version']}; link RTSEngine::libraries")
++    print(f"Pinned {p['id']} {p['version']}; link AIVERSE::libraries")
 +
 +if __name__ == '__main__':
 +    main()
@@ -11608,7 +11608,7 @@ index 00000000..7051c87a
 +def generate():
 +    spec=json.loads((ROOT/'libraries/spec/gameplay.json').read_text())
 +    code=['// Generated by tools/libraries/generate_gameplay.py. Edit libraries/spec/gameplay.json.', '#pragma once', '#include <charconv>', '#include <cstdint>', '#include <optional>', '#include <string>', '#include <vector>', 'namespace rts::lib::gameplay {']
-+    schema={'$schema':'https://json-schema.org/draft/2020-12/schema','title':'RTSEngine gameplay configuration','type':'object','additionalProperties':False,'required':['schemaVersion'],'properties':{'schemaVersion':{'const':spec['version']}}}
++    schema={'$schema':'https://json-schema.org/draft/2020-12/schema','title':'AIVERSE gameplay configuration','type':'object','additionalProperties':False,'required':['schemaVersion'],'properties':{'schemaVersion':{'const':spec['version']}}}
 +    doc=['# Настройки игровых подсистем','', 'Generated from `libraries/spec/gameplay.json`. Integer values are literal integers; no floating conversion.', '', '| Section | Field | Type | Default | Range |','|---|---|---|---|---|']
 +    constraints=[]
 +    for key,p in spec['packages'].items():
@@ -11781,7 +11781,7 @@ index 00000000..29b77f34
 +    smoke='#include "State.h"\n#include "Commands.h"\nint main(){rts::game::NativeState state;if(!'+ns+'::initialize(state)||!'+ns+'::load(state))return 1;\n'
 +    for c in s['commands']:smoke+='if(auto cmd='+ns+'::encode(1,'+ns+'::'+c['name']+'{});!cmd||!'+ns+'::decode_'+c['name']+'(*cmd))return 2;\n'
 +    smoke+='return 0;}\n'
-+    return {'Smoke.cpp':smoke,'State.h':'\n'.join(header)+'\n','Commands.h':'\n'.join(commands)+'\n','Module.cpp':source,'CMakeLists.txt':f'rts_native_module(ID {ns} VERSION {version} ENTRY create_{ns} SOURCES Module.cpp)\ntarget_link_libraries(rts_native_{ns} PRIVATE RTSEngine::gameplay_native)\n','schema.json':json.dumps(s,indent=2)+'\n','rules.fragment.json':json.dumps({'nativeModules':[{'id':ns,'version':version,'command':s['commandType'],'config':{}}]},indent=2)+'\n'}
++    return {'Smoke.cpp':smoke,'State.h':'\n'.join(header)+'\n','Commands.h':'\n'.join(commands)+'\n','Module.cpp':source,'CMakeLists.txt':f'rts_native_module(ID {ns} VERSION {version} ENTRY create_{ns} SOURCES Module.cpp)\ntarget_link_libraries(rts_native_{ns} PRIVATE AIVERSE::gameplay_native)\n','schema.json':json.dumps(s,indent=2)+'\n','rules.fragment.json':json.dumps({'nativeModules':[{'id':ns,'version':version,'command':s['commandType'],'config':{}}]},indent=2)+'\n'}
 +def write(s,output):
 +    files=generate(s)
 +    if output.exists():raise ValueError('output exists; generate separately and review a diff')

@@ -1,5 +1,5 @@
 {
-  "id": "com.rtsengine.fps_survival",
+  "id": "com.aiverse.fps_survival",
   "name": "Last Survivor",
   "description": "Большая карта, 100 мест, потоковая загрузка окружения и сужающаяся зона.",
   "module": "fps",

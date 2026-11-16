@@ -4,7 +4,7 @@
 {
   "description": "2D-спрайты на 3D-рельефе (K&M).",
   "name": "Green Hills",
-  "id": "com.rtsengine.greenhills",
+  "id": "com.aiverse.greenhills",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",

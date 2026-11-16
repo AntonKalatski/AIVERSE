@@ -2,7 +2,7 @@
 {
   "description": "Как Company of Heroes: отряды и точки.",
   "name": "Hold the Line",
-  "id": "com.rtsengine.holdtheline",
+  "id": "com.aiverse.holdtheline",
   "version": "0.1.0",
   "build": 1,
   "module": "rts",
