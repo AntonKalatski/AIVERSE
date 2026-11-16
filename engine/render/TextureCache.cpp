@@ -37,48 +37,105 @@ bool decodeImage(const std::string& bytes, int& w, int& h, std::vector<uint8_t>&
 
 void TextureCache::shutdown() {
     auto isPage = [&](gfx::TextureHandle h) { for (auto& [k, p] : atlasPages_) if (p == h) return true; return false; };
-    if (dev_) for (auto& [k, t] : cache_) if (t.tex.valid() && !isPage(t.tex)) dev_->destroyTexture(t.tex);
+    std::vector<gfx::TextureHandle> gone;   // resolveSprite's fallbacks share resolve()'s textures
+    auto destroyed = [&](gfx::TextureHandle h) { for (auto& g : gone) if (g == h) return true; return false; };
+    if (dev_)
+        for (auto& [k, t] : cache_)
+            if (t.tex.valid() && !isPage(t.tex) && !destroyed(t.tex)) { dev_->destroyTexture(t.tex); gone.push_back(t.tex); }
     if (dev_) for (auto& [k, t] : atlasPages_) if (t.valid()) dev_->destroyTexture(t);
     cache_.clear();
     atlasPages_.clear();
+    sprites_.clear();
     atlas_.reset();
 }
 
-bool TextureCache::resolveAtlased(const std::string& path, bool nearest, const std::string& base, TextureRef& r) {
-    if (!atlas_ || atlasBase_ != base) {
-        atlasBase_ = base;
-        atlas_ = std::make_shared<atlas::ImageSource>([base](const std::string& p, std::string& o) { return platform::readContentFile(base + p, o); },
-                                                       [](const std::string& b, atlas::Image& img) { return decodeImage(b, img.width, img.height, img.rgba); });
-    }
-    const atlas::Region* reg = atlas_->manifest().find(path);
-    if (!reg) return false;
-    const atlas::Page& pg = atlas_->manifest().pages()[size_t(reg->page)];
-    gfx::TextureDesc td;
-    td.filter = nearest ? gfx::Filter::Nearest : gfx::Filter::Linear;
-    bool untrimmed = !reg->rotated && reg->offsetX == 0 && reg->offsetY == 0 && reg->w == reg->sourceW && reg->h == reg->sourceH;
-    if (!untrimmed) { // callers map uvs linearly over the whole image: give them the original pixels
-        atlas::Image img;
-        if (!atlas_->load(path, img)) return false;
-        td.width = img.width; td.height = img.height; td.data = img.rgba.data(); td.label = path.c_str();
-        r.tex = dev_->createTexture(td);
-        r.width = img.width; r.height = img.height;
-        return true;
-    }
+void TextureCache::useAtlas(const std::string& base) {
+    if (atlas_ && atlasBase_ == base) return;
+    atlasBase_ = base;
+    atlas_ = std::make_shared<atlas::ImageSource>([base](const std::string& p, std::string& o) { return platform::readContentFile(base + p, o); },
+                                                   [](const std::string& b, atlas::Image& img) { return decodeImage(b, img.width, img.height, img.rgba); });
+}
+
+gfx::TextureHandle TextureCache::atlasPage(int index, bool nearest, const std::string& base) {
+    const atlas::Page& pg = atlas_->manifest().pages()[size_t(index)];
     std::string key = base + pg.file + (nearest ? "#n" : "#l");
     gfx::TextureHandle& page = atlasPages_[key];
     if (!page.valid()) {
         std::string bytes;
         atlas::Image img;
         if (!platform::readContentFile(base + pg.file, bytes) || !atlas::loadPageImage(bytes, [](const std::string& b, atlas::Image& i) { return decodeImage(b, i.width, i.height, i.rgba); }, img))
-            return false;
+            return {};
+        gfx::TextureDesc td;
+        td.filter = nearest ? gfx::Filter::Nearest : gfx::Filter::Linear;
         td.width = img.width; td.height = img.height; td.data = img.rgba.data(); td.label = "atlas-page";
         page = dev_->createTexture(td);
     }
-    r.tex = page;
+    return page;
+}
+
+bool TextureCache::resolveAtlased(const std::string& path, bool nearest, const std::string& base, TextureRef& r) {
+    useAtlas(base);
+    const atlas::Region* reg = atlas_->manifest().find(path);
+    if (!reg && !atlas_->manifest().findSheet(path)) return false;
+    if (!reg || !reg->plain()) { // callers map uvs linearly over the whole image: give them the original pixels
+        atlas::Image img;
+        if (!atlas_->load(path, img)) return false;
+        gfx::TextureDesc td;
+        td.filter = nearest ? gfx::Filter::Nearest : gfx::Filter::Linear;
+        td.width = img.width; td.height = img.height; td.data = img.rgba.data(); td.label = path.c_str();
+        r.tex = dev_->createTexture(td);
+        r.width = img.width; r.height = img.height;
+        return true;
+    }
+    const atlas::Page& pg = atlas_->manifest().pages()[size_t(reg->page)];
+    r.tex = atlasPage(reg->page, nearest, base);
+    if (!r.tex.valid()) return false;
     r.u0 = float(reg->x) / float(pg.width); r.v0 = float(reg->y) / float(pg.height);
     r.u1 = float(reg->x + reg->w) / float(pg.width); r.v1 = float(reg->y + reg->h) / float(pg.height);
     r.width = reg->sourceW; r.height = reg->sourceH;
     return true;
+}
+
+TextureRef TextureCache::resolveSprite(const std::string& path, bool nearest, const std::string& base, int frameW, int frameH) {
+    const std::string key = base + path + (nearest ? "#n" : "#l") + "#sprite" + std::to_string(frameW) + "x" + std::to_string(frameH);
+    if (auto it = cache_.find(key); it != cache_.end()) return it->second;
+    TextureRef r;
+    if (dev_) {
+        useAtlas(base);
+        const atlas::Manifest& m = atlas_->manifest();
+        auto sprite = std::make_unique<AtlasSprite>();
+        int W = 0, H = 0;
+        if (const atlas::Sheet* sh = m.findSheet(path)) {
+            const int fw = frameW > 0 ? frameW : sh->sourceW, fh = frameH > 0 ? frameH : fw;
+            if (fw == sh->frameW() && fh == sh->frameH()) {   // the renderer's grid is the build's grid
+                sprite->cols = sh->cols; sprite->rows = sh->rows;
+                for (int i = 0; i < sh->cols * sh->rows; ++i) sprite->frames.push_back({{}, *m.frame(path, i), 1, 1});
+                W = sh->sourceW; H = sh->sourceH;
+            }
+        } else if (const atlas::Region* reg = m.find(path); reg && !reg->plain()) {
+            sprite->frames.push_back({{}, *reg, 1, 1});
+            W = reg->sourceW; H = reg->sourceH;
+        }
+        bool ok = !sprite->frames.empty();
+        for (AtlasFrame& f : sprite->frames) {
+            if (!ok) break;
+            const atlas::Page& pg = m.pages()[size_t(f.region.page)];
+            f.tex = atlasPage(f.region.page, nearest, base);
+            f.pageW = pg.width; f.pageH = pg.height;
+            ok = f.tex.valid();
+        }
+        if (ok) {
+            r.tex = sprite->frames[0].tex;
+            r.width = W; r.height = H;
+            r.sprite = sprite.get();
+            sprites_[key] = std::move(sprite);
+            cache_[key] = r;
+            return r;
+        }
+    }
+    r = resolve(path, nearest, base);
+    cache_[key] = r;
+    return r;
 }
 
 TextureRef TextureCache::resolve(const std::string& path, bool nearest, const std::string& base, bool tiling) {

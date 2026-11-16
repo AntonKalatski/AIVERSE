@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include "engine/pack/PackWriter.h"
+#include "tools/atlas/AtlasMesh.h"
 #include "third_party/zstd/zstd.h"
 
 #define STB_IMAGE_WRITE_STATIC
@@ -59,7 +60,8 @@ std::string usageGroup(const std::string& path) {
     return it == kMap.end() ? std::string() : it->second;
 }
 
-const char* kRuleKeys[] = {"group", "atlasGroup", "noAtlas", "wrap", "kind", "rotate", "trim", "mips", "splitAlpha", "padding", "extrude"};
+const char* kRuleKeys[] = {"group", "atlasGroup", "noAtlas", "wrap", "kind", "rotate", "trim", "mips", "splitAlpha", "padding", "extrude",
+                           "mesh", "tight", "frames", "meshVertices"};
 
 void checkKeys(const Json& o, const std::string& where) {
     if (!o.isObject()) bad(where + " must be an object");
@@ -80,6 +82,10 @@ void applyProps(FileProps& p, const Json& o) {
     if (o.has("splitAlpha")) p.splitAlpha = o.getBool("splitAlpha");
     if (o.has("padding")) p.padding = int(o.getInt("padding"));
     if (o.has("extrude")) p.extrude = int(o.getInt("extrude"));
+    if (o.has("mesh")) p.mesh = o.getBool("mesh");
+    if (o.has("tight")) p.tight = o.getBool("tight");
+    if (o.has("frames")) p.frames = o.getBool("frames");
+    if (o.has("meshVertices")) p.meshVertices = int(o.getInt("meshVertices"));
 }
 
 struct Prepared {
@@ -89,6 +95,13 @@ struct Prepared {
     int offX = 0, offY = 0, srcW = 0, srcH = 0;
     uint64_t hash = 0, fileBytes = 0;
     bool opaque = true;
+    std::string sheet;          // frame of this framed sheet ("" = a whole image)
+    std::vector<float> mesh;
+};
+
+struct SheetRec {               // a framed sheet: the frames carry its pixels
+    Sheet grid;
+    uint64_t fileBytes = 0;
 };
 
 uint64_t imageHash(const Image& img) {
@@ -124,6 +137,19 @@ void blit(Image& page, const Image& img, int x, int y, bool rotated, int e) {
             const uint8_t* s = rotated ? img.px(dy, img.height - 1 - dx) : img.px(dx, dy);
             std::memcpy(page.px(x + px, y + py), s, 4);
         }
+}
+
+// Tight packing: only the texels of the item's shape (the rest of its rectangle may hold others).
+void blitMasked(Image& page, const Image& img, int x, int y, bool rotated, const RowMask& m) {
+    for (int r = 0; r < m.count(); ++r) {
+        const int dy = m.y0 + r;
+        for (int dx = m.rows[size_t(r) * 2]; dx < m.rows[size_t(r) * 2 + 1]; ++dx) {
+            int sx = rotated ? dy : dx, sy = rotated ? img.height - 1 - dx : dy;
+            sx = std::clamp(sx, 0, img.width - 1);
+            sy = std::clamp(sy, 0, img.height - 1);
+            std::memcpy(page.px(x + dx, y + dy), img.px(sx, sy), 4);
+        }
+    }
 }
 
 size_t zstdSize(const std::string& s) {
@@ -229,8 +255,9 @@ FileProps AtlasConfig::classify(const std::string& path) const {
     if (endsWith(s, "_repeat") || endsWith(s, "_tiling") || endsWith(s, "_wrap")) p.repeat = true;
     if (groups.has(group)) applyProps(p, groups[group]);
     for (const Json* r : rules) applyProps(p, *r);
-    if (p.kind != "color") p.trim = false; // alpha of normal maps / masks is data, not coverage
-    if (sheets.count(path)) { p.trim = false; p.rotate = false; }
+    if (p.tight) p.mesh = true;
+    if (p.kind != "color") { p.trim = false; p.mesh = p.tight = false; } // alpha of normal maps / masks is data, not coverage
+    if (sheets.count(path) && !p.frames) { p.trim = false; p.rotate = false; p.mesh = p.tight = false; }
     return p;
 }
 
@@ -248,6 +275,7 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
 
     int maxTex = cfg.maxTextureSize > 0 ? cfg.maxTextureSize : cfg.pack.maxPage / 4;
     std::map<std::string, std::vector<Prepared>> groups; // group key -> members, sorted by path
+    std::map<std::string, SheetRec> sheetRecs;
     for (const SourceImage* s : sorted) {
         FileProps p = cfg.classify(s->path);
         if (p.group.empty() || !isImagePath(s->path)) continue;
@@ -256,27 +284,70 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
         if (p.repeat) { st.excluded.push_back({s->path, "wrap: repeat"}); continue; }
         Image img;
         if (!decodeImageFile(s->bytes, img)) { st.excluded.push_back({s->path, "cannot decode"}); st.warnings.push_back("atlas: cannot decode " + s->path); continue; }
-        Prepared pr;
-        pr.path = s->path;
-        pr.props = p;
-        pr.srcW = img.width;
-        pr.srcH = img.height;
-        pr.fileBytes = s->bytes.size();
-        pr.trimmed = trimImage(img, p.trim, pr.offX, pr.offY);
+        // a framed sheet becomes one item per frame; anything else is one item
+        int cols = 1, rows = 1;
+        if (auto sh = cfg.sheets.find(s->path); sh != cfg.sheets.end() && p.frames) {
+            int fw = sh->second.first, fh = sh->second.second;
+            if (fw == 0 && fh == 0) { fw = img.width; fh = img.height; }
+            if (fw > 0 && fh > 0 && img.width % fw == 0 && img.height % fh == 0) {
+                cols = img.width / fw;
+                rows = img.height / fh;
+            } else {
+                st.warnings.push_back("atlas: " + s->path + ": frames: the frame size does not divide the sheet (or differs between its uses), kept whole");
+                p.trim = p.rotate = p.mesh = p.tight = false;
+            }
+        }
+        const int fw = img.width / cols, fh = img.height / rows;
         int pad = p.padding >= 0 ? p.padding : cfg.pack.padding, ext = p.extrude >= 0 ? p.extrude : cfg.pack.extrude;
         const int sizeLimit = std::min(maxTex, cfg.pack.maxPage - 2 * ext - (p.mips ? (1 << cfg.mipLevels) : 0));
-        if (std::max(pr.trimmed.width, pr.trimmed.height) > sizeLimit || pad < 0) {
-            st.excluded.push_back({s->path, "too large (" + std::to_string(img.width) + "x" + std::to_string(img.height) + " > " + std::to_string(maxTex) + ")"});
-            if (pad >= 0 && sizeLimit > 0) st.resizeFixes[s->path] = sizeLimit;
+        if (p.mips && p.tight) {
+            st.warnings.push_back("atlas: " + s->path + ": tight packing is off in groups with mipmaps");
+            p.tight = false;
+        }
+        std::vector<Prepared> frames;
+        bool tooLarge = false;
+        for (int f = 0; f < cols * rows && !tooLarge; ++f) {
+            Prepared pr;
+            pr.path = cols * rows > 1 ? sheetFramePath(s->path, f) : s->path;
+            pr.sheet = cols * rows > 1 ? s->path : std::string();
+            pr.props = p;
+            pr.srcW = fw;
+            pr.srcH = fh;
+            pr.fileBytes = cols * rows > 1 ? 0 : s->bytes.size();
+            Image cell;
+            const Image* src = &img;
+            if (cols * rows > 1) {
+                cell.width = fw; cell.height = fh;
+                cell.rgba.resize(size_t(fw) * size_t(fh) * 4);
+                const int cx = (f % cols) * fw, cy = (f / cols) * fh;
+                for (int y = 0; y < fh; ++y) std::memcpy(cell.px(0, y), img.px(cx, cy + y), size_t(fw) * 4);
+                src = &cell;
+            }
+            pr.trimmed = trimImage(*src, p.trim, pr.offX, pr.offY);
+            tooLarge = std::max(pr.trimmed.width, pr.trimmed.height) > sizeLimit || pad < 0;
+            for (size_t i = 3; i < pr.trimmed.rgba.size(); i += 4) if (pr.trimmed.rgba[i] != 255) { pr.opaque = false; break; }
+            pr.hash = imageHash(pr.trimmed);
+            frames.push_back(std::move(pr));
+        }
+        if (tooLarge) {
+            st.excluded.push_back({s->path, "too large (" + std::to_string(fw) + "x" + std::to_string(fh) + " > " + std::to_string(maxTex) + ")"});
+            if (pad >= 0 && sizeLimit > 0 && cols * rows == 1) st.resizeFixes[s->path] = sizeLimit;
             continue;
         }
-        for (size_t i = 3; i < pr.trimmed.rgba.size(); i += 4) if (pr.trimmed.rgba[i] != 255) { pr.opaque = false; break; }
-        pr.hash = imageHash(pr.trimmed);
+        if (cols * rows > 1) {
+            SheetRec& rec = sheetRecs[s->path];
+            rec.grid.cols = cols; rec.grid.rows = rows;
+            rec.grid.sourceW = img.width; rec.grid.sourceH = img.height;
+            rec.fileBytes = s->bytes.size();
+        }
+        // the frames of a sheet share one group (one page set): opaque only when all of them are
+        const bool opaque = std::all_of(frames.begin(), frames.end(), [](const Prepared& f) { return f.opaque; });
         std::string key = p.group;
         if (p.kind != "color") key += "|" + p.kind;
-        if (p.splitAlpha) key += pr.opaque ? "|opaque" : "|alpha";
+        if (p.splitAlpha) key += opaque ? "|opaque" : "|alpha";
         if (p.mips) key += "|mips";
-        groups[key].push_back(std::move(pr));
+        if (p.tight) key += "|tight";
+        for (auto& pr : frames) groups[key].push_back(std::move(pr));
     }
 
     for (auto it = groups.begin(); it != groups.end();) {
@@ -298,8 +369,11 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
             if (uniqueOf[i] < 0) { uniqueOf[i] = int(i); byHash.emplace(members[i].hash, i); uniques.push_back(i); }
             else ++st.duplicates;
         }
+        for (size_t u : uniques)   // identical pixels: identical mesh
+            if (members[u].props.mesh) members[u].mesh = buildMesh(members[u].trimmed, members[u].props.meshVertices);
         PackSettings ps = cfg.pack;
         bool mips = members[0].props.mips;
+        ps.tight = members[0].props.tight;
         ps.padding = 0;
         ps.extrude = 0;
         for (auto& m : members) {
@@ -321,6 +395,7 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
             it.allowRotate = members[u].props.rotate;
             it.cluster = parentDir(members[u].path);
             it.key = members[u].path;
+            if (ps.tight) it.mesh = members[u].mesh;
             items.push_back(std::move(it));
         }
         PackedPages pp = packRects(items, ps);
@@ -343,7 +418,8 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
         for (size_t k = 0; k < uniques.size(); ++k) {
             const Prepared& m = members[uniques[k]];
             const Placement& pl = pp.placements[k];
-            blit(imgs[size_t(pl.page)], m.trimmed, pl.x, pl.y, pl.rotated, ps.extrude);
+            if (ps.tight) blitMasked(imgs[size_t(pl.page)], m.trimmed, pl.x, pl.y, pl.rotated, writtenMask(items[k], ps, pl.rotated));
+            else blit(imgs[size_t(pl.page)], m.trimmed, pl.x, pl.y, pl.rotated, ps.extrude);
             if (!m.opaque) alpha[size_t(pl.page)] = true;
             gs.usedArea += uint64_t(m.trimmed.width) * uint64_t(m.trimmed.height);
         }
@@ -379,7 +455,18 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
             r.rotated = pl.rotated;
             r.offsetX = m.offX; r.offsetY = m.offY;
             r.sourceW = m.srcW; r.sourceH = m.srcH;
+            r.mesh = members[size_t(uniqueOf[i])].mesh;
             out.manifest.add(m.path, r);
+            if (!m.sheet.empty()) {
+                if (out.manifest.findSheet(m.sheet)) continue;   // counted with its first frame
+                const SheetRec& rec = sheetRecs[m.sheet];
+                out.manifest.addSheet(m.sheet, rec.grid);
+                out.consumed.push_back(m.sheet);
+                st.sourceBytes += rec.fileBytes;
+                st.gpuBytesBefore += uint64_t(rec.grid.sourceW) * uint64_t(rec.grid.sourceH) * 4;
+                ++st.atlasedSheets;
+                continue;
+            }
             out.consumed.push_back(m.path);
             st.sourceBytes += m.fileBytes;
             st.gpuBytesBefore += uint64_t(m.srcW) * uint64_t(m.srcH) * 4;
@@ -399,11 +486,22 @@ bool buildAtlas(const std::vector<SourceImage>& input, const AtlasConfig& cfg, A
     return true;
 }
 
-void collectSheets(const Json& j, std::set<std::string>& out) {
+void collectSheets(const Json& j, std::map<std::string, std::pair<int, int>>& out) {
     if (j.isObject()) {
         for (auto& [k, v] : j.members()) {
-            if (k == "sheet" && v.isString()) out.insert(pack::normalizePath(v.str()));
-            else collectSheets(v, out);
+            if (k == "sheet" && v.isString()) {
+                // as the sprite renderer reads it: frame [w, h], h defaults to w, no frame = the whole image
+                const Json& f = j["frame"];
+                std::pair<int, int> size{0, 0};
+                if (f.isArray() && f.size() >= 1 && f[0].isNumber()) {
+                    size.first = int(f[0].integer());
+                    size.second = f.size() >= 2 && f[1].isNumber() ? int(f[1].integer()) : size.first;
+                }
+                auto [it, fresh] = out.emplace(pack::normalizePath(v.str()), size);
+                if (!fresh && it->second != size) it->second = {-1, -1};
+            } else {
+                collectSheets(v, out);
+            }
         }
     } else if (j.isArray()) {
         for (auto& v : j.items()) collectSheets(v, out);
@@ -460,6 +558,7 @@ Json AtlasStats::toJson() const {
     j.set("maxPage", Json::number(int64_t(maxPage)));
     j.set("candidates", Json::number(int64_t(candidates)));
     j.set("atlased", Json::number(int64_t(atlased)));
+    j.set("framedSheets", Json::number(int64_t(atlasedSheets)));
     j.set("duplicates", Json::number(int64_t(duplicates)));
     j.set("pages", Json::number(int64_t(pages)));
     j.set("occupancyPercent", Json::number(occupancy() * 100.0, 1));

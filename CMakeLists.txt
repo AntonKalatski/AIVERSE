@@ -1015,7 +1015,7 @@ if(TARGET aiverse_render2d)
     target_link_libraries(aiverse_render2d PUBLIC aiverse_atlas)  # TextureCache resolves atlased sprites
 endif()
 if(AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS)
-    add_library(aiverse_atlas_builder STATIC tools/atlas/AtlasPacker.cpp tools/atlas/AtlasBuild.cpp)
+    add_library(aiverse_atlas_builder STATIC tools/atlas/AtlasPacker.cpp tools/atlas/AtlasMesh.cpp tools/atlas/AtlasBuild.cpp)
     target_include_directories(aiverse_atlas_builder PRIVATE third_party/stb_image_write)
     target_link_libraries(aiverse_atlas_builder PUBLIC aiverse_atlas aiverse_pack_writer)
     foreach(t aiversebuild assetpipe aiverse_tests)
