@@ -2107,6 +2107,37 @@
       ]
     },
     {
+      "id": "aiverse-place-server",
+      "package": null,
+      "path": "skills/network/aiverse-place-server/SKILL.md",
+      "domain": "workflow",
+      "summary": "Server-authoritative place hosting: tickets, encrypted UDP, WebSocket gate, reconnect, bots",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/replica.md",
+      "keywords": [
+        "place",
+        "server",
+        "host",
+        "hosting",
+        "tickets",
+        "secure",
+        "udp",
+        "websocket",
+        "wss",
+        "reconnect",
+        "bots",
+        "replica",
+        "сервер",
+        "хостинг",
+        "билет",
+        "переподключение"
+      ]
+    },
+    {
       "id": "aiverse-planets",
       "package": null,
       "path": "skills/world/aiverse-planets/SKILL.md",
