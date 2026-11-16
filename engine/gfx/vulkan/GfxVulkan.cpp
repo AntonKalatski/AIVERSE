@@ -124,6 +124,8 @@ bool VulkanDevice::pickDevice(std::string& error) {
     VkPhysicalDeviceFeatures have{}, enable{};
     vkGetPhysicalDeviceFeatures(gpu_, &have);
     enable.textureCompressionBC = have.textureCompressionBC;
+    enable.multiDrawIndirect = have.multiDrawIndirect;
+    multiDrawIndirect_ = have.multiDrawIndirect;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
     const float priority = 1.0f;
