@@ -80,6 +80,116 @@ raycast, overlap, события контактов/датчиков, допол
 Для полностью динамического состава мира используйте C API с собственным владением
 и манифестом вместо `World`.
 
+## Scene: динамическая сцена для авторитетного хоста
+
+`World` хранит неизменный манифест тел (ради save/restore). Для мест с телами, которые появляются
+и исчезают во время игры (сервер replica, `docs/replica.md`), есть отдельный `physics::Scene`
+(`engine/physics/Scene.h`); `World` он не трогает.
+
+```cpp
+#include "engine/physics/Scene.h"
+using namespace aiverse::physics;
+auto scene = Scene::fromJson(json);          // тот же формат, что выше; ошибки — JsonError с текстом
+auto copy = Scene::staticCopy(json);         // клиент: только static-тела, для коллизий предсказания
+BodyDesc d; d.shape = ShapeKind::Box; d.size = {1, 1, 1}; d.position = {0, 5, 0};
+BodyHandle crate = scene->create(d);         // kNoBody при ошибке или лимите, без исключений
+scene->applyImpulse(crate, {0, 300, 0});
+scene->step();                               // один такт 1/tickRate с substeps
+for (auto& c : scene->contactBegins()) { /* c.a, c.b, c.point, c.normal */ }
+scene->destroy(crate);                       // старый handle больше никогда не валиден
+```
+
+- **Handle** — `uint32_t`: индекс слота + поколение (16 + 16 бит), 0 = `kNoBody`. Освобождённый слот
+  снова используется только после 256 других освобождений и с новым поколением, поэтому
+  «висящий» handle не указывает на чужое тело. `Scene::handleOf(b3BodyId)` читает handle из
+  user data тела Box3D. Лимит `SceneConfig::maxBodies` (по умолчанию 16384, максимум 65535).
+- **Тела**: `box` / `sphere` / `capsule`, у static — ещё `mesh` (`vertices` + `indices`, CCW снаружи;
+  до 65536 вершин и 131072 треугольников). Движение `Static` / `Dynamic` / `Kinematic`
+  (у kinematic затухание отключено, чтобы платформа держала заданную скорость).
+  Позиция, поворот (кватернион), линейная / угловая скорость: get / set; `setTransform` — телепорт,
+  `moveKinematic` — довести kinematic-тело до цели за следующий такт; импульс (в центр или в точку),
+  сила, момент; `userData` (uint32) на тело; `awake()` — флаг сна.
+- **События после каждого `step()`** копируются из Box3D и живут до следующего такта:
+  `contactBegins()` (пара handle, точка и нормаль a→b), `sensorEvents()` (begin / end, датчик и
+  посетитель), `moved()` (тела, сдвинувшиеся за такт, и `fellAsleep`; отсортировано по handle —
+  удобно для снимков replica). Конец касания с уже удалённым телом не сообщается.
+- **Запросы** `raycast` / `raycastAll` / `overlapSphere` / `overlapBox` / `overlapCapsule` возвращают
+  handle; результаты отсортированы (по доле луча / по handle) и не зависят от порядка broad-phase.
+  `QueryFilter`: маска категорий, `ignore` (например, собственный персонаж стрелка), датчики
+  пропускаются, пока не попросить `sensors = true`. Луч задаётся сдвигом (`translation = end - start`).
+- **Категории фильтра**: `kCategoryStatic / Dynamic / Kinematic / Sensor` по типу тела,
+  `kCategoryCharacter` — прокси персонажей, `kCategoryQuery` — категория самих запросов.
+  Прокси персонажа (`createCharacter`) — kinematic-капсула, которую видят запросы, датчики и
+  другие персонажи, но с которой не сталкиваются тела: толкание делает контроллер явными
+  ограниченными импульсами (`applyPushes`).
+- JSON дополнительно понимает `userData` тела, `maxBodies` сцены и форму `mesh`. Загрузка
+  «всё или ничего»: при ошибке созданные этим вызовом тела удаляются. В `StaticOnly` пропускаются
+  нестатические тела и ограничения.
+
+## Character: кинематический контроллер персонажа
+
+`physics::Character` (`engine/physics/Character.h`) — капсула на `b3World_CastMover`,
+`b3World_CollideMover` и `b3SolvePlanes`. Позиция — точка ступней (низ капсулы), +Y вверх.
+
+```cpp
+CharacterParams params;                      // radius, height, walk/run speed, acceleration, airControl,
+                                             // jumpSpeed, gravity, maxSlope, stepHeight, pushImpulseLimit
+CharacterState st;                           // position, velocity, yaw, grounded, ground (handle)
+BodyHandle proxy = scene->createCharacter(params, st.position);
+// такт сервера: сначала персонажи (по миру до шага), затем физика
+CharacterInput in = CharacterInput::unpack(bytes);   // 5 байт из входного кадра replica
+Pushes pushes;
+stepCharacter(scene->world(), params, st, in, scene->dt(), &pushes, proxy);
+scene->applyPushes(pushes);
+scene->moveCharacter(proxy, st);
+scene->step();
+// клиент: тот же вызов против Scene::staticCopy(json), self = kNoBody, вход через in.quantized()
+```
+
+- `stepCharacter` зависит только от аргументов и геометрии мира: клиент повторяет его для
+  предсказания (`net::replica::Predictor`). `self` — собственный прокси, запросы его пропускают.
+- Ввод: `moveX` (вправо) и `moveZ` (вперёд) в [-1, 1] относительно `yaw`; `yaw = 0` смотрит вдоль −Z,
+  рост `yaw` поворачивает влево. `jump` — удержание (на земле прыгает сразу), `run` — бег.
+  `pack()` — 5 байт (int8 x, int8 z, uint16 yaw, флаги); `unpack` любых байтов не падает: короткий
+  ввод — нейтральный, значения ограничены. Клиент предсказывает с `quantized()`, как видит сервер.
+- Горизонтальная скорость разгоняется к желаемой с `acceleration` (в воздухе × `airControl`),
+  тормозит так же. Прыжок — `jumpSpeed`, высота ≈ jumpSpeed² / (2·gravity) (интегрирование
+  по средней скорости шага, без систематической потери высоты). Своя гравитация `gravity`.
+- Ходьба идёт по склону; поверхности круче `maxSlope` для ходьбы — вертикальные стены, а гравитация
+  по ним скатывает. Уступы до `stepHeight` берутся подъёмом (вверх, вперёд, вниз); край уступа
+  считается землёй, если сверху ровная поверхность не выше `stepHeight` над ступнями. Спуск со
+  склонов и ступенек прижимает к земле, если опора не дальше `stepHeight`. Потолок останавливает
+  прыжок. Быстрое движение не проходит сквозь стены: каждый сдвиг — sweep `CastMover`.
+- Платформы: скорость точки опоры (kinematic / dynamic тело под ногами) добавляется к сдвигу;
+  при прыжке или сходе с платформы её скорость сохраняется. `state.ground` — handle опоры.
+  Вращение платформы не поворачивает `yaw`.
+- Толкание: dynamic-тела, в которые персонаж идёт, попадают в `Pushes` (точка, направление,
+  скорость); `Scene::applyPushes` даёт импульс до скорости персонажа, не больше
+  `pushImpulseLimit` за такт на тело. Тяжёлое тело блокирует персонажа.
+- Невалидные параметры, `dt` вне (0, 0.1] или нечисловое состояние не двигают персонажа
+  (скорость обнуляется).
+
+Ограничения: персонажи друг для друга — жёсткие капсулы, при глубоком взаимном проникновении
+(спавн друг в друге) расталкивания нет; предсказание на статической копии расходится с сервером
+рядом с динамическими и kinematic-телами (их нет в копии) — это исправляет reconcile replica.
+Детерминизм между машинами не обещается: это float-физика сервера.
+
+**Тесты** (`aiverse_physics_scene_tests`, CTest `physics_scene`): handles (создание, удаление,
+без повторов на 1800 телах, лимит, отказ на плохих описаниях), падение и сон, запросы и фильтры,
+контакты и датчики (в том числе прокси персонажа), JSON и тексты ошибок, ходьба / бег / поворот /
+торможение, прыжок и потолок, ступеньки 0.1 / 0.3 / 0.5 м и высокий `stepHeight`, склоны 30° /
+65° / 70°, стена при 90 м/с, движущаяся платформа, толкание лёгкого и тяжёлого ящика, персонаж
+против персонажа, совпадение полной сцены и статической копии (1500 тактов, расхождение 0),
+упаковка ввода и fuzz.
+
+**Замер** (`aiverse_physics_scene_tests examples/physics/scene.json --bench`): 500 dynamic-тел
+(ящики и шары в куче) + 64 персонажа с прокси, бродящих сквозь кучу и прыгающих, 1 worker,
+600 тактов 60 Гц / 4 подшага. Linux aarch64 VM (4 ядра), g++ 11.4, Release:
+персонажи **0.44–0.51 мс**, `step()` **0.40 мс**, всего **0.84–0.90 мс на такт**.
+
+Проверено: Linux aarch64, GCC 11, Release. macOS / Windows / Android / iOS / web для Scene и
+Character не проверялись (графики нет, Metal не участвует).
+
 ## Сохранения и проверка
 
 `World::save/restore` использует полный seed snapshot публичного recording API
