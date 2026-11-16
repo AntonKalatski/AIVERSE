@@ -20,6 +20,9 @@ BINARIES = {
     "macos": ["AiverseEditor.app", "AiverseGame.app", "aiversemcp", "aiversebuild", "aiverse_headless", "assetpipe", "aiverse_modeling", "aiverse_lod_simplify", "aiverse_fps_client", "aiverse_fps_server"],
     "linux": ["aiverse_editor", "aiversemcp", "aiversebuild", "aiverse_headless", "AiverseGame", "assetpipe", "aiverse_modeling", "aiverse_lod_simplify", "aiverse_fps_client", "aiverse_fps_server"],
 }
+# source paths left out of packages: benchmark screenshots are not needed to run the engine and
+# would push a zip past GitHub's 100 MB file limit on the builds branch
+EXCLUDE = ("docs/benchmarks/",)
 # a package needs one of these; Linux may be tools only (aiversemcp + aiverse_headless, no editor: CI hosts, MCP clients)
 REQUIRED = {"windows": ["aiverse_editor.exe"], "macos": ["AiverseEditor.app"], "linux": ["aiverse_editor", "aiversemcp"]}
 
@@ -70,6 +73,8 @@ def main():
     with zipfile.ZipFile(tmp_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         with tarfile.open(fileobj=io.BytesIO(src_tar)) as t:
             for m in t.getmembers():
+                if m.name.startswith(EXCLUDE):
+                    continue
                 info = zipfile.ZipInfo("AIVERSE/" + m.name + ("/" if m.isdir() else ""))
                 info.date_time = (1980, 1, 1, 0, 0, 0)
                 info.compress_type = zipfile.ZIP_DEFLATED
