@@ -29,6 +29,8 @@
 #include "RtsCommerce.h"
 #include "RtsCareer.h"
 #include "RtsPrompt.h"
+#include "RtsSensors.h"
+#include "RtsFieldOps.h"
 #include "RtsRoutes.h"
 #include "RtsArsenal.h"
 #include "RtsTraffic.h"
@@ -105,6 +107,10 @@ enum CommandType : uint16_t {
     kCmdTopDownWeapon,  // no units (rules "arsenal", RtsArsenal.h): param kWeaponNext / kWeaponPrev, or kWeaponSlot + slot
     kCmdCareer,         // no units (rules "careers", RtsCareer.h): param = careerPack(op, career); open careers only
     kCmdPrompt,         // no units (rules "prompts", RtsPrompt.h): param = option picked (0-based), -1 = the interact key
+    // field operations (RtsFieldOps.h)
+    kCmdRepair,         // builders; target = damaged own / allied unit (rules "repair" units: mobile ones too)
+    kCmdReclaim,        // builders; target = resource node (gather) or a unit to take apart (rules "reclaim")
+    kCmdSelfDestruct,   // units: arm the countdown (rules "selfDestruct"); again: disarm
     // top-down heroes (rules "topDown", RtsTopDown.h). Engine-reserved hero ids (engine/net/HeroInput.h: net::kCmdHeroInput / kCmdHeroAbility), so hosted battles,
     // the battle load test and every top-down game share one command scheme.
     kCmdTopDown = 0xF100, // no units; param = topdown::pack(Input): sticky move vector / aim / fire of the player's hero
@@ -214,6 +220,7 @@ enum GameEvent : uint16_t {
     kEvShotEnd,         // a free-fire shot (rules "arsenal") stopped at a wall / its range, or went off (splash): a = shooter, value = weapon index of its type, pos
     kEvAssault,         // a unit assaulted a defended garrison: player = attacker, a = structure, b = the unit, value = defenders lost
     kEvNative,          // emitted by native modules for the view / scripts: value, a, b, pos are the module's (docs/native-modules.md)
+    kEvFieldOp,         // field operations (RtsFieldOps.h): value = FieldOpEvent | data << 8, a = unit, b = projectile (intercepted)
 };
 // kEvModePhase values
 enum ModePhaseEvent : int64_t { kModeSdCounter = 1, kModeSdPreview, kModeSdStart, kModeSdEnd, kModeTimeStep, kModeTimeUp,
@@ -252,7 +259,8 @@ enum class OrderType : uint8_t { Move, AttackMove, Attack, Patrol, Gather, Retur
                                  Rearm,      // go to the dock `target` and reload ammo
                                  Trade,      // trader loop between its markets (Trader component)
                                  PickItem,   // walk to `point` and pick up the ground item there
-                                 Merge };    // walk to `target` and merge with it
+                                 Merge,      // walk to `target` and merge with it
+                                 Reclaim };  // take the unit `target` apart for its cost (RtsFieldOps.cpp)
 
 struct Order {
     OrderType type = OrderType::Move;
@@ -612,6 +620,8 @@ public:
     GridFields* gridFields() const { return fields_.get(); }  // grid fields (RtsGridFields.h); null before setup
     Raid* raid() const { return raid_.get(); }                // extraction raids (RtsRaid.h); inactive without rules "raid"
     Prompts* prompts() const { return prompts_.get(); }        // script choice menus (RtsPrompt.h); null before setup
+    Sensors* sensors() const { return sensors_ && sensors_->active() ? sensors_.get() : nullptr; }      // radar / sonar / jammers (RtsSensors.h)
+    FieldOps* fieldOps() const { return fieldOps_ && fieldOps_->active() ? fieldOps_.get() : nullptr; }  // repair, reclaim, stockpiles... (RtsFieldOps.h)
     Career* career() const { return career_.get(); }           // career ladders and perks (RtsCareer.h); null before setup
     Commerce* commerce() const { return commerce_.get(); }     // premises, businesses, the bank (RtsCommerce.h); null before setup
     Arsenal* arsenal() const { return arsenal_.get(); }        // the hero's weapons, ammo, crates, money (RtsArsenal.h); null before setup
@@ -1056,6 +1066,8 @@ private:
     std::unique_ptr<Raid> raid_;           // extraction raids (state: RaidStore resource)
     friend class TopDown;                  // free fire launches weapon projectiles (initProjectileProgram)
     std::unique_ptr<Prompts> prompts_;     // rules "prompts" (state: PromptStore resource)
+    std::unique_ptr<Sensors> sensors_;     // type "radar" / "sonar" / "jammer" ... (no state)
+    std::unique_ptr<FieldOps> fieldOps_;   // rules / type field operations (state: FieldOpsStore resource)
     std::unique_ptr<Career> career_;       // rules "careers" (state: CareerStore resource)
     std::unique_ptr<Commerce> commerce_;   // rules "commerce" (state: CommerceStore resource)
     std::unique_ptr<Arsenal> arsenal_;     // rules "arsenal" (state: ArsenalStore resource)

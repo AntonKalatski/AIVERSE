@@ -66,6 +66,7 @@ void RtsModule::sysEconomy(Simulation& sim) {
         if (!off) for (auto& a : t.income) p.income[a.res] += mechOn(sim) ? a.value * mechIncomeMult(sim, e) : a.value;
     });
     if (rules_.dungeon) roomEconomy(sim); // painted rooms add supply, storage, capacity and income per cell
+    if (fieldOps_ && fieldOps_->active()) fieldOps_->economy(sim);   // ambient income: wind, tide (RtsFieldOps.cpp)
     if (rules_.originals) economyOriginals(sim); // power fields, upkeep per resource / on income, territory income
     for (size_t pi = 1; pi < gs.players.size(); ++pi) {
         auto& p = gs.players[pi];
@@ -191,6 +192,7 @@ void RtsModule::sysProduction(Simulation& sim) {
             time = time * it.timeMult;   // hero revive
             const std::vector<Amount> cost = isTech ? techCost(sim, o.player, uint16_t(~it.item)) : rules_.types[size_t(it.item)].cost;
             Fixed step = dt * eco.productionMult * stat(sim, e, Stat::ProductionSpeed) / fxMax(time, Fixed::fromRatio(1, 10));
+            if (fieldOps_ && fieldOps_->active()) step = step * fieldOps_->assistMult(sim, e);   // builders assisting the factory
             if (rules_.costModel == CostModel::Progressive) {
                 step = fxMin(step, kOne - it.paid);
                 step = payProgressive(rules_, eco, cost, step);

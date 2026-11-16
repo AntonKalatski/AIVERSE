@@ -482,6 +482,7 @@ bool RtsModule::runOrder(Simulation& sim, Entity e, Order& o) {
     case OrderType::Trade: return runTrade(sim, e, o);
     case OrderType::PickItem: return runPickItem(sim, e, o);
     case OrderType::Merge: return runMerge(sim, e, o);
+    case OrderType::Reclaim: return !fieldOps_ || fieldOps_->runReclaim(sim, e, o);   // RtsFieldOps.cpp
     case OrderType::Return: {
         auto* cargo = w.tryGet<Cargo>(e);
         if (!cargo || cargo->res < 0 || cargo->amount.raw <= 0) return true;
@@ -543,7 +544,8 @@ bool RtsModule::runOrder(Simulation& sim, Entity e, Order& o) {
         Fixed step = t.buildPower * sim.dt() / fxMax(tt.buildTime, kOne);
         const uint8_t owner = w.get<Owner>(e).player;
         std::vector<Amount> cost = tt.cost;
-        for (auto& c : cost) c.value = c.value * step * Fixed::fromRatio(3, 10);
+        const Fixed share = fieldOps_ && fieldOps_->active() ? fieldOps_->repairCost() : Fixed::fromRatio(3, 10);   // rules "repair" cost
+        for (auto& c : cost) c.value = c.value * step * share;
         if (!pay(sim, owner, cost, {}, false)) return true;
         tu.hp = fxMin(maxHp, tu.hp + maxHp * step);
         return false;

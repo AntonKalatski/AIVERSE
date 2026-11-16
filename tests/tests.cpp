@@ -1,5 +1,6 @@
 #include <chrono>
 // Dependency-free unit tests. Run: ctest  (or ./aiverse_tests)
+#include "../engine/data/JsonCompose.h"
 #include "engine/ui/UiLua.h"
 extern "C" {
 #include <lauxlib.h>
@@ -189,7 +190,7 @@ static const std::string kMushrooms = std::string(AIVERSE_SOURCE_DIR) + "/templa
 static std::unique_ptr<Simulation> makeSim(const std::string& game, const std::string& map, uint64_t seed) {
     SimConfig cfg; cfg.seed = seed;
     auto sim = std::make_unique<Simulation>(cfg, std::make_unique<game::RtsModule>());
-    sim->setup(Json::parseFile(game + "/rules.json"), Json::parseFile(game + "/" + map));
+    sim->setup(readComposedJson(game + "/rules.json", fileReader()), Json::parseFile(game + "/" + map));   // rules may include files
     return sim;
 }
 static game::RtsModule& mod(Simulation& s) { return *dynamic_cast<game::RtsModule*>(&s.module()); }
@@ -4309,7 +4310,7 @@ TEST(terrain_incremental_clearance_matches_full) {
 
 TEST(terrain_heightfield_match_is_deterministic) {
     const std::string dir = std::string(AIVERSE_SOURCE_DIR) + "/templates/metaltide";
-    Json rules = Json::parseFile(dir + "/rules.json"), map = Json::parseFile(dir + "/maps/twin_craters.json");
+    Json rules = readComposedJson(dir + "/rules.json", fileReader()), map = Json::parseFile(dir + "/maps/twin_craters.json");
     CHECK(game::loadRules(rules).terrain.heightfield());
     auto run = [&] {
         SimConfig cfg; cfg.seed = 3;
@@ -9578,6 +9579,7 @@ TEST(pack_file_copy_into_existing) {
 
 #include "tests_mech.inc"   // agent-mech
 #include "tests_sc2.inc"    // agent-sc2: magic box, overkill targeting, warp-in
+#include "tests_fieldops.inc"   // radar / sonar / jammers, field operations (repair, reclaim, stockpiles, ...)
 
 // ---- post-processing data (postfx agent): parsing, map overrides, cost model, presets
 #include "engine/render/PostFxData.h"

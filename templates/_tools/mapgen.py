@@ -307,13 +307,14 @@ def metaltide():
     m.disc(32, 24, 5, '#', sym=False)
     m.heightfield(metaltide_heights(64, 48, [(10, 24, 7)],
                                     [(6, 18, 2), (6, 30, 2), (14, 16, 2), (14, 32, 2), (20, 24, 2), (24, 10, 2), (26, 38, 2),
-                                     (16, 20, 1), (16, 28, 1), (8, 12, 1)]))
+                                     (16, 20, 1), (16, 28, 1), (8, 12, 1), (8, 40, 2)]))
     m.players[0]["start"] = [10, 24]
     m.players[1]["start"] = m.mirror([10, 24])
     for p in [(6, 18), (6, 30), (14, 16), (14, 32), (20, 24), (24, 10), (26, 38)]:
         m.ent("metal_spot", 0, [p[0], p[1]])
     for p in [(16, 20), (16, 28), (8, 12)]:
         m.ent("wreck_rock", 0, [p[0] + 0.5, p[1] + 0.5])
+    m.ent("geo_vent", 0, [8, 40])   # geothermal vent behind each base (rules/strategic.json)
     write("metaltide", m, "twin_craters")
 
 

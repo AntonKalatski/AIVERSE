@@ -48,6 +48,7 @@ const CmdName kCommands[] = {
     {"merge", kCmdMerge}, {"split", kCmdSplit}, {"trade", kCmdTrade}, {"trade_route", kCmdTradeRoute}, {"tribute", kCmdTribute},
     {"diplomacy", kCmdDiplomacy}, {"buy_item", kCmdBuyItem}, {"use_item", kCmdUseItem}, {"drop_item", kCmdDropItem}, {"pick_item", kCmdPickItem}, {"bounty", kCmdBounty}, {"rotate", kCmdRotate}, {"lock", kCmdLock}, {"end_turn", kCmdEndTurn},
     {"script", kCmdScript}, {"topdown", kCmdTopDown}, {"topdown_ability", kCmdTopDownAbility}, {"progression", kCmdProgression},
+    {"repair", kCmdRepair}, {"reclaim", kCmdReclaim}, {"self_destruct", kCmdSelfDestruct},   // field operations (RtsFieldOps.h)
 };
 
 Vec3 readPoint(const Json& p) {

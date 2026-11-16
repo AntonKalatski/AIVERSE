@@ -283,7 +283,20 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const uint64_t key = o.entity.valid() ? o.entity.packed() : (1ull << 63) | uint64_t(i);
         EntityAnim& st = stateFor(key, o);
         st.last = o;
-        if (!o.visible) continue;
+        if (!o.visible) {
+            if (o.blip) {   // radar contact: a filled dot with a ring where the unit is, no model (the viewer doesn't know its type)
+                const float gy = groundAt(grid, o.pos.x, o.pos.z) + 0.06f;
+                constexpr int kSeg = 12;
+                const float rd = 0.32f;
+                for (int k = 0; k < kSeg; ++k) {
+                    const float a0 = 6.2831853f * float(k) / kSeg, a1 = 6.2831853f * float(k + 1) / kSeg;
+                    r.triangle({o.pos.x, gy, o.pos.z}, {o.pos.x + rd * std::cos(a0), gy, o.pos.z + rd * std::sin(a0)},
+                               {o.pos.x + rd * std::cos(a1), gy, o.pos.z + rd * std::sin(a1)}, rgba(255, 60, 40, 220));
+                }
+                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.6f, rgba(255, 70, 50, 150), 16, gy);
+            }
+            continue;
+        }
         const TypeLook& L = looks_[o.type];
         const float ground = !rules_->types[o.type].structure && !L.air ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z);
         animate(st, o, dt, &grid);
@@ -402,6 +415,9 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         }
     if (const Surface* surf = gs.surface.get()) { sceneFromSphere(sim, *m, *surf, out, alpha, viewer); return; }   // RtsPlanetView.cpp
     const Driving* drivingCars = m->driving() && m->driving()->active() ? m->driving() : nullptr;
+    // radar / sonar contacts of the viewer outside its sight: drawn as blips (RtsSensors.h)
+    std::vector<Entity> blips;
+    if (Sensors* sn = m->sensors(); sn && viewer != 0) { blips = sn->blips(sim, viewer); std::sort(blips.begin(), blips.end(), [](Entity a, Entity b) { return a.index < b.index; }); }
     w.each<Unit, Owner, Transform>([&](Entity e, Unit& u, Owner& o, Transform& t) {
         if (u.flags & kUnitInCargo) return;   // inside a transport (agent-mech)
         SceneObject so;
@@ -460,6 +476,10 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         }
         if (so.visible && ut.trap >= 0 && viewer != 0 && o.player != viewer && !sim.allied(o.player, viewer) && w.has<TrapState>(e) &&
             (m->statusFlags(sim, e) & kStInvisible) && !(m->statusFlags(sim, e) & kStRevealed)) so.visible = false;   // hidden trap
+        if (!so.visible && !blips.empty()) {
+            auto it = std::lower_bound(blips.begin(), blips.end(), e, [](Entity a, Entity b) { return a.index < b.index; });
+            so.blip = it != blips.end() && *it == e;
+        }
         out.objects.push_back(so);
     });
     // bodies of native modules (kHookScene): drawn as unit types
