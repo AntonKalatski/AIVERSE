@@ -41,7 +41,7 @@ using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
 enum class Backend { Metal, GLES3, GL33, Vulkan };
-enum class BufferType { Vertex, Index, Storage };
+enum class BufferType { Vertex, Index, Storage, Indirect };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          ETC2_RGB8, ETC2_RGBA8, BC1, BC3, BC7, ASTC_4x4, ASTC_6x6,   // block-compressed: upload levels, check supports()   // Depth: 24/32-bit depth render target; RGBA32F: data textures
@@ -56,6 +56,16 @@ enum class CullMode { None, Back, Front };
 enum class BlendMode { Opaque, Alpha, Additive, Premultiplied, Multiply, Subtract, Screen };
 // Premultiplied: ONE, 1-srcAlpha. Multiply: dst * src colour. Subtract: dst - src * srcAlpha (reverse subtract). (particles)
 // Screen: src + dst * (1 - src colour) for premultiplied colour, alpha as Premultiplied (Spine "screen" slots)
+
+// Cross-backend layout of indexed indirect commands (Vulkan/Metal compatible).
+// All commands in one submission share vertex/index buffers, pipeline, resources
+// and uniforms. Material state or transform changes require a separate group.
+struct DrawIndexedIndirectCommand {
+    uint32_t indexCount = 0, instanceCount = 1, firstIndex = 0;
+    int32_t baseVertex = 0;
+    uint32_t firstInstance = 0;
+};
+static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
 
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
@@ -233,6 +243,14 @@ public:
     virtual void setUniforms(int slot, const void* data, size_t size) = 0;
     virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0) = 0;
     virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0, uint32_t instanceCount = 1) = 0;
+    // One API render submission for several indexed GPU commands. Command buffer
+    // must use BufferType::Indirect; count/stride are validated by backend.
+    // Unsupported (ES3/WebGL2/legacy GL) returns false and callers use drawIndexed.
+    virtual bool supportsMultiDrawIndirect() const { return false; }
+    virtual bool drawIndexedIndirect(BufferHandle commands, size_t offset,
+                                     uint32_t drawCount, uint32_t stride = sizeof(DrawIndexedIndirectCommand)) {
+        (void)commands; (void)offset; (void)drawCount; (void)stride; return false;
+    }
 
 protected:
     int fbW_ = 0, fbH_ = 0;
