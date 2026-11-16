@@ -91,6 +91,7 @@ WORKFLOWS=[
  ('aiverse-online-battles','Online PvP and PvE: rollback, tick rate, simulated mobile links, reconnect','docs/battle-net.md'),
  ('aiverse-determinism-triage','Checksum mismatches: first differing tick and field, causes, fix and proof','docs/native-toolkit.md'),
  ('aiverse-docs-upkeep','README and translations, translated docs, format sections, readme check','tools/readme/check.py'),
+ ('aiverse-capability-audit','Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory','docs/genre-implementation.json'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
 ]
@@ -109,6 +110,7 @@ WORKFLOW_ALIASES={
  'aiverse-online-battles':'online network pvp pve rollback netcode multiplayer онлайн сеть мультиплеер откат',
  'aiverse-determinism-triage':'determinism desync checksum mismatch детерминизм рассинхрон контрольн сумм',
  'aiverse-docs-upkeep':'docs readme documentation translation документац ридми перевод',
+ 'aiverse-capability-audit':'capability audit gap gaps missing feasibility estimate limits can engine genre minecraft voxel sandbox чего не хватает оценк можно ли сделать возможност ограничен пробел жанр движок умеет',
  'aiverse-skill-authoring':'skill skills author add catalog audit скилл скиллы добав каталог аудит',
  'aiverse-publish-builds':'publish builds branch release editor zip публикац сборк редактор',
  'aiverse-bots-configure':'bot bots ai computer opponent rules.ai difficulty style personality scripted director бот боты ии компьютер противник сложност стиль характер',
