@@ -145,7 +145,17 @@ private:
             if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
                 sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
             ImGui::Separator();
-            ImGui::Text("Renderer draws (all passes): %u", ed.renderer().drawCalls());
+            const uint32_t currentDraws = ed.renderer().drawCalls();
+            ImGui::Text("Renderer draws (all passes): %u", currentDraws);
+            const auto& modelStats = ed.renderer().modelStats();
+            ImGui::Text("Model instanced calls: %llu", (unsigned long long)modelStats.instancedDraws);
+            ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
+            if (ImGui::Button("Capture baseline##scene_batch")) baselineDraws_ = currentDraws;
+            if (baselineDraws_ >= 0) {
+                ImGui::SameLine();
+                ImGui::Text("baseline %lld, delta %+lld", (long long)baselineDraws_,
+                            (long long)currentDraws - baselineDraws_);
+            }
             const auto& profile = ed.renderer().profile();
             ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
             ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
@@ -643,6 +653,7 @@ private:
     bool sceneInstancing_ = true, sceneCulling_ = true;
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
+    int64_t baselineDraws_ = -1;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;
