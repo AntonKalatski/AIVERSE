@@ -1345,7 +1345,6 @@ TEST(traffic_cars_without_business_keep_out_of_dead_ends) {
         {"id": 10, "a": 6, "b": 7, "type": "street_2"}, {"id": 11, "a": 7, "b": 8, "type": "street_2"},)");
     auto sim = makeSimJson(splineTrafficRules(), map, 5);
     auto& w = sim->world();
-    const auto& net = trf(*sim).net();
     // well inside the branch: south of the junction box, west of the ring road on the east
     auto inBranch = [&](Vec3 p) { return p.z > Fixed::fromInt(29) && p.z < Fixed::fromInt(35) && p.x > Fixed::fromInt(13) && p.x < Fixed::fromInt(17); };
     std::map<uint32_t, bool> was;
