@@ -1598,6 +1598,7 @@ Type keys (all optional; `modules/rts/RtsSensors.h`). Radii are in cells.
 - The view draws contacts outside sight as red dots (no model: the viewer does not know the type). Native code:
   `RtsModule::sensors()->onRadar(sim, e, viewer)`, `blips(sim, viewer)`.
 - `radar.targeting`: artillery and long-range towers fire at what radar or allies see. Without it nothing changes.
+- Bots build one structure with `radar` once their base runs (`RtsAI`); contacts feed their long-range guns.
 - No state: contacts are recomputed from the units, so saves and replays carry nothing extra; games without these
   keys keep their checksums.
 
