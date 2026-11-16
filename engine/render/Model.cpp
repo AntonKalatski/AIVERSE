@@ -412,6 +412,18 @@ void ModelTextureCache::shutdown(gfx::Device& dev) {
 void prepareModelUpload(Model& m) {
     if (m.uploadPrepared || m.vertices.empty()) return;
 
+    // One shared engine path for game clients, editor previews, tools and all model formats.
+    // Geometry compaction is opt-in because arbitrary client-side pose changes cannot
+    // be inferred from a static glTF/FBX hierarchy. An asset policy may declare
+    // preserveNodes, and individual nodes can be tagged runtimeMutable.
+    if (m.batching.mergeRigid) {
+        ModelMergeOptions options;
+        options.maxExtent = m.batching.maxExtent;
+        options.keepNodes = m.batching.preserveNodes;
+        const auto merged = mergeStaticPrimitives(m, options);
+        (void)merged;
+    }
+
         const char* shadowBatches = std::getenv("AIVERSE_AUTO_SHADOW_BATCHES");
         if (!shadowBatches || std::string(shadowBatches) != "off") prepareShadowBatches(m);
         ensureTangents(m);
