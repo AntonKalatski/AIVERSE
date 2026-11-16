@@ -3,7 +3,8 @@
 //  - trafficCarriageway: driven width of a piece in cells (kerb to kerb minus one cell of kerbs);
 //  - trafficWideExit: at a junction, the exit that leads to the destination piece over pieces at least
 //    `minWidth` wide (fire engines, lorries, buses avoid narrow lanes when a wide route exists; the first and the
-//    last piece are always allowed, so stations and addresses on narrow streets stay reachable);
+//    last piece are always allowed on the route, so stations and addresses on narrow streets stay reachable; the
+//    exit taken at this junction must itself be wide unless it is the destination);
 //  - trafficLocalDetour: a short bounded route around a local blockage (a jam, a wreck) on a small lattice
 //    around the vehicle, simplified to straight legs that the caller's `clear` test accepts.
 // Integers / Fixed only and the immutable road net: the same inputs give the same choice everywhere.
@@ -42,9 +43,10 @@ inline int trafficWideExit(const TrafficNet& net, int junction, int incoming, in
     int exit = fallback;
     for (int side = 0; side < 4; ++side) {
         const int q = net.junctions[std::size_t(junction)].piece[side];
-        if (side == incoming || q < 0 || !usable(q)) continue;
-        if (q == destination) return side;
+        if (side == incoming || q < 0) continue;
         const auto& p = net.pieces[std::size_t(q)];
+        if (p.lanes <= 0 || (trafficCarriageway(net, p) < minWidth && q != destination)) continue;   // the exit itself must be wide
+        if (q == destination) return side;
         const int other = p.junction[0] == junction ? p.junction[1] : p.junction[0];
         if (other >= 0 && route->distance[std::size_t(other)] < route->distance[std::size_t(junction)] &&
             route->distance[std::size_t(other)] < best) {
