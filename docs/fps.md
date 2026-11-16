@@ -141,6 +141,25 @@ lies on the generated room spots (requires `mechanics.enabled`). The client draw
 `templates/fps_survival` has 25 houses of one to three floors. Test: `buildings` in `tests/fps/tests.cpp` (walk in
 through the door, climb a floor with the real motor).
 
+## Library bots (opt-in)
+
+`fps.bots` holds [bots-fps](../skills/ai/aiverse-bots-fps/SKILL.md) settings (`{"preset":"normal","sightRange":120}`).
+Map players with `"bot": true` then run that controller inside the authoritative tick instead of the reference
+fallback bot: perception, reaction, bounded aim, reload, retreat and the battle-royale zone (the announced circle).
+On top of it the module adds goals: wanted loot within 25 m (weapons it lacks, better gear, medkits, ammo) and
+Interact when in reach, Heal when hurt and out of combat, and a point inside the next circle otherwise. Navigation:
+one navmesh per generated building (0.5 m cells, built at setup from collision) plus straight steering in the open;
+a goal inside a building outside the bot's region goes through its door, other floors through the stair flights
+(the navmesh reaches the flight's hall point, the bot walks the flight straight). Bot state is saved (FPS save
+version 9) and hashed. `templates/fps_survival` uses it. Tests: `houseBots`, `upstairsBot`, `houseNavigation`.
+
+## Rotated colliders
+
+A map collider with `"yaw"` (turns) is `{"id","center","half","yaw"}`: a box turned about +Y, stored as its 12
+surface triangles (`engine/world/OrientedBox.h`), so casts, the motor and hits use the exact turned box. Its
+collision ids are allocated from `kRotatedColliderBase`; the navmesh treats it by its bounding box. Test:
+`rotatedColliders`.
+
 ## Gear (opt-in)
 
 `fps.gear` (requires `mechanics.enabled`) is a [gear-tiers](../skills/gameplay/aiverse-gear-tiers/SKILL.md) catalog:

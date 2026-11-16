@@ -132,7 +132,10 @@ inline std::optional<Command> fpsCommand(Simulation& sim,const fps::Module& modu
     // Safe-zone movement has priority over chasing and stationary shooting.
     const auto& cfg=module.config();
     const auto& weapon=self.weaponIndex<cfg.weapons.size()?cfg.weapons[self.weaponIndex]:cfg.weapon;
-    if(cfg.mode=="battleRoyale"){
+    if(cfg.royale){   // phased battle-royale zone: head for the announced circle when outside 90 % of it
+        auto view=module.royaleView(sim,slot);
+        if(view.enabled&&(self.pos.xz()-view.target.center).length()>view.target.radius*Fixed::fromRatio(9,10)){goal=Vec3{view.target.center.x,self.pos.y,view.target.center.y};s.decision=FpsDecision::Zone;}
+    }else if(cfg.mode=="battleRoyale"){
         auto elapsed=tick>cfg.zoneStart?std::min(tick-cfg.zoneStart,cfg.zoneDuration):0;
         auto radius=cfg.zoneRadius+(cfg.zoneEndRadius-cfg.zoneRadius)*Fixed::fromRatio(elapsed,cfg.zoneDuration);
         if((self.pos-cfg.zoneCenter).xz().length()>radius*Fixed::fromRatio(9,10)){goal=cfg.zoneCenter;s.decision=FpsDecision::Zone;}

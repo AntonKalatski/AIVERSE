@@ -7,7 +7,7 @@ std::vector<Loot> Module::buildMapBuildings(const Json& map) {
     std::vector<Loot> loot;const auto& list=map["buildings"];
     if(list.isNull())return loot;
     if(!list.isArray()||list.size()>512)throw JsonError("fps.buildings: expected at most 512 buildings");
-    uint32_t next=kBuildingColliderBase;
+    uint32_t next=kBuildingColliderBase;buildingRegions_.clear();
     for(size_t i=0;i<list.size();++i){
         auto path="fps.buildings["+std::to_string(i)+"]";const auto& b=list[i];
         if(!b.isObject())throw JsonError(path+": expected object");
@@ -18,8 +18,10 @@ std::vector<Loot> Module::buildMapBuildings(const Json& map) {
         if(yaw<0||yaw>3)throw JsonError(path+".yaw: expected quarter turns 0..3");
         auto def=b.has("building")?lib::systems::readBuildingDef(b["building"],path+".building"):lib::systems::BuildingDef{};
         def.agentRadius=config_.motor.radius;def.agentHeight=config_.motor.height;def.maxStepRise=fxMin(def.maxStepRise,config_.motor.stepHeight);
-        auto layout=lib::systems::generateBuilding(def,uint64_t(seed),origin,uint32_t(yaw));
+        // Sink the ground slab into the ground: a flush threshold (the navmesh links ground and floor without a step).
+        auto layout=lib::systems::generateBuilding(def,uint64_t(seed),origin-Vec3{{},def.slab,{}},uint32_t(yaw));
         if(!layout)throw JsonError(path+": building does not fit the motor (step height, radius, height) or its footprint");
+        {auto m=4_fx;auto door=layout->doorOutside;door.y=origin.y;buildingRegions_.push_back({{origin-Vec3{m,1_fx,m},origin+Vec3{fxMax(def.width,def.depth)+m,def.floorHeight*Fixed::fromInt(def.floors)+2_fx,fxMax(def.width,def.depth)+m}},door,layout->stairs,layout->stairHalls});}
         for(const auto& box:layout->boxes){
             for(auto c:{box.min.x,box.min.z,box.max.x,box.max.z})if(fxAbs(c)>config_.worldLimit)throw JsonError(path+": outside world limit");
             if(!collision_.add({next++,{box.min,box.max}}))throw JsonError(path+": invalid generated box");

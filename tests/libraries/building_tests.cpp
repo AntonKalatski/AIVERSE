@@ -12,7 +12,7 @@ BuildingBox agent(const BuildingDef& d,Vec3 p,Fixed half){auto e=Fixed::fromRati
 bool supported(const BuildingLayout& l,Vec3 p){for(const auto& b:l.boxes)if(b.max.y==p.y&&p.x>b.min.x&&p.x<b.max.x&&p.z>b.min.z&&p.z<b.max.z)return true;return false;}
 Fixed volume(const BuildingLayout& l){Fixed v;for(const auto& b:l.boxes)v+=(b.max.x-b.min.x)*(b.max.y-b.min.y)*(b.max.z-b.min.z);return v;}
 void check(const BuildingDef& d,uint64_t seed,Vec3 origin,uint32_t yaw){
-    auto l=*generateBuilding(d,seed,origin,yaw);CHECK(l.stairs.size()==d.floors-1&&l.lootSpots.size()==d.floors*(d.partition?2u:1u));
+    auto built=generateBuilding(d,seed,origin,yaw);if(!built)std::printf("no building: seed %llu %f x %f floors %u\n",(unsigned long long)seed,d.width.toDouble(),d.depth.toDouble(),d.floors);CHECK(built);auto l=*built;CHECK(l.stairs.size()==d.floors-1&&l.lootSpots.size()==d.floors*(d.partition?2u:1u));
     for(const auto& b:l.boxes)CHECK(b.min.x<b.max.x&&b.min.y<b.max.y&&b.min.z<b.max.z);
     CHECK(clear(l,agent(d,l.door,d.agentRadius)));CHECK(clear(l,agent(d,l.doorOutside,d.agentRadius)));
     for(auto p:l.lootSpots){CHECK(clear(l,agent(d,p,d.agentRadius)));CHECK(supported(l,p));}
@@ -22,7 +22,7 @@ void check(const BuildingDef& d,uint64_t seed,Vec3 origin,uint32_t yaw){
         CHECK(clear(l,agent(d,bottom,d.agentRadius)));CHECK(clear(l,agent(d,top,d.agentRadius)));CHECK(supported(l,top));
         auto dir=top.z>bottom.z?1:-1;
         for(uint32_t i=0;i<steps;++i){   // headroom above every step tread
-            auto zc=(dir>0?bottom.z+d.agentRadius:bottom.z-d.agentRadius)+d.stairRun*Fixed::fromInt(int64_t(i)*dir)+d.stairRun/2*Fixed::fromInt(dir);
+            auto zc=(dir>0?bottom.z+d.agentRadius*2:bottom.z-d.agentRadius*2)+d.stairRun*Fixed::fromInt(int64_t(i)*dir)+d.stairRun/2*Fixed::fromInt(dir);
             Vec3 p{bottom.x,bottom.y+rise*Fixed::fromInt(i+1),zc};CHECK(supported(l,p));CHECK(clear(l,agent(d,p,d.stairRun/2-Fixed::fromRatio(1,100))));
         }
     }

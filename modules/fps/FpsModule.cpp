@@ -1,6 +1,7 @@
 #include "FpsModule.h"
 #include <algorithm>
 #include "engine/core/FixedMath.h"
+#include "engine/world/OrientedBox.h"
 #include <stdexcept>
 
 namespace aiverse::fps {
@@ -144,6 +145,7 @@ Config readConfig(const Json& root) {
         for(const auto& [id,g]:c.gear)if(id>55)throw JsonError("fps.gear: ids must be 1..55 (loot type 200 + id)");
     }
     for(auto item:c.crate)if(item.type>=200&&!c.gear.contains(item.type-200))throw JsonError("fps.crate: unknown gear "+std::to_string(item.type-200));
+    if(j.has("bots")){if(!j["bots"].isObject())throw JsonError("fps.bots: expected object");c.bots=j["bots"];}
     if(j.has("vehicleTypes")){
         if(!c.systems.enabled)throw JsonError("fps.vehicleTypes: requires mechanics.enabled");
         c.vehicleTypes=lib::genre::readVehicleDefinitions(j["vehicleTypes"]);
@@ -180,7 +182,16 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     collision_.clear();spawns_.clear();bots_.clear();
     const auto& boxes=map["colliders"];
     if(!boxes.isArray()||boxes.size()>100000)throw JsonError("fps.colliders: expected at most 100000 boxes");
+    uint32_t rotated=kRotatedColliderBase;
     for(const auto& b:boxes.items()) {
+        if(b.has("yaw")){   // rotated box: {"id","center","half","yaw" (turns)} -> 12 exact triangles
+            auto id=integer(b,"id",0,1,kBuildingColliderBase-1);(void)id;
+            if(!b["yaw"].isNumber())throw JsonError("fps.collider.yaw: expected turns");
+            auto half=vector(b["half"]);if(half.x<=Fixed{}||half.y<=Fixed{}||half.z<=Fixed{}||half.x>2048_fx||half.z>2048_fx)throw JsonError("fps.collider.half: expected positive half sizes up to 2048");
+            for(const auto& t:world::orientedBoxTriangles(vector(b["center"]),half,b["yaw"].fx()))
+                if(!collision_.addTriangle(rotated++,t))throw JsonError("fps.collider: invalid rotated box");
+            continue;
+        }
         auto id=integer(b,"id",0,1,UINT32_MAX);
         if(collision_.colliders().contains(uint32_t(id))||!collision_.add({uint32_t(id),{vector(b["min"]),vector(b["max"])}}))throw JsonError("fps.collider: invalid or duplicate box");
     }
@@ -203,6 +214,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     setupRoyale(sim,map,s);
     if(!config_.gear.empty())s.gear.assign(s.actors.size(),{});
     setupVehicles(sim,map,s);
+    setupBots(sim,map,s);
     meleeAttacks_.clear();
     if(config_.melee.enabled){
         const auto& m=config_.melee;auto total=m.windup+m.active+m.recovery;
@@ -274,7 +286,8 @@ void Module::tick(Simulation& sim) {
             } else {skydive(sim,a);continue;}   // a body in the air keeps falling (battle royale)
         }
         if(skydive(sim,a))continue;
-        if(bots_[a.slot-1]&&a.lastSequence==0) {
+        if(bots_[a.slot-1]&&a.lastSequence==0&&thinkBot(sim,a)){}
+        else if(bots_[a.slot-1]&&a.lastSequence==0) {
             const Actor* target=nullptr;Fixed nearest=config_.weapons[a.weaponIndex].range*config_.weapons[a.weaponIndex].range;
             for(const auto& candidate:s.actors)if(candidate.health>0&&!candidate.downed&&candidate.team!=a.team) {
                 auto distance=(candidate.pos-a.pos).lengthSq();if(distance<nearest){
@@ -345,6 +358,7 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
     if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
     for(const auto& g:state(sim).gear)hash.u64(lib::systems::gearHash(g));
     if(!state(sim).vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,state(sim).vehicleRuns);hash.str(extra);}
+    for(const auto& b:state(sim).botStates)hash.str(b);
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
@@ -353,6 +367,8 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
     if(version>=9){uint32_t n=archive.count(copy.gear.size());if(n>256){archive.fail();return false;}if(!archive.writing())copy.gear.resize(n);for(auto& g:copy.gear)lib::systems::io(archive,g);}else copy.gear.clear();
     if(version>=9)ioVehicleRuns(archive,copy.vehicleRuns);else copy.vehicleRuns.clear();
+    if(version>=9){archive(copy.botStates);if(copy.botStates.size()>256)return false;}else copy.botStates.clear();
+    if(copy.botStates.size()!=(botHost_?spawns_.size():0))return false;
     for(const auto& r:copy.vehicleRuns){
         if(!config_.vehicleTypes||!config_.vehicleTypes->vehicles.contains(r.type)||!lib::genre::valid(r.controller)||!lib::genre::valid(r.seats))return false;
         if(std::none_of(copy.vehicles.begin(),copy.vehicles.end(),[&](const Vehicle& v){return v.id==r.vehicle;}))return false;

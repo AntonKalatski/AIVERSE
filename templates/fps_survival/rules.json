@@ -84,6 +84,10 @@
       "enabled": true,
       "knockdown": true,
       "startArmor": 0
+    },
+    "bots": {
+      "preset": "normal",
+      "sightRange": 120
     }
   }
 }

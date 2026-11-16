@@ -27,7 +27,9 @@ bool triangleCast(Vec3 p,Vec3 delta,Vec3 half,const Triangle& triangle,Fixed& fr
         auto first=low/velocity,last=high/velocity;auto n=axis*(-1_fx);
         if(first>last){std::swap(first,last);n=axis;}
         if(first>enter){enter=first;entryNormal=n;}
-        leave=fxMin(leave,last);if(enter>leave)return false;
+        // A plane axis (the face normal, or an edge axis parallel to it) has a zero-width interval: its entry and exit
+        // come from two separately rounded axis vectors, so allow a few raw units before calling it a separation.
+        leave=fxMin(leave,last);if(enter>leave+Fixed::fromRaw(8))return false;
     }
     if(leave<0_fx||enter>1_fx)return false;
     // Tangent contact with a floor must not arrest horizontal movement.

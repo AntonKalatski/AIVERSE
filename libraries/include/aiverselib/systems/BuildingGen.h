@@ -20,7 +20,7 @@ struct BuildingBox{Vec3 min,max;bool operator==(const BuildingBox&)const=default
 struct BuildingDef{
     Fixed width=12_fx,depth=10_fx,floorHeight=Fixed::fromRatio(32,10),wall=Fixed::fromRatio(25,100),slab=Fixed::fromRatio(2,10);
     uint32_t floors=2;
-    Fixed doorWidth=Fixed::fromRatio(14,10),doorHeight=Fixed::fromRatio(23,10);
+    Fixed doorWidth=Fixed::fromRatio(16,10),doorHeight=Fixed::fromRatio(23,10);
     Fixed windowWidth=Fixed::fromRatio(12,10),windowHeight=Fixed::fromRatio(12,10),windowSill=Fixed::fromRatio(9,10),windowSpacing=4_fx;
     Fixed stairWidth=Fixed::fromRatio(14,10),stairRun=Fixed::fromRatio(3,10),maxStepRise=Fixed::fromRatio(25,100);
     bool partition=true,roof=true;
@@ -30,6 +30,7 @@ struct BuildingDef{
 struct BuildingLayout{
     std::vector<BuildingBox> boxes;std::vector<Vec3> lootSpots;Vec3 door{},doorOutside{};
     std::vector<std::pair<Vec3,Vec3>> stairs;   // bottom and top walking points of each flight
+    std::vector<std::pair<Vec3,Vec3>> stairHalls;   // open floor beside each end of a flight, clear of the walls (nav goals)
     uint32_t doorSide=0;                        // 0 = -Z, 1 = +X, 2 = +Z, 3 = -X (before yaw)
 };
 namespace buildingDetail {
@@ -68,7 +69,8 @@ inline bool valid(const BuildingDef& d){
     if(d.doorWidth<agent||d.doorHeight<d.agentHeight+Fixed::fromRatio(1,10)||d.doorHeight>d.floorHeight-d.slab||d.stairWidth<agent)return false;
     if(d.windowWidth<=Fixed{}||d.windowHeight<=Fixed{}||d.windowSill+d.windowHeight>d.floorHeight-d.slab||d.windowSpacing<d.windowWidth+d.wall*2)return false;
     auto steps=((d.floorHeight)/d.maxStepRise).toInt()+1;auto run=d.stairRun*Fixed::fromInt(steps);
-    if(run+agent*2+d.wall*2>d.depth||d.stairWidth*2+d.wall*2+agent>(d.partition?d.width/2:d.width))return false;
+    auto landing=d.agentRadius*4+Fixed::fromRatio(1,2);   // free floor in front of and behind each flight (navmesh cells fit)
+    if(run+landing*2+d.wall*2>d.depth||d.stairWidth*2+d.wall*2+agent>(d.partition?d.width/2:d.width))return false;
     return d.doorWidth+d.wall*4<fxMin(d.width,d.depth)/2;
 }
 // Boxes in world space: origin = the building's minimum corner after yaw (quarter turns about +Y).
@@ -80,20 +82,22 @@ inline std::optional<BuildingLayout> generateBuilding(const BuildingDef& d,uint6
     L.doorSide=g.below(4);
     // Stairwell in the corner: lane 0 x in [t, t + w] climbs +Z (even floors), lane 1 next to it climbs -Z (odd).
     auto steps=uint32_t((H/d.maxStepRise).toInt()+1);auto rise=H/Fixed::fromInt(steps);auto run=d.stairRun*Fixed::fromInt(steps);
-    Fixed sx0=t,sx1=t+d.stairWidth*2,sz0=t+d.agentRadius*2+Fixed::fromRatio(1,10),sz1=sz0+run;
+    Fixed sx0=t,sx1=t+d.stairWidth*2,sz0=t+d.agentRadius*4+Fixed::fromRatio(1,2),sz1=sz0+run;
     auto lane=[&](uint32_t f){Fixed x=t+d.stairWidth*Fixed::fromInt(f%2);return std::pair<Fixed,Fixed>{x,x+d.stairWidth};};
     // Door centre: seeded among positions 0.5 m apart that keep the doorway and an agent in front of it clear
     // of the corners, the stairwell (walls -Z and -X) and the partition (walls -Z and +Z).
-    auto len=L.doorSide%2==0?W:D;auto margin=d.doorWidth/2+t*2;auto agentFree=d.agentRadius*2+Fixed::fromRatio(1,10);
+    auto margin=d.doorWidth/2+t*2;auto agentFree=d.agentRadius*2+Fixed::fromRatio(1,10);
     std::vector<Fixed> spots;
-    for(Fixed c=margin;c<=len-margin;c+=Fixed::fromRatio(1,2)){
-        auto lo=c-d.doorWidth/2-agentFree,hi=c+d.doorWidth/2+agentFree;bool ok=true;
-        if(L.doorSide==0)ok&=lo>sx1;                       // stairwell spans x in [t, sx1] along the -Z wall
-        if(L.doorSide==3)ok&=lo>sz1||hi<sz0-agentFree;     // ... and z in [sz0, sz1] along the -X wall
-        if(d.partition&&L.doorSide%2==0)ok&=hi<W/2-t||lo>W/2+t;
-        if(ok)spots.push_back(c);
+    for(uint32_t turn=0;turn<4&&spots.empty();++turn){   // the seeded side first; a side with no room passes the door on
+        if(turn)L.doorSide=(L.doorSide+1)%4;auto len=L.doorSide%2==0?W:D;
+        for(Fixed c=margin;c<=len-margin;c+=Fixed::fromRatio(1,2)){
+            auto lo=c-d.doorWidth/2-agentFree,hi=c+d.doorWidth/2+agentFree;bool ok=true;
+            if(L.doorSide==0)ok&=lo>sx1;                       // stairwell spans x in [t, sx1] along the -Z wall
+            if(L.doorSide==3)ok&=lo>sz1||hi<sz0-agentFree;     // ... and z in [sz0, sz1] along the -X wall
+            if(d.partition&&L.doorSide%2==0)ok&=hi<W/2-t||lo>W/2+t;
+            if(ok)spots.push_back(c);
+        }
     }
-    if(spots.empty())return {};
     auto doorAt=spots[g.below(uint32_t(spots.size()))];
     for(uint32_t f=0;f<d.floors;++f){
         auto y=H*Fixed::fromInt(f);
@@ -124,7 +128,9 @@ inline std::optional<BuildingLayout> generateBuilding(const BuildingDef& d,uint6
         if(f+1<d.floors){
             auto [l0,l1]=lane(f);bool up=f%2==0;
             for(uint32_t i=0;i<steps;++i){auto z=up?sz0+d.stairRun*Fixed::fromInt(i):sz1-d.stairRun*Fixed::fromInt(i+1);b.push_back({{l0,y0,z},{l1,y0+rise*Fixed::fromInt(i+1),z+d.stairRun}});}
-            auto cx=(l0+l1)/2;L.stairs.push_back(up?std::pair<Vec3,Vec3>{{cx,y0,sz0-d.agentRadius},{cx,y0+H,sz1+d.agentRadius}}:std::pair<Vec3,Vec3>{{cx,y0,sz1+d.agentRadius},{cx,y0+H,sz0-d.agentRadius}});
+            auto cx=(l0+l1)/2;auto off=d.agentRadius*2;auto hx=sx1+d.agentRadius*3+Fixed::fromRatio(1,10);
+            L.stairHalls.push_back(up?std::pair<Vec3,Vec3>{{hx,y0,sz0-off},{hx,y0+H,sz1+off}}:std::pair<Vec3,Vec3>{{hx,y0,sz1+off},{hx,y0+H,sz0-off}});
+            L.stairs.push_back(up?std::pair<Vec3,Vec3>{{cx,y0,sz0-off},{cx,y0+H,sz1+off}}:std::pair<Vec3,Vec3>{{cx,y0,sz1+off},{cx,y0+H,sz0-off}});
         }
         // Loot spots: the middle of each room, clear of the stairwell.
         auto mid=(sz1+D)/2;
@@ -139,6 +145,7 @@ inline std::optional<BuildingLayout> generateBuilding(const BuildingDef& d,uint6
     auto place=[&](Vec3 p){return turn(p,yaw,W,D)+origin;};
     for(auto& x:b){auto p=place(x.min),q=place(x.max);L.boxes.push_back({{fxMin(p.x,q.x),fxMin(p.y,q.y),fxMin(p.z,q.z)},{fxMax(p.x,q.x),fxMax(p.y,q.y),fxMax(p.z,q.z)}});}
     for(auto& s:L.lootSpots)s=place(s);for(auto& s:L.stairs){s.first=place(s.first);s.second=place(s.second);}
+    for(auto& s:L.stairHalls){s.first=place(s.first);s.second=place(s.second);}
     L.door=place(door);L.doorOutside=place(outside);
     return L;
 }

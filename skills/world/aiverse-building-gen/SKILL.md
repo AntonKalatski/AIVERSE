@@ -15,8 +15,11 @@ call the library directly.
    [width, run, max rise], `partition`, `roof`. Always overwrite `agentRadius`, `agentHeight` and `maxStepRise`
    with the owner's motor so every doorway, landing and tread fits; errors name the path.
 3. `generateBuilding(def, seed, origin, yaw)` (yaw in quarter turns) returns boxes in world space plus
-   `lootSpots`, `door` / `doorOutside` and per-flight `stairs` (bottom, top), or nullopt when it does not fit.
-4. Add the boxes to the owner's static collision with ids from a reserved range (FPS: `kBuildingColliderBase`),
+   `lootSpots`, `door` / `doorOutside`, per-flight `stairs` (bottom, top) and `stairHalls` (open floor beside each end,
+   reachable on a navmesh; walk the flight itself straight), or nullopt when it does not fit (the door moves to another
+   side when the seeded one has no room).
+4. Put `origin.y` at ground height minus `slab` so the ground floor is flush with the terrain (no threshold step;
+   the FPS module does this). Add the boxes to the owner's static collision with ids from a reserved range (FPS: `kBuildingColliderBase`),
    rebuild navigation for the region (`skills/world/aiverse-navmesh`), spawn loot on `lootSpots` through the
    loot owner, use `doorOutside` / `stairs` as bot waypoints.
 5. Determinism: Fixed math; the same definition, seed, origin and yaw give the same boxes everywhere, so a

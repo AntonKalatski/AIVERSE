@@ -13,7 +13,8 @@
 
 namespace aiverse::fps {
 constexpr uint16_t kInputCommand=1;
-constexpr uint32_t kBuildingColliderBase=0x40000000;   // collider ids of map `buildings` (building-gen)
+constexpr uint32_t kBuildingColliderBase=0x40000000;
+constexpr uint32_t kRotatedColliderBase=0x50000000;   // triangles of map colliders with a "yaw" (12 per box)   // collider ids of map `buildings` (building-gen)
 enum Buttons : uint32_t { Fire=1, Jump=2, Crouch=4, Reload=8, Sprint=16, WeaponMask=224, Aim=256, Prone=512, Melee=1024, Block=2048, LockOn=4096 };
 constexpr uint32_t kButtonBits=8191;
 constexpr uint32_t selectWeapon(uint32_t index) { return (index+1)<<5; }
@@ -66,6 +67,9 @@ struct Config {
     // Opt-in `fps.vehicleTypes` (vehicle-controllers JSON): map vehicles with a `type` drive with the package's
     // controller and seats (driver, passengers, gunners); vehicles without one keep the legacy arcade car.
     std::optional<lib::genre::VehicleDefinitions> vehicleTypes;
+    // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
+    // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
+    Json bots;
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -121,6 +125,7 @@ struct State {
     RoyaleRun royale;
     std::vector<lib::systems::GearLoadout> gear;   // per slot when fps.gear is set (FPS save version 9)
     std::vector<VehicleRun> vehicleRuns;
+    std::vector<std::string> botStates;   // lib::bots::saveFps bytes per slot when fps.bots is set (save version 9)
 
 };
 Config readConfig(const Json& rules);
@@ -132,6 +137,7 @@ void moveActor(Actor& actor,const Input& input,const MotorConfig& config,const w
 void io(Archive&,Input&);
 void io(Archive&,Actor&);
 Fixed stanceHeight(const Actor&,const MotorConfig&);
+struct BotHost;   // FpsBots.cpp: bot settings and regional navmeshes (derived from collision, never saved)
 class Module final : public GameModule {
 public:
     std::string name() const override { return "fps"; }
@@ -172,6 +178,11 @@ private:
     bool vehicleInteract(Simulation&,Actor&);
     VehicleRun* vehicleRun(State&,uint32_t vehicle) const;
     bool canFireFromVehicle(State&,const Actor&) const;
+    void setupBots(Simulation&,const Json&,State&);
+    bool thinkBot(Simulation&,Actor&);
+    std::shared_ptr<BotHost> botHost_;
+    struct BuildingRegion{world::Bounds bounds;Vec3 door{};std::vector<std::pair<Vec3,Vec3>> stairs,halls;};
+    std::vector<BuildingRegion> buildingRegions_;   // generated buildings: footprint (+margin), door, stair flights
     std::vector<world::Bounds> ladders_,sites_;
     std::map<uint32_t,Fixed> penetrable_;
     std::vector<Vehicle> initialVehicles_;
