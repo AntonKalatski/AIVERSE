@@ -55,6 +55,7 @@ public:
     uint32_t attempts() const { return attempts_; }     // dials so far
     uint32_t reconnects() const { return reconnects_; } // sessions that came back after a loss
     uint64_t retryAt() const { return retryAt_; }
+    bool dialing() const { return gate_ || client_; }  // an attempt is in progress (else waiting for retryAt)
     bool resumedCharacter() const { return resumed_; }  // the server said this session took over a kept character
     // Best application ping of the last 5 s (the closest to network RTT: one ping also waits for the server tick).
     uint32_t bestPingMs() const;

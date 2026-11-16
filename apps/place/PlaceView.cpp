@@ -245,7 +245,7 @@ struct View {
         ImGui::TextUnformatted(loc.tr("place.title").c_str());
         uint64_t now = net::nowMs();
         LinkStatus st = link->status();
-        if (link->resumedCharacter() && st == LinkStatus::Playing && link->reconnects() && !resumedUntil) resumedUntil = now + 4000;
+        if (link->resumedCharacter() && st == LinkStatus::Playing && link->reconnects() && !resumedUntil) resumedUntil = now + 6000;
         if (st != LinkStatus::Playing) resumedUntil = 0;
         if (st != LinkStatus::Playing) {
             i18n::Args args;
@@ -253,7 +253,8 @@ struct View {
             args.str("seconds", fixed1(double(link->retryAt() > now ? link->retryAt() - now : 0) / 1000.0));
             args.str("reason", loc.tr(std::string("place.reject.") + std::to_string(int(link->rejectReason()))));
             ImGui::PushStyleColor(ImGuiCol_Text, st == LinkStatus::Unstable ? ImVec4(1, 0.85f, 0.3f, 1) : ImVec4(1, 0.5f, 0.4f, 1));
-            ImGui::TextUnformatted(loc.tr(linkStatusKey(st), args).c_str());
+            const bool waiting = st == LinkStatus::Reconnecting && !link->dialing();
+            ImGui::TextUnformatted(loc.tr(waiting ? "place.link.waiting" : linkStatusKey(st), args).c_str());
             ImGui::PopStyleColor();
         } else if (resumedUntil > now) {
             ImGui::TextUnformatted(loc.tr("place.link.resumed").c_str());
