@@ -714,10 +714,11 @@ void Renderer3D::renderModels(int phase) {
     // This avoids quadratic work over thousands of instances of one material.
     std::vector<uint32_t> materialGroup(modelItems_.size(), 0);
     std::vector<uint32_t> representatives;
-    std::unordered_map<const Material*,uint32_t> identicalPointers;
+    std::map<std::pair<const Material*, const Model*>, uint32_t> identicalPointers;
     for (uint32_t i : order_) {
         const auto& item = modelItems_[i];
-        const auto cached = identicalPointers.find(item.mat);
+        const auto materialKey = std::make_pair(item.mat, item.model);
+        const auto cached = identicalPointers.find(materialKey);
         if (cached != identicalPointers.end()) {
             materialGroup[i] = cached->second; continue;
         }
@@ -725,7 +726,7 @@ void Renderer3D::renderModels(int phase) {
         for (uint32_t j = 0; j < representatives.size(); ++j)
             if (sameGpuMaterial(item, modelItems_[representatives[j]])) { id = j; break; }
         if (id == representatives.size()) representatives.push_back(i);
-        identicalPointers.emplace(item.mat, id);
+        identicalPointers.emplace(materialKey, id);
         materialGroup[i] = id;
     }
     if (phase == 2) { // back to front
@@ -761,7 +762,7 @@ void Renderer3D::renderModels(int phase) {
             const auto& first = modelItems_[order_[i]];
             auto compatible = [&](const ModelItem& y) {
                 if (first.model != y.model || first.prim == y.prim ||
-                    first.mat != y.mat || first.geometryPrimitive == y.geometryPrimitive ||
+                    !sameGpuMaterial(first, y) || first.geometryPrimitive == y.geometryPrimitive ||
                     first.model->geometry || first.gi || y.gi ||
                     first.materialRole || y.materialRole || first.shadowRole || y.shadowRole ||
                     first.baked || y.baked || first.joints >= 0 || y.joints >= 0 ||
