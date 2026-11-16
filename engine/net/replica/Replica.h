@@ -28,8 +28,10 @@
 
 namespace aiverse::net::replica {
 
-constexpr uint32_t kProtocol = 1;
-using ObjectId = uint32_t;            // 0 = none; ids are reused only after every client acked the destroy
+constexpr uint32_t kProtocol = 2;     // 2: object generations, delta-coded numbers
+// 0 = none; ids are reused only after every client acked the destroy. Each reuse bumps a generation that travels
+// with creates and reliable fields, so a client never mixes the reliable fields of two objects behind one id.
+using ObjectId = uint32_t;
 using ClassId = uint16_t;
 constexpr ObjectId kNoObject = 0;
 
@@ -94,9 +96,21 @@ struct ServerOptions {
     size_t maxMessageBytes = 8192;
     int maxMessagesPerSecond = 30;  // remote messages per client (burst: twice this); the rest are dropped
     uint32_t helloTimeoutMs = 5000;
+    // Interest grid on x/y/z (towers, multi-floor buildings, space): only cells near a viewer are visited. Off:
+    // x/z columns (every object above or below a viewer is distance-checked). The relevance test is the same
+    // 3D sphere of the class radius either way; this only changes what it costs.
+    bool interest3d = true;
 };
 
-struct ServerStats { uint64_t snapshots = 0, snapshotBytes = 0, reliableBytes = 0, inputs = 0, rejected = 0, starved = 0; };
+struct ServerStats {
+    uint64_t snapshots = 0, snapshotBytes = 0, reliableBytes = 0, inputs = 0, rejected = 0, starved = 0;
+    uint64_t entries = 0;           // objects written into snapshots (creates + deltas)
+    uint64_t creates = 0;           // of which full creates
+    uint64_t deltaFields = 0;       // numeric fields written as a small difference to a confirmed value
+    uint64_t evaluated = 0;         // relevant objects compared field by field (changed or not yet confirmed)
+    uint64_t relevant = 0;          // relevant objects summed over snapshots (evaluated / relevant: work share)
+    uint64_t interestChecks = 0;    // distance tests (grid passes + re-tests of changed objects)
+};
 
 class Server {
 public:
@@ -154,9 +168,24 @@ struct ClientOptions {
     // Each input packet repeats the last N frames: covers loss, and the latest channel keeping only the newest
     // packet when two arrive between server polls. 5 survives the SimNet "bad" preset's 5-packet bursts mostly.
     int inputRedundancy = 5;
+    // Render clock: render time follows (estimated newest server time - delay) by changing its rate by at most
+    // this fraction (0.05: 5 % fast or slow), so it never jumps or runs backwards; a target more than
+    // `clockSnapMs` away (first snapshot, server restart, long freeze) is taken at once.
+    float maxClockAdjust = 0.05f;
+    uint32_t clockSnapMs = 1000;
+    // Adaptive delay: the delay follows the measured snapshot jitter and loss (1.5 snapshot intervals + 4 x jitter
+    // + up to one more interval at 4 % snapshot loss), clamped to [minDelayMs (0: one interval), maxDelayMs];
+    // interpolationDelayMs is then only the start value.
+    bool adaptiveDelay = false;
+    uint32_t minDelayMs = 0, maxDelayMs = 300;
 };
 
-struct ClientStats { uint64_t snapshots = 0, bytesIn = 0, bytesOut = 0, dropped = 0; };
+struct ClientStats {
+    uint64_t snapshots = 0, bytesIn = 0, bytesOut = 0, dropped = 0;
+    uint64_t underruns = 0;         // times render time passed the newest snapshot (extrapolate / hold began)
+    uint64_t underrunMs = 0;        // time spent so
+    uint64_t clockSnaps = 0;        // times the render clock was set instead of slewed
+};
 
 class Client {
 public:
@@ -183,6 +212,14 @@ public:
     // Newest authoritative value (for the owner's reconciliation).
     const Value& latest(ObjectId id, int field) const;
     uint32_t latestTick() const;           // server tick of the newest snapshot
+    // ---- clock (ms on the server's tick clock: tick * 1000 / tickRate)
+    double serverTimeMs() const;           // estimated server time now (newest arrival path + RTT / 2)
+    double renderTimeMs() const;           // what sample() shows: newest server time - delay, rate-slewed, monotonic
+    double renderTick() const;             // renderTimeMs in server ticks (fractional)
+    double jitterMs() const;               // snapshot arrival jitter (RFC 3550 style mean deviation)
+    double snapshotLoss() const;           // fraction of snapshots that did not arrive (recent, smoothed)
+    double interpolationDelayMs() const;   // current delay (fixed, or adaptive)
+    uint32_t rttMs() const;                // connection RTT, else measured from input frames to lastAppliedInput
     std::function<void(ObjectId)> onCreate, onDestroy;
     std::function<void(ObjectId, int field)> onReliableChange;   // String / Bytes / reliable fields
     const ClientStats& stats() const;
