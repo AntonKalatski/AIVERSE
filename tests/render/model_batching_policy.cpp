@@ -2,7 +2,8 @@
 // This is intentionally independent from any particular project/genre.
 #include "engine/render/Model.h"
 #include "engine/render/ModelMerge.h"
-#include <cassert>
+#include <cstdlib>
+#define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
 #include <string>
 
@@ -42,17 +43,17 @@ int main() {
     const auto oldMatrices = m.bindWorld;
     m.batching.mergeRigid = true;
     prepareModelUpload(m);
-    assert(m.uploadPrepared);
-    assert(m.nodes.size() == 6);
-    assert(m.nodes.back().name == "merged");
-    assert(m.nodes[2].name == "hinged_panel");
-    assert(m.nodes[3].name == "panel_surface");
-    assert(m.nodes[3].parent == oldParent);
+    CHECK(m.uploadPrepared);
+    CHECK(m.nodes.size() == 6);
+    CHECK(m.nodes.back().name == "merged");
+    CHECK(m.nodes[2].name == "hinged_panel");
+    CHECK(m.nodes[3].name == "panel_surface");
+    CHECK(m.nodes[3].parent == oldParent);
     for (int n : {2, 3}) {
-        assert(m.nodes[size_t(n)].mesh >= 0);
-        assert(m.meshes[size_t(m.nodes[size_t(n)].mesh)].primitives.size() == 1);
+        CHECK(m.nodes[size_t(n)].mesh >= 0);
+        CHECK(m.meshes[size_t(m.nodes[size_t(n)].mesh)].primitives.size() == 1);
         for (int row = 0; row < 16; ++row)
-            assert(m.bindWorld[size_t(n)].m[row] == oldMatrices[size_t(n)].m[row]);
+            CHECK(m.bindWorld[size_t(n)].m[row] == oldMatrices[size_t(n)].m[row]);
     }
 
     Model skip;
@@ -68,7 +69,7 @@ int main() {
     skip.nodes[0].mesh = 0;
     skip.finalize();
     prepareModelUpload(skip);
-    assert(skip.nodes.size() == 1);
+    CHECK(skip.nodes.size() == 1);
     std::puts("engine model batching policy: PASS");
     return 0;
 }
