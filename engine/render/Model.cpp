@@ -1,6 +1,7 @@
 #include "ModelTextureCache.h"
 #include <filesystem>
 #include "Model.h"
+#include "../data/Json.h"
 #include "ModelClips.h"
 #include "ModelMerge.h"
 #include "Renderer3D.h"
@@ -161,6 +162,45 @@ Loader loaderFor(const std::string& ext) {
 } // namespace
 
 bool isNativeModelFormat(const std::string& path) { return loaderFor(extOf(path)) != nullptr; }
+namespace {
+void applyModelBatchingSidecar(Model& model, const std::string& path, const FileReader& read) {
+    std::string bytes;
+    if (!read(path + ".batching.json", bytes)) return;
+    const Json config = Json::parse(bytes);
+    if (!config.isObject()) throw std::runtime_error(path + ".batching.json: expected JSON object");
+    model.batching.mergeRigid = config.getBool("mergeRigid", false);
+    if (config.has("maxExtent")) {
+        const float extent = float(config["maxExtent"].toDouble());
+        if (!std::isfinite(extent) || extent <= 0.0f || extent > 1000000.0f)
+            throw std::runtime_error(path + ".batching.json: maxExtent must be finite and > 0");
+        model.batching.maxExtent = extent;
+    }
+    if (config.has("preserveNodes")) {
+        if (!config["preserveNodes"].isArray())
+            throw std::runtime_error(path + ".batching.json: preserveNodes must be an array");
+        for (const Json& entry : config["preserveNodes"].items()) {
+            if (!entry.isString() || entry.str().empty())
+                throw std::runtime_error(path + ".batching.json: preserveNodes entries must be nonempty names");
+            model.batching.preserveNodes.push_back(entry.str());
+        }
+    }
+    if (config.has("mutableNodes")) {
+        if (!config["mutableNodes"].isArray())
+            throw std::runtime_error(path + ".batching.json: mutableNodes must be an array");
+        for (const Json& entry : config["mutableNodes"].items()) {
+            if (!entry.isString() || entry.str().empty())
+                throw std::runtime_error(path + ".batching.json: mutableNodes entries must be nonempty names");
+            bool found = false;
+            for (Node& node : model.nodes) if (node.name == entry.str()) {
+                node.runtimeMutable = true;
+                found = true;
+            }
+            if (!found) throw std::runtime_error(path + ".batching.json: unknown mutable node " + entry.str());
+        }
+    }
+}
+} // namespace
+
 
 namespace { thread_local std::shared_ptr<ModelTextureCache> loadingTextures; }
 std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read, std::vector<std::string>* warnings, std::shared_ptr<ModelTextureCache> textures) {
@@ -174,6 +214,7 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
         if (read(path + ".glb", bytes)) {
             auto m = loadGltf(path + ".glb", bytes, read, warnings);
             m->path = path;
+            applyModelBatchingSidecar(*m, path, read);
             return m;
         }
 #if defined(AIVERSE_NO_FBX)
@@ -192,6 +233,7 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
         if (!applyLightmapUvs(*m, uv, &err) && warnings) warnings->push_back(path + ".lmuv: " + err);
     }
     applyClipSidecar(*m, path, read, warnings);   // "<model>.clips.json": splits, external clips (ModelClips.h)
+    applyModelBatchingSidecar(*m, path, read);
     return m;
 }
 
