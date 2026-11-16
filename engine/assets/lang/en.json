@@ -140,6 +140,8 @@
   "mode": {
     "attack": "Attack: choose a target",
     "patrol": "Patrol: choose a point",
+    "repair": "Repair: choose a damaged unit",
+    "reclaim": "Reclaim: choose a wreck or a unit",
     "rally": "Rally point",
     "ability": "Ability: choose a target",
     "claim": "Choose a neighbouring region",
@@ -169,6 +171,9 @@
     "stop": "Stop",
     "hold": "Hold",
     "patrol": "Patrol",
+    "repair": "Repair",
+    "reclaim": "Reclaim",
+    "self_destruct": "Self-destruct",
     "build": "Build",
     "requires": "Requires: {list}",
     "aura": "Aura: {name}",

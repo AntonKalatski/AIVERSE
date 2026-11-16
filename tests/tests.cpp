@@ -9578,6 +9578,7 @@ TEST(pack_file_copy_into_existing) {
 
 #include "tests_mech.inc"   // agent-mech
 #include "tests_sc2.inc"    // agent-sc2: magic box, overkill targeting, warp-in
+#include "tests_fieldops.inc"   // radar / sonar / jammers, field operations (repair, reclaim, stockpiles, ...)
 
 // ---- post-processing data (postfx agent): parsing, map overrides, cost model, presets
 #include "engine/render/PostFxData.h"

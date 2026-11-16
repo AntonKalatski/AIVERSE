@@ -1572,6 +1572,75 @@ dives to the `y` of its move orders (MCP `{"cmd": "move", "x", "z", "y"}`), foll
 attacks, and weapon ranges to and from it are measured in 3D. Paths and avoidance stay 2D. The view does not draw the
 altitude yet.
 
+## Radar, sonar and jammers
+
+Type keys (all optional; `modules/rts/RtsSensors.h`). Radii are in cells.
+
+```jsonc
+"radar_tower": {"radar": 30, "income": {"energy": -20}},        // enemies inside the circle are contacts of its side
+"sonar_buoy":  {"sonar": 25},                                    // the same for underwater units (radar does not see them)
+"jammer":      {"jammer": 12},                                   // hides its own side's units inside the circle from enemy radar / sonar
+"spy":         {"stealth": true},                                // never a radar contact (still seen in sight)
+"submarine":   {"move": {"layer": "naval"}, "underwater": true,  // only weapons with "underwater": true hit it
+                "weapons": [{"range": 6, "damage": 80, "underwater": true, "targets": ["naval"]}]},
+// rules
+"radar": {"targeting": true}   // units pick targets beyond their sight, up to weapon range, that their side sees or tracks
+```
+
+- A contact is an enemy inside the radar (sonar, for underwater units) circle of the viewer or an ally, not inside a
+  jammer circle of its own side and not stealthy. Unpowered (`kUnitDisabled`), unfinished or carried sources are off.
+- The view draws contacts outside sight as red dots (no model: the viewer does not know the type). Native code:
+  `RtsModule::sensors()->onRadar(sim, e, viewer)`, `blips(sim, viewer)`.
+- `radar.targeting`: artillery and long-range towers fire at what radar or allies see. Without it nothing changes.
+- No state: contacts are recomputed from the units, so saves and replays carry nothing extra; games without these
+  keys keep their checksums.
+
+## Field operations
+
+Optional blocks for flow-economy wars (`modules/rts/RtsFieldOps.h`; state in the `FieldOpsStore` resource: hashed,
+saved). Games without them have no extra system and keep their checksums.
+
+```jsonc
+// rules
+"repair": {"cost": 0, "units": true},            // share of the cost for a full repair (default 0.3); mobile units too
+"reclaim": {"units": true, "refund": 1},         // builders take units apart (own or enemy) for that share of their cost
+"selfDestruct": {"time": 5},                     // kCmdSelfDestruct arms a countdown (again: disarms); death effects apply
+"ambient": {"wind": {"min": 0, "max": 25, "every": [15, 45]}, "tidal": 18},   // the map's "ambient" overrides key by key
+// types
+"con_kbot":   {"assist": true, "patrolWork": true},   // guard a factory: adds build power; patrol: repairs / reclaims on the way
+"wind_gen":   {"income": {"energy": 2}, "ambientIncome": {"wind": {"energy": 1}}},   // + wind strength x 1 energy/s
+"tidal_gen":  {"ambientIncome": {"tidal": {"energy": 1}}},
+"nuke_silo":  {"tags": ["nuke"], "stockpile": {"max": 5, "time": 90, "cost": {"metal": 1000, "energy": 20000}, "abilities": ["launch"]},
+               "abilities": [{"id": "launch", "target": "point", "range": 200, "effects": [{"type": "projectile", ...}]}]},
+"anti_nuke":  {"intercept": {"radius": 40, "tags": ["nuke"]}, "stockpile": {"max": 3, "time": 60, "cost": {"metal": 500}}},
+"bomber":     {"move": {"layer": "air"}, "attackRun": {"overshoot": 5}, "seekRepair": 0.3,
+               "weapons": [{"range": 1.5, "damage": 200, "targets": ["ground"]}]},
+"air_pad":    {"repairPad": {"heal": 40, "radius": 1.5}}
+```
+
+- **Repair / reclaim**: `kCmdRepair` (target = damaged own or allied unit; structures always, mobile units with
+  `repair.units`), `kCmdReclaim` (target = resource node: a gather order; a unit: `OrderType::Reclaim`, at the builder's
+  `buildPower` over the target's build time, paying the cost x `refund` while it shrinks; no wreck, no death blast). Smart
+  click on a damaged own unit repairs it when `repair.units` is on.
+- **Assist**: a builder with `assist` guarding (`kCmdGuard`) an own producer within 5 cells adds its `buildPower` to the
+  producer's (`step x (1 + sum / producer buildPower)`); progressive costs are paid at the faster rate.
+- **Patrol work**: a `patrolWork` builder on patrol repairs damaged allies in sight first, then gathers flow resource
+  nodes (wrecks, rocks, trees) it passes; the patrol resumes after each job.
+- **Stockpile**: charges build one at a time over `time` seconds (scaled by low power), paying `cost` as they build and
+  stalling when short; abilities listed in `abilities` (default: every ability of the type) need and use a charge. The
+  bot uses them through ability `autocast` + `smart` targeting.
+- **Intercept**: hostile projectiles shot by types with any of `tags` are destroyed inside `radius`; with a stockpile each
+  interception uses a charge. Event `kEvFieldOp` (value `kFieldOpIntercepted`, a = interceptor, b = projectile).
+- **Ambient income**: the wind changes every `every` seconds to a random strength in [min, max] (sim RNG); `tidal` is
+  constant per map. `ambientIncome` adds strength x amount per second to the owner's income (finished, powered objects).
+  Keep a small fixed `income` on such types so the bot counts them as income buildings.
+- **Attack runs**: an `attackRun` unit flies over its target and `overshoot` cells past it, then turns for the next
+  pass; its weapons fire while passing (short-range bombs).
+- **Repair pads**: units standing still within `radius` of an own or allied `repairPad` heal `heal` hp/s for free;
+  `seekRepair` sends an idle unit below that health share to the nearest own pad.
+- Events `kEvFieldOp`: `value & 0xFF` = `kFieldOpArmed` (data = ticks left) / `Disarmed` / `Stockpiled` (data = charges) /
+  `Intercepted` / `Wind` (data = strength). Native code: `RtsModule::fieldOps()` (`stockpile`, `selfDestructAt`, `wind`).
+
 ## Save states (agent-mech)
 
 `Simulation::serialize()` returns the whole dynamic state as bytes (versioned, little-endian, identical on every
@@ -1623,7 +1692,7 @@ room `extra` = room index or -1 erase), `kCmdPickUp` (units), `kCmdDrop` (point;
 `kCmdSlap` (units), `kCmdPossess` (units[0]; empty = release), `kCmdDirect` (point = direction, `param` bit 0 = fire,
 optional target), `kCmdPlayerAbility` (`param` = index, point), `kCmdBuildRoad` (rect, `extra` 1 = remove),
 `kCmdConnectRoad` (units = own structures), `kCmdTransit` (planets: orbit units, `param` = target body), `kCmdStance` (param = stance),
-`kCmdRetreat`, `kCmdLoad` (target = transport), `kCmdUnload` (param 1 = drive to point first), `kCmdGuard` / `kCmdFollow` (target = unit). `kCmdPlayerAbility` with a `structure` / `group` / `player`
+`kCmdRetreat`, `kCmdLoad` (target = transport), `kCmdUnload` (param 1 = drive to point first), `kCmdGuard` / `kCmdFollow` (target = unit). `kCmdRepair` / `kCmdReclaim` (builders, target = unit) and `kCmdSelfDestruct` (units): see "Field operations". `kCmdPlayerAbility` with a `structure` / `group` / `player`
 ability takes the clicked object in `target` (or the nearest one to `point`).
 
 ## Triggers
@@ -1892,7 +1961,7 @@ image with transparency (it is flattened on `background`).
 - **StarCraft**: three factions with `buildMode` walk/warp/morph, larva `charges`, `creep`, refinery `structure.on` + `takesOverNode`, cliff `levels` + ramps + `heights.missUphill`.
 - **Red Alert / C&C**: ore `fields` + harvesters + refinery `dropoff`, `fieldSpawner` mines, `power` capacity with `deficitDisables`, construction yard `produces` structures (sidebar), `deploysTo` MCV, `sellable`, `buildRadius`.
 - **Dune II**: spice `fields`, `capped` spice with silos `storage`, `terrain: "rock"` for structures, sandworm `neutral.wander` + `move.layer: "sand"`.
-- **Total Annihilation**: `flow` metal/energy with `income`, `costModel: "progressive"`, commander `key` + `victory: keyUnits`, extractors `structure.on: metal_spot`, `wreck` reclaim.
+- **Total Annihilation**: `flow` metal/energy with `income`, `costModel: "progressive"`, commander `key` + `victory: keyUnits`, extractors `structure.on: metal_spot`, `wreck` reclaim; `radar` / `sonar` / `jammer` / `stealth` + rules `radar.targeting`, `underwater` subs and torpedoes, rules `repair` / `reclaim` / `selfDestruct`, `assist` + `patrolWork` builders, `ambient` wind / tidal generators, geothermal vents as `structure.on`, nuke silos `stockpile` + anti-nukes `intercept`, bombers `attackRun`, air `repairPad` (`templates/metaltide`).
 - **Age of Empires II**: four `stock` resources, farms with infinite `ownerOnly` nodes, ages as techs required by types, `techs` with tag effects.
 - **Company of Heroes**: `squad`, `capture` points with `victoryPoint`, `victory: tickets`, `income` from captured points via triggers or `income` on point types.
 - **They Are Billions**: map `waves` from a `waves: true` player, `victory: survive`, `buildRadius`.

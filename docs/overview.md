@@ -203,7 +203,7 @@ builds are for personal use only and must not be committed or distributed.
 
 ### Importing games (importers)
 
-An importer turns your copy of a classic game into a game folder for the engine. Dune II is available now:
+An importer turns your copy of a classic game into a game folder for the engine. Dune II and Total Annihilation are available now:
 
 ```bash
 python3 tools/importers/dune2/import.py --source "~/Downloads/Dune II" --out ~/AiverseGames/dune2
@@ -218,6 +218,23 @@ blocks), CPS images and WSA animations as PNG, VOC sounds → WAV + `audio.json`
 Terrain is approximate: the original landscape generator is not used, bases stand on rock, spice comes from
 `Field=`, mission quotas are triggers. Infantry, the ornithopter and the carryall are still drawn as 3D shapes.
 The folder is marked `"external": true` — it must not be committed or distributed.
+
+**Total Annihilation** (`tools/importers/ta`): the archives of your copy (`.hpi`, `.ufo`, `.ccx`, `.gp3`, read by the
+`hpi` unpacker: header cipher, LZ77 and zlib chunks) or an extracted folder:
+
+```bash
+python3 tools/importers/ta/import.py --source "~/Games/TotalA" --out ~/AiverseGames/ta
+```
+
+Units (`units/*.fbi`) become types with costs, worker / build time, health, speed, sight, radar / sonar / jammers,
+stealth, air / naval / hover / underwater layers, extractors, wind / tidal generators, metal makers, air repair pads
+and commanders; build menus come from `guis/*.gui` and `download/*.tdf`; weapons (`weapons/*.tdf`) from range,
+reload, damage, area, velocity, anti-air and torpedo flags; stockpiled weapons (nukes) become abilities with a
+`stockpile`, interceptors an `intercept`, explosions death blasts; features (`features/**.tdf`) reclaimable nodes;
+maps (`maps/*.tnt` + `.ota`) heightfield maps with water below the sea level, start positions, features, metal
+spots, wind and tide. `.3do` models and `.gaf` textures are copied next to them (the engine reads them itself).
+Scale: 1 cell = 16 TA pixels. Not converted: unit scripts (`.cob`; use `procedural` animation), sounds, campaign
+missions, the metal map of tiles (metal spots come from metal features). The folder is marked `"external": true`.
 
 ## Project file .aiverse
 

@@ -418,6 +418,12 @@ bool GameClient::selectionHasGarrison() const {
     return false;
 }
 
+bool GameClient::selectionBuilds() const {   // a builder is selected (repair / reclaim modes)
+    for (Entity e : selection_)
+        if (auto* u = sim_->world().tryGet<Unit>(e); u && !rules_.types[u->type].builds.empty()) return true;
+    return false;
+}
+
 void GameClient::selectBox(float x0, float y0, float x1, float y1, bool add) {
     if (x0 > x1) std::swap(x0, x1);
     if (y0 > y1) std::swap(y0, y1);
@@ -607,6 +613,11 @@ void GameClient::event(const Event& e) {
                 mode_ = Mode::Normal;
                 return;
             }
+            if (mode_ == Mode::Repair || mode_ == Mode::Reclaim) {   // field operations: click the unit / wreck
+                command(mode_ == Mode::Repair ? kCmdRepair : kCmdReclaim, e.x, e.y, e.mods & platform::kModShift);
+                mode_ = Mode::Normal;
+                return;
+            }
             Entity t = pick(e.x, e.y);
             if (t.valid() && w.has<Garrison>(t) && w.get<Owner>(t).player == human_) {
                 sendDrag_ = true; // Mushroom-Wars gesture: drag from own building to a target
@@ -769,6 +780,7 @@ void GameClient::event(const Event& e) {
         if (!ctrl && !selection_.empty()) {
             if (e.key == Key::A) mode_ = Mode::AttackMove;
             if (e.key == Key::P) mode_ = Mode::Patrol;
+            if (mod().fieldOps() && (e.key == Key::R || e.key == Key::E) && selectionBuilds()) mode_ = e.key == Key::R ? Mode::Repair : Mode::Reclaim;   // field operations
             if (e.key == Key::S) { Command c; c.type = kCmdStop; c.units = selection_; issue(c); }
             if (e.key == Key::H) { Command c; c.type = kCmdHold; c.units = selection_; issue(c); }
         }

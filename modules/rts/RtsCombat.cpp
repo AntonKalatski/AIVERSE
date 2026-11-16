@@ -26,6 +26,10 @@ void RtsModule::sysTargeting(Simulation& sim) {
         if (auto* sh = w.tryGet<Shield>(t)) left += sh->value;
         return it->second >= left;
     };
+    // radar targeting (rules radar.targeting, RtsSensors.cpp): acquire up to weapon range what the side sees or tracks
+    Sensors* sensors = this->sensors();
+    const bool radarAcq = sensors && sensors->radarTargeting();
+    if (radarAcq) sensors->beginTargeting(sim);
     w.each<Combat, Unit, Owner, Transform>([&](Entity e, Combat& c, Unit& u, Owner& o, Transform& tr) {
         if (o.player == 0 || (u.flags & (kUnitUnderConstruction | kUnitDisabled | kUnitInHand | kUnitPossessed))) return;
         if (mechOn(sim) && !mechCanAcquire(sim, e)) { if (c.autoTarget && w.alive(c.target)) { c.target = kNullEntity; if (!w.has<Orders>(e) || w.get<Orders>(e).queue.empty()) stopMoving(sim, e); } return; }   // agent-mech
@@ -41,7 +45,8 @@ void RtsModule::sysTargeting(Simulation& sim) {
         if (auto* gd = w.tryGet<Guard>(e); gd && gd->returning) return;
         if (w.alive(c.target) && w.has<Unit>(c.target)) {
             if (!c.autoTarget) return;
-            if (dist2D(w.get<Transform>(c.target).pos, tr.pos) <= stat(sim, e, Stat::Sight) + kOne && !doomed(c.target)) {
+            const Fixed keep = radarAcq ? fxMax(stat(sim, e, Stat::Sight), maxWeaponRange(rules_.types[u.type]) + stat(sim, e, Stat::Range)) : stat(sim, e, Stat::Sight);
+            if (dist2D(w.get<Transform>(c.target).pos, tr.pos) <= keep + kOne && !doomed(c.target)) {
                 if (rules_.overkill && !t.weapons.empty()) incoming[c.target.index] += t.weapons[0].damage;   // its next shot is spoken for
                 return;
             }
@@ -49,6 +54,8 @@ void RtsModule::sysTargeting(Simulation& sim) {
         uint8_t layers = 0;
         for (auto& wd : t.weapons) layers |= wd.targets;
         Fixed sight = stat(sim, e, Stat::Sight);
+        const Fixed ownSight = sight;
+        if (radarAcq) sight = fxMax(sight, maxWeaponRange(t) + stat(sim, e, Stat::Range));   // beyond sight: seen by allies or on radar
         int myLevel = levelAt(sim, tr.pos);
         const bool hf = gs.grid.hf;
         Entity best;
@@ -61,15 +68,18 @@ void RtsModule::sysTargeting(Simulation& sim) {
             if (!cu || cu->hp.raw <= 0) return;
             const UnitType& ct = rules_.types[cu->type];
             if (ct.invulnerable || !layerHit(layers, ct.layer)) return;
+            if (sensors && !sensors->anyWeaponHits(u.type, cu->type)) return;   // underwater: torpedoes only
             if (!hostile(sim, o.player, w.get<Owner>(cand).player)) return;
             if (rules_.advancedEffects) { uint32_t fl = statusFlags(sim, cand); if (fl & kStUntargetable) return; if ((fl & kStInvisible) && !(fl & kStRevealed) && !(rules_.mech.detection && detected(sim, cand, o.player))) return; }
             Vec3 cp = w.get<Transform>(cand).pos;
             Fixed d = dist2D(cp, tr.pos);
             if (d > sight) return;
+            if (radarAcq && d > ownSight && !sensors->tracked(sim, cand, o.player)) return;
             if (aspect != kOne && !inRangeEllipse(tr.pos, cp, sight, aspect)) return;
             // high ground hides units from those below unless revealed (any ally vision of that cell)
             // (heightfield: vision already follows line of sight, so the target must simply be in sight)
-            if (rules_.heights.blockVision && !(ct.layer & kLayerAir) && (hf || levelAt(sim, cp) > myLevel) && !isVisible(sim, o.player, cp)) return;
+            if (rules_.heights.blockVision && !(ct.layer & kLayerAir) && (hf || levelAt(sim, cp) > myLevel) && !isVisible(sim, o.player, cp) &&
+                !(radarAcq && sensors->tracked(sim, cand, o.player))) return;
             if (doomed(cand)) return;   // targeting.overkill: shots in flight already kill it
             if (ct.weapons.empty()) d += Fixed::fromInt(4); // prefer things that can shoot back
             if (!best.valid() || d < bestD) { best = cand; bestD = d; }
@@ -185,6 +195,7 @@ void RtsModule::sysWeapons(Simulation& sim) {
         for (size_t i = 0; i < t.weapons.size() && i < 4; ++i) {
             const WeaponDef& wd = t.weapons[i];
             if (!canHit(wd, tt.layer) || c.cooldown[i].raw > 0 || dist > wd.range + rangeBonus || dist < wd.minRange) continue;
+            if (sensors_ && sensors_->active() && !sensors_->weaponHits(u.type, i, tu.type)) continue;   // underwater: torpedoes only
             if (wd.rangeAspect != kOne && !inRangeEllipse(tr.pos, tp, wd.range + rangeBonus, wd.rangeAspect)) continue;
             if (m && m->moving && ord && !ord->queue.empty() && ord->queue.front().type == OrderType::Move) continue;
             if (wd.chargeTime.raw > 0) {
@@ -341,6 +352,7 @@ bool RtsModule::canCast(Simulation& sim, Entity caster, int index) const {
         if (st && st->busyUntil > sim.tick()) return false;
         if (st && a.chargesMax > 0) return st->charges[index] > 0;
     }
+    if (fieldOps_ && fieldOps_->active() && !fieldOps_->castReady(sim, caster, index)) return false;   // stockpile charge (RtsFieldOps.cpp)
     return !st || st->readyAt[index] <= sim.tick();
 }
 
@@ -356,6 +368,7 @@ void RtsModule::castAbility(Simulation& sim, Entity caster, int index, Entity ta
     World& w = sim.world();
     if (!canCast(sim, caster, index)) return;
     if (script_ && (script_->hooks() & ScriptEngine::kHookCast) && !script_->allowCast(sim, caster, index, target, point)) return;   // can_cast (G12)
+    if (fieldOps_ && fieldOps_->active()) fieldOps_->onCast(sim, caster, index);   // uses a stockpile charge
     Unit& u = w.get<Unit>(caster);
     const uint16_t casterType = u.type;
     const AbilityDef a = rules_.types[casterType].abilities[size_t(index)]; // copy: spawning may move vectors? (rules are stable, but be safe)

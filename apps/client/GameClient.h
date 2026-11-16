@@ -123,7 +123,7 @@ public:
 
 private:
     enum class Screen { Menu, Lobby, Playing, Paused, Over };
-    enum class Mode { Normal, AttackMove, Patrol, Place, Rally, Ability, Claim, Skill, Dig, Undig, Room, Road, Unroad, Drop, ScriptCmd };
+    enum class Mode { Normal, AttackMove, Patrol, Place, Rally, Ability, Claim, Skill, Dig, Undig, Room, Road, Unroad, Drop, ScriptCmd, Repair, Reclaim };
 
     void startMatch(size_t idx, const Json& initialVars = Json());
     std::function<void(uint16_t)> typeAssetLoader_;
@@ -169,6 +169,7 @@ private:
     void notice(const std::string& t) { notices_.push_back({t, time_ + 2.5}); if (notices_.size() > 4) notices_.erase(notices_.begin()); }
     void cleanSelection();
     bool selectionHasGarrison() const;
+    bool selectionBuilds() const;
     Vec3 placeCentre(float sx, float sy, bool& ok);
     void setScreen(Screen s);
     void toMenu();

@@ -283,7 +283,14 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const uint64_t key = o.entity.valid() ? o.entity.packed() : (1ull << 63) | uint64_t(i);
         EntityAnim& st = stateFor(key, o);
         st.last = o;
-        if (!o.visible) continue;
+        if (!o.visible) {
+            if (o.blip) {   // radar contact: a pulsing dot where the unit is, no model (its type is unknown to the viewer)
+                const float gy = groundAt(grid, o.pos.x, o.pos.z) + 0.06f;
+                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.35f, rgba(255, 70, 50, 230), 12, gy);
+                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.6f, rgba(255, 70, 50, 110), 16, gy);
+            }
+            continue;
+        }
         const TypeLook& L = looks_[o.type];
         const float ground = !rules_->types[o.type].structure && !L.air ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z);
         animate(st, o, dt, &grid);
@@ -402,6 +409,9 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         }
     if (const Surface* surf = gs.surface.get()) { sceneFromSphere(sim, *m, *surf, out, alpha, viewer); return; }   // RtsPlanetView.cpp
     const Driving* drivingCars = m->driving() && m->driving()->active() ? m->driving() : nullptr;
+    // radar / sonar contacts of the viewer outside its sight: drawn as blips (RtsSensors.h)
+    std::vector<Entity> blips;
+    if (Sensors* sn = m->sensors(); sn && viewer != 0) { blips = sn->blips(sim, viewer); std::sort(blips.begin(), blips.end(), [](Entity a, Entity b) { return a.index < b.index; }); }
     w.each<Unit, Owner, Transform>([&](Entity e, Unit& u, Owner& o, Transform& t) {
         if (u.flags & kUnitInCargo) return;   // inside a transport (agent-mech)
         SceneObject so;
@@ -460,6 +470,10 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         }
         if (so.visible && ut.trap >= 0 && viewer != 0 && o.player != viewer && !sim.allied(o.player, viewer) && w.has<TrapState>(e) &&
             (m->statusFlags(sim, e) & kStInvisible) && !(m->statusFlags(sim, e) & kStRevealed)) so.visible = false;   // hidden trap
+        if (!so.visible && !blips.empty()) {
+            auto it = std::lower_bound(blips.begin(), blips.end(), e, [](Entity a, Entity b) { return a.index < b.index; });
+            so.blip = it != blips.end() && *it == e;
+        }
         out.objects.push_back(so);
     });
     // bodies of native modules (kHookScene): drawn as unit types

@@ -473,6 +473,13 @@ void GameClient::buildCommandCard(UiState& s) {
         add(tr("card.stop"), "S", false, simple(kCmdStop, selection_));
         add(tr("card.hold"), "H", false, simple(kCmdHold, selection_));
         add(tr("card.patrol"), "P", mode_ == Mode::Patrol, [this] { mode_ = Mode::Patrol; });
+        if (const FieldOps* fo = mod().fieldOps()) {   // field operations (rules repair / reclaim / selfDestruct)
+            if (!buildable.empty()) {
+                add(tr("card.repair"), "R", mode_ == Mode::Repair, [this] { mode_ = Mode::Repair; });
+                add(tr("card.reclaim"), "E", mode_ == Mode::Reclaim, [this] { mode_ = Mode::Reclaim; });
+            }
+            if (fo->selfDestructEnabled()) add(tr("card.self_destruct"), "", false, simple(kCmdSelfDestruct, selection_));
+        }
         pushSection(s, sec);
     }
     if (!buildable.empty()) {

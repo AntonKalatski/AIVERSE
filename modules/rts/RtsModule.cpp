@@ -63,6 +63,10 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     career_->setup(sim, *this, rulesJson);
     prompts_ = std::make_unique<Prompts>();   // script choice menus (rules "prompts"); nothing without the key
     prompts_->setup(sim, *this, rulesJson);
+    sensors_ = std::make_unique<Sensors>();     // radar, sonar, jammers, stealth, underwater (type keys); nothing without them
+    sensors_->setup(sim, *this, rulesJson);
+    fieldOps_ = std::make_unique<FieldOps>();   // repair / reclaim / stockpiles / ambient income ... ; nothing without the blocks
+    fieldOps_->setup(sim, *this, rulesJson, mapIn);
     driving_->loadMap(sim, mapIn, rulesJson["roadTypes"]);   // bridges and tunnels as second levels (map "decks", spline roads)
     arsenal_ = std::make_unique<Arsenal>();   // the hero's weapon slots, ammo, crates and money (rules "arsenal"); nothing without the block
     arsenal_->setup(sim, *this, rulesJson);
@@ -90,6 +94,7 @@ void RtsModule::setup(Simulation& sim, const Json& rulesIn, const Json& map) {
     if (rules_.originals) sim.addSystem("originals", [this](Simulation& s) { sysOriginals(s); }); // RtsOriginals.cpp
     if (rules_.fidelity) sim.addSystem("fidelity", [this](Simulation& s) { sysFidelity(s); });    // RtsFidelity.cpp
     sim.addSystem("targeting", [this](Simulation& s) { sysTargeting(s); });
+    if (fieldOps_->active()) sim.addSystem("fieldops", [this](Simulation& s) { fieldOps_->tick(s); });   // RtsFieldOps.cpp (games with field operations only)
     sim.addSystem("movement", [this](Simulation& s) { sysMovement(s); });
     if (state(sim).surface) sim.addSystem("transit", [this](Simulation& s) { sysTransit(s); });
     sim.addSystem("weapons", [this](Simulation& s) { sysWeapons(s); });
@@ -1066,6 +1071,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
     if (cmd.type == kCmdRaid) { if (raid_ && raid_->active()) raid_->command(sim, cmd); return; }   // RtsRaid.cpp
     if (progression_ && progression_->command(sim, cmd)) return;   // kCmdProgression (RtsProgression.cpp)
     if (prompts_ && prompts_->command(sim, cmd)) return;     // kCmdPrompt (RtsPrompt.cpp)
+    if (fieldOps_ && fieldOps_->command(sim, cmd)) return;   // kCmdRepair / kCmdReclaim / kCmdSelfDestruct (RtsFieldOps.cpp)
     if (career_ && career_->command(sim, cmd)) return;       // kCmdCareer (RtsCareer.cpp)
     if (commerce_ && commerce_->command(sim, cmd)) return;   // kCmdCommerce (RtsCommerce.cpp)
     if (driving_ && driving_->command(sim, cmd)) return;   // kCmdTopDownEnter (RtsDriving.cpp)
@@ -1405,7 +1411,7 @@ void RtsModule::applyCommand(Simulation& sim, const Command& cmd) {
                 }
                 if (towner == cmd.player && !t.builds.empty()) {
                     if (w.has<Construction>(tg)) { o.type = OrderType::Build; o.param = -1; issue(sim, e, o, queue); break; }
-                    if (tt.structure && w.get<Unit>(tg).hp < tt.maxHp) { o.type = OrderType::Repair; issue(sim, e, o, queue); break; }
+                    if ((tt.structure || (fieldOps_ && fieldOps_->repairsUnits())) && w.get<Unit>(tg).hp < tt.maxHp) { o.type = OrderType::Repair; issue(sim, e, o, queue); break; }
                 }
             } else {
                 // right click on a resource field
@@ -1689,6 +1695,7 @@ void RtsModule::hashState(Simulation& sim, Hasher& h) {
     if (commerce_ && commerce_->active()) commerce_->hash(sim, h);   // games with rules "commerce" only
     if (career_ && career_->active()) career_->hash(sim, h);         // games with rules "careers" only
     if (prompts_ && prompts_->active()) prompts_->hash(sim, h);      // games with rules "prompts" only
+    if (fieldOps_ && fieldOps_->active()) fieldOps_->hash(sim, h);   // games with field operations only
     if (arsenal_ && arsenal_->active()) arsenal_->hash(sim, h);   // games with rules "arsenal" only
     if (traffic_ && traffic_->active()) traffic_->hash(sim, h);   // games with rules "traffic" only
 }

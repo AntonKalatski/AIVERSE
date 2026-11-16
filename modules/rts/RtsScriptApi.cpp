@@ -918,7 +918,7 @@ int gEnableType(lua_State* L, Vm& vm) {
 }
 // ---------------------------------------------------------------- direct unit control and state queries (G4)
 const char* const kOrderNames[] = {"move", "attack_move", "attack", "patrol", "gather", "return", "build", "repair", "enter", "cast",
-                                   "dig", "claim_cell", "need", "haul", "board", "unload", "follow", "rearm", "trade", "pick_item", "merge"};
+                                   "dig", "claim_cell", "need", "haul", "board", "unload", "follow", "rearm", "trade", "pick_item", "merge", "reclaim"};
 void pushOrder(lua_State* L, const Order& o) {
     lua_createtable(L, 0, 6);
     const size_t k = size_t(o.type);

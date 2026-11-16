@@ -1,0 +1,12 @@
+{
+  "protocol": 1,
+  "name": "hpi",
+  "title": "Cavedog HPI archive (Total Annihilation .hpi / .ufo / .ccx / .gp3)",
+  "version": "1.0.0",
+  "extensions": [".hpi", ".ufo", ".ccx", ".gp3", ".gp4", ".swx"],
+  "magic": [{"offset": 0, "ascii": "HAPI"}],
+  "capabilities": ["probe", "list", "extract"],
+  "external": true,
+  "command": ["python3", "unpack.py"],
+  "command_windows": ["py", "-3", "unpack.py"]
+}
