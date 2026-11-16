@@ -163,6 +163,25 @@ void MapGrid::hpaRefresh(HpaGraph& G) {
 }
 
 bool MapGrid::hpaPath(int sx, int sy, int gx, int gy, uint8_t layer, std::vector<int>& cells) {
+    std::vector<int> way;
+    if (!hpaRoute(sx, sy, gx, gy, layer, way)) return false;
+    const int k = HpaGraph::kC;
+    // refine: A* between consecutive waypoints (in or next to one cluster, so each search stays small)
+    cells.clear();
+    cells.push_back(way[0]);
+    std::vector<int> seg;
+    for (size_t i = 0; i + 1 < way.size(); ++i) {
+        int a = way[i], b = way[i + 1];
+        if (std::max(std::abs(a % w - b % w), std::abs(a / w - b / w)) <= 1) { cells.push_back(b); continue; }
+        seg.clear();
+        if (!astarCells(a % w, a / w, b % w, b / w, layer, 4 * k * k, seg)) return false;
+        cells.insert(cells.end(), seg.begin() + 1, seg.end());
+    }
+    return true;
+}
+
+// Abstract HPA* route: start cell, entrance cells..., goal cell (consecutive cells share a cluster or a border step).
+bool MapGrid::hpaRoute(int sx, int sy, int gx, int gy, uint8_t layer, std::vector<int>& way) {
     HpaGraph& G = hpaFor(layer);
     hpaRefresh(G);
     const int k = HpaGraph::kC;
@@ -237,20 +256,9 @@ bool MapGrid::hpaPath(int sx, int sy, int gx, int gy, uint8_t layer, std::vector
         if (c == cg) relax(cur.id, T, toT[li]);
     }
     if (!found) return false;
-    std::vector<int> way;
+    way.clear();
     for (int32_t id = T; id != -1; id = par[size_t(id)]) way.push_back(cellOf(id));
     std::reverse(way.begin(), way.end());
-    // refine: A* between consecutive waypoints (in or next to one cluster, so each search stays small)
-    cells.clear();
-    cells.push_back(way[0]);
-    std::vector<int> seg;
-    for (size_t i = 0; i + 1 < way.size(); ++i) {
-        int a = way[i], b = way[i + 1];
-        if (std::max(std::abs(a % w - b % w), std::abs(a / w - b / w)) <= 1) { cells.push_back(b); continue; }
-        seg.clear();
-        if (!astarCells(a % w, a / w, b % w, b / w, layer, 4 * k * k, seg)) return false;
-        cells.insert(cells.end(), seg.begin() + 1, seg.end());
-    }
     return true;
 }
 

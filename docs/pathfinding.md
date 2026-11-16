@@ -13,6 +13,7 @@ face seams and cube corners (7 neighbours) are ordinary steps.
 | HPA* | `RtsHpa.cpp` (flat, maps >= 256x256), `RtsHpaSphere.cpp` (planet bodies >= 65,536 cells) | one unit's long trip: entrance graph of 16x16 clusters, then A* between consecutive waypoints |
 | flow fields | `RtsFlowField.cpp` | many units to one goal: group orders >= `movement.flowField.minGroup`, map / lane waves with `waves: true` |
 | navigation mesh | `engine/nav/NavMesh.h` (genre-independent), `MapGrid::navPath` | opt-in `movement.pathfinding: "navmesh"`: one unit's path on flat maps, any angle (docs/navmesh.md) |
+| hybrid | `MapGrid::hybridPath` (HPA* graph + navmesh / grid per cluster) | opt-in `movement.pathfinding: "hybrid"`: big or mixed flat maps; flow fields on the same cluster graph |
 
 `MapGrid::findPath` picks A* or HPA* (string pulling on top). Flow fields are opt-in per game or map
 (docs/game-format.md "Movement and bodies"); without `movement.flowField` nothing changes.
@@ -35,7 +36,26 @@ face seams and cube corners (7 neighbours) are ordinary steps.
 - **Fallback.** Start or goal off the mesh, no connection within the budget, `soft` paths: the grid search runs as
   before, so unreachable goals still end at the closest reachable cell. `MapGrid::navStats` counts answers / fallbacks.
 - **Measured** (`engine/nav` alone, VM, random obstacles): 256x256 build 4 ms, 1024x1024 build 86 ms, rebuild after a
-  3x3 structure 0.3 ms, path query 0.05 ms (256²) / 0.7 ms (1024²); paths ~7% shorter than octile grid paths.
+  3x3 structure 0.3 ms, path query 0.05 ms (256²) / 0.7 ms (1024²); paths ~7% shorter than octile grid paths and about
+  as long as the string-pulled grid paths. Mode comparison on real and synthetic maps: docs/navmesh.md.
+
+## Hybrid (`movement.pathfinding: "hybrid"`)
+
+One graph, a solver per area:
+
+- **Graph.** The HPA* clusters (16x16) with their border entrances and integer intra-cluster costs are the portal graph
+  of the whole map - at any map size, not only from 256x256. Long routes are searched on it with exact grid costs, so
+  costs of different solvers never mix.
+- **Solver per cluster.** The navmesh uses tiles = clusters with `maxRectRatio = movement.hybrid.mazeRatio` (default
+  0.15): open clusters keep rectangles, maze clusters get none and are left to grid A*. Classes are a pure function of
+  the cluster's cells and change with them (structures, digging).
+- **Trips.** Within 2 clusters: the navmesh when both ends are in open clusters, else the grid search. Longer: the HPA*
+  route (`hpaRoute`), each leg refined by its cluster's solver (navmesh corners or A* cells), the joined polyline
+  string-pulled with the grid line test (look-ahead 48). No route on the graph = unreachable: the grid search does not
+  repeat HPA*, it only finds the closest reachable cell.
+- **Flow fields.** `flowHierFor` is true on every hybrid map (`flatHierarchy`): fields use the same cluster graph
+  (hierarchical values, clusters computed lazily) instead of whole-map Dijkstra on small maps.
+- **Keys.** `movement.hybrid.mazeRatio` (rules or map, 0.01..1). `--bench-nav` / `--bench-ratio` measure a map.
 
 ## Flow fields
 

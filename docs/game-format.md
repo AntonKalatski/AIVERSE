@@ -237,6 +237,12 @@ any tag in `deficitDisables`).
   cheap on 1024x1024 maps). Cliffs, ramps, slopes and structures are respected; searches it can't answer (start or goal
   off the mesh, unreachable goals, surround-allies paths) use the grid search as before. Planets keep the grid / HPA*.
   Different waypoints than the grid, so it is opt-in.
+- `movement.pathfinding: "hybrid"` (rules or map): one portal graph for the map (the 16x16 HPA* clusters, at any map
+  size) and a solver per cluster - navmesh rectangles in open clusters, grid A* in maze clusters (more than
+  `movement.hybrid.mazeRatio` rectangles per cell, default 0.15: `"hybrid": {"mazeRatio": 0.15}`). Long trips follow
+  the graph, legs use their cluster's solver, the result is string-pulled; flow fields use the same cluster graph.
+  For big or mixed maps (cities, caves, mazes next to open land); measure a map with `aiverse_headless --bench-nav N`
+  (docs/navmesh.md § Which solver where).
 - `movement.airOverRock: false` (default `true`): fliers are confined to open cells - ground and water - so they
   follow tunnels like everyone else instead of crossing undug rock and `#` (`MapGrid::airSolid`; their paths are
   searched like walkers', structures and units still don't block them). Dungeon games (`underlord`).

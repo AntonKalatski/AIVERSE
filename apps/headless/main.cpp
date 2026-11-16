@@ -82,6 +82,9 @@ struct Args {
     bool verifyRestore = false;
     uint32_t restoreAt = 0, restoreTicks = 100; // bounded forward interval, then both restoration paths
     int benchPaths = 0;   // >0: time that many path queries (HPA* vs plain A*) and exit
+    int benchClear = 0;   // --bench-nav: clearance (cells) of the queries
+    Fixed benchRatio;     // --bench-ratio: hybrid maze ratio for --bench-nav (default: rules)
+    int benchNav = 0;     // >0: compare path modes (grid / navmesh / hybrid) on that many queries + per-tile solver report
     int benchBody = -1;
     std::string checksumLog; // --checksum-log FILE: "tick checksum" every checksum interval (tools/determinism/diff.py)
     std::string tickTimes;  // --tick-times FILE: wall time of every simulation step, "tick microseconds" per line
@@ -197,6 +200,114 @@ static int benchPaths(Simulation& sim, const Args& a) {
     return 0;
 }
 
+// Path mode comparison (docs/navmesh.md): the same random ground queries with grid A* / HPA*, the navmesh and the
+// hybrid; then, per 16x16 tile, which solver answers paths inside the tile faster, bucketed by the tile's
+// rectangles-per-cell ratio (what movement.hybrid.mazeRatio thresholds). Wall-clock numbers: diagnostics only.
+static int benchNav(Simulation& sim, const Args& a) {
+    using clk = std::chrono::steady_clock;
+    auto ms = [](clk::time_point t) { return std::chrono::duration<double, std::milli>(clk::now() - t).count(); };
+    auto* m = dynamic_cast<game::RtsModule*>(&sim.module());
+    game::MapGrid& g = m->state(sim).grid;
+    if (g.surf) { std::printf("--bench-nav: flat maps only (planets keep the grid / HPA*)\n"); return 2; }
+    const uint8_t layer = game::kLayerGround;
+    const uint8_t keep = g.pathMode;
+    if (a.benchRatio.raw > 0) g.hybridMazeRatio = a.benchRatio;
+    Random rng(a.seed);
+    std::vector<std::pair<Vec3, Vec3>> q;
+    for (int tries = 0; int(q.size()) < a.benchNav && tries < a.benchNav * 1000; ++tries) {
+        int x0 = int(rng.below(uint32_t(g.w))), y0 = int(rng.below(uint32_t(g.h))), x1 = int(rng.below(uint32_t(g.w))), y1 = int(rng.below(uint32_t(g.h)));
+        if (g.passable(x0, y0, layer) && g.passable(x1, y1, layer)) q.push_back({g.cellCenter(x0, y0), g.cellCenter(x1, y1)});
+    }
+    g.updateClearance();
+    std::printf("Map %dx%d, %zu queries (ground layer)\n", g.w, g.h, q.size());
+    const char* names[3] = {"grid", "navmesh", "hybrid"};
+    for (uint8_t mode = 0; mode < 3; ++mode) {
+        g.setPathMode(mode);
+        g.navStats[0] = g.navStats[1] = 0;
+        auto t = clk::now();
+        g.prepareNavMesh(layer);
+        const double build = ms(t);
+        std::vector<Vec3> path;
+        int found = 0;
+        double total = 0, worst = 0, length = 0, okMs = 0;
+        size_t points = 0;
+        for (auto& [s, e] : q) {
+            auto t1 = clk::now();
+            const bool ok = g.findPath(s, e, layer, path, 40000, a.benchClear);
+            const double d = ms(t1);
+            if (ok) { ++found; okMs += d; }
+            total += d; worst = std::max(worst, d); points += path.size();
+            Vec3 p = s;
+            for (auto& wp : path) { length += (wp - p).xz().length().toDouble(); p = wp; }
+        }
+        std::printf("%-8s build %7.1f ms  found=%d avg=%.3f ms (found %.3f, unreachable %.3f) max=%.2f ms waypoints=%zu length=%.0f  (mesh answered %d, fell back %d)\n",
+                    names[mode], build, found, total / double(std::max<size_t>(1, q.size())), okMs / std::max(1, found),
+                    (total - okMs) / std::max<double>(1, double(q.size()) - found), worst, points, length, g.navStats[0], g.navStats[1]);
+        if (mode == game::MapGrid::kPathHybrid) {
+            const nav::Mesh* mesh = g.navMeshFor(layer);
+            int coarse = 0, open = 0, empty = 0;
+            for (size_t i = 0; i < mesh->tileCount(); ++i) { auto ti = mesh->tileInfo(i); if (!ti.spans) ++empty; else (ti.coarse ? coarse : open)++; }
+            std::printf("         tiles: %d navmesh, %d grid (maze, ratio > %.2f), %d without ground\n", open, coarse, g.hybridMazeRatio.toDouble(), empty);
+        }
+    }
+    // per tile: grid A* vs navmesh inside the tile (no classification), by rectangles per cell
+    g.setPathMode(game::MapGrid::kPathNavMesh);
+    nav::Mesh tiles;
+    struct GroundSource final : nav::Source {
+        const game::MapGrid& g;
+        explicit GroundSource(const game::MapGrid& grid) : g(grid) {}
+        void spans(int32_t x, int32_t z, std::vector<nav::Span>& out) const override { if (g.passable(x, z, game::kLayerGround)) out.push_back({}); }
+        bool link(int32_t x0, int32_t z0, uint32_t, int32_t x1, int32_t z1, uint32_t) const override {
+            return g.canStep(x0, z0, x1, z1, game::kLayerGround) && g.canStep(x1, z1, x0, z0, game::kLayerGround);
+        }
+    } src(g);
+    nav::Config tc; tc.width = g.w; tc.depth = g.h; tc.tile = game::HpaGraph::kC;
+    tiles.build(src, tc);
+    struct Bucket { int tiles = 0, queries = 0; double grid = 0, nav = 0; };
+    const double edges[] = {0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 1.01};
+    Bucket buckets[9];
+    std::vector<Vec3> path;
+    nav::Query nq; nq.margin = Fixed::fromRatio(1, 2); nq.yTolerance = Fixed::fromInt(1 << 20); nq.maxVisits = 4 * 16 * 16;
+    const size_t stride = std::max<size_t>(1, tiles.tileCount() / 512);   // big maps: a sample of the tiles
+    for (size_t i = 0; i < tiles.tileCount(); i += stride) {
+        const auto ti = tiles.tileInfo(i);
+        if (ti.spans < 8) continue;
+        const double ratio = double(ti.merged) / double(ti.spans);
+        int b = 0;
+        while (ratio >= edges[b] && b < 8) ++b;
+        Bucket& bk = buckets[b];
+        ++bk.tiles;
+        std::vector<std::pair<Vec3, Vec3>> tq;   // pairs inside the tile, connected through it (grid finds them)
+        for (int tries = 0; tq.size() < 12 && tries < 200; ++tries) {
+            int x0 = ti.x0 + int(rng.below(uint32_t(ti.w))), y0 = ti.z0 + int(rng.below(uint32_t(ti.d)));
+            int x1 = ti.x0 + int(rng.below(uint32_t(ti.w))), y1 = ti.z0 + int(rng.below(uint32_t(ti.d)));
+            if (g.passable(x0, y0, layer) && g.passable(x1, y1, layer) && !g.lineWalkable(x0, y0, x1, y1, layer)) tq.push_back({g.cellCenter(x0, y0), g.cellCenter(x1, y1)});
+        }
+        for (auto& [s, e] : tq) {
+            g.setPathMode(game::MapGrid::kPathGrid);
+            auto t = clk::now();
+            bool gridOk = false, navOk = false;
+            for (int r = 0; r < 20; ++r) gridOk = g.findPath(s, e, layer, path, 4 * 16 * 16);
+            const double gt = ms(t) / 20;
+            t = clk::now();
+            for (int r = 0; r < 20; ++r) navOk = tiles.findPath(s, e, nq, path);
+            const double nt = ms(t) / 20;
+            if (!gridOk || !navOk) continue;   // compare paths both answer within their local budgets
+            bk.grid += gt; bk.nav += nt;
+            ++bk.queries;
+        }
+    }
+    g.setPathMode(keep);
+    std::printf("Per 16x16 tile, paths inside the tile (blocked straight line): rectangles/cell -> avg us grid vs navmesh\n");
+    double lo = 0;
+    for (int b = 0; b < 9; ++b) {
+        const Bucket& bk = buckets[b];
+        if (bk.tiles) std::printf("  ratio %.2f-%.2f: %4d tiles, %5d queries  grid %7.2f us  navmesh %7.2f us  -> %s\n", lo, std::min(1.0, edges[b]), bk.tiles, bk.queries,
+                                   bk.queries ? 1000 * bk.grid / bk.queries : 0.0, bk.queries ? 1000 * bk.nav / bk.queries : 0.0, bk.nav < bk.grid ? "navmesh" : "grid");
+        lo = edges[b];
+    }
+    return 0;
+}
 
 static void printProfile(Simulation& sim) {
     int64_t tot = 0;
@@ -392,6 +503,7 @@ static int play(const Args& a) {
 
     if (a.profile) sim.setProfileClock([] { return int64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()); });
     if (a.benchPaths > 0) return benchPaths(sim, a);
+    if (a.benchNav > 0) return benchNav(sim, a);
     if (a.benchGroup > 0) return benchGroup(sim, a);
     std::vector<game::RtsAI> bots;
     for (auto& p : sim.players()) bots.emplace_back(p.slot, a.seed);
@@ -583,6 +695,9 @@ int main(int argc, char** argv) {
         else if (k == "--checksum-log") a.checksumLog = next();
         else if (k == "--dump") a.dump = true;
         else if (k == "--bench-paths") a.benchPaths = std::stoi(next());
+        else if (k == "--bench-nav") a.benchNav = std::stoi(next());
+        else if (k == "--bench-clear") a.benchClear = std::stoi(next());
+        else if (k == "--bench-ratio") a.benchRatio = Fixed::parse(next());
         else if (k == "--bench-body") a.benchBody = std::stoi(next());
         else if (k == "--bench-group") a.benchGroup = std::stoi(next());
         else if (k == "--bench-flow") a.benchFlow = next() == "on" ? 1 : 0;
@@ -600,7 +715,7 @@ int main(int argc, char** argv) {
         else if (k == "--gen-out") a.genOut = next();
         else { std::printf("usage: aiverse_headless --project DIR [--map FILE] [--seed N] [--record F] [--save F --save-at S] [--load F] [--tick-times F] [--checksum-log F] [--verify-restore-at S --verify-restore-ticks N] [--generate PRESET [--players N] [--symmetry S] [--gen-params JSON] [--gen-out F]] | --replay F\n"); return 2; }
     }
-    if (a.verifyRestore && (!a.replay.empty() || a.benchPaths>0 || a.benchGroup>0 || a.maxSeconds==0)) { std::fprintf(stderr,"restore verification requires a normal match\n");return 2; }
+    if (a.verifyRestore && (!a.replay.empty() || a.benchPaths>0 || a.benchNav>0 || a.benchGroup>0 || a.maxSeconds==0)) { std::fprintf(stderr,"restore verification requires a normal match\n");return 2; }
     try {
         if(a.replay.empty()&&Json::parseFile(a.project+"/game.json").getStr("module","rts")=="fps")return playFps(a);
         return a.replay.empty() ? play(a) : replay(a);

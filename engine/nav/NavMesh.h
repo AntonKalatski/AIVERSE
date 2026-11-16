@@ -42,7 +42,13 @@ struct Config {
     int32_t tile = 32;                 // rectangles never cross tile borders (local rebuilds)
     bool flat = true;                  // merge only spans of equal height (false: any linked spans)
     uint32_t maxSpans = 1u << 24;      // build fails beyond this (explicit, never truncated)
+    // Tile classification (0: off): a tile whose merge gives more than maxRectRatio rectangles per span is "coarse" -
+    // a maze where rectangles shrink to cells and buy nothing. It keeps no rectangles; callers route through it with
+    // their own solver (RTS hybrid pathing: grid A*). Pure function of the tile, so classes refresh with the tile.
+    Fixed maxRectRatio;
 };
+
+struct TileInfo { int32_t x0 = 0, z0 = 0, w = 0, d = 0; uint32_t spans = 0, merged = 0; bool coarse = false; };
 
 struct Rect {
     int32_t x0 = 0, z0 = 0, x1 = 0, z1 = 0;   // inclusive column bounds
@@ -65,6 +71,11 @@ struct Query {
     Fixed yTolerance = Fixed::fromInt(1);    // locating points among stacked spans
     size_t maxVisits = 8192;                 // rectangles expanded by A* before giving up
     const std::vector<Fixed>* areaCost = nullptr;   // per area id cost multiplier (missing: 1)
+    // Corridor search. false (default): A* over rectangles, entering each at the point where the straight line to the
+    // goal meets the portal - fast (open areas: ~3x the grid), but now and then a longer corridor (a few % on open
+    // maps). true: A* over portal points (both shrunk ends + middle) - the best corridor of those points, paths a few
+    // % shorter than string-pulled grid paths at about grid speed in open areas; slow in mazes (many tiny portals).
+    bool bestCorridor = false;
 };
 
 class Mesh {
@@ -132,11 +143,33 @@ public:
         }
         base_.assign(tiles_.size() + 1, 0);
         for (size_t i = 0; i < tiles_.size(); ++i) base_[i + 1] = base_[i] + uint32_t(tiles_[i].rects.size());
+        // portal slots (dense, rectangle order) for the portal-point search
+        slotBase_.assign(rectCount() + 1, 0);
+        slotOwner_.clear(); slotIndex_.clear(); slotPortal_.clear(); slotTarget_.clear(); rectArea_.clear();
+        for (uint32_t id = 0; id < rectCount(); ++id) {
+            const auto& ps = portals(id);
+            rectArea_.push_back(rect(id).area);
+            slotBase_[id + 1] = slotBase_[id] + uint32_t(ps.size());
+            for (uint32_t i = 0; i < ps.size(); ++i) {
+                slotOwner_.push_back(id); slotIndex_.push_back(i); slotPortal_.push_back(&ps[i]); slotTarget_.push_back(idOf(ps[i].tile, ps[i].rect));
+            }
+        }
         anyDirty_ = false;
         ++revision_;
         return true;
     }
     uint64_t revision() const { return revision_; }
+    size_t lastVisits() const { return lastVisits_; }   // rectangles the last rectangle search expanded (diagnostics)
+
+    // Tiles (classification, statistics). merged: rectangles the merge produced (also for coarse tiles).
+    size_t tileCount() const { return tiles_.size(); }
+    int32_t tileSize() const { return cfg_.tile; }
+    TileInfo tileInfo(size_t i) const {
+        const Tile& t = tiles_[i];
+        return {t.x0, t.z0, t.w, t.d, uint32_t(t.spans.size()), t.merged, t.coarse};
+    }
+    // Column (x, z) lies in a coarse tile (or outside the mesh).
+    bool coarseAt(int32_t x, int32_t z) const { return !inside(x, z) || tiles_[tileIndex(x, z)].coarse; }
 
     // Rectangles: dense ids in tile order, stable until a refresh rebuilds tiles.
     size_t rectCount() const { return base_.empty() ? 0 : base_.back(); }
@@ -185,6 +218,7 @@ public:
             if (corridor) corridor->push_back(*s);
             return true;
         }
+        if (q.bestCorridor) return portalSearch(from, to, *s, *g, q, out, corridor);
         const size_t n = rectCount();
         if (gCost_.size() != n) { gCost_.assign(n, Fixed{}); stamp_.assign(n, 0); parent_.assign(n, kNone); via_.assign(n, kNone); entry_.assign(n, Vec2{}); closed_.assign(n, 0); }
         if (++search_ == 0) { std::fill(stamp_.begin(), stamp_.end(), 0u); search_ = 1; }
@@ -222,6 +256,7 @@ public:
                 open(nb, gc, at, cur.id, pi);
             }
         }
+        lastVisits_ = q.maxVisits - visits;
         if (!found) return false;
         std::vector<const Portal*> chain;
         for (uint32_t id = *g; parent_[id] != kNone; id = parent_[id]) {
@@ -240,7 +275,7 @@ public:
     uint64_t digest() const {
         Hasher h;
         for (const Tile& t : tiles_) {
-            h.u32(uint32_t(t.rects.size()));
+            h.u32(uint32_t(t.rects.size())); h.u32(t.coarse);
             for (size_t i = 0; i < t.rects.size(); ++i) {
                 const Rect& r = t.rects[i];
                 h.i32(r.x0); h.i32(r.z0); h.i32(r.x1); h.i32(r.z1); h.fx(r.y); h.u32(r.area);
@@ -253,7 +288,8 @@ public:
 private:
     struct Tile {
         int32_t x0 = 0, z0 = 0, w = 0, d = 0;
-        bool dirty = true;
+        bool dirty = true, coarse = false;
+        uint32_t merged = 0;
         std::vector<uint32_t> colFirst;    // w * d + 1, local columns row-major
         std::vector<Span> spans;
         std::vector<uint32_t> spanRect;    // per span: rectangle index in the tile (kNone: none)
@@ -268,12 +304,90 @@ private:
     uint64_t revision_ = 0;
     std::vector<Tile> tiles_;
     std::vector<uint32_t> base_;
+    std::vector<uint32_t> slotBase_, slotOwner_, slotIndex_, slotTarget_;
+    std::vector<const Portal*> slotPortal_;   // valid until the next refresh
+    std::vector<uint16_t> rectArea_;
+    mutable std::vector<Fixed> pg_;
+    mutable std::vector<uint32_t> pstamp_, pparent_;
+    mutable std::vector<uint8_t> pclosed_;
+    mutable uint32_t psearch_ = 0;
+
+    // A* over portal points: three points per portal (both shrunk ends and the middle), costs = straight distances
+    // between points of portals of one rectangle (scaled by its area cost). The corridor of the best point route then
+    // goes through the funnel. Ties by node id.
+    bool portalSearch(Vec3 from, Vec3 to, uint32_t s, uint32_t g, const Query& q, std::vector<Vec3>& out, std::vector<uint32_t>* corridor) const {
+        const size_t nodes = size_t(slotOwner_.size()) * 3, T = nodes;
+        if (pg_.size() != nodes + 1) { pg_.assign(nodes + 1, Fixed{}); pstamp_.assign(nodes + 1, 0); pparent_.assign(nodes + 1, kNone); pclosed_.assign(nodes + 1, 0); }
+        if (++psearch_ == 0) { std::fill(pstamp_.begin(), pstamp_.end(), 0u); psearch_ = 1; }
+        const Vec2 goal = to.xz();
+        auto point = [&](uint32_t slot, int k) {
+            const Portal& p = *slotPortal_[slot];
+            Fixed lo, hi;
+            interval(p, q.margin, lo, hi);
+            const Fixed v = k == 0 ? lo : k == 1 ? (lo + hi) / 2 : hi;
+            return p.side < 2 ? Vec2{p.fixed, v} : Vec2{v, p.fixed};
+        };
+        auto mulOf = [&](uint32_t rid) { const uint16_t a = rectArea_[rid]; return q.areaCost && a < q.areaCost->size() ? (*q.areaCost)[a] : Fixed::fromInt(1); };
+        struct Node { Fixed f; uint32_t id; };
+        auto worse = [](const Node& a, const Node& b) { return a.f != b.f ? a.f > b.f : a.id > b.id; };
+        std::vector<Node> heap;
+        auto relax = [&](uint32_t node, Fixed gc, Fixed h, uint32_t par) {
+            if (pstamp_[node] == psearch_ && (pclosed_[node] || gc >= pg_[node])) return;
+            pstamp_[node] = psearch_; pclosed_[node] = 0; pg_[node] = gc; pparent_[node] = par;
+            heap.push_back({gc + h, uint32_t(node)});
+            std::push_heap(heap.begin(), heap.end(), worse);
+        };
+        uint32_t prevRect = kNone;
+        auto expand = [&](uint32_t rid, Vec2 at, Fixed gc, uint32_t par) {   // from a point inside rectangle rid
+            const Fixed mul = mulOf(rid);
+            for (uint32_t slot = slotBase_[rid]; slot < slotBase_[rid + 1]; ++slot) {
+                if (slotTarget_[slot] == prevRect) continue;   // never straight back through the portal just crossed
+                const Portal& p = *slotPortal_[slot];
+                const int kinds = p.hi - p.lo > q.margin * 4 ? 3 : 1;   // short portals: their middle only
+                for (int k = 0; k < kinds; ++k) {
+                    const int kk = kinds == 1 ? 1 : k;
+                    const Vec2 pt = point(slot, kk);
+                    relax(slot * 3 + uint32_t(kk), gc + (pt - at).length() * mul, (goal - pt).length(), par);
+                }
+            }
+            if (rid == g) relax(uint32_t(T), gc + (goal - at).length() * mul, Fixed{}, par);
+        };
+        expand(s, from.xz(), Fixed{}, kNone);
+        size_t visits = q.maxVisits * 3;
+        bool found = false;
+        while (!heap.empty()) {
+            std::pop_heap(heap.begin(), heap.end(), worse);
+            const Node cur = heap.back();
+            heap.pop_back();
+            if (pclosed_[cur.id]) continue;
+            pclosed_[cur.id] = 1;
+            if (cur.id == T) { found = true; break; }
+            if (visits == 0) break;
+            --visits;
+            const uint32_t slot = cur.id / 3;
+            prevRect = slotOwner_[slot];
+            expand(slotTarget_[slot], point(slot, int(cur.id % 3)), pg_[cur.id], cur.id);
+        }
+        if (!found) return false;
+        std::vector<const Portal*> chain;
+        std::vector<uint32_t> ids{g};
+        for (uint32_t node = pparent_[T]; node != kNone; node = pparent_[node]) {
+            const uint32_t slot = node / 3;
+            chain.push_back(slotPortal_[slot]);
+            ids.push_back(slotOwner_[slot]);
+        }
+        std::reverse(chain.begin(), chain.end());
+        if (corridor) { *corridor = ids; std::reverse(corridor->begin(), corridor->end()); }
+        funnel(from, to, chain, ids, q.margin, out);
+        return true;
+    }
     // search scratch (derived, never part of the result)
     mutable std::vector<Fixed> gCost_;
     mutable std::vector<uint32_t> stamp_, parent_, via_;
     mutable std::vector<Vec2> entry_;
     mutable std::vector<uint8_t> closed_;
     mutable uint32_t search_ = 0;
+    mutable size_t lastVisits_ = 0;
 
     std::pair<uint32_t, uint32_t> split(uint32_t id) const {
         const uint32_t t = uint32_t(std::upper_bound(base_.begin(), base_.end(), id) - base_.begin()) - 1;
@@ -353,6 +467,10 @@ private:
                     t.rects.push_back({t.x0 + lx, t.z0 + lz, t.x0 + lx + int32_t(row.size()) - 1, t.z0 + lz1, t.spans[s].y, t.spans[s].area});
                 }
             }
+        t.merged = uint32_t(t.rects.size());
+        t.coarse = cfg_.maxRectRatio.raw > 0 && !t.spans.empty() &&
+                   int64_t(t.rects.size()) * Fixed::kOne > cfg_.maxRectRatio.raw * int64_t(t.spans.size());
+        if (t.coarse) { t.rects.clear(); std::fill(t.spanRect.begin(), t.spanRect.end(), kNone); }
         t.portals.assign(t.rects.size(), {});
     }
 

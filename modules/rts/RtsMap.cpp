@@ -363,8 +363,11 @@ bool MapGrid::findPath(Vec3 from, Vec3 to, uint8_t layer, std::vector<Vec3>& out
     if (goalOk && lineWalkable(sx, sy, gx, gy, layer)) { out.push_back(to); return true; }
 
     // navigation mesh (opt-in): any-angle path through merged rectangles; what it can't answer goes to the grid search
-    if (navMesh && goalOk && !pathSoft_) {
-        if (navPath(from, to, sx, sy, layer, maxNodes, clear, out)) { ++navStats[0]; return true; }
+    hybridNoRoute_ = false;
+    if (pathMode != kPathGrid && goalOk && !pathSoft_) {
+        const bool ok = pathMode == kPathHybrid ? hybridPath(from, to, sx, sy, gx, gy, layer, maxNodes, clear, out)
+                                                : navPath(from, to, sx, sy, layer, maxNodes, clear, out);
+        if (ok) { ++navStats[0]; return true; }
         ++navStats[1];
         out.clear();
     }
@@ -372,7 +375,7 @@ bool MapGrid::findPath(Vec3 from, Vec3 to, uint8_t layer, std::vector<Vec3>& out
     std::vector<int> cells;
     bool found = false, routed = false;
     // long trips on big maps: HPA* route refined with A* (plain A* would run out of nodes)
-    if (!routed && bigMap() && goalOk && std::max(std::abs(gx - sx), std::abs(gy - sy)) > 2 * HpaGraph::kC) {
+    if (!routed && bigMap() && goalOk && !hybridNoRoute_ && std::max(std::abs(gx - sx), std::abs(gy - sy)) > 2 * HpaGraph::kC) {
         routed = found = hpaPath(sx, sy, gx, gy, layer, cells);
         ++hpaStats[routed ? 0 : 1];
     }
@@ -540,14 +543,15 @@ nav::Mesh& MapGrid::navFor(uint8_t layer) {
         n = &nav_.back();
         nav::Config c;
         c.width = w; c.depth = h;
-        c.tile = 32;
+        c.tile = pathMode == kPathHybrid ? HpaGraph::kC : 32;   // hybrid: tiles = HPA* clusters
+        if (pathMode == kPathHybrid) c.maxRectRatio = hybridMazeRatio;
         n->mesh.build(src, c);
     } else if (n->mesh.dirty()) n->mesh.refresh(src);
     return n->mesh;
 }
 
 const nav::Mesh* MapGrid::navMeshFor(uint8_t layer) {
-    if (!navMesh || surf || w <= 0 || h <= 0) return nullptr;
+    if (pathMode == kPathGrid || surf || w <= 0 || h <= 0) return nullptr;
     return &navFor(layer);
 }
 
@@ -565,6 +569,59 @@ bool MapGrid::navPath(Vec3 from, Vec3 to, int sx, int sy, uint8_t layer, int max
     if (!m.findPath(a, b, q, pts)) return false;
     for (size_t i = 1; i + 1 < pts.size(); ++i) out.push_back({pts[i].x, Fixed{}, pts[i].z});
     out.push_back(to);
+    return true;
+}
+
+// Hybrid: short trips go to the cluster solver directly (navmesh when both ends are in open clusters, else the grid
+// search of the caller); long trips take the HPA* route over cluster portals and refine each leg with the solver of
+// its cluster, then pull the joined polyline straight across clusters (bounded look-ahead like the grid path).
+bool MapGrid::hybridPath(Vec3 from, Vec3 to, int sx, int sy, int gx, int gy, uint8_t layer, int maxNodes, int clear, std::vector<Vec3>& out) {
+    const nav::Mesh& m = navFor(layer);
+    const int k = HpaGraph::kC;
+    nav::Query q;
+    q.margin = Fixed::fromRatio(1, 2) * int64_t(1 + clear);
+    q.yTolerance = Fixed::fromInt(1 << 20);
+    q.maxVisits = size_t(std::max(1, maxNodes));
+    Vec3 a = cellX(from.x) == sx && cellY(from.z) == sy ? from : cellCenter(sx, sy);
+    a.y = Fixed{};
+    Vec3 b = to;
+    b.y = Fixed{};
+    std::vector<Vec3> pts;
+    if (std::max(std::abs(gx - sx), std::abs(gy - sy)) <= 2 * k) {
+        if (m.coarseAt(sx, sy) || m.coarseAt(gx, gy) || !m.findPath(a, b, q, pts)) return false;   // maze end: grid
+        for (size_t i = 1; i + 1 < pts.size(); ++i) out.push_back({pts[i].x, Fixed{}, pts[i].z});
+        out.push_back(to);
+        return true;
+    }
+    std::vector<int> way;
+    if (!hpaRoute(sx, sy, gx, gy, layer, way)) { hybridNoRoute_ = true; return false; }   // the grid search skips HPA*
+    std::vector<Vec3> poly{a}, leg;
+    std::vector<int> seg;
+    nav::Query lq = q;
+    lq.maxVisits = size_t(k * k);   // a leg stays in (or next to) one cluster
+    for (size_t i = 0; i + 1 < way.size(); ++i) {
+        const int A = way[i], B = way[i + 1];
+        const Vec3 pb = i + 2 == way.size() ? b : cellCenter(B % w, B / w);
+        if (std::max(std::abs(A % w - B % w), std::abs(A / w - B / w)) <= 1) { poly.push_back(pb); continue; }   // border step
+        if (!m.coarseAt(A % w, A / w) && !m.coarseAt(B % w, B / w) && m.findPath(poly.back(), pb, lq, leg)) {
+            poly.insert(poly.end(), leg.begin() + 1, leg.end());
+            continue;
+        }
+        seg.clear();
+        if (!astarCells(A % w, A / w, B % w, B / w, layer, 4 * k * k, seg)) return false;
+        for (size_t j = 1; j < seg.size(); ++j) poly.push_back(j + 1 == seg.size() ? pb : cellCenter(seg[j] % w, seg[j] / w));
+    }
+    // string pulling over the joined legs (cells of the points, the grid's line test)
+    size_t i = 0;
+    const size_t window = 48;
+    while (i + 1 < poly.size()) {
+        size_t j = std::min(poly.size() - 1, i + window);
+        const int ax = cellX(poly[i].x), ay = cellY(poly[i].z);
+        while (j > i + 1 && !lineWalkable(ax, ay, cellX(poly[j].x), cellY(poly[j].z), layer)) --j;
+        out.push_back(j + 1 == poly.size() ? to : Vec3{poly[j].x, Fixed{}, poly[j].z});
+        i = j;
+    }
+    if (out.empty()) out.push_back(to);
     return true;
 }
 
