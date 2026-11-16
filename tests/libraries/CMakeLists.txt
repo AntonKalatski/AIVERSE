@@ -237,6 +237,7 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/data/Json.cpp")
         target_compile_options(aiverse_library_voxel_tests PRIVATE -Wall -Wextra -Werror -pedantic $<$<CXX_COMPILER_ID:GNU>:-Wno-misleading-indentation>)
     endif()
     add_test(NAME library_voxel COMMAND aiverse_library_voxel_tests)
+endif()
 # City packages: world-calendar, weather-timeline, vehicle-fx, swept-shapes, derived-keys, city-traffic routes.
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../../engine/core/Fixed.cpp")
     add_executable(aiverse_library_city_tests city_tests.cpp ../../engine/core/Fixed.cpp)
