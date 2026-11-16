@@ -294,6 +294,7 @@ ctest --test-dir build/.temp/place -R '^place$' --output-on-failure
 build/.temp/place/aiverse_place serve --scene examples/place/scene.json --port 27300 --insecure [--ws-port 27301]
 build/.temp/place/aiverse_place client --connect 127.0.0.1:27300 --insecure [--player me] [--lang ru]   # more windows = more players
 build/.temp/place/aiverse_place bots --connect 127.0.0.1:27300 --insecure --count 8 --seconds 120
+AIVERSE_PLACE_AUTOPILOT=7 build/.temp/place/aiverse_place client ...   # a bot plays the window (screenshots, soak)
 build/.temp/place/aiverse_place load --clients 16 --seconds 30 --profile 4g --late 20   # one process, SimNet
 ```
 
@@ -303,12 +304,14 @@ sides), snapshots per second, incoming KB/s and the prediction correction (last 
 
 **How it works.** The server loads the scene JSON into a `physics::Scene`, replicates every non-static body
 (class `body`) and one character per client (class `character`, owned by the client) plus a `game` object.
-Each input frame (6 bytes: `CharacterInput` + action bits) steps that client's character once (`stepCharacter`,
-`applyPushes`); after the inputs come kinematic movers, `scene.step()`, and `set()` of what changed: bodies
-that sleep and slept the tick before are skipped. Viewers are the characters. On join the server sends the
-static part of the scene (channel 1); the client builds `Scene::staticCopy` from it, draws the static
-bodies from it and predicts its own character with the same `stepCharacter` (`Predictor`), reconciling on
-each snapshot; corrections are smoothed (`net/Smoothing.h`, 50 ms half-life, snap above 3 m). Remote bodies
+Input frames (6 bytes: `CharacterInput` + action bits) wait in a short per-player buffer and step that client's
+character one per tick (`stepCharacter`, `applyPushes`; see § Prediction against bodies); after the inputs come
+kinematic movers, `scene.step()`, and `set()` of what changed: bodies that sleep and slept the tick before are
+skipped. Viewers are the characters. On join the server sends the static and kinematic part of the scene
+(channel 1); the client draws the static bodies from it and predicts its own character with the same
+`stepCharacter` (`Predictor`) in a `PredictionWorld` (`apps/place/PlacePredict.h`), reconciling on each
+snapshot; corrections are smoothed (`net/Smoothing.h`, 50 ms half-life, snap above 3 m), the camera follows a
+second smoother with a 150 ms half-life so corrections glide in instead of jolting the view. Remote bodies
 and characters are drawn from `sample()`. Push (E): an input bit; the server applies a mass-scaled impulse to
 dynamic bodies in a sphere in front of the character (cooldown). Spawn box (F): remote message (channel 2),
 token bucket per player (`perSecond`, `burst`), at most `maxPerPlayer` live boxes per player (the oldest is
@@ -334,8 +337,43 @@ Example scene: 500 dynamic bodies + platform, bots pushing and spawning (~20-70 
 Resting-body error is the 0.01 m position quantization; bodies still moving after the bots stop (rolling
 spheres) differ by latency (mean 3-4 cm). Prediction: a steady walker on static ground over 4g: 0 corrections
 over 1 cm in 30 s, mean 2.8 mm per reconcile (position / velocity quantization); same on a 60 ± 20 ms
-loopback for 15 s with runs and jumps (max 5 mm). Bots that push piles all the time: 17 % of reconciles over
-1 cm (mean 5 cm), see limits. Example scene with nobody in it: settles and sleeps (0.015 ms per tick).
+loopback for 15 s with runs and jumps (max 5 mm). Near bodies and other players: § Prediction against bodies.
+Example scene with nobody in it: settles and sleeps (0.015 ms per tick).
+
+### Prediction against bodies (agent-place-predict)
+
+The client's prediction world (`PredictionWorld`) holds what the server's character step meets:
+- static and kinematic bodies of the join message; movers are moved from the tick with the server's own
+  formula (`moverPosition`), so a platform rider predicts exactly;
+- replicated bodies within a few metres (plus the distance the pending inputs and a thrown box can cover) as
+  local dynamic bodies, restarted from every snapshot (pose, `velocity`, `density` / `friction`, sleep), pushed
+  by the own character (walking pushes, the E action with its cooldown) and stepped by `Scene::step`;
+- other characters as proxies stepped with `stepCharacter` on a guessed input (they keep moving and turning as
+  in the snapshot; their walking pushes act on the local bodies), for at most 0.4 s.
+The bodies drawn stay the server's (interpolated); the local ones only block, carry and get pushed.
+
+Timing: the server applies one input frame per tick from a two-frame buffer (two per tick while more than six
+wait) and reports the last applied one in the character's `input` field (16 bits). Snapshot S with last applied
+L means input L + j meets the server's world of tick S + j - 1, which is what the replay rebuilds (without the
+buffer, arrival jitter moved inputs by ±2 ticks: 5 cm errors next to a 3 m/s platform). Body fields added for
+this: `kinematic` (scene kinematic index, reliable), `velocity`, `density`, `friction` (reliable);
+character: `input`. Cost: +17 % bytes per client (`load --clients 16`: 28.7 -> 33.6 KB/s).
+
+Corrections over 1 cm per reconcile (test `prediction_near_dynamic_obstacles`, SimNet 4g, 30-40 s;
+`load --clients 16 --seconds 30 --late 20` for the last row):
+
+| Case | Static copy only (before) | Prediction world |
+|---|---|---|
+| (a) walker on open ground | 0 %, mean 2.6 mm | 0 %, mean 2.7 mm |
+| (b) 15 bots pushing piles | 16.7 %, mean 5.9 cm | 14-17 %, mean 2.5-3.0 cm (stand-ins only: 18-19 %, 4.2-4.4 cm) |
+| (c) rider on a 3 m/s platform | 70.5 %, mean 13 cm | 0 %, mean 2.1 mm, max 7 mm |
+| one bot pushing piles alone | | 1.7 %, mean 3.5 mm |
+| `load`, 16 bots | 16.9 %, mean 5.0 cm | 15.4 %, mean 2.9 cm |
+
+(b) stays high because the bots crowd the same piles: what the 14 others will press, push (E) or jump in the
+next ~10 ticks is unknown to each client, and box stacks amplify it; with the true past world (an oracle in a
+diagnostic run) half of the corrections remain. The mean halved and the camera hides them (99th percentile of
+camera correction motion 4 cm per frame). Real UDP on localhost, `bots --count 10`: 4.5 %, mean 4.6 mm.
 
 Two fixes in the layers below came out of this milestone (separate commits for review):
 - replica: owned objects resend every field the client has not confirmed (`ReplicaServer.cpp`). Before, a lost
@@ -345,9 +383,10 @@ Two fixes in the layers below came out of this milestone (separate commits for r
 - physics: `stepCharacter` ignores downward planes of dynamic bodies; a box that landed on a head (proxies have no
   body contacts) pressed the character through the ground (test in `physics_scene`).
 
-Limits: the client predicts against static geometry only: walking into boxes, other characters or onto the
-moving platform is corrected by reconcile (smoothed, visible as a short slide when pushing piles); a server
-that skips a lost input frame (all redundant copies lost) costs one corrected step; the client uses input
+Limits: crowds of players pushing the same piles still correct often (above: others' future inputs are
+unknown; network ownership of bodies near a client is the way further); an input-buffer underrun or catch-up
+(~0.2 % of inputs on 4g) costs a corrected step near moving things; bodies' friction / restitution beyond
+`friction` and damping are assumed default on the client; a server that skips a lost input frame (all redundant copies lost) costs one corrected step; the client uses input
 redundancy 8 (~4 KB/s up); interest is 3D (`interest3d`, on by default). (Tickets, encryption, reconnect and the frame-rate bound
 snapshot rate are solved in § Place hosting.) Verified on Linux (tests, load, real UDP, client rendered under Xvfb + Mesa);
 macOS / Windows client builds, the WebSocket path and web / mobile are not verified. Not built for the web

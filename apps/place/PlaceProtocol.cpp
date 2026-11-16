@@ -15,7 +15,11 @@ Schema::Schema() {
                 {"shape", FieldKind::Int, 0, 2, 0, 0, true},
                 {"size", FieldKind::Vec3, 0, 100, 0.01, 0, true},
                 {"color", FieldKind::Int, 0, 0xFFFFFF, 0, 0, true},
-                {"sleeping", FieldKind::Bool}};
+                {"sleeping", FieldKind::Bool},
+                {"kinematic", FieldKind::Int, 0, 65535, 0, 0, true},
+                {"velocity", FieldKind::Vec3, -32, 32, 0.02},
+                {"density", FieldKind::Float, 0, 100000, 0.5, 0, true},
+                {"friction", FieldKind::Float, 0, 2, 0.01, 0, true}};
     body = schema.add(b);
     // Characters: the owner reconciles against pos / velocity / grounded, so velocity is fine-grained.
     ClassDef c{"character", {}, 4.0f, 0, false, 0};
@@ -24,12 +28,13 @@ Schema::Schema() {
                 {"velocity", FieldKind::Vec3, -64, 64, 0.005},
                 {"grounded", FieldKind::Bool},
                 {"name", FieldKind::String},
-                {"color", FieldKind::Int, 0, 0xFFFFFF, 0, 0, true}};
+                {"color", FieldKind::Int, 0, 0xFFFFFF, 0, 0, true},
+                {"input", FieldKind::Int, 0, 65535}};
     character = schema.add(c);
     ClassDef g{"game", {}, 2.0f, 0, true, -1};
     g.fields = {{"tick", FieldKind::Int, 0, 0}, {"players", FieldKind::Int, 0, 255}, {"bodies", FieldKind::Int, 0, 65535}};
     game = schema.add(g);
-    if (schema.field(body, "sleeping") != kBodySleeping || schema.field(character, "color") != kCharColor ||
+    if (schema.field(body, "friction") != kBodyFriction || schema.field(character, "input") != kCharInput ||
         schema.field(game, "bodies") != kGameBodies)
         throw std::logic_error("place schema field order");
 }
@@ -96,10 +101,16 @@ Json staticPart(const Json& scene) {
         if (key == "joints") continue;
         Json bodies = Json::array();
         for (const auto& b : value.items())
-            if (b.getStr("motion", "dynamic") == "static") bodies.push(b);
+            if (b.getStr("motion", "dynamic") != "dynamic") bodies.push(b);
         out.set("bodies", std::move(bodies));
     }
     return out;
+}
+
+b3Vec3 moverPosition(b3Vec3 start, b3Vec3 offset, float period, uint64_t tick, float dt) {
+    double t = double(tick) * dt;
+    float k = float(0.5 - 0.5 * std::cos(2 * 3.14159265358979 * t / period));
+    return {start.x + offset.x * k, start.y + offset.y * k, start.z + offset.z * k};
 }
 
 physics::CharacterParams characterParams() {

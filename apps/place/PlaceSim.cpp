@@ -19,6 +19,7 @@ Bot::Bot(uint32_t seed, std::vector<b3Vec3> waypoints) : rng_(seed), waypoints_(
 
 Input Bot::think(PlaceClient& c, bool active) {
     ++ticks_;
+    yaw_ += c.takeGroundTurn();   // a rotating platform turns the bot like it turns a player's view
     Input in;
     in.move.yaw = yaw_;
     if (!active || !c.ready()) return in;
@@ -98,7 +99,7 @@ void SimPlace::frame() {
     server.update(now_);
     if (afterServer) afterServer();
     for (auto& e : clients) {
-        Input in = e.bot ? e.bot->think(*e.client, botsActive) : Input{};
+        Input in = e.script ? e.script(*e.client) : e.bot ? e.bot->think(*e.client, botsActive) : Input{};
         e.client->update(now_, in);
         e.client->advanceSmoothing(1000.0f / 60);
     }
@@ -179,12 +180,12 @@ std::string LoadReport::text() const {
     std::snprintf(b, sizeof b,
                   "server tick: avg %.3f ms, worst %.3f ms (%zu bodies)\n"
                   "bytes per client per second: %.0f received (server sent %.0f)\n"
-                  "prediction: %llu reconciles, %llu corrections > 1 cm, mean %.4f m, max %.3f m\n"
+                  "prediction: %llu reconciles, %llu corrections > 1 cm (%.1f %%), mean %.4f m, max %.3f m\n"
                   "convergence: worst body error %.4f m, missing %zu\n"
                   "late join: %s (worst %.4f m, missing %zu)\n"
                   "server: %llu inputs, %llu idle steps, %llu pushes moved %llu bodies, %llu boxes spawned, %llu refused, %llu bad messages\n",
                   tickAvgMs, tickWorstMs, bodies, bytesPerClientPerSecond, serverBytesPerClientPerSecond, (unsigned long long)reconciles,
-                  (unsigned long long)corrections, meanCorrection, maxCorrection, worstConvergence, missing, lateJoinSame ? "same objects" : "DIFFERENT",
+                  (unsigned long long)corrections, reconciles ? 100.0 * double(corrections) / double(reconciles) : 0.0, meanCorrection, maxCorrection, worstConvergence, missing, lateJoinSame ? "same objects" : "DIFFERENT",
                   lateJoinWorst, lateJoinMissing, (unsigned long long)server.inputs, (unsigned long long)server.idleSteps,
                   (unsigned long long)server.pushes, (unsigned long long)server.pushedBodies, (unsigned long long)server.spawned,
                   (unsigned long long)server.spawnDenied, (unsigned long long)server.badMessages);

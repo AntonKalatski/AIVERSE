@@ -6,6 +6,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -118,6 +119,8 @@ public:
     // One fixed tick (1 / tickRate, substeps). Events below are copied and stay valid until the next step.
     void step();
     const std::vector<ContactEvent>& contactBegins() const { return contactBegins_; }
+    // Sensor begin / end per (sensor, visitor). Destroying either body ends its overlaps: the end events come
+    // with the next step(), first in the list, with the dead handle (compare, do not query it).
     const std::vector<SensorEvent>& sensorEvents() const { return sensorEvents_; }
     const std::vector<MoveEvent>& moved() const { return moved_; }
 
@@ -169,5 +172,9 @@ private:
     std::vector<ContactEvent> contactBegins_;
     std::vector<SensorEvent> sensorEvents_;
     std::vector<MoveEvent> moved_;
+    // Live sensor overlaps (sensor, visitor): destroy() ends them itself (Box3D drops destroyed shapes'
+    // end events); those ends are delivered with the next step's events.
+    std::set<std::pair<BodyHandle, BodyHandle>> sensorPairs_;
+    std::vector<SensorEvent> pendingEnds_;
 };
 }

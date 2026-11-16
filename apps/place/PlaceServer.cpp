@@ -84,10 +84,14 @@ PlaceServer::PlaceServer(const Json& scene, replica::ServerOptions options, int 
       server_(schema_.schema, [&] { options.tickRate = scene_->tickRate(); options.defaultRadius = config_.relevance; return options; }()) {
     std::string text = staticPart(scene).dump(0);
     staticScene_.assign(text.begin(), text.end());
+    int64_t kinematic = 0;
     for (const auto& look : bodyLooks(scene)) {
         if (look.motion == physics::Motion::Static) continue;
+        if (look.motion == physics::Motion::Kinematic) ++kinematic;   // numbered in JSON order, as the client does
         BodyHandle h = scene_->find(look.id);
-        if (h != kNoBody) track(h, look, 0);
+        if (h == kNoBody) continue;
+        replica::ObjectId id = track(h, look, 0);
+        if (look.motion == physics::Motion::Kinematic) server_.set(id, Schema::kBodyKinematic, integer(kinematic));
     }
     for (const auto& m : config_.movers) {
         BodyHandle h = scene_->find(m.body);
@@ -97,7 +101,7 @@ PlaceServer::PlaceServer(const Json& scene, replica::ServerOptions options, int 
     game_ = server_.create(schema_.game);
     server_.onJoin = [this](uint8_t slot) { join(slot); };
     server_.onLeave = [this](uint8_t slot) { leave(slot); };
-    server_.onInput = [this](uint8_t slot, uint32_t, const net::Bytes& b) { input(slot, b); };
+    server_.onInput = [this](uint8_t slot, uint32_t seq, const net::Bytes& b) { input(slot, seq, b); };
     server_.onMessage = [this](uint8_t slot, uint16_t ch, const net::Bytes& b) { message(slot, ch, b); };
 }
 
@@ -117,6 +121,14 @@ replica::ObjectId PlaceServer::track(BodyHandle h, const BodyLook& look, uint8_t
     server_.set(r.id, Schema::kBodyColor, integer(look.color));
     r.awake = scene_->awake(h);
     server_.set(r.id, Schema::kBodySleeping, integer(!r.awake));
+    b3ShapeId shape;
+    if (b3Body_GetShapes(scene_->native(h), &shape, 1) == 1) {
+        replica::Value density, friction;
+        density.f[0] = b3Shape_GetDensity(shape);
+        friction.f[0] = b3Shape_GetFriction(shape);
+        server_.set(r.id, Schema::kBodyDensity, density);
+        server_.set(r.id, Schema::kBodyFriction, friction);
+    }
     repOf_[h] = reps_.size();
     reps_.push_back(r);
     return r.id;
@@ -241,6 +253,9 @@ void PlaceServer::join(uint8_t slot) {
         p.slot = slot;
         p.awayUntilTick = 0;
         p.lastInputTick = tick_;
+        p.inputs.clear();          // the new connection numbers its input frames from the start
+        p.buffering = true;
+        p.applied = 0;
         server_.setOwner(p.object, slot);
         players_[slot] = std::move(p);
         ++stats_.resumed;
@@ -315,12 +330,22 @@ void PlaceServer::step(Player& p, const physics::CharacterInput& in) {
     scene_->applyPushes(pushes);
 }
 
-void PlaceServer::input(uint8_t slot, const net::Bytes& frame) {
+namespace {
+constexpr size_t kInputBuffer = 2;     // frames held before applying (absorbs ~2 ticks of arrival jitter)
+constexpr size_t kInputCatchUp = 6;    // above this many queued, two frames per tick
+constexpr size_t kInputQueueMax = 32;
+}
+
+void PlaceServer::input(uint8_t slot, uint32_t seq, const net::Bytes& frame) {
     auto it = players_.find(slot);
     if (it == players_.end()) return;
     Player& p = it->second;
     if (frame.size() != physics::CharacterInput::kPackedSize + 1) ++stats_.badMessages;   // still unpacked safely
-    Input in = Input::unpack(frame);
+    p.inputs.push_back({seq, Input::unpack(frame)});
+    if (p.inputs.size() > kInputQueueMax) p.inputs.pop_front();
+}
+
+void PlaceServer::apply(Player& p, const Input& in) {
     ++stats_.inputs;
     step(p, in.move);
     p.lastInputTick = tick_;
@@ -397,6 +422,8 @@ void PlaceServer::syncBodies() {
         server_.set(r.id, Schema::kBodyPos, vec3(pos.x, pos.y, pos.z));
         server_.set(r.id, Schema::kBodyRot, quatValue(scene_->rotation(r.handle)));
         server_.set(r.id, Schema::kBodySleeping, integer(!awake));
+        b3Vec3 v = awake ? scene_->linearVelocity(r.handle) : b3Vec3{0, 0, 0};
+        server_.set(r.id, Schema::kBodyVelocity, vec3(v.x, v.y, v.z));
         r.awake = awake;
     }
     for (BodyHandle h : fallen) {
@@ -419,13 +446,14 @@ void PlaceServer::syncCharacters() {
         server_.set(p.object, Schema::kCharYaw, yawValue(st.yaw));
         server_.set(p.object, Schema::kCharVelocity, vec3(st.velocity.x, st.velocity.y, st.velocity.z));
         server_.set(p.object, Schema::kCharGrounded, integer(st.grounded));
+        server_.set(p.object, Schema::kCharInput, integer(int64_t(p.applied & 0xFFFFu)));
         server_.setViewers(slot, {{st.position.x, st.position.y, st.position.z}});
     }
 }
 
 void PlaceServer::update(uint64_t nowMs) {
     auto t0 = std::chrono::steady_clock::now();
-    server_.poll(nowMs);                 // input frames step their characters (onInput), messages
+    server_.poll(nowMs);                 // input frames (onInput, queued per player), messages
     for (auto it = kicking_.begin(); it != kicking_.end();) {
         if (tick_ < it->second) { ++it; continue; }
         uint8_t slot = it->first;
@@ -436,13 +464,24 @@ void PlaceServer::update(uint64_t nowMs) {
     expire();
     for (auto& [id, p] : away_) keepStanding(p);
     for (auto& [slot, p] : players_) {
+        if (p.inputs.empty()) { if (!p.buffering) ++stats_.inputUnderruns; p.buffering = true; }
+        else if (p.buffering && p.inputs.size() >= kInputBuffer) p.buffering = false;
+        if (p.buffering) continue;
+        size_t n = p.inputs.size() > kInputCatchUp ? 2 : 1;
+        if (n == 2) ++stats_.inputCatchUps;
+        for (size_t k = 0; k < n && !p.inputs.empty(); ++k) {
+            p.applied = p.inputs.front().first;
+            Input in = p.inputs.front().second;
+            p.inputs.pop_front();
+            apply(p, in);
+        }
+    }
+    for (auto& [slot, p] : players_) {
         keepStanding(p);
         p.spawnTokens = std::min<double>(config_.spawnBurst, p.spawnTokens + config_.spawnPerSecond * dt);
     }
     for (const auto& m : movers_) {
-        double t = double(tick_ + 1) * dt;
-        float k = float(0.5 - 0.5 * std::cos(2 * 3.14159265358979 * t / m.period));
-        scene_->moveKinematic(m.handle, add(m.start, mul(m.offset, k)), m.rot);
+        scene_->moveKinematic(m.handle, moverPosition(m.start, m.offset, m.period, tick_ + 1, dt), m.rot);
     }
     scene_->step();
     ++tick_;

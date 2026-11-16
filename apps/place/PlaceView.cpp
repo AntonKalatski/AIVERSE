@@ -8,12 +8,14 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <mutex>
 #include <set>
 #include <thread>
 #include "apps/place/PlaceLink.h"
+#include "apps/place/PlaceSim.h"
 #include "engine/i18n/Localization.h"
 #include "engine/platform/EngineDir.h"
 #include "engine/platform/Platform.h"
@@ -48,6 +50,8 @@ struct View {
     std::set<platform::Key> keys;
     float yaw = 0, pitch = 0.35f, distance = 6;
     bool pushQueued = false, haveYaw = false;
+    float groundTurn = 0;           // yaw a rotating platform turned the character by, not yet in `yaw` (mutex)
+    std::unique_ptr<Bot> autopilot; // AIVERSE_PLACE_AUTOPILOT=<seed>: a bot plays (screenshots, soak runs)
     uint64_t resumedUntil = 0;
 
     void netLoop() {
@@ -60,9 +64,12 @@ struct View {
                 double step = 1000.0 * (any ? any->dt() : 1.0f / 60);
                 if (double(now) >= next) {
                     Input in = shared;
+                    in.move.yaw += groundTurn;
+                    if (autopilot && link->client()) in = autopilot->think(*link->client(), true);
                     if (pushLatch) { in.actions |= kActionPush; pushLatch = false; }
                     link->update(now, in);
                     if (PlaceClient* c = link->client()) {
+                        groundTurn += c->takeGroundTurn();   // rotating platforms turn the view
                         if (spawnLatch) c->spawnBox();
                         c->advanceSmoothing(float(step));
                     }
@@ -155,6 +162,9 @@ struct View {
         gui.newFrame(dt);
         std::unique_lock<std::mutex> lock(mutex);
         {
+            yaw += groundTurn;
+            groundTurn = 0;
+            if (autopilot && link->view() && link->view()->ready()) yaw = link->view()->predicted().yaw;   // camera behind the bot
             Input in = input();
             if (in.actions & kActionPush) pushLatch = true;
             in.actions = 0;
@@ -177,9 +187,9 @@ struct View {
         }
         auto& r = client->replica();
         const auto& params = client->params();
-        b3Vec3 me = client->drawPosition();
+        b3Vec3 me = client->drawPosition(), view = client->cameraPosition();
         RTSCamera cam;
-        cam.target = {me.x, me.y + params.height * 0.85f, me.z};
+        cam.target = {view.x, view.y + params.height * 0.85f, view.z};
         cam.distance = distance;
         cam.pitch = pitch;
         cam.yaw = yaw;
@@ -300,6 +310,7 @@ int runPlaceClient(LinkConfig config, const std::string& language, bool suspendO
     view.link = std::make_unique<PlaceLink>(std::move(config));
     view.language = language;
     view.suspendOnFocus = suspendOnFocus;
+    if (const char* seed = std::getenv("AIVERSE_PLACE_AUTOPILOT")) view.autopilot = std::make_unique<Bot>(uint32_t(std::strtoul(seed, nullptr, 10)));
     view.net = std::thread([] { view.netLoop(); });
     platform::AppConfig cfg;
     cfg.title = "AIVERSE Place";

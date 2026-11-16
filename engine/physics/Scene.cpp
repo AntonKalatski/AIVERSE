@@ -336,6 +336,11 @@ void Scene::release(Slot& s) {
 bool Scene::destroy(BodyHandle h) {
     Slot* s = slot(h);
     if (!s) return false;
+    for (auto it = sensorPairs_.begin(); it != sensorPairs_.end();) {
+        if (it->first != h && it->second != h) { ++it; continue; }
+        pendingEnds_.push_back({it->first, it->second, false});
+        it = sensorPairs_.erase(it);
+    }
     release(*s);
     free_.push_back((h & 0xFFFFu) - 1);
     return true;
@@ -417,6 +422,7 @@ void Scene::step() {
     ++tick_;
     contactBegins_.clear();
     sensorEvents_.clear();
+    sensorEvents_.swap(pendingEnds_);   // overlaps ended by destroy() since the last step
     moved_.clear();
     // Copy the transient Box3D events now: ids may die with the next mutation.
     auto contacts = b3World_GetContactEvents(world_);
@@ -436,12 +442,12 @@ void Scene::step() {
     auto sensors = b3World_GetSensorEvents(world_);
     for (int i = 0; i < sensors.beginCount; ++i) {
         SensorEvent e{bodyOfShape(sensors.beginEvents[i].sensorShapeId), bodyOfShape(sensors.beginEvents[i].visitorShapeId), true};
-        if (e.sensor && e.visitor) sensorEvents_.push_back(e);
+        if (e.sensor && e.visitor) { sensorPairs_.insert({e.sensor, e.visitor}); sensorEvents_.push_back(e); }
     }
     for (int i = 0; i < sensors.endCount; ++i) {
-        // Destroyed shapes are not reported: destroy() already ends their overlaps for the host.
+        // Destroyed shapes are not reported (and destroy() already ended their overlaps): only live pairs end here.
         SensorEvent e{bodyOfShape(sensors.endEvents[i].sensorShapeId), bodyOfShape(sensors.endEvents[i].visitorShapeId), false};
-        if (e.sensor && e.visitor) sensorEvents_.push_back(e);
+        if (e.sensor && e.visitor && sensorPairs_.erase({e.sensor, e.visitor})) sensorEvents_.push_back(e);
     }
     auto bodies = b3World_GetBodyEvents(world_);
     for (int i = 0; i < bodies.moveCount; ++i) {

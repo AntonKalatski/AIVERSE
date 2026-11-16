@@ -1,12 +1,13 @@
 ---
 name: aiverse-physics
-description: Use AIVERSE's optional Box3D rigid-body physics for collisions, queries, sensors, joints, motors, breakable assemblies, debris and native physics hosts. Covers the scene wrapper and direct C API, lifecycle, snapshots and integration boundaries; deterministic vehicle and interaction policies remain their existing owners.
+description: Use AIVERSE's optional Box3D rigid-body physics for collisions, queries, sensors, joints, motors, breakable assemblies, debris, server-authoritative runtime scenes and the kinematic character controller (stepCharacter, pushes, platforms, client prediction against static copies and dynamic proxies). Covers World, Scene, Character and the direct C API, lifecycle, snapshots and integration boundaries; deterministic vehicle and interaction policies remain their existing owners.
 ---
 
 # Box3D physics in AIVERSE
 
 This is an existing-engine reference recipe. Runtime library provided by this skill: none.
-Reuse `engine/physics/World.h` (`aiverse::physics::World`) and the vendored public
+Reuse `engine/physics/World.h` (`aiverse::physics::World`), `engine/physics/Scene.h`
+(`physics::Scene`), `engine/physics/Character.h` (`physics::stepCharacter`) and the vendored public
 `third_party/box3d/include/box3d/box3d.h`; do not install another physics engine.
 The engine target is **`AIVERSE::physics`**, enabled by **`AIVERSE_ENABLE_PHYSICS=ON`**
 (default OFF). It publicly links `aiverse_engine` and `box3d::box3d`.
@@ -41,6 +42,11 @@ Do not pass this reference package to `aiverse_native_use_libraries`: it is not 
 - **Dynamic composition, detachable parts, custom joints or collision geometry:** own the
   world and stable object manifest with the C API. Read
   [runtime integration](references/runtime.md), especially events and hinge frames.
+- **Server-authoritative host with bodies coming and going (players, spawned props) and walking
+  characters:** use `Scene` (stable handles, copied events, sorted queries, JSON loader) and
+  `Character` (`stepCharacter`, pushes, platforms). Client prediction steps the same controller
+  against `Scene::staticCopy` plus proxies of nearby bodies and characters. Read
+  [Scene, Character and prediction](references/scene-character.md).
 - For exact signatures/defaults use the pinned headers, not Box2D examples or recalled APIs.
   The API map covers every public subsystem and points to the complete declarations.
 
@@ -75,6 +81,22 @@ if (const auto* ball = world.find("ball")) {
 }
 ```
 
+```cpp
+#include "engine/physics/Character.h"
+using namespace aiverse::physics;
+auto scene = Scene::fromJson(sceneJson);                     // server: everything
+CharacterParams params;
+CharacterState st; st.position = {0, 0, 0};
+BodyHandle proxy = scene->createCharacter(params, st.position);
+// per tick: characters first (pre-step world), then pushes, proxies, physics
+Pushes pushes;
+stepCharacter(scene->world(), params, st, CharacterInput::unpack(frame), scene->dt(), &pushes, proxy);
+scene->applyPushes(pushes);
+scene->moveCharacter(proxy, st);
+scene->step();
+for (const auto& e : scene->sensorEvents()) { /* begin / end, ends of destroyed bodies too */ }
+```
+
 ## Implementation and acceptance
 
 - Metres, seconds, kilograms, radians; +Y up. Document the asset's forward axis separately.
@@ -89,7 +111,10 @@ if (const auto* ball = world.find("ball")) {
 - Verify real contact-driven behaviour, not only scripted damage calls or animation clips.
   Test impact zones, repeated contact suppression, opposite-side isolation, hinge limits,
   reopening after sleep, one-time detachment, gravity and collision after release.
-- Run `physics_runtime` for wrapper changes; test custom lifecycle, filters, sensors and queries
+- Run `physics_runtime` for wrapper changes and `physics_scene` for Scene / Character changes
+  (`aiverse_physics_scene_tests examples/physics/scene.json [--bench]`); prediction changes also
+  `place` (`aiverse_place_tests examples/place/scene.json prediction_near_dynamic_obstacles` prints
+  the share of corrections over 1 cm). Test custom lifecycle, filters, sensors and queries
   used by the integration. Verify restore continuation and reacquire handles. Run actual
   native/export consumers if linking changes, and in-client visual checks for render wiring.
 - Report tested platform/compiler and remaining host/network/render gaps. Worker trajectory
