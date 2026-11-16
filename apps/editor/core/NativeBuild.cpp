@@ -173,6 +173,25 @@ std::string nativeBuildDirProblem(const std::string& engineDir, const std::strin
     return "папка сборки внутри репозитория движка и не в Builds/ (git её не игнорирует): " + bd.string();
 }
 
+bool dropForeignCMakeCache(const std::string& buildDir, const std::string& engineDir, std::string* oldSource) {
+    const fs::path cache = fs::path(buildDir) / "CMakeCache.txt";
+    std::ifstream f(cache);
+    if (!f) return false;
+    const std::string key = "CMAKE_HOME_DIRECTORY:INTERNAL=";
+    std::string line, source;
+    while (std::getline(f, line))
+        if (line.rfind(key, 0) == 0) { source = line.substr(key.size()); break; }
+    f.close();
+    while (!source.empty() && (source.back() == '\r' || source.back() == ' ')) source.pop_back();
+    if (source.empty()) return false;
+    std::error_code ec;
+    if (normal(source) == normal(engineDir) || fs::equivalent(source, engineDir, ec)) return false;
+    fs::remove(cache, ec);
+    fs::remove_all(fs::path(buildDir) / "CMakeFiles", ec);
+    if (oldSource) *oldSource = source;
+    return true;
+}
+
 std::string nativeBuildGitProblem(const std::string& buildDir) {
 #if defined(_WIN32)
     const std::string devnull = " >NUL 2>&1";

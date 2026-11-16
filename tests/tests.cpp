@@ -14580,3 +14580,25 @@ TEST(graphics_setting_from_game_json_and_command_line) {
     CHECK(platform::graphicsSettingsProblems(Json::parse(R"({"windows": "vulkan", "linux": "metal"})")).size() == 1);
     CHECK(platform::graphicsSettingsProblems(Json::string("gl")).empty());
 }
+
+TEST(native_build_drops_cache_of_another_engine_folder) {
+    namespace fs = std::filesystem;
+    using namespace aiverse::editor;
+    const fs::path bd = fs::temp_directory_path() / "aiverse_native_cache_test";
+    fs::remove_all(bd);
+    fs::create_directories(bd / "CMakeFiles");
+    const std::string eng = AIVERSE_SOURCE_DIR;
+    auto write = [&](const std::string& home) {
+        std::ofstream(bd / "CMakeCache.txt") << "CMAKE_CACHEFILE_DIR:INTERNAL=" << bd.string() << "\nCMAKE_HOME_DIRECTORY:INTERNAL=" << home << "\n";
+    };
+    write(eng);
+    CHECK(!dropForeignCMakeCache(bd.string(), eng));                 // same engine: kept
+    CHECK(fs::exists(bd / "CMakeCache.txt"));
+    write("/Users/someone/Projects/RTSEngine");
+    std::string old;
+    CHECK(dropForeignCMakeCache(bd.string(), eng, &old));             // renamed engine folder: dropped
+    CHECK(old == "/Users/someone/Projects/RTSEngine");
+    CHECK(!fs::exists(bd / "CMakeCache.txt") && !fs::exists(bd / "CMakeFiles"));
+    CHECK(!dropForeignCMakeCache(bd.string(), eng));                 // nothing left to drop
+    fs::remove_all(bd);
+}

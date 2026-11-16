@@ -70,6 +70,7 @@ NativeTools findNativeTools(const Workspace& ws) {
 NativeBuildPlan nativePlanFor(const Workspace& ws, const NativeTools& tools) {
     const std::string bd = nativeBuildDir(ws.project.dir, nativeHost());
     std::error_code ec;
+    dropForeignCMakeCache(bd, ws.engineDir);   // configured from an old engine folder: cmake would refuse it
     const bool cache = fs::exists(fs::path(bd) / "CMakeCache.txt", ec);
     return planNativeBuild(ws.engineDir, ws.project.dir, nativeHost(), tools.cmake, tools.ninja, cache, nativeBuildJobs());
 }

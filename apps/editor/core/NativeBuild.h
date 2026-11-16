@@ -55,6 +55,10 @@ int nativeBuildJobs();
 // below a "Builds" folder (.gitignore: Builds/) and never in the engine's own build/ dirs.
 // Returns "" when fine, else why not.
 std::string nativeBuildDirProblem(const std::string& engineDir, const std::string& buildDir);
+// A build dir configured from another engine checkout (a moved or renamed folder) makes cmake refuse
+// to configure. Removes its CMakeCache.txt and CMakeFiles/ so the next configure starts fresh; returns
+// true and the old source dir when it did.
+bool dropForeignCMakeCache(const std::string& buildDir, const std::string& engineDir, std::string* oldSource = nullptr);
 // git check-ignore of the build dir when it is inside a git work tree; "" = ignored / not in a repo / no git.
 std::string nativeBuildGitProblem(const std::string& buildDir);
 
