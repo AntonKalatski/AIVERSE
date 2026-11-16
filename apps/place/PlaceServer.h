@@ -26,6 +26,7 @@ struct PlaceConfig {
 };
 
 struct PlaceServerStats {
+    uint64_t inputUnderruns = 0, inputCatchUps = 0;   // input buffer ran empty / applied two in a tick
     uint64_t ticks = 0, inputs = 0, idleSteps = 0, pushes = 0, pushedBodies = 0, spawned = 0, spawnDenied = 0, badMessages = 0;
     double tickMsSum = 0, tickMsWorst = 0;
     uint64_t ticksTimedFrom = 0;
@@ -60,13 +61,19 @@ private:
         physics::BodyHandle proxy = physics::kNoBody;
         physics::CharacterState state;
         uint64_t lastInputTick = 0, pushReadyTick = 0;
+        // Input frames wait here and are applied one per tick (two while the queue is long), so the owner's
+        // prediction knows the tick of each pending input (docs/replica.md § Prediction against bodies).
+        std::deque<std::pair<uint32_t, Input>> inputs;
+        bool buffering = true;
+        uint32_t applied = 0;
         double spawnTokens = 0;
         std::deque<physics::BodyHandle> spawned;
     };
     struct Mover { physics::BodyHandle handle; b3Vec3 start, offset; b3Quat rot; float period; };
     void join(uint8_t slot);
     void leave(uint8_t slot);
-    void input(uint8_t slot, const net::Bytes& frame);
+    void input(uint8_t slot, uint32_t seq, const net::Bytes& frame);
+    void apply(Player& p, const Input& in);
     void message(uint8_t slot, uint16_t channel, const net::Bytes& payload);
     void step(Player& p, const physics::CharacterInput& in);
     void push(Player& p);
