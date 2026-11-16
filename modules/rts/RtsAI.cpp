@@ -672,6 +672,17 @@ void RtsAI::economy(Simulation& sim, RtsModule& m) {
         for (auto& [n, ti] : cands) if (build(sim, m, uint16_t(ti))) return;
     }
     const bool buildOk = canBuildNow && !holdForArmy;
+    // 1d) games with radar (RtsSensors.h): one radar structure once the base runs - contacts for long-range guns
+    if (const Sensors* sn = m.sensors(); sn && buildOk && sim.tick() > 150 * sim.tickRate()) {
+        int have = 0, pick = -1;
+        for (size_t ti = 0; ti < R.types.size(); ++ti) {
+            const SensorTypeDef* d = sn->def(uint16_t(ti));
+            if (!d || d->radar.raw <= 0 || !R.types[ti].structure) continue;
+            have += count[ti];
+            if (pick < 0 && m.canTrain(sim, player_, uint16_t(ti))) pick = int(ti);
+        }
+        if (have == 0 && pick >= 0 && build(sim, m, uint16_t(pick))) return;
+    }
     // 2) supply (structures like farms/depots, or supply units like overlords)
     // (sites under way count: in games where sites wait for deliveries a new one every few seconds buried the base)
     Fixed freeSupply = eco.supplyCap - eco.supplyUsed + pendingSupply;

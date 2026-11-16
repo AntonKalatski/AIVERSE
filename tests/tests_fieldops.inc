@@ -1,6 +1,7 @@
 // Sensors (radar, sonar, jammers, stealth, underwater) and field operations (repair, reclaim, assist, patrol work,
 // self-destruct, stockpiles, interceptors, ambient income, attack runs, repair pads). Included after tests_sc2.inc
 // (uses the tests_mech.inc helpers). Everything is off unless the rules ask.
+#include "../engine/data/JsonCompose.h"
 
 static const char* kFoVic = R"("victory": {"mode": "score", "seconds": 10000, "keyLoses": false})";
 
@@ -235,4 +236,34 @@ TEST(fieldops_bad_data_errors) {
     CHECK(threw(foRules("", R"("s": {"ambientIncome": {"sun": {"energy": 1}}})"), "sun"));
     CHECK(threw(foRules("", R"("s": {"ambientIncome": {"wind": {"gold": 1}}})"), "gold"));
     CHECK(threw(foRules(R"(, "ambient": {"wind": {"min": 9, "max": 1}})", R"("s": {})"), "wind"));
+}
+
+// The sample game uses the mechanics and its bots play them: radar towers, geothermal plants on the vents, air
+// plants and aircraft; a radar contact is tracked beyond sight; the match ends with a winner.
+TEST(fieldops_metaltide_bots_use_the_mechanics) {
+    const std::string dir = std::string(AIVERSE_SOURCE_DIR) + "/templates/metaltide/";
+    Json rulesJson = readComposedJson(dir + "rules.json", fileReader());
+    Json map = readComposedJson(dir + "maps/twin_craters.json", fileReader());
+    SimConfig cfg; cfg.seed = 2;
+    Simulation sim(cfg, std::make_unique<game::RtsModule>());
+    sim.setup(rulesJson, map);
+    CHECK(mod(sim).sensors() && mod(sim).fieldOps());
+    std::vector<game::RtsAI> bots;
+    for (auto& p : sim.players()) bots.emplace_back(p.slot, 2);
+    std::set<std::string> built;
+    int blipTicks = 0;
+    for (int t = 0; t < 20 * 1800 && sim.result() == 0; ++t) {
+        for (auto& b : bots) b.update(sim);
+        sim.step();
+        for (auto& ev : sim.events())
+            if (ev.type == game::kEvBuildDone || ev.type == game::kEvTrainDone) built.insert(mod(sim).rules().types[size_t(ev.value)].id);
+        if (t % 200 == 0 && !mod(sim).sensors()->blips(sim, 1).empty()) ++blipTicks;
+    }
+    std::string list;
+    for (auto& b : built) list += b + " ";
+    std::printf("    built / trained: %s\n", list.c_str());
+    CHECK(built.count("radar_tower") && built.count("geothermal"));
+    CHECK(built.count("air_plant_arm") || built.count("air_plant_core"));
+    CHECK(blipTicks > 0);
+    CHECK(sim.result() != 0);
 }

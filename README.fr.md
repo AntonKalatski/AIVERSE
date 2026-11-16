@@ -82,7 +82,7 @@ travailler sur le jeu.
 | **Le multijoueur, c’est des désynchronisations sans fin.** Un seul `float` suffit pour qu’une partie entre un iPhone et un Android diverge. | La simulation est identique au bit près partout : virgule fixe au lieu de flottants, générateur aléatoire propre, sommes de contrôle. La CI compare les parties sur Linux x64/ARM64, Windows et macOS à chaque push. Seules les commandes transitent sur le réseau ; il y a un lockstep avec rollback et un serveur avec matchmaking et verdict par replay. |
 | **Les GPU mobiles sont faibles, mais le jeu doit être beau.** | Chaque fonction coûteuse — ombres, particules, terrain, post-traitement — a des niveaux de qualité et s’adapte au GPU, des vieux Mali et Adreno jusqu’à Apple Silicon. |
 | **Sortir sur toutes les plateformes est un projet à part entière.** Signatures, icônes, SDK des stores et de la publicité. | `aiversebuild` produit en une commande un .app, un projet Xcode, Gradle/APK, web et .exe. Icônes et écrans de démarrage sont générés. Plugins pour l’App Store, Google Play, RuStore, Yandex Games, Steam, AdMob, AppLovin et d’autres — un build n’embarque que ceux que le jeu choisit. |
-| **Chaque nouveau jeu repart de zéro.** | Plus de 30 modèles jouables, des kits de genre avec listes de recette, 174 compétences pour les agents. Un nouveau jeu part d’un jeu qui fonctionne déjà. |
+| **Chaque nouveau jeu repart de zéro.** | Plus de 30 modèles jouables, des kits de genre avec listes de recette, 175 compétences pour les agents. Un nouveau jeu part d’un jeu qui fonctionne déjà. |
 | **La méta et le LiveOps sont réécrits dans chaque projet.** | `aiverse::meta` : boutique, monnaies, quêtes, passes, récompenses quotidiennes, énergie, clans, tournois, coffres avec garantie — configurés en JSON. |
 
 ---
@@ -179,7 +179,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 
 | Genre | Modèles |
 |---|---|
-| RTS classique avec base | **Iron and Gold** (Warcraft / Red Alert) · **Iron Front** (Red Alert : MCV, minerai, barre latérale) · **Starfall Sectors** (StarCraft : trois races) · **Frost Crown** (Warcraft III : héros, creeps, terrain) · **Four Ages** (Age of Empires II) · **Amber Sands** (Dune II) · **Metal Tide** (Total Annihilation : économie de flux) |
+| RTS classique avec base | **Iron and Gold** (Warcraft / Red Alert) · **Iron Front** (Red Alert : MCV, minerai, barre latérale) · **Starfall Sectors** (StarCraft : trois races) · **Frost Crown** (Warcraft III : héros, creeps, terrain) · **Four Ages** (Age of Empires II) · **Amber Sands** (Dune II) · **Metal Tide** (Total Annihilation : économie de flux, radar, récupération, avions, missiles nucléaires) |
 | Conquête et garnisons | **Mushroom Clash** et **Shroom Wars** (Mushroom Wars 1–2) · **Spore Lanes** · **Spell Bunkers** (Bunker Wars) · **Border Rush** (State.io) · **Clan Lands** (Northgard) · **Flag Sectors** (Z) |
 | Escouades, vagues, survie | **Hold the Line** (Company of Heroes) · **Last Colony** (They Are Billions) · **Lane Clash** (lane battler) |
 | Économie et construction | **Hearth and Haul** (Knights and Merchants) · **Underlord** (Dungeon Keeper) |
@@ -222,7 +222,7 @@ Chaque modèle est un jeu entièrement jouable avec des bots. Ouvrez-le dans l�
 - Éditeur à fenêtres ancrables façon Unity : scène, inspecteur, terrain, effets, éclairage, UI, partie de test et simulateur d’appareils
 - `aiversemcp` — serveur MCP pour les agents
 - Assistant **Créer un jeu**
-- 174 compétences pour les agents et kits de genre avec listes de recette
+- 175 compétences pour les agents et kits de genre avec listes de recette
 - Importateurs de ressources de jeux classiques depuis votre propre copie
 
 </td>

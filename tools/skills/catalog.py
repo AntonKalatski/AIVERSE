@@ -105,6 +105,7 @@ WORKFLOWS=[
  ('aiverse-editor-extension','New editor windows, MCP window control, Hierarchy and inspector grouping','docs/editor-windows.md'),
  ('aiverse-modeling','In-engine model, rig and animation authoring through MCP and editor windows','docs/modeling.md'),
  ('rts-bunkerwars-skills','Convert Bunker Wars energy skills into rules player abilities','docs/bunkerwars-skills.md'),
+ ('rts-flow-war','Flow-economy wars: radar, jammers, reclaim, stockpiles and interceptors, wind, attack runs, TA import','docs/game-format.md'),
  ('aiverse-skill-authoring','Add or change a repository skill with its code, registration, catalog and audit','tools/skills/audit.py'),
  ('aiverse-publish-builds','Editor packages for Windows and macOS on the builds branch (MAIN only)','tools/release/publish_builds.py'),
 ]
@@ -137,6 +138,7 @@ WORKFLOW_ALIASES={
  'aiverse-editor-extension':'editor window imgui hierarchy inspector details редактор окно иерарх инспектор',
  'aiverse-modeling':'modeling mesh model rig weights animation lod моделирован меш модел риг анимац',
  'rts-bunkerwars-skills':'bunker wars mushroom energy skills converter бункер скилл энерг конвертер',
+ 'rts-flow-war':'total annihilation ta flow radar sonar jammer stealth submarine reclaim repair assist patrol nuke anti-nuke stockpile intercept wind tidal geothermal bomber self-destruct hpi радар сонар глушилк стелс подлодк разбор ремонт помощь патрул ядерк противоракет накоплен перехват ветер прилив геотерм бомбардировщ самоуничтож',
  'aiverse-skill-authoring':'skill skills author add catalog audit скилл скиллы добав каталог аудит',
  'aiverse-publish-builds':'publish builds branch release editor zip публикац сборк редактор',
  'aiverse-bots-configure':'bot bots ai computer opponent rules.ai difficulty style personality scripted director бот боты ии компьютер противник сложност стиль характер',
