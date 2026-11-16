@@ -8,12 +8,14 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <mutex>
 #include <set>
 #include <thread>
 #include "apps/place/PlaceLink.h"
+#include "apps/place/PlaceSim.h"
 #include "engine/i18n/Localization.h"
 #include "engine/platform/EngineDir.h"
 #include "engine/platform/Platform.h"
@@ -49,6 +51,7 @@ struct View {
     float yaw = 0, pitch = 0.35f, distance = 6;
     bool pushQueued = false, haveYaw = false;
     float groundTurn = 0;           // yaw a rotating platform turned the character by, not yet in `yaw` (mutex)
+    std::unique_ptr<Bot> autopilot; // AIVERSE_PLACE_AUTOPILOT=<seed>: a bot plays (screenshots, soak runs)
     uint64_t resumedUntil = 0;
 
     void netLoop() {
@@ -62,6 +65,7 @@ struct View {
                 if (double(now) >= next) {
                     Input in = shared;
                     in.move.yaw += groundTurn;
+                    if (autopilot && link->client()) in = autopilot->think(*link->client(), true);
                     if (pushLatch) { in.actions |= kActionPush; pushLatch = false; }
                     link->update(now, in);
                     if (PlaceClient* c = link->client()) {
@@ -160,6 +164,7 @@ struct View {
         {
             yaw += groundTurn;
             groundTurn = 0;
+            if (autopilot && link->view() && link->view()->ready()) yaw = link->view()->predicted().yaw;   // camera behind the bot
             Input in = input();
             if (in.actions & kActionPush) pushLatch = true;
             in.actions = 0;
@@ -305,6 +310,7 @@ int runPlaceClient(LinkConfig config, const std::string& language, bool suspendO
     view.link = std::make_unique<PlaceLink>(std::move(config));
     view.language = language;
     view.suspendOnFocus = suspendOnFocus;
+    if (const char* seed = std::getenv("AIVERSE_PLACE_AUTOPILOT")) view.autopilot = std::make_unique<Bot>(uint32_t(std::strtoul(seed, nullptr, 10)));
     view.net = std::thread([] { view.netLoop(); });
     platform::AppConfig cfg;
     cfg.title = "AIVERSE Place";
