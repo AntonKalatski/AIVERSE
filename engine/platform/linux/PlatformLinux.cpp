@@ -1,7 +1,12 @@
-// Linux: X11 window + EGL + OpenGL ES 3. Used for development and CI (works under Xvfb with Mesa).
+// Linux: X11 window + EGL + OpenGL ES 3, or Vulkan on request (GraphicsSettings.h). Used for development and CI
+// (works under Xvfb with Mesa: llvmpipe for GL, lavapipe for Vulkan).
 // Debug hooks (env):  AIVERSE_SCREENSHOT=out.ppm  AIVERSE_EXIT_AFTER_FRAMES=N  -> capture frame N and exit.
 #include "../PlatformCommon.h"
+#include "../GraphicsSettings.h"
 #include "../../gfx/Gfx.h"
+#if defined(AIVERSE_WITH_VULKAN)
+#include "../../gfx/vulkan/Vulkan.h"
+#endif
 
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
@@ -11,6 +16,7 @@
 #include <X11/keysym.h>
 
 #include <algorithm>
+#include <memory>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -165,29 +171,47 @@ int run(const AppConfig& cfgIn, AppCallbacks cb) {
     XIM xim = XOpenIM(g_dpy, nullptr, nullptr, nullptr);
     XIC xic = xim ? XCreateIC(xim, XNInputStyle, XIMPreeditNothing | XIMStatusNothing, XNClientWindow, g_win, nullptr) : nullptr;
 
-    EGLDisplay ed = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(g_dpy));
-    eglInitialize(ed, nullptr, nullptr);
-    // AIVERSE_GL=desktop: desktop GL 3.3 core through EGL (the GL33 backend used on Windows) - for Mesa
-    // builds without GLES (dev VMs, CI images); the default stays GLES3 like Android/web.
-    const char* glEnv = std::getenv("AIVERSE_GL");
-    const bool desktopGL = glEnv && std::strcmp(glEnv, "desktop") == 0;
-    eglBindAPI(desktopGL ? EGL_OPENGL_API : EGL_OPENGL_ES_API);
-    const EGLint attrs[] = {EGL_RENDERABLE_TYPE, desktopGL ? EGL_OPENGL_BIT : EGL_OPENGL_ES3_BIT, EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-                            EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_DEPTH_SIZE, 24, EGL_NONE};
-    EGLConfig ec; EGLint n = 0;
-    if (!eglChooseConfig(ed, attrs, &ec, 1, &n) || n == 0) { std::fprintf(stderr, "no EGL config\n"); return 1; }
-    const EGLint ctxAttrs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
-    const EGLint glAttrs[] = {EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 3,
-                              EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT, EGL_NONE};
-    EGLContext ctx = eglCreateContext(ed, ec, EGL_NO_CONTEXT, desktopGL ? glAttrs : ctxAttrs);
-    EGLSurface surf = eglCreateWindowSurface(ed, ec, static_cast<EGLNativeWindowType>(g_win), nullptr);
-    eglMakeCurrent(ed, surf, surf, ctx);
-    eglSwapInterval(ed, 1);
-
     S.winW = float(cfg.width); S.winH = float(cfg.height);
     S.fbW = cfg.width; S.fbH = cfg.height; S.scale = 1.0f;
 
-    auto device = gfx::createGLDevice(desktopGL ? gfx::Backend::GL33 : gfx::Backend::GLES3);
+    std::unique_ptr<gfx::Device> device;
+#if defined(AIVERSE_WITH_VULKAN)
+    if (wantVulkan(cfg)) {   // GraphicsSettings.h; GL when the machine has no Vulkan
+        gfx::VulkanWindow vw;
+        vw.kind = gfx::VulkanWindow::Kind::Xlib;
+        vw.display = g_dpy;
+        vw.window = uint64_t(g_win);
+        std::string err;
+        device = gfx::createVulkanDevice(vw, &err);
+        if (!device) std::fprintf(stderr, "[gfx] %s, using OpenGL\n", err.c_str());
+    }
+#endif
+    const bool vulkan = device != nullptr;
+    EGLDisplay ed = EGL_NO_DISPLAY;
+    EGLSurface surf = EGL_NO_SURFACE;
+    EGLContext ctx = EGL_NO_CONTEXT;
+    if (!vulkan) {
+        ed = eglGetDisplay(reinterpret_cast<EGLNativeDisplayType>(g_dpy));
+        eglInitialize(ed, nullptr, nullptr);
+        // AIVERSE_GL=desktop: desktop GL 3.3 core through EGL (the GL33 backend used on Windows) - for Mesa
+        // builds without GLES (dev VMs, CI images); the default stays GLES3 like Android/web.
+        const char* glEnv = std::getenv("AIVERSE_GL");
+        const bool desktopGL = glEnv && std::strcmp(glEnv, "desktop") == 0;
+        eglBindAPI(desktopGL ? EGL_OPENGL_API : EGL_OPENGL_ES_API);
+        const EGLint attrs[] = {EGL_RENDERABLE_TYPE, desktopGL ? EGL_OPENGL_BIT : EGL_OPENGL_ES3_BIT, EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+                                EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_DEPTH_SIZE, 24, EGL_NONE};
+        EGLConfig ec; EGLint n = 0;
+        if (!eglChooseConfig(ed, attrs, &ec, 1, &n) || n == 0) { std::fprintf(stderr, "no EGL config\n"); return 1; }
+        const EGLint ctxAttrs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
+        const EGLint glAttrs[] = {EGL_CONTEXT_MAJOR_VERSION, 3, EGL_CONTEXT_MINOR_VERSION, 3,
+                                  EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT, EGL_NONE};
+        ctx = eglCreateContext(ed, ec, EGL_NO_CONTEXT, desktopGL ? glAttrs : ctxAttrs);
+        surf = eglCreateWindowSurface(ed, ec, static_cast<EGLNativeWindowType>(g_win), nullptr);
+        eglMakeCurrent(ed, surf, surf, ctx);
+        eglSwapInterval(ed, 1);
+        device = gfx::createGLDevice(desktopGL ? gfx::Backend::GL33 : gfx::Backend::GLES3);
+    }
+    if (vulkan) std::fprintf(stderr, "[gfx] %s\n", device->info().name.c_str());
     if (S.cb.init) S.cb.init(*device);
 
     const detail::CaptureRequest capture = detail::captureRequestFromEnv();
@@ -279,20 +303,31 @@ int run(const AppConfig& cfgIn, AppCallbacks cb) {
         }
         double dt = clock.tick(std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
 
+        if (vulkan && capture.active() && frameNo + 1 >= capture.frames && !capture.path.empty()) {
+            const std::string path = capture.path;   // Vulkan: read back inside endFrame (top-down rows)
+            device->captureNextFrame([path](int w, int h, std::vector<uint8_t> px) {
+                const size_t row = size_t(w) * 4;
+                std::vector<uint8_t> up(px.size());
+                for (int y = 0; y < h; ++y) std::copy_n(px.data() + size_t(h - 1 - y) * row, row, up.data() + size_t(y) * row);
+                if (!detail::writePPM(path, w, h, up.data())) std::fprintf(stderr, "screenshot: cannot write %s\n", path.c_str());
+            });
+        }
         device->beginFrame(S.fbW, S.fbH);
         if (S.cb.frame) S.cb.frame(*device, dt);
         device->endFrame();
         ++frameNo;
         if (capture.active() && frameNo >= capture.frames) {
-            if (!capture.path.empty()) saveScreenshot(capture.path, S.fbW, S.fbH);
+            if (!capture.path.empty() && !vulkan) saveScreenshot(capture.path, S.fbW, S.fbH);
             S.quit = true;
         }
-        eglSwapBuffers(ed, surf);
+        if (!vulkan) eglSwapBuffers(ed, surf);
     }
     if (S.cb.shutdown) S.cb.shutdown();
     device.reset();
-    eglMakeCurrent(ed, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    eglDestroySurface(ed, surf); eglDestroyContext(ed, ctx); eglTerminate(ed);
+    if (!vulkan) {
+        eglMakeCurrent(ed, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        eglDestroySurface(ed, surf); eglDestroyContext(ed, ctx); eglTerminate(ed);
+    }
     XDestroyWindow(g_dpy, g_win); XCloseDisplay(g_dpy);
     return 0;
 }

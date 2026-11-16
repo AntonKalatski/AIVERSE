@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependencies
-        run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build libx11-dev libegl-dev libgles-dev xvfb
+        run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build libx11-dev libegl-dev libgles-dev xvfb mesa-vulkan-drivers
       - name: Configure
         run: cmake --preset linux-release -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
       - name: Build
@@ -51,6 +51,15 @@ jobs:
               timeout 300 build/linux-release/AiverseGame --map 0 --spectate
           done
           python3 .github/scripts/check-screenshot.py shot-*.ppm
+      - name: Vulkan backend (lavapipe)
+        if: matrix.cc == 'gcc'
+        run: |
+          build/linux-release/aiverse_vulkan_tests
+          Xvfb :98 -screen 0 1280x800x24 & sleep 1
+          DISPLAY=:98 AIVERSE_GFX=vulkan AIVERSE_CONTENT=templates/skirmish AIVERSE_SHADOWS=medium AIVERSE_SCREENSHOT=vk-skirmish.ppm \
+            AIVERSE_EXIT_AFTER_FRAMES=300 timeout 300 build/linux-release/AiverseGame --map 0 --spectate 2>&1 | tee vk.log
+          grep -q "\[gfx\] Vulkan" vk.log
+          python3 .github/scripts/check-screenshot.py vk-skirmish.ppm
       - uses: actions/upload-artifact@v4
         with:
           name: checksums-linux-${{ matrix.arch }}-${{ matrix.cc }}

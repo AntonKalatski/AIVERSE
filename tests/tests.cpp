@@ -14553,3 +14553,28 @@ TEST(view_scripts_read_live_game_data_of_neutral_props) {
     CHECK(ref.checksum() == sim.checksum());
 }
 #include "tests_atlas_tight.inc"   // atlas meshes, tight packing, framed sheets (atlas agent)
+
+// ---------------------------------------------------------------- game.json "graphics" (RHI backend, docs/vulkan.md)
+#include "engine/platform/GraphicsSettings.h"
+TEST(graphics_setting_from_game_json_and_command_line) {
+    using platform::AppConfig;
+    AppConfig all;
+    platform::applyGraphicsSettings(all, Json::string("vulkan"), "linux");
+    CHECK(all.graphics == "vulkan");
+    AppConfig per;
+    platform::applyGraphicsSettings(per, Json::parse(R"({"windows": "vulkan", "android": "gl"})"), "android");
+    CHECK(per.graphics == "gl");
+    AppConfig other;   // a platform without an entry keeps the default
+    platform::applyGraphicsSettings(other, Json::parse(R"({"windows": "vulkan"})"), "linux");
+    CHECK(other.graphics.empty());
+    AppConfig args;   // --gfx came first and wins
+    args.graphics = "gl";
+    platform::applyGraphicsSettings(args, Json::string("vulkan"), "linux");
+    CHECK(args.graphics == "gl");
+    AppConfig bad;
+    platform::applyGraphicsSettings(bad, Json::string("directx"), "windows");
+    CHECK(bad.graphics.empty());
+    CHECK(platform::graphicsSettingsProblems(Json()).empty());
+    CHECK(platform::graphicsSettingsProblems(Json::parse(R"({"windows": "vulkan", "linux": "metal"})")).size() == 1);
+    CHECK(platform::graphicsSettingsProblems(Json::string("gl")).empty());
+}

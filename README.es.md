@@ -11,7 +11,7 @@
 <p align="center">
   <img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white">
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-iOS%20·%20Android%20·%20Web%20·%20Windows%20·%20macOS%20·%20Linux-444">
-  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2-6a3de8">
+  <img alt="Rendering" src="https://img.shields.io/badge/rendering-Metal%20·%20GLES3%20·%20WebGL2%20·%20Vulkan-6a3de8">
   <img alt="MCP" src="https://img.shields.io/badge/AI%20agents-MCP-d97757">
   <img alt="MIT" src="https://img.shields.io/badge/license-MIT-2ea44f">
   <a href="https://t.me/aiverseengine"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-@aiverseengine-26A5E4?logo=telegram&logoColor=white"></a>
@@ -206,7 +206,7 @@ Cada plantilla es un juego totalmente jugable con bots. Ábrela en el editor y e
 <td width="50%" valign="top">
 
 **Gráficos y audio**
-- RHI propio: Metal, GLES3 / WebGL2, GL 3.3
+- RHI propio: Metal, GLES3 / WebGL2, GL 3.3, Vulkan (Windows / Linux / Android, opcional)
 - PBR, glTF/OBJ, animación esquelética y procedural, cables procedurales, renderizado de entidades con jerarquía
 - Sombras, luces dinámicas, noche, posprocesado, Shader Graph
 - Partículas con los módulos de Unity ParticleSystem e importador desde Unity
@@ -280,7 +280,7 @@ invernal, comprueba con bots el equilibrio de tres facciones y genera una versi�
 
 El motor está en desarrollo activo. Lo que se ha verificado:
 
-- ✅ **Linux**: cliente, editor, pruebas, partidas entre bots; sumas de verificación idénticas en x64 y ARM64
+- ✅ **Linux**: cliente, editor, pruebas, partidas entre bots; sumas de verificación idénticas en x64 y ARM64; el cliente en Vulkan (Mesa lavapipe)
 - ✅ **macOS / Metal**: compilación, pruebas, juego; `aiversebuild` → .app y un proyecto de iOS con build para el simulador
 - ✅ **Web**: una partida se ejecuta en Chromium headless (WebGL2)
 - ✅ **Windows**: .exe compilado de forma cruzada con MinGW, ejecutado con Wine

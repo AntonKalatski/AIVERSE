@@ -67,6 +67,8 @@ struct AppConfig {
     int minWidth = 0, minHeight = 0; // logical points; 0 = no limit
     bool keepAspect = false;        // resizing keeps width : height of the initial size
     bool allowFullscreen = true;    // F11, Alt+Enter (Windows) and the green button (macOS) switch fullscreen
+    // RHI backend on Windows, Linux, Android: "" / "gl" or "vulkan" (GraphicsSettings.h; AIVERSE_GFX wins).
+    std::string graphics;
 };
 
 struct AppCallbacks {

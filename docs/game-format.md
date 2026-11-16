@@ -27,6 +27,10 @@ is optional — the blocks present on a type decide what it can do.
 `"icons"` and `"splash"`: game icons for every platform and the loading screen — see "Icons and
 splash" below (the old single `"icon"` still works as the master icon).
 
+Optional `"graphics"`: the RHI backend on Windows, Linux and Android — `"gl"` (default) or `"vulkan"`,
+or per platform `{"windows": "vulkan", "android": "gl"}`. Vulkan falls back to GL when the machine has no
+driver; `--gfx` and `AIVERSE_GFX` override it (docs/vulkan.md). macOS / iOS use Metal, the web WebGL2.
+
 Optional `"window"` block: how the game window opens on desktops (macOS, Windows, Linux; phones and
 tablets are always fullscreen, the web build fills the page). Editor: **Сборка → Окно игры** (window «Сборка»).
 
