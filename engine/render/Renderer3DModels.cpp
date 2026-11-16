@@ -70,6 +70,8 @@ void Renderer3D::initModels() {
 }
 
 void Renderer3D::shutdownModels() {
+    if (indirectCommands_.valid()) dev_->destroyBuffer(indirectCommands_);
+    indirectCommands_ = {};
     modelError_.clear();
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
@@ -476,11 +478,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
 
 }
 
-void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase) {
+bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase, bool submit) {
     const ModelItem& it = modelItems_[items[0]];
     const bool instanced = count > 1;
     gfx::PipelineHandle ph = modelPipeline(it, phase, instanced);
-    if (!ph.valid()) return;
+    if (!ph.valid()) return false;
     if (!(ph == currentPipe_)) {
         dev_->setPipeline(ph); currentPipe_ = ph;
         if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
@@ -573,6 +575,7 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     }
     dev_->setVertexBuffer(it.model->vb);
     dev_->setIndexBuffer(it.model->ib);
+    if (!submit) return true;  // Bind shared state for one indirect multi-draw.
     dev_->drawIndexed(it.indexCount, it.firstIndex, 0, count);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
@@ -580,6 +583,48 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     ++drawCalls_;
     ++profile_.draws[size_t(phase)];profile_.instances[size_t(phase)]+=count;
     profile_.triangles[size_t(phase)]+=it.indexCount/3*count;
+    return true;
+}
+
+// A single command buffer submission for multiple rigid primitives that share
+// ALL shader data, vertex/index buffers, transform and pipeline. The ordinary
+// pipeline remains the automatic fallback on platforms lacking indirect draws.
+bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase) {
+    if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    std::vector<gfx::DrawIndexedIndirectCommand> commands;
+    commands.reserve(count);
+    uint64_t triangles = 0;
+    for (uint32_t n = 0; n < count; ++n) {
+        const auto& part = modelItems_[items[n]];
+        commands.push_back({part.indexCount, 1, part.firstIndex, 0, 0});
+        triangles += part.indexCount / 3;
+    }
+    if (!drawModelBatch(items, 1, phase, false)) return true; // pipeline warming: no fallback draw
+    if (!indirectCommands_.valid()) {
+        gfx::BufferDesc d;
+        d.type = gfx::BufferType::Indirect;
+        d.usage = gfx::Usage::Dynamic;
+        d.snapshotUpdates = true;
+        d.size = commands.size() * sizeof(commands[0]);
+        d.data = commands.data();
+        d.label = "model indexed indirect commands";
+        indirectCommands_ = dev_->createBuffer(d);
+    } else dev_->updateBuffer(indirectCommands_, commands.data(), commands.size() * sizeof(commands[0]));
+    if (!indirectCommands_.valid() ||
+        !dev_->drawIndexedIndirect(indirectCommands_, 0, count)) {
+        for (uint32_t n = 0; n < count; ++n)
+            drawModelBatch(items + n, 1, phase);
+        return true;
+    }
+    lastItem_ = &modelItems_[items[count - 1]];
+    modelStats_.triangles += triangles;
+    ++modelStats_.multiDrawSubmissions;
+    modelStats_.indirectCommands += count;
+    ++drawCalls_;
+    ++profile_.draws[size_t(phase)];
+    profile_.instances[size_t(phase)] += count;
+    profile_.triangles[size_t(phase)] += uint32_t(triangles);
+    return true;
 }
 
 void Renderer3D::renderModels(int phase) {
@@ -709,6 +754,42 @@ void Renderer3D::renderModels(int phase) {
                (x.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal)) == (y.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal));
     };
     for (size_t i = 0; i < order_.size();) {
+        // Try MDI before conventional instancing, only when every command can
+        // legally inherit the SAME uniforms/textures and rigid transform.
+        // Draw-call colour mode uses one colour per indirect submission.
+        if (modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() && phase <= 1) {
+            const auto& first = modelItems_[order_[i]];
+            auto compatible = [&](const ModelItem& y) {
+                if (first.model != y.model || first.prim == y.prim ||
+                    first.mat != y.mat || first.geometryPrimitive == y.geometryPrimitive ||
+                    first.model->geometry || first.gi || y.gi ||
+                    first.materialRole || y.materialRole || first.shadowRole || y.shadowRole ||
+                    first.baked || y.baked || first.joints >= 0 || y.joints >= 0 ||
+                    first.morph >= 0 || y.morph >= 0 || first.paletteMaterials || y.paletteMaterials ||
+                    first.lodThreshold < 1 || y.lodThreshold < 1 || first.lodInvert || y.lodInvert ||
+                    first.flags != y.flags || first.tint.w < .99f || y.tint.w < .99f ||
+                    first.dissolve != y.dissolve || first.flash != y.flash ||
+                    first.teamGlow != y.teamGlow ||
+                    std::memcmp(first.world.m, y.world.m, sizeof(first.world.m)) != 0 ||
+                    std::memcmp(&first.tint, &y.tint, sizeof(first.tint)) != 0 ||
+                    std::memcmp(&first.team, &y.team, sizeof(first.team)) != 0 ||
+                    std::memcmp(&first.anim, &y.anim, sizeof(first.anim)) != 0 ||
+                    std::memcmp(&first.outline, &y.outline, sizeof(first.outline)) != 0)
+                    return false;
+                return true;
+            };
+            // Do not reorder translucent parts or geometry-cluster selections.
+            if (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
+                                !transparentItem(first.flags))) {
+                size_t end = i + 1;
+                while (end < order_.size() && end - i < 256 &&
+                       compatible(modelItems_[order_[end]])) ++end;
+                if (end - i >= 2 &&
+                    drawModelIndirectBatch(order_.data() + i, uint32_t(end - i), phase)) {
+                    i = end; continue;
+                }
+            }
+        }
         size_t j = i + 1;
         if (batchable(modelItems_[order_[i]]))
             while (j < order_.size() && j - i < size_t(instanceLimit_) && batchable(modelItems_[order_[j]]) &&
