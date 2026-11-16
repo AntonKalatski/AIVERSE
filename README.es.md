@@ -31,6 +31,25 @@
 
 ---
 
+## Capturas
+
+<p align="center">
+  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <sub>Sponza: PBR, sombras, oclusión ambiental</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <sub>Rayos de luz en la niebla: apagado / encendido</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <sub>Ciudad creada por un agente con las skills <code>aiverse-roads</code> y <code>aiverse-city-blocks</code>: carreteras spline, pasos de peatones, manzanas</sub>
+</p>
+
+---
+
 ## En resumen
 
 **AIVERSE** es un motor en C++20 escrito desde cero con un único objetivo: un juego **de cualquier género**

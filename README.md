@@ -31,6 +31,25 @@
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <sub>Sponza: PBR, shadows, ambient occlusion</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <sub>Light shafts through haze: off / on</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <sub>City built by an agent with the <code>aiverse-roads</code> and <code>aiverse-city-blocks</code> skills: spline roads, crossings, blocks</sub>
+</p>
+
+---
+
 ## In short
 
 **AIVERSE** is a C++20 engine written from scratch for one goal: a game **of any genre** should be

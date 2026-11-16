@@ -31,6 +31,25 @@
 
 ---
 
+## 截图
+
+<p align="center">
+  <img src="docs/images/screenshots/sponza.png" alt="Sponza" width="860"><br>
+  <sub>Sponza：PBR、阴影、环境光遮蔽</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/sponza-light-shafts.png" alt="Sponza light shafts" width="860"><br>
+  <sub>雾中光束：关 / 开</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshots/city-roads.jpg" alt="City" width="860"><br>
+  <sub>由代理使用 <code>aiverse-roads</code> 和 <code>aiverse-city-blocks</code> 技能搭建的城市：样条道路、人行横道、街区</sub>
+</p>
+
+---
+
 ## 简介
 
 **AIVERSE** 是一款从零编写的 C++20 引擎，只为一个目标：**任何类型**的游戏都应该可以通过**描述**来制作，
