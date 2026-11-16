@@ -173,6 +173,7 @@ enum DrawFlags : uint32_t {
 struct ModelRenderStats {
     uint64_t nodes = 0, culledNodes = 0, lodNodes[4] = {};
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
+    uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
 };
 
 class Renderer3D {
@@ -257,6 +258,8 @@ public:
     int studioDebugMode() const { return studioDebugMode_; }
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
+    void setModelMultiDrawEnabled(bool on) { modelMultiDrawEnabled_ = on; }
+    bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
     struct RenderProfile {
         double submitMs=0,occlusionMs=0;
@@ -318,7 +321,8 @@ private:
     void initModels();
     void shutdownModels();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced);
-    void drawModelBatch(const uint32_t* items, uint32_t count, int phase);
+    bool drawModelBatch(const uint32_t* items, uint32_t count, int phase, bool submit = true);
+    bool drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase);
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
     void renderReflection();        // water planar reflection (Renderer3DReflect.cpp, lighting agent)
     void renderSpotShadow();        // depth of the casters seen from the main spot light (same file)
@@ -380,6 +384,8 @@ private:
 
     // models
     ModelRenderStats modelStats_;
+    gfx::BufferHandle indirectCommands_;
+    bool modelMultiDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
     bool profiling_=false,modelLodEnabled_=true;
