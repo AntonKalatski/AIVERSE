@@ -76,7 +76,7 @@ public:
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     const int hit = ed.pickFpsSceneObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
                     ed.selectFpsSceneObject(hit);
-                    fpsDragActive_ = hit >= 0 && ed.tool == Tool::Select && !io.KeyCtrl && !io.KeyShift;
+                    fpsDragActive_ = hit >= 0 && ed.tool == Tool::Select && !io.KeyCtrl;
                     fpsDragEdited_ = false;
                     fpsDragLastX_ = io.MousePos.x;
                     fpsDragLastY_ = io.MousePos.y;
@@ -94,10 +94,15 @@ public:
                     ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
                                                 io.MousePos.y - vp_.originY,
                                                 vp_.pointsW, vp_.pointsH, current)) {
-                    const float dx = current.x - previous.x, dz = current.z - previous.z;
-                    if (std::abs(dx) > 1e-5f || std::abs(dz) > 1e-5f) {
+                    // Shift-drag constrains translation to world Y; otherwise
+                    // drag on the XZ ground plane. This does not imply rotation
+                    // or scale support in the FPS map schema.
+                    const float dx = io.KeyShift ? 0.0f : current.x - previous.x;
+                    const float dy = io.KeyShift ? -io.MouseDelta.y * std::max(0.01f, ed.sceneCam.distance * 0.002f) : 0.0f;
+                    const float dz = io.KeyShift ? 0.0f : current.z - previous.z;
+                    if (std::abs(dx) > 1e-5f || std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f) {
                         if (!fpsDragEdited_) ed.doc().beginEdit();
-                        fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dz) || fpsDragEdited_;
+                        fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) || fpsDragEdited_;
                     }
                 }
                 fpsDragLastX_ = io.MousePos.x;
