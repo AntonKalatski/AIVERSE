@@ -238,7 +238,7 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
     if (v["model"].isString()) entries.emplace_back(v["model"].str(), v);
     const auto initialChoices = initialModelChoices(v);
     for (size_t index = 0; index < v["model"].items().size(); ++index) {
-        if (deferredLoading_ && std::find(initialChoices.begin(), initialChoices.end(), index) == initialChoices.end()) {
+        if (deferredLoading_ && deferAppearanceVariants_ && std::find(initialChoices.begin(), initialChoices.end(), index) == initialChoices.end()) {
             L.pendingVariants.push_back(index); continue;
         }
         const auto& p = v["model"][index];
@@ -383,7 +383,7 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
             }
             else for (const auto& value : v.items()) visit(value);
         };
-        if (!allVariants && deferredLoading_ && t.view["model"].isArray() && t.view["streaming"].getInt("initialModels", 0) > 0) {
+        if (!allVariants && deferredLoading_ && deferAppearanceVariants_ && t.view["model"].isArray() && t.view["streaming"].getInt("initialModels", 0) > 0) {
             Json initialView = t.view, choices = Json::array();
             for (size_t index : initialModelChoices(t.view)) choices.push(t.view["model"][index]);
             initialView.set("model", std::move(choices));
