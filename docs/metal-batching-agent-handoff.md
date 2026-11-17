@@ -319,6 +319,14 @@ Recommended test launch after rebuild and tests:
 
 **No assistant-side macOS build or runtime test.** Recommended one-pass owner validation: pull branch, build `build-metal`, run `aiverse_tests`, launch first with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_ADAPTIVE=1 AIVERSE_MDI_GEOMETRY_SORT=1 AIVERSE_BENCH_UNCAPPED=1`, check 3-way A/B and both CPU/GPU times plus object movement. Only after successful image/AGX stability add `AIVERSE_GPU_ICB_LOD=1` and check LOD transitions and shadows. Report zero GPU ICB submissions, fallback reasons, shader/pipeline compilation errors, or visual errors with logs. Prior baseline: Instancing CPU 11.873 ms/GPU editor 1.446 ms; CPU MDI 11.977/1.508; GPU ICB 12.094/1.674, 3 ICB submissions / 33 commands (different scene workloads). Do not claim improved FPS without owner measurements.
 
+## Adaptive fallback correction after zero-ICB benchmark (2026-11-17)
+
+Owner tested `AIVERSE_GPU_ICB_ADAPTIVE=1 AIVERSE_GPU_ICB_MIN_COMMANDS=8`: the policy correctly selected **0 GPU-encoded ICB submissions** but still ran **22 GPU-authored single draws**. Three-way benchmark: Instancing CPU 11.980ms / full GPU frame 1.383ms; CPU MDI 12.103 / 1.449ms; GPU-authored 12.219 / 1.509ms. This was not a clean no-GPU fallback, because GPU command generation and single indirect draws still executed.
+
+Commits `6e6c54b` and `0631880` fix the policy as an all-or-nothing decision when no viable GPU ICB batches exist. Adaptive mode **never submits GPU-authored singles**; it now scans GPU state groups against the effective minimum **before GPU upload or compute**, and if none qualifies, skips the entire GPU-generated arguments stage. The ordinary CPU MDI and instancing renderer remain active. When viable groups exist, the compute/ICB stage still runs and incompatible groups use CPU fallbacks. Commit `50f6210` adds Scene Batching status `Adaptive GPU ICB: no viable batch, GPU compute skipped`. This does not remove the CPU eligibility/group classification cost: future caching/preflight may further reduce CPU overhead.
+
+No local Mac build/visual validation has been run for this fix. Owner should rebuild, confirm `GPU-authored opaque: ... / 0 single draws`, `GPU-encoded ICB 0 submissions`, `GPU indirect args: not ready / unsupported` and `GPU draw record uploads 0` in adaptive no-group case. A/B GPU-authored vs CPU MDI should converge, though CPU grouping bookkeeping may still add overhead. Keep experimental mode disabled by default.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
