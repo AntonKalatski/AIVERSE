@@ -391,7 +391,10 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         in.aimYaw = wrap(std::atan2(-to.z, to.x) - st.yaw);
         in.aimPitch = std::atan2(to.y, std::max(0.01f, std::sqrt(to.x * to.x + to.z * to.z)));
     }
-    if (grid && grid->w > 0) { // terrain normal around the object, rotated into object space
+    // Ground normals are consumed only by procedural modifiers. Most static
+    // models have no procs: avoid four heightAt() samples and a matrix
+    // rotation per object when those values would be discarded.
+    if (!ch.procs.empty() && !st.graph.hasContacts() && grid && grid->w > 0) { // terrain normal around the object, rotated into object space
         const float e = 0.6f;
         const float hx = heightAt(*grid, o.pos.x + e, o.pos.z) - heightAt(*grid, o.pos.x - e, o.pos.z);
         const float hz = heightAt(*grid, o.pos.x, o.pos.z + e) - heightAt(*grid, o.pos.x, o.pos.z - e);
@@ -406,10 +409,9 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     }
     if (ch.needsPose && updatePose) {
         // Kingston corner stride: shorten leg excursion without slowing the actor.
-        float stride=1.f;
-        if(fx_){auto it=fx_->animations.find(o.entity.packed());if(it!=fx_->animations.end()){
-            auto value=it->second.parameters.values.find("strideScale");if(value!=it->second.parameters.values.end())stride=std::clamp(value->second,.7f,1.f);
-        }}
+        // The animation entry was already resolved above; reuse the same
+        // stride override for pose correction rather than searching again.
+        const float stride = kingstonStride;
         if(moving&&stride<1.f)for(const auto&leg:ch.legs)for(int node:{leg.hip,leg.knee})st.pose[node].r=slerp(m.nodes[node].r,st.pose[node].r,stride);
         worldMatrices(m, st.pose, st.world);
         // foot IK: plant two-bone legs on the terrain under each foot (ramps, cliffs, slopes)
