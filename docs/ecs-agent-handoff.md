@@ -279,6 +279,53 @@ ctest --test-dir build -R '^ecs_' --output-on-failure
 - The compare script assumes CMake toolchain and example template availability; any configure/build failures must be fixed and recorded.
 - Avoid calling this feature complete until `run_ecs_gameplay_compare.sh` and relevant RTS/FPS lockstep suites pass.
 
+## 2026-11-17 — Additional guarded parallel jobs, failure recovery and race tests (CURRENT)
+
+Additional work implemented on the existing PR #8 **since the earlier RTS integration section**:
+
+- `9b16c2b` — `engine/core/ECS.h`: added `eachExistingRange<T>(begin,end,fn)` and `countExisting<T>()` for non-mutating, non-registering access to stable dense pool ranges.
+- `ef1d480` — `engine/experiments/EcsGuardedWorld.h`: `eachAdaptiveWrite<T>(PersistentWorkers&, ExecutionMode, ParallelPolicy, callback)`. Propagates the system's `AccessScope` into each worker, partitions the target component pool into disjoint ranges, and uses `EntityScope` to reject **cross-entity reads/writes of component types declared writable** through the GuardedWorld facade. Read-only components can be read from other entities. It does not prevent retaining or escaping raw references, global state writes, or indirect unsafe writes outside the facade. The target component is passed as `T&` for the current Entity only; no structural changes during jobs.
+- `8bf9357` — `tests/ecs_guarded_parallel_test.cpp`: compares checksum across 0/1/3/7 worker counts at 1%,25%,100% density, rejects foreign writable component access, verifies pool usability after thrown `AccessViolation`.
+- `8365e0b` and `93958a2` — added guarded parallel test to standalone runner and CTest.
+- `6d0d450` — `engine/experiments/EcsSimulationBridge.h`: optional `GuardedGroupOptions{restoreWorldOnFailure=true}` takes a deep World snapshot before each checked group and restores it on failure after worker joins. Disabled by default because of snapshot cost. Only the World is restored, not arbitrary external/module state, RNG or tick-global side effects.
+- `b092b2e` — `tests/ecs_guarded_failure_test.cpp`: injects exception after partial writes in checked systems and verifies World checksum/data restored and Simulation tick not advanced, across 0/3/7 workers.
+- `e899d50` and `5a1cfff` — registered transactional failure test in standalone suite and CTest.
+- `037f864` — `tests/run_ecs_experiment_suite.sh` supports optional `--tsan` (ThreadSanitizer) as a **separate** run, not combined with `--sanitize`. TSan may be unavailable on some Apple/Clang configurations; log toolchain limitations without treating them as passing tests.
+
+### Latest validation status
+
+The previously uploaded regular, ASan/UBSan and benchmark suite **passed**, but these newly committed tests and RTS opt-in changes have **NOT YET been compiled/run**. No claims of RTS/FPS production speedups or TSan race-free status should be made from this step.
+
+### Test commands for user
+
+```sh
+git switch feature/ecs-architecture-benchmarks
+git pull --ff-only
+
+# Unit and Simulation test suite (includes nested workers, checked parallel, exception rollback):
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+
+# Optional race detector, compiler/runtime permitting:
+bash tests/run_ecs_experiment_suite.sh --tsan
+
+# Real engine game-module comparison (two independent CMake builds;
+# RTS checksum + snapshot replay; FPS tests twice):
+bash tests/run_ecs_gameplay_compare.sh
+
+# Extended real-game tests (builds aiverse_tests in both configurations):
+bash tests/run_ecs_gameplay_compare.sh --full
+```
+
+### Remaining engineering risks, not yet complete
+
+1. `GuardedWorld` cannot prevent a captured `World&`, pointer/ref escape, global mutable state, or arbitrary mutation outside its facade; cannot safely parallelize existing RTS/FPS systems by simply declaring access masks. Static/compile-time restrictions or validated encapsulation are needed before default-on.
+2. Only RTS transform history preprocessing has a real-game opt-in; FPS gameplay is a monolithic shared-`State` tick with RNG, hitscan, actors and history, and remains sequential pending its own dataflow redesign. The compare script runs FPS regressions but does **not** parallelize FPS gameplay.
+3. `GuardedGroupOptions` is an opt-in World-only transaction. Non-World mutations must be prohibited/audited or restored via full Simulation snapshot.
+4. `DirtyPageSnapshot` remains a vector-page prototype, not a complete tracked ECS rollback solution. Production rollback continues to use complete snapshots.
+5. Real gameplay timing, frame stability, memory, TSan and cross-platform performance require user verification. The CMake configure and gameplay comparison scripts have not been executed by this agent.
+6. Merge PR #8 only after normal/sanitized/regression tests, baseline-vs-opt-in RTS checksum equality, FPS tests and real gameplay checks.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
