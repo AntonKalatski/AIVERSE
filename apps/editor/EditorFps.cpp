@@ -23,7 +23,7 @@ std::string quote(const std::string& s) {
 }
 render::float3 point(const Json& j){return {float(j[0].toDouble()),float(j[1].toDouble()),float(j[2].toDouble())};}
 }
-// FPS actors live in a World resource, not in per-entity component pools.
+// FPS exposes real ECS runtime components; an opt-in mode stores full authoritative payloads.
 // Expose a typed, read-only snapshot without pretending they are DocEntity or
 // RTS World rows. This uses the same fps::Module::setup as the FPS client.
 const Json& Editor::fpsRuntimeSnapshot() {
@@ -106,6 +106,24 @@ const Json& Editor::fpsRuntimeSnapshot() {
             vitalsFields.set("crouched", Json::fromBool(vitals->crouched));
             vitalsFields.set("prone", Json::fromBool(vitals->prone));
             components.set("ActorEntityVitals", vitalsFields);
+            if(const auto* full=world.tryGetConst<fps::ActorRuntime>(entity)) {
+                const auto& a=full->value;
+                Json runtime=Json::object();
+                runtime.set("slot",Json::number(int64_t(a.slot)));
+                runtime.set("team",Json::number(int64_t(a.team)));
+                runtime.set("life",Json::number(int64_t(a.life)));
+                runtime.set("health",Json::number(int64_t(a.health)));
+                runtime.set("kills",Json::number(int64_t(a.kills)));
+                runtime.set("shots",Json::number(int64_t(a.shots)));
+                runtime.set("hits",Json::number(int64_t(a.hits)));
+                runtime.set("weaponIndex",Json::number(int64_t(a.weaponIndex)));
+                runtime.set("reloadUntil",Json::number(int64_t(a.reloadUntil)));
+                runtime.set("nextFire",Json::number(int64_t(a.nextFire)));
+                runtime.set("lastSequence",Json::number(int64_t(a.lastSequence)));
+                runtime.set("grounded",Json::fromBool(a.grounded));
+                runtime.set("vehicle",Json::number(int64_t(a.vehicle)));
+                components.set("ActorRuntime",std::move(runtime));
+            }
             data.set("components", components);
             actors.push(std::move(data));
         }
@@ -130,6 +148,16 @@ const Json& Editor::fpsRuntimeSnapshot() {
                     fields.set("kind", Json::number(int64_t(projectile->kind)));
                     fields.set("damage", Json::number(int64_t(projectile->damage)));
                     components.set("ProjectileEntity", fields);
+                    if(const auto* full=world.tryGetConst<fps::ProjectileRuntime>(entity)) {
+                        Json runtime=Json::object();
+                        runtime.set("id",Json::number(int64_t(full->value.id)));
+                        runtime.set("order",Json::number(int64_t(full->order)));
+                        runtime.set("expires",Json::number(int64_t(full->value.expires)));
+                        runtime.set("owner",Json::number(int64_t(full->value.owner)));
+                        runtime.set("damage",Json::number(int64_t(full->value.damage)));
+                        runtime.set("programEnabled",Json::fromBool(full->value.program.enabled));
+                        components.set("ProjectileRuntime",std::move(runtime));
+                    }
                     data.set("title", Json::string("Projectile #" +
                         std::to_string(projectile->id)));
                 } else if (kind == 2) {
@@ -141,6 +169,15 @@ const Json& Editor::fpsRuntimeSnapshot() {
                     fields.set("type", Json::number(int64_t(loot->type)));
                     fields.set("count", Json::number(int64_t(loot->count)));
                     components.set("LootEntity", fields);
+                    if(const auto* full=world.tryGetConst<fps::LootRuntime>(entity)) {
+                        Json runtime=Json::object();
+                        runtime.set("id",Json::number(int64_t(full->value.id)));
+                        runtime.set("order",Json::number(int64_t(full->order)));
+                        runtime.set("count",Json::number(int64_t(full->value.count)));
+                        runtime.set("ammo",Json::number(int64_t(full->value.ammo)));
+                        runtime.set("reserve",Json::number(int64_t(full->value.reserve)));
+                        components.set("LootRuntime",std::move(runtime));
+                    }
                     data.set("title", Json::string("Loot #" +
                         std::to_string(loot->id)));
                 } else if (kind == 3) {
@@ -153,6 +190,15 @@ const Json& Editor::fpsRuntimeSnapshot() {
                     fields.set("driver", Json::number(int64_t(vehicle->driver)));
                     fields.set("yaw", Json::number(vehicle->yaw.toDouble(), 3));
                     components.set("VehicleEntity", fields);
+                    if(const auto* full=world.tryGetConst<fps::VehicleRuntime>(entity)) {
+                        Json runtime=Json::object();
+                        runtime.set("id",Json::number(int64_t(full->value.id)));
+                        runtime.set("order",Json::number(int64_t(full->order)));
+                        runtime.set("health",Json::number(int64_t(full->value.health)));
+                        runtime.set("driver",Json::number(int64_t(full->value.driver)));
+                        runtime.set("speed",Json::number(full->value.speed.toDouble(),3));
+                        components.set("VehicleRuntime",std::move(runtime));
+                    }
                     data.set("title", Json::string("Vehicle #" +
                         std::to_string(vehicle->id)));
                 } else continue;
