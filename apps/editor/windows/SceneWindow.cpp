@@ -235,6 +235,10 @@ private:
                 ImGui::Text("GPU draw record uploads: %u records / %u ranges (%.2f KiB)",
                             gpu.uploadedRecords, gpu.uploadRanges,
                             double(gpu.uploadBytes) / 1024.0);
+                if (const char* c = std::getenv("AIVERSE_GPU_COMPACT_DRAW_RECORDS");
+                    c && std::strcmp(c, "1") == 0)
+                    ImGui::Text("GPU visibility compaction: %s (not rendered yet)",
+                                gpu.compacted ? "generated" : "unavailable");
                 ImGui::TextDisabled("Experimental one-draw-per-primitive; slower than instancing is possible.");
             }
             if (const char* persistent = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
