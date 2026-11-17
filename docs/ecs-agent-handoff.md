@@ -503,6 +503,12 @@ Do not merge to main until latest CI tests and real Mac Studio RTS/FPS parity ar
 - These features remain **OFF by default**. Full authoritative FPS AI/combat/projectile parallel execution and page-level COW of the monolithic FPS `State` are still not implemented. Generic ECS component payloads are paged; singleton resources copy whole objects on first write. This is deliberate in order not to destabilize existing gameplay without determinism proof.
 - Strict merge gate: run both `bash tests/run_ecs_experiment_suite.sh --sanitize` and `bash tests/run_ecs_gameplay_compare.sh --full` successfully, plus native Linux/macOS CI and TSan, inspect actual tick performance. Do not claim complete or merge on microbenchmarks alone.
 
+### FPS benchmark fixture coverage — latest addition
+
+- `1f9c92d` records wall-clock time for the fixed 100-actor/120-tick FPS motor fixture as `FPS_MOTOR_TICKS_MS`. The benchmark includes command injection, full tick, checksum, and test overhead: it is **not** a clean isolated motor kernel time.
+- `9276c6b` validates and prints that timing for each baseline/opt-in build in `tests/run_ecs_gameplay_compare.sh`, alongside parallel batch/commit coverage. This allows judging whether speculative actor copies and state validation cost more than jobs save.
+- No timing or checksum claims for these changes until the user or CI has run the updated suite. If the opt-in path is consistently slower in real-frame measurements, retain the default OFF setting or revise its workload threshold.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
