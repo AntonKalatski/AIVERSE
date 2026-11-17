@@ -78,6 +78,63 @@ records. Register it through the public
 and a strategy host with matching COW rollback checksums). **This is a flight
 stage; legacy RTS/FPS shooting/damage adapters are not yet migrated.**
 
+### Full reusable ECS shooting chain
+
+`libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h` adds the
+missing **WeaponLaunch** and **ProjectileSpawn** systems to the existing
+ballistic flight / impact / damage libraries:
+
+| Component / resource | Purpose |
+| --- | --- |
+| `WeaponParametersComponent` | Muzzle speed, gravity, radius, lifetime, interval and direct damage |
+| `WeaponStateComponent` | Authoritative magazine/ammo and next allowed firing tick |
+| `FireIntentComponent` | One-tick request, origin and direction supplied by input, AI or trigger |
+| `ProjectileSpawnQueue` | Deterministically ordered projectile spawn commands and stable shot ID counter |
+
+Register stages in this exact order:
+
+```cpp
+#include <aiverselib/genre/EcsWeaponLaunchSystems.h>
+namespace lg = aiverse::lib::genre;
+
+// Create WeaponParametersComponent, WeaponStateComponent and
+// FireIntentComponent on ANY shooting Entity (unit, vehicle, player, turret).
+// Create ProjectileSpawnQueue, ColliderEntityIndex and DamageQueue resources.
+lg::addWeaponLaunchSystem(sim, "weapon-launch");
+lg::addProjectileSpawnSystem(sim, "projectile-spawn");
+lg::addProjectileFlightSystem(sim, "projectile-flight",
+    [&collision](aiverse::Simulation&) -> const aiverse::world::SpatialWorld& {
+        return collision;
+    },
+    [](aiverse::Simulation& s,const lg::ProjectileImpactEvent& hit) {
+        lg::enqueueProjectileDamage(s,hit);
+    });
+lg::addDamageResolutionSystem(sim, "apply-damage",
+    [](aiverse::Simulation& s,const lg::DamageApplied& applied) {
+        // Optional ordered score, audio, visual or gameplay event.
+    });
+```
+
+The launch stage updates ammo/cooldown and only **enqueues** spawn commands.
+The spawn stage creates Entities in canonical submission order; the flight
+stage moves them with the same `stepProjectile` fixed-point policy and stages
+impacts; the damage stage applies health changes with an optional policy.
+The engine does **not** inspect whether the projectile came from FPS, RTS,
+artillery, a turret, a spellcaster or a drone.
+
+Public target: `AIVERSE::lib_ecs_weapon_launch`. Full composition test:
+`tests/ecs_cross_genre_weapon_pipeline_test.cpp` (shooter + artillery,
+ammo, shot ID, health, COW and rollback). The low-level checks remain
+`ecs_projectile_composition_test` and `ecs_cross_genre_projectile_test`.
+Run them in CTest and in `bash tests/run_ecs_experiment_suite.sh`.
+
+**Limits:** the reusable component pipeline is implemented and not yet used
+as the authoritative firing system of existing RTS/FPS gameplay. Guidance,
+spread/recoil, targeting, penetration, AoE, reload and status effects need
+explicit feature components or supplied policies. Do not add genre branches
+to the shared algorithm or claim old FPS/RTS save/network parity until
+those adapters and tests exist.
+
 ### Shared ECS impact and damage stage
 
 `libraries/include/aiverselib/genre/EcsDamageSystems.h` builds on the same
