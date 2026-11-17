@@ -232,6 +232,9 @@ private:
                             gpu.eligible, gpu.submitted);
                 ImGui::Text("GPU indirect args: %s",
                             gpu.prepared ? "compute generated" : "not ready / unsupported");
+                ImGui::Text("GPU draw record uploads: %u records / %u ranges (%.2f KiB)",
+                            gpu.uploadedRecords, gpu.uploadRanges,
+                            double(gpu.uploadBytes) / 1024.0);
                 ImGui::TextDisabled("Experimental one-draw-per-primitive; slower than instancing is possible.");
             }
             if (const char* persistent = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
