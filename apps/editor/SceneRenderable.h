@@ -72,6 +72,18 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
             renderer.drawModel(draw);
         } else if (object.mesh) {
             renderer.drawMesh(*object.mesh, object.world, object.tint);
+            if (object.selected || object.hovered) {
+                const auto lo = object.boundsMin, hi = object.boundsMax;
+                const render::float3 corners[8] = {
+                    {lo.x,lo.y,lo.z}, {hi.x,lo.y,lo.z}, {hi.x,lo.y,hi.z}, {lo.x,lo.y,hi.z},
+                    {lo.x,hi.y,lo.z}, {hi.x,hi.y,lo.z}, {hi.x,hi.y,hi.z}, {lo.x,hi.y,hi.z}
+                };
+                constexpr int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},
+                                              {4,5},{5,6},{6,7},{7,4},
+                                              {0,4},{1,5},{2,6},{3,7}};
+                const uint32_t color = object.selected ? render::rgba(64,158,255) : render::rgba(180,190,205);
+                for (const auto& edge : edges) renderer.line(corners[edge[0]], corners[edge[1]], color);
+            }
         }
     }
 }
