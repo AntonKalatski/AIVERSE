@@ -530,7 +530,17 @@ private:
         float wx, wz;
         if (!ed.selectionPos(ed.selection, wx, wz)) return -1;
         const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
-        // RTS authored Transform currently persists only X/Z.
+        if (ed.transformTool == TransformTool::Rotate &&
+            ed.selection.kind == Selection::Entity &&
+            ed.selection.index >= 0 &&
+            size_t(ed.selection.index) < ed.doc().data.entities.size() &&
+            ed.doc().data.entities[size_t(ed.selection.index)]
+                .extra["facing"].isNumber()) {
+            return pickRotateYawGizmoRing(ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                vp_.originX, vp_.originY, sx, sy,
+                {wx, wy, wz}, 1.5f) ? 3 : -1;
+        }
+        if (ed.transformTool != TransformTool::Move) return -1;
         return pickMoveGizmoAxis(ed.sceneCam, vp_.pointsW, vp_.pointsH,
                                   vp_.originX, vp_.originY, sx, sy,
                                   {wx, wy, wz}, 1.5f, 0x5);
@@ -552,6 +562,7 @@ private:
                 dragMoved_ = false;
                 gizmoGroundX_ = x;
                 gizmoGroundZ_ = z;
+                gizmoLastScreenX_ = sx;
                 break;
             }
             const Selection picked = ed.pickObject(vp_, ed.sceneCam, sx, sy);
@@ -857,6 +868,7 @@ private:
     int studioDebugMode_ = 0;
     int gizmoAxis_ = -1;
     float gizmoGroundX_ = 0.0f, gizmoGroundZ_ = 0.0f;
+    float gizmoLastScreenX_ = 0.0f;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;
