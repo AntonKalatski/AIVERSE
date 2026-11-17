@@ -345,6 +345,13 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - Verify shell parsing before running: `bash -n tests/run_ecs_gameplay_compare.sh`.
 - **This replacement script has not yet been run**, so any configure, build, CTest or log-format failures must be reported and corrected.
 
+## 2026-11-17 — Continuous integration and non-registering parallel queries
+
+- Commit `e93f2e0`: added `.github/workflows/ecs-experiments.yml` to run normal and ASan/UBSan ECS suites on Linux and macOS. The workflow uses `actions/checkout@v4` and checks shell syntax. It is intended as an automated regression gate, not proof that every real-game configuration has passed.
+- Commit `7149c7b`: `PreparedAll`, `eachAdaptive` and `eachParallel` now use `countExisting` and `eachExistingRange` instead of implicitly registering a missing pool through `World::pool<T>()`. This removes unintended structural registry changes from experimental query setup. Existing query order is retained.
+- GitHub Actions had no associated pull-request workflow results exposed for commit `7149c7b` when checked. **No CI green status should be claimed.**
+- Current status: latest manual full ECS suite from user passed **before** these additions; rerun new branch after obtaining checkout and compare real RTS/FPS tests.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
