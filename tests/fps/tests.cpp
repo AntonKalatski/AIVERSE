@@ -130,6 +130,28 @@ void parallelMotorParityFixture(Json rules,Json map) {
     CHECK(sim->checksum()==current);
     std::printf("FPS_MOTOR_PARITY_HASH=%016llx\n",
         (unsigned long long)history.value());
+    // Combat also runs in the speculative motor phase. Earlier actor damage
+    // must invalidate a later actor's movement plan before canonical commit.
+    auto combatSim=simulation(rules,map);
+    Hasher combatHistory;
+    for(uint32_t t=0;t<80;++t) {
+        for(uint32_t i=0;i<100;++i) {
+            fps::Input input;
+            input.sequence=t+1;
+            input.viewTick=t;
+            input.yaw=i<50?Fixed{}:Fixed::fromRatio(1,2);
+            input.forward=300;
+            if(i%6==0)input.buttons=fps::Fire;
+            auto cmd=fps::command(uint8_t(i+1),input);
+            cmd.tick=t;
+            combatSim->inject(cmd);
+        }
+        combatSim->step();
+        combatHistory.u64(combatSim->checksum());
+    }
+    std::printf("FPS_COMBAT_PARITY_HASH=%016llx\\n",
+        (unsigned long long)combatHistory.value());
+
 }
 void cowSnapshotsFps(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
