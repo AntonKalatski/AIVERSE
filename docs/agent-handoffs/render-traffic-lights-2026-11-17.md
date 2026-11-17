@@ -40,6 +40,21 @@ Branch: `fix/indirect-vulkan-base-vertex-safety` (PR #4, based on `feature/unive
 - Semantics: **submitted triangle indices / 3, including instances** for currently drawn camera geometry. Not the number of rasterized/visible fragments or GPU-late culled primitives. Excludes shadows, reflections, repeated SSR colour pass, outlines/depth-only model passes, custom renderers such as terrain/sprites. Custom draw APIs do not expose universal triangle counts currently. This is a precise scoped tracked counter, NOT a universal total GPU triangles figure.
 - Tests pending: compile `aiverse_editor` on Apple Silicon, run Scene, verify changing camera updates counts, check SSR/reflection doesn't double count and MDI OFF/ON yields matching numbers for same view. Run native tests/CI if available.
 
+## Step 6 — actual top-level Statistics tab triangle card (IMPLEMENTED; build pending)
+- User's actual request was the main **Статистика** tab (FPS / CPU frame / draw calls / simulation), not just the Scene Batching popup. Earlier implementation in Scene Batching alone did not satisfy it.
+- Commits: `f21679f` extends editor FrameStats with `cameraTriangles`, `58556bc` samples the last viewport's triangle count in Editor.cpp, `efdc13a` adds **Треугольников** KPI between draw calls and simulation in StatsWindow.cpp; compact K/M format and dynamic updates.
+- The screenshot with brightly colored roads/meshes was Scene's Draw Calls visualization. This is controlled separately by `studioDebugMode_` in SceneWindow.cpp (drop-down `Shaded` vs `Draw Calls`), and is not evidence the triangle counter failed.
+- Validation pending: compile editor, check Stats tab has 5 cards and camera moves update triangle count.
+
+## Step 7 — why even a small scene consumes 340 MiB geometry (DIAGNOSIS)
+- `RtsView::init` in `modules/rts/view/RtsView.cpp`: when `deferredLoading_` is false, loops over **every** `rules.types` entry calling `loadType` on startup. The `RtsView.h` comment explicitly says **editor/model viewer eager, clients deferred**.
+- Editor initialization `apps/editor/Editor.cpp::reloadRules` calls `view_.init` without `setDeferredLoading(true)` and thus loads the whole project asset catalog, not just map entities or camera-visible objects.
+- `GlobalGeometryPool.cpp`: 2 MiB minimum pages, power-of-two growth for bigger models; 16 MiB max per model. GPU pages persist while any owning model is resident; no per-model suballocation reuse/compaction. A pool page tracks actual occupancy and owns a GPU storage buffer.
+- User's older Scene Batching screenshot: 95 active pages, 884 loaded models, occupied 336.9 MiB, allocated 340.0 MiB (99.1% used). This reflects models in the **project**, not a viewport triangle count. Textures, other GPU buffers, render targets, decoded image cache (CPU budget up to 64 MiB) and editor resources are excluded. macOS Apple Silicon shares physical memory between CPU/GPU.
+- This is **not** mostly page slack: only ~3.1 MiB unused. Reducing page size alone cannot fix the cause.
+- Recommended separate engineering task: support editor-on-demand type/model loading from map instances, selected placement tool, thumbnails/previews, play mode, and asset hot reload; acquire/release unused types, cap texture cache; add a memory breakdown for CPU and GPU asset categories. Do NOT just set `deferredLoading_=true` globally: editor currently assumes available models for the catalog, placement, previews and game startup.
+- No lazy-loading change applied yet and no current process-wide Activity Monitor/RSS measurement. Do not claim total process RAM is 340 MiB.
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
