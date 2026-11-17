@@ -402,7 +402,8 @@ private:
             bool valid = false;
             render::float3 pos{};
             float ground = 0, yaw = 0, scale = 0, sx = 0, sz = 0;
-            bool structure = false, shape = false;
+            float flyHeight = 0;
+            bool structure = false, shape = false, air = false;
             const render::Model* model = nullptr;
             render::mat4 fix{};
             render::mat4 world{};
