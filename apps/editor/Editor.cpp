@@ -12,10 +12,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <unordered_map>
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/view/RtsCamera.h"
 #include "modules/rts/view/RtsOverlayData.h"
@@ -118,6 +121,14 @@ void Editor::init(gfx::Device& dev) {
     initFileAssoc();
     registerNativeBuildOps(ws_, opt_.editorExe);   // up-to-date check against this binary
     checkNativeModules(false);
+    // Only the map's types need resident GPU models. In particular, do not
+    // eagerly upload the full rules.json type catalog into editor memory.
+    // Escape hatch for diagnosing assets that rely on legacy eager loading.
+    const char* eagerAssets = std::getenv("AIVERSE_EDITOR_EAGER_MODELS");
+    lazyEditorAssets_ = !(eagerAssets && std::strcmp(eagerAssets, "1") == 0);
+    editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
+    view_.setDeferredLoading(lazyEditorAssets_);
+    view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(dev, rules(), projectReader(ws_.project.dir));
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
@@ -223,7 +234,13 @@ void Editor::reloadFx() {
 }
 
 void Editor::reloadRules() {
+    editSceneCacheValid_ = false;
+    editSceneCache_.clear();
     view_.shutdown(*dev_);
+    editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
+    lastEditorTrim_ = time_;
+    view_.setDeferredLoading(lazyEditorAssets_);
+    view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(*dev_, rules(), projectReader(ws_.project.dir));
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
@@ -233,6 +250,48 @@ void Editor::reloadRules() {
     for (auto& e : worldCfg_.errors) ws_.log("world", "game.json " + e, true);
     placeType = std::clamp(placeType, 0, std::max(0, int(rules().types.size()) - 1));
     reloadFx();
+}
+
+void Editor::retainEditorType(uint16_t type) {
+    if (type >= rules().types.size()) return;
+    if (editorTypeLastUsed_.size() != rules().types.size())
+        editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
+    editorTypeLastUsed_[type] = time_;
+    // The Model/Materials windows and model_info must work when the type has
+    // no instances on the map. The RtsView loader caches this call per type.
+    if (lazyEditorAssets_) view_.loadType(type);
+}
+
+void Editor::reclaimEditorAssets(bool force) {
+    if (!lazyEditorAssets_ || !dev_ || playing() || clientPlaying() ||
+        ws_.project.isFps()) return;
+    constexpr double kSweepInterval = 5.0;
+    constexpr double kUnusedGrace = 15.0;
+    if (!force && time_ - lastEditorTrim_ < kSweepInterval) return;
+    lastEditorTrim_ = time_;
+    const size_t typeCount = rules().types.size();
+    if (editorTypeLastUsed_.size() != typeCount) return;
+    std::vector<bool> keep(typeCount, false);
+    // Keep the entire map's authored types, including currently hidden
+    // objects: switching an edit layer must never cause a load/unload loop.
+    for (const auto& entity : doc().data.entities) {
+        const int type = rules().findType(entity.type);
+        if (type >= 0 && size_t(type) < typeCount) keep[size_t(type)] = true;
+    }
+    // Editor thumbnails, model inspector, dynamic world preview, and ghost
+    // placements get a grace period. On-demand loading marks those types.
+    for (size_t i = 0; i < typeCount; ++i)
+        if (time_ - editorTypeLastUsed_[i] < kUnusedGrace) keep[i] = true;
+    if (selection.kind == Selection::Type)
+        for (size_t i = 0; i < typeCount; ++i)
+            if (rules().types[i].id == selection.key) keep[i] = true;
+    if (tool == Tool::Place && placeType >= 0 && size_t(placeType) < typeCount)
+        keep[size_t(placeType)] = true;
+    if (overlayPreviewType >= 0 && size_t(overlayPreviewType) < typeCount)
+        keep[size_t(overlayPreviewType)] = true;
+    // This only releases models no longer referenced by any kept TypeLook.
+    // GPU work from their last use is older than the grace interval.
+    view_.trimTypes(keep);
 }
 
 void Editor::newMap(int w, int h) {
@@ -582,12 +641,72 @@ void Editor::buildEditScene(game::RtsScene& out) const {
     out.objects.clear();
     out.roads.clear();
     out.moveMarkers.clear();
-    auto inSet = [&](const Selection& s) { return std::find(selectionSet.begin(), selectionSet.end(), s) != selectionSet.end() || selection == s; };
+    // Keep these caches local to the frame: rules, visibility and selections can
+    // change through editor commands without a map revision. Cache the expensive
+    // type lookup and visibility result for repeated entity types/owners.
+    out.objects.reserve(d.entities.size() + (showGameObjects ? world_.rows.size() : 0));
+    out.roads.reserve(d.roads.size());
+    std::unordered_map<std::string, int> typeCache;
+    typeCache.reserve(std::min(d.entities.size(), rules().types.size()));
+    std::unordered_map<std::string, bool> visibilityCache;
+    visibilityCache.reserve(std::min(d.entities.size(), rules().types.size() * size_t(4)));
+    std::vector<uint8_t> selectedEntities(d.entities.size(), 0);
+    for (const Selection& item : selectionSet)
+        if (item.kind == Selection::Entity && item.index >= 0 && size_t(item.index) < selectedEntities.size())
+            selectedEntities[size_t(item.index)] = 1;
+    if (selection.kind == Selection::Entity && selection.index >= 0 && size_t(selection.index) < selectedEntities.size())
+        selectedEntities[size_t(selection.index)] = 1;
+    auto visible = [&](int owner, const std::string& type) {
+        std::string key = std::to_string(owner);
+        key.push_back('/');
+        key += type;
+        auto it = visibilityCache.find(key);
+        if (it != visibilityCache.end()) return it->second;
+        return visibilityCache.emplace(std::move(key), !objectHidden(owner, type)).first->second;
+    };
+    auto inSet = [&](const Selection& item) { return item == selection || std::find(selectionSet.begin(), selectionSet.end(), item) != selectionSet.end(); };
+    // A document scene can contain thousands of unchanged static placements.
+    // Reuse their type resolution, facing, position and visibility until the
+    // map, project rules or visibility filters change. Do not cache the world
+    // preview (it has an independent asynchronous lifetime). Selection and
+    // hover are applied to fresh output copies every frame.
+    static const bool cacheEditScene = [] {
+        const char* value = std::getenv("AIVERSE_EDITOR_SCENE_CACHE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const bool cacheEligible = cacheEditScene && !d.planet();
+    const bool cacheHit = cacheEligible && editSceneCacheValid_ &&
+        editSceneCacheMapRevision_ == ws_.map.revision &&
+        editSceneCacheRulesRevision_ == static_cast<uint64_t>(rulesRevision_) &&
+        editSceneCacheEntities_ == d.entities.data() &&
+        editSceneCacheEntityCount_ == d.entities.size() &&
+        editSceneCacheHidden_ == sceneHidden;
+    if (cacheHit) {
+        for (const EditSceneCacheEntry& entry : editSceneCache_) {
+            game::SceneObject o = entry.object;
+            const size_t index = entry.documentIndex;
+            o.selected = selectedEntities[index] != 0 || int(index) == roadStart;
+            o.hovered = hover.kind == Selection::Entity && hover.index == int(index);
+            out.objects.push_back(std::move(o));
+        }
+    } else {
+        if (cacheEligible) {
+            editSceneCacheValid_ = false;
+            editSceneCache_.clear();
+            editSceneCache_.reserve(d.entities.size());
+        }
     for (size_t i = 0; i < d.entities.size(); ++i) {
         const auto& e = d.entities[i];
-        int t = rules().findType(e.type);
-        if (t < 0 || objectHidden(e.owner, e.type)) continue;
+        auto typeIt = typeCache.find(e.type);
+        if (typeIt == typeCache.end())
+            typeIt = typeCache.emplace(e.type, rules().findType(e.type)).first;
+        const int t = typeIt->second;
+        if (t < 0 || !visible(e.owner, e.type)) continue;
         game::SceneObject o;
+        // Editor document entity index is stable while the document structure
+        // is unchanged. If indices shift, changed records are uploaded again.
+        // Keep these keys in a separate namespace from simulation entity IDs.
+        o.persistentKey = (uint64_t(0xED) << 56) | (uint64_t(i) + 1);
         o.type = uint16_t(t);
         o.owner = e.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(e.owner, 0, 16));
         o.pos = {e.x, 0, e.z};
@@ -602,16 +721,30 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         }
         if (rules().types[size_t(t)].garrisonMax > 0) o.garrison = e.garrison >= 0 ? e.garrison : 0;
         const Selection me{Selection::Entity, int(i), {}};
-        o.selected = inSet(me) || int(i) == roadStart;
+        o.selected = selectedEntities[i] != 0 || int(i) == roadStart;
         o.hovered = hover == me;
-        out.objects.push_back(o);
+        if (cacheEligible) {
+            game::SceneObject base = o;
+            base.selected = base.hovered = false;
+            editSceneCache_.push_back({i, std::move(base)});
+        }
+        out.objects.push_back(std::move(o));
+    }
+        if (cacheEligible) {
+            editSceneCacheMapRevision_ = ws_.map.revision;
+            editSceneCacheRulesRevision_ = rulesRevision_;
+            editSceneCacheEntities_ = d.entities.data();
+            editSceneCacheEntityCount_ = d.entities.size();
+            editSceneCacheHidden_ = sceneHidden;
+            editSceneCacheValid_ = true;
+        }
     }
     // what the game creates at start (world tree preview: faction start units, script / C++ module objects); read-only
     if (showGameObjects && !worldLive_ && !d.planet() && !sceneHidden.count("game")) wantWorld();   // the preview is built for the Scene too
     if (showGameObjects && !worldLive_ && !d.planet() && !sceneHidden.count("game"))
         for (auto& r : world_.rows) {
             if (r.doc >= 0 || r.type < 0 || !r.hasPos || (r.flags & game::kUnitOffMap) || size_t(r.type) >= rules().types.size()) continue;
-            if (objectHidden(r.owner, rules().types[size_t(r.type)].id)) continue;
+            if (!visible(r.owner, rules().types[size_t(r.type)].id)) continue;
             game::SceneObject o;
             o.type = uint16_t(r.type);
             o.owner = r.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(r.owner, 0, 16));
@@ -692,8 +825,20 @@ void Editor::drawEditOverlays3D() {
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
     if (playing() && !ws_.project.isFps()) { renderGame(vp, cam); return; }
-    if (!ws_.project.isFps()) buildEditScene(scene_);
+    const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
+    const auto stageStart = std::chrono::steady_clock::now();
+    if (!ws_.project.isFps()) {
+        buildEditScene(scene_);
+        if (lazyEditorAssets_) {
+            // Preserve generated preview types without loading the entire catalog.
+            for (const auto& o : scene_.objects)
+                if (!o.isProjectile && o.type < editorTypeLastUsed_.size() &&
+                    editorTypeLastUsed_[o.type] != time_) retainEditorType(o.type);
+        }
+    }
+    const auto afterBuild = std::chrono::steady_clock::now();
     if (!ws_.project.isFps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
+    const auto afterFields = std::chrono::steady_clock::now();
     const bool planets = !ws_.project.isFps() && view_.planetMode();
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
@@ -711,6 +856,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         view_.draw(r3d_, scene_, time_, nullptr, grid_);
         view_.setSelectionOutline(false);
     }
+    const auto afterView = std::chrono::steady_clock::now();
     if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
@@ -721,12 +867,33 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     pass.clearColor[0] = 0.13f; pass.clearColor[1] = 0.15f; pass.clearColor[2] = 0.17f;
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
+    const auto beforeRender = std::chrono::steady_clock::now();
     r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &postFx_ : nullptr));
+    const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePostFx();
     dev_->endPass();
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
+    if (traceSceneStages) {
+        static unsigned samples = 0;
+        static double sums[6] = {};
+        const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        sums[0] += ms(stageStart, afterBuild);
+        sums[1] += ms(afterBuild, afterFields);
+        sums[2] += ms(afterFields, afterView);
+        sums[3] += ms(afterView, beforeRender);
+        sums[4] += ms(beforeRender, afterRender);
+        sums[5] += ms(afterRender, std::chrono::steady_clock::now());
+        if (++samples == 120) {
+            std::fprintf(stderr,
+                "[scene-stages] avg/120 build=%.3f fields=%.3f view=%.3f overlays-fx=%.3f renderer=%.3f post-overlays=%.3f ms\n",
+                sums[0]/samples, sums[1]/samples, sums[2]/samples,
+                sums[3]/samples, sums[4]/samples, sums[5]/samples);
+            samples = 0;
+            for (double& v : sums) v = 0.0;
+        }
+    }
 }
 
 void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
@@ -1005,9 +1172,13 @@ void Editor::drawDockspace() {
 
 void Editor::frame(gfx::Device& dev, double dt) {
     auto t0 = std::chrono::steady_clock::now();
+    const bool traceEditor = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     time_ += dt;
     pollAgentLink();
     applyChanges();
+    // Sweep only after a substantial no-use interval, before new viewport
+    // submission. Never unload while the editor's play simulation is active.
+    reclaimEditorAssets();
     if (!playing() && gridRevision_ != doc().revision && time_ >= gridRebuildAt_) { syncGrid(); gridRebuildAt_ = time_ + 0.05; }
     if (sceneFlying_) {
         float k = float(std::min(1.0, dt * 4.0));
@@ -1027,18 +1198,25 @@ void Editor::frame(gfx::Device& dev, double dt) {
     syncSelection();
     updateWorld();
     for (auto& w : windows_) w->update(*this, dt);
+    const auto afterUpdate = std::chrono::steady_clock::now();
 
     theme_.applyPending();
     ui_.newFrame(dt);
     handleShortcuts();
     pollGameWizard();   // the game wizard's agent: progress into the activity feed / status bar
+    const auto afterUiSetup = std::chrono::steady_clock::now();
     if (showPicker_) {
         drawGamePicker();
     } else {
         drawMenuBar();
         drawDockspace();
+        // Per-window timings identify the expensive viewport or panel without
+        // changing frame scheduling. Keep only the top offender per frame.
+        double slowestWindowMs = 0.0;
+        const char* slowestWindow = nullptr;
         for (auto& w : windows_) {
             if (!w->open) continue;
+            const auto windowStart = std::chrono::steady_clock::now();
             if (w->zeroPadding()) ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             if (focusFirst_ == 1 && w->order() == 0) ImGui::SetNextWindowFocus();
             // a window opened for the first time (not in the saved layout) joins the tabs of its dock area
@@ -1054,6 +1232,27 @@ void Editor::frame(gfx::Device& dev, double dt) {
                 StudioContextMenus::get().drawWindowFallback(*this, w->id());
             }
             ImGui::End();
+            if (traceEditor) {
+                const double elapsed = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - windowStart).count();
+                if (elapsed > slowestWindowMs) {
+                    slowestWindowMs = elapsed;
+                    slowestWindow = w->id();
+                }
+            }
+        }
+        if (traceEditor) {
+            static unsigned windowSamples = 0;
+            static double slowestSum = 0.0;
+            static std::string slowestId;
+            slowestSum += slowestWindowMs;
+            if (slowestWindow && slowestWindowMs > 0.0) slowestId = slowestWindow;
+            if (++windowSamples == 120) {
+                std::fprintf(stderr, "[editor-window] avg-top=%.3f ms last-top=%s\n",
+                             slowestSum / windowSamples, slowestId.c_str());
+                windowSamples = 0;
+                slowestSum = 0.0;
+            }
         }
         if (pendingFocusFrames_ > 0 && --pendingFocusFrames_ == 0)
             for (auto& id : pendingFocus_) if (EditorWindow* w = window(id)) ImGui::SetWindowFocus(w->imguiName());
@@ -1061,6 +1260,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
         drawActivityToasts();
         if (focusFirst_ > 0) --focusFirst_;
     }
+    const auto afterWindows = std::chrono::steady_clock::now();
     drawOpenRequest();
     drawNativeBuild();
     // the screen: only the UI (3D views were rendered offscreen by their windows)
@@ -1075,7 +1275,30 @@ void Editor::frame(gfx::Device& dev, double dt) {
     ui_.render();
     dev.endPass();
     deliverShots(dev);
-    FrameStats fs_{float(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()), lastSimMs_, r3d_.drawCalls()};
+    const auto afterUiRender = std::chrono::steady_clock::now();
+    if (traceEditor) {
+        static unsigned samples = 0;
+        static double totals[4] = {};
+        const auto ms = [](auto begin, auto end) { return std::chrono::duration<double, std::milli>(end - begin).count(); };
+        totals[0] += ms(t0, afterUpdate);
+        totals[1] += ms(afterUpdate, afterUiSetup);
+        totals[2] += ms(afterUiSetup, afterWindows);
+        totals[3] += ms(afterWindows, afterUiRender);
+        if (++samples == 120) {
+            std::fprintf(stderr, "[editor-frame] avg/120 update=%.3f ms ui-setup=%.3f ms windows=%.3f ms ui-render=%.3f ms\n",
+                         totals[0] / samples, totals[1] / samples, totals[2] / samples, totals[3] / samples);
+            samples = 0;
+            for (double& value : totals) value = 0.0;
+        }
+    }
+    // Stats tab reports geometry for the same latest viewport as its draw calls.
+    // Do not sum render passes: the model profile already isolates one camera
+    // colour pass (no shadow, reflection or SSR replay double counting).
+    const auto& sceneProfile = r3d_.profile();
+    const uint64_t cameraTriangles = sceneProfile.cameraModelTriangles +
+        sceneProfile.cameraMeshTriangles + sceneProfile.cameraOverlayTriangles;
+    FrameStats fs_{float(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()),
+                   lastSimMs_, r3d_.drawCalls(), cameraTriangles};
     frameHistory.push_back(fs_);
     prof.frame(fs_.frameMs, time_);
     if (frameHistory.size() > 240) frameHistory.pop_front();
