@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <optional>
 #include "EditorUtil.h"
 #include "EditorWorldEdit.h"
 #include "EditorComponentPanel.h"
@@ -178,8 +179,7 @@ void DetailsPanel::prepare() {
             if (components.isObject() && components.has(id)) values.push_back(&components[id]);
         }
         if (values.empty()) continue;
-        std::string title = id;
-        for (const auto& c : registry) if (id == c.id) { title = c.title; break; }
+        const std::string title = worldComponentDisplayName(id);
         bool expanded = id == "Transform";
         for (auto* o : open) if (id == o) { expanded = true; break; }
         sections_.push_back({id, title, merge(values), values.size(), expanded});
@@ -414,12 +414,12 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
     if (!matches(key, v)) return;
     // Typed metadata is registered alongside the real ECS component dump.
     // Unknown native/project fields remain visible through the generic JSON drawer.
-    const WorldComponentField* fieldSchema = nullptr;
+    std::optional<WorldComponentField> fieldSchema;
     if (const auto dot = path.find('.'); dot != std::string::npos &&
         path.find('.', dot + 1) == std::string::npos) {
         for (const auto& field : worldComponentFields(path.substr(0, dot)))
             if (path.substr(dot + 1) == field.id) {
-                fieldSchema = &field;
+                fieldSchema = field;
                 break;
             }
     }
@@ -438,7 +438,7 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGui::TreePop();
         }
     } else {
-        ImGui::TreeNodeEx(fieldSchema ? fieldSchema->title : key.c_str(),
+        ImGui::TreeNodeEx(fieldSchema ? fieldSchema->title.c_str() : key.c_str(),
             ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
             ImGuiTreeNodeFlags_SpanAllColumns);
         rowMenu(path, v);
