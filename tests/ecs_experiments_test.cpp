@@ -126,6 +126,18 @@ int main() {
         std::atomic<size_t> processed{0};
         workers.parallelFor(10000,[&](size_t begin,size_t end){processed.fetch_add(end-begin);});
         assert(processed==10000);
+        // Nested use of the same pool must fail fast, not deadlock.
+        std::atomic<size_t> nestedRejected{0};
+        workers.parallelFor(512,[&](size_t begin,size_t end) {
+            if(begin==end)return;
+            try {
+                workers.parallelFor(8,[](size_t,size_t){});
+            } catch(const std::logic_error&) {
+                nestedRejected.fetch_add(1);
+            }
+        });
+        assert(nestedRejected==4);
+
     }
     {
         DependencyPlan plan;
