@@ -12,6 +12,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
+#include <cstdlib>
 
 namespace aiverse::game {
 
@@ -177,6 +179,8 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
 }
 
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
+    const auto viewStart = std::chrono::steady_clock::now();
     // Script spawns, reinforcements and restored entities need not exist at map load time.
     if (!streamingTypes_) for (const auto& o : input.objects) if (!o.isProjectile) loadType(o.type);
     RtsScene resolved;
@@ -229,6 +233,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             }
         }
     }
+    const auto afterSetup = std::chrono::steady_clock::now();
     geometryScene_.draw(r);
     const bool tiles = twoD_ && twoD_->hasTiles();
     if (twoD_) twoD_->beginFrame(r.camera(), time, r, &grid, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);
@@ -242,6 +247,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if (tiles || !groundFx_.drawsLinks())
         for (auto& [a, b] : s.roads) r.quadXZ(a, b, 0.5f, rgba(196, 164, 112, 235), 0.04f);
 
+    const auto afterGround = std::chrono::steady_clock::now();
     const float dt = lastTime_ < 0 ? 0.0f : float(std::clamp(time - lastTime_, 0.0, 0.1));
     lastTime_ = time;
     ++frame_;
@@ -309,6 +315,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
         }
     }
+    const auto afterObjects = std::chrono::steady_clock::now();
     drawTracers(r, dt, &grid);
     // corpses (entity already removed) play their death and fade; stale states are dropped
     for (auto it = anims_.begin(); it != anims_.end();) {
@@ -342,6 +349,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         twoD_->submit(r, grid, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);
     }
 
+    const auto afterAnimations = std::chrono::steady_clock::now();
     // grid fields (RtsFieldView): overlays under the fog sheet
     if (!s.fields.empty() && s.fieldDefs) {
         if (fieldDefsSeen_ != s.fieldDefs || fieldDefsCount_ != s.fieldDefs->size()) {
@@ -363,6 +371,24 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     lights_.draw(r, s, time, vision, grid, *this);
     // selection / hover rings, move markers, placement footprint and game overlays (after the fog sheet)
     overlays_.drawWorld(r, s, time, vision, grid, *this);
+    if (traceView) {
+        static unsigned samples = 0;
+        static double totals[5] = {};
+        const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b-a).count(); };
+        totals[0] += ms(viewStart, afterSetup);
+        totals[1] += ms(afterSetup, afterGround);
+        totals[2] += ms(afterGround, afterObjects);
+        totals[3] += ms(afterObjects, afterAnimations);
+        totals[4] += ms(afterAnimations, std::chrono::steady_clock::now());
+        if (++samples == 120) {
+            std::fprintf(stderr,
+                "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\\n",
+                totals[0]/samples, totals[1]/samples, totals[2]/samples,
+                totals[3]/samples, totals[4]/samples);
+            samples = 0;
+            for (double& v : totals) v = 0.0;
+        }
+    }
 }
 
 void RtsView::drawOverlays(const RTSCamera& cam, const RtsScene& s, float w, float h, float ox, float oy, void* drawList) {
