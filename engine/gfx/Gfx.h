@@ -262,6 +262,9 @@ public:
     // selects one GPU DrawIndexedIndirectCommand; baseInstance becomes its
     // ordinal in the accompanying parent-encoder instanced uniform block.
     // Returns zero if unsupported; nonzero token is valid this GPU frame only.
+    // Force persistent buffer-backed per-draw uniforms while a GPU-encoded
+    // ICB inherits parent bindings; setBytes memory is not a safe ICB input.
+    virtual void setGpuIcbUniformBinding(bool enabled) { (void)enabled; }
     virtual uint32_t prepareGpuEncodedIndexedIcb(
         BufferHandle gpuArguments, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count) {
