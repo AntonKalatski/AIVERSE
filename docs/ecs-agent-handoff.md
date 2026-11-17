@@ -536,6 +536,15 @@ bash tests/run_ecs_gameplay_compare.sh --full
 
 Known remaining scope: page COW covers ordinary ECS components, but snapshot allocator vectors and the monolithic FPS State resource are not page-granular. COW misuse through retained raw pointers is not statically prevented. Full FPS AI/combat/projectile parallelism requires deterministic gather/commit refactors. Neither opt-in should be default until actual verified gameplay and race checks.
 
+## 2026-11-18 — Real FPS RollbackSession + non-detaching checksums (latest)
+
+- `dfb6463`: `tests/fps/tests.cpp` now constructs actual FPS `Simulation` + `net::RollbackSession` in both legacy and opt-in COW modes; a remote player's late input at tick 2 arrives after five predicted ticks, triggers replay, and validates full authoritative FPS checksum/tick parity. Complements isolated toy RollbackSession test.
+- `2692223`: `fps::Module::hashState` now reads FPS State via `World::resourceConst<State>()` to avoid detaching and deep-copying the shared singleton resource solely to compute a checksum. The Archive writer requires mutable references but `stateIo` is read-only on its `writing()` branch; a local writer alias is used, with that contract explicitly documented.
+- `e13d9e9`: FPS real-module test asserts a checksum after `SimSnapshot` leaves `sharedResourceCount()` unchanged. This guards the regression where diagnostics/checksum changed snapshot sharing.
+- Previous FPS motor optimization `d4886a8` stores only moveActor-relevant fields in speculative motor snapshots instead of copying each Actor's inventory, melee metadata and bot internals.
+- World COW transitions are all-or-nothing across multiple pools/resources (`b8a0f06`, `f818952`), with failure injections (`0fb3d6a`, `1db43f1`). The legacy sparse-set component append is now rolled back on throwing construction (`b9920c3`, `f43be33`).
+- **All these recent changes are still unverified by native Mac Studio or GitHub CI execution**. Do not assert pass or merge until tests and real RTS/FPS comparison are green.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
