@@ -1001,6 +1001,7 @@ public:
         if (!gpuIcbPipeline_) {
             static const char* source = R"MSL(
 #include <metal_stdlib>
+#include <metal_command_buffer>
 using namespace metal;
 struct DrawArgs {
     uint indexCount, instanceCount, firstIndex;
