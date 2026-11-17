@@ -4,6 +4,34 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## ECS 2.0 experimental work (PR #8)
+
+**Parallel migration coordination (2026-11-18):** another agent is actively
+moving RTS and FPS to a universal ECS architecture. Do not concurrently
+rewrite RTS/FPS gameplay systems or change legacy world-space `Transform`
+semantics from the ECS architecture PR. Keep `Parent`, `LocalTransform`,
+`WorldTransform` and `SceneHierarchy` generic under `engine/sim`. Share
+the integration contract in `docs/ecs-agent-handoff.md`, and merge/cherry-pick
+only verified core changes into the genre migration. Both agents must avoid
+overlapping edits to `modules/rts` and `modules/fps`.
+
+For nested gameplay entities and native project object hierarchies, read
+`docs/ecs-scene-hierarchy.md` and use `Parent` / `LocalTransform` /
+`WorldTransform` with `SceneHierarchy`. Do not reinterpret RTS
+`Transform` as local space, or feed float presentation transforms into
+deterministic simulation. Keep hierarchy topology generation-safe; rebuild
+the derived graph on save/load and update only dirty branches.
+
+For any ECS storage, scheduler, rollback or parallelism change, **first read**
+`docs/ecs-agent-handoff.md`. This is the continuously updated handoff for
+`feature/ecs-architecture-benchmarks` and PR #8. It contains prior benchmark
+results, verified tests, exact commits, limitations and remaining work.
+Update it after **each** ECS development step, preserving a clear distinction
+between code pushed and tests actually run. Production ECS remains deterministic
+Sparse Set; new scheduler/guarded interfaces are opt-in experiments. Do not
+enable arbitrary existing RTS/FPS gameplay systems in parallel or merge PR #8
+without complete test and lockstep/replay validation.
+
 ## 1. What this is
 
 AIVERSE is a from-scratch C++20 game engine with RTS and FPS modules. The RTS module covers
