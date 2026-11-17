@@ -216,6 +216,7 @@ public:
     PersistentSceneStats persistentSceneStats() const { return persistentStats_; }
     struct GpuModelDrawStats {
         uint32_t eligible = 0, submitted = 0;
+        uint32_t gpuEncodedSubmissions = 0, gpuEncodedCommands = 0;
         uint32_t uploadedRecords = 0, uploadRanges = 0;
         size_t uploadBytes = 0;
         bool compacted = false, prepared = false;
@@ -224,8 +225,9 @@ public:
         const auto upload = gpuModelCommandsReady_ ?
             gpuModelCommands_.uploadStats(gpuModelFrame_, gpuModelSubmission_) :
             GpuSceneDrawCommands::UploadStats{};
-        return {gpuModelEligible_, gpuModelDrawn_, upload.records,
-                upload.ranges, upload.bytes,
+        return {gpuModelEligible_, gpuModelDrawn_,
+                gpuEncodedDrawCalls_, gpuEncodedCommands_,
+                upload.records, upload.ranges, upload.bytes,
                 gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
                 gpuModelCommandsReady_};
     }
@@ -459,6 +461,13 @@ private:
     bool gpuModelCommandsReady_ = false;
     uint64_t gpuModelFrame_ = 0;
     size_t gpuModelSubmission_ = 0;
+    struct GpuEncodedBatch {
+        std::vector<uint32_t> items;
+        uint32_t token = 0;
+    };
+    std::vector<GpuEncodedBatch> gpuEncodedBatches_;
+    std::vector<uint8_t> gpuEncodedCovered_;
+    uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     PersistentGpuScene persistentScene_;
     std::unique_ptr<PersistentGpuSceneUpload> persistentUpload_;
