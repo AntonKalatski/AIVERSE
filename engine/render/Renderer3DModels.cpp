@@ -627,12 +627,30 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Upload the whole instance block declared by this backend's shader variant.
     const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
     const float4 callColour = colourDraw ? drawCallDebugColor(++debugMainDrawId_) : float4{1, 1, 1, 1};
+    // Each indirect instance can index the PBR factors for its own material
+    // without changing geometry, textures or the per-model node transform.
+    // Kept separate from the existing per-vertex mesh material palettes.
+    std::vector<const Material*> instanceMaterialSlots;
+    if (instancePalette) instanceMaterialSlots.reserve(std::min<size_t>(count, kMaxMaterialPalette));
     if (!gpuInstances) {
         const uint32_t slots = instanced ? instanceLimit_ : 1u;
         instData_.assign(size_t(slots) * 36, 0.0f);
-        for (uint32_t i = 0; i < count; ++i)
-            packModelInstance(modelItems_[items[i]], phase, callColour,
-                              instData_.data() + size_t(i) * 36);
+        for (uint32_t i = 0; i < count; ++i) {
+            const auto& part = modelItems_[items[i]];
+            uint32_t materialSlot = 0;
+            if (instancePalette) {
+                auto it = std::find(instanceMaterialSlots.begin(),
+                                    instanceMaterialSlots.end(), part.mat);
+                if (it == instanceMaterialSlots.end()) {
+                    // Preflight in drawModelIndirectBatch enforces this.
+                    if (instanceMaterialSlots.size() >= kMaxMaterialPalette) return false;
+                    materialSlot = uint32_t(instanceMaterialSlots.size());
+                    instanceMaterialSlots.push_back(part.mat);
+                } else materialSlot = uint32_t(it - instanceMaterialSlots.begin());
+            }
+            packModelInstance(part, phase, callColour,
+                              instData_.data() + size_t(i) * 36, materialSlot);
+        }
     }
     const auto afterInstanceBuild = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (!gpuInstances)
@@ -690,7 +708,17 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setTexture(8, it.model->morphTex.valid() ? it.model->morphTex : white_);
     }
     if (it.gi && (phase == 1 || phase == 2)) bindBakedGI(it);
-    if (phase == 1 && it.paletteMaterials) {
+    if (instancePalette) {
+        float palette[kMaxMaterialPalette * 8] = {};
+        for (size_t i = 0; i < instanceMaterialSlots.size(); ++i) {
+            const auto& material = *instanceMaterialSlots[i];
+            float* p = palette + i * 8;
+            p[0] = material.baseColor.x; p[1] = material.baseColor.y;
+            p[2] = material.baseColor.z; p[3] = material.baseColor.w;
+            p[4] = material.metallic; p[5] = material.roughness;
+        }
+        dev_->setUniforms(3, palette, sizeof palette);
+    } else if (phase == 1 && it.paletteMaterials) {
         float palette[kMaxMaterialPalette * 8] = {};
         for (size_t i = 0; i < it.paletteMaterials->size(); ++i) {
             const auto& m = (*it.paletteMaterials)[i];
@@ -768,8 +796,21 @@ static size_t indirectCommandThreshold() {
 // A single command buffer submission for multiple rigid primitives that share
 // ALL shader data, vertex/index buffers, transform and pipeline. The ordinary
 // pipeline remains the automatic fallback on platforms lacking indirect draws.
-bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase) {
+bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase,
+                                        bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    if (instancePalette) {
+        // Shader U3 is fixed to 64 material entries. Never produce a batch
+        // that would index beyond that uniform array.
+        std::vector<const Material*> unique;
+        unique.reserve(std::min<size_t>(count, kMaxMaterialPalette));
+        for (uint32_t n = 0; n < count; ++n) {
+            const Material* m = modelItems_[items[n]].mat;
+            if (std::find(unique.begin(), unique.end(), m) != unique.end()) continue;
+            if (unique.size() == kMaxMaterialPalette) return false;
+            unique.push_back(m);
+        }
+    }
     // The Vulkan direct-draw path applies gpuBaseVertex as a vertex-buffer offset,
     // whereas indexed indirect applies vertexOffset to the fetched vertex index.
     // Until both paths use the same shader-visible vertex addressing convention,
@@ -855,7 +896,8 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
     if (commands.size() < minimumCommands) return false;
     const auto afterGrouping = std::chrono::steady_clock::now();
-    if (!drawModelBatch(items, count, phase, false)) return true; // pipeline warming: no fallback draw
+    if (!drawModelBatch(items, count, phase, false, false, instancePalette))
+        return true; // pipeline warming: no fallback draw
     const auto afterPipeline = std::chrono::steady_clock::now();
     if (!indirectCommands_.valid()) {
         gfx::BufferDesc d;
