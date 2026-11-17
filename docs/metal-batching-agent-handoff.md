@@ -156,6 +156,12 @@ Opt-in `AIVERSE_MODEL_BATCH_PROFILE=1` in `engine/render/Renderer3DModels.cpp` e
 
 `Renderer3DModels.cpp` now counts consecutive primitive runs of each compatible candidate before calling `drawModelIndirectBatch`; candidates below the backend threshold (Metal 8 commands, others 4) bypass vector construction and indirect preparation. Existing fallback instancing remains unchanged. Diagnostics `AIVERSE_MODEL_BATCH_PROFILE=1` now report `belowThreshold`, `acceptedMs`, `rejectedMs`. The previous rejected count included candidates below the minimum and is not directly comparable to the new `rejected` count. No build or A/B verification yet. The early filter avoids redundant command vector construction but still performs compatibility scanning; any further deduplication must preserve possible later grouping and material correctness.
 
+## Indirect preparation breakdown and CPU scratch reuse (2026-11-17)
+
+Commits `8b42935`, `42abf98`, `cd37de8`: `Renderer3D` now reuses a member `indirectCommandScratch_` vector across batches instead of allocating a new command vector each submission. `AIVERSE_ICB_PROFILE=1` now also logs `[model-prep]` every 600 indirect preparation calls: pipeline, instance-build, instance-upload (`setUniforms(0)`), material-bind. Combined with `[render-indirect]` and `[metal-icb]` this helps localize remaining costs.
+
+**Important unresolved issue:** `indirectCommands_` is still a dynamic `snapshotUpdates=true` GPU buffer. Metal `updateBuffer` allocates a fresh MTLBuffer when updated repeatedly within one frame, which is required for safety with previously encoded GPU commands. Do NOT simply turn snapshotUpdates off or write in place; previous ICB commands may still reference the memory. A per-frame-slot/per-submission GPU command buffer pool or safe direct-mapped command writer would be a separate implementation. No build/test yet for these commits.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
