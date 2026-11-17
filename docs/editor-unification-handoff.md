@@ -578,3 +578,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `6dc7a89`: added `tests/ecs_cross_genre_mechanics_test.cpp`. It runs **identical** reusable `stepMotion`, `stepRecoil`, `stepCapture` policies through `addEcsMechanicSystem<Component>` in two independent GameModule types with distinct ECS components (`ShooterCharacter`, `StrategySoldier`). Checks matching deterministic checksums, rollback replay, and optional page COW state.
 - Scope: this proves generic C++ policies can be bound by independently authored game modules **once compiled and executed**. It does **not** prove that every existing RTS/FPS gameplay function can be moved to a new genre unchanged; those still refer to `RtsModule&`, `fps::Actor`, domain-specific state and configuration.
 - New test is not yet wired into build/test runners; no native compilation or passing CI observed.
+
+### 2026-11-18 — Cross-genre audit: stage 3, public header contract
+- Commit `561bafa`: cross-genre test imports `<aiverselib/genre/EcsMechanicSystems.h>`, `Locomotion.h`, `Weapons.h`, `Match.h` via published `AIVERSE::libraries` include conventions instead of repository-internal relative include paths. This makes the test a useful native-project consumer contract.
+- Build and execution still pending. Next action: register the test in root CMake and standalone ECS runner.
