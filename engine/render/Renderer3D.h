@@ -16,6 +16,7 @@
 #include "Model.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
+#include "GpuSceneDrawCommands.h"
 #include <memory>
 #include <unordered_map>
 
@@ -213,6 +214,13 @@ public:
         bool gpuFrustumDispatched = false;
     };
     PersistentSceneStats persistentSceneStats() const { return persistentStats_; }
+    struct GpuModelDrawStats {
+        uint32_t eligible = 0, submitted = 0;
+        bool prepared = false;
+    };
+    GpuModelDrawStats gpuModelDrawStats() const {
+        return {gpuModelEligible_, gpuModelDrawn_, gpuModelCommandsReady_};
+    }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
     // Call after everything that belongs to the 3D scene (particles), before UI.
@@ -338,6 +346,7 @@ private:
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase, bool submit = true);
     bool drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase);
+    void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
     void renderReflection();        // water planar reflection (Renderer3DReflect.cpp, lighting agent)
     void renderSpotShadow();        // depth of the casters seen from the main spot light (same file)
@@ -431,6 +440,13 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    // Opt-in actual GPU-authored draw commands for static opaque primitives.
+    GpuSceneDrawCommands gpuModelCommands_;
+    std::vector<GpuPrimitiveDrawRecord> gpuModelRecords_;
+    std::vector<uint32_t> gpuModelSlots_;
+    bool gpuModelCommandsReady_ = false;
+    uint64_t gpuModelFrame_ = 0;
+    uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     PersistentGpuScene persistentScene_;
     std::unique_ptr<PersistentGpuSceneUpload> persistentUpload_;
     GpuSceneCulling persistentCull_;
