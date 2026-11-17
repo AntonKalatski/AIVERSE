@@ -799,3 +799,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `tests/ecs_cross_genre_timed_mechanics_test.cpp`: shooter + strategy hosts exercise the identical reload/fire-gate, health/energy regeneration and timed expiry systems; verifies ammo/reserve, stable ticks, suppression/consumption, full reload, TTL and snapshot replay with/without COW.
 - Verification: fixture committed through GitHub; **not compiled nor run** (no checked-out native toolchain in this environment). Assertions reflect expected semantics, not observed pass results.
 - Next: register this test in CMake and package in catalog, add agent skill; then run compiler/CTest before integrating RTS/FPS gameplay.
+
+
+### 2026-11-18 — Timed ECS package, skill and CTest wiring
+- Commits: `939f8e89d039c443bb802ce66cd2cc93f60eb17c` (new agent skill), `9cb1be3ca61432eb98b60b9c8fd1b95764e643bf` (`libraries/catalog.json`, package #121), `a6aac3026dfc058de780baaaaab34a8708a5570c` (CTest registration in `CMakeLists.txt`).
+- New public target `AIVERSE::lib_ecs_timed_mechanics` depends on `ecs-weapon-launch`; native registration example and compatibility requirements in `skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md`. Test executable `aiverse_ecs_cross_genre_timed_mechanics_test` added to CTest; test source already added in prior checkpoint.
+- Verification: programmatically parsed `libraries/catalog.json` as 121 valid JSON entries at the catalog edit point. **No CMake configure/build, no CTest execution, no package catalog filesystem check, no FPS/RTS runtime parity**; avoid claims of readiness.
+- Next: run `python3 tools/libraries/catalog.py check`, configure native CMake, build `aiverse_ecs_cross_genre_timed_mechanics_test` and run `ctest -R ecs_cross_genre_timed_mechanics_test --output-on-failure`. Investigate compile errors and cross-genre replay. Then integrate one legacy host (FPS or RTS) behind an explicit gate and compare tick/order/checksum/save/network before enabling.
