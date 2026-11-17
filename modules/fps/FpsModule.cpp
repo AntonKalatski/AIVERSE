@@ -187,10 +187,21 @@ void Module::syncActorEntities(Simulation& sim) const {
     auto* index = world.resource<ActorEntityIndex>();
     auto* current = world.resource<State>();
     if (!index || !current) return;
+    // Save v9 predates these ECS pools. Its entity allocator can legitimately
+    // contain no actor identities. Recreate derived identities deterministically
+    // after loading such a save, without modifying the saved Actor/command data.
+    if (index->bySlot.size() < current->actors.size())
+        index->bySlot.resize(current->actors.size(), kNullEntity);
     for (const Actor& actor : current->actors) {
         if (actor.slot == 0 || size_t(actor.slot) > index->bySlot.size()) continue;
-        const Entity entity = index->bySlot[size_t(actor.slot - 1)];
-        if (!world.alive(entity)) continue;
+        Entity& entity = index->bySlot[size_t(actor.slot - 1)];
+        if (!world.alive(entity)) entity = world.create();
+        if (!world.has<ActorEntityIdentity>(entity))
+            world.add<ActorEntityIdentity>(entity);
+        if (!world.has<ActorEntityTransform>(entity))
+            world.add<ActorEntityTransform>(entity);
+        if (!world.has<ActorEntityVitals>(entity))
+            world.add<ActorEntityVitals>(entity);
         if (auto* identity = world.tryGet<ActorEntityIdentity>(entity))
             *identity = {actor.slot, actor.team, actor.life};
         if (auto* transform = world.tryGet<ActorEntityTransform>(entity))
