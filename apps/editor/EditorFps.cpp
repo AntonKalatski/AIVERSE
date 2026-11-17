@@ -28,11 +28,11 @@ render::float3 point(const Json& j){return {float(j[0].toDouble()),float(j[1].to
 const Json& Editor::fpsRuntimeSnapshot() {
     const bool current = fpsRuntimeRevision_ == doc().revision &&
         fpsRuntimeRulesRevision_ == rulesRevision_ &&
-        fpsRuntimeProjectDir_ == ws_.project.dir;
+        fpsRuntimeProjectDir_ == ws_.project.dir + "\n" + doc().path;
     if (current) return fpsRuntimeCache_;
     fpsRuntimeRevision_ = doc().revision;
     fpsRuntimeRulesRevision_ = rulesRevision_;
-    fpsRuntimeProjectDir_ = ws_.project.dir;
+    fpsRuntimeProjectDir_ = ws_.project.dir + "\n" + doc().path;
     fpsRuntimeCache_ = Json::object();
     Json actors = Json::array();
     if (!ws_.project.isFps()) {
