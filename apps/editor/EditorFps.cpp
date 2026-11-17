@@ -3,6 +3,7 @@
 #include "SceneRenderable.h"
 #include "EditorEntityAdapter.h"
 #include "EditorSceneNodes.h"
+#include "EditorSelectionAdapter.h"
 #include "EditorComponentPanel.h"
 #include "modules/fps/FpsModule.h"
 #include <filesystem>
@@ -116,23 +117,23 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
 }
 
 bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
-    if (selection.kind != Selection::FpsObject) return false;
     DocumentEntityRef ref;
-    if (!DocumentEntityRef::fromFpsKey(selection.ref, ref)) return false;
+    if (!documentEntityFromSelection(selection, ref) ||
+        ref.source == DocumentEntityRef::Source::MapEntity) return false;
     return translateDocumentEntity(doc(), ref, {dx, dy, dz});
 }
 
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
-    const uint64_t key = (spawn ? DocumentEntityRef::fpsSpawn(sourceIndex) : DocumentEntityRef::fpsCollider(sourceIndex)).fpsKey();
-    return selection.kind == Selection::FpsObject && selection.ref == key;
+    const auto ref = spawn ? DocumentEntityRef::fpsSpawn(sourceIndex)
+                           : DocumentEntityRef::fpsCollider(sourceIndex);
+    return selection == selectionForDocumentEntity(ref);
 }
 
 void Editor::selectFpsSceneSource(bool spawn, size_t sourceIndex) {
-    const uint64_t key = (spawn ? (uint64_t(1) << 63) : 0) | (uint64_t(sourceIndex) + 1);
-    Selection chosen;
-    chosen.kind = Selection::FpsObject;
-    chosen.ref = key;
-    select(chosen);
+    const auto ref = spawn ? DocumentEntityRef::fpsSpawn(sourceIndex)
+                           : DocumentEntityRef::fpsCollider(sourceIndex);
+    const Selection chosen = selectionForDocumentEntity(ref);
+    if (chosen.kind != Selection::None) select(chosen);
 }
 
 int Editor::pickFpsSceneObject(const Viewport& vp, const render::RTSCamera& camera,
