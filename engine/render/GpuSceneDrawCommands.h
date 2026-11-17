@@ -90,22 +90,24 @@ public:
             } else flush(i);
         }
         flush(records.size());
+        // Bind all declared compute resources even when compaction is off:
+        // Metal validates kernel argument buffers before executing branches.
+        if (!allocate(device, slot.compacted, slot.compactedCapacity,
+                      compact ? records.size() * sizeof(GpuCompactedDrawRecord)
+                              : sizeof(GpuCompactedDrawRecord),
+                      "GPU dense visible draw records") ||
+            !allocate(device, slot.visibleCount, slot.visibleCountCapacity,
+                      sizeof(uint32_t), "GPU visible draw count")) return false;
         if (compact) {
-            if (!allocate(device, slot.compacted, slot.compactedCapacity,
-                          records.size() * sizeof(GpuCompactedDrawRecord),
-                          "GPU dense visible draw records") ||
-                !allocate(device, slot.visibleCount, slot.visibleCountCapacity,
-                          sizeof(uint32_t), "GPU visible draw count")) return false;
             const uint32_t zero = 0;
             device.updateBuffer(slot.visibleCount, &zero, sizeof(zero));
         }
+        slot.compactionActive = false;
         if (!device.beginCompute(pipeline_)) return false;
         device.setComputeBuffer(0, slot.input);
         device.setComputeBuffer(1, slot.output);
-        if (compact) {
-            device.setComputeBuffer(2, slot.compacted);
-            device.setComputeBuffer(3, slot.visibleCount);
-        }
+        device.setComputeBuffer(2, slot.compacted);
+        device.setComputeBuffer(3, slot.visibleCount);
         struct alignas(16) Uniforms {
             float viewProjection[16];
             uint32_t count = 0;
@@ -118,13 +120,14 @@ public:
         device.dispatch(params.count);
         device.endCompute();
         slot.commandCount = params.count;
+        slot.compactionActive = compact;
         return true;
     }
 
     bool compactedReady(uint64_t frameSerial) const {
         const auto& slot = slots_[frameSerial % slots_.size()];
-        return slot.commandCount > 0 && slot.compacted.valid() &&
-               slot.visibleCount.valid();
+        return slot.compactionActive && slot.commandCount > 0 &&
+               slot.compacted.valid() && slot.visibleCount.valid();
     }
     gfx::BufferHandle compacted(uint64_t frameSerial) const {
         return slots_[frameSerial % slots_.size()].compacted;
@@ -157,6 +160,7 @@ private:
         uint32_t commandCount = 0;
         std::vector<GpuPrimitiveDrawRecord> lastRecords;
         UploadStats upload{};
+        bool compactionActive = false;
     };
     std::array<Slot, 3> slots_{};
     gfx::ComputeHandle pipeline_{};
@@ -240,7 +244,10 @@ kernel void cs_main(device const Record* records [[buffer(0)]],
     if (params.compactEnabled != 0 && args.instanceCount != 0) {
         const uint position = atomic_fetch_add_explicit(
             visibleCount, 1u, memory_order_relaxed);
-        dense[position] = {args, idx};
+        CompactedDraw packed{};
+        packed.args = args;
+        packed.sourceIndex = idx;
+        dense[position] = packed;
     }
 }
 )MSL";
