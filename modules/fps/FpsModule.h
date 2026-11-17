@@ -230,6 +230,7 @@ public:
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
+    void moveActorEcs(Simulation&,Actor&,const Input&); // direct ECS motor, legacy workspace updated for other systems
     void shoot(Simulation&,Actor&);
     void equipInitial(Actor&) const;
     void setupSystems(Simulation&,const Json&,State&);
