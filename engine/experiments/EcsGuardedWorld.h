@@ -90,7 +90,7 @@ public:
     template<class T> const T* read(Entity e) const {
         requireComponent(componentId<T>(),false);
         AccessScope::requireEntityLocal(componentId<T>(),e);
-        return const_cast<World&>(world_).tryGet<T>(e);
+        return static_cast<const World&>(world_).tryGetConst<T>(e);
     }
     template<class T> T* write(Entity e) {
         requireComponent(componentId<T>(),true);
@@ -126,7 +126,7 @@ public:
     }
     template<class T> const T* readResource() const {
         requireResource(componentId<T>(),false);
-        return const_cast<World&>(world_).resource<T>();
+        return static_cast<const World&>(world_).resourceConst<T>();
     }
     template<class T> T* writeResource() {
         AccessScope::requireOutsideEntityJob();
@@ -138,8 +138,8 @@ public:
     template<class T,class Fn> void eachRead(Fn&& fn) const {
         AccessScope::requireOutsideEntityJob();
         requireComponent(componentId<T>(),false);
-        const_cast<World&>(world_).eachExisting<T>([&](Entity e,T& v){
-            fn(e,static_cast<const T&>(v));
+        static_cast<const World&>(world_).eachExistingConst<T>([&](Entity e,const T& v){
+            fn(e,v);
         });
     }
     template<class T,class Fn> void eachWrite(Fn&& fn) {
@@ -157,7 +157,8 @@ public:
         AccessScope::requireOutsideEntityJob();
         requireComponent(componentId<T>(),true);
         const auto* declaration=AccessScope::current();
-        const size_t count=world_.countExisting<T>();
+        auto* writePool=world_.prepareExistingWrite<T>();
+        const size_t count=writePool?writePool->size():0;
         const size_t lanes=size_t(workers.workers())+1;
         const bool parallel=workers.workers()>0 &&
             (mode==ExecutionMode::Parallel ||
@@ -165,10 +166,11 @@ public:
               count/lanes>=policy.minimumPerLane));
         auto range=[&](size_t begin,size_t end) {
             AccessScope scope(*declaration); // install permissions on each worker
-            world_.eachExistingRange<T>(begin,end,[&](Entity e,T& component) {
+            for(size_t i=begin;i<end;++i) {
+                Entity e=writePool->entityAt(i);
                 AccessScope::EntityScope owner(e);
-                fn(e,component);
-            });
+                fn(e,writePool->dataAt(i));
+            }
         };
         if(parallel)workers.parallelFor(count,range);
         else if(count>0)range(0,count);
