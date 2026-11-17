@@ -158,16 +158,7 @@ void Editor::drawFpsSceneInspector() {
     ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
     drawDocumentComponentInventory(doc(), ref);
-    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (collider) {
-            drawDocumentPositionField(doc(), ref);
-            drawDocumentColliderBoundsField(doc(), ref);
-            ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
-        } else {
-            drawDocumentPositionField(doc(), ref);
-            ImGui::TextDisabled("Spawn orientation and scale are not part of the current map schema.");
-        }
-    }
+    drawDocumentEditableComponents(doc(), ref);
     if (ImGui::CollapsingHeader("Raw data")) {
         ImGui::TextWrapped("%s", source.dump().c_str());
     }
