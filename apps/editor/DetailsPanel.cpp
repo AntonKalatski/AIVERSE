@@ -9,6 +9,7 @@
 #include "EditorWorldEdit.h"
 #include "EditorComponentPanel.h"
 #include "EditorEcsWriteback.h"
+#include "EditorSelectionAdapter.h"
 
 namespace aiverse::editor {
 
@@ -203,7 +204,7 @@ void DetailsPanel::draw(Editor& ed) {
     // document-component card drawers as any other authored entity.
     if (ed.selection.kind == Selection::FpsObject) {
         DocumentEntityRef ref;
-        if (!DocumentEntityRef::fromFpsKey(ed.selection.ref, ref)) {
+        if (!documentEntityFromSelection(ed.selection, ref)) {
             ui::hint("Invalid scene object reference");
             return;
         }
