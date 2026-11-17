@@ -47,7 +47,8 @@ struct Selection {
                 MapBlock,   // a block of the map document's extra JSON (key = path: "lights[2]", "gridFields")
                 Road,       // map road (index)
                 FpsObject,  // FPS document collider/spawn, stable source key in ref
-                FpsActor,   // FPS runtime actor snapshot (State resource; index is actor slot index)
+                FpsActor,   // FPS runtime actor ECS identity, slot index for editor UI
+                FpsRuntimeObject, // FPS projectile, loot or vehicle ECS entity; stable kind/id key in ref
                 Body } kind = None;   // planet map body (index)
     int index = -1;          // entity / player (0-based) / wave / trigger / road / body
     std::string key;         // area name, region letter, rule id, map block path
