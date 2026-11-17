@@ -1132,7 +1132,10 @@ void Renderer3D::prepareGpuModelDraws() {
             hasSuitableGroup = true;
             break;
         }
-    if (!hasSuitableGroup && adaptiveGpuIcb) return;
+    if (!hasSuitableGroup && adaptiveGpuIcb) {
+        gpuAdaptiveInstancingFallback_ = true;
+        return;
+    }
     if (!prepareGpuCommands()) return;
     for (auto& group : groups) {
         const auto& indices = group.items;
@@ -1300,7 +1303,11 @@ void Renderer3D::renderModels(int phase) {
     // queries and backend capability dispatch for every small group.
     const char* renderSafe = std::getenv("AIVERSE_RENDER_SAFE");
     const char* indirectToggle = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+    // When the adaptive GPU plan cannot amortize ICB setup, choose ordinary
+    // instancing for this frame (including shadow/opaque model submissions),
+    // not the more expensive CPU MDI path. Existing A/B modes remain distinct.
     const bool allowIndirect = modelMultiDrawEnabled_ &&
+        !gpuAdaptiveInstancingFallback_ &&
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
         dev_->supportsMultiDrawIndirect() && phase <= 1;
