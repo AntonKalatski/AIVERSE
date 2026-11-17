@@ -68,6 +68,16 @@ generation-safe `Entity` or position). Use data flags/policies for
 ballistic, hitscan, rocket/homing, splash and magic effects. Never
 `if (genre == FPS)` inside the shared motion algorithm.
 
+Implemented cross-genre ECS flight adapter:
+`libraries/include/aiverselib/genre/EcsProjectileSystems.h`. It exposes
+`ProjectileFlightComponent`, a pluggable `BallisticFlightPolicy`, the
+`addProjectileFlightSystem` ECS system and canonical `ProjectileImpactEvent`
+records. Register it through the public
+`AIVERSE::lib_ecs_projectile_systems` catalog target. Test:
+`tests/ecs_projectile_composition_test.cpp` (one system in a shooter host
+and a strategy host with matching COW rollback checksums). **This is a flight
+stage; legacy RTS/FPS shooting/damage adapters are not yet migrated.**
+
 Existing reusable building blocks:
 `engine/sim/ProjectileData.h` (projectile programs),
 `libraries/include/aiverselib/genre/Weapons.h` (trajectory, recoil, spread),
@@ -122,8 +132,8 @@ aiverse::lib::genre::addEcsMechanicSystem<TurretWeapon>(
 
 In a real feature, use shared `WeaponState` and launch policies rather than
 creating a second turret-specific cooldown implementation. The example only
-demonstrates generic system registration. Shared projectile motion/impact must
-be implemented once and reused by **both** the FPS and RTS host adapters.
+demonstrates generic system registration. The shared projectile-flight system must be bound to **both** FPS and RTS
+host adapters; authoritative weapon launch and damage apply still need conversion.
 
 ## Acceptance gate for every new or migrated feature
 
