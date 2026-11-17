@@ -996,7 +996,8 @@ public:
         auto* commandData = buffers_.get(gpuArguments.id);
         auto* indexData = buffers_.get(indexBuffer.id);
         if (!commandData || !indexData || commandData->type != BufferType::Storage ||
-            indexData->type != BufferType::Index) return 0;
+            (indexData->type != BufferType::Index &&
+             indexData->type != BufferType::Storage)) return 0;
         if (!gpuIcbPipeline_) {
             static const char* source = R"MSL(
 #include <metal_stdlib>
