@@ -321,10 +321,56 @@ bool Renderer3D::warmModelPipelines(const Model& model, const std::vector<Materi
     warmingPipelines_=false; return !warmingPending_;
 }
 
+void Renderer3D::recordPersistentModel(const ModelDraw& d) {
+    if (!persistentSceneEnabled_ || !d.persistentId || !d.model) return;
+    GpuSceneRecord record{};
+    std::memcpy(record.world, d.world.m, sizeof(record.world));
+    const auto& lo = d.model->boundsMin;
+    const auto& hi = d.model->boundsMax;
+    record.boundsMin[0] = lo.x; record.boundsMin[1] = lo.y; record.boundsMin[2] = lo.z;
+    record.boundsMax[0] = hi.x; record.boundsMax[1] = hi.y; record.boundsMax[2] = hi.z;
+    record.geometry = d.model->vb.id;
+    record.material = d.model->ib.id;
+    record.flags = d.flags;
+    auto it = persistentIds_.find(d.persistentId);
+    if (it == persistentIds_.end()) {
+        const auto handle = persistentScene_.insert(record);
+        if (handle.valid())
+            persistentIds_.emplace(d.persistentId, PersistentEntry{handle, persistentSceneEpoch_});
+    } else {
+        it->second.seen = persistentSceneEpoch_;
+        persistentScene_.update(it->second.handle, record);
+    }
+}
+
+void Renderer3D::syncPersistentModels() {
+    if (!persistentSceneEnabled_ || !dev_) return;
+    // Tolerate an entity being absent from an occasional Scene/Game viewport.
+    // Stale handles are retired before its GPU slot is synchronized.
+    for (auto it = persistentIds_.begin(); it != persistentIds_.end();) {
+        if (persistentSceneEpoch_ > it->second.seen + 3) {
+            persistentScene_.erase(it->second.handle);
+            it = persistentIds_.erase(it);
+        } else ++it;
+    }
+    persistentStats_.live = persistentScene_.liveCount();
+    persistentStats_.ranges = persistentStats_.records = 0;
+    persistentStats_.bytes = 0;
+    const uint64_t frame = dev_->frameSerial();
+    if (!frame) return;
+    if (!persistentUpload_)
+        persistentUpload_ = std::make_unique<PersistentGpuSceneUpload>(*dev_);
+    const auto changed = persistentUpload_->sync(persistentScene_, frame);
+    persistentStats_.ranges = changed.ranges;
+    persistentStats_.records = changed.records;
+    persistentStats_.bytes = changed.bytes;
+}
+
 void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
+    recordPersistentModel(d);
     if (capture_ && (d.flags & kDrawStatic)) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
