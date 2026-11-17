@@ -198,7 +198,6 @@ void DetailsPanel::draw(Editor& ed) {
     // Live-world rows retain the existing ECS DetailsPanel sections below.
     if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
         const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
-        drawDocumentComponentInventory(ed.doc(), ref);
         // The same component-card dispatcher is used for RTS and FPS.
         // Runtime ECS sections remain rendered by DetailsPanel below.
         drawDocumentEditableComponents(ed.doc(), ref);
@@ -305,7 +304,7 @@ void DetailsPanel::mapFields(Editor& ed) {
     cx /= float(idx.size()); cz /= float(idx.size());
     const int ti = R.findType(e0.type);
     if (!filter_.empty() && !ui::contains("тип владелец позиция гарнизон запас id карта", filter_)) return;
-    ui::section(ICON_PENCIL, idx.size() > 1 ? "Карта (правка всех выбранных)" : "Карта (правка)");
+    ui::section(ICON_PENCIL, idx.size() > 1 ? "RTS Object (все выбранные)" : "RTS Object");
     if (!ui::beginProps("##mapfields")) return;
     ui::prop("Тип", "Тип объекта из правил; меняется у всех выбранных (одна отмена)");
     if (ImGui::BeginCombo("##type", sameType ? (ti >= 0 ? R.types[size_t(ti)].name.c_str() : e0.type.c_str()) : "—", ImGuiComboFlags_HeightLarge)) {
