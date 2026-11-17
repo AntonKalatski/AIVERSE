@@ -428,6 +428,15 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - `da46368`: `World::destroy` now detaches only shared component pools that actually contain the destroyed Entity. Unrelated pools remain shared, reducing unnecessary whole-pool copies during rollback snapshots.
 - This follow-up commit has not been compiled or benchmarked yet; retain the verification gates above.
 
+## 2026-11-18 — Real FPS and RTS COW integration parity (latest step)
+
+- `e45843d`: `tests/fps/tests.cpp` now also runs a **real `fps::Module`** deterministic match in deep mode vs `World::enableCowSnapshots(true)`. It steps 120 ticks with identical movement inputs, compares every tick checksum, restores snapshots at ticks 41 and 81, and verifies a serialized state can be deserialized into a fresh simulation with identical checksum. Unlike the standalone toy network test this exercises actual FPS `State` (large singleton, history, actors, projectiles, etc.). It remains a snapshot parity test rather than complete FPS network rollback / client prediction.
+- `cde2c3c`: `apps/headless/main.cpp` accepts `--cow-snapshots` for **testing** only. It enables World pool-COW after game-module setup, preserving default behavior without flag.
+- `a03ad3f`: `tests/run_ecs_gameplay_compare.sh` exercises real RTS headless restore twice in each of the sequential/parallel transform builds — once with deep snapshots and once with `--cow-snapshots` — and compares checksum logs.
+- These latest changes have NOT been compiled or run in assistant environment; GitHub connector successfully committed all files. The previous user-reported green tests predate them.
+- Current COW is still whole-pool/resource detach-on-write (not page dirty tracking) and OFF by default. The default FPS gameplay loop remains sequential except its restricted movement-only opt-in precompute stage. Do not describe full FPS parallelization or page-granular incremental rollback as finished.
+- Verification: `bash -n tests/run_ecs_gameplay_compare.sh`, `bash tests/run_ecs_experiment_suite.sh`, `bash tests/run_ecs_gameplay_compare.sh --full` with exact checksum comparison and sanitizer checks before any merge.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
