@@ -24,6 +24,8 @@ public:
     int created = 0, destroyed = 0;
     const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
     const std::string& lastError() const override { return error; }
+    bool supportsMultiDrawIndirect() const override { return indirectSupported; }
+    bool indirectSupported = true;
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
         auto id = nextId++;
         buffers[id].resize(d.size);
@@ -224,6 +226,19 @@ int main() {
     releaseModel(dev, modelB);
     CHECK(dev.destroyed == 1 && dev.buffers.empty());
     CHECK(geometryPoolStats(dev).pages == 0);
+    // A backend without MDI (GLES3/WebGL2) must retain the legacy dedicated
+    // buffers automatically and must not allocate a shared geometry page.
+    MockDevice legacy;
+    legacy.indirectSupported = false;
+    auto legacyModel = pooledFixture(0);
+    CHECK(uploadModel(legacy, legacyModel, true));
+    CHECK(!legacyModel.geometryPoolPage);
+    CHECK(legacyModel.vb.valid() && legacyModel.ib.valid() &&
+          !(legacyModel.vb == legacyModel.ib));
+    CHECK(geometryPoolStats(legacy).pages == 0);
+    releaseModel(legacy, legacyModel);
+    CHECK(legacy.destroyed == 2);
+
 
     std::puts("engine model batching policy: PASS");
     return 0;
