@@ -117,6 +117,12 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
+    if (persistentUpload_) {
+        persistentUpload_->release();
+        persistentUpload_.reset();
+    }
+    persistentIds_.clear();
+    persistentScene_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -128,6 +134,12 @@ void Renderer3D::shutdown() {
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+    static const bool enablePersistentScene = [] {
+        const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    persistentSceneEnabled_ = enablePersistentScene;
+    if (persistentSceneEnabled_) ++persistentSceneEpoch_;
     bakedLightmapped_ = bakedCountLm_; bakedProbed_ = bakedCountPr_; bakedCountLm_ = bakedCountPr_ = 0;   // agent-lightbake
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(graphEpoch_ < 0) graphEpoch_ = now;
@@ -301,6 +313,9 @@ float4 Renderer3D::drawCallDebugColor(uint32_t drawId) {
 
 void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     drawCalls_ = 0;
+    // Synchronize persistent scene staging before any rendering passes.
+    // Model shader bindings and GPU culling remain on the legacy path.
+    syncPersistentModels();
     prepareOcclusion();
     // ---- shadow pass
     if (quality_ != ShadowQuality::Off && shadowMap_.valid()) {
