@@ -149,7 +149,9 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     }
     if (L.transparent) d.flags |= kDrawTransparent;
     if (tintOverride) { d.tint = *tintOverride; d.flags = kDrawNoCastShadow; d.flash = 0; d.dissolve = 0; }
-    const bool sel = o.selected && overlays_.outlineSelected(), hov = o.hovered && overlays_.outlineHovered();
+    // The editor explicitly enables mesh outlines for its selection, independent
+    // of game overlay configuration. Hover remains controlled by game overlays.
+    const bool sel = o.selected && (outline_ || overlays_.outlineSelected()), hov = o.hovered && overlays_.outlineHovered();
     if (outline_ && !st.dead && !tintOverride && (sel || hov)) {
         const float3 c = sel ? (o.owner == 0 ? float3{0.9f, 0.9f, 0.35f} : float3{0.25f, 0.95f, 0.3f}) : float3{0.8f, 0.8f, 0.8f};
         d.outline = {c.x, c.y, c.z, 0.03f * std::max(1.0f, k)};
