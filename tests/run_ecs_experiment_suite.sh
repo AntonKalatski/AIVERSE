@@ -38,6 +38,7 @@ compile_run() {
 compile_run ecs-experiments tests/ecs_experiments_test.cpp
 compile_run ecs-waves tests/ecs_wave_executor_test.cpp
 compile_run ecs-guarded tests/ecs_guarded_world_test.cpp
+compile_run ecs-snapshot-delta tests/ecs_snapshot_delta_test.cpp
 compile_run ecs-guarded-parallel tests/ecs_guarded_parallel_test.cpp
 compile_run ecs-world-replay tests/ecs_wave_replay_test.cpp
 compile_run ecs-simulation-bridge tests/ecs_simulation_bridge_test.cpp \
