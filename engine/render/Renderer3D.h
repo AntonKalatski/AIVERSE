@@ -218,14 +218,16 @@ public:
         uint32_t eligible = 0, submitted = 0;
         uint32_t uploadedRecords = 0, uploadRanges = 0;
         size_t uploadBytes = 0;
-        bool prepared = false;
+        bool compacted = false, prepared = false;
     };
     GpuModelDrawStats gpuModelDrawStats() const {
         const auto upload = gpuModelCommandsReady_ ?
             gpuModelCommands_.uploadStats(gpuModelFrame_) :
             GpuSceneDrawCommands::UploadStats{};
         return {gpuModelEligible_, gpuModelDrawn_, upload.records,
-                upload.ranges, upload.bytes, gpuModelCommandsReady_};
+                upload.ranges, upload.bytes,
+                gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_),
+                gpuModelCommandsReady_};
     }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
