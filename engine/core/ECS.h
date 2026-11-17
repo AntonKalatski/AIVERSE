@@ -112,9 +112,14 @@ public:
                 data_[sparse_[e.index]]=T{std::forward<Args>(args)...};
                 return data_[sparse_[e.index]];
             }
-            sparse_[e.index]=static_cast<uint32_t>(dense_.size());
-            dense_.push_back(e);
+            // Commit sparse membership only after both dense columns append.
+            // A throwing component constructor/move must not leave a phantom
+            // Entity in the pool, even in the legacy contiguous mode.
+            const size_t pos=dense_.size();
             data_.push_back(T{std::forward<Args>(args)...});
+            try {dense_.push_back(e);}
+            catch(...) {data_.pop_back();throw;}
+            sparse_[e.index]=static_cast<uint32_t>(pos);
             return data_.back();
         }
         // Replacing an existing component only dirties its payload page.
