@@ -101,23 +101,45 @@ public:
 
     // Deep copy of every pool and resource (rollback snapshots). Pools and resources that already
     // exist here are assigned in place so a ring of snapshots stops allocating after warm-up.
+    // Opt-in pool-level copy-on-write snapshots. The switch must be made at
+    // tick boundaries; outstanding mutable references must not survive it.
+    // Copies share untouched pools/resources, and detach on mutable access.
+    void enableCowSnapshots(bool enable=true) {
+        if (!enable && cowSnapshots_) {
+            for (auto& p:pools_) if(p && !p.unique()) p=std::shared_ptr<IPool>(p->clone());
+            for (size_t i=0;i<resources_.size();++i)
+                if(resources_[i] && !resources_[i].unique())
+                    resources_[i]=resourceOps_[i].make(resources_[i].get());
+        }
+        cowSnapshots_=enable;
+    }
+    bool cowSnapshotsEnabled() const {return cowSnapshots_;}
+
     void copyFrom(const World& o) {
-        pools_.resize(o.pools_.size());
-        for (size_t i = 0; i < o.pools_.size(); ++i) {
-            if (!o.pools_[i]) pools_[i].reset();
-            else if (pools_[i]) pools_[i]->copyFrom(*o.pools_[i]);
-            else pools_[i] = o.pools_[i]->clone();
+        if(o.cowSnapshots_) {
+            pools_=o.pools_;
+            resources_=o.resources_;
+            resourceOps_=o.resourceOps_;
+        } else {
+            pools_.resize(o.pools_.size());
+            for (size_t i=0;i<o.pools_.size();++i) {
+                if(!o.pools_[i])pools_[i].reset();
+                else if(pools_[i] && pools_[i].unique())pools_[i]->copyFrom(*o.pools_[i]);
+                else pools_[i]=std::shared_ptr<IPool>(o.pools_[i]->clone());
+            }
+            resources_.resize(o.resources_.size());
+            resourceOps_.resize(o.resourceOps_.size());
+            for (size_t i=0;i<o.resources_.size();++i) {
+                const ResourceOps& op=o.resourceOps_[i];
+                if(!o.resources_[i])resources_[i].reset();
+                else if(resources_[i] && resources_[i].unique() && resourceOps_[i].assign==op.assign)
+                    op.assign(resources_[i].get(),o.resources_[i].get());
+                else resources_[i]=op.make(o.resources_[i].get());
+                resourceOps_[i]=op;
+            }
         }
-        resources_.resize(o.resources_.size());
-        resourceOps_.resize(o.resourceOps_.size());
-        for (size_t i = 0; i < o.resources_.size(); ++i) {
-            const ResourceOps& op = o.resourceOps_[i];
-            if (!o.resources_[i]) resources_[i].reset();
-            else if (resources_[i] && resourceOps_[i].assign == op.assign) op.assign(resources_[i].get(), o.resources_[i].get());
-            else resources_[i] = op.make(o.resources_[i].get());
-            resourceOps_[i] = op;
-        }
-        gens_ = o.gens_; alive_ = o.alive_; free_ = o.free_; pendingDestroy_ = o.pendingDestroy_;
+        cowSnapshots_=o.cowSnapshots_;
+        gens_=o.gens_;alive_=o.alive_;free_=o.free_;pendingDestroy_=o.pendingDestroy_;
     }
 
     Entity create() {
@@ -135,7 +157,10 @@ public:
 
     void destroy(Entity e) {
         if (!alive(e)) return;
-        for (auto& p : pools_) if (p) p->remove(e.index);
+        for (auto& p : pools_) if (p) {
+            if (cowSnapshots_ && !p.unique()) p=std::shared_ptr<IPool>(p->clone());
+            p->remove(e.index);
+        }
         alive_[e.index] = 0;
         ++gens_[e.index];
         free_.push_back(e.index);
@@ -205,18 +230,24 @@ public:
         return p?p->size():0;
     }
 
-    template <class T> size_t count() { return pool<T>().size(); }
+    template <class T> size_t count() { return countExisting<T>(); }
 
     // Hot: called for every component access. The common case (pool exists) stays inline; creating a
     // pool is the rare out-of-line path.
     template <class T> [[gnu::always_inline]] inline Pool<T>& pool() {
         const uint32_t id = detail::componentTypeId<T>();
-        if (id < pools_.size()) [[likely]] if (IPool* p = pools_[id].get()) [[likely]] return *static_cast<Pool<T>*>(p);
+        if (id < pools_.size()) [[likely]] if (IPool* p = pools_[id].get()) [[likely]] {
+            if (cowSnapshots_ && !pools_[id].unique())
+                pools_[id]=std::shared_ptr<IPool>(p->clone());
+            return *static_cast<Pool<T>*>(pools_[id].get());
+        }
         return makePool<T>(id);
     }
     template <class T> [[gnu::noinline]] Pool<T>& makePool(uint32_t id) {
         if (id >= pools_.size()) pools_.resize(id + 1);
-        if (!pools_[id]) pools_[id] = std::make_unique<Pool<T>>();
+        if (!pools_[id]) pools_[id] = std::make_shared<Pool<T>>();
+        else if(cowSnapshots_ && !pools_[id].unique())
+            pools_[id]=std::shared_ptr<IPool>(pools_[id]->clone());
         return *static_cast<Pool<T>*>(pools_[id].get());
     }
 
@@ -232,7 +263,10 @@ public:
     }
     template <class T> T* resource() {
         uint32_t id = detail::componentTypeId<T>();
-        return id < resources_.size() && resources_[id] ? static_cast<T*>(resources_[id].get()) : nullptr;
+        if(id>=resources_.size() || !resources_[id])return nullptr;
+        if(cowSnapshots_ && !resources_[id].unique())
+            resources_[id]=resourceOps_[id].make(resources_[id].get());
+        return static_cast<T*>(resources_[id].get());
     }
 
     // Save states (Simulation::serialize): the entity allocator, restored exactly so ids and recycling match.
@@ -251,11 +285,15 @@ private:
         return id < pools_.size() && pools_[id] ? static_cast<const Pool<T>*>(pools_[id].get()) : nullptr;
     }
     template <class T> Pool<T>* poolIfExists() {
-        uint32_t id = detail::componentTypeId<T>();
-        return id < pools_.size() && pools_[id] ? static_cast<Pool<T>*>(pools_[id].get()) : nullptr;
+        uint32_t id=detail::componentTypeId<T>();
+        if(id>=pools_.size() || !pools_[id])return nullptr;
+        if(cowSnapshots_ && !pools_[id].unique())
+            pools_[id]=std::shared_ptr<IPool>(pools_[id]->clone());
+        return static_cast<Pool<T>*>(pools_[id].get());
     }
 
-    std::vector<std::unique_ptr<IPool>> pools_;
+    std::vector<std::shared_ptr<IPool>> pools_;
+    bool cowSnapshots_=false;
     std::vector<std::shared_ptr<void>> resources_;
     struct ResourceOps {
         std::shared_ptr<void> (*make)(const void*) = nullptr;
