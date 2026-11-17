@@ -427,11 +427,23 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
     const auto& studio = EditorTheme::current();
     ImGui::PushStyleColor(ImGuiCol_Header, studio.panelRaised);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, studio.frameHover);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, studio.frameHover);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 9));
     const bool expanded = ImGui::CollapsingHeader(label, sec.open ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+    const ImVec2 headerMin = ImGui::GetItemRectMin();
+    const ImVec2 headerMax = ImGui::GetItemRectMax();
+    // A thin accent rail identifies the Transform card without filling the UI
+    // with saturated backgrounds. Other components use a muted divider.
+    const ImVec4 accent = sec.id == "Transform" ? ui::accentColor() : studio.frameHover;
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(headerMin.x, headerMin.y + 3.0f),
+        ImVec2(headerMin.x + 3.0f, headerMax.y - 3.0f),
+        ImGui::GetColorU32(accent), 1.5f);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
-    if (!expanded) { ImGui::Spacing(); return; }
+    ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("%s  |  %zu/%zu entities", id, sec.have, withData_);
+    if (!expanded) { ImGui::Dummy(ImVec2(0, 5)); return; }
     if (ImGui::BeginPopupContextItem()) {
         if (ui::menuItem(ICON_BRACES, "Копировать раздел как JSON")) ImGui::SetClipboardText(merged.dump().c_str());
         ImGui::EndPopup();
