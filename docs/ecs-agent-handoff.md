@@ -545,6 +545,12 @@ Known remaining scope: page COW covers ordinary ECS components, but snapshot all
 - World COW transitions are all-or-nothing across multiple pools/resources (`b8a0f06`, `f818952`), with failure injections (`0fb3d6a`, `1db43f1`). The legacy sparse-set component append is now rolled back on throwing construction (`b9920c3`, `f43be33`).
 - **All these recent changes are still unverified by native Mac Studio or GitHub CI execution**. Do not assert pass or merge until tests and real RTS/FPS comparison are green.
 
+### Additional zero-worker recursion regression
+
+- `6ccbdf5`: `PersistentWorkers::parallelFor` now installs/restores the active pool guard also when workerCount=0. Nested submission to the same pool is rejected in sequential mode instead of executing an uncontrolled recursive callback.
+- `4dc046e`: added a zero-worker nested submission and reuse regression to `ecs_experiments_test.cpp`.
+- Both are newly committed and must be covered by the next manual/CI test run; the preceding full Mac Studio PASS was from an older branch state.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
