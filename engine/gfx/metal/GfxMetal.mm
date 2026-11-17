@@ -383,6 +383,10 @@ public:
         pd.vertexFunction = s->vs;
         pd.fragmentFunction = s->fs; // depth-only shaders without fs_main get nil (no fragment stage)
         pd.vertexDescriptor = vd;
+        // Metal requires opt-in at pipeline creation for pipeline states
+        // referenced by indirect render commands. Without this the driver may
+        // silently discard ICB draws or fail an entire command buffer.
+        pd.supportIndirectCommandBuffers = YES;
         pd.colorAttachments[0].pixelFormat = d.depthOnly ? MTLPixelFormatInvalid
                                            : d.colorFormat == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
                                            : d.colorFormat == PixelFormat::RGBA8_sRGB ? MTLPixelFormatBGRA8Unorm_sRGB   // sRGB render targets
@@ -582,7 +586,11 @@ public:
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer>) { dispatch_semaphore_signal(sem); }];
         auto timing=gpuMs_;auto health=gpuHealthy_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
-            if(completed.status==MTLCommandBufferStatusError)health->store(false);
+            if(completed.status==MTLCommandBufferStatusError) {
+                health->store(false);
+                const char* description = completed.error ? completed.error.localizedDescription.UTF8String : "unknown";
+                std::fprintf(stderr, "[metal] command buffer failed: %s\\n", description);
+            }
             if(completed.status==MTLCommandBufferStatusCompleted)timing->store((completed.GPUEndTime-completed.GPUStartTime)*1000);
         }];
         firstPass_ = true;
