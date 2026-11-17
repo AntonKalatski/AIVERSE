@@ -478,6 +478,21 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
             const auto* runtime=s.world().tryGetConst<ActorRuntime>(entity);
             if (!runtime || !(runtime->value == actor))
                 throw std::logic_error("FPS ECS actor mirror diverged after tick");
+            const auto* identity=s.world().tryGetConst<ActorEntityIdentity>(entity);
+            const auto* transform=s.world().tryGetConst<ActorEntityTransform>(entity);
+            const auto* vitals=s.world().tryGetConst<ActorEntityVitals>(entity);
+            if (!identity || identity->slot!=actor.slot ||
+                identity->team!=actor.team || identity->life!=actor.life ||
+                !transform || transform->pos!=actor.pos ||
+                transform->velocity!=actor.velocity ||
+                transform->yaw!=actor.yaw || transform->pitch!=actor.pitch ||
+                !vitals || vitals->health!=actor.health ||
+                vitals->armor!=actor.armor || vitals->ammo!=actor.ammo ||
+                vitals->reserve!=actor.reserve ||
+                vitals->downed!=actor.downed ||
+                vitals->crouched!=actor.crouched ||
+                vitals->prone!=actor.prone)
+                throw std::logic_error("FPS ECS editor projection diverged after tick");
         }
     });
 }
