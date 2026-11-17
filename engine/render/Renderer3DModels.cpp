@@ -633,7 +633,16 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     const Material& mt = *it.mat;
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
     const bool newModel = !lastItem_ || lastItem_->model != it.model || (phase != 0 && lastItem_->gi != 0);
-    if (!lastItem_ || lastItem_->mat != it.mat || newModel || ((lastItem_->flags ^ it.flags) & kDrawActorReveal)) {
+    // As in a state-oriented render batch, Material* identity does not decide
+    // whether to upload U2. Distinct instances of the same GPU state share
+    // shader parameters; geometry/model-specific state is handled separately.
+    // GI can override sampled bindings, so the texture stage below still
+    // refreshes those slots after a GI draw.
+    const bool materialStateChanged = !lastItem_ ||
+        !equivalentGpuMaterial(*lastItem_->model, *lastItem_->mat, *it.model, mt);
+    const bool actorRevealChanged = lastItem_ &&
+        ((lastItem_->flags ^ it.flags) & kDrawActorReveal) != 0;
+    if (materialStateChanged || actorRevealChanged) {
         MaterialUniforms mu{};
         mu.base[0] = mt.baseColor.x; mu.base[1] = mt.baseColor.y; mu.base[2] = mt.baseColor.z; mu.base[3] = mt.baseColor.w;
         mu.emissive[0] = mt.emissive.x * mt.emissiveStrength; mu.emissive[1] = mt.emissive.y * mt.emissiveStrength; mu.emissive[2] = mt.emissive.z * mt.emissiveStrength;
@@ -652,6 +661,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             mu.revealAxis[3]=cam_.ortho ? 0.f : 1.f/std::max(.01f,length(cam_.eye()-centre));
         }
         dev_->setUniforms(2, &mu, sizeof mu);
+    }
+    if (materialStateChanged || newModel) {
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
