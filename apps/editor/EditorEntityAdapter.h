@@ -194,8 +194,13 @@ inline bool translateDocumentEntities(MapDoc& map,
             };
             if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
                 if (!validCoords(*object)) return false;
-            } else if (!validCoords((*object)["min"]) ||
-                       !validCoords((*object)["max"])) return false;
+            } else {
+                const Json& lo = (*object)["min"];
+                const Json& hi = (*object)["max"];
+                if (!validCoords(lo) || !validCoords(hi)) return false;
+                for (size_t axis = 0; axis < 3; ++axis)
+                    if (lo[axis].toDouble() >= hi[axis].toDouble()) return false;
+            }
         }
     }
     bool moved = false;
