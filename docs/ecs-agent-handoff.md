@@ -593,6 +593,24 @@ bash tests/run_ecs_gameplay_compare.sh --full
 ```
 Explicit lifecycle contract: callers use `SceneHierarchy::attach/setParent/setLocal/detach`, or `invalidate` / `rebuild` after raw ECS writes/deletes; the hierarchy does **not** intercept mutations of `Parent`/ `LocalTransform` through raw `World`. After restoring any snapshot, `rebuild` is required; `installSceneHierarchy` installs callbacks for Simulation save/load. Custom game modules must serialize new authoritative component pools themselves. No automatic editor drag/drop reparent action has been implemented; Inspector read-only visibility is provided. The hierarchy updater is sequential but dirty-pruned; a parallel depth-wave evaluator is a future optimization only if measured necessary. Do not claim production readiness until tests and real scene benchmarks are confirmed.
 
+## 2026-11-18 — Coordination with parallel RTS/FPS universal ECS migration (user instruction)
+
+**The user confirmed another agent is actively migrating RTS and FPS onto a shared universal ECS architecture.** This PR's job is to supply **genre-independent core primitives**, not to simultaneously replace the same gameplay systems.
+
+Integration contract:
+
+- `Parent`, `LocalTransform`, `WorldTransform`, `SceneHierarchy` and `installSceneHierarchy` are generic ECS facilities under `engine/sim`, exposed to native projects via `CommonComponents.h`.
+- Existing `Transform` continues to mean legacy world-space pose until the migrating agent explicitly performs its own transition. Do not change or reinterpret it in this branch.
+- The new hierarchy is opt-in; do not automatically attach old RTS/FPS entities, overwrite their transforms, or duplicate their simulation systems. The migrating agent should replace old usage explicitly.
+- `Parent` stores generation-safe `Entity`; `LocalTransform` is authoritative; `WorldTransform::affine` is derived from hierarchy and used as the exact matrix for nested nonuniform scales.
+- Structural parent/reparent/destruction changes must go through hierarchy API or trigger index rebuild; rollback invokes restored-state hooks when the system is installed.
+- Register hierarchy update as a deterministic barrier between transform writers and world-space readers. Do not let other jobs mutate hierarchy while it evaluates.
+- Migration agent owns RTS/FPS refactor and genre system access declarations; this PR owns shared ECS primitives, dirty-tree evaluation, validation, tests and documentation. Avoid concurrent edits to `modules/rts`, `modules/fps`, and editor genre-specific migration files from this branch.
+- For integration, the other agent should cherry-pick or merge the **verified** generic primitives after ECS tests pass rather than independently rewriting hierarchy components.
+- The user's exact active migration branch is **not known**. GitHub branch search for `universal` currently returned `codex/universal-projectiles`, `feature/universal-entity-inspector-fps`, `feature/universal-model-batching-policy`; search for `ecs` returned this experimental branch. Do not assume which one holds their in-progress changes.
+
+This coordination rule supersedes earlier suggestions in this document to directly migrate RTS/FPS gameplay here. Retain the existing experimental opt-in RTS/FPS changes, but avoid expanding them in ways that conflict with parallel migration. Updated after the user's explicit clarification.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
