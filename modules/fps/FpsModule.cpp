@@ -467,6 +467,25 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     sim.addSystem("fps.ecsMirror",[this](Simulation& s){
         syncActorEntities(s);
         syncDynamicEntities(s);
+        if (!config_.ecsAuthority) return;
+        // Migration invariant: after the commit barrier, the legacy tick
+        // workspace must not diverge from authoritative ECS actor storage.
+        // Keep this check opt-in with ecsAuthority until all legacy systems
+        // have been replaced by direct component systems.
+        const auto& actors=state(s).actors;
+        for (const Actor& actor : actors) {
+            const Entity entity=actorEntity(s,actor.slot);
+            const auto* runtime=s.world().tryGetConst<ActorRuntime>(entity);
+            if (!runtime || runtime->value.slot!=actor.slot ||
+                runtime->value.pos!=actor.pos ||
+                runtime->value.velocity!=actor.velocity ||
+                runtime->value.health!=actor.health ||
+                runtime->value.armor!=actor.armor ||
+                runtime->value.weaponIndex!=actor.weaponIndex ||
+                runtime->value.magazine!=actor.magazine ||
+                runtime->value.reserve!=actor.reserve)
+                throw std::logic_error("FPS ECS actor mirror diverged after tick");
+        }
     });
 }
 void Module::applyCommand(Simulation& sim,const Command& c) {
