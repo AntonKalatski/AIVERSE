@@ -1,5 +1,6 @@
 #include "Renderer3D.h"
 #include "Shaders.h"
+#include "SelectionOutlineShaders.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -96,6 +97,7 @@ bool Renderer3D::init(gfx::Device& dev) {
     initModels();
     if (!lights.init(dev)) return false;
     if (!initTrace()) return false;
+    initSelectionOutline();  // optional editor effect: failure must not break the game renderer
     return litPipe_.valid() && shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid();
 }
 
@@ -122,6 +124,12 @@ void Renderer3D::shutdown() {
     shutdownTrace();
     dev_->destroyTexture(shadowMap_);
     dev_->destroyBuffer(lineVB_); dev_->destroyBuffer(triVB_);
+    if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
+    if (sceneSelectionTriangle_.valid()) dev_->destroyBuffer(sceneSelectionTriangle_);
+    for (auto p : {sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_})
+        if (p.valid()) dev_->destroyPipeline(p);
+    if (sceneSelectionEdgeShader_.valid())
+        dev_->destroyShader(sceneSelectionEdgeShader_);
     for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_}) dev_->destroyPipeline(p);
     for (auto s : {litShader_, shadowShader_, colorShader_}) dev_->destroyShader(s);
     dev_ = nullptr;
@@ -196,6 +204,13 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
 }
+
+void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
+                                   float4 tint, float4 selection) {
+    drawMesh(mesh, model, tint);
+    if (!items_.empty()) items_.back().selection = selection;
+}
+
 
 void Renderer3D::line(float3 a, float3 b, uint32_t c) { lines_.push_back({a, c}); lines_.push_back({b, c}); }
 void Renderer3D::triangle(float3 a, float3 b, float3 c, uint32_t col) { tris_.push_back({a, col}); tris_.push_back({b, col}); tris_.push_back({c, col}); }
@@ -381,7 +396,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     };
     for (auto& it : items_) if (it.color.w >= 0.99f) drawItem(it);
     renderModels(1);
-    renderModels(3);
+    if (!sceneSelectionOutline_) renderModels(3); // legacy game outline; editor uses a depth-tested mask
     if (capture) {
         endSceneCapture(mainPass, sw, sh); dev_->setViewport({0, 0, sw, sh});
         // The blit binds scene color at slot 0; model shaders expect the sun depth map there.
@@ -418,6 +433,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->draw(uint32_t(lines_.size()));
         ++drawCalls_;
     }
+    if (sceneSelectionOutline_) renderSelectionOutline(mainPass, sw, sh);
 }
 
 } // namespace aiverse::render
