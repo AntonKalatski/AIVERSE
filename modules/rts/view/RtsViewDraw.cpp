@@ -160,7 +160,10 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     r.drawModel(d);
 
     // ---- attachments on sockets (weapons, cargo, banners)
-    if (show == &ch || (stage && stage->choice.model == ch.model)) {
+    // No attachment or effect can consume the state mask on plain models.
+    // Avoid stateBits() and its event/locomotion checks for this common case.
+    if ((show == &ch || (stage && stage->choice.model == ch.model)) &&
+        (!ch.attach.empty() || (!tintOverride && !show->fx.empty()))) {
         const bool moving = !st.dead && (o.moving || st.speed > 0.15f);
         const uint32_t state = stateBits(st, o, moving);
         for (const auto& at : ch.attach) {
