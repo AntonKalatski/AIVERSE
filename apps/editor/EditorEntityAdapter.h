@@ -90,6 +90,23 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
                 !(*object)[0].isNumber() || !(*object)[1].isNumber() || !(*object)[2].isNumber()) return false;
             out = {(*object)[0].toDouble(), (*object)[1].toDouble(), (*object)[2].toDouble()};
         } else {
+            // FPS also supports rotated box colliders stored as center/half/yaw.
+            // Preserve their real serialization instead of fabricating min/max.
+            if ((*object)["yaw"].isNumber()) {
+                const Json& centre = (*object)["center"];
+                const Json& half = (*object)["half"];
+                if (!centre.isArray() || !half.isArray() ||
+                    centre.size() != 3 || half.size() != 3 ||
+                    !std::isfinite((*object)["yaw"].toDouble())) return false;
+                for (size_t axis = 0; axis < 3; ++axis)
+                    if (!centre[axis].isNumber() || !half[axis].isNumber() ||
+                        !std::isfinite(centre[axis].toDouble()) ||
+                        !std::isfinite(half[axis].toDouble()) ||
+                        half[axis].toDouble() <= 0.0) return false;
+                out = {centre[0].toDouble(), centre[1].toDouble(),
+                       centre[2].toDouble()};
+                return true;
+            }
             const Json& lo = (*object)["min"], &hi = (*object)["max"];
             if (!lo.isArray() || !hi.isArray() || lo.size() < 3 || hi.size() < 3) return false;
             for (size_t axis = 0; axis < 3; ++axis) {
@@ -152,6 +169,10 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
             Json moved;
             if (!shifted(*entity, moved)) return false;
             *entity = moved;
+        } else if ((*entity)["yaw"].isNumber()) {
+            Json centre;
+            if (!shifted((*entity)["center"], centre)) return false;
+            entity->member("center") = centre;
         } else {
             const Json& originalMin = (*entity)["min"];
             const Json& originalMax = (*entity)["max"];
