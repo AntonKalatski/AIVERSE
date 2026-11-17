@@ -109,6 +109,16 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     }
     if (fpsSelectedSceneObject_ >= 0) instances[size_t(fpsSelectedSceneObject_)].selected = true;
     submitSceneRenderables(r3d_, instances);
+    // Draw world-space XYZ handles at the selected object's centre. Unlike
+    // the bounds box, these retain a consistent apparent size while zooming.
+    if (fpsSelectedSceneObject_ >= 0) {
+        const auto& selected = instances[size_t(fpsSelectedSceneObject_)];
+        const float3 centre = (selected.boundsMin + selected.boundsMax) * 0.5f;
+        const float extent = std::max(0.35f, camera.distance * 0.075f);
+        r3d_.line(centre, centre + float3{extent, 0, 0}, rgba(235, 84, 84));
+        r3d_.line(centre, centre + float3{0, extent, 0}, rgba(93, 215, 113));
+        r3d_.line(centre, centre + float3{0, 0, extent}, rgba(80, 153, 245));
+    }
 }
 
 bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
