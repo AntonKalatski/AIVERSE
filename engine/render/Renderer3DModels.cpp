@@ -538,12 +538,38 @@ void Renderer3D::drawModel(const ModelDraw& d) {
 
 }
 
-bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase, bool submit) {
+void Renderer3D::packModelInstance(const ModelItem& x, int phase,
+                                   const float4& callColour, float* d) const {
+    const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
+    std::memcpy(d, x.world.m, 16 * sizeof(float));
+    d[16] = colourDraw ? callColour.x : x.tint.x;
+    d[17] = colourDraw ? callColour.y : x.tint.y;
+    d[18] = colourDraw ? callColour.z : x.tint.z;
+    d[19] = phase == 0 && (x.flags & kDrawKeepShadow) ? 1.f : x.tint.w;
+    if (phase == 3) {
+        d[20] = x.outline.x; d[21] = x.outline.y;
+        d[22] = x.outline.z; d[23] = 0;
+    } else {
+        d[20] = x.team.x; d[21] = x.team.y;
+        d[22] = x.team.z; d[23] = x.flash;
+    }
+    d[24] = (x.mat->receiveShadow && !(x.flags & kDrawNoReceiveShadow)) ? 1.0f : 0.0f;
+    d[25] = x.dissolve;
+    d[26] = x.outline.w;
+    d[27] = phase == 3 ? 0.0f : x.teamGlow;
+    d[28] = x.anim.x; d[29] = x.anim.y;
+    d[30] = x.anim.z; d[31] = x.anim.w;
+    d[32] = x.lodThreshold;
+    d[33] = x.lodInvert ? 1.0f : 0.0f;
+}
+
+bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
+                                int phase, bool submit, bool gpuInstances) {
     const bool tracePreparation = !submit && std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto prepStart = std::chrono::steady_clock::now();
     const ModelItem& it = modelItems_[items[0]];
     const bool instanced = count > 1;
-    gfx::PipelineHandle ph = modelPipeline(it, phase, instanced);
+    gfx::PipelineHandle ph = modelPipeline(it, phase, instanced, gpuInstances);
     if (!ph.valid()) return false;
     if (!(ph == currentPipe_)) {
         dev_->setPipeline(ph); currentPipe_ = ph;
@@ -553,27 +579,16 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     // Upload the whole instance block declared by this backend's shader variant.
     const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
     const float4 callColour = colourDraw ? drawCallDebugColor(++debugMainDrawId_) : float4{1, 1, 1, 1};
-    const uint32_t slots = instanced ? instanceLimit_ : 1u;
-    instData_.assign(size_t(slots) * 36, 0.0f);
-    for (uint32_t i = 0; i < count; ++i) {
-        const ModelItem& x = modelItems_[items[i]];
-        float* d = instData_.data() + size_t(i) * 36;
-        std::memcpy(d, x.world.m, 16 * sizeof(float));
-        d[16] = colourDraw ? callColour.x : x.tint.x;
-        d[17] = colourDraw ? callColour.y : x.tint.y;
-        d[18] = colourDraw ? callColour.z : x.tint.z;
-        d[19] = phase == 0 && (x.flags & kDrawKeepShadow) ? 1.f : x.tint.w;
-        if (phase == 3) { d[20] = x.outline.x; d[21] = x.outline.y; d[22] = x.outline.z; d[23] = 0; }
-        else { d[20] = x.team.x; d[21] = x.team.y; d[22] = x.team.z; d[23] = x.flash; }
-        d[24] = (x.mat->receiveShadow && !(x.flags & kDrawNoReceiveShadow)) ? 1.0f : 0.0f;
-        d[25] = x.dissolve;
-        d[26] = x.outline.w;
-        d[27] = phase == 3 ? 0.0f : x.teamGlow;
-        d[32] = x.lodThreshold; d[33] = x.lodInvert ? 1.0f : 0.0f;
-        d[28] = x.anim.x; d[29] = x.anim.y; d[30] = x.anim.z; d[31] = x.anim.w;   // w: lightmap uv2 offset.y (agent-lightbake)
+    if (!gpuInstances) {
+        const uint32_t slots = instanced ? instanceLimit_ : 1u;
+        instData_.assign(size_t(slots) * 36, 0.0f);
+        for (uint32_t i = 0; i < count; ++i)
+            packModelInstance(modelItems_[items[i]], phase, callColour,
+                              instData_.data() + size_t(i) * 36);
     }
     const auto afterInstanceBuild = std::chrono::steady_clock::now();
-    dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
+    if (!gpuInstances)
+        dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
     const auto afterInstanceUpload = std::chrono::steady_clock::now();
     const Material& mt = *it.mat;
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
