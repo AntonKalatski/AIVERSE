@@ -496,7 +496,14 @@ void main() {
     "#if defined(SKINNED) || defined(BAKED)\n#define SKIN_ARG , constant MU3& sk [[buffer(4)]]\n#else\n#define SKIN_ARG\n#endif\n" \
     "#if defined(BAKED)\n#define BAKED_ARG , texture2d<float> tex7 [[texture(7)]]\n#else\n#define BAKED_ARG\n#endif\n" \
     "#if defined(MORPH)\n#define MORPH_ARG , constant MU4& mo [[buffer(5)]], texture2d<float> tex8 [[texture(8)]]\n#else\n#define MORPH_ARG\n#endif\n" \
-    "#define VERTEX_ARGS VIn in [[stage_in]], uint iid [[instance_id]], uint vid [[vertex_id]], constant MU0& u [[buffer(1)]], " \
+    "#if defined(GPU_INSTANCE_BUFFER)\n" \
+    "#define INSTANCE_ARG device const Inst* gpuInstances [[buffer(1)]]\n" \
+    "#define INSTANCE gpuInstances[iid]\n" \
+    "#else\n" \
+    "#define INSTANCE_ARG constant MU0& u [[buffer(1)]]\n" \
+    "// GPU_INSTANCE_BUFFER / INSTANCE defined above for Metal vertex shaders.\n" \
+    "#endif\n" \
+    "#define VERTEX_ARGS VIn in [[stage_in]], uint iid [[instance_id]], uint vid [[vertex_id]], INSTANCE_ARG, " \
     "constant U1& f [[buffer(2)]], constant MU2& m [[buffer(3)]] SKIN_ARG BAKED_ARG MORPH_ARG GI_VARG PROBE_VARG\n" \
     "#if defined(SKINNED) || defined(BAKED)\n#define SKIN_PASS , sk\n#else\n#define SKIN_PASS\n#endif\n" \
     "#if defined(BAKED)\n#define BAKED_PASS , tex7\n#else\n#define BAKED_PASS\n#endif\n" \
