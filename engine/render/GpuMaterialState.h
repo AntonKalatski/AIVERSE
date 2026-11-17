@@ -3,6 +3,8 @@
 #pragma once
 #include "Model.h"
 #include <tuple>
+#include <bit>
+#include <string_view>
 
 namespace aiverse::render {
 
@@ -43,6 +45,49 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
             if (texture(ma, a.graphTextures[i]) != texture(mb, b.graphTextures[i])) return false;
     }
     return true;
+}
+
+// Fast, collision-safe grouping key. Hash collisions are resolved with
+// equivalentGpuMaterial(), never treated as automatic material equivalence.
+inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
+    uint64_t hash = 14695981039346656037ull;
+    auto u = [&](uint64_t v) { hash ^= v; hash *= 1099511628211ull; };
+    auto f = [&](float v) { u(v == 0 ? 0u : std::bit_cast<uint32_t>(v)); };
+    auto str = [&](std::string_view v) {
+        u(v.size());
+        for (unsigned char c : v) u(c);
+    };
+    u(m.shaderGraph ? 1 : 0);
+    if (m.shaderGraph) {
+        const auto& g = *m.shaderGraph;
+        str(g.domain); str(g.vertexGlsl); str(g.vertexMsl);
+        str(g.glsl); str(g.msl); u(g.minQuality);
+        u(g.textures.size());
+        for (const auto& t : g.textures) str(t);
+        u(g.outputs.size());
+        for (const auto& [key, value] : g.outputs) { str(key); str(value); }
+    }
+    u(uint32_t(m.shading)); u(uint32_t(m.alpha)); f(m.alphaCutoff);
+    for (bool b : {m.doubleSided, m.vertexOcclusion, m.backOcclusion,
+                   m.vertexColors, m.castShadow, m.receiveShadow, m.transparent}) u(b);
+    u(uint32_t(m.team)); f(m.teamStrength);
+    f(m.normalScale); f(m.occlusionStrength);
+    f(m.baseColor.x); f(m.baseColor.y); f(m.baseColor.z); f(m.baseColor.w);
+    f(m.metallic); f(m.roughness);
+    f(m.emissive.x); f(m.emissive.y); f(m.emissive.z); f(m.emissiveStrength);
+    f(m.uvOffset.x); f(m.uvOffset.y);
+    f(m.uvScale.x); f(m.uvScale.y); f(m.uvRotation);
+    f(m.fixedLight.x); f(m.fixedLight.y); f(m.fixedLight.z); f(m.fixedLight.w);
+    f(m.fixedShade.x); f(m.fixedShade.y);
+    auto texture = [&](int index) {
+        u(index >= 0 && size_t(index) < model.images.size()
+            ? model.images[size_t(index)].tex.id : 0);
+    };
+    for (int t : {m.baseTex, m.mrTex, m.normalTex, m.occlusionTex, m.emissiveTex, m.teamTex}) texture(t);
+    if (m.shaderGraph)
+        for (size_t i = 0; i < m.shaderGraph->textures.size() && i < 4; ++i)
+            texture(m.graphTextures[i]);
+    return hash;
 }
 
 } // namespace aiverse::render
