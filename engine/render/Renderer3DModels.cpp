@@ -1562,7 +1562,7 @@ void Renderer3D::renderModels(int phase) {
                 double(t.rejected) / t.passes, double(t.belowThreshold) / t.passes,
                 double(t.shortGroups) / t.passes);
             std::fprintf(stderr,
-                "[model-batch-submissions] mode=%s phase=%d avg/120 batches=%.1f instanced=%.1f items=%.1f avg-items-per-batch=%.2f\\n",
+                "[model-batch-submissions] mode=%s phase=%d avg/120 batches=%.1f instanced=%.1f items=%.1f avg-items-per-batch=%.2f\n",
                 mode ? "ON" : "OFF", phase,
                 double(st.batches) / t.passes, double(st.instanced) / t.passes,
                 double(st.items) / t.passes,
