@@ -28,6 +28,21 @@ struct FragileResource {
     FragileResource& operator=(const FragileResource&)=default;
 };
 int main() {
+    // Legacy Sparse Set must also roll back failed component insertion
+    // without leaving a phantom dense entry or stale sparse index.
+    {
+        World legacy;
+        Entity e=legacy.create();
+        Fragile::throwMove=true;
+        bool rejected=false;
+        try {legacy.add<Fragile>(e,5);}
+        catch(const std::runtime_error&){rejected=true;}
+        assert(rejected && !legacy.has<Fragile>(e));
+        assert(legacy.countExisting<Fragile>()==0);
+        Fragile::throwMove=false;
+        legacy.add<Fragile>(e,5);
+        assert(legacy.get<Fragile>(e).value==5);
+    }
     World world;
     Entity first=world.create();
     world.add<Stable>(first,Stable{77});
