@@ -200,18 +200,19 @@ void DetailsPanel::prepare() {
 }
 
 void DetailsPanel::draw(Editor& ed) {
-    if (ed.selection.kind == Selection::FpsActor) {
+    if (ed.selection.kind == Selection::FpsActor ||
+        ed.selection.kind == Selection::FpsRuntimeObject) {
         const auto runtime = enumerateEditorRuntimeEntities(ed);
         const auto found = std::find_if(runtime.begin(), runtime.end(),
             [&](const EditorRuntimeEntity& item) {
                 return item.selection == ed.selection;
             });
         if (found == runtime.end()) {
-            ui::hint("FPS runtime actor is unavailable; rebuild the preview.");
+            ui::hint("FPS ECS runtime entity is unavailable; rebuild the preview.");
             return;
         }
         const Json& actor = found->fields;
-        ImGui::TextDisabled("FPS ECS ACTOR · READ ONLY");
+        ImGui::TextDisabled("FPS ECS ENTITY · READ ONLY");
         ImGui::TextUnformatted(found->title.c_str());
         const Json& components = actor["components"];
         if (components.isObject()) {
