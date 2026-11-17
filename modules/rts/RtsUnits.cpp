@@ -722,6 +722,9 @@ void RtsModule::sysMovement(Simulation& sim) {
     // disjoint lanes. Spatial-hash insertion stays sequential and retains the
     // original Unit dense order. No structural changes while jobs are running.
     static thread_local ecs_experiment::PersistentWorkers transformWorkers{3};
+    // A network snapshot may share the Transform pool. Detach it on this
+    // caller before any worker thread invokes tryGet<Transform>.
+    (void)w.prepareExistingWrite<Transform>();
     ecs_experiment::eachAdaptive<Unit>(
         w, transformWorkers, ecs_experiment::ExecutionMode::Auto,
         ecs_experiment::ParallelPolicy{8192,2048},
