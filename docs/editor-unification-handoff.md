@@ -848,3 +848,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `tests/ecs_cross_genre_inventory_test.cpp`: same ECS inventory queue and transaction system in an RTS store and an FPS bag host; transfer, stack expansion, weight-cap rejection without partial mutation, ordered results, id sequence and COW snapshot rollback parity.
 - Verification: source committed through GitHub. **No compiler execution or CTest results**. Built-in FPS and RTS gameplay still use their legacy inventory paths; test does not assert they have been migrated.
 - Next: skill/catalog/CMake/standalone runner, then parity-checked native and built-in host adoption.
+
+
+### 2026-11-18 — ECS inventory native package, skill and test registration
+- Commits: `f59e7c888dd690ca4e76a9169f5556b89511e558` (agent skill), `30828e37f64e1d0f5d9794b8ec50ae9d77ee2fc3` (catalog #123), `0a311f24c98e9d63f212ccd4f380c1cd0d866ef3` (CTest), `513bffd59e84c4331a4399eb112fa2df18218343` (standalone experiment script).
+- Published public native target `AIVERSE::lib_ecs_inventory` and `skills/gameplay/aiverse-ecs-inventory/SKILL.md`, reusing existing Inventory algorithms. Registered `ecs_cross_genre_inventory_test` on two unrelated game hosts, stable ordered commands, weight rejection, rollback and COW.
+- Verification: catalog JSON parsed to 123 records in editor operation. **No compiler/CTest/CI success yet**. FPS/RTS built-in inventories are not migrated; authorization remains host responsibility.
+- Next: run native CI, resolve issues, then migrate FPS loot/inventory and RTS gather/storehouses via explicit ECS owners and full save/network/checksum regression gates.
