@@ -45,3 +45,12 @@ jobs:
           else
             bash tests/run_ecs_experiment_suite.sh
           fi
+  ecs-threadsanitizer:
+    name: ECS thread race checks (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run under ThreadSanitizer
+        shell: bash
+        run: bash tests/run_ecs_experiment_suite.sh --tsan
