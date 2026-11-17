@@ -481,6 +481,8 @@ private:
     std::map<std::string, std::unique_ptr<render::Model>> models_;  // by path; shapes as "shape:<name>"
     render::GeometryScene geometryScene_;
     std::vector<TypeLook> looks_;
+    // Immutable per-type reveal policy; avoid string prefix checks on every draw.
+    std::vector<uint8_t> actorRevealTypes_;
     std::vector<bool> loadedTypes_;
     std::vector<std::string> requestedModels_, loadedModels_;
     bool deferredLoading_ = false, streamingTypes_ = false;
