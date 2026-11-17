@@ -165,6 +165,31 @@ inline bool setDocumentPosition(MapDoc& map, DocumentEntityRef ref,
         {position.x - current.x, position.y - current.y, position.z - current.z});
 }
 
+inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
+                                      DocumentTransform minimum,
+                                      DocumentTransform maximum) {
+    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    const double lo[3] = {minimum.x, minimum.y, minimum.z};
+    const double hi[3] = {maximum.x, maximum.y, maximum.z};
+    for (size_t axis = 0; axis < 3; ++axis)
+        if (!std::isfinite(lo[axis]) || !std::isfinite(hi[axis]) ||
+            !(lo[axis] < hi[axis])) return false;
+    Json* collider = fpsDocumentEntity(map.data.fps, ref);
+    if (!collider || !(*collider)["min"].isArray() ||
+        !(*collider)["max"].isArray()) return false;
+    Json minJson = Json::array(), maxJson = Json::array();
+    for (size_t axis = 0; axis < 3; ++axis) {
+        minJson.push(Json::number(lo[axis], 3));
+        maxJson.push(Json::number(hi[axis], 3));
+    }
+    if ((*collider)["min"] == minJson && (*collider)["max"] == maxJson)
+        return false;
+    collider->member("min") = minJson;
+    collider->member("max") = maxJson;
+    map.touched();
+    return true;
+}
+
 inline bool translateDocumentEntities(MapDoc& map,
                                       const std::vector<DocumentEntityRef>& refs,
                                       DocumentTransform delta) {
