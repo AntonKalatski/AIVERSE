@@ -693,3 +693,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS weapon launch, stage C (CMake)
 - Commit `282a299`: registers `aiverse_ecs_cross_genre_weapon_pipeline_test` after `modules/fps` creates `aiverse_world`, linking only `aiverse_engine`, `aiverse_world` and `AIVERSE::libraries` (not `aiverse_fps` or `aiverse_game`). CTest case `ecs_cross_genre_weapon_pipeline_test` covers full shared shooting and damage composition.
 - Not compiled on Mac/Linux yet; CI must confirm.
+
+### 2026-11-18 — Universal ECS weapon launch, stage D (standalone suite)
+- Commit `7e3fe6d`: `tests/run_ecs_experiment_suite.sh` now compiles and runs `ecs-cross-genre-weapon-pipeline` with public library includes, shared SpatialWorld/TriangleCollision and simulation sources. It checks the full weapon→flight→damage chain without linking any genre gameplay module, including normal/sanitized build modes.
+- The source and shell continuation lines were assembled explicitly. Runtime tests remain unverified; check `bash -n` and execute suite on native toolchain.
