@@ -43,9 +43,24 @@ With `AIVERSE_FRAME_TRACE=1`, user reported:
 ```
 Startup/scene-load samples were substantially slower (e.g. 72–152 ms), so distinguish warm steady-state from loading. The `[editor-window]` measurement records average cost of the slowest window per frame but `last-top` is only the most recently observed ID, not a ranked aggregate.
 
+## New confirmed profiling result (2026-11-17)
+
+The owner ran the newest `[scene-stages]` trace. After warmup, two consecutive 120-frame averages were:
+
+```text
+[scene-stages] avg/120 build=13.245 fields=0.001 view=8.257 overlays-fx=0.187 renderer=1.601 post-overlays=0.441 ms
+[scene-stages] avg/120 build=13.140 fields=0.001 view=8.126 overlays-fx=0.187 renderer=1.607 post-overlays=0.435 ms
+```
+
+**Confirmed hotspots:** `buildEditScene(scene_)` (~13.1 ms, 56%) and `view_.draw(...)` (~8.1 ms, 35%). Together they consume ~90% of the warm ~23.5 ms `renderScene()`. `r3d_.render` is only ~1.6 ms. The earlier 36.884 ms renderer sample was during startup and is not representative.
+
+**Immediate code inspection:** `apps/editor/Editor.cpp:buildEditScene` clears/rebuilds scene objects each frame, loops over `d.entities`, invokes `rules().findType(e.type)`, `objectHidden(...)`, and checks `selectionSet` with linear `std::find` per entity. It may also iterate `world_.rows` and call `wantWorld()`. These are *hypotheses* for the 13 ms; measure substeps and entity counts before choosing caching/invalidation or lookup indexing. The `view_.draw` ~8 ms needs separate instrumentation in `modules/rts/view`; identify model submission vs traversal vs terrain/overlays.
+
+Do not simply skip rebuilding scene based only on map revision: selection, hover, visibility, world preview, project rules and planet state also affect output. Preserve correctness and regression-test editing interactions.
+
 ## Immediate next step (highest priority)
 
-**Wait for the latest `[scene-stages]` measurements**, which split `Editor::renderScene()` into:
+**The latest `[scene-stages]` measurements have arrived (see above).**, which split `Editor::renderScene()` into:
 `buildEditScene`, `fieldPreview_.fill`, `view_.draw`, edit overlays/FX, `r3d_.render`, and post-processing/overlays.
 
 ```sh
