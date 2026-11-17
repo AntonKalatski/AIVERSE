@@ -277,6 +277,17 @@ private:
             const uint32_t otherSubmissions = totalSubmissions >= modelSubmissions
                 ? totalSubmissions - modelSubmissions : 0;
             ImGui::Text("GPU API submissions (tracked): %u", totalSubmissions);
+            const uint64_t cameraTriangles = profile.cameraModelTriangles +
+                profile.cameraMeshTriangles + profile.cameraOverlayTriangles;
+            ImGui::Text("Triangles in camera (tracked): %llu",
+                        (unsigned long long)cameraTriangles);
+            ImGui::TextDisabled("Models: %llu | Meshes: %llu | Overlays: %llu",
+                                (unsigned long long)profile.cameraModelTriangles,
+                                (unsigned long long)profile.cameraMeshTriangles,
+                                (unsigned long long)profile.cameraOverlayTriangles);
+            ImGui::TextDisabled("Current camera only; excludes shadow/reflection and repeated SSR pass.");
+            ImGui::TextDisabled("Counts submitted geometry incl. instances, not visible pixels.");
+            ImGui::TextDisabled("Terrain, sprites and custom renderers not included.");
             const bool safeMode = [] {
                 const char* env = std::getenv("AIVERSE_RENDER_SAFE");
                 return env && std::strcmp(env, "1") == 0;
