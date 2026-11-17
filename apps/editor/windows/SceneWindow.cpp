@@ -218,6 +218,14 @@ private:
                 (unsigned long long)modelStats.multiDrawSubmissions,
                 (unsigned long long)modelStats.indirectCommands);
             ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
+            if (const char* persistent = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
+                persistent && std::strcmp(persistent, "1") == 0) {
+                const auto stats = ed.renderer().persistentSceneStats();
+                ImGui::Text("Persistent GPU scene: %u objects", stats.live);
+                ImGui::Text("Scene upload: %u records / %u ranges (%.1f KiB)",
+                            stats.records, stats.ranges, double(stats.bytes) / 1024.0);
+                ImGui::TextDisabled("Staging only: model shaders still use the classic path.");
+            }
             if (ImGui::Button("Compare A/B same frame##scene_batch") && !benchmarkActive_)
                 measureBatchingNextFrame_ = true;
             if (mdiBackend && !ed.playing()) {
