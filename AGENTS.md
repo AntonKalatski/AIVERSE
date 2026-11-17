@@ -6,6 +6,15 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## ECS 2.0 experimental work (PR #8)
 
+**Parallel migration coordination (2026-11-18):** another agent is actively
+moving RTS and FPS to a universal ECS architecture. Do not concurrently
+rewrite RTS/FPS gameplay systems or change legacy world-space `Transform`
+semantics from the ECS architecture PR. Keep `Parent`, `LocalTransform`,
+`WorldTransform` and `SceneHierarchy` generic under `engine/sim`. Share
+the integration contract in `docs/ecs-agent-handoff.md`, and merge/cherry-pick
+only verified core changes into the genre migration. Both agents must avoid
+overlapping edits to `modules/rts` and `modules/fps`.
+
 For nested gameplay entities and native project object hierarchies, read
 `docs/ecs-scene-hierarchy.md` and use `Parent` / `LocalTransform` /
 `WorldTransform` with `SceneHierarchy`. Do not reinterpret RTS
