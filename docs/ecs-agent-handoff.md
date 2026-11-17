@@ -551,6 +551,48 @@ Known remaining scope: page COW covers ordinary ECS components, but snapshot all
 - `4dc046e`: added a zero-worker nested submission and reuse regression to `ecs_experiments_test.cpp`.
 - Both are newly committed and must be covered by the next manual/CI test run; the preceding full Mac Studio PASS was from an older branch state.
 
+## 2026-11-18 — Generic ECS Parent hierarchy and transform graph (NEW)
+
+User requested efficient nested objects with `Parent` component and derived world transforms. Added an **opt-in generic engine API**, separate from the legacy RTS world-space `Transform` and the existing presentation-only `modules/rts/view/EntityHierarchy.h`.
+
+### Commits and files
+
+- `1cb1aed`, `e651e14`, `4d3a6a6`, `f57e6e1`, `e68a267`, `30d74f5`, `155ce775`: `engine/sim/SceneHierarchy.h` — deterministic parent/children graph, generation-aware cycle detection, dirty subtree propagation through clean ancestors, pending-dirty-roots scheduling, top-down iterative world-transform calculation and repair of invalid/cyclic parent links on rebuild.
+- `ba0705c`: common ECS component definitions in `engine/sim/CommonComponents.h`: `Parent` (`Entity` handle), `Rotation` (Fixed quaternion), `LocalTransform` and `WorldTransform` (cached 3x4 fixed affine). Existing `Transform` not changed.
+- `e68a267`: affine composition preserves shear from nested rotations and nonuniform scale; `WorldTransform::affine` is authoritative, quaternion/scale fields convenience only under shear.
+- `263d6e1`: `engine/render/SceneHierarchyRender.h` converts fixed affine to `render::mat4`, subtracting render origin in fixed point before float conversion.
+- `3ceb6c1`, `74c1b54`: `Simulation::addStateRestoredHook` and callbacks after `loadState` / successful `deserialize` enable rebuilding non-authoritative hierarchy caches following rollback.
+- `b146673`: `engine/sim/SceneHierarchySystem.h::installSceneHierarchy` registers the hierarchy update as an optional `Simulation` system and installs restore hook.
+- `1bf73ce`, `ca52898`, `3051015`, `43271c2`, `da0e3d2`: `tests/ecs_scene_hierarchy_test.cpp` covers nested transforms, rotations/scales, sheared affine, dirty-leaf tracking, cycle rejection, stale generations, reparent, detach, deep 3000-level chain, World snapshots and COW rollback.
+- `60c4e3c`: `tests/ecs_scene_hierarchy_simulation_test.cpp` verifies actual Simulation integration, rendering matrix and automatic SimSnapshot restore.
+- `c6ede97`, `2e4363e`: `tests/ecs_scene_hierarchy_bench.cpp` benchmarks 10k and 100k entities for initial/full, clean and sparse-dirty frames.
+- `96e0a79`, `94fb217`: registered hierarchy correctness tests in standalone ECS suite and CTest.
+- `8815507`: `apps/editor/core/WorldInspect.cpp` exposes `Parent`, `LocalTransform` and derived `WorldTransform` in ECS details.
+- `266c514`: `docs/ecs-scene-hierarchy.md` documents native C++ usage, simulation integration, lifecycle, render origin, rollback, performance and known limitations.
+- `7cf42f3`: `AGENTS.md` links hierarchy documentation for future agent work.
+
+### Design decision
+
+Use *components* for authoritative Parent + local transform, a separate cached children index for structural relations and a derived WorldTransform component. Do not maintain expensive mutable `Children` vectors on arbitrary ECS components; maintain sorted adjacency in `SceneHierarchy`.
+
+- Dirty changes mark affected descendants and ancestor path.
+- `pendingRoots_` means zero hierarchy traversal when no node changed.
+- Updates traverse parent-first and prune clean subtrees; no recursion.
+- Opt-in system ordering chooses when to commit world transforms.
+- No float simulation; renderer receives fixed-origin-relative matrices.
+
+### Verification / remaining scope
+
+New hierarchy changes have **not yet passed compiler or runtime checks on the user's Mac**. The source was committed through the GitHub connector. Test using:
+```bash
+git switch feature/ecs-architecture-benchmarks && git pull --ff-only
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+bash tests/run_ecs_experiment_suite.sh --bench
+bash tests/run_ecs_gameplay_compare.sh --full
+```
+Explicit lifecycle contract: callers use `SceneHierarchy::attach/setParent/setLocal/detach`, or `invalidate` / `rebuild` after raw ECS writes/deletes; the hierarchy does **not** intercept mutations of `Parent`/ `LocalTransform` through raw `World`. After restoring any snapshot, `rebuild` is required; `installSceneHierarchy` installs callbacks for Simulation save/load. Custom game modules must serialize new authoritative component pools themselves. No automatic editor drag/drop reparent action has been implemented; Inspector read-only visibility is provided. The hierarchy updater is sequential but dirty-pruned; a parallel depth-wave evaluator is a future optimization only if measured necessary. Do not claim production readiness until tests and real scene benchmarks are confirmed.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
