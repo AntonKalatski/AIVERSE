@@ -56,6 +56,9 @@ struct Selection {
 };
 
 enum class Tool { Select, Place, Terrain, Level, Height, Field, Region, Area, Start, Road, Erase, Count };
+// Universal Scene Transform interaction mode. Unsupported operations are
+// disabled per selected entity's real authoring schema.
+enum class TransformTool { Move, Rotate, Scale };
 
 // Offscreen 3D view shown inside a window with ImGui::Image.
 struct Viewport {
@@ -113,6 +116,7 @@ public:
     // Selection: `selection` is the primary item (Inspector header, F focus); selectionSet holds every selected
     // item (multi-selection from the Hierarchy / Scene). Code that assigns `selection` directly gets a set of one.
     Selection selection;
+    TransformTool transformTool = TransformTool::Move;
     std::vector<Selection> selectionSet;
     void select(Selection s) { selection = std::move(s); selectionSet.clear(); if (selection.kind != Selection::None) selectionSet.push_back(selection); }
     int selectedEntity() const { return selection.kind == Selection::Entity ? selection.index : -1; }
