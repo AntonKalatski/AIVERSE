@@ -101,4 +101,47 @@ int Editor::pickFpsSceneObject(const Viewport& vp, const render::RTSCamera& came
     return pickSceneRenderable(fpsSceneObjects_, origin, direction);
 }
 
+void Editor::drawFpsSceneInspector() {
+    const int selected = fpsSelectedSceneObject_;
+    if (selected < 0 || selected >= int(fpsSceneObjects_.size())) return;
+    auto& fps = doc().data.fps;
+    const int colliders = int(fps["colliders"].size());
+    const bool collider = selected < colliders;
+    const int sourceIndex = collider ? selected : selected - colliders;
+    Json& source = collider ? fps.member("colliders")[size_t(sourceIndex)]
+                            : fps.member("spawns")[size_t(sourceIndex)];
+    ImGui::TextDisabled("SCENE OBJECT");
+    ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto field = [&](const char* label, Json& array) {
+            if (!array.isArray() || array.size() < 3) return;
+            float xyz[3] = {float(array[0].toDouble()), float(array[1].toDouble()), float(array[2].toDouble())};
+            ImGui::PushID(label);
+            ImGui::TextDisabled("%s", label);
+            ImGui::SetNextItemWidth(-1);
+            const bool changed = ImGui::DragFloat3("##xyz", xyz, 0.05f, 0, 0, "%.3f");
+            if (ImGui::IsItemActivated()) doc().beginEdit();
+            if (changed && std::isfinite(xyz[0]) && std::isfinite(xyz[1]) && std::isfinite(xyz[2])) {
+                Json value = Json::array();
+                for (float x : xyz) value.push(Json::number(double(x), 3));
+                array = value;
+                doc().touched();
+            }
+            ImGui::PopID();
+        };
+        if (collider) {
+            field("Min XYZ", source.member("min"));
+            field("Max XYZ", source.member("max"));
+            ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
+        } else {
+            field("Position XYZ", source);
+            ImGui::TextDisabled("Spawn orientation and scale are not part of the current map schema.");
+        }
+    }
+    if (ImGui::CollapsingHeader("Raw data")) {
+        ImGui::TextWrapped("%s", source.dump().c_str());
+    }
+}
+
 }
