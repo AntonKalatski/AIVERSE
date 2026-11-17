@@ -78,7 +78,7 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
             renderer.drawModel(draw);
         } else if (object.mesh) {
             renderer.drawMesh(*object.mesh, object.world, object.tint);
-            if (object.selected || object.hovered) {
+            if (object.pickable && (object.selected || object.hovered)) {
                 const auto lo = object.boundsMin, hi = object.boundsMax;
                 const render::float3 corners[8] = {
                     {lo.x,lo.y,lo.z}, {hi.x,lo.y,lo.z}, {hi.x,lo.y,hi.z}, {lo.x,lo.y,hi.z},
