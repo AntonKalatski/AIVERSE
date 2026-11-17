@@ -862,3 +862,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `AGENTS.md` to link the 120-package baseline audit, newly published public ECS packages (timed mechanics, locomotion, inventory), their skills and required real-world RTS/FPS migration gates. Explicitly distinguishes library availability from production gameplay migration.
 - Verification: GitHub source committed only. CI/build and user gameplay tests are still pending; latest workflow status check reported queued runs.
 - Next: check compilation/CTests; migrate an actual built-in host with source-of-truth ownership and validate golden save/network/replay parity before turning on defaults.
+
+
+### 2026-11-18 — Whole-engine ECS migration tracker
+- Created persistent work tracker: https://github.com/chromealex/AIVERSE/issues/19 (epic with phased checklists, canonical authority gates and links to audit/AGENTS/this handoff).
+- The epic marks reusable ECS packages as **implemented but unverified and not yet adopted by built-in RTS/FPS**. Do not close it merely because catalog entries exist.
+- Next: obtain native build/CI evidence, then migrate actual FPS/RTS systems one behavior at a time, update the linked issue checklist and this handoff separately.
