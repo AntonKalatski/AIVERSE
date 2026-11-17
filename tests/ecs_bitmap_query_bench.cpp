@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <vector>
+#include <utility>
 
 using namespace aiverse;
 using Clock = std::chrono::steady_clock;
@@ -41,6 +42,7 @@ struct Mask {
 
 class BitmapIndex {
     std::vector<Mask> masks_;
+    std::vector<uint32_t> generations_;
 public:
     template<class T> Mask& mask() {
         uint32_t id=detail::componentTypeId<T>();
@@ -51,7 +53,11 @@ public:
         uint32_t id=detail::componentTypeId<T>();
         return id<masks_.size()? &masks_[id]:nullptr;
     }
-    template<class T> void added(Entity e) { mask<T>().set(e.index); }
+    template<class T> void added(Entity e) {
+        if(e.index>=generations_.size()) generations_.resize(size_t(e.index)+1);
+        generations_[e.index]=e.gen;
+        mask<T>().set(e.index);
+    }
     template<class T> void removed(Entity e) { mask<T>().unset(e.index); }
     void destroyed(Entity e) { for (auto& m:masks_) m.unset(e.index); }
     template<class A, class B, class F> void eachAll(World& w,F&& fn) const {
@@ -62,13 +68,9 @@ public:
             uint64_t bits=a->block(block) & b->block(block);
             while(bits) {
                 uint32_t id=uint32_t(block*64+std::countr_zero(bits));
-                // World generations are validated at write boundaries; on iteration
-                // the dense pool retains the authoritative generation.
+                // Preserve generation after recycling an Entity index.
                 auto& pa=w.pool<A>(); auto& pb=w.pool<B>();
-                // An Entity reconstructed with generation zero is NOT safe after recycling.
-                // Resolve its generation from the live pool's dense entity handle.
-                // The benchmark stores generation-zero entities and never recycles during queries.
-                Entity e{id,0};
+                Entity e{id,generations_[id]};
                 fn(e,pa.get(id),pb.get(id));
                 bits &= bits-1;
             }
@@ -236,7 +238,10 @@ static void verifyIndexLifecycle() {
     if(recycled.index!=e.index || recycled.gen==e.gen) throw std::runtime_error("generation recycle failed");
     w.add<Position>(recycled); w.add<Velocity>(recycled);
     uint32_t matched=0;
-    w.index.eachAll<Position,Velocity>(w.world,[&](Entity,Position&,Velocity&){++matched;});
+    w.index.eachAll<Position,Velocity>(w.world,[&](Entity current,Position&,Velocity&){
+        if(current!=recycled) throw std::runtime_error("bitmap generation mismatch");
+        ++matched;
+    });
     if(matched!=1) throw std::runtime_error("bitmap recycled entity query failed");
     w.add<Health>(recycled);
     uint32_t matchedNone=0,matchedAny=0;
