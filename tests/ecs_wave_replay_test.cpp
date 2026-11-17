@@ -62,11 +62,12 @@ static uint64_t replay(World world,unsigned workerCount) {
             [&] {
                 // This system is serialized behind the component updates.
                 // Record the operation; do not mutate while iterating.
-                auto& pool=world.pool<Position>();
-                if(pool.size()>0 && tick%2==0) {
-                    Entity e=pool.entityAt(0);
-                    commands.enqueue(0,[e](World& w){w.destroyLater(e);});
-                }
+                Entity first=kNullEntity;
+                guarded.eachRead<Position>([&](Entity e,const Position&) {
+                    if(!first.valid())first=e;
+                });
+                if(first.valid() && tick%2==0)
+                    commands.enqueue(0,[first](World& w){w.destroyLater(first);});
                 commands.enqueue(1,[tick](World& w) {
                     auto e=w.create();
                     w.add<Position>(e,Position{10000+tick});
