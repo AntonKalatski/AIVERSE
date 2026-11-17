@@ -121,6 +121,7 @@ int aiverseMain(int argc, char** argv) {
     const std::string prefix = argv[2];
     const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
     render::Renderer3D renderer; render::Mesh floor; gfx::Device* device = nullptr;
+    std::unique_ptr<render::Model> secondModel;
     std::vector<render::Material> materials;
     std::vector<std::vector<render::MaterialBatch>> batches;
     std::vector<uint8_t> before;
@@ -129,6 +130,12 @@ int aiverseMain(int argc, char** argv) {
     platform::AppCallbacks cb;
     cb.init=[&](gfx::Device& d) {
         device=&d; if (!renderer.init(d) || !render::uploadModel(d,*model)) { failed=true; return; }
+        if (scenario == "indirect") {
+            secondModel = indirectFixture();
+            if (!render::uploadModel(d, *secondModel)) { failed=true; return; }
+            if (!model->geometryPoolPage || !secondModel->geometryPoolPage ||
+                !(model->vb == secondModel->vb)) { failed=true; return; }
+        }
         renderer.setProfiling(true); renderer.setShadowQuality(render::ShadowQuality::High);
         renderer.lighting.fogDensity=0;
         if (const char* q=std::getenv("AIVERSE_PALETTE_TEST_QUALITY")) renderer.setMaterialQuality(render::MaterialQuality(std::atoi(q)));
@@ -170,6 +177,13 @@ int aiverseMain(int argc, char** argv) {
             mesh.lods.resize(1);mesh.lods[0].maxPixels=pixels;renderer.setModelLodFadeWidth(.15f);
         }
         renderer.drawModel(draw);
+        if (scenario == "indirect") {
+            render::ModelDraw other = draw;
+            other.model = secondModel.get();
+            other.materials = &secondModel->materials; // distinct Material* with identical shader/parameters
+            other.world = render::mat4::translate({4.f, 0, 0}) * draw.world;
+            renderer.drawModel(other);
+        }
         if(scenario=="instanced"){draw.world=render::mat4::translate({3,0,0})*draw.world;renderer.drawModel(draw);}
         gfx::PassDesc pass;renderer.render(pass);
         if(frame==8||frame==23){
@@ -199,6 +213,6 @@ int aiverseMain(int argc, char** argv) {
         }
         failed|=!renderer.modelError().empty();d.endPass();++frame;
     };
-    cb.shutdown=[&]{device->destroyBuffer(floor.vb);device->destroyBuffer(floor.ib);render::releaseModel(*device,*model);renderer.shutdown();};
+    cb.shutdown=[&]{device->destroyBuffer(floor.vb);device->destroyBuffer(floor.ib);if(secondModel)render::releaseModel(*device,*secondModel);render::releaseModel(*device,*model);renderer.shutdown();};
     platform::run(cfg,cb);return failed||!finished?1:0;
 }
