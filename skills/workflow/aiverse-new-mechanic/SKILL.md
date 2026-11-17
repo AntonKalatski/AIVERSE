@@ -1,84 +1,73 @@
 ---
 name: aiverse-new-mechanic
-description: Add a genre-independent composable ECS mechanic to AIVERSE: reusable components, systems, native API, deterministic tests, optional RTS/FPS adapters, skill/docs and examples.
+description: Implement any AIVERSE mechanic as composable genre-independent ECS components + feature systems, with optional adapters for existing RTS/FPS modules and cross-genre proof.
 ---
 
-# New mechanic — build once, compose everywhere
+# New engine mechanic — component + system composition
 
-Read **AGENTS.md → Genre-independent ECS mechanics contract** and
-`docs/editor-unification-handoff.md` before modifying code. The gameplay engine
-is **not RTS-specific**. A user assembles a game by combining reusable mechanics
-and changing configuration; genre never determines an algorithm's owner.
+**Mandatory:** read `AGENTS.md` (universal ECS mechanic contract) and
+`docs/ecs-mechanic-composition.md` before writing feature code. These rules
+supersede the old RTS-only instructions.
 
-## Architecture
+1. **Coordinate branches and handoff.** Find the current integration branch
+   and existing agent work. Never rewrite another agent's files without
+   reconciling the source. Update the active handoff immediately after each
+   implementation step, with commit SHA, changed paths, test result, and what
+   remains. Do not merge to `main` without explicit approval and green gates.
+2. **Reuse first.** Search `libraries/catalog.json`, public
+   `aiverselib` headers, `engine/sim`, `engine/nav`, skills, docs and
+   CTest. Refactor existing reusable behavior instead of cloning FPS/RTS
+   algorithms or making parallel incompatible configurations.
+3. **Define ECS components.** For each feature, define *data-only*
+   authoritative, saveable components for state, ownership, settings and
+   other necessary capabilities. Use Fixed/integer math, generation-safe
+   Entity references, one source of truth, explicit version handling and
+   settings validation. A mechanic does not live in a monolithic
+   `State::actors`, `RtsModule` field, global singleton or render object.
+4. **Implement reusable systems.** Each system provides one feature/stage
+   with explicit component/resource Read/Write access and a deterministic
+   execution order. Missing components mean the Entity does not participate.
+   Use a deterministic deferred command/event barrier for creation,
+   destruction, damage, shared RNG and other order-dependent side effects.
+   The core system must not branch on genre names or require
+   `game::RtsModule&` / `fps::Module&`.
+5. **Separate shared policy from adapters.** Put neutral calculations in
+   `libraries/include/aiverselib/` or shared `engine/`. Genre modules
+   register systems, map existing input/config, preserve external save/network
+   contracts and provide presentation only. Prefer configuration/policies
+   over RTS-specific vs FPS-specific implementations.
+6. **Projectile example (mandatory pattern elsewhere).** Shooting is
+   assembled from `WeaponLaunch`, `ProjectileFlight`,
+   `Collision/Impact`, `Damage`, `Effects/Despawn` components/systems.
+   A rifle bullet, artillery shell, homing rocket or spell uses one
+   calculation library plus settings, not duplicate RTS/FPS math. Start
+   with `engine/sim/ProjectileData.h` and `aiverselib/genre/Weapons.h`.
+   Apply the same decomposition to vehicles, crafting, loot, economy, AI,
+   inventory, interactions and other features.
+7. **Compose in native C++ games.** Expose through public
+   `AIVERSE::libraries`/`AIVERSE::gameplay_native` targets; a project's
+   native code registers whatever components and systems it needs, without
+   changing engine sources or requiring a specific genre module.
+8. **Prove reuse.** Test the *same* library/system in at least two different
+   GameModule hosts, plus a combined-mechanics example; register CTest and
+   a standalone native consumer. Add invalid configuration, lifecycle,
+   actor/entity generation, deterministic event ordering, snapshot/rollback,
+   serialisation/replay and cross-worker checksum tests. Existing
+   `tests/ecs_cross_genre_mechanics_test.cpp` is the pattern.
+9. **Expose in Editor and data.** Add generic component metadata,
+   inspector editing of authored state, hierarchy/selection and appropriate
+   UI or presentation hooks. No genre-hardcoded editor rendering if the
+   components already describe the feature. Keep old content loading with
+   stable defaults and errors that identify invalid fields.
+10. **Run actual verification.** Build/test on supported platforms, normal
+    and sanitized ECS suites, FPS/RTS replay parity, native project consumer,
+    affected templates and headless matches. For graphics, validate both
+    GLSL and Metal and check visual captures. Unrun checks must be labeled
+    unverified; never assert production readiness from code review alone.
+11. **Deliver and document.** Update this skill if needed, the public API
+    guide, `docs/ecs-mechanic-composition.md`, and handoff. State exactly
+    what is implemented vs still a legacy adapter, what passed, and which
+    branch/commit contains the change.
 
-1. **Inventory before implementation.** Search the library catalog, ECS
-   components/systems, existing skills and `docs/game-format.md`. Extend
-   compatible shared features; do **not** generate a second algorithm in FPS
-   or RTS because it is convenient.
-2. **Data components.** Define minimal public C++ ECS components for
-   configuration, runtime state and result/events in `libraries/include/aiverselib`
-   (or `engine/sim` for genuine core primitives). Use deterministic
-   `Fixed` sim values, Entity handles, stable IDs. Do not store authoritative
-   state in genre-specific vectors when an ECS component can own it.
-3. **Small independent systems.** Implement reusable systems operating on
-   explicit component query/read/write sets. Distinguish planning, immutable
-   sampling, simulation, command/event collection and **ordered commit**.
-   Never change ECS topology during parallel iteration. Support optional
-   registration and per-project configuration.
-4. **Public native API.** Make component and system headers directly available
-   to each native project without editing engine internals, depending on
-   FPS or RTS GameModule classes, Lua, the editor or rendering backend.
-   Provide registration and composition examples.
-5. **Genre adapters only.** FPS/RTS/racing/etc. may map input, target selection,
-   entities and scenario configuration to shared systems. They must not own
-   separate copies of the shared trajectory, damage, collision or AI logic.
-
-## Shared projectile example
-
-Use one projectile/trajectory stack for bullets, rockets, grenades, lasers
-and spells, regardless of RTS/FPS:
-
-- `ProjectileMotion` (position, velocity, lifetime, gravity, guidance),
-  `ProjectileTarget`, `CollisionShape`, `ImpactDamage`, plus optional
-  `Penetration`, `Splash`, `Homing` and `Trail` components.
-- Shared trajectory, collision/impact and damage systems; optional components
-  select behavior. Deferred canonical impact application determines identical
-  results under different worker counts.
-- FPS muzzle input and RTS turret firing become adapters producing the same
-  projectile entities. Rendering/trails/audio are presentation systems and
-  cannot alter authoritative simulation.
-- **Reuse existing projectile libraries where available.** This is an interface
-  example, not authorization to implement duplicate models just to match names.
-
-Apply the same pattern to locomotion, physics, vehicles, gear, inventory,
-crafting, health, status effects, economy, UI/meta, navigation, bots and AI.
-
-## Required handoff + tests
-
-6. **Serialization, replay and rollback.** Serialize/hash every authoritative
-   component, explicitly define persistence versions, generation-safe
-   references and deterministic RNG streams. If migrating old gameplay,
-   maintain parity and a documented deprecation path for compatibility State.
-7. **Tests.** Test components and systems in isolation, native-project
-   compilation, cross-genre use with different configuration, deterministic
-   per-tick checksums, snapshot restore and exception handling. Add ASan/TSan
-   and actual timing tests when concurrency is involved. Tests that have not
-   run are **unverified**, never PASS.
-8. **Agent docs/skill.** Add concise public API examples, configuration
-   reference, dependency/registration graph, one matching AI skill and
-   `AGENTS.md` pointer or catalog entry. Prefer reusing an existing skill
-   instead of adding duplicate instructions.
-9. **Visual/UI work only when needed.** Keep editor Inspector, render and
-   audio adapters optional and independent. Validate real screenshots if a
-   change is visual.
-10. **Document after every code commit.** Append the commit SHA, changed
-    files, current architecture, actual verification and exact next step to
-    `docs/editor-unification-handoff.md` in the working branch.
-11. **Merge discipline.** Work in your assigned branch/worktree, reconcile
-    other agents' changes without overwriting them, and never merge into
-    `main` before requested verification and explicit authorization.
-
-**Definition of done:** one generic ECS library + feature systems + public
-native entry points + two distinct host configurations + tests + docs/skill.
-Genre-specific duplicated algorithm code is grounds for rejecting the work.
+The engine is an assembly of mechanic pieces. **The genre is a preset,
+not a code ownership or feature eligibility boundary.**
