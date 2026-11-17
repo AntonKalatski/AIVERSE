@@ -166,6 +166,13 @@ struct VehicleEntity {
     int32_t health = 0;
     uint8_t driver = 0;
 };
+// Full authoritative dynamic object payloads. The order field preserves
+// legacy vector iteration order (important for deterministic hits/drops).
+// When ecsAuthority is enabled, State arrays are tick-local workspaces only.
+struct ProjectileRuntime { Projectile value; uint32_t order=0; };
+struct LootRuntime { Loot value; uint32_t order=0; };
+struct VehicleRuntime { Vehicle value; uint32_t order=0; };
+
 struct DynamicEntityIndex {
     // Packed key: top 8 bits = kind, low 32 bits = existing object ID.
     std::map<uint64_t, Entity> byKey;
@@ -217,6 +224,7 @@ public:
     void syncActorEntities(Simulation& sim) const; // rebuild ECS actor state and inspector projections
     void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
     void syncDynamicEntities(Simulation& sim) const; // projectile, loot and vehicle ECS views
+    void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
