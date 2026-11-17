@@ -119,6 +119,17 @@ Json orderJson(J& j, const Order& o) {
 const std::vector<Desc>& descs() {
     static const std::vector<Desc> d = {
         AIVERSE_C(Transform, "Положение", j.f("pos", x.pos).f("yaw", x.yaw)),
+        AIVERSE_C(Parent, "Родитель", j.f("parent", x.value)),
+        AIVERSE_C(LocalTransform, "Локальный трансформ", {
+            j.f("pos", x.position).f("scale", x.scale)
+             .f("qx", x.rotation.x).f("qy", x.rotation.y)
+             .f("qz", x.rotation.z).f("qw", x.rotation.w);
+        }),
+        AIVERSE_C(WorldTransform, "Мировой трансформ (кэш)", {
+            j.f("pos", x.position).f("scale", x.scale)
+             .f("qx", x.rotation.x).f("qy", x.rotation.y)
+             .f("qz", x.rotation.z).f("qw", x.rotation.w);
+        }),
         AIVERSE_C(Owner, "Владелец", j.f("player", x.player)),
         AIVERSE_C(Unit, "Объект", {
             j.type("type", x.type).f("hp", x.hp).f("energy", x.energy).f("facing", x.facing).f("lastAttacker", x.lastAttacker).f("lastHitBy", x.lastHitBy);
