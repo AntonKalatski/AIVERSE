@@ -16,7 +16,6 @@
 #include <string>
 #include <chrono>
 #include <unordered_map>
-#include <unordered_set>
 #include <tuple>
 #include <functional>
 
@@ -1163,15 +1162,22 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
         return flag && std::strcmp(flag, "1") == 0;
     }();
+    // Reuse a tiny CPU scratch array instead of allocating an unordered_set
+    // for every batch. Stop as soon as the group reaches the ICB threshold.
+    std::vector<const Primitive*> uniquePrimitives;
+    uniquePrimitives.reserve(effectiveMinimum);
     auto gpuGroupRuns = [&](const std::vector<uint32_t>& indices,
                             size_t begin, size_t end) {
-        // Count unique source primitives; a 100-car instanced fleet is
-        // not a 100-command GPU ICB win. Pointer identity is sufficient to
-        // identify a source primitive inside this frame, never GPU material.
-        std::unordered_set<const Primitive*> unique;
-        for (size_t j = begin; j < end; ++j)
-            unique.insert(modelItems_[indices[j]].prim);
-        return uint32_t(unique.size());
+        uniquePrimitives.clear();
+        for (size_t j = begin; j < end; ++j) {
+            const Primitive* prim = modelItems_[indices[j]].prim;
+            if (std::find(uniquePrimitives.begin(), uniquePrimitives.end(), prim) ==
+                uniquePrimitives.end()) {
+                uniquePrimitives.push_back(prim);
+                if (uniquePrimitives.size() >= effectiveMinimum) break;
+            }
+        }
+        return uint32_t(uniquePrimitives.size());
     };
     bool hasSuitableGroup = false;
     for (const auto& group : groups) {
