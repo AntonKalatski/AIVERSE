@@ -90,6 +90,14 @@ public:
                 std::chrono::steady_clock::now() - benchmarkStart).count();
             if (benchmarkWarmup_ > 0) --benchmarkWarmup_;
             else {
+                // Tag this full Metal command buffer with the exact benchmark
+                // mode. Results arrive asynchronously and are matched by tag.
+                constexpr uint64_t kGpuTag = 0xA17E000000000000ull;
+                const uint64_t tag = kGpuTag |
+                    (uint64_t(benchmarkGeneration_) << 40) |
+                    (uint64_t(benchmarkMode_) << 38) |
+                    (++benchmarkGpuSequence_ & ((uint64_t(1) << 38) - 1));
+                ed.device().timeGpuFrame(tag);
                 benchmarkSamples_[benchmarkMode_].push_back(cpuMs);
                 benchmarkDrawSum_[benchmarkMode_] += renderer.drawCalls();
                 benchmarkIndirectSum_[benchmarkMode_] += renderer.modelStats().multiDrawSubmissions;
@@ -112,6 +120,19 @@ public:
                         benchmarkWarmup_ = 60;
                     }
                 }
+            }
+        }
+        if (benchmarkActive_ || benchmarkDone_) {
+            // Metal timings include the full editor MTLCommandBuffer, not just
+            // renderScene. Never label them as isolated Scene GPU durations.
+            for (const auto& timing : ed.device().takeGpuTimings()) {
+                if (!timing.valid || !std::isfinite(timing.milliseconds) ||
+                    timing.milliseconds <= 0.0 ||
+                    (timing.tag & 0xFFFF000000000000ull) != 0xA17E000000000000ull ||
+                    ((timing.tag >> 40) & 0xFFu) != benchmarkGeneration_)
+                    continue;
+                const uint32_t mode = uint32_t((timing.tag >> 38) & 0x3u);
+                if (mode < 3) benchmarkGpuSamples_[mode].push_back(timing.milliseconds);
             }
         }
         const auto afterRenderScene = std::chrono::steady_clock::now();
@@ -266,6 +287,8 @@ private:
                         benchmarkDone_ = false;
                         benchmarkThreeModes_ = threeModes;
                         benchmarkBlockCount_ = threeModes ? 9 : 6;
+                        ++benchmarkGeneration_;
+                        benchmarkGpuSequence_ = 0;
                         benchmarkPhase_ = 0;
                         benchmarkMode_ = 0;
                         benchmarkPhaseSamples_ = 0;
@@ -273,6 +296,7 @@ private:
                         benchmarkCamera_ = ed.sceneCam;
                         for (int mode = 0; mode < 3; ++mode) {
                             benchmarkSamples_[mode].clear();
+                            benchmarkGpuSamples_[mode].clear();
                             benchmarkDrawSum_[mode] = 0;
                             benchmarkIndirectSum_[mode] = 0;
                             benchmarkCommandSum_[mode] = 0;
@@ -316,7 +340,19 @@ private:
                                     double(benchmarkGpuAuthoredSum_[2]) / 900.0);
                         ImGui::TextDisabled("3 x 300 per mode; order ABC CBA ABC; P95 pooled.");
                     } else ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
-                    ImGui::TextDisabled("Fixed camera; Scene render CPU only. GPU timings are asynchronous.");
+                    if (ed.device().info().backend == gfx::Backend::Metal) {
+                        const int modes = benchmarkThreeModes_ ? 3 : 2;
+                        const char* names[] = {"Instancing", "CPU MDI", "GPU-authored"};
+                        for (int mode = 0; mode < modes; ++mode) {
+                            if (benchmarkGpuSamples_[mode].empty()) continue;
+                            const auto timing = stats(benchmarkGpuSamples_[mode]);
+                            ImGui::Text("%s full GPU frame: avg %.3f / P95 %.3f ms (%zu samples)",
+                                        names[mode], timing.first, timing.second,
+                                        benchmarkGpuSamples_[mode].size());
+                        }
+                        ImGui::TextDisabled("GPU: tagged full editor command buffer, includes UI/other passes.");
+                    }
+                    ImGui::TextDisabled("Fixed camera; CPU is Scene render only. GPU results are asynchronous.");
                     ImGui::TextDisabled("Same geometry pool in both modes; excludes asset upload.");
                 }
             }
@@ -883,6 +919,9 @@ private:
     int benchmarkPhase_ = 0, benchmarkMode_ = 0, benchmarkPhaseSamples_ = 0, benchmarkWarmup_ = 0;
     RTSCamera benchmarkCamera_{};
     std::vector<double> benchmarkSamples_[3];
+    std::vector<double> benchmarkGpuSamples_[3];
+    uint8_t benchmarkGeneration_ = 0;
+    uint64_t benchmarkGpuSequence_ = 0;
     uint64_t benchmarkDrawSum_[3] = {};
     uint64_t benchmarkIndirectSum_[3] = {};
     uint64_t benchmarkCommandSum_[3] = {};
