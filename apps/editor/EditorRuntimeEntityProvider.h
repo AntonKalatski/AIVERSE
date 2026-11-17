@@ -1,7 +1,7 @@
 // Unified *view* of runtime objects for the editor, irrespective of genre.
-// This intentionally distinguishes real ECS Entities (RTS) from deterministic
-// World resource records (FPS): changing the editor view must not invent an ECS
-// identity or silently migrate FPS snapshot/rollback serialization.
+// Runtime RTS rows and FPS Actor/Projectile/Loot/Vehicle previews now expose
+// real ECS entity components. FPS still mirrors its authoritative World State
+// vectors into ECS until the gameplay/netcode migration is completed.
 #pragma once
 #include "Editor.h"
 #include <string>
