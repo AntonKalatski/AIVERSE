@@ -148,15 +148,39 @@ void DetailsPanel::prepare() {
         for (auto& f : flat) v.push_back(&f);
         if (!v.empty()) sections_.push_back({"stats", "Характеристики (база → итог)", merge(v), v.size(), true});
     }
-    // components in the engine's order
+    // Render the components actually reported by the selected entities, not just
+    // the RTS registry. Native/FPS/project-specific components can have arbitrary IDs.
+    // The registry supplies friendly titles and ordering where known.
     static const char* const open[] = {"Transform", "Owner", "Unit", "Orders", "Production", "Construction", "Garrison", "Cargo", "ResourceStock", "ScriptData", "Boarded", "Transport"};
-    for (auto& c : worldComponents()) {
-        std::vector<const Json*> v;
-        for (auto* it : withData) if (it->data["components"].has(c.id)) v.push_back(&it->data["components"][c.id]);
-        if (v.empty()) continue;
-        bool def = false;
-        for (auto* o : open) def |= std::string(o) == c.id;
-        sections_.push_back({c.id, c.title, merge(v), v.size(), def});
+    std::vector<std::string> componentIds;
+    for (auto* it : withData) {
+        const Json& components = it->data["components"];
+        if (!components.isObject()) continue;
+        for (auto& [id, value] : components.members()) {
+            if (std::find(componentIds.begin(), componentIds.end(), id) == componentIds.end()) componentIds.push_back(id);
+        }
+    }
+    const auto& registry = worldComponents();
+    auto componentRank = [&](const std::string& id) {
+        if (id == "Transform") return -1;
+        for (size_t i = 0; i < registry.size(); ++i) if (id == registry[i].id) return int(i);
+        return int(registry.size());
+    };
+    std::stable_sort(componentIds.begin(), componentIds.end(), [&](const std::string& a, const std::string& b) {
+        return componentRank(a) < componentRank(b);
+    });
+    for (const auto& id : componentIds) {
+        std::vector<const Json*> values;
+        for (auto* it : withData) {
+            const Json& components = it->data["components"];
+            if (components.isObject() && components.has(id)) values.push_back(&components[id]);
+        }
+        if (values.empty()) continue;
+        std::string title = id;
+        for (const auto& c : registry) if (id == c.id) { title = c.title; break; }
+        bool expanded = id == "Transform";
+        for (auto* o : open) if (id == o) { expanded = true; break; }
+        sections_.push_back({id, title, merge(values), values.size(), expanded});
     }
     // the rules block of the type
     std::vector<const Json*> rules;
