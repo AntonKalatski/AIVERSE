@@ -111,9 +111,9 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     submitSceneRenderables(r3d_, instances);
 }
 
-bool Editor::moveSelectedFpsSceneObject(float dx, float dz) {
+bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
     if (fpsSelectedSceneObject_ < 0 || fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size()) ||
-        !std::isfinite(dx) || !std::isfinite(dz)) return false;
+        !std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) return false;
     const uint64_t key = fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity;
     if (!key) return false;
     const bool spawn = (key & (uint64_t(1) << 63)) != 0;
@@ -127,11 +127,11 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dz) {
     auto shifted = [&](const Json& xyz, Json& out) {
         if (!xyz.isArray() || xyz.size() < 3 ||
             !xyz[0].isNumber() || !xyz[1].isNumber() || !xyz[2].isNumber()) return false;
-        const double x = xyz[0].toDouble() + dx, z = xyz[2].toDouble() + dz;
-        if (!std::isfinite(x) || !std::isfinite(z)) return false;
+        const double x = xyz[0].toDouble() + dx, y = xyz[1].toDouble() + dy, z = xyz[2].toDouble() + dz;
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
         out = Json::array();
         out.push(Json::number(x, 3));
-        out.push(xyz[1]);
+        out.push(Json::number(y, 3));
         out.push(Json::number(z, 3));
         return true;
     };
