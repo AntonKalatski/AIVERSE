@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <map>
 #include <cstring>
@@ -877,6 +878,7 @@ public:
         auto* p = pipelines_.get(pipelineId_);
         auto* ib = buffers_.get(ibId_);
         if (!enc_ || !p || !ib) return;
+        const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         [enc_ drawIndexedPrimitives:prim() indexCount:count indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
                         indexBuffer:current(*ib) indexBufferOffset:ibOffset_ + size_t(firstIndex) * (u32 ? 4 : 2)
@@ -927,6 +929,8 @@ public:
         if (!indirectData || !indirectData.contents || !indices || !vertices || !indirectPipeline ||
             !indirectPipeline.supportIndirectCommandBuffers) return false;
 
+        const bool traceIcb = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
+        const auto profileStart = std::chrono::steady_clock::now();
         // Build one fragment argument buffer containing all PBR texture and
         // sampler descriptors. The ICB can bind this buffer, whereas it cannot
         // encode the individual texture/sampler bindings used by direct draws.
@@ -946,6 +950,7 @@ public:
             }
         }
 
+        const auto afterArgs = std::chrono::steady_clock::now();
         // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
         // fault inside executeCommandsInBufferCommon on Apple Silicon.
@@ -1002,6 +1007,7 @@ public:
                 indexBuffer:indices indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * indexBytes
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
         }
+        const auto afterEncode = std::chrono::steady_clock::now();
         // ICB resources are not automatically resident. Explicitly declare every
         // resource accessed by commands, even when the parent encoder also uses it.
         declareIndirectRead(vertices, MTLRenderStageVertex);
@@ -1018,6 +1024,29 @@ public:
         }
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
         indirectFrames_[frame_ % kFramesInFlight].push_back(icb);
+        if (traceIcb) {
+            static uint32_t submissions = 0;
+            static uint64_t commandsEncoded = 0;
+            static double totals[4] = {};
+            const auto ms = [](auto a, auto b) {
+                return std::chrono::duration<double, std::milli>(b - a).count();
+            };
+            totals[0] += ms(profileStart, afterArgs);
+            totals[1] += ms(afterArgs, afterAlloc);
+            totals[2] += ms(afterAlloc, afterEncode);
+            totals[3] += ms(afterEncode, std::chrono::steady_clock::now());
+            commandsEncoded += drawCount;
+            if (++submissions == 600) {
+                std::fprintf(stderr,
+                    "[metal-icb] avg/600 submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    totals[0] / submissions, totals[1] / submissions,
+                    totals[2] / submissions, totals[3] / submissions,
+                    double(commandsEncoded) / submissions);
+                submissions = 0;
+                commandsEncoded = 0;
+                for (double& value : totals) value = 0.0;
+            }
+        }
         return true;
     }
 
