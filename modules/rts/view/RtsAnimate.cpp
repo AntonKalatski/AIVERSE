@@ -372,41 +372,45 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         if(wp.attack>=0&&st.eventAge[kProcEvAttack]<m.clips[wp.attack].duration){clip=wp.attack;age=st.eventAge[kProcEvAttack];}
         if(clip>=0){auto mask=subtreeMask(m,ch.weaponMask);sampleClip(m.clips[clip],age,st.pose,1.f,&mask);}break;
     }
-    // ---- procedural
-    ProcInputs in;
-    in.time = float(lastTime_);
-    in.dt = dt;
-    in.speed = st.speed;
-    in.distance = st.distance;
-    in.turnRate = st.turnRate;
-    in.accel = st.accel;
-    in.steer = o.steer;
-    in.phase = st.phase;
-    in.state = state;
-    for (int i = 0; i < kProcEvCount; ++i) in.eventAge[i] = st.eventAge[i];
-    if (!st.dead) in.eventAge[kProcEvDeath] = 1e9f;
-    if (o.hasTarget) {
-        float3 to = o.target - o.pos;
-        in.hasTarget = true;
-        in.aimYaw = wrap(std::atan2(-to.z, to.x) - st.yaw);
-        in.aimPitch = std::atan2(to.y, std::max(0.01f, std::sqrt(to.x * to.x + to.z * to.z)));
-    }
-    // Ground normals are consumed only by procedural modifiers. Most static
-    // models have no procs: avoid four heightAt() samples and a matrix
-    // rotation per object when those values would be discarded.
-    if (!ch.procs.empty() && !st.graph.hasContacts() && grid && grid->w > 0) { // terrain normal around the object, rotated into object space
-        const float e = 0.6f;
-        const float hx = heightAt(*grid, o.pos.x + e, o.pos.z) - heightAt(*grid, o.pos.x - e, o.pos.z);
-        const float hz = heightAt(*grid, o.pos.x, o.pos.z + e) - heightAt(*grid, o.pos.x, o.pos.z - e);
-        const float3 n = normalize(float3{-hx, 2 * e, -hz});
-        in.groundNormal = mat4::rotateY(-st.yaw).transformDir(n);
-    }
+    // The majority of scenery has no procedural modifiers. Do not build
+    // ProcInputs (including target angles and terrain samples) unless the
+    // procedural runtime will consume it. Always reset the object transform.
     st.objXf = mat4{};
     if (!ch.procs.empty() && !st.graph.hasContacts()) {
-        // node modifiers act on the pose: skip them with the pose when LOD postponed it
-        static Pose none; // a postponed pose must not take the node modifiers twice
-        applyProcedural(ch.procs, in, st.rt, ch.needsPose && updatePose ? st.pose : none, st.objXf);
-    }
+        ProcInputs in;
+        in.time = float(lastTime_);
+        in.dt = dt;
+        in.speed = st.speed;
+        in.distance = st.distance;
+        in.turnRate = st.turnRate;
+        in.accel = st.accel;
+        in.steer = o.steer;
+        in.phase = st.phase;
+        in.state = state;
+        for (int i = 0; i < kProcEvCount; ++i) in.eventAge[i] = st.eventAge[i];
+        if (!st.dead) in.eventAge[kProcEvDeath] = 1e9f;
+        if (o.hasTarget) {
+            float3 to = o.target - o.pos;
+            in.hasTarget = true;
+            in.aimYaw = wrap(std::atan2(-to.z, to.x) - st.yaw);
+            in.aimPitch = std::atan2(to.y, std::max(0.01f, std::sqrt(to.x * to.x + to.z * to.z)));
+        }
+        // Ground normals are consumed only by procedural modifiers. Most static
+        // models have no procs: avoid four heightAt() samples and a matrix
+        // rotation per object when those values would be discarded.
+        if (!ch.procs.empty() && !st.graph.hasContacts() && grid && grid->w > 0) { // terrain normal around the object, rotated into object space
+            const float e = 0.6f;
+            const float hx = heightAt(*grid, o.pos.x + e, o.pos.z) - heightAt(*grid, o.pos.x - e, o.pos.z);
+            const float hz = heightAt(*grid, o.pos.x, o.pos.z + e) - heightAt(*grid, o.pos.x, o.pos.z - e);
+            const float3 n = normalize(float3{-hx, 2 * e, -hz});
+            in.groundNormal = mat4::rotateY(-st.yaw).transformDir(n);
+        }
+        {
+            // node modifiers act on the pose: skip them with the pose when LOD postponed it
+            static Pose none; // a postponed pose must not take the node modifiers twice
+            applyProcedural(ch.procs, in, st.rt, ch.needsPose && updatePose ? st.pose : none, st.objXf);
+        }
+
     if (ch.needsPose && updatePose) {
         // Kingston corner stride: shorten leg excursion without slowing the actor.
         // The animation entry was already resolved above; reuse the same
