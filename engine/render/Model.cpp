@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include <cmath>
 #include <stdexcept>
 
@@ -492,7 +494,7 @@ void prepareModelUpload(Model& m) {
     m.batching.primitivesAfter = countPrimitives();
     if (automaticRigid && std::strcmp(automaticRigid, "1") == 0 &&
         m.batching.compacted && m.batching.primitivesAfter < m.batching.primitivesBefore) {
-        std::fprintf(stderr, "[rigid-merge] model=%s before=%zu after=%zu\\n",
+        std::fprintf(stderr, "[rigid-merge] model=%s before=%zu after=%zu\n",
             m.path.c_str(), m.batching.primitivesBefore, m.batching.primitivesAfter);
     }
 
