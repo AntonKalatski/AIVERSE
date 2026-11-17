@@ -220,6 +220,15 @@ private:
                 (unsigned long long)modelStats.multiDrawSubmissions,
                 (unsigned long long)modelStats.indirectCommands);
             ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
+            if (const char* authored = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
+                authored && std::strcmp(authored, "1") == 0) {
+                const auto gpu = ed.renderer().gpuModelDrawStats();
+                ImGui::Text("GPU-authored opaque: %u eligible / %u submitted",
+                            gpu.eligible, gpu.submitted);
+                ImGui::Text("GPU indirect args: %s",
+                            gpu.prepared ? "compute generated" : "not ready / unsupported");
+                ImGui::TextDisabled("Experimental one-draw-per-primitive; slower than instancing is possible.");
+            }
             if (const char* persistent = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
                 persistent && std::strcmp(persistent, "1") == 0) {
                 const auto stats = ed.renderer().persistentSceneStats();
