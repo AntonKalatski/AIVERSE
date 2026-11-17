@@ -272,6 +272,16 @@ inline bool translateDocumentEntities(MapDoc& map,
             };
             if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
                 if (!validCoords(*object)) return false;
+            } else if ((*object)["yaw"].isNumber()) {
+                const Json& centre = (*object)["center"];
+                const Json& half = (*object)["half"];
+                if (!validCoords(centre) || !half.isArray() ||
+                    half.size() != 3 ||
+                    !std::isfinite((*object)["yaw"].toDouble())) return false;
+                for (size_t axis = 0; axis < 3; ++axis)
+                    if (!half[axis].isNumber() ||
+                        !std::isfinite(half[axis].toDouble()) ||
+                        half[axis].toDouble() <= 0.0) return false;
             } else {
                 const Json& lo = (*object)["min"];
                 const Json& hi = (*object)["max"];
