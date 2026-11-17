@@ -109,7 +109,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool skinned = it.joints >= 0, baked = it.baked, morph = it.morph >= 0;
     const bool materialPalette = phase == 1 && it.paletteMaterials;
     const bool lodFade = it.lodThreshold<1 || it.lodInvert;
-    const bool mask = !outline && it.mat->alpha == AlphaMode::Mask;
+    // The screen-space selection pass must honour cutout materials; the
+    // legacy inflated-hull pass intentionally remains a solid silhouette.
+    const bool mask = (!outline || maskPass) && it.mat->alpha == AlphaMode::Mask;
     const bool normalMap = phase != 0 && !outline && it.mat->normalTex >= 0 && matQuality_ != MaterialQuality::Low;
     const bool blend = (outline && !maskPass) || (!outline && !shadow && !depthAfter &&
         (it.mat->alpha == AlphaMode::Blend || it.tint.w < 0.99f || transparentItem(it.flags)));
