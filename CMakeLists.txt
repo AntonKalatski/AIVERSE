@@ -119,6 +119,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_wave_executor_test
             ecs_guarded_world_test
             ecs_snapshot_delta_test
+            ecs_cow_snapshot_test
             ecs_guarded_parallel_test
             ecs_guarded_failure_test
             ecs_wave_replay_test
@@ -291,6 +292,12 @@ add_library(aiverse_net STATIC
     third_party/monocypher/monocypher.c)
 set_source_files_properties(third_party/monocypher/monocypher.c PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w,-w>")
 target_link_libraries(aiverse_net PUBLIC aiverse_engine)
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_cow_rollback_session_test tests/ecs_cow_rollback_session_test.cpp)
+    target_link_libraries(aiverse_ecs_cow_rollback_session_test PRIVATE aiverse_net Threads::Threads)
+    add_test(NAME ecs_cow_rollback_session_test COMMAND aiverse_ecs_cow_rollback_session_test)
+endif()
+
 if(WIN32)
     target_link_libraries(aiverse_net PUBLIC ws2_32 bcrypt)
 elseif(EMSCRIPTEN)
