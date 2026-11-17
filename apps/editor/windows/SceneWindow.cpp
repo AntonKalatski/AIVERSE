@@ -307,8 +307,15 @@ private:
                 ImGui::Text("Single/short runs: %llu  Below threshold: %llu",
                             (unsigned long long)modelStats.mdiShort,
                             (unsigned long long)modelStats.mdiBelowThreshold);
-                ImGui::Text("Ineligible source geometry: %llu",
+                ImGui::Text("Ineligible candidate scans: %llu",
                             (unsigned long long)modelStats.mdiIneligible);
+                ImGui::Text("  Geometry clusters: %llu | baked / GI: %llu",
+                            (unsigned long long)modelStats.mdiIneligibleGeometry,
+                            (unsigned long long)modelStats.mdiIneligibleLighting);
+                ImGui::Text("  Material batches: %llu | skin / morph: %llu | alpha / fade: %llu",
+                            (unsigned long long)modelStats.mdiIneligibleMaterial,
+                            (unsigned long long)modelStats.mdiIneligibleDeform,
+                            (unsigned long long)modelStats.mdiIneligibleAlpha);
                 ImGui::Text("Run split by geometry buffers: %llu",
                             (unsigned long long)modelStats.mdiGeometryBreaks);
                 ImGui::Text("Run split by material state: %llu",
