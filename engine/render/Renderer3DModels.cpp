@@ -467,7 +467,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             const float fadeWidth = opaque && !m->geometry && matQuality_!=MaterialQuality::Low ? modelLodFadeWidth_ : 0;
             lodBlend=selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
             meshIndex=lodBlend.mesh;level=lodBlend.level;
-            if (nodeView && nodeShadow && pixels > cameraPixels &&
+            // This extra camera-only LOD selection is a diagnostic, not
+            // part of rendering. Avoid doing it on every frame when the
+            // LOD inspector is closed, especially in dense cities.
+            if (lodDiagnosticsEnabled_ && nodeView && nodeShadow && pixels > cameraPixels &&
                 selectModelLod(node.mesh, baseMesh.lods, cameraPixels, fadeWidth).level > level) {
                 ++modelStats_.cameraShadowLimitedLod;
                 if (lodDebugTarget_ && d.persistentId == lodDebugTarget_)
@@ -477,7 +480,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (meshIndex != node.mesh) ++profile_.lodNodes;
         }
         ++modelStats_.lodNodes[std::min<size_t>(level, 3)];
-        if (nodeView) {
+        if (lodDiagnosticsEnabled_ && nodeView) {
             ++modelStats_.cameraLodNodes[std::min<size_t>(level, 3)];
             if (baseMesh.lods.empty()) ++modelStats_.cameraNoLodChains;
             else {
