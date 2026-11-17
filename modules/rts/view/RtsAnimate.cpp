@@ -63,14 +63,22 @@ bool fresh(float age, float dt) { return age <= dt + 1e-4f; }
 void RtsView::handleEvents(const RtsScene& s) {
     if (s.tick == lastTick_) return;
     lastTick_ = s.tick;
-    std::map<uint64_t, const SceneObject*> objects;
-    for (const auto& o : s.objects) if (!o.isProjectile) objects.emplace(o.entity.packed(), &o);
+    // Most simulation ticks have no attack events. Avoid allocating and
+    // populating a scene-wide lookup for events that never query it.
+    std::unordered_map<uint64_t, const SceneObject*> objects;
+    bool objectsIndexed = false;
     for (const auto& ev : s.events) {
         if (!ev.a.valid()) continue;
         const uint64_t key = ev.a.packed();
         auto it = anims_.find(key);
         switch (ev.type) {
             case kEvAttack: {
+                if (!objectsIndexed) {
+                    objects.reserve(s.objects.size());
+                    for (const auto& o : s.objects)
+                        if (!o.isProjectile) objects.emplace(o.entity.packed(), &o);
+                    objectsIndexed = true;
+                }
                 auto source = objects.find(key), target = objects.find(ev.b.packed());
                 if (!ev.b.valid() && source != objects.end() && source->second->visible) { anims_[key].eventAge[kProcEvAttack] = 0; break; }   // free fire (arsenal): no target
                 if (source == objects.end() || target == objects.end()) break;
