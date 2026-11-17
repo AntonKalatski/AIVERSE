@@ -54,23 +54,59 @@ const Json& Editor::fpsRuntimeSnapshot() {
         preview.setup(ws_.project.rulesJson, doc().toJson());
         auto* module = dynamic_cast<fps::Module*>(&preview.module());
         if (!module) throw std::runtime_error("FPS module missing");
-        const fps::State& state = module->state(preview);
-        for (const fps::Actor& actor : state.actors) {
+        // Runtime actors now have real ECS identities and typed component
+        // pools, which the editor inspects directly. State::actors remains
+        // the authoritative compatibility storage until gameplay migration.
+        World& world = preview.world();
+        for (size_t i = 0; i < preview.players().size(); ++i) {
+            const Entity entity = module->actorEntity(preview, uint8_t(i + 1));
+            if (!world.alive(entity)) continue;
+            const auto* identity = world.tryGet<fps::ActorEntityIdentity>(entity);
+            const auto* transform = world.tryGet<fps::ActorEntityTransform>(entity);
+            const auto* vitals = world.tryGet<fps::ActorEntityVitals>(entity);
+            if (!identity || !transform || !vitals) continue;
             Json data = Json::object();
-            data.set("slot", Json::number(int64_t(actor.slot)));
-            data.set("team", Json::number(int64_t(actor.team)));
-            Json pos = Json::array(), velocity = Json::array();
-            for (const Fixed c : {actor.pos.x, actor.pos.y, actor.pos.z})
-                pos.push(Json::number(c.toDouble(), 3));
-            for (const Fixed c : {actor.velocity.x, actor.velocity.y, actor.velocity.z})
-                velocity.push(Json::number(c.toDouble(), 3));
-            data.set("position", pos);
+            data.set("slot", Json::number(int64_t(identity->slot)));
+            data.set("team", Json::number(int64_t(identity->team)));
+            data.set("life", Json::number(int64_t(identity->life)));
+            data.set("ecsEntity", Json::number(int64_t(entity.packed())));
+            Json position = Json::array(), velocity = Json::array();
+            for (const Fixed value : {transform->position.x, transform->position.y,
+                                      transform->position.z})
+                position.push(Json::number(value.toDouble(), 3));
+            for (const Fixed value : {transform->velocity.x, transform->velocity.y,
+                                      transform->velocity.z})
+                velocity.push(Json::number(value.toDouble(), 3));
+            data.set("position", position);
             data.set("velocity", velocity);
-            data.set("yaw", Json::number(actor.yaw.toDouble(), 3));
-            data.set("pitch", Json::number(actor.pitch.toDouble(), 3));
-            data.set("health", Json::number(int64_t(actor.health)));
-            data.set("ammo", Json::number(int64_t(actor.ammo)));
-            data.set("reserve", Json::number(int64_t(actor.reserve)));
+            data.set("yaw", Json::number(transform->yaw.toDouble(), 3));
+            data.set("pitch", Json::number(transform->pitch.toDouble(), 3));
+            data.set("health", Json::number(int64_t(vitals->health)));
+            data.set("armor", Json::number(int64_t(vitals->armor)));
+            data.set("ammo", Json::number(int64_t(vitals->ammo)));
+            data.set("reserve", Json::number(int64_t(vitals->reserve)));
+            Json components = Json::object();
+            Json identityFields = Json::object();
+            identityFields.set("slot", Json::number(int64_t(identity->slot)));
+            identityFields.set("team", Json::number(int64_t(identity->team)));
+            identityFields.set("life", Json::number(int64_t(identity->life)));
+            components.set("ActorEntityIdentity", identityFields);
+            Json transformFields = Json::object();
+            transformFields.set("position", position);
+            transformFields.set("velocity", velocity);
+            transformFields.set("yaw", Json::number(transform->yaw.toDouble(), 3));
+            transformFields.set("pitch", Json::number(transform->pitch.toDouble(), 3));
+            components.set("ActorEntityTransform", transformFields);
+            Json vitalsFields = Json::object();
+            vitalsFields.set("health", Json::number(int64_t(vitals->health)));
+            vitalsFields.set("armor", Json::number(int64_t(vitals->armor)));
+            vitalsFields.set("ammo", Json::number(int64_t(vitals->ammo)));
+            vitalsFields.set("reserve", Json::number(int64_t(vitals->reserve)));
+            vitalsFields.set("downed", Json::fromBool(vitals->downed));
+            vitalsFields.set("crouched", Json::fromBool(vitals->crouched));
+            vitalsFields.set("prone", Json::fromBool(vitals->prone));
+            components.set("ActorEntityVitals", vitalsFields);
+            data.set("components", components);
             actors.push(std::move(data));
         }
     } catch (const std::exception& e) {
