@@ -81,6 +81,67 @@ format must remain compatible until an explicitly versioned migration.
 Run `aiverse_fps_tests`, `fps_transport`, checksum replay, sanitizer and
 universal Editor tests on the integrated branch before main merge.
 
+## Mandatory universal ECS mechanic contract (2026-11-18)
+
+**Games are compositions of components and systems, NOT fixed RTS/FPS feature silos.**
+This section supersedes older genre-specific implementation instructions elsewhere in
+this file or in skills. Every new or refactored gameplay mechanic MUST have:
+
+1. **ECS components** holding all mutable authoritative state: e.g. `ProjectileFlight`,
+   `DamagePayload`, `WeaponState`, `Inventory`, `VehicleMotion`, `Team`.
+   Use generation-safe Entity links, Fixed/integer values and explicit versioned
+   configuration. Do not hide gameplay state in global variables, module objects,
+   ephemeral mirrors or untracked vectors.
+2. **Reusable ECS systems** implementing one feature or stage, with explicit
+   `reads`, `writes`, resource/structural dependencies and a deterministic tick
+   stage. A system consumes the components it needs; no requirement that the
+   hosting game is RTS, FPS, racing, RPG or another predefined genre.
+3. **Pure/shared algorithms or policies** when possible, located in
+   `libraries/include/aiverselib/` (or shared `engine/` when engine-owned).
+   Genre-specific modules only map input/config/presentation and assemble
+   shared systems. Never duplicate the same core algorithm in RTS and FPS.
+4. **Composable execution**: systems opt in per project through data/config,
+   run with deterministic ordering and explicit barriers, and interoperate
+   through components, events and deferred command buffers. A single Entity
+   may use any combination of shooting, inventory, driving, crafting, AI,
+   abilities and other mechanics. Missing components mean a system skips
+   that Entity; no hard-coded genre switch or mutually exclusive feature list.
+5. **Gameplay determinism and rollback**: all state that affects outcome is
+   hashed/serialized/snapshotted, input is a validated Command, RNG is injected
+   from Simulation and consumed in canonical order, structural changes are
+   deferred, and cross-worker writes are protected. No presentation floats
+   in authoritative logic.
+6. **Native-project usability**: a standalone game's C++ source must be able
+   to include, configure and register the components and systems through public
+   AIVERSE targets, without editing the engine or depending on `RtsModule&`
+   / `fps::Module`. Optional adapters for legacy modules are allowed, but the
+   reusable mechanic itself must have no such dependency.
+7. **Cross-genre proof**: before calling a mechanic reusable, compile and
+   exercise it in at least TWO independent module hosts (e.g. shooter and
+   strategy), plus a combined-mechanics scenario. Validate checksum parity,
+   save/load, rollback, component lifecycle and permissions; add CTest/CI.
+   No green tests => mark unverified, do not claim production-ready.
+8. **Documentation on every feature change**: update the feature skill,
+   `docs/ecs-mechanic-composition.md`, the relevant API guide and the current
+   branch's agent handoff after EACH implementation commit. The handoff must
+   distinguish implemented code from native test results.
+
+**Projectile example:** RTS turret, FPS rifle, missile launcher and RPG spell
+must all use shared flight/trajectory/collision/impact policies driven by
+`ProjectileFlight` / `ProjectileState` / `Target` / `DamagePayload`
+components. Separate launch, motion/homing, collision, damage, effects and
+despawn systems; adapt genre-specific rules at the edges. Reuse existing
+`engine/sim/ProjectileData.h` and `aiverselib/genre/Weapons.h` as a base,
+not duplicate trajectory physics inside each genre module. Parameterize bullet,
+shell and rocket behavior rather than branching on the genre name.
+
+**Migration rule:** legacy `RtsModule` or `fps::Module` methods are not
+considered universal simply because both run on an ECS World. Extract common
+mechanic state + behavior into reusable ECS units, keep old public/save/network
+contracts through thin adapters until parity tests pass, then remove duplicated
+implementations. See `docs/ecs-mechanic-composition.md` and
+`skills/workflow/aiverse-new-mechanic/SKILL.md`.
+
 ## ECS 2.0 experimental work (PR #8)
 
 **Parallel migration coordination (2026-11-18):** another agent is actively
