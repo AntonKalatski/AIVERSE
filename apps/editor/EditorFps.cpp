@@ -122,22 +122,28 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dz) {
     const char* group = spawn ? "spawns" : "colliders";
     if (sourceIndex >= fps[group].size()) return false;
     Json& item = fps.member(group)[sourceIndex];
-    auto shift = [&](Json& xyz) {
-        if (!xyz.isArray() || xyz.size() < 3) return false;
+    // Validate every affected endpoint before changing the document. A failed
+    // second endpoint must never leave a collider half-translated.
+    auto shifted = [&](const Json& xyz, Json& out) {
+        if (!xyz.isArray() || xyz.size() < 3 ||
+            !xyz[0].isNumber() || !xyz[1].isNumber() || !xyz[2].isNumber()) return false;
         const double x = xyz[0].toDouble() + dx, z = xyz[2].toDouble() + dz;
         if (!std::isfinite(x) || !std::isfinite(z)) return false;
-        Json updated = Json::array();
-        updated.push(Json::number(x, 3));
-        updated.push(xyz[1]);
-        updated.push(Json::number(z, 3));
-        xyz = updated;
+        out = Json::array();
+        out.push(Json::number(x, 3));
+        out.push(xyz[1]);
+        out.push(Json::number(z, 3));
         return true;
     };
     if (spawn) {
-        if (!shift(item)) return false;
+        Json moved;
+        if (!shifted(item, moved)) return false;
+        item = std::move(moved);
     } else {
-        if (!item["min"].isArray() || !item["max"].isArray()) return false;
-        if (!shift(item.member("min")) || !shift(item.member("max"))) return false;
+        Json minMoved, maxMoved;
+        if (!shifted(item["min"], minMoved) || !shifted(item["max"], maxMoved)) return false;
+        item.member("min") = std::move(minMoved);
+        item.member("max") = std::move(maxMoved);
     }
     doc().touched();
     return true;
