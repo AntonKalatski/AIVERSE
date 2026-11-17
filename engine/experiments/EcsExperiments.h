@@ -4,6 +4,7 @@
 #include "../core/ECS.h"
 #include <algorithm>
 #include <condition_variable>
+#include <exception>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -31,54 +32,67 @@ struct PreparedAll {
 // any other external data. Same component pool is split into stable index ranges.
 class PersistentWorkers {
 public:
-    explicit PersistentWorkers(unsigned workers)
-        : workers_(workers) {
-        for (unsigned i=0; i<workers; ++i)
-            threads_.emplace_back([this,i] { runWorker(i); });
+    explicit PersistentWorkers(unsigned workers):workers_(workers) {
+        // If thread creation fails, join the already-created workers before rethrowing.
+        try {
+            for(unsigned i=0;i<workers_;++i)
+                threads_.emplace_back([this,i]{runWorker(i);});
+        } catch(...) {
+            stopAndJoin();
+            throw;
+        }
     }
     PersistentWorkers(const PersistentWorkers&)=delete;
     PersistentWorkers& operator=(const PersistentWorkers&)=delete;
-    ~PersistentWorkers() {
+    ~PersistentWorkers(){stopAndJoin();}
+    unsigned workers() const {return workers_;}
+
+    template<class Fn> void parallelFor(size_t n,Fn&& callback) {
+        if(n==0)return;
+        if(workers_==0){callback(size_t(0),n);return;}
+        std::function<void(unsigned)> local;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if(active_)throw std::logic_error("parallelFor is not reentrant");
+            const size_t lanes=size_t(workers_)+1;
+            local=[&callback,n,lanes](unsigned lane) {
+                const size_t begin=(n*lane)/lanes;
+                const size_t end=(n*(lane+1))/lanes;
+                if(begin<end)callback(begin,end);
+            };
+            fn_=local;
+            active_=true;
+            finished_=0;
+            failure_=nullptr;
+            ++epoch_;
+        }
+        wake_.notify_all();
+        try {local(workers_);}
+        catch(...) {recordFailure(std::current_exception());}
+        std::exception_ptr failure;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            done_.wait(lock,[this]{return finished_==workers_;});
+            failure=failure_;
+            active_=false;
+            fn_={};
+        }
+        if(failure)std::rethrow_exception(failure);
+    }
+private:
+    void recordFailure(std::exception_ptr exception) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(!failure_)failure_=exception;
+    }
+    void stopAndJoin() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             stopping_=true;
             ++epoch_;
         }
         wake_.notify_all();
-        for (auto& t:threads_) t.join();
+        for(auto& t:threads_)if(t.joinable())t.join();
     }
-    unsigned workers() const { return workers_; }
-
-    // n is partitioned deterministically into lanes (workers+caller).
-    // All tasks complete before this method returns. No concurrent calls.
-    template<class Fn> void parallelFor(size_t n, Fn&& callback) {
-        if (n==0) return;
-        if (workers_==0) { callback(size_t(0),n); return; }
-        using Callback=std::remove_reference_t<Fn>;
-        Callback& ref=callback;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (active_) throw std::logic_error("parallelFor is not reentrant");
-            const size_t lanes=size_t(workers_)+1;
-            fn_=[&ref,n,lanes](unsigned lane) {
-                const size_t begin=(n*lane)/lanes;
-                const size_t end=(n*(lane+1))/lanes;
-                if(begin<end) ref(begin,end);
-            };
-            active_=true;
-            finished_=0;
-            ++epoch_;
-        }
-        wake_.notify_all();
-        fn_(workers_);
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            done_.wait(lock,[this]{return finished_==workers_;});
-            active_=false;
-            fn_={};
-        }
-    }
-private:
     void runWorker(unsigned index) {
         uint64_t seen=0;
         while(true) {
@@ -86,15 +100,16 @@ private:
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 wake_.wait(lock,[&]{return stopping_ || epoch_!=seen;});
-                if(stopping_) return;
+                if(stopping_)return;
                 seen=epoch_;
                 fn=fn_;
             }
-            fn(index);
+            try {fn(index);}
+            catch(...) {recordFailure(std::current_exception());}
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 ++finished_;
-                if(finished_==workers_) done_.notify_one();
+                if(finished_==workers_)done_.notify_one();
             }
         }
     }
@@ -103,10 +118,36 @@ private:
     std::mutex mutex_;
     std::condition_variable wake_,done_;
     std::function<void(unsigned)> fn_;
+    std::exception_ptr failure_;
     uint64_t epoch_=0;
     unsigned finished_=0;
     bool active_=false,stopping_=false;
 };
+
+enum class ExecutionMode { Sequential, Parallel, Auto };
+struct ParallelPolicy {
+    // Conservative default; tune per system using real frame profiling.
+    size_t minimumEntities=8192;
+    size_t minimumPerLane=2048;
+};
+template<class A,class Fn>
+void eachAdaptive(World& world,PersistentWorkers& workers,ExecutionMode mode,
+                  ParallelPolicy policy,Fn&& fn) {
+    auto& pool=world.pool<A>();
+    const size_t n=pool.size();
+    const size_t lanes=size_t(workers.workers())+1;
+    const bool useParallel=workers.workers()>0 &&
+        (mode==ExecutionMode::Parallel ||
+         (mode==ExecutionMode::Auto && n>=policy.minimumEntities &&
+          n/lanes>=policy.minimumPerLane));
+    if(!useParallel) {
+        for(size_t i=0;i<n;++i)fn(pool.entityAt(i),pool.dataAt(i));
+        return;
+    }
+    workers.parallelFor(n,[&](size_t begin,size_t end){
+        for(size_t i=begin;i<end;++i)fn(pool.entityAt(i),pool.dataAt(i));
+    });
+}
 
 // This helper follows the existing FIRST pool's dense order.
 // No filtered query: use only when all entries in A are eligible or filter in fn.
