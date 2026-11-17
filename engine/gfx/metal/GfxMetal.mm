@@ -566,6 +566,7 @@ public:
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
         indirectFrames_[frame_ % kFramesInFlight].clear(); // prior use of this slot has completed
+        indirectUniformFrames_[frame_ % kFramesInFlight].clear();
         uniformPage_=uniformOffset_=0;
         layer_.drawableSize = CGSizeMake(w, h);
         drawable_ = [layer_ nextDrawable];
@@ -714,6 +715,7 @@ public:
     }
     void setVertexBuffer(BufferHandle h, size_t offset) override {
         vbId_ = h.id;
+        vbOffset_ = offset;
         auto* b = buffers_.get(h.id);
         if(enc_&&b){auto buffer=current(*b);if(bindingCacheEnabled_&&boundVertexBuffer_==buffer&&boundVertexOffset_==offset)return;
             [enc_ setVertexBuffer:buffer offset:offset atIndex:0];if(bindingCacheEnabled_){boundVertexBuffer_=buffer;boundVertexOffset_=offset;}}
@@ -737,7 +739,13 @@ public:
     std::vector<UniformPage> uniformPages_[kFramesInFlight];
     size_t uniformPage_=0, uniformOffset_=0;
     void setUniforms(int slot, const void* data, size_t size) override {
-        if (!enc_) return;
+        if (!enc_ || !data || !size) return;
+        // ICB commands cannot inherit setVertexBytes/setFragmentBytes when
+        // inheritBuffers=NO. Capture the exact bytes to give each command a
+        // stable MTLBuffer instead. This is used only in experimental ICB mode.
+        if (supportsMultiDrawIndirect() && slot >= 0 && slot < 8)
+            indirectUniformSnapshots_[slot].assign(static_cast<const uint8_t*>(data),
+                                                   static_cast<const uint8_t*>(data) + size);
         if(size>4096) {
             if(size>maxUniformBytes()) { error_="uniform block exceeds device limit"; return; }
             // Per-frame pages survive until this frame slot's GPU work has completed.
@@ -789,9 +797,9 @@ public:
         return false;
     }
     bool drawIndexedIndirect(BufferHandle commands, size_t offset, uint32_t drawCount, uint32_t stride) override {
-        if (!supportsMultiDrawIndirect() || !enc_ || !pipelines_.get(pipelineId_) ||
-            !drawCount || stride < sizeof(DrawIndexedIndirectCommand) || (stride & 3u) ||
-            (offset & 3u)) return false;
+        auto* p = pipelines_.get(pipelineId_);
+        if (!supportsMultiDrawIndirect() || !enc_ || !p || !drawCount ||
+            stride < sizeof(DrawIndexedIndirectCommand) || (stride & 3u) || (offset & 3u)) return false;
         auto* cmdBuffer = buffers_.get(commands.id);
         auto* ib = buffers_.get(ibId_);
         auto* vb = buffers_.get(vbId_);
@@ -799,33 +807,68 @@ public:
             offset > cmdBuffer->size ||
             size_t(drawCount - 1) * stride + sizeof(DrawIndexedIndirectCommand) > cmdBuffer->size - offset)
             return false;
+
         const id<MTLBuffer> indirectData = current(*cmdBuffer);
         const id<MTLBuffer> indices = current(*ib);
+        const id<MTLBuffer> vertices = current(*vb);
+        if (!indirectData || !indices || !vertices || !p->state) return false;
+
+        // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
+        // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
+        // fault inside executeCommandsInBufferCommon on Apple Silicon.
         MTLIndirectCommandBufferDescriptor* descriptor = [MTLIndirectCommandBufferDescriptor new];
         descriptor.commandTypes = MTLIndirectCommandTypeDrawIndexed;
-        descriptor.inheritBuffers = YES;
-        descriptor.inheritPipelineState = YES;
-        descriptor.maxVertexBufferBindCount = 0;
-        descriptor.maxFragmentBufferBindCount = 0;
+        descriptor.inheritBuffers = NO;
+        descriptor.inheritPipelineState = NO;
+        descriptor.maxVertexBufferBindCount = 9; // vertex at 0; uniforms at 1..8
+        descriptor.maxFragmentBufferBindCount = 9;
         id<MTLIndirectCommandBuffer> icb = [device_ newIndirectCommandBufferWithDescriptor:descriptor
             maxCommandCount:drawCount options:MTLResourceStorageModeShared];
         if (!icb) return false;
-        const bool u32 = pipelines_.get(pipelineId_)->desc.indexType == IndexType::UInt32;
+
+        // Uniform buffers are private to this submission. Preserve their lifetime
+        // until the frame's GPU fence has completed; never reference setBytes
+        // allocations made by a parent render encoder from an ICB.
+        id<MTLBuffer> uniforms[8] = {};
+        for (int slot = 0; slot < 8; ++slot) {
+            const auto& bytes = indirectUniformSnapshots_[slot];
+            if (bytes.empty()) continue;
+            uniforms[slot] = [device_ newBufferWithBytes:bytes.data() length:bytes.size()
+                                               options:MTLResourceStorageModeShared];
+            if (!uniforms[slot]) return false;
+        }
+        const bool u32 = p->desc.indexType == IndexType::UInt32;
+        const size_t indexBytes = u32 ? 4u : 2u;
         for (uint32_t i = 0; i < drawCount; ++i) {
-            DrawIndexedIndirectCommand args;
-            std::memcpy(&args, static_cast<const uint8_t*>(indirectData.contents) + offset + size_t(i) * stride, sizeof(args));
+            DrawIndexedIndirectCommand args{};
+            std::memcpy(&args, static_cast<const uint8_t*>(indirectData.contents) +
+                               offset + size_t(i) * stride, sizeof(args));
             if (!args.indexCount || !args.instanceCount) continue;
+            if (size_t(args.firstIndex) > (ib->size - std::min(ib->size,ibOffset_)) / indexBytes ||
+                ibOffset_ > ib->size ||
+                size_t(args.indexCount) > (ib->size - ibOffset_) / indexBytes - args.firstIndex)
+                return false;
             id<MTLIndirectRenderCommand> command = [icb indirectRenderCommandAtIndex:i];
+            if (!command) return false;
+            [command setRenderPipelineState:p->state];
+            [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
+            for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
+                [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
+                [command setFragmentBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
+            }
             [command drawIndexedPrimitives:prim() indexCount:args.indexCount
-                indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16 indexBuffer:indices
-                indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * (u32 ? 4 : 2)
+                indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
+                indexBuffer:indices indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * indexBytes
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
         }
-        // Apple's ICB contract requires explicit residency declarations for
-        // buffers referenced by indirect commands. The vertex stream is
-        // inherited from the parent encoder but still needs useResource.
-        [enc_ useResource:current(*vb) usage:MTLResourceUsageRead];
+        // ICB resources are not automatically resident. Explicitly declare every
+        // resource accessed by commands, even when the parent encoder also uses it.
+        [enc_ useResource:vertices usage:MTLResourceUsageRead];
         [enc_ useResource:indices usage:MTLResourceUsageRead];
+        for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
+            [enc_ useResource:uniforms[slot] usage:MTLResourceUsageRead];
+            indirectUniformFrames_[frame_ % kFramesInFlight].push_back(uniforms[slot]);
+        }
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
         indirectFrames_[frame_ % kFramesInFlight].push_back(icb);
         return true;
@@ -858,7 +901,9 @@ private:
     Pool<MTShader> shaders_;
     Pool<MTPipeline> pipelines_;
     uint32_t pipelineId_ = 0, vbId_ = 0, ibId_ = 0;
-    size_t ibOffset_ = 0;
+    size_t vbOffset_ = 0, ibOffset_ = 0;
+    std::vector<uint8_t> indirectUniformSnapshots_[8];
+    std::vector<id<MTLBuffer>> indirectUniformFrames_[kFramesInFlight];
     int passW_ = 0, passH_ = 0;
 };
 
