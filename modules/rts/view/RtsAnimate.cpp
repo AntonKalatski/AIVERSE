@@ -219,7 +219,12 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     }
     if (locomotionSpeed >= 0.f) st.speed = locomotionSpeed;
     const bool moving = !st.dead && (locomotionSpeed >= 0.f ? st.speed > .015f : (o.moving || st.speed > .15f));
-    const uint32_t state = stateBits(st, o, moving);
+    // Plain scenery has no graph, clip or procedural consumer of the state
+    // mask. Avoid inspecting its action/production/target flags each frame.
+    const Model& m = *ch.model;
+    const bool needsState = ch.graph || (control && control->graph) ||
+        !m.clips.empty() || !ch.procs.empty();
+    const uint32_t state = needsState ? stateBits(st, o, moving) : 0;
 
     // ---- animation LOD: off screen -> clips only keep time; far away -> pose updated less often
     bool updatePose = true;
@@ -233,7 +238,6 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
 
     // ---- clips
     Animator& A = st.anim;
-    const Model& m = *ch.model;
     auto program=ch.graph;
     if(control&&control->graph){
         if(!ch.programmableAnimation)control->error="type view.programmableAnimation must be enabled";
