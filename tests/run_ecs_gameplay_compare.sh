@@ -26,7 +26,7 @@ for mode in off on; do
   build="$ROOT/build-$mode"
   flag=OFF
   [[ "$mode" == on ]] && flag=ON
-  cmake -S . -B "$build" "${COMMON[@]}" "-DAIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=$flag"
+  cmake -S . -B "$build" "${COMMON[@]}" "-DAIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=$flag" "-DAIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR=$flag"
   targets=(aiverse_headless aiverse_fps_tests)
   if [[ "$FULL" == 1 ]]; then targets+=(aiverse_tests aiverse_net_tests); fi
   cmake --build "$build" --parallel "${AIVERSE_ECS_BUILD_JOBS:-4}" --target "${targets[@]}"
@@ -43,6 +43,12 @@ for mode in off on; do
   }
   echo "=== FPS tests: $mode ==="
   ctest --test-dir "$build" --no-tests=error -R "^(fps|fps_transport)$" --output-on-failure
+  "$build/modules/fps/aiverse_fps_tests" examples/fps/arena > "$ROOT/fps-$mode.log" 2>&1 || {
+    cat "$ROOT/fps-$mode.log"; exit 1;
+  }
+  grep 'FPS_MOTOR_PARITY_HASH=' "$ROOT/fps-$mode.log" > "$ROOT/fps-$mode.hash" || {
+    echo "FPS motor parity fixture did not execute in $mode" >&2; exit 1;
+  }
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS and network tests: $mode ==="
     ctest --test-dir "$build" --no-tests=error -R "^aiverse_(tests|net_tests)$" --output-on-failure
@@ -50,6 +56,10 @@ for mode in off on; do
 done
 if ! grep -Eq "^[0-9]+ [0-9a-fA-F]{16}$" "$ROOT/rtssim-off.checksums"; then
   echo "No RTS checksum checkpoints collected" >&2
+  exit 1
+fi
+if ! diff -u "$ROOT/fps-off.hash" "$ROOT/fps-on.hash"; then
+  echo "FAIL: FPS baseline and parallel-motor checkpoints differ" >&2
   exit 1
 fi
 if ! diff -u "$ROOT/rtssim-off.checksums" "$ROOT/rtssim-on.checksums"; then
@@ -62,5 +72,5 @@ for mode in off on; do
        END {if(count) printf "%.3f ms/tick (%d ticks)\n",sum/count/1000,count;
             else {print "no measurements";exit 1}}' "$ROOT/rtssim-$mode.tick-us"
 done
-echo "PASS RTS checksum equality and FPS regression in baseline/opt-in builds"
+echo "PASS RTS and FPS per-tick checksum parity plus snapshot restore in baseline/opt-in builds"
 echo "Logs: $ROOT"
