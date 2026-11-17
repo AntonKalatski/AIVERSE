@@ -174,6 +174,33 @@ void Module::equipInitial(Actor& a) const {
     a.ammo=a.storedAmmo[0];a.reserve=a.storedReserve[0];
     if(config_.systems.enabled)a.bag={{1,2},{3,2},{4,2},{5,2}};
 }
+Entity Module::actorEntity(Simulation& sim, uint8_t slot) const {
+    const auto* index = sim.world().resource<ActorEntityIndex>();
+    if (!index || slot == 0 || size_t(slot) > index->bySlot.size())
+        return kNullEntity;
+    const Entity entity = index->bySlot[size_t(slot - 1)];
+    return sim.world().alive(entity) ? entity : kNullEntity;
+}
+
+void Module::syncActorEntities(Simulation& sim) const {
+    World& world = sim.world();
+    auto* index = world.resource<ActorEntityIndex>();
+    auto* current = world.resource<State>();
+    if (!index || !current) return;
+    for (const Actor& actor : current->actors) {
+        if (actor.slot == 0 || size_t(actor.slot) > index->bySlot.size()) continue;
+        const Entity entity = index->bySlot[size_t(actor.slot - 1)];
+        if (!world.alive(entity)) continue;
+        if (auto* identity = world.tryGet<ActorEntityIdentity>(entity))
+            *identity = {actor.slot, actor.team, actor.life};
+        if (auto* transform = world.tryGet<ActorEntityTransform>(entity))
+            *transform = {actor.pos, actor.velocity, actor.yaw, actor.pitch};
+        if (auto* vitals = world.tryGet<ActorEntityVitals>(entity))
+            *vitals = {actor.health, actor.armor, actor.ammo, actor.reserve,
+                       actor.downed, actor.crouched, actor.prone};
+    }
+}
+
 void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
     if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
@@ -224,7 +251,22 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     }
     Hasher hash;hash.str(rules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
     sim.world().setResource<State>(std::move(s));
+    // Allocate one deterministic ECS identity per actor slot. No FPS save,
+    // command, rewind or network format changes: the existing State resource
+    // remains authoritative during this staged migration.
+    ActorEntityIndex actorIndex;
+    actorIndex.bySlot.reserve(sim.players().size());
+    for (size_t i = 0; i < sim.players().size(); ++i) {
+        const Entity entity = sim.world().create();
+        actorIndex.bySlot.push_back(entity);
+        sim.world().add<ActorEntityIdentity>(entity);
+        sim.world().add<ActorEntityTransform>(entity);
+        sim.world().add<ActorEntityVitals>(entity);
+    }
+    sim.world().setResource<ActorEntityIndex>(std::move(actorIndex));
+    syncActorEntities(sim);
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
+    sim.addSystem("fps.ecsMirror",[this](Simulation& s){syncActorEntities(s);});
 }
 void Module::applyCommand(Simulation& sim,const Command& c) {
     auto& s=state(sim);Input input;
@@ -404,7 +446,10 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     for(const auto& v:copy.vehicles)if(v.driver>spawns_.size()||v.health<0||v.health>500)return false;
     for(const auto& actor:copy.actors)if(!valid(actor))return false;
     for(const auto& frame:copy.history)for(const auto& actor:frame.actors)if(!valid(actor))return false;
-    if(!archive.writing())state(sim)=std::move(copy);
+    if(!archive.writing()) {
+        state(sim)=std::move(copy);
+        syncActorEntities(sim); // restore the derived ECS view after save loading
+    }
     return true;
 }
 }
