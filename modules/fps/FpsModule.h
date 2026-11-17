@@ -225,6 +225,7 @@ public:
     void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
     void syncDynamicEntities(Simulation& sim) const; // projectile, loot and vehicle ECS views
     void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
+    State authoritativeStateCopy(Simulation& sim) const; // v9 save/hash assembled from ECS payloads
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
