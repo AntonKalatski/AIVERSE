@@ -16,7 +16,7 @@ struct EditorRuntimeEntity {
     std::string title;
     render::float3 position{};
     bool hasPosition = false;
-    bool ecsEntity = false;  // true for RTS World::Entity, false for FPS State actor record
+    bool ecsEntity = false;  // true for real ECS entities from RTS and FPS worlds
     Json fields;
 };
 
@@ -35,7 +35,29 @@ inline std::vector<EditorRuntimeEntity> enumerateEditorRuntimeEntities(Editor& e
             info.title = "Actor #" + std::to_string(
                 actor["slot"].integer(int64_t(i + 1)));
             info.fields = actor;
+            info.ecsEntity = actor["ecsEntity"].isNumber();
             const Json& pos = actor["position"];
+            if (pos.isArray() && pos.size() == 3 &&
+                pos[0].isNumber() && pos[1].isNumber() && pos[2].isNumber()) {
+                info.position = {float(pos[0].toDouble()),
+                                 float(pos[1].toDouble()),
+                                 float(pos[2].toDouble())};
+                info.hasPosition = std::isfinite(info.position.x) &&
+                                   std::isfinite(info.position.y) &&
+                                   std::isfinite(info.position.z);
+            }
+            result.push_back(std::move(info));
+        }
+        const Json& objects = runtime["objects"];
+        if (objects.isArray()) for (const auto& object : objects.items()) {
+            if (!object["key"].isNumber()) continue;
+            EditorRuntimeEntity info;
+            info.selection.kind = Selection::FpsRuntimeObject;
+            info.selection.ref = uint64_t(object["key"].integer());
+            info.title = object.getStr("title", "FPS Object");
+            info.fields = object;
+            info.ecsEntity = object["ecsEntity"].isNumber();
+            const Json& pos = object["position"];
             if (pos.isArray() && pos.size() == 3 &&
                 pos[0].isNumber() && pos[1].isNumber() && pos[2].isNumber()) {
                 info.position = {float(pos[0].toDouble()),
