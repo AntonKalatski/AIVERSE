@@ -322,6 +322,7 @@ int main() {
     // optional on non-Metal devices. No compute dispatch on the mock device.
     {
         static_assert(sizeof(GpuPrimitiveDrawRecord) == 128);
+        static_assert(sizeof(GpuCompactedDrawRecord) == 24);
         static_assert(sizeof(aiverse::gfx::DrawIndexedIndirectCommand) == 20);
         MockDevice mock;
         GpuSceneDrawCommands generator;
