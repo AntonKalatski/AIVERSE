@@ -78,6 +78,59 @@ records. Register it through the public
 and a strategy host with matching COW rollback checksums). **This is a flight
 stage; legacy RTS/FPS shooting/damage adapters are not yet migrated.**
 
+### Shared ECS impact and damage stage
+
+`libraries/include/aiverselib/genre/EcsDamageSystems.h` builds on the same
+`ProjectileFlightComponent` and `ProjectileImpactEvent` rather than making
+separate shooter/artillery damage solvers.
+
+- `HitPointsComponent`: authoritative health; any vehicle, character,
+  structure, boss or destructible can opt in.
+- `ProjectileDamageComponent`: direct damage associated with a shot Entity.
+- `ColliderEntityIndex`: stable collision ID → generation-safe ECS target.
+- `DamageQueue`: ordered damage requests, serialized with the ECS World.
+- `addDamageResolutionSystem`: deterministic apply stage, with an optional
+  policy for project-specific armor, resistance, factions and immunities.
+
+Native host registration, for either RTS-like or FPS-like gameplay:
+
+```cpp
+#include <aiverselib/genre/EcsDamageSystems.h>
+namespace lg = aiverse::lib::genre;
+
+// In setup(): create projectile and target entities with their components,
+// register the ColliderEntityIndex and DamageQueue world resources.
+lg::addProjectileFlightSystem(sim, "projectile-flight",
+    [&collision](aiverse::Simulation&) -> const aiverse::world::SpatialWorld& {
+        return collision;
+    },
+    [](aiverse::Simulation& s, const lg::ProjectileImpactEvent& hit) {
+        lg::enqueueProjectileDamage(s, hit);
+    });
+
+lg::addDamageResolutionSystem(sim, "apply-damage",
+    [](aiverse::Simulation& s, const lg::DamageApplied& damage) {
+        // Emit a deterministic gameplay event / score / effect command.
+    });
+```
+
+The order is **flight → impact queue → damage resolution → deferred
+despawn/presentation**. No genre checks, no floating-point gameplay arithmetic,
+no mutable cross-thread event emission. New requests enqueued by damage
+callbacks are processed at the next resolution barrier.
+
+The public native target is `AIVERSE::lib_ecs_impact_damage`, which depends
+on `AIVERSE::lib_ecs_projectile_systems`. Verify with
+`ecs_cross_genre_projectile_test` (shooter/artillery hosts, identical damage,
+COW and replay) and `ecs_projectile_composition_test` (flight-only).
+
+**Limits:** only direct projectile damage is implemented by default. Status
+effects, area explosions, penetration, armor and team policies are separate
+composable systems or host-supplied policies. Existing `fps::Module::shoot`
+and RTS combat still require explicit parity-checked migration before
+switching to this shared pipeline; these classes are not automatically
+replaced by merely registering the library.
+
 Existing reusable building blocks:
 `engine/sim/ProjectileData.h` (projectile programs),
 `libraries/include/aiverselib/genre/Weapons.h` (trajectory, recoil, spread),
