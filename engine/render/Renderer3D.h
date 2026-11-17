@@ -355,6 +355,7 @@ public:
         std::array<uint64_t,4> levels{};
     };
     void setLodDebugTarget(uint64_t id) { lodDebugTarget_ = id; }
+    void setLodDiagnosticsEnabled(bool enabled) { lodDiagnosticsEnabled_ = enabled; }
     const LodDebugSample& lodDebugSample() const { return lodDebugSample_; }
     void setModelLodEnabled(bool enabled) { modelLodEnabled_=enabled; }
     bool modelLodEnabled() const { return modelLodEnabled_; }
@@ -507,6 +508,7 @@ private:
     bool auxiliaryModelPass_ = false;
     bool profiling_=false,modelLodEnabled_=true;
     uint64_t lodDebugTarget_ = 0;
+    bool lodDiagnosticsEnabled_ = false;
     LodDebugSample lodDebugSample_;
     float modelLodFadeWidth_=.15f;
     RenderProfile profile_;
