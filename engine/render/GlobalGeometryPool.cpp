@@ -63,7 +63,10 @@ bool globalGeometryPoolingEnabled() { return !disabled(); }
 void setGlobalGeometryPoolingEnabled(bool enabled) { poolEnabled.store(enabled, std::memory_order_relaxed); }
 
 bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
-    if (disabled() || !dev.canUpdateSharedBuffers() || !canPool(m) ||
+    // Pooling is primarily for MDI across assets. On GLES/WebGL/legacy GL,
+    // retain compact per-model buffers instead of allocating unused large pages.
+    if (disabled() || !dev.supportsMultiDrawIndirect() ||
+        !dev.canUpdateSharedBuffers() || !canPool(m) ||
         m.vertices.empty() || m.indices.empty()) return false;
     const size_t vertexBytes = m.vertices.size() * sizeof(ModelVertex);
     const size_t indexBytes = m.indices.size() * sizeof(uint32_t);
