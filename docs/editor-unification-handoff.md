@@ -732,3 +732,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Keep unverified code changes explicitly marked as unverified; do not claim successful native build, sanitizer, Metal rendering or FPS/RTS parity without evidence.
 - Current branch: `feature/universal-entity-inspector-fps`. Most recent code commits: `51d53d4553c5034f2a124b5511f107b97d377df2`, `a302652200d196b69b0f4057ae4071a52aa5653d`; preceding handoff commit: `6a780676d307b6121a76df23082d87088da064c4`.
 - Next: run cross-genre weapon pipeline tests in native environment, then integrate actual FPS/RTS adapters in small, parity-checked increments.
+
+
+### 2026-11-18 — Universal weapon dry-fire rollback replay (next checkpoint)
+- Implementation SHA: `3c30e16a89897fb9f77c196dfa796686fb86de0c`.
+- Changed: `tests/ecs_cross_genre_weapon_pipeline_test.cpp`. Saves a snapshot after the first shot and successful 8-tick replay, requests a dry fire with empty ammo, checks no projectile ID allocation or pending spawn and that the request is consumed; restores the post-shot snapshot, repeats the request and checks byte-stable simulation checksum. The template runs both ShooterTag and ArtilleryTag, with and without COW.
+- Verification: GitHub file update succeeded. **No native compilation, CTest, sanitizer or gameplay runtime verification executed**. Do not mark test passed.
+- Next action: run `bash tests/run_ecs_experiment_suite.sh`, targeted CTest and native consumer/catalog checks. Diagnose any failures before connecting real FPS/RTS weapon paths to the shared ECS systems.
