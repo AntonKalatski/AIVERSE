@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 
 namespace aiverse::game {
 
@@ -66,8 +67,13 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     // Only completely static rigid placements can reuse a cached world
     // transform. Exclude procedural animation, authored clips, hierarchy,
     // time/FX variants, planets, construction and LOD switches.
+    static const bool cacheEnabled = [] {
+        const char* setting = std::getenv("AIVERSE_RTS_PLACEMENT_CACHE");
+        return setting && std::strcmp(setting, "1") == 0;
+    }();
     const mat4 identity{};
-    const bool immutablePlacement = !hasFx && !tintOverride && !placement &&
+    const bool immutablePlacement = cacheEnabled &&
+        !hasFx && !tintOverride && !placement &&
         !o.parented && !st.dead && !o.moving && o.build >= 1.0f &&
         (t.structure || t.speed <= Fixed{}) && show == &ch &&
         L.stages.empty() && L.lods.empty() &&
