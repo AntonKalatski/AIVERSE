@@ -702,3 +702,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `ac54b13`: created `skills/gameplay/aiverse-ecs-weapon-launch/SKILL.md`. Agents must assemble shared WeaponLaunch, Spawn, ProjectileFlight and DamageResolution components/systems, independent of RTS/FPS genre; state/queues/shot IDs in ECS, canonical side effects and COW/replay proof. New capabilities such as reload, guided rockets and spread are **separate systems**, not genre branches.
 - Skill explicitly warns that legacy RTS/FPS combat modules still need stepwise migration and old save/network parity checks.
 - Next: catalog public native target and update normative mechanics specification.
+
+### 2026-11-18 — Universal ECS weapon launch, stage F (public native package)
+- Commit `e1d286f`: registered `ecs-weapon-launch` package in `libraries/catalog.json`, exported as `AIVERSE::lib_ecs_weapon_launch`. It depends on `ecs-impact-damage` (and transitively on `ecs-projectile-systems` and collision), with public header/skill/test dependencies.
+- Catalog parsed and validated as JSON (120 packages, new package last), but native `tools/libraries/catalog.py check` and CMake test **have not been run**. Native projects can request this package without importing FPS/RTS gameplay modules.
+- Next: update composition spec + agent rules and inspect CI results.
