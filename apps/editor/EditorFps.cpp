@@ -55,7 +55,9 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     fpsSceneObjects_.clear();
     auto& instances = fpsSceneObjects_;
     const auto& fps = doc().data.fps;
+    size_t colliderIndex = 0;
     for (const auto& collider : fps["colliders"].items()) {
+        const size_t sourceIndex = colliderIndex++;
         if (!collider["min"].isArray() || !collider["max"].isArray() ||
             collider["min"].size() < 3 || collider["max"].size() < 3) continue;
         const float3 lo = point(collider["min"]), hi = point(collider["max"]);
@@ -69,12 +71,15 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.world = mat4::translate(base)*mat4::scale(size);
         object.tint = {0.35f,0.42f,0.44f,1};
         object.mesh = &fpsPreviewMesh_;
+        object.entity = uint64_t(sourceIndex) + 1;
         object.boundsMin = lo;
         object.boundsMax = hi;
         object.pickable = true;
         instances.push_back(object);
     }
+    size_t spawnIndex = 0;
     for (const auto& spawn : fps["spawns"].items()) {
+        const size_t sourceIndex = spawnIndex++;
         if (!spawn.isArray() || spawn.size() < 3) continue;
         const float3 pos = point(spawn);
         if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) continue;
@@ -82,6 +87,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.world = mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f});
         object.tint = {0.1f,0.65f,0.85f,1};
         object.mesh = &fpsPreviewMesh_;
+        object.entity = (uint64_t(1) << 63) | (uint64_t(sourceIndex) + 1);
         object.boundsMin = {pos.x - 0.3f, pos.y, pos.z - 0.3f};
         object.boundsMax = {pos.x + 0.3f, pos.y + 1.8f, pos.z + 0.3f};
         object.pickable = true;
@@ -105,11 +111,13 @@ void Editor::drawFpsSceneInspector() {
     const int selected = fpsSelectedSceneObject_;
     if (selected < 0 || selected >= int(fpsSceneObjects_.size())) return;
     auto& fps = doc().data.fps;
-    const int colliders = int(fps["colliders"].size());
-    const bool collider = selected < colliders;
-    const int sourceIndex = collider ? selected : selected - colliders;
-    Json& source = collider ? fps.member("colliders")[size_t(sourceIndex)]
-                            : fps.member("spawns")[size_t(sourceIndex)];
+    const uint64_t key = fpsSceneObjects_[size_t(selected)].entity;
+    if (!key) return;
+    const bool collider = (key & (uint64_t(1) << 63)) == 0;
+    const size_t sourceIndex = size_t((key & ~(uint64_t(1) << 63)) - 1);
+    if (sourceIndex >= fps[collider ? "colliders" : "spawns"].size()) return;
+    Json& source = collider ? fps.member("colliders")[sourceIndex]
+                            : fps.member("spawns")[sourceIndex];
     ImGui::TextDisabled("SCENE OBJECT");
     ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
