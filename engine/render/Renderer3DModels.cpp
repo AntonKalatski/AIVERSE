@@ -1358,6 +1358,8 @@ void Renderer3D::renderModels(int phase) {
         materialGroup[i] = id;
         ++resolvedGroups;
     }
+    modelStats_.materialGroupsReused += reusedGroups;
+    modelStats_.materialGroupsResolved += resolvedGroups;
     if (traceModelPass) {
         static uint64_t counts[2] = {};
         static uint32_t samples = 0;
