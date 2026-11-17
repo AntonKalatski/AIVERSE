@@ -444,6 +444,47 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGui::BeginDisabled();
             ImGui::Checkbox("##value", &checked);
             ImGui::EndDisabled();
+        } else if (path == "Transform.pos" && v.isArray() && v.size() == 3 &&
+                   v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
+            // This is the real ECS Transform snapshot. For map-authored RTS
+            // entities only X/Z have a persistent document representation;
+            // world-space Y is visible but intentionally not writable.
+            const bool authored = !ed.worldLive() && items_.size() == 1 &&
+                                  items_[0].doc >= 0;
+            const float values[3] = {float(v[0].toDouble()),
+                                     float(v[1].toDouble()),
+                                     float(v[2].toDouble())};
+            DocumentTransform docPosition;
+            const DocumentEntityRef ref = DocumentEntityRef::mapEntity(
+                authored ? size_t(items_[0].doc) : 0);
+            const bool editable = authored && readDocumentTransform(
+                ed.doc(), ref, docPosition);
+            float x = editable ? float(docPosition.x) : values[0];
+            float y = values[1];
+            float z = editable ? float(docPosition.z) : values[2];
+            const float width = std::max(55.0f,
+                (ImGui::GetContentRegionAvail().x - 8.0f) / 3.0f);
+            bool changed = false;
+            ImGui::BeginDisabled(!editable);
+            ImGui::SetNextItemWidth(width);
+            changed |= ImGui::DragFloat("X##ecsPos", &x, 0.05f, 0, 0, "%.3f");
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            ImGui::EndDisabled();
+            ImGui::SameLine(0, 4);
+            ImGui::BeginDisabled();
+            ImGui::SetNextItemWidth(width);
+            ImGui::DragFloat("Y##ecsPos", &y, 0, 0, 0, "%.3f");
+            ImGui::EndDisabled();
+            ImGui::SameLine(0, 4);
+            ImGui::BeginDisabled(!editable);
+            ImGui::SetNextItemWidth(width);
+            changed |= ImGui::DragFloat("Z##ecsPos", &z, 0.05f, 0, 0, "%.3f");
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            ImGui::EndDisabled();
+            if (changed)
+                setDocumentPosition(ed.doc(), ref, {double(x), docPosition.y, double(z)});
+            if (editable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Y comes from the ECS world and is not serialized by this map.");
         } else if (v.isArray() && v.size() == 3 &&
                    v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
             // A three-component vector gets the same compact XYZ layout for
