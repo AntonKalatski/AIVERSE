@@ -509,6 +509,11 @@ Do not merge to main until latest CI tests and real Mac Studio RTS/FPS parity ar
 - `9276c6b` validates and prints that timing for each baseline/opt-in build in `tests/run_ecs_gameplay_compare.sh`, alongside parallel batch/commit coverage. This allows judging whether speculative actor copies and state validation cost more than jobs save.
 - No timing or checksum claims for these changes until the user or CI has run the updated suite. If the opt-in path is consistently slower in real-frame measurements, retain the default OFF setting or revise its workload threshold.
 
+### FPS parity output fix
+
+- `48a87ca`: fixed C++ string escapes in `tests/fps/tests.cpp` for `FPS_COMBAT_PARITY_HASH`, `FPS_MOTOR_BATCHES`, `FPS_MOTOR_COMMITS` and `FPS_MOTOR_TICKS_MS`. They previously contained escaped backslash characters followed by `n`, which would print literal `\\n` and make two parity records run together. All five FPS fixture outputs now use actual C++ newline escapes.
+- This was detected by inspecting source character counts for each output format and corrected before a native run. Latest suite status is **not yet verified**.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
