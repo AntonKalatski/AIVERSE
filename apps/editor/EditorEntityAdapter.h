@@ -290,7 +290,6 @@ inline std::vector<DocumentComponentDescriptor> documentComponents(
         const DocEntity* entity = documentMapEntity(map, ref);
         if (!entity) return {};
         components.push_back({DocumentComponentKind::Renderable, "Renderable", "Renderable", false});
-        components.push_back({DocumentComponentKind::Gameplay, "RtsObject", "RTS Object", false});
         break;
     }
     case DocumentEntityRef::Source::FpsCollider:
