@@ -341,4 +341,37 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
     return false;
 }
 
+inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
+                                   DocumentComponentKind kind, const Json& value) {
+    if (!value.isObject()) return false;
+    auto readVec3 = [](const Json& array, DocumentTransform& out) {
+        if (!array.isArray() || array.size() != 3) return false;
+        for (size_t axis = 0; axis < 3; ++axis)
+            if (!array[axis].isNumber() || !std::isfinite(array[axis].toDouble()))
+                return false;
+        out = {array[0].toDouble(), array[1].toDouble(), array[2].toDouble()};
+        return true;
+    };
+    if (kind == DocumentComponentKind::Transform) {
+        DocumentTransform position;
+        return readVec3(value["position"], position) &&
+               setDocumentPosition(map, ref, position);
+    }
+    if (kind == DocumentComponentKind::Collider &&
+        ref.source == DocumentEntityRef::Source::FpsCollider) {
+        DocumentTransform lo, hi;
+        return readVec3(value["min"], lo) && readVec3(value["max"], hi) &&
+               setDocumentColliderBounds(map, ref, lo, hi);
+    }
+    if (kind == DocumentComponentKind::Spawn &&
+        ref.source == DocumentEntityRef::Source::FpsSpawn) {
+        DocumentTransform position;
+        return readVec3(value["position"], position) &&
+               setDocumentPosition(map, ref, position);
+    }
+    // Renderable and RTS gameplay are deliberately read-only until their
+    // runtime/schema writeback contract is implemented and tested.
+    return false;
+}
+
 } // namespace aiverse::editor
