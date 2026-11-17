@@ -202,10 +202,45 @@ bash tests/run_ecs_experiment_suite.sh
 
 Check line endings with `file tests/run_ecs_experiment_suite.sh` or `git check-attr text eol -- tests/run_ecs_experiment_suite.sh`. The local recovery edits the working tree; after successful verification, restore the file to the committed version if needed.
 
+## 2026-11-17 — Full Mac Studio validation (confirmed)
+
+User ran the updated `tests/run_ecs_experiment_suite.sh` with normal, `--sanitize`, and `--bench` modes. Full pasted output is retained in conversation. **All five correctness suites passed in both normal and sanitizer modes**:
+
+- `PASS prepared, adaptive jobs, exceptions, dependency waves, deterministic commands, dirty pages`
+- `PASS dependency wave execution, sequential/parallel checksum, worker recovery`
+- `PASS guarded access, dependency barriers, parallel parity, exception recovery`
+- `PASS deterministic world snapshot replay across 0/3/7 workers`
+- `PASS Simulation step, canonical commands, snapshot rollback, 0/1/3/7-worker checksums`
+- `PASS ECS experiment suite` printed after normal, sanitizer, and benchmark runs.
+
+During `--sanitize`, macOS emitted `malloc: nano zone abandoned due to inability to reserve vm space.` This is a sanitizer/allocator VM warning, **not a failed test**. No ASan/UBSan violations were shown in the supplied output. This does not amount to a proof of absence of all races; ThreadSanitizer has not been run.
+
+Selected **latest** benchmark timings at 1,000,000 entities, 10 passes median (ms):
+
+| Density | Adaptive Sequential | Adaptive Parallel (8 lanes) | Adaptive Auto (8 lanes) | Auto/Sequential speedup |
+| ---: | ---: | ---: | ---: | ---: |
+| 1% | 0.766041 | 0.706875 | 0.766166 | ~1.00x |
+| 25% | 10.9338 | 2.99763 | 2.96833 | 3.68x |
+| 100% | 27.1653 | 5.10267 | 4.82267 | 5.63x |
+
+Latest hierarchical benchmark at 1m (ms):
+
+| Density | Sparse dense | Sparse hierarchical | Static hierarchical | Static 2 threads |
+| ---: | ---: | ---: | ---: | ---: |
+| 1% | 0.140041 | 0.476584 | 0.458209 | 0.7465 |
+| 25% | 3.36696 | 4.83896 | 8.24113 | 5.88079 |
+| 100% | 8.07446 | 9.03925 | 8.45104 | 5.72075 |
+
+Selected latest storage-oriented query benchmark (1m): sparse broad 16.8395ms; narrow 8.317ms; auto-smallest 8.38842ms; sparse-bitmap-prepared 8.24079ms; static-slot-bitmap 4.88879ms. Note: these are different microbenchmark workloads and MUST NOT be directly compared with hierarchical or adaptive numbers.
+
+All compared checksum columns matched across variants in the user-provided CSV for each dataset. The entire suite executes, including `Simulation::step()` + `SimSnapshot` test on a toy module, but **no existing RTS/FPS gameplay module has been migrated or subjected to full network lockstep integration testing**.
+
+**Updated handoff decision:** prior blocker "latest tests not compiled" is resolved for these five suites. Remaining blockers: runtime guarded access only checks calls using the facade, arbitrary external captures/raw World bypass it; complete production dependency contracts, deterministic external effect handling, realistic RTS/FPS replay tests, worker race detection/TSan, and complete ECS-wide incremental snapshots are not implemented/verified. Retain opt-in bridge and sequential default; do NOT merge by default.
+
 ## Outstanding work and risks (priority order)
 
-1. **Validate latest changes**: compile and execute new tests; fix compiler warnings or test failures in PR #8.
-2. **Enforce access contracts**: declared read/write component and resource accesses are currently advisory only. Need guarded world views, safe lifecycle and explicit access validation before production scheduling.
+1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
+2. **Enforce access contracts:** GuardedWorld now validates calls routed through it, but raw World references, retained pointers and external captures bypass checks; harden safe lifecycle and declarations before production scheduling.
 3. **Deterministic job commands**: current `DeterministicCommands` merges lane-local commands, but order-dependent operations must use stable semantic lane IDs independent of OS scheduling; validate against replay and rollback.
 4. **Wave executor safety**: a rejected/misdeclared dependency can race. Add robust instrumentation and integration tests for write/write, resource/RNG and structural conflicts; avoid concurrent writes to shared event queues.
 5. **Production integration**: add explicit opt-in system registration and keep existing sequential path as fallback; do not blanket-parallelize RTS modules.
