@@ -270,6 +270,18 @@ New commits `eda8b8f`, `9971de7`, `f00bfc7`, `e5bbdbb`, `eb98411`, `d75b73b`, `d
 
 **Remaining:** GPU dense-list compaction into GPU-ICB count/command indexing; stable per-primitive material/pipeline/instance resource tables across arbitrary mesh groups, async GPU failure recovery, cross-platform Vulkan path, isolated Scene GPU timings and comprehensive stability regression. This implementation is a functioning *code path awaiting device validation*, not a proven high-performance universal GPU-driven renderer.
 
+## GPU ICB zero-submission diagnosis and GPU-state batching fix (2026-11-17)
+
+Owner's screenshot from the first GPU-ICB build shows 3-way Scene benchmark:
+- Instancing: CPU 12.017 ms avg / 12.464 P95, 473 submissions, tagged full-GPU-frame 1.512 ms.
+- CPU MDI: CPU 12.154 ms avg / 12.600 P95, 357 submissions, GPU frame 1.562 ms.
+- GPU-authored: CPU 12.215 ms avg / 12.675 P95, 375 submissions, GPU frame 1.636 ms.
+- Critically: GPU-authored 28.0 commands/frame but **GPU-encoded ICB 0.0 submissions/frame**. Thus the first implementation did NOT actually execute GPU-encoded ICBs on this scene. Do not call that measured performance a working GPU-ICB result.
+
+Root cause candidate: `prepareGpuModelDraws` previously grouped only by the exact `Model*` + `Material*`, despite shared geometry pooling and identical GPU materials across distinct objects. Commit `9945214` changes candidate grouping to matching vertex/index handles, exact equal GPU material state (collision-safe material hash + `equivalentGpuMaterial`), identical flags, baked and morph texture resource state. A group must contain 2+ eligible primitives; zero candidates is now distinguishable from compile/encode failures. Commits `da1856b` and `ca20cc4` add `GPU ICB batches: candidates/prepared/rejected/execute failed` to the editor Scene popup and display `device.lastError()` for backend rejects. `d085cc3` validates source slots before GPU ICB encode, and `ef20f49` snapshots all active U0..U7 into frame/submission-owned Metal buffers before executing inherited ICB commands, so legacy setBytes uniforms (notably U1 frame) cannot be referenced after their lifetime. None of these commits have been built or tested by owner yet.
+
+**Test priority:** rebuild and start small scene with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1`. Inspect the new counters before benchmarking. `candidates=0` means grouping did not produce eligible multi-primitive groups; `rejected>0` means the Metal preparation refused (check backend error); `execute failed>0` means inherited render-state or pipeline validation failed. Only `GPU-encoded ICB submissions >0` verifies actual ICB execution calls. Even if >0, inspect rendered scene, Metal device health and GPU validation before claiming correct output. The existing Apple AGX crash risk remains; never enable by default. Then rerun 3-way CPU/full-GPU A/B. GPU times include full editor, UI and other passes, and remain not isolated Scene render durations.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
