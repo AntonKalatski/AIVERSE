@@ -102,7 +102,10 @@ public:
                 benchmarkDrawSum_[benchmarkMode_] += renderer.drawCalls();
                 benchmarkIndirectSum_[benchmarkMode_] += renderer.modelStats().multiDrawSubmissions;
                 benchmarkCommandSum_[benchmarkMode_] += renderer.modelStats().indirectCommands;
-                benchmarkGpuAuthoredSum_[benchmarkMode_] += renderer.gpuModelDrawStats().submitted;
+                const auto gpuDraw = renderer.gpuModelDrawStats();
+                benchmarkGpuAuthoredSum_[benchmarkMode_] += gpuDraw.submitted +
+                    gpuDraw.gpuEncodedCommands;
+                benchmarkGpuIcbSum_[benchmarkMode_] += gpuDraw.gpuEncodedSubmissions;
                 ++benchmarkPhaseSamples_;
                 if (benchmarkPhaseSamples_ == 300) {
                     benchmarkPhaseSamples_ = 0;
@@ -249,8 +252,12 @@ private:
             if (const char* authored = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
                 authored && std::strcmp(authored, "1") == 0) {
                 const auto gpu = ed.renderer().gpuModelDrawStats();
-                ImGui::Text("GPU-authored opaque: %u eligible / %u submitted",
+                ImGui::Text("GPU-authored opaque: %u eligible / %u single draws",
                             gpu.eligible, gpu.submitted);
+                if (const char* icb = std::getenv("AIVERSE_GPU_ENCODED_ICB");
+                    icb && std::strcmp(icb, "1") == 0)
+                    ImGui::Text("GPU-encoded ICB: %u submissions / %u commands",
+                                gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
                 ImGui::Text("GPU indirect args: %s",
                             gpu.prepared ? "compute generated" : "not ready / unsupported");
                 ImGui::Text("GPU draw record uploads: %u records / %u ranges (%.2f KiB)",
@@ -301,6 +308,7 @@ private:
                             benchmarkIndirectSum_[mode] = 0;
                             benchmarkCommandSum_[mode] = 0;
                             benchmarkGpuAuthoredSum_[mode] = 0;
+                            benchmarkGpuIcbSum_[mode] = 0;
                         }
                         measureBatchingNextFrame_ = false;
                     }
@@ -336,8 +344,9 @@ private:
                         ImGui::Text("GPU vs CPU MDI: %+.1f%%; GPU vs Instancing: %+.1f%%",
                                     (gpu.first / std::max(on.first, 0.0001) - 1.0) * 100.0,
                                     (gpu.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
-                        ImGui::Text("GPU-authored draws: %.1f/frame",
-                                    double(benchmarkGpuAuthoredSum_[2]) / 900.0);
+                        ImGui::Text("GPU-authored commands: %.1f/frame, GPU ICB submissions: %.1f/frame",
+                                    double(benchmarkGpuAuthoredSum_[2]) / 900.0,
+                                    double(benchmarkGpuIcbSum_[2]) / 900.0);
                         ImGui::TextDisabled("3 x 300 per mode; order ABC CBA ABC; P95 pooled.");
                     } else ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
                     if (ed.device().info().backend == gfx::Backend::Metal) {
@@ -926,6 +935,7 @@ private:
     uint64_t benchmarkIndirectSum_[3] = {};
     uint64_t benchmarkCommandSum_[3] = {};
     uint64_t benchmarkGpuAuthoredSum_[3] = {};
+    uint64_t benchmarkGpuIcbSum_[3] = {};
     bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
     int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
     int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
