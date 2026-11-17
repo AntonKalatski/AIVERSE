@@ -6,6 +6,33 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+## FPS ECS authority migration (PR #7, in progress)
+
+**Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
+has been merged as an ancestor into PR #7; do not restore outdated FPS
+`FpsModule.cpp` or Inspector sources from the standalone PR #8 branch.
+
+**Mandatory living handoff:** `docs/editor-unification-handoff.md`,
+latest FPS stages A–S. After EVERY implementation commit, append the exact
+SHA, changed files, behavior, verification status and next action to the
+handoff in a separate documentation commit before taking another action.
+
+`fps.ecsAuthority` is an experimental default-OFF storage migration gate.
+When ON, full `ActorRuntime`, `ProjectileRuntime`, `LootRuntime` and
+`VehicleRuntime` components are canonical between ticks and define
+checksum/save v9 entity payloads. `fps.ecsHydrate` creates the ordered
+legacy tick workspace; old algorithms not yet migrated still read/write it.
+`fps.ecsMirror` commits the tick results to ECS and refreshes read-only
+Editor projections. Commands, actor motor and centralized damage already
+have direct ECS code paths. **Do NOT call the migration complete.**
+
+Next migrate direct gameplay systems one by one, verify same-tick side-effect
+ordering and byte-identical checksums to the default mode, then remove the
+temporary State arrays once all uses are gone. Legacy save v9 and network
+format must remain compatible until an explicitly versioned migration.
+Run `aiverse_fps_tests`, `fps_transport`, checksum replay, sanitizer and
+universal Editor tests on the integrated branch before main merge.
+
 ## ECS 2.0 experimental work (PR #8)
 
 **Parallel migration coordination (2026-11-18):** another agent is actively
