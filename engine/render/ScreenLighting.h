@@ -30,6 +30,7 @@ public:
     RTSCamera jittered(RTSCamera camera, int w, int h);
     bool active() const override { return post_ && post_->active(); }
     bool linearScene() const override { return post_ && post_->linearScene(); }
+    bool temporalShadowResolve() const override { return running_; }
     gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) override;
     void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) override;
     bool running() const { return running_; }
