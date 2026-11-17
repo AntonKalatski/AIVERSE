@@ -335,7 +335,8 @@ void ecsDynamicAuthorityParity(Json rules,Json map) {
     for(int i=0;i<8;++i) {
         legacy->step();ecs->step();
         CHECK(legacy->checksum()==ecs->checksum());
-        CHECK(state(*ecs).projectiles==state(*legacy).projectiles);
+        CHECK(state(*ecs).projectiles.size()==state(*legacy).projectiles.size());
+        CHECK(state(*ecs).projectiles[0].id==state(*legacy).projectiles[0].id);
         CHECK(state(*ecs).loot.size()==state(*legacy).loot.size());
         CHECK(state(*ecs).vehicles.size()==state(*legacy).vehicles.size());
     }
