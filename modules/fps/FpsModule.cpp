@@ -50,6 +50,7 @@ Config readConfig(const Json& root) {
     const auto& j=root["fps"];if(!j.isObject())throw JsonError("rules.fps: expected object");
     Config c;
     c.tickRate=uint32_t(integer(j,"tickRate",60,20,120));
+    c.ecsAuthority=j.getBool("ecsAuthority",false);
     c.snapshotRate=uint32_t(integer(j,"snapshotRate",20,1,c.tickRate));
     c.maxPlayers=uint32_t(integer(j,"maxPlayers",100,1,200));
     c.rewindTicks=uint32_t(integer(j,"rewindTicks",12,0,120));
@@ -209,6 +210,13 @@ void Module::syncActorEntities(Simulation& sim) const {
             world.add<ActorEntityTransform>(entity);
         if (!world.has<ActorEntityVitals>(entity))
             world.add<ActorEntityVitals>(entity);
+        if (config_.ecsAuthority) {
+            if (!world.has<ActorRuntime>(entity))
+                world.add<ActorRuntime>(entity);
+            // The old FPS algorithms still use State::actors as a canonical
+            // ordered tick workspace; commit the complete result to ECS.
+            *world.tryGet<ActorRuntime>(entity) = ActorRuntime{actor};
+        }
         if (auto* identity = world.tryGet<ActorEntityIdentity>(entity))
             *identity = {actor.slot, actor.team, actor.life};
         if (auto* transform = world.tryGet<ActorEntityTransform>(entity))
@@ -216,6 +224,22 @@ void Module::syncActorEntities(Simulation& sim) const {
         if (auto* vitals = world.tryGet<ActorEntityVitals>(entity))
             *vitals = {actor.health, actor.armor, actor.ammo, actor.reserve,
                        actor.downed, actor.crouched, actor.prone};
+    }
+}
+
+void Module::hydrateActorsFromEcs(Simulation& sim) const {
+    if (!config_.ecsAuthority) return;
+    World& world=sim.world();
+    auto* current=world.resource<State>();
+    const auto* index=static_cast<const World&>(world).resourceConst<ActorEntityIndex>();
+    if (!current || !index || index->bySlot.size()!=current->actors.size())
+        throw std::logic_error("FPS ECS authority index is missing or incomplete");
+    for(size_t i=0;i<index->bySlot.size();++i) {
+        const Entity e=index->bySlot[i];
+        const ActorRuntime* actor=world.tryGetConst<ActorRuntime>(e);
+        if(!world.alive(e)||!actor||actor->value.slot!=i+1)
+            throw std::logic_error("FPS ECS authoritative ActorRuntime is missing");
+        current->actors[i]=actor->value;
     }
 }
 
@@ -347,6 +371,8 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     sim.world().setResource<DynamicEntityIndex>();
     syncActorEntities(sim);
     syncDynamicEntities(sim);
+    if (config_.ecsAuthority)
+        sim.addSystem("fps.ecsHydrate",[this](Simulation& s){hydrateActorsFromEcs(s);});
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
     sim.addSystem("fps.ecsMirror",[this](Simulation& s){
         syncActorEntities(s);
@@ -356,10 +382,19 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
 void Module::applyCommand(Simulation& sim,const Command& c) {
     auto& s=state(sim);Input input;
     if(c.player==0||c.player>s.actors.size()||!decodeInput(c,input))return;
-    auto& p=s.actors[c.player-1];
+    Actor* canonical=&s.actors[c.player-1];
+    if(config_.ecsAuthority) {
+        const Entity e=actorEntity(sim,c.player);
+        auto* component=sim.world().tryGet<ActorRuntime>(e);
+        if(!component)return;
+        canonical=&component->value;
+    }
+    Actor& p=*canonical;
     if(input.sequence==0||input.sequence<=p.lastSequence||input.viewTick>sim.tick()||
        (p.lastSequence&&p.lastInputTick==sim.tick()))return;
     p.input=input;p.lastSequence=input.sequence;p.lastInputTick=sim.tick();
+    if(config_.ecsAuthority)
+        s.actors[c.player-1]=p; // maintain existing external view until the tick
 }
 void Module::shoot(Simulation& sim,Actor& p) {
     auto& s=state(sim);
