@@ -362,8 +362,12 @@ private:
     };
     void initModels();
     void shutdownModels();
-    gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced);
-    bool drawModelBatch(const uint32_t* items, uint32_t count, int phase, bool submit = true);
+    gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
+                                      bool gpuInstances = false);
+    bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
+                        bool submit = true, bool gpuInstances = false);
+    void packModelInstance(const ModelItem& item, int phase,
+                           const float4& callColour, float* destination) const;
     bool drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase);
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
