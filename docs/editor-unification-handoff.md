@@ -671,3 +671,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `259258b`: registered public package `ecs-impact-damage` in `libraries/catalog.json`, with target `AIVERSE::lib_ecs_impact_damage`, source `EcsDamageSystems.h`, workflow skill, CTest fixture and dependency on existing `ecs-projectile-systems`. The library catalog's generated `AIVERSE::lib_*` targets make it accessible to native C++ game modules without linking FPS/RTS combat modules.
 - JSON structure was parsed and validated before commit (119 packages; package at end); **not** tested with the catalog CLI or a native CMake configure yet.
 - Next: update normative composition guide/skill and verify build/results; do not advertise automatic integration into legacy `fps::Module` / `RtsModule`.
+
+### 2026-11-18 — Universal ECS projectile + damage resolution, stage G
+- Commit `95025b3`: updated normative `docs/ecs-mechanic-composition.md` with the actual `EcsDamageSystems.h` component schema, registration recipe, ordered flight→impact queue→damage resolution→deferred despawn barrier, public target `AIVERSE::lib_ecs_impact_damage`, and shooter/artillery rollback fixture.
+- Explicit limits: default only implements direct hits; armor, AoE, penetration and status require new composable systems/policies. Existing RTS/FPS damage systems have **not** been migrated or equivalence-tested. No native compilation/visual checks passed yet.
