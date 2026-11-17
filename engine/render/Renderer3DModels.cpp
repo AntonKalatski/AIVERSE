@@ -840,6 +840,13 @@ void Renderer3D::prepareGpuModelDraws() {
         dev_->info().backend != gfx::Backend::Metal ||
         !dev_->supportsCompute() || !dev_->frameSerial()) return;
 
+    // The original static-only GPU route was useful for validating Metal
+    // ICB but covered very few RTS objects. Rigid non-static primitives can
+    // use the same code: draw records and uniforms are refreshed each frame.
+    static const bool includeRigidDynamic = [] {
+        const char* value = std::getenv("AIVERSE_GPU_ICB_RIGID");
+        return value && std::strcmp(value, "1") == 0;
+    }();
     gpuModelSlots_.assign(modelItems_.size(), UINT32_MAX);
     gpuModelRecords_.reserve(modelItems_.size() / 4);
     for (uint32_t i = 0; i < modelItems_.size(); ++i) {
@@ -848,7 +855,8 @@ void Renderer3D::prepareGpuModelDraws() {
         // primitives with no GPU deformation, GI, fades or material batching.
         // Shadows/transparent/outline passes remain on the CPU renderer.
         if (!it.inView || !it.rigid || !it.prim || !it.model || !it.mat ||
-            !(it.flags & kDrawStatic) || (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
+            (!includeRigidDynamic && !(it.flags & kDrawStatic)) ||
+            (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
             it.tint.w < .99f || it.mat->alpha != AlphaMode::Opaque ||
             it.mat->transparent || it.mat->shaderGraph ||
             it.joints >= 0 || it.morph >= 0 || it.baked ||
@@ -896,13 +904,23 @@ void Renderer3D::prepareGpuModelDraws() {
     };
     std::vector<Group> groups;
     groups.reserve(gpuModelRecords_.size() / 2 + 1);
+    // Bucket by GPU material hash to avoid scanning every existing group for
+    // each of the many identical RTS instances. Hash collisions are always
+    // resolved by the exact GPU/material/buffer equivalence test below.
+    std::unordered_map<uint64_t, std::vector<size_t>> groupsByHash;
+    groupsByHash.reserve(gpuModelRecords_.size() / 4 + 1);
+    std::map<std::pair<const Model*, const Material*>, uint64_t> cachedMaterialHashes;
     for (uint32_t item = 0; item < gpuModelSlots_.size(); ++item) {
         if (gpuModelSlots_[item] == UINT32_MAX) continue;
         const auto& m = modelItems_[item];
-        const uint64_t hash = gpuMaterialStateHash(*m.model, *m.mat);
+        const auto key = std::make_pair(m.model, m.mat);
+        auto [cached, inserted] = cachedMaterialHashes.try_emplace(key, 0);
+        if (inserted) cached->second = gpuMaterialStateHash(*m.model, *m.mat);
+        const uint64_t hash = cached->second;
         bool found = false;
-        for (auto& group : groups) {
-            if (group.materialHash != hash) continue;
+        auto& bucket = groupsByHash[hash];
+        for (size_t groupIndex : bucket) {
+            auto& group = groups[groupIndex];
             const auto& first = modelItems_[group.items.front()];
             if (first.model->vb != m.model->vb ||
                 first.model->ib != m.model->ib ||
@@ -915,7 +933,10 @@ void Renderer3D::prepareGpuModelDraws() {
             found = true;
             break;
         }
-        if (!found) groups.push_back({hash, {item}});
+        if (!found) {
+            bucket.push_back(groups.size());
+            groups.push_back({hash, {item}});
+        }
     }
     gpuEncodedCovered_.assign(modelItems_.size(), 0);
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
