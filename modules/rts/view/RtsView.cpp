@@ -410,7 +410,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                          objectTotals[0]/samples, objectTotals[1]/samples, objectTotals[2]/samples,
                          double(objectCount)/samples);
             if (placementHits + placementMisses)
-                std::fprintf(stderr, "[rts-placement] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\\n",
+                std::fprintf(stderr, "[rts-placement] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\n",
                     double(placementHits)/samples, double(placementMisses)/samples,
                     100.0 * double(placementHits)/double(placementHits+placementMisses));
             placementHits = placementMisses = 0;
