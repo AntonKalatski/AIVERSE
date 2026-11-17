@@ -222,11 +222,11 @@ public:
     };
     GpuModelDrawStats gpuModelDrawStats() const {
         const auto upload = gpuModelCommandsReady_ ?
-            gpuModelCommands_.uploadStats(gpuModelFrame_) :
+            gpuModelCommands_.uploadStats(gpuModelFrame_, gpuModelSubmission_) :
             GpuSceneDrawCommands::UploadStats{};
         return {gpuModelEligible_, gpuModelDrawn_, upload.records,
                 upload.ranges, upload.bytes,
-                gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_),
+                gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
                 gpuModelCommandsReady_};
     }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
@@ -458,6 +458,7 @@ private:
     std::vector<uint32_t> gpuModelSlots_;
     bool gpuModelCommandsReady_ = false;
     uint64_t gpuModelFrame_ = 0;
+    size_t gpuModelSubmission_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     PersistentGpuScene persistentScene_;
     std::unique_ptr<PersistentGpuSceneUpload> persistentUpload_;
