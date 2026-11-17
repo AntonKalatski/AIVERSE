@@ -1551,6 +1551,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::libraries)
     add_test(NAME ecs_projectile_composition_test
         COMMAND aiverse_ecs_projectile_composition_test)
+    add_executable(aiverse_ecs_cross_genre_projectile_test
+        tests/ecs_cross_genre_projectile_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_projectile_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_cross_genre_projectile_test
+        COMMAND aiverse_ecs_cross_genre_projectile_test)
 endif()
 add_subdirectory(modules/voxel)
 
