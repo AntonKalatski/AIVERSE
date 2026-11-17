@@ -188,6 +188,12 @@ The last owner balanced A/B before these commits: OFF 12.161 ms, ON 12.259 ms (+
 
 Both the preflight primitive-run check in `renderModels` and the authoritative check in `drawModelIndirectBatch` now share a configurable Metal command threshold: `AIVERSE_METAL_MDI_MIN_COMMANDS` accepts integer 2..32 (default 8). Other backends retain threshold 4. This allows testing larger and smaller command groups without changing shader layouts or risking cross-material/geometry merges. It is read once per process; restart for each value. Test values 4, 8, 12, 16 in separate launches with identical camera and balanced 3x300 A/B. This is **threshold tuning**, not yet persistent GPU-driven batching or cross-group merging. No owner build/test yet.
 
+## Experimental geometry-aware MDI sorting and A/B counters (2026-11-17)
+
+Commits `3fe9f45`, `0ace2b6` add opt-in `AIVERSE_MDI_GEOMETRY_SORT=1` for MDI-enabled shadow/opaque model passes. Within existing material-equivalence groups, sorting considers GPU vertex/index buffer handles before primitive, with flags/GI/lightmap keys. Transparent phase 2 stays depth sorted; MDI OFF retains old sorting. The aim is to expose larger contiguous MDI candidate groups without allowing incompatible GPU buffers in one submission. The A/B UI now also reports average indirect submissions and GPU indirect commands/frame for ON. **No owner build, visual correctness test, or performance measurement yet.** Validate geometry, shadows, lighting, GI, transparent layers, and compare balanced A/B with and without the env flag on the same camera. If geometry ordering changes results incorrectly, disable the flag.
+
+This is an experimental grouping improvement, **not** the complete proposed GPU-driven architecture: no persistent batch-layout cache, dirty-only updates, cross-material merging or accurately paired GPU timestamps were implemented. These require stronger invalidation/versioning and GPU completion tracking to avoid stale transforms and buffer races. Keep ICB opt-in and default behavior unchanged.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
