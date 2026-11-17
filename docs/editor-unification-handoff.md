@@ -629,3 +629,27 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `d58435d`: `tests/ecs_cross_genre_projectile_test.cpp` defines two unrelated native `GameModule` types using `ShooterTag` and `ArtilleryTag`. Both install identical shared `addProjectileFlightSystem` + `addDamageResolutionSystem` to simulate an ECS projectile against the same collision AABB, convert impact to `DamageQueue`, and apply 35 damage to a `HitPointsComponent` in a deterministic order. Checks impact count, projectile lifetime/despawn, checksum parity, and full `SimSnapshot` rollback/replay with and without COW.
 - This test deliberately links no FPS or RTS gameplay modules: it proves one mechanic combination can work for different genres once compiled.
 - **Status:** source committed, not compiled or run yet. Next action: CMake/standalone ECS test runner integration and native build verification.
+
+### 2026-11-18 — User-mandated universal ECS mechanic contract (all genres)
+- User explicitly requires **every reusable gameplay mechanic** to be built from (1) persistent ECS **components**, (2) composable ECS **systems** implementing feature stages. Genre is a project preset, never a gate: a vehicle may shoot, RTS objects may use first-person weapons, inventory and AI systems mix freely.
+- Commit `304e847` (`AGENTS.md`): high-priority normative rules require data-only ECS components, independent systems with explicit read/write/resource dependencies, pure policies, deterministic ordered effects, public native-project API, composability and cross-genre tests. Disallows duplicating trajectory/damage formulas in RTS/FPS and treats RtsModule/fps::Module code as adapters rather than universal APIs.
+- Commit `76d7a69` (`docs/ecs-mechanic-composition.md`): detailed architecture, per-mechanic deliverables/acceptance gates and concrete launch -> flight -> collision -> damage -> effects/despawn design, plus candid migration status.
+- Commit `035aae4` (`skills/workflow/aiverse-new-mechanic/SKILL.md`): rewrote older RTS-only instructions. All future features must follow shared ECS component + system + policy + host-adapter architecture.
+- Commit `bc6ff19` (`skills/gameplay/aiverse-weapon-policies/SKILL.md`) requires shared ECS weapon/projectile systems for all genres. Commit `3cd63b6` created `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` for the new shared flight API.
+- Commit `8f36243` (`libraries/include/aiverselib/genre/EcsProjectileSystems.h`) adds reusable `ProjectileFlightComponent`, `BallisticFlightPolicy`, `ProjectileImpactEvent`, `addProjectileFlightSystem`: deterministic ECS ballistic updates, read-only collision source provided by ANY game, ordered impact sink after component iteration, deferred despawn. This is a reusable **flight stage**, not complete combat/damage/AI migration.
+- Commit `68d92e0` (`tests/ecs_projectile_composition_test.cpp`) exercises the same flight ECS system in unrelated Shooter and Strategy GameModule hosts, with stable ordered impacts and deep-vs-page-COW rollback checksum comparison. Commits `bd94083`, `786941f` register it in CTest and the standalone ECS suite, without linking aiverse_game or aiverse_fps.
+- Commit `741c292` registers package `ecs-projectile-systems` and its public `AIVERSE::lib_ecs_projectile_systems` target in `libraries/catalog.json`. Commit `41d6fb3` updates the composition guide to point to actual implementations.
+- **Native build and shader test results are NOT confirmed.** These are code, test and guideline changes, NOT proof every legacy RTS/FPS mechanic is universal. Outstanding: replace genre-specific projectile/collision/damage logic with shared systems, extract RTS-only NativeModule hooks, FPS Actor State workspace migration, generic Inspector/persistence integration, and pass cross-genre/native/ASan/TSan tests.
+
+### PR #17 integration proof (same feature branch)
+- User requested import of PR #17 (`fix/pcss-penumbra-sampling-20261117`). Commit `0a6abe5f114851ed6bf27b4a020ae9953b75ff95` has PR #17 head `e4f23850b0c123e8004232e49438143a5581d5f4` as its **second parent**, previous PR #7 head as first. Imported five render source/shader changes through exact-context patching and added `tests/render/temporal-pcss.md`, preserving unrelated PR #7 renderer changes.
+- Verified Git comparison: PR #7 branch is **ahead** of PR #17, **behind = 0**. This is an ancestry merge into PR #7, NOT a merge to main and does not necessarily close PR #17.
+- Still unverified: actual Metal/GLES shader compilation, HDR TAA render captures, no-TAA stability, GPU performance. See `tests/render/temporal-pcss.md`.
+
+### Immediate next actions
+1. Run `bash tests/run_ecs_experiment_suite.sh` and CTest for `ecs_projectile_composition_test`, `ecs_cross_genre_mechanics_test`, FPS/RTS parity and page-COW rollback. Fix compiler or runtime failures without changing default genre behavior.
+2. Run `python3 tools/libraries/catalog.py check` and public native consumer tests; validate new library and skill/catalog packaging.
+3. Compile renderer/shaders on macOS Metal and GLES and inspect PCSS penumbra ghosting with/without HDR TAA.
+4. Incrementally migrate RTS + FPS launch, projectile, hit/damage and weapon states to the same ECS systems. Document which exact adapters remain; do not claim all mechanics universal until cross-genre acceptance gates pass.
+5. Update this handoff after every substantive code change (exact commit, result, next owner).
+
