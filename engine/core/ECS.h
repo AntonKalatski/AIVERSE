@@ -128,13 +128,25 @@ public:
         if(e.index>=sparseCow_->size())sparseCow_->resize(e.index+1,kNone);
         ensureUnique(denseCow_);
         const size_t pos=denseCow_->size();
-        if(pos%kCowPageElements==0) {
+        const bool newPage=(pos%kCowPageElements)==0;
+        if(newPage) {
             auto page=std::make_shared<std::vector<T>>();
             page->reserve(kCowPageElements);
             pages_.push_back(std::move(page));
         } else ensureUnique(pages_.back());
-        pages_.back()->push_back(T{std::forward<Args>(args)...});
-        denseCow_->push_back(e);
+        try {
+            pages_.back()->push_back(T{std::forward<Args>(args)...});
+        } catch(...) {
+            if(newPage)pages_.pop_back();
+            throw;
+        }
+        try {
+            denseCow_->push_back(e);
+        } catch(...) {
+            pages_.back()->pop_back();
+            if(newPage)pages_.pop_back();
+            throw;
+        }
         (*sparseCow_)[e.index]=static_cast<uint32_t>(pos);
         return pages_.back()->back();
     }
