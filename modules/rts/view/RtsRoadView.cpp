@@ -2197,6 +2197,7 @@ void addShapes(Acc& a, const std::string& shape, const mat4& xf, float worldPerM
 } // namespace
 
 void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
+    ++surfaceGeneration_;
     release(dev);
     dirty_ = false;
     ghostDirty_ = true;

@@ -67,6 +67,7 @@ public:
     // ground there) is used where no road surface lies. Presentation only (docs/roads.md § Surface for wheels).
     float surfaceAt(float x, float z, float terrain) const;
     bool hasSurface() const { return !surface_.empty(); }
+    uint64_t surfaceGeneration() const { return surfaceGeneration_; }
     // editor preview: one edge drawn as a translucent ribbon (not part of the network)
     struct Ghost { bool on = false; RoadNetwork net; bool ok = true; };
     void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
@@ -97,6 +98,7 @@ private:
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
     std::vector<Chunk> chunks_;
+    uint64_t surfaceGeneration_ = 1; // increments whenever road geometry/surface is rebuilt
     // standable road surface: tiles of 8x8 cells, kSurfRes samples per cell, height * 2048 (INT16_MIN: none)
     static constexpr int kSurfTile = 8, kSurfRes = 8, kSurfSide = kSurfTile * kSurfRes;
     struct SurfTile { int16_t h[kSurfSide * kSurfSide]; };

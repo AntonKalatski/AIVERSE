@@ -286,6 +286,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         }
     }
     placementCacheHits_ = placementCacheMisses_ = 0;
+    groundCacheHits_ = groundCacheMisses_ = 0;
     staticAnimateFastHits_ = 0;
     double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0, objectShadowMs = 0.0;
     size_t tracedObjects = 0;
@@ -326,7 +327,36 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             continue;
         }
         const TypeLook& L = looks_[o.type];
-        const float ground = !rules_->types[o.type].structure && !L.air ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z);
+        const bool roadSurface = !rules_->types[o.type].structure && !L.air;
+        static const bool cacheGround = [] {
+            const char* setting = std::getenv("AIVERSE_RTS_GROUND_CACHE");
+            return setting && std::strcmp(setting, "1") == 0;
+        }();
+        const bool groundEligible = cacheGround && !o.moving && !o.parented &&
+            (L.structure || rules_->types[o.type].speed <= Fixed{});
+        auto& cachedGround = st.ground;
+        const uint64_t roadsGeneration = roads_ ? roads_->surfaceGeneration() : 0;
+        const bool reuseGround = groundEligible && cachedGround.valid &&
+            cachedGround.grid == &grid && cachedGround.terrainGeneration == terrainGeneration_ &&
+            cachedGround.roadGeneration == roadsGeneration &&
+            cachedGround.type == o.type && cachedGround.roadSurface == roadSurface &&
+            cachedGround.pos.x == o.pos.x && cachedGround.pos.z == o.pos.z;
+        const float ground = reuseGround ? cachedGround.height :
+            (roadSurface ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z));
+        if (groundEligible) {
+            if (reuseGround) ++groundCacheHits_;
+            else {
+                ++groundCacheMisses_;
+                cachedGround.valid = true;
+                cachedGround.grid = &grid;
+                cachedGround.terrainGeneration = terrainGeneration_;
+                cachedGround.roadGeneration = roadsGeneration;
+                cachedGround.type = o.type;
+                cachedGround.roadSurface = roadSurface;
+                cachedGround.pos = o.pos;
+                cachedGround.height = ground;
+            }
+        } else cachedGround.valid = false;
         const auto beforeAnimate = traceView ? std::chrono::steady_clock::now() : viewStart;
         animate(st, o, dt, &grid);
         const auto beforeDraw = traceView ? std::chrono::steady_clock::now() : viewStart;
@@ -418,6 +448,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         static double objectTotals[4] = {};
         static size_t objectCount = 0;
         static uint64_t placementHits = 0, placementMisses = 0;
+        static uint64_t groundHits = 0, groundMisses = 0;
         static uint64_t staticFastHits = 0;
         const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b-a).count(); };
         totals[0] += ms(viewStart, afterSetup);
@@ -432,6 +463,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         objectCount += tracedObjects;
         placementHits += placementCacheHits_;
         placementMisses += placementCacheMisses_;
+        groundHits += groundCacheHits_;
+        groundMisses += groundCacheMisses_;
         staticFastHits += staticAnimateFastHits_;
         if (++samples == 120) {
             std::fprintf(stderr,
@@ -445,11 +478,16 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 std::fprintf(stderr, "[rts-placement] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\n",
                     double(placementHits)/samples, double(placementMisses)/samples,
                     100.0 * double(placementHits)/double(placementHits+placementMisses));
+            if (groundHits + groundMisses)
+                std::fprintf(stderr,
+                    "[rts-ground-cache] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\\n",
+                    double(groundHits)/samples, double(groundMisses)/samples,
+                    100.0 * double(groundHits)/double(groundHits+groundMisses));
             if (staticFastHits)
                 std::fprintf(stderr,
                     "[rts-static-animate] avg/120 fast-path=%.1f objects/frame\n",
                     double(staticFastHits) / samples);
-            placementHits = placementMisses = staticFastHits = 0;
+            placementHits = placementMisses = groundHits = groundMisses = staticFastHits = 0;
             samples = 0;
             for (double& v : totals) v = 0.0;
             for (double& v : objectTotals) v = 0.0;

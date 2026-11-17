@@ -411,6 +411,17 @@ private:
             render::mat4 world{};
             render::mat4 drawn{};
         } placement;
+        // Camera-independent height for stationary objects. Revalidated when
+        // terrain or road surface is rebuilt, or when placement/type changes.
+        struct GroundCache {
+            bool valid = false;
+            const MapGrid* grid = nullptr;
+            uint64_t terrainGeneration = 0, roadGeneration = 0;
+            render::float3 pos{};
+            uint16_t type = 0;
+            bool roadSurface = false;
+            float height = 0;
+        } ground;
         float yaw = 0, speed = 0, distance = 0, turnRate = 0, accel = 0, phase = 0;
         float eventAge[render::kProcEvCount] = {1e9f, 1e9f, 1e9f, 1e9f};
         render::float3 attackDirection{};          // last shot in the animation tangent frame
@@ -516,6 +527,8 @@ private:
     uint32_t lastTick_ = ~0u;
     uint64_t frame_ = 0;
     uint32_t placementCacheHits_ = 0, placementCacheMisses_ = 0;
+    uint32_t groundCacheHits_ = 0, groundCacheMisses_ = 0;
+    uint64_t terrainGeneration_ = 1;
     uint32_t staticAnimateFastHits_ = 0;
     RtsLights lights_;
     RtsPaintLayers paintLayers_;
