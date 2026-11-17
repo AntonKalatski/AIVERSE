@@ -79,6 +79,12 @@ The latest diagnostic commit was `0b9a4f1`. If `build` or `fields` dominates, in
 - Build and run regression tests after each fix; test on the owner's Metal hardware. The latest diagnostic code has not yet been independently compiled/tested by this agent.
 - PR is open; do not merge without owner confirmation. Preserve existing game data and rendering defaults.
 
+## First targeted optimization (commit `171fe6b`)
+
+`apps/editor/Editor.cpp::buildEditScene` now reserves output vectors, caches `rules().findType` by type and `objectHidden` by owner/type **per frame**, and replaces per-object linear entity selection searches with an indexed byte array. Caches are deliberately frame-local to avoid stale data after rules/visibility edits. Live-world selections retain existing semantics.
+
+**Not yet benchmarked or compiled on the owner's Mac.** Compare steady-state `[scene-stages] build` and `view` before/after this commit, keeping camera and scene fixed. If build is still expensive, instrument `wantWorld`, entity loop and world-row loop individually. `view_.draw` remains a separate ~8 ms target. Do not claim the 13 ms is fixed without new measurements.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
