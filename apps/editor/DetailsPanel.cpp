@@ -7,6 +7,7 @@
 #include "EditorUtil.h"
 #include "EditorWorldEdit.h"
 #include "EditorComponentPanel.h"
+#include "EditorEcsWriteback.h"
 
 namespace aiverse::editor {
 
@@ -451,6 +452,28 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
                 if (const WorldRow* r = ed.world().find(uint64_t(v["$entity"].integer()))) ed.select(ed.worldSelection(*r));
             }
             ImGui::PopStyleColor();
+        } else if (path == "Owner.player" && v.isNumber()) {
+            const bool authored = !ed.worldLive() && items_.size() == 1 &&
+                                  items_[0].doc >= 0;
+            const auto ref = DocumentEntityRef::mapEntity(
+                authored ? size_t(items_[0].doc) : 0);
+            const bool editable = authored && canWriteAuthoredEcsField(
+                ed.doc(), ref, "Owner", "player");
+            // Show the ECS value, but edit the serialized map value so the
+            // preview can be rebuilt and undo/redo remains deterministic.
+            const DocEntity* source = editable ? documentMapEntity(ed.doc(), ref) : nullptr;
+            int player = source ? source->owner : int(v.integer());
+            const int maxPlayer = int(std::min<size_t>(
+                ed.doc().data.players.size(), 255));
+            ImGui::BeginDisabled(!editable || player < 0);
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::SliderInt("##ecsOwner", &player, 0, maxPlayer)) {
+                writeAuthoredEcsField(ed.doc(), ref, "Owner", "player",
+                                      Json::number(int64_t(player)));
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Persisted owner of a map-authored ECS entity; live entities are read-only.");
         } else if (fieldSchema && fieldSchema->kind == WorldFieldKind::Turn && v.isNumber()) {
             ImGui::Text("%.2f°", v.toDouble() * 360.0);
             ImGui::SetItemTooltip("ECS rotation is stored in turns; no persistent map rotation field exists.");
@@ -498,7 +521,14 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             if (ImGui::IsItemActivated()) ed.doc().beginEdit();
             ImGui::EndDisabled();
             if (changed)
-                setDocumentPosition(ed.doc(), ref, {double(x), docPosition.y, double(z)});
+                writeAuthoredEcsField(ed.doc(), ref, "Transform", "pos",
+                    [&] {
+                        Json values = Json::array();
+                        values.push(Json::number(double(x), 3));
+                        values.push(Json::number(double(y), 3));
+                        values.push(Json::number(double(z), 3));
+                        return values;
+                    }());
             if (editable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
                 ImGui::SetTooltip("Y comes from the ECS world and is not serialized by this map.");
         } else if (v.isArray() && v.size() == 3 &&
