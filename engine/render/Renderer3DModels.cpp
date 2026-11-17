@@ -613,6 +613,21 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     return true;
 }
 
+// Shared threshold for both the cheap preflight and actual indirect encoding.
+// Tune with AIVERSE_METAL_MDI_MIN_COMMANDS=4..32; never let the two paths disagree.
+static size_t indirectCommandThreshold() {
+    static const size_t value = [] {
+        const size_t fallback = 8u;
+        const char* raw = std::getenv("AIVERSE_METAL_MDI_MIN_COMMANDS");
+        if (!raw || !*raw) return fallback;
+        char* end = nullptr;
+        const long parsed = std::strtol(raw, &end, 10);
+        return end != raw && *end == '\0' && parsed >= 2 && parsed <= 32
+            ? size_t(parsed) : fallback;
+    }();
+    return value;
+}
+
 // A single command buffer submission for multiple rigid primitives that share
 // ALL shader data, vertex/index buffers, transform and pipeline. The ordinary
 // pipeline remains the automatic fallback on platforms lacking indirect draws.
@@ -648,7 +663,7 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     // Building CPU ICB commands on Metal has a measurable setup cost.
     // Avoid switching to indirect for tiny groups where indexed draws win.
-    const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
+    const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
     if (commands.size() < minimumCommands) return false;
     const auto afterGrouping = std::chrono::steady_clock::now();
     if (!drawModelBatch(items, count, phase, false)) return true; // pipeline warming: no fallback draw
@@ -815,7 +830,7 @@ void Renderer3D::renderModels(int phase) {
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
         dev_->supportsMultiDrawIndirect() && phase <= 1;
-    const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
+    const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
     for (size_t i = 0; i < order_.size();) {
         // Try MDI before conventional instancing, only when every command can
         // legally inherit the SAME uniforms/textures and rigid transform.
