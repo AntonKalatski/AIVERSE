@@ -224,6 +224,8 @@ void Editor::reloadFx() {
 }
 
 void Editor::reloadRules() {
+    editSceneCacheValid_ = false;
+    editSceneCache_.clear();
     view_.shutdown(*dev_);
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(*dev_, rules(), projectReader(ws_.project.dir));
@@ -599,6 +601,36 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         return visibilityCache.emplace(std::move(key), !objectHidden(owner, type)).first->second;
     };
     auto inSet = [&](const Selection& item) { return item == selection || std::find(selectionSet.begin(), selectionSet.end(), item) != selectionSet.end(); };
+    // A document scene can contain thousands of unchanged static placements.
+    // Reuse their type resolution, facing, position and visibility until the
+    // map, project rules or visibility filters change. Do not cache the world
+    // preview (it has an independent asynchronous lifetime). Selection and
+    // hover are applied to fresh output copies every frame.
+    static const bool cacheEditScene = [] {
+        const char* value = std::getenv("AIVERSE_EDITOR_SCENE_CACHE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const bool cacheEligible = cacheEditScene && !d.planet();
+    const bool cacheHit = cacheEligible && editSceneCacheValid_ &&
+        editSceneCacheMapRevision_ == ws_.map.revision &&
+        editSceneCacheRulesRevision_ == rulesRevision_ &&
+        editSceneCacheEntities_ == d.entities.data() &&
+        editSceneCacheEntityCount_ == d.entities.size() &&
+        editSceneCacheHidden_ == sceneHidden;
+    if (cacheHit) {
+        for (const EditSceneCacheEntry& entry : editSceneCache_) {
+            game::SceneObject o = entry.object;
+            const size_t index = entry.documentIndex;
+            o.selected = selectedEntities[index] != 0 || int(index) == roadStart;
+            o.hovered = hover.kind == Selection::Entity && hover.index == int(index);
+            out.objects.push_back(std::move(o));
+        }
+    } else {
+        if (cacheEligible) {
+            editSceneCacheValid_ = false;
+            editSceneCache_.clear();
+            editSceneCache_.reserve(d.entities.size());
+        }
     for (size_t i = 0; i < d.entities.size(); ++i) {
         const auto& e = d.entities[i];
         auto typeIt = typeCache.find(e.type);
@@ -627,7 +659,21 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         const Selection me{Selection::Entity, int(i), {}};
         o.selected = selectedEntities[i] != 0 || int(i) == roadStart;
         o.hovered = hover == me;
-        out.objects.push_back(o);
+        if (cacheEligible) {
+            game::SceneObject base = o;
+            base.selected = base.hovered = false;
+            editSceneCache_.push_back({i, std::move(base)});
+        }
+        out.objects.push_back(std::move(o));
+    }
+        if (cacheEligible) {
+            editSceneCacheMapRevision_ = ws_.map.revision;
+            editSceneCacheRulesRevision_ = rulesRevision_;
+            editSceneCacheEntities_ = d.entities.data();
+            editSceneCacheEntityCount_ = d.entities.size();
+            editSceneCacheHidden_ = sceneHidden;
+            editSceneCacheValid_ = true;
+        }
     }
     // what the game creates at start (world tree preview: faction start units, script / C++ module objects); read-only
     if (showGameObjects && !worldLive_ && !d.planet() && !sceneHidden.count("game")) wantWorld();   // the preview is built for the Scene too
