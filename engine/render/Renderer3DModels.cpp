@@ -740,10 +740,13 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
 }
 
 // Shared threshold for both the cheap preflight and actual indirect encoding.
-// Tune with AIVERSE_METAL_MDI_MIN_COMMANDS=4..32; never let the two paths disagree.
+// Tune with AIVERSE_METAL_MDI_MIN_COMMANDS=2..32; never let the two paths disagree.
+// The 16-command default avoids Metal CPU-ICB overhead for undersized groups.
+// macOS fixed-camera A/B (110 vs 68 calls) showed 8-command batches slower
+// on both CPU and GPU; keep the threshold overridable for different devices.
 static size_t indirectCommandThreshold() {
     static const size_t value = [] {
-        const size_t fallback = 8u;
+        const size_t fallback = 16u;
         const char* raw = std::getenv("AIVERSE_METAL_MDI_MIN_COMMANDS");
         if (!raw || !*raw) return fallback;
         char* end = nullptr;
@@ -770,8 +773,13 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     const bool traceIndirect = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto indirectStart = std::chrono::steady_clock::now();
-    const bool layoutCaching = std::getenv("AIVERSE_MDI_LAYOUT_CACHE") &&
-        std::strcmp(std::getenv("AIVERSE_MDI_LAYOUT_CACHE"), "1") == 0;
+    // Exact-signature validation makes this safe across changing visibility,
+    // model reloads and mixed geometry pages. Static scenes reuse layouts
+    // almost every frame; avoid rebuilding the command list each time.
+    // AIVERSE_MDI_LAYOUT_CACHE=off (or 0) restores the uncached path.
+    const char* cacheMode = std::getenv("AIVERSE_MDI_LAYOUT_CACHE");
+    const bool layoutCaching = !cacheMode ||
+        (std::strcmp(cacheMode, "off") != 0 && std::strcmp(cacheMode, "0") != 0);
     auto& commands = indirectCommandScratch_;
     commands.clear();
     uint64_t triangles = 0;
@@ -1582,7 +1590,18 @@ void Renderer3D::renderModels(int phase) {
                     ++mdiShort;
                     ++modelStats_.mdiShort;
                 }
-            } else ++modelStats_.mdiIneligible;
+            } else {
+                ++modelStats_.mdiIneligible;
+                // Exclusive attribution for the first rejected candidate
+                // in this run. These count scan attempts, not unique models.
+                if (first.model->geometry) ++modelStats_.mdiIneligibleGeometry;
+                else if (first.gi != 0 || first.baked) ++modelStats_.mdiIneligibleLighting;
+                else if (first.materialRole || first.shadowRole || first.paletteMaterials)
+                    ++modelStats_.mdiIneligibleMaterial;
+                else if (first.joints >= 0 || first.morph >= 0)
+                    ++modelStats_.mdiIneligibleDeform;
+                else ++modelStats_.mdiIneligibleAlpha;
+            }
         }
         size_t j = i + 1;
         if (batchable(modelItems_[order_[i]]))
