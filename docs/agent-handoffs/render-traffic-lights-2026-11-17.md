@@ -16,10 +16,16 @@ Branch: `fix/indirect-vulkan-base-vertex-safety` (PR #4, based on `feature/unive
 - Previous screenshot MDI ON: 53 candidate scans, 47 ineligible scans, 5 material state splits, 1 geometry-buffer split, 0 flags/pose, 0 submission failures; sample counters may represent repeated passes, not distinct objects.
 - Conclusion: **do not force MDI just for draw-call count**; adaptive selection or batching overhead reduction required, preserve instancing fallback.
 
-## Step 2 — traffic light discovery (IN PROGRESS)
-- GTA project has `assets_src/traffic-signals/README.md`, and generated three phase-specific models with the same geometry but different active emissive lens.
-- `assets_src/_pipeline/kingston_traffic.py` and `assets_src/resident-traffic/source/install.py` define light_green, light_yellow, light_red types.
-- Need inspect actual `assets_src/traffic-signals/source/install.py` and rendering/view path to select safe representation: ideally single base mesh and per-instance emissive state with stable pipeline, not three separate GLB GPU objects.
+## Step 2 — GTA traffic light diagnosis (DONE)
+- GTA installer previously wrote three phase-specific files (`red.glb`, `yellow.glb`, `green.glb`) with identical mesh geometry but different active material colors. This caused distinct GPU VB/IB handles and prevented cross-phase model batching despite identical housings.
+- AIVERSE already supports per-type `view.materials` named overrides and shared model caching (RtsLook::configureChoice), so we can share one source model without modifying ECS/simulation phase logic.
+
+## Step 3 — shared-model traffic-light fix (IMPLEMENTED, awaiting runtime tests)
+- Separate GTA branch: `fix/shared-traffic-signal-model-batching` and draft PR https://github.com/chromealex/gta/pull/4
+- GTA commits: `99b792d` shared GLB generator & phase-only emissive material overrides; `c091dd2` geometry/material alignment regression tests; `e5ee4f2` migration docs.
+- New `models/traffic-signals/signal.glb` has shared pole/head/lens meshes. Each traffic-signal rules type overrides only its active `red_lens`, `yellow_lens`, or `green_lens` material and retains per-lens spotlight offset.
+- Installer updates `streamedWorld.assets` and removes obsolete three old GLB hash entries, but must be re-run locally to generate binary asset and update rules; pre-existing unused binary files may remain.
+- NOT YET verified with native render, installed model, traffic light simulation, or macOS benchmark. Keep PR draft until tests and visual check.
 
 ## Next
 - Inspect GTA signal assets and type switching; identify stable material path and shared model geometry.
