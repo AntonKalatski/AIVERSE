@@ -377,6 +377,52 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - **Important:** production `SimSnapshot` and `RollbackSession` still store full World snapshots. The new delta is experimental and not yet wired into the rollback ring; replacing the ring without measuring reconstitution latency would risk performance regressions.
 - New test has not yet been compiled/run on the user's Mac Studio. Do not claim serialized delta correctness before the updated suite succeeds.
 
+## 2026-11-18 — FPS independent motor jobs + real incremental COW rollback (LATEST)
+
+User requested full FPS parallelization and production incremental rollback. The code below is an **incremental, opt-in implementation**, not a proof that arbitrary authoritative FPS gameplay can run concurrently. All changes below are committed in PR #8 and **have not been compiled or validated on Mac Studio yet**.
+
+### FPS motor stage
+
+- `b559900`: `modules/fps/FpsModule.cpp` adds `AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR` opt-in two-phase motor path. Only when 32+ actors, deathmatch, no bots, weapons firing, vehicles, melee, systems, royale, streaming or active interactions: precompute per-actor movement concurrently on copies and commit position/velocity/orientation/stance back in original actor order. Other FPS combat/AI/projectiles/authority logic still runs sequentially. This does **NOT** implement full FPS parallel gameplay.
+- `39066c5`: `modules/fps/CMakeLists.txt` exposes the feature as OFF by default; links Threads when enabled.
+- `c463308` / `37bcffe`: `tests/fps/tests.cpp` generates a 100-player movement-only fixture for 120 ticks with command-driven movement, jump, crouch and sprint, checks snapshot restore and prints `FPS_MOTOR_PARITY_HASH`. This exercises the optional path when enabled and the legacy sequential path otherwise.
+- `7273dd2`: `tests/run_ecs_gameplay_compare.sh` now also builds FPS motor OFF/ON and compares the full-tick hash produced by this fixture; FPS combat/authority regressions run in both builds. `--full` adds game and network suites.
+
+### Pool-level COW snapshots in real RollbackSession
+
+- `17094a6`: `engine/core/ECS.h` changes pool ownership from `unique_ptr<IPool>` to `shared_ptr<IPool>`, adding opt-in `World::enableCowSnapshots`. `World::copyFrom` shares pools and singleton resources when COW is enabled; mutable `pool<T>`, `tryGet<T>`, `get<T>`, `resource<T>`, `each` and `destroy` detach shared content before writing. When COW is off, deep-copy behavior is preserved. Component generations/allocator state still copy fully. **Granularity is a whole pool/resource, not per-page COW**.
+- `1aec3e1` / `17f6159`: `net::SessionConfig::incrementalWorldSnapshots` (default false) activates COW snapshot copying in the existing `RollbackSession` ring; on session destruction it releases its ring and returns the World to its original mode.
+- `348b81a`: introduces `tryGetConst<T>`, `resourceConst<T>`, `eachExistingConst<T>`, `prepareExistingWrite<T>`; read-only queries never trigger detach.
+- `d043264`, `2b061ae`, `4a99df7`: GuardedWorld and experimental range jobs detach their writable pools on the caller **before** spawning worker lanes. RTS opt-in jobs prepare the shared Transform pool similarly. This avoids a COW detach race when multiple workers access a newly shared pool.
+- `7bdf3c0`: `sharedPoolCount()` and `sharedResourceCount()` diagnostic counters.
+- `21d8a14`, `b521203`: isolated World COW snapshot/rollback test with resource/Entity-generation isolation and actual shared-pool diagnostics.
+- `0b60d39`: real `RollbackSession` deep-vs-COW checksum/replay test with a delayed remote confirmation.
+- `a8bc56e`: guarded parallel update after COW snapshot, verifying untouched snapshot and consistent results for 0/1/3/7 workers.
+- `84650dee`, `2b5717f`, `4a4e4b1`, `1bccd07`: added above correctness tests to standalone suite/CTest.
+- `d385c22` / `ba350b3` / `c827251`: 12-snapshot deep-vs-COW benchmark at 10k/100k/1m Entities with read-only vs one changed Position per tick. Results pending.
+- `2d8add2`: GitHub CI now includes RTS/FPS gameplay comparator and network tests on Ubuntu, plus original normal/sanitizer/TSan lanes.
+
+### Required verification (all new code unverified)
+
+```bash
+git switch feature/ecs-architecture-benchmarks
+git pull --ff-only
+bash -n tests/run_ecs_experiment_suite.sh tests/run_ecs_gameplay_compare.sh
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+bash tests/run_ecs_experiment_suite.sh --bench
+bash tests/run_ecs_gameplay_compare.sh --full
+# Linux TSan if available: bash tests/run_ecs_experiment_suite.sh --tsan
+```
+
+### IMPORTANT — unresolved full-production limitations
+
+1. **FPS is NOT fully parallel.** Only a collision-world-read-only actor motor phase has an opt-in guarded workload gate. Combat, shared actor state, shooting, RNG, bots, vehicles, projectiles, melee and royale remain sequential. A complete safe parallel FPS architecture requires restructuring those into deterministic read-only planning stages and ordered commit phases, with new gameplay-equivalence tests.
+2. **COW is pool-level, not page-level**. Changing one element clones the entire pool; FPS State is one large mutable singleton resource, so a full clone may still occur every tick. The new option is OFF by default until memory, tick cost, replay and sanitizer tests are green.
+3. **COW bypass risks:** if callers retain mutable references/pointers from before a snapshot, those can mutate shared state without invoking the World write API. Modules must not retain such references across snapshot boundaries. GuardedWorld cannot prevent raw external captures.
+4. **Network rollback safety:** COW snapshots carry World components/resources but do not change command ordering, RNG, state checksum or serializer. Ring lifecycle and concurrent jobs need TSan and real network stress validation.
+5. **Performance**: no measured FPS speedup or COW snapshot memory savings from these latest changes. Do not enable either experimental mode by default or merge PR #8 before real testing.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
