@@ -127,6 +127,17 @@ int main() {
     check(authored.meshes[0].lods.size() == 1 && authored.meshes[0].lods[0].maxPixels == 128,
           "authored LOD chains must have priority");
 
+    // The actual shared import/upload entry point must invoke the fallback
+    // without callers needing to know about AutoLodRuntime.
+    auto automatic = makeRigidVehicle();
+    prepareModelUpload(automatic);
+    check(automatic.uploadPrepared && automatic.autoLod.generatedLevels >= 2,
+          "prepareModelUpload did not generate LODs automatically");
+    const size_t preparedMeshCount = automatic.meshes.size();
+    prepareModelUpload(automatic);
+    check(automatic.meshes.size() == preparedMeshCount,
+          "repeated prepareModelUpload changed LODs");
+
     auto skinned = makeRigidVehicle();
     skinned.skins.emplace_back();
     check(generateMissingModelLods(skinned) == 0,
