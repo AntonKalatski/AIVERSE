@@ -478,6 +478,42 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             it.geometry = d.geometry;
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
+            // Restrict GPU LOD to a single compatible rigid primitive in each
+            // of exactly two meshes. Complex materials and fading stay on CPU.
+            static const bool gpuLod = [] {
+                const char* value = std::getenv("AIVERSE_GPU_ICB_LOD");
+                return value && std::strcmp(value, "1") == 0;
+            }();
+            if (gpuLod && modelLodEnabled_ && rigid && !m->geometry &&
+                lodBlend.incoming < 0 && d.variant < 0 && !d.nodeMaterial &&
+                !shadowBatch && materialRole == 0 && shadowRole == 0 &&
+                baseMesh.lods.size() == 1 && baseMesh.primitives.size() == 1 &&
+                baseMesh.materialBatches.empty() &&
+                baseMesh.lods[0].mesh >= 0 &&
+                size_t(baseMesh.lods[0].mesh) < m->meshes.size()) {
+                const auto& nearPrim = baseMesh.primitives[0];
+                const auto& lod = baseMesh.lods[0];
+                const auto& farMesh = m->meshes[size_t(lod.mesh)];
+                if (farMesh.primitives.size() == 1 && farMesh.materialBatches.empty()) {
+                    const auto& farPrim = farMesh.primitives[0];
+                    if (nearPrim.material == farPrim.material &&
+                        nearPrim.indexCount && farPrim.indexCount &&
+                        nearPrim.morphTargets == 0 && farPrim.morphTargets == 0 &&
+                        nearPrim.jointPalette.empty() && farPrim.jointPalette.empty() &&
+                        (&p == &nearPrim || &p == &farPrim) &&
+                        lod.maxPixels > 0) {
+                        it.gpuLodAvailable = true;
+                        it.gpuLodNear = {nearPrim.indexCount, 1u,
+                            nearPrim.firstIndex + m->gpuFirstIndex,
+                            int32_t(m->gpuBaseVertex), 0};
+                        it.gpuLodFar = {farPrim.indexCount, 1u,
+                            farPrim.firstIndex + m->gpuFirstIndex,
+                            int32_t(m->gpuBaseVertex), 0};
+                        it.gpuLodMaxPixels = lod.maxPixels;
+                        it.gpuLodError = length(baseMesh.boundsMax - baseMesh.boundsMin);
+                    }
+                }
+            }
             size_t pi = cache?cache->primitiveOffsets[size_t(meshIndex)]:0;
             if(!cache)for (int mesh = 0; mesh < meshIndex; ++mesh) pi += m->meshes[size_t(mesh)].primitives.size();
             it.geometryPrimitive = shadowRole == 2 || materialRole == 2 ? 0 : pi + size_t(&p - m->meshes[size_t(meshIndex)].primitives.data());
