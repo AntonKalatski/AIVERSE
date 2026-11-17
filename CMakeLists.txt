@@ -118,6 +118,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_experiments_test
             ecs_wave_executor_test
             ecs_guarded_world_test
+            ecs_snapshot_delta_test
             ecs_guarded_parallel_test
             ecs_guarded_failure_test
             ecs_wave_replay_test
