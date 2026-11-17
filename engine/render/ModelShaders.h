@@ -644,7 +644,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         constant float4* materials [[buffer(4)]],
 #endif
 #if defined(AIVERSE_ICB_PBR)
-                        constant IcbPbrTextures& icbTextures [[buffer(8)]],
+                        constant IcbPbrTextures& icbTextures [[buffer(8)]]
 #else
                         depth2d<float> tex0 [[texture(0)]], sampler s0 [[sampler(0)]],
                         texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]],
@@ -656,7 +656,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         constant LightU& lu [[buffer(6)]], texture2d<float> tex9 [[texture(9)]], sampler s9 [[sampler(9)]],
                         texture2d<float> tex10 [[texture(10)]], sampler s10 [[sampler(10)]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
-                        depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]],
+                        depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
                         GI_FARGS) {
 #if defined(AIVERSE_ICB_PBR)
