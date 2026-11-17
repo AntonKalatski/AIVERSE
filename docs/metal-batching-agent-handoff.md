@@ -426,3 +426,12 @@ For a clean CPU benchmark, disable `AIVERSE_MODEL_BATCH_PROFILE`; retain compara
 3. A more informative Scene > Batching UI and Draw Calls legend splitting model passes, real API submissions and instances, and explaining road material splits.
 4. Safe Metal ICB driver-level validation before ever enabling MDI by default.
 5. Fix missing/invalid GLB and texture assets separately; do not confuse fallback geometry with real batching success.
+
+
+## Scene Batching readout clarification (2026-11-17, `1e65ea4`)
+
+The Scene > Batching popup now summarizes **tracked renderer API submissions**, splitting tracked model calls from tracked non-model calls. A new expandable per-phase breakdown displays `RenderProfile::draws[0..4]`, instances and triangles (shadow, opaque including optional reflection, blended, outline, transparent depth). Another expandable panel shows instanced model calls, instances submitted in instanced calls, and MDI submissions versus indexed commands. Existing GPU ICB diagnostics remain opt-in; the UI explicitly indicates when backend Metal MDI is unavailable. The Draw Calls tooltip/help now explains that it colours main-view built-in model submissions, not every custom terrain/decal/callback render path or shadow draw. The 4x4 road merge coalesces **chunks**, not all primitive/material groups.
+
+**Accounting caveat:** the "Other tracked" number is the difference between `Renderer3D::drawCalls()` and the sum of `RenderProfile::draws` across the five model phases. Neither count includes every backend call from arbitrary custom callbacks; phase 1 may include reflection re-renders. These numbers are not GPU hardware draw counts. This is a diagnostic UI change, not a reduction in real draw calls.
+
+Validation still required: compile SceneWindow on macOS and verify popup layout, debug view, and that actual numbers sum correctly in same-frame comparisons. No Mac run for this commit was performed by the assistant.
