@@ -1042,7 +1042,7 @@ struct IcbContainer {
 };
 struct Params { uint count, indexCapacity, pad0, pad1; };
 kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
-                    device const uint* indices [[buffer(1)]],
+                    device uint* indices [[buffer(1)]],
                     device IcbContainer* container [[buffer(2)]],
                     device const uint* slots [[buffer(3)]],
                     device const uchar* vertices [[buffer(4)]],
