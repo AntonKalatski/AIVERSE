@@ -169,6 +169,38 @@ Compare with `AIVERSE_EDITOR_EAGER_MODELS=1` (same binary/project/map). Check `Ð
 - Must validate on macOS: configure `AIVERSE_BUILD_HDR_TESTS=ON`; build `aiverse_editor` and `aiverse_material_batches`, run `aiverse_material_batches --unit`, run `AIVERSE_PALETTE_TEST_CASE=indirect_palette AIVERSE_MDI_INSTANCE_PALETTE=1 AIVERSE_EXPERIMENTAL_METAL_ICB=1 ./aiverse_material_batches ignored /tmp/palette`. Compare pixel images and draw counts. Also test ordinary shaded microtest sedan with `AIVERSE_MDI_INSTANCE_PALETTE=1` vs unset and inspect `Scene > Batching`, not just the Draw Calls debug colours. Run driving client separately to check wheels, doors and lamps.
 - DO NOT merge into main until regression tests/pixel equality, Metal GPU stability and CPU/GPU fixed-camera A/B are verified. No measured speedup or exact sedan reduction claimed.
 
+## Step 17 â€” PR #13 created; status and run instructions (2026-11-18)
+- Draft PR: https://github.com/chromealex/AIVERSE/pull/13, head `perf/vehicle-indirect-material-palette`, base `perf/roads-small-map-chunk-merge` (PR #12). It contains the entire renderer optimization stack by ancestry.
+- PR head before this handoff: `661ed50bd3126cd47cfd02b86ee69708df4553d9`. GitHub Actions `CI`, `GPU batching focused regression`, `AIVERSE Studio validation` were **queued** on that commit, not passed at the time of the lookup. New head after docs-only commit may spawn replacement jobs.
+- User's GTA active `sedan_damage.glb` is in LFS and not programmatically analyzed here. The 7,043 triangles in GTA sedan-refresh validation are a **different sibling model**; actual count and state split for active sedan remain unknown. Evaluate the user's scene after rebuilding before claiming any submission reduction.
+- Build and test on Apple Silicon:
+```sh
+cd ~/Projects/AIVERSE
+git fetch origin
+git switch perf/vehicle-indirect-material-palette || git switch --track origin/perf/vehicle-indirect-material-palette
+git pull --ff-only origin perf/vehicle-indirect-material-palette
+cmake -S . -B build/.temp/vehicle-palette -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_HDR_TESTS=ON
+cmake --build build/.temp/vehicle-palette --target aiverse_editor aiverse_material_batches aiverse_deferred_loading_tests -j8
+./build/.temp/vehicle-palette/aiverse_material_batches --unit
+ctest --test-dir build/.temp/vehicle-palette -R '^aiverse_deferred_loading_tests
+- Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
+- Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
+- Benchmark Metal CPU MDI threshold 8 vs 16 (and cache off/on) with controlled camera; update findings before merging.
+- Append exact commit/test results for another agent after **each step**.
+
+- Inspect GTA signal assets and type switching; identify stable material path and shared model geometry.
+- Implement in correct repository/branch with tests, benchmark CPU/GPU and pixel-equivalence.
+- Append new steps, exact commits and any known blockers after each meaningful change; avoid merging to main before validation.
+ --output-on-failure
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_MDI_INSTANCE_PALETTE=1 AIVERSE_PALETTE_TEST_CASE=indirect_palette \
+    ./build/.temp/vehicle-palette/aiverse_material_batches ignored /tmp/aiverse-car-palette
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_MDI_INSTANCE_PALETTE=1 AIVERSE_MODEL_BATCH_PROFILE=1 \
+    ./build/.temp/vehicle-palette/AiverseEditor.app/Contents/MacOS/AiverseEditor
+```
+- Open GTA branch `gta` `project/` and microtest map `project/maps/render_microtest.json`. In Scene > Batching, select **Multi-Draw Indirect**, disable auto override that picked instancing earlier when comparing, inspect `Instancing and indirect details` for `Per-command PBR palette: N submissions / N commands`. New mode is disabled by default; MDI eligibility and 16-command Metal threshold remain in force. No claims of one or three submissions for the entire car when pipeline/texture state differs.
+- Compare original screenshot and CPU/GPU timings with and without `AIVERSE_MDI_INSTANCE_PALETTE=1`, identical fixed camera, shaded view (debug draw-call coloring itself affects shader and counters). A/B fixture must report `changed_channels=0` and reduced opaque draw count before considering merge. Also check real native car runtime wheels/door/roof panel state and lights if switching from editor to native.
+- All commits and findings saved in this handoff. No successful local macOS build or visual benchmark of PR #13 was performed by this agent.
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
