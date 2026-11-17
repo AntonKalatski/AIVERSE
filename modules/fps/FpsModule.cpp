@@ -197,6 +197,11 @@ void Module::syncActorEntities(Simulation& sim) const {
         if (actor.slot == 0 || size_t(actor.slot) > index->bySlot.size()) continue;
         Entity& entity = index->bySlot[size_t(actor.slot - 1)];
         if (!world.alive(entity)) entity = world.create();
+        // A legacy save can restore an allocator that predates these pools.
+        // Do not retain stale dynamic ECS components at a recycled index.
+        if (world.has<ProjectileEntity>(entity)) world.remove<ProjectileEntity>(entity);
+        if (world.has<LootEntity>(entity)) world.remove<LootEntity>(entity);
+        if (world.has<VehicleEntity>(entity)) world.remove<VehicleEntity>(entity);
         if (!world.has<ActorEntityIdentity>(entity))
             world.add<ActorEntityIdentity>(entity);
         if (!world.has<ActorEntityTransform>(entity))
@@ -225,7 +230,19 @@ void Module::syncDynamicEntities(Simulation& sim) const {
         auto [it, inserted] = index->byKey.emplace(key, kNullEntity);
         (void)inserted;
         if (!world.alive(it->second)) it->second = world.create();
-        return it->second;
+        const Entity entity = it->second;
+        // World::restoreEntityState restores generations, not component pools.
+        // Strip stale components before reusing a source ID on legacy saves.
+        if (world.has<ActorEntityIdentity>(entity)) world.remove<ActorEntityIdentity>(entity);
+        if (world.has<ActorEntityTransform>(entity)) world.remove<ActorEntityTransform>(entity);
+        if (world.has<ActorEntityVitals>(entity)) world.remove<ActorEntityVitals>(entity);
+        if (kind != 1 && world.has<ProjectileEntity>(entity))
+            world.remove<ProjectileEntity>(entity);
+        if (kind != 2 && world.has<LootEntity>(entity))
+            world.remove<LootEntity>(entity);
+        if (kind != 3 && world.has<VehicleEntity>(entity))
+            world.remove<VehicleEntity>(entity);
+        return entity;
     };
     for (const Projectile& projectile : current->projectiles) {
         const Entity entity = ensure(1, projectile.id);
