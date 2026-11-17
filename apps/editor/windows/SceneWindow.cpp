@@ -268,14 +268,45 @@ private:
                 ImGui::Text("Pool utilization: %.1f%% (%.1f MiB slack)", fill, slackMiB);
                 ImGui::TextDisabled("Pool memory excludes textures and dedicated model buffers.");
             }
-            const uint32_t currentDraws = ed.renderer().drawCalls();
-            ImGui::Text("Renderer draws (all passes): %u", currentDraws);
+            const auto& profile = ed.renderer().profile();
             const auto& modelStats = ed.renderer().modelStats();
-            ImGui::Text("Model instanced calls: %llu", (unsigned long long)modelStats.instancedDraws);
-            ImGui::Text("Indirect submissions: %llu (%llu commands)",
-                (unsigned long long)modelStats.multiDrawSubmissions,
-                (unsigned long long)modelStats.indirectCommands);
-            ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
+            const uint32_t totalSubmissions = ed.renderer().drawCalls();
+            const uint32_t modelSubmissions =
+                profile.draws[0] + profile.draws[1] + profile.draws[2] +
+                profile.draws[3] + profile.draws[4];
+            const uint32_t otherSubmissions = totalSubmissions >= modelSubmissions
+                ? totalSubmissions - modelSubmissions : 0;
+            ImGui::Text("GPU API submissions (tracked): %u", totalSubmissions);
+            ImGui::Text("Models: %u | Other tracked: %u",
+                        modelSubmissions, otherSubmissions);
+            ImGui::TextDisabled("Includes repeated geometry in shadow, reflection and colour passes.");
+            if (ImGui::TreeNode("Model pass breakdown")) {
+                static constexpr const char* phaseNames[5] = {
+                    "Shadow", "Opaque (+ reflection)", "Blended",
+                    "Outline", "Transparent depth"
+                };
+                for (size_t phase = 0; phase < 5; ++phase) {
+                    ImGui::Text("%s: %u calls, %u instances, %u triangles",
+                        phaseNames[phase], profile.draws[phase],
+                        profile.instances[phase], profile.triangles[phase]);
+                }
+                ImGui::TextDisabled("These are renderer API counts, not unique scene objects.");
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Instancing and indirect details")) {
+                ImGui::Text("Instanced model calls: %llu",
+                    (unsigned long long)modelStats.instancedDraws);
+                ImGui::Text("Instances in instanced calls: %llu",
+                    (unsigned long long)modelStats.drawnInstances);
+                ImGui::Text("MDI submissions: %llu (%llu indexed commands)",
+                    (unsigned long long)modelStats.multiDrawSubmissions,
+                    (unsigned long long)modelStats.indirectCommands);
+                ImGui::TextDisabled("One instanced call may draw multiple identical meshes.");
+                ImGui::TextDisabled("Indirect command count is not the API submission count.");
+                ImGui::TreePop();
+            }
+            if (!mdiBackend)
+                ImGui::TextDisabled("Metal MDI/ICB unavailable: distinct meshes remain separate draws.");
             if (const char* authored = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
                 authored && std::strcmp(authored, "1") == 0) {
                 const auto gpu = ed.renderer().gpuModelDrawStats();
@@ -432,16 +463,20 @@ private:
                             (long long)(optimizedModelDraws_ - baselineModelDraws_));
                 ImGui::TextDisabled("Same camera/frame; excludes GPU timing and upload cost.");
             }
-            const auto& profile = ed.renderer().profile();
             const double gpuMs = ed.device().gpuFrameMs();
             if (gpuMs > 0.0) ImGui::Text("GPU frame: %.3f ms (last completed)", gpuMs);
             else ImGui::TextDisabled("GPU frame timing unavailable / not ready");
-            ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
+            ImGui::Text("Main colour model calls (opaque + blended): %u",
+                        profile.draws[1] + profile.draws[2]);
             if (profile.drawMs[1] > 0.0 || profile.drawMs[2] > 0.0)
                 ImGui::Text("CPU model draw phase: %.3f ms (profiling enabled)",
                             profile.drawMs[1] + profile.drawMs[2]);
             else ImGui::TextDisabled("CPU model draw timing requires renderer profiling.");
-            ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
+            ImGui::TextDisabled("Draw Calls view: colour per main-view model submission.");
+            ImGui::TextDisabled("Shadows/reflections are not separately colour-coded.");
+            ImGui::TextDisabled("Terrain, decals and custom passes may use other draw paths.");
+            ImGui::TextDisabled("Road merge reduces chunks, not material primitive count.");
+            ImGui::TextDisabled("The debug view is not a total GPU draw-call heatmap.");
             if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
             ImGui::Separator();
             ImGui::TextDisabled("Instance limit applies to the shared renderer (Scene and Game).");
@@ -486,7 +521,7 @@ private:
         if (ImGui::BeginCombo("##sceneVisualisation", studioModes[studioDebugMode_])) {
             for (int i = 0; i < 10; ++i) {
                 if (ImGui::Selectable(studioModes[i], studioDebugMode_ == i)) studioDebugMode_ = i;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip(i == 1 ? "Каждый встроенный GPU draw batch — свой цвет (instancing сохраняется)" :
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(i == 1 ? "Цвет на GPU submission основного прохода моделей. Дороги с разными материалами и custom/decal passes могут не объединяться; тени считаются отдельно." :
                                                          i >= 2 ? "Диагностика моделей; terrain и callback renderers могут оставаться без раскраски" : "Обычный материал и освещение");
             }
             ImGui::EndCombo();
