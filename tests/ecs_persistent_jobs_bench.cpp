@@ -41,7 +41,7 @@ static void run(size_t n,int density){
     for(int workersCount: {0,1,2,3,7}) {
         // Thread creation is intentionally outside the timed region, unlike
         // previous std::thread-per-query microbenchmarks.
-        PersistentWorkers workers(unsigned(workersCount));
+        PersistentWorkers workers{unsigned(workersCount)};
         std::vector<double> samples;
         for(int rep=-2;rep<7;++rep){
             World w=base;
