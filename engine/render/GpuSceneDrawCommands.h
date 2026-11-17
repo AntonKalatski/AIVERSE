@@ -21,8 +21,14 @@ struct GpuPrimitiveDrawRecord {
     gfx::DrawIndexedIndirectCommand command{};
     uint32_t enabled = 0;
     uint32_t padding[2] = {};
+    // Optional compatible two-level LOD: command stores near detail and
+    // alternate stores far detail, selected entirely by the GPU when enabled.
+    gfx::DrawIndexedIndirectCommand lodAlternate{};
+    float lodMaxPixels = 0, lodError = 0;
+    uint32_t lodEnabled = 0;
+    uint32_t lodPadding[4] = {};
 };
-static_assert(sizeof(GpuPrimitiveDrawRecord) == 128,
+static_assert(sizeof(GpuPrimitiveDrawRecord) == 176,
     "GpuPrimitiveDrawRecord must match Metal compute layout");
 // Dense output record keeps the original model index; GPU ICB encoding will
 // consume it in a later, separately validated backend stage.
@@ -41,7 +47,8 @@ public:
 
     bool prepare(gfx::Device& device, const std::vector<GpuPrimitiveDrawRecord>& records,
                  const mat4& viewProjection, uint64_t frameSerial,
-                 size_t* submissionOut = nullptr) {
+                 size_t* submissionOut = nullptr,
+                 uint32_t viewportWidth = 0, uint32_t viewportHeight = 0) {
         if (device.info().backend != gfx::Backend::Metal ||
             !device.supportsCompute() || !frameSerial || records.empty() ||
             records.size() > UINT32_MAX) return false;
@@ -124,10 +131,14 @@ public:
             float viewProjection[16];
             uint32_t count = 0;
             uint32_t padding[3] = {};
+            uint32_t viewportWidth = 0, viewportHeight = 0;
+            uint32_t unused[2] = {};
         } params{};
         std::memcpy(params.viewProjection, viewProjection.m, sizeof(params.viewProjection));
         params.count = uint32_t(records.size());
         params.padding[0] = compact ? 1u : 0u;
+        params.viewportWidth = viewportWidth;
+        params.viewportHeight = viewportHeight;
         device.setComputeUniforms(&params, sizeof(params));
         device.dispatch(params.count);
         device.endCompute();
