@@ -157,40 +157,25 @@ void Editor::drawFpsSceneInspector() {
     ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto field = [&](const char* label, Json& array) {
-            if (!array.isArray() || array.size() < 3) return;
-            float xyz[3] = {float(array[0].toDouble()), float(array[1].toDouble()), float(array[2].toDouble())};
-            ImGui::PushID(label);
-            ImGui::TextDisabled("%s", label);
-            ImGui::SetNextItemWidth(-1);
-            const bool changed = ImGui::DragFloat3("##xyz", xyz, 0.05f, 0, 0, "%.3f");
-            if (ImGui::IsItemActivated()) doc().beginEdit();
-            if (changed && std::isfinite(xyz[0]) && std::isfinite(xyz[1]) && std::isfinite(xyz[2])) {
-                bool valid = true;
-                if (collider) {
-                    const Json& other = source[label[0] == 'M' && label[1] == 'i' ? "max" : "min"];
-                    if (other.isArray() && other.size() >= 3) {
-                        for (int axis = 0; axis < 3; ++axis) {
-                            const float limit = float(other[size_t(axis)].toDouble());
-                            if (label[0] == 'M' && label[1] == 'i')
-                                valid &= xyz[axis] < limit;
-                            else
-                                valid &= xyz[axis] > limit;
-                        }
-                    }
-                }
-                if (valid) {
-                    Json value = Json::array();
-                    for (float x : xyz) value.push(Json::number(double(x), 3));
-                    array = value;
-                    doc().touched();
-                }
-            }
-            ImGui::PopID();
-        };
         if (collider) {
-            field("Min XYZ", source.member("min"));
-            field("Max XYZ", source.member("max"));
+            const Json& lo = source["min"];
+            const Json& hi = source["max"];
+            if (lo.isArray() && hi.isArray() && lo.size() >= 3 && hi.size() >= 3) {
+                float minimum[3] = {float(lo[0].toDouble()), float(lo[1].toDouble()), float(lo[2].toDouble())};
+                float maximum[3] = {float(hi[0].toDouble()), float(hi[1].toDouble()), float(hi[2].toDouble())};
+                ImGui::TextDisabled("Min XYZ");
+                ImGui::SetNextItemWidth(-1);
+                bool changedMin = ImGui::DragFloat3("##colliderMin", minimum, 0.05f, 0, 0, "%.3f");
+                if (ImGui::IsItemActivated()) doc().beginEdit();
+                ImGui::TextDisabled("Max XYZ");
+                ImGui::SetNextItemWidth(-1);
+                bool changedMax = ImGui::DragFloat3("##colliderMax", maximum, 0.05f, 0, 0, "%.3f");
+                if (ImGui::IsItemActivated()) doc().beginEdit();
+                if (changedMin || changedMax)
+                    setDocumentColliderBounds(doc(), ref,
+                        {minimum[0], minimum[1], minimum[2]},
+                        {maximum[0], maximum[1], maximum[2]});
+            }
             ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
         } else {
             DocumentTransform position;
