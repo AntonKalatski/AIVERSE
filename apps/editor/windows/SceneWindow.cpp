@@ -53,7 +53,28 @@ public:
             renderer.setInstanceLimit(uint32_t(sceneInstanceLimit_));
             sceneInstanceLimitDirty_ = false;
         }
-        ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+        if (measureBatchingNextFrame_) {
+            measureBatchingNextFrame_ = false;
+            // Both passes use exactly the same scene camera and frame. A/B
+            // disables both per-primitive instancing and indirect submissions;
+            // geometry remains uploaded, so no asset reload is required.
+            renderer.setModelInstancingEnabled(false);
+            renderer.setModelMultiDrawEnabled(false);
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            baselineDraws_ = int64_t(renderer.drawCalls());
+            baselineModelDraws_ = int64_t(renderer.profile().draws[1]) +
+                                  int64_t(renderer.profile().draws[2]);
+            renderer.setModelInstancingEnabled(sceneInstancing_);
+            renderer.setModelMultiDrawEnabled(sceneIndirect_);
+            // Present optimized scene as usual (not the comparison baseline).
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            optimizedDraws_ = int64_t(renderer.drawCalls());
+            optimizedModelDraws_ = int64_t(renderer.profile().draws[1]) +
+                                   int64_t(renderer.profile().draws[2]);
+            comparisonValid_ = true;
+        } else {
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+        }
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
         renderer.setModelInstancingEnabled(true);
@@ -140,11 +161,16 @@ private:
                 (unsigned long long)modelStats.multiDrawSubmissions,
                 (unsigned long long)modelStats.indirectCommands);
             ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
-            if (ImGui::Button("Capture baseline##scene_batch")) baselineDraws_ = currentDraws;
-            if (baselineDraws_ >= 0) {
-                ImGui::SameLine();
-                ImGui::Text("baseline %lld, delta %+lld", (long long)baselineDraws_,
-                            (long long)currentDraws - baselineDraws_);
+            if (ImGui::Button("Compare A/B same frame##scene_batch"))
+                measureBatchingNextFrame_ = true;
+            if (comparisonValid_) {
+                ImGui::Text("Total draws: baseline %lld -> batched %lld (%+lld)",
+                            (long long)baselineDraws_, (long long)optimizedDraws_,
+                            (long long)(optimizedDraws_ - baselineDraws_));
+                ImGui::Text("Model pass draws: %lld -> %lld (%+lld)",
+                            (long long)baselineModelDraws_, (long long)optimizedModelDraws_,
+                            (long long)(optimizedModelDraws_ - baselineModelDraws_));
+                ImGui::TextDisabled("Same camera/frame; excludes GPU timing and upload cost.");
             }
             const auto& profile = ed.renderer().profile();
             ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
@@ -687,7 +713,9 @@ private:
     bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
-    int64_t baselineDraws_ = -1;
+    bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
+    int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
+    int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;
