@@ -529,7 +529,18 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGuiTreeNodeFlags_SpanAllColumns);
         rowMenu(path, v);
         ImGui::TableNextColumn();
-        if (isMixed(v)) {
+        bool customHandled = false;
+        if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
+            auto& drawers = InspectorDrawerRegistry::instance();
+            const auto custom = drawers.fields.find(path);
+            if (custom != drawers.fields.end())
+                customHandled = custom->second(ed.doc(),
+                    DocumentEntityRef::mapEntity(size_t(items_[0].doc)),
+                    key.c_str(), v);
+        }
+        if (customHandled) {
+            // The registered field drawer rendered its own value controls.
+        } else if (isMixed(v)) {
             ImGui::TextDisabled("—");
             ImGui::SetItemTooltip("Значения различаются");
         } else if (isRef(v)) {   // another object: click selects it
@@ -752,6 +763,23 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
     if (!filter_.empty() && (ui::contains(title, filter_) || ui::contains(id, filter_))) filter_.clear();   // the section matched: all of it
     ImGui::PushID(id);
     ImGui::Indent(8.0f);
+    // C++ custom component drawers apply to actual ECS component snapshots
+    // as well as authored document components. The enclosing ECS card and
+    // component ID always come from WorldInspect, never DocEntity.
+    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0 &&
+        sec.id != "stats" && sec.id != "rules") {
+        auto& drawers = InspectorDrawerRegistry::instance();
+        auto custom = drawers.components.find(sec.id);
+        if (custom != drawers.components.end()) {
+            custom->second(ed.doc(),
+                DocumentEntityRef::mapEntity(size_t(items_[0].doc)), merged);
+            ImGui::Unindent(8.0f);
+            ImGui::PopID();
+            ImGui::Spacing();
+            filter_ = sectionFilter;
+            return;
+        }
+    }
     if (ImGui::BeginTable("##props", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthStretch, 0.45f);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch, 0.55f);
