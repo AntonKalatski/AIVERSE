@@ -54,6 +54,12 @@ if ! diff -u "$ROOT/rtssim-off.checksums" "$ROOT/rtssim-on.checksums"; then
   echo "FAIL: baseline and opt-in RTS checksums differ" >&2
   exit 1
 fi
+for mode in off on; do
+  echo -n "RTS $mode mean step: "
+  awk 'NF==2 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ {sum+=$2; count++}
+       END {if(count) printf "%.3f ms/tick (%d ticks)\\n",sum/count/1000,count;
+            else {print "no measurements";exit 1}}' "$ROOT/rtssim-$mode.tick-us"
+done
 echo "PASS RTS baseline vs opt-in per-tick checkpoints; FPS tests both variants"
 echo "Logs: $ROOT"
  --output-on-failure
