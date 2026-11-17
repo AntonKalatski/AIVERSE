@@ -267,8 +267,10 @@ public:
     virtual void setGpuIcbUniformBinding(bool enabled) { (void)enabled; }
     virtual uint32_t prepareGpuEncodedIndexedIcb(
         BufferHandle gpuArguments, BufferHandle indexBuffer,
-        const uint32_t* sourceSlots, uint32_t count) {
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes) {
         (void)gpuArguments; (void)indexBuffer; (void)sourceSlots; (void)count;
+        (void)instanceData; (void)instanceBytes;
         return 0;
     }
     // Finish batched GPU command encoding before opening a render pass.
