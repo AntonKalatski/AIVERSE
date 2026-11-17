@@ -7,6 +7,7 @@
 //   focuses the Scene; arrows, Delete, F, F2 (rename), Ctrl+D (duplicate); drag objects onto a player to
 //   change the owner; eye / lock per player, type and section; hover highlights the object in the Scene.
 #include "../EditorEntityAdapter.h"
+#include "../EditorSelectionAdapter.h"
 #include "../EditorSceneNodes.h"
 #include "../EditorRuntimeEntityProvider.h"
 #include <algorithm>
@@ -61,17 +62,29 @@ public:
             // This lists document objects, never synthetic ECS components.
             const auto nodes = enumerateDocumentSceneNodes(ed.doc(), true);
             ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
+            ImGui::Spacing();
+            ui::searchField("##fpsSceneFilter", filter_,
+                            "Search scene entities, sources and actors");
+            ImGui::Separator();
+            auto selectNode = [&](const Selection& item) {
+                const ImGuiIO& io = ImGui::GetIO();
+                if (io.KeyCtrl || io.KeySuper) ed.selectToggle(item);
+                else if (io.KeyShift) ed.selectAdd(item);
+                else ed.select(item);
+            };
             for (const char* group : {"Colliders", "Spawn Points"}) {
                 if (!ImGui::TreeNodeEx(group, ImGuiTreeNodeFlags_DefaultOpen))
                     continue;
                 for (const auto& node : nodes) {
-                    if (node.group != group) continue;
+                    if (node.group != group ||
+                        (!filter_.empty() &&
+                         !ui::contains(node.label, filter_) &&
+                         !ui::contains(group, filter_))) continue;
                     ImGui::PushID(int(node.ref.index));
-                    const bool spawn = node.ref.source == DocumentEntityRef::Source::FpsSpawn;
-                    if (ImGui::Selectable(node.label.c_str(),
-                                          ed.isFpsSceneSourceSelected(spawn, node.ref.index))) {
-                        ed.selectFpsSceneSource(spawn, node.ref.index);
-                        if (node.hasPosition)
+                    const Selection candidate = selectionForDocumentEntity(node.ref);
+                    if (ImGui::Selectable(node.label.c_str(), ed.isSelected(candidate))) {
+                        selectNode(candidate);
+                        if (node.hasPosition && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
                             ed.sceneCam.target = {float(node.position.x),
                                                   float(node.position.y),
                                                   float(node.position.z)};
@@ -88,11 +101,15 @@ public:
             if (!runtimeEntities.empty() &&
                 ImGui::TreeNodeEx("Runtime Actors", ImGuiTreeNodeFlags_DefaultOpen)) {
                 for (const auto& entity : runtimeEntities) {
+                    if (!filter_.empty() &&
+                        !ui::contains(entity.title, filter_) &&
+                        !ui::contains("Runtime Actors", filter_)) continue;
                     ImGui::PushID(entity.selection.index);
                     const bool selected = ed.isSelected(entity.selection);
                     if (ImGui::Selectable(entity.title.c_str(), selected)) {
-                        ed.select(entity.selection);
-                        if (entity.hasPosition) ed.sceneCam.target = entity.position;
+                        selectNode(entity.selection);
+                        if (entity.hasPosition && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                            ed.sceneCam.target = entity.position;
                     }
                     ImGui::PopID();
                 }
