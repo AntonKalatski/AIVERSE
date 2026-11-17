@@ -1205,7 +1205,14 @@ void Editor::frame(gfx::Device& dev, double dt) {
             for (double& value : totals) value = 0.0;
         }
     }
-    FrameStats fs_{float(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()), lastSimMs_, r3d_.drawCalls()};
+    // Stats tab reports geometry for the same latest viewport as its draw calls.
+    // Do not sum render passes: the model profile already isolates one camera
+    // colour pass (no shadow, reflection or SSR replay double counting).
+    const auto& sceneProfile = r3d_.profile();
+    const uint64_t cameraTriangles = sceneProfile.cameraModelTriangles +
+        sceneProfile.cameraMeshTriangles + sceneProfile.cameraOverlayTriangles;
+    FrameStats fs_{float(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()),
+                   lastSimMs_, r3d_.drawCalls(), cameraTriangles};
     frameHistory.push_back(fs_);
     prof.frame(fs_.frameMs, time_);
     if (frameHistory.size() > 240) frameHistory.pop_front();
