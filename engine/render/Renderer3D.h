@@ -180,6 +180,10 @@ enum DrawFlags : uint32_t {
 
 struct ModelRenderStats {
     uint64_t nodes = 0, culledNodes = 0, lodNodes[4] = {};
+    // Main-camera source nodes only; excludes shadow/reflection repetitions.
+    uint64_t cameraLodNodes[4] = {};
+    uint64_t cameraLodChains = 0, cameraNoLodChains = 0;
+    uint64_t cameraLodBlocked = 0, cameraShadowLimitedLod = 0;
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
     // A subset of CPU MDI submissions: different rigid meshes and materials
@@ -343,8 +347,10 @@ public:
     void setInstanceLimit(uint32_t limit);
     uint32_t instanceLimit() const { return instanceLimit_; }
     void setModelLodEnabled(bool enabled) { modelLodEnabled_=enabled; }
+    bool modelLodEnabled() const { return modelLodEnabled_; }
     // Relative screen-size band around each threshold; 0 restores instant switches.
     void setModelLodFadeWidth(float width) { modelLodFadeWidth_=std::clamp(width,0.0f,0.49f); }
+    float modelLodFadeWidth() const { return modelLodFadeWidth_; }
 
     // Baked global illumination (agent-lightbake): lightmaps for static models (matched by model path,
     // node and world transform), light probes for everything else, mixed with the realtime sun by the
