@@ -445,3 +445,27 @@ Terrain generation increments at `setTerrainDetail` and `buildTerrain` (includin
 One-build A/B (same camera, fixed scene, separate processes): run with the previously validated RTS flags and `AIVERSE_RTS_GROUND_CACHE=1`, then with `AIVERSE_RTS_GROUND_CACHE=0`. Compare steady-state `[view-stages]`, `[view-objects]`, `[scene-stages]`, `[rts-ground-cache]`; verify editing road geometry, terrain sculpting, moving units, road removal and game mode transitions. **The assistant has not built or measured these commits locally; the performance gain is unverified.** If height caching does not materially improve warm `view`, do not enable it by default.
 
 Outstanding: the full `buildEditScene` (~2.9 ms) and `RtsView` (~8.3 ms) traversal remain; a true persistent draw-submission graph requires generation-aware invalidation of material, animation, FX, model streaming, visibility and camera-dependent culling. Do not conflate this first height memoization with a finished persistent scene cache.
+
+
+## 2026-11-17 — CPU MDI opt-in and explicit GPU-encoded ICB resources
+
+Source commits: `727bebd` (exact GPU material equality for U2 reuse across distinct `Material*`), `3ba47b2` (split CPU MDI from GPU ICB capability), `9ab97dc` (GPU ICB explicit resource bindings), `a2e9388` (pass actual vertex and index resources independently).
+
+**CPU Multi-Draw:** `AIVERSE_METAL_CPU_MDI=1` now enables the Metal CPU-encoded ICB backend independently of GPU-authored draw generation, provided the device supports Metal ICB. Legacy `AIVERSE_EXPERIMENTAL_METAL_ICB=1` retains CPU support for old profiling commands. CPU MDI is still **experimental**, not production-default; old AGX crashes are not disproved by compilation. It groups compatible GPU material state and compatible vertex/index resources, not `Material*` identity. `AIVERSE_MDI_GEOMETRY_SORT=1` can make heterogeneous pooled geometry adjacent; test OFF and ON. The default Metal threshold is 8 indexed commands; `AIVERSE_METAL_MDI_MIN_COMMANDS=2` permits diagnosing small cars, but may be slower due to ICB setup overhead. Neither flag merges original meshes; they remain separately addressable.
+
+**GPU-encoded ICB:** requires all three existing safety gates `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1`. The new `Device::supportsGpuEncodedIcb` capability separates it from CPU MDI: `AIVERSE_METAL_CPU_MDI=1` alone must **never** activate GPU-encoded ICB. When explicitly enabled, Metal compute emits per-draw explicit vertex and fragment buffer bindings into an ICB with `inheritBuffers=NO`, rather than relying on inherited buffer bindings at zero ICB binding capacity (a previous Apple AGX crash pattern). Geometry vertex/index buffers are both passed from the real model. The compute kernel binds source vertices, the per-command instance block and U1..U7 stable per-submission buffers; the PBR material argument buffer is also stable and filled before render execution. All prepared GPU ICB buffer pointers are immutable until frame completion. The GPU kernel skips empty, multi-instance, or out-of-range uint32 index draws, and the execution path rejects unsupported index types and oversized uniform snapshots. Shader pipeline state remains inherited; shadows, transparent/skinned/morphed/GI, and unsupported material permutations stay on the conventional renderer.
+
+**Critical:** these changes have NOT been compiled, Metal validation tested, or performance benchmarked by this assistant on the owner's machine yet. The GPU path still requires a **real** Apple Silicon smoke test and Metal API Validation, especially where the ICB fragment argument buffer and multiple per-draw uniforms interact. Do not claim the AGX bug is fixed or enable either feature by default before evidence. Both must retain ordinary instancing/drawIndexed fallback and correct visual output.
+
+Suggested same-scene three-run experiment, each in a **separate process** after one full `cmake --build build-metal -j 8`:
+
+```sh
+# Baseline: CPU instancing only (no experimental ICB)
+AIVERSE_MULTI_DRAW_INDIRECT=off AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
+# CPU multi-draw only (tiny sedan test workload, lower threshold to exercise batches)
+AIVERSE_METAL_CPU_MDI=1 AIVERSE_METAL_MDI_MIN_COMMANDS=2 AIVERSE_MDI_GEOMETRY_SORT=1 AIVERSE_BENCH_UNCAPPED=1 AIVERSE_ICB_PROFILE=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
+# GPU-encoded only under all explicit experimental flags; inspect materials/AGX health
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_ICB_TRACE=1 AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
+```
+
+Open Kingston Streets `gta` branch map `render_microtest.json` (one sedan, two junctions, one police building). To isolate draw calls, keep the same camera, material quality, light/shadow settings and debugging visual mode in all runs. For the third run inspect Batching > `GPU ICB batches` and `GPU-encoded ICB submissions / commands`; mere eligible candidates or nonzero indexed commands do not establish successful GPU execution. If GPU ICB produces driver errors, report the complete log and stop experimental runs. For CPU MDI, compare actual `[model-batch-submissions]`, `[render-indirect]` and wall/CPU/GPU milliseconds rather than assuming a drop in draw count always speeds up a 4 ms Scene.
