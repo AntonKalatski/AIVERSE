@@ -131,6 +131,44 @@ void parallelMotorParityFixture(Json rules,Json map) {
     std::printf("FPS_MOTOR_PARITY_HASH=%016llx\n",
         (unsigned long long)history.value());
 }
+void cowSnapshotsFps(Json rules,Json map) {
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    auto baseline=simulation(rules,map),incremental=simulation(rules,map);
+    incremental->world().enableCowSnapshots(true);
+    for(uint32_t tick=0;tick<120;++tick) {
+        fps::Input input;
+        input.sequence=tick+1;
+        input.forward=tick<70?700:0;
+        input.right=tick>=70?200:0;
+        input.buttons=(tick==20?uint32_t(fps::Jump):0u);
+        auto cmd=fps::command(1,input);
+        cmd.tick=tick;
+        baseline->inject(cmd);
+        incremental->inject(cmd);
+        baseline->step();incremental->step();
+        CHECK(baseline->checksum()==incremental->checksum());
+        if(tick==40 || tick==80) {
+            SimSnapshot a,b;
+            baseline->saveState(a);
+            incremental->saveState(b);
+            const auto checksum=incremental->checksum();
+            CHECK(baseline->checksum()==checksum);
+            // Exercise two full rollbacks without losing original state
+            // or accidentally retaining mutable shared singleton resources.
+            baseline->step();incremental->step();
+            baseline->loadState(a);incremental->loadState(b);
+            CHECK(incremental->checksum()==checksum);
+            CHECK(baseline->checksum()==checksum);
+        }
+    }
+    CHECK(incremental->world().cowSnapshotsEnabled());
+    auto archived=incremental->serialize();
+    CHECK(!archived.empty());
+    auto loaded=simulation(rules,map);
+    CHECK(loaded->deserialize(archived));
+    CHECK(loaded->checksum()==incremental->checksum());
+}
+
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
@@ -213,6 +251,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
