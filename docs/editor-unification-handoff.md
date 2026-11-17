@@ -747,3 +747,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Verification: GitHub source commit confirmed; C++ compilation and runtime test still **not verified**.
 - CI observation for prior documentation commit `a07dc450d875f1438d707bf2dd211a463dea9e42`: four GitHub Actions runs were queued (ECS 2.0 experimental checks #318, CI #1168, AIVERSE Studio validation #835, GPU batching focused regression #439), with no conclusions at time of inspection. This is not a passing test report.
 - Next: inspect the workflow outcomes and logs; run native suite/CTest, fix failures, and migrate FPS/RTS weapon adapters in isolated parity-checked increments.
+
+
+### 2026-11-18 — FPS ECS authority post-tick invariant
+- Implementation commits: `671c5e9680438bbf9aac4285cbc3d3bf66d7a292` and corrective `ec34d1c0b4735311b605da1f2518c1b8b3655f8f`.
+- Changed: `modules/fps/FpsModule.cpp`, the `fps.ecsMirror` system. When `fps.ecsAuthority` is ON, after syncing actors and dynamic objects it now checks that every actor slot has an `ActorRuntime` component whose slot, position, velocity, health, armor, weapon index, ammo and reserve agree with the just-committed legacy tick workspace. A missing/divergent runtime throws `std::logic_error` instead of silently allowing authority drift. No extra checks run with the default OFF gate. The second commit corrects an initially mistaken `Actor::magazine` member to the real `Actor::ammo` member.
+- Verification: checked `Actor` declaration in `modules/fps/FpsModule.h` and committed source; **no compilation or runtime test**. The invariant checks selected fields, not every nested actor field; it is a migration guard, **not** completion of direct ECS combat or actor-system migration.
+- Next: verify `aiverse_fps_tests` with ecsAuthority both OFF and ON, save v9 and transport checksum parity; expand direct ECS systems and then remove the legacy tick workspace once complete. Check Editor regressions before merge.
