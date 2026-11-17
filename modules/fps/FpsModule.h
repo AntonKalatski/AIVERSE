@@ -125,10 +125,11 @@ struct VehicleRun {
 // compatibility workspace for older simulation algorithms/save v9.
 struct ActorRuntime { Actor value; };
 
-// Stable ECS identities for FPS actors. A transitional compatibility layer:
-// State::actors is still authoritative for FPS gameplay/netcode/save v9.
-// These real World components mirror the current state after each tick so
-// generic editor systems can inspect actual ECS entities without inventing IDs.
+// Stable ECS identities for FPS actors. In default mode, State::actors
+// remains the gameplay authority and these are read-only ECS projections.
+// With fps.ecsAuthority=true, ActorRuntime holds canonical full actor payloads
+// between ticks; State::actors is a contiguous gameplay compatibility workspace.
+// Identity/Transform/Vitals remain lightweight editor projections.
 struct ActorEntityIdentity {
     uint8_t slot = 0, team = 0;
     uint32_t life = 0;
