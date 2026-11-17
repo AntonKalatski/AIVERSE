@@ -764,3 +764,18 @@ A focused `metal-icb-gpu` macOS CI job builds the real-backend A/B fixture
 fixture compares pixel buffers and expects reduced CPU draw submissions when
 an indirect-capable GPU is available. This CI alone does not certify stability
 on Apple G15; a passing result on the original Mac is the final release gate.
+
+### Metal classic ICB shader compatibility
+
+Classic `MTLIndirectRenderCommand` can bind vertex/fragment **buffers**, but not
+direct fragment textures or samplers. AIVERSE PBR model fragment shaders use
+direct `[[texture(...)] ]` and `[[sampler(...)] ]` arguments, so Metal rejects
+`supportIndirectCommandBuffers=YES` with the diagnostic
+`Fragment shader cannot be used with indirect command buffers`.
+The backend now marks **depth-only, fragment-free** pipelines as ICB eligible,
+uses regular/instanced submissions for PBR colour pipelines, and checks
+`MTLRenderPipelineState.supportIndirectCommandBuffers` at each ICB submission.
+Both synchronous and asynchronous pipeline creation have a regular-pipeline
+fallback. The renderer must **not** count a rejected ICB as a submitted GPU draw.
+A future full colour ICB path requires shader conversion to texture/sampler
+argument buffers; shader compilation fallback is not a substitute for that.
