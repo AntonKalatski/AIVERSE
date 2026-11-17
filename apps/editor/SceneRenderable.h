@@ -12,7 +12,8 @@ namespace aiverse::editor {
 
 struct SceneRenderable {
     uint64_t entity = 0;                 // authored source reference; 0 = non-document entity
-    int runtimeActor = -1;              // FPS World resource actor index; not an ECS Entity
+    int runtimeActor = -1;              // FPS runtime actor slot index (ECS mirrored)
+    uint64_t runtimeObject = 0;         // FPS ECS dynamic-object kind/id key
     render::mat4 world{};
     render::float4 tint{1, 1, 1, 1};
     const render::Mesh* mesh = nullptr;   // editor/debug primitives
