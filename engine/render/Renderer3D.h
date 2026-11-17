@@ -387,6 +387,20 @@ private:
     gfx::BufferHandle indirectCommands_;
     // Reuse command storage across submissions; only contents/size change.
     std::vector<gfx::DrawIndexedIndirectCommand> indirectCommandScratch_;
+    // Experimental persistent indirect command layout. Cache entries are
+    // validated against the full per-item geometry signature on every use.
+    struct IndirectLayoutItem {
+        const void* primitive = nullptr;
+        uint32_t indexCount = 0, firstIndex = 0, gpuFirstIndex = 0, gpuBaseVertex = 0;
+        bool operator==(const IndirectLayoutItem&) const = default;
+    };
+    struct IndirectLayoutEntry {
+        std::vector<IndirectLayoutItem> signature;
+        std::vector<gfx::DrawIndexedIndirectCommand> commands;
+        uint64_t triangles = 0;
+    };
+    std::vector<IndirectLayoutEntry> indirectLayoutCache_[5];
+    size_t indirectLayoutCursor_[5] = {};
     bool modelMultiDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
