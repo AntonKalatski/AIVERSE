@@ -142,25 +142,5 @@ int Editor::pickFpsSceneObject(const Viewport& vp, const render::RTSCamera& came
     return pickSceneRenderable(fpsSceneObjects_, origin, direction);
 }
 
-void Editor::drawFpsSceneInspector() {
-    if (selection.kind != Selection::FpsObject) return;
-    auto& fps = doc().data.fps;
-    const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
-    if (!key) return;
-    DocumentEntityRef ref;
-    if (!DocumentEntityRef::fromFpsKey(key, ref)) return;
-    Json* sourcePtr = fpsDocumentEntity(fps, ref);
-    if (!sourcePtr) return;
-    const bool collider = ref.source == DocumentEntityRef::Source::FpsCollider;
-    const size_t sourceIndex = ref.index;
-    Json& source = *sourcePtr;
-    ImGui::TextDisabled("SCENE OBJECT");
-    ImGui::Text("%s #%zu", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
-    ImGui::Separator();
-    drawDocumentEditableComponents(doc(), ref);
-    if (ImGui::CollapsingHeader("Raw data")) {
-        ImGui::TextWrapped("%s", source.dump().c_str());
-    }
-}
 
 }
