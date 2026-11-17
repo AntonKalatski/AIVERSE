@@ -483,3 +483,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `cf561b1` in `modules/fps/FpsModule.cpp`: `fps.ecsAuthority` is removed from a temporary rules JSON copy **only** before computing `contentHash_`. The actual rules object remains unchanged. The toggle is an implementation/storage choice and must not change legacy save v9 content checks or authoritative cross-worker/network hashes. All other game-rule fields are still hashed exactly as before.
 - No changes to the binary save format, command protocol, or actual gameplay rules. `ecsActorAuthorityParity` from stage C should now compare identical checksums across authority modes.
 - **Validation:** compile/execute tests pending. Next migration target is full ECS dynamic object ownership (projectile, loot, vehicle), preserving their original order explicitly before changing gameplay algorithms.
+
+### 2026-11-18 — FPS ECS authority migration: stage E (dynamic payload schema)
+- Commit `1cb6283` (`modules/fps/FpsModule.h`): declares full payload components `ProjectileRuntime{Projectile value, uint32_t order}`, `LootRuntime{Loot value, order}`, and `VehicleRuntime{Vehicle value, order}`. The order is essential because existing projectile/loot/vehicle vectors are deterministic and gameplay behavior depends on iteration order. Declares `hydrateDynamicsFromEcs`.
+- This commit is **only API/schema**, not a running authority migration yet. Next implementation commit will integrate it into `syncDynamicEntities` and `fps.ecsHydrate`, preserving save v9 and existing inspector projection components.
+- **Verification:** not compiled or tested.
