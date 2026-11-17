@@ -83,6 +83,33 @@ c++ -std=c++20 -O3 -DNDEBUG -pthread -I. tests/ecs_adaptive_jobs_bench.cpp -o /t
 /tmp/aiverse-ecs-adaptive
 ```
 
+## 2026-11-17 — Step: checked access scopes (latest)
+
+User Mac Studio validation of prior step (reported in conversation):
+- `PASS dependency wave execution, sequential/parallel checksum, worker recovery`
+- `PASS prepared, adaptive jobs, exceptions, dependency waves, deterministic commands, dirty pages`
+
+Current code changes in PR #8:
+- Commit `932ebe0`: `engine/experiments/EcsGuardedWorld.h`. Added opt-in `GuardedWorld` facade with declared per-component `read<T>/write<T>/has<T>`, resource access, guarded structural calls, `eachRead<T>/eachWrite<T>`, and thread-local `AccessScope` checking the executing system's `SystemAccess`. `runChecked` wraps each `WaveExecutor` callback in an `AccessScope`, restoring scope on exceptions.
+- Commit `1091e10`: `tests/ecs_guarded_world_test.cpp`. Covers sequential/parallel parity of independent system wave, resource barrier, rejecting undeclared writes/resources/structural operations, and worker pool reuse after access violation.
+
+**Validation status:** these two new commits were pushed via GitHub connector, but the new test has **not** yet been compiled or run on Mac Studio. No claim of production memory safety. `GuardedWorld` is only an opt-in facade; raw `World`, previously retained references/pointers, global state, external resources, and misdeclared indirect effects can bypass the checks. Access IDs are per-process component type IDs and not stable serialized identifiers. This is a prototype, not full scheduler enforcement.
+
+Run:
+```sh
+git switch feature/ecs-architecture-benchmarks
+git pull --ff-only
+c++ -std=c++20 -O2 -pthread -I. tests/ecs_guarded_world_test.cpp -o /tmp/aiverse-ecs-guarded
+/tmp/aiverse-ecs-guarded
+```
+
+Next:
+1. Validate this test; correct build/runtime errors.
+2. Introduce a stronger restricted access API to prevent direct raw `World` escape in scheduled call sites; assess thread-safety of concurrent pool creation and access.
+3. Add a deterministic rollback/replay test with the existing `SimSnapshot` API and wave jobs; execute with different worker counts, compare canonical checksums.
+4. Then design conservative opt-in `Simulation` integration, preserving the sequential path.
+5. Continue updating this handoff after each code step and do not merge PR #8 until complete regression tests pass.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validate latest changes**: compile and execute new tests; fix compiler warnings or test failures in PR #8.
