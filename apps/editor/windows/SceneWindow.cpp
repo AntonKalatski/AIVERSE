@@ -85,25 +85,31 @@ public:
             }
             if (fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
                 (io.MousePos.x != fpsDragLastX_ || io.MousePos.y != fpsDragLastY_)) {
-                // FPS map colliders/spawns currently expose translation on XZ.
-                // Project consecutive pointer positions onto the ground plane.
-                float3 previous, current;
-                if (ed.sceneCam.screenToGround(fpsDragLastX_ - vp_.originX,
-                                                fpsDragLastY_ - vp_.originY,
-                                                vp_.pointsW, vp_.pointsH, previous) &&
-                    ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
-                                                io.MousePos.y - vp_.originY,
-                                                vp_.pointsW, vp_.pointsH, current)) {
-                    // Shift-drag constrains translation to world Y; otherwise
-                    // drag on the XZ ground plane. This does not imply rotation
-                    // or scale support in the FPS map schema.
-                    const float dx = io.KeyShift ? 0.0f : current.x - previous.x;
-                    const float dy = io.KeyShift ? -io.MouseDelta.y * std::max(0.01f, ed.sceneCam.distance * 0.002f) : 0.0f;
-                    const float dz = io.KeyShift ? 0.0f : current.z - previous.z;
-                    if (std::abs(dx) > 1e-5f || std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f) {
-                        if (!fpsDragEdited_) ed.doc().beginEdit();
-                        fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) || fpsDragEdited_;
+                float dx = 0.0f, dy = 0.0f, dz = 0.0f;
+                bool valid = false;
+                if (io.KeyShift) {
+                    // Vertical dragging must work even for a horizontal camera
+                    // whose rays cannot intersect the XZ ground plane.
+                    dy = (fpsDragLastY_ - io.MousePos.y) *
+                         std::max(0.01f, ed.sceneCam.distance * 0.002f);
+                    valid = std::isfinite(dy);
+                } else {
+                    float3 previous, current;
+                    valid = ed.sceneCam.screenToGround(fpsDragLastX_ - vp_.originX,
+                                                       fpsDragLastY_ - vp_.originY,
+                                                       vp_.pointsW, vp_.pointsH, previous) &&
+                            ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
+                                                       io.MousePos.y - vp_.originY,
+                                                       vp_.pointsW, vp_.pointsH, current);
+                    if (valid) {
+                        dx = current.x - previous.x;
+                        dz = current.z - previous.z;
+                        valid = std::isfinite(dx) && std::isfinite(dz);
                     }
+                }
+                if (valid && (std::abs(dx) > 1e-5f || std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f)) {
+                    if (!fpsDragEdited_) ed.doc().beginEdit();
+                    fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) || fpsDragEdited_;
                 }
                 fpsDragLastX_ = io.MousePos.x;
                 fpsDragLastY_ = io.MousePos.y;
