@@ -183,7 +183,6 @@ private:
         ImGui::SameLine();
         batchingControls(ed);
         ImGui::SameLine();
-        ImGui::SameLine();
         if (ui::toolButton(ICON_EYE, "Отладочные gizmo")) ImGui::OpenPopup("##studio_gizmos");
         if (ImGui::BeginPopup("##studio_gizmos")) {
             ImGui::TextDisabled("Scene overlays");
