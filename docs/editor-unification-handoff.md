@@ -542,3 +542,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Preserves existing damage sequence: friendly fire, gear/armor absorption, action cancel, lastAttacker/weapon, hit counter, knockdown, death/kill/money, drops and SimEvents. Lambda wrapping preserves early-return cases while ensuring authoritative ECS results are committed to the temporary workspace.
 - Default `ecsAuthority=false` still operates exclusively on legacy State. The centralized damage method is one **direct gameplay** ECS subsystem, alongside direct actor motor and command validation; other FPS systems still use tick workspace arrays.
 - Verification: compile/firing parity tests and ASan not yet run. Next add a two-team damage/kill regression under both authority modes, check same-tick event ordering, and update read-only editor schema as needed.
+
+### 2026-11-18 — Universal mechanics audit: build preflight
+- User requires proving that RTS/FPS mechanics are reusable by **any genre**, not merely present in the same repository. Universal ECS primitives and pure policy libraries exist, but RTS/FPS module-specific business logic still has coupling; comprehensive genre-agnostic integration is not yet complete.
+- Commit `0b8ad00` fixed three invalid `//` comments in root `CMakeLists.txt` near ECS test/RTS option blocks. CMake uses `#` for comments, so previous imported PR #7 configuration could fail to parse before tests could run. This is a syntax-level fix; **native CMake configuration not yet executed**.
+- Next: add explicit independent cross-genre ECS policy consumer tests + reusable adapter API; audit genre-bound `RtsModule&`/ `fps::Actor` dependencies; report remaining blockers without claiming complete universality.
