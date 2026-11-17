@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -119,7 +120,9 @@ class SceneHierarchy {
     };
     std::map<uint32_t,Node> nodes_; // index sorted for deterministic updates
     std::vector<uint32_t> roots_;
+    std::set<uint32_t> pendingRoots_; // no full root scan on clean frames
     size_t lastUpdated_=0;
+    size_t lastVisited_=0;
     static void erase(std::vector<uint32_t>& v,uint32_t index) {
         auto it=std::lower_bound(v.begin(),v.end(),index);
         if(it!=v.end()&&*it==index)v.erase(it);
@@ -142,6 +145,7 @@ class SceneHierarchy {
 public:
     size_t size()const{return nodes_.size();}
     size_t lastUpdated()const{return lastUpdated_;}
+    size_t lastVisited()const{return lastVisited_;}
     bool contains(Entity e)const {
         auto it=nodes_.find(e.index);
         return e.valid()&&it!=nodes_.end()&&it->second.entity==e;
@@ -154,6 +158,7 @@ public:
         w.add<WorldTransform>(entity,hierarchy_detail::root(local));
         nodes_.emplace(entity.index,Node{entity,kNullEntity,{},true,true});
         insert(roots_,entity.index);
+        pendingRoots_.insert(entity.index);
         return true;
     }
     // Keep local values when changing parent. No implicit floating-point
@@ -164,7 +169,10 @@ public:
         auto& node=nodes_.at(child.index);
         if(node.parent==parent)return true;
         if(node.parent.valid())erase(nodes_.at(node.parent.index).children,child.index);
-        else erase(roots_,child.index);
+        else {
+            erase(roots_,child.index);
+            pendingRoots_.erase(child.index);
+        }
         node.parent=parent;
         if(parent.valid())insert(nodes_.at(parent.index).children,child.index);
         else insert(roots_,child.index);
@@ -193,13 +201,16 @@ public:
         }
         // Propagate a cheap subtree marker upwards, so an edited grandchild
         // remains reachable through any number of otherwise-clean ancestors.
+        Entity root=entity;
         Entity parent=nodes_.at(entity.index).parent;
         while(parent.valid()) {
             auto it=nodes_.find(parent.index);
             if(it==nodes_.end()||it->second.entity!=parent)break;
             it->second.subtreeDirty=true;
+            root=parent;
             parent=it->second.parent;
         }
+        pendingRoots_.insert(root.index);
     }
     // Detach direct children to scene roots. Destroying the Entity itself is
     // caller-owned; invoke before World::destroy()/flush().
@@ -210,6 +221,7 @@ public:
         auto parent=nodes_.at(entity.index).parent;
         if(parent.valid())erase(nodes_.at(parent.index).children,entity.index);
         else erase(roots_,entity.index);
+        pendingRoots_.erase(entity.index);
         nodes_.erase(entity.index);
         if(w.alive(entity)){
             w.remove<Parent>(entity);
@@ -221,7 +233,7 @@ public:
     // Rebuild derived indices from ECS components after save/load/rollback.
     // Invalid/cyclic parent links become roots, preserving valid local data.
     void rebuild(World& w) {
-        nodes_.clear();roots_.clear();
+        nodes_.clear();roots_.clear();pendingRoots_.clear();
         w.eachExistingConst<LocalTransform>([&](Entity e,const LocalTransform&){
             if(w.alive(e))nodes_.emplace(e.index,Node{e,kNullEntity,{},true,true});
         });
@@ -248,16 +260,24 @@ public:
             node.parent=parent;
             insert(nodes_.at(parent.index).children,child.index);
         }
+        pendingRoots_.insert(roots_.begin(),roots_.end());
         lastUpdated_=0;
+        lastVisited_=0;
     }
     // Top-down iterative update. Clean branches are pruned; no recursion,
     // so arbitrarily deep nested scene hierarchies cannot overflow the stack.
     size_t update(World& w) {
         lastUpdated_=0;
+        lastVisited_=0;
+        if(pendingRoots_.empty())return 0;
         std::vector<uint32_t> stack;
-        for(auto it=roots_.rbegin();it!=roots_.rend();++it)stack.push_back(*it);
+        stack.reserve(pendingRoots_.size());
+        for(auto it=pendingRoots_.rbegin();it!=pendingRoots_.rend();++it)
+            stack.push_back(*it);
+        pendingRoots_.clear();
         while(!stack.empty()){
             uint32_t index=stack.back();stack.pop_back();
+            ++lastVisited_;
             auto it=nodes_.find(index);if(it==nodes_.end())continue;
             auto& node=it->second;
             if(!w.alive(node.entity))continue; // caller must detach stale nodes
