@@ -40,17 +40,41 @@ void Editor::startFpsPlay(bool listen,const std::string& address) {
         ws_.startCommand(cmd,cmd,"fps-play");status=genreText(ws_,"fps.editor.running");
     }catch(const std::exception& e){status=genreText(ws_,"fps.editor.invalid");ws_.log("fps",e.what(),true);}
 }
+// FPS contributes scene geometry to the shared editor renderer. The scene
+// lifecycle, post-processing, depth buffer and UI overlays are owned by
+// Editor::renderScene, not by a genre-specific render pass.
 void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     using namespace render;
-    if(!fpsPreviewMesh_.vb.valid()){MeshBuilder mesh;mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});fpsPreviewMesh_=mesh.upload(*dev_);}
-    for(const auto& b:doc().data.fps["colliders"].items()) {
-        auto lo=point(b["min"]),hi=point(b["max"]);
-        float3 base{(lo.x+hi.x)*0.5f,lo.y,(lo.z+hi.z)*0.5f};
-        if(length(base-camera.target)>1000&&hi.y>0)continue;
-        r3d_.drawMesh(fpsPreviewMesh_,mat4::translate(base)*mat4::scale(hi-lo),{0.35f,0.42f,0.44f,1});
+    if (!fpsPreviewMesh_.vb.valid()) {
+        MeshBuilder mesh;
+        mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});
+        fpsPreviewMesh_ = mesh.upload(*dev_);
     }
-    for(const auto& spawn:doc().data.fps["spawns"].items()) {
-        auto p=point(spawn);r3d_.drawMesh(fpsPreviewMesh_,mat4::translate(p)*mat4::scale({0.6f,1.8f,0.6f}),{0.1f,0.65f,0.85f,1});
+    struct PreviewInstance {
+        mat4 transform;
+        float4 color;
+    };
+    std::vector<PreviewInstance> instances;
+    const auto& fps = doc().data.fps;
+    for (const auto& collider : fps["colliders"].items()) {
+        if (!collider["min"].isArray() || !collider["max"].isArray() ||
+            collider["min"].size() < 3 || collider["max"].size() < 3) continue;
+        const float3 lo = point(collider["min"]), hi = point(collider["max"]);
+        const float3 size = hi - lo;
+        if (size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
+        const float3 base{(lo.x+hi.x)*0.5f,lo.y,(lo.z+hi.z)*0.5f};
+        if (length(base-camera.target)>1000 && hi.y>0) continue;
+        instances.push_back({mat4::translate(base)*mat4::scale(size), {0.35f,0.42f,0.44f,1}});
     }
+    for (const auto& spawn : fps["spawns"].items()) {
+        if (!spawn.isArray() || spawn.size() < 3) continue;
+        const float3 pos = point(spawn);
+        instances.push_back({mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f}), {0.1f,0.65f,0.85f,1}});
+    }
+    // The adapter emits renderable instances only. Future native ECS models
+    // can use the same scene submission stage with Renderer3D::drawModel.
+    for (const auto& instance : instances)
+        r3d_.drawMesh(fpsPreviewMesh_, instance.transform, instance.color);
 }
+
 }
