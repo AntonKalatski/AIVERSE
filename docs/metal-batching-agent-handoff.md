@@ -162,6 +162,12 @@ Commits `8b42935`, `42abf98`, `cd37de8`: `Renderer3D` now reuses a member `indir
 
 **Important unresolved issue:** `indirectCommands_` is still a dynamic `snapshotUpdates=true` GPU buffer. Metal `updateBuffer` allocates a fresh MTLBuffer when updated repeatedly within one frame, which is required for safety with previously encoded GPU commands. Do NOT simply turn snapshotUpdates off or write in place; previous ICB commands may still reference the memory. A per-frame-slot/per-submission GPU command buffer pool or safe direct-mapped command writer would be a separate implementation. No build/test yet for these commits.
 
+## Per-submission Metal indirect command snapshot pool (commit `fb77a5b`)
+
+`GfxMetal.mm` now special-cases dynamic `BufferType::Indirect` with `snapshotUpdates=true` in `updateBuffer`. Each `MTBuffer` keeps a vector of MTLBuffer snapshots per `kFramesInFlight` slot and a cursor reset on the first update of a new `frame_`. Each update uses its own entry so previously encoded draws retain their original command data; after frame-slot reuse, entries are recycled, growing as needed. Other buffer types retain their old snapshot behavior. The existing Metal queue and 3-frame semaphore are assumed to make frame-slot recycling safe; validate on Apple Silicon. This pool is for GPU indirect command data and is separate from the existing reusable ICB/uniform/PBR pool.
+
+**Not compiled or run on owner's Mac yet.** Check full and partial indirect updates, scene switching, command-count growth, multiple submissions per frame, ICB residency, GPU correctness, and memory high-watermark. Use `AIVERSE_ICB_PROFILE=1` and compare `[render-indirect] upload` to previous ~0.013–0.022 ms/submission. Repeat the fixed-camera OFF/ON 300-frame benchmark without profiling; the latest known overall ON penalty was +4.1% CPU in a different workload. Do not claim measured speedup until new logs arrive.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
