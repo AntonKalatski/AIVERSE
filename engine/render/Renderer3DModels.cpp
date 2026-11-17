@@ -105,12 +105,14 @@ void Renderer3D::setMaterialQuality(MaterialQuality q) {
 
 gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bool instanced) {
     const bool shadow = phase == 0, outline = phase == 3, depthAfter = phase == 4;
+    const bool maskPass = outline && selectionMaskPass_;
     const bool skinned = it.joints >= 0, baked = it.baked, morph = it.morph >= 0;
     const bool materialPalette = phase == 1 && it.paletteMaterials;
     const bool lodFade = it.lodThreshold<1 || it.lodInvert;
     const bool mask = !outline && it.mat->alpha == AlphaMode::Mask;
     const bool normalMap = phase != 0 && !outline && it.mat->normalTex >= 0 && matQuality_ != MaterialQuality::Low;
-    const bool blend = outline || (!shadow && !depthAfter && (it.mat->alpha == AlphaMode::Blend || it.tint.w < 0.99f || transparentItem(it.flags)));
+    const bool blend = (outline && !maskPass) || (!outline && !shadow && !depthAfter &&
+        (it.mat->alpha == AlphaMode::Blend || it.tint.w < 0.99f || transparentItem(it.flags)));
     const bool twoSided = !outline && it.mat->doubleSided;
     const bool giPhase = phase == 1 || phase == 2;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
@@ -122,7 +124,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                                ((drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2)) ? kKeyDrawCallView : 0u) |
                                (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
-    const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) | (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u);
+    const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) |
+        (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u) | (maskPass ? (1u << 29) : 0u);
     const auto selectedGraph=it.mat->shaderGraph && int(matQuality_)>=it.mat->shaderGraph->minQuality?it.mat->shaderGraph:nullptr;
     const auto* graph = selectedGraph.get();
     const ModelShaderKey skey{shaderKey, selectedGraph};
@@ -259,7 +262,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         pd.attrCount = 7;
         pd.stride = sizeof(ModelVertex);
         pd.indexType = gfx::IndexType::UInt32;
-        pd.cull = outline ? gfx::CullMode::Front : twoSided ? gfx::CullMode::None : gfx::CullMode::Back;
+        pd.cull = maskPass ? (it.mat->doubleSided ? gfx::CullMode::None : gfx::CullMode::Back) :
+                  outline ? gfx::CullMode::Front : twoSided ? gfx::CullMode::None : gfx::CullMode::Back;
+        if (maskPass) pd.depthWrite = false;
         if (shadow) {
             pd.depthOnly = true;
             pd.depthBiasConstant = 2.0f; pd.depthBiasSlope = 2.5f;
@@ -500,7 +505,7 @@ void Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
         else { d[20] = x.team.x; d[21] = x.team.y; d[22] = x.team.z; d[23] = x.flash; }
         d[24] = (x.mat->receiveShadow && !(x.flags & kDrawNoReceiveShadow)) ? 1.0f : 0.0f;
         d[25] = x.dissolve;
-        d[26] = x.outline.w;
+        d[26] = selectionMaskPass_ && phase == 3 ? 0.0f : x.outline.w;
         d[27] = phase == 3 ? 0.0f : x.teamGlow;
         d[32] = x.lodThreshold; d[33] = x.lodInvert ? 1.0f : 0.0f;
         d[28] = x.anim.x; d[29] = x.anim.y; d[30] = x.anim.z; d[31] = x.anim.w;   // w: lightmap uv2 offset.y (agent-lightbake)
