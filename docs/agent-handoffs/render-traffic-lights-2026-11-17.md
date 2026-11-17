@@ -91,6 +91,14 @@ ctest --test-dir build-metal -R '^aiverse_deferred_loading_tests
 ```
 Compare with `AIVERSE_EDITOR_EAGER_MODELS=1` (same binary/project/map). Check `Статистика → Память ассетов`, model inspector for non-map type, model variants, ghost placement, switching maps and play mode. Report model/texture count and GPU occupied/allocated before/after.
 
+## Step 9 — PR / final memory reclamation safeguards (CODE COMPLETE; CI pending)
+- Draft stacked PR: https://github.com/chromealex/AIVERSE/pull/9 (base `fix/indirect-vulkan-base-vertex-safety` / earlier PR #4); all changes isolated in `fix/editor-lazy-model-residency`.
+- CI jobs were initially queued on PR creation (GPU batching focused regression, CI, AIVERSE Studio validation); no pass/fail information had been returned at writing time.
+- During review, discovered that `ModelTextureCache::trim` only evicted abandoned GPU textures, leaving decoded CPU image cache entries resident (up to 64 MiB). `d960ecb` clears the decoded LRU on residency reclamation using the existing mutex. Any pending image that holds a `sharedRgba` lease remains safe.
+- `Model::releaseModel` previously left borrowed `Image::textureLease` references alive until model destructor, preventing immediate cache reclamation if a Model object remained in scope. `fb5bdf2` drops those leases at explicit release. `6831104` tests shared texture release plus decoded cache accounting after `trim`.
+- `42395ec` documents the behavior in `docs/startup-loading.md`.
+- **Not done:** renderer/backend-specific Metal GPU-fence stability verification, full CI results, in-editor memory before/after measurements, standalone client startup regression tests.
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
