@@ -1,5 +1,6 @@
 #include "FpsModule.h"
 #include <algorithm>
+#include <set>
 #include "engine/core/FixedMath.h"
 #include "engine/world/OrientedBox.h"
 #include <stdexcept>
