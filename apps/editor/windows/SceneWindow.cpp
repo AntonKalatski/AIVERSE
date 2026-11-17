@@ -496,7 +496,6 @@ private:
                 dl->AddCircleFilled(c, 3.0f, IM_COL32(225, 238, 255, 255));
                 if (sel.kind == Selection::Entity || sel.kind == Selection::Live) {
                     const float axisLength = 1.5f;
-                    const float3 origin = {wx, wy, wz};
                     const float3 ends[3] = {
                         {wx + axisLength, wy, wz},
                         {wx, wy + axisLength, wz},
