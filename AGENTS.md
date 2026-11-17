@@ -6,6 +6,54 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+## Genre-independent ECS mechanics contract (2026-11-18)
+
+AIVERSE is **a composable game-mechanics engine**, not a collection of
+hard-coded RTS/FPS implementations. Every new gameplay feature, library or
+mechanic MUST follow the **Components + Systems** model:
+
+1. **ECS component contracts.** Define minimal, reusable data-only components
+   describing state, inputs, configuration and outputs. Place shared components
+   in engine/libraries rather than a genre module. Do not own authoritative
+   gameplay state in duplicated per-genre arrays or custom singleton worlds.
+   Components should have stable IDs and deterministic save/rollback semantics.
+2. **Independent systems.** Implement behavior as small, configurable systems
+   operating on declared ECS component read/write sets and resources, with
+   explicit update order, event/command outputs and structural barriers.
+   A mechanic can be enabled/disabled or composed with other mechanics by
+   registering systems/components; no genre-specific engine forks.
+3. **Reuse one shared mechanic across genres.** RTS bullet, FPS projectile,
+   missile, rocket, grenade and spell should use the **same** trajectory,
+   collision query, impact/penetration/splash, lifetime and damage primitives.
+   Genre adapters provide components, target selection, input and tuning, not
+   duplicate projectile solvers. Extend this rule to locomotion, vehicles,
+   health/damage, inventories, economy, navigation, physics and AI.
+4. **Configuration instead of inheritance by genre.** Prefer capability-based
+   feature flags, typed rules/assets and composition to `isFPS`/`isRTS`
+   branches. Different projects can combine any mechanics regardless of genre.
+5. **Native C++ and agent reuse.** Libraries must be callable from the native
+   game/project module via public headers, without modifying engine core.
+   Deliver corresponding AI skill documentation, stable interfaces and usage
+   examples; reference them here and in the relevant handoff to prevent agents
+   regenerating equivalent mechanics.
+6. **Determinism first.** Fixed-point sim math, stable iteration/command merge,
+   explicit RNG ownership, versioned persistence, per-tick replay/rollback
+   and multi-worker checksum tests. Keep presentation/float effects out of
+   authoritative systems. Confirm parity between old and new integrations
+   before removing a legacy path.
+7. **Migration without parallel source-of-truth copies.** Transitional adapters
+   may support old FPS/RTS saves/netcode but must state the owner of canonical
+   data, the barrier where mirrors are updated and when compatibility buffers
+   can be deleted. Move one system at a time; preserve gameplay ordering.
+8. **Required artifacts for every mechanic:** component schemas, system
+   implementation, registration/configuration sample (RTS+FPS or two distinct
+   host games), tests (including native linkage and save/rollback), matching
+   skill, and update to living handoff. Do not mark production-ready without
+   compiling and running applicable checks.
+
+The ongoing universal FPS/RTS migration must gradually consume these generic
+mechanic libraries, not create new genre-specific gameplay engines.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
