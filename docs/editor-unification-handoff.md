@@ -707,3 +707,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `e1d286f`: registered `ecs-weapon-launch` package in `libraries/catalog.json`, exported as `AIVERSE::lib_ecs_weapon_launch`. It depends on `ecs-impact-damage` (and transitively on `ecs-projectile-systems` and collision), with public header/skill/test dependencies.
 - Catalog parsed and validated as JSON (120 packages, new package last), but native `tools/libraries/catalog.py check` and CMake test **have not been run**. Native projects can request this package without importing FPS/RTS gameplay modules.
 - Next: update composition spec + agent rules and inspect CI results.
+
+### 2026-11-18 — Universal ECS weapon launch, stage G (normative composition doc)
+- Commit `c458af0`: `docs/ecs-mechanic-composition.md` documents the complete public ECS `WeaponLaunch → ProjectileSpawn → Flight → Damage` component/system chain, order/barriers and native registration example. A single shared implementation works with any shooting Entity regardless of genre, with `AIVERSE::lib_ecs_weapon_launch` and `ecs_cross_genre_weapon_pipeline_test` as proof points.
+- **Explicit non-completeness:** published FPS/RTS gameplay still has original combat implementations. The generic pipeline is reusable in independent hosts but requires migration of existing engines, tuning and legacy save/network parity tests. No native test success reported yet.
