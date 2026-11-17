@@ -55,6 +55,13 @@ public:
         const auto afterViewport = std::chrono::steady_clock::now();
         // Diagnostic rendering is scoped to Scene, never leaked into the Game tab.
         auto& renderer = ed.renderer();
+        // The map document assigns 0xED-prefixed IDs to authored entities.
+        // Trace only the selected one; avoid per-entity allocation in runtime.
+        uint64_t lodTarget = 0;
+        if (ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
+            size_t(ed.selection.index) < ed.doc().data.entities.size())
+            lodTarget = (uint64_t(0xED) << 56) | (uint64_t(ed.selection.index) + 1);
+        renderer.setLodDebugTarget(lodTarget);
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
@@ -159,6 +166,10 @@ public:
                 if (mode < 3) benchmarkGpuSamples_[mode].push_back(timing.milliseconds);
             }
         }
+        // Take a stable copy before the Game window overwrites the shared
+        // Renderer3D counters later in the editor frame.
+        lastSceneLodStats_ = renderer.modelStats();
+        lastSelectedLod_ = renderer.lodDebugSample();
         const auto afterRenderScene = std::chrono::steady_clock::now();
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
@@ -167,6 +178,9 @@ public:
         renderer.setModelMultiDrawEnabled(true);
         renderer.setGpuAuthoredDrawEnabled(true);
         renderer.setModelCullingEnabled(true);
+        renderer.setModelLodEnabled(true);
+        renderer.setModelLodFadeWidth(0.15f);
+        renderer.setLodDebugTarget(0);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
         if (traceScene) {
@@ -231,7 +245,7 @@ private:
         ImGui::Separator();
         ImGui::Checkbox("Включить Model LOD", &sceneLodEnabled_);
         ImGui::SliderFloat("Переход LOD", &sceneLodFadeWidth_, 0.0f, 0.49f, "%.2f");
-        const auto& stats = ed.renderer().modelStats();
+        const auto& stats = lastSceneLodStats_;
         ImGui::Text("В кадре: LOD0 %llu | LOD1 %llu | LOD2 %llu | LOD3+ %llu",
                     (unsigned long long)stats.cameraLodNodes[0],
                     (unsigned long long)stats.cameraLodNodes[1],
@@ -273,6 +287,20 @@ private:
                 }
                 ImGui::Text("LOD-цепочек: %zu | доп. уровней: %zu", chains, levels);
                 if (!chains) ImGui::TextDisabled("В GLB нет импортированных LOD.");
+                if (ed.selection.kind == Selection::Entity) {
+                    const auto& actual = lastSelectedLod_;
+                    if (actual.matched) {
+                        ImGui::Text("Выбранный объект: LOD0 %llu, LOD1 %llu, LOD2 %llu, LOD3+ %llu",
+                            (unsigned long long)actual.levels[0],
+                            (unsigned long long)actual.levels[1],
+                            (unsigned long long)actual.levels[2],
+                            (unsigned long long)actual.levels[3]);
+                        ImGui::Text("Видимые узлы: %llu, с цепочкой: %llu, ограничены тенями: %llu",
+                            (unsigned long long)actual.visibleNodes,
+                            (unsigned long long)actual.withChain,
+                            (unsigned long long)actual.shadowLimited);
+                    } else ImGui::TextDisabled("Выбранный объект не рисовался в текущей камере.");
+                }
                 ImGui::TextDisabled("Подробности: окно «Модели» → «LOD модели».");
             }
         } else ImGui::TextDisabled("Выбери автомобиль или здание, чтобы проверить их LOD.");
@@ -1171,6 +1199,8 @@ private:
     bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
     bool sceneLodEnabled_ = true;
     float sceneLodFadeWidth_ = 0.15f;
+    ModelRenderStats lastSceneLodStats_{};
+    Renderer3D::LodDebugSample lastSelectedLod_{};
     bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
