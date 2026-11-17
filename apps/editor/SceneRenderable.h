@@ -78,8 +78,17 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
             else if (object.hovered) draw.outline = {0.75f, 0.8f, 0.85f, 0.025f};
             renderer.drawModel(draw);
         } else if (object.mesh) {
-            renderer.drawMesh(*object.mesh, object.world, object.tint);
-            if (object.pickable && (object.selected || object.hovered)) {
+            if (object.selected || object.hovered) {
+                const render::float4 selection = object.selected
+                    ? render::float4{0.25f, 0.62f, 1.0f, 1.0f}
+                    : render::float4{0.75f, 0.8f, 0.85f, 1.0f};
+                renderer.drawSelectionMesh(*object.mesh, object.world,
+                                           object.tint, selection);
+            } else {
+                renderer.drawMesh(*object.mesh, object.world, object.tint);
+            }
+            if (!renderer.sceneSelectionOutlineEnabled() && object.pickable &&
+                (object.selected || object.hovered)) {
                 const auto lo = object.boundsMin, hi = object.boundsMax;
                 const render::float3 corners[8] = {
                     {lo.x,lo.y,lo.z}, {hi.x,lo.y,lo.z}, {hi.x,lo.y,hi.z}, {lo.x,lo.y,hi.z},
