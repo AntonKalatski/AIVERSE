@@ -1034,41 +1034,89 @@ void Renderer3D::prepareGpuModelDraws() {
         uint64_t materialHash = 0;
         std::vector<uint32_t> items;
     };
-    std::vector<Group> groups;
-    groups.reserve(gpuModelRecords_.size() / 2 + 1);
-    // Bucket by GPU material hash to avoid scanning every existing group for
-    // each of the many identical RTS instances. Hash collisions are always
-    // resolved by the exact GPU/material/buffer equivalence test below.
-    std::unordered_map<uint64_t, std::vector<size_t>> groupsByHash;
-    groupsByHash.reserve(gpuModelRecords_.size() / 4 + 1);
+    // The stable plan stores ONLY model-item indices and GPU-state signatures.
+    // Transforms/instance payloads are never cached here. A new viewport,
+    // reordered scene, asset reload or material mutation invalidates the plan.
+    std::vector<GpuBatchPlanItem> signature;
+    signature.reserve(eligibleIndices.size());
     std::map<std::pair<const Model*, const Material*>, uint64_t> cachedMaterialHashes;
-    for (uint32_t item = 0; item < gpuModelSlots_.size(); ++item) {
-        if (gpuModelSlots_[item] == UINT32_MAX) continue;
+    std::vector<uint64_t> hashes(modelItems_.size(), 0);
+    for (uint32_t item : eligibleIndices) {
         const auto& m = modelItems_[item];
         const auto key = std::make_pair(m.model, m.mat);
-        auto [cached, inserted] = cachedMaterialHashes.try_emplace(key, 0);
-        if (inserted) cached->second = gpuMaterialStateHash(*m.model, *m.mat);
+        auto [cached, fresh] = cachedMaterialHashes.try_emplace(key, 0);
+        if (fresh) cached->second = gpuMaterialStateHash(*m.model, *m.mat);
         const uint64_t hash = cached->second;
-        bool found = false;
-        auto& bucket = groupsByHash[hash];
-        for (size_t groupIndex : bucket) {
-            auto& group = groups[groupIndex];
-            const auto& first = modelItems_[group.items.front()];
-            if (first.model->vb != m.model->vb ||
-                first.model->ib != m.model->ib ||
-                first.model->baked.tex != m.model->baked.tex ||
-                first.model->morphTex != m.model->morphTex ||
-                first.flags != m.flags ||
-                !equivalentGpuMaterial(*first.model, *first.mat, *m.model, *m.mat))
-                continue;
-            group.items.push_back(item);
-            found = true;
-            break;
+        hashes[item] = hash;
+        signature.push_back({m.model, m.mat, item, m.flags,
+            m.model->vb.id, m.model->ib.id,
+            m.model->baked.tex.id, m.model->morphTex.id, hash});
+    }
+    std::vector<Group> groups;
+    bool cacheValid = gpuBatchPlan_.signature == signature;
+    if (cacheValid) {
+        // Hashes are a prefilter, not a correctness guarantee. Revalidate the
+        // material equivalence of every cached group before using it.
+        size_t verified = 0;
+        for (const auto& members : gpuBatchPlan_.groups) {
+            if (members.empty()) { cacheValid = false; break; }
+            const auto& first = modelItems_[members.front()];
+            for (uint32_t member : members) {
+                if (member >= modelItems_.size()) { cacheValid = false; break; }
+                const auto& candidate = modelItems_[member];
+                if (first.model->vb != candidate.model->vb ||
+                    first.model->ib != candidate.model->ib ||
+                    first.flags != candidate.flags ||
+                    !equivalentGpuMaterial(*first.model, *first.mat,
+                                           *candidate.model, *candidate.mat)) {
+                    cacheValid = false;
+                    break;
+                }
+                ++verified;
+            }
+            if (!cacheValid) break;
         }
-        if (!found) {
-            bucket.push_back(groups.size());
-            groups.push_back({hash, {item}});
+        if (verified != eligibleIndices.size()) cacheValid = false;
+    }
+    if (cacheValid) {
+        ++gpuBatchCacheHits_;
+        groups.reserve(gpuBatchPlan_.groups.size());
+        for (const auto& members : gpuBatchPlan_.groups)
+            groups.push_back({hashes[members.front()], members});
+    } else {
+        ++gpuBatchCacheMisses_;
+        groups.reserve(eligibleIndices.size() / 2 + 1);
+        std::unordered_map<uint64_t, std::vector<size_t>> groupsByHash;
+        groupsByHash.reserve(eligibleIndices.size() / 4 + 1);
+        for (uint32_t item : eligibleIndices) {
+            const auto& m = modelItems_[item];
+            const uint64_t hash = hashes[item];
+            bool found = false;
+            auto& bucket = groupsByHash[hash];
+            for (size_t groupIndex : bucket) {
+                auto& group = groups[groupIndex];
+                const auto& first = modelItems_[group.items.front()];
+                if (first.model->vb != m.model->vb ||
+                    first.model->ib != m.model->ib ||
+                    first.model->baked.tex != m.model->baked.tex ||
+                    first.model->morphTex != m.model->morphTex ||
+                    first.flags != m.flags ||
+                    !equivalentGpuMaterial(*first.model, *first.mat, *m.model, *m.mat))
+                    continue;
+                group.items.push_back(item);
+                found = true;
+                break;
+            }
+            if (!found) {
+                bucket.push_back(groups.size());
+                groups.push_back({hash, {item}});
+            }
         }
+        gpuBatchPlan_.signature = std::move(signature);
+        gpuBatchPlan_.groups.clear();
+        gpuBatchPlan_.groups.reserve(groups.size());
+        for (const auto& group : groups)
+            gpuBatchPlan_.groups.push_back(group.items);
     }
     gpuEncodedCovered_.assign(modelItems_.size(), 0);
     // GPU encoding has a compute-dispatch cost per batch, unlike CPU MDI.
