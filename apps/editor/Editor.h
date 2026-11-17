@@ -187,16 +187,7 @@ public:
     void enqueueFpsSceneGeometry(const render::RTSCamera&);
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void drawFpsSceneInspector();
-    void selectFpsSceneObject(int index) {
-        if (index < 0 || index >= int(fpsSceneObjects_.size())) { select({}); return; }
-        Selection chosen;
-        chosen.kind = Selection::FpsObject;
-        chosen.ref = fpsSceneObjects_[size_t(index)].entity;
-        select(chosen);
-        fpsSelectedSceneObject_ = index;
-    }
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
-    int selectedFpsSceneObject() const { return fpsSelectedSceneObject_; }
     bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;
     bool moveSelectedFpsSceneObject(float dx, float dy, float dz);
     void startPlay(int humanSlot = 0);
@@ -329,7 +320,6 @@ private:
     render::Renderer3D r3d_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;
-    int fpsSelectedSceneObject_ = -1; // legacy render index, being phased out in favor of Selection::FpsObject
     render::PostFx postFx_;
     game::RtsView view_;
     bool showPicker_ = false;
