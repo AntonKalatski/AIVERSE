@@ -79,6 +79,79 @@ public:
     void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t) override {}
 };
 
+
+static void verifyVehiclePartsRemainIndependent() {
+    // No project assets are required. Each part has a different mesh and its
+    // own transform, while several parts intentionally share the SAME material.
+    // A draw-submission optimizer must not alter wheel/door node identity.
+    Model car;
+    car.path = "test-vehicle-separated-meshes";
+    car.materials.resize(2);
+    car.materials[1].alpha = AlphaMode::Blend;
+    car.materials[1].transparent = true;
+    const char* names[] = {"body", "wheel_fl", "wheel_fr", "wheel_rl",
+                           "wheel_rr", "door_left", "glass"};
+    for (int n = 0; n < 7; ++n) {
+        const uint32_t firstVertex = uint32_t(car.vertices.size());
+        const uint32_t firstIndex = uint32_t(car.indices.size());
+        for (int k = 0; k < 3; ++k) {
+            ModelVertex v;
+            v.pos = {float(k == 1), float(k == 2), 0};
+            v.nrm = {0, 0, 1};
+            car.vertices.push_back(v);
+            car.indices.push_back(firstVertex + uint32_t(k));
+        }
+        Primitive p;
+        p.firstIndex = firstIndex; p.indexCount = 3;
+        p.firstVertex = firstVertex; p.vertexCount = 3;
+        p.material = n == 6 ? 1 : 0;
+        MeshDef mesh;
+        mesh.name = names[n];
+        mesh.primitives.push_back(p);
+        Node node;
+        node.name = names[n];
+        node.mesh = n;
+        node.t = {float(n * 2), 0, 0};
+        node.runtimeMutable = n > 0 && n < 6;
+        car.meshes.push_back(std::move(mesh));
+        car.nodes.push_back(std::move(node));
+    }
+    car.finalize();
+    const auto worldBefore = car.bindWorld;
+    car.batching.mergeRigid = true;
+    prepareModelUpload(car);
+    CHECK(car.uploadPrepared);
+    // Wheels and doors still have their own mesh, node ID and bind transform.
+    // Glass uses separate transparent state and must not join the opaque run.
+    for (int n = 1; n <= 5; ++n) {
+        CHECK(car.nodes[size_t(n)].name == names[n]);
+        CHECK(car.nodes[size_t(n)].mesh >= 0);
+        CHECK(car.bindWorld[size_t(n)].transformPoint({0, 0, 0}).x ==
+              worldBefore[size_t(n)].transformPoint({0, 0, 0}).x);
+    }
+    CHECK(car.nodes[6].mesh >= 0);
+    CHECK(car.materials[size_t(car.meshes[size_t(car.nodes[6].mesh)]
+                               .primitives[0].material)].transparent);
+    // A GPU batch of different geometry must preserve source index offsets
+    // and the independent object matrices. The source meshes are not merged.
+    for (int n = 1; n <= 6; ++n) {
+        const auto& primitive = car.meshes[size_t(car.nodes[size_t(n)].mesh)]
+                                    .primitives[0];
+        CHECK(primitive.firstIndex + primitive.indexCount <= car.indices.size());
+        CHECK(primitive.indexCount == 3);
+    }
+    // Independent Material allocations with the same resolved GPU parameters
+    // are equivalent, even when they live in different Model objects.
+    Model copy;
+    copy.materials = car.materials;
+    CHECK(equivalentGpuMaterial(car, car.materials[0], copy, copy.materials[0]));
+    CHECK(gpuMaterialStateHash(car, car.materials[0]) ==
+          gpuMaterialStateHash(copy, copy.materials[0]));
+    copy.materials[0].roughness *= .75f;
+    CHECK(!equivalentGpuMaterial(car, car.materials[0], copy, copy.materials[0]));
+    CHECK(!equivalentGpuMaterial(car, car.materials[0], car, car.materials[1]));
+}
+
 static Model pooledFixture(float dx) {
     Model m;
     m.path = "geometry-pool-fixture";
@@ -101,6 +174,7 @@ static Model pooledFixture(float dx) {
 
 
 int main() {
+    verifyVehiclePartsRemainIndependent();
     Model m;
     m.materials.resize(1);
     constexpr int kNodes = 5;
