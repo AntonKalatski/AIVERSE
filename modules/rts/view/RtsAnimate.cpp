@@ -195,9 +195,8 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     if (staticFastPath && ch.model &&
         (L.structure || rules_->types[o.type].speed <= Fixed{}) &&
         !st.dead && !o.moving && o.build >= 1.0f &&
-        ch.model->clips.empty() && !ch.graph && !st.graph.graph() &&
-        st.anim.clip(0) < 0 && ch.procs.empty() &&
-        !ch.needsPose && !ch.baked && ch.attach.empty() && ch.fx.empty() &&
+        ch.staticAnimateEligible && !st.graph.graph() &&
+        st.anim.clip(0) < 0 &&
         !o.parented && (!fx_ || (fx_->animations.empty() && fx_->entries.empty())) &&
         o.pos.x == st.lastPos.x && o.pos.y == st.lastPos.y &&
         o.pos.z == st.lastPos.z &&

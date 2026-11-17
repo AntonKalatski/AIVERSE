@@ -77,8 +77,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         !o.parented && !st.dead && !o.moving && o.build >= 1.0f &&
         (t.structure || t.speed <= Fixed{}) && show == &ch &&
         L.stages.empty() && L.lods.empty() &&
-        !ch.graph && !ch.needsPose && !ch.baked && ch.procs.empty() &&
-        ch.attach.empty() && ch.fx.empty() &&
+        ch.staticPlacementEligible &&
         std::memcmp(st.objXf.m, identity.m, sizeof(identity.m)) == 0;
     auto& cached = st.placement;
     const bool reusePlacement = immutablePlacement && cached.valid &&

@@ -347,6 +347,8 @@ private:
         bool programmableAnimation = false;
         bool needsPose = false;                   // a CPU pose is needed (palette skinning, node procs, sockets, IK)
         bool baked = false;                       // skinned from the baked clip texture (instanced crowds)
+        bool staticPlacementEligible = false;    // immutable type/choice properties, computed by finishChoice
+        bool staticAnimateEligible = false;      // additionally excludes authored model clips
         int variant = -1;                         // KHR_materials_variants index
         std::vector<Attachment> attach;
         std::vector<WeaponPose> weaponPoses; int weaponMask=-1;
