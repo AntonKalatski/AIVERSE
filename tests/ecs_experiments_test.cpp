@@ -83,6 +83,20 @@ int main() {
         commands.flush(w);
         assert(count==13);
     }
+    // Recursion detection must also hold without worker threads.
+    {
+        PersistentWorkers sequential{0};
+        bool rejected=false;
+        sequential.parallelFor(4,[&](size_t,size_t) {
+            try {sequential.parallelFor(1,[](size_t,size_t){});}
+            catch(const std::logic_error&) {rejected=true;}
+        });
+        assert(rejected);
+        // The fallback pool is reusable after a rejected nested call.
+        int completed=0;
+        sequential.parallelFor(1,[&](size_t,size_t){++completed;});
+        assert(completed==1);
+    }
     // Each deterministic lane has one producer until flush/discard.
     // A different thread must be rejected rather than racing on vector storage.
     {
