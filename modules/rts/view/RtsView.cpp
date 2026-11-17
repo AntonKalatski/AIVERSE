@@ -269,6 +269,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             replacedByRoads[t] = hit;
         }
     }
+    placementCacheHits_ = placementCacheMisses_ = 0;
     double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0;
     size_t tracedObjects = 0;
     for (size_t i = 0; i < s.objects.size(); ++i) {
@@ -387,6 +388,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         static double totals[5] = {};
         static double objectTotals[3] = {};
         static size_t objectCount = 0;
+        static uint64_t placementHits = 0, placementMisses = 0;
         const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b-a).count(); };
         totals[0] += ms(viewStart, afterSetup);
         totals[1] += ms(afterSetup, afterGround);
@@ -397,6 +399,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         objectTotals[1] += objectAnimateMs;
         objectTotals[2] += objectDrawMs;
         objectCount += tracedObjects;
+        placementHits += placementCacheHits_;
+        placementMisses += placementCacheMisses_;
         if (++samples == 120) {
             std::fprintf(stderr,
                 "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\n",
@@ -405,6 +409,11 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             std::fprintf(stderr, "[view-objects] avg/120 state=%.3f animate=%.3f drawObject=%.3f ms objects/frame=%.1f\n",
                          objectTotals[0]/samples, objectTotals[1]/samples, objectTotals[2]/samples,
                          double(objectCount)/samples);
+            if (placementHits + placementMisses)
+                std::fprintf(stderr, "[rts-placement] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\\n",
+                    double(placementHits)/samples, double(placementMisses)/samples,
+                    100.0 * double(placementHits)/double(placementHits+placementMisses));
+            placementHits = placementMisses = 0;
             samples = 0;
             for (double& v : totals) v = 0.0;
             for (double& v : objectTotals) v = 0.0;
