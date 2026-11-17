@@ -1563,6 +1563,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::libraries)
     add_test(NAME ecs_cross_genre_weapon_pipeline_test
         COMMAND aiverse_ecs_cross_genre_weapon_pipeline_test)
+    add_executable(aiverse_ecs_cross_genre_timed_mechanics_test
+        tests/ecs_cross_genre_timed_mechanics_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_timed_mechanics_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::lib_ecs_timed_mechanics)
+    add_test(NAME ecs_cross_genre_timed_mechanics_test
+        COMMAND aiverse_ecs_cross_genre_timed_mechanics_test)
 endif()
 add_subdirectory(modules/voxel)
 
