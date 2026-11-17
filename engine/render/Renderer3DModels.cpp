@@ -639,7 +639,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // GI can override sampled bindings, so the texture stage below still
     // refreshes those slots after a GI draw.
     const bool materialStateChanged = !lastItem_ ||
-        !equivalentGpuMaterial(*lastItem_->model, *lastItem_->mat, *it.model, mt);
+        ((lastItem_->mat != it.mat || lastItem_->model != it.model) &&
+         !equivalentGpuMaterial(*lastItem_->model, *lastItem_->mat, *it.model, mt));
     const bool actorRevealChanged = lastItem_ &&
         ((lastItem_->flags ^ it.flags) & kDrawActorReveal) != 0;
     if (materialStateChanged || actorRevealChanged) {
