@@ -118,6 +118,26 @@ struct VehicleRun {
     uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
     std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
 };
+// Stable ECS identities for FPS actors. A transitional compatibility layer:
+// State::actors is still authoritative for FPS gameplay/netcode/save v9.
+// These real World components mirror the current state after each tick so
+// generic editor systems can inspect actual ECS entities without inventing IDs.
+struct ActorEntityIdentity {
+    uint8_t slot = 0, team = 0;
+    uint32_t life = 0;
+};
+struct ActorEntityTransform {
+    Vec3 position{}, velocity{};
+    Fixed yaw{}, pitch{};
+};
+struct ActorEntityVitals {
+    int32_t health = 0, armor = 0, ammo = 0, reserve = 0;
+    bool downed = false, crouched = false, prone = false;
+};
+struct ActorEntityIndex {
+    std::vector<Entity> bySlot; // slot 1 -> index 0; stable across ticks
+};
+
 struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
 struct State {
     std::vector<Actor> actors;
@@ -154,6 +174,8 @@ public:
     bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
+    Entity actorEntity(Simulation& sim, uint8_t slot) const;
+    void syncActorEntities(Simulation& sim) const; // compatibility mirror (not gameplay authority)
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
