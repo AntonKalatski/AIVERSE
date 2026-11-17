@@ -1,4 +1,5 @@
 #include "FpsModule.h"
+#include "engine/experiments/EcsExperiments.h"
 #include <algorithm>
 #include <set>
 #include "engine/core/FixedMath.h"
@@ -281,6 +282,7 @@ void Module::syncDynamicEntities(Simulation& sim) const {
 
 void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
+    experimentalMotorBatches_=experimentalMotorCommits_=0;
     if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
     if(sim.players().empty()||sim.players().size()>config_.maxPlayers)throw JsonError("fps: invalid player count");
     streamedCollision_.reset();streamManifest_=map["world"];
@@ -402,6 +404,95 @@ void Module::tick(Simulation& sim) {
     if(s.winner)return;
     s.history.push_back({sim.tick(),s.actors});
     while(s.history.size()>size_t(config_.rewindTicks)+1)s.history.pop_front();
+#if defined(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
+    // Two-phase fixed-point motor update for independent, movement-only actors.
+    // Never parallelize combat, shared State/RNG, bot target selection or events.
+    // Copying Actor is expensive, hence the threshold; benchmark real-world gains.
+    struct MotorResult {
+        Vec3 pos{},velocity{};
+        Fixed yaw{},pitch{};
+        bool grounded=false,crouched=false,prone=false;
+    };
+    // The parallel phase computes independent fixed-point movement only.
+    // The original Actor snapshot is compared at canonical commit time.
+    // Prior damage, bot decisions or other changes invalidate a precompute.
+    const bool motorWorldEligible=!config_.systems.enabled &&
+        !s.royale.enabled && !streamedCollision_ && s.vehicleRuns.empty();
+    // Retain only the fields read by moveActor(). Actor contains bags and
+    // melee hit lists; deep-copying whole Actors per tick would dominate the
+    // speculative motor cost for large multiplayer matches.
+    struct MotorSource {
+        Vec3 pos{},velocity{};
+        Fixed yaw{},pitch{};
+        Input input{};
+        uint32_t lastInputTick=0,vehicle=0;
+        int32_t health=0;
+        bool frozen=false,climbing=false,prone=false,crouched=false,
+             grounded=false,downed=false;
+        static MotorSource capture(const Actor& a) {
+            return {a.pos,a.velocity,a.yaw,a.pitch,a.input,a.lastInputTick,
+                    a.vehicle,a.health,a.frozen,a.climbing,a.prone,
+                    a.crouched,a.grounded,a.downed};
+        }
+        bool sameMotorInputs(const Actor& a) const {
+            return pos==a.pos && velocity==a.velocity &&
+                   yaw==a.yaw && pitch==a.pitch && input==a.input &&
+                   lastInputTick==a.lastInputTick && vehicle==a.vehicle &&
+                   health==a.health && frozen==a.frozen &&
+                   climbing==a.climbing && prone==a.prone &&
+                   crouched==a.crouched && grounded==a.grounded &&
+                   downed==a.downed;
+        }
+        Actor toActor() const {
+            Actor a;
+            a.pos=pos;a.velocity=velocity;a.yaw=yaw;a.pitch=pitch;
+            a.input=input;a.lastInputTick=lastInputTick;
+            a.vehicle=vehicle;a.health=health;
+            a.frozen=frozen;a.climbing=climbing;a.prone=prone;
+            a.crouched=crouched;a.grounded=grounded;a.downed=downed;
+            return a;
+        }
+    };
+    std::vector<MotorResult> motorResults;
+    std::vector<MotorSource> motorOriginals;
+    std::vector<uint8_t> motorEligible;
+    bool parallelMotor=false;
+    if(motorWorldEligible && s.actors.size()>=32) {
+        motorEligible.assign(s.actors.size(),uint8_t(0));
+        size_t count=0;
+        for(size_t i=0;i<s.actors.size();++i) {
+            const Actor& actor=s.actors[i];
+            if(!bots_[i] && actor.health>0 && !actor.vehicle &&
+               !actor.frozen && !actor.climbing) {
+                motorEligible[i]=1;
+                ++count;
+            }
+        }
+        parallelMotor=count>=32;
+    }
+    if(parallelMotor) {
+        ++experimentalMotorBatches_;
+        motorResults.resize(s.actors.size());
+        motorOriginals.resize(s.actors.size());
+        for(size_t i=0;i<s.actors.size();++i)
+            if(motorEligible[i])motorOriginals[i]=MotorSource::capture(s.actors[i]);
+        static thread_local ecs_experiment::PersistentWorkers motorWorkers{3};
+        motorWorkers.parallelFor(s.actors.size(),[&](size_t begin,size_t end) {
+            for(size_t i=begin;i<end;++i) {
+                if(!motorEligible[i])continue;
+                Actor copy=motorOriginals[i].toActor();
+                Input input=copy.input;
+                if(sim.tick()-copy.lastInputTick>config_.inputTimeout) {
+                    input.forward=input.right=0;
+                    input.buttons=0;input.action=Action::None;
+                }
+                moveActor(copy,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+                motorResults[i]={copy.pos,copy.velocity,copy.yaw,copy.pitch,
+                                 copy.grounded,copy.crouched,copy.prone};
+            }
+        });
+    }
+#endif
     for(auto& a:s.actors) {
         if(a.health<=0) {
             if(config_.mode=="deathmatch"&&sim.tick()>=a.respawnAt) {
@@ -435,6 +526,16 @@ void Module::tick(Simulation& sim) {
         auto input=a.input;
         if(sim.tick()-a.lastInputTick>config_.inputTimeout){input.forward=input.right=0;input.buttons=0;input.action=Action::None;}
         if(config_.systems.enabled)actorSystems(sim,a,input);
+#if defined(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
+        const size_t motorIndex=size_t(&a-s.actors.data());
+        if(parallelMotor && motorEligible[motorIndex] &&
+           motorOriginals[motorIndex].sameMotorInputs(a)) {
+            ++experimentalMotorCommits_;
+            const auto& m=motorResults[motorIndex];
+            a.pos=m.pos;a.velocity=m.velocity;a.yaw=m.yaw;a.pitch=m.pitch;
+            a.grounded=m.grounded;a.crouched=m.crouched;a.prone=m.prone;
+        } else
+#endif
         if(!a.vehicle)moveActor(a,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
         if(config_.melee.enabled)tickMelee(sim,a,input);
         // Jump is an edge, movement/fire are held; loss of input eventually releases them.
