@@ -2,6 +2,7 @@
 #include "EditorGenreUi.h"
 #include "SceneRenderable.h"
 #include "EditorEntityAdapter.h"
+#include "EditorSceneNodes.h"
 #include "EditorComponentPanel.h"
 #include "modules/fps/FpsModule.h"
 #include <filesystem>
@@ -58,42 +59,42 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     fpsSceneObjects_.clear();
     auto& instances = fpsSceneObjects_;
     const auto& fps = doc().data.fps;
-    size_t colliderIndex = 0;
-    for (const auto& collider : fps["colliders"].items()) {
-        const size_t sourceIndex = colliderIndex++;
-        if (!collider["min"].isArray() || !collider["max"].isArray() ||
-            collider["min"].size() < 3 || collider["max"].size() < 3) continue;
-        const float3 lo = point(collider["min"]), hi = point(collider["max"]);
-        const float3 size = hi - lo;
-        if (!std::isfinite(lo.x) || !std::isfinite(lo.y) || !std::isfinite(lo.z) ||
-            !std::isfinite(hi.x) || !std::isfinite(hi.y) || !std::isfinite(hi.z) ||
-            size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
-        const float3 base{(lo.x+hi.x)*0.5f,lo.y,(lo.z+hi.z)*0.5f};
-        if (length(base-camera.target)>1000 && hi.y>0) continue;
+    for (const auto& node : enumerateDocumentSceneNodes(doc(), true)) {
+        if (!node.hasPosition) continue;
+        const Json* source = fpsDocumentEntity(fps, node.ref);
+        if (!source) continue;
         SceneRenderable object;
-        object.world = mat4::translate(base)*mat4::scale(size);
-        object.tint = {0.35f,0.42f,0.44f,1};
+        object.entity = node.ref.fpsKey();
         object.mesh = &fpsPreviewMesh_;
-        object.entity = DocumentEntityRef::fpsCollider(sourceIndex).fpsKey();
-        object.boundsMin = lo;
-        object.boundsMax = hi;
         object.pickable = true;
-        instances.push_back(object);
-    }
-    size_t spawnIndex = 0;
-    for (const auto& spawn : fps["spawns"].items()) {
-        const size_t sourceIndex = spawnIndex++;
-        if (!spawn.isArray() || spawn.size() < 3) continue;
-        const float3 pos = point(spawn);
-        if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) continue;
-        SceneRenderable object;
-        object.world = mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f});
-        object.tint = {0.1f,0.65f,0.85f,1};
-        object.mesh = &fpsPreviewMesh_;
-        object.entity = DocumentEntityRef::fpsSpawn(sourceIndex).fpsKey();
-        object.boundsMin = {pos.x - 0.3f, pos.y, pos.z - 0.3f};
-        object.boundsMax = {pos.x + 0.3f, pos.y + 1.8f, pos.z + 0.3f};
-        object.pickable = true;
+        if (node.ref.source == DocumentEntityRef::Source::FpsCollider) {
+            const Json& lower = (*source)["min"];
+            const Json& upper = (*source)["max"];
+            if (!lower.isArray() || !upper.isArray() ||
+                lower.size() < 3 || upper.size() < 3) continue;
+            const float3 lo = point(lower), hi = point(upper);
+            const float3 size = hi - lo;
+            if (!std::isfinite(lo.x) || !std::isfinite(lo.y) || !std::isfinite(lo.z) ||
+                !std::isfinite(hi.x) || !std::isfinite(hi.y) || !std::isfinite(hi.z) ||
+                size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
+            const float3 base{float(node.position.x), lo.y, float(node.position.z)};
+            if (length(base - camera.target) > 1000 && hi.y > 0) continue;
+            object.world = mat4::translate(base) * mat4::scale(size);
+            object.tint = {0.35f, 0.42f, 0.44f, 1};
+            object.boundsMin = lo;
+            object.boundsMax = hi;
+        } else if (node.ref.source == DocumentEntityRef::Source::FpsSpawn) {
+            const float3 pos{float(node.position.x), float(node.position.y),
+                             float(node.position.z)};
+            if (!std::isfinite(pos.x) || !std::isfinite(pos.y) ||
+                !std::isfinite(pos.z)) continue;
+            object.world = mat4::translate(pos) * mat4::scale({0.6f, 1.8f, 0.6f});
+            object.tint = {0.1f, 0.65f, 0.85f, 1};
+            object.boundsMin = {pos.x - 0.3f, pos.y, pos.z - 0.3f};
+            object.boundsMax = {pos.x + 0.3f, pos.y + 1.8f, pos.z + 0.3f};
+        } else {
+            continue;
+        }
         instances.push_back(object);
     }
     const uint64_t hoveredKey = hover.kind == Selection::FpsObject ? hover.ref : 0;
