@@ -41,6 +41,19 @@ for mode in off on; do
     echo "Restore verification missing in $mode" >&2
     cat "$ROOT/rtssim-$mode.log"; exit 1;
   }
+  echo "=== RTS headless COW: $mode ==="
+  "$build/aiverse_headless" --project templates/skirmish --seed 3 --max-seconds 10 \
+    --cow-snapshots --verify-restore-at 2 --verify-restore-ticks 40 \
+    --checksum-log "$ROOT/rtssim-$mode.cow.checksums" > "$ROOT/rtssim-$mode.cow.log" 2>&1 || {
+    cat "$ROOT/rtssim-$mode.cow.log"; exit 1;
+  }
+  grep "Restore OK" "$ROOT/rtssim-$mode.cow.log" || {
+    echo "COW restore verification missing in $mode" >&2
+    cat "$ROOT/rtssim-$mode.cow.log"; exit 1;
+  }
+  diff -u "$ROOT/rtssim-$mode.checksums" "$ROOT/rtssim-$mode.cow.checksums" || {
+    echo "FAIL: COW vs deep RTS checksum mismatch in $mode" >&2; exit 1;
+  }
   echo "=== FPS tests: $mode ==="
   ctest --test-dir "$build" --no-tests=error -R "^(fps|fps_transport)$" --output-on-failure
   "$build/modules/fps/aiverse_fps_tests" examples/fps/arena > "$ROOT/fps-$mode.log" 2>&1 || {
