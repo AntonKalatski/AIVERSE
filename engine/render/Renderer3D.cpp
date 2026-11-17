@@ -126,6 +126,8 @@ void Renderer3D::shutdown() {
     dev_->destroyBuffer(lineVB_); dev_->destroyBuffer(triVB_);
     if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
     if (sceneSelectionTriangle_.valid()) dev_->destroyBuffer(sceneSelectionTriangle_);
+    if (sceneSelectionPrimitiveMaskPipe_.valid())
+        dev_->destroyPipeline(sceneSelectionPrimitiveMaskPipe_);
     for (auto p : {sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_})
         if (p.valid()) dev_->destroyPipeline(p);
     if (sceneSelectionEdgeShader_.valid())
@@ -464,6 +466,21 @@ bool Renderer3D::initSelectionOutline() {
     pd.colorFormat = gfx::PixelFormat::RGBA16F;
     pd.label = "scene selection edge HDR";
     sceneSelectionEdgePipeHdr_ = dev_->createPipeline(pd);
+    // Mask primitives with their REAL geometry, but never modify the scene
+    // depth. The same depth buffer is reused to hide occluded silhouettes.
+    gfx::PipelineDesc primitiveMask;
+    primitiveMask.shader = litShader_;
+    primitiveMask.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+    primitiveMask.attrs[1] = {1, gfx::VertexFormat::Float3, 12};
+    primitiveMask.attrs[2] = {2, gfx::VertexFormat::UByte4N, 24};
+    primitiveMask.attrCount = 3;
+    primitiveMask.stride = sizeof(MeshVertex);
+    primitiveMask.indexType = gfx::IndexType::UInt32;
+    primitiveMask.depthTest = true;
+    primitiveMask.depthWrite = false;
+    primitiveMask.colorFormat = gfx::PixelFormat::RGBA8;
+    primitiveMask.label = "selection primitive mask depth read-only";
+    sceneSelectionPrimitiveMaskPipe_ = dev_->createPipeline(primitiveMask);
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd;
     bd.data = triangle;
@@ -534,7 +551,8 @@ void Renderer3D::renderSelectionOutline(const gfx::PassDesc& mainPass,
         if (item.selection.w <= 0 || !item.mesh || !item.mesh->vb.valid())
             continue;
         if (!bound) {
-            dev_->setPipeline(litPipe_);
+            if (!sceneSelectionPrimitiveMaskPipe_.valid()) break;
+            dev_->setPipeline(sceneSelectionPrimitiveMaskPipe_);
             uploadFrameUniforms(false);
             bound = true;
         }
