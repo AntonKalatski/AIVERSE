@@ -81,11 +81,14 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
         const Json* object = fpsDocumentEntity(map.data.fps, ref);
         if (!object) return false;
         if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
-            if (!object->isArray() || object->size() < 3) return false;
+            if (!object->isArray() || object->size() < 3 ||
+                !(*object)[0].isNumber() || !(*object)[1].isNumber() || !(*object)[2].isNumber()) return false;
             out = {(*object)[0].toDouble(), (*object)[1].toDouble(), (*object)[2].toDouble()};
         } else {
             const Json& lo = (*object)["min"], &hi = (*object)["max"];
             if (!lo.isArray() || !hi.isArray() || lo.size() < 3 || hi.size() < 3) return false;
+            for (size_t axis = 0; axis < 3; ++axis)
+                if (!lo[axis].isNumber() || !hi[axis].isNumber()) return false;
             out = {(lo[0].toDouble() + hi[0].toDouble()) * 0.5,
                    (lo[1].toDouble() + hi[1].toDouble()) * 0.5,
                    (lo[2].toDouble() + hi[2].toDouble()) * 0.5};
