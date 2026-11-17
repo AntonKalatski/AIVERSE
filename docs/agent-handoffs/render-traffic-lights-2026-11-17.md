@@ -135,6 +135,12 @@ Compare with `AIVERSE_EDITOR_EAGER_MODELS=1` (same binary/project/map). Check `Ð
 - **Not tested by a macOS compiler in this agent environment.** Run `aiverse_editor`, `aiverse_deferred_loading_tests`, renderer material batching unit tests, and fixed-camera A/B with identical scenes (cache off vs default). Compare `[model-batch]` sort costs and whole scene CPU frame timing; verify same draw counts and screenshots in both modes. No timing improvement claimed from source changes alone.
 - Potential improvement later: material-group signature invalidation for unsupported runtime mutations of `Material` between subpasses; consider if clients rely on such mutations.
 
+## Step 14 â€” PR #11 and in-editor grouping counters (IMPLEMENTED, benchmark pending)
+- Draft PR https://github.com/chromealex/AIVERSE/pull/11, head `perf/renderer-frame-material-state-cache`, base `perf/rts-visible-type-frame-cache` (PR #10). The PR is stacked on #9/#4 and intentionally NOT merged to main.
+- `3c43590` introduces `ModelRenderStats::materialGroupsReused/materialGroupsResolved` (reused group ID vs new GPU-state hash), removing unused shadow counters; `9bf5c4a` removes old reset from `beginScene`; `c5239f2` increments counters per pass. `e1160cf` exposes them in Scene > Batching > Instancing and indirect details as "Material grouping: N reused / N hashed".
+- Important: counts cover *all model passes* in the current scene, including shadow/reflection; they are not draw-call counts. With `AIVERSE_FRAME_MATERIAL_GROUP_CACHE=off` only repeated identical pointers *within the same pass* can reuse IDs.
+- Source changes were published; real macOS Metal compile/visual verification and before/after CPU/GPU timings remain pending. No acceleration or memory savings claimed.
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
