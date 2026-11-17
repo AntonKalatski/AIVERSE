@@ -227,11 +227,16 @@ public:
         });
         for(auto& [id,node]:nodes_)roots_.push_back(id);
         std::vector<std::pair<Entity,Entity>> links;
+        std::vector<Entity> invalid;
         w.eachExistingConst<Parent>([&](Entity e,const Parent& p){
-            if(contains(e)&&contains(p.value))links.push_back({e,p.value});
+            if(!contains(e))return;
+            if(contains(p.value))links.push_back({e,p.value});
+            else invalid.push_back(e);
         });
-        // Repair invalid/cyclic links after collecting the query results.
-        // This keeps authoritative Parent components consistent with graph.
+        // Repair invalid links outside the query iteration.
+        for(Entity child:invalid)w.remove<Parent>(child);
+        // Repair cyclic links as well; authoritative components and graph
+        // must have identical parent relations after rebuild.
         for(auto [child,parent]:links) {
             if(cycle(child,parent)) {
                 w.remove<Parent>(child);
