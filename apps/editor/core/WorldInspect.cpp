@@ -593,7 +593,13 @@ Json inspectEntity(Simulation& sim, RtsModule& mod, Entity e, const Json& rulesJ
         Json value = extension.read(w, e);
         if (value.isObject()) comps.set(extension.id, std::move(value));
     }
+    // The Simulation's loaded native modules are the authoritative owner of
+    // their additional ECS pools. This path is scoped to this module instance,
+    // avoiding callbacks from a previous project or stale preview.
+    Json moduleSchemas = Json::object();
+    mod.native().inspectComponents(sim, e, comps, moduleSchemas);
     r.set("components", comps);
+    if (moduleSchemas.size() > 0) r.set("componentSchemas", moduleSchemas);
     if (auto* u = w.tryGet<Unit>(e); u && size_t(u->type) < R.types.size()) {
         const UnitType& t = R.types[u->type];
         // effective values (techs, levels, buffs, statuses) next to the type's base
