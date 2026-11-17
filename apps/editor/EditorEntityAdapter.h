@@ -97,4 +97,60 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
     return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
 }
 
+inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
+                                    DocumentTransform delta) {
+    if (!std::isfinite(delta.x) || !std::isfinite(delta.y) || !std::isfinite(delta.z))
+        return false;
+    DocumentTransform before;
+    if (!readDocumentTransform(map, ref, before)) return false;
+    const DocumentTransform after{before.x + delta.x, before.y + delta.y, before.z + delta.z};
+    if (!std::isfinite(after.x) || !std::isfinite(after.y) || !std::isfinite(after.z))
+        return false;
+    if (delta.x == 0 && delta.y == 0 && delta.z == 0) return false;
+    if (ref.source == DocumentEntityRef::Source::MapEntity) {
+        // RTS maps are 2D in their serialized format. Never silently discard Y.
+        if (delta.y != 0) return false;
+        DocEntity* entity = documentMapEntity(map, ref);
+        if (!entity) return false;
+        const float x = float(after.x), z = float(after.z);
+        if (!std::isfinite(x) || !std::isfinite(z)) return false;
+        entity->x = x;
+        entity->z = z;
+        if (entity->at.isObject()) {
+            entity->at.set("x", Json::number(double(x), 3));
+            entity->at.set("y", Json::number(double(z), 3));
+        }
+    } else {
+        Json* entity = fpsDocumentEntity(map.data.fps, ref);
+        if (!entity) return false;
+        auto shifted = [&](const Json& xyz, Json& result) {
+            if (!xyz.isArray() || xyz.size() < 3) return false;
+            for (size_t i = 0; i < 3; ++i)
+                if (!xyz[i].isNumber()) return false;
+            const double coords[3] = {xyz[0].toDouble() + delta.x,
+                                      xyz[1].toDouble() + delta.y,
+                                      xyz[2].toDouble() + delta.z};
+            result = Json::array();
+            for (double value : coords) {
+                if (!std::isfinite(value)) return false;
+                result.push(Json::number(value, 3));
+            }
+            return true;
+        };
+        if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
+            Json moved;
+            if (!shifted(*entity, moved)) return false;
+            *entity = moved;
+        } else {
+            Json lo, hi;
+            if (!shifted((*entity)["min"], lo) || !shifted((*entity)["max"], hi))
+                return false;
+            entity->member("min") = lo;
+            entity->member("max") = hi;
+        }
+    }
+    map.touched();
+    return true;
+}
+
 } // namespace aiverse::editor
