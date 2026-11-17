@@ -8,6 +8,26 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
+**Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`
+(baseline 120 catalog packages, RTS tick stage map, FPS authority backlog, migration
+waves and acceptance checks). Keep the inventory and handoff updated as packages
+are added. A generic public library is NOT equivalent to converting existing
+gameplay; track library publication and actual RTS/FPS adoption separately.
+
+New reusable opt-in ECS packages:
+- `AIVERSE::lib_ecs_timed_mechanics` — reload/fire gate, health/energy regen,
+  despawn by tick; `skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md`.
+- `AIVERSE::lib_ecs_locomotion` — component-based input/state/output around
+  existing shared fixed-point `stepMotion`; `skills/gameplay/aiverse-ecs-locomotion/SKILL.md`.
+- `AIVERSE::lib_ecs_inventory` — ordered, transactional inventory add/remove/
+  transfer using the shared inventory policies;
+  `skills/gameplay/aiverse-ecs-inventory/SKILL.md`.
+All have cross-genre CTest/standalone experiment runner entries but **native
+results remain unverified** until the suite executes. Keep the legacy FPS/RTS
+systems in place until explicit one-writer authority, save/network and replay
+parity tests pass. Continue annotating every code stage in
+`docs/editor-unification-handoff.md`.
+
 AIVERSE is **a composable game-mechanics engine**, not a collection of
 hard-coded RTS/FPS implementations. Every new gameplay feature, library or
 mechanic MUST follow the **Components + Systems** model:
