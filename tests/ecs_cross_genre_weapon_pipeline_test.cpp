@@ -136,8 +136,12 @@ uint64_t exercise(bool cow) {
     replayIntent->requested=true;
     sim.step();
     require(sim.checksum()==dryChecksum,"dry fire rollback/replay checksum mismatch");
-
-    return expected;
+    const auto* finalHp=sim.world().tryGetConst<lg::HitPointsComponent>(host->target);
+    const auto* finalSummary=sim.world().resourceConst<DamageSummary>();
+    require(finalHp&&finalHp->current==65,"dry fire changed target health");
+    require(finalSummary&&finalSummary->count==1&&finalSummary->total==35,
+            "dry fire generated an extra damage event");
+    return dryChecksum;
 }
 int main(){
     const uint64_t expected=exercise<ShooterTag>(false);
