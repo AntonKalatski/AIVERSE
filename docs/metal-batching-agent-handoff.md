@@ -361,3 +361,68 @@ With both `AIVERSE_RTS_PLACEMENT_CACHE=1` and `AIVERSE_FRAME_TRACE=1`, per-120-f
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
+
+
+## 2026-11-17 continuation: verified road/rigid batching and CPU profile; interpret Draw Calls correctly
+
+**Active branch:** \`fix/indirect-vulkan-base-vertex-safety\`. This section documents actual user-run Apple Silicon AIVERSE Editor tests for a 14,772-object RTS scene. Original logs were uploaded in the conversation as \`aiverse-optimized.log\` (road grouping 2), \`aiverse-merge4.log\` (grouping 4), and \`aiverse-cpu-optimized.log\` (grouping 4 plus CPU changes); these log files are **not** tracked in Git. Results are comparable only after startup/warmup and with similar camera/scene.
+
+### Implemented code and commits
+
+- \`f41645e\`: lazy event lookup in \`RtsAnimate.cpp\` for attack events (avoid eager whole-scene map on every tick).
+- \`905ff6e\`, \`b5e02aa\`: restrict RTS shadow FX lookup and timing to actual shadow-producing draws; avoid measurement overhead per object.
+- \`2edc343\`, \`91cd62a\`, \`03b2f2e\`: cache actor-reveal type flags rather than compare string prefixes each draw.
+- \`f03b6ee\` experimented with geometry-pool-first MDI sorting enabled by default; **reversed to opt-in in \`c3c434b\`** because GPU MDI was disabled and sort cost rose with no accepted indirect draws. \`c3c434b\` also introduced \`[model-mdi-gate]\` diagnostics.
+- \`73f9d48\`, \`69df7e6\`: conditionalize \`steady_clock\` profiling in \`drawModelBatch\`; hash-cache identical material/model pointers for material-group IDs; \`[model-batch-submissions]\` logs CPU grouping (not complete GPU command count).
+- \`ca279b2\`: optional CPU road-chunk coalescing by 2x2 or 4x4 spatial groups in \`RtsRoadView.cpp\`. Flags \`AIVERSE_RTS_ROAD_CHUNK_MERGE=2\` or \`4\`, default original granularity (1). Retains per-material primitives; increases culling granularity and therefore requires camera/visual A/B.
+- \`fd2a450\`, \`dae88d9\`: opt-in \`AIVERSE_AUTO_RIGID_MERGE=1\` calls the existing static-primitive compaction during model preparation. Protect animated/skinned/variant/LOD/runtime-mutable node content and verify any client-authored node transforms before production enablement.
+- \`fada836\`: avoid repeatedly calling \`loadType()\` for objects of the same type within one frame.
+- \`90561be\`: skip facing interpolation and sqrt for unchanged facings; move completed \`SceneObject\` into the output vector instead of copying.
+- \`5a30e91\`: resolve per-type \`teamFromTerritory\` configuration once per \`sceneFromSim\` build and hoist arsenal/top-down module pointers.
+- \`a1f6430\`: precompute \`ModelChoice::staticPlacementEligible\` and \`staticAnimateEligible\` on choice creation/reload, retaining per-frame checks for FX, movement, animator and changing world state.
+
+### User-verified results and limitations
+
+- Road 2x2: \`[rts-road-merge] group=2 source-chunks=106 merged-chunks=33 success=1\`.
+- Road 4x4: \`[rts-road-merge] group=4 source-chunks=106 merged-chunks=9 success=1\` (91.5% fewer road *models/chunks*, **not** 91.5% fewer whole-scene GPU draws). More aggressive grouping may cull less effectively.
+- \`[rigid-merge]\` confirmed many real assets were compacted. Examples: \`models/seaport/road_truck.glb\` 21 -> 6 primitives; traffic signal variants 21 -> 7; many \`plaza-gen\` buildings were reduced. Do not assume arbitrary animated vehicle meshes are safe to merge.
+- The user log with 4x4 roads before the latest CPU changes had stable \`build\` ~2.91 ms, \`view\` ~8.57 ms, \`objects\` ~7.46 ms, \`state\` ~1.30 ms, \`renderer\` ~0.88 ms (variable visibility/camera). After \`90561be\`, \`5a30e91\`, \`a1f6430\`, latest stable log had \`build\` ~2.90 ms, \`view\` ~8.29 ms, \`objects\` ~7.22 ms, \`state\` ~1.00 ms, \`animate\` ~1.06 ms and \`renderer\` ~1.05 ms. Thus \`state\` appears roughly 23% faster while overall \`view\` improves roughly 3%; the renderer difference reflects different visible workloads and is **not proof of a renderer regression or gain**.
+- \`AIVERSE_RTS_STATIC_ANIMATE_FAST=1\`: about 13,956 fast-path objects / 14,772 objects. \`AIVERSE_RTS_PLACEMENT_CACHE=1\`: approximately 14,205 placement hits, 0 misses after warmup.
+- Startup/streaming/initial population frames had \`view\` 25+ ms and \`renderer\` 25+ ms. Exclude these from steady-state benchmarks and avoid comparing windows with different cameras.
+- Metal backend \`engine/gfx/metal/GfxMetal.mm::supportsMultiDrawIndirect()\` still returns false by default. Measured \`[model-mdi-gate]\`: \`supported=0 allowed=0 enabled=1 adaptive-fallback=0\`. This is intentional, because a previous opt-in Metal ICB path crashed Apple G15 inside \`AGX executeCommandsInBufferCommon\`. Do **not** blindly enable \`AIVERSE_EXPERIMENTAL_METAL_ICB=1\` globally.
+- User-visible model warnings: \`models/north-city/trim_road_layout_*.glb\` missing GLB binary chunk, resulting in fallback built-in shapes; \`models/natural-coast/*.glb\` refer to unavailable \`_shared_textures\` paths. These are outstanding asset correctness issues, not batching results.
+
+### Why the Scene Draw Calls visualization still looks fragmented
+
+The question was specifically raised by the owner after testing group 4. In \`Renderer3DModels.cpp::drawModelBatch\`, debug colours advance once **per model draw submission/batch**. Road chunk coalescing reduces separate road models, but \`RtsRoadView::toModel\` still emits **one primitive per material inside each merged chunk**; asphalt, curbs, shoulders, sidewalks and painted road variants still require independent direct calls when MDI is disabled. Repeated **identical** primitives can instance, but distinct meshes do not become one call merely from material equality. \`drawCallDebug_\` also disables GPU-encoded ICB execution in the opaque pass, so do not treat the debug view as equivalent to production GPU batching when experimental ICB is active.
+
+In \`apps/editor/windows/SceneWindow.cpp::batchingControls\`, \`Renderer draws (all passes)\` includes shadow/opaque/transparent and other passes, not visible-object count; \`Model instances submitted\` counts instances, not GPU submissions; \`Model instanced calls\` counts batches that use instancing. A single object or chunk can produce multiple draw calls due to its materials/meshes and render passes. Terrain, decals and callback rendering may be outside the model draw-call colouring or reported differently. GPU indirect submissions, indirect command count, CPU batches and true hardware draw commands are different metrics. Do not promise one draw call for all roads or assert the visual debugger is wrong without verifying individual primitive/material groups.
+
+**Next useful diagnostics:** report per-pass direct draw submissions; per-material/geometry groups; instances; road chunks and road primitives; mesh material-batch compaction. Ensure the visual debug legend matches exactly what is coloured and state whether unsupported GPU routes are disabled. Current \`[model-batch-submissions]\` is a CPU grouping counter and can include multiple pass invocations; it is not a substitute for a GPU capture.
+
+### Reproduction command (one build; compare by restarting with flags)
+
+\`\`\`sh
+cd ~/Projects/AIVERSE
+git pull --ff-only origin fix/indirect-vulkan-base-vertex-safety
+cmake --build build-metal -j 8
+AIVERSE_RTS_PLACEMENT_CACHE=1 \
+AIVERSE_RTS_STATIC_ANIMATE_FAST=1 \
+AIVERSE_RTS_ROAD_CHUNK_MERGE=4 \
+AIVERSE_AUTO_RIGID_MERGE=1 \
+AIVERSE_FRAME_TRACE=1 \
+AIVERSE_BENCH_UNCAPPED=1 \
+AIVERSE_MODEL_BATCH_PROFILE=1 \
+./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor \
+2>&1 | tee /tmp/aiverse-cpu-optimized.log
+\`\`\`
+
+For a clean CPU benchmark, disable \`AIVERSE_MODEL_BATCH_PROFILE\`; retain comparable cameras, selections and visual mode. Run with grouping 2 and 4 in separate processes to compare roads without rebuilding. **Do not use \`cmake --build build-metal --target AiverseEditor\`: this target is absent from the user's Make build; use \`cmake --build build-metal -j 8\`.**
+
+### Follow-up engineering work (not yet implemented)
+
+1. Real incremental CPU scene/render-record cache with stable IDs and dirty generations, preserving camera-dependent culling, edits, selection, visibility, construction, animation and material/FX changes. \`PersistentGpuScene\` is not equivalent to a persistent CPU render-item cache.
+2. Breakdown of the remaining ~2.9 ms \`buildEditScene\` and ~7.2 ms \`RtsView\` object phase; verify a repeated same-camera benchmark before modifying architecture.
+3. A more informative Scene > Batching UI and Draw Calls legend splitting model passes, real API submissions and instances, and explaining road material splits.
+4. Safe Metal ICB driver-level validation before ever enabling MDI by default.
+5. Fix missing/invalid GLB and texture assets separately; do not confuse fallback geometry with real batching success.
