@@ -148,24 +148,58 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         }
         instances.push_back(object);
     }
+    // FPS actors belong to the live-style World State resource. Draw simple
+    // readonly scene markers from its snapshot without fabricating Entity IDs.
+    const Json& runtime = fpsRuntimeSnapshot();
+    const Json& actors = runtime["actors"];
+    if (actors.isArray()) {
+        for (size_t i = 0; i < actors.size(); ++i) {
+            const Json& pos = actors[i]["position"];
+            if (!pos.isArray() || pos.size() != 3 ||
+                !pos[0].isNumber() || !pos[1].isNumber() || !pos[2].isNumber())
+                continue;
+            const float3 point{float(pos[0].toDouble()),
+                               float(pos[1].toDouble()),
+                               float(pos[2].toDouble())};
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) ||
+                !std::isfinite(point.z)) continue;
+            SceneRenderable actor;
+            actor.runtimeActor = int(i);
+            actor.world = mat4::translate(point) * mat4::scale({0.5f, 1.7f, 0.5f});
+            actor.tint = {0.85f, 0.68f, 0.25f, 1};
+            actor.mesh = &fpsPreviewMesh_;
+            actor.pickable = true;
+            actor.boundsMin = {point.x - 0.25f, point.y, point.z - 0.25f};
+            actor.boundsMax = {point.x + 0.25f, point.y + 1.7f, point.z + 0.25f};
+            instances.push_back(actor);
+        }
+    }
     const uint64_t hoveredKey = hover.kind == Selection::FpsObject ? hover.ref : 0;
     for (auto& object : instances) {
-        object.selected = selectedKey != 0 && object.entity == selectedKey;
-        if (!object.selected)
+        object.selected = object.runtimeActor >= 0
+            ? selection.kind == Selection::FpsActor &&
+              selection.index == object.runtimeActor
+            : selectedKey != 0 && object.entity == selectedKey;
+        if (!object.selected && object.runtimeActor < 0)
             for (const auto& chosen : selectionSet)
                 if (chosen.kind == Selection::FpsObject &&
                     chosen.ref == object.entity) {
                     object.selected = true;
                     break;
                 }
-        object.hovered = !object.selected && hoveredKey != 0 && object.entity == hoveredKey;
+        object.hovered = !object.selected &&
+            (object.runtimeActor >= 0
+                ? hover.kind == Selection::FpsActor &&
+                  hover.index == object.runtimeActor
+                : hoveredKey != 0 && object.entity == hoveredKey);
     }
     submitSceneRenderables(r3d_, instances);
     // Draw transform axes from the selected renderable, if visible.
     for (const auto& selected : instances) {
         // The gizmo belongs to the primary selected entity, not whichever
         // selected collider happens to come first in source order.
-        if (!selected.selected || selected.entity != selectedKey) continue;
+        if (!selected.selected || selected.runtimeActor >= 0 ||
+            selected.entity != selectedKey) continue;
         DocumentEntityRef ref;
         DocumentTransform position;
         if (!DocumentEntityRef::fromFpsKey(selected.entity, ref) ||
