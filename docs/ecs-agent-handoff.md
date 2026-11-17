@@ -358,6 +358,12 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - `5ce3dbb`: `tests/ecs_experiments_test.cpp` validates same-lane mixed-thread rejection, separate lane acceptance, lane-major ordering, and ownership reset on subsequent flush.
 - These commits have not yet been built/tested on the user's Mac; previous green suite predates them.
 
+## 2026-11-17 — CI race checks and source validation limitation
+
+- Commit `96327a7`: added a Linux ThreadSanitizer job in `.github/workflows/ecs-experiments.yml` in addition to the Linux/macOS normal and ASan/UBSan matrix. The sanitizer will report data races from tests instrumented by `--tsan`; this does not prove all gameplay systems are safe.
+- Attempted native GitHub repository fetch in assistant environment: `git ls-remote https://github.com/chromealex/AIVERSE.git HEAD` failed because `github.com` could not be resolved. Therefore source changes committed through the GitHub connector are **not** locally compiled by this assistant.
+- Last checked commit had no associated *PR-triggered* workflow runs reported. Do not claim CI success until actual job results are visible; CI may be disabled or run only on push events.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
