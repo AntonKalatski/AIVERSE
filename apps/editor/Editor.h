@@ -5,6 +5,7 @@
 //
 // The public part of Editor is the API windows use; keep it small and stable.
 #pragma once
+#include "SceneRenderable.h"
 #include <cmath>
 #include <deque>
 #include <memory>
@@ -183,6 +184,9 @@ public:
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
     void enqueueFpsSceneGeometry(const render::RTSCamera&);
+    int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
+    void selectFpsSceneObject(int index) { fpsSelectedSceneObject_ = index; }
+    int selectedFpsSceneObject() const { return fpsSelectedSceneObject_; }
     void startPlay(int humanSlot = 0);
     void stopPlay();
     // Play as in the game client, inside the Game window (EditorClientPlay.cpp, ClientHost.h): the game's
@@ -312,6 +316,8 @@ private:
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
     render::Mesh fpsPreviewMesh_;
+    std::vector<SceneRenderable> fpsSceneObjects_;
+    int fpsSelectedSceneObject_ = -1;
     render::PostFx postFx_;
     game::RtsView view_;
     bool showPicker_ = false;
