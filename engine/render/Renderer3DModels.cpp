@@ -602,6 +602,8 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         for (uint32_t n = 0; n < count; ++n)
             if (modelItems_[items[n]].model->gpuBaseVertex != 0) return false;
     }
+    const bool traceIndirect = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
+    const auto indirectStart = std::chrono::steady_clock::now();
     std::vector<gfx::DrawIndexedIndirectCommand> commands;
     commands.reserve(count);
     uint64_t triangles = 0;
@@ -622,7 +624,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     // Avoid switching to indirect for tiny groups where indexed draws win.
     const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
     if (commands.size() < minimumCommands) return false;
+    const auto afterGrouping = std::chrono::steady_clock::now();
     if (!drawModelBatch(items, count, phase, false)) return true; // pipeline warming: no fallback draw
+    const auto afterPipeline = std::chrono::steady_clock::now();
     if (!indirectCommands_.valid()) {
         gfx::BufferDesc d;
         d.type = gfx::BufferType::Indirect;
@@ -633,11 +637,29 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         d.label = "model indexed indirect commands";
         indirectCommands_ = dev_->createBuffer(d);
     } else dev_->updateBuffer(indirectCommands_, commands.data(), commands.size() * sizeof(commands[0]));
+    const auto afterUpload = std::chrono::steady_clock::now();
     if (!indirectCommands_.valid() ||
         !dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()))) {
         for (uint32_t n = 0; n < count; ++n)
             drawModelBatch(items + n, 1, phase);
         return true;
+    }
+    const auto afterSubmit = std::chrono::steady_clock::now();
+    if (traceIndirect) {
+        static uint32_t samples = 0;
+        static double sums[4] = {};
+        const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        sums[0] += ms(indirectStart, afterGrouping);
+        sums[1] += ms(afterGrouping, afterPipeline);
+        sums[2] += ms(afterPipeline, afterUpload);
+        sums[3] += ms(afterUpload, afterSubmit);
+        if (++samples == 600) {
+            std::fprintf(stderr,
+                "[render-indirect] avg/600 grouping=%.4f pipeline=%.4f upload=%.4f backend=%.4f ms\n",
+                sums[0]/samples, sums[1]/samples, sums[2]/samples, sums[3]/samples);
+            samples = 0;
+            for (double& v : sums) v = 0.0;
+        }
     }
     lastItem_ = &modelItems_[items[count - 1]];
     modelStats_.triangles += triangles;
