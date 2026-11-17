@@ -60,11 +60,8 @@ public:
     const char* dockArea() const override { return "right"; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            ImGui::TextWrapped("%s",genreText(ed.ws(),"fps.editor.hint").c_str());
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            return;
-        }
+        // All genres share the same entity inspector. FPS tools are available separately;
+        // they must not hide the selected entity's Transform and ECS components.
         Selection& s = ed.selection;
         if (!(s == lastSel_)) { message_.clear(); lastSel_ = s; }
         // Studio Inspector header, with a direct jump to the scene and map properties.
