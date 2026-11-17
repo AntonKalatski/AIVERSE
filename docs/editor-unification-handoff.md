@@ -494,3 +494,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - On recycled Entity indices the sync removes mismatched runtime component kinds along with former inspector components; stale vanished dynamic objects are destroyed in deterministic source-ID order. On save v9 load, the existing `syncActorEntities/syncDynamicEntities` creates all authoritative payloads again from the deserialized legacy state; SimSnapshot includes the ECS pools.
 - Does **not** yet rewrite projectile collision/damage, loot pickup or vehicle simulation algorithms to operate directly on ECS pools; these continue using State arrays in the tick. Does not change default behavior or FPS save format. This is **stage F**, not final complete migration.
 - **Verification:** compilation, CI, FPS deterministic checks, save/restore parity pending. Next add direct ECS dynamics mutation+rollback tests, then eliminate gameplay dependency on temporary arrays system by system.
+
+### 2026-11-18 — FPS ECS authority migration: stage G (canonical save/hash interface)
+- Commit `8ca50de`: declares `Module::authoritativeStateCopy(Simulation&)` to construct legacy save v9 / checksum state **from authoritative ECS ActorRuntime/ProjectileRuntime/LootRuntime/VehicleRuntime components**, while preserving non-entity round/history/meta data from `State`.
+- This commit is declaration only; next action must implement and route `hashState` and `serializeState` through the materialized canonical snapshot under `fps.ecsAuthority`.
+- **Verification:** not run. Do not turn the storage option on by default until paired runtime and save/load checks pass.
