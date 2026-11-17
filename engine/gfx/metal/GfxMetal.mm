@@ -154,6 +154,7 @@ public:
         memcpy(static_cast<uint8_t*>(current(*b).contents) + offset, data, size);
     }
     void destroyBuffer(BufferHandle h) override { buffers_.remove(h.id); }
+    bool canUpdateSharedBuffers() const override { return !enc_ && !compute_; }
 
     bool supportsCompute() const override {
         if (@available(macOS 10.14, iOS 12.0, *)) return true;
