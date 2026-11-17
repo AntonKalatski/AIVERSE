@@ -719,3 +719,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS weapon launch, stage I (skill cross-links)
 - Commit `2363b7d`: updated the existing `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` to direct agents to `aiverse-ecs-weapon-launch` and `aiverse-ecs-impact-damage`, the complete public header chain and three cross-genre regression tests. This prevents a future agent from implementing duplicate RTS/FPS weapon or damage stages when reading the older flight-only skill.
 - Work in this checkpoint is limited to independent reusable packages and tests. **Existing** `RtsModule` and `fps::Module` shooting/AI/netcode remain to be migrated, one stage at a time with real checksum and legacy save parity checks. CI not confirmed green.
+
+
+### 2026-11-18 — Shared weapon dry-fire regression checkpoint
+- Commits `51d53d4553c5034f2a124b5511f107b97d377df2` and `a302652200d196b69b0f4057ae4071a52aa5653d`: extended `tests/ecs_cross_genre_weapon_pipeline_test.cpp` to request another shot after ammo reaches zero and after the initial 8-tick snapshot replay checksum parity checkpoint. It checks request consumption, unchanged ammo, unchanged nextShotId and empty pending spawn queue for both shooter and artillery hosts, including COW runs.
+- The second commit places the dry-fire scenario **after** the original replay checksum assertion to avoid comparing different tick counts.
+- Verification: GitHub source commits only; native compile, CTest, sanitizer and real FPS/RTS gameplay integration **not executed**. Next: compile and run the suite, address failures, then migrate real FPS/RTS launch paths to the shared weapon systems one at a time with save/network parity.
