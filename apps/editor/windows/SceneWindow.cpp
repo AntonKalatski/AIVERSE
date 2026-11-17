@@ -226,7 +226,11 @@ private:
                 ImGui::Text("Persistent GPU scene: %u objects", stats.live);
                 ImGui::Text("Scene upload: %u records / %u ranges (%.1f KiB)",
                             stats.records, stats.ranges, double(stats.bytes) / 1024.0);
-                ImGui::TextDisabled("Staging only: model shaders still use the classic path.");
+                if (const char* cull = std::getenv("AIVERSE_GPU_SCENE_CULL");
+                    cull && std::strcmp(cull, "1") == 0)
+                    ImGui::Text("Metal GPU frustum: %s",
+                                stats.gpuFrustumDispatched ? "compute dispatched" : "unavailable");
+                ImGui::TextDisabled("Diagnostics only: visibility flags are not used for draws.");
             }
             if (ImGui::Button("Compare A/B same frame##scene_batch") && !benchmarkActive_)
                 measureBatchingNextFrame_ = true;
