@@ -7,6 +7,7 @@
 //   focuses the Scene; arrows, Delete, F, F2 (rename), Ctrl+D (duplicate); drag objects onto a player to
 //   change the owner; eye / lock per player, type and section; hover highlights the object in the Scene.
 #include "../EditorEntityAdapter.h"
+#include "../EditorSceneNodes.h"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -55,36 +56,27 @@ public:
 
     void draw(Editor& ed) override {
         if (ed.ws().project.isFps()) {
-            const auto& fps = ed.doc().data.fps;
+            // The same authoring-node index is shared with Scene/Inspector.
+            // This lists document objects, never synthetic ECS components.
+            const auto nodes = enumerateDocumentSceneNodes(ed.doc(), true);
             ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
-            if (ImGui::TreeNodeEx("Colliders", ImGuiTreeNodeFlags_DefaultOpen)) {
-                size_t index = 0;
-                for (size_t count = fps["colliders"].size(); index < count; ++index) {
-                    ImGui::PushID(int(index));
-                    const std::string label = "Box Collider #" + std::to_string(index + 1);
-                    if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(false, index))) {
-                        ed.selectFpsSceneSource(false, index);
-                        DocumentTransform transform;
-                        if (readDocumentTransform(ed.doc(), DocumentEntityRef::fpsCollider(index), transform))
-                            ed.sceneCam.target = {float(transform.x), float(transform.y), float(transform.z)};
+            for (const char* group : {"Colliders", "Spawn Points"}) {
+                if (!ImGui::TreeNodeEx(group, ImGuiTreeNodeFlags_DefaultOpen))
+                    continue;
+                for (const auto& node : nodes) {
+                    if (node.group != group) continue;
+                    ImGui::PushID(int(node.ref.index));
+                    const bool spawn = node.ref.source == DocumentEntityRef::Source::FpsSpawn;
+                    if (ImGui::Selectable(node.label.c_str(),
+                                          ed.isFpsSceneSourceSelected(spawn, node.ref.index))) {
+                        ed.selectFpsSceneSource(spawn, node.ref.index);
+                        if (node.hasPosition)
+                            ed.sceneCam.target = {float(node.position.x),
+                                                  float(node.position.y),
+                                                  float(node.position.z)};
                     }
                     ImGui::PopID();
                 }
-                ImGui::TreePop();
-            }
-            if (ImGui::TreeNodeEx("Spawn Points", ImGuiTreeNodeFlags_DefaultOpen)) {
-                size_t index = 0;
-                for (size_t count = fps["spawns"].size(); index < count; ++index) {
-                    ImGui::PushID(int(index));
-                    const std::string label = "Spawn #" + std::to_string(index + 1);
-                    if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(true, index))) {
-                        ed.selectFpsSceneSource(true, index);
-                        DocumentTransform transform;
-                        if (readDocumentTransform(ed.doc(), DocumentEntityRef::fpsSpawn(index), transform))
-                            ed.sceneCam.target = {float(transform.x), float(transform.y), float(transform.z)};
-                    }
-                    ImGui::PopID();
-                                    }
                 ImGui::TreePop();
             }
             return;
