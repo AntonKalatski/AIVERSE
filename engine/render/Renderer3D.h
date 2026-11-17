@@ -488,6 +488,7 @@ private:
         const Model* model = nullptr;
         const Material* material = nullptr;
         uint32_t itemIndex = 0, flags = 0, vb = 0, ib = 0;
+        uint32_t bakedTex = 0, morphTex = 0;
         uint64_t materialHash = 0;
         bool operator==(const GpuBatchPlanItem&) const = default;
     };
