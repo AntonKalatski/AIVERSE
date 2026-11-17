@@ -45,53 +45,179 @@ public:
     // Snapshots for rollback netcode: deep copy that reuses this pool's memory when possible.
     virtual std::unique_ptr<IPool> clone() const = 0;
     virtual void copyFrom(const IPool& other) = 0;
+    virtual void setPaged(bool enabled) = 0;
+    virtual void prepareParallelWrite() = 0;
+    virtual size_t sharedPageCount() const = 0;
 };
 
 template <class T>
 class Pool final : public IPool {
 public:
-    static constexpr uint32_t kNone = UINT32_MAX;
+    static constexpr uint32_t kNone=UINT32_MAX;
+    static constexpr size_t kCowPageElements=256;
+
+    // Contiguous Sparse Set is unchanged in default (non-COW) mode. Opt-in COW
+    // uses shared metadata and 256-element pages for component payloads.
+    void setPaged(bool enabled) override {
+        if(enabled==paged_)return;
+        if(enabled) {
+            sparseCow_=std::make_shared<std::vector<uint32_t>>(std::move(sparse_));
+            denseCow_=std::make_shared<std::vector<Entity>>(std::move(dense_));
+            pages_.clear();
+            pages_.reserve((data_.size()+kCowPageElements-1)/kCowPageElements);
+            for(size_t i=0;i<data_.size();++i) {
+                if(i%kCowPageElements==0) {
+                    auto page=std::make_shared<std::vector<T>>();
+                    page->reserve(kCowPageElements);
+                    pages_.push_back(std::move(page));
+                }
+                pages_.back()->push_back(std::move(data_[i]));
+            }
+            data_.clear();
+        } else {
+            sparse_=*sparseCow_;
+            dense_=*denseCow_;
+            data_.clear();
+            data_.reserve(dense_.size());
+            for(const auto& page:pages_)
+                for(const auto& value:*page)data_.push_back(value);
+            sparseCow_.reset();
+            denseCow_.reset();
+            pages_.clear();
+        }
+        paged_=enabled;
+    }
+    void prepareParallelWrite() override {
+        if(paged_)for(auto& page:pages_)ensureUnique(page);
+    }
+    size_t sharedPageCount() const override {
+        size_t result=0;
+        if(paged_)for(const auto& page:pages_)if(!page.unique())++result;
+        return result;
+    }
 
     template <class... Args>
-    T& emplace(Entity e, Args&&... args) {
-        if (e.index >= sparse_.size()) sparse_.resize(e.index + 1, kNone);
-        if (sparse_[e.index] != kNone) { data_[sparse_[e.index]] = T{std::forward<Args>(args)...}; return data_[sparse_[e.index]]; }
-        sparse_[e.index] = static_cast<uint32_t>(dense_.size());
-        dense_.push_back(e);
-        data_.push_back(T{std::forward<Args>(args)...});
-        return data_.back();
-    }
-    void remove(uint32_t index) override {
-        if (!has(index)) return;
-        uint32_t pos = sparse_[index];
-        uint32_t last = static_cast<uint32_t>(dense_.size() - 1);
-        if (pos != last) {
-            dense_[pos] = dense_[last];
-            data_[pos] = std::move(data_[last]);
-            sparse_[dense_[pos].index] = pos;
+    T& emplace(Entity e,Args&&... args) {
+        if(!paged_) {
+            if(e.index>=sparse_.size())sparse_.resize(e.index+1,kNone);
+            if(sparse_[e.index]!=kNone) {
+                data_[sparse_[e.index]]=T{std::forward<Args>(args)...};
+                return data_[sparse_[e.index]];
+            }
+            sparse_[e.index]=static_cast<uint32_t>(dense_.size());
+            dense_.push_back(e);
+            data_.push_back(T{std::forward<Args>(args)...});
+            return data_.back();
         }
-        dense_.pop_back(); data_.pop_back();
-        sparse_[index] = kNone;
+        ensureUnique(sparseCow_);
+        if(e.index>=sparseCow_->size())sparseCow_->resize(e.index+1,kNone);
+        if((*sparseCow_)[e.index]!=kNone) {
+            T& current=dataAt((*sparseCow_)[e.index]);
+            current=T{std::forward<Args>(args)...};
+            return current;
+        }
+        ensureUnique(denseCow_);
+        const size_t pos=denseCow_->size();
+        if(pos%kCowPageElements==0) {
+            auto page=std::make_shared<std::vector<T>>();
+            page->reserve(kCowPageElements);
+            pages_.push_back(std::move(page));
+        } else ensureUnique(pages_.back());
+        pages_.back()->push_back(T{std::forward<Args>(args)...});
+        denseCow_->push_back(e);
+        (*sparseCow_)[e.index]=static_cast<uint32_t>(pos);
+        return pages_.back()->back();
     }
-    bool has(uint32_t index) const override { return index < sparse_.size() && sparse_[index] != kNone; }
-    void clear() override { sparse_.clear(); dense_.clear(); data_.clear(); }
-    std::unique_ptr<IPool> clone() const override { return std::make_unique<Pool<T>>(*this); }
-    void copyFrom(const IPool& other) override { *this = static_cast<const Pool<T>&>(other); }
 
-    T* tryGet(uint32_t index) { return has(index) ? &data_[sparse_[index]] : nullptr; }
-    const T* tryGet(uint32_t index) const { return has(index) ? &data_[sparse_[index]] : nullptr; }
-    T& get(uint32_t index) { assert(has(index)); return data_[sparse_[index]]; }
-    const T& get(uint32_t index) const { assert(has(index)); return data_[sparse_[index]]; }
+    void remove(uint32_t index) override {
+        if(!has(index))return;
+        if(!paged_) {
+            uint32_t pos=sparse_[index];
+            uint32_t last=static_cast<uint32_t>(dense_.size()-1);
+            if(pos!=last) {
+                dense_[pos]=dense_[last];
+                data_[pos]=std::move(data_[last]);
+                sparse_[dense_[pos].index]=pos;
+            }
+            dense_.pop_back();data_.pop_back();
+            sparse_[index]=kNone;
+            return;
+        }
+        ensureUnique(sparseCow_);
+        ensureUnique(denseCow_);
+        const size_t pos=(*sparseCow_)[index];
+        const size_t last=denseCow_->size()-1;
+        if(pos!=last) {
+            dataAt(pos)=std::move(dataAt(last));
+            (*denseCow_)[pos]=(*denseCow_)[last];
+            (*sparseCow_)[(*denseCow_)[pos].index]=static_cast<uint32_t>(pos);
+        }
+        ensureUnique(pages_[last/kCowPageElements]);
+        pages_[last/kCowPageElements]->pop_back();
+        if(pages_.back()->empty())pages_.pop_back();
+        denseCow_->pop_back();
+        (*sparseCow_)[index]=kNone;
+    }
 
-    size_t size() const { return dense_.size(); }
-    Entity entityAt(size_t i) const { return dense_[i]; }
-    T& dataAt(size_t i) { return data_[i]; }
-    const T& dataAt(size_t i) const { return data_[i]; }
-
+    bool has(uint32_t index) const override {
+        const auto& sparse=paged_?*sparseCow_:sparse_;
+        return index<sparse.size()&&sparse[index]!=kNone;
+    }
+    void clear() override {
+        if(paged_) {
+            sparseCow_=std::make_shared<std::vector<uint32_t>>();
+            denseCow_=std::make_shared<std::vector<Entity>>();
+            pages_.clear();
+        } else {sparse_.clear();dense_.clear();data_.clear();}
+    }
+    std::unique_ptr<IPool> clone() const override {
+        return std::make_unique<Pool<T>>(*this);
+    }
+    void copyFrom(const IPool& other) override {
+        *this=static_cast<const Pool<T>&>(other);
+    }
+    T* tryGet(uint32_t index) {
+        if(!has(index))return nullptr;
+        return &dataAt(indexOf(index));
+    }
+    const T* tryGet(uint32_t index) const {
+        if(!has(index))return nullptr;
+        return &dataAt(indexOf(index));
+    }
+    T& get(uint32_t index) {
+        assert(has(index));return dataAt(indexOf(index));
+    }
+    const T& get(uint32_t index) const {
+        assert(has(index));return dataAt(indexOf(index));
+    }
+    size_t size() const {return paged_?denseCow_->size():dense_.size();}
+    Entity entityAt(size_t i) const {
+        return paged_?(*denseCow_)[i]:dense_[i];
+    }
+    T& dataAt(size_t i) {
+        if(!paged_)return data_[i];
+        auto& page=pages_[i/kCowPageElements];
+        ensureUnique(page);
+        return (*page)[i%kCowPageElements];
+    }
+    const T& dataAt(size_t i) const {
+        if(!paged_)return data_[i];
+        return (*pages_[i/kCowPageElements])[i%kCowPageElements];
+    }
 private:
+    template<class V> static void ensureUnique(std::shared_ptr<V>& value) {
+        if(!value.unique())value=std::make_shared<V>(*value);
+    }
+    size_t indexOf(uint32_t index) const {
+        return paged_?(*sparseCow_)[index]:sparse_[index];
+    }
+    bool paged_=false;
     std::vector<uint32_t> sparse_;
     std::vector<Entity> dense_;
     std::vector<T> data_;
+    std::shared_ptr<std::vector<uint32_t>> sparseCow_;
+    std::shared_ptr<std::vector<Entity>> denseCow_;
+    std::vector<std::shared_ptr<std::vector<T>>> pages_;
 };
 
 class World {
@@ -113,6 +239,14 @@ public:
             for (size_t i=0;i<resources_.size();++i)
                 if(resources_[i] && !resources_[i].unique())
                     resources_[i]=resourceOps_[i].make(resources_[i].get());
+        }
+        if(enable && !cowSnapshots_) {
+            for(auto& p:pools_)if(p) {
+                if(!p.unique())p=std::shared_ptr<IPool>(p->clone());
+                p->setPaged(true);
+            }
+        } else if(!enable && cowSnapshots_) {
+            for(auto& p:pools_)if(p)p->setPaged(false);
         }
         cowSnapshots_=enable;
     }
@@ -254,7 +388,9 @@ public:
     // Resolve COW once on the caller before launching disjoint write lanes.
     // A null result means the type was never registered; no registry mutation.
     template <class T> Pool<T>* prepareExistingWrite() {
-        return poolIfExists<T>();
+        auto* pool=poolIfExists<T>();
+        if(pool)pool->prepareParallelWrite();
+        return pool;
     }
 
     template <class T> size_t count() { return countExisting<T>(); }
@@ -272,7 +408,11 @@ public:
     }
     template <class T> [[gnu::noinline]] Pool<T>& makePool(uint32_t id) {
         if (id >= pools_.size()) pools_.resize(id + 1);
-        if (!pools_[id]) pools_[id] = std::make_shared<Pool<T>>();
+        if (!pools_[id]) {
+            auto fresh=std::make_shared<Pool<T>>();
+            if(cowSnapshots_)fresh->setPaged(true);
+            pools_[id]=std::move(fresh);
+        }
         else if(cowSnapshots_ && !pools_[id].unique())
             pools_[id]=std::shared_ptr<IPool>(pools_[id]->clone());
         return *static_cast<Pool<T>*>(pools_[id].get());
@@ -309,6 +449,11 @@ public:
     size_t sharedPoolCount() const {
         size_t count=0;
         for(const auto& p:pools_)if(p && !p.unique())++count;
+        return count;
+    }
+    size_t sharedCowPageCount() const {
+        size_t count=0;
+        for(const auto& p:pools_)if(p)count+=p->sharedPageCount();
         return count;
     }
     size_t sharedResourceCount() const {
