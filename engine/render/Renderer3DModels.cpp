@@ -644,22 +644,60 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     const bool traceIndirect = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto indirectStart = std::chrono::steady_clock::now();
+    const bool layoutCaching = std::getenv("AIVERSE_MDI_LAYOUT_CACHE") &&
+        std::strcmp(std::getenv("AIVERSE_MDI_LAYOUT_CACHE"), "1") == 0;
     auto& commands = indirectCommandScratch_;
     commands.clear();
-    if (commands.capacity() < count) commands.reserve(count);
     uint64_t triangles = 0;
-    // Consecutive instances of one primitive form ONE indirect command.
-    // Subsequent primitives share the same U0 data block; firstInstance
-    // selects their transform/instance parameters in the vertex shader.
-    for (uint32_t n = 0; n < count;) {
-        const auto& part = modelItems_[items[n]];
-        uint32_t end = n + 1;
-        while (end < count && modelItems_[items[end]].prim == part.prim) ++end;
-        commands.push_back({part.indexCount, end - n,
-                            part.firstIndex + part.model->gpuFirstIndex,
-                            int32_t(part.model->gpuBaseVertex), n});
-        triangles += uint64_t(part.indexCount / 3) * (end - n);
-        n = end;
+    bool cacheHit = false;
+    IndirectLayoutEntry* cacheEntry = nullptr;
+    if (layoutCaching) {
+        auto& entries = indirectLayoutCache_[size_t(phase)];
+        const size_t cursor = indirectLayoutCursor_[size_t(phase)]++;
+        if (cursor == entries.size()) entries.emplace_back();
+        cacheEntry = &entries[cursor];
+        // Compare exact geometry signatures, not hashes: stale model pointers,
+        // mesh reloads and LOD changes must never reuse invalid commands.
+        cacheHit = cacheEntry->signature.size() == count;
+        if (cacheHit) for (uint32_t n = 0; n < count; ++n) {
+            const auto& part = modelItems_[items[n]];
+            const IndirectLayoutItem current{part.prim, part.indexCount, part.firstIndex,
+                part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)};
+            if (!(cacheEntry->signature[n] == current)) {
+                cacheHit = false;
+                break;
+            }
+        }
+        if (cacheHit) {
+            commands.assign(cacheEntry->commands.begin(), cacheEntry->commands.end());
+            triangles = cacheEntry->triangles;
+        }
+    }
+    if (!cacheHit) {
+        if (commands.capacity() < count) commands.reserve(count);
+        // Consecutive instances of one primitive form ONE indirect command.
+        // firstInstance selects per-object transform data.
+        for (uint32_t n = 0; n < count;) {
+            const auto& part = modelItems_[items[n]];
+            uint32_t end = n + 1;
+            while (end < count && modelItems_[items[end]].prim == part.prim) ++end;
+            commands.push_back({part.indexCount, end - n,
+                                part.firstIndex + part.model->gpuFirstIndex,
+                                int32_t(part.model->gpuBaseVertex), n});
+            triangles += uint64_t(part.indexCount / 3) * (end - n);
+            n = end;
+        }
+        if (cacheEntry) {
+            cacheEntry->signature.clear();
+            cacheEntry->signature.reserve(count);
+            for (uint32_t n = 0; n < count; ++n) {
+                const auto& part = modelItems_[items[n]];
+                cacheEntry->signature.push_back({part.prim, part.indexCount, part.firstIndex,
+                    part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)});
+            }
+            cacheEntry->commands = commands;
+            cacheEntry->triangles = triangles;
+        }
     }
     // Building CPU ICB commands on Metal has a measurable setup cost.
     // Avoid switching to indirect for tiny groups where indexed draws win.
@@ -719,6 +757,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // A renderModels invocation is one independent visibility/ordering epoch.
+    // Reset the per-phase cache cursor, but retain validated layouts across frames.
+    indirectLayoutCursor_[size_t(phase)] = 0;
     const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
     const auto passBegin = std::chrono::steady_clock::now();
     uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
