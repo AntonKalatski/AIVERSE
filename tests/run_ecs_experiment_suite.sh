@@ -39,6 +39,10 @@ compile_run ecs-experiments tests/ecs_experiments_test.cpp
 compile_run ecs-waves tests/ecs_wave_executor_test.cpp
 compile_run ecs-guarded tests/ecs_guarded_world_test.cpp
 compile_run ecs-snapshot-delta tests/ecs_snapshot_delta_test.cpp
+compile_run ecs-cow-snapshot tests/ecs_cow_snapshot_test.cpp
+compile_run ecs-cow-rollback tests/ecs_cow_rollback_session_test.cpp \
+    engine/net/Rollback.cpp engine/sim/Simulation.cpp engine/core/Fixed.cpp \
+    engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
 compile_run ecs-guarded-parallel tests/ecs_guarded_parallel_test.cpp
 compile_run ecs-world-replay tests/ecs_wave_replay_test.cpp
 compile_run ecs-simulation-bridge tests/ecs_simulation_bridge_test.cpp \
