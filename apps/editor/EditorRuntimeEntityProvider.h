@@ -1,7 +1,8 @@
 // Unified *view* of runtime objects for the editor, irrespective of genre.
 // Runtime RTS rows and FPS Actor/Projectile/Loot/Vehicle previews now expose
-// real ECS entity components. FPS still mirrors its authoritative World State
-// vectors into ECS until the gameplay/netcode migration is completed.
+// real ECS entity components. In the optional FPS ecsAuthority mode full ECS
+// Actor/Projectile/Loot/Vehicle runtime pools are canonical between ticks;
+// lightweight inspector projections remain available in both modes.
 #pragma once
 #include "Editor.h"
 #include <string>
