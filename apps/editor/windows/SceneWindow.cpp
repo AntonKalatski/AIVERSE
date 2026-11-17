@@ -259,20 +259,26 @@ private:
             if (ui::toolButton(icons[i], tip, ed.tool == Tool(i))) { ed.tool = Tool(i); ed.roadStart = -1; }
         }
         ui::endSegment();
-        if (ed.ws().project.isFps() && ed.tool == Tool::Select) {
+        if (ed.tool == Tool::Select) {
             ui::toolbarDivider();
+            DocumentEntityRef ref;
+            const bool hasDocRef = documentEntityFromSelection(ed.selection, ref);
+            const Json* fpsSource = hasDocRef && ref.source ==
+                DocumentEntityRef::Source::FpsCollider
+                ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+            const bool fpsOriented = fpsSource && (*fpsSource)["yaw"].isNumber();
+            const DocEntity* rtsSource = hasDocRef && ref.source ==
+                DocumentEntityRef::Source::MapEntity
+                ? documentMapEntity(ed.doc(), ref) : nullptr;
+            const bool rtsFacing = rtsSource &&
+                rtsSource->extra["facing"].isNumber();
             for (const auto mode : {TransformTool::Move,
                                     TransformTool::Rotate, TransformTool::Scale}) {
                 const char* title = mode == TransformTool::Move ? "Move" :
                                     mode == TransformTool::Rotate ? "Rotate" : "Scale";
-                if (mode != TransformTool::Move) {
-                    DocumentEntityRef ref;
-                    if (!documentEntityFromSelection(ed.selection, ref) ||
-                        ref.source != DocumentEntityRef::Source::FpsCollider)
-                        continue;
-                    const Json* object = fpsDocumentEntity(ed.doc().data.fps, ref);
-                    if (!object || !(*object)["yaw"].isNumber()) continue;
-                }
+                if (mode == TransformTool::Rotate && !fpsOriented && !rtsFacing)
+                    continue;
+                if (mode == TransformTool::Scale && !fpsOriented) continue;
                 ImGui::SameLine(0, 5);
                 if (ImGui::SmallButton(title)) ed.transformTool = mode;
             }
