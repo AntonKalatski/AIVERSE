@@ -2461,6 +2461,27 @@
       "packageDependencies": [
         "ecs-impact-damage"
       ]
+    },
+    {
+      "id": "ecs-timed-mechanics",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsTimedMechanics.h",
+      "skill": "skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md",
+      "summary": "Reusable ECS weapon reload/fire gating, hit-point and energy regeneration, and deterministic entity expiration systems for any genre.",
+      "notes": "Opt-in native mechanics. Reuses shared ECS weapon/health states, no FPS/RTS dependency. Built-in FPS/RTS authority integration, native CTest and serialization/network parity still pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_timed_mechanics",
+      "dependencies": [
+        "docs/ecs-all-features-migration-plan.md",
+        "tests/ecs_cross_genre_timed_mechanics_test.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-weapon-launch"
+      ]
     }
   ]
 }
