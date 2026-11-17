@@ -830,7 +830,8 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* flag = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    if (!enabled || !dev_ || dev_->info().backend != gfx::Backend::Metal ||
+    if (!enabled || !modelMultiDrawEnabled_ || !dev_ ||
+        dev_->info().backend != gfx::Backend::Metal ||
         !dev_->supportsCompute() || !dev_->frameSerial()) return;
 
     gpuModelSlots_.assign(modelItems_.size(), UINT32_MAX);
@@ -1010,7 +1011,7 @@ void Renderer3D::renderModels(int phase) {
         // One submission per rigid static primitive, so this is a correctness
         // milestone, NOT a faster replacement for conventional instancing.
         const uint32_t modelIndex = order_[i];
-        if (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
+        if (phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ && !auxiliaryModelPass_ &&
             gpuModelCommandsReady_ && !drawCallDebug_ &&
             modelIndex < gpuModelSlots_.size() &&
             gpuModelSlots_[modelIndex] != UINT32_MAX &&
