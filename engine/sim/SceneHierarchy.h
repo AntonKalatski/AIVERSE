@@ -68,6 +68,7 @@ class SceneHierarchy {
         Entity parent=kNullEntity;
         std::vector<uint32_t> children;
         bool dirty=true;
+        bool subtreeDirty=true;
     };
     std::map<uint32_t,Node> nodes_; // index sorted for deterministic updates
     std::vector<uint32_t> roots_;
@@ -79,17 +80,6 @@ class SceneHierarchy {
     static void insert(std::vector<uint32_t>& v,uint32_t index) {
         auto it=std::lower_bound(v.begin(),v.end(),index);
         if(it==v.end()||*it!=index)v.insert(it,index);
-    }
-    void markSubtree(uint32_t index) {
-        std::vector<uint32_t> stack{index};
-        while(!stack.empty()) {
-            const auto current=stack.back();stack.pop_back();
-            auto it=nodes_.find(current);
-            if(it==nodes_.end())continue;
-            if(it->second.dirty)continue;
-            it->second.dirty=true;
-            for(uint32_t c:it->second.children)stack.push_back(c);
-        }
     }
     bool cycle(Entity child,Entity parent)const {
         Entity current=parent;
@@ -115,7 +105,7 @@ public:
         if(auto it=nodes_.find(entity.index);it!=nodes_.end())return false;
         w.add<LocalTransform>(entity,local);
         w.add<WorldTransform>(entity,hierarchy_detail::root(local));
-        nodes_.emplace(entity.index,Node{entity,kNullEntity,{},true});
+        nodes_.emplace(entity.index,Node{entity,kNullEntity,{},true,true});
         insert(roots_,entity.index);
         return true;
     }
@@ -145,14 +135,23 @@ public:
     }
     void invalidate(Entity entity) {
         if(!contains(entity))return;
-        // Force root dirty before traversing so already-dirty roots do not
-        // suppress propagation into their potentially-clean descendants.
+        // Every descendant must be recomputed when its ancestor changes.
         std::vector<uint32_t> stack{entity.index};
         while(!stack.empty()){
             uint32_t id=stack.back();stack.pop_back();
             auto it=nodes_.find(id);if(it==nodes_.end())continue;
             it->second.dirty=true;
+            it->second.subtreeDirty=true;
             for(uint32_t child:it->second.children)stack.push_back(child);
+        }
+        // Propagate a cheap subtree marker upwards, so an edited grandchild
+        // remains reachable through any number of otherwise-clean ancestors.
+        Entity parent=nodes_.at(entity.index).parent;
+        while(parent.valid()) {
+            auto it=nodes_.find(parent.index);
+            if(it==nodes_.end()||it->second.entity!=parent)break;
+            it->second.subtreeDirty=true;
+            parent=it->second.parent;
         }
     }
     // Detach direct children to scene roots. Destroying the Entity itself is
@@ -177,7 +176,7 @@ public:
     void rebuild(World& w) {
         nodes_.clear();roots_.clear();
         w.eachExistingConst<LocalTransform>([&](Entity e,const LocalTransform&){
-            if(w.alive(e))nodes_.emplace(e.index,Node{e,kNullEntity,{},true});
+            if(w.alive(e))nodes_.emplace(e.index,Node{e,kNullEntity,{},true,true});
         });
         for(auto& [id,node]:nodes_)roots_.push_back(id);
         std::vector<std::pair<Entity,Entity>> links;
@@ -220,8 +219,9 @@ public:
                 }
                 node.dirty=false;
             }
-            for(auto c=node.children.rbegin();c!=node.children.rend();++c)
-                if(nodes_.at(*c).dirty)stack.push_back(*c);
+            node.subtreeDirty=false;
+            for(auto child=node.children.rbegin();child!=node.children.rend();++child)
+                if(nodes_.at(*child).subtreeDirty)stack.push_back(*child);
         }
         return lastUpdated_;
     }
