@@ -47,4 +47,41 @@ inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
     return applied;
 }
 
+inline bool drawDocumentColliderBoundsField(MapDoc& map, DocumentEntityRef ref) {
+    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    Json component;
+    if (!readDocumentComponent(map, ref, DocumentComponentKind::Collider, component))
+        return false;
+    const Json& lo = component["min"];
+    const Json& hi = component["max"];
+    if (!lo.isArray() || !hi.isArray() || lo.size() < 3 || hi.size() < 3)
+        return false;
+    float minimum[3], maximum[3];
+    for (size_t axis = 0; axis < 3; ++axis) {
+        if (!lo[axis].isNumber() || !hi[axis].isNumber()) return false;
+        minimum[axis] = float(lo[axis].toDouble());
+        maximum[axis] = float(hi[axis].toDouble());
+    }
+    ImGui::PushID("BoxCollider");
+    ImGui::TextDisabled("Min XYZ");
+    ImGui::SetNextItemWidth(-1);
+    const bool changedMin = ImGui::DragFloat3("##min", minimum, 0.05f, 0, 0, "%.3f");
+    if (ImGui::IsItemActivated()) map.beginEdit();
+    ImGui::TextDisabled("Max XYZ");
+    ImGui::SetNextItemWidth(-1);
+    const bool changedMax = ImGui::DragFloat3("##max", maximum, 0.05f, 0, 0, "%.3f");
+    if (ImGui::IsItemActivated()) map.beginEdit();
+    bool applied = false;
+    if (changedMin || changedMax) {
+        Json updated = Json::object(), minArray = Json::array(), maxArray = Json::array();
+        for (float coordinate : minimum) minArray.push(Json::number(double(coordinate), 3));
+        for (float coordinate : maximum) maxArray.push(Json::number(double(coordinate), 3));
+        updated.set("min", minArray);
+        updated.set("max", maxArray);
+        applied = writeDocumentComponent(map, ref, DocumentComponentKind::Collider, updated);
+    }
+    ImGui::PopID();
+    return applied;
+}
+
 } // namespace aiverse::editor
