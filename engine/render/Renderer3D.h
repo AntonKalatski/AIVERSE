@@ -186,6 +186,10 @@ struct ModelRenderStats {
     // renderers. Eligible scans are distinct from actual GPU submissions.
     uint64_t mdiScans = 0, mdiShort = 0, mdiBelowThreshold = 0;
     uint64_t mdiIneligible = 0, mdiFailed = 0;
+    // Exclusive reason per ineligible MDI scan attempt (not per entity).
+    uint64_t mdiIneligibleGeometry = 0, mdiIneligibleLighting = 0;
+    uint64_t mdiIneligibleMaterial = 0, mdiIneligibleDeform = 0;
+    uint64_t mdiIneligibleAlpha = 0;
     uint64_t mdiGeometryBreaks = 0, mdiMaterialBreaks = 0;
     uint64_t mdiStateBreaks = 0;
 };
