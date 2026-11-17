@@ -152,6 +152,10 @@ Re-run `AIVERSE_ICB_PROFILE=1`: prior `[metal-icb]` alloc ~0.0565 ms/submission,
 
 Opt-in `AIVERSE_MODEL_BATCH_PROFILE=1` in `engine/render/Renderer3DModels.cpp` emits `[model-batch]` per 120 nonempty renderModels() calls for each mode (ON/OFF) and phase. Columns: select, sort (includes material classification and sorting), draw, scan (compatible-group discovery), attempt (indirect batch submission), and candidate/accepted/rejected/short counts per pass. Run the editor with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_BENCH_UNCAPPED=1 AIVERSE_MODEL_BATCH_PROFILE=1`, use fixed-camera OFF/ON 300-frame benchmark, and collect `grep '\[model-batch\]'`. Timing instrumentation itself has overhead, and model pass timings are subsets of Scene CPU, not additional frame costs. Empty phases do not emit. No owner build/measurements yet.
 
+## Early MDI rejection (commit `6d7b352`)
+
+`Renderer3DModels.cpp` now counts consecutive primitive runs of each compatible candidate before calling `drawModelIndirectBatch`; candidates below the backend threshold (Metal 8 commands, others 4) bypass vector construction and indirect preparation. Existing fallback instancing remains unchanged. Diagnostics `AIVERSE_MODEL_BATCH_PROFILE=1` now report `belowThreshold`, `acceptedMs`, `rejectedMs`. The previous rejected count included candidates below the minimum and is not directly comparable to the new `rejected` count. No build or A/B verification yet. The early filter avoids redundant command vector construction but still performs compatibility scanning; any further deduplication must preserve possible later grouping and material correctness.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
