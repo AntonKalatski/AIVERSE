@@ -973,6 +973,17 @@ void Renderer3D::prepareGpuModelDraws() {
         return end != raw && *end == '\0' && value >= 2 && value <= 256
             ? uint32_t(value) : 2u;
     }();
+    static const bool adaptiveGpuIcb = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    // Conservative adaptive policy, based on expected amortization, not an
+    // unmeasured FPS claim. Under 256 eligible primitives, only groups of
+    // 16+ GPU draws offset the Metal compute/ICB setup overhead. For a large
+    // population, 8+ commands are worth trying. Manual minimum still applies.
+    const uint32_t adaptiveMinimum = adaptiveGpuIcb ?
+        (gpuModelEligible_ < 256u ? 16u : 8u) : 2u;
+    const uint32_t effectiveMinimum = std::max(minGpuIcbCommands, adaptiveMinimum);
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
     for (auto& group : groups) {
         const auto& indices = group.items;
@@ -980,7 +991,7 @@ void Renderer3D::prepareGpuModelDraws() {
             const size_t end = std::min(indices.size(), first + groupCapacity);
             // Do not spend a GPU compute dispatch for undersized groups.
             // Remaining items fall back to conventional instancing.
-            if (end - first < minGpuIcbCommands) break;
+            if (end - first < effectiveMinimum) break;
             std::vector<uint32_t> sourceSlots;
             sourceSlots.reserve(end - first);
             for (size_t j = first; j < end; ++j)
