@@ -51,7 +51,16 @@ public:
         if (currentPool_==this)
             throw std::logic_error("nested parallelFor on the same worker pool");
         if(n==0)return;
-        if(workers_==0){callback(size_t(0),n);return;}
+        if(workers_==0) {
+            // Even in sequential fallback, nested calls to this same pool
+            // must fail fast rather than recursively executing the job.
+            const auto* previous=currentPool_;
+            currentPool_=this;
+            try {callback(size_t(0),n);}
+            catch(...) {currentPool_=previous;throw;}
+            currentPool_=previous;
+            return;
+        }
         std::function<void(unsigned)> local;
         {
             std::lock_guard<std::mutex> lock(mutex_);
