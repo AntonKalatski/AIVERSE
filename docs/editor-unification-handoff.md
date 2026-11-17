@@ -420,3 +420,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `6d5f1f68` (`tests/tests.cpp`): added `selection_outline_mask_pipeline_preserves_scene_depth` using existing `entityfxtest::RecordingDevice`.
 - The test inspects the pipeline created by `Renderer3D::initSelectionOutline()` and asserts it is RGBA8, color-writing, depth-tested, **depth-write disabled**. It is part of the existing `aiverse_tests` executable, so it runs through the standard CTest suite when executed.
 - Source-level checks were performed, but **the test and macOS editor build have NOT been executed** in this environment. This test validates a pipeline descriptor, not Metal shader compilation, mask occlusion, or final visual quality.
+
+### 2026-11-18 — FPS Hierarchy interaction parity with universal selection
+- Commit `d9de10a5` (`apps/editor/windows/HierarchyWindow.cpp`): FPS document nodes and runtime actor rows now use the same `Selection` modifier handling as RTS (Cmd/Ctrl toggles, Shift adds, unmodified selects), common `ed.isSelected` highlighting, a search field over node/group labels, and double-click camera focus.
+- This removes FPS-only `selectFpsSceneSource` branching from the Hierarchy click path without fabricating runtime ECS components. It keeps the RTS rich world-tree implementation intact to avoid losing its owner/type grouping, hide/lock, drag/drop and keyboard functionality.
+- Verification: source-level inspection only; macOS compilation and UI tests **NOT RUN**. Check mixed FPS collider/spawn selection, Ctrl/Shift, search, double-click and runtime actor selection. A true shared visual row tree and unified backend provider across all genres are still open.
