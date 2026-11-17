@@ -353,6 +353,7 @@ private:
     gfx::TextureHandle sceneSelectionMask_;
     gfx::ShaderHandle sceneSelectionEdgeShader_;
     gfx::PipelineHandle sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_;
+    gfx::PipelineHandle sceneSelectionPrimitiveMaskPipe_; // scene-depth-tested, ZWrite off
     gfx::BufferHandle sceneSelectionTriangle_;
     int sceneSelectionWidth_ = 0, sceneSelectionHeight_ = 0;
     bool sceneSelectionOutline_ = false, selectionMaskPass_ = false;
