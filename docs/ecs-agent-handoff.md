@@ -178,6 +178,30 @@ bash tests/run_ecs_experiment_suite.sh --bench
 - Current production world remains Sparse Set. The new bridge is **opt-in only** through `addGuardedGroup`; existing RTS/FPS system registration and execution remain unchanged.
 - The bulk suite still awaits user execution on Mac Studio. Treat all fresh commits after `PASS dependency wave execution` as unverified until the new combined suite passes.
 
+## 2026-11-17 — macOS test runner CRLF fix
+
+Mac Studio reported before any C++ compilation:
+
+```
+: invalid option nameent_suite.sh: line 3: set: pipefail
+```
+
+This is consistent with the local shell script containing CRLF (`\r\n`) line endings, making Bash parse `pipefail\r`.
+
+- Commit `e7e66fb`: added root `.gitattributes` with `*.sh text eol=lf` and `*.bash text eol=lf`.
+- Commit `a1bff78`: rewrote `tests/run_ecs_experiment_suite.sh` with LF line endings and a header note.
+- This addresses the script transport/checkout problem only; all C++ suite results remain unverified until Mac Studio can run it.
+
+Recovery if an existing checkout retains CRLF despite pull:
+
+```sh
+git pull --ff-only
+perl -pi -e 's/\r\n/\n/g' tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh
+```
+
+Check line endings with `file tests/run_ecs_experiment_suite.sh` or `git check-attr text eol -- tests/run_ecs_experiment_suite.sh`. The local recovery edits the working tree; after successful verification, restore the file to the committed version if needed.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validate latest changes**: compile and execute new tests; fix compiler warnings or test failures in PR #8.
