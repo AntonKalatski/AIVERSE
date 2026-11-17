@@ -157,6 +157,7 @@ public:
         AccessScope::requireOutsideEntityJob();
         requireComponent(componentId<T>(),true);
         const auto* declaration=AccessScope::current();
+        world_.prepareExistingWriteIds(declaration->writes);
         auto* writePool=world_.prepareExistingWrite<T>();
         const size_t count=writePool?writePool->size():0;
         const size_t lanes=size_t(workers.workers())+1;
