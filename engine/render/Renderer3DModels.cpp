@@ -1057,6 +1057,10 @@ void Renderer3D::renderModels(int phase) {
         !drawCallDebug_ && gpuModelCommandsReady_) {
         for (auto& group : gpuEncodedBatches_) {
             if (group.items.size() < 2) continue;
+            // Force all inherited parent state to be bound from this group.
+            // Previous direct draws may have used transient setBytes blocks.
+            currentPipe_ = {};
+            lastItem_ = nullptr;
             dev_->setGpuIcbUniformBinding(true);
             const bool submitted = drawModelBatch(
                 group.items.data(), uint32_t(group.items.size()), phase, false);
