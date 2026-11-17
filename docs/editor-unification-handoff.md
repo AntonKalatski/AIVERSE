@@ -841,3 +841,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `libraries/include/aiverselib/genre/EcsInventorySystems.h`: per-Entity `InventoryComponent`; immutable `InventoryCatalog` world resource; ordered `InventoryCommandQueue`, `InventoryResultQueue`, generation-safe source/destination entities, and `addInventoryTransactionSystem`. Reuses transactional `gameplay::addItem/removeItem/transferItem` policies, preserving capacity and no-partial-write guarantees without FPS/RTS dependencies.
 - Verification: source committed; **not compiled or run**, not yet integrated into legacy built-in FPS `Actor::bag` or RTS inventories.
 - Next: cross-genre transaction/rollback tests, public package and CMake runner, skill; then migrate FPS loot/pickups and RTS item transfer by explicit authority cutover.
+
+
+### 2026-11-18 — Cross-genre ECS inventory transaction fixture
+- Implementation SHA: `b52131d3db13dc61c9a1c4ab23dc30454b4a3a25`.
+- Added `tests/ecs_cross_genre_inventory_test.cpp`: same ECS inventory queue and transaction system in an RTS store and an FPS bag host; transfer, stack expansion, weight-cap rejection without partial mutation, ordered results, id sequence and COW snapshot rollback parity.
+- Verification: source committed through GitHub. **No compiler execution or CTest results**. Built-in FPS and RTS gameplay still use their legacy inventory paths; test does not assert they have been migrated.
+- Next: skill/catalog/CMake/standalone runner, then parity-checked native and built-in host adoption.
