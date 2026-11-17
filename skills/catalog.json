@@ -809,6 +809,38 @@
       ]
     },
     {
+      "id": "aiverse-city-blocks",
+      "package": null,
+      "path": "skills/world/aiverse-city-blocks/SKILL.md",
+      "domain": "workflow",
+      "summary": "City block paving, curb elevations, planting beds and street furniture",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "skills/world/aiverse-city-blocks/SKILL.md",
+      "keywords": [
+        "city",
+        "blocks",
+        "plaza",
+        "courtyard",
+        "curb",
+        "sidewalk",
+        "planter",
+        "flowerbed",
+        "paving",
+        "zfight",
+        "квартал",
+        "площадь",
+        "двор",
+        "бордюр",
+        "тротуар",
+        "клумб",
+        "мощение"
+      ]
+    },
+    {
       "id": "aiverse-city-economy",
       "package": null,
       "path": "skills/gameplay/aiverse-city-economy/SKILL.md",
