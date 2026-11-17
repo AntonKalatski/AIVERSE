@@ -7,6 +7,9 @@
 #include "GlobalGeometryPool.h"
 #include "Renderer3D.h"
 #include "LightmapUv.h"
+#ifdef AIVERSE_RUNTIME_AUTOLOD
+#include "AutoLodRuntime.h"
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -177,6 +180,11 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     const Json config = Json::parse(bytes);
     if (!config.isObject()) throw std::runtime_error(path + ".batching.json: expected JSON object");
     model.batching.mergeRigid = config.getBool("mergeRigid", false);
+    // Allows projects to opt out individual sensitive assets without
+    // disabling import-time LOD generation for other models.
+    if (config.has("autoLod") && !config["autoLod"].isBool())
+        throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
+    model.batching.autoLod = config.getBool("autoLod", true);
     if (config.has("maxExtent")) {
         const float extent = float(config["maxExtent"].toDouble());
         if (!std::isfinite(extent) || extent <= 0.0f || extent > 1000000.0f)
@@ -503,6 +511,30 @@ void prepareModelUpload(Model& m) {
         m.batching.compacted && m.batching.primitivesAfter < m.batching.primitivesBefore) {
         std::fprintf(stderr, "[rigid-merge] model=%s before=%zu after=%zu\n",
             m.path.c_str(), m.batching.primitivesBefore, m.batching.primitivesAfter);
+    }
+
+    // Missing imported LODs are generated once per CPU model preparation,
+    // before shadow/material batches and before GPU geometry upload.
+    // Node hierarchy and LOD0 mesh data remain unchanged. An external
+    // asset policy or AIVERSE_AUTOLOD=off restores authored-only behavior.
+#ifdef AIVERSE_RUNTIME_AUTOLOD
+    const char* lodFlag = std::getenv("AIVERSE_AUTOLOD");
+    if (!lodFlag || (std::strcmp(lodFlag, "off") != 0 &&
+                     std::strcmp(lodFlag, "0") != 0))
+        generateMissingModelLods(m);
+    else {
+        m.autoLod.attempted = true;
+        m.autoLod.reason = "disabled by AIVERSE_AUTOLOD";
+    }
+#else
+    m.autoLod.attempted = true;
+    m.autoLod.reason = "runtime automatic LOD disabled at build time";
+#endif
+    if (const char* trace = std::getenv("AIVERSE_AUTOLOD_TRACE"); trace && std::strcmp(trace, "1") == 0 &&
+        isNativeModelFormat(m.path)) {
+        std::fprintf(stderr, "[auto-lod] model=%s meshes=%zu generated=%zu added-indices=%llu reason=%s\n",
+            m.path.c_str(), m.meshes.size(), m.autoLod.generatedLevels,
+            (unsigned long long)m.autoLod.addedIndices, m.autoLod.reason.c_str());
     }
 
         const char* shadowBatches = std::getenv("AIVERSE_AUTO_SHADOW_BATCHES");
