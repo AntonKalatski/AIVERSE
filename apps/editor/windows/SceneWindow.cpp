@@ -340,6 +340,35 @@ private:
         hoverX_ = mx; hoverY_ = my;
     }
 
+    // Hit-test the projected move handles, independently of entity mesh picking.
+    // Map documents currently expose X/Z positions; Y, rotation and scale are
+    // not writable through DocEntity and must not pretend to be interactive.
+    int moveHandle(Editor& ed, float sx, float sy) {
+        if (ed.playing() || ed.tool != Tool::Select || ed.planetMap()) return -1;
+        float wx, wz;
+        if (!ed.selectionPos(ed.selection, wx, wz)) return -1;
+        const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+        float2 origin;
+        if (!ed.sceneCam.worldToScreen({wx, wy, wz}, vp_.pointsW, vp_.pointsH, origin)) return -1;
+        int best = -1;
+        float bestDist = 90.0f;
+        for (int axis : {0, 2}) {
+            float2 end;
+            const float3 target = axis == 0 ? float3{wx + 1.5f, wy, wz} : float3{wx, wy, wz + 1.5f};
+            if (!ed.sceneCam.worldToScreen(target, vp_.pointsW, vp_.pointsH, end)) continue;
+            const float ax = vp_.originX + origin.x, ay = vp_.originY + origin.y;
+            const float bx = vp_.originX + end.x, by = vp_.originY + end.y;
+            const float vx = bx - ax, vy = by - ay;
+            const float len2 = vx * vx + vy * vy;
+            if (len2 < 64.0f) continue;
+            const float t = std::clamp(((sx - ax) * vx + (sy - ay) * vy) / len2, 0.25f, 1.1f);
+            const float dx = sx - (ax + t * vx), dy = sy - (ay + t * vy);
+            const float dist2 = dx * dx + dy * dy;
+            if (dist2 < bestDist) { bestDist = dist2; best = axis; }
+        }
+        return best;
+    }
+
     void down(Editor& ed, float sx, float sy, ImGuiIO& io) {
         int n = ed.pickEntity(vp_, ed.sceneCam, sx, sy);
         float x = 0, z = 0;
@@ -349,6 +378,15 @@ private:
         const auto& rules = ed.rules();
         switch (ed.tool) {
         case Tool::Select: {
+            const int handle = moveHandle(ed, sx, sy);
+            if (handle >= 0 && ed.selectedEntity() >= 0 && ground) {
+                gizmoAxis_ = handle;
+                dragging_ = true;
+                dragMoved_ = false;
+                gizmoGroundX_ = x;
+                gizmoGroundZ_ = z;
+                break;
+            }
             const Selection picked = ed.pickObject(vp_, ed.sceneCam, sx, sy);
             const bool keepSet = picked.kind == Selection::Entity && ed.isSelected(picked) && !io.KeyCtrl && !io.KeySuper && !io.KeyShift;
             if (!keepSet) pickSelect(ed, picked, io);   // a click on a selected object keeps the set: drag moves all of it
@@ -422,7 +460,19 @@ private:
         auto& doc = ed.doc();
         auto& d = doc.data;
         int sel = ed.selectedEntity();
-        if (dragging_ && sel >= 0 && sel < int(d.entities.size())) {   // the primary follows the cursor, the rest of the set keeps its offsets
+        if (dragging_ && gizmoAxis_ >= 0 && sel >= 0 && sel < int(d.entities.size())) {
+            const float dx = gizmoAxis_ == 0 ? x - gizmoGroundX_ : 0.0f;
+            const float dz = gizmoAxis_ == 2 ? z - gizmoGroundZ_ : 0.0f;
+            if (dx != 0.0f || dz != 0.0f) {
+                if (!dragMoved_) doc.beginEdit();
+                dragMoved_ = true;
+                std::vector<int> idx;
+                for (int i : ed.selectedEntities()) if (i >= 0 && size_t(i) < d.entities.size() && !ed.objectLocked(d.entities[size_t(i)].owner, d.entities[size_t(i)].type)) idx.push_back(i);
+                worldedit::move(doc, idx, dx, dz);
+                gizmoGroundX_ = x;
+                gizmoGroundZ_ = z;
+            }
+        } else if (dragging_ && sel >= 0 && sel < int(d.entities.size())) {   // the primary follows the cursor, the rest of the set keeps its offsets
             auto& e = d.entities[size_t(sel)];
             int t = ed.rules().findType(e.type);
             const float dx = ed.snapCoord(x + dragOffX_, t) - e.x, dz = ed.snapCoord(z + dragOffZ_, t) - e.z;
@@ -472,6 +522,7 @@ private:
         if (dragging_ && keepSetClick_ && !dragMoved_) ed.select(clicked_);   // a plain click inside a multi-selection picks that one
         keepSetClick_ = false;
         dragging_ = painting_ = false;
+        gizmoAxis_ = -1;
     }
 
     // brush circle, placement ghost and help text over the viewport
@@ -631,6 +682,8 @@ private:
     Viewport vp_;
     bool looking_ = false, panning_ = false, dragging_ = false, painting_ = false, areaDrag_ = false;
     int studioDebugMode_ = 0;
+    int gizmoAxis_ = -1;
+    float gizmoGroundX_ = 0.0f, gizmoGroundZ_ = 0.0f;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;
