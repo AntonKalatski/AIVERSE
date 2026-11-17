@@ -156,6 +156,17 @@ void Editor::drawFpsSceneInspector() {
     ImGui::TextDisabled("SCENE OBJECT");
     ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
+    // Component inventory is provided by the same document adapter used for
+    // RTS entities. Keep specialized drawers until common typed editing lands.
+    const auto components = documentComponents(doc(), ref);
+    ImGui::TextDisabled("COMPONENTS  %d", int(components.size()));
+    for (const auto& component : components) {
+        Json snapshot;
+        if (!readDocumentComponent(doc(), ref, component.kind, snapshot)) continue;
+        ImGui::BulletText("%s%s", component.title,
+                          component.editable ? "" : "  (read-only)");
+    }
+    ImGui::Separator();
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (collider) {
             DocumentTransform position;
