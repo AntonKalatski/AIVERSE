@@ -158,6 +158,15 @@ void Editor::drawFpsSceneInspector() {
     ImGui::Separator();
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (collider) {
+            DocumentTransform position;
+            if (readDocumentTransform(doc(), ref, position)) {
+                float xyz[3] = {float(position.x), float(position.y), float(position.z)};
+                ImGui::TextDisabled("Position XYZ");
+                ImGui::SetNextItemWidth(-1);
+                const bool changed = ImGui::DragFloat3("##colliderPosition", xyz, 0.05f, 0, 0, "%.3f");
+                if (ImGui::IsItemActivated()) doc().beginEdit();
+                if (changed) setDocumentPosition(doc(), ref, {xyz[0], xyz[1], xyz[2]});
+            }
             const Json& lo = source["min"];
             const Json& hi = source["max"];
             if (lo.isArray() && hi.isArray() && lo.size() >= 3 && hi.size() >= 3) {
