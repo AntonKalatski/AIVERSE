@@ -81,12 +81,12 @@ void stress(Json rules,Json map) {
     std::printf("100 clients / 300 ticks / sparse 16 km world: %lld ms (debug/local loopback, not WAN capacity)\n",(long long)elapsed);
 }
 void parallelMotorParityFixture(Json rules,Json map) {
-    auto& fps=rules.member("fps");
-    fps.set("maxPlayers",Json::number(int64_t(100)));
-    fps.set("mode",Json::string("deathmatch"));
-    fps.erase("mechanics");
-    fps.erase("melee");
-    fps.erase("royale");
+    auto& settings=rules.member("fps");
+    settings.set("maxPlayers",Json::number(int64_t(100)));
+    settings.set("mode",Json::string("deathmatch"));
+    settings.erase("mechanics");
+    settings.erase("melee");
+    settings.erase("royale");
     map.set("colliders",Json::parse(
         R"([{"id":1,"min":[-128,-2,-128],"max":[128,0,128]}])"));
     auto players=Json::array(),spawns=Json::array();
