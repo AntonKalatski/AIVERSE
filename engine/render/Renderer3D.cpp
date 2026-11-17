@@ -117,6 +117,7 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
+    persistentCull_.release(*dev_);
     if (persistentUpload_) {
         persistentUpload_->release();
         persistentUpload_.reset();
