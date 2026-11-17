@@ -4,6 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 using namespace aiverse;
+struct Stable {int value=0;};
 struct Fragile {
     int value=0;
     static inline bool throwCopy=false,throwMove=false;
@@ -20,6 +21,7 @@ struct Fragile {
 int main() {
     World world;
     Entity first=world.create();
+    world.add<Stable>(first,Stable{77});
     world.add<Fragile>(first,1);
     Fragile::throwCopy=true;
     bool caught=false;
@@ -27,6 +29,8 @@ int main() {
     catch(const std::runtime_error&){caught=true;}
     assert(caught && !world.cowSnapshotsEnabled());
     assert(world.get<Fragile>(first).value==1);
+    assert(world.get<Stable>(first).value==77);
+    assert(world.sharedCowPageCount()==0);
     Fragile::throwCopy=false;
     world.enableCowSnapshots(true);
     World snapshot=world;
