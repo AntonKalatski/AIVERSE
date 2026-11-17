@@ -779,3 +779,31 @@ Both synchronous and asynchronous pipeline creation have a regular-pipeline
 fallback. The renderer must **not** count a rejected ICB as a submitted GPU draw.
 A future full colour ICB path requires shader conversion to texture/sampler
 argument buffers; shader compilation fallback is not a substitute for that.
+
+### Experimental PBR colour ICB and same-frame diagnostics
+
+The experimental Metal path now compiles a second fragment-shader variant
+(`AIVERSE_ICB_PBR`) using Metal argument buffers at fragment buffer slot 8,
+with texture/sampler descriptors for slots 0..6 and 9..12. The backend
+captures the current fragment textures, builds a per-submission argument buffer
+and explicitly declares its resources. It keeps conventional pipelines as
+fallback; the experimental variant is restricted to the built-in, rigid,
+non-GI, non-skinned/non-morphed model shader and requires argument-buffer tier 2.
+ShaderGraph and legacy shader variants are still excluded.
+
+**Validation gate:** do not enable the experimental PBR path by default until
+the real Metal GPU fixture passes with the original Mac Studio. Use
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_EXPECT_PBR_ICB=1
+AIVERSE_PALETTE_TEST_CASE=indirect` with
+`aiverse_material_batches unused.obj /tmp/aiverse-icb`; expect
+`changed_channels=0`, `PBR colour indirect active=1` and process exit 0.
+Set `AIVERSE_ICB_TRACE=1` to log any PBR shader/pipeline compilation failures.
+If the variant cannot compile, regular instanced draws remain the fallback.
+
+The Scene Batching menu has `Compare A/B same frame`: it draws one baseline
+pass without instancing/indirect, then the optimized pass with the same scene
+camera, displaying both sets of draw counts. GPU timing and geometry upload
+cost are intentionally excluded. Geometry pooling stays at upload-time
+configuration in both passes. The 382.9/384 MiB scene observation indicates
+high page occupancy, so simply shrinking page sizes will not materially reduce
+geometry storage for that workload.
