@@ -8,6 +8,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 
 namespace aiverse::game {
 
@@ -174,6 +176,29 @@ void RtsView::emitClipEvents(EntityAnim& st, const ModelChoice& ch, const SceneO
 void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapGrid* grid, const float3* viewPos) {
     const TypeLook& L = looks_[o.type];
     const ModelChoice& ch = L.models[size_t(st.choice)];
+    // A finished, stationary visual without clips, graph, procedural effects,
+    // pose, or programmable overrides has no animation work to evaluate.
+    // Keep hit/spawn/death event clocks advancing for the normal colour path.
+    // This is opt-in until its contribution to large RTS scenes is measured.
+    static const bool staticFastPath = [] {
+        const char* flag = std::getenv("AIVERSE_RTS_STATIC_ANIMATE_FAST");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    if (staticFastPath && ch.model &&
+        (L.structure || rules_->types[o.type].speed <= Fixed{}) &&
+        !st.dead && !o.moving && o.build >= 1.0f &&
+        ch.model->clips.empty() && !ch.graph && ch.procs.empty() &&
+        !ch.needsPose && !ch.baked && ch.attach.empty() && ch.fx.empty() &&
+        !o.parented && (!fx_ || (fx_->animations.empty() && fx_->entries.empty())) &&
+        o.pos.x == st.lastPos.x && o.pos.y == st.lastPos.y &&
+        o.pos.z == st.lastPos.z &&
+        std::fabs(wrap(yawOf(o.facing) - st.yaw)) <= 1.0e-6f) {
+        for (float& age : st.eventAge) age += dt;
+        st.castAge += dt;
+        st.objXf = mat4{};
+        ++staticAnimateFastHits_;
+        return;
+    }
     // ---- kinematics from the interpolated positions
     float3 d = o.pos - st.lastPos;
     d.y = 0;
