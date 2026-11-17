@@ -61,7 +61,7 @@ public:
                 for (const auto& box : fps["colliders"].items()) {
                     ImGui::PushID(int(index));
                     const std::string label = "Box Collider #" + std::to_string(index + 1);
-                    if (ImGui::Selectable(label.c_str())) {
+                    if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(false, index))) {
                         ed.selectFpsSceneSource(false, index);
                         const auto& lo = box["min"];
                         const auto& hi = box["max"];
@@ -80,7 +80,7 @@ public:
                 for (const auto& spawn : fps["spawns"].items()) {
                     ImGui::PushID(int(index));
                     const std::string label = "Spawn #" + std::to_string(index + 1);
-                    if (ImGui::Selectable(label.c_str())) {
+                    if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(true, index))) {
                         ed.selectFpsSceneSource(true, index);
                         if (spawn.isArray() && spawn.size() >= 3)
                             ed.sceneCam.target = {float(spawn[0].toDouble()), float(spawn[1].toDouble()), float(spawn[2].toDouble())};
