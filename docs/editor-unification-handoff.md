@@ -591,3 +591,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `0c57aff` updates `AGENTS.md` with current integrated PR #7 branch, the staged `fps.ecsAuthority` source-of-truth contract, already-migrated direct ECS systems (command, motor, damage), and explicit acknowledgement that unconverted AI/projectiles/vehicles/loot still use `State` as a tick workspace.
 - It instructs any successor agent to update **this exact handoff after every implementation commit**, preserve save v9/net compatibility and deterministic side-effect order, and avoid replacing merged PR7 Editor/FPS code with stale PR8 file copies.
 - New code remains unverified by a completed native CI/Metal/FPS test run. Future tasks: compile, inspect any actual failures, migrate remaining FPS systems directly to ECS and eventually remove temporary ordered workspace vectors.
+
+### 2026-11-18 — Cross-genre audit: stage 5, standalone regression runner
+- Commit `835c24b`: `tests/run_ecs_experiment_suite.sh` runs a public-include cross-genre consumer alongside existing ECS correctness checks; compiles with `-Ilibraries/include` and Simulation sources, independent of RTS/FPS link libraries.
+- **Verification:** not yet executed. Next: create an explicit reuse matrix/definition of done; review GitHub CI outcomes and any build errors. Run `bash tests/run_ecs_experiment_suite.sh` and `ctest -R '^ecs_cross_genre_mechanics_test$'` once a native toolchain is available.
