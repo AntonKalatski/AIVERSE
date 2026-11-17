@@ -23,9 +23,11 @@ static void nested() {
     assert(graph.update(w)==4);
     assert(x(w,a)==10 && x(w,b)==12 && x(w,c)==15);
     assert(graph.update(w)==0);
+    assert(graph.lastVisited()==0); // no root scan on a clean frame
     // Deeply nested child dirty while ancestors remain clean.
     assert(graph.setLocal(w,c,local(5)));
     assert(graph.update(w)==1);
+    assert(graph.lastVisited()==3); // only root -> parent -> leaf visited
     assert(x(w,c)==17);
     assert(graph.setLocal(w,a,local(20)));
     assert(graph.update(w)==3);
@@ -118,9 +120,14 @@ static void deep() {
     assert(graph.update(w)==n);
     assert(x(w,previous)==n);
     assert(graph.update(w)==0);
+    assert(graph.lastVisited()==0);
+    graph.setLocal(w,previous,local(4));
+    assert(graph.update(w)==1);
+    assert(graph.lastVisited()==n); // ancestor path, one written leaf
+    assert(x(w,previous)==n+3);
     graph.setLocal(w,first,local(2));
     assert(graph.update(w)==n);
-    assert(x(w,previous)==n+1);
+    assert(x(w,previous)==n+4);
 }
 int main(){
     nested();rotateScale();nonuniformScaleShear();rollback();deep();
