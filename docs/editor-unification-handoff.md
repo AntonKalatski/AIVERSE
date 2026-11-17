@@ -761,3 +761,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed: `modules/fps/FpsModule.cpp`. Replaced the selective field checks in `fps.ecsMirror` with `Actor::operator==` against the complete `ActorRuntime::value`. `modules/fps/FpsModule.h` already declares defaulted `Actor::operator==`. This covers inventory, melee state, input, timers, weapon slots, actions and movement alongside the previous vitals, under the opt-in `fps.ecsAuthority` gate. No save/network wire-format changes.
 - Verification: GitHub source inspection and commit only; native compile and runtime behavior **not verified**. Potential compile dependency: all nested Actor members must support equality, as required by its defaulted operator. Do not claim actual FPS/RTS migration is complete.
 - Next: validate native build, replay and transport; migrate remaining tick algorithms to direct ECS components, while keeping versioned save/network compatibility.
+
+
+### 2026-11-18 — FPS Editor ECS projection consistency guard
+- Implementation SHAs: `75b3673b55ac10d6028130bf570d42277b9e718f`, correction `a1e6dacfc3af1db18dde1241944a4dc2f08c7745`.
+- Changed `modules/fps/FpsModule.cpp`: after the full ActorRuntime equality guard, `fps.ecsMirror` now also verifies the derived `ActorEntityIdentity`, `ActorEntityTransform` and `ActorEntityVitals` projections against canonical Actor state (slot/team/life, position/velocity/yaw/pitch, health/armor/ammo/reserve and stance flags). This detects editor-facing stale projections while `fps.ecsAuthority` is enabled. Default OFF path unchanged. Corrective SHA uses actual `ActorEntityTransform::position` field, verified in `modules/fps/FpsModule.h`.
+- Verification: source inspection and GitHub commits only. Native C++ compilation, runtime save/replay/network tests and visual editor regression **not run**.
+- CI observation: at inspection, commit `858c575d31bc91f5efdf649600263ea9b6ffea22` had four queued Actions workflows (ECS 2.0, CI, Studio, GPU batching); no success reported.
+- Next: run native build/CI and FPS ecsAuthority on/off replay tests. Complete actual direct ECS systems and RTS integration; Editor Inspector live ECS writeback, hierarchy/gizmo and rollback remain separate unfinished gates.
