@@ -685,14 +685,19 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if(ws_.project.isFps()){if(vp.color.valid())renderFpsScene(vp,cam);return;}
     if (!vp.color.valid()) return;
     if (playing()) { renderGame(vp, cam); return; }
+    const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
+    const auto stageStart = std::chrono::steady_clock::now();
     buildEditScene(scene_);
+    const auto afterBuild = std::chrono::steady_clock::now();
     fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
+    const auto afterFields = std::chrono::steady_clock::now();
     const bool planets = view_.planetMode();
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     r3d_.beginScene(useCam, vp.w, vp.h);
     setOverlayContext(vp, useCam, false);
     view_.draw(r3d_, scene_, time_, nullptr, grid_);
+    const auto afterView = std::chrono::steady_clock::now();
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets) drawEditOverlays3D();
@@ -703,11 +708,32 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     pass.clearColor[0] = 0.13f; pass.clearColor[1] = 0.15f; pass.clearColor[2] = 0.17f;
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
+    const auto beforeRender = std::chrono::steady_clock::now();
     r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &postFx_ : nullptr));
+    const auto afterRender = std::chrono::steady_clock::now();
     if (!r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePostFx();
     dev_->endPass();
     view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
+    if (traceSceneStages) {
+        static unsigned samples = 0;
+        static double sums[6] = {};
+        const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        sums[0] += ms(stageStart, afterBuild);
+        sums[1] += ms(afterBuild, afterFields);
+        sums[2] += ms(afterFields, afterView);
+        sums[3] += ms(afterView, beforeRender);
+        sums[4] += ms(beforeRender, afterRender);
+        sums[5] += ms(afterRender, std::chrono::steady_clock::now());
+        if (++samples == 120) {
+            std::fprintf(stderr,
+                "[scene-stages] avg/120 build=%.3f fields=%.3f view=%.3f overlays-fx=%.3f renderer=%.3f post-overlays=%.3f ms\n",
+                sums[0]/samples, sums[1]/samples, sums[2]/samples,
+                sums[3]/samples, sums[4]/samples, sums[5]/samples);
+            samples = 0;
+            for (double& v : sums) v = 0.0;
+        }
+    }
 }
 
 void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
