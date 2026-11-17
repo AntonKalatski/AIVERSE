@@ -66,7 +66,7 @@ inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
         ref.source != DocumentEntityRef::Source::FpsSpawn) return nullptr;
     const char* collection = fpsEntityCollection(ref.source);
     if (!fps[collection].isArray() || ref.index >= fps[collection].size()) return nullptr;
-    return &fps.member(collection)[ref.index];
+    return &fps.member(collection).at(ref.index);
 }
 
 struct DocumentTransform {
