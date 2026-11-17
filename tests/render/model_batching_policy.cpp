@@ -205,6 +205,8 @@ int main() {
     {
         const auto stats = geometryPoolStats(dev);
         CHECK(stats.pages == 1 && stats.liveModels == 2);
+        // Small shared pages avoid reserving 8 MiB for just a few rigid meshes.
+        CHECK(stats.allocatedBytes == 2u * 1024u * 1024u);
         CHECK(stats.occupiedBytes > 0 && stats.occupiedBytes < stats.allocatedBytes);
     }
     const auto& bytes = dev.buffers.at(modelA.vb.id);
