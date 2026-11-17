@@ -17,6 +17,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <tuple>
+#include <functional>
 
 namespace aiverse::render {
 
@@ -605,7 +606,7 @@ void Renderer3D::packModelInstance(const ModelItem& x, int phase,
 bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
                                 int phase, bool submit, bool gpuInstances) {
     const bool tracePreparation = !submit && std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
-    const auto prepStart = std::chrono::steady_clock::now();
+    const auto prepStart = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const ModelItem& it = modelItems_[items[0]];
     const bool instanced = count > 1;
     gfx::PipelineHandle ph = modelPipeline(it, phase, instanced, gpuInstances);
@@ -614,7 +615,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setPipeline(ph); currentPipe_ = ph;
         if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
     }
-    const auto afterPipeBind = std::chrono::steady_clock::now();
+    const auto afterPipeBind = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     // Upload the whole instance block declared by this backend's shader variant.
     const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
     const float4 callColour = colourDraw ? drawCallDebugColor(++debugMainDrawId_) : float4{1, 1, 1, 1};
@@ -625,10 +626,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             packModelInstance(modelItems_[items[i]], phase, callColour,
                               instData_.data() + size_t(i) * 36);
     }
-    const auto afterInstanceBuild = std::chrono::steady_clock::now();
+    const auto afterInstanceBuild = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     if (!gpuInstances)
         dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
-    const auto afterInstanceUpload = std::chrono::steady_clock::now();
+    const auto afterInstanceUpload = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const Material& mt = *it.mat;
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
     const bool newModel = !lastItem_ || lastItem_->model != it.model || (phase != 0 && lastItem_->gi != 0);
@@ -1201,6 +1202,7 @@ void Renderer3D::renderModels(int phase) {
     const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
     const auto passBegin = std::chrono::steady_clock::now();
     uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
+    uint64_t submittedBatches = 0, submittedInstanced = 0, submittedItems = 0;
     double mdiScanMs = 0.0, mdiAttemptMs = 0.0, mdiAcceptedMs = 0.0, mdiRejectedMs = 0.0;
     uint64_t mdiBelowThreshold = 0;
     order_.clear();
@@ -1251,8 +1253,19 @@ void Renderer3D::renderModels(int phase) {
     // This avoids quadratic work over thousands of instances of one material.
     std::vector<uint32_t> materialGroup(modelItems_.size(), 0);
     std::vector<uint32_t> representatives;
-    std::map<std::pair<const Material*, const Model*>, uint32_t> identicalPointers;
+    // Pointer identity is a fast cache within this pass, never a substitute
+    // for the GPU-state hash and exact equality check between distinct copies.
+    struct MaterialPointerHash {
+        size_t operator()(const std::pair<const Material*, const Model*>& pair) const {
+            const size_t a = std::hash<const Material*>{}(pair.first);
+            const size_t b = std::hash<const Model*>{}(pair.second);
+            return a ^ (b + size_t(0x9e3779b9) + (a << 6) + (a >> 2));
+        }
+    };
+    std::unordered_map<std::pair<const Material*, const Model*>, uint32_t, MaterialPointerHash> identicalPointers;
+    identicalPointers.reserve(std::min<size_t>(order_.size(), 4096));
     std::unordered_map<uint64_t, std::vector<uint32_t>> candidatesByHash;
+    candidatesByHash.reserve(std::min<size_t>(order_.size(), 512));
     for (uint32_t i : order_) {
         const auto& item = modelItems_[i];
         const auto materialKey = std::make_pair(item.mat, item.model);
@@ -1279,6 +1292,7 @@ void Renderer3D::renderModels(int phase) {
     const bool geometrySortRequested = geometrySortSetting &&
         std::strcmp(geometrySortSetting, "1") == 0;
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
+        dev_->supportsMultiDrawIndirect() &&
         !gpuAdaptiveInstancingFallback_ && phase <= 1 &&
         geometrySortRequested;
     if (phase == 2) { // back to front
@@ -1485,6 +1499,9 @@ void Renderer3D::renderModels(int phase) {
                         }
                         if (accepted) {
                             ++mdiAccepted;
+                            ++submittedBatches;
+                            ++submittedInstanced;
+                            submittedItems += end - i;
                             i = end; continue;
                         }
                         ++mdiRejected;
@@ -1497,6 +1514,9 @@ void Renderer3D::renderModels(int phase) {
             while (j < order_.size() && j - i < size_t(instanceLimit_) && batchable(modelItems_[order_[j]]) &&
                    sameBatch(order_[i], order_[j])) ++j;
         drawGeometryBatch(order_.data() + i, uint32_t(j - i), phase);
+        ++submittedBatches;
+        submittedInstanced += j - i > 1 ? 1u : 0u;
+        submittedItems += j - i;
         i = j;
     }
     if (traceModelPass) {
@@ -1506,8 +1526,16 @@ void Renderer3D::renderModels(int phase) {
             uint64_t candidates = 0, accepted = 0, rejected = 0, shortGroups = 0, belowThreshold = 0;
         };
         static Totals totals[2][5] = {};
+        struct SubmissionTotals {
+            uint64_t batches = 0, instanced = 0, items = 0;
+        };
+        static SubmissionTotals submissions[2][5] = {};
         const int mode = modelMultiDrawEnabled_ ? 1 : 0;
         auto& t = totals[mode][phase];
+        auto& st = submissions[mode][phase];
+        st.batches += submittedBatches;
+        st.instanced += submittedInstanced;
+        st.items += submittedItems;
         const auto ms = [](auto a, auto b) {
             return std::chrono::duration<double, std::milli>(b - a).count();
         };
@@ -1533,6 +1561,13 @@ void Renderer3D::renderModels(int phase) {
                 double(t.candidates) / t.passes, double(t.accepted) / t.passes,
                 double(t.rejected) / t.passes, double(t.belowThreshold) / t.passes,
                 double(t.shortGroups) / t.passes);
+            std::fprintf(stderr,
+                "[model-batch-submissions] mode=%s phase=%d avg/120 batches=%.1f instanced=%.1f items=%.1f avg-items-per-batch=%.2f\\n",
+                mode ? "ON" : "OFF", phase,
+                double(st.batches) / t.passes, double(st.instanced) / t.passes,
+                double(st.items) / t.passes,
+                st.batches ? double(st.items) / double(st.batches) : 0.0);
+            st = {};
             t = {};
         }
     }
