@@ -469,3 +469,23 @@ AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODE
 ```
 
 Open Kingston Streets `gta` branch map `render_microtest.json` (one sedan, two junctions, one police building). To isolate draw calls, keep the same camera, material quality, light/shadow settings and debugging visual mode in all runs. For the third run inspect Batching > `GPU ICB batches` and `GPU-encoded ICB submissions / commands`; mere eligible candidates or nonzero indexed commands do not establish successful GPU execution. If GPU ICB produces driver errors, report the complete log and stop experimental runs. For CPU MDI, compare actual `[model-batch-submissions]`, `[render-indirect]` and wall/CPU/GPU milliseconds rather than assuming a drop in draw count always speeds up a 4 ms Scene.
+
+## 2026-11-17 — opt-in per-GPU-state draw group adaptive policy
+
+Commits `8a89c08`, `bb3e856`, and `751e303` add `AIVERSE_ADAPTIVE_DRAW_GROUPS=1` (default OFF). This is an **experimental CPU heuristic**, NOT an online timing-trained GPU/CPU cost model and NOT a new GPU feature. It works *within existing state-compatible draw groups*, preserving the material equivalence rule from `GpuMaterialState.h`. Instance identity and `Material*` do not form batching keys; actual GPU state, buffers, pipeline, alpha and GI restrictions remain required.
+
+- Small/one-primitive batches: conventional indexed draw or GPU instancing. Crucially, a fleet of identical vehicles does NOT trigger GPU ICB just because its instance count is high. An opt-in GPU ICB group must have at least `effectiveMinimum` **distinct source primitives** in its capped group; otherwise it leaves models for CPU fallback. The distinct-primitive count uses reusable scratch space and exits once the threshold is reached.
+- Heterogeneous, state-compatible GPU-buffer groups: CPU MDI if the number of consecutive primitive runs reaches `AIVERSE_METAL_MDI_MIN_COMMANDS` (default 8 on Metal, 4 on other backends) and the backend supports ICB; otherwise ordinary instancing/direct draws. GPU ICB is considered first only when GPU-encoded ICB was separately enabled with ALL experimental gates, the eligible primitive diversity reaches the adaptive threshold and the GPU batch passes existing preparation.
+- If GPU ICB has no suitable group, CPU MDI is **not disabled globally** by the group-adaptive flag. `AIVERSE_MDI_GEOMETRY_SORT=1` can still group pooled geometry for CPU MDI after this GPU fallback. The feature never merges mesh CPU geometry or changes material/texture state. The source 3-way Scene benchmark and auto-choose checkbox remain independent global diagnostic settings, not per-group measured feedback.
+
+The new GPU-free regression assertions in `tests/render/model_batching_policy.cpp` cover empty/direct, identical-primitive instancing, CPU MDI group threshold, GPU ICB group threshold, and fallback behaviour. This has NOT been run on the owner's Metal machine at the time of commit; CI may still be queued. Do not claim performance wins or enable by default until a controlled A/B on the tiny GTA map and a dense scene.
+
+Test on the same camera, separate processes (after one `cmake --build build-metal -j 8`):
+```sh
+# Baseline
+AIVERSE_MULTI_DRAW_INDIRECT=off AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
+# CPU adaptive: index mesh diversity is judged per group; no GPU compute
+AIVERSE_ADAPTIVE_DRAW_GROUPS=1 AIVERSE_METAL_CPU_MDI=1 AIVERSE_METAL_MDI_MIN_COMMANDS=2 AIVERSE_MDI_GEOMETRY_SORT=1 AIVERSE_MODEL_BATCH_PROFILE=1 AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
+# Experimental GPU adaptive: only on tested Metal devices, NOT production
+AIVERSE_ADAPTIVE_DRAW_GROUPS=1 AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_ADAPTIVE=1 AIVERSE_ICB_TRACE=1 AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor
+```
