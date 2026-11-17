@@ -293,10 +293,8 @@ namespace aiverse::render::shaders {
     "    }\n" \
     "    // per-pixel rotation (interleaved gradient noise) turns banding into fine grain; a kernel of a\n" \
     "    // few texels can't band (each tap is a bilinear compare), where the grain would only show as stipple\n" \
-    "    // Temporal sampling rotates the PCSS disk between frames only when HDR TAA is active.
-" \
-    "    float temporal = fract(u_quality.x) > 0.25 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;
-" \
+    "    // Temporal sampling rotates the PCSS disk between frames only when HDR TAA is active.\n" \
+    "    float temporal = fract(u_quality.x) > 0.25 ? floor(u_camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
     "    float a = r < u_shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + temporal);\n" \
     "    vec2 cs = vec2(cos(a), sin(a));\n" \
     "    int n_ = int(u_quality.x);\n" \
@@ -356,8 +354,7 @@ namespace aiverse::render::shaders {
     "        float penumbra = (gap / blockers) / max(depthPerWorld, 1e-6) * 0.05 * uvPerWorld;\n" \
     "        r = clamp(penumbra, min(r, f.shadow.w * 0.5), r);\n" \
     "    }\n" \
-    "    float temporal = fract(f.quality.x) > 0.25 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;
-" \
+    "    float temporal = fract(f.quality.x) > 0.25 ? floor(f.camPos.w * 60.0) * 0.61803398875 : 0.0;\n" \
     "    float a = r < f.shadow.w * 3.2 ? 0.0 : 6.2831853 * fract(52.9829189 * fract(dot(fragCoord, float2(0.06711056, 0.00583715))) + temporal);\n" \
     "    float2 cs = float2(cos(a), sin(a));\n" \
     "    int cnt = int(f.quality.x);\n" \
