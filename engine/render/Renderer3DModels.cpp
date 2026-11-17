@@ -830,7 +830,7 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* flag = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    if (!enabled || !modelMultiDrawEnabled_ || !dev_ ||
+    if (!enabled || !gpuAuthoredDrawEnabled_ || !modelMultiDrawEnabled_ || !dev_ ||
         dev_->info().backend != gfx::Backend::Metal ||
         !dev_->supportsCompute() || !dev_->frameSerial()) return;
 
