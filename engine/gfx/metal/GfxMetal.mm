@@ -44,6 +44,9 @@ struct MTBuffer {
     // Only for dynamic indirect command snapshots: per-frame, per-submission
     // allocations retained until this frame slot is safe to recycle.
     std::vector<id<MTLBuffer>> indirectSnapshots[kFramesInFlight];
+    // Number of valid bytes in each snapshot (per slot/submission).
+    // Kept in lockstep with indirectSnapshots to avoid comparing uninitialized data.
+    std::vector<size_t> indirectSnapshotValid[kFramesInFlight];
     size_t indirectCursor = 0;
 };
 struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
@@ -150,6 +153,7 @@ public:
             const int slot = int(frame_ % kFramesInFlight);
             if (b->updatedFrame != frame_) b->indirectCursor = 0;
             auto& snapshots = b->indirectSnapshots[slot];
+            auto& valid = b->indirectSnapshotValid[slot];
             const size_t cursor = b->indirectCursor;
             id<MTLBuffer> previous = cursor ? b->bufs[slot] : nil;
             id<MTLBuffer> target = cursor < snapshots.size() ? snapshots[cursor] : nil;
@@ -161,15 +165,28 @@ public:
                     gpuHealthy_->store(false);
                     return;
                 }
-                if (cursor == snapshots.size()) snapshots.push_back(target);
-                else snapshots[cursor] = target;
+                if (cursor == snapshots.size()) {
+                    snapshots.push_back(target);
+                    valid.push_back(0);
+                } else {
+                    snapshots[cursor] = target;
+                    valid[cursor] = 0;
+                }
             }
-            // Preserve untouched bytes for partial updates within the frame.
-            // The renderer's indirect path normally updates from offset zero.
-            if (previous && (offset != 0 || size < b->size))
-                std::memcpy(target.contents, previous.contents,
-                            std::min(size_t(target.length), size_t(previous.length)));
-            std::memcpy(static_cast<uint8_t*>(target.contents) + offset, data, size);
+            // Full updates are the common model indirect path. If this
+            // frame-slot/submission's commands have not changed, keep the
+            // previous contents. The slot is safe after the GPU fence.
+            // Partial updates preserve the previous submission's bytes.
+            const bool fullUpdate = offset == 0 && size == required;
+            const bool unchanged = fullUpdate && valid[cursor] >= size &&
+                std::memcmp(target.contents, data, size) == 0;
+            if (!unchanged) {
+                if (previous && (offset != 0 || size < b->size))
+                    std::memcpy(target.contents, previous.contents,
+                                std::min(size_t(target.length), size_t(previous.length)));
+                std::memcpy(static_cast<uint8_t*>(target.contents) + offset, data, size);
+            }
+            valid[cursor] = std::max(valid[cursor], required);
             b->bufs[slot] = target;
             b->size = capacity;
             b->indirectCursor = cursor + 1;
