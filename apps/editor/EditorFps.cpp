@@ -138,12 +138,12 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dz) {
     if (spawn) {
         Json moved;
         if (!shifted(item, moved)) return false;
-        item = std::move(moved);
+        item = moved;
     } else {
         Json minMoved, maxMoved;
         if (!shifted(item["min"], minMoved) || !shifted(item["max"], maxMoved)) return false;
-        item.member("min") = std::move(minMoved);
-        item.member("max") = std::move(maxMoved);
+        item.member("min") = minMoved;
+        item.member("max") = maxMoved;
     }
     doc().touched();
     return true;
