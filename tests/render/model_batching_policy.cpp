@@ -9,6 +9,7 @@
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
+#include <cstddef>
 #include <cstring>
 #include <map>
 #include <vector>
