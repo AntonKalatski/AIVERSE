@@ -157,7 +157,6 @@ void Editor::drawFpsSceneInspector() {
     ImGui::TextDisabled("SCENE OBJECT");
     ImGui::Text("%s #%zu", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
-    drawDocumentComponentInventory(doc(), ref);
     drawDocumentEditableComponents(doc(), ref);
     if (ImGui::CollapsingHeader("Raw data")) {
         ImGui::TextWrapped("%s", source.dump().c_str());
