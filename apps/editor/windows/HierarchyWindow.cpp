@@ -98,17 +98,29 @@ public:
                 ImGui::TextWrapped("Runtime preview: %s",
                                    runtime["error"].str().c_str());
             const auto runtimeEntities = enumerateEditorRuntimeEntities(ed);
-            if (!runtimeEntities.empty() &&
-                ImGui::TreeNodeEx("Runtime Actors", ImGuiTreeNodeFlags_DefaultOpen)) {
+            for (const char* group : {"Runtime Actors", "Projectiles",
+                                      "Loot", "Vehicles"}) {
+                if (!ImGui::TreeNodeEx(group, ImGuiTreeNodeFlags_DefaultOpen))
+                    continue;
                 for (const auto& entity : runtimeEntities) {
-                    if (!filter_.empty() &&
+                    const bool actor = entity.selection.kind == Selection::FpsActor;
+                    const uint8_t kind = entity.selection.kind ==
+                        Selection::FpsRuntimeObject
+                            ? uint8_t(entity.selection.ref >> 32) : 0;
+                    const bool inGroup = actor ? std::string(group) == "Runtime Actors"
+                        : kind == 1 ? std::string(group) == "Projectiles"
+                        : kind == 2 ? std::string(group) == "Loot"
+                        : kind == 3 ? std::string(group) == "Vehicles" : false;
+                    if (!inGroup || (!filter_.empty() &&
                         !ui::contains(entity.title, filter_) &&
-                        !ui::contains("Runtime Actors", filter_)) continue;
-                    ImGui::PushID(entity.selection.index);
-                    const bool selected = ed.isSelected(entity.selection);
-                    if (ImGui::Selectable(entity.title.c_str(), selected)) {
+                        !ui::contains(group, filter_))) continue;
+                    ImGui::PushID(actor ? uint64_t(entity.selection.index) :
+                                 entity.selection.ref);
+                    if (ImGui::Selectable(entity.title.c_str(),
+                                          ed.isSelected(entity.selection))) {
                         selectNode(entity.selection);
-                        if (entity.hasPosition && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                        if (entity.hasPosition &&
+                            ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
                             ed.sceneCam.target = entity.position;
                     }
                     ImGui::PopID();
