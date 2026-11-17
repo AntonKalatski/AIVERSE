@@ -172,6 +172,12 @@ bash tests/run_ecs_experiment_suite.sh --bench
 4. Design a safe per-entity parallel guarded job API that propagates `AccessScope` to workers without nested worker-pool deadlocks.
 5. Evaluate real-world performance and snapshot optimizations, ensuring a sequential fallback.
 
+## 2026-11-17 — Agent discoverability
+
+- Commit `c873f52`: `AGENTS.md` now links this living ECS handoff in its introduction and instructs every agent to update it per implementation step.
+- Current production world remains Sparse Set. The new bridge is **opt-in only** through `addGuardedGroup`; existing RTS/FPS system registration and execution remain unchanged.
+- The bulk suite still awaits user execution on Mac Studio. Treat all fresh commits after `PASS dependency wave execution` as unverified until the new combined suite passes.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validate latest changes**: compile and execute new tests; fix compiler warnings or test failures in PR #8.
