@@ -70,6 +70,9 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     if (disabled() || !dev.supportsMultiDrawIndirect() ||
         !dev.canUpdateSharedBuffers() || !canPool(m) ||
         m.vertices.empty() || m.indices.empty()) return false;
+    // Guard size arithmetic before allocating or calculating page offsets.
+    if (m.vertices.size() > kMaximumPooledModelSize / sizeof(ModelVertex) ||
+        m.indices.size() > kMaximumPooledModelSize / sizeof(uint32_t)) return false;
     const size_t vertexBytes = m.vertices.size() * sizeof(ModelVertex);
     const size_t indexBytes = m.indices.size() * sizeof(uint32_t);
     if (vertexBytes > kMaximumPooledModelSize ||
