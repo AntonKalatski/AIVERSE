@@ -303,6 +303,18 @@ public:
     struct EntityState { std::vector<uint32_t> gens; std::vector<uint8_t> alive; std::vector<uint32_t> free; std::vector<Entity> pendingDestroy; };
     EntityState entityState() const { return {gens_, alive_, free_, pendingDestroy_}; }
     size_t poolCount() const { size_t n = 0; for (auto& p : pools_) if (p) ++n; return n; }
+    // Diagnostic counters: pools/resources shared with snapshots rather than copied.
+    size_t sharedPoolCount() const {
+        size_t count=0;
+        for(const auto& p:pools_)if(p && !p.unique())++count;
+        return count;
+    }
+    size_t sharedResourceCount() const {
+        size_t count=0;
+        for(const auto& resource:resources_)if(resource && !resource.unique())++count;
+        return count;
+    }
+
     void restoreEntityState(EntityState s) { gens_ = std::move(s.gens); alive_ = std::move(s.alive); free_ = std::move(s.free); pendingDestroy_ = std::move(s.pendingDestroy); }
 
     void clear() {
