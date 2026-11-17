@@ -77,6 +77,10 @@ public:
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Свойства карты");
         ImGui::Separator();
         ImGui::Spacing();
+        if (ed.ws().project.isFps() && ed.selectedFpsSceneObject() >= 0) {
+            ed.drawFpsSceneInspector();
+            return;
+        }
         switch (s.kind) {
             case Selection::Entity: case Selection::Live: details_.draw(ed); customLua_.draw(ed); break;   // «Детали»: one or many world objects
             case Selection::MapBlock: mapJson(ed, s.key, ICON_BRACES, s.key, "Блок карты (JSON)"); break;
