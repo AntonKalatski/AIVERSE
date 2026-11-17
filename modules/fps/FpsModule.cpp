@@ -676,19 +676,69 @@ void Module::tick(Simulation& sim) {
         } else s.winner=-1;
     }
 }
+State Module::authoritativeStateCopy(Simulation& sim) const {
+    // Serialize/hash from canonical ECS payloads, never from a possibly stale
+    // State::actors/projectiles/loot/vehicles compatibility workspace.
+    State result=state(sim);
+    if(!config_.ecsAuthority)return result;
+    const World& world=sim.world();
+    const auto* index=world.resourceConst<ActorEntityIndex>();
+    if(!index||index->bySlot.size()!=result.actors.size())
+        throw std::logic_error("FPS ECS authority index missing during save/checksum");
+    for(size_t i=0;i<result.actors.size();++i) {
+        const Entity e=index->bySlot[i];
+        const auto* runtime=world.tryGetConst<ActorRuntime>(e);
+        if(!runtime||!world.alive(e)||runtime->value.slot!=i+1)
+            throw std::logic_error("FPS ActorRuntime missing during save/checksum");
+        result.actors[i]=runtime->value;
+    }
+    std::vector<std::pair<uint32_t,Projectile>> projectiles;
+    std::vector<std::pair<uint32_t,Loot>> loot;
+    std::vector<std::pair<uint32_t,Vehicle>> vehicles;
+    world.eachExistingConst<ProjectileRuntime>([&](Entity e,const ProjectileRuntime& r) {
+        if(world.alive(e))projectiles.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<LootRuntime>([&](Entity e,const LootRuntime& r) {
+        if(world.alive(e))loot.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<VehicleRuntime>([&](Entity e,const VehicleRuntime& r) {
+        if(world.alive(e))vehicles.emplace_back(r.order,r.value);
+    });
+    auto reconstruct=[](auto& entries,auto& out) {
+        std::sort(entries.begin(),entries.end(),[](const auto& a,const auto& b) {
+            if(a.first!=b.first)return a.first<b.first;
+            return a.second.id<b.second.id;
+        });
+        out.clear();
+        out.reserve(entries.size());
+        for(auto& entry:entries)out.push_back(std::move(entry.second));
+    };
+    reconstruct(projectiles,result.projectiles);
+    reconstruct(loot,result.loot);
+    reconstruct(vehicles,result.vehicles);
+    return result;
+}
 void Module::hashState(Simulation& sim,Hasher& hash) {
-    hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,state(sim));hash.str(bytes);
-    if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:state(sim).actors)meleeIo(m,actor);hash.str(extra);}
-    for(auto& p:state(sim).projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
-    if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
-    for(const auto& g:state(sim).gear)hash.u64(lib::systems::gearHash(g));
-    if(!state(sim).vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,state(sim).vehicleRuns);hash.str(extra);}
-    for(const auto& b:state(sim).botStates)hash.str(b);
+    State materialized;
+    State* authoritative=&state(sim);
+    if(config_.ecsAuthority) {
+        materialized=authoritativeStateCopy(sim);
+        authoritative=&materialized;
+    }
+    State& s=*authoritative;
+    hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,s);hash.str(bytes);
+    if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:s.actors)meleeIo(m,actor);hash.str(extra);}
+    for(auto& p:s.projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
+    if(s.royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,s.royale);hash.str(extra);}
+    for(const auto& g:s.gear)hash.u64(lib::systems::gearHash(g));
+    if(!s.vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,s.vehicleRuns);hash.str(extra);}
+    for(const auto& b:s.botStates)hash.str(b);
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
     if((version!=3&&version<6)||version>9||content!=contentHash_)return false;
-    State copy=state(sim);stateIo(archive,copy,version>=6,version>=7);
+    State copy=config_.ecsAuthority?authoritativeStateCopy(sim):state(sim);
+    stateIo(archive,copy,version>=6,version>=7);
     if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
     if(version>=9){uint32_t n=archive.count(copy.gear.size());if(n>256){archive.fail();return false;}if(!archive.writing())copy.gear.resize(n);for(auto& g:copy.gear)lib::systems::io(archive,g);}else copy.gear.clear();
     if(version>=9)ioVehicleRuns(archive,copy.vehicleRuns);else copy.vehicleRuns.clear();
