@@ -247,11 +247,13 @@ namespace aiverse::render::shaders {
     AIVERSE_GLSL_SUN_FILTER("tex0") \
     "// Soft shadows: rotated Poisson-disc PCF over bilinear 2x2 compare taps.\n" \
     "//   u_quality.x taps (1 / 4 / 8 / 16), u_quality.z filter radius in shadow UV, u_quality.w normal offset (world)\n" \
-    "const vec2 kDisk[16] = vec2[16](\n" \
+    "const vec2 kDisk[24] = vec2[24](\n" \
     "    vec2(-0.613, 0.617), vec2(0.170, -0.040), vec2(-0.299, 0.791), vec2(0.645, 0.493),\n" \
     "    vec2(-0.651, 0.717), vec2(0.421, 0.027), vec2(-0.817, -0.271), vec2(-0.705, -0.668),\n" \
     "    vec2(0.977, -0.108), vec2(0.063, -0.233), vec2(0.346, -0.894), vec2(-0.272, 0.416),\n" \
-    "    vec2(-0.025, 0.919), vec2(-0.389, -0.144), vec2(0.733, -0.627), vec2(0.282, 0.512));\n" \
+    "    vec2(-0.025, 0.919), vec2(-0.389, -0.144), vec2(0.733, -0.627), vec2(0.282, 0.512),\n" \
+    "    vec2(-0.900, 0.160), vec2(0.880, 0.250), vec2(-0.480, -0.860), vec2(0.490, 0.860),\n" \
+    "    vec2(-0.080, -0.980), vec2(0.970, -0.360), vec2(-0.960, -0.360), vec2(0.410, -0.730));\n" \
     "float shadowAt(vec3 wpos, vec3 n) {\n" \
     "    if (u_quality.y < 0.5) return 1.0;\n" \
     "    vec3 L = normalize(u_sunDir.xyz);\n" \
@@ -295,7 +297,7 @@ namespace aiverse::render::shaders {
     "    vec2 cs = vec2(cos(a), sin(a));\n" \
     "    int n_ = int(u_quality.x);\n" \
     "    float s = 0.0;\n" \
-    "    for (int i = 0; i < 16; ++i) {\n" \
+    "    for (int i = 0; i < 24; ++i) {\n" \
     "        if (i >= n_) break;\n" \
     "        vec2 o = kDisk[i];\n" \
     "        o = vec2(o.x * cs.x - o.y * cs.y, o.x * cs.y + o.y * cs.x);\n" \
@@ -306,11 +308,13 @@ namespace aiverse::render::shaders {
 
 #define AIVERSE_MSL_SHADOW \
     AIVERSE_MSL_SUN_FILTER \
-    "constant float2 kDisk[16] = {\n" \
+    "constant float2 kDisk[24] = {\n" \
     "    float2(-0.613, 0.617), float2(0.170, -0.040), float2(-0.299, 0.791), float2(0.645, 0.493),\n" \
     "    float2(-0.651, 0.717), float2(0.421, 0.027), float2(-0.817, -0.271), float2(-0.705, -0.668),\n" \
     "    float2(0.977, -0.108), float2(0.063, -0.233), float2(0.346, -0.894), float2(-0.272, 0.416),\n" \
-    "    float2(-0.025, 0.919), float2(-0.389, -0.144), float2(0.733, -0.627), float2(0.282, 0.512)};\n" \
+    "    float2(-0.025, 0.919), float2(-0.389, -0.144), float2(0.733, -0.627), float2(0.282, 0.512),\n" \
+    "    float2(-0.900, 0.160), float2(0.880, 0.250), float2(-0.480, -0.860), float2(0.490, 0.860),\n" \
+    "    float2(-0.080, -0.980), float2(0.970, -0.360), float2(-0.960, -0.360), float2(0.410, -0.730)};\n" \
     "static float shadowAt(constant U1& f, float3 wpos, float3 n, float2 fragCoord, depth2d<float> sm, sampler ss) {\n" \
     "    if (f.quality.y < 0.5) return 1.0;\n" \
     "    float3 L = normalize(f.sunDir.xyz);\n" \
@@ -352,7 +356,7 @@ namespace aiverse::render::shaders {
     "    float2 cs = float2(cos(a), sin(a));\n" \
     "    int cnt = int(f.quality.x);\n" \
     "    float s = 0.0;\n" \
-    "    for (int i = 0; i < 16; ++i) {\n" \
+    "    for (int i = 0; i < 24; ++i) {\n" \
     "        if (i >= cnt) break;\n" \
     "        float2 o = kDisk[i];\n" \
     "        o = float2(o.x * cs.x - o.y * cs.y, o.x * cs.y + o.y * cs.x);\n" \
