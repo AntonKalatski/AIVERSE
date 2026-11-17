@@ -468,8 +468,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             lodBlend=selectModelLod(node.mesh,baseMesh.lods,pixels,fadeWidth);
             meshIndex=lodBlend.mesh;level=lodBlend.level;
             if (nodeView && nodeShadow && pixels > cameraPixels &&
-                selectModelLod(node.mesh, baseMesh.lods, cameraPixels, fadeWidth).level > level)
+                selectModelLod(node.mesh, baseMesh.lods, cameraPixels, fadeWidth).level > level) {
                 ++modelStats_.cameraShadowLimitedLod;
+                if (lodDebugTarget_ && d.persistentId == lodDebugTarget_)
+                    ++lodDebugSample_.shadowLimited;
+            }
             if(lodBlend.incoming>=0)++profile_.lodTransitionNodes;
             if (meshIndex != node.mesh) ++profile_.lodNodes;
         }
@@ -480,6 +483,16 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             else {
                 ++modelStats_.cameraLodChains;
                 if (!lodEligible) ++modelStats_.cameraLodBlocked;
+            }
+            // Editor only: the selected map entity provides a stable ID from
+            // SceneObject::persistentKey, so we can inspect its actual LOD
+            // without storing per-entity traces or changing draw grouping.
+            if (lodDebugTarget_ && d.persistentId == lodDebugTarget_) {
+                lodDebugSample_.matched = true;
+                ++lodDebugSample_.visibleNodes;
+                ++lodDebugSample_.levels[std::min<size_t>(level, 3)];
+                if (baseMesh.lods.empty()) ++lodDebugSample_.withoutChain;
+                else ++lodDebugSample_.withChain;
             }
         }
         // Shadow batch (mergeStaticPrimitives): one shadow draw covers the opaque parts of the mesh.
