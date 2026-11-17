@@ -109,6 +109,64 @@ const Json& Editor::fpsRuntimeSnapshot() {
             data.set("components", components);
             actors.push(std::move(data));
         }
+        Json objects = Json::array();
+        if (const auto* dynamic = world.resource<fps::DynamicEntityIndex>()) {
+            for (const auto& [key, entity] : dynamic->byKey) {
+                if (!world.alive(entity)) continue;
+                const uint8_t kind = uint8_t(key >> 32);
+                Json data = Json::object();
+                data.set("key", Json::number(int64_t(key)));
+                data.set("ecsEntity", Json::number(int64_t(entity.packed())));
+                data.set("kind", Json::number(int64_t(kind)));
+                Json components = Json::object();
+                Vec3 position{};
+                if (kind == 1) {
+                    const auto* projectile = world.tryGet<fps::ProjectileEntity>(entity);
+                    if (!projectile) continue;
+                    position = projectile->position;
+                    Json fields = Json::object();
+                    fields.set("id", Json::number(int64_t(projectile->id)));
+                    fields.set("owner", Json::number(int64_t(projectile->owner)));
+                    fields.set("kind", Json::number(int64_t(projectile->kind)));
+                    fields.set("damage", Json::number(int64_t(projectile->damage)));
+                    components.set("ProjectileEntity", fields);
+                    data.set("title", Json::string("Projectile #" +
+                        std::to_string(projectile->id)));
+                } else if (kind == 2) {
+                    const auto* loot = world.tryGet<fps::LootEntity>(entity);
+                    if (!loot) continue;
+                    position = loot->position;
+                    Json fields = Json::object();
+                    fields.set("id", Json::number(int64_t(loot->id)));
+                    fields.set("type", Json::number(int64_t(loot->type)));
+                    fields.set("count", Json::number(int64_t(loot->count)));
+                    components.set("LootEntity", fields);
+                    data.set("title", Json::string("Loot #" +
+                        std::to_string(loot->id)));
+                } else if (kind == 3) {
+                    const auto* vehicle = world.tryGet<fps::VehicleEntity>(entity);
+                    if (!vehicle) continue;
+                    position = vehicle->position;
+                    Json fields = Json::object();
+                    fields.set("id", Json::number(int64_t(vehicle->id)));
+                    fields.set("health", Json::number(int64_t(vehicle->health)));
+                    fields.set("driver", Json::number(int64_t(vehicle->driver)));
+                    fields.set("yaw", Json::number(vehicle->yaw.toDouble(), 3));
+                    components.set("VehicleEntity", fields);
+                    data.set("title", Json::string("Vehicle #" +
+                        std::to_string(vehicle->id)));
+                } else continue;
+                Json pos = Json::array();
+                for (const Fixed coordinate : {position.x, position.y, position.z})
+                    pos.push(Json::number(coordinate.toDouble(), 3));
+                data.set("position", pos);
+                for (const auto& [name, entry] : components.members())
+                    components.member(name).set("position", pos);
+                data.set("components", components);
+                objects.push(std::move(data));
+            }
+        }
+        fpsRuntimeCache_.set("objects", objects);
     } catch (const std::exception& e) {
         fpsRuntimeCache_.set("error", Json::string(e.what()));
     }
