@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <unordered_set>
 
 namespace aiverse::game {
 
@@ -492,10 +493,13 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
     for (auto it=anims_.begin();it!=anims_.end();) {
         if (!keep[it->second.type]) it=anims_.erase(it); else ++it;
     }
-    std::vector<const render::Model*> used;
+    // Large projects can keep hundreds of model assets. A hash set makes
+    // reclamation linear instead of repeatedly scanning the entire keep list.
+    std::unordered_set<const render::Model*> used;
+    used.reserve(models_.size());
     auto visit=[&](const ModelChoice& c){
-        if(c.model)used.push_back(c.model);
-        for(const auto& a:c.attach)if(a.model)used.push_back(a.model);
+        if(c.model)used.insert(c.model);
+        for(const auto& a:c.attach)if(a.model)used.insert(a.model);
     };
     for(const auto& look:looks_) {
         for(const auto& c:look.models)visit(c);
@@ -504,7 +508,7 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
     }
     size_t released=0;
     for(auto it=models_.begin();it!=models_.end();) {
-        if(it->first.rfind("shape:",0)==0 || std::find(used.begin(),used.end(),it->second.get())!=used.end()){++it;continue;}
+        if(it->first.rfind("shape:",0)==0 || used.contains(it->second.get())){++it;continue;}
         if(it->second){animationCache_.erase(it->second.get());releaseModel(*dev_,*it->second);}
         it=models_.erase(it);++released;
     }
