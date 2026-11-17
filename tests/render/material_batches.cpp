@@ -53,6 +53,43 @@ static bool unitChecks() {
     return ok;
 }
 
+// Deterministic 16-primitive fixture with one shader/material and independent
+// node transforms. MDI and the fallback must render byte-identical images.
+static std::unique_ptr<render::Model> indirectFixture() {
+    using namespace render;
+    auto m = std::make_unique<Model>();
+    m->path = "indirect-fixture";
+    m->materials.resize(1);
+    m->materials[0].doubleSided = true;
+    m->materials[0].baseColor = {.72f, .48f, .19f, 1.f};
+    for (int i = 0; i < 16; ++i) {
+        const uint32_t start = uint32_t(m->vertices.size());
+        for (float3 pos : {float3{-.3f, 0, 0}, float3{.3f, 0, 0}, float3{0, .75f, 0}}) {
+            ModelVertex v;
+            v.pos = pos;
+            v.nrm = {0, 0, 1};
+            m->vertices.push_back(v);
+        }
+        m->indices.insert(m->indices.end(), {start, start + 1, start + 2});
+        Primitive p;
+        p.firstIndex = uint32_t(m->indices.size() - 3);
+        p.indexCount = 3;
+        p.firstVertex = start;
+        p.vertexCount = 3;
+        MeshDef mesh;
+        mesh.name = "primitive_" + std::to_string(i);
+        mesh.primitives.push_back(p);
+        Node node;
+        node.mesh = int(m->meshes.size());
+        node.name = mesh.name;
+        node.t = {float(i % 4) * 1.5f - 2.25f, float(i / 4) * .9f, 0};
+        m->meshes.push_back(std::move(mesh));
+        m->nodes.push_back(std::move(node));
+    }
+    m->finalize();
+    return m;
+}
+
 int aiverseMain(int argc, char** argv) {
     if (!unitChecks()) return 1;
     if (argc == 2 && std::string(argv[1]) == "--unit") return 0;
@@ -79,9 +116,9 @@ int aiverseMain(int argc, char** argv) {
         std::printf("models=%zu opaque_before=%zu opaque_after=%zu added_indices=%zu added_vertices=%zu\n",models,before,after,addedIndices,addedVertices);
         return models && after<before ? 0 : 1;
     }
-    auto model=render::loadModel(argv[1],read);
-    const std::string prefix = argv[2];
     const std::string scenario = std::getenv("AIVERSE_PALETTE_TEST_CASE") ? std::getenv("AIVERSE_PALETTE_TEST_CASE") : "default";
+    auto model = scenario == "indirect" ? indirectFixture() : render::loadModel(argv[1],read);
+    const std::string prefix = argv[2];
     const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
     render::Renderer3D renderer; render::Mesh floor; gfx::Device* device = nullptr;
     std::vector<render::Material> materials;
@@ -112,7 +149,10 @@ int aiverseMain(int argc, char** argv) {
     cb.frame=[&](gfx::Device& d,double) {
         if(failed||finished||frame>40){platform::requestQuit();return;}
         const bool batch=frame>=15;
-        for(size_t i=0;i<model->meshes.size();++i) model->meshes[i].materialBatches=batch?batches[i]:std::vector<render::MaterialBatch>{};
+        renderer.setModelMultiDrawEnabled(scenario != "indirect" || batch);
+        for(size_t i=0;i<model->meshes.size();++i)
+            model->meshes[i].materialBatches=(batch && scenario != "indirect")
+                ? batches[i] : std::vector<render::MaterialBatch>{};
         render::RTSCamera cam; cam.target={0,2,0};cam.distance=std::getenv("AIVERSE_SHADOW_TEST_DISTANCE")?float(std::atof(std::getenv("AIVERSE_SHADOW_TEST_DISTANCE"))):14;cam.pitch=.85f;cam.yaw=.45f;
         renderer.beginScene(cam,960,640);
         renderer.drawMesh(floor,{}, {.6f,.6f,.6f,1});
@@ -136,6 +176,15 @@ int aiverseMain(int argc, char** argv) {
             const auto& p=renderer.profile();
             std::printf("batch=%d shadow=%u opaque=%u total=%u error=%s\n",batch,p.draws[0],p.draws[1],renderer.drawCalls(),renderer.modelError().c_str());
             if(!batch){shadowBefore=p.draws[0];opaqueBefore=p.draws[1];}
+            else if (scenario == "indirect") {
+                const bool supported = d.supportsMultiDrawIndirect();
+                if (supported && (p.draws[1] >= opaqueBefore || renderer.modelStats().indirectCommands < 8)) failed = true;
+                if (!supported && (p.draws[1] != opaqueBefore || p.draws[0] != shadowBefore)) failed = true;
+                std::printf("GPU indirect supported=%d submissions=%llu commands=%llu\\n",
+                            int(supported),
+                            (unsigned long long)renderer.modelStats().multiDrawSubmissions,
+                            (unsigned long long)renderer.modelStats().indirectCommands);
+            }
             else if(p.draws[0]!=shadowBefore || (scenario=="fallback"?p.draws[1]!=opaqueBefore:p.draws[1]>=opaqueBefore)) failed=true;
             if(scenario=="transition") {std::printf("lod_transition_nodes=%u\n",p.lodTransitionNodes);failed|=p.lodTransitionNodes==0;}
             d.captureNextFrame([&,batch](int w,int h,std::vector<uint8_t> px){
