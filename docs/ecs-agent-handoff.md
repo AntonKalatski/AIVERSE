@@ -364,6 +364,11 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - Attempted native GitHub repository fetch in assistant environment: `git ls-remote https://github.com/chromealex/AIVERSE.git HEAD` failed because `github.com` could not be resolved. Therefore source changes committed through the GitHub connector are **not** locally compiled by this assistant.
 - Last checked commit had no associated *PR-triggered* workflow runs reported. Do not claim CI success until actual job results are visible; CI may be disabled or run only on push events.
 
+## 2026-11-17 — Explicit thread linkage for opt-in RTS jobs
+
+- Commit `0049872`: `CMakeLists.txt` now calls `find_package(Threads REQUIRED)` and links `aiverse_game` with `Threads::Threads` only when `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=ON`, including headless/export builds with `AIVERSE_BUILD_TESTS=OFF`. This avoids relying on incidental transitive thread flags.
+- Build/link validation pending macOS and Linux runs. No changes to the default OFF build.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
