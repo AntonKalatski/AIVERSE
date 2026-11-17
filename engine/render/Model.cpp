@@ -4,6 +4,7 @@
 #include "../data/Json.h"
 #include "ModelClips.h"
 #include "ModelMerge.h"
+#include "GlobalGeometryPool.h"
 #include "Renderer3D.h"
 #include "LightmapUv.h"
 
@@ -494,10 +495,12 @@ void prepareModelUpload(Model& m) {
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
     if (!m.vertices.empty() && !m.vb.valid()) {
         prepareModelUpload(m);
-        gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
-        m.vb = dev.createBuffer(vb);
-        gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
-        m.ib = dev.createBuffer(ib);
+        if (!uploadModelToGeometryPool(dev, m)) {
+            gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
+            m.vb = dev.createBuffer(vb);
+            gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
+            m.ib = dev.createBuffer(ib);
+        }
     }
     for (auto& img : m.images) {
         if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
@@ -544,8 +547,11 @@ int addImage(gfx::Device& dev, Model& m, Image img) {
 }
 
 void releaseModel(gfx::Device& dev, Model& m) {
-    if (m.vb.valid()) dev.destroyBuffer(m.vb);
-    if (m.ib.valid()) dev.destroyBuffer(m.ib);
+    if (m.geometryPoolPage) releaseModelGeometryPool(dev, m);
+    else {
+        if (m.vb.valid()) dev.destroyBuffer(m.vb);
+        if (m.ib.valid()) dev.destroyBuffer(m.ib);
+    }
     m.vb = {}; m.ib = {};
     for (auto& img : m.images) if (img.tex.valid()) { if(!img.borrowedTexture)dev.destroyTexture(img.tex); img.tex = {}; }
     if (m.morphTex.valid()) dev.destroyTexture(m.morphTex);
