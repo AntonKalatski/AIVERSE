@@ -120,6 +120,9 @@ public:
     // Rollback support. loadState() also drops executed commands recorded after the snapshot.
     void saveState(SimSnapshot& out);
     void loadState(const SimSnapshot& in);
+    // Optional cache rebuild hooks for non-authoritative derived data
+    // (e.g. parent hierarchy indices). Called after World restoration.
+    void addStateRestoredHook(SystemFn fn) {stateRestoredHooks_.push_back(std::move(fn));}
     // Save states in bytes: identical on every platform, versioned, checked by the state checksum on load.
     // Load into a simulation set up from the same rules + map (and seed); false (state untouched on a bad header,
     // possibly partial otherwise) with a reason in err.
@@ -170,6 +173,7 @@ private:
     Fixed dt_;
     double accumulator_ = 0.0; // real-time only, never affects the simulation
     std::vector<System> systems_;
+    std::vector<SystemFn> stateRestoredHooks_;
     int64_t (*profClock_)() = nullptr;
     std::vector<int64_t> profNs_;
     std::map<uint32_t, std::vector<Command>> pending_;
