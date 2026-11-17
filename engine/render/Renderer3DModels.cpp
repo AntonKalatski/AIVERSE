@@ -861,6 +861,9 @@ void Renderer3D::prepareGpuModelDraws() {
             it.mat->transparent || it.mat->shaderGraph ||
             it.joints >= 0 || it.morph >= 0 || it.baked ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
+            // Current GPU compute only does frustum culling; do not bypass
+            // the CPU occlusion pipeline for geometry requiring its tests.
+            it.geometry.occlusion ||
             it.model->geometry || it.lodThreshold < 1.0f || it.lodInvert ||
             !it.model->vb.valid() || !it.model->ib.valid() || !it.indexCount)
             continue;
@@ -1138,14 +1141,16 @@ void Renderer3D::renderModels(int phase) {
     for (size_t i = 0; i < order_.size();) {
         if (phase == 1 && !gpuEncodedCovered_.empty() &&
             gpuEncodedCovered_[order_[i]]) { ++i; continue; }
-        // GPU-authored indirect arguments: actual compute->draw path, opt-in.
-        // One submission per rigid static primitive, so this is a correctness
-        // milestone, NOT a faster replacement for conventional instancing.
+        // Keep one-draw-per-primitive GPU-authoring limited to the legacy
+        // static path. Dynamic rigid models only use GPU ICB in batches of 2+;
+        // otherwise conventional instancing remains cheaper and preserves
+        // the original fallback behavior.
         const uint32_t modelIndex = order_[i];
         if (phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ && !auxiliaryModelPass_ &&
             gpuModelCommandsReady_ && !drawCallDebug_ &&
             modelIndex < gpuModelSlots_.size() &&
             gpuModelSlots_[modelIndex] != UINT32_MAX &&
+            (modelItems_[modelIndex].flags & kDrawStatic) &&
             drawModelBatch(&modelIndex, 1, phase, false)) {
             if (dev_->drawIndexedGpuIndirect(
                     gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
