@@ -282,6 +282,9 @@ public:
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
     void setModelMultiDrawEnabled(bool on) { modelMultiDrawEnabled_ = on; }
+    // Independently control GPU-authored draws for 3-way Scene benchmarking.
+    // The process-wide experimental environment flag remains mandatory.
+    void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
     struct RenderProfile {
@@ -426,6 +429,7 @@ private:
     std::vector<IndirectLayoutEntry> indirectLayoutCache_[5];
     size_t indirectLayoutCursor_[5] = {};
     bool modelMultiDrawEnabled_ = true;
+    bool gpuAuthoredDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
     bool profiling_=false,modelLodEnabled_=true;
