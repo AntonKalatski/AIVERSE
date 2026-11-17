@@ -5,6 +5,37 @@ description: Reuse AIVERSE seeded spread, recoil, swept projectiles, material pe
 
 # weapon-policies
 
+## Mandatory composable ECS weapon architecture
+
+Follow `AGENTS.md` and `docs/ecs-mechanic-composition.md`.
+Weapons must be built from reusable ECS components and systems, not separate
+RTS/FPS projectile calculations. The public integration reference is
+`<aiverselib/genre/EcsProjectileSystems.h>`, which binds a shared
+`ProjectileFlightComponent` and `BallisticFlightPolicy` into any
+`Simulation` and delivers ordered `ProjectileImpactEvent` records.
+
+A weapon feature must separate:
+- `WeaponState` / `WeaponLaunchSystem` (fire mode, validated ammo, cooldown),
+- `ProjectileFlightComponent` / `ProjectileFlightSystem` (trajectory; pluggable
+  ballistic/homing/rocket guidance policy; existing `stepProjectile` for gravity),
+- `Collision/ImpactSystem` and `DamagePayload/ApplyDamageSystem`
+  (typed hits, armor, friendly-fire, resistance and splash),
+- `Despawn` and presentation systems (deferred destruction, particles, sound).
+
+RTS artillery, FPS bullets, turret-on-vehicle, homing rockets and spells
+are different *configurations and adapters* of the same underlying systems.
+No `RtsModule&`/`fps::Module&` dependency in the reusable system.
+Do not keep a second authoritative copy of weapon, projectile or damage state.
+Use Fixed math and stable Entity IDs; collect hits first, apply damage and
+RNG in deterministic order at the commit barrier. Never mutate World topology
+during component iteration.
+
+**Proof before claiming reuse:** compile/run the same public header and system
+in two independent GameModules plus a combined vehicle/weapon example;
+verify save/rollback/hash parity, collisions, team ownership and native C++
+linkage. See `tests/ecs_projectile_composition_test.cpp`. That test shows
+ballistic flight reuse, NOT a completed full FPS/RTS shooting-system migration.
+
 1. Read `docs/genre-packages.md` (section Weapons and ballistics) and the catalog entry. Inspect `genre/Weapons.h` (recoil, spread, projectiles), `genre/Ballistics.h` (traceLayers/resolvePenetration, resolveExplosion, solveLaunch/solveIntercept), `genre/WeaponMods.h` (stepFeed, stepCharge, equipAttachment/resolveStats), `genre/WeaponData.h` and `genre/WeaponPersistence.h` for exact behavior.
 2. Prefer existing engine mechanics for built-in FPS movement/ammo, RTS abilities/damage and victory. Use these policies for an explicit custom owner; never maintain duplicate health, inventory or cooldown state.
 3. Load scalar JSON through generated readGameplaySettings, then genre/Configured.h adapters. Read narrative definitions with readStory; use stable localization/fact/choice IDs. Keep definitions immutable for a running save.
