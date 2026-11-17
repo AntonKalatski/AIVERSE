@@ -80,6 +80,57 @@ void stress(Json rules,Json map) {
     auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     std::printf("100 clients / 300 ticks / sparse 16 km world: %lld ms (debug/local loopback, not WAN capacity)\n",(long long)elapsed);
 }
+void parallelMotorParityFixture(Json rules,Json map) {
+    auto& fps=rules.member("fps");
+    fps.set("maxPlayers",Json::number(int64_t(100)));
+    fps.set("mode",Json::string("deathmatch"));
+    fps.erase("mechanics");
+    fps.erase("melee");
+    fps.erase("royale");
+    map.set("colliders",Json::parse(
+        R"([{"id":1,"min":[-128,-2,-128],"max":[128,0,128]}])"));
+    auto players=Json::array(),spawns=Json::array();
+    for(int i=0;i<100;++i) {
+        auto p=Json::object();
+        p.set("name",Json::string("Motor "+std::to_string(i)));
+        p.set("team",Json::number(int64_t(i<50?1:2)));
+        p.set("bot",Json::fromBool(false));
+        players.push(std::move(p));
+        auto spawn=Json::array();
+        spawn.push(Json::number(int64_t(-80+16*(i%10))));
+        spawn.push(Json::numberText("0.01"));
+        spawn.push(Json::number(int64_t(-80+16*(i/10))));
+        spawns.push(std::move(spawn));
+    }
+    map.set("players",std::move(players));
+    map.set("spawns",std::move(spawns));
+    auto sim=simulation(rules,map);
+    Hasher history;
+    for(uint32_t t=0;t<120;++t) {
+        for(uint32_t i=0;i<100;++i) {
+            fps::Input input;
+            input.sequence=t+1;
+            input.forward=500;
+            input.right=(int(i%3)-1)*200;
+            input.buttons=(t==10?fps::Jump:0u) |
+                          (t>=30&&t<40?fps::Crouch:0u) |
+                          (t>=60?fps::Sprint:0u);
+            auto command=fps::command(uint8_t(i+1),input);
+            command.tick=t;
+            sim->inject(command);
+        }
+        sim->step();
+        history.u64(sim->checksum());
+    }
+    SimSnapshot snapshot;
+    sim->saveState(snapshot);
+    auto current=sim->checksum();
+    sim->step();
+    sim->loadState(snapshot);
+    CHECK(sim->checksum()==current);
+    std::printf("FPS_MOTOR_PARITY_HASH=%016llx\n",
+        (unsigned long long)history.value());
+}
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
@@ -162,6 +213,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
