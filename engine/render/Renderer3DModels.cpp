@@ -942,13 +942,25 @@ void Renderer3D::prepareGpuModelDraws() {
         }
     }
     gpuEncodedCovered_.assign(modelItems_.size(), 0);
+    // GPU encoding has a compute-dispatch cost per batch, unlike CPU MDI.
+    // Keep this threshold separately tunable; default 2 preserves the
+    // previously validated path and permits a controlled 4/8/16 sweep.
+    static const uint32_t minGpuIcbCommands = [] {
+        const char* raw = std::getenv("AIVERSE_GPU_ICB_MIN_COMMANDS");
+        if (!raw || !*raw) return 2u;
+        char* end = nullptr;
+        const long value = std::strtol(raw, &end, 10);
+        return end != raw && *end == '\0' && value >= 2 && value <= 256
+            ? uint32_t(value) : 2u;
+    }();
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
     for (auto& group : groups) {
         const auto& indices = group.items;
         for (size_t first = 0; first < indices.size();) {
             const size_t end = std::min(indices.size(), first + groupCapacity);
-            // Avoid a GPU compute/ICB submission for single-primitive groups.
-            if (end - first < 2) break;
+            // Do not spend a GPU compute dispatch for undersized groups.
+            // Remaining items fall back to conventional instancing.
+            if (end - first < minGpuIcbCommands) break;
             std::vector<uint32_t> sourceSlots;
             sourceSlots.reserve(end - first);
             for (size_t j = first; j < end; ++j)
