@@ -494,6 +494,37 @@ void Module::shoot(Simulation& sim,Actor& p) {
     if(config_.systems.enabled)p.recoil=fxMin(Fixed::fromRatio(1,20),p.recoil+weapon.recoil*((p.attachments[p.weaponIndex]&2)?Fixed::fromRatio(3,4):1_fx));
 }
 
+void Module::moveActorEcs(Simulation& sim,Actor& actor,const Input& input) {
+    // Runtime motor operates on a real ECS component. Only state fields
+    // consumed/produced by moveActor are copied across the compatibility
+    // boundary; bags, weapon state, melee history etc. are NOT duplicated.
+    const Entity entity=actorEntity(sim,actor.slot);
+    auto* component=sim.world().tryGet<ActorRuntime>(entity);
+    if(!component)
+        throw std::logic_error("FPS ActorRuntime missing during ECS motor");
+    Actor& motor=component->value;
+    motor.pos=actor.pos;
+    motor.velocity=actor.velocity;
+    motor.yaw=actor.yaw;
+    motor.pitch=actor.pitch;
+    motor.grounded=actor.grounded;
+    motor.crouched=actor.crouched;
+    motor.prone=actor.prone;
+    motor.downed=actor.downed;
+    motor.climbing=actor.climbing;
+    motor.frozen=actor.frozen;
+    motor.vehicle=actor.vehicle;
+    motor.health=actor.health;
+    moveActor(motor,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+    actor.pos=motor.pos;
+    actor.velocity=motor.velocity;
+    actor.yaw=motor.yaw;
+    actor.pitch=motor.pitch;
+    actor.grounded=motor.grounded;
+    actor.crouched=motor.crouched;
+    actor.prone=motor.prone;
+}
+
 void Module::tick(Simulation& sim) {
     auto& s=state(sim);if(s.winner)return;
     tickProjectilePrograms(sim);
@@ -634,7 +665,10 @@ void Module::tick(Simulation& sim) {
             a.grounded=m.grounded;a.crouched=m.crouched;a.prone=m.prone;
         } else
 #endif
-        if(!a.vehicle)moveActor(a,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+        if(!a.vehicle) {
+            if(config_.ecsAuthority)moveActorEcs(sim,a,input);
+            else moveActor(a,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+        }
         if(config_.melee.enabled)tickMelee(sim,a,input);
         // Jump is an edge, movement/fire are held; loss of input eventually releases them.
         a.input.buttons&=~uint32_t(Jump);
