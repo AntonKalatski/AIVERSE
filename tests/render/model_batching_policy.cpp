@@ -98,8 +98,10 @@ int main() {
     gpuB.materials.resize(1);
     CHECK(&gpuA.materials[0] != &gpuB.materials[0]);
     CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) == gpuMaterialStateHash(gpuB, gpuB.materials[0]));
     gpuB.materials[0].roughness = .25f;
     CHECK(!equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    CHECK(gpuMaterialStateHash(gpuA, gpuA.materials[0]) != gpuMaterialStateHash(gpuB, gpuB.materials[0]));
     gpuB.materials[0].roughness = gpuA.materials[0].roughness;
     gpuA.images.resize(1); gpuB.images.resize(1);
     gpuA.images[0].tex.id = 101;
