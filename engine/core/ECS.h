@@ -270,12 +270,16 @@ public:
         }
         std::vector<std::shared_ptr<void>> detached;
         if(!enable) {
-            // Disable COW only after any shared singleton resources have been
-            // detached. This also makes legacy mutable resource() safe.
-            detached=resources_;
-            for(size_t i=0;i<detached.size();++i)
-                if(detached[i] && !detached[i].unique())
-                    detached[i]=resourceOps_[i].make(detached[i].get());
+            // Test ownership BEFORE staging a second reference: otherwise
+            // copying resources_ into a temporary makes every entry look
+            // shared, needlessly deep-copying immutable/unique resources.
+            detached.reserve(resources_.size());
+            for(size_t i=0;i<resources_.size();++i) {
+                const auto& resource=resources_[i];
+                if(resource && !resource.unique())
+                    detached.push_back(resourceOps_[i].make(resource.get()));
+                else detached.push_back(resource);
+            }
         }
         pools_.swap(converted);
         if(!enable)resources_.swap(detached);
