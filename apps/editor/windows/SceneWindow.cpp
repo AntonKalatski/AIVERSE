@@ -78,9 +78,20 @@ public:
                     // The same Selection now drives Scene, Hierarchy and Inspector.
                     // Do not run a second genre-specific picker or overwrite a
                     // cleared FPS selection with a stale RTS selection.
-                    pickSelect(ed, hovered, io);
+                    const bool alreadySelected =
+                        std::find(ed.selectionSet.begin(), ed.selectionSet.end(),
+                                  hovered) != ed.selectionSet.end();
+                    // Preserve a group when dragging an already-selected
+                    // member. A simple click without movement still selects
+                    // just that member on release, matching RTS behavior.
+                    fpsDragKeepSelection_ = alreadySelected &&
+                        ed.selectionSet.size() > 1 &&
+                        !io.KeyCtrl && !io.KeySuper && ed.tool == Tool::Select;
+                    fpsDragClicked_ = hovered;
+                    if (!fpsDragKeepSelection_) pickSelect(ed, hovered, io);
                     fpsDragActive_ = hovered.kind == Selection::FpsObject &&
-                                     ed.selection == hovered && ed.tool == Tool::Select &&
+                                     (ed.selection == hovered || fpsDragKeepSelection_) &&
+                                     ed.tool == Tool::Select &&
                                      !io.KeyCtrl && !io.KeySuper;
                     fpsDragEdited_ = false;
                     fpsDragLastX_ = io.MousePos.x;
@@ -122,7 +133,13 @@ public:
                 fpsDragLastX_ = io.MousePos.x;
                 fpsDragLastY_ = io.MousePos.y;
             }
-            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) fpsDragActive_ = false;
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                if (fpsDragKeepSelection_ && !fpsDragEdited_ &&
+                    fpsDragClicked_.kind == Selection::FpsObject)
+                    ed.select(fpsDragClicked_);
+                fpsDragKeepSelection_ = false;
+                fpsDragActive_ = false;
+            }
         } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
@@ -139,6 +156,8 @@ public:
 
 private:
     bool fpsDragActive_ = false, fpsDragEdited_ = false;
+    bool fpsDragKeepSelection_ = false;
+    Selection fpsDragClicked_;
     float fpsDragLastX_ = 0, fpsDragLastY_ = 0;
 
     void toolbar(Editor& ed) {
