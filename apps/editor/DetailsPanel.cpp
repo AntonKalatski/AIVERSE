@@ -199,6 +199,35 @@ void DetailsPanel::prepare() {
 }
 
 void DetailsPanel::draw(Editor& ed) {
+    if (ed.selection.kind == Selection::FpsActor) {
+        const Json& runtime = ed.fpsRuntimeSnapshot();
+        const Json& actors = runtime["actors"];
+        const int index = ed.selection.index;
+        if (!actors.isArray() || index < 0 || size_t(index) >= actors.size()) {
+            ui::hint("FPS runtime actor is unavailable; rebuild the preview.");
+            return;
+        }
+        const Json& actor = actors[size_t(index)];
+        ImGui::TextDisabled("FPS RUNTIME ACTOR · READ ONLY");
+        ImGui::Text("Actor #%lld", static_cast<long long>(actor["slot"].integer()));
+        if (ImGui::CollapsingHeader("Actor State", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::BeginTable("##fpsActorFields", 2,
+                    ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
+                for (const auto& field : actor.members()) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(field.first.c_str());
+                    ImGui::TableNextColumn();
+                    const std::string value = field.second.isString()
+                        ? field.second.str() : field.second.dump(-1);
+                    ImGui::TextWrapped("%s", value.c_str());
+                }
+                ImGui::EndTable();
+            }
+        }
+        ImGui::TextDisabled("FPS actors are World resource records, not individual ECS entities.");
+        return;
+    }
     // FPS authored objects are document sources; they do not have ECS snapshot
     // rows yet. They nevertheless use the same Inspector panel and registered
     // document-component card drawers as any other authored entity.
