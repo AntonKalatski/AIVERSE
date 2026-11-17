@@ -136,6 +136,29 @@ void NativeModules::sceneBodies(RtsModule& rts, Simulation& sim, std::vector<Nat
     AIVERSE_NATIVE_EACH(kHookScene) entries_[i].instance->sceneBodies(rts, sim, store->modules[i], out);
 }
 #undef AIVERSE_NATIVE_EACH
+
+void NativeModules::inspectComponents(Simulation& sim, Entity entity,
+                                     Json& components, Json& schemas) const {
+    World& world = sim.world();
+    if (!world.alive(entity) || !components.isObject() || !schemas.isObject())
+        return;
+    for (const auto& entry : entries_) {
+        Json reported = Json::object();
+        Json declared = Json::object();
+        entry.instance->inspectComponents(world, entity, reported, declared);
+        if (!reported.isObject()) continue;
+        for (const auto& [id, fields] : reported.members()) {
+            // Keep builtin ECS descriptors authoritative. A module cannot
+            // fabricate duplicate builtin components or overwrite another
+            // module's already reported component.
+            if (id.empty() || !fields.isObject() || components.has(id)) continue;
+            components.set(id, fields);
+            if (declared.isObject() && declared[id].isObject())
+                schemas.set(id, declared[id]);
+        }
+    }
+}
+
 void NativeModules::hash(Simulation& sim, Hasher& h) const {
     if (entries_.empty()) return; // preserve existing games' checksums
     h.str("nativeModules"); h.u32(uint32_t(entries_.size()));
