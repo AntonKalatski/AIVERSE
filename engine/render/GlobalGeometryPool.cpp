@@ -1,5 +1,6 @@
 #include "GlobalGeometryPool.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <limits>
 #include <map>
@@ -17,6 +18,7 @@ struct GeometryPoolPage {
     size_t indexBegin = 0;
 };
 namespace {
+std::atomic<bool> poolEnabled{true};
 std::mutex poolMutex;
 std::map<gfx::Device*, std::vector<std::weak_ptr<GeometryPoolPage>>> pools;
 constexpr size_t kDefaultPageSize = 8 * 1024 * 1024;
@@ -35,9 +37,12 @@ bool canPool(const Model& m) {
 }
 bool disabled() {
     const char* e = std::getenv("AIVERSE_GEOMETRY_POOL");
-    return e && (std::string(e) == "off" || std::string(e) == "0");
+    return !poolEnabled.load(std::memory_order_relaxed) ||
+           (e && (std::string(e) == "off" || std::string(e) == "0"));
 }
-}
+} // namespace
+bool globalGeometryPoolingEnabled() { return !disabled(); }
+void setGlobalGeometryPoolingEnabled(bool enabled) { poolEnabled.store(enabled, std::memory_order_relaxed); }
 
 bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     if (disabled() || !dev.canUpdateSharedBuffers() || !canPool(m) ||
