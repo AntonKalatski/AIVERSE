@@ -1,11 +1,16 @@
 // Cross-genre picking regression tests for the shared ray/AABB implementation.
 #include "apps/editor/SceneRenderable.h"
-#include <cassert>
+#include <cstdlib>
 #include <limits>
 #include <vector>
 
 using namespace aiverse::editor;
 using namespace aiverse::render;
+
+static void require(bool condition) {
+    // Active in Release builds too; assertions are compiled out by NDEBUG.
+    if (!condition) std::abort();
+}
 
 int main() {
     SceneRenderable first;
@@ -22,21 +27,21 @@ int main() {
 
     const std::vector<SceneRenderable> scene{second, first};
     // Closest surface, not insertion order.
-    assert(pickSceneRenderable(scene, {0, 0, 0}, {0, 0, 1}) == 1);
-    assert(pickSceneRenderable(scene, {0, 0, 10}, {0, 0, -1}) == 0);
+    require(pickSceneRenderable(scene, {0, 0, 0}, {0, 0, 1}) == 1);
+    require(pickSceneRenderable(scene, {0, 0, 10}, {0, 0, -1}) == 0);
     // Rays parallel to an AABB slab must not create false hits.
-    assert(pickSceneRenderable(scene, {3, 0, 0}, {0, 0, 1}) == -1);
-    assert(pickSceneRenderable(scene, {0, 3, 0}, {0, 0, 1}) == -1);
-    assert(pickSceneRenderable(scene, {0, 0, 0}, {0, 0, 0}) == -1);
+    require(pickSceneRenderable(scene, {3, 0, 0}, {0, 0, 1}) == -1);
+    require(pickSceneRenderable(scene, {0, 3, 0}, {0, 0, 1}) == -1);
+    require(pickSceneRenderable(scene, {0, 0, 0}, {0, 0, 0}) == -1);
 
     const float nan = std::numeric_limits<float>::quiet_NaN();
-    assert(pickSceneRenderable(scene, {nan, 0, 0}, {0, 0, 1}) == -1);
-    assert(pickSceneRenderable(scene, {0, 0, 0}, {nan, 0, 1}) == -1);
+    require(pickSceneRenderable(scene, {nan, 0, 0}, {0, 0, 1}) == -1);
+    require(pickSceneRenderable(scene, {0, 0, 0}, {nan, 0, 1}) == -1);
 
     SceneRenderable hidden = first;
     hidden.pickable = false;
-    assert(pickSceneRenderable({hidden}, {0, 0, 0}, {0, 0, 1}) == -1);
+    require(pickSceneRenderable({hidden}, {0, 0, 0}, {0, 0, 1}) == -1);
     SceneRenderable malformed = first;
     malformed.boundsMin.x = 5;
-    assert(pickSceneRenderable({malformed}, {0, 0, 0}, {0, 0, 1}) == -1);
+    require(pickSceneRenderable({malformed}, {0, 0, 0}, {0, 0, 1}) == -1);
 }
