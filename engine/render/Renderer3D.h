@@ -15,6 +15,7 @@
 #include "Math3D.h"
 #include "Model.h"
 #include "PersistentGpuSceneUpload.h"
+#include "GpuSceneCulling.h"
 #include <memory>
 #include <unordered_map>
 
@@ -206,7 +207,11 @@ public:
     void drawModel(const ModelDraw& d);
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
-    struct PersistentSceneStats { uint32_t live = 0, ranges = 0, records = 0; size_t bytes = 0; };
+    struct PersistentSceneStats {
+        uint32_t live = 0, ranges = 0, records = 0;
+        size_t bytes = 0;
+        bool gpuFrustumDispatched = false;
+    };
     PersistentSceneStats persistentSceneStats() const { return persistentStats_; }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
@@ -428,6 +433,7 @@ private:
     std::vector<ModelItem> modelItems_;
     PersistentGpuScene persistentScene_;
     std::unique_ptr<PersistentGpuSceneUpload> persistentUpload_;
+    GpuSceneCulling persistentCull_;
     struct PersistentEntry { GpuSceneHandle handle; uint64_t seen = 0; };
     std::unordered_map<uint64_t, PersistentEntry> persistentIds_;
     uint64_t persistentSceneEpoch_ = 0;
