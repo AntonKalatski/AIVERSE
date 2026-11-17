@@ -118,6 +118,12 @@ In `modules/rts/view/RtsViewDraw.cpp`, the attachments/effect-anchor block previ
 
 This is a targeted low-risk optimization, **not yet benchmarked or compiled on the owner's Mac**. Compare warm `[view-objects]` drawObject (~2.1–2.2 ms baseline), `[view-stages]` objects (~7.6–7.8 ms), and full `[scene-stages]` view (~9.6–10.0 ms). Test attachments, weapons, FX anchors and staged model choices visually. If no gain, focus on the remaining uninstrumented ~3 ms object-loop cost; avoid broad static caching until invalidation rules are defined.
 
+## Latest procedural-input fast path (2026-11-17)
+
+Commits `d10016f` and `f39b62a` change `modules/rts/view/RtsAnimate.cpp`: `ProcInputs` initialization, target-angle calculations and terrain-normal samples are now inside the `!ch.procs.empty() && !st.graph.hasContacts()` branch, the only branch that invokes `applyProcedural`. `st.objXf` is reset on every call, and regular pose updates, IK, animation graphs and events remain outside this branch. The second commit fixes the block scope of the first; **use the final branch head**.
+
+This optimization has not been built or benchmarked by the owner yet. Compare warm `[view-objects]` animate (~1.30–1.35 ms) and `[view-stages]` objects (~7.6–7.8 ms), as well as model/animation correctness. If CPU improvement is negligible, investigate remaining uninstrumented object-loop cost rather than repeating speculative micro-optimizations.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
