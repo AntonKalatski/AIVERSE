@@ -37,8 +37,8 @@ const std::vector<WorldComponent>& worldComponents();
 // This is not a DocEntity component and does not imply writable persistence.
 enum class WorldFieldKind : uint8_t { Number, Integer, Boolean, Text, Vec3, Turn, Unknown };
 struct WorldComponentField {
-    const char* id;
-    const char* title;
+    std::string id;
+    std::string title;
     WorldFieldKind kind;
 };
 std::vector<WorldComponentField> worldComponentFields(const std::string& componentId);
