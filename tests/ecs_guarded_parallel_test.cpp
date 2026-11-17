@@ -2,6 +2,7 @@
 // /tmp/aiverse-ecs-guarded-parallel
 #include "engine/experiments/EcsGuardedWorld.h"
 #include <cassert>
+#include <atomic>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -10,6 +11,7 @@ using namespace aiverse::ecs_experiment;
 struct Position {int64_t x=0;};
 struct Velocity {int64_t x=0;};
 struct Audit {int64_t x=0;};
+struct Shared {int64_t x=0;};
 static uint64_t checksum(World& world) {
     uint64_t h=1469598103934665603ull;
     world.eachExisting<Position>([&](Entity e,Position& p) {
@@ -66,6 +68,35 @@ static void testForeignWriteRejection() {
     }
     assert(world.get<Position>(a).x==1 && world.get<Position>(b).x==1);
 }
+static void testNoSharedMutationWithinJobs() {
+    World world;
+    for(int i=0;i<64;++i)world.add<Position>(world.create());
+    world.setResource<Shared>(Shared{});
+    GuardedWorld view{world};
+    PersistentWorkers workers{3};
+    SystemAccess access{"restricted",{}, {componentId<Position>()},
+        {},{componentId<Shared>()},true,false};
+    std::atomic<size_t> rejected{0};
+    {
+        AccessScope scope(access);
+        view.eachAdaptiveWrite<Position>(workers,ExecutionMode::Parallel,{},
+            [&](Entity,Position&) {
+                try{(void)view.create();}
+                catch(const AccessViolation&){++rejected;}
+                try{(void)view.writeResource<Shared>();}
+                catch(const AccessViolation&){++rejected;}
+                try{view.eachWrite<Position>([](Entity,Position&){});}
+                catch(const AccessViolation&){++rejected;}
+                try {
+                    view.eachAdaptiveWrite<Position>(workers,ExecutionMode::Parallel,{},
+                        [](Entity,Position&){});
+                } catch(const AccessViolation&){++rejected;}
+            });
+    }
+    assert(rejected==64*4);
+    assert(world.countExisting<Position>()==64);
+}
+
 int main() {
     for(unsigned density:{1u,25u,100u}) {
         const auto expected=run(0,density);
@@ -74,5 +105,6 @@ int main() {
         assert(run(7,density)==expected);
     }
     testForeignWriteRejection();
+    testNoSharedMutationWithinJobs();
     std::cout<<"PASS checked adaptive per-entity jobs: worker scopes, checksum, foreign-write rejection\n";
 }
