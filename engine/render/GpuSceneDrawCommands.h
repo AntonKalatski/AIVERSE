@@ -292,7 +292,7 @@ kernel void cs_main(device const Record* records [[buffer(0)]],
     if (r.lodEnabled != 0 && params.viewportWidth != 0 &&
         params.viewportHeight != 0 && r.lodMaxPixels > 0 &&
         allOutside == 0) {
-        float minW = INFINITY, maxAbsX = 0.0f, maxAbsY = 0.0f;
+        float minW = 1.0e30f, maxAbsX = 0.0f, maxAbsY = 0.0f;
         bool safe = true;
         for (uint corner = 0; corner < 8; ++corner) {
             const float3 p = float3(
