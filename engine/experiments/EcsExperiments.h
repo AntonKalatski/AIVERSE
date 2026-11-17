@@ -69,13 +69,11 @@ public:
             ++epoch_;
         }
         wake_.notify_all();
-        struct CallerScope {
-            const PersistentWorkers* previous;
-            CallerScope(const PersistentWorkers* pool):previous(currentPool_) {currentPool_=pool;}
-            ~CallerScope(){currentPool_=previous;}
-        };
-        try {CallerScope scope(this);local(workers_);}
+        const auto* previousPool=currentPool_;
+        currentPool_=this;
+        try {local(workers_);}
         catch(...) {recordFailure(std::current_exception());}
+        currentPool_=previousPool;
         std::exception_ptr failure;
         {
             std::unique_lock<std::mutex> lock(mutex_);
