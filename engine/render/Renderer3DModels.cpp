@@ -681,7 +681,8 @@ void Renderer3D::renderModels(int phase) {
     const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
     const auto passBegin = std::chrono::steady_clock::now();
     uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
-    double mdiScanMs = 0.0, mdiAttemptMs = 0.0;
+    double mdiScanMs = 0.0, mdiAttemptMs = 0.0, mdiAcceptedMs = 0.0, mdiRejectedMs = 0.0;
+    uint64_t mdiBelowThreshold = 0;
     order_.clear();
     auto started=profiling_?std::chrono::steady_clock::now():std::chrono::steady_clock::time_point{};
     for (uint32_t i = 0; i < modelItems_.size(); ++i) {
@@ -820,17 +821,31 @@ void Renderer3D::renderModels(int phase) {
                     mdiScanMs += std::chrono::duration<double, std::milli>(
                         std::chrono::steady_clock::now() - scanBegin).count();
                 if (end - i >= 2) {
-                    const auto attemptBegin = std::chrono::steady_clock::now();
-                    const bool accepted = drawModelIndirectBatch(
-                        order_.data() + i, uint32_t(end - i), phase);
-                    if (traceModelPass)
-                        mdiAttemptMs += std::chrono::duration<double, std::milli>(
-                            std::chrono::steady_clock::now() - attemptBegin).count();
-                    if (accepted) {
-                        ++mdiAccepted;
-                        i = end; continue;
-                    }
-                    ++mdiRejected;
+                    // Count consecutive primitive runs before allocating a command
+                    // vector or preparing a pipeline. Repeated instances of one
+                    // primitive are only ONE indirect command.
+                    const size_t minCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
+                    size_t runs = 1;
+                    for (size_t k = i + 1; k < end && runs < minCommands; ++k)
+                        if (modelItems_[order_[k - 1]].prim != modelItems_[order_[k]].prim)
+                            ++runs;
+                    if (runs >= minCommands) {
+                        const auto attemptBegin = std::chrono::steady_clock::now();
+                        const bool accepted = drawModelIndirectBatch(
+                            order_.data() + i, uint32_t(end - i), phase);
+                        if (traceModelPass) {
+                            const double elapsed = std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - attemptBegin).count();
+                            mdiAttemptMs += elapsed;
+                            if (accepted) mdiAcceptedMs += elapsed;
+                            else mdiRejectedMs += elapsed;
+                        }
+                        if (accepted) {
+                            ++mdiAccepted;
+                            i = end; continue;
+                        }
+                        ++mdiRejected;
+                    } else ++mdiBelowThreshold;
                 } else ++mdiShort;
             }
         }
@@ -844,8 +859,8 @@ void Renderer3D::renderModels(int phase) {
     if (traceModelPass) {
         struct Totals {
             uint32_t passes = 0;
-            double select = 0, sort = 0, draw = 0, scan = 0, attempt = 0;
-            uint64_t candidates = 0, accepted = 0, rejected = 0, shortGroups = 0;
+            double select = 0, sort = 0, draw = 0, scan = 0, attempt = 0, acceptedMs = 0, rejectedMs = 0;
+            uint64_t candidates = 0, accepted = 0, rejected = 0, shortGroups = 0, belowThreshold = 0;
         };
         static Totals totals[2][5] = {};
         const int mode = modelMultiDrawEnabled_ ? 1 : 0;
@@ -858,18 +873,23 @@ void Renderer3D::renderModels(int phase) {
         t.draw += ms(afterSort, std::chrono::steady_clock::now());
         t.scan += mdiScanMs;
         t.attempt += mdiAttemptMs;
+        t.acceptedMs += mdiAcceptedMs;
+        t.rejectedMs += mdiRejectedMs;
+        t.belowThreshold += mdiBelowThreshold;
         t.candidates += mdiCandidates;
         t.accepted += mdiAccepted;
         t.rejected += mdiRejected;
         t.shortGroups += mdiShort;
         if (++t.passes == 120) {
             std::fprintf(stderr,
-                "[model-batch] mode=%s phase=%d avg/120 select=%.4f sort=%.4f draw=%.4f scan=%.4f attempt=%.4f ms candidates=%.1f accepted=%.1f rejected=%.1f short=%.1f /pass\n",
+                "[model-batch] mode=%s phase=%d avg/120 select=%.4f sort=%.4f draw=%.4f scan=%.4f attempt=%.4f acceptedMs=%.4f rejectedMs=%.4f ms candidates=%.1f accepted=%.1f rejected=%.1f belowThreshold=%.1f short=%.1f /pass\n",
                 mode ? "ON" : "OFF", phase,
                 t.select / t.passes, t.sort / t.passes, t.draw / t.passes,
                 t.scan / t.passes, t.attempt / t.passes,
+                t.acceptedMs / t.passes, t.rejectedMs / t.passes,
                 double(t.candidates) / t.passes, double(t.accepted) / t.passes,
-                double(t.rejected) / t.passes, double(t.shortGroups) / t.passes);
+                double(t.rejected) / t.passes, double(t.belowThreshold) / t.passes,
+                double(t.shortGroups) / t.passes);
             t = {};
         }
     }
