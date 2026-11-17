@@ -776,6 +776,7 @@ public:
         return out;
     }
     void endFrame() override {
+        finishGpuEncodedIcbPreparation();
         endCompute();
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
         if (capture_ && drawable_ && captureDelay_-- <= 0 && !drawable_.texture.framebufferOnly) {
@@ -1089,9 +1090,15 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // Reset before GPU encoding. This slot is reused only after the Metal
         // frame-semaphore fence and not twice within one frame.
         [resources.icb resetWithRange:NSMakeRange(0, count)];
-        id<MTLComputeCommandEncoder> encoder = [cmd_ computeCommandEncoder];
-        if (!encoder) return 0;
-        [encoder setComputePipelineState:gpuIcbPipeline_];
+        // Encode every compatible group into one Metal compute encoder.
+        // The caller closes it once, before opening the render pass, reducing
+        // per-group encoder switches and associated GPU scheduling overhead.
+        if (!gpuIcbEncoder_) {
+            gpuIcbEncoder_ = [cmd_ computeCommandEncoder];
+            if (!gpuIcbEncoder_) return 0;
+            [gpuIcbEncoder_ setComputePipelineState:gpuIcbPipeline_];
+        }
+        id<MTLComputeCommandEncoder> encoder = gpuIcbEncoder_;
         [encoder setBuffer:current(*commandData) offset:0 atIndex:0];
         [encoder setBuffer:current(*indexData) offset:0 atIndex:1];
         [encoder setBuffer:resources.argBuffer offset:0 atIndex:2];
@@ -1101,10 +1108,15 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
         [encoder dispatchThreadgroups:MTLSizeMake((count + 63u) / 64u, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(64,1,1)];
-        [encoder endEncoding];
         resources.frame = frame_;
         resources.count = count;
         return uint32_t(slotIndex + 1);
+    }
+    void finishGpuEncodedIcbPreparation() override {
+        if (gpuIcbEncoder_) {
+            [gpuIcbEncoder_ endEncoding];
+            gpuIcbEncoder_ = nil;
+        }
     }
     bool executeGpuEncodedIndexedIcb(uint32_t token) override {
         auto reject = [this](const char* cause) {
@@ -1411,6 +1423,7 @@ private:
         uint64_t frame = 0;
     };
     id<MTLComputePipelineState> gpuIcbPipeline_ = nil;
+    id<MTLComputeCommandEncoder> gpuIcbEncoder_ = nil;
     id<MTLArgumentEncoder> gpuIcbArgumentEncoder_ = nil;
     std::vector<GpuEncodedIcbResources> gpuEncodedIcbPool_[kFramesInFlight];
     size_t gpuEncodedIcbCursor_[kFramesInFlight] = {};
