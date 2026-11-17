@@ -423,6 +423,11 @@ bash tests/run_ecs_gameplay_compare.sh --full
 4. **Network rollback safety:** COW snapshots carry World components/resources but do not change command ordering, RNG, state checksum or serializer. Ring lifecycle and concurrent jobs need TSan and real network stress validation.
 5. **Performance**: no measured FPS speedup or COW snapshot memory savings from these latest changes. Do not enable either experimental mode by default or merge PR #8 before real testing.
 
+### Further COW safety/performance refinement
+
+- `da46368`: `World::destroy` now detaches only shared component pools that actually contain the destroyed Entity. Unrelated pools remain shared, reducing unnecessary whole-pool copies during rollback snapshots.
+- This follow-up commit has not been compiled or benchmarked yet; retain the verification gates above.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
