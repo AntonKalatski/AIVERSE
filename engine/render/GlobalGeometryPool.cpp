@@ -21,7 +21,9 @@ namespace {
 std::atomic<bool> poolEnabled{true};
 std::mutex poolMutex;
 std::map<gfx::Device*, std::vector<std::weak_ptr<GeometryPoolPage>>> pools;
-constexpr size_t kDefaultPageSize = 8 * 1024 * 1024;
+// Small pages reduce stranded memory when a scene has many distinct models.
+// Oversized models still get a dedicated power-of-two page below.
+constexpr size_t kDefaultPageSize = 2 * 1024 * 1024;
 constexpr size_t kMaximumPooledModelSize = 16 * 1024 * 1024;
 bool canPool(const Model& m) {
     // Keep skin/morph/LOD/cluster paths on dedicated buffers because those
