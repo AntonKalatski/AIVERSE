@@ -302,6 +302,30 @@ const std::vector<WorldComponent>& worldComponents() {
     return v;
 }
 
+const std::vector<WorldComponentField>& worldComponentFields(const std::string& componentId) {
+    // These descriptions match fields emitted by the real World::has<T> /
+    // descs() serializers above. Native project components can extend the
+    // registry with their own type information in a later stage.
+    static const std::vector<WorldComponentField> transform = {
+        {"pos", "Position", WorldFieldKind::Vec3},
+        {"yaw", "Yaw (turns)", WorldFieldKind::Turn},
+    };
+    static const std::vector<WorldComponentField> owner = {
+        {"player", "Player", WorldFieldKind::Integer},
+    };
+    static const std::vector<WorldComponentField> unit = {
+        {"type", "Type", WorldFieldKind::Text},
+        {"hp", "Health", WorldFieldKind::Number},
+        {"energy", "Energy", WorldFieldKind::Number},
+        {"facing", "Facing", WorldFieldKind::Number},
+    };
+    static const std::vector<WorldComponentField> empty;
+    if (componentId == "Transform") return transform;
+    if (componentId == "Owner") return owner;
+    if (componentId == "Unit") return unit;
+    return empty;
+}
+
 int findWorldComponent(const std::string& s) {
     const std::string l = lower(s);
     const auto& c = worldComponents();
