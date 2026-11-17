@@ -114,7 +114,12 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     // Draw transform axes from the selected renderable, if visible.
     for (const auto& selected : instances) {
         if (!selected.selected) continue;
-        const float3 centre = (selected.boundsMin + selected.boundsMax) * 0.5f;
+        DocumentEntityRef ref;
+        DocumentTransform position;
+        if (!DocumentEntityRef::fromFpsKey(selected.entity, ref) ||
+            !readDocumentTransform(doc(), ref, position)) break;
+        const float3 centre{float(position.x), float(position.y),
+                            float(position.z)};
         const float extent = std::max(0.35f, camera.distance * 0.075f);
         r3d_.line(centre, centre + float3{extent, 0, 0}, rgba(235, 84, 84));
         r3d_.line(centre, centre + float3{0, extent, 0}, rgba(93, 215, 113));
