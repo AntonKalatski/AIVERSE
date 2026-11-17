@@ -41,6 +41,18 @@ public:
     // Modules must only report a component when World::has<T>(entity) is true.
     virtual void inspectComponents(World&, Entity, Json& /*components*/,
                                    Json& /*schemas*/) const {}
+    // Opt-in persisted Inspector editing for native ECS component fields.
+    // The project module validates the requested field and returns a new
+    // authoring-extra JSON object. The editor commits it with MapDoc Undo.
+    // Return false unless the changed authoring data really recreates the
+    // same ECS field on the next Simulation::setup. No runtime World writes.
+    virtual bool inspectWriteback(const std::string& /*componentId*/,
+                                  const std::string& /*fieldId*/,
+                                  const Json& /*value*/,
+                                  const Json& /*currentExtra*/,
+                                  Json& /*updatedExtra*/) const {
+        return false;
+    }
     // ---- optional hooks into built-in mechanics: declare the implemented ones in hooks() (NativeHook bits); a
     // module without hooks costs nothing. All of them run inside the simulation: deterministic, state in NativeState.
     virtual uint32_t hooks() const { return 0; }
@@ -110,6 +122,10 @@ public:
     bool allowDefeat(RtsModule&, Simulation&, uint8_t player) const;
     void sceneBodies(RtsModule&, Simulation&, std::vector<NativeModule::Body>&) const;
     void inspectComponents(Simulation&, Entity, Json& components, Json& schemas) const;
+    bool inspectWriteback(const std::string& componentId,
+                          const std::string& fieldId,
+                          const Json& value, const Json& currentExtra,
+                          Json& updatedExtra) const;
 private:
     uint32_t hooks_ = 0;
     struct Entry {
