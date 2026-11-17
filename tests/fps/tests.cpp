@@ -15,6 +15,48 @@ std::unique_ptr<Simulation> simulation(Json rules,Json map) {
     auto sim=std::make_unique<Simulation>(SimConfig{7,fps::readConfig(rules).tickRate,0},std::make_unique<fps::Module>());sim->setup(rules,map);return sim;
 }
 fps::State& state(Simulation& sim){return *sim.world().resource<fps::State>();}
+void actorEcsBridge(const Json& rules, const Json& map) {
+    auto sim = simulation(rules, map);
+    auto& module = dynamic_cast<fps::Module&>(sim->module());
+    auto verify = [&](Simulation& running) {
+        const auto& actors = state(running).actors;
+        CHECK(actors.size() == running.players().size());
+        auto& world = running.world();
+        for (const auto& actor : actors) {
+            const Entity entity = module.actorEntity(running, actor.slot);
+            CHECK(world.alive(entity));
+            CHECK(world.has<fps::ActorEntityIdentity>(entity));
+            CHECK(world.has<fps::ActorEntityTransform>(entity));
+            CHECK(world.has<fps::ActorEntityVitals>(entity));
+            const auto& identity = world.get<fps::ActorEntityIdentity>(entity);
+            const auto& transform = world.get<fps::ActorEntityTransform>(entity);
+            const auto& vitals = world.get<fps::ActorEntityVitals>(entity);
+            CHECK(identity.slot == actor.slot && identity.team == actor.team);
+            CHECK(identity.life == actor.life);
+            CHECK(transform.position == actor.pos);
+            CHECK(transform.velocity == actor.velocity);
+            CHECK(transform.yaw == actor.yaw && transform.pitch == actor.pitch);
+            CHECK(vitals.health == actor.health && vitals.ammo == actor.ammo);
+            CHECK(vitals.armor == actor.armor && vitals.reserve == actor.reserve);
+            CHECK(vitals.downed == actor.downed);
+        }
+    };
+    verify(*sim);
+    SimSnapshot snapshot;
+    sim->saveState(snapshot);
+    for (int i = 0; i < 30; ++i) {
+        sim->step();
+        verify(*sim);
+    }
+    auto saved = sim->serialize();
+    auto loaded = simulation(rules, map);
+    CHECK(loaded->deserialize(saved));
+    verify(*loaded);
+    sim->loadState(snapshot);
+    verify(*sim);
+    CHECK(module.actorEntity(*sim, 0) == kNullEntity);
+}
+
 void spatial() {
     world::SpatialWorld w(32);CHECK(w.add({1,{{-2_fx,0_fx,-2_fx},{2_fx,2_fx,2_fx}}}));
     auto hit=w.cast({0_fx,1_fx,-10_fx},{0_fx,0_fx,20_fx});CHECK(hit.hit&&hit.id==1);CHECK(fxAbs(hit.fraction-Fixed::fromRatio(4,10))<Fixed::fromRaw(3));
@@ -162,6 +204,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();actorEcsBridge(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
