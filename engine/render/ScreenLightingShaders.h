@@ -75,7 +75,9 @@ inline const char* temporal = R"(
         // Validate taps independently. Cubic reconstruction avoids the progressive blur of bilinear history reads.
         vec2 pixel=oldUv/px.xy-vec2(0.5), base=floor(pixel), fraction=fract(pixel);
         vec3 sum=vec3(0.0);float accepted=0.0;
-        float tolerance=max(0.03,distance*0.003);
+        // Stored alpha is distance to the previous camera, not the current one.
+        float expectedCenter=distance>0.0 ? length(p-prevEye.xyz) : 0.0;
+        float tolerance=max(0.03,expectedCenter*0.003);
         bool depthEdge=skyNeighbor!= (distance==0.0) || (farHistory-nearHistory)>max(0.06,distance*0.01);
         for(int y=-1;y<=2;++y) for(int x=-1;x<=2;++x) {
             vec2 q=(base+vec2(float(x),float(y))+vec2(0.5))*px.xy;
@@ -83,7 +85,7 @@ inline const char* temporal = R"(
             vec4 prior=HISTORY(UV(q));
             float w=taaKernel(float(x)-fraction.x)*taaKernel(float(y)-fraction.y);
             bool sameReceiver=distance==0.0 ? prior.a==0.0 :
-                prior.a>0.0 && abs(prior.a-distance)<=tolerance;
+                prior.a>0.0 && abs(prior.a-expectedCenter)<=tolerance;
             bool compatible=!depthEdge && prior.a>0.0 &&
                 prior.a>=nearHistory-tolerance && prior.a<=farHistory+tolerance;
             if(sameReceiver || compatible) {
