@@ -595,3 +595,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Cross-genre audit: stage 5, standalone regression runner
 - Commit `835c24b`: `tests/run_ecs_experiment_suite.sh` runs a public-include cross-genre consumer alongside existing ECS correctness checks; compiles with `-Ilibraries/include` and Simulation sources, independent of RTS/FPS link libraries.
 - **Verification:** not yet executed. Next: create an explicit reuse matrix/definition of done; review GitHub CI outcomes and any build errors. Run `bash tests/run_ecs_experiment_suite.sh` and `ctest -R '^ecs_cross_genre_mechanics_test$'` once a native toolchain is available.
+
+### 2026-11-18 — Cross-genre mechanic contract and PR #17 integration
+
+- Commit `5737403` added a mandatory **genre-independent ECS Components + Systems architecture contract** to `AGENTS.md`. Every mechanic/library must expose reusable ECS component definitions, configurable independently scheduled systems, explicit read/write sets, deterministic order/commands, persistence/rollback, native public C++ APIs and corresponding tests/AI skill/docs. Genre modules only adapt input/configuration/presentation; they must not duplicate shared algorithms.
+- Examples: RTS and FPS ballistics/rockets use one reusable trajectory, collision, hit/penetration/splash/damage implementation with different configurations, not separate projectile solvers. Apply the same requirement to health, inventory, AI, steering, vehicles, economy and networking.
+- User requested importing **PR #17** (`fix/pcss-penumbra-sampling-20261117`, temporal PCSS/HDR TAA) into `feature/universal-entity-inspector-fps`/PR #7 without overwriting existing editor/FPS changes. The PR has five renderer source-file patches and one new render validation document. Source-level dry-run of all five patches against PR #7 showed **unique exact context matches**; integration is the next action.
+- **Verification:** policy/docs only; shaders/macOS build and real FPS runtime integration tests remain unverified. Keep PR #7 open and do not merge main.
