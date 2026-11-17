@@ -3,10 +3,12 @@
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <string>
 using namespace aiverse;
 struct Position {int64_t x=0;};
 struct Health {int64_t hp=100;};
 struct Resource {int64_t gold=1;};
+struct Named {std::string name;};
 static void check(World& w,Entity e,int64_t x,int64_t hp,int64_t gold) {
     assert(w.alive(e));
     assert(w.get<Position>(e).x==x);
@@ -52,5 +54,38 @@ int main() {
     w.get<Position>(a).x=77;
     assert(legacy.get<Position>(a).x==42);
     assert(!w.cowSnapshotsEnabled());
+    // Page-level COW: one modified component detaches only its page.
+    {
+        World large;
+        for(uint32_t i=0;i<800;++i) {
+            Entity e=large.create();
+            large.add<Position>(e,Position{int64_t(i)});
+            large.add<Named>(e,Named{std::to_string(i)});
+        }
+        large.enableCowSnapshots(true);
+        World checkpoint=large;
+        Entity e10{10,0},e511{511,0},e300{300,0};
+        large.get<Position>(e10).x=999;
+        assert(large.sharedCowPageCount()>=3);
+        assert(static_cast<const World&>(checkpoint).tryGetConst<Position>(e10)->x==10);
+        large.get<Position>(e511).x=888;
+        assert(static_cast<const World&>(checkpoint).tryGetConst<Position>(e511)->x==511);
+        large.destroy(e300);
+        assert(!large.alive(e300) && checkpoint.alive(e300));
+        Entity reused=large.create();
+        assert(reused.index==e300.index && reused.gen==e300.gen+1);
+        large.add<Position>(reused,Position{123456});
+        large.add<Named>(reused,Named{"new"});
+        assert(static_cast<const World&>(checkpoint).tryGetConst<Position>(e300)->x==300);
+        assert(static_cast<const World&>(checkpoint).tryGetConst<Named>(e300)->name=="300");
+        assert(large.get<Named>(reused).name=="new");
+        large.copyFrom(checkpoint);
+        assert(large.alive(e300));
+        assert(large.get<Position>(e10).x==10);
+        assert(large.get<Named>(e300).name=="300");
+        large.enableCowSnapshots(false);
+        assert(!large.cowSnapshotsEnabled());
+        assert(large.get<Position>(e511).x==511);
+    }
     std::cout<<"PASS COW world snapshots, resource detachment, generations, rollback, legacy fallback\n";
 }
