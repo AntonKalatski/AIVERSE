@@ -960,17 +960,30 @@ void Renderer3D::prepareGpuModelDraws() {
     }
     gpuModelEligible_ = uint32_t(gpuModelRecords_.size());
     if (!gpuModelEligible_) return;
-    gpuModelFrame_ = dev_->frameSerial();
-    gpuModelCommandsReady_ = gpuModelCommands_.prepare(
-        *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_,
-        &gpuModelSubmission_, uint32_t(std::max(sceneW_, 0)),
-        uint32_t(std::max(sceneH_, 0)));
-    if (!gpuModelCommandsReady_ || !modelInstancingEnabled_) return;
     static const bool gpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    if (!gpuIcb || !dev_->supportsMultiDrawIndirect()) return;
+    static const bool adaptiveGpuIcb = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    auto prepareGpuCommands = [&]() {
+        gpuModelFrame_ = dev_->frameSerial();
+        gpuModelCommandsReady_ = gpuModelCommands_.prepare(
+            *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_,
+            &gpuModelSubmission_, uint32_t(std::max(sceneW_, 0)),
+            uint32_t(std::max(sceneH_, 0)));
+        return gpuModelCommandsReady_;
+    };
+    // The original single-draw experiment can still be tested separately,
+    // but adaptive mode must never pay its compute cost when no ICB group
+    // is large enough to justify GPU execution.
+    if (!gpuIcb || !dev_->supportsMultiDrawIndirect()) {
+        if (!adaptiveGpuIcb) prepareGpuCommands();
+        return;
+    }
+    if (!modelInstancingEnabled_) return;
 
     // Pooling means different Model/Material objects can share the same GPU
     // vertex/index buffers and exact material state. Group by *GPU state*,
@@ -1029,10 +1042,7 @@ void Renderer3D::prepareGpuModelDraws() {
         return end != raw && *end == '\0' && value >= 2 && value <= 256
             ? uint32_t(value) : 2u;
     }();
-    static const bool adaptiveGpuIcb = [] {
-        const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
-        return flag && std::strcmp(flag, "1") == 0;
-    }();
+
     // Conservative adaptive policy, based on expected amortization, not an
     // unmeasured FPS claim. Under 256 eligible primitives, only groups of
     // 16+ GPU draws offset the Metal compute/ICB setup overhead. For a large
@@ -1041,6 +1051,18 @@ void Renderer3D::prepareGpuModelDraws() {
         (gpuModelEligible_ < 256u ? 16u : 8u) : 2u;
     const uint32_t effectiveMinimum = std::max(minGpuIcbCommands, adaptiveMinimum);
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
+    // Decide the entire GPU stage before uploading any draw-record buffers.
+    // The previous implementation always ran compute even if adaptive policy
+    // selected zero ICB groups, wasting work for the CPU fallback.
+    bool hasSuitableGroup = false;
+    for (const auto& group : groups)
+        if (std::min(group.items.size(), size_t(groupCapacity)) >=
+            size_t(effectiveMinimum)) {
+            hasSuitableGroup = true;
+            break;
+        }
+    if (!hasSuitableGroup && adaptiveGpuIcb) return;
+    if (!prepareGpuCommands()) return;
     for (auto& group : groups) {
         const auto& indices = group.items;
         for (size_t first = 0; first < indices.size();) {
