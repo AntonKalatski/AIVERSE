@@ -1254,8 +1254,16 @@ void Renderer3D::renderModels(int phase) {
         // otherwise conventional instancing remains cheaper and preserves
         // the original fallback behavior.
         const uint32_t modelIndex = order_[i];
-        if (phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ && !auxiliaryModelPass_ &&
-            gpuModelCommandsReady_ && !drawCallDebug_ &&
+        // Adaptive GPU ICB is a whole-path decision: never replace
+        // undersized ICB groups with GPU single draws, otherwise the supposedly
+        // disabled GPU path still incurs compute+per-draw API overhead.
+        static const bool adaptiveGpuIcbFallback = [] {
+            const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        if (!adaptiveGpuIcbFallback &&
+            phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ &&
+            !auxiliaryModelPass_ && gpuModelCommandsReady_ && !drawCallDebug_ &&
             modelIndex < gpuModelSlots_.size() &&
             gpuModelSlots_[modelIndex] != UINT32_MAX &&
             (modelItems_[modelIndex].flags & kDrawStatic) &&
