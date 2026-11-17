@@ -806,3 +806,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - New public target `AIVERSE::lib_ecs_timed_mechanics` depends on `ecs-weapon-launch`; native registration example and compatibility requirements in `skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md`. Test executable `aiverse_ecs_cross_genre_timed_mechanics_test` added to CTest; test source already added in prior checkpoint.
 - Verification: programmatically parsed `libraries/catalog.json` as 121 valid JSON entries at the catalog edit point. **No CMake configure/build, no CTest execution, no package catalog filesystem check, no FPS/RTS runtime parity**; avoid claims of readiness.
 - Next: run `python3 tools/libraries/catalog.py check`, configure native CMake, build `aiverse_ecs_cross_genre_timed_mechanics_test` and run `ctest -R ecs_cross_genre_timed_mechanics_test --output-on-failure`. Investigate compile errors and cross-genre replay. Then integrate one legacy host (FPS or RTS) behind an explicit gate and compare tick/order/checksum/save/network before enabling.
+
+
+### 2026-11-18 — Standalone ECS experiment suite wired
+- Implementation SHA: `515536b3793c973b22a2b1e72e2dd33ecc64054e`.
+- Changed `tests/run_ecs_experiment_suite.sh` to compile/run the cross-genre timed mechanics test from public headers with only shared engine/world link inputs; no RTS/FPS game library dependency.
+- Verification: GitHub source edit succeeded. **No shell syntax check, native compilation, sanitizer or test execution available in this environment.** GitHub Actions on previous commit `3ad66dc1` returned all runs queued; not passing evidence.
+- Next: check CI completion and target build errors; proceed to controlled legacy host integration only after baseline parity and source-of-truth mapping.
