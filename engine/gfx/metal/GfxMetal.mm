@@ -972,6 +972,27 @@ public:
 #pragma clang diagnostic pop
         }
     }
+    bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override {
+        if (!enc_ || !pipelines_.get(pipelineId_) || !buffers_.get(ibId_)) return false;
+        auto* args = buffers_.get(arguments.id);
+        auto* index = buffers_.get(ibId_);
+        if (!args || !index || args->type != BufferType::Storage ||
+            (offset & 3u) || offset > args->size ||
+            sizeof(DrawIndexedIndirectCommand) > args->size - offset ||
+            ibOffset_ > index->size) return false;
+        const id<MTLBuffer> argumentBuffer = current(*args);
+        const id<MTLBuffer> indexBuffer = current(*index);
+        if (!argumentBuffer || !indexBuffer) return false;
+        const auto* p = pipelines_.get(pipelineId_);
+        const bool u32 = p->desc.indexType == IndexType::UInt32;
+        [enc_ drawIndexedPrimitives:prim()
+                         indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
+                       indexBuffer:indexBuffer
+                 indexBufferOffset:ibOffset_
+                    indirectBuffer:argumentBuffer
+              indirectBufferOffset:offset];
+        return true;
+    }
     bool drawIndexedIndirect(BufferHandle commands, size_t offset, uint32_t drawCount, uint32_t stride) override {
         auto* p = pipelines_.get(pipelineId_);
         if (!supportsMultiDrawIndirect() || !enc_ || !p || !drawCount ||
