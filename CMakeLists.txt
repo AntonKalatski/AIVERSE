@@ -1575,6 +1575,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine AIVERSE::lib_ecs_locomotion)
     add_test(NAME ecs_cross_genre_locomotion_test
         COMMAND aiverse_ecs_cross_genre_locomotion_test)
+    add_executable(aiverse_ecs_cross_genre_inventory_test
+        tests/ecs_cross_genre_inventory_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_inventory_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_inventory)
+    add_test(NAME ecs_cross_genre_inventory_test
+        COMMAND aiverse_ecs_cross_genre_inventory_test)
 endif()
 add_subdirectory(modules/voxel)
 
