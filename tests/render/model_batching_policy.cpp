@@ -30,6 +30,16 @@ public:
     const std::string& lastError() const override { return error; }
     bool supportsMultiDrawIndirect() const override { return indirectSupported; }
     bool indirectSupported = true;
+    bool fakeMetalCompute = false;
+    bool supportsCompute() const override { return fakeMetalCompute; }
+    aiverse::gfx::ComputeHandle createCompute(const aiverse::gfx::ComputeDesc&) override {
+        return fakeMetalCompute ? aiverse::gfx::ComputeHandle{1} : aiverse::gfx::ComputeHandle{};
+    }
+    bool beginCompute(aiverse::gfx::ComputeHandle) override { return fakeMetalCompute; }
+    void setComputeBuffer(int, aiverse::gfx::BufferHandle) override {}
+    void setComputeUniforms(const void*, size_t) override {}
+    void dispatch(uint32_t, uint32_t) override {}
+    void endCompute() override {}
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
         auto id = nextId++;
         buffers[id].resize(d.size);
@@ -333,6 +343,41 @@ int main() {
         CHECK(!generator.prepare(mock, records, mat4::identity(), 1));
         CHECK(!generator.output(1).valid());
         generator.release(mock);
+    }
+
+    // Fake Metal compute does not execute shaders but exercises CPU-side GPU
+    // buffer allocation and command slot lifetime without requiring a Mac.
+    {
+        MockDevice mock;
+        mock.deviceInfo.backend = aiverse::gfx::Backend::Metal;
+        mock.fakeMetalCompute = true;
+        GpuSceneDrawCommands generator;
+        std::vector<GpuPrimitiveDrawRecord> records(2);
+        records[0].enabled = records[1].enabled = 1;
+        records[0].command.indexCount = 12;
+        records[1].command.indexCount = 36;
+        size_t first = SIZE_MAX, second = SIZE_MAX, reused = SIZE_MAX;
+        CHECK(generator.prepare(mock, records, mat4::identity(), 1, &first));
+        CHECK(first == 0);
+        const auto firstBuffer = generator.output(1, first);
+        CHECK(firstBuffer.valid());
+        CHECK(generator.uploadStats(1, first).records == 2);
+        records[1].command.indexCount = 48;
+        CHECK(generator.prepare(mock, records, mat4::identity(), 1, &second));
+        CHECK(second == 1);
+        const auto secondBuffer = generator.output(1, second);
+        CHECK(secondBuffer.valid() && !(secondBuffer == firstBuffer));
+        CHECK(generator.output(1, first) == firstBuffer);
+        CHECK(generator.uploadStats(1, second).records == 2);
+        // Recycling a frame slot after three frames reuses the first
+        // submission's buffers and uploads only the changed records.
+        records[1].command.indexCount = 36;
+        CHECK(generator.prepare(mock, records, mat4::identity(), 4, &reused));
+        CHECK(reused == 0 && generator.output(4, reused) == firstBuffer);
+        CHECK(generator.uploadStats(4, reused).records == 0);
+        CHECK(!generator.output(1, first).valid()); // old frame epoch retired
+        generator.release(mock);
+        CHECK(mock.buffers.empty());
     }
 
     std::puts("engine model batching policy: PASS");
