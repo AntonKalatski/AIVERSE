@@ -192,7 +192,13 @@ int aiverseMain(int argc, char** argv) {
             if(!batch){shadowBefore=p.draws[0];opaqueBefore=p.draws[1];}
             else if (scenario == "indirect") {
                 const bool supported = d.supportsMultiDrawIndirect();
-                if (supported && (p.draws[1] >= opaqueBefore || renderer.modelStats().indirectCommands < 8)) failed = true;
+                // Traditional Metal ICB accepts depth-only/vertex-buffer shaders,
+                // but PBR colour fragment shaders with direct textures cannot
+                // become ICB pipelines without converting textures to argument
+                // buffers. Validate the actual shadow + colour submission total.
+                if (supported &&
+                    (uint64_t(p.draws[0]) + p.draws[1] >= uint64_t(shadowBefore) + opaqueBefore ||
+                     renderer.modelStats().indirectCommands < 8)) failed = true;
                 if (!supported && (p.draws[1] != opaqueBefore || p.draws[0] != shadowBefore)) failed = true;
                 std::printf("GPU indirect supported=%d submissions=%llu commands=%llu\\n",
                             int(supported),
