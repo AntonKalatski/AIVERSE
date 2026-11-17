@@ -679,3 +679,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS projectile + damage resolution, stage H
 - Commit `0f3c4d8`: replaced `assert`-only checks in `tests/ecs_cross_genre_projectile_test.cpp` with throwing `require` runtime assertions. C++ `NDEBUG` must not disable collider setup or make Release CTest silently pass if impact, damage, rollback, COW or cross-genre checks fail.
 - **Verification:** source-level inspection only; native test builds still pending. Keep both CTest and standalone suite as required gates.
+
+### 2026-11-18 — Universal ECS weapon launch, stage A
+- Commit `3e146a3`: added shared `libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h`. Data-only ECS components: `WeaponParametersComponent` (Fixed speed/gravity/radius, lifetime, cooldown, damage), `WeaponStateComponent` (ammo/nextFireTick), `FireIntentComponent` (origin/direction/one-shot request), `ProjectileSpawnQueue` and `ProjectileSpawnCommand`.
+- `addWeaponLaunchSystem` validates settings, cooldown/ammo, consumes requests in stable `WeaponState` dense order and emits spawn commands without structural changes during iteration. `addProjectileSpawnSystem` consumes them in a separate deterministic barrier and creates `ProjectileFlightComponent`/`ProjectileDamageComponent` pairs for the shared flight→impact→damage chain. Host genre adapters supply inputs and configuration; no `RtsModule` or `fps::Module` dependencies.
+- **Status:** initial implementation only, not compiled/run or integrated with legacy RTS/FPS gameplay. Next: full cross-genre weapon→spawn→flight→damage test, CMake/standalone registration, catalog, skill and documentation. Keep existing host combat untouched until equivalence is proven.
