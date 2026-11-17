@@ -111,6 +111,13 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     submitSceneRenderables(r3d_, instances);
 }
 
+bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
+    if (fpsSelectedSceneObject_ < 0 ||
+        fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size())) return false;
+    const uint64_t key = (spawn ? (uint64_t(1) << 63) : 0) | (uint64_t(sourceIndex) + 1);
+    return fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity == key;
+}
+
 void Editor::selectFpsSceneSource(bool spawn, size_t sourceIndex) {
     const uint64_t key = (spawn ? (uint64_t(1) << 63) : 0) | (uint64_t(sourceIndex) + 1);
     fpsSelectedSceneObject_ = -1;
