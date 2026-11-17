@@ -85,6 +85,21 @@ The latest diagnostic commit was `0b9a4f1`. If `build` or `fields` dominates, in
 
 **Not yet benchmarked or compiled on the owner's Mac.** Compare steady-state `[scene-stages] build` and `view` before/after this commit, keeping camera and scene fixed. If build is still expensive, instrument `wantWorld`, entity loop and world-row loop individually. `view_.draw` remains a separate ~8 ms target. Do not claim the 13 ms is fixed without new measurements.
 
+## Object-loop measurements (2026-11-17)
+
+Latest warm 120-frame averages from the owner, with `AIVERSE_FRAME_TRACE=1`:
+
+```text
+[view-stages] avg/120 setup=0.318 ground=0.085 objects=8.758 anim-cleanup=1.361 overlays=0.361 ms
+[view-objects] avg/120 state=1.447 animate=2.112 drawObject=2.168 ms objects/frame=14772.0
+```
+
+Previous warm sample agrees: objects=8.824, state=1.432, animate=2.113, drawObject=2.253 ms. Early frames had 15–17 ms objects and 8–9 ms drawObject: treat as warmup.
+
+**Important:** `objects/frame=14772` counts objects that reach the traced `animate/drawObject` path, not necessarily all scene entities. The three instrumented sub-phases total ~5.73 ms, leaving ~3.03 ms in object loop for ground/height queries, effects, shadows, skipped branches, profiling overhead, etc. Per-object timing itself adds overhead; benchmark without trace before claiming FPS gain.
+
+**Next actions:** (1) Profile remaining ~3 ms with aggregate timestamps rather than 14k+ high-resolution clock calls; (2) inspect `stateFor`, `animate`, `drawObject` and identify truly static model cases; (3) avoid skipping `stateFor` or `animate` indiscriminately because `st.seen`, death/corpse cleanup, selection, hover, construction, animation and effects may depend on per-frame updates; (4) evaluate batched/static submission only after proving correctness; (5) compare scene with trace disabled and inspect GPU memory.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
