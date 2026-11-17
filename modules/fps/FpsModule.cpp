@@ -737,7 +737,10 @@ void Module::hashState(Simulation& sim,Hasher& hash) {
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
     if((version!=3&&version<6)||version>9||content!=contentHash_)return false;
-    State copy=config_.ecsAuthority?authoritativeStateCopy(sim):state(sim);
+    // On load, Simulation has already restored the saved Entity allocator;
+    // old v9 saves may not have any ECS actor identities yet. Only writing
+    // materializes canonical ECS payloads; reading starts from the old state.
+    State copy=(archive.writing()&&config_.ecsAuthority)?authoritativeStateCopy(sim):state(sim);
     stateIo(archive,copy,version>=6,version>=7);
     if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
     if(version>=9){uint32_t n=archive.count(copy.gear.size());if(n>256){archive.fail();return false;}if(!archive.writing())copy.gear.resize(n);for(auto& g:copy.gear)lib::systems::io(archive,g);}else copy.gear.clear();
