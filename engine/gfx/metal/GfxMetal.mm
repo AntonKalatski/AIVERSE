@@ -435,6 +435,14 @@ public:
         MTPipeline p;
         p.desc = d;
         p.state = [device_ newRenderPipelineStateWithDescriptor:pd options:shaderAssets_->options() reflection:nil error:&err];
+        // Classic Metal ICB cannot bind direct fragment textures/samplers.
+        // PBR material shaders use tex1..tex13, so Metal rejects an ICB-enabled
+        // pipeline. Retry the normal pipeline rather than breaking the Scene.
+        if (!p.state && pd.supportIndirectCommandBuffers) {
+            pd.supportIndirectCommandBuffers = NO;
+            err = nil;
+            p.state = [device_ newRenderPipelineStateWithDescriptor:pd options:shaderAssets_->options() reflection:nil error:&err];
+        }
         if (!p.state) { ++*shaderAssets_->failureCounter(); error_ = std::string("pipeline: ") + (err ? err.localizedDescription.UTF8String : "?"); std::fprintf(stderr,"[metal-assets] pipeline failed: %s\n",error_.c_str()); if(shaderAssets_->strict())MetalShaderAssets::requiredFailure("pipeline archive miss"); return {}; }
         MTLDepthStencilDescriptor* dd = [MTLDepthStencilDescriptor new];
         dd.depthCompareFunction = d.depthTest ? MTLCompareFunctionLessEqual : MTLCompareFunctionAlways;
@@ -454,9 +462,34 @@ public:
         result->value.depth=[device_ newDepthStencilStateWithDescriptor:depth];
         const auto failures=shaderAssets_->failureCounter();
         const bool strict=shaderAssets_->strict();
-        [device_ newRenderPipelineStateWithDescriptor:pipelineDescriptor(d,shader) options:shaderAssets_->options() completionHandler:^(id<MTLRenderPipelineState> state, MTLRenderPipelineReflection*, NSError* error) {
+        // If the indirect-enabled PBR pipeline is rejected (fragment texture
+        // arguments are not encodable in classic ICB), asynchronously compile
+        // the ordinary pipeline instead. Report failure only if both fail.
+        MTLRenderPipelineDescriptor* pd = pipelineDescriptor(d,shader);
+        [device_ newRenderPipelineStateWithDescriptor:pd options:shaderAssets_->options()
+            completionHandler:^(id<MTLRenderPipelineState> state, MTLRenderPipelineReflection*, NSError* firstError) {
+            if (!state && pd.supportIndirectCommandBuffers) {
+                pd.supportIndirectCommandBuffers = NO;
+                [device_ newRenderPipelineStateWithDescriptor:pd options:shaderAssets_->options()
+                    completionHandler:^(id<MTLRenderPipelineState> fallback, MTLRenderPipelineReflection*, NSError* fallbackError) {
+                    result->value.state = fallback;
+                    if (!fallback) {
+                        ++*failures;
+                        result->error = fallbackError ? fallbackError.localizedDescription.UTF8String : "Metal fallback pipeline compilation failed";
+                        std::fprintf(stderr,"[metal-assets] pipeline failed: %s\\n",result->error.c_str());
+                        if (strict) MetalShaderAssets::requiredFailure("pipeline archive miss");
+                    }
+                    result->done.store(true,std::memory_order_release);
+                }];
+                return;
+            }
             result->value.state=state;
-            if (!state) { ++*failures; result->error=error ? error.localizedDescription.UTF8String : "Metal pipeline compilation failed"; std::fprintf(stderr,"[metal-assets] pipeline failed: %s\n",result->error.c_str()); if(strict)MetalShaderAssets::requiredFailure("pipeline archive miss"); }
+            if (!state) {
+                ++*failures;
+                result->error=firstError ? firstError.localizedDescription.UTF8String : "Metal pipeline compilation failed";
+                std::fprintf(stderr,"[metal-assets] pipeline failed: %s\\n",result->error.c_str());
+                if(strict)MetalShaderAssets::requiredFailure("pipeline archive miss");
+            }
             result->done.store(true,std::memory_order_release);
         }];
         return [this,result](PipelineHandle& out) {
@@ -804,6 +837,16 @@ public:
 #endif
         return false;
     }
+    void declareIndirectRead(id<MTLResource> resource, MTLRenderStages stages) {
+        if (@available(macOS 13.0, iOS 16.0, *))
+            [enc_ useResource:resource usage:MTLResourceUsageRead stages:stages];
+        else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            [enc_ useResource:resource usage:MTLResourceUsageRead];
+#pragma clang diagnostic pop
+        }
+    }
     bool drawIndexedIndirect(BufferHandle commands, size_t offset, uint32_t drawCount, uint32_t stride) override {
         auto* p = pipelines_.get(pipelineId_);
         if (!supportsMultiDrawIndirect() || !enc_ || !p || !drawCount ||
@@ -819,7 +862,8 @@ public:
         const id<MTLBuffer> indirectData = current(*cmdBuffer);
         const id<MTLBuffer> indices = current(*ib);
         const id<MTLBuffer> vertices = current(*vb);
-        if (!indirectData || !indices || !vertices || !p->state) return false;
+        if (!indirectData || !indices || !vertices || !p->state ||
+            !p->state.supportIndirectCommandBuffers) return false;
 
         // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
@@ -871,10 +915,10 @@ public:
         }
         // ICB resources are not automatically resident. Explicitly declare every
         // resource accessed by commands, even when the parent encoder also uses it.
-        [enc_ useResource:vertices usage:MTLResourceUsageRead];
-        [enc_ useResource:indices usage:MTLResourceUsageRead];
+        declareIndirectRead(vertices, MTLRenderStageVertex);
+        declareIndirectRead(indices, MTLRenderStageVertex);
         for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
-            [enc_ useResource:uniforms[slot] usage:MTLResourceUsageRead];
+            declareIndirectRead(uniforms[slot], MTLRenderStageVertex | MTLRenderStageFragment);
             indirectUniformFrames_[frame_ % kFramesInFlight].push_back(uniforms[slot]);
         }
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
