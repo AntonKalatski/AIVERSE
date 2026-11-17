@@ -480,6 +480,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
 }
 
 bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase, bool submit) {
+    const bool tracePreparation = !submit && std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
+    const auto prepStart = std::chrono::steady_clock::now();
     const ModelItem& it = modelItems_[items[0]];
     const bool instanced = count > 1;
     gfx::PipelineHandle ph = modelPipeline(it, phase, instanced);
@@ -488,6 +490,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
         dev_->setPipeline(ph); currentPipe_ = ph;
         if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
     }
+    const auto afterPipeBind = std::chrono::steady_clock::now();
     // Upload the whole instance block declared by this backend's shader variant.
     const bool colourDraw = drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2);
     const float4 callColour = colourDraw ? drawCallDebugColor(++debugMainDrawId_) : float4{1, 1, 1, 1};
@@ -510,7 +513,9 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
         d[32] = x.lodThreshold; d[33] = x.lodInvert ? 1.0f : 0.0f;
         d[28] = x.anim.x; d[29] = x.anim.y; d[30] = x.anim.z; d[31] = x.anim.w;   // w: lightmap uv2 offset.y (agent-lightbake)
     }
+    const auto afterInstanceBuild = std::chrono::steady_clock::now();
     dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
+    const auto afterInstanceUpload = std::chrono::steady_clock::now();
     const Material& mt = *it.mat;
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
     const bool newModel = !lastItem_ || lastItem_->model != it.model || (phase != 0 && lastItem_->gi != 0);
@@ -576,7 +581,27 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     }
     dev_->setVertexBuffer(it.model->vb);
     dev_->setIndexBuffer(it.model->ib);
-    if (!submit) return true;  // Bind shared state for one indirect multi-draw.
+    if (!submit) {
+        if (tracePreparation) {
+            static uint32_t samples = 0;
+            static double sums[4] = {};
+            const auto ms = [](auto a, auto b) {
+                return std::chrono::duration<double, std::milli>(b - a).count();
+            };
+            sums[0] += ms(prepStart, afterPipeBind);
+            sums[1] += ms(afterPipeBind, afterInstanceBuild);
+            sums[2] += ms(afterInstanceBuild, afterInstanceUpload);
+            sums[3] += ms(afterInstanceUpload, std::chrono::steady_clock::now());
+            if (++samples == 600) {
+                std::fprintf(stderr,
+                    "[model-prep] avg/600 pipeline=%.4f instance-build=%.4f instance-upload=%.4f material-bind=%.4f ms\n",
+                    sums[0]/samples, sums[1]/samples, sums[2]/samples, sums[3]/samples);
+                samples = 0;
+                for (double& v : sums) v = 0.0;
+            }
+        }
+        return true; // Bind shared state for one indirect multi-draw.
+    }
     dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
                       int32_t(it.model->gpuBaseVertex), count);
     lastItem_ = &it;
