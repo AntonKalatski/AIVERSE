@@ -510,6 +510,7 @@ private:
     double lastTime_ = -1;
     uint32_t lastTick_ = ~0u;
     uint64_t frame_ = 0;
+    uint32_t placementCacheHits_ = 0, placementCacheMisses_ = 0;
     RtsLights lights_;
     RtsPaintLayers paintLayers_;
     RtsGroundCanvas groundCanvas_;
