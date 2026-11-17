@@ -190,6 +190,7 @@ public:
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
     int selectedFpsSceneObject() const { return fpsSelectedSceneObject_; }
     bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;
+    bool moveSelectedFpsSceneObject(float dx, float dz);
     void startPlay(int humanSlot = 0);
     void stopPlay();
     // Play as in the game client, inside the Game window (EditorClientPlay.cpp, ClientHost.h): the game's
