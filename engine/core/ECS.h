@@ -61,26 +61,34 @@ public:
     void setPaged(bool enabled) override {
         if(enabled==paged_)return;
         if(enabled) {
-            sparseCow_=std::make_shared<std::vector<uint32_t>>(std::move(sparse_));
-            denseCow_=std::make_shared<std::vector<Entity>>(std::move(dense_));
-            pages_.clear();
-            pages_.reserve((data_.size()+kCowPageElements-1)/kCowPageElements);
+            // Build the new representation first. Failed allocations or
+            // throwing component copies must leave the original pool intact.
+            auto sparse=std::make_shared<std::vector<uint32_t>>(sparse_);
+            auto dense=std::make_shared<std::vector<Entity>>(dense_);
+            std::vector<std::shared_ptr<std::vector<T>>> pages;
+            pages.reserve((data_.size()+kCowPageElements-1)/kCowPageElements);
             for(size_t i=0;i<data_.size();++i) {
                 if(i%kCowPageElements==0) {
                     auto page=std::make_shared<std::vector<T>>();
                     page->reserve(kCowPageElements);
-                    pages_.push_back(std::move(page));
+                    pages.push_back(std::move(page));
                 }
-                pages_.back()->push_back(std::move(data_[i]));
+                pages.back()->push_back(data_[i]);
             }
-            data_.clear();
+            sparseCow_=std::move(sparse);
+            denseCow_=std::move(dense);
+            pages_=std::move(pages);
+            sparse_.clear();dense_.clear();data_.clear();
         } else {
-            sparse_=*sparseCow_;
-            dense_=*denseCow_;
-            data_.clear();
-            data_.reserve(dense_.size());
+            auto sparse=*sparseCow_;
+            auto dense=*denseCow_;
+            std::vector<T> data;
+            data.reserve(dense.size());
             for(const auto& page:pages_)
-                for(const auto& value:*page)data_.push_back(value);
+                for(const auto& value:*page)data.push_back(value);
+            sparse_=std::move(sparse);
+            dense_=std::move(dense);
+            data_=std::move(data);
             sparseCow_.reset();
             denseCow_.reset();
             pages_.clear();
