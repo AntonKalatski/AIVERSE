@@ -464,6 +464,35 @@ bash tests/run_ecs_gameplay_compare.sh --full
 
 **Remaining safety gate:** compile and run the above; then verify TSan on Linux and actual FPS/RTS production matches with both feature flags OFF and ON. Any failure must be fixed before this PR merges or either opt-in becomes a default.
 
+## 2026-11-18 — ECS page COW hardening + FPS combat parity coverage (latest)
+
+After the earlier implementation of pool-level COW, the current PR #8 now contains:
+- `e45843d`: actual `fps::Module` deep-vs-COW snapshot/serialize/checksum parity for 120 ticks and rollback at two checkpoints in `tests/fps/tests.cpp`.
+- `cde2c3c`, `a03ad3f`: `apps/headless/main.cpp` flag `--cow-snapshots` and real RTS gameplay deep-vs-COW checkpoint/restore comparison in `tests/run_ecs_gameplay_compare.sh`.
+- `99c87d4`: opt-in 256-element pages in `Pool<T>`; contiguous default storage unchanged. Shared dense/sparse metadata and page-level COW data mean ordinary single-component writes detach only one page, rather than a whole pool. Structure modifications detach metadata/touched pages.
+- `2c41d47`, `7118822`: avoid sparse metadata copies on existing component replacement; make conversion between contiguous/paged representations exception-safe.
+- `f726be5`: snapshot test spanning 800 Entities and 4 pages, including nontrivial string components, swap-remove and generation reuse.
+- `a9c876b`: opt-in FPS speculative parallel motor planning for eligible actors during combat, with immutable actor snapshot and revalidation at sequential commit; if earlier actor interactions modified the actor, move is recalculated sequentially. All damage/RNG/bots/projectiles/modes still use canonical sequential application.
+- `89acfd9`, `4ae7443`: FPS fixture exercises movement and firing, and compares full-tick checksum histories of two builds.
+- `2a90016`, `8f2514e`: before checked per-entity Jobs, detach **all** component types declared writable, not only leading pool. This avoids shared COW page/pool detachment races across worker lanes.
+- `bb73a4f`: test checked parallel writes to Position+Audit per Entity, preserving earlier shared snapshots.
+- `0b6b66c`, `97642fc`, `7c52df8`, `9b31824`: profiling-only FPS motor batch and commit counters; compare script now checks the actual opt-in path ran in the enabled build and did not run in default build, instead of passing a false-positive checksum test.
+
+**Latest CI observation:** the GitHub workflow endpoint returned `ECS 2.0 experimental checks` run ID `44180927827` and `CI` run ID `44180927913`, both **queued** for commit `9b318245`. Earlier push CI runs were mostly cancelled by subsequent pushes. No latest build/sanitizer/TSan/gameplay PASS has been verified yet.
+
+**Still not production-complete:** FPS motor planning is parallel but damage, RNG, combat application, AI and global modes remain sequential. This is deliberate to preserve authoritative result ordering. Generic ECS components have 256-element page-level COW, but resources such as FPS `State` remain whole-resource COW and are still expensive on mutation; allocator metadata is not page-granular. Retained writable references across snapshots remain a contract violation, not automatically blocked by the engine.
+
+Recommended final validation:
+```sh
+git switch feature/ecs-architecture-benchmarks && git pull --ff-only
+bash -n tests/run_ecs_experiment_suite.sh tests/run_ecs_gameplay_compare.sh
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+bash tests/run_ecs_experiment_suite.sh --bench
+bash tests/run_ecs_gameplay_compare.sh --full
+```
+Do not merge to main until latest CI tests and real Mac Studio RTS/FPS parity are confirmed.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
