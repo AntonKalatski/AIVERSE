@@ -189,6 +189,22 @@ public:
             fn(p->entityAt(i), p->dataAt(i));
     }
 
+    // Stable range iteration for already-registered component pools. No pool
+    // creation and no structural writes permitted until all lanes complete.
+    template <class T, class Fn>
+    void eachExistingRange(size_t begin,size_t end,Fn&& fn) {
+        auto* p=poolIfExists<T>();
+        if(!p)return;
+        const size_t n=p->size();
+        if(end>n)end=n;
+        for(size_t i=begin;i<end;++i)
+            fn(p->entityAt(i),p->dataAt(i));
+    }
+    template <class T> size_t countExisting() const {
+        auto* p=poolIfExists<T>();
+        return p?p->size():0;
+    }
+
     template <class T> size_t count() { return pool<T>().size(); }
 
     // Hot: called for every component access. The common case (pool exists) stays inline; creating a
