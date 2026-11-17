@@ -1319,8 +1319,12 @@ void Renderer3D::renderModels(int phase) {
     auto& candidatesByHash = frameCacheEnabled ? materialHashCandidates_ : localCandidates;
     if (materialGroup.size() < modelItems_.size())
         materialGroup.resize(modelItems_.size(), UINT32_MAX);
-    identities.reserve(identities.size() + std::min<size_t>(order_.size(), 4096));
-    candidatesByHash.reserve(candidatesByHash.size() + std::min<size_t>(order_.size(), 512));
+    // retain hashtable capacity across phases and frames; reserve only
+    // when the current visible set would exceed the existing bucket budget.
+    const size_t identityBudget = std::min<size_t>(order_.size(), 4096);
+    const size_t hashBudget = std::min<size_t>(order_.size(), 512);
+    if (identities.bucket_count() < identityBudget) identities.reserve(identityBudget);
+    if (candidatesByHash.bucket_count() < hashBudget) candidatesByHash.reserve(hashBudget);
     uint32_t reusedGroups = 0, resolvedGroups = 0;
     for (uint32_t i : order_) {
         if (materialGroup[i] != UINT32_MAX) {
