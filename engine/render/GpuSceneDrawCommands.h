@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 
 namespace aiverse::render {
@@ -23,6 +24,13 @@ struct GpuPrimitiveDrawRecord {
 };
 static_assert(sizeof(GpuPrimitiveDrawRecord) == 128,
     "GpuPrimitiveDrawRecord must match Metal compute layout");
+// Dense output record keeps the original model index; GPU ICB encoding will
+// consume it in a later, separately validated backend stage.
+struct GpuCompactedDrawRecord {
+    gfx::DrawIndexedIndirectCommand command{};
+    uint32_t sourceIndex = 0;
+};
+static_assert(sizeof(GpuCompactedDrawRecord) == 24);
 
 class GpuSceneDrawCommands {
 public:
@@ -44,6 +52,10 @@ public:
         Slot& slot = slots_[frameSerial % slots_.size()];
         const size_t inputBytes = records.size() * sizeof(GpuPrimitiveDrawRecord);
         const size_t outputBytes = records.size() * sizeof(gfx::DrawIndexedIndirectCommand);
+        static const bool compact = [] {
+            const char* value = std::getenv("AIVERSE_GPU_COMPACT_DRAW_RECORDS");
+            return value && std::strcmp(value, "1") == 0;
+        }();
         const bool resizedInput = !slot.input.valid() || slot.inputCapacity < inputBytes;
         if (!allocate(device, slot.input, slot.inputCapacity, inputBytes,
                       "GPU draw record input") ||
@@ -78,9 +90,22 @@ public:
             } else flush(i);
         }
         flush(records.size());
+        if (compact) {
+            if (!allocate(device, slot.compacted, slot.compactedCapacity,
+                          records.size() * sizeof(GpuCompactedDrawRecord),
+                          "GPU dense visible draw records") ||
+                !allocate(device, slot.visibleCount, slot.visibleCountCapacity,
+                          sizeof(uint32_t), "GPU visible draw count")) return false;
+            const uint32_t zero = 0;
+            device.updateBuffer(slot.visibleCount, &zero, sizeof(zero));
+        }
         if (!device.beginCompute(pipeline_)) return false;
         device.setComputeBuffer(0, slot.input);
         device.setComputeBuffer(1, slot.output);
+        if (compact) {
+            device.setComputeBuffer(2, slot.compacted);
+            device.setComputeBuffer(3, slot.visibleCount);
+        }
         struct alignas(16) Uniforms {
             float viewProjection[16];
             uint32_t count = 0;
@@ -88,6 +113,7 @@ public:
         } params{};
         std::memcpy(params.viewProjection, viewProjection.m, sizeof(params.viewProjection));
         params.count = uint32_t(records.size());
+        params.padding[0] = compact ? 1u : 0u;
         device.setComputeUniforms(&params, sizeof(params));
         device.dispatch(params.count);
         device.endCompute();
@@ -95,6 +121,17 @@ public:
         return true;
     }
 
+    bool compactedReady(uint64_t frameSerial) const {
+        const auto& slot = slots_[frameSerial % slots_.size()];
+        return slot.commandCount > 0 && slot.compacted.valid() &&
+               slot.visibleCount.valid();
+    }
+    gfx::BufferHandle compacted(uint64_t frameSerial) const {
+        return slots_[frameSerial % slots_.size()].compacted;
+    }
+    gfx::BufferHandle visibleCount(uint64_t frameSerial) const {
+        return slots_[frameSerial % slots_.size()].visibleCount;
+    }
     UploadStats uploadStats(uint64_t frameSerial) const {
         return slots_[frameSerial % slots_.size()].upload;
     }
@@ -105,6 +142,8 @@ public:
         for (Slot& slot : slots_) {
             if (slot.input.valid()) device.destroyBuffer(slot.input);
             if (slot.output.valid()) device.destroyBuffer(slot.output);
+            if (slot.compacted.valid()) device.destroyBuffer(slot.compacted);
+            if (slot.visibleCount.valid()) device.destroyBuffer(slot.visibleCount);
             slot = {};
         }
         if (pipeline_.valid()) device.destroyCompute(pipeline_);
@@ -112,8 +151,9 @@ public:
     }
 private:
     struct Slot {
-        gfx::BufferHandle input{}, output{};
+        gfx::BufferHandle input{}, output{}, compacted{}, visibleCount{};
         size_t inputCapacity = 0, outputCapacity = 0;
+        size_t compactedCapacity = 0, visibleCountCapacity = 0;
         uint32_t commandCount = 0;
         std::vector<GpuPrimitiveDrawRecord> lastRecords;
         UploadStats upload{};
@@ -157,10 +197,16 @@ struct alignas(16) Record {
 struct Params {
     float4x4 viewProjection;
     uint count;
-    uint pad0, pad1, pad2;
+    uint compactEnabled, pad1, pad2;
+};
+struct CompactedDraw {
+    DrawArgs args;
+    uint sourceIndex;
 };
 kernel void cs_main(device const Record* records [[buffer(0)]],
                     device DrawArgs* output [[buffer(1)]],
+                    device CompactedDraw* dense [[buffer(2)]],
+                    device atomic_uint* visibleCount [[buffer(3)]],
                     constant Params& params [[buffer(8)]],
                     uint idx [[thread_position_in_grid]]) {
     if (idx >= params.count) return;
@@ -191,6 +237,11 @@ kernel void cs_main(device const Record* records [[buffer(0)]],
     }
     args.instanceCount = (allOutside == 0) ? args.instanceCount : 0;
     output[idx] = args;
+    if (params.compactEnabled != 0 && args.instanceCount != 0) {
+        const uint position = atomic_fetch_add_explicit(
+            visibleCount, 1u, memory_order_relaxed);
+        dense[position] = {args, idx};
+    }
 }
 )MSL";
 };
