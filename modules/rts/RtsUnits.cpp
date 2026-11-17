@@ -1,6 +1,9 @@
 // Orders and movement: move/attack-move/patrol, gathering from nodes and fields (with harvesters,
 // reclaim, upkeep), construction in walk/warp/morph modes, repair, entering garrisons, casting.
 #include "RtsInternal.h"
+#if defined(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
+#include "../../engine/experiments/EcsExperiments.h"
+#endif
 #include <algorithm>
 #include <map>
 
@@ -714,7 +717,23 @@ void RtsModule::sysMovement(Simulation& sim) {
     const Fixed dt = sim.dt();
 
     gs.hash.reset(g.w, g.h, 4);
+#if defined(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
+    // Experimental opt-in only: copy each entity's previous transform in
+    // disjoint lanes. Spatial-hash insertion stays sequential and retains the
+    // original Unit dense order. No structural changes while jobs are running.
+    static thread_local ecs_experiment::PersistentWorkers transformWorkers{3};
+    ecs_experiment::eachAdaptive<Unit>(
+        w, transformWorkers, ecs_experiment::ExecutionMode::Auto,
+        ecs_experiment::ParallelPolicy{8192,2048},
+        [&](Entity e, Unit&) {
+            if (auto* tr = w.tryGet<Transform>(e)) tr->prevPos = tr->pos;
+        });
+    w.each<Unit, Transform>([&](Entity e, Unit& u, Transform& t) {
+        if (!(u.flags & kUnitOffMap)) gs.hash.insert(e, t.pos);
+    });
+#else
     w.each<Unit, Transform>([&](Entity e, Unit& u, Transform& t) { t.prevPos = t.pos; if (!(u.flags & kUnitOffMap)) gs.hash.insert(e, t.pos); });
+#endif
     sysFlowFields(sim);
 
     if (gs.surface) { moveSphere(sim); return; }   // planets (RtsPlanets.cpp)
