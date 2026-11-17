@@ -155,6 +155,16 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
     return true;
 }
 
+inline bool setDocumentPosition(MapDoc& map, DocumentEntityRef ref,
+                                DocumentTransform position) {
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(position.z)) return false;
+    DocumentTransform current;
+    if (!readDocumentTransform(map, ref, current)) return false;
+    return translateDocumentEntity(map, ref,
+        {position.x - current.x, position.y - current.y, position.z - current.z});
+}
+
 inline bool translateDocumentEntities(MapDoc& map,
                                       const std::vector<DocumentEntityRef>& refs,
                                       DocumentTransform delta) {
