@@ -271,8 +271,12 @@ private:
                         lod && std::strcmp(lod, "1") == 0)
                         ImGui::Text("GPU two-level LOD candidates: %u", gpu.gpuLodEligible);
                     if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
-                        adaptive && std::strcmp(adaptive, "1") == 0)
-                        ImGui::TextDisabled("Adaptive GPU ICB grouping enabled.");
+                        adaptive && std::strcmp(adaptive, "1") == 0) {
+                        if (!gpu.gpuIcbCandidates && !gpu.prepared)
+                            ImGui::TextDisabled("Adaptive GPU ICB: no viable batch, GPU compute skipped.");
+                        else
+                            ImGui::TextDisabled("Adaptive GPU ICB grouping enabled.");
+                    }
                     if (gpu.gpuIcbRejected || gpu.gpuIcbExecuteFailed)
                         ImGui::TextWrapped("Metal backend error: %s",
                                            ed.device().lastError().c_str());
@@ -286,7 +290,11 @@ private:
                     c && std::strcmp(c, "1") == 0)
                     ImGui::Text("GPU visibility compaction: %s (not rendered yet)",
                                 gpu.compacted ? "generated" : "unavailable");
-                ImGui::TextDisabled("Experimental one-draw-per-primitive; slower than instancing is possible.");
+                if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+                    adaptive && std::strcmp(adaptive, "1") == 0)
+                    ImGui::TextDisabled("Adaptive fallback: conventional instancing/CPU MDI.");
+                else
+                    ImGui::TextDisabled("Experimental GPU draws may be slower than instancing.");
             }
             if (const char* persistent = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
                 persistent && std::strcmp(persistent, "1") == 0) {
