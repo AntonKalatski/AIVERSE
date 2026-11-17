@@ -1,6 +1,7 @@
 // Scene: the map in 3D with a free camera; select/drag objects and apply the current tool.
 //   RMB drag: look around, RMB + WASD/QE: fly, MMB drag: pan, wheel: zoom, F: focus selection.
 #include "../EditorEntityAdapter.h"
+#include "../EditorTransformGizmo.h"
 #include <algorithm>
 #include <cmath>
 #include "../Editor.h"
@@ -425,25 +426,10 @@ private:
         float wx, wz;
         if (!ed.selectionPos(ed.selection, wx, wz)) return -1;
         const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
-        float2 origin;
-        if (!ed.sceneCam.worldToScreen({wx, wy, wz}, vp_.pointsW, vp_.pointsH, origin)) return -1;
-        int best = -1;
-        float bestDist = 90.0f;
-        for (int axis : {0, 2}) {
-            float2 end;
-            const float3 target = axis == 0 ? float3{wx + 1.5f, wy, wz} : float3{wx, wy, wz + 1.5f};
-            if (!ed.sceneCam.worldToScreen(target, vp_.pointsW, vp_.pointsH, end)) continue;
-            const float ax = vp_.originX + origin.x, ay = vp_.originY + origin.y;
-            const float bx = vp_.originX + end.x, by = vp_.originY + end.y;
-            const float vx = bx - ax, vy = by - ay;
-            const float len2 = vx * vx + vy * vy;
-            if (len2 < 64.0f) continue;
-            const float t = std::clamp(((sx - ax) * vx + (sy - ay) * vy) / len2, 0.25f, 1.1f);
-            const float dx = sx - (ax + t * vx), dy = sy - (ay + t * vy);
-            const float dist2 = dx * dx + dy * dy;
-            if (dist2 < bestDist) { bestDist = dist2; best = axis; }
-        }
-        return best;
+        // RTS authored Transform currently persists only X/Z.
+        return pickMoveGizmoAxis(ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                  vp_.originX, vp_.originY, sx, sy,
+                                  {wx, wy, wz}, 1.5f, 0x5);
     }
 
     void down(Editor& ed, float sx, float sy, ImGuiIO& io) {
