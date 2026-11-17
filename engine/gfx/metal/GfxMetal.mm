@@ -178,8 +178,12 @@ public:
             // previous contents. The slot is safe after the GPU fence.
             // Partial updates preserve the previous submission's bytes.
             const bool fullUpdate = offset == 0 && size == required;
-            const bool unchanged = fullUpdate && valid[cursor] >= size &&
-                std::memcmp(target.contents, data, size) == 0;
+            static const bool dirtyIndirectUpdates = [] {
+                const char* setting = std::getenv("AIVERSE_METAL_ICB_DIRTY_UPDATES");
+                return setting && std::strcmp(setting, "1") == 0;
+            }();
+            const bool unchanged = dirtyIndirectUpdates && fullUpdate &&
+                valid[cursor] >= size && std::memcmp(target.contents, data, size) == 0;
             if (!unchanged) {
                 if (previous && (offset != 0 || size < b->size))
                     std::memcpy(target.contents, previous.contents,
