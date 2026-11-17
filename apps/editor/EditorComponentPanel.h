@@ -7,20 +7,6 @@
 
 namespace aiverse::editor {
 
-inline void drawDocumentComponentInventory(const MapDoc& map,
-                                           DocumentEntityRef ref) {
-    const auto components = documentComponents(map, ref);
-    if (components.empty()) return;
-    ImGui::TextDisabled("COMPONENTS  %d", int(components.size()));
-    for (const auto& component : components) {
-        Json snapshot;
-        if (!readDocumentComponent(map, ref, component.kind, snapshot)) continue;
-        ImGui::BulletText("%s%s", component.title,
-                          component.editable ? "" : "  (read-only)");
-    }
-    ImGui::Separator();
-}
-
 inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
                                       const char* label = "Position XYZ") {
     DocumentTransform position;
@@ -87,7 +73,6 @@ inline bool drawDocumentColliderBoundsField(MapDoc& map, DocumentEntityRef ref) 
 inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
     const auto components = documentComponents(map, ref);
     for (const auto& component : components) {
-        if (!component.editable) continue;
         ImGui::PushID(component.id);
         if (ImGui::CollapsingHeader(component.title, ImGuiTreeNodeFlags_DefaultOpen)) {
             switch (component.kind) {
@@ -101,6 +86,22 @@ inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
             case DocumentComponentKind::Spawn:
                 ImGui::TextDisabled("Spawn orientation and scale are not part of the current map schema.");
                 break;
+            case DocumentComponentKind::Renderable:
+            case DocumentComponentKind::Gameplay: {
+                Json snapshot;
+                if (readDocumentComponent(map, ref, component.kind, snapshot) &&
+                    snapshot.isObject()) {
+                    for (const auto& entry : snapshot.members()) {
+                        const Json& value = entry.second;
+                        const std::string display = value.isString()
+                            ? value.str() : value.dump(-1);
+                        ImGui::TextDisabled("%s", entry.first.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextWrapped("%s", display.c_str());
+                    }
+                }
+                break;
+            }
             default:
                 break;
             }
