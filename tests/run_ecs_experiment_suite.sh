@@ -58,5 +58,6 @@ if [[ "$DO_BENCH" == 1 ]]; then
     compile_run ecs-hier-bench tests/ecs_hierarchical_bench.cpp
     compile_run ecs-persistent-bench tests/ecs_persistent_jobs_bench.cpp
     compile_run ecs-adaptive-bench tests/ecs_adaptive_jobs_bench.cpp
+    compile_run ecs-cow-bench tests/ecs_cow_bench.cpp
 fi
 echo "PASS ECS experiment suite"
