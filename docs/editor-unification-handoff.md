@@ -558,3 +558,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Native projects can now create an ECS Entity and `world.add<LootRuntime>/add<ProjectileRuntime>/add<VehicleRuntime>` directly **without writing legacy State vectors or manually populating index.byKey**. Hydration reconstructs deterministic ordered workspaces; existing post-tick `syncDynamicEntities` populates lightweight Inspector/Hierarchy component projections on the **same Entity**, not a duplicate.
 - Important: new ECS dynamic mutations are applied at the next tick barrier, not mid-tick. Authoritative direct ECS creation in projects should be done outside concurrent job waves. Existing legacy default mode unchanged.
 - Tests must verify native runtime spawn without pre-registered index and duplicate-ID failure. Native compile/CI not yet confirmed.
+
+### 2026-11-18 — Cross-genre audit: stage 1, ECS policy adapter
+- Commit `cb9a43e`: `libraries/include/aiverselib/genre/EcsMechanicSystems.h` introduces genre-independent `eachEcsMechanic<Component>(World&,policy)` and `addEcsMechanicSystem<Component>(Simulation&,name,policy)`. Game code chooses an arbitrary ECS component type, binds its existing policy, and gets deterministic dense-order iteration and COW write preparation. No dependency on `RtsModule` or `fps::Module`.
+- This is **an adapter, not universalization of all FPS/RTS functions**. Any mechanic requiring `RtsModule&`, `fps::Actor`, global RNG, actor ownership, collision or format-specific state must be extracted/refactored separately. No native compilation yet.
+- Next: compile and run the same pure policies against two different GameModules via this common adapter; add coverage and an explicit capability matrix for each mechanic.
