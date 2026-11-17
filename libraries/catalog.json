@@ -2392,6 +2392,31 @@
       "packageDependencies": [
         "voxel-world"
       ]
+    },
+    {
+      "id": "ecs-projectile-systems",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsProjectileSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md",
+      "summary": "Genre-independent ECS projectile motion/impact assembly: shared flight components, deterministic ballistic or injected guidance policy, read-only collision provider, ordered hit records and deferred despawn",
+      "notes": "Opt-in composable flight/impact stage only, NOT full FPS/RTS combat migration. Bind separate weapon launch, damage/status and presentation systems; no genre module dependencies. Run cross-genre CTest and native builds before production enablement.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_projectile_systems",
+      "dependencies": [
+        "docs/ecs-mechanic-composition.md",
+        "tests/ecs_projectile_composition_test.cpp",
+        "libraries/include/aiverselib/genre/Weapons.h",
+        "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_world"
+      ],
+      "packageDependencies": [
+        "weapon-policies"
+      ]
     }
   ]
 }
