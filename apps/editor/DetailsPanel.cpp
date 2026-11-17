@@ -487,13 +487,20 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
     // Native module schemas travel with the real component snapshot. Never
     // assume that a similarly named component in another project shares it.
     std::string schemaTitle;
+    bool nativeEditable = false;
+    std::string nativeComponent, nativeField;
+    std::string nativeKind;
     if (const auto dot = path.find('.'); dot != std::string::npos &&
         path.find('.', dot + 1) == std::string::npos) {
         for (const auto& item : items_) {
             const Json& meta = item.data["componentSchemas"][path.substr(0, dot)]
                                         ["fields"][path.substr(dot + 1)];
-            if (meta.isObject() && meta["title"].isString()) {
-                schemaTitle = meta["title"].str();
+            if (meta.isObject()) {
+                if (meta["title"].isString()) schemaTitle = meta["title"].str();
+                nativeEditable = meta.getBool("editable", false);
+                nativeKind = meta.getStr("kind");
+                nativeComponent = path.substr(0, dot);
+                nativeField = path.substr(dot + 1);
                 break;
             }
         }
@@ -528,6 +535,52 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
                 if (const WorldRow* r = ed.world().find(uint64_t(v["$entity"].integer()))) ed.select(ed.worldSelection(*r));
             }
             ImGui::PopStyleColor();
+        } else if (nativeEditable && !ed.worldLive() && items_.size() == 1 &&
+                   items_[0].doc >= 0 && ed.worldModule() &&
+                   (v.isNumber() || v.isString() ||
+                    v.type() == Json::Type::Bool ||
+                    (v.isArray() && v.size() == 3))) {
+            // The owning native module explicitly declared this field
+            // editable and will validate its authoring JSON writeback. No
+            // arbitrary mutation of transient World/Simulation snapshots.
+            Json updated;
+            bool changed = false;
+            if (v.type() == Json::Type::Bool) {
+                bool value = v.boolean();
+                changed = ImGui::Checkbox("##nativeBool", &value);
+                if (changed) updated = Json::fromBool(value);
+            } else if (v.isString()) {
+                std::string value = v.str();
+                changed = ui::inputString("##nativeString", value);
+                if (changed) updated = Json::string(value);
+            } else if (v.isArray() && v.size() == 3 &&
+                       v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
+                float xyz[3] = {float(v[0].toDouble()), float(v[1].toDouble()),
+                                float(v[2].toDouble())};
+                ImGui::SetNextItemWidth(-1);
+                changed = ImGui::DragFloat3("##nativeVec3", xyz, 0.05f);
+                if (changed) {
+                    updated = Json::array();
+                    for (float n : xyz) updated.push(Json::number(double(n), 3));
+                }
+            } else if (v.isNumber() && nativeKind == "integer") {
+                int n = int(v.integer());
+                ImGui::SetNextItemWidth(-1);
+                changed = ImGui::DragInt("##nativeInt", &n, 1.0f);
+                if (changed) updated = Json::number(int64_t(n));
+            } else if (v.isNumber()) {
+                float n = float(v.toDouble());
+                ImGui::SetNextItemWidth(-1);
+                changed = ImGui::DragFloat("##nativeNumber", &n, 0.05f);
+                if (changed) updated = Json::number(double(n), 3);
+            }
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            if (changed) {
+                const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
+                writeNativeAuthoredEcsField(ed.doc(), ed.worldModule()->native(),
+                                            ref, nativeComponent, nativeField,
+                                            updated);
+            }
         } else if (path == "Owner.player" && v.isNumber()) {
             const bool authored = !ed.worldLive() && items_.size() == 1 &&
                                   items_[0].doc >= 0;
