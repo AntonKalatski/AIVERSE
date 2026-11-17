@@ -945,6 +945,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     ++modelStats_.multiDrawSubmissions;
     modelStats_.indirectCommands += commands.size();
+    if (instancePalette) {
+        ++modelStats_.mdiPaletteSubmissions;
+        modelStats_.mdiPaletteCommands += commands.size();
+    }
     ++drawCalls_;
     ++profile_.draws[size_t(phase)];
     profile_.instances[size_t(phase)] += count;
