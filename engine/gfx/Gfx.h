@@ -250,6 +250,13 @@ public:
     // One API render submission for several indexed GPU commands. Command buffer
     // must use BufferType::Indirect; count/stride are validated by backend.
     // Unsupported (ES3/WebGL2/legacy GL) returns false and callers use drawIndexed.
+    // GPU-authored single indexed draw arguments. Unlike drawIndexedIndirect,
+    // command bytes are produced by an earlier compute pass and MUST NOT be
+    // read back or validated on the CPU. Unsupported backends return false.
+    // This is intentionally one draw per call, not multi-draw batching.
+    virtual bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) {
+        (void)arguments; (void)offset; return false;
+    }
     virtual bool supportsMultiDrawIndirect() const { return false; }
     virtual bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                                      uint32_t drawCount, uint32_t stride = sizeof(DrawIndexedIndirectCommand)) {
