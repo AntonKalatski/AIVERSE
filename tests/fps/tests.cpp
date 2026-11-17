@@ -249,6 +249,59 @@ void incrementalRollbackFps(Json rules,Json map) {
     };
     CHECK(run(*deep,false)==run(*cow,true));
 }
+void ecsActorAuthorityParity(Json rules,Json map) {
+    // Legacy gameplay versus ECS ActorRuntime canonical state, with the
+    // same input commands, fixed-point motor, weapons, save and rollback.
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    CHECK(!static_cast<fps::Module&>(legacy->module()).actorEcsAuthority());
+    CHECK(static_cast<fps::Module&>(ecs->module()).actorEcsAuthority());
+    auto& module=static_cast<fps::Module&>(ecs->module());
+    SimSnapshot restore;
+    for(uint32_t tick=0;tick<160;++tick) {
+        for(uint32_t slot=1;slot<=2;++slot) {
+            fps::Input input;
+            input.sequence=tick+1;input.viewTick=tick;
+            input.forward=tick<95?500:0;
+            input.right=slot==1?250:-250;
+            input.buttons=tick==12?uint32_t(fps::Jump):0;
+            if(slot==1&&tick>=80&&tick<95)input.buttons|=fps::Fire;
+            auto cmd=fps::command(uint8_t(slot),input);cmd.tick=tick;
+            legacy->inject(cmd);ecs->inject(cmd);
+        }
+        legacy->step();ecs->step();
+        CHECK(legacy->checksum()==ecs->checksum());
+        for(size_t i=0;i<state(*ecs).actors.size();++i) {
+            const auto entity=module.actorEntity(*ecs,uint8_t(i+1));
+            CHECK(ecs->world().alive(entity));
+            const auto* runtime=ecs->world().tryGetConst<fps::ActorRuntime>(entity);
+            CHECK(runtime&&runtime->value==state(*ecs).actors[i]);
+        }
+        if(tick==49)ecs->saveState(restore);
+    }
+    auto bytes=ecs->serialize();
+    auto reloaded=simulation(ecsRules,map);
+    CHECK(reloaded->deserialize(bytes));
+    CHECK(reloaded->checksum()==ecs->checksum());
+    // Rewind ECS snapshots and replay the same no-input continuation.
+    auto checkpoint=ecs->checksum();
+    SimSnapshot latest;ecs->saveState(latest);
+    for(int i=0;i<8;++i)ecs->step();
+    const auto after=ecs->checksum();
+    ecs->loadState(latest);CHECK(ecs->checksum()==checkpoint);
+    for(int i=0;i<8;++i)ecs->step();
+    CHECK(ecs->checksum()==after);
+    // Writing directly into authoritative ECS must affect the next tick's
+    // working set; State::actors must not overwrite it on hydration.
+    auto e=module.actorEntity(*ecs,1);
+    auto* runtime=ecs->world().tryGet<fps::ActorRuntime>(e);
+    CHECK(runtime);
+    runtime->value.pos.x+=5_fx;
+    ecs->step();
+    CHECK(state(*ecs).actors[0].pos.x==ecs->world().tryGetConst<fps::ActorRuntime>(e)->value.pos.x);
+}
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
@@ -331,6 +384,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
