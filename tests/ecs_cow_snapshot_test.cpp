@@ -21,7 +21,11 @@ int main() {
     w.add<Health>(a,Health{100});w.add<Health>(b,Health{200});
     w.setResource<Resource>(Resource{7});
     World s1=w;
+    assert(w.sharedPoolCount()==2);
+    assert(w.sharedResourceCount()==1);
     w.get<Position>(a).x=30;
+    assert(w.sharedPoolCount()==1);
+    assert(s1.sharedPoolCount()==1);
     w.get<Health>(b).hp=300;
     w.resource<Resource>()->gold=8;
     check(s1,a,10,100,7);
