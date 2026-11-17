@@ -196,9 +196,13 @@ void DetailsPanel::draw(Editor& ed) {
     header(ed);
     // Authored RTS entities use the same document component inventory as FPS.
     // Live-world rows retain the existing ECS DetailsPanel sections below.
-    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0)
-        drawDocumentComponentInventory(ed.doc(),
-            DocumentEntityRef::mapEntity(size_t(items_[0].doc)));
+    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
+        const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
+        drawDocumentComponentInventory(ed.doc(), ref);
+        // RTS map entities currently serialize X/Z only. The shared position
+        // writer refuses Y changes rather than discarding them.
+        drawDocumentPositionField(ed.doc(), ref);
+    }
     const float clear = filter_.empty() ? 0 : ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
     ui::searchField("##propfilter", filter_, "Фильтр свойств", std::max(40.0f, ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - 4 - clear));
     ImGui::SameLine(0, 4);
