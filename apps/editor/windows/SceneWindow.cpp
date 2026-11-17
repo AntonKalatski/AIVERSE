@@ -107,9 +107,16 @@ private:
         if (ImGui::BeginPopup("##scene_batching")) {
             ImGui::TextUnformatted("Scene model batching");
             ImGui::Separator();
+            const bool mdiBackend = ed.renderer().modelMultiDrawSupported();
+            if (!mdiBackend) ImGui::BeginDisabled();
             if (ImGui::Checkbox("Shared Geometry Pool", &sceneGeometryPool_)) {
                 render::setGlobalGeometryPoolingEnabled(sceneGeometryPool_);
                 ed.reloadRules(); // reupload original models; never toggle existing GPU buffers in place
+            }
+            if (!mdiBackend) {
+                ImGui::EndDisabled();
+                ImGui::TextDisabled("Geometry Pool inactive: Multi-Draw Indirect is unavailable on this backend.");
+                ImGui::TextDisabled("Metal ICB is disabled until the driver crash is resolved.");
             }
             ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
             ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
@@ -120,7 +127,8 @@ private:
                 sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
             ImGui::Separator();
             const auto geometryPool = render::geometryPoolStats(ed.device());
-            ImGui::Text("Geometry: %zu pages / %zu models", geometryPool.pages, geometryPool.liveModels);
+            ImGui::Text("Geometry: %zu pages / %zu models (%s)", geometryPool.pages, geometryPool.liveModels,
+                        !mdiBackend ? "unavailable" : (!sceneGeometryPool_ ? "disabled" : "enabled"));
             ImGui::Text("GPU geometry: %.1f / %.1f MiB",
                         double(geometryPool.occupiedBytes) / (1024.0 * 1024.0),
                         double(geometryPool.allocatedBytes) / (1024.0 * 1024.0));
