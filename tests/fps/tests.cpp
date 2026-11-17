@@ -151,6 +151,15 @@ void parallelMotorParityFixture(Json rules,Json map) {
     }
     std::printf("FPS_COMBAT_PARITY_HASH=%016llx\\n",
         (unsigned long long)combatHistory.value());
+    auto& motorModule=static_cast<fps::Module&>(sim->module());
+    auto& combatModule=static_cast<fps::Module&>(combatSim->module());
+    std::printf("FPS_MOTOR_BATCHES=%llu\\n",
+        (unsigned long long)(motorModule.experimentalMotorBatches()+
+                             combatModule.experimentalMotorBatches()));
+    std::printf("FPS_MOTOR_COMMITS=%llu\\n",
+        (unsigned long long)(motorModule.experimentalMotorCommits()+
+                             combatModule.experimentalMotorCommits()));
+
 
 }
 void cowSnapshotsFps(Json rules,Json map) {
