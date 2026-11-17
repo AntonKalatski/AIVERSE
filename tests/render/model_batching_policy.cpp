@@ -7,6 +7,7 @@
 #include "engine/render/PersistentGpuScene.h"
 #include "engine/render/PersistentGpuSceneUpload.h"
 #include "engine/render/GpuSceneDrawCommands.h"
+#include "engine/render/ModelShaders.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -378,6 +379,19 @@ int main() {
         CHECK(!generator.output(1, first).valid()); // old frame epoch retired
         generator.release(mock);
         CHECK(mock.buffers.empty());
+    }
+
+    // GPU-indexed instance records retain the same 144-byte layout as the
+    // original U0 Inst uniform; Metal switches address spaces, not layout.
+    // The GPU shader macro must select device memory and instance_id, while
+    // the legacy permutation must still select the original MU0 block.
+    {
+        CHECK(36u * sizeof(float) == 144u);
+        CHECK(std::strstr(shaders::kModelMSL, "GPU_INSTANCE_BUFFER") != nullptr);
+        CHECK(std::strstr(shaders::kModelMSL,
+            "#define INSTANCE gpuInstances[iid]") != nullptr);
+        CHECK(std::strstr(shaders::kModelMSL,
+            "#define INSTANCE u.inst[iid]") != nullptr);
     }
 
     std::puts("engine model batching policy: PASS");
