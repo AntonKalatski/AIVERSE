@@ -59,34 +59,66 @@ void Module::setupSystems(Simulation& sim,const Json& map,State& s) {
     }
     s.match.start=ticks(sim);initialLoot_=s.loot;initialVehicles_=s.vehicles;
 }
-void Module::damage(Simulation& sim,uint8_t source,Actor& target,int32_t amount,bool head) {
-    auto& s=state(sim);if(target.health<=0||amount<=0)return;
-    Actor* attacker=source&&source<=s.actors.size()?&s.actors[source-1]:nullptr;
-    if(attacker&&source!=target.slot&&!config_.friendlyFire&&attacker->team==target.team)return;
-    if(!config_.gear.empty()){   // gear-tiers: helmets cover zone 1 (head shots), everything else hits zone 2
-        if(auto hit=lib::systems::absorbHit(config_.gear,s.gear[target.slot-1],head?1u:2u,amount)){
-            amount=int32_t(hit->damage);for(auto slot:hit->broken)sim.emit({9,target.slot,{},{},int64_t(slot),target.pos});
+void Module::damage(Simulation& sim,uint8_t source,Actor& targetView,int32_t amount,bool head) {
+    auto& s=state(sim);
+    Actor* attackerView=source&&source<=s.actors.size()?&s.actors[source-1]:nullptr;
+    Actor* target=&targetView;
+    Actor* attacker=attackerView;
+    ActorRuntime* targetRuntime=nullptr;
+    ActorRuntime* attackerRuntime=nullptr;
+    if(config_.ecsAuthority) {
+        // Damage the actual ECS gameplay payload, not the legacy working
+        // vector. Copy in only to account for preceding actor-side tick work.
+        targetRuntime=sim.world().tryGet<ActorRuntime>(actorEntity(sim,targetView.slot));
+        if(!targetRuntime)throw std::logic_error("FPS target ActorRuntime missing");
+        targetRuntime->value=targetView;
+        target=&targetRuntime->value;
+        if(attackerView) {
+            if(source==targetView.slot)attacker=target;
+            else {
+                attackerRuntime=sim.world().tryGet<ActorRuntime>(actorEntity(sim,source));
+                if(!attackerRuntime)throw std::logic_error("FPS attacker ActorRuntime missing");
+                attackerRuntime->value=*attackerView;
+                attacker=&attackerRuntime->value;
+            }
         }
-    }else if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
-    target.lastDamage=sim.tick();target.activeAction=Action::None;target.actionUntil=0;
-    if(s.royale.enabled&&attacker&&source!=target.slot){s.royale.lastAttacker[target.slot-1]=source;s.royale.lastWeapon[target.slot-1]=uint8_t(attacker->weaponIndex+1);}
-    if(attacker)++attacker->hits;
-    if(config_.systems.enabled&&config_.systems.knockdown&&!target.downed&&amount>=target.health) {
-        bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;
-        if(teammate){for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
     }
-    target.health=std::max(0,target.health-amount);
-    if(target.health)return;
-    target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
-    if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
-    if(config_.systems.enabled){
-        if(s.match.carrier==target.slot){s.match.carrier=0;s.match.bombPos=target.pos;}
-        if(s.loot.size()<256&&(target.owned&(1u<<target.weaponIndex)))s.loot.push_back({s.nextObject++,target.pos,100+target.weaponIndex,1,target.ammo,target.reserve,target.attachments[target.weaponIndex]});
-        if(!s.gear.empty()){for(const auto& [slot,piece]:s.gear[target.slot-1].slots)if(s.loot.size()<256)s.loot.push_back({s.nextObject++,target.pos,int32_t(200+piece.def),1,int32_t(piece.durability)});s.gear[target.slot-1]={};}
-        for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;
-        target.vehicle=0;
+    // Keep historical side-effect ordering (gear -> hits -> knockdown ->
+    // kill/loot -> event). The lambda's early returns still commit ECS data
+    // to the compatibility vector before returning from this method.
+    const auto apply=[&](Actor& target,Actor* attacker) {
+        if(target.health<=0||amount<=0)return;
+        if(attacker&&source!=target.slot&&!config_.friendlyFire&&attacker->team==target.team)return;
+        if(!config_.gear.empty()){   // gear-tiers: helmets cover zone 1 (head shots), everything else hits zone 2
+            if(auto hit=lib::systems::absorbHit(config_.gear,s.gear[target.slot-1],head?1u:2u,amount)){
+                amount=int32_t(hit->damage);for(auto slot:hit->broken)sim.emit({9,target.slot,{},{},int64_t(slot),target.pos});
+            }
+        }else if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
+        target.lastDamage=sim.tick();target.activeAction=Action::None;target.actionUntil=0;
+        if(s.royale.enabled&&attacker&&source!=target.slot){s.royale.lastAttacker[target.slot-1]=source;s.royale.lastWeapon[target.slot-1]=uint8_t(attacker->weaponIndex+1);}
+        if(attacker)++attacker->hits;
+        if(config_.systems.enabled&&config_.systems.knockdown&&!target.downed&&amount>=target.health) {
+            bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;
+            if(teammate){for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
+        }
+        target.health=std::max(0,target.health-amount);
+        if(target.health)return;
+        target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
+        if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
+        if(config_.systems.enabled){
+            if(s.match.carrier==target.slot){s.match.carrier=0;s.match.bombPos=target.pos;}
+            if(s.loot.size()<256&&(target.owned&(1u<<target.weaponIndex)))s.loot.push_back({s.nextObject++,target.pos,100+target.weaponIndex,1,target.ammo,target.reserve,target.attachments[target.weaponIndex]});
+            if(!s.gear.empty()){for(const auto& [slot,piece]:s.gear[target.slot-1].slots)if(s.loot.size()<256)s.loot.push_back({s.nextObject++,target.pos,int32_t(200+piece.def),1,int32_t(piece.durability)});s.gear[target.slot-1]={};}
+            for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;
+            target.vehicle=0;
+        }
+        sim.emit({2,source,{}, {},target.slot,target.pos});
+    };
+    apply(*target,attacker);
+    if(targetRuntime) {
+        targetView=targetRuntime->value;
+        if(attackerRuntime)*attackerView=attackerRuntime->value;
     }
-    sim.emit({2,source,{}, {},target.slot,target.pos});
 }
 bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_t amount,const WeaponConfig& weapon,const std::vector<Actor>& targets,Projectile* projectile) {
     auto& s=state(sim);Fixed best=1_fx;uint8_t victim=0;const Actor* pose=nullptr;
