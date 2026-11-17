@@ -1117,8 +1117,15 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         auto* pipeline = pipelines_.get(pipelineId_);
         if (!pipeline || !pipeline->state)
             return reject("active render pipeline missing");
-        if (!pipeline->state.supportIndirectCommandBuffers)
-            return reject("active Metal render pipeline lacks supportIndirectCommandBuffers");
+        // Regular PBR pipelines are deliberately compiled without ICB support
+        // when their direct fragment textures/samplers are rejected by Metal.
+        // The existing PBR ICB variant consumes these resources through a
+        // fragment argument buffer at index 8 instead.
+        const bool usePbrVariant = !pipeline->state.supportIndirectCommandBuffers;
+        id<MTLRenderPipelineState> icbPipeline =
+            usePbrVariant ? pipeline->icbPbrState : pipeline->state;
+        if (!icbPipeline || !icbPipeline.supportIndirectCommandBuffers)
+            return reject("ICB-compatible pipeline unavailable (PBR variant not compiled)");
         const size_t frameSlot = frame_ % kFramesInFlight;
         auto& pool = gpuEncodedIcbPool_[frameSlot];
         if (size_t(token) > pool.size())
@@ -1151,10 +1158,39 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [enc_ setFragmentBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
             declareIndirectRead(stable, MTLRenderStageVertex | MTLRenderStageFragment);
         }
+        if (usePbrVariant) {
+            if (!pipeline->icbPbrEncoder)
+                return reject("PBR ICB fragment argument encoder missing");
+            constexpr int pbrSlots[] = {0,1,2,3,4,5,6,9,10,11,12};
+            for (int slot : pbrSlots)
+                if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot])
+                    return reject("PBR ICB required texture or sampler not bound");
+            const NSUInteger size = pipeline->icbPbrEncoder.encodedLength;
+            if (!resources.pbrArgs || resources.pbrArgs.length < size)
+                resources.pbrArgs = [device_ newBufferWithLength:size
+                                         options:MTLResourceStorageModeShared];
+            if (!resources.pbrArgs)
+                return reject("PBR ICB argument buffer allocation failed");
+            [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
+            for (int slot : pbrSlots) {
+                [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
+                                            atIndex:NSUInteger(slot * 2)];
+                [pipeline->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
+                                                 atIndex:NSUInteger(slot * 2 + 1)];
+                declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
+            }
+            // Bind after U0..U7 snapshots: PBR argument slot 8 must not be
+            // accidentally replaced by an old U7 uniform snapshot.
+            [enc_ setFragmentBuffer:resources.pbrArgs offset:0 atIndex:8];
+            declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
+            [enc_ setRenderPipelineState:icbPipeline];
+        }
         declareIndirectRead(current(*buffers_.get(ibId_)), MTLRenderStageVertex);
         declareIndirectRead(current(*buffers_.get(vbId_)), MTLRenderStageVertex);
         [enc_ executeCommandsInBuffer:resources.icb
                             withRange:NSMakeRange(0, resources.count)];
+        if (usePbrVariant)
+            [enc_ setRenderPipelineState:pipeline->state];
         return true;
     }
     bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override {
@@ -1368,6 +1404,7 @@ private:
     struct GpuEncodedIcbResources {
         id<MTLIndirectCommandBuffer> icb = nil;
         id<MTLBuffer> argBuffer = nil;
+        id<MTLBuffer> pbrArgs = nil;
         id<MTLBuffer> slots = nil;
         id<MTLBuffer> uniforms[8] = {};
         uint32_t capacity = 0, count = 0;
