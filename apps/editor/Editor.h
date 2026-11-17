@@ -182,7 +182,7 @@ public:
     Simulation* sim() { return sim_.get(); }
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
-    void renderFpsScene(Viewport&,const render::RTSCamera&);
+    void enqueueFpsSceneGeometry(const render::RTSCamera&);
     void startPlay(int humanSlot = 0);
     void stopPlay();
     // Play as in the game client, inside the Game window (EditorClientPlay.cpp, ClientHost.h): the game's
