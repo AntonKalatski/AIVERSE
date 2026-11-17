@@ -179,6 +179,7 @@ void Module::equipInitial(Actor& a) const {
 }
 void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
+    experimentalMotorBatches_=experimentalMotorCommits_=0;
     if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
     if(sim.players().empty()||sim.players().size()>config_.maxPlayers)throw JsonError("fps: invalid player count");
     streamedCollision_.reset();streamManifest_=map["world"];
@@ -312,6 +313,7 @@ void Module::tick(Simulation& sim) {
         parallelMotor=count>=32;
     }
     if(parallelMotor) {
+        ++experimentalMotorBatches_;
         motorResults.resize(s.actors.size());
         motorOriginals=s.actors;
         static thread_local ecs_experiment::PersistentWorkers motorWorkers{3};
@@ -368,6 +370,7 @@ void Module::tick(Simulation& sim) {
         const size_t motorIndex=size_t(&a-s.actors.data());
         if(parallelMotor && motorEligible[motorIndex] &&
            a==motorOriginals[motorIndex]) {
+            ++experimentalMotorCommits_;
             const auto& m=motorResults[motorIndex];
             a.pos=m.pos;a.velocity=m.velocity;a.yaw=m.yaw;a.pitch=m.pitch;
             a.grounded=m.grounded;a.crouched=m.crouched;a.prone=m.prone;
