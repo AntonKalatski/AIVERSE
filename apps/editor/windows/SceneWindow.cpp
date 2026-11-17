@@ -1,5 +1,6 @@
 // Scene: the map in 3D with a free camera; select/drag objects and apply the current tool.
 //   RMB drag: look around, RMB + WASD/QE: fly, MMB drag: pan, wheel: zoom, F: focus selection.
+#include "../EditorEntityAdapter.h"
 #include <algorithm>
 #include <cmath>
 #include "../Editor.h"
@@ -526,7 +527,10 @@ private:
                 dragMoved_ = true;
                 std::vector<int> idx;
                 for (int i : ed.selectedEntities()) if (i >= 0 && size_t(i) < d.entities.size() && !ed.objectLocked(d.entities[size_t(i)].owner, d.entities[size_t(i)].type)) idx.push_back(i);
-                worldedit::move(doc, idx, dx, dz);
+                std::vector<DocumentEntityRef> refs;
+                refs.reserve(idx.size());
+                for (int index : idx) refs.push_back(DocumentEntityRef::mapEntity(size_t(index)));
+                translateDocumentEntities(doc, refs, {dx, 0.0, dz});
                 gizmoGroundX_ = x;
                 gizmoGroundZ_ = z;
             }
@@ -539,7 +543,10 @@ private:
                 dragMoved_ = true;
                 std::vector<int> idx;
                 for (int i : ed.selectedEntities()) if (!ed.objectLocked(d.entities[size_t(i)].owner, d.entities[size_t(i)].type) || i == sel) idx.push_back(i);
-                worldedit::move(doc, idx, dx, dz);
+                std::vector<DocumentEntityRef> refs;
+                refs.reserve(idx.size());
+                for (int index : idx) refs.push_back(DocumentEntityRef::mapEntity(size_t(index)));
+                translateDocumentEntities(doc, refs, {dx, 0.0, dz});
             }
         }
         if (!painting_) return;
