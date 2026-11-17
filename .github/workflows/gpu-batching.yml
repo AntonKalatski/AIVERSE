@@ -1,0 +1,32 @@
+name: GPU batching focused regression
+
+on:
+  pull_request:
+    paths:
+      - 'engine/render/**'
+      - 'engine/gfx/**'
+      - 'apps/editor/windows/SceneWindow.cpp'
+      - 'tests/render/model_batching_policy.cpp'
+      - '.github/workflows/gpu-batching.yml'
+  workflow_dispatch:
+
+jobs:
+  model-policy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >-
+          cmake -S . -B build/gpu-batching
+          -DAIVERSE_BUILD_TESTS=ON
+          -DAIVERSE_BUILD_EDITOR=OFF
+          -DAIVERSE_BUILD_TOOLS=OFF
+          -DCMAKE_BUILD_TYPE=Release
+      - name: Build engine model-batching regression
+        run: cmake --build build/gpu-batching --target aiverse_model_batching_policy_tests --parallel 4
+      - name: Verify
+        run: ctest --test-dir build/gpu-batching -R '^model_batching_policy$' --output-on-failure
