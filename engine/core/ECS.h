@@ -79,11 +79,14 @@ public:
     void copyFrom(const IPool& other) override { *this = static_cast<const Pool<T>&>(other); }
 
     T* tryGet(uint32_t index) { return has(index) ? &data_[sparse_[index]] : nullptr; }
+    const T* tryGet(uint32_t index) const { return has(index) ? &data_[sparse_[index]] : nullptr; }
     T& get(uint32_t index) { assert(has(index)); return data_[sparse_[index]]; }
+    const T& get(uint32_t index) const { assert(has(index)); return data_[sparse_[index]]; }
 
     size_t size() const { return dense_.size(); }
     Entity entityAt(size_t i) const { return dense_[i]; }
     T& dataAt(size_t i) { return data_[i]; }
+    const T& dataAt(size_t i) const { return data_[i]; }
 
 private:
     std::vector<uint32_t> sparse_;
@@ -185,6 +188,13 @@ public:
         auto* p = poolIfExists<T>();
         return p ? p->tryGet(e.index) : nullptr;
     }
+    // Never detaches a shared pool. Safe for declared read-only jobs if no
+    // structural changes run concurrently.
+    template <class T> const T* tryGetConst(Entity e) const {
+        if(!alive(e))return nullptr;
+        const auto* p=poolIfExists<T>();
+        return p?p->tryGet(e.index):nullptr;
+    }
     template <class T> T& get(Entity e) { assert(alive(e)); return pool<T>().get(e.index); }
 
     // Iterate entities having all components. fn(Entity, A&, B&, ...)
@@ -230,6 +240,21 @@ public:
         return p?p->size():0;
     }
 
+    template <class T, class Fn>
+    void eachExistingConst(Fn&& fn) const {
+        const auto* p=poolIfExists<T>();
+        if(!p)return;
+        const size_t n=p->size();
+        for(size_t i=0;i<n;++i)
+            fn(p->entityAt(i),p->dataAt(i));
+    }
+
+    // Resolve COW once on the caller before launching disjoint write lanes.
+    // A null result means the type was never registered; no registry mutation.
+    template <class T> Pool<T>* prepareExistingWrite() {
+        return poolIfExists<T>();
+    }
+
     template <class T> size_t count() { return countExisting<T>(); }
 
     // Hot: called for every component access. The common case (pool exists) stays inline; creating a
@@ -267,6 +292,11 @@ public:
         if(cowSnapshots_ && !resources_[id].unique())
             resources_[id]=resourceOps_[id].make(resources_[id].get());
         return static_cast<T*>(resources_[id].get());
+    }
+    template <class T> const T* resourceConst() const {
+        uint32_t id=detail::componentTypeId<T>();
+        return id<resources_.size()&&resources_[id]
+            ? static_cast<const T*>(resources_[id].get()):nullptr;
     }
 
     // Save states (Simulation::serialize): the entity allocator, restored exactly so ids and recycling match.
