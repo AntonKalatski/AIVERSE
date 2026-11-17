@@ -127,21 +127,53 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.mesh = &fpsPreviewMesh_;
         object.pickable = true;
         if (node.ref.source == DocumentEntityRef::Source::FpsCollider) {
-            const Json& lower = (*source)["min"];
-            const Json& upper = (*source)["max"];
-            if (!lower.isArray() || !upper.isArray() ||
-                lower.size() < 3 || upper.size() < 3) continue;
-            const float3 lo = point(lower), hi = point(upper);
-            const float3 size = hi - lo;
-            if (!std::isfinite(lo.x) || !std::isfinite(lo.y) || !std::isfinite(lo.z) ||
-                !std::isfinite(hi.x) || !std::isfinite(hi.y) || !std::isfinite(hi.z) ||
-                size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
-            const float3 base{float(node.position.x), lo.y, float(node.position.z)};
-            if (length(base - camera.target) > 1000 && hi.y > 0) continue;
-            object.world = mat4::translate(base) * mat4::scale(size);
-            object.tint = {0.35f, 0.42f, 0.44f, 1};
-            object.boundsMin = lo;
-            object.boundsMax = hi;
+            if ((*source)["yaw"].isNumber()) {
+                const Json& half = (*source)["half"];
+                if (!half.isArray() || half.size() != 3 ||
+                    !half[0].isNumber() || !half[1].isNumber() ||
+                    !half[2].isNumber()) continue;
+                const float3 centre{float(node.position.x),
+                                    float(node.position.y),
+                                    float(node.position.z)};
+                const float3 extents = point(half);
+                if (!std::isfinite(extents.x) || !std::isfinite(extents.y) ||
+                    !std::isfinite(extents.z) || extents.x <= 0 ||
+                    extents.y <= 0 || extents.z <= 0) continue;
+                const float angle = float((*source)["yaw"].toDouble() *
+                                          6.283185307179586);
+                const float cs = std::abs(std::cos(angle));
+                const float sn = std::abs(std::sin(angle));
+                const float3 bounds{
+                    cs * extents.x + sn * extents.z,
+                    extents.y,
+                    sn * extents.x + cs * extents.z
+                };
+                object.world = mat4::translate({centre.x, centre.y - extents.y,
+                                               centre.z}) *
+                               mat4::rotateY(angle) *
+                               mat4::scale(extents * 2.0f);
+                object.tint = {0.35f, 0.42f, 0.44f, 1};
+                object.boundsMin = centre - bounds;
+                object.boundsMax = centre + bounds;
+            } else {
+                const Json& lower = (*source)["min"];
+                const Json& upper = (*source)["max"];
+                if (!lower.isArray() || !upper.isArray() ||
+                    lower.size() < 3 || upper.size() < 3) continue;
+                const float3 lo = point(lower), hi = point(upper);
+                const float3 size = hi - lo;
+                if (!std::isfinite(lo.x) || !std::isfinite(lo.y) ||
+                    !std::isfinite(lo.z) || !std::isfinite(hi.x) ||
+                    !std::isfinite(hi.y) || !std::isfinite(hi.z) ||
+                    size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
+                const float3 base{float(node.position.x), lo.y,
+                                  float(node.position.z)};
+                if (length(base - camera.target) > 1000 && hi.y > 0) continue;
+                object.world = mat4::translate(base) * mat4::scale(size);
+                object.tint = {0.35f, 0.42f, 0.44f, 1};
+                object.boundsMin = lo;
+                object.boundsMax = hi;
+            }
         } else if (node.ref.source == DocumentEntityRef::Source::FpsSpawn) {
             const float3 pos{float(node.position.x), float(node.position.y),
                              float(node.position.z)};
