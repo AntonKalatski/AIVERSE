@@ -451,13 +451,13 @@ public:
         if (!cached.attempted) {
             cached.attempted = true;
             const std::string variant = colorShaderPrefix(true,shader->linear) +
-                                        "#define AIVERSE_ICB_PBR 1\\n" + src;
+                                        "#define AIVERSE_ICB_PBR 1\n" + src;
             NSError* err = nil;
             id<MTLLibrary> library = [device_ newLibraryWithSource:
                 [NSString stringWithUTF8String:variant.c_str()] options:nil error:&err];
             if (library) cached.fragment = [library newFunctionWithName:@"fs_main"];
             if (!cached.fragment && std::getenv("AIVERSE_ICB_TRACE"))
-                std::fprintf(stderr,"[metal-icb] PBR variant failed: %s\\n",
+                std::fprintf(stderr,"[metal-icb] PBR variant failed: %s\n",
                              err ? err.localizedDescription.UTF8String : "missing fs_main");
         }
         if (!cached.fragment) return;
@@ -468,7 +468,7 @@ public:
         auto state = [device_ newRenderPipelineStateWithDescriptor:pd error:&error];
         if (!state) {
             if (std::getenv("AIVERSE_ICB_TRACE"))
-                std::fprintf(stderr,"[metal-icb] PBR pipeline rejected: %s\\n",
+                std::fprintf(stderr,"[metal-icb] PBR pipeline rejected: %s\n",
                              error ? error.localizedDescription.UTF8String : "unknown");
             return;
         }
@@ -920,8 +920,29 @@ public:
         const id<MTLBuffer> indirectData = current(*cmdBuffer);
         const id<MTLBuffer> indices = current(*ib);
         const id<MTLBuffer> vertices = current(*vb);
-        if (!indirectData || !indices || !vertices || !p->state ||
-            !p->state.supportIndirectCommandBuffers) return false;
+        const bool pbr = p->icbPbrState != nil;
+        id<MTLRenderPipelineState> indirectPipeline = pbr ? p->icbPbrState : p->state;
+        if (!indirectData || !indices || !vertices || !indirectPipeline ||
+            !indirectPipeline.supportIndirectCommandBuffers) return false;
+
+        // Build one fragment argument buffer containing all PBR texture and
+        // sampler descriptors. The ICB can bind this buffer, whereas it cannot
+        // encode the individual texture/sampler bindings used by direct draws.
+        id<MTLBuffer> pbrArgs = nil;
+        constexpr int pbrSlots[] = {0,1,2,3,4,5,6,9,10,11,12};
+        if (pbr) {
+            if (!p->icbPbrEncoder) return false;
+            for (int slot : pbrSlots)
+                if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot]) return false;
+            pbrArgs = [device_ newBufferWithLength:p->icbPbrEncoder.encodedLength
+                                           options:MTLResourceStorageModeShared];
+            if (!pbrArgs) return false;
+            [p->icbPbrEncoder setArgumentBuffer:pbrArgs offset:0];
+            for (int slot : pbrSlots) {
+                [p->icbPbrEncoder setTexture:icbFragmentTextures_[slot] atIndex:NSUInteger(slot * 2)];
+                [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot] atIndex:NSUInteger(slot * 2 + 1)];
+            }
+        }
 
         // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
@@ -960,7 +981,8 @@ public:
                 return false;
             id<MTLIndirectRenderCommand> command = [icb indirectRenderCommandAtIndex:i];
             if (!command) return false;
-            [command setRenderPipelineState:p->state];
+            [command setRenderPipelineState:indirectPipeline];
+            if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
             for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
                 [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
@@ -975,6 +997,12 @@ public:
         // resource accessed by commands, even when the parent encoder also uses it.
         declareIndirectRead(vertices, MTLRenderStageVertex);
         declareIndirectRead(indices, MTLRenderStageVertex);
+        if (pbr) {
+            declareIndirectRead(pbrArgs, MTLRenderStageFragment);
+            indirectUniformFrames_[frame_ % kFramesInFlight].push_back(pbrArgs);
+            for (int slot : pbrSlots)
+                declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
+        }
         for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
             declareIndirectRead(uniforms[slot], MTLRenderStageVertex | MTLRenderStageFragment);
             indirectUniformFrames_[frame_ % kFramesInFlight].push_back(uniforms[slot]);
