@@ -249,7 +249,7 @@ public:
     void destroyCompute(ComputeHandle h) override { computes_.remove(h.id); }
     bool beginCompute(ComputeHandle h) override {
         auto* state=computes_.get(h.id);
-        if (!cmd_ || enc_ || compute_ || !state) return false;
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !state) return false;
         compute_=[cmd_ computeCommandEncoder];[compute_ setComputePipelineState:*state];return compute_!=nil;
     }
     void setComputeBuffer(int slot,BufferHandle h) override {
@@ -815,6 +815,9 @@ public:
     void clearBindings(){for(auto& t:boundTextures_)t=nil;for(auto& s:boundSamplers_)s=nil;boundVertexBuffer_=nil;}
     void setBindingCacheEnabled(bool enabled) override {if(enabled!=bindingCacheEnabled_){bindingCacheEnabled_=enabled;clearBindings();}}
     void beginPass(const PassDesc& d) override {
+        // Do not allow an unfinished GPU ICB compute pass to overlap a
+        // render encoder, even if a future caller omits the explicit finish.
+        finishGpuEncodedIcbPreparation();
         clearBindings();
         const auto* color = textures_.get(d.colorTarget.id);
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
