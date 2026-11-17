@@ -18,12 +18,40 @@ public:
 class AccessScope {
     const SystemAccess* previous_;
     static inline thread_local const SystemAccess* current_ = nullptr;
+    static inline thread_local Entity currentEntity_=kNullEntity;
+    static inline thread_local bool entityConstrained_=false;
 public:
     explicit AccessScope(const SystemAccess& access):previous_(current_) {current_=&access;}
     AccessScope(const AccessScope&)=delete;
     AccessScope& operator=(const AccessScope&)=delete;
     ~AccessScope(){current_=previous_;}
     static const SystemAccess* current(){return current_;}
+    // Only the entity currently owned by the lane can be accessed for types
+    // written by the job. Other read-only component types are freely readable.
+    class EntityScope {
+        Entity previous_;
+        bool previousConstrained_;
+    public:
+        explicit EntityScope(Entity e)
+            : previous_(currentEntity_),previousConstrained_(entityConstrained_) {
+            currentEntity_=e;
+            entityConstrained_=true;
+        }
+        EntityScope(const EntityScope&)=delete;
+        ~EntityScope(){
+            currentEntity_=previous_;
+            entityConstrained_=previousConstrained_;
+        }
+    };
+    static void requireEntityLocal(AccessId id,Entity e) {
+        if(entityConstrained_ && current_ &&
+           containsWrite(current_->writes,id) && !(e==currentEntity_))
+            throw AccessViolation("cross-entity access to a component written by this job");
+    }
+private:
+    static bool containsWrite(const std::vector<AccessId>& ids, AccessId id) {
+        return std::find(ids.begin(),ids.end(),id)!=ids.end();
+    }
 };
 
 inline bool containsAccess(const std::vector<AccessId>& ids, AccessId id) {
@@ -57,14 +85,17 @@ public:
     explicit GuardedWorld(World& world):world_(world){}
     template<class T> const T* read(Entity e) const {
         requireComponent(componentId<T>(),false);
+        AccessScope::requireEntityLocal(componentId<T>(),e);
         return const_cast<World&>(world_).tryGet<T>(e);
     }
     template<class T> T* write(Entity e) {
         requireComponent(componentId<T>(),true);
+        AccessScope::requireEntityLocal(componentId<T>(),e);
         return world_.tryGet<T>(e);
     }
     template<class T> bool has(Entity e) const {
         requireComponent(componentId<T>(),false);
+        AccessScope::requireEntityLocal(componentId<T>(),e);
         return world_.has<T>(e);
     }
     template<class T,class... Args> T& add(Entity e,Args&&... args) {
@@ -104,6 +135,31 @@ public:
     template<class T,class Fn> void eachWrite(Fn&& fn) {
         requireComponent(componentId<T>(),true);
         world_.eachExisting<T>(std::forward<Fn>(fn));
+    }
+    // A checked per-entity job; each lane owns distinct dense positions of T.
+    // Other components declared as writable cannot be accessed on foreign
+    // entities through GuardedWorld, preventing a common cross-lane race.
+    // The caller must still avoid retained aliases and unmanaged external state.
+    template<class T,class Fn>
+    void eachAdaptiveWrite(PersistentWorkers& workers,ExecutionMode mode,
+                           ParallelPolicy policy,Fn&& fn) {
+        requireComponent(componentId<T>(),true);
+        const auto* declaration=AccessScope::current();
+        const size_t count=world_.countExisting<T>();
+        const size_t lanes=size_t(workers.workers())+1;
+        const bool parallel=workers.workers()>0 &&
+            (mode==ExecutionMode::Parallel ||
+             (mode==ExecutionMode::Auto && count>=policy.minimumEntities &&
+              count/lanes>=policy.minimumPerLane));
+        auto range=[&](size_t begin,size_t end) {
+            AccessScope scope(*declaration); // install permissions on each worker
+            world_.eachExistingRange<T>(begin,end,[&](Entity e,T& component) {
+                AccessScope::EntityScope owner(e);
+                fn(e,component);
+            });
+        };
+        if(parallel)workers.parallelFor(count,range);
+        else if(count>0)range(0,count);
     }
 };
 
