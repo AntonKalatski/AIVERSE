@@ -6,6 +6,7 @@
 #include <map>
 #include "EditorUtil.h"
 #include "EditorWorldEdit.h"
+#include "EditorComponentPanel.h"
 
 namespace aiverse::editor {
 
@@ -193,6 +194,11 @@ void DetailsPanel::draw(Editor& ed) {
     collect(ed);
     if (items_.empty()) { ui::emptyStateHere(ICON_INSPECTOR, "Объект исчез", "Его больше нет в мире игры."); return; }
     header(ed);
+    // Authored RTS entities use the same document component inventory as FPS.
+    // Live-world rows retain the existing ECS DetailsPanel sections below.
+    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0)
+        drawDocumentComponentInventory(ed.doc(),
+            DocumentEntityRef::mapEntity(size_t(items_[0].doc)));
     const float clear = filter_.empty() ? 0 : ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
     ui::searchField("##propfilter", filter_, "Фильтр свойств", std::max(40.0f, ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - 4 - clear));
     ImGui::SameLine(0, 4);
