@@ -71,6 +71,7 @@ struct Config {
     // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
     // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
     Json bots;
+    bool ecsAuthority=false; // opt-in: full actor state canonical in ECS, legacy vector is tick workspace
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -119,6 +120,11 @@ struct VehicleRun {
     uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
     std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
 };
+// Full gameplay Actor payload. In fps.ecsAuthority mode this ECS component
+// is canonical between tick barriers, and State::actors is a temporary
+// compatibility workspace for older simulation algorithms/save v9.
+struct ActorRuntime { Actor value; };
+
 // Stable ECS identities for FPS actors. A transitional compatibility layer:
 // State::actors is still authoritative for FPS gameplay/netcode/save v9.
 // These real World components mirror the current state after each tick so
@@ -206,8 +212,10 @@ public:
     bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
+    bool actorEcsAuthority() const { return config_.ecsAuthority; }
     Entity actorEntity(Simulation& sim, uint8_t slot) const;
-    void syncActorEntities(Simulation& sim) const; // compatibility mirror (not gameplay authority)
+    void syncActorEntities(Simulation& sim) const; // rebuild ECS actor state and inspector projections
+    void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
     void syncDynamicEntities(Simulation& sim) const; // projectile, loot and vehicle ECS views
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
