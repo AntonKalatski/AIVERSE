@@ -338,6 +338,13 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - `be74da3`: `ecs_guarded_parallel_test.cpp` tests these denials with 64 entities and 4 intentionally prohibited operations per Entity, including a recursive call that previously could deadlock.
 - These changes are not yet compiled/run on Mac Studio. Re-run both normal and sanitizer suites, then the gameplay compare script. A runtime-checked facade is still not a security sandbox; raw World references, leaked pointers and captured global state remain outside enforcement.
 
+## 2026-11-17 — Gameplay comparison script repair
+
+- `04df6e0` and `d54ae54` extended `run_ecs_gameplay_compare.sh` with network tests and tick timing, but introduced a **malformed CTest regular-expression line** while patching the shell source. This was found by source inspection before any user run.
+- `f8ec548` replaced the script with a clean, explicit LF version. It compares baseline/opt-in RTS checksum checkpoints, verifies RTS snapshot restoration in both builds, runs FPS tests in both builds, logs measured tick durations, and optionally builds/runs `aiverse_tests` and `aiverse_net_tests` when passed `--full`.
+- Verify shell parsing before running: `bash -n tests/run_ecs_gameplay_compare.sh`.
+- **This replacement script has not yet been run**, so any configure, build, CTest or log-format failures must be reported and corrected.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
