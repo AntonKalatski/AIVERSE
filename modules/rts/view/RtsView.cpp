@@ -480,7 +480,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                     100.0 * double(placementHits)/double(placementHits+placementMisses));
             if (groundHits + groundMisses)
                 std::fprintf(stderr,
-                    "[rts-ground-cache] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\\n",
+                    "[rts-ground-cache] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\n",
                     double(groundHits)/samples, double(groundMisses)/samples,
                     100.0 * double(groundHits)/double(groundHits+groundMisses));
             if (staticFastHits)
