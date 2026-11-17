@@ -6,6 +6,13 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## ECS 2.0 experimental work (PR #8)
 
+For nested gameplay entities and native project object hierarchies, read
+`docs/ecs-scene-hierarchy.md` and use `Parent` / `LocalTransform` /
+`WorldTransform` with `SceneHierarchy`. Do not reinterpret RTS
+`Transform` as local space, or feed float presentation transforms into
+deterministic simulation. Keep hierarchy topology generation-safe; rebuild
+the derived graph on save/load and update only dirty branches.
+
 For any ECS storage, scheduler, rollback or parallelism change, **first read**
 `docs/ecs-agent-handoff.md`. This is the continuously updated handoff for
 `feature/ecs-architecture-benchmarks` and PR #8. It contains prior benchmark
