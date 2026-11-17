@@ -1,9 +1,12 @@
 // c++ -std=c++20 -O3 -pthread -I. tests/ecs_experiments_test.cpp -o /tmp/aiverse-ecs-experiments-test
 // /tmp/aiverse-ecs-experiments-test
 #include "engine/experiments/EcsExperiments.h"
+#include "engine/experiments/EcsDependencyPlan.h"
 #include <cassert>
 #include <cstdint>
 #include <iostream>
+#include <stdexcept>
+#include <atomic>
 #include <vector>
 using namespace aiverse;
 using namespace aiverse::ecs_experiment;
@@ -76,5 +79,55 @@ int main() {
         delta.apply(before);
         for(size_t i=0;i<before.size();++i) assert(before[i].x==updated[i].x);
     }
-    std::cout<<"PASS prepared, persistent parallel, deterministic commands, dirty pages\n";
+    // Adaptive threshold uses caller for small jobs; parallel range assignment stays deterministic.
+    {
+        PersistentWorkers workers(3);
+        std::vector<Position> first(500),second(500);
+        World a=initial,b=initial;
+        eachAdaptive<Position>(a,workers,ExecutionMode::Auto,{200000,2048},
+            [](Entity,Position& p){p.x+=2;});
+        eachAdaptive<Position>(b,workers,ExecutionMode::Sequential,{},
+            [](Entity,Position& p){p.x+=2;});
+        assert(result(a)==result(b));
+        eachAdaptive<Position>(a,workers,ExecutionMode::Auto,{1024,64},
+            [](Entity,Position& p){p.x+=3;});
+        eachAdaptive<Position>(b,workers,ExecutionMode::Sequential,{},
+            [](Entity,Position& p){p.x+=3;});
+        assert(result(a)==result(b));
+
+        // Exceptions from workers AND caller must propagate; the worker pool remains reusable.
+        bool caught=false;
+        try {
+            workers.parallelFor(10000,[](size_t begin,size_t end){
+                if(begin<end)throw std::runtime_error("worker or caller failed");
+            });
+        } catch(const std::runtime_error&) {caught=true;}
+        assert(caught);
+        std::atomic<size_t> processed{0};
+        workers.parallelFor(10000,[&](size_t begin,size_t end){processed.fetch_add(end-begin);});
+        assert(processed==10000);
+    }
+    {
+        DependencyPlan plan;
+        plan.add({"move",{}, {1}, {}, {}, false,false});
+        plan.add({"independent",{}, {2}, {}, {}, false,false});
+        plan.add({"read_positions",{1}, {}, {}, {}, false,false});
+        plan.add({"write_positions",{}, {1}, {}, {}, false,false});
+        plan.add({"rng",{}, {}, {}, {7}, false,false});
+        plan.add({"rng_read",{}, {}, {7}, {}, false,false});
+        plan.add({"spawn",{}, {}, {}, {}, true,false});
+        auto waves=plan.waves();
+        assert(waves.size()>=3);
+        assert(waves[0].size()>=2);
+        auto indexOf=[&](size_t i) {
+            for(size_t w=0;w<waves.size();++w)
+                for(size_t j:waves[w])if(j==i)return w;
+            return waves.size();
+        };
+        assert(indexOf(2)>indexOf(0));
+        assert(indexOf(3)>indexOf(2));
+        assert(indexOf(5)>indexOf(4));
+        assert(indexOf(6)>indexOf(5));
+    }
+    std::cout<<"PASS prepared, adaptive jobs, exceptions, dependency waves, deterministic commands, dirty pages\n";
 }
