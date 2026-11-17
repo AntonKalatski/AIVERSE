@@ -329,3 +329,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `pickMoveGizmoAxis()`: one screen-space projected-segment picker for all 3 world axes, constrained via mask by what the author's schema can persist. RTS now uses it for X/Z; FPS now uses it for X/Y/Z. FPS visible axes and hit tests both use the actual source's `readDocumentTransform` pivot; group gizmo remains on primary selected source.
 - FPS clicking a move handle preserves the selection while dragging; X/Z constrained movement uses ground ray differences, Y uses vertical screen delta, and batch translation is shared with RTS. Snap, local/world gizmo axes, Rotate/Scale, true geometry outline and runtime component writeback remain pending.
 - Verification: source reviewed and committed; **no successful macOS build, automated UI test or interactive gizmo test yet**. User should test Y handle, perspective/orthographic camera pitches, group translation/Undo and handle occlusion.
+
+### 2026-11-17 — Move gizmo projected-handle regression test
+- Commits: `92dc34c3` (`tests/editor/scene_gizmo_tests.cpp`), `832d2d64` (`CMakeLists.txt`).
+- Registered CTest `editor_scene_gizmo`, checking projected axis handle hit selection, missing/disabled axes, invalid extent and offscreen cursor rejection. This exercises common mathematical gizmo picking, not full mouse gesture/Undo.
+- Verification: committed; **NOT COMPILED/RUN**. Build with `cmake --build build-metal --target aiverse_editor_scene_gizmo_tests -j 8` and run `ctest --test-dir build-metal -R editor_scene_gizmo --output-on-failure`.
