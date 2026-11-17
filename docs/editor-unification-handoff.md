@@ -517,3 +517,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `345d809` replaces an invalid full `std::vector<Projectile>` equality check (Projectile has no `operator==`) with size and ID verification; other payload equality is enforced by full deterministic checksum already checked every tick.
 - This is an **unverified test**, not proof that FPS gameplay now directly uses ECS in combat systems. Actor and dynamic ECS payloads are authoritative at tick barriers; gameplay uses State vectors as a compatibility workspace until later direct ECS system migration.
 - Next: validate compilation/tests, add Inspector coverage for full runtime components, then migrate one combat/AI system at a time.
+
+### 2026-11-18 — FPS ECS authority migration: stage K (Inspector runtime fields)
+- Commit `a160612` in `apps/editor/EditorFps.cpp`: shared FPS Runtime snapshot now includes actual `ActorRuntime` fields (kills, shots, hits, weapon index, reload/fire timers, input sequence, vehicle, etc.) alongside legacy ActorIdentity/Transform/Vitals projections; projectile/loot/vehicle runtime payload component cards show source order and additional authoritative fields if present. The existing EditorRuntimeEntityProvider/Hierarchy stable Entity IDs and selection logic remain unchanged.
+- UI is read-only; mutations must go through ECS-authoritative gameplay APIs rather than direct editor-side mutation of simulation memory. For projects without `fps.ecsAuthority`, full runtime components are absent and existing mirror panels continue to work.
+- Verification: source code committed, no Metal editor visual test or native build yet.
