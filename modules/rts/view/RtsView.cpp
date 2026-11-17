@@ -508,6 +508,13 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         }
     if (const Surface* surf = gs.surface.get()) { sceneFromSphere(sim, *m, *surf, out, alpha, viewer); return; }   // RtsPlanetView.cpp
     const Driving* drivingCars = m->driving() && m->driving()->active() ? m->driving() : nullptr;
+    // The view configuration is shared by every entity of a type. Avoid
+    // repeating JSON object lookups for thousands of identical scenery types.
+    std::vector<uint8_t> territoryTeamTypes(R.types.size(), 0);
+    for (size_t type = 0; type < R.types.size(); ++type)
+        territoryTeamTypes[type] = uint8_t(R.types[type].view.getBool("teamFromTerritory", false));
+    auto* arsenal = m->arsenal();
+    auto* topDown = m->topDown();
     // radar / sonar contacts of the viewer outside its sight: drawn as blips (RtsSensors.h)
     std::vector<Entity> blips;
     if (Sensors* sn = m->sensors(); sn && viewer != 0) { blips = sn->blips(sim, viewer); std::sort(blips.begin(), blips.end(), [](Entity a, Entity b) { return a.index < b.index; }); }
@@ -515,10 +522,13 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
         if (u.flags & kUnitInCargo) return;   // inside a transport (agent-mech)
         SceneObject so;
         so.entity = e; so.type = u.type; so.owner = o.player;
-        if(auto*arsenal=m->arsenal())if(auto*hand=arsenal->hand(sim,o.player))if(hand->hero==e&&hand->current>=0&&size_t(hand->current)<arsenal->rules().weapons.size()){
-            so.heldWeapon=arsenal->rules().weapons[hand->current].weapon;
-            if(auto*td=m->topDown())if(auto*pilots=td->store(sim))if(o.player<pilots->pilots.size())so.weaponAim=pilots->pilots[o.player].input.aim||pilots->pilots[o.player].input.fire;
-        }
+        if (arsenal) if (auto* hand = arsenal->hand(sim, o.player))
+            if (hand->hero == e && hand->current >= 0 && size_t(hand->current) < arsenal->rules().weapons.size()) {
+                so.heldWeapon = arsenal->rules().weapons[hand->current].weapon;
+                if (topDown) if (auto* pilots = topDown->store(sim))
+                    if (o.player < pilots->pilots.size())
+                        so.weaponAim = pilots->pilots[o.player].input.aim || pilots->pilots[o.player].input.fire;
+            }
         float3 a = toF(t.prevPos), b = toF(t.pos);
         so.pos = lerp(a, b, alpha);
         so.facing = toF(u.facing);
@@ -538,7 +548,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
             }
         }
         const UnitType& ut = R.types[u.type];
-        if (ut.view.getBool("teamFromTerritory", false)) {
+        if (territoryTeamTypes[u.type]) {
             const int x = int(t.pos.x.floorInt()), z = int(t.pos.z.floorInt());
             if (gs.grid.inside(x, z)) {
                 const size_t cell = size_t(gs.grid.index(x, z));
