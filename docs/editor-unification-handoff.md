@@ -415,3 +415,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Overrides are available **only for a single authored map-backed ECS entity in edit mode**; runtime entities, multi-selection, stats/rules sections remain guarded/read-only. Document source is an editing persistence target, not used to fake ECS component presence. Project-specific trusted C++ drawers must handle their own validation and undo semantics.
 - Not an exported stable C ABI or a hot-reloadable editor plugin: this is an in-process C++ drawer registry. Native gameplay modules should expose data via `NativeModule::inspectComponents`, and use a project/editor bridge for ImGui-specific custom drawers if needed.
 - Verification: source-level review and commit only; macOS build and runtime registration tests **NOT RUN**. Test component override, per-field override, default fallback, project change and undo.
+
+### 2026-11-18 — Regression test for selection-mask GPU pipeline depth safety
+- Commit `6d5f1f68` (`tests/tests.cpp`): added `selection_outline_mask_pipeline_preserves_scene_depth` using existing `entityfxtest::RecordingDevice`.
+- The test inspects the pipeline created by `Renderer3D::initSelectionOutline()` and asserts it is RGBA8, color-writing, depth-tested, **depth-write disabled**. It is part of the existing `aiverse_tests` executable, so it runs through the standard CTest suite when executed.
+- Source-level checks were performed, but **the test and macOS editor build have NOT been executed** in this environment. This test validates a pipeline descriptor, not Metal shader compilation, mask occlusion, or final visual quality.
