@@ -189,6 +189,16 @@ if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
 endif()
 
 add_subdirectory(libraries)
+# Prove public shared mechanics can execute in unrelated native genre hosts.
+# The target uses AIVERSE::libraries, never aiverse_game or aiverse_fps.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_cross_genre_mechanics_test
+        tests/ecs_cross_genre_mechanics_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_mechanics_test PRIVATE
+        aiverse_engine AIVERSE::libraries)
+    add_test(NAME ecs_cross_genre_mechanics_test
+        COMMAND aiverse_ecs_cross_genre_mechanics_test)
+endif()
 include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
 file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsMech*.cpp)
