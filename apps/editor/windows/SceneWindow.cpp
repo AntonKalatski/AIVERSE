@@ -26,6 +26,8 @@ public:
     ImGuiWindowFlags flags() const override { return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse; }
 
     void draw(Editor& ed) override {
+        const bool traceScene = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
+        const auto sceneStart = std::chrono::steady_clock::now();
         if(ed.ws().project.isFps()) {
             if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
             ImGui::SameLine();ImGui::TextDisabled("%s",genreText(ed.ws(),"fps.editor.camera").c_str());
@@ -41,6 +43,7 @@ public:
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
         // image first (like the Game window): the screen overlays renderScene adds (bars, labels) stay on top of it
         vp_.image(ed.device(), avail.x, avail.y);
+        const auto afterViewport = std::chrono::steady_clock::now();
         // Diagnostic rendering is scoped to Scene, never leaked into the Game tab.
         auto& renderer = ed.renderer();
         renderer.setStudioDebugMode(studioDebugMode_);
@@ -76,6 +79,7 @@ public:
         } else {
             ed.renderScene(vp_, ed.sceneCam, !ed.playing());
         }
+        const auto afterRenderScene = std::chrono::steady_clock::now();
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
         renderer.setProfiling(false);
@@ -84,6 +88,20 @@ public:
         renderer.setModelCullingEnabled(true);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
+        if (traceScene) {
+            static unsigned samples = 0;
+            static double totals[3] = {};
+            const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+            totals[0] += ms(sceneStart, afterViewport);
+            totals[1] += ms(afterViewport, afterRenderScene);
+            totals[2] += ms(sceneStart, std::chrono::steady_clock::now());
+            if (++samples == 120) {
+                std::fprintf(stderr, "[scene-frame] avg/120 viewport=%.3f ms renderScene=%.3f ms total-before-input=%.3f ms\n",
+                             totals[0] / samples, totals[1] / samples, totals[2] / samples);
+                samples = 0;
+                for (double& value : totals) value = 0.0;
+            }
+        }
         if(ed.ws().project.isFps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
