@@ -1272,16 +1272,12 @@ void Renderer3D::renderModels(int phase) {
         identicalPointers.emplace(materialKey, id);
         materialGroup[i] = id;
     }
-    // Group compatible opaque/shadow geometry by shared GPU buffers before
-    // individual primitives. Distinct meshes with the same GPU material can
-    // then share one MDI submission instead of being separated by prim pointers.
-    // Metal benefits from this ordering; keep the prior ordering elsewhere
-    // (notably Vulkan's nonzero-base-vertex indirect fallback).
-    // AIVERSE_MDI_GEOMETRY_SORT=0 restores primitive-first order for A/B tests.
+    // Sort by shared GPU buffers only when explicitly requested. It helps
+    // heterogeneous pooled meshes once MDI is active, but is wasted work when
+    // MDI is unavailable (and can regress ordinary instancing performance).
     const char* geometrySortSetting = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
-    const bool geometrySortRequested = geometrySortSetting
-        ? std::strcmp(geometrySortSetting, "1") == 0
-        : dev_->info().backend == gfx::Backend::Metal;
+    const bool geometrySortRequested = geometrySortSetting &&
+        std::strcmp(geometrySortSetting, "1") == 0;
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
         !gpuAdaptiveInstancingFallback_ && phase <= 1 &&
         geometrySortRequested;
@@ -1335,6 +1331,23 @@ void Renderer3D::renderModels(int phase) {
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
         dev_->supportsMultiDrawIndirect() && phase <= 1;
     const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
+    if (traceModelPass) {
+        // candidates=0 is otherwise ambiguous: it could mean no GPU MDI
+        // support, an explicit safety toggle, or an adaptive ICB fallback.
+        // Report the gating conditions rather than treating a sorting A/B
+        // comparison as evidence of improved multi-draw submission.
+        static unsigned gateSamples[5] = {};
+        if (++gateSamples[size_t(phase)] == 120) {
+            std::fprintf(stderr,
+                "[model-mdi-gate] phase=%d allowed=%d supported=%d enabled=%d adaptive-fallback=%d render-safe=%d indirect-off=%d debug-drawcalls=%d geometry-sort=%d min-commands=%zu order=%zu\n",
+                phase, int(allowIndirect), int(dev_->supportsMultiDrawIndirect()),
+                int(modelMultiDrawEnabled_), int(gpuAdaptiveInstancingFallback_),
+                int(renderSafe && std::strcmp(renderSafe, "1") == 0),
+                int(indirectToggle && std::strcmp(indirectToggle, "off") == 0),
+                int(drawCallDebug_), int(mdiGeometrySort), minIndirectCommands, order_.size());
+            gateSamples[size_t(phase)] = 0;
+        }
+    }
     if (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
         !drawCallDebug_ && gpuModelCommandsReady_) {
         for (auto& group : gpuEncodedBatches_) {
