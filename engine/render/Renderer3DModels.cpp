@@ -804,19 +804,30 @@ void Renderer3D::renderModels(int phase) {
         return x.paletteMaterials == y.paletteMaterials && x.prim == y.prim && sameGpuMaterial(x, y) && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
                (x.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal)) == (y.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal));
     };
+    // Invariant across all model batches in this pass. Avoid environment
+    // queries and backend capability dispatch for every small group.
+    const char* renderSafe = std::getenv("AIVERSE_RENDER_SAFE");
+    const char* indirectToggle = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+    const bool allowIndirect = modelMultiDrawEnabled_ &&
+        !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
+        !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
+        dev_->supportsMultiDrawIndirect() && phase <= 1;
+    const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
     for (size_t i = 0; i < order_.size();) {
         // Try MDI before conventional instancing, only when every command can
         // legally inherit the SAME uniforms/textures and rigid transform.
         // Draw-call colour mode uses one colour per indirect submission.
-        const char* renderSafe = std::getenv("AIVERSE_RENDER_SAFE");
-        const char* indirectToggle = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
-        const bool allowIndirect = !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
-                                   !(indirectToggle && std::strcmp(indirectToggle, "off") == 0);
-        if (modelMultiDrawEnabled_ && allowIndirect && dev_->supportsMultiDrawIndirect() && phase <= 1) {
+        if (allowIndirect && order_.size() - i >= minIndirectCommands) {
             const auto scanBegin = std::chrono::steady_clock::now();
             ++mdiCandidates;
-            const auto& first = modelItems_[order_[i]];
-            auto compatible = [&](const ModelItem& y) {
+            const uint32_t firstIndex = order_[i];
+            const auto& first = modelItems_[firstIndex];
+            const bool firstEligible = !first.model->geometry &&
+                first.gi == 0 && !first.materialRole && !first.shadowRole &&
+                !first.baked && first.joints < 0 && first.morph < 0 &&
+                !first.paletteMaterials && first.tint.w >= .99f;
+            auto compatible = [&](uint32_t candidateIndex) {
+                const auto& y = modelItems_[candidateIndex];
                 // Each indirect command selects its own world/tint/team/etc
                 // through firstInstance into the shared instance uniform array.
                 // Pipeline, geometry buffers, textures and material uniforms
@@ -835,14 +846,15 @@ void Renderer3D::renderModels(int phase) {
                        (y.lodThreshold < 1 || y.lodInvert) &&
                     first.flags == y.flags &&
                     first.tint.w >= .99f && y.tint.w >= .99f &&
-                    equivalentGpuMaterial(*first.model, *first.mat, *y.model, *y.mat);
+                    materialGroup[firstIndex] == materialGroup[candidateIndex];
             };
             // Do not reorder translucent parts or geometry-cluster selections.
-            if (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
-                                !transparentItem(first.flags))) {
+            if (firstEligible &&
+                (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
+                                !transparentItem(first.flags)))) {
                 size_t end = i + 1;
                 while (end < order_.size() && end - i < size_t(instanceLimit_) &&
-                       compatible(modelItems_[order_[end]])) ++end;
+                       compatible(order_[end])) ++end;
                 if (traceModelPass)
                     mdiScanMs += std::chrono::duration<double, std::milli>(
                         std::chrono::steady_clock::now() - scanBegin).count();
@@ -850,12 +862,11 @@ void Renderer3D::renderModels(int phase) {
                     // Count consecutive primitive runs before allocating a command
                     // vector or preparing a pipeline. Repeated instances of one
                     // primitive are only ONE indirect command.
-                    const size_t minCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
                     size_t runs = 1;
-                    for (size_t k = i + 1; k < end && runs < minCommands; ++k)
+                    for (size_t k = i + 1; k < end && runs < minIndirectCommands; ++k)
                         if (modelItems_[order_[k - 1]].prim != modelItems_[order_[k]].prim)
                             ++runs;
-                    if (runs >= minCommands) {
+                    if (runs >= minIndirectCommands) {
                         const auto attemptBegin = std::chrono::steady_clock::now();
                         const bool accepted = drawModelIndirectBatch(
                             order_.data() + i, uint32_t(end - i), phase);
