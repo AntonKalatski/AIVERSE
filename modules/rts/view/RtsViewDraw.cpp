@@ -83,6 +83,9 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     if (o.parented && !placement) base = o.parentFrame * mat4::scale({k, k * (t.structure ? grow : 1.f), k});
     if (placement) base = *placement * base;   // flat maps: untouched (bit-identical)
     ModelDraw d;
+    // Stable identity for persistent scene staging; editor placements,
+    // previews and attachments use the existing transient draw path.
+    if (o.entity.valid()) d.persistentId = o.entity.packed();
     d.model = show->model;
     if (!tintOverride && (t.id.starts_with("city_interior_") || t.id == "shop_roof")) d.flags |= kDrawActorReveal;
     d.geometry = show->geometry;
@@ -171,6 +174,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
             if (at.when && !(state & at.when)) continue;
             if (at.carry != -2 && !(o.carry > 0 && (at.carry == -1 || at.carry == o.carryRes))) continue;
             ModelDraw ad = d;
+            ad.persistentId = 0; // attachments need distinct stable IDs
             ad.model = at.model;
             ad.geometry = {};
             ad.materials = &at.materials;
