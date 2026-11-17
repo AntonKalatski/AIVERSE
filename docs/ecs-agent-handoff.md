@@ -514,6 +514,28 @@ Do not merge to main until latest CI tests and real Mac Studio RTS/FPS parity ar
 - `48a87ca`: fixed C++ string escapes in `tests/fps/tests.cpp` for `FPS_COMBAT_PARITY_HASH`, `FPS_MOTOR_BATCHES`, `FPS_MOTOR_COMMITS` and `FPS_MOTOR_TICKS_MS`. They previously contained escaped backslash characters followed by `n`, which would print literal `\\n` and make two parity records run together. All five FPS fixture outputs now use actual C++ newline escapes.
 - This was detected by inspecting source character counts for each output format and corrected before a native run. Latest suite status is **not yet verified**.
 
+## 2026-11-18 — COW transaction safety and FPS motor allocation hardening
+
+Further changes committed in PR #8 after the earlier page-COW stage:
+
+- `b8a0f06`: `World::enableCowSnapshots` now uses a staged, all-or-nothing conversion of *all* component pools, and detaches shared resources before committing the switch. Any throwing component copy or resource clone leaves the old mode usable, without mixed paged/contiguous pool state.
+- `f818952`: when leaving COW mode, copies only genuinely shared singleton resources (ownership checked against the original list before staging) rather than needlessly copying every resource.
+- `0fb3d6a`, `1db43f1`: expanded `ecs_cow_exception_test.cpp` to cover multi-pool conversion failure, and shared resource exception during disable, with snapshot isolation checks.
+- `b9920c3`, `f43be33`: fixed and tested phantom sparse-set membership on a throwing component append in legacy contiguous storage. Sparse map membership is now committed only after the component and dense Entity columns append.
+- `d4886a8`: FPS motor speculative snapshots now retain only state needed by `moveActor` (pose/velocity/input/lifecycle and stance flags), instead of deep copying all Actor bags/melee metadata every tick. At canonical actor-order commit, compare those relevant inputs; recompute sequentially on mismatch. This is still an opt-in movement stage, not fully parallel damage/AI.
+- Latest GitHub workflow runs for recent commits are **queued**. There is no confirmed latest CI PASS, TSan PASS or real FPS/RTS parity result for these new changes.
+
+Validation remains mandatory:
+```sh
+git switch feature/ecs-architecture-benchmarks && git pull --ff-only
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+bash tests/run_ecs_experiment_suite.sh --bench
+bash tests/run_ecs_gameplay_compare.sh --full
+```
+
+Known remaining scope: page COW covers ordinary ECS components, but snapshot allocator vectors and the monolithic FPS State resource are not page-granular. COW misuse through retained raw pointers is not statically prevented. Full FPS AI/combat/projectile parallelism requires deterministic gather/commit refactors. Neither opt-in should be default until actual verified gameplay and race checks.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
