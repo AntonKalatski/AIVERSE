@@ -7,6 +7,7 @@
 #include "engine/render/PersistentGpuScene.h"
 #include "engine/render/PersistentGpuSceneUpload.h"
 #include "engine/render/GpuSceneDrawCommands.h"
+#include "engine/render/GpuIcbPolicy.h"
 #include "engine/render/ModelShaders.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
@@ -397,6 +398,20 @@ int main() {
             "#define INSTANCE gpuInstances[iid]") != nullptr);
         CHECK(std::strstr(shaders::kModelMSL,
             "#define INSTANCE u.inst[iid]") != nullptr);
+    }
+
+    // Adaptive ICB is a three-way policy, not a disguised CPU MDI fallback:
+    // tiny groups select direct instancing before running GPU compute.
+    {
+        CHECK(gpuIcbMinimumCommands(67, 8, true) == 16);
+        CHECK(gpuIcbMinimumCommands(255, 2, true) == 16);
+        CHECK(gpuIcbMinimumCommands(256, 2, true) == 8);
+        CHECK(gpuIcbMinimumCommands(512, 20, true) == 20);
+        CHECK(gpuIcbMinimumCommands(67, 8, false) == 8);
+        CHECK(gpuIcbMinimumCommands(67, 1, false) == 2);
+        CHECK(gpuIcbShouldFallbackToInstancing(true, 0));
+        CHECK(!gpuIcbShouldFallbackToInstancing(true, 1));
+        CHECK(!gpuIcbShouldFallbackToInstancing(false, 0));
     }
 
     std::puts("engine model batching policy: PASS");
