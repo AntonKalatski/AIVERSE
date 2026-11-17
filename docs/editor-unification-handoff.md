@@ -473,3 +473,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Legacy `State` save v9, history/replay, network snapshots, editor runtime views remain unchanged with opt-in OFF. Deserialization already calls syncActorEntities to rebuild ECS ActorRuntime from save v9; SimSnapshot includes both since stored in World.
 - Next stage: consistency and rollback parity tests, then migrate one system at a time to query/mutate ActorRuntime directly, remove mirror dependency, then migrate other object types. Validate with `fps.ecsAuthority=true` side-by-side checksums against old mode.
 - **Verification:** not built/run. Keep this commit isolated from main until tested.
+
+### 2026-11-18 — FPS ECS authority migration: stage C (parity regression)
+- Commit `01055b4` adds `ecsActorAuthorityParity` to `tests/fps/tests.cpp`, invoked by the existing `aiverse_fps_tests` runner. Runs old vector-authoritative vs `fps.ecsAuthority=true` under the same 160-tick command stream, compares authoritative ECS ActorRuntime full Actor payload with the legacy workspace, checks legacy v9 save/reload and SimSnapshot rollback continuation, and exercises direct ECS mutation across a tick barrier.
+- **Important finding:** `Module::setup` originally hashes the entire rules JSON into `contentHash_`. The opt-in implementation flag would incorrectly change checksum/save compatibility even when gameplay is byte-identical. Next commit must exclude only `fps.ecsAuthority` from the gameplay content hash, while preserving all actual game rules. This is a deterministic compatibility fix.
+- Validation pending; the new test has not run on Mac Studio or CI and will expose any state divergence.
