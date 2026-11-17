@@ -53,15 +53,40 @@ public:
     const char* dockArea() const override { return "left"; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            if(ImGui::TreeNodeEx(genreText(ed.ws(),"fps.settings.geometry").c_str(),ImGuiTreeNodeFlags_DefaultOpen)) {
-                for(const auto& box:ed.doc().data.fps["colliders"].items()) {
-                    auto label=genreText(ed.ws(),"fps.settings.collider")+" #"+std::to_string(box.getInt("id"));
-                    if(ImGui::Selectable(label.c_str())) {
-                        ed.sceneCam.target={float((box["min"][0].toDouble()+box["max"][0].toDouble())/2),float(box["min"][1].toDouble()),float((box["min"][2].toDouble()+box["max"][2].toDouble())/2)};
-                        ed.sceneCam.distance=25;
+        if (ed.ws().project.isFps()) {
+            const auto& fps = ed.doc().data.fps;
+            ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
+            if (ImGui::TreeNodeEx("Colliders", ImGuiTreeNodeFlags_DefaultOpen)) {
+                size_t index = 0;
+                for (const auto& box : fps["colliders"].items()) {
+                    ImGui::PushID(int(index));
+                    const std::string label = "Box Collider #" + std::to_string(index + 1);
+                    if (ImGui::Selectable(label.c_str())) {
+                        ed.selectFpsSceneSource(false, index);
+                        const auto& lo = box["min"];
+                        const auto& hi = box["max"];
+                        if (lo.isArray() && hi.isArray() && lo.size() >= 3 && hi.size() >= 3)
+                            ed.sceneCam.target = {float((lo[0].toDouble()+hi[0].toDouble())*0.5),
+                                                  float((lo[1].toDouble()+hi[1].toDouble())*0.5),
+                                                  float((lo[2].toDouble()+hi[2].toDouble())*0.5)};
                     }
+                    ImGui::PopID();
+                    ++index;
+                }
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNodeEx("Spawn Points", ImGuiTreeNodeFlags_DefaultOpen)) {
+                size_t index = 0;
+                for (const auto& spawn : fps["spawns"].items()) {
+                    ImGui::PushID(int(index));
+                    const std::string label = "Spawn #" + std::to_string(index + 1);
+                    if (ImGui::Selectable(label.c_str())) {
+                        ed.selectFpsSceneSource(true, index);
+                        if (spawn.isArray() && spawn.size() >= 3)
+                            ed.sceneCam.target = {float(spawn[0].toDouble()), float(spawn[1].toDouble()), float(spawn[2].toDouble())};
+                    }
+                    ImGui::PopID();
+                    ++index;
                 }
                 ImGui::TreePop();
             }
