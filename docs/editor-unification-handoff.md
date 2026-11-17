@@ -711,3 +711,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS weapon launch, stage G (normative composition doc)
 - Commit `c458af0`: `docs/ecs-mechanic-composition.md` documents the complete public ECS `WeaponLaunch → ProjectileSpawn → Flight → Damage` component/system chain, order/barriers and native registration example. A single shared implementation works with any shooting Entity regardless of genre, with `AIVERSE::lib_ecs_weapon_launch` and `ecs_cross_genre_weapon_pipeline_test` as proof points.
 - **Explicit non-completeness:** published FPS/RTS gameplay still has original combat implementations. The generic pipeline is reusable in independent hosts but requires migration of existing engines, tuning and legacy save/network parity tests. No native test success reported yet.
+
+### 2026-11-18 — Universal ECS weapon launch, stage H (agent policy)
+- Commit `8421961`: `AGENTS.md` explicitly names the required shared shooting packages `AIVERSE::lib_ecs_weapon_launch`, `ecs-projectile-systems` and `ecs-impact-damage`. Agents must reuse the same ECS projectile trajectory, collision and damage stages for FPS, RTS, vehicle turrets, RPG spells, etc., and extend systems through composable components/policies. Do not create new genre-specific duplicate solvers.
+- The required cross-genre test cases are listed; published RTS/FPS save/rollback and real-game checksum migration remains a separate, unverified task.
