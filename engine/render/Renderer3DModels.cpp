@@ -593,6 +593,15 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
 // pipeline remains the automatic fallback on platforms lacking indirect draws.
 bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    // The Vulkan direct-draw path applies gpuBaseVertex as a vertex-buffer offset,
+    // whereas indexed indirect applies vertexOffset to the fetched vertex index.
+    // Until both paths use the same shader-visible vertex addressing convention,
+    // indirect draws with nonzero base vertices would read the wrong geometry.
+    // Preserve correctness by falling back to regular indexed draws for these models.
+    if (dev_->info().backend == gfx::Backend::Vulkan) {
+        for (uint32_t n = 0; n < count; ++n)
+            if (modelItems_[items[n]].model->gpuBaseVertex != 0) return false;
+    }
     std::vector<gfx::DrawIndexedIndirectCommand> commands;
     commands.reserve(count);
     uint64_t triangles = 0;
