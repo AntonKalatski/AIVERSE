@@ -1036,17 +1036,52 @@ struct DrawArgs {
 struct IcbContainer {
     command_buffer commands [[id(0)]];
 };
-struct Params { uint count, pad0, pad1, pad2; };
+struct Params { uint count, indexCapacity, pad0, pad1; };
 kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     device const uint* indices [[buffer(1)]],
                     device IcbContainer* container [[buffer(2)]],
                     device const uint* slots [[buffer(3)]],
-                    constant Params& params [[buffer(8)]],
+                    device const uchar* vertices [[buffer(4)]],
+                    device const uchar* instances [[buffer(5)]],
+                    device const uchar* uniform1 [[buffer(6)]],
+                    device const uchar* uniform2 [[buffer(7)]],
+                    device const uchar* uniform3 [[buffer(8)]],
+                    device const uchar* uniform4 [[buffer(9)]],
+                    device const uchar* uniform5 [[buffer(10)]],
+                    device const uchar* uniform6 [[buffer(11)]],
+                    device const uchar* uniform7 [[buffer(12)]],
+                    device const uchar* pbrArguments [[buffer(13)]],
+                    constant Params& params [[buffer(17)]],
                     uint tid [[thread_position_in_grid]]) {
     if (tid >= params.count) return;
     const DrawArgs args = generated[slots[tid]];
-    if (args.indexCount == 0 || args.instanceCount == 0) return;
+    // Generated draw commands are untrusted until bounded. Each GPU slot
+    // owns exactly one uniform record: multi-instance source commands would
+    // overrun that record and must fall back to the CPU renderer.
+    if (args.indexCount == 0 || args.instanceCount != 1 ||
+        args.firstIndex > params.indexCapacity ||
+        args.indexCount > params.indexCapacity - args.firstIndex) return;
     render_command command(container->commands, tid);
+    // Bind explicitly in the ICB. Inheriting buffers with a zero binding
+    // capacity previously triggered an AGX executeCommandsInBuffer crash.
+    command.set_vertex_buffer(vertices, 0);
+    command.set_vertex_buffer(instances, 1);
+    command.set_vertex_buffer(uniform1, 2);
+    command.set_vertex_buffer(uniform2, 3);
+    command.set_vertex_buffer(uniform3, 4);
+    command.set_vertex_buffer(uniform4, 5);
+    command.set_vertex_buffer(uniform5, 6);
+    command.set_vertex_buffer(uniform6, 7);
+    command.set_vertex_buffer(uniform7, 8);
+    command.set_fragment_buffer(uniform1, 2);
+    command.set_fragment_buffer(uniform2, 3);
+    command.set_fragment_buffer(uniform3, 4);
+    command.set_fragment_buffer(uniform4, 5);
+    command.set_fragment_buffer(uniform5, 6);
+    command.set_fragment_buffer(uniform6, 7);
+    // Fragment slot 8 is reserved for the PBR argument-buffer variant.
+    // U7 is still available at vertex slot 8.
+    command.set_fragment_buffer(pbrArguments, 8);
     command.draw_indexed_primitives(primitive_type::triangle,
                                     args.indexCount,
                                     indices + args.firstIndex,
@@ -1083,10 +1118,10 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             MTLIndirectCommandBufferDescriptor* descriptor =
                 [MTLIndirectCommandBufferDescriptor new];
             descriptor.commandTypes = MTLIndirectCommandTypeDrawIndexed;
-            descriptor.inheritBuffers = YES;
+            descriptor.inheritBuffers = NO;
             descriptor.inheritPipelineState = YES;
-            descriptor.maxVertexBufferBindCount = 0;
-            descriptor.maxFragmentBufferBindCount = 0;
+            descriptor.maxVertexBufferBindCount = 9;
+            descriptor.maxFragmentBufferBindCount = 9;
             resources.icb =
                 [device_ newIndirectCommandBufferWithDescriptor:descriptor
                                                 maxCommandCount:count
@@ -1106,6 +1141,21 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             resources.instanceBuffer = [device_ newBufferWithLength:instanceBytes
                                              options:MTLResourceStorageModeShared];
         if (!resources.instanceBuffer || !resources.instanceBuffer.contents) return 0;
+        // The GPU encoder references persistent uniform allocations, not
+        // transient parent setBytes or parent buffer inheritance. The values
+        // are filled from the correct render pass at execution time.
+        constexpr size_t kGpuIcbUniformCapacity = 4096;
+        for (int slot = 1; slot < 8; ++slot) {
+            if (!resources.uniforms[slot] ||
+                resources.uniforms[slot].length < kGpuIcbUniformCapacity)
+                resources.uniforms[slot] = [device_ newBufferWithLength:
+                    kGpuIcbUniformCapacity options:MTLResourceStorageModeShared];
+            if (!resources.uniforms[slot]) return 0;
+        }
+        if (!resources.pbrArgs || resources.pbrArgs.length < kGpuIcbUniformCapacity)
+            resources.pbrArgs = [device_ newBufferWithLength:
+                kGpuIcbUniformCapacity options:MTLResourceStorageModeShared];
+        if (!resources.pbrArgs) return 0;
         // The same submission index in a recycled frame slot typically
         // contains the same static instance payload. Avoid rewriting it.
         if (resources.instanceValidBytes != instanceBytes ||
@@ -1135,8 +1185,19 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         [encoder setBuffer:current(*indexData) offset:0 atIndex:1];
         [encoder setBuffer:resources.argBuffer offset:0 atIndex:2];
         [encoder setBuffer:resources.slots offset:0 atIndex:3];
-        struct Params { uint32_t count, padding[3]; } params{count, {0,0,0}};
-        [encoder setBytes:&params length:sizeof(params) atIndex:8];
+        // The model renderer supplies both geometry buffers from the same
+        // pooled resource. Each indexed command selects its local firstIndex.
+        [encoder setBuffer:current(*indexData) offset:0 atIndex:4];
+        [encoder setBuffer:resources.instanceBuffer offset:0 atIndex:5];
+        for (int slot = 1; slot < 8; ++slot)
+            [encoder setBuffer:resources.uniforms[slot] offset:0
+                      atIndex:NSUInteger(slot + 5)];
+        [encoder setBuffer:resources.pbrArgs offset:0 atIndex:13];
+        struct Params { uint32_t count, indexCapacity, padding[2]; };
+        const size_t indexCount = indexData->size / sizeof(uint32_t);
+        if (indexCount > UINT32_MAX) return 0;
+        Params params{count, uint32_t(indexCount), {0,0}};
+        [encoder setBytes:&params length:sizeof(params) atIndex:17];
         [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
         [encoder dispatchThreadgroups:MTLSizeMake((count + 63u) / 64u, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(64,1,1)];
@@ -1154,7 +1215,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         auto reject = [this](const char* cause) {
             error_ = std::string("GPU-encoded ICB execute rejected: ") + cause;
             if (std::getenv("AIVERSE_ICB_TRACE"))
-                std::fprintf(stderr, "[metal-gpu-icb] %s\\n", error_.c_str());
+                std::fprintf(stderr, "[metal-gpu-icb] %s\n", error_.c_str());
             return false;
         };
         if (!enc_ || token == 0) return reject("render encoder missing or token zero");
@@ -1166,6 +1227,10 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // The existing PBR ICB variant consumes these resources through a
         // fragment argument buffer at index 8 instead.
         const bool usePbrVariant = !pipeline->state.supportIndirectCommandBuffers;
+        // GPU command encoder uses uint32 index addresses. A future uint16
+        // specialization must be explicit rather than reinterpret indices.
+        if (pipeline->desc.indexType != IndexType::UInt32)
+            return reject("GPU ICB requires uint32 indices");
         id<MTLRenderPipelineState> icbPipeline =
             usePbrVariant ? pipeline->icbPbrState : pipeline->state;
         if (!icbPipeline || !icbPipeline.supportIndirectCommandBuffers)
@@ -1190,21 +1255,16 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // U0 is a device-indexed persistent GPU instance buffer. Material and
         // frame uniform blocks U1..U7 remain explicitly inherited snapshots.
         if (!resources.instanceBuffer) return reject("GPU instance buffer missing");
-        [enc_ setVertexBuffer:resources.instanceBuffer offset:0 atIndex:1];
         declareIndirectRead(resources.instanceBuffer, MTLRenderStageVertex);
         for (int slot = 1; slot < 8; ++slot) {
             const auto& snapshot = indirectUniformSnapshots_[slot];
-            if (snapshot.empty()) continue;
-            if (!resources.uniforms[slot] ||
-                resources.uniforms[slot].length < snapshot.size())
-                resources.uniforms[slot] = [device_ newBufferWithLength:snapshot.size()
-                                            options:MTLResourceStorageModeShared];
             id<MTLBuffer> stable = resources.uniforms[slot];
-            if (!stable || !stable.contents)
-                return reject("uniform snapshot allocation failed");
-            std::memcpy(stable.contents, snapshot.data(), snapshot.size());
-            [enc_ setVertexBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
-            [enc_ setFragmentBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
+            if (!stable || !stable.contents || snapshot.size() > stable.length)
+                return reject("uniform snapshot exceeds encoded GPU ICB buffer");
+            // The command was GPU-encoded to refer to this buffer. Never
+            // replace it after encoding: only update the existing contents.
+            if (!snapshot.empty())
+                std::memcpy(stable.contents, snapshot.data(), snapshot.size());
             declareIndirectRead(stable, MTLRenderStageVertex | MTLRenderStageFragment);
         }
         if (usePbrVariant) {
@@ -1215,11 +1275,10 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot])
                     return reject("PBR ICB required texture or sampler not bound");
             const NSUInteger size = pipeline->icbPbrEncoder.encodedLength;
+            // The compute kernel already recorded this exact buffer pointer.
+            // Growing/replacing it here would make the encoded ICB stale.
             if (!resources.pbrArgs || resources.pbrArgs.length < size)
-                resources.pbrArgs = [device_ newBufferWithLength:size
-                                         options:MTLResourceStorageModeShared];
-            if (!resources.pbrArgs)
-                return reject("PBR ICB argument buffer allocation failed");
+                return reject("PBR ICB argument buffer exceeds encoded capacity");
             [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
             for (int slot : pbrSlots) {
                 [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
@@ -1228,9 +1287,6 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                                                  atIndex:NSUInteger(slot * 2 + 1)];
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
             }
-            // Bind after U0..U7 snapshots: PBR argument slot 8 must not be
-            // accidentally replaced by an old U7 uniform snapshot.
-            [enc_ setFragmentBuffer:resources.pbrArgs offset:0 atIndex:8];
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
         }
