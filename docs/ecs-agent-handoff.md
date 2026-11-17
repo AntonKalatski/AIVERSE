@@ -626,3 +626,13 @@ This coordination rule supersedes earlier suggestions in this document to direct
 ## Operating rule for the next agent
 
 Work on the current feature branch and existing PR #8. Do not merge to main without explicit approval and full verification. Every implementation step must update `docs/ecs-agent-handoff.md` in the same branch. Report specific confirmed outcomes separately from assumptions.
+
+
+## Cross-branch integration into universal Editor PR #7 (2026-11-18)
+
+- Original source snapshot: `feature/ecs-architecture-benchmarks` commit `b75b873b1b2091a4a4a9bb386d39f3237f5d2585`. It remains independent; **PR #8 was NOT merged into main**.
+- Git blob-exact core and experiments/test import commit in PR #7: `f4cf94d1` (42 files). CMake test and off-by-default RTS experiment configuration: `5866850a`.
+- FPS experimental motor planning merged alongside ongoing FPS ECS actor mirror, rather than replacing either implementation: `3cf9aee4`, `48fae9dd`, `a272d1c4`. Existing FPS save v9 and synchronous gameplay authority preserved.
+- Ported RTS opt-in preprocessing, headless COW flag, FPS comparative tests, and Scene Hierarchy/WorldInspect support, with intentional overlap resolution. See `docs/editor-unification-handoff.md` for exact commit list and audit.
+- The opt-in ECS mechanisms remain **unverified on the integrated branch**. Latest GitHub Actions for `e2c12d0d` were all queued (CI, Studio validation and ECS experiments). Do not enable FPS/RTS experimental parallelism by default or call a COW/rollback optimization production-safe without real builds, replay parity, sanitizer, and gameplay regression checks.
+- Two branches may still receive independent updates. Future cherry-picks should compare source blob histories and resolve overlapping FPS/editor changes manually; never overwrite the universal Editor's runtime entity provider or `syncActorEntities` with a stale FPS `FpsModule` copy.
