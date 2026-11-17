@@ -41,6 +41,23 @@ bool disabled() {
            (e && (std::string(e) == "off" || std::string(e) == "0"));
 }
 } // namespace
+GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
+    GeometryPoolStats stats;
+    std::lock_guard lock(poolMutex);
+    const auto iter = pools.find(&dev);
+    if (iter == pools.end()) return stats;
+    for (const auto& weak : iter->second) {
+        const auto page = weak.lock();
+        if (!page) continue;
+        ++stats.pages;
+        stats.allocatedBytes += page->capacity;
+        stats.occupiedBytes += page->vertexEnd + (page->capacity - page->indexBegin);
+        const long owners = page.use_count() - 1; // exclude this temporary lock
+        if (owners > 0) stats.liveModels += size_t(owners);
+    }
+    return stats;
+}
+
 bool globalGeometryPoolingEnabled() { return !disabled(); }
 void setGlobalGeometryPoolingEnabled(bool enabled) { poolEnabled.store(enabled, std::memory_order_relaxed); }
 
