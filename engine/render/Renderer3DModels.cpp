@@ -965,7 +965,7 @@ void Renderer3D::prepareGpuModelDraws() {
     const uint32_t effectiveMinimum = gpuIcbMinimumCommands(
         gpuModelEligible_, minGpuIcbCommands, adaptiveGpuIcb);
     if (adaptiveGpuIcb && gpuIcb && modelInstancingEnabled_ &&
-        dev_->supportsMultiDrawIndirect()) {
+        dev_->supportsGpuEncodedIcb()) {
         // First eliminate impossible groups using only resource handles and
         // draw flags. This avoids hashing material data when each compatible
         // geometry pool has fewer objects than the ICB threshold.
@@ -1048,10 +1048,13 @@ void Renderer3D::prepareGpuModelDraws() {
     // The original single-draw experiment can still be tested separately,
     // but adaptive mode must never pay its compute cost when no ICB group
     // is large enough to justify GPU execution.
-    if (!gpuIcb || !dev_->supportsMultiDrawIndirect()) {
+    if (!gpuIcb) {
         if (!adaptiveGpuIcb) prepareGpuCommands();
         return;
     }
+    // Requesting GPU ICB without the explicit safety gate falls back
+    // directly to CPU instancing/MDI, not extra GPU single-draw compute.
+    if (!dev_->supportsGpuEncodedIcb()) return;
     if (!modelInstancingEnabled_) return;
 
     // Pooling means different Model/Material objects can share the same GPU

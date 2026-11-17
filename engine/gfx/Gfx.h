@@ -284,6 +284,9 @@ public:
         (void)token; return false;
     }
     virtual bool supportsMultiDrawIndirect() const { return false; }
+    // GPU-authored ICB is a separate, higher-risk feature. A backend may
+    // support CPU-encoded multi-draw without allowing GPU command encoding.
+    virtual bool supportsGpuEncodedIcb() const { return false; }
     virtual bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                                      uint32_t drawCount, uint32_t stride = sizeof(DrawIndexedIndirectCommand)) {
         (void)commands; (void)offset; (void)drawCount; (void)stride; return false;

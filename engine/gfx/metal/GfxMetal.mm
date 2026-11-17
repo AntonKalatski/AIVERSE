@@ -965,18 +965,29 @@ public:
     }
 
     bool supportsMultiDrawIndirect() const override {
-        // Disabled by default until the Metal ICB encoder has completed
-        // driver-level validation. On Apple G15 the previous encoder crashed
-        // in AGX executeCommandsInBufferCommon during Scene rendering.
-        // Keep an explicit opt-in for engineering reproductions only.
+        // Both Metal ICB paths are deliberately opt-in. CPU Multi-Draw is
+        // independently testable without enabling GPU-authored commands.
+        // Historic AIVERSE_EXPERIMENTAL_METAL_ICB continues to enable the
+        // CPU path for old A/B scripts; neither flag is a production default.
+        const char* cpu = std::getenv("AIVERSE_METAL_CPU_MDI");
         const char* experimental = std::getenv("AIVERSE_EXPERIMENTAL_METAL_ICB");
-        if (!experimental || std::strcmp(experimental, "1") != 0) return false;
+        if (!(cpu && std::strcmp(cpu, "1") == 0) &&
+            !(experimental && std::strcmp(experimental, "1") == 0)) return false;
 #if TARGET_OS_IPHONE
         if (@available(iOS 14.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3];
 #else
         if (@available(macOS 11.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3] || [device_ supportsFamily:MTLGPUFamilyMac2];
 #endif
         return false;
+    }
+    bool supportsGpuEncodedIcb() const override {
+        // Do not let the CPU-only opt-in accidentally enable an unvalidated
+        // compute-encoded ICB path on a driver with known AGX failures.
+        const char* experimental = std::getenv("AIVERSE_EXPERIMENTAL_METAL_ICB");
+        const char* encoded = std::getenv("AIVERSE_GPU_ENCODED_ICB");
+        return experimental && std::strcmp(experimental, "1") == 0 &&
+            encoded && std::strcmp(encoded, "1") == 0 &&
+            supportsMultiDrawIndirect();
     }
     void declareIndirectRead(id<MTLResource> resource, MTLRenderStages stages) {
         if (@available(macOS 13.0, iOS 16.0, *))
@@ -999,7 +1010,7 @@ public:
             const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
             return flag && std::strcmp(flag, "1") == 0;
         }();
-        if (!enabled || !supportsMultiDrawIndirect() || !cmd_ || enc_ || compute_ ||
+        if (!enabled || !supportsGpuEncodedIcb() || !cmd_ || enc_ || compute_ ||
             !sourceSlots || !instanceData || count < 2 || count > 256 ||
             instanceBytes != size_t(count) * 36u * sizeof(float)) return 0;
         auto* commandData = buffers_.get(gpuArguments.id);
