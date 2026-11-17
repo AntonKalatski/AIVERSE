@@ -6,9 +6,80 @@
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
+#include <cstring>
+#include <map>
+#include <vector>
 #include <string>
 
 using namespace aiverse::render;
+// GPU-free device verifies byte-accurate shared geometry offsets and release
+// behaviour on every CI platform, independently of Metal/Vulkan availability.
+class MockDevice final : public aiverse::gfx::Device {
+public:
+    aiverse::gfx::DeviceInfo deviceInfo{};
+    std::string error;
+    std::map<uint32_t,std::vector<uint8_t>> buffers;
+    uint32_t nextId = 1;
+    int created = 0, destroyed = 0;
+    const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
+    const std::string& lastError() const override { return error; }
+    aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
+        auto id = nextId++;
+        buffers[id].resize(d.size);
+        if (d.data && d.size) std::memcpy(buffers[id].data(), d.data, d.size);
+        ++created; return {id};
+    }
+    void updateBuffer(aiverse::gfx::BufferHandle h, const void* data, size_t size, size_t offset) override {
+        auto& v = buffers.at(h.id);
+        CHECK(offset <= v.size() && size <= v.size() - offset);
+        if (size) std::memcpy(v.data() + offset, data, size);
+    }
+    void destroyBuffer(aiverse::gfx::BufferHandle h) override {
+        CHECK(buffers.erase(h.id) == 1);
+        ++destroyed;
+    }
+    aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc&) override { return {100}; }
+    void updateTexture(aiverse::gfx::TextureHandle,int,int,int,int,const void*,int) override {}
+    void destroyTexture(aiverse::gfx::TextureHandle) override {}
+    aiverse::gfx::ShaderHandle createShader(const aiverse::gfx::ShaderDesc&) override { return {1}; }
+    void destroyShader(aiverse::gfx::ShaderHandle) override {}
+    aiverse::gfx::PipelineHandle createPipeline(const aiverse::gfx::PipelineDesc&) override { return {1}; }
+    void destroyPipeline(aiverse::gfx::PipelineHandle) override {}
+    void beginFrame(int,int) override {}
+    void endFrame() override {}
+    void beginPass(const aiverse::gfx::PassDesc&) override {}
+    void endPass() override {}
+    void setViewport(const aiverse::gfx::Rect&) override {}
+    void setScissor(const aiverse::gfx::Rect&) override {}
+    void setPipeline(aiverse::gfx::PipelineHandle) override {}
+    void setVertexBuffer(aiverse::gfx::BufferHandle,size_t) override {}
+    void setIndexBuffer(aiverse::gfx::BufferHandle,size_t) override {}
+    void setTexture(int,aiverse::gfx::TextureHandle) override {}
+    void setUniforms(int,const void*,size_t) override {}
+    void draw(uint32_t,uint32_t) override {}
+    void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t) override {}
+};
+
+static Model pooledFixture(float dx) {
+    Model m;
+    m.path = "geometry-pool-fixture";
+    m.materials.resize(1);
+    m.nodes.resize(1);
+    m.nodes[0].mesh = 0;
+    m.meshes.resize(1);
+    m.meshes[0].primitives.resize(1);
+    m.meshes[0].primitives[0].indexCount = 3;
+    m.meshes[0].primitives[0].vertexCount = 3;
+    m.vertices.resize(3);
+    m.vertices[0].pos = {dx, 0, 0};
+    m.vertices[1].pos = {dx + 1, 0, 0};
+    m.vertices[2].pos = {dx, 1, 0};
+    for (auto& v : m.vertices) v.nrm = {0, 0, 1};
+    m.indices = {0, 1, 2};
+    m.finalize();
+    return m;
+}
+
 
 int main() {
     Model m;
@@ -115,6 +186,38 @@ int main() {
     gpuB.materials[0].shaderGraph = std::make_shared<graph::Program>();
     gpuA.materials[0].shaderGraph = std::make_shared<const graph::Program>(*gpuA.materials[0].shaderGraph);
     CHECK(equivalentGpuMaterial(gpuA, gpuA.materials[0], gpuB, gpuB.materials[0]));
+    // Different rigid models automatically share one GPU resource, preserving
+    // independent node transforms, local index data and model selection IDs.
+    MockDevice dev;
+    auto modelA = pooledFixture(0);
+    auto modelB = pooledFixture(12);
+    CHECK(uploadModel(dev, modelA, true));
+    CHECK(uploadModel(dev, modelB, true));
+    CHECK(modelA.geometryPoolPage && modelB.geometryPoolPage);
+    CHECK(modelA.vb == modelB.vb && modelA.ib == modelB.ib);
+    CHECK(modelA.vb == modelA.ib);
+    CHECK(modelA.gpuFirstIndex != modelB.gpuFirstIndex);
+    CHECK(modelA.gpuBaseVertex != modelB.gpuBaseVertex);
+    CHECK(dev.created == 1);
+    const auto& bytes = dev.buffers.at(modelA.vb.id);
+    for (auto* model : {&modelA, &modelB}) {
+        const uint32_t first = model->gpuFirstIndex;
+        for (size_t i = 0; i < model->indices.size(); ++i) {
+            uint32_t stored = 0;
+            std::memcpy(&stored, bytes.data() + (size_t(first) + i) * sizeof(uint32_t), sizeof(stored));
+            CHECK(stored == model->indices[i]);
+        }
+        for (size_t i = 0; i < model->vertices.size(); ++i) {
+            ModelVertex stored{};
+            std::memcpy(&stored, bytes.data() + (size_t(model->gpuBaseVertex) + i) * sizeof(ModelVertex), sizeof(stored));
+            CHECK(stored.pos.x == model->vertices[i].pos.x);
+        }
+    }
+    releaseModel(dev, modelA);
+    CHECK(dev.destroyed == 0);
+    releaseModel(dev, modelB);
+    CHECK(dev.destroyed == 1 && dev.buffers.empty());
+
     std::puts("engine model batching policy: PASS");
     return 0;
 }
