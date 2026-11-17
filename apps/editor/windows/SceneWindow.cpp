@@ -104,6 +104,10 @@ public:
                     if (valid) {
                         dx = current.x - previous.x;
                         dz = current.z - previous.z;
+                        // X and Z constrain translation to a single world axis.
+                        // No modifier preserves free XZ dragging.
+                        if (ImGui::IsKeyDown(ImGuiKey_X)) dz = 0.0f;
+                        else if (ImGui::IsKeyDown(ImGuiKey_Z)) dx = 0.0f;
                         valid = std::isfinite(dx) && std::isfinite(dz);
                     }
                 }
