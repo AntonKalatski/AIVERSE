@@ -369,6 +369,14 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - Commit `0049872`: `CMakeLists.txt` now calls `find_package(Threads REQUIRED)` and links `aiverse_game` with `Threads::Threads` only when `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=ON`, including headless/export builds with `AIVERSE_BUILD_TESTS=OFF`. This avoids relying on incidental transitive thread flags.
 - Build/link validation pending macOS and Linux runs. No changes to the default OFF build.
 
+## 2026-11-17 — Serialized-state delta prototype
+
+- `6f6559e`: `engine/experiments/EcsSnapshotDelta.h` defines `SerializedDelta` for **complete serialized binary states**, with 256-byte changed page payloads, base/result FNV-1a checksums, growth/shrink handling, and full-snapshot fallback when page storage costs more. It is encoding of finished bytes, NOT automatic `World` dirty tracking.
+- `952f160`: `tests/ecs_snapshot_delta_test.cpp` tests unchanged data, sparse page modifications, binary bytes, length changes, full fallback, and rejection of an incorrect base snapshot.
+- `c39e196`, `d4f1b3c`: registered the new delta test in the standalone ECS suite and CTest.
+- **Important:** production `SimSnapshot` and `RollbackSession` still store full World snapshots. The new delta is experimental and not yet wired into the rollback ring; replacing the ring without measuring reconstitution latency would risk performance regressions.
+- New test has not yet been compiled/run on the user's Mac Studio. Do not claim serialized delta correctness before the updated suite succeeds.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
