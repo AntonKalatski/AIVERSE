@@ -14,6 +14,9 @@
 #include "Lights.h"
 #include "Math3D.h"
 #include "Model.h"
+#include "PersistentGpuSceneUpload.h"
+#include <memory>
+#include <unordered_map>
 
 namespace aiverse::render {
 
@@ -135,6 +138,9 @@ struct ModelDraw {
     const StaticModelCache* staticCache=nullptr;
     GeometryPolicy geometry;
     const Model* model = nullptr;
+    // Optional stable entity identity; 0 means transient/immediate draw.
+    // Attachments and multiple draws per entity need distinct IDs.
+    uint64_t persistentId = 0;
     mat4 world;                                    // model space -> world
     const std::vector<mat4>* nodeWorld = nullptr;  // pose, model space; null = bind pose
     const std::vector<Material>* materials = nullptr; // per-instance override (model->materials first, extra ones after)
@@ -198,6 +204,10 @@ public:
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Diagnostic, opt-in persistent scene upload stats. This staging path is
+    // not yet bound to model shaders or used for GPU culling.
+    struct PersistentSceneStats { uint32_t live = 0, ranges = 0, records = 0; size_t bytes = 0; };
+    PersistentSceneStats persistentSceneStats() const { return persistentStats_; }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
     // Call after everything that belongs to the 3D scene (particles), before UI.
@@ -416,6 +426,15 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    PersistentGpuScene persistentScene_;
+    std::unique_ptr<PersistentGpuSceneUpload> persistentUpload_;
+    struct PersistentEntry { GpuSceneHandle handle; uint64_t seen = 0; };
+    std::unordered_map<uint64_t, PersistentEntry> persistentIds_;
+    uint64_t persistentSceneEpoch_ = 0;
+    PersistentSceneStats persistentStats_{};
+    bool persistentSceneEnabled_ = false;
+    void recordPersistentModel(const ModelDraw& d);
+    void syncPersistentModels();
     std::vector<float> jointData_, morphData_, instData_;
     const ModelItem* lastItem_ = nullptr;   // state already bound (material, model textures, palette)
     std::vector<mat4> palette_;
