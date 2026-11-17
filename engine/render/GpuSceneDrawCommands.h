@@ -26,6 +26,7 @@ static_assert(sizeof(GpuPrimitiveDrawRecord) == 128,
 
 class GpuSceneDrawCommands {
 public:
+    struct UploadStats { uint32_t records = 0, ranges = 0; size_t bytes = 0; };
     GpuSceneDrawCommands() = default;
     GpuSceneDrawCommands(const GpuSceneDrawCommands&) = delete;
     GpuSceneDrawCommands& operator=(const GpuSceneDrawCommands&) = delete;
@@ -43,13 +44,40 @@ public:
         Slot& slot = slots_[frameSerial % slots_.size()];
         const size_t inputBytes = records.size() * sizeof(GpuPrimitiveDrawRecord);
         const size_t outputBytes = records.size() * sizeof(gfx::DrawIndexedIndirectCommand);
+        const bool resizedInput = !slot.input.valid() || slot.inputCapacity < inputBytes;
         if (!allocate(device, slot.input, slot.inputCapacity, inputBytes,
                       "GPU draw record input") ||
             !allocate(device, slot.output, slot.outputCapacity, outputBytes,
                       "GPU authored draw arguments")) return false;
-        // Upload before beginning the compute encoder. Storage uploads are
-        // ordered via Metal blit in the same MTLCommandBuffer.
-        device.updateBuffer(slot.input, records.data(), inputBytes);
+        // A recycled frame-slot retains its last CPU/GPU records. Upload only
+        // changed consecutive ranges; camera changes still rerun compute.
+        // Keep the comparison independent per frame slot for in-flight safety.
+        slot.upload = {};
+        if (resizedInput) slot.lastRecords.clear();
+        const size_t oldCount = slot.lastRecords.size();
+        slot.lastRecords.resize(records.size());
+        size_t begin = records.size();
+        auto flush = [&](size_t end) {
+            if (begin == records.size()) return;
+            const size_t length = end - begin;
+            const size_t bytes = length * sizeof(GpuPrimitiveDrawRecord);
+            device.updateBuffer(slot.input, records.data() + begin, bytes,
+                                begin * sizeof(GpuPrimitiveDrawRecord));
+            slot.upload.ranges++;
+            slot.upload.records += uint32_t(length);
+            slot.upload.bytes += bytes;
+            begin = records.size();
+        };
+        for (size_t i = 0; i < records.size(); ++i) {
+            const bool dirty = i >= oldCount ||
+                std::memcmp(&slot.lastRecords[i], &records[i],
+                            sizeof(GpuPrimitiveDrawRecord)) != 0;
+            if (dirty) {
+                slot.lastRecords[i] = records[i];
+                if (begin == records.size()) begin = i;
+            } else flush(i);
+        }
+        flush(records.size());
         if (!device.beginCompute(pipeline_)) return false;
         device.setComputeBuffer(0, slot.input);
         device.setComputeBuffer(1, slot.output);
@@ -67,6 +95,9 @@ public:
         return true;
     }
 
+    UploadStats uploadStats(uint64_t frameSerial) const {
+        return slots_[frameSerial % slots_.size()].upload;
+    }
     gfx::BufferHandle output(uint64_t frameSerial) const {
         return slots_[frameSerial % slots_.size()].output;
     }
@@ -84,6 +115,8 @@ private:
         gfx::BufferHandle input{}, output{};
         size_t inputCapacity = 0, outputCapacity = 0;
         uint32_t commandCount = 0;
+        std::vector<GpuPrimitiveDrawRecord> lastRecords;
+        UploadStats upload{};
     };
     std::array<Slot, 3> slots_{};
     gfx::ComputeHandle pipeline_{};
