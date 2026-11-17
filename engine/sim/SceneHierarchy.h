@@ -5,6 +5,7 @@
 #include "../core/ECS.h"
 #include "../core/Fixed.h"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <map>
 #include <stdexcept>
@@ -23,13 +24,57 @@ struct LocalTransform {
     Vec3 scale{1_fx,1_fx,1_fx};
     constexpr bool operator==(const LocalTransform&)const=default;
 };
+struct AffineTransform {
+    // Row-major 3x4 affine matrix; authoritative for full nested TRS,
+    // including shear induced by rotated children of non-uniformly scaled
+    // parents. Translation is column 3.
+    std::array<Fixed,12> m{
+        1_fx,Fixed{},Fixed{},Fixed{},
+        Fixed{},1_fx,Fixed{},Fixed{},
+        Fixed{},Fixed{},1_fx,Fixed{}
+    };
+    constexpr Fixed at(size_t row,size_t col)const{return m[row*4+col];}
+    constexpr bool operator==(const AffineTransform&)const=default;
+};
 struct WorldTransform {
     Vec3 position{};
     Rotation rotation{};
     Vec3 scale{1_fx,1_fx,1_fx};
+    AffineTransform affine{}; // use this for rendering and spatial queries
     constexpr bool operator==(const WorldTransform&)const=default;
 };
 namespace hierarchy_detail {
+inline AffineTransform localAffine(LocalTransform t) {
+    const auto q=t.rotation;
+    const auto xx=q.x*q.x,yy=q.y*q.y,zz=q.z*q.z;
+    const auto xy=q.x*q.y,xz=q.x*q.z,yz=q.y*q.z;
+    const auto wx=q.w*q.x,wy=q.w*q.y,wz=q.w*q.z;
+    const auto two=2_fx;
+    AffineTransform a;
+    a.m={
+        (1_fx-two*(yy+zz))*t.scale.x, two*(xy-wz)*t.scale.y, two*(xz+wy)*t.scale.z,t.position.x,
+        two*(xy+wz)*t.scale.x,(1_fx-two*(xx+zz))*t.scale.y,two*(yz-wx)*t.scale.z,t.position.y,
+        two*(xz-wy)*t.scale.x,two*(yz+wx)*t.scale.y,(1_fx-two*(xx+yy))*t.scale.z,t.position.z
+    };
+    return a;
+}
+inline AffineTransform multiplyAffine(const AffineTransform& a,const AffineTransform& b) {
+    AffineTransform result;
+    for(size_t row=0;row<3;++row)
+        for(size_t col=0;col<4;++col) {
+            Fixed value=col==3?a.at(row,3):Fixed{};
+            for(size_t k=0;k<3;++k)value+=a.at(row,k)*b.at(k,col);
+            result.m[row*4+col]=value;
+        }
+    return result;
+}
+inline Vec3 transformPoint(const AffineTransform& a,Vec3 p) {
+    return {
+        a.at(0,0)*p.x+a.at(0,1)*p.y+a.at(0,2)*p.z+a.at(0,3),
+        a.at(1,0)*p.x+a.at(1,1)*p.y+a.at(1,2)*p.z+a.at(1,3),
+        a.at(2,0)*p.x+a.at(2,1)*p.y+a.at(2,2)*p.z+a.at(2,3)
+    };
+}
 inline Vec3 scale(Vec3 a,Vec3 b){return {a.x*b.x,a.y*b.y,a.z*b.z};}
 inline Vec3 cross(Vec3 a,Vec3 b){
     return {a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};
@@ -48,14 +93,16 @@ inline Vec3 rotate(Rotation q,Vec3 v) {
     return v+t*q.w+cross({q.x,q.y,q.z},t);
 }
 inline WorldTransform combine(const WorldTransform& parent,const LocalTransform& child){
+    const auto affine=multiplyAffine(parent.affine,localAffine(child));
     return {
-        parent.position+rotate(parent.rotation,scale(parent.scale,child.position)),
+        {affine.at(0,3),affine.at(1,3),affine.at(2,3)},
         multiply(parent.rotation,child.rotation),
-        scale(parent.scale,child.scale)
+        scale(parent.scale,child.scale),
+        affine
     };
 }
 inline WorldTransform root(LocalTransform local) {
-    return {local.position,local.rotation,local.scale};
+    return {local.position,local.rotation,local.scale,localAffine(local)};
 }
 }
 
