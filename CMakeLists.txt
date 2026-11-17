@@ -154,6 +154,14 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
+# ECS 2.0 migration experiment. OFF by default: current RTS simulation
+# retains the original sequential movement/spatial-hash behavior.
+option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
+    "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
+if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
+    target_compile_definitions(aiverse_game PRIVATE AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=1)
+endif()
+
 add_subdirectory(libraries)
 include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
