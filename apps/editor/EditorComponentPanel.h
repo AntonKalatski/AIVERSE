@@ -4,8 +4,33 @@
 #pragma once
 #include "EditorEntityAdapter.h"
 #include "imgui.h"
+#include <functional>
+#include <string>
+#include <unordered_map>
 
 namespace aiverse::editor {
+
+
+using ComponentDrawer = std::function<void(MapDoc&, DocumentEntityRef, const Json&)>;
+using ComponentFieldDrawer = std::function<bool(MapDoc&, DocumentEntityRef, const char*, const Json&)>;
+
+// Optional native project/editor extensions can replace a whole component or
+// override individual fields. Unregistered fields use the built-in drawer.
+struct InspectorDrawerRegistry {
+    std::unordered_map<std::string, ComponentDrawer> components;
+    std::unordered_map<std::string, ComponentFieldDrawer> fields;
+    static InspectorDrawerRegistry& instance() {
+        static InspectorDrawerRegistry registry;
+        return registry;
+    }
+    void registerComponent(std::string id, ComponentDrawer drawer) {
+        components[std::move(id)] = std::move(drawer);
+    }
+    void registerField(std::string componentId, std::string fieldId,
+                       ComponentFieldDrawer drawer) {
+        fields[componentId + "." + fieldId] = std::move(drawer);
+    }
+};
 
 inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
                                       const char* label = "Position XYZ") {
@@ -75,6 +100,15 @@ inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
     for (const auto& component : components) {
         ImGui::PushID(component.id);
         if (ImGui::CollapsingHeader(component.title, ImGuiTreeNodeFlags_DefaultOpen)) {
+            Json snapshot;
+            readDocumentComponent(map, ref, component.kind, snapshot);
+            auto& registry = InspectorDrawerRegistry::instance();
+            const auto custom = registry.components.find(component.id);
+            if (custom != registry.components.end()) {
+                custom->second(map, ref, snapshot);
+                ImGui::PopID();
+                continue;
+            }
             switch (component.kind) {
             case DocumentComponentKind::Transform:
                 drawDocumentPositionField(map, ref);
@@ -95,6 +129,11 @@ inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
                         const Json& value = entry.second;
                         const std::string display = value.isString()
                             ? value.str() : value.dump(-1);
+                        const auto field = registry.fields.find(
+                            std::string(component.id) + "." + entry.first);
+                        if (field != registry.fields.end() &&
+                            field->second(map, ref, entry.first.c_str(), value))
+                            continue;
                         ImGui::TextDisabled("%s", entry.first.c_str());
                         ImGui::SameLine();
                         ImGui::TextWrapped("%s", display.c_str());
