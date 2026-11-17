@@ -158,21 +158,16 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
 }
 
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
-    if (fpsSelectedSceneObject_ < 0 ||
-        fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size())) return false;
     const uint64_t key = (spawn ? (uint64_t(1) << 63) : 0) | (uint64_t(sourceIndex) + 1);
-    return fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity == key;
+    return selection.kind == Selection::FpsObject && selection.ref == key;
 }
 
 void Editor::selectFpsSceneSource(bool spawn, size_t sourceIndex) {
     const uint64_t key = (spawn ? (uint64_t(1) << 63) : 0) | (uint64_t(sourceIndex) + 1);
-    fpsSelectedSceneObject_ = -1;
-    for (size_t i = 0; i < fpsSceneObjects_.size(); ++i) {
-        if (fpsSceneObjects_[i].entity == key) {
-            fpsSelectedSceneObject_ = int(i);
-            break;
-        }
-    }
+    Selection chosen;
+    chosen.kind = Selection::FpsObject;
+    chosen.ref = key;
+    select(chosen);
 }
 
 int Editor::pickFpsSceneObject(const Viewport& vp, const render::RTSCamera& camera,
@@ -187,7 +182,7 @@ void Editor::drawFpsSceneInspector() {
     const int selected = fpsSelectedSceneObject_;
     if (selected < 0 || selected >= int(fpsSceneObjects_.size())) return;
     auto& fps = doc().data.fps;
-    const uint64_t key = fpsSceneObjects_[size_t(selected)].entity;
+    const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
     if (!key) return;
     const bool collider = (key & (uint64_t(1) << 63)) == 0;
     const size_t sourceIndex = size_t((key & ~(uint64_t(1) << 63)) - 1);
