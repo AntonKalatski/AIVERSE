@@ -22,10 +22,8 @@ std::map<gfx::Device*, std::vector<std::weak_ptr<GeometryPoolPage>>> pools;
 constexpr size_t kDefaultPageSize = 8 * 1024 * 1024;
 constexpr size_t kMaximumPooledModelSize = 16 * 1024 * 1024;
 bool canPool(const Model& m) {
-    if (!m.geometry || m.skins.empty()) {
-        // Keep GPU skin/morph/LOD/geometry clusters on the existing dedicated
-        // buffers; those paths may refer to vertex IDs or expand index data.
-    }
+    // Keep skin/morph/LOD/cluster paths on dedicated buffers because those
+    // paths can reference original GPU vertex IDs or expanded index ranges.
     if (m.geometry || !m.skins.empty() || !m.clips.empty() ||
         !m.variants.empty() || m.morphTex.valid()) return false;
     for (const auto& mesh : m.meshes) {
