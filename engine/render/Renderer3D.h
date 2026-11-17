@@ -491,6 +491,28 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    // Material GPU-state equivalence is pass-independent within one scene.
+    // Resolve each distinct (model, material) once for shadows, colour,
+    // reflection and outline. All containers are cleared at beginScene(),
+    // retaining capacity to avoid per-pass allocations. Distinct pointers
+    // still require exact GPU-state equivalence, never pointer-only batching.
+    struct MaterialStatePointer {
+        const Material* material = nullptr;
+        const Model* model = nullptr;
+        bool operator==(const MaterialStatePointer&) const = default;
+    };
+    struct MaterialStatePointerHash {
+        size_t operator()(const MaterialStatePointer& p) const {
+            const size_t a = std::hash<const Material*>{}(p.material);
+            const size_t b = std::hash<const Model*>{}(p.model);
+            return a ^ (b + size_t(0x9e3779b9) + (a << 6) + (a >> 2));
+        }
+    };
+    std::unordered_map<MaterialStatePointer, uint32_t, MaterialStatePointerHash> materialStateIds_;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> materialHashCandidates_;
+    std::vector<uint32_t> materialRepresentatives_;
+    std::vector<uint32_t> materialItemIds_; // UINT32_MAX = unclassified
+    uint64_t materialStateCacheHits_ = 0, materialStateCacheMisses_ = 0;
     // Opt-in actual GPU-authored draw commands for static opaque primitives.
     GpuSceneDrawCommands gpuModelCommands_;
     std::vector<GpuPrimitiveDrawRecord> gpuModelRecords_;
