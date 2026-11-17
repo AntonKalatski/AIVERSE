@@ -2,6 +2,7 @@
 //   RMB drag: look around, RMB + WASD/QE: fly, MMB drag: pan, wheel: zoom, F: focus selection.
 #include "../EditorEntityAdapter.h"
 #include "../EditorTransformGizmo.h"
+#include "../EditorSelectionAdapter.h"
 #include <algorithm>
 #include <cmath>
 #include "../Editor.h"
@@ -198,6 +199,24 @@ private:
             if (ui::toolButton(icons[i], tip, ed.tool == Tool(i))) { ed.tool = Tool(i); ed.roadStart = -1; }
         }
         ui::endSegment();
+        if (ed.ws().project.isFps() && ed.tool == Tool::Select) {
+            ui::toolbarDivider();
+            for (const auto mode : {TransformTool::Move,
+                                    TransformTool::Rotate, TransformTool::Scale}) {
+                const char* title = mode == TransformTool::Move ? "Move" :
+                                    mode == TransformTool::Rotate ? "Rotate" : "Scale";
+                if (mode != TransformTool::Move) {
+                    DocumentEntityRef ref;
+                    if (!documentEntityFromSelection(ed.selection, ref) ||
+                        ref.source != DocumentEntityRef::Source::FpsCollider)
+                        continue;
+                    const Json* object = fpsDocumentEntity(ed.doc().data.fps, ref);
+                    if (!object || !(*object)["yaw"].isNumber()) continue;
+                }
+                ImGui::SameLine(0, 5);
+                if (ImGui::SmallButton(title)) ed.transformTool = mode;
+            }
+        }
         if (compact) {
             ImGui::SameLine(0, 5);
             if (ui::toolButton(ICON_MORE, "Другие инструменты")) ImGui::OpenPopup("##scene_more_tools");
