@@ -89,3 +89,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added this living agent handoff and the explicit acceptance criteria, architecture inventory, risks and execution plan.
 - Code build/tests: **NOT RUN in this handoff stage**. Earlier GitHub workflow checks were observed queued.
 - Next: obtain CI results and compile/fix, then implement component adapter/Inspector consolidation.
+
+### 2026-11-17 — Transform validation hardening
+- Branch: `feature/universal-entity-inspector-fps`.
+- Commits: `ccc5c829` (`apps/editor/EditorEntityAdapter.h`), `27cf8262` (same file).
+- Single-object FPS collider translation now rejects malformed/non-finite/inverted min/max extents **before** mutation. The shared bounds setter rejects arrays shorter than three coordinates.
+- Validation: source edits committed; targeted code review by inspecting exact replacement blocks. **Build/tests NOT RUN**. GitHub Actions for prior handoff commit `47aa2192`: CI and Studio validation were **queued** at last check, not green.
+- Limitations: No generic native ECS reflection, no common Inspector drawer registry, no full Move/Rotate/Scale gizmo or mesh silhouette outline.
+- Next: obtain successful build/test results; implement common component adapter and migrate Inspector; verify interactions on macOS.
