@@ -95,8 +95,11 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.pickable = true;
         instances.push_back(object);
     }
-    for (auto& object : instances)
+    const uint64_t hoveredKey = hover.kind == Selection::FpsObject ? hover.ref : 0;
+    for (auto& object : instances) {
         object.selected = selectedKey != 0 && object.entity == selectedKey;
+        object.hovered = !object.selected && hoveredKey != 0 && object.entity == hoveredKey;
+    }
     submitSceneRenderables(r3d_, instances);
     // Draw transform axes from the selected renderable, if visible.
     for (const auto& selected : instances) {
