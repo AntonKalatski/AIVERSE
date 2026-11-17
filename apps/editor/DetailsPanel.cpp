@@ -218,7 +218,7 @@ void DetailsPanel::draw(Editor& ed) {
     }
     if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
         ImGui::PushID("RtsObjectProperties");
-        if (ImGui::CollapsingHeader("RTS Object", ImGuiTreeNodeFlags_DefaultOpen))
+        if (ImGui::CollapsingHeader("Map Entity Metadata", ImGuiTreeNodeFlags_DefaultOpen))
             mapFields(ed);
         ImGui::PopID();
     } else {
@@ -314,7 +314,7 @@ void DetailsPanel::mapFields(Editor& ed) {
     cx /= float(idx.size()); cz /= float(idx.size());
     const int ti = R.findType(e0.type);
     if (!filter_.empty() && !ui::contains("тип владелец позиция гарнизон запас id карта", filter_)) return;
-    if (idx.size() > 1) ui::section(ICON_PENCIL, "RTS Object (все выбранные)");
+    if (idx.size() > 1) ui::section(ICON_PENCIL, "Map Entity Metadata (все выбранные)");
     if (!ui::beginProps("##mapfields")) return;
     ui::prop("Тип", "Тип объекта из правил; меняется у всех выбранных (одна отмена)");
     if (ImGui::BeginCombo("##type", sameType ? (ti >= 0 ? R.types[size_t(ti)].name.c_str() : e0.type.c_str()) : "—", ImGuiComboFlags_HeightLarge)) {
