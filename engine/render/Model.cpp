@@ -452,6 +452,13 @@ void ModelTextureCache::trim(gfx::Device& dev) {
             it=gpu_.erase(it);
         } else ++it;
     }
+    // Residency reclamation is infrequent, unlike normal image reads.
+    // Clear decoded source pixels too: sharedRgba leases held by a pending
+    // upload remain valid even after their map entry is removed. This can
+    // return up to the configured 64 MiB CPU LRU budget to the allocator.
+    std::lock_guard lock(mutex_);
+    decoded_.clear();
+    bytes_ = 0;
 }
 void ModelTextureCache::shutdown(gfx::Device& dev) {
     for (auto& [key, image] : gpu_) if (image.tex.valid()) dev.destroyTexture(image.tex);
