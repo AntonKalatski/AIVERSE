@@ -2,6 +2,7 @@
 #include "engine/sim/Simulation.h"
 #include "engine/world/SpatialWorld.h"
 #include <deque>
+#include <map>
 #include "FpsSystems.h"
 #include "engine/world/CollisionStream.h"
 #include "libraries/include/aiverselib/genre/Melee.h"
