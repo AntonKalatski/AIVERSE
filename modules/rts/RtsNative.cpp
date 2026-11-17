@@ -159,6 +159,24 @@ void NativeModules::inspectComponents(Simulation& sim, Entity entity,
     }
 }
 
+bool NativeModules::inspectWriteback(const std::string& componentId,
+                                     const std::string& fieldId,
+                                     const Json& value, const Json& currentExtra,
+                                     Json& updatedExtra) const {
+    if (componentId.empty() || fieldId.empty() || !currentExtra.isObject())
+        return false;
+    for (const auto& entry : entries_) {
+        Json candidate = currentExtra;
+        if (!entry.instance->inspectWriteback(componentId, fieldId, value,
+                                               currentExtra, candidate))
+            continue;
+        if (!candidate.isObject()) return false;
+        updatedExtra = std::move(candidate);
+        return true;
+    }
+    return false;
+}
+
 void NativeModules::hash(Simulation& sim, Hasher& h) const {
     if (entries_.empty()) return; // preserve existing games' checksums
     h.str("nativeModules"); h.u32(uint32_t(entries_.size()));
