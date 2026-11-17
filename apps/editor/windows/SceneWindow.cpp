@@ -1,7 +1,9 @@
 // Scene: the map in 3D with a free camera; select/drag objects and apply the current tool.
 //   RMB drag: look around, RMB + WASD/QE: fly, MMB drag: pan, wheel: zoom, F: focus selection.
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <vector>
 #include "../Editor.h"
 #include "StudioContextMenus.h"
 #include "StudioLuaExtensions.h"
@@ -49,7 +51,7 @@ public:
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
         renderer.setModelInstancingEnabled(sceneInstancing_);
-        renderer.setModelMultiDrawEnabled(sceneIndirect_);
+        renderer.setModelMultiDrawEnabled(benchmarkActive_ ? benchmarkPhase_ == 1 : sceneIndirect_);
         renderer.setModelCullingEnabled(sceneCulling_);
         // Pipeline layouts depend on instance limit. Apply only when the user changes
         // the control: resetting this after every Scene frame would recompile shaders.
@@ -57,7 +59,8 @@ public:
             renderer.setInstanceLimit(uint32_t(sceneInstanceLimit_));
             sceneInstanceLimitDirty_ = false;
         }
-        if (measureBatchingNextFrame_) {
+        const auto benchmarkStart = std::chrono::steady_clock::now();
+        if (measureBatchingNextFrame_ && !benchmarkActive_) {
             measureBatchingNextFrame_ = false;
             // Both passes use exactly the same scene camera and frame. A/B
             // disables both per-primitive instancing and indirect submissions;
@@ -77,7 +80,25 @@ public:
                                    int64_t(renderer.profile().draws[2]);
             comparisonValid_ = true;
         } else {
-            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            ed.renderScene(vp_, benchmarkActive_ ? benchmarkCamera_ : ed.sceneCam, !ed.playing());
+        }
+        if (benchmarkActive_) {
+            const double cpuMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - benchmarkStart).count();
+            if (benchmarkWarmup_ > 0) --benchmarkWarmup_;
+            else {
+                benchmarkSamples_[benchmarkPhase_].push_back(cpuMs);
+                benchmarkDrawSum_[benchmarkPhase_] += renderer.drawCalls();
+                if (benchmarkSamples_[benchmarkPhase_].size() == 300) {
+                    if (benchmarkPhase_ == 0) {
+                        benchmarkPhase_ = 1;
+                        benchmarkWarmup_ = 60;
+                    } else {
+                        benchmarkActive_ = false;
+                        benchmarkDone_ = true;
+                    }
+                }
+            }
         }
         const auto afterRenderScene = std::chrono::steady_clock::now();
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
@@ -189,8 +210,45 @@ private:
                 (unsigned long long)modelStats.multiDrawSubmissions,
                 (unsigned long long)modelStats.indirectCommands);
             ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
-            if (ImGui::Button("Compare A/B same frame##scene_batch"))
+            if (ImGui::Button("Compare A/B same frame##scene_batch") && !benchmarkActive_)
                 measureBatchingNextFrame_ = true;
+            if (mdiBackend && !ed.playing()) {
+                if (!benchmarkActive_) {
+                    if (ImGui::Button("Benchmark MDI OFF / ON (300 frames each)")) {
+                        benchmarkActive_ = true;
+                        benchmarkDone_ = false;
+                        benchmarkPhase_ = 0;
+                        benchmarkWarmup_ = 60;
+                        benchmarkCamera_ = ed.sceneCam;
+                        benchmarkSamples_[0].clear();
+                        benchmarkSamples_[1].clear();
+                        benchmarkDrawSum_[0] = benchmarkDrawSum_[1] = 0;
+                        measureBatchingNextFrame_ = false;
+                    }
+                } else {
+                    ImGui::Text("Benchmark: %s, warmup %d, samples %zu / 300",
+                                benchmarkPhase_ == 0 ? "MDI OFF" : "MDI ON",
+                                benchmarkWarmup_, benchmarkSamples_[benchmarkPhase_].size());
+                    if (ImGui::Button("Cancel benchmark")) benchmarkActive_ = false;
+                }
+                if (benchmarkDone_) {
+                    auto stats = [](std::vector<double> v) {
+                        std::sort(v.begin(), v.end());
+                        double sum = 0.0;
+                        for (double n : v) sum += n;
+                        return std::pair<double,double>{sum / double(v.size()), v[(v.size() * 95 - 1) / 100]};
+                    };
+                    const auto off = stats(benchmarkSamples_[0]);
+                    const auto on = stats(benchmarkSamples_[1]);
+                    ImGui::Text("Scene CPU OFF: avg %.3f / P95 %.3f ms, draws %.0f",
+                                off.first, off.second, double(benchmarkDrawSum_[0]) / 300.0);
+                    ImGui::Text("Scene CPU ON:  avg %.3f / P95 %.3f ms, draws %.0f",
+                                on.first, on.second, double(benchmarkDrawSum_[1]) / 300.0);
+                    ImGui::Text("MDI CPU delta: %+.1f%%", (on.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
+                    ImGui::TextDisabled("Fixed camera; Scene render CPU only. GPU timings are asynchronous.");
+                    ImGui::TextDisabled("Same geometry pool in both modes; excludes asset upload.");
+                }
+            }
             if (comparisonValid_) {
                 ImGui::Text("Total draws: baseline %lld -> batched %lld (%+lld)",
                             (long long)baselineDraws_, (long long)optimizedDraws_,
@@ -749,6 +807,11 @@ private:
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
     bool sceneProfiling_ = false;
+    bool benchmarkActive_ = false, benchmarkDone_ = false;
+    int benchmarkPhase_ = 0, benchmarkWarmup_ = 0;
+    RTSCamera benchmarkCamera_{};
+    std::vector<double> benchmarkSamples_[2];
+    uint64_t benchmarkDrawSum_[2] = {0, 0};
     bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
     int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
     int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
