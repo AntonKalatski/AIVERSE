@@ -37,6 +37,7 @@ struct MTBuffer {
     id<MTLBuffer> bufs[kFramesInFlight];
     int count = 1;          // 1 for immutable, kFramesInFlight for dynamic (one copy per frame in flight)
     size_t size = 0;
+    BufferType type = BufferType::Vertex;
     bool storage = false,snapshot = false;
     uint64_t updatedFrame = UINT64_MAX;
 };
@@ -108,6 +109,7 @@ public:
     BufferHandle createBuffer(const BufferDesc& d) override {
         MTBuffer b;
         b.size = d.size ? d.size : 16;
+        b.type = d.type;
         b.snapshot = d.snapshotUpdates;
         b.storage = d.type == BufferType::Storage;
         b.count = !b.storage && d.usage == Usage::Dynamic ? kFramesInFlight : 1;
