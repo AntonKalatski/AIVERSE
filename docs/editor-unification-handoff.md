@@ -785,3 +785,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed: `docs/ecs-all-features-migration-plan.md`; catalog-based review of all 120 packages (78 simulation, 21 presentation, 21 tools), 41 RTS `Simulation` system registrations, FPS opt-in `ecsAuthority` and the three existing generic weapon packages. Records waves, source-of-truth contract, host parity gates, native/API/editor requirements and per-package dispositions.
 - Verification: read source via linked GitHub branch and parsed the catalog; **no native build, CTest or real RTS/FPS gameplay parity executed**. A migration plan is not a code migration. Library data may have changed since inspection; re-read before editing.
 - Next: add reusable ECS gameplay components/systems (weapon reload, timers, stats) and independent native/cross-genre rollback fixtures; integrate actual RTS/FPS paths incrementally with legacy-save parity.
+
+
+### 2026-11-18 — Generic ECS timed mechanics header
+- Implementation SHA: `5907d5f893f91bd4e7989ed2eb8eaa3109ba2959`.
+- Added `libraries/include/aiverselib/genre/EcsTimedMechanics.h`: `WeaponReloadComponent`/`ReloadIntentComponent` with reload and fire-intent gate stages; `HealthRegenerationComponent` over the canonical shared `HitPointsComponent`; `EnergyRegenerationComponent`; `TimedExpiryComponent`, all independently registered with `Simulation` and without RTS/FPS dependencies.
+- Verification: source uploaded via GitHub; **native compile and CTest not run**, host integrations not yet switched. Shared health/weapon components remain additive/opt-in and are not asserted to replace legacy modules.
+- Next: add two-host COW/save/rollback fixture, package registration, skill, catalog and CMake, then verify natively before any default host switch.
