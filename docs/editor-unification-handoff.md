@@ -191,3 +191,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Fix commit `9f4493e`: changed to `&fps.member(collection).at(ref.index)`.
 - Verification: API signature inspected in source; **macOS rebuild NOT YET RUN after fix**. Ask user to pull branch and rerun `cmake --build build-metal -j 8`; collect subsequent errors.
 - Next: fix remaining compiler diagnostics, then launch editor and test RTS/FPS Inspector, selection and Undo.
+
+### 2026-11-17 — macOS compiler error in SceneWindow and Hierarchy warnings
+- User's second `cmake --build build-metal -j 8` failed at `apps/editor/windows/SceneWindow.cpp:88`: undeclared identifier `hit`. Also reported unused `box` and `spawn` in `HierarchyWindow.cpp`.
+- Fix commit `a6c8e700`: removed obsolete `if (hit < 0) pickSelect(ed, hovered, io);` after the shared selection path already invokes `pickSelect`.
+- Cleanup commit `017a5731`: switched FPS Hierarchy collider/spawn iteration to indexed loops, removing unused variables.
+- Validation: fixes committed; **macOS rebuild NOT YET RUN after these commits**. User should pull branch and rerun build.
+- Next: resolve further build errors, launch editor, test selection/Inspector/Undo; record actual test results.
