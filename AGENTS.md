@@ -774,3 +774,7 @@ C API. Copy transient events before mutations, wake reactivated joints, and vali
 real contacts. Physics needs an explicit host and never feeds float state into RTS
 Fixed lockstep implicitly. Deterministic vehicle/interaction policies retain their
 own authority. A standalone test or a model animation is not an in-client integration.
+
+## Active editor-unification work (PR #7)
+
+Before modifying editor Scene, Inspector, Hierarchy, Transform, ECS component adapters or rendering for RTS/FPS, **read `docs/editor-unification-handoff.md`**. It contains the target architecture, implementation status, acceptance gates and known risks. **Update its progress log after every implementation or verification stage in the same PR**, with commits, actual test results (or NOT RUN), blockers and next steps. Do not merge PR #7 without the documented validation gates.
