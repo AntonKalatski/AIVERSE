@@ -501,7 +501,7 @@ void main() {
     "#define INSTANCE gpuInstances[iid]\n" \
     "#else\n" \
     "#define INSTANCE_ARG constant MU0& u [[buffer(1)]]\n" \
-    "// GPU_INSTANCE_BUFFER / INSTANCE defined above for Metal vertex shaders.\n" \
+    "// INSTANCE supplied by GPU_INSTANCE_BUFFER or MU0 path above.\n" \
     "#endif\n" \
     "#define VERTEX_ARGS VIn in [[stage_in]], uint iid [[instance_id]], uint vid [[vertex_id]], INSTANCE_ARG, " \
     "constant U1& f [[buffer(2)]], constant MU2& m [[buffer(3)]] SKIN_ARG BAKED_ARG MORPH_ARG GI_VARG PROBE_VARG\n" \
