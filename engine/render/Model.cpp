@@ -166,6 +166,11 @@ namespace {
 void applyModelBatchingSidecar(Model& model, const std::string& path, const FileReader& read) {
     std::string bytes;
     if (!read(path + ".batching.json", bytes)) return;
+    // FileReader is an arbitrary content callback. Some existing importers
+    // return their source bytes for unrecognized paths instead of false.
+    // An opt-in sidecar must begin with an object, otherwise ignore it.
+    const auto first = bytes.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos || bytes[first] != '{') return;
     const Json config = Json::parse(bytes);
     if (!config.isObject()) throw std::runtime_error(path + ".batching.json: expected JSON object");
     model.batching.mergeRigid = config.getBool("mergeRigid", false);
