@@ -53,7 +53,10 @@ Unused preview-only types are eligible for release after **15 seconds**. A butto
 **Статистика → Память ассетов** triggers the same safe sweep (does not bypass the grace
 period). No eviction takes place during editor play/client-host sessions.
 Changes to a model or rules continue to reinitialize the view normally; textures shared
-between retained models remain alive. Sprite/terrain/custom renderer caches have their
+between retained models remain alive. Unreferenced GPU texture leases and decoded
+CPU image-cache entries are cleared during a type-residency trim (pending users
+of shared decoded pixels still keep their own references).
+Sprite/terrain/custom renderer caches have their
 own lifecycles and are **not covered by this model eviction policy**.
 
 **A/B rollback:** launch with `AIVERSE_EDITOR_EAGER_MODELS=1` to restore the old
