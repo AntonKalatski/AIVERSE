@@ -715,3 +715,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS weapon launch, stage H (agent policy)
 - Commit `8421961`: `AGENTS.md` explicitly names the required shared shooting packages `AIVERSE::lib_ecs_weapon_launch`, `ecs-projectile-systems` and `ecs-impact-damage`. Agents must reuse the same ECS projectile trajectory, collision and damage stages for FPS, RTS, vehicle turrets, RPG spells, etc., and extend systems through composable components/policies. Do not create new genre-specific duplicate solvers.
 - The required cross-genre test cases are listed; published RTS/FPS save/rollback and real-game checksum migration remains a separate, unverified task.
+
+### 2026-11-18 — Universal ECS weapon launch, stage I (skill cross-links)
+- Commit `2363b7d`: updated the existing `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` to direct agents to `aiverse-ecs-weapon-launch` and `aiverse-ecs-impact-damage`, the complete public header chain and three cross-genre regression tests. This prevents a future agent from implementing duplicate RTS/FPS weapon or damage stages when reading the older flight-only skill.
+- Work in this checkpoint is limited to independent reusable packages and tests. **Existing** `RtsModule` and `fps::Module` shooting/AI/netcode remain to be migrated, one stage at a time with real checksum and legacy save parity checks. CI not confirmed green.
