@@ -123,7 +123,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     d.persistentId = o.persistentKey ? o.persistentKey :
         (o.entity.valid() ? o.entity.packed() : 0);
     d.model = show->model;
-    if (!tintOverride && (t.id.starts_with("city_interior_") || t.id == "shop_roof")) d.flags |= kDrawActorReveal;
+    if (!tintOverride && o.type < actorRevealTypes_.size() && actorRevealTypes_[o.type]) d.flags |= kDrawActorReveal;
     d.geometry = show->geometry;
     d.world = reusePlacement ? cached.world : base * st.objXf * show->fix;
     d.materials = &show->materials;
