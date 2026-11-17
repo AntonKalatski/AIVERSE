@@ -83,6 +83,35 @@ int main() {
         commands.flush(w);
         assert(count==13);
     }
+    // Each deterministic lane has one producer until flush/discard.
+    // A different thread must be rejected rather than racing on vector storage.
+    {
+        World w;
+        DeterministicCommands commands(2);
+        int sequence=0;
+        commands.enqueue(0,[&](World&){sequence=sequence*10+1;});
+        std::atomic<bool> rejected{false};
+        std::thread competing([&] {
+            try {
+                commands.enqueue(0,[&](World&){sequence=999;});
+            } catch(const std::logic_error&) {rejected.store(true);}
+        });
+        competing.join();
+        assert(rejected.load());
+        std::thread independent([&] {
+            commands.enqueue(1,[&](World&){sequence=sequence*10+2;});
+        });
+        independent.join();
+        commands.flush(w);
+        assert(sequence==12);
+        // Ownership is reset after draining, another thread can own that lane.
+        std::thread next([&] {
+            commands.enqueue(0,[&](World&){sequence=sequence*10+3;});
+        });
+        next.join();
+        commands.flush(w);
+        assert(sequence==123);
+    }
     // Dirty snapshot applies only marked pages; unmarked data is preserved.
     {
         std::vector<Position> before(1024),updated(1024);
