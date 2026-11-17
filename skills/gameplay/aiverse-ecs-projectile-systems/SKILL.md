@@ -34,8 +34,18 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
    (includes `AIVERSE::lib_weapon_policies` and `aiverse_world`), replay
    hash/rollback, old save formats, impact ordering and cross-genre reuse.
    `tests/ecs_projectile_composition_test.cpp` is the reference fixture.
-7. The example tests shared ballistic flight only; it does **not** establish
-   that the entire legacy RTS/FPS fire/damage stack has been migrated.
+7. This flight skill is **one part** of the complete common shooting pipeline.
+   For weapon inputs/ammo/cooldown and deterministic deferred projectile creation,
+   use `skills/gameplay/aiverse-ecs-weapon-launch/SKILL.md` and
+   `<aiverselib/genre/EcsWeaponLaunchSystems.h>`. For health, impacts and
+   ordered damage, use `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md`
+   and `<aiverselib/genre/EcsDamageSystems.h>`.
+8. Run `ecs_projectile_composition_test` (flight-only),
+   `ecs_cross_genre_projectile_test` (flight + health) and
+   `ecs_cross_genre_weapon_pipeline_test` (full launch-to-damage)
+   before considering genre-neutral mechanics reusable.
+9. These tests compose the shared pipeline in independent host games; they
+   do **not** imply the legacy RTS/FPS fire/damage stacks have been migrated.
    Document remaining adapters and native test status honestly.
 
 When implementing another mechanic, repeat the same decomposition:
