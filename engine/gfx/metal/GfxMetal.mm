@@ -998,6 +998,11 @@ public:
         if (!commandData || !indexData || commandData->type != BufferType::Storage ||
             (indexData->type != BufferType::Index &&
              indexData->type != BufferType::Storage)) return 0;
+        // CPU knows the input slots and the original command buffer capacity.
+        // Reject malformed source offsets before launching the GPU kernel.
+        const size_t availableCommands = commandData->size / sizeof(DrawIndexedIndirectCommand);
+        for (uint32_t i = 0; i < count; ++i)
+            if (sourceSlots[i] >= availableCommands) return 0;
         if (!gpuIcbPipeline_) {
             static const char* source = R"MSL(
 #include <metal_stdlib>
@@ -1113,6 +1118,9 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         if (resources.frame != frame_ || !resources.icb ||
             resources.count == 0 || !buffers_.get(ibId_) ||
             !buffers_.get(vbId_)) return false;
+        // The Metal render pipeline must retain all parent vertex/fragment
+        // bindings; no transient bytes may be inherited from earlier draws.
+        if (!gpuIcbUniformBinding_) return false;
         // The inherited parent bindings are explicit Metal buffers for all
         // active uniform slots, never setBytes transient storage.
         declareIndirectRead(current(*buffers_.get(ibId_)), MTLRenderStageVertex);
