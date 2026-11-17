@@ -59,9 +59,13 @@ for mode in off on; do
   "$build/modules/fps/aiverse_fps_tests" examples/fps/arena > "$ROOT/fps-$mode.log" 2>&1 || {
     cat "$ROOT/fps-$mode.log"; exit 1;
   }
-  grep 'FPS_MOTOR_PARITY_HASH=' "$ROOT/fps-$mode.log" > "$ROOT/fps-$mode.hash" || {
+  grep -E '^FPS_(MOTOR|COMBAT)_PARITY_HASH=' "$ROOT/fps-$mode.log" > "$ROOT/fps-$mode.hash" || {
     echo "FPS motor parity fixture did not execute in $mode" >&2; exit 1;
   }
+  if [[ "$(wc -l < "$ROOT/fps-$mode.hash" | tr -d ' ')" != 2 ]]; then
+    echo "FPS movement and combat parity hashes are both required in $mode" >&2
+    exit 1
+  fi
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS and network tests: $mode ==="
     ctest --test-dir "$build" --no-tests=error -R "^aiverse_(tests|net_tests)$" --output-on-failure
