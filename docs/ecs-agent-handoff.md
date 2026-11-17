@@ -237,6 +237,48 @@ All compared checksum columns matched across variants in the user-provided CSV f
 
 **Updated handoff decision:** prior blocker "latest tests not compiled" is resolved for these five suites. Remaining blockers: runtime guarded access only checks calls using the facade, arbitrary external captures/raw World bypass it; complete production dependency contracts, deterministic external effect handling, realistic RTS/FPS replay tests, worker race detection/TSan, and complete ECS-wide incremental snapshots are not implemented/verified. Retain opt-in bridge and sequential default; do NOT merge by default.
 
+## 2026-11-17 — Gameplay integration hardening and real RTS/FPS compare (CURRENT)
+
+After the full prior test suite passed, new code was committed in PR #8:
+
+- `9d84ca7` — `PersistentWorkers::parallelFor` now rejects nested calls on the **same** pool from its worker or caller lanes rather than deadlocking. This is defensive only; calling two distinct pools recursively is not yet subjected to a general concurrency audit.
+- `12ad169` — `tests/ecs_experiments_test.cpp` verifies nested parallel submissions are rejected and worker pool remains usable.
+- `942ff3b` — `modules/rts/RtsUnits.cpp` gains an **off-by-default** `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS` path for the independent `Transform.prevPos = Transform.pos` work in `sysMovement`. The spatial-hash insertion stays **sequential in original Unit dense order**. It processes at most one Transform per Unit and does not change the rest of RTS movement.
+- `ed7ed90` — `CMakeLists.txt` defines the default-OFF option `AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS` and applies it privately to `aiverse_game`. It **must not** be enabled for every game without validation.
+- `ac8dfa3` — `tests/run_ecs_gameplay_compare.sh` builds a baseline and opt-in version of the **real RTS** headless runner and FPS tests. Runs RTS at fixed seed with `--verify-restore-at` and compares `--checksum-log` checkpoint files. FPS tests run in each build; FPS gameplay is still sequential and its authoritative State/actors/RNG must not be parallelized without a separate dependency redesign.
+- `c06c48a`, `df98896` — registered `ecs_experiments_test`, `ecs_wave_executor_test`, `ecs_guarded_world_test`, `ecs_wave_replay_test`, `ecs_simulation_bridge_test` in CMake/CTest, linked to `aiverse_engine` and `Threads::Threads`.
+
+### Validation status of this step
+
+**Not yet compiled or run on Mac Studio**. The **previous** complete ECS suite (including sanitizers and benchmarks) passed; this new code requires fresh validation.
+
+### Execute after git pull
+
+```sh
+# Existing standalone suites; now includes nested worker-pool test
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+
+# Real modules: build two engine variants, run RTS snapshot/checksum comparison,
+# FPS regression in both, optionally aiverse_tests in both:
+bash tests/run_ecs_gameplay_compare.sh
+bash tests/run_ecs_gameplay_compare.sh --full
+
+# Alternative via existing CMake build tree:
+cmake -S . -B build -DAIVERSE_BUILD_TESTS=ON
+cmake --build build --target aiverse_ecs_experiments_test aiverse_ecs_simulation_bridge_test
+ctest --test-dir build -R '^ecs_' --output-on-failure
+```
+
+### Known limitations
+
+- No general parallel execution of RTS/FPS systems; only opt-in RTS previous-transform preprocessing is experimental.
+- The number of copied Unit transforms must be large enough to justify 3 worker threads; performance and cross-platform checks are outstanding. Source option is OFF by default; no change to existing users.
+- The guarded facade detects only accesses routed through it; raw `World` and external/global captures remain unguarded, so any such scheduled system must be audited.
+- `DirtyPageSnapshot` does not integrate with `SimSnapshot` (no complete dirty tracking for all pools/resources/Entity state); do not replace the existing rollback mechanism.
+- The compare script assumes CMake toolchain and example template availability; any configure/build failures must be fixed and recorded.
+- Avoid calling this feature complete until `run_ecs_gameplay_compare.sh` and relevant RTS/FPS lockstep suites pass.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
