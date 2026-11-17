@@ -689,3 +689,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `95c4a08`: `tests/ecs_cross_genre_weapon_pipeline_test.cpp` installs identical **WeaponLaunch → ProjectileSpawn → ProjectileFlight → ImpactQueue → DamageResolution** ECS systems into unrelated ShooterTag/ArtilleryTag `GameModule` hosts. Checks one request consumes exactly one ammo, stable generated shot ID, 35 damage, projectile despawn, identical checksums and snapshot rollback with/without COW.
 - The test depends on no FPS/RTS game module header or linkage, only `AIVERSE::libraries` + shared `aiverse_world` collision. It complements existing flight-only and flight-to-damage cross-genre tests.
 - **Status:** new test not yet built/executed. Next wire CMake/standalone runner, register public package and skill, and preserve deterministic event barriers.
+
+### 2026-11-18 — Universal ECS weapon launch, stage C (CMake)
+- Commit `282a299`: registers `aiverse_ecs_cross_genre_weapon_pipeline_test` after `modules/fps` creates `aiverse_world`, linking only `aiverse_engine`, `aiverse_world` and `AIVERSE::libraries` (not `aiverse_fps` or `aiverse_game`). CTest case `ecs_cross_genre_weapon_pipeline_test` covers full shared shooting and damage composition.
+- Not compiled on Mac/Linux yet; CI must confirm.
