@@ -321,12 +321,23 @@ void DetailsPanel::mapFields(Editor& ed) {
             if (ImGui::Selectable((d.players[p].name + "##p" + std::to_string(p)).c_str(), sameOwner && e0.owner == int(p + 1))) worldedit::setOwner(doc, idx, int(p + 1));
         ImGui::EndCombo();
     }
-    ui::prop(idx.size() > 1 ? "Центр" : "Позиция", idx.size() > 1 ? "Перетаскивание сдвигает все выбранные объекты" : "x и z в клетках; перетаскивание в «Сцене» тоже двигает");
-    if (!posActive_) { posEdit_[0] = cx; posEdit_[1] = cz; }
-    const bool ch = ImGui::DragFloat2("##pos", posEdit_, 0.1f, 0, 0, "%.1f");
-    if (ImGui::IsItemActivated()) doc.beginEdit();
-    posActive_ = ImGui::IsItemActive();
-    if (ch) worldedit::move(doc, idx, posEdit_[0] - cx, posEdit_[1] - cz);
+    // Single-object Position XZ is edited by the shared component drawer
+    // above. Preserve the centroid editor for multi-selection only.
+    if (idx.size() > 1) {
+        ui::prop("Центр", "Перетаскивание сдвигает все выбранные объекты");
+        if (!posActive_) { posEdit_[0] = cx; posEdit_[1] = cz; }
+        const bool ch = ImGui::DragFloat2("##pos", posEdit_, 0.1f, 0, 0, "%.1f");
+        if (ImGui::IsItemActivated()) doc.beginEdit();
+        posActive_ = ImGui::IsItemActive();
+        if (ch) {
+            std::vector<DocumentEntityRef> refs;
+            refs.reserve(idx.size());
+            for (int i : idx) refs.push_back(DocumentEntityRef::mapEntity(size_t(i)));
+            translateDocumentEntities(doc, refs, {posEdit_[0] - cx, 0.0, posEdit_[1] - cz});
+        }
+    } else {
+        posActive_ = false;
+    }
     bool allGarrison = true, allNodes = true;
     for (int i : idx) {
         const int t = R.findType(d.entities[size_t(i)].type);
