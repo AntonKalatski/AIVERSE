@@ -986,6 +986,7 @@ void Editor::drawDockspace() {
 
 void Editor::frame(gfx::Device& dev, double dt) {
     auto t0 = std::chrono::steady_clock::now();
+    const bool traceEditor = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     time_ += dt;
     pollAgentLink();
     applyChanges();
@@ -1008,11 +1009,13 @@ void Editor::frame(gfx::Device& dev, double dt) {
     syncSelection();
     updateWorld();
     for (auto& w : windows_) w->update(*this, dt);
+    const auto afterUpdate = std::chrono::steady_clock::now();
 
     theme_.applyPending();
     ui_.newFrame(dt);
     handleShortcuts();
     pollGameWizard();   // the game wizard's agent: progress into the activity feed / status bar
+    const auto afterUiSetup = std::chrono::steady_clock::now();
     if (showPicker_) {
         drawGamePicker();
     } else {
@@ -1042,6 +1045,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
         drawActivityToasts();
         if (focusFirst_ > 0) --focusFirst_;
     }
+    const auto afterWindows = std::chrono::steady_clock::now();
     drawOpenRequest();
     drawNativeBuild();
     // the screen: only the UI (3D views were rendered offscreen by their windows)
@@ -1056,6 +1060,22 @@ void Editor::frame(gfx::Device& dev, double dt) {
     ui_.render();
     dev.endPass();
     deliverShots(dev);
+    const auto afterUiRender = std::chrono::steady_clock::now();
+    if (traceEditor) {
+        static unsigned samples = 0;
+        static double totals[4] = {};
+        const auto ms = [](auto begin, auto end) { return std::chrono::duration<double, std::milli>(end - begin).count(); };
+        totals[0] += ms(t0, afterUpdate);
+        totals[1] += ms(afterUpdate, afterUiSetup);
+        totals[2] += ms(afterUiSetup, afterWindows);
+        totals[3] += ms(afterWindows, afterUiRender);
+        if (++samples == 120) {
+            std::fprintf(stderr, "[editor-frame] avg/120 update=%.3f ms ui-setup=%.3f ms windows=%.3f ms ui-render=%.3f ms\n",
+                         totals[0] / samples, totals[1] / samples, totals[2] / samples, totals[3] / samples);
+            samples = 0;
+            for (double& value : totals) value = 0.0;
+        }
+    }
     FrameStats fs_{float(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count()), lastSimMs_, r3d_.drawCalls()};
     frameHistory.push_back(fs_);
     prof.frame(fs_.frameMs, time_);
