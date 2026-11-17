@@ -272,6 +272,12 @@ void ecsActorAuthorityParity(Json rules,Json map) {
             legacy->inject(cmd);ecs->inject(cmd);
         }
         legacy->step();ecs->step();
+        if(i==0) {
+            const auto* indexView=world.resourceConst<fps::DynamicEntityIndex>();
+            CHECK(indexView && indexView->byKey.at((uint64_t(1)<<32)|projectile.id)==p);
+            CHECK(indexView->byKey.at((uint64_t(2)<<32)|loot.id)==l);
+            CHECK(indexView->byKey.at((uint64_t(3)<<32)|vehicle.id)==v);
+        }
         CHECK(legacy->checksum()==ecs->checksum());
         for(size_t i=0;i<state(*ecs).actors.size();++i) {
             const auto entity=module.actorEntity(*ecs,uint8_t(i+1));
@@ -350,18 +356,16 @@ void ecsDynamicAuthorityParity(Json rules,Json map) {
     state(*legacy).loot.push_back(loot);
     state(*legacy).vehicles.push_back(vehicle);
     auto& world=ecs->world();
-    auto* index=world.resource<fps::DynamicEntityIndex>();
-    CHECK(index);
-    auto add=[&](uint8_t kind,uint32_t id) {
-        Entity e=world.create();
-        index->byKey[(uint64_t(kind)<<32)|id]=e;
-        return e;
-    };
-    const Entity p=add(1,projectile.id),l=add(2,loot.id),v=add(3,vehicle.id);
+    // Native ECS spawn should not require manual State edits or explicit
+    // DynamicEntityIndex mutation: the pre-tick bridge discovers components.
+    const Entity p=world.create(),l=world.create(),v=world.create();
     world.add<fps::ProjectileRuntime>(p,fps::ProjectileRuntime{projectile,0});
     world.add<fps::LootRuntime>(l,fps::LootRuntime{loot,0});
     world.add<fps::VehicleRuntime>(v,fps::VehicleRuntime{vehicle,0});
     CHECK(legacy->checksum()==ecs->checksum()); // authoritative ECS without a tick
+    auto* index=world.resource<fps::DynamicEntityIndex>();
+    CHECK(index && index->byKey.empty());
+
     SimSnapshot snapshot;
     ecs->saveState(snapshot);
     for(int i=0;i<8;++i) {
