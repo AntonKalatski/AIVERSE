@@ -165,6 +165,11 @@ int aiverseMain(int argc, char** argv) {
         renderer.drawMesh(floor,{}, {.6f,.6f,.6f,1});
         if(reflection) renderer.drawMesh(floor,render::mat4::translate({0,.2f,0}),{.1f,.2f,.3f,.6f},render::kDrawNoCastShadow,.9f);
         render::ModelDraw draw;draw.model=model.get();draw.materials=&materials;
+        // This is also a GPU-authored draw fixture. The real renderer only
+        // puts static (or explicitly allowed rigid) instances into the
+        // compute-generated ICB path. Without this flag a green test would
+        // exercise CPU MDI only, regardless of AIVERSE_GPU_ENCODED_ICB.
+        if (scenario == "indirect") draw.flags |= render::kDrawStatic;
         const auto center=(model->boundsMin+model->boundsMax)*.5f;
         draw.world=render::mat4::scale({.25f,.25f,.25f})*render::mat4::translate({-center.x,-model->boundsMin.y,-center.z});
         if (scenario=="effects") {draw.dissolve=.18f;draw.outline={1,.2f,0,.025f};}
@@ -200,6 +205,13 @@ int aiverseMain(int argc, char** argv) {
                     (uint64_t(p.draws[0]) + p.draws[1] >= uint64_t(shadowBefore) + opaqueBefore ||
                      renderer.modelStats().indirectCommands < 8)) failed = true;
                 if (!supported && (p.draws[1] != opaqueBefore || p.draws[0] != shadowBefore)) failed = true;
+                const bool expectGpu = std::getenv("AIVERSE_EXPECT_GPU_ICB") &&
+                                        std::string(std::getenv("AIVERSE_EXPECT_GPU_ICB")) == "1";
+                if (expectGpu && d.supportsGpuEncodedIcb() &&
+                    renderer.gpuModelDrawStats().gpuEncodedSubmissions == 0) {
+                    std::fprintf(stderr, "[metal-gpu-icb] no GPU-encoded submissions executed; candidates do not count\\n");
+                    failed = true;
+                }
                 const bool demandPbr = std::getenv("AIVERSE_EXPECT_PBR_ICB") &&
                                        std::string(std::getenv("AIVERSE_EXPECT_PBR_ICB")) == "1";
                 if (demandPbr && supported && p.draws[1] >= opaqueBefore) {

@@ -78,10 +78,16 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
       - name: Build real Metal A/B fixture
         run: cmake --build build/metal-icb --target aiverse_material_batches --parallel 4
-      - name: Compare real GPU draw results with ICB enabled when supported
+      - name: Compare actual GPU-encoded ICB against direct model draws
         env:
           AIVERSE_EXPERIMENTAL_METAL_ICB: '1'
+          AIVERSE_GPU_AUTHORED_DRAWS: '1'
+          AIVERSE_GPU_ENCODED_ICB: '1'
+          AIVERSE_GPU_ICB_RIGID: '1'
+          AIVERSE_GPU_ICB_MIN_COMMANDS: '2'
+          AIVERSE_EXPECT_GPU_ICB: '1'
           AIVERSE_PALETTE_TEST_CASE: indirect
+          AIVERSE_ICB_TRACE: '1'
         run: |
           mkdir -p build/metal-icb/captures
-          build/metal-icb/aiverse_material_batches unused.obj build/metal-icb/captures/mdi
+          build/metal-icb/aiverse_material_batches unused.obj build/metal-icb/captures/gpu-icb
