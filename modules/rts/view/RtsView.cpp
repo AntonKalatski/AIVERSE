@@ -528,9 +528,14 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
             if (fresh || (t.prevPos == t.pos && ft.tick != sim.tick())) { ft.prev = ft.cur = so.facing; }   // new, or teleported / standing
             else if (ft.tick != sim.tick()) { ft.prev = ft.cur; ft.cur = so.facing; }
             ft.tick = sim.tick(); ft.seen = out.facingFrame;
-            const float3 f{ft.prev.x + (ft.cur.x - ft.prev.x) * alpha, ft.prev.y + (ft.cur.y - ft.prev.y) * alpha, ft.prev.z + (ft.cur.z - ft.prev.z) * alpha};
-            const float fl = std::sqrt(f.x * f.x + f.z * f.z);
-            if (fl > 1e-3f && ft.prev.x * ft.cur.x + ft.prev.z * ft.cur.z > 0) so.facing = {f.x / fl, f.y, f.z / fl};   // a flip over 90 degrees snaps
+            // Stationary structures and unchanged facings already have the
+            // correct direction. Avoid interpolation, sqrt and division for
+            // the common static RTS path, without changing turning behaviour.
+            if (ft.prev.x != ft.cur.x || ft.prev.y != ft.cur.y || ft.prev.z != ft.cur.z) {
+                const float3 f{ft.prev.x + (ft.cur.x - ft.prev.x) * alpha, ft.prev.y + (ft.cur.y - ft.prev.y) * alpha, ft.prev.z + (ft.cur.z - ft.prev.z) * alpha};
+                const float fl = std::sqrt(f.x * f.x + f.z * f.z);
+                if (fl > 1e-3f && ft.prev.x * ft.cur.x + ft.prev.z * ft.cur.z > 0) so.facing = {f.x / fl, f.y, f.z / fl};   // a flip over 90 degrees snaps
+            }
         }
         const UnitType& ut = R.types[u.type];
         if (ut.view.getBool("teamFromTerritory", false)) {
@@ -573,7 +578,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
             auto it = std::lower_bound(blips.begin(), blips.end(), e, [](Entity a, Entity b) { return a.index < b.index; });
             so.blip = it != blips.end() && *it == e;
         }
-        out.objects.push_back(so);
+        out.objects.push_back(std::move(so));
     });
     // bodies of native modules (kHookScene): drawn as unit types
     if (m->native().has(kHookScene)) {
@@ -592,7 +597,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
                 int x = int(b.pos.x.floorInt()), y = int(b.pos.z.floorInt());
                 so.visible = gs.grid.inside(x, y) && gs.vision[viewer][size_t(gs.grid.index(x, y))] == 2;
             }
-            out.objects.push_back(so);
+            out.objects.push_back(std::move(so));
         }
     }
     w.each<Projectile, Transform>([&](Entity e, Projectile& pr, Transform& t) {
@@ -604,7 +609,7 @@ void sceneFromSim(Simulation& sim, RtsScene& out, float alpha, uint8_t viewer) {
             int x = int(t.pos.x.floorInt()), y = int(t.pos.z.floorInt());
             so.visible = gs.grid.inside(x, y) && gs.vision[viewer][size_t(gs.grid.index(x, y))] == 2;
         }
-        out.objects.push_back(so);
+        out.objects.push_back(std::move(so));
     });
     for (size_t i = 0; i < gs.roads.nodes.size(); ++i)
         for (uint16_t j : gs.roads.adj[i]) {
