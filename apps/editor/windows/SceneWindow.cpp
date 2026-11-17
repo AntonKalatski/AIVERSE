@@ -86,11 +86,29 @@ public:
                         DocumentTransform position;
                         if (DocumentEntityRef::fromFpsKey(ed.selection.ref, selectedRef) &&
                             readDocumentTransform(ed.doc(), selectedRef, position)) {
-                            fpsGizmoAxis_ = pickMoveGizmoAxis(
-                                ed.sceneCam, vp_.pointsW, vp_.pointsH,
-                                vp_.originX, vp_.originY, io.MousePos.x, io.MousePos.y,
-                                {float(position.x), float(position.y), float(position.z)},
-                                std::max(0.35f, ed.sceneCam.distance * 0.075f));
+                            const float3 pivot{float(position.x), float(position.y),
+                                               float(position.z)};
+                            const float extent = std::max(0.35f, ed.sceneCam.distance * 0.075f);
+                            const Json* source = fpsDocumentEntity(ed.doc().data.fps, selectedRef);
+                            const bool oriented = selectedRef.source ==
+                                DocumentEntityRef::Source::FpsCollider && source &&
+                                (*source)["yaw"].isNumber();
+                            if (ed.transformTool == TransformTool::Rotate && oriented) {
+                                fpsGizmoAxis_ = pickRotateYawGizmoRing(
+                                    ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                    vp_.originX, vp_.originY, io.MousePos.x,
+                                    io.MousePos.y, pivot, extent) ? 3 : -1;
+                            } else if (ed.transformTool == TransformTool::Scale && oriented) {
+                                fpsGizmoAxis_ = pickMoveGizmoAxis(
+                                    ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                    vp_.originX, vp_.originY, io.MousePos.x,
+                                    io.MousePos.y, pivot, extent);
+                            } else if (ed.transformTool == TransformTool::Move) {
+                                fpsGizmoAxis_ = pickMoveGizmoAxis(
+                                    ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                    vp_.originX, vp_.originY, io.MousePos.x,
+                                    io.MousePos.y, pivot, extent);
+                            }
                         }
                     }
                     const bool alreadySelected =
