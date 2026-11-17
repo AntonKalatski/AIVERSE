@@ -44,6 +44,7 @@ public:
         // Diagnostic rendering is scoped to Scene, never leaked into the Game tab.
         auto& renderer = ed.renderer();
         renderer.setStudioDebugMode(studioDebugMode_);
+        renderer.setProfiling(sceneProfiling_);
         renderer.setModelInstancingEnabled(sceneInstancing_);
         renderer.setModelMultiDrawEnabled(sceneIndirect_);
         renderer.setModelCullingEnabled(sceneCulling_);
@@ -77,6 +78,7 @@ public:
         }
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
+        renderer.setProfiling(false);
         renderer.setModelInstancingEnabled(true);
         renderer.setModelMultiDrawEnabled(true);
         renderer.setModelCullingEnabled(true);
@@ -143,6 +145,8 @@ private:
             ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
             ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
             ImGui::Checkbox("Model culling", &sceneCulling_);
+            ImGui::Checkbox("Profile Scene renderer", &sceneProfiling_);
+            ImGui::SameLine(); ImGui::TextDisabled("CPU render stages");
             ImGui::SetNextItemWidth(180.0f);
             if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
                 sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
@@ -179,6 +183,9 @@ private:
                 ImGui::TextDisabled("Same camera/frame; excludes GPU timing and upload cost.");
             }
             const auto& profile = ed.renderer().profile();
+            const double gpuMs = ed.device().gpuFrameMs();
+            if (gpuMs > 0.0) ImGui::Text("GPU frame: %.3f ms (last completed)", gpuMs);
+            else ImGui::TextDisabled("GPU frame timing unavailable / not ready");
             ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
             if (profile.drawMs[1] > 0.0 || profile.drawMs[2] > 0.0)
                 ImGui::Text("CPU model draw phase: %.3f ms (profiling enabled)",
@@ -723,6 +730,7 @@ private:
     bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
+    bool sceneProfiling_ = false;
     bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
     int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
     int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
