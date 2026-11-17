@@ -1021,8 +1021,13 @@ void Editor::frame(gfx::Device& dev, double dt) {
     } else {
         drawMenuBar();
         drawDockspace();
+        // Per-window timings identify the expensive viewport or panel without
+        // changing frame scheduling. Keep only the top offender per frame.
+        double slowestWindowMs = 0.0;
+        const char* slowestWindow = nullptr;
         for (auto& w : windows_) {
             if (!w->open) continue;
+            const auto windowStart = std::chrono::steady_clock::now();
             if (w->zeroPadding()) ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
             if (focusFirst_ == 1 && w->order() == 0) ImGui::SetNextWindowFocus();
             // a window opened for the first time (not in the saved layout) joins the tabs of its dock area
@@ -1038,6 +1043,27 @@ void Editor::frame(gfx::Device& dev, double dt) {
                 StudioContextMenus::get().drawWindowFallback(*this, w->id());
             }
             ImGui::End();
+            if (traceEditor) {
+                const double elapsed = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - windowStart).count();
+                if (elapsed > slowestWindowMs) {
+                    slowestWindowMs = elapsed;
+                    slowestWindow = w->id();
+                }
+            }
+        }
+        if (traceEditor) {
+            static unsigned windowSamples = 0;
+            static double slowestSum = 0.0;
+            static std::string slowestId;
+            slowestSum += slowestWindowMs;
+            if (slowestWindow && slowestWindowMs > 0.0) slowestId = slowestWindow;
+            if (++windowSamples == 120) {
+                std::fprintf(stderr, "[editor-window] avg-top=%.3f ms last-top=%s\n",
+                             slowestSum / windowSamples, slowestId.c_str());
+                windowSamples = 0;
+                slowestSum = 0.0;
+            }
         }
         if (pendingFocusFrames_ > 0 && --pendingFocusFrames_ == 0)
             for (auto& id : pendingFocus_) if (EditorWindow* w = window(id)) ImGui::SetWindowFocus(w->imguiName());
