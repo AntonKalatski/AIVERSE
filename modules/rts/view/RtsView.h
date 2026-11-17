@@ -522,7 +522,7 @@ private:
     std::shared_ptr<std::map<uint64_t,render::mat4>> animationSurfaceFrames_;
     std::shared_ptr<const render::AnimationEnvironment> animationEnvironment(const SceneObject&,const EntityAnim&,const ModelChoice&,const MapGrid&);
     EntityFxStore* fx_ = nullptr;   // this frame's view.entity_fx store (RtsScene::entityFx)
-    bool fxFor(const SceneObject& o, EntityFxValues& out) const { return fx_ && o.entity.valid() && fx_->lookup(o.entity.packed(), out); }
+    bool fxFor(const SceneObject& o, EntityFxValues& out) const { return fx_ && !fx_->entries.empty() && o.entity.valid() && fx_->lookup(o.entity.packed(), out); }
     // an object that left the scene without a death event (silent removal, or a death inside a frame that ran several
     // ticks) becomes a corpse when its view.entity_fx carries corpse_age
     bool fxCorpse(uint64_t key, EntityAnim& st) const {
