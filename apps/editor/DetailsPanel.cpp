@@ -194,14 +194,6 @@ void DetailsPanel::draw(Editor& ed) {
     collect(ed);
     if (items_.empty()) { ui::emptyStateHere(ICON_INSPECTOR, "Объект исчез", "Его больше нет в мире игры."); return; }
     header(ed);
-    // Authored RTS entities use the same document component inventory as FPS.
-    // Live-world rows retain the existing ECS DetailsPanel sections below.
-    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
-        const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
-        // The same component-card dispatcher is used for RTS and FPS.
-        // Runtime ECS sections remain rendered by DetailsPanel below.
-        drawDocumentEditableComponents(ed.doc(), ref);
-    }
     const float clear = filter_.empty() ? 0 : ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
     ui::searchField("##propfilter", filter_, "Фильтр свойств", std::max(40.0f, ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - 4 - clear));
     ImGui::SameLine(0, 4);
@@ -216,15 +208,17 @@ void DetailsPanel::draw(Editor& ed) {
         ImGui::SetClipboardText((items_.size() == 1 ? all[0] : all).dump().c_str());
         ed.status = "Скопировано в буфер обмена";
     }
+    // Runtime ECS component snapshots are authoritative for component cards.
+    // Authoring metadata is deliberately separate and follows those cards.
+    sections(ed);
     if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
-        ImGui::PushID("RtsObjectProperties");
-        if (ImGui::CollapsingHeader("Map Entity Metadata", ImGuiTreeNodeFlags_DefaultOpen))
+        ImGui::PushID("MapEntityMetadata");
+        if (ImGui::CollapsingHeader("Map Entity Metadata"))
             mapFields(ed);
         ImGui::PopID();
     } else {
         mapFields(ed);
     }
-    sections(ed);
 }
 
 void DetailsPanel::header(Editor& ed) {
