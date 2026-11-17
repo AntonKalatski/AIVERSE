@@ -1569,6 +1569,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::lib_ecs_timed_mechanics)
     add_test(NAME ecs_cross_genre_timed_mechanics_test
         COMMAND aiverse_ecs_cross_genre_timed_mechanics_test)
+    add_executable(aiverse_ecs_cross_genre_locomotion_test
+        tests/ecs_cross_genre_locomotion_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_locomotion_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_locomotion)
+    add_test(NAME ecs_cross_genre_locomotion_test
+        COMMAND aiverse_ecs_cross_genre_locomotion_test)
 endif()
 add_subdirectory(modules/voxel)
 
