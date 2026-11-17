@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <unordered_map>
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/view/RtsCamera.h"
 #include "modules/rts/view/RtsOverlayData.h"
@@ -574,11 +575,37 @@ void Editor::buildEditScene(game::RtsScene& out) const {
     out.objects.clear();
     out.roads.clear();
     out.moveMarkers.clear();
-    auto inSet = [&](const Selection& s) { return std::find(selectionSet.begin(), selectionSet.end(), s) != selectionSet.end() || selection == s; };
+    // Keep these caches local to the frame: rules, visibility and selections can
+    // change through editor commands without a map revision. Cache the expensive
+    // type lookup and visibility result for repeated entity types/owners.
+    out.objects.reserve(d.entities.size() + (showGameObjects ? world_.rows.size() : 0));
+    out.roads.reserve(d.roads.size());
+    std::unordered_map<std::string, int> typeCache;
+    typeCache.reserve(std::min(d.entities.size(), rules().types.size()));
+    std::unordered_map<std::string, bool> visibilityCache;
+    visibilityCache.reserve(std::min(d.entities.size(), rules().types.size() * size_t(4)));
+    std::vector<uint8_t> selectedEntities(d.entities.size(), 0);
+    for (const Selection& item : selectionSet)
+        if (item.kind == Selection::Entity && item.index >= 0 && size_t(item.index) < selectedEntities.size())
+            selectedEntities[size_t(item.index)] = 1;
+    if (selection.kind == Selection::Entity && selection.index >= 0 && size_t(selection.index) < selectedEntities.size())
+        selectedEntities[size_t(selection.index)] = 1;
+    auto visible = [&](int owner, const std::string& type) {
+        std::string key = std::to_string(owner);
+        key.push_back('/');
+        key += type;
+        auto it = visibilityCache.find(key);
+        if (it != visibilityCache.end()) return it->second;
+        return visibilityCache.emplace(std::move(key), !objectHidden(owner, type)).first->second;
+    };
+    auto inSet = [&](const Selection& item) { return item == selection || std::find(selectionSet.begin(), selectionSet.end(), item) != selectionSet.end(); };
     for (size_t i = 0; i < d.entities.size(); ++i) {
         const auto& e = d.entities[i];
-        int t = rules().findType(e.type);
-        if (t < 0 || objectHidden(e.owner, e.type)) continue;
+        auto typeIt = typeCache.find(e.type);
+        if (typeIt == typeCache.end())
+            typeIt = typeCache.emplace(e.type, rules().findType(e.type)).first;
+        const int t = typeIt->second;
+        if (t < 0 || !visible(e.owner, e.type)) continue;
         game::SceneObject o;
         o.type = uint16_t(t);
         o.owner = e.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(e.owner, 0, 16));
@@ -594,7 +621,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         }
         if (rules().types[size_t(t)].garrisonMax > 0) o.garrison = e.garrison >= 0 ? e.garrison : 0;
         const Selection me{Selection::Entity, int(i), {}};
-        o.selected = inSet(me) || int(i) == roadStart;
+        o.selected = selectedEntities[i] != 0 || int(i) == roadStart;
         o.hovered = hover == me;
         out.objects.push_back(o);
     }
@@ -603,7 +630,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
     if (showGameObjects && !worldLive_ && !d.planet() && !sceneHidden.count("game"))
         for (auto& r : world_.rows) {
             if (r.doc >= 0 || r.type < 0 || !r.hasPos || (r.flags & game::kUnitOffMap) || size_t(r.type) >= rules().types.size()) continue;
-            if (objectHidden(r.owner, rules().types[size_t(r.type)].id)) continue;
+            if (!visible(r.owner, rules().types[size_t(r.type)].id)) continue;
             game::SceneObject o;
             o.type = uint16_t(r.type);
             o.owner = r.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(r.owner, 0, 16));
