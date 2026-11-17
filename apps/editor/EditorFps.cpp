@@ -111,41 +111,10 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
 }
 
 bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
-    if (selection.kind != Selection::FpsObject ||
-        !std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) return false;
-    const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
-    if (!key) return false;
+    if (selection.kind != Selection::FpsObject) return false;
     DocumentEntityRef ref;
-    if (!DocumentEntityRef::fromFpsKey(key, ref)) return false;
-    const bool spawn = ref.source == DocumentEntityRef::Source::FpsSpawn;
-    Json* itemPtr = fpsDocumentEntity(doc().data.fps, ref);
-    if (!itemPtr) return false;
-    Json& item = *itemPtr;
-    // Validate every affected endpoint before changing the document. A failed
-    // second endpoint must never leave a collider half-translated.
-    auto shifted = [&](const Json& xyz, Json& out) {
-        if (!xyz.isArray() || xyz.size() < 3 ||
-            !xyz[0].isNumber() || !xyz[1].isNumber() || !xyz[2].isNumber()) return false;
-        const double x = xyz[0].toDouble() + dx, y = xyz[1].toDouble() + dy, z = xyz[2].toDouble() + dz;
-        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
-        out = Json::array();
-        out.push(Json::number(x, 3));
-        out.push(Json::number(y, 3));
-        out.push(Json::number(z, 3));
-        return true;
-    };
-    if (spawn) {
-        Json moved;
-        if (!shifted(item, moved)) return false;
-        item = moved;
-    } else {
-        Json minMoved, maxMoved;
-        if (!shifted(item["min"], minMoved) || !shifted(item["max"], maxMoved)) return false;
-        item.member("min") = minMoved;
-        item.member("max") = maxMoved;
-    }
-    doc().touched();
-    return true;
+    if (!DocumentEntityRef::fromFpsKey(selection.ref, ref)) return false;
+    return translateDocumentEntity(doc(), ref, {dx, dy, dz});
 }
 
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
