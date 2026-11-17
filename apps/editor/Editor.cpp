@@ -128,6 +128,7 @@ void Editor::init(gfx::Device& dev) {
     lazyEditorAssets_ = !(eagerAssets && std::strcmp(eagerAssets, "1") == 0);
     editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
     view_.setDeferredLoading(lazyEditorAssets_);
+    view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(dev, rules(), projectReader(ws_.project.dir));
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
@@ -239,6 +240,7 @@ void Editor::reloadRules() {
     editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
     lastEditorTrim_ = time_;
     view_.setDeferredLoading(lazyEditorAssets_);
+    view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(*dev_, rules(), projectReader(ws_.project.dir));
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
