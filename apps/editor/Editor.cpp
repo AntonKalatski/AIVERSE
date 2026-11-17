@@ -613,7 +613,7 @@ void Editor::buildEditScene(game::RtsScene& out) const {
     const bool cacheEligible = cacheEditScene && !d.planet();
     const bool cacheHit = cacheEligible && editSceneCacheValid_ &&
         editSceneCacheMapRevision_ == ws_.map.revision &&
-        editSceneCacheRulesRevision_ == rulesRevision_ &&
+        editSceneCacheRulesRevision_ == static_cast<uint64_t>(rulesRevision_) &&
         editSceneCacheEntities_ == d.entities.data() &&
         editSceneCacheEntityCount_ == d.entities.size() &&
         editSceneCacheHidden_ == sceneHidden;
