@@ -99,7 +99,7 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
 }
 
 inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
-                                    DocumentTransform delta) {
+                                    DocumentTransform delta, bool markDirty = true) {
     if (!std::isfinite(delta.x) || !std::isfinite(delta.y) || !std::isfinite(delta.z))
         return false;
     DocumentTransform before;
@@ -150,7 +150,7 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
             entity->member("max") = hi;
         }
     }
-    map.touched();
+    if (markDirty) map.touched();
     return true;
 }
 
@@ -193,7 +193,8 @@ inline bool translateDocumentEntities(MapDoc& map,
     }
     bool moved = false;
     for (const auto& ref : refs)
-        moved = translateDocumentEntity(map, ref, delta) || moved;
+        moved = translateDocumentEntity(map, ref, delta, false) || moved;
+    if (moved) map.touched();
     return moved;
 }
 
