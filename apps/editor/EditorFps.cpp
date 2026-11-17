@@ -73,7 +73,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.world = mat4::translate(base)*mat4::scale(size);
         object.tint = {0.35f,0.42f,0.44f,1};
         object.mesh = &fpsPreviewMesh_;
-        object.entity = DocumentEntityRef{DocumentEntityRef::Source::FpsCollider, sourceIndex}.fpsKey();
+        object.entity = DocumentEntityRef::fpsCollider(sourceIndex).fpsKey();
         object.boundsMin = lo;
         object.boundsMax = hi;
         object.pickable = true;
@@ -89,7 +89,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.world = mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f});
         object.tint = {0.1f,0.65f,0.85f,1};
         object.mesh = &fpsPreviewMesh_;
-        object.entity = DocumentEntityRef{DocumentEntityRef::Source::FpsSpawn, sourceIndex}.fpsKey();
+        object.entity = DocumentEntityRef::fpsSpawn(sourceIndex).fpsKey();
         object.boundsMin = {pos.x - 0.3f, pos.y, pos.z - 0.3f};
         object.boundsMax = {pos.x + 0.3f, pos.y + 1.8f, pos.z + 0.3f};
         object.pickable = true;
@@ -149,7 +149,7 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
 }
 
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
-    const uint64_t key = DocumentEntityRef{spawn ? DocumentEntityRef::Source::FpsSpawn : DocumentEntityRef::Source::FpsCollider, sourceIndex}.fpsKey();
+    const uint64_t key = (spawn ? DocumentEntityRef::fpsSpawn(sourceIndex) : DocumentEntityRef::fpsCollider(sourceIndex)).fpsKey();
     return selection.kind == Selection::FpsObject && selection.ref == key;
 }
 
