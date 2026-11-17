@@ -43,7 +43,7 @@ struct MTBuffer {
 struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
 struct MTShaderCompilation { MTShader value; std::string error; std::atomic<bool> done{false}; };
-struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
+struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
 
 MTLVertexFormat toMTL(VertexFormat f) {
     switch (f) {
@@ -430,6 +430,53 @@ public:
         shaderAssets_->prepare(pd);
         return pd;
     }
+    void prepareIcbPbrPipeline(MTPipeline& pipeline, const MTShader* shader) {
+        // ICB colour requires all sampled textures/samplers inside an argument
+        // buffer. Preserve conventional pipelines; build this optional variant
+        // only for rigid built-in model shaders, on explicit experimental opt-in.
+        if (!supportsMultiDrawIndirect() || !shader || !shader->fs ||
+            pipeline.desc.depthOnly || shaderAssets_->strict() ||
+            device_.argumentBuffersSupport < MTLArgumentBuffersTier2) return;
+        const auto& src = shader->source;
+        if (src.find("#define AIVERSE_MODEL_SSR 1") == std::string::npos ||
+            src.find("#define LIGHTMAP 1") != std::string::npos ||
+            src.find("#define PROBES 1") != std::string::npos ||
+            src.find("#define SKINNED 1") != std::string::npos ||
+            src.find("#define BAKED 1") != std::string::npos ||
+            src.find("#define MORPH 1") != std::string::npos ||
+            src.find("#define MATERIAL_PALETTE 1") != std::string::npos ||
+            src.find("#define SG_SAMPLE(") != std::string::npos) return;
+
+        auto& cached = icbPbrShaders_[{src, shader->linear}];
+        if (!cached.attempted) {
+            cached.attempted = true;
+            const std::string variant = colorShaderPrefix(true,shader->linear) +
+                                        "#define AIVERSE_ICB_PBR 1\\n" + src;
+            NSError* err = nil;
+            id<MTLLibrary> library = [device_ newLibraryWithSource:
+                [NSString stringWithUTF8String:variant.c_str()] options:nil error:&err];
+            if (library) cached.fragment = [library newFunctionWithName:@"fs_main"];
+            if (!cached.fragment && std::getenv("AIVERSE_ICB_TRACE"))
+                std::fprintf(stderr,"[metal-icb] PBR variant failed: %s\\n",
+                             err ? err.localizedDescription.UTF8String : "missing fs_main");
+        }
+        if (!cached.fragment) return;
+        MTLRenderPipelineDescriptor* pd = pipelineDescriptor(pipeline.desc,shader);
+        pd.fragmentFunction = cached.fragment;
+        pd.supportIndirectCommandBuffers = YES;
+        NSError* error = nil;
+        auto state = [device_ newRenderPipelineStateWithDescriptor:pd error:&error];
+        if (!state) {
+            if (std::getenv("AIVERSE_ICB_TRACE"))
+                std::fprintf(stderr,"[metal-icb] PBR pipeline rejected: %s\\n",
+                             error ? error.localizedDescription.UTF8String : "unknown");
+            return;
+        }
+        auto encoder = [cached.fragment newArgumentEncoderWithBufferIndex:8];
+        if (!encoder) return;
+        pipeline.icbPbrState = state;
+        pipeline.icbPbrEncoder = encoder;
+    }
     PipelineHandle createPipeline(const PipelineDesc& d) override {
         auto* s = shaders_.get(d.shader.id);
         if (!s) { error_ = "pipeline: invalid shader"; return {}; }
@@ -451,6 +498,7 @@ public:
         dd.depthCompareFunction = d.depthTest ? MTLCompareFunctionLessEqual : MTLCompareFunctionAlways;
         dd.depthWriteEnabled = d.depthWrite ? YES : NO;
         p.depth = [device_ newDepthStencilStateWithDescriptor:dd];
+        prepareIcbPbrPipeline(p, s);
         return {pipelines_.add(p)};
     }
     PipelineJob createPipelineAsync(const PipelineDesc& d) override {
@@ -498,7 +546,10 @@ public:
         return [this,result](PipelineHandle& out) {
             if (!result->done.load(std::memory_order_acquire)) return false;
             if (!result->error.empty()) { error_=result->error; out={}; return true; }
-            if (!result->published.valid()) result->published={pipelines_.add(std::move(result->value))};
+            if (!result->published.valid()) {
+                prepareIcbPbrPipeline(result->value, shaders_.get(result->value.desc.shader.id));
+                result->published = {pipelines_.add(std::move(result->value))};
+            }
             out=result->published; return true;
         };
     }
@@ -768,6 +819,10 @@ public:
     void setTexture(int slot, TextureHandle h) override {
         auto* t = textures_.get(h.id);
         if (!enc_ || !t) return;
+        if (slot >= 0 && slot < 32) {
+            icbFragmentTextures_[slot] = t->tex;
+            icbFragmentSamplers_[slot] = t->sampler;
+        }
         if(bindingCacheEnabled_&&slot>=0&&slot<32&&boundTextures_[slot]==t->tex&&(slot>=16||boundSamplers_[slot]==t->sampler))return;
         if(bindingCacheEnabled_&&slot>=0&&slot<32)boundTextures_[slot]=t->tex;
         if(bindingCacheEnabled_&&slot>=0&&slot<16)boundSamplers_[slot]=t->sampler;
@@ -953,6 +1008,10 @@ private:
     Pool<MTBuffer> buffers_;
     Pool<MTTexture> textures_;
     std::map<std::pair<std::string,bool>,std::shared_ptr<MTShaderCompilation>> asyncShaderCompiles_;
+    struct IcbPbrShaderCache { id<MTLFunction> fragment; bool attempted = false; };
+    std::map<std::pair<std::string,bool>, IcbPbrShaderCache> icbPbrShaders_;
+    id<MTLTexture> icbFragmentTextures_[32] = {};
+    id<MTLSamplerState> icbFragmentSamplers_[32] = {};
     Pool<MTShader> shaders_;
     Pool<MTPipeline> pipelines_;
     uint32_t pipelineId_ = 0, vbId_ = 0, ibId_ = 0;
