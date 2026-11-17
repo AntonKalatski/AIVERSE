@@ -11,6 +11,16 @@ add_library(AIVERSE::world ALIAS aiverse_world)
 add_library(aiverse_fps STATIC FpsModule.cpp FpsMotor.cpp FpsSystems.cpp FpsProjectiles.cpp FpsStreaming.cpp FpsMelee.cpp FpsRoyale.cpp FpsVehicles.cpp FpsBuildings.cpp FpsBots.cpp)
 target_link_libraries(aiverse_fps PUBLIC aiverse_world aiverse_engine)
 add_library(AIVERSE::fps ALIAS aiverse_fps)
+# FPS authoritative motor-only parallel experiment. OFF by default; combat,
+# RNG, shared actor effects and streaming continue to run sequentially.
+option(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR
+    "Enable parallel precomputation of independent FPS actor motors" OFF)
+if(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_fps PRIVATE Threads::Threads)
+    target_compile_definitions(aiverse_fps PRIVATE AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR=1)
+endif()
+
 add_library(aiverse_authority STATIC ../../engine/net/authority/Session.cpp)
 target_link_libraries(aiverse_authority PUBLIC aiverse_fps aiverse_net aiverse_content_reader)
 add_library(AIVERSE::authority ALIAS aiverse_authority)
