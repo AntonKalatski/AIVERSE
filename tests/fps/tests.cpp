@@ -64,6 +64,58 @@ void actorEcsBridge(const Json& rules, const Json& map) {
     verify(*legacy);
 }
 
+void dynamicEcsBridge(const Json& rules, const Json& map) {
+    auto sim = simulation(rules, map);
+    auto& module = dynamic_cast<fps::Module&>(sim->module());
+    auto& current = state(*sim);
+    fps::Loot loot;
+    loot.id = 8001;
+    loot.pos = {2_fx, 3_fx, 4_fx};
+    loot.type = 1;
+    loot.count = 2;
+    fps::Vehicle vehicle;
+    vehicle.id = 8002;
+    vehicle.pos = {5_fx, 6_fx, 7_fx};
+    vehicle.health = 400;
+    fps::Projectile projectile;
+    projectile.id = 8003;
+    projectile.owner = 1;
+    projectile.pos = {8_fx, 9_fx, 10_fx};
+    projectile.damage = 25;
+    current.loot.push_back(loot);
+    current.vehicles.push_back(vehicle);
+    current.projectiles.push_back(projectile);
+    module.syncDynamicEntities(*sim);
+    auto* index = sim->world().resource<fps::DynamicEntityIndex>();
+    CHECK(index != nullptr);
+    CHECK(index->byKey.size() >= 3);
+    const uint64_t lootKey = (uint64_t(2) << 32) | loot.id;
+    const uint64_t vehicleKey = (uint64_t(3) << 32) | vehicle.id;
+    const uint64_t projectileKey = (uint64_t(1) << 32) | projectile.id;
+    CHECK(index->byKey.contains(lootKey));
+    CHECK(index->byKey.contains(vehicleKey));
+    CHECK(index->byKey.contains(projectileKey));
+    const Entity lootEntity = index->byKey.at(lootKey);
+    const Entity vehicleEntity = index->byKey.at(vehicleKey);
+    const Entity projectileEntity = index->byKey.at(projectileKey);
+    CHECK(sim->world().get<fps::LootEntity>(lootEntity).position == loot.pos);
+    CHECK(sim->world().get<fps::VehicleEntity>(vehicleEntity).health == 400);
+    CHECK(sim->world().get<fps::ProjectileEntity>(projectileEntity).damage == 25);
+    SimSnapshot rollback;
+    sim->saveState(rollback);
+    current.loot.erase(std::remove_if(current.loot.begin(), current.loot.end(),
+        [&](const fps::Loot& obj) { return obj.id == loot.id; }), current.loot.end());
+    module.syncDynamicEntities(*sim);
+    CHECK(!index->byKey.contains(lootKey));
+    CHECK(!sim->world().alive(lootEntity));
+    sim->loadState(rollback);
+    index = sim->world().resource<fps::DynamicEntityIndex>();
+    CHECK(index->byKey.contains(lootKey));
+    CHECK(sim->world().alive(index->byKey.at(lootKey)));
+    module.syncDynamicEntities(*sim);
+    CHECK(sim->world().get<fps::LootEntity>(index->byKey.at(lootKey)).position == loot.pos);
+}
+
 void spatial() {
     world::SpatialWorld w(32);CHECK(w.add({1,{{-2_fx,0_fx,-2_fx},{2_fx,2_fx,2_fx}}}));
     auto hit=w.cast({0_fx,1_fx,-10_fx},{0_fx,0_fx,20_fx});CHECK(hit.hit&&hit.id==1);CHECK(fxAbs(hit.fraction-Fixed::fromRatio(4,10))<Fixed::fromRaw(3));
@@ -211,6 +263,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();actorEcsBridge(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();actorEcsBridge(rules,map);dynamicEcsBridge(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
