@@ -277,6 +277,21 @@ AIVERSE_AUTOLOD_TRACE=1 ./build/.temp/runtime-autolod/AiverseEditor.app/Contents
 - In GTA microtest select `sedan` then `civic_police_station`: **Модели → LOD модели**, **Сцена → LOD**. Look for `Авто-LOD: ...` or real authored levels and change camera range. Compare with `AIVERSE_AUTOLOD=off` in a fresh editor process; verify rolling wheels, opening doors and no visible geometry corruption. Benchmark Scene CPU frame, GPU frame and triangle count after warmup; **do not claim speedup** merely because triangle count falls.
 - **Mac build, full native model LFS inspection, runtime A/B and CI status unverified** at writing. Keep PR draft pending these steps.
 
+## Step 20 — Full renderer/AutoLOD integration into universal FPS/RTS inspector branch (2026-11-18)
+- Requested destination: `feature/universal-entity-inspector-fps`. Source stack: `feat/runtime-auto-lod-fallback` at `9444b0f1421771e948d604b129eb3593bfb7399f` (PRs #4, #9–#15).
+- Merge-base `9799544162b9b6e58f2ec9277fcc1b13c38df39c`. Original FPS head at the start of integration: `e0b584d5592f8dae17d02d5487200c9a89875de6`. The branches had 478 source-only and 516 FPS-only commits; a raw PR #16 failed automatic merge.
+- Created safe staging branch `integrate/perf-stack-into-universal-inspector-20261118` from the FPS head. Relative to common merge-base there were **57** changed source files, **99** changed target files, and **10 overlapping file paths**. Git-tree overlay copied all 47 source-only files by blob SHA without touching any target-only files. Conflicted paths were merged three-way from merge-base (not overwritten with source):
+  - `AGENTS.md`: retained ECS migration instructions and added batching handoff link.
+  - `CMakeLists.txt`, `apps/editor/Editor.h`, `engine/render/Renderer3D.h`, `engine/render/ModelShaders.h`, `modules/rts/view/RtsViewDraw.cpp`: line-level three-way hunk merges with no overlapping edits.
+  - `apps/editor/Editor.cpp`: retained FPS unified `enqueueFpsSceneGeometry`, selection post-outline and FPS no-RTS-view mode; brought in lazy asset residency and scene-stage profiling in the RTS branch only.
+  - `apps/editor/windows/SceneWindow.cpp`: retained unified FPS/RTS toolbar, FPS object picker, rotate/scale/move gizmos and selection; added road batching/LOD controls and profiling. FPS-only toolbar was *not* restored, preventing duplicate controls.
+  - `engine/render/Renderer3D.cpp`: retained FPS mask/outline instead of old hull, added camera triangle profile without duplicate outline rendering.
+  - `engine/render/Renderer3DModels.cpp`: retained new material palette and MDI packing, explicitly restored FPS `selectionMaskPass_` outline width override in `packModelInstance`.
+- Initial integration staging commits through `b8cbd60ef015367a8ab27fec83941fec562646fd`. PR #18 is a review target for integration; do not merge the original conflicting PR #16.
+- During merge, FPS target advanced by 24 commits to `a3772e95f2b1a78ec84b1483cb2a6352456cf77d`; changed paths are only `apps/editor/EditorFps.cpp`, `apps/editor/EditorRuntimeEntityProvider.h`, `docs/editor-unification-handoff.md`, `modules/fps/FpsModule.cpp/.h`, `tests/fps/tests.cpp`. All are **outside** the 57 changed files from the renderer source stack, so forward integrate them unchanged from the latest FPS target.
+- Target code preservation and source code availability verified by inspecting source and staging through GitHub; **not a confirmed macOS compile/test/pixel match**. Run complete CI plus `aiverse_editor`, `aiverse_auto_lod_tests`, `aiverse_deferred_loading_tests`, `aiverse_material_batches --unit`, FPS/scene gizmo tests, Metal screenshot/selection/LOD A/B before declaring production-ready.
+- Do not overwrite `feature/universal-entity-inspector-fps` with source branch via forced ref update. Use three-parent merge commit retaining staging, latest FPS target and original render-stack source ancestry; update destination only fast-forward with expected-SHA guard. Any new concurrent commits must be reapplied without clobbering.
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
