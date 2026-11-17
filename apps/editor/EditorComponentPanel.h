@@ -84,4 +84,29 @@ inline bool drawDocumentColliderBoundsField(MapDoc& map, DocumentEntityRef ref) 
     return applied;
 }
 
+inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
+    const auto components = documentComponents(map, ref);
+    for (const auto& component : components) {
+        if (!component.editable) continue;
+        ImGui::PushID(component.id);
+        if (ImGui::CollapsingHeader(component.title, ImGuiTreeNodeFlags_DefaultOpen)) {
+            switch (component.kind) {
+            case DocumentComponentKind::Transform:
+                drawDocumentPositionField(map, ref);
+                break;
+            case DocumentComponentKind::Collider:
+                drawDocumentColliderBoundsField(map, ref);
+                ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
+                break;
+            case DocumentComponentKind::Spawn:
+                ImGui::TextDisabled("Spawn orientation and scale are not part of the current map schema.");
+                break;
+            default:
+                break;
+            }
+        }
+        ImGui::PopID();
+    }
+}
+
 } // namespace aiverse::editor
