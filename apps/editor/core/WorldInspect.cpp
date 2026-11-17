@@ -362,7 +362,8 @@ bool registerWorldInspectorExtension(WorldInspectorExtension extension) {
     if (extension.title.empty()) extension.title = extension.id;
     auto& registry = inspectorExtensions();
     std::lock_guard<std::mutex> lock(registry.mutex);
-    return registry.components.emplace(extension.id, std::move(extension)).second;
+    const std::string id = extension.id;
+    return registry.components.emplace(id, std::move(extension)).second;
 }
 
 bool unregisterWorldInspectorExtension(const std::string& id) {
