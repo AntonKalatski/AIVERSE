@@ -1424,9 +1424,51 @@ void Renderer3D::renderModels(int phase) {
             counts[0] = counts[1] = 0;
         }
     }
-    // Sort by shared GPU buffers only when explicitly requested. It helps
-    // heterogeneous pooled meshes once MDI is active, but is wasted work when
-    // MDI is unavailable (and can regress ordinary instancing performance).
+    // Opt-in vehicle experiment: separate node/primitive geometry stays
+    // intact, while base colour + metallic + roughness are selected from
+    // a shared per-command palette in the colour shader.
+    // All other material state (including texture handles and emissive)
+    // must still compare exactly.
+    static const bool instancePaletteRequested = [] {
+        const char* flag = std::getenv("AIVERSE_MDI_INSTANCE_PALETTE");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    const bool paletteSort = instancePaletteRequested && phase == 1 &&
+        modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() &&
+        !gpuAdaptiveInstancingFallback_;
+    std::vector<uint32_t> paletteGroup;
+    if (paletteSort) {
+        paletteGroup.resize(modelItems_.size(), UINT32_MAX);
+        std::vector<uint32_t> byExactGroup(representatives.size(), UINT32_MAX);
+        std::unordered_map<uint64_t, std::vector<uint32_t>> paletteCandidates;
+        std::vector<uint32_t> paletteRepresentatives;
+        for (uint32_t index : order_) {
+            const uint32_t exact = materialGroup[index];
+            uint32_t group = byExactGroup[exact];
+            if (group == UINT32_MAX) {
+                const ModelItem& item = modelItems_[index];
+                const uint64_t hash = gpuPaletteStateHash(*item.model, *item.mat);
+                auto& candidates = paletteCandidates[hash];
+                group = uint32_t(paletteRepresentatives.size());
+                for (uint32_t other : candidates) {
+                    const ModelItem& known = modelItems_[paletteRepresentatives[other]];
+                    if (equivalentGpuPaletteState(*item.model, *item.mat,
+                                                  *known.model, *known.mat)) {
+                        group = other;
+                        break;
+                    }
+                }
+                if (group == paletteRepresentatives.size()) {
+                    paletteRepresentatives.push_back(index);
+                    candidates.push_back(group);
+                }
+                byExactGroup[exact] = group;
+            }
+            paletteGroup[index] = group;
+        }
+    }
+    // Sort by shared GPU buffers only when requested (or for the palette
+    // experiment). It helps heterogeneous primitives on shared buffers.
     static const bool groupAdaptive = [] {
         const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
         return flag && std::strcmp(flag, "1") == 0;
@@ -1437,7 +1479,7 @@ void Renderer3D::renderModels(int phase) {
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
         dev_->supportsMultiDrawIndirect() &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
-        phase <= 1 && geometrySortRequested;
+        phase <= 1 && (geometrySortRequested || paletteSort);
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
@@ -1445,7 +1487,10 @@ void Renderer3D::renderModels(int phase) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
-            if (materialGroup[a] != materialGroup[b]) return materialGroup[a] < materialGroup[b];
+            if (paletteSort && paletteGroup[a] != paletteGroup[b])
+                return paletteGroup[a] < paletteGroup[b];
+            if (!paletteSort && materialGroup[a] != materialGroup[b])
+                return materialGroup[a] < materialGroup[b];
             if (mdiGeometrySort) {
                 if (x.model->vb.id != y.model->vb.id) return x.model->vb.id < y.model->vb.id;
                 if (x.model->ib.id != y.model->ib.id) return x.model->ib.id < y.model->ib.id;
@@ -1454,6 +1499,10 @@ void Renderer3D::renderModels(int phase) {
                 if (x.gi != y.gi) return x.gi < y.gi;
                 if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
             }
+            // Keep identical primitives together for cheap conventional
+            // instancing when an indirect group is too small.
+            if (paletteSort && materialGroup[a] != materialGroup[b])
+                return materialGroup[a] < materialGroup[b];
             if (x.prim != y.prim) return x.prim < y.prim;
             if (x.gi != y.gi) return x.gi < y.gi;
             if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
@@ -1611,7 +1660,8 @@ void Renderer3D::renderModels(int phase) {
                        (y.lodThreshold < 1 || y.lodInvert) &&
                     first.flags == y.flags &&
                     first.tint.w >= .99f && y.tint.w >= .99f &&
-                    materialGroup[firstIndex] == materialGroup[candidateIndex];
+                    (paletteSort ? paletteGroup[firstIndex] == paletteGroup[candidateIndex]
+                                 : materialGroup[firstIndex] == materialGroup[candidateIndex]);
             };
             // Do not reorder translucent parts or geometry-cluster selections.
             if (firstEligible &&
@@ -1625,7 +1675,9 @@ void Renderer3D::renderModels(int phase) {
                         if (first.model->vb != y.model->vb ||
                             first.model->ib != y.model->ib)
                             ++modelStats_.mdiGeometryBreaks;
-                        else if (materialGroup[firstIndex] != materialGroup[candidate])
+                        else if (paletteSort
+                            ? paletteGroup[firstIndex] != paletteGroup[candidate]
+                            : materialGroup[firstIndex] != materialGroup[candidate])
                             ++modelStats_.mdiMaterialBreaks;
                         else ++modelStats_.mdiStateBreaks;
                         break;
@@ -1652,7 +1704,7 @@ void Renderer3D::renderModels(int phase) {
                             uint32_t(minIndirectCommands)))) {
                         const auto attemptBegin = std::chrono::steady_clock::now();
                         const bool accepted = drawModelIndirectBatch(
-                            order_.data() + i, uint32_t(end - i), phase);
+                            order_.data() + i, uint32_t(end - i), phase, paletteSort);
                         if (traceModelPass) {
                             const double elapsed = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - attemptBegin).count();
