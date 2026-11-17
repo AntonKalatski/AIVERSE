@@ -713,6 +713,7 @@ public:
         [enc_ setDepthBias:p->desc.depthBiasConstant slopeScale:p->desc.depthBiasSlope clamp:0.0f];
     }
     void setVertexBuffer(BufferHandle h, size_t offset) override {
+        vbId_ = h.id;
         auto* b = buffers_.get(h.id);
         if(enc_&&b){auto buffer=current(*b);if(bindingCacheEnabled_&&boundVertexBuffer_==buffer&&boundVertexOffset_==offset)return;
             [enc_ setVertexBuffer:buffer offset:offset atIndex:0];if(bindingCacheEnabled_){boundVertexBuffer_=buffer;boundVertexOffset_=offset;}}
@@ -793,7 +794,8 @@ public:
             (offset & 3u)) return false;
         auto* cmdBuffer = buffers_.get(commands.id);
         auto* ib = buffers_.get(ibId_);
-        if (!cmdBuffer || !ib || cmdBuffer->storage ||
+        auto* vb = buffers_.get(vbId_);
+        if (!cmdBuffer || !ib || !vb || cmdBuffer->storage ||
             offset > cmdBuffer->size ||
             size_t(drawCount - 1) * stride + sizeof(DrawIndexedIndirectCommand) > cmdBuffer->size - offset)
             return false;
@@ -819,6 +821,10 @@ public:
                 indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * (u32 ? 4 : 2)
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
         }
+        // Apple's ICB contract requires explicit residency declarations for
+        // buffers referenced by indirect commands. The vertex stream is
+        // inherited from the parent encoder but still needs useResource.
+        [enc_ useResource:current(*vb) usage:MTLResourceUsageRead];
         [enc_ useResource:indices usage:MTLResourceUsageRead];
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
         indirectFrames_[frame_ % kFramesInFlight].push_back(icb);
@@ -851,7 +857,7 @@ private:
     std::map<std::pair<std::string,bool>,std::shared_ptr<MTShaderCompilation>> asyncShaderCompiles_;
     Pool<MTShader> shaders_;
     Pool<MTPipeline> pipelines_;
-    uint32_t pipelineId_ = 0, ibId_ = 0;
+    uint32_t pipelineId_ = 0, vbId_ = 0, ibId_ = 0;
     size_t ibOffset_ = 0;
     int passW_ = 0, passH_ = 0;
 };
