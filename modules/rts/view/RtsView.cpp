@@ -269,7 +269,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             replacedByRoads[t] = hit;
         }
     }
+    double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0;
+    size_t tracedObjects = 0;
     for (size_t i = 0; i < s.objects.size(); ++i) {
+        const auto objectStart = traceView ? std::chrono::steady_clock::now() : viewStart;
         const SceneObject& o = s.objects[i];
         if (!o.isProjectile && o.type < replacedByRoads.size() && replacedByRoads[o.type]) continue;
         if (o.isProjectile) {
@@ -289,6 +292,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         const uint64_t key = o.entity.valid() ? o.entity.packed() : (1ull << 63) | uint64_t(i);
         EntityAnim& st = stateFor(key, o);
         st.last = o;
+        if (traceView) objectStateMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - objectStart).count();
         if (!o.visible) {
             if (o.blip) {   // radar contact: a filled dot with a ring where the unit is, no model (the viewer doesn't know its type)
                 const float gy = groundAt(grid, o.pos.x, o.pos.z) + 0.06f;
@@ -305,8 +309,15 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         }
         const TypeLook& L = looks_[o.type];
         const float ground = !rules_->types[o.type].structure && !L.air ? groundAt(grid, o.pos.x, o.pos.z) : heightAt(grid, o.pos.x, o.pos.z);
+        const auto beforeAnimate = traceView ? std::chrono::steady_clock::now() : viewStart;
         animate(st, o, dt, &grid);
+        const auto beforeDraw = traceView ? std::chrono::steady_clock::now() : viewStart;
         drawObject(r, st, o, ground, 1.0f);
+        if (traceView) {
+            objectAnimateMs += std::chrono::duration<double, std::milli>(beforeDraw - beforeAnimate).count();
+            objectDrawMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - beforeDraw).count();
+            ++tracedObjects;
+        }
         EntityFxValues fx;
         const bool hasFx = fxFor(o, fx);
         if (!L.shadow.image.empty()) addGroundShadow(L, st, o.pos, ground, hasFx ? &fx : nullptr);
@@ -374,19 +385,30 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};
+        static double objectTotals[3] = {};
+        static size_t objectCount = 0;
         const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b-a).count(); };
         totals[0] += ms(viewStart, afterSetup);
         totals[1] += ms(afterSetup, afterGround);
         totals[2] += ms(afterGround, afterObjects);
         totals[3] += ms(afterObjects, afterAnimations);
         totals[4] += ms(afterAnimations, std::chrono::steady_clock::now());
+        objectTotals[0] += objectStateMs;
+        objectTotals[1] += objectAnimateMs;
+        objectTotals[2] += objectDrawMs;
+        objectCount += tracedObjects;
         if (++samples == 120) {
             std::fprintf(stderr,
-                "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\\n",
+                "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\n",
                 totals[0]/samples, totals[1]/samples, totals[2]/samples,
                 totals[3]/samples, totals[4]/samples);
+            std::fprintf(stderr, "[view-objects] avg/120 state=%.3f animate=%.3f drawObject=%.3f ms objects/frame=%.1f\n",
+                         objectTotals[0]/samples, objectTotals[1]/samples, objectTotals[2]/samples,
+                         double(objectCount)/samples);
             samples = 0;
             for (double& v : totals) v = 0.0;
+            for (double& v : objectTotals) v = 0.0;
+            objectCount = 0;
         }
     }
 }
