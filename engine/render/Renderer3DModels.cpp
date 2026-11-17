@@ -356,6 +356,7 @@ void Renderer3D::syncPersistentModels() {
     persistentStats_.live = persistentScene_.liveCount();
     persistentStats_.ranges = persistentStats_.records = 0;
     persistentStats_.bytes = 0;
+    persistentStats_.gpuFrustumDispatched = false;
     const uint64_t frame = dev_->frameSerial();
     if (!frame) return;
     if (!persistentUpload_)
@@ -364,6 +365,14 @@ void Renderer3D::syncPersistentModels() {
     persistentStats_.ranges = changed.ranges;
     persistentStats_.records = changed.records;
     persistentStats_.bytes = changed.bytes;
+    static const bool gpuCull = [] {
+        const char* setting = std::getenv("AIVERSE_GPU_SCENE_CULL");
+        return setting && std::strcmp(setting, "1") == 0;
+    }();
+    if (gpuCull && persistentScene_.capacity() <= UINT32_MAX)
+        persistentStats_.gpuFrustumDispatched = persistentCull_.dispatch(
+            *dev_, persistentUpload_->buffer(frame),
+            uint32_t(persistentScene_.capacity()), frame, viewProj_);
 }
 
 void Renderer3D::drawModel(const ModelDraw& d) {
