@@ -377,6 +377,7 @@ add_library(aiverse_models STATIC
     engine/render/MeshBuilder.cpp
     engine/render/Model.cpp
     engine/render/ModelMerge.cpp   # static batching of parts that share a material
+    engine/render/GlobalGeometryPool.cpp
     engine/render/ModelGltf.cpp
     engine/render/ModelObj.cpp
     engine/render/Animation.cpp
