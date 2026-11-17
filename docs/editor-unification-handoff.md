@@ -323,3 +323,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - FPS Scene drag preserves a multi-selection when starting a drag on an already-selected member; clicking without moving selects only that member on release. Ctrl/Cmd/Shift selection stays routed through the shared editor `Selection` API.
 - Validation: source edits committed, **macOS compile/UI tests NOT RUN**. Manual FPS regression checks: Shift-click mixed collider/spawn, drag group, Undo once, click member without dragging, confirm all selections/labels and no duplicate movement.
 - Remaining: generic gizmo handles, snap/rotate/scale with schema-backed persistence, full FPS runtime ECS provider, post-process geometry silhouette and shared RTS/FPS world hierarchy.
+
+### 2026-11-17 — Shared Move gizmo axis selection (RTS X/Z; FPS X/Y/Z)
+- Commits: `282ec92e` (`apps/editor/EditorTransformGizmo.h`), `ef7356f1` and `0f34a491` (`apps/editor/windows/SceneWindow.cpp`), `c13a1508` and `e9b73dbf` (`apps/editor/EditorFps.cpp`).
+- Added `pickMoveGizmoAxis()`: one screen-space projected-segment picker for all 3 world axes, constrained via mask by what the author's schema can persist. RTS now uses it for X/Z; FPS now uses it for X/Y/Z. FPS visible axes and hit tests both use the actual source's `readDocumentTransform` pivot; group gizmo remains on primary selected source.
+- FPS clicking a move handle preserves the selection while dragging; X/Z constrained movement uses ground ray differences, Y uses vertical screen delta, and batch translation is shared with RTS. Snap, local/world gizmo axes, Rotate/Scale, true geometry outline and runtime component writeback remain pending.
+- Verification: source reviewed and committed; **no successful macOS build, automated UI test or interactive gizmo test yet**. User should test Y handle, perspective/orthographic camera pitches, group translation/Undo and handle occlusion.
