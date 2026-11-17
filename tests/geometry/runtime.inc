@@ -141,6 +141,7 @@ TEST(geometry_shadow_policy_and_mesh_lod) {
     auto m=geometrytest::grid(4);auto coarse=m.meshes[0];coarse.primitives[0].indexCount=6;m.meshes.push_back(coarse);m.meshes[0].lods.push_back({1,10000});m.finalize();uploadModel(dev,m);
     RTSCamera cam;cam.pitch=0;cam.distance=100;
     r.setLodDebugTarget(77);
+    r.setLodDiagnosticsEnabled(true);
     auto frame=[&](bool lod){
         r.setModelLodEnabled(lod);
         r.beginScene(cam,800,600);
@@ -161,6 +162,7 @@ TEST(geometry_shadow_policy_and_mesh_lod) {
     ModelDraw other;other.model=&m;other.persistentId=77;
     r.drawModel(other);r.render(gfx::PassDesc{});
     CHECK(!r.lodDebugSample().matched);
+    r.setLodDiagnosticsEnabled(false);
     releaseModel(dev,m);r.shutdown();
 }
 TEST(geometry_prepared_scene_owns_geometry_and_shared_materials) {
