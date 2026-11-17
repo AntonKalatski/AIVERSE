@@ -678,6 +678,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
+    const auto passBegin = std::chrono::steady_clock::now();
+    uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
+    double mdiScanMs = 0.0, mdiAttemptMs = 0.0;
     order_.clear();
     auto started=profiling_?std::chrono::steady_clock::now():std::chrono::steady_clock::time_point{};
     for (uint32_t i = 0; i < modelItems_.size(); ++i) {
@@ -715,6 +719,7 @@ void Renderer3D::renderModels(int phase) {
     }
     if(profiling_){auto now=std::chrono::steady_clock::now();profile_.selectMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(now-started).count();started=now;}
     if (order_.empty()) return;
+    const auto afterSelect = std::chrono::steady_clock::now();
     // Material identity is NOT a batching key. Editor/game code routinely creates
     // per-entity Material copies with identical GPU state. Compare all shader,
     // pipeline, uniform and sampled texture state instead of Material*.
@@ -761,6 +766,7 @@ void Renderer3D::renderModels(int phase) {
         });
     }
     if(profiling_)profile_.sortMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+    const auto afterSort = std::chrono::steady_clock::now();
     ProfileTimer timer(profiling_?&profile_.drawMs[size_t(phase)]:nullptr);
     currentPipe_ = {};
     lastItem_ = nullptr;
@@ -780,6 +786,8 @@ void Renderer3D::renderModels(int phase) {
         const bool allowIndirect = !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
                                    !(indirectToggle && std::strcmp(indirectToggle, "off") == 0);
         if (modelMultiDrawEnabled_ && allowIndirect && dev_->supportsMultiDrawIndirect() && phase <= 1) {
+            const auto scanBegin = std::chrono::steady_clock::now();
+            ++mdiCandidates;
             const auto& first = modelItems_[order_[i]];
             auto compatible = [&](const ModelItem& y) {
                 // Each indirect command selects its own world/tint/team/etc
@@ -808,10 +816,22 @@ void Renderer3D::renderModels(int phase) {
                 size_t end = i + 1;
                 while (end < order_.size() && end - i < size_t(instanceLimit_) &&
                        compatible(modelItems_[order_[end]])) ++end;
-                if (end - i >= 2 &&
-                    drawModelIndirectBatch(order_.data() + i, uint32_t(end - i), phase)) {
-                    i = end; continue;
-                }
+                if (traceModelPass)
+                    mdiScanMs += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - scanBegin).count();
+                if (end - i >= 2) {
+                    const auto attemptBegin = std::chrono::steady_clock::now();
+                    const bool accepted = drawModelIndirectBatch(
+                        order_.data() + i, uint32_t(end - i), phase);
+                    if (traceModelPass)
+                        mdiAttemptMs += std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - attemptBegin).count();
+                    if (accepted) {
+                        ++mdiAccepted;
+                        i = end; continue;
+                    }
+                    ++mdiRejected;
+                } else ++mdiShort;
             }
         }
         size_t j = i + 1;
@@ -820,6 +840,38 @@ void Renderer3D::renderModels(int phase) {
                    sameBatch(modelItems_[order_[i]], modelItems_[order_[j]])) ++j;
         drawGeometryBatch(order_.data() + i, uint32_t(j - i), phase);
         i = j;
+    }
+    if (traceModelPass) {
+        struct Totals {
+            uint32_t passes = 0;
+            double select = 0, sort = 0, draw = 0, scan = 0, attempt = 0;
+            uint64_t candidates = 0, accepted = 0, rejected = 0, shortGroups = 0;
+        };
+        static Totals totals[2][5] = {};
+        const int mode = modelMultiDrawEnabled_ ? 1 : 0;
+        auto& t = totals[mode][phase];
+        const auto ms = [](auto a, auto b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        t.select += ms(passBegin, afterSelect);
+        t.sort += ms(afterSelect, afterSort);
+        t.draw += ms(afterSort, std::chrono::steady_clock::now());
+        t.scan += mdiScanMs;
+        t.attempt += mdiAttemptMs;
+        t.candidates += mdiCandidates;
+        t.accepted += mdiAccepted;
+        t.rejected += mdiRejected;
+        t.shortGroups += mdiShort;
+        if (++t.passes == 120) {
+            std::fprintf(stderr,
+                "[model-batch] mode=%s phase=%d avg/120 select=%.4f sort=%.4f draw=%.4f scan=%.4f attempt=%.4f ms candidates=%.1f accepted=%.1f rejected=%.1f short=%.1f /pass\n",
+                mode ? "ON" : "OFF", phase,
+                t.select / t.passes, t.sort / t.passes, t.draw / t.passes,
+                t.scan / t.passes, t.attempt / t.passes,
+                double(t.candidates) / t.passes, double(t.accepted) / t.passes,
+                double(t.rejected) / t.passes, double(t.shortGroups) / t.passes);
+            t = {};
+        }
     }
 }
 
