@@ -97,13 +97,13 @@ public:
     // this facade. No direct World& escapes from this API.
     template<class T,class Fn> void eachRead(Fn&& fn) const {
         requireComponent(componentId<T>(),false);
-        const_cast<World&>(world_).each<T>([&](Entity e,T& v){
+        const_cast<World&>(world_).eachExisting<T>([&](Entity e,T& v){
             fn(e,static_cast<const T&>(v));
         });
     }
     template<class T,class Fn> void eachWrite(Fn&& fn) {
         requireComponent(componentId<T>(),true);
-        world_.each<T>(std::forward<Fn>(fn));
+        world_.eachExisting<T>(std::forward<Fn>(fn));
     }
 };
 
