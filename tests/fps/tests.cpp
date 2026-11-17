@@ -1,6 +1,7 @@
 #include "engine/net/authority/Session.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
+#include <algorithm>
 #include "engine/audio/Audio.h"
 #include <chrono>
 #include "engine/net/LatestChannel.h"
