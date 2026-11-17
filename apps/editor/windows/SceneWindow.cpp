@@ -79,7 +79,8 @@ public:
                     // cleared FPS selection with a stale RTS selection.
                     pickSelect(ed, hovered, io);
                     fpsDragActive_ = hovered.kind == Selection::FpsObject &&
-                                     ed.tool == Tool::Select && !io.KeyCtrl;
+                                     ed.selection == hovered && ed.tool == Tool::Select &&
+                                     !io.KeyCtrl && !io.KeySuper;
                     fpsDragEdited_ = false;
                     fpsDragLastX_ = io.MousePos.x;
                     fpsDragLastY_ = io.MousePos.y;
