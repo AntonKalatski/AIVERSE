@@ -182,6 +182,9 @@ struct ModelRenderStats {
     uint64_t nodes = 0, culledNodes = 0, lodNodes[4] = {};
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // A subset of CPU MDI submissions: different rigid meshes and materials
+    // share shader/texture state, with per-command base/PBR factors in U3.
+    uint64_t mdiPaletteSubmissions = 0, mdiPaletteCommands = 0;
     // GPU-state grouping work across all model passes in a single scene.
     // Reused covers per-item or same-(model,material)-pointer cache hits;
     // resolved counts new GPU-state hashes/representative comparisons.
