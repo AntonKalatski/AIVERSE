@@ -167,6 +167,17 @@ game::RtsModule* Editor::worldModule() {
 }
 
 Selection Editor::pickObject(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const {
+    // All Scene consumers (hover, click, Inspector, Hierarchy) use one
+    // selection API. FPS previews map their renderable ID back to the
+    // document source; the transient render-array index never escapes.
+    if (ws_.project.isFps()) {
+        const int index = pickFpsSceneObject(vp, cam, sx, sy);
+        if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
+        Selection hit;
+        hit.kind = Selection::FpsObject;
+        hit.ref = fpsSceneObjects_[size_t(index)].entity;
+        return hit;
+    }
     if (!playing()) {
         const int n = pickEntity(vp, cam, sx, sy);
         if (n >= 0) return {Selection::Entity, n, {}};
