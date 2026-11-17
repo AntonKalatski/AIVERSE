@@ -603,6 +603,26 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
                 ImGui::SetTooltip("Persisted owner of a map-authored ECS entity; live entities are read-only.");
+        } else if (path == "Unit.facing" && v.isArray() && v.size() == 3 &&
+                   !ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0 &&
+                   size_t(items_[0].doc) < ed.doc().data.entities.size() &&
+                   ed.doc().data.entities[size_t(items_[0].doc)].extra["facing"].isNumber()) {
+            // Unit.facing is the real ECS direction vector, produced at
+            // Simulation::setup from the serialized authoring facing degrees.
+            // Edit that persisted input, not a transient World snapshot.
+            const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
+            float degrees = float(ed.doc().data.entities[size_t(items_[0].doc)]
+                                  .extra["facing"].toDouble());
+            ImGui::SetNextItemWidth(-1);
+            const bool changed = ImGui::DragFloat("##ecsFacing", &degrees,
+                                                   0.5f, 0, 0, "%.2f deg");
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            if (changed) {
+                Json edited = Json::object();
+                edited.set("rotationY", Json::number(double(degrees), 3));
+                writeDocumentComponent(ed.doc(), ref,
+                                       DocumentComponentKind::Transform, edited);
+            }
         } else if (fieldSchema && fieldSchema->kind == WorldFieldKind::Turn && v.isNumber()) {
             ImGui::Text("%.2f°", v.toDouble() * 360.0);
             ImGui::SetItemTooltip("ECS rotation is stored in turns; no persistent map rotation field exists.");
