@@ -1,10 +1,10 @@
 // Cross-genre compile/runtime contract: the exact same ECS mechanic policies
 // run in two unrelated GameModule/component types with no RTS/FPS includes.
 // Does NOT imply all existing RtsModule/fps::Module methods are universal.
-#include "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
-#include "libraries/include/aiverselib/genre/Locomotion.h"
-#include "libraries/include/aiverselib/genre/Weapons.h"
-#include "libraries/include/aiverselib/genre/Match.h"
+#include <aiverselib/genre/EcsMechanicSystems.h>
+#include <aiverselib/genre/Locomotion.h>
+#include <aiverselib/genre/Weapons.h>
+#include <aiverselib/genre/Match.h>
 #include <cassert>
 #include <cstdint>
 #include <iostream>
