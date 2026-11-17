@@ -8,6 +8,7 @@
 //   change the owner; eye / lock per player, type and section; hover highlights the object in the Scene.
 #include "../EditorEntityAdapter.h"
 #include "../EditorSceneNodes.h"
+#include "../EditorRuntimeEntityProvider.h"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -80,29 +81,18 @@ public:
                 ImGui::TreePop();
             }
             const Json& runtime = ed.fpsRuntimeSnapshot();
-            const Json& actors = runtime["actors"];
             if (runtime["error"].isString())
                 ImGui::TextWrapped("Runtime preview: %s",
                                    runtime["error"].str().c_str());
-            if (actors.isArray() &&
+            const auto runtimeEntities = enumerateEditorRuntimeEntities(ed);
+            if (!runtimeEntities.empty() &&
                 ImGui::TreeNodeEx("Runtime Actors", ImGuiTreeNodeFlags_DefaultOpen)) {
-                for (size_t i = 0; i < actors.size(); ++i) {
-                    ImGui::PushID(int(i));
-                    const Json& actor = actors[i];
-                    const std::string label = "Actor #" + std::to_string(
-                        actor["slot"].integer(int64_t(i + 1)));
-                    const bool selected = ed.selection.kind == Selection::FpsActor &&
-                                          ed.selection.index == int(i);
-                    if (ImGui::Selectable(label.c_str(), selected)) {
-                        Selection chosen;
-                        chosen.kind = Selection::FpsActor;
-                        chosen.index = int(i);
-                        ed.select(chosen);
-                        const Json& pos = actor["position"];
-                        if (pos.isArray() && pos.size() == 3)
-                            ed.sceneCam.target = {float(pos[0].toDouble()),
-                                                  float(pos[1].toDouble()),
-                                                  float(pos[2].toDouble())};
+                for (const auto& entity : runtimeEntities) {
+                    ImGui::PushID(entity.selection.index);
+                    const bool selected = ed.isSelected(entity.selection);
+                    if (ImGui::Selectable(entity.title.c_str(), selected)) {
+                        ed.select(entity.selection);
+                        if (entity.hasPosition) ed.sceneCam.target = entity.position;
                     }
                     ImGui::PopID();
                 }
