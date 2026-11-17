@@ -642,6 +642,13 @@ Browser UI is selectable through `metadata.metaScreens`; it is not a native RmlU
 adapter. Validate kits, native linking, client retries and selected UI screens.
 
 
+## City block authoring
+
+For plazas, courtyards, planting beds and street furniture, read
+`skills/world/aiverse-city-blocks/SKILL.md`. Resolve curb elevations from the road renderer's
+units and support surfaces; keep soil inside planter walls. Project generators and assets
+stay in the game's repository. Workflow ownership: city-blocks task; additive catalog routing.
+
 ## Adding and updating repository skills
 
 - Write every skill in English: frontmatter `name`/`description` and the body. This applies to
