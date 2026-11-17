@@ -824,6 +824,9 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuModelFrame_ = 0;
     gpuModelSubmission_ = 0;
     gpuModelEligible_ = gpuModelDrawn_ = 0;
+    gpuEncodedDrawCalls_ = gpuEncodedCommands_ = 0;
+    gpuEncodedBatches_.clear();
+    gpuEncodedCovered_.clear();
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
 
@@ -873,6 +876,49 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuModelFrame_ = dev_->frameSerial();
     gpuModelCommandsReady_ = gpuModelCommands_.prepare(
         *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_, &gpuModelSubmission_);
+    if (!gpuModelCommandsReady_ || !modelInstancingEnabled_) return;
+    static const bool gpuIcb = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    if (!gpuIcb || !dev_->supportsMultiDrawIndirect()) return;
+
+    // Group by exact model/material identity and opaque render flags. Each
+    // group inherits ONE pipeline, texture set and uniform block from its
+    // parent render encoder. Never merge GI, fade, animated or alpha items.
+    // Each GPU command gets its own baseInstance within this uniform block.
+    using BatchKey = std::tuple<const Model*, const Material*, uint32_t>;
+    std::map<BatchKey, std::vector<uint32_t>> groups;
+    for (uint32_t item = 0; item < gpuModelSlots_.size(); ++item) {
+        if (gpuModelSlots_[item] == UINT32_MAX) continue;
+        const auto& m = modelItems_[item];
+        groups[{m.model, m.mat, m.flags}].push_back(item);
+    }
+    gpuEncodedCovered_.assign(modelItems_.size(), 0);
+    const uint32_t groupCapacity = std::max(2u, instanceLimit_);
+    for (auto& [key, indices] : groups) {
+        (void)key;
+        for (size_t first = 0; first < indices.size();) {
+            const size_t end = std::min(indices.size(), first + groupCapacity);
+            // Avoid a GPU compute/ICB submission for single-primitive groups.
+            if (end - first < 2) break;
+            std::vector<uint32_t> sourceSlots;
+            sourceSlots.reserve(end - first);
+            for (size_t j = first; j < end; ++j)
+                sourceSlots.push_back(gpuModelSlots_[indices[j]]);
+            const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
+                gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
+                modelItems_[indices[first]].model->ib,
+                sourceSlots.data(), uint32_t(sourceSlots.size()));
+            if (token) {
+                GpuEncodedBatch group;
+                group.items.assign(indices.begin() + first, indices.begin() + end);
+                group.token = token;
+                gpuEncodedBatches_.push_back(std::move(group));
+            }
+            first = end;
+        }
+    }
 }
 
 void Renderer3D::renderModels(int phase) {
@@ -1007,7 +1053,34 @@ void Renderer3D::renderModels(int phase) {
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
         dev_->supportsMultiDrawIndirect() && phase <= 1;
     const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
+    if (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
+        !drawCallDebug_ && gpuModelCommandsReady_) {
+        for (auto& group : gpuEncodedBatches_) {
+            if (group.items.size() < 2) continue;
+            dev_->setGpuIcbUniformBinding(true);
+            const bool submitted = drawModelBatch(
+                group.items.data(), uint32_t(group.items.size()), phase, false);
+            dev_->setGpuIcbUniformBinding(false);
+            if (!submitted || !dev_->executeGpuEncodedIndexedIcb(group.token))
+                continue;
+            lastItem_ = &modelItems_[group.items.back()];
+            ++gpuEncodedDrawCalls_;
+            gpuEncodedCommands_ += uint32_t(group.items.size());
+            ++drawCalls_;
+            ++profile_.draws[size_t(phase)];
+            profile_.instances[size_t(phase)] += uint32_t(group.items.size());
+            for (uint32_t idx : group.items) {
+                gpuEncodedCovered_[idx] = 1;
+                const auto& item = modelItems_[idx];
+                const uint32_t triangles = item.indexCount / 3;
+                modelStats_.triangles += triangles;
+                profile_.triangles[size_t(phase)] += triangles;
+            }
+        }
+    }
     for (size_t i = 0; i < order_.size();) {
+        if (phase == 1 && !gpuEncodedCovered_.empty() &&
+            gpuEncodedCovered_[order_[i]]) { ++i; continue; }
         // GPU-authored indirect arguments: actual compute->draw path, opt-in.
         // One submission per rigid static primitive, so this is a correctness
         // milestone, NOT a faster replacement for conventional instancing.
