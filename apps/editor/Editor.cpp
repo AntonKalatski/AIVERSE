@@ -682,25 +682,28 @@ void Editor::drawEditOverlays3D() {
 }
 
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
-    if(ws_.project.isFps()){if(vp.color.valid())renderFpsScene(vp,cam);return;}
     if (!vp.color.valid()) return;
-    if (playing()) { renderGame(vp, cam); return; }
-    buildEditScene(scene_);
-    fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
-    const bool planets = view_.planetMode();
+    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam); return; }
+    if (!ws_.project.isFps()) buildEditScene(scene_);
+    if (!ws_.project.isFps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
+    const bool planets = !ws_.project.isFps() && view_.planetMode();
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     r3d_.beginScene(useCam, vp.w, vp.h);
-    setOverlayContext(vp, useCam, false);
+    if (!ws_.project.isFps()) setOverlayContext(vp, useCam, false);
     // Scene-only silhouette outline through the existing ModelDraw outline path.
     // Keep the Game view unaffected by restoring the flag after draw.
-    view_.setSelectionOutline(true);
-    view_.draw(r3d_, scene_, time_, nullptr, grid_);
-    view_.setSelectionOutline(false);
-    if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
+    if (ws_.project.isFps()) {
+        enqueueFpsSceneGeometry(useCam);
+    } else {
+        view_.setSelectionOutline(true);
+        view_.draw(r3d_, scene_, time_, nullptr, grid_);
+        view_.setSelectionOutline(false);
+    }
+    if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
-    if (editOverlays && !planets) drawEditOverlays3D();
-    if (!planets) tickFx(cam, vp.w, vp.h, nullptr);   // agent previews (fx_preview) in the Scene view
+    if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
+    if (!planets && !ws_.project.isFps()) tickFx(cam, vp.w, vp.h, nullptr);   // agent previews (fx_preview) in the Scene view
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
@@ -711,7 +714,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (!r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePostFx();
     dev_->endPass();
-    view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
+    if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
 
 void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
