@@ -9,10 +9,6 @@ struct GeometryPoolStats {
     size_t allocatedBytes = 0;
     size_t occupiedBytes = 0;
     size_t liveModels = 0;
-    size_t uploadAttempts = 0;
-    size_t rejectedDisabled = 0, rejectedUnsafeTime = 0;
-    size_t rejectedDynamic = 0, rejectedOversize = 0;
-    size_t successfullyPooled = 0;
 };
 GeometryPoolStats geometryPoolStats(gfx::Device& dev);
 bool globalGeometryPoolingEnabled();
