@@ -101,6 +101,13 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     const uint64_t hoveredKey = hover.kind == Selection::FpsObject ? hover.ref : 0;
     for (auto& object : instances) {
         object.selected = selectedKey != 0 && object.entity == selectedKey;
+        if (!object.selected)
+            for (const auto& chosen : selectionSet)
+                if (chosen.kind == Selection::FpsObject &&
+                    chosen.ref == object.entity) {
+                    object.selected = true;
+                    break;
+                }
         object.hovered = !object.selected && hoveredKey != 0 && object.entity == hoveredKey;
     }
     submitSceneRenderables(r3d_, instances);
@@ -117,16 +124,24 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
 }
 
 bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
-    DocumentEntityRef ref;
-    if (!documentEntityFromSelection(selection, ref) ||
-        ref.source == DocumentEntityRef::Source::MapEntity) return false;
-    return translateDocumentEntity(doc(), ref, {dx, dy, dz});
+    // FPS uses the same atomic/deduplicated multi-document translation as
+    // RTS. The selected set may contain colliders and spawn points together.
+    std::vector<DocumentEntityRef> refs;
+    for (const auto& chosen : selected()) {
+        DocumentEntityRef ref;
+        if (!documentEntityFromSelection(chosen, ref) ||
+            ref.source == DocumentEntityRef::Source::MapEntity) continue;
+        refs.push_back(ref);
+    }
+    return translateDocumentEntities(doc(), refs, {dx, dy, dz});
 }
 
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
     const auto ref = spawn ? DocumentEntityRef::fpsSpawn(sourceIndex)
                            : DocumentEntityRef::fpsCollider(sourceIndex);
-    return selection == selectionForDocumentEntity(ref);
+    const Selection candidate = selectionForDocumentEntity(ref);
+    return selection == candidate ||
+        std::find(selectionSet.begin(), selectionSet.end(), candidate) != selectionSet.end();
 }
 
 void Editor::selectFpsSceneSource(bool spawn, size_t sourceIndex) {
