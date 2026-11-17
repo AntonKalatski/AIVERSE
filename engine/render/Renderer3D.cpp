@@ -436,4 +436,139 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     if (sceneSelectionOutline_) renderSelectionOutline(mainPass, sw, sh);
 }
 
+
+bool Renderer3D::initSelectionOutline() {
+    if (!dev_) return false;
+    gfx::ShaderDesc shader;
+    shader.glslVertex = selection_outline::kVertex;
+    shader.glslFragment = selection_outline::kFragment;
+    shader.msl = selection_outline::kMetal;
+    shader.textureSlots = 1;
+    shader.uniformSlots = 1;
+    shader.label = "scene selection edge";
+    sceneSelectionEdgeShader_ = dev_->createShader(shader);
+    if (!sceneSelectionEdgeShader_.valid()) return false;
+    gfx::PipelineDesc pd;
+    pd.shader = sceneSelectionEdgeShader_;
+    pd.attrs[0] = {0, gfx::VertexFormat::Float2, 0};
+    pd.attrCount = 1;
+    pd.stride = 2 * sizeof(float);
+    pd.indexType = gfx::IndexType::None;
+    pd.cull = gfx::CullMode::None;
+    pd.blend = gfx::BlendMode::Alpha;
+    pd.depthTest = false;
+    pd.depthWrite = false;
+    pd.colorFormat = gfx::PixelFormat::RGBA8;
+    pd.label = "scene selection edge RGBA8";
+    sceneSelectionEdgePipe8_ = dev_->createPipeline(pd);
+    pd.colorFormat = gfx::PixelFormat::RGBA16F;
+    pd.label = "scene selection edge HDR";
+    sceneSelectionEdgePipeHdr_ = dev_->createPipeline(pd);
+    const float triangle[6] = {-1, -1, 3, -1, -1, 3};
+    gfx::BufferDesc bd;
+    bd.data = triangle;
+    bd.size = sizeof triangle;
+    bd.label = "scene selection edge fullscreen triangle";
+    sceneSelectionTriangle_ = dev_->createBuffer(bd);
+    return sceneSelectionEdgePipe8_.valid() && sceneSelectionTriangle_.valid();
+}
+
+void Renderer3D::renderSelectionOutline(const gfx::PassDesc& mainPass,
+                                        int width, int height) {
+    if (!dev_ || !mainPass.colorTarget.valid() || !mainPass.depthTarget.valid() ||
+        !sceneSelectionTriangle_.valid() || width <= 0 || height <= 0)
+        return;
+    const gfx::PipelineHandle edgePipeline = hdrFrame_
+        ? sceneSelectionEdgePipeHdr_ : sceneSelectionEdgePipe8_;
+    if (!edgePipeline.valid()) return;
+    bool any = false;
+    for (const auto& item : modelItems_) if (item.outline.w > 0 && item.inView) {
+        any = true;
+        break;
+    }
+    if (!any) for (const auto& item : items_) if (item.selection.w > 0) {
+        any = true;
+        break;
+    }
+    if (!any) return;
+
+    if (!sceneSelectionMask_.valid() ||
+        sceneSelectionWidth_ != width || sceneSelectionHeight_ != height) {
+        if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
+        sceneSelectionMask_ = {};
+        sceneSelectionWidth_ = width;
+        sceneSelectionHeight_ = height;
+        gfx::TextureDesc td;
+        td.width = width; td.height = height;
+        td.format = gfx::PixelFormat::RGBA8;
+        td.renderTarget = true;
+        td.filter = gfx::Filter::Nearest;
+        td.label = "Scene selected-object depth-tested mask";
+        sceneSelectionMask_ = dev_->createTexture(td);
+    }
+    if (!sceneSelectionMask_.valid()) return;
+
+    // Renderer3D::render normally leaves the main pass open. Temporarily
+    // suspend it, draw visible selected geometry using the same scene depth,
+    // then resume the colour pass WITHOUT clearing its contents or depth.
+    dev_->endPass();
+    gfx::PassDesc mask;
+    mask.colorTarget = sceneSelectionMask_;
+    mask.depthTarget = mainPass.depthTarget;
+    mask.clearColor[0] = mask.clearColor[1] = mask.clearColor[2] =
+        mask.clearColor[3] = 0.0f;
+    mask.clearDepthEnabled = false;
+    dev_->beginPass(mask);
+    dev_->setViewport({0, 0, width, height});
+
+    // Existing model skin/morph/LOD pipelines draw a second pass with zero
+    // normal displacement. Cull backfaces and do not write the scene depth.
+    selectionMaskPass_ = true;
+    uploadFrameUniforms(false);
+    renderModels(3);
+    selectionMaskPass_ = false;
+
+    // Primitive previews use their original geometry, not bounding-box lines.
+    bool bound = false;
+    for (const auto& item : items_) {
+        if (item.selection.w <= 0 || !item.mesh || !item.mesh->vb.valid())
+            continue;
+        if (!bound) {
+            dev_->setPipeline(litPipe_);
+            uploadFrameUniforms(false);
+            bound = true;
+        }
+        DrawUniforms u{};
+        std::memcpy(u.model, item.model.m, sizeof u.model);
+        u.color[0] = item.selection.x;
+        u.color[1] = item.selection.y;
+        u.color[2] = item.selection.z;
+        u.color[3] = 1.0f;
+        u.params[0] = 2.0f;  // existing solid unlit/diagnostic branch
+        dev_->setUniforms(0, &u, sizeof u);
+        dev_->setVertexBuffer(item.mesh->vb);
+        dev_->setIndexBuffer(item.mesh->ib);
+        dev_->drawIndexed(item.mesh->indexCount);
+        ++drawCalls_;
+    }
+    dev_->endPass();
+
+    gfx::PassDesc resume = mainPass;
+    resume.clearColorEnabled = false;
+    resume.clearDepthEnabled = false;
+    dev_->beginPass(resume);
+    dev_->setViewport({0, 0, width, height});
+
+    dev_->setPipeline(edgePipeline);
+    dev_->setVertexBuffer(sceneSelectionTriangle_);
+    const float params[4] = {
+        1.0f / float(width), 1.0f / float(height),
+        dev_->info().renderTargetFlipY ? 1.0f : 0.0f, 0.0f
+    };
+    dev_->setUniforms(0, params, sizeof params);
+    dev_->setTexture(0, sceneSelectionMask_);
+    dev_->draw(3);
+    ++drawCalls_;
+}
+
 } // namespace aiverse::render
