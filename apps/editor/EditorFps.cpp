@@ -52,6 +52,9 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});
         fpsPreviewMesh_ = mesh.upload(*dev_);
     }
+    const uint64_t selectedKey =
+        fpsSelectedSceneObject_ >= 0 && fpsSelectedSceneObject_ < int(fpsSceneObjects_.size())
+            ? fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity : 0;
     fpsSceneObjects_.clear();
     auto& instances = fpsSceneObjects_;
     const auto& fps = doc().data.fps;
@@ -93,8 +96,17 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.pickable = true;
         instances.push_back(object);
     }
-    // Selection is stable across frames while the source array ordering remains stable.
-    if (fpsSelectedSceneObject_ >= int(instances.size())) fpsSelectedSceneObject_ = -1;
+    // Preserve the selected source identity when filtering or visibility changes
+    // shift the renderable indices (e.g. an invalid collider is skipped).
+    fpsSelectedSceneObject_ = -1;
+    if (selectedKey != 0) {
+        for (size_t i = 0; i < instances.size(); ++i) {
+            if (instances[i].entity == selectedKey) {
+                fpsSelectedSceneObject_ = int(i);
+                break;
+            }
+        }
+    }
     if (fpsSelectedSceneObject_ >= 0) instances[size_t(fpsSelectedSceneObject_)].selected = true;
     submitSceneRenderables(r3d_, instances);
 }
