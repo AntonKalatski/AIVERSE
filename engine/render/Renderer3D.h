@@ -182,6 +182,12 @@ struct ModelRenderStats {
     uint64_t nodes = 0, culledNodes = 0, lodNodes[4] = {};
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // Per-frame diagnostic counters: only the model pass, not custom
+    // renderers. Eligible scans are distinct from actual GPU submissions.
+    uint64_t mdiScans = 0, mdiShort = 0, mdiBelowThreshold = 0;
+    uint64_t mdiIneligible = 0, mdiFailed = 0;
+    uint64_t mdiGeometryBreaks = 0, mdiMaterialBreaks = 0;
+    uint64_t mdiStateBreaks = 0;
 };
 
 class Renderer3D {

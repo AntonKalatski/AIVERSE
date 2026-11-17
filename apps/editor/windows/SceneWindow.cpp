@@ -277,6 +277,48 @@ private:
             const uint32_t otherSubmissions = totalSubmissions >= modelSubmissions
                 ? totalSubmissions - modelSubmissions : 0;
             ImGui::Text("GPU API submissions (tracked): %u", totalSubmissions);
+            const bool safeMode = [] {
+                const char* env = std::getenv("AIVERSE_RENDER_SAFE");
+                return env && std::strcmp(env, "1") == 0;
+            }();
+            const char* off = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+            const bool envOff = off && std::strcmp(off, "off") == 0;
+            const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
+            const bool mdiSelected = measuredMode
+                ? (benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_) != 0
+                : sceneIndirect_;
+            const bool mdiAllowed = mdiBackend && mdiSelected && !safeMode && !envOff;
+            const char* reason = !mdiBackend ? "Metal ICB unsupported/disabled"
+                : !mdiSelected ? "Scene mode disabled"
+                : safeMode ? "AIVERSE_RENDER_SAFE=1"
+                : envOff ? "AIVERSE_MULTI_DRAW_INDIRECT=off"
+                : "available";
+            ImGui::Text("CPU Multi-Draw: %s (%s)",
+                        mdiAllowed ? "AVAILABLE" : "DISABLED", reason);
+            ImGui::Text("Actual CPU MDI: %llu submissions / %llu commands",
+                        (unsigned long long)modelStats.multiDrawSubmissions,
+                        (unsigned long long)modelStats.indirectCommands);
+            if (mdiAllowed && modelStats.multiDrawSubmissions == 0)
+                ImGui::TextDisabled("No CPU MDI submissions this frame. Expand diagnostics below.");
+            if (ImGui::TreeNode("Why batches split (model passes)")) {
+                ImGui::Text("Candidate scans: %llu  Rejected submissions: %llu",
+                            (unsigned long long)modelStats.mdiScans,
+                            (unsigned long long)modelStats.mdiFailed);
+                ImGui::Text("Single/short runs: %llu  Below threshold: %llu",
+                            (unsigned long long)modelStats.mdiShort,
+                            (unsigned long long)modelStats.mdiBelowThreshold);
+                ImGui::Text("Ineligible source geometry: %llu",
+                            (unsigned long long)modelStats.mdiIneligible);
+                ImGui::Text("Run split by geometry buffers: %llu",
+                            (unsigned long long)modelStats.mdiGeometryBreaks);
+                ImGui::Text("Run split by material state: %llu",
+                            (unsigned long long)modelStats.mdiMaterialBreaks);
+                ImGui::Text("Run split by flags / GI / pose: %llu",
+                            (unsigned long long)modelStats.mdiStateBreaks);
+                ImGui::TextDisabled("Counters cover the current scene model passes only.");
+                ImGui::TextDisabled("Different GLBs and their material slots may require separate draws.");
+                ImGui::TreePop();
+            }
             ImGui::Text("Models: %u | Other tracked: %u",
                         modelSubmissions, otherSubmissions);
             ImGui::TextDisabled("Includes repeated geometry in shadow, reflection and colour passes.");

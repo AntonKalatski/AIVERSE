@@ -1487,6 +1487,7 @@ void Renderer3D::renderModels(int phase) {
         // legally inherit the SAME uniforms/textures and rigid transform.
         // Draw-call colour mode uses one colour per indirect submission.
         if (allowIndirect && order_.size() - i >= minIndirectCommands) {
+            ++modelStats_.mdiScans;
             const auto scanBegin = std::chrono::steady_clock::now();
             ++mdiCandidates;
             const uint32_t firstIndex = order_[i];
@@ -1522,8 +1523,20 @@ void Renderer3D::renderModels(int phase) {
                 (phase == 0 || (first.mat->alpha == AlphaMode::Opaque &&
                                 !transparentItem(first.flags)))) {
                 size_t end = i + 1;
-                while (end < order_.size() && end - i < size_t(instanceLimit_) &&
-                       compatible(order_[end])) ++end;
+                while (end < order_.size() && end - i < size_t(instanceLimit_)) {
+                    const uint32_t candidate = order_[end];
+                    if (!compatible(candidate)) {
+                        const auto& y = modelItems_[candidate];
+                        if (first.model->vb != y.model->vb ||
+                            first.model->ib != y.model->ib)
+                            ++modelStats_.mdiGeometryBreaks;
+                        else if (materialGroup[firstIndex] != materialGroup[candidate])
+                            ++modelStats_.mdiMaterialBreaks;
+                        else ++modelStats_.mdiStateBreaks;
+                        break;
+                    }
+                    ++end;
+                }
                 if (traceModelPass)
                     mdiScanMs += std::chrono::duration<double, std::milli>(
                         std::chrono::steady_clock::now() - scanBegin).count();
@@ -1560,9 +1573,16 @@ void Renderer3D::renderModels(int phase) {
                             i = end; continue;
                         }
                         ++mdiRejected;
-                    } else ++mdiBelowThreshold;
-                } else ++mdiShort;
-            }
+                        ++modelStats_.mdiFailed;
+                    } else {
+                        ++mdiBelowThreshold;
+                        ++modelStats_.mdiBelowThreshold;
+                    }
+                } else {
+                    ++mdiShort;
+                    ++modelStats_.mdiShort;
+                }
+            } else ++modelStats_.mdiIneligible;
         }
         size_t j = i + 1;
         if (batchable(modelItems_[order_[i]]))
