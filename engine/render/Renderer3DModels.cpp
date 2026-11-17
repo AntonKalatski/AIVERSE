@@ -965,6 +965,9 @@ void Renderer3D::prepareGpuModelDraws() {
             first = end;
         }
     }
+    // A single command-encoder end creates the compute->render dependency
+    // for all groups, instead of opening/closing one encoder per ICB batch.
+    dev_->finishGpuEncodedIcbPreparation();
 }
 
 void Renderer3D::renderModels(int phase) {
