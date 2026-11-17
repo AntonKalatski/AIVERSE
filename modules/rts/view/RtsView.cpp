@@ -85,6 +85,11 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     anims_.clear(); streamingChoices_.clear(); animationCache_.clear();
     tracers_.clear();
     looks_.resize(rules.types.size());
+    actorRevealTypes_.resize(rules.types.size());
+    for (size_t i = 0; i < rules.types.size(); ++i) {
+        const auto& id = rules.types[i].id;
+        actorRevealTypes_[i] = uint8_t(id.starts_with("city_interior_") || id == "shop_roof");
+    }
     loadedTypes_.assign(rules.types.size(), false);
     requestedModels_.assign(rules.types.size(), {}); loadedModels_.assign(rules.types.size(), {});
     if(deferredLoading_)for(size_t t=0;t<rules.types.size();++t)
@@ -107,7 +112,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     geometryScene_.shutdown(dev);
     for (auto& [k, m] : models_) if (m) releaseModel(dev, *m);
     textureCache_->shutdown(dev);
-    models_.clear(); looks_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
+    models_.clear(); looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
     for (Mesh* m : {&projectile_}) { dev.destroyBuffer(m->vb); dev.destroyBuffer(m->ib); *m = Mesh{}; }
     terrain_.shutdown(dev);
     fog_.shutdown();
