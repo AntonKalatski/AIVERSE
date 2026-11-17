@@ -265,6 +265,9 @@ public:
     // Force persistent buffer-backed per-draw uniforms while a GPU-encoded
     // ICB inherits parent bindings; setBytes memory is not a safe ICB input.
     virtual void setGpuIcbUniformBinding(bool enabled) { (void)enabled; }
+    // Amount of host instance bytes copied into persistent GPU ICB memory
+    // so far in the current GPU frame (includes all scene viewports).
+    virtual size_t gpuIcbInstanceUploadBytes() const { return 0; }
     virtual uint32_t prepareGpuEncodedIndexedIcb(
         BufferHandle gpuArguments, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count,
