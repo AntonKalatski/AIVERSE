@@ -7,6 +7,7 @@
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
+#include "GpuIcbPolicy.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -949,9 +950,8 @@ void Renderer3D::prepareGpuModelDraws() {
             ? uint32_t(value) : 2u;
     }();
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
-    const uint32_t adaptiveMinimum = adaptiveGpuIcb ?
-        (gpuModelEligible_ < 256u ? 16u : 8u) : 2u;
-    const uint32_t effectiveMinimum = std::max(minGpuIcbCommands, adaptiveMinimum);
+    const uint32_t effectiveMinimum = gpuIcbMinimumCommands(
+        gpuModelEligible_, minGpuIcbCommands, adaptiveGpuIcb);
     if (adaptiveGpuIcb && gpuIcb && modelInstancingEnabled_ &&
         dev_->supportsMultiDrawIndirect()) {
         // First eliminate impossible groups using only resource handles and
@@ -984,7 +984,7 @@ void Renderer3D::prepareGpuModelDraws() {
         }
         for (const auto& [key, count] : counts)
             if (count >= effectiveMinimum) ++gpuPreflightGroups_;
-        if (gpuPreflightGroups_ == 0) {
+        if (gpuIcbShouldFallbackToInstancing(adaptiveGpuIcb, gpuPreflightGroups_)) {
             gpuAdaptiveInstancingFallback_ = true;
             return;
         }
@@ -1149,7 +1149,7 @@ void Renderer3D::prepareGpuModelDraws() {
             hasSuitableGroup = true;
             break;
         }
-    if (!hasSuitableGroup && adaptiveGpuIcb) {
+    if (gpuIcbShouldFallbackToInstancing(adaptiveGpuIcb, hasSuitableGroup ? 1u : 0u)) {
         gpuAdaptiveInstancingFallback_ = true;
         return;
     }
