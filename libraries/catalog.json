@@ -2504,6 +2504,27 @@
       "packageDependencies": [
         "character-locomotion"
       ]
+    },
+    {
+      "id": "ecs-inventory",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsInventorySystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-inventory/SKILL.md",
+      "summary": "Genre-independent authoritative ECS inventory item add/remove/transfer transactions with deterministic request IDs, capacity/weight checks and ordered outcomes.",
+      "notes": "Uses existing gameplay Inventory policies. Permission/faction/distance checks belong to validated host Commands. Built-in FPS/RTS bag integration and native tests remain pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_inventory",
+      "dependencies": [
+        "docs/ecs-all-features-migration-plan.md",
+        "tests/ecs_cross_genre_inventory_test.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "inventory"
+      ]
     }
   ]
 }
