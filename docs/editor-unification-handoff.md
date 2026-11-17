@@ -820,3 +820,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `libraries/include/aiverselib/genre/EcsLocomotionSystems.h`: `LocomotionParametersComponent`, `LocomotionStateComponent`, `LocomotionInputComponent`, `LocomotionOutputComponent` and `addLocomotionPolicySystem`. Uses the existing shared `stepMotion` fixed-point policy instead of duplicating movement math. Consumes jump edge, leaves persistent movement wishes, returns velocity; host collision/position integration is intentionally separate.
 - Verification: GitHub source committed, **native compiler and behavioral tests not executed**. Does not replace FPS `moveActor` or RTS `sysMovement` yet.
 - Next: native cross-genre tests and CMake/catalog/skill registration; then integrate collision sampling and movement into actual hosts behind parity gates.
+
+
+### 2026-11-18 — Locomotion ECS two-host regression
+- Implementation SHA: `9c7b593dad3755b89fec0186e2e03dfd2a92466e`.
+- Added `tests/ecs_cross_genre_locomotion_test.cpp`: shooter and strategy modules use the exact same ECS locomotion system, verify jump edge, deterministic ground/air acceleration, output publishing, rollback/replay checksums and COW equivalence.
+- Verification: source committed; **no native C++ compilation or runtime assertions executed**. Tests do not cover collision, ladders, mantling, swimming or legacy FPS/RTS integration.
+- Next: publish native package target, skill, CMake/standalone test runner; add separate collider/transform integration and nontrivial locomotion mode tests before changing default games.
