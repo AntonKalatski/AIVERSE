@@ -12,7 +12,7 @@
 - [ ] Shared entity identity and component/transform contract for both authored document entities and live ECS entities; no FPS-only editor selection state.
 - [ ] Both RTS and FPS feed the same editor scene submission path without losing model/animation/material/skin support.
 - [ ] Scene picking, hover, selection, Hierarchy, Inspector and undo/redo share identity and work for both genres.
-- [ ] Editable native ECS component inspection, add/remove component support where safe, type-aware serialization/writeback.
+- [ ] Editable native ECS component inspection, add/remove component support where safe, type-aware serialization/writeback. Document-only typed read inventory introduced; live ECS writeback still absent.
 - [ ] Interactive Move/Rotate/Scale gizmo (XYZ, Local/World, handles, snapping, multi-selection, undo/redo). Where a legacy map schema cannot express rotation/scale, expose the limitation instead of silently dropping edits.
 - [ ] Silhouette outline for selected/hovered authored models and primitive meshes, not just AABB wireframes.
 - [ ] CI builds/tests green; macOS editor starts without crash; manual visual and interaction checks completed.
@@ -97,3 +97,12 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Validation: source edits committed; targeted code review by inspecting exact replacement blocks. **Build/tests NOT RUN**. GitHub Actions for prior handoff commit `47aa2192`: CI and Studio validation were **queued** at last check, not green.
 - Limitations: No generic native ECS reflection, no common Inspector drawer registry, no full Move/Rotate/Scale gizmo or mesh silhouette outline.
 - Next: obtain successful build/test results; implement common component adapter and migrate Inspector; verify interactions on macOS.
+
+### 2026-11-17 — Document component inventory and FPS Inspector hookup
+- Branch: `feature/universal-entity-inspector-fps`.
+- Commits: `231f9890` (`apps/editor/EditorEntityAdapter.h`), `17cc48bb` (`apps/editor/EditorFps.cpp`).
+- Added `DocumentComponentKind`, `DocumentComponentDescriptor`, `documentComponents()` and `readDocumentComponent()`. Supported document-backed views: RTS Transform/Renderable/Gameplay; FPS Transform/BoxCollider/SpawnPoint.
+- FPS Inspector now renders a shared component inventory and read-only status while retaining existing specialized editable fields.
+- Important: this is **not native ECS reflection**. No live-world component add/remove, no generalized writeback, and no RTS Inspector migration yet.
+- Verification: source changes committed; **build/tests NOT RUN**. CI and Studio validation for previous `f0bb6d6a` were observed **queued**, not passed.
+- Next: compile first; then introduce safe typed component writeback and migrate both genre inspectors to common component drawers; add targeted tests.
