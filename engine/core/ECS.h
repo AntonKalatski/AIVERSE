@@ -177,6 +177,18 @@ public:
             }
         }
     }
+    // No implicit pool registration. Suitable for read-only/query scopes in
+    // opt-in jobs once all structural writes have been stopped.
+    // Unlike each<T>(), absent component types do not mutate the pool registry.
+    template <class T, class Fn>
+    void eachExisting(Fn&& fn) {
+        auto* p = poolIfExists<T>();
+        if (!p) return;
+        const size_t n = p->size();
+        for (size_t i = 0; i < n && i < p->size(); ++i)
+            fn(p->entityAt(i), p->dataAt(i));
+    }
+
     template <class T> size_t count() { return pool<T>().size(); }
 
     // Hot: called for every component access. The common case (pool exists) stays inline; creating a
