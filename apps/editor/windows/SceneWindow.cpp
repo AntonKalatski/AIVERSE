@@ -639,6 +639,20 @@ private:
         auto& d = doc.data;
         int sel = ed.selectedEntity();
         if (dragging_ && gizmoAxis_ >= 0 && sel >= 0 && sel < int(d.entities.size())) {
+            if (gizmoAxis_ == 3 && ed.transformTool == TransformTool::Rotate &&
+                d.entities[size_t(sel)].extra["facing"].isNumber()) {
+                const double delta = double(sx - gizmoLastScreenX_) * 0.5;
+                if (std::isfinite(delta) && std::abs(delta) > 1e-6) {
+                    if (!dragMoved_) doc.beginEdit();
+                    Json patch = Json::object();
+                    patch.set("rotationY", Json::number(
+                        d.entities[size_t(sel)].extra["facing"].toDouble() + delta, 3));
+                    dragMoved_ = writeDocumentComponent(
+                        doc, DocumentEntityRef::mapEntity(size_t(sel)),
+                        DocumentComponentKind::Transform, patch) || dragMoved_;
+                }
+                gizmoLastScreenX_ = sx;
+            } else {
             const float dx = gizmoAxis_ == 0 ? x - gizmoGroundX_ : 0.0f;
             const float dz = gizmoAxis_ == 2 ? z - gizmoGroundZ_ : 0.0f;
             if (dx != 0.0f || dz != 0.0f) {
@@ -652,6 +666,7 @@ private:
                 translateDocumentEntities(doc, refs, {dx, 0.0, dz});
                 gizmoGroundX_ = x;
                 gizmoGroundZ_ = z;
+            }
             }
         } else if (dragging_ && sel >= 0 && sel < int(d.entities.size())) {   // the primary follows the cursor, the rest of the set keeps its offsets
             auto& e = d.entities[size_t(sel)];
