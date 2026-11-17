@@ -203,10 +203,10 @@ int aiverseMain(int argc, char** argv) {
                 const bool demandPbr = std::getenv("AIVERSE_EXPECT_PBR_ICB") &&
                                        std::string(std::getenv("AIVERSE_EXPECT_PBR_ICB")) == "1";
                 if (demandPbr && supported && p.draws[1] >= opaqueBefore) {
-                    std::fprintf(stderr, "[metal-icb] PBR colour pass did not enter indirect rendering\\n");
+                    std::fprintf(stderr, "[metal-icb] PBR colour pass did not enter indirect rendering\n");
                     failed = true;
                 }
-                std::printf("PBR colour indirect active=%d (before %u, after %u)\\n",
+                std::printf("PBR colour indirect active=%d (before %u, after %u)\n",
                             int(p.draws[1] < opaqueBefore), opaqueBefore, p.draws[1]);
                 std::printf("GPU indirect supported=%d submissions=%llu commands=%llu\\n",
                             int(supported),
