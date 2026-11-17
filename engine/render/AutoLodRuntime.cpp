@@ -83,7 +83,8 @@ size_t generateMissingModelLods(Model& model) {
         info.reason = "missing CPU geometry or already uploaded";
         return 0;
     }
-    if (model.vertices.size() > kMaxVertices || model.indices.size() > kMaxIndices) {
+    if (model.vertices.size() > kMaxVertices || model.indices.size() > kMaxIndices ||
+        model.meshes.size() > 10000) {
         info.reason = "asset exceeds bounded runtime simplification budget; precompute LOD offline";
         return 0;
     }
@@ -127,6 +128,10 @@ size_t generateMissingModelLods(Model& model) {
     }
 
     const std::vector<float> attrs = vertexAttributes(model);
+    if (std::any_of(attrs.begin(), attrs.end(), [](float v) { return !std::isfinite(v); })) {
+        info.reason = "non-finite vertex attributes";
+        return 0;
+    }
     // All generated LODs reuse original ModelVertex indices, preserving GPU
     // texture layout and attributes, and have one primitive per source
     // material. Each node retains its original mesh index; only mesh.lods
