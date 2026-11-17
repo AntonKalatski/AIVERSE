@@ -155,6 +155,9 @@ public:
     // Editor also opts in to deferred assets: actual map objects and previews
     // load their own types on demand, instead of allocating the entire catalog.
     void setDeferredLoading(bool on) { deferredLoading_ = on; }
+    // Independent from type residency: the editor requests full appearance
+    // variants for any type it opens, while clients may stream alternatives.
+    void setDeferAppearanceVariants(bool on) { deferAppearanceVariants_ = on; }
     struct AssetResidencyStats {
         size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
     };
@@ -515,6 +518,7 @@ private:
     std::vector<bool> loadedTypes_;
     std::vector<std::string> requestedModels_, loadedModels_;
     bool deferredLoading_ = false, streamingTypes_ = false;
+    bool deferAppearanceVariants_ = true; // client default; editor disables
     render::FileReader asyncReader_;
     std::string preparingResource_;
 #ifndef __EMSCRIPTEN__
