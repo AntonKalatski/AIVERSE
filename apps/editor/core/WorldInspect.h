@@ -11,6 +11,7 @@
 #include <functional>
 #include <cstdint>
 #include <map>
+#include <mutex>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,6 +42,23 @@ struct WorldComponentField {
     WorldFieldKind kind;
 };
 const std::vector<WorldComponentField>& worldComponentFields(const std::string& componentId);
+
+ 
+// Project-specific component readers are registered explicitly. They inspect
+// REAL World pools, not map JSON. A missing component must return false from
+// has(); read() is called only when has() succeeds. The editor owns copies of
+// these callbacks and fields. Registration must finish before preview starts.
+struct WorldInspectorExtension {
+    std::string id;
+    std::string title;
+    std::vector<WorldComponentField> fields;
+    std::function<bool(const World&, Entity)> has;
+    std::function<Json(const World&, Entity)> read;
+};
+bool registerWorldInspectorExtension(WorldInspectorExtension extension);
+bool unregisterWorldInspectorExtension(const std::string& id);
+std::string worldComponentDisplayName(const std::string& id);
+
 
 int findWorldComponent(const std::string& idOrTitle);   // case-insensitive id or title; -1
 // Creates every described pool in `w` and returns how many were described (tests compare it with the
