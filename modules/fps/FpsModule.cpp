@@ -295,8 +295,43 @@ void Module::tick(Simulation& sim) {
     // Prior damage, bot decisions or other changes invalidate a precompute.
     const bool motorWorldEligible=!config_.systems.enabled &&
         !s.royale.enabled && !streamedCollision_ && s.vehicleRuns.empty();
+    // Retain only the fields read by moveActor(). Actor contains bags and
+    // melee hit lists; deep-copying whole Actors per tick would dominate the
+    // speculative motor cost for large multiplayer matches.
+    struct MotorSource {
+        Vec3 pos{},velocity{};
+        Fixed yaw{},pitch{};
+        Input input{};
+        uint32_t lastInputTick=0,vehicle=0;
+        int32_t health=0;
+        bool frozen=false,climbing=false,prone=false,crouched=false,
+             grounded=false,downed=false;
+        static MotorSource capture(const Actor& a) {
+            return {a.pos,a.velocity,a.yaw,a.pitch,a.input,a.lastInputTick,
+                    a.vehicle,a.health,a.frozen,a.climbing,a.prone,
+                    a.crouched,a.grounded,a.downed};
+        }
+        bool sameMotorInputs(const Actor& a) const {
+            return pos==a.pos && velocity==a.velocity &&
+                   yaw==a.yaw && pitch==a.pitch && input==a.input &&
+                   lastInputTick==a.lastInputTick && vehicle==a.vehicle &&
+                   health==a.health && frozen==a.frozen &&
+                   climbing==a.climbing && prone==a.prone &&
+                   crouched==a.crouched && grounded==a.grounded &&
+                   downed==a.downed;
+        }
+        Actor toActor() const {
+            Actor a;
+            a.pos=pos;a.velocity=velocity;a.yaw=yaw;a.pitch=pitch;
+            a.input=input;a.lastInputTick=lastInputTick;
+            a.vehicle=vehicle;a.health=health;
+            a.frozen=frozen;a.climbing=climbing;a.prone=prone;
+            a.crouched=crouched;a.grounded=grounded;a.downed=downed;
+            return a;
+        }
+    };
     std::vector<MotorResult> motorResults;
-    std::vector<Actor> motorOriginals;
+    std::vector<MotorSource> motorOriginals;
     std::vector<uint8_t> motorEligible;
     bool parallelMotor=false;
     if(motorWorldEligible && s.actors.size()>=32) {
@@ -315,12 +350,14 @@ void Module::tick(Simulation& sim) {
     if(parallelMotor) {
         ++experimentalMotorBatches_;
         motorResults.resize(s.actors.size());
-        motorOriginals=s.actors;
+        motorOriginals.resize(s.actors.size());
+        for(size_t i=0;i<s.actors.size();++i)
+            if(motorEligible[i])motorOriginals[i]=MotorSource::capture(s.actors[i]);
         static thread_local ecs_experiment::PersistentWorkers motorWorkers{3};
         motorWorkers.parallelFor(s.actors.size(),[&](size_t begin,size_t end) {
             for(size_t i=begin;i<end;++i) {
                 if(!motorEligible[i])continue;
-                Actor copy=motorOriginals[i];
+                Actor copy=motorOriginals[i].toActor();
                 Input input=copy.input;
                 if(sim.tick()-copy.lastInputTick>config_.inputTimeout) {
                     input.forward=input.right=0;
@@ -369,7 +406,7 @@ void Module::tick(Simulation& sim) {
 #if defined(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
         const size_t motorIndex=size_t(&a-s.actors.data());
         if(parallelMotor && motorEligible[motorIndex] &&
-           a==motorOriginals[motorIndex]) {
+           motorOriginals[motorIndex].sameMotorInputs(a)) {
             ++experimentalMotorCommits_;
             const auto& m=motorResults[motorIndex];
             a.pos=m.pos;a.velocity=m.velocity;a.yaw=m.yaw;a.pitch=m.pitch;
