@@ -986,10 +986,18 @@ void Renderer3D::prepareGpuModelDraws() {
             for (size_t j = first; j < end; ++j)
                 sourceSlots.push_back(gpuModelSlots_[indices[j]]);
             ++gpuIcbCandidates_;
+            // One contiguous GPU Instance record per command. The Metal vertex
+            // shader fetches it by baseInstance, so no per-batch U0 upload is
+            // necessary when binding the GPU_INSTANCE_BUFFER permutation.
+            std::vector<float> instanceRecords((end - first) * 36u, 0.0f);
+            for (size_t j = first; j < end; ++j)
+                packModelInstance(modelItems_[indices[j]], 1, {1, 1, 1, 1},
+                                  instanceRecords.data() + (j - first) * 36u);
             const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
                 gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                 modelItems_[indices[first]].model->ib,
-                sourceSlots.data(), uint32_t(sourceSlots.size()));
+                sourceSlots.data(), uint32_t(sourceSlots.size()),
+                instanceRecords.data(), instanceRecords.size() * sizeof(float));
             if (token) {
                 ++gpuIcbPrepared_;
                 GpuEncodedBatch group;
@@ -1147,7 +1155,8 @@ void Renderer3D::renderModels(int phase) {
             lastItem_ = nullptr;
             dev_->setGpuIcbUniformBinding(true);
             const bool submitted = drawModelBatch(
-                group.items.data(), uint32_t(group.items.size()), phase, false);
+                group.items.data(), uint32_t(group.items.size()), phase,
+                false, true);
             const bool executed = submitted &&
                 dev_->executeGpuEncodedIndexedIcb(group.token);
             dev_->setGpuIcbUniformBinding(false);
