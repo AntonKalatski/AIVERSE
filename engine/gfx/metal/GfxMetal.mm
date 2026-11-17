@@ -1002,12 +1002,17 @@ public:
         // Driver crash fix: explicit pipeline and vertex/fragment buffer bindings.
         // Inheriting buffers with maxVertexBufferBindCount=0 caused AGX G15 to
         // fault inside executeCommandsInBufferCommon on Apple Silicon.
-        MTLIndirectCommandBufferDescriptor* descriptor = [MTLIndirectCommandBufferDescriptor new];
-        descriptor.commandTypes = MTLIndirectCommandTypeDrawIndexed;
-        descriptor.inheritBuffers = NO;
-        descriptor.inheritPipelineState = NO;
-        descriptor.maxVertexBufferBindCount = 9; // vertex at 0; uniforms at 1..8
-        descriptor.maxFragmentBufferBindCount = 9;
+        // Descriptor configuration is identical for every model ICB. Keep one
+        // immutable descriptor rather than allocating an Obj-C object per draw.
+        if (!modelIcbDescriptor_) {
+            modelIcbDescriptor_ = [MTLIndirectCommandBufferDescriptor new];
+            modelIcbDescriptor_.commandTypes = MTLIndirectCommandTypeDrawIndexed;
+            modelIcbDescriptor_.inheritBuffers = NO;
+            modelIcbDescriptor_.inheritPipelineState = NO;
+            modelIcbDescriptor_.maxVertexBufferBindCount = 9;
+            modelIcbDescriptor_.maxFragmentBufferBindCount = 9;
+        }
+        MTLIndirectCommandBufferDescriptor* descriptor = modelIcbDescriptor_;
         if (!resources.icb || resources.icbCapacity < drawCount) {
             resources.icb = [device_ newIndirectCommandBufferWithDescriptor:descriptor
                 maxCommandCount:drawCount options:MTLResourceStorageModeShared];
@@ -1122,6 +1127,7 @@ private:
     // Each frame slot is recycled only after its completion semaphore.
     // Each submission gets its own reusable resources to avoid overwriting
     // buffers referenced by earlier commands in the same frame.
+    MTLIndirectCommandBufferDescriptor* modelIcbDescriptor_ = nil;
     struct IndirectResources {
         id<MTLIndirectCommandBuffer> icb = nil;
         uint32_t icbCapacity = 0;
