@@ -332,6 +332,12 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - `65531e3`: `enable_testing()` now executes before adding ECS CTest targets. Other existing `enable_testing()` calls remain harmless.
 - These are **unverified code changes** until the latest full suite and gameplay build comparison run. The previous user-supplied successful suite predates these commits.
 
+## 2026-11-17 — Harden per-entity job API (after gameplay compare setup)
+
+- `e861e74`: `GuardedWorld` now denies structural mutation, shared-resource writes, nested pool traversals and nested adaptive traversal *inside* `eachAdaptiveWrite<T>` callbacks. This is enforced using the executing lane's thread-local `AccessScope::EntityScope` and throws `AccessViolation`, even if a standalone system declaration otherwise allows the operation.
+- `be74da3`: `ecs_guarded_parallel_test.cpp` tests these denials with 64 entities and 4 intentionally prohibited operations per Entity, including a recursive call that previously could deadlock.
+- These changes are not yet compiled/run on Mac Studio. Re-run both normal and sanitizer suites, then the gameplay compare script. A runtime-checked facade is still not a security sandbox; raw World references, leaked pointers and captured global state remain outside enforcement.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
