@@ -6,6 +6,60 @@ The editor Inspector reads components from the **actual ECS World**, not from ma
 
 `apps/editor/core/WorldInspect.cpp` calls `inspectEntity()`, which queries `World::has<T>` for built-in ECS pools and serializes the fields under `{"components": {"ComponentId": {...}}}`. The common `DetailsPanel` draws one card for each **present** component. `DocEntity` metadata, when relevant, appears separately.
 
+## Preferred integration: loaded NativeModule hook
+
+AIVERSE native modules are **statically compiled** into the project-specific
+editor (see `docs/native-modules.md`). There is no dynamic DLL/dylib loading
+or hot reload. The editor therefore reads native component data through the
+`NativeModule` instance already loaded into the current Simulation.
+
+Override the optional `NativeModule::inspectComponents(World&, Entity, Json&
+components, Json& schemas) const` method in a project's module. Example
+(the project must declare its actual `VehiclePhysics` type):
+
+```cpp
+void MyNativeModule::inspectComponents(aiverse::World& world,
+                                       aiverse::Entity entity,
+                                       aiverse::Json& components,
+                                       aiverse::Json& schemas) const {
+    const auto* vehicle = world.tryGet<VehiclePhysics>(entity);
+    if (!vehicle) return; // no component: no Inspector card
+
+    aiverse::Json values = aiverse::Json::object();
+    values.set("speed", aiverse::Json::number(vehicle->speed.toDouble(), 3));
+    components.set("VehiclePhysics", values);
+
+    aiverse::Json fields = aiverse::Json::object();
+    aiverse::Json speed = aiverse::Json::object();
+    speed.set("title", aiverse::Json::string("Speed"));
+    speed.set("kind", aiverse::Json::string("number"));
+    fields.set("speed", speed);
+    aiverse::Json schema = aiverse::Json::object();
+    schema.set("title", aiverse::Json::string("Vehicle Physics"));
+    schema.set("fields", fields);
+    schemas.set("VehiclePhysics", schema);
+}
+```
+
+This is a **read-only inspector hook**. Only report real ECS components
+whose pools are present; the engine does not create components or edit the
+runtime world on your behalf. The loaded module's hooks are automatically
+queried by `WorldInspect::inspectEntity`, scoped to that Simulation, so no
+global unregister action is needed when switching projects. Built-in
+component entries retain priority if IDs collide.
+
+**Important:** Existing native modules do not automatically implement this
+hook. Each owning module must supply its actual component schema/read callback.
+This does not yet provide generic arbitrary native ECS reflection or
+project-specific persistence/Undo.
+
+## Alternative: global editor-side registration (advanced)
+
+The `registerWorldInspectorExtension` API below remains available for
+components compiled into the editor host directly. Unlike the preferred
+`NativeModule` hook, its registration is global and requires synchronization
+when callbacks are replaced/unregistered.
+
 ## Opt-in reader registration for additional C++ ECS components
 
 A native C++ module **linked into the editor process** can register an inspector reader after its component type is available and before the editor begins inspecting objects:
