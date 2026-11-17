@@ -143,10 +143,25 @@ void Editor::drawFpsSceneInspector() {
             const bool changed = ImGui::DragFloat3("##xyz", xyz, 0.05f, 0, 0, "%.3f");
             if (ImGui::IsItemActivated()) doc().beginEdit();
             if (changed && std::isfinite(xyz[0]) && std::isfinite(xyz[1]) && std::isfinite(xyz[2])) {
-                Json value = Json::array();
-                for (float x : xyz) value.push(Json::number(double(x), 3));
-                array = value;
-                doc().touched();
+                bool valid = true;
+                if (collider) {
+                    const Json& other = source[label[0] == 'M' && label[1] == 'i' ? "max" : "min"];
+                    if (other.isArray() && other.size() >= 3) {
+                        for (int axis = 0; axis < 3; ++axis) {
+                            const float limit = float(other[size_t(axis)].toDouble());
+                            if (label[0] == 'M' && label[1] == 'i')
+                                valid &= xyz[axis] < limit;
+                            else
+                                valid &= xyz[axis] > limit;
+                        }
+                    }
+                }
+                if (valid) {
+                    Json value = Json::array();
+                    for (float x : xyz) value.push(Json::number(double(x), 3));
+                    array = value;
+                    doc().touched();
+                }
             }
             ImGui::PopID();
         };
