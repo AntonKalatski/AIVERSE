@@ -177,3 +177,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Both mutable and const FPS entity accessors now explicitly accept only Collider/Spawn source kinds; invalid enum values no longer silently fall back to colliders. RTS Transform reads reject non-finite source X/Z values before exposing them to Inspector/Scene.
 - Verification: GitHub source inspection only; **build/tests NOT RUN**. CI for previous `42cc0612` observed queued (both CI and Studio validation).
 - Next: prioritize a real build and focused adapter tests before further native ECS editor work. Investigate long-running queued Actions and test typed Inspector edits/undo.
+
+### 2026-11-17 — Collider midpoint numeric safety
+- Branch: `feature/universal-entity-inspector-fps`.
+- Commits: `1a400e7e`, `c1a653bc` (`apps/editor/EditorEntityAdapter.h`).
+- Collider midpoint calculation now uses half-scaled endpoints instead of adding two potentially huge finite values, avoiding spurious overflow. FPS source-key index bounds comparison is explicitly 64-bit.
+- Verification: source edits committed; **build/tests NOT RUN**. CI for `820ed35c` remained queued on latest check.
+- Next: run actual editor build and targeted component adapter tests; inspect CI queue/runner availability before claiming functional readiness.
