@@ -105,6 +105,15 @@ uint64_t exercise(bool cow) {
     require(hp&&hp->current==65,"wrong projectile damage");
     require(gun&&gun->ammo==0,"weapon ammo not consumed");
     require(spawns&&spawns->nextShotId==2,"non-deterministic shot identity");
+    require(summary&&summary->count==1&&summary->total==35,"damage event mismatch");
+    require(world.countExisting<lg::ProjectileFlightComponent>()==0,
+            "projectile not despawned");
+    const auto expected=sim.checksum();
+    sim.loadState(original);
+    require(sim.world().tryGetConst<lg::WeaponStateComponent>(host->gun)->ammo==1,
+            "rollback failed to restore ammo");
+    for(int i=0;i<8;++i)sim.step();
+    require(sim.checksum()==expected,"replayed firing checksum mismatch");
     // A second request with an empty magazine must be consumed without
     // spawning a projectile or advancing the shot sequence.
     auto* retry=sim.world().tryGet<lg::FireIntentComponent>(host->gun);
@@ -118,15 +127,7 @@ uint64_t exercise(bool cow) {
             "dry fire must not allocate projectile IDs");
     require(afterDryState&&afterDryState->ammo==0,"dry fire changed ammo");
     require(afterDryIntent&&!afterDryIntent->requested,"dry fire request was not consumed");
-    require(summary&&summary->count==1&&summary->total==35,"damage event mismatch");
-    require(world.countExisting<lg::ProjectileFlightComponent>()==0,
-            "projectile not despawned");
-    const auto expected=sim.checksum();
-    sim.loadState(original);
-    require(sim.world().tryGetConst<lg::WeaponStateComponent>(host->gun)->ammo==1,
-            "rollback failed to restore ammo");
-    for(int i=0;i<8;++i)sim.step();
-    require(sim.checksum()==expected,"replayed firing checksum mismatch");
+
     return expected;
 }
 int main(){
