@@ -89,6 +89,10 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         cached.sx == L.sx && cached.sz == L.sz &&
         cached.structure == t.structure && cached.shape == L.shape &&
         std::memcmp(cached.fix.m, ch.fix.m, sizeof(ch.fix.m)) == 0;
+    if (immutablePlacement) {
+        if (reusePlacement) ++placementCacheHits_;
+        else ++placementCacheMisses_;
+    }
     if (!immutablePlacement) cached.valid = false;
     mat4 base;
     if (!reusePlacement) {
