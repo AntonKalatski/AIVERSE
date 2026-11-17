@@ -385,6 +385,8 @@ private:
     // models
     ModelRenderStats modelStats_;
     gfx::BufferHandle indirectCommands_;
+    // Reuse command storage across submissions; only contents/size change.
+    std::vector<gfx::DrawIndexedIndirectCommand> indirectCommandScratch_;
     bool modelMultiDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
