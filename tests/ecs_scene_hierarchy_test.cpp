@@ -61,6 +61,30 @@ static void rotateScale() {
     assert(g.update(w)==2);
     assert(x(w,b)==8);
 }
+static void nonuniformScaleShear() {
+    World w;SceneHierarchy g;
+    Entity parent=w.create(),child=w.create();
+    LocalTransform p;
+    p.scale={2_fx,1_fx,1_fx};
+    LocalTransform l;
+    // 45 degrees around Z: combining this rotation with parent X-scale
+    // produces shear that cannot be represented by quaternion + scale alone.
+    l.rotation.z=Fixed::fromRatio(382683,1000000);
+    l.rotation.w=Fixed::fromRatio(923880,1000000);
+    assert(g.attach(w,parent,p));
+    assert(g.attach(w,child,l));
+    assert(g.setParent(w,child,parent));
+    assert(g.update(w)==2);
+    const auto* world=w.tryGetConst<WorldTransform>(child);
+    assert(world);
+    auto result=hierarchy_detail::transformPoint(world->affine,Vec3{1_fx,Fixed{},Fixed{}});
+    assert(fxAbs(result.x-Fixed::fromRatio(1414214,1000000))<Fixed::fromRatio(1,100));
+    assert(fxAbs(result.y-Fixed::fromRatio(707107,1000000))<Fixed::fromRatio(1,100));
+    // The transformed basis vectors are non-orthogonal: real affine shear.
+    const auto dot=world->affine.at(0,0)*world->affine.at(0,1)
+                  +world->affine.at(1,0)*world->affine.at(1,1);
+    assert(fxAbs(dot)>Fixed::fromRatio(1,2));
+}
 static void rollback() {
     World w;SceneHierarchy graph;
     Entity a=w.create(),b=w.create();
@@ -99,6 +123,6 @@ static void deep() {
     assert(x(w,previous)==n+1);
 }
 int main(){
-    nested();rotateScale();rollback();deep();
+    nested();rotateScale();nonuniformScaleShear();rollback();deep();
     std::cout<<"PASS hierarchy parent links, deep updates, dirty branches, cycles, rollback and generations\n";
 }
