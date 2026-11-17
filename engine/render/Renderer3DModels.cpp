@@ -819,6 +819,60 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     return true;
 }
 
+void Renderer3D::prepareGpuModelDraws() {
+    gpuModelCommandsReady_ = false;
+    gpuModelFrame_ = 0;
+    gpuModelEligible_ = gpuModelDrawn_ = 0;
+    gpuModelSlots_.clear();
+    gpuModelRecords_.clear();
+
+    static const bool enabled = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    if (!enabled || !dev_ || dev_->info().backend != gfx::Backend::Metal ||
+        !dev_->supportsCompute() || !dev_->frameSerial()) return;
+
+    gpuModelSlots_.assign(modelItems_.size(), UINT32_MAX);
+    gpuModelRecords_.reserve(modelItems_.size() / 4);
+    for (uint32_t i = 0; i < modelItems_.size(); ++i) {
+        const ModelItem& it = modelItems_[i];
+        // This path is deliberately conservative: only opaque rigid static
+        // primitives with no GPU deformation, GI, fades or material batching.
+        // Shadows/transparent/outline passes remain on the CPU renderer.
+        if (!it.inView || !it.rigid || !it.prim || !it.model || !it.mat ||
+            !(it.flags & kDrawStatic) || (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
+            it.tint.w < .99f || it.mat->alpha != AlphaMode::Opaque ||
+            it.mat->transparent || it.mat->shaderGraph ||
+            it.joints >= 0 || it.morph >= 0 || it.baked ||
+            it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
+            it.model->geometry || it.lodThreshold < 1.0f || it.lodInvert ||
+            !it.model->vb.valid() || !it.model->ib.valid() || !it.indexCount)
+            continue;
+        GpuPrimitiveDrawRecord record{};
+        std::memcpy(record.world, it.world.m, sizeof(record.world));
+        record.boundsMin[0] = it.prim->boundsMin.x;
+        record.boundsMin[1] = it.prim->boundsMin.y;
+        record.boundsMin[2] = it.prim->boundsMin.z;
+        record.boundsMax[0] = it.prim->boundsMax.x;
+        record.boundsMax[1] = it.prim->boundsMax.y;
+        record.boundsMax[2] = it.prim->boundsMax.z;
+        record.command.indexCount = it.indexCount;
+        record.command.instanceCount = 1;
+        record.command.firstIndex = it.firstIndex + it.model->gpuFirstIndex;
+        record.command.baseVertex = int32_t(it.model->gpuBaseVertex);
+        record.command.firstInstance = 0;
+        record.enabled = 1;
+        gpuModelSlots_[i] = uint32_t(gpuModelRecords_.size());
+        gpuModelRecords_.push_back(record);
+    }
+    gpuModelEligible_ = uint32_t(gpuModelRecords_.size());
+    if (!gpuModelEligible_) return;
+    gpuModelFrame_ = dev_->frameSerial();
+    gpuModelCommandsReady_ = gpuModelCommands_.prepare(
+        *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_);
+}
+
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
     // A renderModels invocation is one independent visibility/ordering epoch.
@@ -952,6 +1006,30 @@ void Renderer3D::renderModels(int phase) {
         dev_->supportsMultiDrawIndirect() && phase <= 1;
     const size_t minIndirectCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
     for (size_t i = 0; i < order_.size();) {
+        // GPU-authored indirect arguments: actual compute->draw path, opt-in.
+        // One submission per rigid static primitive, so this is a correctness
+        // milestone, NOT a faster replacement for conventional instancing.
+        const uint32_t modelIndex = order_[i];
+        if (phase == 1 && gpuModelCommandsReady_ && !drawCallDebug_ &&
+            modelIndex < gpuModelSlots_.size() &&
+            gpuModelSlots_[modelIndex] != UINT32_MAX &&
+            drawModelBatch(&modelIndex, 1, phase, false)) {
+            if (dev_->drawIndexedGpuIndirect(
+                    gpuModelCommands_.output(gpuModelFrame_),
+                    size_t(gpuModelSlots_[modelIndex]) * sizeof(gfx::DrawIndexedIndirectCommand))) {
+                const ModelItem& item = modelItems_[modelIndex];
+                lastItem_ = &item;
+                ++gpuModelDrawn_;
+                ++drawCalls_;
+                ++profile_.draws[size_t(phase)];
+                ++profile_.instances[size_t(phase)];
+                const uint32_t triangles = item.indexCount / 3;
+                profile_.triangles[size_t(phase)] += triangles;
+                modelStats_.triangles += triangles;
+                ++i;
+                continue;
+            }
+        }
         // Try MDI before conventional instancing, only when every command can
         // legally inherit the SAME uniforms/textures and rigid transform.
         // Draw-call colour mode uses one colour per indirect submission.
