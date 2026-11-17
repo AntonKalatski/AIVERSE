@@ -607,6 +607,10 @@ void Editor::buildEditScene(game::RtsScene& out) const {
         const int t = typeIt->second;
         if (t < 0 || !visible(e.owner, e.type)) continue;
         game::SceneObject o;
+        // Editor document entity index is stable while the document structure
+        // is unchanged. If indices shift, changed records are uploaded again.
+        // Keep these keys in a separate namespace from simulation entity IDs.
+        o.persistentKey = (uint64_t(0xED) << 56) | (uint64_t(i) + 1);
         o.type = uint16_t(t);
         o.owner = e.owner < 0 ? uint8_t(game::kHostileNeutral) : uint8_t(std::clamp(e.owner, 0, 16));
         o.pos = {e.x, 0, e.z};
