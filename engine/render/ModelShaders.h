@@ -640,6 +640,7 @@ struct IcbPbrTextures {
 
 fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         constant U1& f [[buffer(2)]], constant MU2& sourceMaterial [[buffer(3)]],
+                        constant LightU& lu [[buffer(6)]],
 #if defined(MATERIAL_PALETTE)
                         constant float4* materials [[buffer(4)]],
 #endif
@@ -653,7 +654,7 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex4 [[texture(4)]], sampler s4 [[sampler(4)]],
                         texture2d<float> tex5 [[texture(5)]], sampler s5 [[sampler(5)]],
                         texture2d<float> tex6 [[texture(6)]], sampler s6 [[sampler(6)]],
-                        constant LightU& lu [[buffer(6)]], texture2d<float> tex9 [[texture(9)]], sampler s9 [[sampler(9)]],
+                        texture2d<float> tex9 [[texture(9)]], sampler s9 [[sampler(9)]],
                         texture2d<float> tex10 [[texture(10)]], sampler s10 [[sampler(10)]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
