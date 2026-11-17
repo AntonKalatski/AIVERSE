@@ -792,3 +792,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `libraries/include/aiverselib/genre/EcsTimedMechanics.h`: `WeaponReloadComponent`/`ReloadIntentComponent` with reload and fire-intent gate stages; `HealthRegenerationComponent` over the canonical shared `HitPointsComponent`; `EnergyRegenerationComponent`; `TimedExpiryComponent`, all independently registered with `Simulation` and without RTS/FPS dependencies.
 - Verification: source uploaded via GitHub; **native compile and CTest not run**, host integrations not yet switched. Shared health/weapon components remain additive/opt-in and are not asserted to replace legacy modules.
 - Next: add two-host COW/save/rollback fixture, package registration, skill, catalog and CMake, then verify natively before any default host switch.
+
+
+### 2026-11-18 — Shared timed mechanics cross-genre regression fixture
+- Implementation SHA: `337cd0e9faea659b5ddedb75c6eb7eeecf0ce77a`.
+- Added `tests/ecs_cross_genre_timed_mechanics_test.cpp`: shooter + strategy hosts exercise the identical reload/fire-gate, health/energy regeneration and timed expiry systems; verifies ammo/reserve, stable ticks, suppression/consumption, full reload, TTL and snapshot replay with/without COW.
+- Verification: fixture committed through GitHub; **not compiled nor run** (no checked-out native toolchain in this environment). Assertions reflect expected semantics, not observed pass results.
+- Next: register this test in CMake and package in catalog, add agent skill; then run compiler/CTest before integrating RTS/FPS gameplay.
