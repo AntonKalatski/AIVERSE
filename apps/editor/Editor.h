@@ -266,7 +266,8 @@ public:
     EditorTheme& theme() { return theme_; }
 
     // statistics
-    struct FrameStats { float frameMs = 0, simMs = 0; uint32_t drawCalls = 0; };
+    // Last rendered viewport, same scope as drawCalls; triangle counts omit custom renderers.
+    struct FrameStats { float frameMs = 0, simMs = 0; uint32_t drawCalls = 0; uint64_t cameraTriangles = 0; };
     std::deque<FrameStats> frameHistory;
     EditorProfile prof;                                // world tree phase timings (AIVERSE_EDITOR_PROFILE=1 prints them)
     struct PlaySample { float t; std::vector<int> units, structures; std::vector<std::vector<float>> resources; };
