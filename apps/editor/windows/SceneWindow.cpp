@@ -258,6 +258,12 @@ private:
                     icb && std::strcmp(icb, "1") == 0)
                     ImGui::Text("GPU-encoded ICB: %u submissions / %u commands",
                                 gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
+                    ImGui::Text("GPU ICB batches: %u candidates, %u prepared, %u rejected, %u execute failed",
+                                gpu.gpuIcbCandidates, gpu.gpuIcbPrepared,
+                                gpu.gpuIcbRejected, gpu.gpuIcbExecuteFailed);
+                    if (gpu.gpuIcbRejected || gpu.gpuIcbExecuteFailed)
+                        ImGui::TextWrapped("Metal backend error: %s",
+                                           ed.device().lastError().c_str());
                 ImGui::Text("GPU indirect args: %s",
                             gpu.prepared ? "compute generated" : "not ready / unsupported");
                 ImGui::Text("GPU draw record uploads: %u records / %u ranges (%.2f KiB)",
