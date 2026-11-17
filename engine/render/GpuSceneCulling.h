@@ -77,7 +77,7 @@ struct SceneRecord {
 struct Uniforms {
     float4x4 viewProj;
     uint count;
-    uint3 pad;
+    uint pad0, pad1, pad2;
 };
 kernel void cs_main(device const SceneRecord* objects [[buffer(0)]],
                     device uint* visible [[buffer(1)]],
