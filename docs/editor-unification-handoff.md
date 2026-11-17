@@ -198,3 +198,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Cleanup commit `017a5731`: switched FPS Hierarchy collider/spawn iteration to indexed loops, removing unused variables.
 - Validation: fixes committed; **macOS rebuild NOT YET RUN after these commits**. User should pull branch and rerun build.
 - Next: resolve further build errors, launch editor, test selection/Inspector/Undo; record actual test results.
+
+### 2026-11-17 — macOS clang warnings and FPS Hierarchy correctness
+- User reported `HierarchyWindow.cpp:87` double increment of `index` (loop header and body), and `EditorFps.cpp:158` wrong `%d` format for `size_t`.
+- Fix commits: `28c8d0c8` removes duplicate body increment (also prevents every second Spawn Point from being skipped); `fa50242c` uses `%zu` for source index.
+- Verification: source fixes committed; **macOS rebuild NOT YET RUN after these commits**.
+- Next: user pull and rebuild; launch editor and verify all FPS spawn entries appear in Hierarchy and Inspector displays correct indices.
