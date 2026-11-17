@@ -112,6 +112,9 @@ public:
     virtual ~PostProcess() = default;
     virtual bool active() const = 0;
     virtual bool linearScene() const { return false; }
+    // True only while the post chain is accumulating a reprojection-validated HDR history.
+    // Shadow sample scrambling must never be enabled without a temporal resolve pass.
+    virtual bool temporalShadowResolve() const { return false; }
     virtual gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) = 0;
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
 };
