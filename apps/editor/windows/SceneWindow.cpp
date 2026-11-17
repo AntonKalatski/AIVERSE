@@ -9,6 +9,7 @@
 #include "../core/PlanetOps.h"
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
+#include "engine/render/GlobalGeometryPool.h"
 
 namespace aiverse::editor {
 
@@ -106,6 +107,10 @@ private:
         if (ImGui::BeginPopup("##scene_batching")) {
             ImGui::TextUnformatted("Scene model batching");
             ImGui::Separator();
+            if (ImGui::Checkbox("Shared Geometry Pool", &sceneGeometryPool_)) {
+                render::setGlobalGeometryPoolingEnabled(sceneGeometryPool_);
+                ed.reloadRules(); // reupload original models; never toggle existing GPU buffers in place
+            }
             ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
             ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
             ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
@@ -666,6 +671,7 @@ private:
     bool looking_ = false, panning_ = false, dragging_ = false, painting_ = false, areaDrag_ = false;
     int studioDebugMode_ = 0;
     bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
+    bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
     int64_t baselineDraws_ = -1;
