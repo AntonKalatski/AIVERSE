@@ -827,3 +827,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `tests/ecs_cross_genre_locomotion_test.cpp`: shooter and strategy modules use the exact same ECS locomotion system, verify jump edge, deterministic ground/air acceleration, output publishing, rollback/replay checksums and COW equivalence.
 - Verification: source committed; **no native C++ compilation or runtime assertions executed**. Tests do not cover collision, ladders, mantling, swimming or legacy FPS/RTS integration.
 - Next: publish native package target, skill, CMake/standalone test runner; add separate collider/transform integration and nontrivial locomotion mode tests before changing default games.
+
+
+### 2026-11-18 — ECS locomotion package and test registration
+- Commits: `278cd8384985c74519940f4d61cae1ecf0290c94` (skill), `40211d94b72739f3127bb58c1415ef417082d19a` (catalog #122), `c9ef4fe369e1fcc26aaabfb7fcbf321d4cb857cc` (CMake/CTest), `0bf6a9a7ac8f52fe5c6ff1fc7635ebcf24bc40a3` (standalone experiment runner).
+- New public target `AIVERSE::lib_ecs_locomotion` depends on existing `character-locomotion`; public `EcsLocomotionSystems.h` and skill cover stable state/input/result policy binding without FPS/RTS module linkage. Two-host test checks replay and COW; `stepMotion` is reused, not duplicated.
+- Verification: catalog parsed to 122 JSON entries during edit. **No native compile, native consumer build, CTest, nor runtime parity run**. Remaining collision, transformations and advanced locomotion modes are not yet ECS-integrated in built-in games.
+- Next: run catalog/check, complete CMake/test suite, and convert one actual RTS/FPS consumer with exact saved-state and deterministic replay parity before deleting a legacy path.
