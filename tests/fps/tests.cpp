@@ -302,6 +302,38 @@ void ecsActorAuthorityParity(Json rules,Json map) {
     ecs->step();
     CHECK(state(*ecs).actors[0].pos.x==ecs->world().tryGetConst<fps::ActorRuntime>(e)->value.pos.x);
 }
+void ecsDamageAuthorityParity(Json rules,Json map) {
+    // Direct ECS damage/attacker scoring must match legacy shot resolution
+    // tick-by-tick, including death, hit counts, and kill events.
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    map.member("players").itemsMut().resize(2);
+    map.member("players").at(1).set("team",Json::number(int64_t(2)));
+    map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    for(uint32_t tick=0;tick<30;++tick) {
+        fps::Input input;
+        input.sequence=tick+1;input.viewTick=tick;input.buttons=fps::Fire;
+        auto cmd=fps::command(1,input);cmd.tick=tick;
+        legacy->inject(cmd);ecs->inject(cmd);
+        legacy->step();ecs->step();
+        CHECK(legacy->checksum()==ecs->checksum());
+        const auto& left=state(*legacy).actors;
+        const auto& right=state(*ecs).actors;
+        CHECK(left[0].hits==right[0].hits);
+        CHECK(left[0].kills==right[0].kills);
+        CHECK(left[1].health==right[1].health);
+        for(uint8_t slot=1;slot<=2;++slot) {
+            auto* runtime=ecs->world().tryGetConst<fps::ActorRuntime>(
+                static_cast<fps::Module&>(ecs->module()).actorEntity(*ecs,slot));
+            CHECK(runtime && runtime->value==right[size_t(slot-1)]);
+        }
+    }
+    CHECK(state(*legacy).actors[1].health==0);
+    CHECK(state(*legacy).actors[0].kills==1);
+    CHECK(state(*ecs).actors[0].hits>0);
+}
 void ecsDynamicAuthorityParity(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto ecsRules=rules;
@@ -447,6 +479,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
