@@ -1,4 +1,5 @@
 #include "engine/net/authority/Session.h"
+#include "engine/net/Rollback.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
 #include "engine/audio/Audio.h"
@@ -204,6 +205,46 @@ void cowSnapshotsFps(Json rules,Json map) {
     CHECK(loaded->checksum()==incremental->checksum());
 }
 
+void incrementalRollbackFps(Json rules,Json map) {
+    // Actual FPS module under RollbackSession: a confirmed remote input
+    // arrives after several predicted ticks, forcing replay in both modes.
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    auto deep=simulation(rules,map),cow=simulation(rules,map);
+    auto run=[&](Simulation& sim,bool incremental) {
+        net::SessionConfig config;
+        config.inputDelay=2;
+        config.rollbackWindow=8;
+        config.incrementalWorldSnapshots=incremental;
+        uint64_t hash=0;
+        {
+            net::RollbackSession session(sim,config,{2},
+                [](uint32_t,const std::vector<Command>&){},
+                [](uint32_t,uint64_t){});
+            CHECK(sim.world().cowSnapshotsEnabled()==incremental);
+            const double tickDuration=1.0/sim.tickRate();
+            for(int i=0;i<5;++i)
+                session.update(tickDuration,uint64_t(i)*17);
+            CHECK(sim.tick()==5);
+            fps::Input input;
+            input.forward=600;
+            input.sequence=1;
+            input.viewTick=2;
+            auto delayed=fps::command(1,input);
+            delayed.tick=2;delayed.seq=1;
+            session.confirm(0,3,{delayed});
+            session.update(0,85);
+            CHECK(session.stats().rollbacks==1);
+            CHECK(session.stats().resimulatedTicks>=3);
+            for(int i=5;i<8;++i)
+                session.update(tickDuration,uint64_t(i)*17);
+            hash=sim.checksum();
+            CHECK(sim.tick()==8);
+        }
+        CHECK(!sim.world().cowSnapshotsEnabled());
+        return hash;
+    };
+    CHECK(run(*deep,false)==run(*cow,true));
+}
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
@@ -286,6 +327,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
