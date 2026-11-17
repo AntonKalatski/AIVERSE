@@ -36,6 +36,7 @@ bool canPool(const Model& m) {
     return true;
 }
 bool disabled() {
+    if (const char* safe = std::getenv("AIVERSE_RENDER_SAFE"); safe && std::string(safe) == "1") return true;
     const char* e = std::getenv("AIVERSE_GEOMETRY_POOL");
     return !poolEnabled.load(std::memory_order_relaxed) ||
            (e && (std::string(e) == "off" || std::string(e) == "0"));
