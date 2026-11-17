@@ -89,6 +89,8 @@ public:
             else {
                 benchmarkSamples_[benchmarkMode_].push_back(cpuMs);
                 benchmarkDrawSum_[benchmarkMode_] += renderer.drawCalls();
+                benchmarkIndirectSum_[benchmarkMode_] += renderer.modelStats().multiDrawSubmissions;
+                benchmarkCommandSum_[benchmarkMode_] += renderer.modelStats().indirectCommands;
                 ++benchmarkPhaseSamples_;
                 if (benchmarkPhaseSamples_ == 300) {
                     benchmarkPhaseSamples_ = 0;
@@ -231,6 +233,8 @@ private:
                         benchmarkSamples_[0].clear();
                         benchmarkSamples_[1].clear();
                         benchmarkDrawSum_[0] = benchmarkDrawSum_[1] = 0;
+                        benchmarkIndirectSum_[0] = benchmarkIndirectSum_[1] = 0;
+                        benchmarkCommandSum_[0] = benchmarkCommandSum_[1] = 0;
                         measureBatchingNextFrame_ = false;
                     }
                 } else {
@@ -253,6 +257,9 @@ private:
                     ImGui::Text("Scene CPU ON:  avg %.3f / P95 %.3f ms, draws %.0f",
                                 on.first, on.second, double(benchmarkDrawSum_[1]) / 900.0);
                     ImGui::Text("MDI CPU delta: %+.1f%%", (on.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
+                    ImGui::Text("MDI ON: %.1f indirect submissions, %.1f GPU commands / frame",
+                                double(benchmarkIndirectSum_[1]) / 900.0,
+                                double(benchmarkCommandSum_[1]) / 900.0);
                     ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
                     ImGui::TextDisabled("Fixed camera; Scene render CPU only. GPU timings are asynchronous.");
                     ImGui::TextDisabled("Same geometry pool in both modes; excludes asset upload.");
@@ -821,6 +828,8 @@ private:
     RTSCamera benchmarkCamera_{};
     std::vector<double> benchmarkSamples_[2];
     uint64_t benchmarkDrawSum_[2] = {0, 0};
+    uint64_t benchmarkIndirectSum_[2] = {0, 0};
+    uint64_t benchmarkCommandSum_[2] = {0, 0};
     bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
     int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
     int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
