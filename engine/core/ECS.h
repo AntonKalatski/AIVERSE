@@ -256,20 +256,29 @@ public:
     // tick boundaries; outstanding mutable references must not survive it.
     // Copies share untouched pools/resources, and detach on mutable access.
     void enableCowSnapshots(bool enable=true) {
-        if (!enable && cowSnapshots_) {
-            for (auto& p:pools_) if(p && !p.unique()) p=std::shared_ptr<IPool>(p->clone());
-            for (size_t i=0;i<resources_.size();++i)
-                if(resources_[i] && !resources_[i].unique())
-                    resources_[i]=resourceOps_[i].make(resources_[i].get());
+        if(enable==cowSnapshots_)return;
+        // Transactional mode conversion: construct ALL replacement pools before
+        // exposing any of them. If a component copy throws, the original World
+        // (and all snapshots) remain in their old mode and are still usable.
+        std::vector<std::shared_ptr<IPool>> converted;
+        converted.reserve(pools_.size());
+        for(const auto& p:pools_) {
+            if(!p) {converted.emplace_back();continue;}
+            auto next=std::shared_ptr<IPool>(p->clone());
+            next->setPaged(enable);
+            converted.push_back(std::move(next));
         }
-        if(enable && !cowSnapshots_) {
-            for(auto& p:pools_)if(p) {
-                if(!p.unique())p=std::shared_ptr<IPool>(p->clone());
-                p->setPaged(true);
-            }
-        } else if(!enable && cowSnapshots_) {
-            for(auto& p:pools_)if(p)p->setPaged(false);
+        std::vector<std::shared_ptr<void>> detached;
+        if(!enable) {
+            // Disable COW only after any shared singleton resources have been
+            // detached. This also makes legacy mutable resource() safe.
+            detached=resources_;
+            for(size_t i=0;i<detached.size();++i)
+                if(detached[i] && !detached[i].unique())
+                    detached[i]=resourceOps_[i].make(detached[i].get());
         }
+        pools_.swap(converted);
+        if(!enable)resources_.swap(detached);
         cowSnapshots_=enable;
     }
     bool cowSnapshotsEnabled() const {return cowSnapshots_;}
