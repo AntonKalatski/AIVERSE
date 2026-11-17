@@ -106,6 +106,27 @@ static void rollback() {
     assert(graph.update(w)==2);
     assert(!w.has<Parent>(b));
 }
+static void cowSnapshotHierarchy() {
+    World w;
+    SceneHierarchy graph;
+    Entity parent=w.create(),child=w.create();
+    assert(graph.attach(w,parent,local(10)));
+    assert(graph.attach(w,child,local(3)));
+    assert(graph.setParent(w,child,parent));
+    graph.update(w);
+    w.enableCowSnapshots(true);
+    World snapshot=w;
+    assert(graph.setLocal(w,parent,local(70)));
+    assert(graph.update(w)==2);
+    assert(x(w,child)==73);
+    assert(static_cast<const World&>(snapshot).tryGetConst<WorldTransform>(child)
+           ->position.x==13_fx);
+    w.copyFrom(snapshot);
+    graph.rebuild(w);
+    assert(graph.update(w)==2);
+    assert(x(w,child)==13);
+    assert(graph.update(w)==0);
+}
 static void deep() {
     World w;SceneHierarchy graph;
     Entity first=kNullEntity,previous=kNullEntity;
@@ -130,6 +151,6 @@ static void deep() {
     assert(x(w,previous)==n+4);
 }
 int main(){
-    nested();rotateScale();nonuniformScaleShear();rollback();deep();
+    nested();rotateScale();nonuniformScaleShear();rollback();cowSnapshotHierarchy();deep();
     std::cout<<"PASS hierarchy parent links, deep updates, dirty branches, cycles, rollback and generations\n";
 }
