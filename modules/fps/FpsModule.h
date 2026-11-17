@@ -149,6 +149,11 @@ public:
     bool serializeState(Simulation&,Archive&) override;
     int result(Simulation& sim) override { return state(sim).winner; }
     const Config& config() const { return config_; }
+    // Profiling-only counters, deliberately excluded from gameplay state,
+    // checksums and snapshots.
+    uint64_t experimentalMotorBatches() const {return experimentalMotorBatches_;}
+    uint64_t experimentalMotorCommits() const {return experimentalMotorCommits_;}
+
     const world::SpatialWorld& collision() const { return collision_; }
     void setContentReader(world::AssetReader);
     bool readyToStep(Simulation&) override;
@@ -191,6 +196,7 @@ private:
     std::vector<Loot> initialLoot_;
     lib::genre::AttackSet meleeAttacks_;
 
+    uint64_t experimentalMotorBatches_=0,experimentalMotorCommits_=0;
     Config config_;
     world::SpatialWorld collision_;
     std::vector<Vec3> spawns_;
