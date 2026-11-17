@@ -4,6 +4,8 @@
 #include "Model.h"
 
 namespace aiverse::render {
+bool globalGeometryPoolingEnabled();
+void setGlobalGeometryPoolingEnabled(bool enabled);
 bool uploadModelToGeometryPool(gfx::Device& dev, Model& m);
 void releaseModelGeometryPool(gfx::Device& dev, Model& m);
 }
