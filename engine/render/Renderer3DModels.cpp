@@ -672,6 +672,15 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             commands.assign(cacheEntry->commands.begin(), cacheEntry->commands.end());
             triangles = cacheEntry->triangles;
         }
+        if (traceIndirect) {
+            static uint64_t cacheHits = 0, cacheMisses = 0;
+            if (cacheHit) ++cacheHits; else ++cacheMisses;
+            if (cacheHits + cacheMisses == 600)
+                std::fprintf(stderr, "[mdi-layout] hits=%llu misses=%llu hit-rate=%.1f%% /600 submissions\n",
+                    (unsigned long long)cacheHits, (unsigned long long)cacheMisses,
+                    100.0 * double(cacheHits) / double(cacheHits + cacheMisses));
+            if (cacheHits + cacheMisses == 600) cacheHits = cacheMisses = 0;
+        }
     }
     if (!cacheHit) {
         if (commands.capacity() < count) commands.reserve(count);
