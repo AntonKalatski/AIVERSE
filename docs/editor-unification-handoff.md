@@ -666,3 +666,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `008f01c`: created `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md` for agent reuse. It specifies data-only health/damage/collider-index/queue components, flight → impact staging → ordered damage resolve → optional project-specific policy, deterministic ownership and save/rollback, native C++ usage, tests, and explicit scope limits.
 - This skill **does not** imply the existing RTS/FPS combat modules have been migrated; they still require adapters and parity tests.
 - Next: add catalog entry to `libraries/catalog.json`, update normative composition docs and run the tests.
+
+### 2026-11-18 — Universal ECS projectile + damage resolution, stage F
+- Commit `259258b`: registered public package `ecs-impact-damage` in `libraries/catalog.json`, with target `AIVERSE::lib_ecs_impact_damage`, source `EcsDamageSystems.h`, workflow skill, CTest fixture and dependency on existing `ecs-projectile-systems`. The library catalog's generated `AIVERSE::lib_*` targets make it accessible to native C++ game modules without linking FPS/RTS combat modules.
+- JSON structure was parsed and validated before commit (119 packages; package at end); **not** tested with the catalog CLI or a native CMake configure yet.
+- Next: update normative composition guide/skill and verify build/results; do not advertise automatic integration into legacy `fps::Module` / `RtsModule`.
