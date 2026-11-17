@@ -85,7 +85,8 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     ModelDraw d;
     // Stable identity for persistent scene staging; editor placements,
     // previews and attachments use the existing transient draw path.
-    if (o.entity.valid()) d.persistentId = o.entity.packed();
+    d.persistentId = o.persistentKey ? o.persistentKey :
+        (o.entity.valid() ? o.entity.packed() : 0);
     d.model = show->model;
     if (!tintOverride && (t.id.starts_with("city_interior_") || t.id == "shop_roof")) d.flags |= kDrawActorReveal;
     d.geometry = show->geometry;
