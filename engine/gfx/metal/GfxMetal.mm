@@ -990,13 +990,15 @@ public:
     // executed later; the instance index maps to the caller's U0 array.
     uint32_t prepareGpuEncodedIndexedIcb(
         BufferHandle gpuArguments, BufferHandle indexBuffer,
-        const uint32_t* sourceSlots, uint32_t count) override {
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes) override {
         static const bool enabled = [] {
             const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
             return flag && std::strcmp(flag, "1") == 0;
         }();
         if (!enabled || !supportsMultiDrawIndirect() || !cmd_ || enc_ || compute_ ||
-            !sourceSlots || count < 2 || count > 256) return 0;
+            !sourceSlots || !instanceData || count < 2 || count > 256 ||
+            instanceBytes != size_t(count) * 36u * sizeof(float)) return 0;
         auto* commandData = buffers_.get(gpuArguments.id);
         auto* indexData = buffers_.get(indexBuffer.id);
         if (!commandData || !indexData || commandData->type != BufferType::Storage ||
@@ -1086,6 +1088,18 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             resources.slots = [device_ newBufferWithLength:count * sizeof(uint32_t)
                                                   options:MTLResourceStorageModeShared];
         if (!resources.argBuffer || !resources.slots) return 0;
+        if (!resources.instanceBuffer || resources.instanceBuffer.length < instanceBytes)
+            resources.instanceBuffer = [device_ newBufferWithLength:instanceBytes
+                                             options:MTLResourceStorageModeShared];
+        if (!resources.instanceBuffer || !resources.instanceBuffer.contents) return 0;
+        // The same submission index in a recycled frame slot typically
+        // contains the same static instance payload. Avoid rewriting it.
+        if (resources.instanceValidBytes != instanceBytes ||
+            std::memcmp(resources.instanceBuffer.contents,
+                        instanceData, instanceBytes) != 0) {
+            std::memcpy(resources.instanceBuffer.contents, instanceData, instanceBytes);
+            resources.instanceValidBytes = instanceBytes;
+        }
         std::memcpy(resources.slots.contents, sourceSlots, count * sizeof(uint32_t));
         [gpuIcbArgumentEncoder_ setArgumentBuffer:resources.argBuffer offset:0];
         [gpuIcbArgumentEncoder_ setIndirectCommandBuffer:resources.icb atIndex:0];
@@ -1158,7 +1172,12 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // from earlier passes (especially U1 frame uniforms). Snapshot every
         // active uniform slot into resources owned by this frame/submission.
         // These buffers remain alive until the frame semaphore retires.
-        for (int slot = 0; slot < 8; ++slot) {
+        // U0 is a device-indexed persistent GPU instance buffer. Material and
+        // frame uniform blocks U1..U7 remain explicitly inherited snapshots.
+        if (!resources.instanceBuffer) return reject("GPU instance buffer missing");
+        [enc_ setVertexBuffer:resources.instanceBuffer offset:0 atIndex:1];
+        declareIndirectRead(resources.instanceBuffer, MTLRenderStageVertex);
+        for (int slot = 1; slot < 8; ++slot) {
             const auto& snapshot = indirectUniformSnapshots_[slot];
             if (snapshot.empty()) continue;
             if (!resources.uniforms[slot] ||
@@ -1421,6 +1440,8 @@ private:
         id<MTLBuffer> argBuffer = nil;
         id<MTLBuffer> pbrArgs = nil;
         id<MTLBuffer> slots = nil;
+        id<MTLBuffer> instanceBuffer = nil;
+        size_t instanceValidBytes = 0;
         id<MTLBuffer> uniforms[8] = {};
         uint32_t capacity = 0, count = 0;
         uint64_t frame = 0;
