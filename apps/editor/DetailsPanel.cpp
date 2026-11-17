@@ -179,7 +179,14 @@ void DetailsPanel::prepare() {
             if (components.isObject() && components.has(id)) values.push_back(&components[id]);
         }
         if (values.empty()) continue;
-        const std::string title = worldComponentDisplayName(id);
+        std::string title = worldComponentDisplayName(id);
+        for (auto* it : withData) {
+            const Json& descriptor = it->data["componentSchemas"][id];
+            if (descriptor.isObject() && descriptor["title"].isString()) {
+                title = descriptor["title"].str();
+                break;
+            }
+        }
         bool expanded = id == "Transform";
         for (auto* o : open) if (id == o) { expanded = true; break; }
         sections_.push_back({id, title, merge(values), values.size(), expanded});
@@ -423,6 +430,20 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
                 break;
             }
     }
+    // Native module schemas travel with the real component snapshot. Never
+    // assume that a similarly named component in another project shares it.
+    std::string schemaTitle;
+    if (const auto dot = path.find('.'); dot != std::string::npos &&
+        path.find('.', dot + 1) == std::string::npos) {
+        for (const auto& item : items_) {
+            const Json& meta = item.data["componentSchemas"][path.substr(0, dot)]
+                                        ["fields"][path.substr(dot + 1)];
+            if (meta.isObject() && meta["title"].isString()) {
+                schemaTitle = meta["title"].str();
+                break;
+            }
+        }
+    }
     ImGui::PushID(key.c_str());
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
@@ -438,7 +459,8 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGui::TreePop();
         }
     } else {
-        ImGui::TreeNodeEx(fieldSchema ? fieldSchema->title.c_str() : key.c_str(),
+        ImGui::TreeNodeEx(!schemaTitle.empty() ? schemaTitle.c_str() :
+            fieldSchema ? fieldSchema->title.c_str() : key.c_str(),
             ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
             ImGuiTreeNodeFlags_SpanAllColumns);
         rowMenu(path, v);
