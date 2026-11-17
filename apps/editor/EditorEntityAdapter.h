@@ -13,6 +13,10 @@ struct DocumentEntityRef {
     Source source = Source::MapEntity;
     size_t index = 0;
 
+    static DocumentEntityRef mapEntity(size_t i) { return {Source::MapEntity, i}; }
+    static DocumentEntityRef fpsCollider(size_t i) { return {Source::FpsCollider, i}; }
+    static DocumentEntityRef fpsSpawn(size_t i) { return {Source::FpsSpawn, i}; }
+
     // FPS refs use the high bit for spawns; zero is reserved for no entity.
     uint64_t fpsKey() const {
         if (source == Source::MapEntity) return 0;
