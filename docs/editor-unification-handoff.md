@@ -697,3 +697,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS weapon launch, stage D (standalone suite)
 - Commit `7e3fe6d`: `tests/run_ecs_experiment_suite.sh` now compiles and runs `ecs-cross-genre-weapon-pipeline` with public library includes, shared SpatialWorld/TriangleCollision and simulation sources. It checks the full weapon→flight→damage chain without linking any genre gameplay module, including normal/sanitized build modes.
 - The source and shell continuation lines were assembled explicitly. Runtime tests remain unverified; check `bash -n` and execute suite on native toolchain.
+
+### 2026-11-18 — Universal ECS weapon launch, stage E (agent skill)
+- Commit `ac54b13`: created `skills/gameplay/aiverse-ecs-weapon-launch/SKILL.md`. Agents must assemble shared WeaponLaunch, Spawn, ProjectileFlight and DamageResolution components/systems, independent of RTS/FPS genre; state/queues/shot IDs in ECS, canonical side effects and COW/replay proof. New capabilities such as reload, guided rockets and spread are **separate systems**, not genre branches.
+- Skill explicitly warns that legacy RTS/FPS combat modules still need stepwise migration and old save/network parity checks.
+- Next: catalog public native target and update normative mechanics specification.
