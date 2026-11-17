@@ -981,6 +981,144 @@ public:
 #pragma clang diagnostic pop
         }
     }
+    // Encode a complete indexed ICB on the GPU, outside all render passes.
+    // Commands inherit the current parent pipeline and buffer arguments when
+    // executed later; the instance index maps to the caller's U0 array.
+    uint32_t prepareGpuEncodedIndexedIcb(
+        BufferHandle gpuArguments, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count) override {
+        static const bool enabled = [] {
+            const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
+            return flag && std::strcmp(flag, "1") == 0;
+        }();
+        if (!enabled || !supportsMultiDrawIndirect() || !cmd_ || enc_ || compute_ ||
+            !sourceSlots || count < 2 || count > 256) return 0;
+        auto* commandData = buffers_.get(gpuArguments.id);
+        auto* indexData = buffers_.get(indexBuffer.id);
+        if (!commandData || !indexData || commandData->type != BufferType::Storage ||
+            indexData->type != BufferType::Index) return 0;
+        if (!gpuIcbPipeline_) {
+            static const char* source = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct DrawArgs {
+    uint indexCount, instanceCount, firstIndex;
+    int baseVertex;
+    uint firstInstance;
+};
+struct IcbContainer {
+    command_buffer commands [[id(0)]];
+};
+struct Params { uint count; uint3 padding; };
+kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
+                    device const uint* indices [[buffer(1)]],
+                    device IcbContainer* container [[buffer(2)]],
+                    device const uint* slots [[buffer(3)]],
+                    constant Params& params [[buffer(8)]],
+                    uint tid [[thread_position_in_grid]]) {
+    if (tid >= params.count) return;
+    const DrawArgs args = generated[slots[tid]];
+    if (args.indexCount == 0 || args.instanceCount == 0) return;
+    render_command command(container->commands, tid);
+    command.draw_indexed_primitives(primitive_type::triangle,
+                                    args.indexCount,
+                                    indices + args.firstIndex,
+                                    args.instanceCount,
+                                    args.baseVertex,
+                                    tid);
+}
+)MSL";
+            NSError* error = nil;
+            id<MTLLibrary> library =
+                [device_ newLibraryWithSource:[NSString stringWithUTF8String:source]
+                                     options:nil error:&error];
+            id<MTLFunction> kernel = library ? [library newFunctionWithName:@"cs_main"] : nil;
+            if (!kernel) {
+                error_ = error ? error.localizedDescription.UTF8String : "GPU ICB kernel missing";
+                return 0;
+            }
+            gpuIcbPipeline_ = [device_ newComputePipelineStateWithFunction:kernel error:&error];
+            gpuIcbArgumentEncoder_ = [kernel newArgumentEncoderWithBufferIndex:2];
+            if (!gpuIcbPipeline_ || !gpuIcbArgumentEncoder_ ||
+                gpuIcbPipeline_.maxTotalThreadsPerThreadgroup < 64) {
+                error_ = error ? error.localizedDescription.UTF8String : "GPU ICB compute unsupported";
+                gpuIcbPipeline_ = nil;
+                return 0;
+            }
+        }
+        const size_t frameSlot = frame_ % kFramesInFlight;
+        auto& pool = gpuEncodedIcbPool_[frameSlot];
+        const size_t slotIndex = gpuEncodedIcbCursor_[frameSlot]++;
+        if (slotIndex >= 65535u) return 0;
+        if (slotIndex == pool.size()) pool.emplace_back();
+        auto& resources = pool[slotIndex];
+        if (!resources.icb || resources.capacity < count) {
+            MTLIndirectCommandBufferDescriptor* descriptor =
+                [MTLIndirectCommandBufferDescriptor new];
+            descriptor.commandTypes = MTLIndirectCommandTypeDrawIndexed;
+            descriptor.inheritBuffers = YES;
+            descriptor.inheritPipelineState = YES;
+            descriptor.maxVertexBufferBindCount = 0;
+            descriptor.maxFragmentBufferBindCount = 0;
+            resources.icb =
+                [device_ newIndirectCommandBufferWithDescriptor:descriptor
+                                                maxCommandCount:count
+                                                        options:MTLResourceStorageModeShared];
+            if (!resources.icb) return 0;
+            resources.capacity = count;
+        }
+        if (!resources.argBuffer || resources.argBuffer.length <
+                    gpuIcbArgumentEncoder_.encodedLength)
+            resources.argBuffer = [device_ newBufferWithLength:
+                gpuIcbArgumentEncoder_.encodedLength options:MTLResourceStorageModeShared];
+        if (!resources.slots || resources.slots.length < count * sizeof(uint32_t))
+            resources.slots = [device_ newBufferWithLength:count * sizeof(uint32_t)
+                                                  options:MTLResourceStorageModeShared];
+        if (!resources.argBuffer || !resources.slots) return 0;
+        std::memcpy(resources.slots.contents, sourceSlots, count * sizeof(uint32_t));
+        [gpuIcbArgumentEncoder_ setArgumentBuffer:resources.argBuffer offset:0];
+        [gpuIcbArgumentEncoder_ setIndirectCommandBuffer:resources.icb atIndex:0];
+
+        // Reset before GPU encoding. This slot is reused only after the Metal
+        // frame-semaphore fence and not twice within one frame.
+        [resources.icb resetWithRange:NSMakeRange(0, count)];
+        id<MTLComputeCommandEncoder> encoder = [cmd_ computeCommandEncoder];
+        if (!encoder) return 0;
+        [encoder setComputePipelineState:gpuIcbPipeline_];
+        [encoder setBuffer:current(*commandData) offset:0 atIndex:0];
+        [encoder setBuffer:current(*indexData) offset:0 atIndex:1];
+        [encoder setBuffer:resources.argBuffer offset:0 atIndex:2];
+        [encoder setBuffer:resources.slots offset:0 atIndex:3];
+        struct Params { uint32_t count, padding[3]; } params{count, {0,0,0}};
+        [encoder setBytes:&params length:sizeof(params) atIndex:8];
+        [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
+        [encoder dispatchThreadgroups:MTLSizeMake((count + 63u) / 64u, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(64,1,1)];
+        [encoder endEncoding];
+        resources.frame = frame_;
+        resources.count = count;
+        return uint32_t(slotIndex + 1);
+    }
+    bool executeGpuEncodedIndexedIcb(uint32_t token) override {
+        if (!enc_ || token == 0) return false;
+        auto* pipeline = pipelines_.get(pipelineId_);
+        if (!pipeline || !pipeline->state ||
+            !pipeline->state.supportIndirectCommandBuffers) return false;
+        const size_t frameSlot = frame_ % kFramesInFlight;
+        auto& pool = gpuEncodedIcbPool_[frameSlot];
+        if (size_t(token) > pool.size()) return false;
+        auto& resources = pool[token - 1];
+        if (resources.frame != frame_ || !resources.icb ||
+            resources.count == 0 || !buffers_.get(ibId_) ||
+            !buffers_.get(vbId_)) return false;
+        // The inherited parent bindings are explicit Metal buffers for all
+        // active uniform slots, never setBytes transient storage.
+        declareIndirectRead(current(*buffers_.get(ibId_)), MTLRenderStageVertex);
+        declareIndirectRead(current(*buffers_.get(vbId_)), MTLRenderStageVertex);
+        [enc_ executeCommandsInBuffer:resources.icb
+                            withRange:NSMakeRange(0, resources.count)];
+        return true;
+    }
     bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override {
         if (!enc_ || !pipelines_.get(pipelineId_) || !buffers_.get(ibId_)) return false;
         auto* args = buffers_.get(arguments.id);
@@ -1189,6 +1327,17 @@ private:
         id<MTLBuffer> uniforms[8] = {};
         id<MTLBuffer> pbrArgs = nil;
     };
+    struct GpuEncodedIcbResources {
+        id<MTLIndirectCommandBuffer> icb = nil;
+        id<MTLBuffer> argBuffer = nil;
+        id<MTLBuffer> slots = nil;
+        uint32_t capacity = 0, count = 0;
+        uint64_t frame = 0;
+    };
+    id<MTLComputePipelineState> gpuIcbPipeline_ = nil;
+    id<MTLArgumentEncoder> gpuIcbArgumentEncoder_ = nil;
+    std::vector<GpuEncodedIcbResources> gpuEncodedIcbPool_[kFramesInFlight];
+    size_t gpuEncodedIcbCursor_[kFramesInFlight] = {};
     std::vector<IndirectResources> indirectPool_[kFramesInFlight];
     size_t indirectCursor_[kFramesInFlight] = {};
     bool firstPass_ = true;
