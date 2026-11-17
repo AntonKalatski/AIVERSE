@@ -120,7 +120,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
 }
 
 bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
-    if (fpsSelectedSceneObject_ < 0 || fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size()) ||
+    if (selection.kind != Selection::FpsObject ||
         !std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) return false;
     const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
     if (!key) return false;
@@ -179,8 +179,7 @@ int Editor::pickFpsSceneObject(const Viewport& vp, const render::RTSCamera& came
 }
 
 void Editor::drawFpsSceneInspector() {
-    const int selected = fpsSelectedSceneObject_;
-    if (selected < 0 || selected >= int(fpsSceneObjects_.size())) return;
+    if (selection.kind != Selection::FpsObject) return;
     auto& fps = doc().data.fps;
     const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
     if (!key) return;
