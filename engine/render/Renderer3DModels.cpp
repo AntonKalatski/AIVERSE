@@ -1276,7 +1276,8 @@ void Renderer3D::renderModels(int phase) {
     // GPU vertex/index buffers together before primitive sorting. This can
     // expose larger contiguous MDI candidates without crossing material groups.
     // Disabled by default; A/B benchmark toggles modelMultiDrawEnabled_.
-    const bool mdiGeometrySort = modelMultiDrawEnabled_ && phase <= 1 &&
+    const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
+        !gpuAdaptiveInstancingFallback_ && phase <= 1 &&
         std::getenv("AIVERSE_MDI_GEOMETRY_SORT") &&
         std::strcmp(std::getenv("AIVERSE_MDI_GEOMETRY_SORT"), "1") == 0;
     if (phase == 2) { // back to front
