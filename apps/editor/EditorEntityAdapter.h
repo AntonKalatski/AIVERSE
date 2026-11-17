@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <cmath>
 
 namespace aiverse::editor {
 
@@ -62,6 +63,35 @@ inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
     const char* collection = fpsEntityCollection(ref.source);
     if (!fps[collection].isArray() || ref.index >= fps[collection].size()) return nullptr;
     return &fps.member(collection)[ref.index];
+}
+
+struct DocumentTransform {
+    double x = 0, y = 0, z = 0;
+};
+
+// All genre-specific document layouts expose position through this API.
+// The returned value is a copy, never a pointer into a mutable JSON array.
+inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
+                                  DocumentTransform& out) {
+    if (ref.source == DocumentEntityRef::Source::MapEntity) {
+        const DocEntity* entity = documentMapEntity(map, ref);
+        if (!entity) return false;
+        out = {entity->x, 0.0, entity->z};
+    } else {
+        const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        if (!object) return false;
+        if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
+            if (!object->isArray() || object->size() < 3) return false;
+            out = {(*object)[0].toDouble(), (*object)[1].toDouble(), (*object)[2].toDouble()};
+        } else {
+            const Json& lo = (*object)["min"], &hi = (*object)["max"];
+            if (!lo.isArray() || !hi.isArray() || lo.size() < 3 || hi.size() < 3) return false;
+            out = {(lo[0].toDouble() + hi[0].toDouble()) * 0.5,
+                   (lo[1].toDouble() + hi[1].toDouble()) * 0.5,
+                   (lo[2].toDouble() + hi[2].toDouble()) * 0.5};
+        }
+    }
+    return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
 }
 
 } // namespace aiverse::editor
