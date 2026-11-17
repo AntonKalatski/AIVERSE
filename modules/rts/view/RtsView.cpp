@@ -257,7 +257,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if (hasTerrain_ && !tiles) terrain_.draw(r, grid, vision, groundFx_.drawsDig());
     if (hasTerrain_ && tiles) terrain_.drawWater(r);
     if (!tiles) groundFx_.draw(r, s, time, vision, grid, *this);
-    if (roads_->active()) roads_->draw(r, [this, &grid](float x, float z) { return heightAt(grid, x, z); });
+    // A deleted road network must flush the old surface too, otherwise
+    // groundAt() and stationary placement caches can retain stale road heights.
+    if (roads_->active() || roads_->needsRebuild())
+        roads_->draw(r, [this, &grid](float x, float z) { return heightAt(grid, x, z); });
     if (shores_->active()) shores_->draw(r, [this, &grid](float x, float z) { return heightAt(grid, x, z); }, terrain_.look().waterOffset, grid.w, grid.h);
     paintLayers_.draw(r, *dev_, s.paintLayers, grid, *this, vision, time, s.viewer);
     if (tiles || !groundFx_.drawsLinks())
