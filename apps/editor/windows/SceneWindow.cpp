@@ -153,6 +153,12 @@ private:
             ImGui::Text("GPU geometry: %.1f / %.1f MiB",
                         double(geometryPool.occupiedBytes) / (1024.0 * 1024.0),
                         double(geometryPool.allocatedBytes) / (1024.0 * 1024.0));
+            if (geometryPool.allocatedBytes) {
+                const double fill = 100.0 * double(geometryPool.occupiedBytes) / double(geometryPool.allocatedBytes);
+                const double slackMiB = double(geometryPool.allocatedBytes - geometryPool.occupiedBytes) / (1024.0 * 1024.0);
+                ImGui::Text("Pool utilization: %.1f%% (%.1f MiB slack)", fill, slackMiB);
+                ImGui::TextDisabled("Pool memory excludes textures and dedicated model buffers.");
+            }
             const uint32_t currentDraws = ed.renderer().drawCalls();
             ImGui::Text("Renderer draws (all passes): %u", currentDraws);
             const auto& modelStats = ed.renderer().modelStats();
@@ -174,6 +180,10 @@ private:
             }
             const auto& profile = ed.renderer().profile();
             ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
+            if (profile.drawMs[1] > 0.0 || profile.drawMs[2] > 0.0)
+                ImGui::Text("CPU model draw phase: %.3f ms (profiling enabled)",
+                            profile.drawMs[1] + profile.drawMs[2]);
+            else ImGui::TextDisabled("CPU model draw timing requires renderer profiling.");
             ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
             if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
             ImGui::Separator();
