@@ -22,6 +22,55 @@ std::string quote(const std::string& s) {
 }
 render::float3 point(const Json& j){return {float(j[0].toDouble()),float(j[1].toDouble()),float(j[2].toDouble())};}
 }
+// FPS actors live in a World resource, not in per-entity component pools.
+// Expose a typed, read-only snapshot without pretending they are DocEntity or
+// RTS World rows. This uses the same fps::Module::setup as the FPS client.
+const Json& Editor::fpsRuntimeSnapshot() {
+    const bool current = fpsRuntimeRevision_ == doc().revision &&
+        fpsRuntimeRulesRevision_ == rulesRevision_ &&
+        fpsRuntimeProjectDir_ == ws_.project.dir;
+    if (current) return fpsRuntimeCache_;
+    fpsRuntimeRevision_ = doc().revision;
+    fpsRuntimeRulesRevision_ = rulesRevision_;
+    fpsRuntimeProjectDir_ = ws_.project.dir;
+    fpsRuntimeCache_ = Json::object();
+    Json actors = Json::array();
+    if (!ws_.project.isFps()) {
+        fpsRuntimeCache_.set("actors", actors);
+        return fpsRuntimeCache_;
+    }
+    try {
+        const fps::Config config = fps::readConfig(ws_.project.rulesJson);
+        Simulation preview({1, config.tickRate, 0}, std::make_unique<fps::Module>());
+        preview.setup(ws_.project.rulesJson, doc().toJson());
+        auto* module = dynamic_cast<fps::Module*>(&preview.module());
+        if (!module) throw std::runtime_error("FPS module missing");
+        const fps::State& state = module->state(preview);
+        for (const fps::Actor& actor : state.actors) {
+            Json data = Json::object();
+            data.set("slot", Json::number(int64_t(actor.slot)));
+            data.set("team", Json::number(int64_t(actor.team)));
+            Json pos = Json::array(), velocity = Json::array();
+            for (const Fixed c : {actor.pos.x, actor.pos.y, actor.pos.z})
+                pos.push(Json::number(c.toDouble(), 3));
+            for (const Fixed c : {actor.velocity.x, actor.velocity.y, actor.velocity.z})
+                velocity.push(Json::number(c.toDouble(), 3));
+            data.set("position", pos);
+            data.set("velocity", velocity);
+            data.set("yaw", Json::number(actor.yaw.toDouble(), 3));
+            data.set("pitch", Json::number(actor.pitch.toDouble(), 3));
+            data.set("health", Json::number(int64_t(actor.health)));
+            data.set("ammo", Json::number(int64_t(actor.ammo)));
+            data.set("reserve", Json::number(int64_t(actor.reserve)));
+            actors.push(std::move(data));
+        }
+    } catch (const std::exception& e) {
+        fpsRuntimeCache_.set("error", Json::string(e.what()));
+    }
+    fpsRuntimeCache_.set("actors", actors);
+    return fpsRuntimeCache_;
+}
+
 void Editor::startFpsPlay(bool listen,const std::string& address) {
     if(!ws_.project.isFps()||ws_.building())return;
     try {
