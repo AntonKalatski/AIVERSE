@@ -14,6 +14,8 @@
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
 #include "engine/render/GlobalGeometryPool.h"
+#include "engine/render/GpuIcbPolicy.h"
+#include <array>
 
 namespace aiverse::editor {
 
@@ -52,9 +54,11 @@ public:
         auto& renderer = ed.renderer();
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
-        renderer.setModelInstancingEnabled(sceneInstancing_);
-        renderer.setModelMultiDrawEnabled(benchmarkActive_ ? benchmarkMode_ != 0 : sceneIndirect_);
-        renderer.setGpuAuthoredDrawEnabled(!benchmarkActive_ || benchmarkMode_ == 2);
+        const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
+        const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
+        renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
+        renderer.setModelMultiDrawEnabled(measuredMode ? activeMode != 0 : sceneIndirect_);
+        renderer.setGpuAuthoredDrawEnabled(measuredMode ? activeMode == 2 : true);
         renderer.setModelCullingEnabled(sceneCulling_);
         // Pipeline layouts depend on instance limit. Apply only when the user changes
         // the control: resetting this after every Scene frame would recompile shaders.
@@ -74,8 +78,9 @@ public:
             baselineDraws_ = int64_t(renderer.drawCalls());
             baselineModelDraws_ = int64_t(renderer.profile().draws[1]) +
                                   int64_t(renderer.profile().draws[2]);
-            renderer.setModelInstancingEnabled(sceneInstancing_);
-            renderer.setModelMultiDrawEnabled(sceneIndirect_);
+            renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
+            renderer.setModelMultiDrawEnabled(measuredMode ? activeMode != 0 : sceneIndirect_);
+            renderer.setGpuAuthoredDrawEnabled(measuredMode ? activeMode == 2 : true);
             // Present optimized scene as usual (not the comparison baseline).
             ed.renderScene(vp_, ed.sceneCam, !ed.playing());
             optimizedDraws_ = int64_t(renderer.drawCalls());
@@ -113,6 +118,17 @@ public:
                     if (benchmarkPhase_ == benchmarkBlockCount_) {
                         benchmarkActive_ = false;
                         benchmarkDone_ = true;
+                        if (autoBatchEnabled_) {
+                            std::array<double, 3> averages{};
+                            for (int mode = 0; mode < 3; ++mode) {
+                                double sum = 0.0;
+                                for (double sample : benchmarkSamples_[mode]) sum += sample;
+                                averages[mode] = benchmarkSamples_[mode].empty() ?
+                                    1.0e30 : sum / double(benchmarkSamples_[mode].size());
+                            }
+                            autoBatchChoice_ = render::chooseSceneBatchMode(
+                                averages, benchmarkThreeModes_ ? 3 : 2);
+                        }
                     } else {
                         // Two modes: ABBAAB. Three modes: ABC CBA ABC.
                         // All modes get 3 x 300 samples with per-block warmup.
@@ -219,10 +235,21 @@ private:
                 ImGui::TextDisabled("Geometry Pool inactive: Multi-Draw Indirect is unavailable on this backend.");
                 ImGui::TextDisabled("Metal ICB is disabled until the driver crash is resolved.");
             }
-            ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
-            ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
+            if (ImGui::Checkbox("GPU Instancing", &sceneInstancing_))
+                autoBatchChoice_ = -1;
+            if (ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_))
+                autoBatchChoice_ = -1;
             ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
             ImGui::Checkbox("Model culling", &sceneCulling_);
+            ImGui::Checkbox("Auto-select fastest mode after benchmark", &autoBatchEnabled_);
+            if (!autoBatchEnabled_) autoBatchChoice_ = -1;
+            if (autoBatchChoice_ >= 0) {
+                const char* names[] = {"Instancing", "CPU MDI", "GPU-authored"};
+                ImGui::Text("Selected Scene render mode: %s (lowest measured CPU)",
+                            names[autoBatchChoice_]);
+                if (ImGui::Button("Restore manual batching"))
+                    autoBatchChoice_ = -1;
+            }
             ImGui::Checkbox("Profile Scene renderer", &sceneProfiling_);
             ImGui::SameLine(); ImGui::TextDisabled("CPU render stages");
             ImGui::SetNextItemWidth(180.0f);
@@ -955,6 +982,8 @@ private:
     bool sceneInstanceLimitDirty_ = true;
     bool sceneProfiling_ = false;
     bool benchmarkActive_ = false, benchmarkDone_ = false, benchmarkThreeModes_ = false;
+    bool autoBatchEnabled_ = true;
+    int autoBatchChoice_ = -1;
     int benchmarkBlockCount_ = 6;
     int benchmarkPhase_ = 0, benchmarkMode_ = 0, benchmarkPhaseSamples_ = 0, benchmarkWarmup_ = 0;
     RTSCamera benchmarkCamera_{};
