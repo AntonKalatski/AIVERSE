@@ -25,10 +25,7 @@ public:
     ImGuiWindowFlags flags() const override { return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            ImGui::SameLine();ImGui::TextDisabled("%s",genreText(ed.ws(),"fps.editor.camera").c_str());
-        } else toolbar(ed);
+        toolbar(ed); // Same scene tools and selection controls in every genre.
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
         vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi));
@@ -70,7 +67,9 @@ public:
                 if (ImGui::IsKeyDown(ImGuiKey_E)) ed.sceneCam.target.y += speed;
                 if (ImGui::IsKeyPressed(ImGuiKey_F, false)) ed.fitScene();
             }
-        } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);hud(ed);}
+        } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
+        // The selection overlay is genre-independent (including FPS).
+        hud(ed);
         StudioLuaExtensions::get().drawScene(ed, vp_);
         // Shift+RMB opens custom scene actions. Ordinary RMB still navigates.
         if (StudioContextMenus::get().available(ed) && vp_.hovered &&
