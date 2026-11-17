@@ -55,13 +55,15 @@ inline const char* fpsEntityCollection(DocumentEntityRef::Source source) {
 // Shared JSON component access: a genre adapter can supply a different
 // component store without requiring a separate Inspector selection model.
 inline const Json* fpsDocumentEntity(const Json& fps, DocumentEntityRef ref) {
-    if (ref.source == DocumentEntityRef::Source::MapEntity) return nullptr;
+    if (ref.source != DocumentEntityRef::Source::FpsCollider &&
+        ref.source != DocumentEntityRef::Source::FpsSpawn) return nullptr;
     const Json& entries = fps[fpsEntityCollection(ref.source)];
     if (!entries.isArray() || ref.index >= entries.size()) return nullptr;
     return &entries[ref.index];
 }
 inline Json* fpsDocumentEntity(Json& fps, DocumentEntityRef ref) {
-    if (ref.source == DocumentEntityRef::Source::MapEntity) return nullptr;
+    if (ref.source != DocumentEntityRef::Source::FpsCollider &&
+        ref.source != DocumentEntityRef::Source::FpsSpawn) return nullptr;
     const char* collection = fpsEntityCollection(ref.source);
     if (!fps[collection].isArray() || ref.index >= fps[collection].size()) return nullptr;
     return &fps.member(collection)[ref.index];
@@ -78,6 +80,7 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
     if (ref.source == DocumentEntityRef::Source::MapEntity) {
         const DocEntity* entity = documentMapEntity(map, ref);
         if (!entity) return false;
+        if (!std::isfinite(entity->x) || !std::isfinite(entity->z)) return false;
         out = {entity->x, 0.0, entity->z};
     } else {
         const Json* object = fpsDocumentEntity(map.data.fps, ref);
