@@ -41,6 +41,10 @@ struct MTBuffer {
     BufferType type = BufferType::Vertex;
     bool storage = false,snapshot = false;
     uint64_t updatedFrame = UINT64_MAX;
+    // Only for dynamic indirect command snapshots: per-frame, per-submission
+    // allocations retained until this frame slot is safe to recycle.
+    std::vector<id<MTLBuffer>> indirectSnapshots[kFramesInFlight];
+    size_t indirectCursor = 0;
 };
 struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
@@ -134,6 +138,42 @@ public:
             [blit copyFromBuffer:upload sourceOffset:0 toBuffer:b->bufs[0] destinationOffset:offset size:size];
             [blit endEncoding];
             if (!cmd_) [cb commit];
+            return;
+        }
+        if (b->type == BufferType::Indirect && b->snapshot && b->count > 1) {
+            // Metal executes commands asynchronously. A later submission must
+            // never overwrite the buffer referenced by an earlier submission.
+            // The queue and frame semaphore ensure that the same frame slot's
+            // previous command buffers have finished before this slot is reused.
+            if (!data || offset > SIZE_MAX - size) return;
+            const size_t required = offset + size;
+            const int slot = int(frame_ % kFramesInFlight);
+            if (b->updatedFrame != frame_) b->indirectCursor = 0;
+            auto& snapshots = b->indirectSnapshots[slot];
+            const size_t cursor = b->indirectCursor;
+            id<MTLBuffer> previous = cursor ? b->bufs[slot] : nil;
+            id<MTLBuffer> target = cursor < snapshots.size() ? snapshots[cursor] : nil;
+            const size_t capacity = std::max(b->size, required);
+            if (!target || target.length < capacity) {
+                target = [device_ newBufferWithLength:capacity options:MTLResourceStorageModeShared];
+                if (!target) {
+                    error_ = "indirect snapshot allocation failed";
+                    gpuHealthy_->store(false);
+                    return;
+                }
+                if (cursor == snapshots.size()) snapshots.push_back(target);
+                else snapshots[cursor] = target;
+            }
+            // Preserve untouched bytes for partial updates within the frame.
+            // The renderer's indirect path normally updates from offset zero.
+            if (previous && (offset != 0 || size < b->size))
+                std::memcpy(target.contents, previous.contents,
+                            std::min(size_t(target.length), size_t(previous.length)));
+            std::memcpy(static_cast<uint8_t*>(target.contents) + offset, data, size);
+            b->bufs[slot] = target;
+            b->size = capacity;
+            b->indirectCursor = cursor + 1;
+            b->updatedFrame = frame_;
             return;
         }
         if (offset + size > b->size) {
