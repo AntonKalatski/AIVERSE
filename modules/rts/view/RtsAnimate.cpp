@@ -204,7 +204,7 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     // programmable animation. Resolve it once instead of three map lookups
     // per visible object (especially costly in large editor scenes).
     EntityAnimationEntry* control = nullptr;
-    if (fx_) {
+    if (fx_ && !fx_->animations.empty()) {
         auto found = fx_->animations.find(o.entity.packed());
         if (found != fx_->animations.end()) control = &found->second;
     }
@@ -271,7 +271,7 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
             p.set("hitAge", std::min(st.eventAge[kProcEvHit], 1000.f));
             p.set("spawnAge", std::min(st.eventAge[kProcEvSpawn], 1000.f));
         }
-        if (fx_) {
+        if (fx_ && !fx_->animations.empty()) {
             auto it = fx_->animations.find(o.entity.packed());
             if (it != fx_->animations.end()) {
                 for (const auto& [key, value] : it->second.parameters.values) p.set(key, value);
