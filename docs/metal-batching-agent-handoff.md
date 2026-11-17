@@ -130,6 +130,16 @@ This optimization has not been built or benchmarked by the owner yet. Compare wa
 
 The benchmark code is committed but **has not been compiled or run on the owner's Mac**. Build and verify both phases render identically, the button works, and the popup remains open long enough to read results. Metal ICB remains opt-in and potentially unstable.
 
+## Metal ICB overhead profiling (2026-11-17)
+
+A fixed-camera 300-frame same-pool Scene CPU A/B reported **MDI OFF 12.939 ms avg / 13.542 ms P95 / 463 submissions; MDI ON 13.609 ms avg / 14.309 ms P95 / 385 submissions**. MDI ON is **+0.670 ms (+5.2%)** slower on this scene, despite fewer API submissions. GPU A/B timings were not attributed, so GPU comparison remains unknown. Keep Metal ICB experimental and off by default.
+
+Commits `8c31b10` and `41dd5de` add opt-in `AIVERSE_ICB_PROFILE=1` instrumentation:
+- `[render-indirect]`: command grouping, pipeline setup, indirect-buffer upload, backend invocation.
+- `[metal-icb]`: PBR argument preparation, ICB/uniform allocation, per-command encoding, resource residency/execute setup.
+
+Each log reports averages per **600 successful indirect submissions** (not 600 frames). This diagnostic does not instrument unsuccessful/fallback submissions, and is not a full GPU timestamp comparison. **No owner build or measurement yet**. Run with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_BENCH_UNCAPPED=1 AIVERSE_ICB_PROFILE=1` and grep both log prefixes. The Metal backend currently allocates a fresh ICB, uniform snapshot buffers and PBR argument buffer per indirect submission; this is a plausible CPU hotspot, not yet proven. Preserve resource lifetime, indirect bounds checks, and Apple AGX stability while optimizing.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
