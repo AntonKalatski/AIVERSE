@@ -334,6 +334,33 @@ void Module::hydrateDynamicsFromEcs(Simulation& sim) const {
     World& world=sim.world();
     auto* current=world.resource<State>();
     if(!current)throw std::logic_error("FPS authoritative dynamic State unavailable");
+    // Native code may spawn a full ECS runtime component directly without
+    // touching State vectors. Reconcile stable kind/id keys before the tick,
+    // so the existing Inspector/Hierarchy projections reuse that Entity.
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)throw std::logic_error("FPS DynamicEntityIndex missing");
+    std::set<uint64_t> seen;
+    auto indexRuntime=[&](uint8_t kind,uint32_t id,Entity entity) {
+        if(!id)throw std::logic_error("FPS ECS dynamic runtime has zero source ID");
+        const uint64_t key=(uint64_t(kind)<<32)|id;
+        if(!seen.insert(key).second)
+            throw std::logic_error("Duplicate FPS ECS dynamic kind/id");
+        auto [it,inserted]=index->byKey.emplace(key,entity);
+        if(!inserted) {
+            if(!world.alive(it->second))it->second=entity;
+            else if(!(it->second==entity))
+                throw std::logic_error("Conflicting FPS ECS dynamic Entity for source ID");
+        }
+    };
+    world.eachExistingConst<ProjectileRuntime>([&](Entity e,const ProjectileRuntime& r) {
+        if(world.alive(e))indexRuntime(1,r.value.id,e);
+    });
+    world.eachExistingConst<LootRuntime>([&](Entity e,const LootRuntime& r) {
+        if(world.alive(e))indexRuntime(2,r.value.id,e);
+    });
+    world.eachExistingConst<VehicleRuntime>([&](Entity e,const VehicleRuntime& r) {
+        if(world.alive(e))indexRuntime(3,r.value.id,e);
+    });
     auto projectiles=std::vector<std::pair<uint32_t,Projectile>>{};
     auto loot=std::vector<std::pair<uint32_t,Loot>>{};
     auto vehicles=std::vector<std::pair<uint32_t,Vehicle>>{};
