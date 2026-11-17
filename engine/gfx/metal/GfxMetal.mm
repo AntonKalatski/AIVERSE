@@ -1121,8 +1121,24 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // The Metal render pipeline must retain all parent vertex/fragment
         // bindings; no transient bytes may be inherited from earlier draws.
         if (!gpuIcbUniformBinding_) return false;
-        // The inherited parent bindings are explicit Metal buffers for all
-        // active uniform slots, never setBytes transient storage.
+        // ICB inherited parent bindings cannot rely on setBytes allocations
+        // from earlier passes (especially U1 frame uniforms). Snapshot every
+        // active uniform slot into resources owned by this frame/submission.
+        // These buffers remain alive until the frame semaphore retires.
+        for (int slot = 0; slot < 8; ++slot) {
+            const auto& snapshot = indirectUniformSnapshots_[slot];
+            if (snapshot.empty()) continue;
+            if (!resources.uniforms[slot] ||
+                resources.uniforms[slot].length < snapshot.size())
+                resources.uniforms[slot] = [device_ newBufferWithLength:snapshot.size()
+                                            options:MTLResourceStorageModeShared];
+            id<MTLBuffer> stable = resources.uniforms[slot];
+            if (!stable || !stable.contents) return false;
+            std::memcpy(stable.contents, snapshot.data(), snapshot.size());
+            [enc_ setVertexBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
+            [enc_ setFragmentBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
+            declareIndirectRead(stable, MTLRenderStageVertex | MTLRenderStageFragment);
+        }
         declareIndirectRead(current(*buffers_.get(ibId_)), MTLRenderStageVertex);
         declareIndirectRead(current(*buffers_.get(vbId_)), MTLRenderStageVertex);
         [enc_ executeCommandsInBuffer:resources.icb
@@ -1341,6 +1357,7 @@ private:
         id<MTLIndirectCommandBuffer> icb = nil;
         id<MTLBuffer> argBuffer = nil;
         id<MTLBuffer> slots = nil;
+        id<MTLBuffer> uniforms[8] = {};
         uint32_t capacity = 0, count = 0;
         uint64_t frame = 0;
     };
