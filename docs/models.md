@@ -677,3 +677,34 @@ batching, nor do they implement indirect MultiDraw. Import compaction is
 opt-in and per-model; instance grouping and material/shadow batching remain
 the existing engine functionality. These distinctions are important when
 comparing GPU draws in the Scene profiler.
+
+
+### Automatic indirect batching: real-backend validation
+
+The `aiverse_material_batches` real-GPU test has an `indirect` scenario with
+16 independent rigid primitives and distinct node transforms. It compares
+before (ordinary draws) and after (automatic indirect) images pixel-by-pixel,
+reports backend capability and the number of submissions/indirect commands,
+and requires fewer opaque submissions on compatible Metal/Vulkan devices.
+Unsupported APIs must render the same pixels with ordinary indexed draws.
+
+```bash
+cmake -S . -B build/mdi -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/mdi --target aiverse_material_batches -j8
+AIVERSE_PALETTE_TEST_CASE=indirect build/mdi/aiverse_material_batches unused.obj /tmp/mdi-ab
+```
+
+The argument `unused.obj` is not loaded in this synthetic scenario. The
+resulting `/tmp/mdi-ab-before.ppm` and `/tmp/mdi-ab-after.ppm` must match;
+the process exits nonzero if they differ. Mac Xcode multi-config builds may
+place the executable under `build/mdi/Release/`.
+
+**Terminology:** one indirect submission contains several GPU indexed draw
+commands. The Scene view's "Renderer draws" count is CPU-side submission
+count, not the number of individual GPU draw commands; the separate
+"Indirect submissions (commands)" figures distinguish them.
+
+This implementation generates commands on the CPU and uploads them to a
+GPU indirect buffer. True GPU-driven command production, GPU Hi-Z/LOD/
+meshlet culling, bindless material tables and global geometry pooling across
+unrelated models still require separate verified implementations.
