@@ -2482,6 +2482,28 @@
       "packageDependencies": [
         "ecs-weapon-launch"
       ]
+    },
+    {
+      "id": "ecs-locomotion",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsLocomotionSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-locomotion/SKILL.md",
+      "summary": "Reusable ECS movement input/state/output components over the existing deterministic stepMotion character locomotion policy, with jump edges and rollback.",
+      "notes": "Independent movement policy only. Collision, position integration, advanced mode machine and FPS/RTS authority migration remain separate. Native compile/CTest not yet verified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_locomotion",
+      "dependencies": [
+        "docs/ecs-all-features-migration-plan.md",
+        "tests/ecs_cross_genre_locomotion_test.cpp",
+        "libraries/include/aiverselib/genre/Locomotion.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "character-locomotion"
+      ]
     }
   ]
 }
