@@ -292,6 +292,27 @@ AIVERSE_AUTOLOD_TRACE=1 ./build/.temp/runtime-autolod/AiverseEditor.app/Contents
 - Target code preservation and source code availability verified by inspecting source and staging through GitHub; **not a confirmed macOS compile/test/pixel match**. Run complete CI plus `aiverse_editor`, `aiverse_auto_lod_tests`, `aiverse_deferred_loading_tests`, `aiverse_material_batches --unit`, FPS/scene gizmo tests, Metal screenshot/selection/LOD A/B before declaring production-ready.
 - Do not overwrite `feature/universal-entity-inspector-fps` with source branch via forced ref update. Use three-parent merge commit retaining staging, latest FPS target and original render-stack source ancestry; update destination only fast-forward with expected-SHA guard. Any new concurrent commits must be reapplied without clobbering.
 
+## Step 21 — source stack merged into requested FPS inspector branch (DONE, CI pending)
+- User requested **direct delivery to `feature/universal-entity-inspector-fps`**, not a separate experimental branch or unmerged PR.
+- GitHub branch ref successfully advanced via **non-forced, expected-SHA-guarded fast-forward** from `7b04d43843027217c7641ea532b27694e4775cf8` to merge commit **`c6f9b30169c682232ba5012c9ea90d825070fa62`**.
+- Integration commit has **three parents**: the reconciled staging branch, the latest FPS target branch, and the complete render/AutoLOD source stack `9444b0f1421771e948d604b129eb3593bfb7399f`. This preserves both histories and all target-only changes; no force-push.
+- New concurrent FPS commits were synced before the final push: the six updated paths were `EditorFps.cpp`, `EditorRuntimeEntityProvider.h`, `docs/editor-unification-handoff.md`, `FpsModule.cpp/.h`, `tests/fps/tests.cpp`. They were copied from the latest FPS target without touching the renderer edits.
+- GitHub acknowledged target branch head `c6f9b301...`. Both integration PR #16 (raw stack) and PR #18 (reconciled staging) are now **closed and marked merged** by GitHub, and `compare_commits(feat/runtime-auto-lod-fallback, feature/universal-entity-inspector-fps)` reports **ahead with behind_by=0**: all source history is included.
+- Static source inspection confirmed merged `SceneWindow` contains both FPS selection/pick/gizmos and Batching/LOD controls, `Editor.cpp` contains both FPS Scene outline and RTS lazy residency, `Renderer3DModels.cpp` contains the selection mask and per-command PBR palette code. This is NOT evidence of a successful CMake build or a pixel/performance validation.
+- At the time of this handoff update, CI, GPU batching regression, ECS 2.0 experimental checks and AIVERSE Studio validation were pending/queued. Do not claim tests passed until their actual results are examined. **Test the merged branch**: editor CMake compile, RTS+FPS scene, selected gizmos/outline, CPU `aiverse_auto_lod_tests`, `aiverse_deferred_loading_tests`, material batching tests, road chunk counters, LOD inspector, Metal screenshots and CPU/GPU A/B.
+- Suggested checkout:
+```sh
+cd ~/Projects/AIVERSE
+git fetch origin
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/.temp/fps-render-integrated -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_HDR_TESTS=ON
+cmake --build build/.temp/fps-render-integrated --target aiverse_editor aiverse_auto_lod_tests aiverse_deferred_loading_tests aiverse_material_batches -j8
+ctest --test-dir build/.temp/fps-render-integrated -R 'auto_lod_runtime|aiverse_deferred_loading_tests' --output-on-failure
+./build/.temp/fps-render-integrated/aiverse_material_batches --unit
+./build/.temp/fps-render-integrated/AiverseEditor.app/Contents/MacOS/AiverseEditor
+```
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
