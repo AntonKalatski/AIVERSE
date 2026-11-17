@@ -26,11 +26,12 @@ for mode in off on; do
   [[ "$mode" == on ]] && flag=ON
   cmake -S . -B "$build" "${COMMON[@]}" "-DAIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=$flag"
   targets=(aiverse_headless aiverse_fps_tests)
-  if [[ "$FULL" == 1 ]]; then targets+=(aiverse_tests); fi
+  if [[ "$FULL" == 1 ]]; then targets+=(aiverse_tests aiverse_net_tests); fi
   cmake --build "$build" --parallel "${AIVERSE_ECS_BUILD_JOBS:-4}" --target "${targets[@]}"
   echo "=== RTS headless: $mode ==="
   "$build/aiverse_headless" --project templates/skirmish --seed 3 --max-seconds 10 \
     --verify-restore-at 2 --verify-restore-ticks 40 \
+    --tick-times "$ROOT/rtssim-$mode.tick-us" \
     --checksum-log "$ROOT/rtssim-$mode.checksums" > "$ROOT/rtssim-$mode.log" 2>&1 || {
     cat "$ROOT/rtssim-$mode.log"; exit 1;
   }
@@ -42,7 +43,20 @@ for mode in off on; do
   ctest --test-dir "$build" -R '^(fps|fps_transport)$' --output-on-failure
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS/game test suite: $mode ==="
-    ctest --test-dir "$build" -R '^aiverse_tests$' --output-on-failure
+    ctest --test-dir "$build" -R '^aiverse_(tests|net_tests)
+  fi
+done
+if ! grep -Eq '^[0-9]+ [0-9a-fA-F]{16}$' "$ROOT/rtssim-off.checksums"; then
+  echo "No RTS checksum checkpoints collected" >&2
+  exit 1
+fi
+if ! diff -u "$ROOT/rtssim-off.checksums" "$ROOT/rtssim-on.checksums"; then
+  echo "FAIL: baseline and opt-in RTS checksums differ" >&2
+  exit 1
+fi
+echo "PASS RTS baseline vs opt-in per-tick checkpoints; FPS tests both variants"
+echo "Logs: $ROOT"
+ --output-on-failure
   fi
 done
 if ! grep -Eq '^[0-9]+ [0-9a-fA-F]{16}$' "$ROOT/rtssim-off.checksums"; then
