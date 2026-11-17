@@ -568,3 +568,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `201b75e` modifies `ecsDynamicAuthorityParity` to create ProjectileRuntime, LootRuntime and VehicleRuntime directly on fresh ECS Entity handles **without** modifying `DynamicEntityIndex`; verifies the index initially has zero entries, and after one FPS tick that it contains the exact three original Entity handles by typed source ID. The remaining test still checks state checksums, save/restore, deletion and snapshot rollback.
 - This specifically guards against an accidentally duplicated ECS entity for a native-created object, which would break Inspector/Hierarchy identity and deterministic object ownership.
 - **Verification:** test code committed; no native compile/CI PASS yet. Next add error-path duplicate-ID coverage and audit save v9 old allocator behavior.
+
+### 2026-11-18 — FPS ECS authority migration: stage S (save-crossmode and duplicate-ID rejection)
+- Commit `2e8de0c` adds two negative/compatibility regressions to `tests/fps/tests.cpp`: `ecsDuplicateDynamicIdRejected` creates two LootRuntime ECS entities with identical typed ID and asserts `sim.step` rejects the ambiguity before tick advances; `ecsActorAuthorityParity` now writes legacy FPS save v9 in default storage mode, loads it into a fresh `fps.ecsAuthority=true` simulation, and compares checksums.
+- This explicitly covers the storage-only toggle's unchanged `contentHash_`, save version and Entity rehydration semantics. The replay contract is still ordered by original slot / dynamic object's explicit source order.
+- Tests remain **unverified by native compilation/CI**. If they fail, fix within PR #7 and document exact failure/commit before considering main merge.
