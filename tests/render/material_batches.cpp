@@ -208,6 +208,11 @@ int aiverseMain(int argc, char** argv) {
                 // CPU-encoded MDI and GPU-encoded ICB account for separate
                 // command counters. Do not reject a successful GPU ICB draw
                 // merely because the CPU indirect-command counter is zero.
+                if (expectGpu && !d.supportsGpuEncodedIcb()) {
+                    std::fprintf(stderr,
+                        "[metal-gpu-icb] GPU-encoded ICB is unavailable on the CI device; cannot claim GPU validation\\n");
+                    failed = true;
+                }
                 if (expectGpu && d.supportsGpuEncodedIcb()) {
                     if (!gpuDraw.gpuEncodedSubmissions ||
                         !gpuDraw.gpuEncodedCommands ||
