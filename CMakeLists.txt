@@ -109,6 +109,31 @@ add_library(aiverse_engine STATIC
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
 target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+// ECS 2.0 opt-in correctness suites imported from feature/ecs-architecture-benchmarks.
+// This does NOT enable production parallel scheduling or change default gameplay.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    enable_testing()
+    find_package(Threads REQUIRED)
+    foreach(test_name IN ITEMS
+            ecs_experiments_test
+            ecs_wave_executor_test
+            ecs_guarded_world_test
+            ecs_snapshot_delta_test
+            ecs_scene_hierarchy_test
+            ecs_scene_hierarchy_simulation_test
+            ecs_cow_snapshot_test
+            ecs_cow_exception_test
+            ecs_cow_parallel_test
+            ecs_guarded_parallel_test
+            ecs_guarded_failure_test
+            ecs_wave_replay_test
+            ecs_simulation_bridge_test)
+        add_executable(aiverse_${test_name} tests/${test_name}.cpp)
+        target_link_libraries(aiverse_${test_name} PRIVATE aiverse_engine Threads::Threads)
+        add_test(NAME ${test_name} COMMAND aiverse_${test_name})
+    endforeach()
+endif()
+
 option(AIVERSE_ENABLE_PHYSICS "Build optional Box3D physics module" OFF)
 if(AIVERSE_ENABLE_PHYSICS)
     add_subdirectory(engine/physics)
@@ -154,6 +179,15 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
+// Experimental RTS transform preprocessing remains OFF by default.
+option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
+    "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
+if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_game PRIVATE Threads::Threads)
+    target_compile_definitions(aiverse_game PRIVATE AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=1)
+endif()
+
 add_subdirectory(libraries)
 include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
@@ -260,6 +294,12 @@ add_library(aiverse_net STATIC
     third_party/monocypher/monocypher.c)
 set_source_files_properties(third_party/monocypher/monocypher.c PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w,-w>")
 target_link_libraries(aiverse_net PUBLIC aiverse_engine)
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_cow_rollback_session_test tests/ecs_cow_rollback_session_test.cpp)
+    target_link_libraries(aiverse_ecs_cow_rollback_session_test PRIVATE aiverse_net Threads::Threads)
+    add_test(NAME ecs_cow_rollback_session_test COMMAND aiverse_ecs_cow_rollback_session_test)
+endif()
+
 if(WIN32)
     target_link_libraries(aiverse_net PUBLIC ws2_32 bcrypt)
 elseif(EMSCRIPTEN)
