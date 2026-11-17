@@ -106,6 +106,12 @@ In `modules/rts/view/RtsAnimate.cpp`, computing procedural ground normal used fo
 
 Benchmark warm `[view-objects]` `animate` and `[view-stages]` `objects` against the previous ~2.1 ms and ~8.6 ms, with 14,772 objects. This change has not yet been compiled or measured on the owner's Mac; do not assert a performance win before checking. Keep testing programmable graphs, procedural models, contacts, foot IK and weapon poses.
 
+## Verified procedural normal optimization (2026-11-17)
+
+The owner tested commit `3a03f93` on the same ~14,772-object scene. Warm averages: `animate` decreased from ~2.13 ms to ~1.30 ms (~39%); `objects` from ~8.63 ms to ~7.79 ms (~10%). `buildEditScene` remains ~2.93 ms. `drawObject` fluctuates ~2.18–2.24 ms and is not proven improved. `Renderer3D::render` measured ~2.3–2.4 ms in this run, compared with ~1.5–2.2 ms previously; do not attribute unrelated variance to the animation change. The complete `renderScene` stage sum is now ~15.9 ms; FPS still requires separate full-frame measurement.
+
+The next most promising targets are `drawObject` (~2.2 ms), remaining ~3 ms of the object loop not covered by per-object timers, and animation cleanup (~1.4 ms). Avoid unconditional skipping of idle animation or static entity state; first inspect model/animation features and correctness requirements.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
