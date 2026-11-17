@@ -61,6 +61,13 @@ jobs:
         run: |
           mkdir -p build/metal-cpu-mdi/captures
           build/metal-cpu-mdi/aiverse_material_batches unused.obj build/metal-cpu-mdi/captures/cpu-mdi
+      - name: Preserve CPU MDI before/after captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-cpu-mdi-captures
+          path: build/metal-cpu-mdi/captures/*.ppm
+          if-no-files-found: ignore
 
   metal-icb-gpu:
     # Regression exercises an actual Metal render pass and compares pixel output
@@ -91,3 +98,10 @@ jobs:
         run: |
           mkdir -p build/metal-icb/captures
           build/metal-icb/aiverse_material_batches unused.obj build/metal-icb/captures/gpu-icb
+      - name: Preserve GPU ICB before/after captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-gpu-icb-captures
+          path: build/metal-icb/captures/*.ppm
+          if-no-files-found: ignore
