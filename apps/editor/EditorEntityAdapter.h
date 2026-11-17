@@ -7,6 +7,7 @@
 #include <limits>
 #include <cmath>
 #include <vector>
+#include <set>
 
 namespace aiverse::editor {
 
@@ -160,8 +161,14 @@ inline bool translateDocumentEntities(MapDoc& map,
     if (refs.empty() || !std::isfinite(delta.x) || !std::isfinite(delta.y) ||
         !std::isfinite(delta.z) ||
         (delta.x == 0 && delta.y == 0 && delta.z == 0)) return false;
+    // A selection may contain duplicate references; move each source once.
+    std::set<std::pair<uint8_t, size_t>> seen;
+    std::vector<DocumentEntityRef> unique;
+    unique.reserve(refs.size());
+    for (const auto& ref : refs)
+        if (seen.insert({uint8_t(ref.source), ref.index}).second) unique.push_back(ref);
     // Validate the entire selection before modifying the map. No partial moves.
-    for (const auto& ref : refs) {
+    for (const auto& ref : unique) {
         DocumentTransform current;
         if (!readDocumentTransform(map, ref, current)) return false;
         const DocumentTransform next{current.x + delta.x, current.y + delta.y,
@@ -192,7 +199,7 @@ inline bool translateDocumentEntities(MapDoc& map,
         }
     }
     bool moved = false;
-    for (const auto& ref : refs)
+    for (const auto& ref : unique)
         moved = translateDocumentEntity(map, ref, delta, false) || moved;
     if (moved) map.touched();
     return moved;
