@@ -257,6 +257,21 @@ public:
     virtual bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) {
         (void)arguments; (void)offset; return false;
     }
+    // Experimental Metal compute-encoded indexed ICB. Called outside render
+    // passes after GPU-authored arguments have been produced. Each source slot
+    // selects one GPU DrawIndexedIndirectCommand; baseInstance becomes its
+    // ordinal in the accompanying parent-encoder instanced uniform block.
+    // Returns zero if unsupported; nonzero token is valid this GPU frame only.
+    virtual uint32_t prepareGpuEncodedIndexedIcb(
+        BufferHandle gpuArguments, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count) {
+        (void)gpuArguments; (void)indexBuffer; (void)sourceSlots; (void)count;
+        return 0;
+    }
+    // Execute pre-encoded ICB with parent pipeline/buffers currently bound.
+    virtual bool executeGpuEncodedIndexedIcb(uint32_t token) {
+        (void)token; return false;
+    }
     virtual bool supportsMultiDrawIndirect() const { return false; }
     virtual bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                                      uint32_t drawCount, uint32_t stride = sizeof(DrawIndexedIndirectCommand)) {
