@@ -573,3 +573,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commit `2e8de0c` adds two negative/compatibility regressions to `tests/fps/tests.cpp`: `ecsDuplicateDynamicIdRejected` creates two LootRuntime ECS entities with identical typed ID and asserts `sim.step` rejects the ambiguity before tick advances; `ecsActorAuthorityParity` now writes legacy FPS save v9 in default storage mode, loads it into a fresh `fps.ecsAuthority=true` simulation, and compares checksums.
 - This explicitly covers the storage-only toggle's unchanged `contentHash_`, save version and Entity rehydration semantics. The replay contract is still ordered by original slot / dynamic object's explicit source order.
 - Tests remain **unverified by native compilation/CI**. If they fail, fix within PR #7 and document exact failure/commit before considering main merge.
+
+### 2026-11-18 — Cross-genre audit: stage 2, executable contract
+- Commit `6dc7a89`: added `tests/ecs_cross_genre_mechanics_test.cpp`. It runs **identical** reusable `stepMotion`, `stepRecoil`, `stepCapture` policies through `addEcsMechanicSystem<Component>` in two independent GameModule types with distinct ECS components (`ShooterCharacter`, `StrategySoldier`). Checks matching deterministic checksums, rollback replay, and optional page COW state.
+- Scope: this proves generic C++ policies can be bound by independently authored game modules **once compiled and executed**. It does **not** prove that every existing RTS/FPS gameplay function can be moved to a new genre unchanged; those still refer to `RtsModule&`, `fps::Actor`, domain-specific state and configuration.
+- New test is not yet wired into build/test runners; no native compilation or passing CI observed.
