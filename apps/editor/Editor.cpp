@@ -692,7 +692,11 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     r3d_.beginScene(useCam, vp.w, vp.h);
     setOverlayContext(vp, useCam, false);
+    // Scene-only silhouette outline through the existing ModelDraw outline path.
+    // Keep the Game view unaffected by restoring the flag after draw.
+    view_.setSelectionOutline(true);
     view_.draw(r3d_, scene_, time_, nullptr, grid_);
+    view_.setSelectionOutline(false);
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets) drawEditOverlays3D();
