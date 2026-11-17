@@ -21,4 +21,25 @@ inline void drawDocumentComponentInventory(const MapDoc& map,
     ImGui::Separator();
 }
 
+inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
+                                      const char* label = "Position XYZ") {
+    DocumentTransform position;
+    if (!readDocumentTransform(map, ref, position)) return false;
+    float xyz[3] = {float(position.x), float(position.y), float(position.z)};
+    ImGui::PushID(label);
+    ImGui::TextDisabled("%s", label);
+    ImGui::SetNextItemWidth(-1);
+    const bool changed = ImGui::DragFloat3("##position", xyz, 0.05f, 0, 0, "%.3f");
+    if (ImGui::IsItemActivated()) map.beginEdit();
+    bool applied = false;
+    if (changed) {
+        Json component = Json::object(), values = Json::array();
+        for (float coordinate : xyz) values.push(Json::number(double(coordinate), 3));
+        component.set("position", values);
+        applied = writeDocumentComponent(map, ref, DocumentComponentKind::Transform, component);
+    }
+    ImGui::PopID();
+    return applied;
+}
+
 } // namespace aiverse::editor
