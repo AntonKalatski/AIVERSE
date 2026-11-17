@@ -6,6 +6,7 @@
 //   Click selects (Ctrl / Cmd toggles, Shift range), a click on a group selects its objects, double click
 //   focuses the Scene; arrows, Delete, F, F2 (rename), Ctrl+D (duplicate); drag objects onto a player to
 //   change the owner; eye / lock per player, type and section; hover highlights the object in the Scene.
+#include "../EditorEntityAdapter.h"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -63,12 +64,9 @@ public:
                     const std::string label = "Box Collider #" + std::to_string(index + 1);
                     if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(false, index))) {
                         ed.selectFpsSceneSource(false, index);
-                        const auto& lo = box["min"];
-                        const auto& hi = box["max"];
-                        if (lo.isArray() && hi.isArray() && lo.size() >= 3 && hi.size() >= 3)
-                            ed.sceneCam.target = {float((lo[0].toDouble()+hi[0].toDouble())*0.5),
-                                                  float((lo[1].toDouble()+hi[1].toDouble())*0.5),
-                                                  float((lo[2].toDouble()+hi[2].toDouble())*0.5)};
+                        DocumentTransform transform;
+                        if (readDocumentTransform(ed.doc(), DocumentEntityRef::fpsCollider(index), transform))
+                            ed.sceneCam.target = {float(transform.x), float(transform.y), float(transform.z)};
                     }
                     ImGui::PopID();
                     ++index;
@@ -82,8 +80,9 @@ public:
                     const std::string label = "Spawn #" + std::to_string(index + 1);
                     if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(true, index))) {
                         ed.selectFpsSceneSource(true, index);
-                        if (spawn.isArray() && spawn.size() >= 3)
-                            ed.sceneCam.target = {float(spawn[0].toDouble()), float(spawn[1].toDouble()), float(spawn[2].toDouble())};
+                        DocumentTransform transform;
+                        if (readDocumentTransform(ed.doc(), DocumentEntityRef::fpsSpawn(index), transform))
+                            ed.sceneCam.target = {float(transform.x), float(transform.y), float(transform.z)};
                     }
                     ImGui::PopID();
                     ++index;
