@@ -954,8 +954,25 @@ void Renderer3D::prepareGpuModelDraws() {
     const uint32_t effectiveMinimum = std::max(minGpuIcbCommands, adaptiveMinimum);
     if (adaptiveGpuIcb && gpuIcb && modelInstancingEnabled_ &&
         dev_->supportsMultiDrawIndirect()) {
-        // Coarse GPU-state keys are a necessary (not sufficient) condition:
-        // collisions only cause extra work; exact state is checked later.
+        // First eliminate impossible groups using only resource handles and
+        // draw flags. This avoids hashing material data when each compatible
+        // geometry pool has fewer objects than the ICB threshold.
+        std::map<std::tuple<uint32_t, uint32_t, uint32_t>, uint32_t> cheapCounts;
+        for (uint32_t idx : eligibleIndices) {
+            const auto& x = modelItems_[idx];
+            auto& count = cheapCounts[{x.model->vb.id, x.model->ib.id, x.flags}];
+            if (count < groupCapacity) ++count;
+        }
+        bool possible = false;
+        for (const auto& [key, count] : cheapCounts)
+            if (count >= effectiveMinimum) { possible = true; break; }
+        if (!possible) {
+            gpuAdaptiveInstancingFallback_ = true;
+            return;
+        }
+        // GPU-state hashes are also only a necessary condition. Collisions
+        // cause extra grouping, never unsafe rendering, because grouping
+        // still calls equivalentGpuMaterial for exact compatibility.
         std::map<std::pair<const Model*, const Material*>, uint64_t> hashes;
         std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint64_t>, uint32_t> counts;
         for (uint32_t i : eligibleIndices) {
