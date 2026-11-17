@@ -1010,7 +1010,8 @@ void Renderer3D::renderModels(int phase) {
         // One submission per rigid static primitive, so this is a correctness
         // milestone, NOT a faster replacement for conventional instancing.
         const uint32_t modelIndex = order_[i];
-        if (phase == 1 && gpuModelCommandsReady_ && !drawCallDebug_ &&
+        if (phase == 1 && geometryMainView_ && !auxiliaryModelPass_ &&
+            gpuModelCommandsReady_ && !drawCallDebug_ &&
             modelIndex < gpuModelSlots_.size() &&
             gpuModelSlots_[modelIndex] != UINT32_MAX &&
             drawModelBatch(&modelIndex, 1, phase, false)) {
