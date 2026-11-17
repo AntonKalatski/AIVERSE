@@ -23,6 +23,7 @@ namespace aiverse::render {
 class MeshBuilder;
 class ModelTextureCache;
 struct GeometryData;
+struct GeometryPoolPage;
 
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
 enum class ShadingModel : uint8_t { Pbr, Unlit };
@@ -214,6 +215,11 @@ struct Model {
     std::vector<ModelVertex> vertices; // CPU copy, released after upload
     std::vector<uint32_t> indices;
     gfx::BufferHandle vb, ib;
+    // Shared rigid geometry arena. Index values are model-relative; the renderer
+    // adds gpuFirstIndex to each Primitive range and gpuBaseVertex on draw.
+    // An empty page means legacy dedicated per-model buffers.
+    std::shared_ptr<GeometryPoolPage> geometryPoolPage;
+    uint32_t gpuBaseVertex = 0, gpuFirstIndex = 0;
     float3 boundsMin, boundsMax;       // model space, bind pose (all meshes under their nodes)
     gfx::TextureHandle morphTex;       // RGBA32F deltas of every morphing primitive (2 texels per vertex and target)
     int morphTexWidth = 0;
