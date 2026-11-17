@@ -179,12 +179,20 @@ public:
         list.push_back({uint32_t(lane),uint64_t(list.size()),std::forward<Fn>(command)});
     }
     void flush(World& world) {
-        // Consumers only enqueue to their own lane and join before flush.
-        for(auto& list:lanes_) {
-            for(auto& entry:list) entry.apply(world);
-            list.clear();
-        }
+        // Only call after all producer jobs join. Move commands into a local
+        // batch so callbacks cannot invalidate vectors being iterated.
+        // Commands added during flush are deliberately kept for the next flush.
+        std::vector<std::vector<Entry>> batch(lanes_.size());
+        for(size_t lane=0;lane<lanes_.size();++lane)
+            batch[lane].swap(lanes_[lane]);
+        for(const auto& list:batch)
+            for(const auto& entry:list)entry.apply(world);
         world.flush();
+    }
+    // Cancel commands collected during a failed wave. A partially mutated
+    // World still requires rollback to a valid pre-wave snapshot.
+    void discard() {
+        for(auto& list:lanes_)list.clear();
     }
 };
 
