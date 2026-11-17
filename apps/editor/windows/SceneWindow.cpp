@@ -79,21 +79,36 @@ public:
                     // The same Selection now drives Scene, Hierarchy and Inspector.
                     // Do not run a second genre-specific picker or overwrite a
                     // cleared FPS selection with a stale RTS selection.
+                    fpsGizmoAxis_ = -1;
+                    if (ed.tool == Tool::Select && ed.selection.kind == Selection::FpsObject) {
+                        DocumentEntityRef selectedRef;
+                        DocumentTransform position;
+                        if (DocumentEntityRef::fromFpsKey(ed.selection.ref, selectedRef) &&
+                            readDocumentTransform(ed.doc(), selectedRef, position)) {
+                            fpsGizmoAxis_ = pickMoveGizmoAxis(
+                                ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                vp_.originX, vp_.originY, io.MousePos.x, io.MousePos.y,
+                                {float(position.x), float(position.y), float(position.z)},
+                                std::max(0.35f, ed.sceneCam.distance * 0.075f));
+                        }
+                    }
                     const bool alreadySelected =
                         std::find(ed.selectionSet.begin(), ed.selectionSet.end(),
                                   hovered) != ed.selectionSet.end();
                     // Preserve a group when dragging an already-selected
                     // member. A simple click without movement still selects
                     // just that member on release, matching RTS behavior.
-                    fpsDragKeepSelection_ = alreadySelected &&
-                        ed.selectionSet.size() > 1 &&
+                    fpsDragKeepSelection_ = fpsGizmoAxis_ < 0 &&
+                        alreadySelected && ed.selectionSet.size() > 1 &&
                         !io.KeyCtrl && !io.KeySuper && ed.tool == Tool::Select;
                     fpsDragClicked_ = hovered;
-                    if (!fpsDragKeepSelection_) pickSelect(ed, hovered, io);
-                    fpsDragActive_ = hovered.kind == Selection::FpsObject &&
-                                     (ed.selection == hovered || fpsDragKeepSelection_) &&
-                                     ed.tool == Tool::Select &&
-                                     !io.KeyCtrl && !io.KeySuper;
+                    if (fpsGizmoAxis_ < 0 && !fpsDragKeepSelection_)
+                        pickSelect(ed, hovered, io);
+                    fpsDragActive_ = ed.tool == Tool::Select &&
+                        !io.KeyCtrl && !io.KeySuper &&
+                        (fpsGizmoAxis_ >= 0 ||
+                         (hovered.kind == Selection::FpsObject &&
+                          (ed.selection == hovered || fpsDragKeepSelection_)));
                     fpsDragEdited_ = false;
                     fpsDragLastX_ = io.MousePos.x;
                     fpsDragLastY_ = io.MousePos.y;
@@ -103,8 +118,8 @@ public:
                 (io.MousePos.x != fpsDragLastX_ || io.MousePos.y != fpsDragLastY_)) {
                 float dx = 0.0f, dy = 0.0f, dz = 0.0f;
                 bool valid = false;
-                if (io.KeyShift) {
-                    // Vertical dragging must work even for a horizontal camera
+                if (fpsGizmoAxis_ == 1 || (fpsGizmoAxis_ < 0 && io.KeyShift)) {
+                    // Y handle or Shift: vertical translation, even at low camera pitch.
                     // whose rays cannot intersect the XZ ground plane.
                     dy = (fpsDragLastY_ - io.MousePos.y) *
                          std::max(0.01f, ed.sceneCam.distance * 0.002f);
@@ -122,8 +137,10 @@ public:
                         dz = current.z - previous.z;
                         // X and Z constrain translation to a single world axis.
                         // No modifier preserves free XZ dragging.
-                        if (ImGui::IsKeyDown(ImGuiKey_X)) dz = 0.0f;
-                        else if (ImGui::IsKeyDown(ImGuiKey_Z)) dx = 0.0f;
+                        if (fpsGizmoAxis_ == 0 || ImGui::IsKeyDown(ImGuiKey_X))
+                            dz = 0.0f;
+                        else if (fpsGizmoAxis_ == 2 || ImGui::IsKeyDown(ImGuiKey_Z))
+                            dx = 0.0f;
                         valid = std::isfinite(dx) && std::isfinite(dz);
                     }
                 }
@@ -140,6 +157,7 @@ public:
                     ed.select(fpsDragClicked_);
                 fpsDragKeepSelection_ = false;
                 fpsDragActive_ = false;
+                fpsGizmoAxis_ = -1;
             }
         } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
         // The selection overlay is genre-independent (including FPS).
@@ -158,6 +176,7 @@ public:
 private:
     bool fpsDragActive_ = false, fpsDragEdited_ = false;
     bool fpsDragKeepSelection_ = false;
+    int fpsGizmoAxis_ = -1;
     Selection fpsDragClicked_;
     float fpsDragLastX_ = 0, fpsDragLastY_ = 0;
 
