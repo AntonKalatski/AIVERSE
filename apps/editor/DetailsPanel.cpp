@@ -404,6 +404,33 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
                 if (const WorldRow* r = ed.world().find(uint64_t(v["$entity"].integer()))) ed.select(ed.worldSelection(*r));
             }
             ImGui::PopStyleColor();
+        } else if (v.type() == Json::Type::Bool) {
+            // Read-only ECS snapshots should look like typed properties rather than JSON.
+            bool checked = v.boolean();
+            ImGui::BeginDisabled();
+            ImGui::Checkbox("##value", &checked);
+            ImGui::EndDisabled();
+        } else if (v.isArray() && v.size() == 3 &&
+                   v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
+            // A three-component vector gets the same compact XYZ layout for
+            // positions, velocities and arbitrary native ECS vector fields.
+            const char* axes[] = {"X", "Y", "Z"};
+            const ImVec4 colors[] = {ImVec4(.95f,.37f,.36f,1), ImVec4(.39f,.82f,.50f,1), ImVec4(.37f,.61f,.96f,1)};
+            const float width = ImGui::GetContentRegionAvail().x / 3.0f;
+            for (int i = 0; i < 3; ++i) {
+                if (i) ImGui::SameLine(0, 3);
+                ImGui::BeginGroup();
+                ImGui::PushStyleColor(ImGuiCol_Text, colors[i]);
+                ImGui::TextUnformatted(axes[i]);
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 3);
+                ImGui::SetNextItemWidth(std::max(25.0f, width - 22.0f));
+                ImGui::BeginDisabled();
+                float value = float(v[size_t(i)].toDouble());
+                ImGui::DragFloat((std::string("##axis") + axes[i]).c_str(), &value, 0.0f, 0.0f, 0.0f, "%.3f");
+                ImGui::EndDisabled();
+                ImGui::EndGroup();
+            }
         } else {
             const std::string t = v.isArray() ? inlineText(v) : scalar(v);
             ImGui::TextUnformatted(t.c_str());
