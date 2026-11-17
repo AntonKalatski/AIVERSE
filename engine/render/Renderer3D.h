@@ -182,6 +182,10 @@ struct ModelRenderStats {
     uint64_t nodes = 0, culledNodes = 0, lodNodes[4] = {};
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // GPU-state grouping work across all model passes in a single scene.
+    // Reused covers per-item or same-(model,material)-pointer cache hits;
+    // resolved counts new GPU-state hashes/representative comparisons.
+    uint64_t materialGroupsReused = 0, materialGroupsResolved = 0;
     // Per-frame diagnostic counters: only the model pass, not custom
     // renderers. Eligible scans are distinct from actual GPU submissions.
     uint64_t mdiScans = 0, mdiShort = 0, mdiBelowThreshold = 0;
@@ -512,7 +516,6 @@ private:
     std::unordered_map<uint64_t, std::vector<uint32_t>> materialHashCandidates_;
     std::vector<uint32_t> materialRepresentatives_;
     std::vector<uint32_t> materialItemIds_; // UINT32_MAX = unclassified
-    uint64_t materialStateCacheHits_ = 0, materialStateCacheMisses_ = 0;
     // Opt-in actual GPU-authored draw commands for static opaque primitives.
     GpuSceneDrawCommands gpuModelCommands_;
     std::vector<GpuPrimitiveDrawRecord> gpuModelRecords_;
