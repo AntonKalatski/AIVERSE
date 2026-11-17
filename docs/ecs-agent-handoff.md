@@ -110,6 +110,27 @@ Next:
 4. Then design conservative opt-in `Simulation` integration, preserving the sequential path.
 5. Continue updating this handoff after each code step and do not merge PR #8 until complete regression tests pass.
 
+## 2026-11-17 — Step: deterministic World replay (latest)
+
+New test `tests/ecs_wave_replay_test.cpp`:
+- Commit `5a93c66`: replay World snapshot through opt-in checked dependency waves and lane-ordered structural commands.
+- Commit `327e0bc`: route scheduled component reads through `GuardedWorld` rather than raw `World::pool`.
+- Executes ten deterministic ticks starting from the same deep-copied World with worker counts 0, 3 and 7; compares a fingerprint that includes dense Entity handles, component values and Entity allocator generations/free list.
+- Movement reads Velocity and writes Position, acceleration writes Velocity, and structural command application occurs after the appropriate wave barrier.
+- Confirms original seed state remains unchanged, compares repeated replay with the same and different worker counts.
+- This test is not `Simulation::saveState/loadState` and does not verify network commands, RNG or full module snapshots.
+
+**Validation status:** commits present on feature branch; Mac Studio has **not yet compiled or run this new replay test**. Prior wave/experiments tests passed as reported by user.
+
+Run:
+```sh
+git pull --ff-only
+c++ -std=c++20 -O2 -pthread -I. tests/ecs_wave_replay_test.cpp -o /tmp/aiverse-ecs-replay
+/tmp/aiverse-ecs-replay
+```
+
+Next: validate new guarded/replay tests, address any failures, add simulation-level snapshot/rollback/lockstep regression coverage and enforce a no-raw-World contract before enabling production scheduled systems.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validate latest changes**: compile and execute new tests; fix compiler warnings or test failures in PR #8.
