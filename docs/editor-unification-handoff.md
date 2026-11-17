@@ -162,3 +162,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - This is a document-backed component UI, **not** native ECS reflection. RTS authored entities still use their existing DetailsPanel plus the shared Position drawer. Read-only component inventory remains separate.
 - Validation: source edits committed; **build/tests NOT RUN**. GitHub Actions for `0e818076`: Studio validation queued (Ubuntu, Windows, macOS jobs), CI queued (multiple platform jobs). This is a CI availability blocker, not a passing result.
 - Next: get actual build diagnostics, then migrate RTS document Inspector into the same card dispatcher without duplicating fields; build native ECS component registry and writeback.
+
+### 2026-11-17 — RTS authored entities use the same editable component-card dispatcher
+- Branch: `feature/universal-entity-inspector-fps`.
+- Commit: `90262a21` (`apps/editor/DetailsPanel.cpp`).
+- Replaced the RTS-only direct `drawDocumentPositionField` call with `drawDocumentEditableComponents`. Both RTS authored DocEntity and FPS collider/spawn now dispatch editable document components through the same `EditorComponentPanel.h` function.
+- Existing RTS DetailsPanel `mapFields` and runtime ECS `sections` remain in place; this does **not** constitute a native ECS Inspector replacement.
+- Validation: source change committed; **build/tests NOT RUN**. CI previously observed queued; no passing build claimed.
+- Next: obtain CI diagnostics and test UI; implement typed runtime ECS component registry and writeback, then eliminate redundant document Inspector paths safely.
