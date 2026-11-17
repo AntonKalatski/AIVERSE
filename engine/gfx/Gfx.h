@@ -41,7 +41,7 @@ using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
 enum class Backend { Metal, GLES3, GL33, Vulkan };
-enum class BufferType { Vertex, Index, Storage };
+enum class BufferType { Vertex, Index, Storage, Indirect };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          ETC2_RGB8, ETC2_RGBA8, BC1, BC3, BC7, ASTC_4x4, ASTC_6x6,   // block-compressed: upload levels, check supports()   // Depth: 24/32-bit depth render target; RGBA32F: data textures
@@ -56,6 +56,16 @@ enum class CullMode { None, Back, Front };
 enum class BlendMode { Opaque, Alpha, Additive, Premultiplied, Multiply, Subtract, Screen };
 // Premultiplied: ONE, 1-srcAlpha. Multiply: dst * src colour. Subtract: dst - src * srcAlpha (reverse subtract). (particles)
 // Screen: src + dst * (1 - src colour) for premultiplied colour, alpha as Premultiplied (Spine "screen" slots)
+
+// Cross-backend layout of indexed indirect commands (Vulkan/Metal compatible).
+// All commands in one submission share vertex/index buffers, pipeline, resources
+// and uniforms. Material state or transform changes require a separate group.
+struct DrawIndexedIndirectCommand {
+    uint32_t indexCount = 0, instanceCount = 1, firstIndex = 0;
+    int32_t baseVertex = 0;
+    uint32_t firstInstance = 0;
+};
+static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
 
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
@@ -151,6 +161,8 @@ public:
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
     virtual void destroyBuffer(BufferHandle h) = 0;
+    // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
+    virtual bool canUpdateSharedBuffers() const { return true; }
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
     virtual void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) = 0;
     virtual void destroyTexture(TextureHandle h) = 0;
@@ -207,6 +219,8 @@ public:
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
+    // Zero if backend does not expose a completed-slot-safe frame serial.
+    virtual uint64_t frameSerial() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
@@ -233,6 +247,50 @@ public:
     virtual void setUniforms(int slot, const void* data, size_t size) = 0;
     virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0) = 0;
     virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0, uint32_t instanceCount = 1) = 0;
+    // One API render submission for several indexed GPU commands. Command buffer
+    // must use BufferType::Indirect; count/stride are validated by backend.
+    // Unsupported (ES3/WebGL2/legacy GL) returns false and callers use drawIndexed.
+    // GPU-authored single indexed draw arguments. Unlike drawIndexedIndirect,
+    // command bytes are produced by an earlier compute pass and MUST NOT be
+    // read back or validated on the CPU. Unsupported backends return false.
+    // This is intentionally one draw per call, not multi-draw batching.
+    virtual bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) {
+        (void)arguments; (void)offset; return false;
+    }
+    // Experimental Metal compute-encoded indexed ICB. Called outside render
+    // passes after GPU-authored arguments have been produced. Each source slot
+    // selects one GPU DrawIndexedIndirectCommand; baseInstance becomes its
+    // ordinal in the accompanying parent-encoder instanced uniform block.
+    // Returns zero if unsupported; nonzero token is valid this GPU frame only.
+    // Force persistent buffer-backed per-draw uniforms while a GPU-encoded
+    // ICB inherits parent bindings; setBytes memory is not a safe ICB input.
+    virtual void setGpuIcbUniformBinding(bool enabled) { (void)enabled; }
+    // Amount of host instance bytes copied into persistent GPU ICB memory
+    // so far in the current GPU frame (includes all scene viewports).
+    virtual size_t gpuIcbInstanceUploadBytes() const { return 0; }
+    virtual uint32_t prepareGpuEncodedIndexedIcb(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes) {
+        (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer; (void)sourceSlots; (void)count;
+        (void)instanceData; (void)instanceBytes;
+        return 0;
+    }
+    // Finish batched GPU command encoding before opening a render pass.
+    // Backends may keep one compute encoder across multiple ICB groups.
+    virtual void finishGpuEncodedIcbPreparation() {}
+    // Execute pre-encoded ICB with parent pipeline/buffers currently bound.
+    virtual bool executeGpuEncodedIndexedIcb(uint32_t token) {
+        (void)token; return false;
+    }
+    virtual bool supportsMultiDrawIndirect() const { return false; }
+    // GPU-authored ICB is a separate, higher-risk feature. A backend may
+    // support CPU-encoded multi-draw without allowing GPU command encoding.
+    virtual bool supportsGpuEncodedIcb() const { return false; }
+    virtual bool drawIndexedIndirect(BufferHandle commands, size_t offset,
+                                     uint32_t drawCount, uint32_t stride = sizeof(DrawIndexedIndirectCommand)) {
+        (void)commands; (void)offset; (void)drawCount; (void)stride; return false;
+    }
 
 protected:
     int fbW_ = 0, fbH_ = 0;

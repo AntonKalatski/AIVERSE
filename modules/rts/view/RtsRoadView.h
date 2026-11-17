@@ -33,6 +33,7 @@ public:
     // heightAt(x, z) in world units (the view's terrain); cellMeters of the road data turns it into metres
     void draw(render::Renderer3D& r, const std::function<float(float, float)>& heightAt);
     bool active() const { return hasNet_ && !net_.empty(); }
+    bool needsRebuild() const { return dirty_; }
     // roadNetwork.replaces: tags or type ids (prefixes) of the objects the spline roads stand in for (a game's
     // baked road surfaces): the view does not draw those while the network is shown
     const std::vector<std::string>& replaces() const { return replaces_; }
@@ -41,6 +42,21 @@ public:
     const RoadGeometry& geometry() const { return geom_; }
     float cellMeters() const { return cellMeters_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
+    // Asset/build-time breakdown, not an estimate of actual GPU draw calls.
+    // One road chunk has a separate model with potentially many materials.
+    // Decals (zebras/paint/wet film) use a different custom draw path.
+    struct BatchStats {
+        struct MaterialUse {
+            std::string name;
+            uint32_t textureId = 0;
+            size_t primitives = 0, triangles = 0, chunks = 0;
+        };
+        size_t sourceChunks = 0, uploadedChunks = 0;
+        size_t primitives = 0, triangles = 0;
+        int mergeGroup = 1;
+        std::vector<MaterialUse> materials;
+    };
+    const BatchStats& batchStats() const { return batchStats_; }
     // Rain on the roads (docs/roads.md § Wet roads and puddles): wet 0..1 darkens every road surface (carriageways,
     // junctions, driveways; not in tunnels), puddles 0..1 fills the puddle spots: along the kerbs, in the wheel
     // tracks, in the ruts of dirt roads and in the corners of junctions; each spot has its own level it appears at
@@ -67,6 +83,7 @@ public:
     // ground there) is used where no road surface lies. Presentation only (docs/roads.md § Surface for wheels).
     float surfaceAt(float x, float z, float terrain) const;
     bool hasSurface() const { return !surface_.empty(); }
+    uint64_t surfaceGeneration() const { return surfaceGeneration_; }
     // editor preview: one edge drawn as a translucent ribbon (not part of the network)
     struct Ghost { bool on = false; RoadNetwork net; bool ok = true; };
     void setGhost(const Ghost& g) { ghost_ = g; ghostDirty_ = true; }
@@ -97,6 +114,8 @@ private:
     RoadGeometry geom_;
     bool hasNet_ = false, dirty_ = false;
     std::vector<Chunk> chunks_;
+    BatchStats batchStats_;
+    uint64_t surfaceGeneration_ = 1; // increments whenever road geometry/surface is rebuilt
     // standable road surface: tiles of 8x8 cells, kSurfRes samples per cell, height * 2048 (INT16_MIN: none)
     static constexpr int kSurfTile = 8, kSurfRes = 8, kSurfSide = kSurfTile * kSurfRes;
     struct SurfTile { int16_t h[kSurfSide * kSurfSide]; };
