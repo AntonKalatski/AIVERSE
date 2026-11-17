@@ -125,6 +125,17 @@ int aiverseMain(int, char**) {
     check(view.typeLoaded(1) && reads["b.obj"]==bReads+1,
           "trimmed type must reload on demand");
     view.shutdown(dev);
+    // Deferred *type* loading must not reduce the number of model variants
+    // available to the editor. Client streaming keeps its original default.
+    rules.types[0].view = Json::parse(R"({"streaming":{"initialModels":1},"model":["a.obj",{"file":"a.obj","materials":{"*":{"color":[1,0,0]}}},"b.obj"]})");
+    view.setDeferredLoading(true);
+    view.setDeferAppearanceVariants(false);
+    check(view.init(dev,rules,reader),"editor full appearance init");
+    view.loadType(0);
+    check(view.modelChoiceCount(0)==3 && view.pendingModelVariants()==0,
+          "lazy editor type must expose every model variant");
+    view.shutdown(dev);
+    view.setDeferAppearanceVariants(true);
     auto cache = std::make_shared<render::ModelTextureCache>();
     int imageReads = 0;
     auto images = [&](const std::string&, std::string& bytes) {
