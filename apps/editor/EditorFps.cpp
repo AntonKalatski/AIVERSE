@@ -283,40 +283,55 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         }
         instances.push_back(object);
     }
-    // FPS actors are World resource records, not ECS Entity IDs. The common
-    // provider also drives the Hierarchy and selected Actor Inspector.
+    // Live objects are now real ECS entity components (the FPS gameplay state
+    // remains the compatibility authority). All runtime genres enter through
+    // the same editor runtime-entity provider.
     for (const auto& runtime : enumerateEditorRuntimeEntities(*this)) {
-        if (!runtime.hasPosition ||
-            runtime.selection.kind != Selection::FpsActor) continue;
+        if (!runtime.hasPosition) continue;
+        const bool actorSource = runtime.selection.kind == Selection::FpsActor;
+        const bool dynamicSource = runtime.selection.kind == Selection::FpsRuntimeObject;
+        if (!actorSource && !dynamicSource) continue;
         const float3 point = runtime.position;
-        SceneRenderable actor;
-        actor.runtimeActor = runtime.selection.index;
-        actor.world = mat4::translate(point) * mat4::scale({0.5f, 1.7f, 0.5f});
-        actor.tint = {0.85f, 0.68f, 0.25f, 1};
-        actor.mesh = &fpsPreviewMesh_;
-        actor.pickable = true;
-        actor.boundsMin = {point.x - 0.25f, point.y, point.z - 0.25f};
-        actor.boundsMax = {point.x + 0.25f, point.y + 1.7f, point.z + 0.25f};
-        instances.push_back(actor);
+        SceneRenderable object;
+        if (actorSource)
+            object.runtimeActor = runtime.selection.index;
+        else
+            object.runtimeObject = runtime.selection.ref;
+        float3 size = actorSource ? float3{0.5f, 1.7f, 0.5f}
+                                 : float3{0.35f, 0.35f, 0.35f};
+        if (dynamicSource) {
+            const uint8_t kind = uint8_t(runtime.selection.ref >> 32);
+            if (kind == 3) size = {1.6f, 1.1f, 3.0f}; // vehicle marker
+            if (kind == 1) size = {0.18f, 0.18f, 0.18f}; // projectile marker
+        }
+        object.world = mat4::translate(point) * mat4::scale(size);
+        object.tint = actorSource ? float4{0.85f, 0.68f, 0.25f, 1}
+                          : float4{0.75f, 0.60f, 0.85f, 1};
+        object.mesh = &fpsPreviewMesh_;
+        object.pickable = true;
+        object.boundsMin = {point.x - size.x * 0.5f, point.y,
+                            point.z - size.z * 0.5f};
+        object.boundsMax = {point.x + size.x * 0.5f, point.y + size.y,
+                            point.z + size.z * 0.5f};
+        instances.push_back(object);
     }
     const uint64_t hoveredKey = hover.kind == Selection::FpsObject ? hover.ref : 0;
     for (auto& object : instances) {
-        object.selected = object.runtimeActor >= 0
-            ? selection.kind == Selection::FpsActor &&
-              selection.index == object.runtimeActor
-            : selectedKey != 0 && object.entity == selectedKey;
-        if (!object.selected && object.runtimeActor < 0)
-            for (const auto& chosen : selectionSet)
-                if (chosen.kind == Selection::FpsObject &&
-                    chosen.ref == object.entity) {
-                    object.selected = true;
-                    break;
-                }
-        object.hovered = !object.selected &&
-            (object.runtimeActor >= 0
-                ? hover.kind == Selection::FpsActor &&
-                  hover.index == object.runtimeActor
-                : hoveredKey != 0 && object.entity == hoveredKey);
+        Selection candidate;
+        if (object.runtimeObject) {
+            candidate.kind = Selection::FpsRuntimeObject;
+            candidate.ref = object.runtimeObject;
+        } else if (object.runtimeActor >= 0) {
+            candidate.kind = Selection::FpsActor;
+            candidate.index = object.runtimeActor;
+        } else {
+            candidate.kind = Selection::FpsObject;
+            candidate.ref = object.entity;
+        }
+        object.selected = selection == candidate ||
+            std::find(selectionSet.begin(), selectionSet.end(), candidate) !=
+                selectionSet.end();
+        object.hovered = !object.selected && hover == candidate;
     }
     submitSceneRenderables(r3d_, instances);
     // Draw transform axes from the selected renderable, if visible.
