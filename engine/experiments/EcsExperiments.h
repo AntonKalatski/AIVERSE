@@ -22,7 +22,7 @@ namespace aiverse::ecs_experiment {
 template<class A, class B>
 struct PreparedAll {
     template<class Fn> void each(World& world, Fn&& fn) const {
-        if (world.count<A>() == 0 || world.count<B>() == 0) return;
+        if (world.countExisting<A>() == 0 || world.countExisting<B>() == 0) return;
         world.each<A,B>(std::forward<Fn>(fn));
     }
 };
@@ -143,19 +143,18 @@ struct ParallelPolicy {
 template<class A,class Fn>
 void eachAdaptive(World& world,PersistentWorkers& workers,ExecutionMode mode,
                   ParallelPolicy policy,Fn&& fn) {
-    auto& pool=world.pool<A>();
-    const size_t n=pool.size();
+    const size_t n=world.countExisting<A>();
     const size_t lanes=size_t(workers.workers())+1;
     const bool useParallel=workers.workers()>0 &&
         (mode==ExecutionMode::Parallel ||
          (mode==ExecutionMode::Auto && n>=policy.minimumEntities &&
           n/lanes>=policy.minimumPerLane));
     if(!useParallel) {
-        for(size_t i=0;i<n;++i)fn(pool.entityAt(i),pool.dataAt(i));
+        world.eachExistingRange<A>(0,n,std::forward<Fn>(fn));
         return;
     }
     workers.parallelFor(n,[&](size_t begin,size_t end){
-        for(size_t i=begin;i<end;++i)fn(pool.entityAt(i),pool.dataAt(i));
+        world.eachExistingRange<A>(begin,end,fn);
     });
 }
 
@@ -164,10 +163,9 @@ void eachAdaptive(World& world,PersistentWorkers& workers,ExecutionMode mode,
 // Do not add/remove/destroy any component while parallelFor is in progress.
 template<class A,class Fn>
 void eachParallel(World& world,PersistentWorkers& workers,Fn&& fn) {
-    auto& pool=world.pool<A>();
-    const size_t count=pool.size();
+    const size_t count=world.countExisting<A>();
     workers.parallelFor(count,[&](size_t begin,size_t end) {
-        for(size_t i=begin;i<end;++i)fn(pool.entityAt(i),pool.dataAt(i));
+        world.eachExistingRange<A>(begin,end,fn);
     });
 }
 
