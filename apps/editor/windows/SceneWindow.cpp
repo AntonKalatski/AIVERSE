@@ -58,7 +58,9 @@ public:
         // The map document assigns 0xED-prefixed IDs to authored entities.
         // Trace only the selected one; avoid per-entity allocation in runtime.
         uint64_t lodTarget = 0;
-        if (ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
+        renderer.setLodDiagnosticsEnabled(lodPopupVisible_);
+        if (lodPopupVisible_ &&
+            ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
             size_t(ed.selection.index) < ed.doc().data.entities.size())
             lodTarget = (uint64_t(0xED) << 56) | (uint64_t(ed.selection.index) + 1);
         renderer.setLodDebugTarget(lodTarget);
@@ -181,6 +183,7 @@ public:
         renderer.setModelLodEnabled(true);
         renderer.setModelLodFadeWidth(0.15f);
         renderer.setLodDebugTarget(0);
+        renderer.setLodDiagnosticsEnabled(false);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
         if (traceScene) {
@@ -240,7 +243,11 @@ public:
 private:
     void lodControls(Editor& ed) {
         if (ImGui::Button("LOD##scene")) ImGui::OpenPopup("##scene_lod");
-        if (!ImGui::BeginPopup("##scene_lod")) return;
+        if (!ImGui::BeginPopup("##scene_lod")) {
+            lodPopupVisible_ = false;
+            return;
+        }
+        lodPopupVisible_ = true;
         ImGui::TextUnformatted("LOD текущей камеры (модели)");
         ImGui::Separator();
         ImGui::Checkbox("Включить Model LOD", &sceneLodEnabled_);
@@ -1198,6 +1205,7 @@ private:
     int studioDebugMode_ = 0;
     bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
     bool sceneLodEnabled_ = true;
+    bool lodPopupVisible_ = false;
     float sceneLodFadeWidth_ = 0.15f;
     ModelRenderStats lastSceneLodStats_{};
     Renderer3D::LodDebugSample lastSelectedLod_{};
