@@ -1,5 +1,6 @@
 #include "Editor.h"
 #include "EditorGenreUi.h"
+#include "SceneRenderable.h"
 #include "modules/fps/FpsModule.h"
 #include <filesystem>
 #include <cmath>
@@ -51,11 +52,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});
         fpsPreviewMesh_ = mesh.upload(*dev_);
     }
-    struct PreviewInstance {
-        mat4 transform;
-        float4 color;
-    };
-    std::vector<PreviewInstance> instances;
+    std::vector<SceneRenderable> instances;
     const auto& fps = doc().data.fps;
     for (const auto& collider : fps["colliders"].items()) {
         if (!collider["min"].isArray() || !collider["max"].isArray() ||
@@ -67,18 +64,24 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
             size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
         const float3 base{(lo.x+hi.x)*0.5f,lo.y,(lo.z+hi.z)*0.5f};
         if (length(base-camera.target)>1000 && hi.y>0) continue;
-        instances.push_back({mat4::translate(base)*mat4::scale(size), {0.35f,0.42f,0.44f,1}});
+        SceneRenderable object;
+        object.world = mat4::translate(base)*mat4::scale(size);
+        object.tint = {0.35f,0.42f,0.44f,1};
+        object.mesh = &fpsPreviewMesh_;
+        instances.push_back(object);
     }
     for (const auto& spawn : fps["spawns"].items()) {
         if (!spawn.isArray() || spawn.size() < 3) continue;
         const float3 pos = point(spawn);
         if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) continue;
-        instances.push_back({mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f}), {0.1f,0.65f,0.85f,1}});
+        SceneRenderable object;
+        object.world = mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f});
+        object.tint = {0.1f,0.65f,0.85f,1};
+        object.mesh = &fpsPreviewMesh_;
+        instances.push_back(object);
     }
-    // The adapter emits renderable instances only. Future native ECS models
-    // can use the same scene submission stage with Renderer3D::drawModel.
-    for (const auto& instance : instances)
-        r3d_.drawMesh(fpsPreviewMesh_, instance.transform, instance.color);
+    // Both primitive and authored-model objects now share the same submitter.
+    submitSceneRenderables(r3d_, instances);
 }
 
 }
