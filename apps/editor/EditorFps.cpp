@@ -2,6 +2,7 @@
 #include "EditorGenreUi.h"
 #include "modules/fps/FpsModule.h"
 #include <filesystem>
+#include <cmath>
 namespace aiverse::editor {
 namespace {
 std::string quote(const std::string& s) {
@@ -61,7 +62,9 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
             collider["min"].size() < 3 || collider["max"].size() < 3) continue;
         const float3 lo = point(collider["min"]), hi = point(collider["max"]);
         const float3 size = hi - lo;
-        if (size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
+        if (!std::isfinite(lo.x) || !std::isfinite(lo.y) || !std::isfinite(lo.z) ||
+            !std::isfinite(hi.x) || !std::isfinite(hi.y) || !std::isfinite(hi.z) ||
+            size.x <= 0 || size.y <= 0 || size.z <= 0) continue;
         const float3 base{(lo.x+hi.x)*0.5f,lo.y,(lo.z+hi.z)*0.5f};
         if (length(base-camera.target)>1000 && hi.y>0) continue;
         instances.push_back({mat4::translate(base)*mat4::scale(size), {0.35f,0.42f,0.44f,1}});
@@ -69,6 +72,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     for (const auto& spawn : fps["spawns"].items()) {
         if (!spawn.isArray() || spawn.size() < 3) continue;
         const float3 pos = point(spawn);
+        if (!std::isfinite(pos.x) || !std::isfinite(pos.y) || !std::isfinite(pos.z)) continue;
         instances.push_back({mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f}), {0.1f,0.65f,0.85f,1}});
     }
     // The adapter emits renderable instances only. Future native ECS models
