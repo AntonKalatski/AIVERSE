@@ -176,7 +176,12 @@ void Editor::drawFpsSceneInspector() {
                 ImGui::SetNextItemWidth(-1);
                 const bool changed = ImGui::DragFloat3("##colliderPosition", xyz, 0.05f, 0, 0, "%.3f");
                 if (ImGui::IsItemActivated()) doc().beginEdit();
-                if (changed) setDocumentPosition(doc(), ref, {xyz[0], xyz[1], xyz[2]});
+                if (changed) {
+                    Json component = Json::object(), position = Json::array();
+                    for (float coordinate : xyz) position.push(Json::number(double(coordinate), 3));
+                    component.set("position", position);
+                    writeDocumentComponent(doc(), ref, DocumentComponentKind::Transform, component);
+                }
             }
             const Json& lo = source["min"];
             const Json& hi = source["max"];
@@ -191,10 +196,14 @@ void Editor::drawFpsSceneInspector() {
                 ImGui::SetNextItemWidth(-1);
                 bool changedMax = ImGui::DragFloat3("##colliderMax", maximum, 0.05f, 0, 0, "%.3f");
                 if (ImGui::IsItemActivated()) doc().beginEdit();
-                if (changedMin || changedMax)
-                    setDocumentColliderBounds(doc(), ref,
-                        {minimum[0], minimum[1], minimum[2]},
-                        {maximum[0], maximum[1], maximum[2]});
+                if (changedMin || changedMax) {
+                    Json component = Json::object(), minArray = Json::array(), maxArray = Json::array();
+                    for (float coordinate : minimum) minArray.push(Json::number(double(coordinate), 3));
+                    for (float coordinate : maximum) maxArray.push(Json::number(double(coordinate), 3));
+                    component.set("min", minArray);
+                    component.set("max", maxArray);
+                    writeDocumentComponent(doc(), ref, DocumentComponentKind::Collider, component);
+                }
             }
             ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
         } else {
