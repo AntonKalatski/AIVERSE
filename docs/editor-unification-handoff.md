@@ -653,3 +653,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 4. Incrementally migrate RTS + FPS launch, projectile, hit/damage and weapon states to the same ECS systems. Document which exact adapters remain; do not claim all mechanics universal until cross-genre acceptance gates pass.
 5. Update this handoff after every substantive code change (exact commit, result, next owner).
 
+
+### 2026-11-18 — Universal ECS projectile + damage resolution, stage C
+- Commit `c957986`: registered `aiverse_ecs_cross_genre_projectile_test` in root `CMakeLists.txt` (after `modules/fps` creates `aiverse_world`), with public `AIVERSE::libraries`, `aiverse_engine` and **collision-only** `aiverse_world` linkage. No `aiverse_fps` or `aiverse_game`. This complements the existing flight-only `ecs_projectile_composition_test` with health/damage queue coverage.
+- **Verification:** no compiler/CTest result has yet been obtained. Next register standalone suite and add an explicit documented mechanics-composition recipe.
