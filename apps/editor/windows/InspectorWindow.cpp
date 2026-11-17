@@ -2,7 +2,6 @@
 // trigger, map, or a rules item (type / resource / tech / faction) with block templates.
 #include <algorithm>
 #include "../Editor.h"
-#include "LuaCustomInspector.h"
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 #include "../DetailsPanel.h"
@@ -82,7 +81,7 @@ public:
             return;
         }
         switch (s.kind) {
-            case Selection::Entity: case Selection::Live: details_.draw(ed); customLua_.draw(ed); break;   // «Детали»: one or many world objects
+            case Selection::Entity: case Selection::Live: details_.draw(ed); break;   // «Детали»: one or many world objects
             case Selection::MapBlock: mapJson(ed, s.key, ICON_BRACES, s.key, "Блок карты (JSON)"); break;
             case Selection::Road: road(ed); break;
             case Selection::Body: body(ed); break;
@@ -106,7 +105,6 @@ public:
     }
 
 private:
-    LuaCustomInspector customLua_;
     static std::string ownerName(Editor& ed, int owner) {
         auto& d = ed.doc().data;
         return owner == 0 ? "Нейтральный" : owner < 0 ? "Враждебные монстры" : owner <= int(d.players.size()) ? d.players[size_t(owner - 1)].name : "?";
