@@ -124,6 +124,12 @@ Commits `d10016f` and `f39b62a` change `modules/rts/view/RtsAnimate.cpp`: `ProcI
 
 This optimization has not been built or benchmarked by the owner yet. Compare warm `[view-objects]` animate (~1.30–1.35 ms) and `[view-stages]` objects (~7.6–7.8 ms), as well as model/animation correctness. If CPU improvement is negligible, investigate remaining uninstrumented object-loop cost rather than repeating speculative micro-optimizations.
 
+## Same-session MDI A/B benchmark (commit `7298992`)
+
+`apps/editor/windows/SceneWindow.cpp` now offers `Benchmark MDI OFF / ON (300 frames each)` when the device supports MDI and the editor is not playing. It freezes the **rendered** camera at start, warms up each mode for 60 frames, then collects 300 CPU timings for the Scene render section and average renderer draw submissions. The result shows mean, P95 and ON-vs-OFF CPU delta. The same loaded Geometry Pool is retained across both phases, unlike disabling `AIVERSE_EXPERIMENTAL_METAL_ICB` at process startup. The scene itself is not frozen: animated objects and time-dependent FX may still vary, so rerun in reverse order if differences are small. The benchmark does **not** measure full editor frame CPU or correctly attributed per-mode GPU time. Do not claim a GPU speedup from this output. GPU frame timings are asynchronous; a future per-command-buffer tagging system would be needed to compare modes reliably.
+
+The benchmark code is committed but **has not been compiled or run on the owner's Mac**. Build and verify both phases render identically, the button works, and the popup remains open long enough to read results. Metal ICB remains opt-in and potentially unstable.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
