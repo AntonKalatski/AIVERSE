@@ -1020,7 +1020,9 @@ public:
             resources.icbCapacity = drawCount;
         }
         id<MTLIndirectCommandBuffer> icb = resources.icb;
-        [icb resetWithRange:NSMakeRange(0, resources.icbCapacity)];
+        // Only commands used by this submission need resetting. Larger pooled
+        // capacity is untouched and cannot execute (execute range is drawCount).
+        [icb resetWithRange:NSMakeRange(0, drawCount)];
 
         // Uniform buffers are private to this submission. Preserve their lifetime
         // until the frame's GPU fence has completed; never reference setBytes
@@ -1039,6 +1041,11 @@ public:
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
+        const auto& modelUniforms = indirectUniformSnapshots_[0];
+        constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
+        const size_t instanceCapacity = modelUniforms.size() / kModelInstanceBytes;
+        if (modelUniforms.empty() || ibOffset_ > ib->size) return false;
+        const size_t indexCapacity = (ib->size - ibOffset_) / indexBytes;
         for (uint32_t i = 0; i < drawCount; ++i) {
             DrawIndexedIndirectCommand args{};
             std::memcpy(&args, static_cast<const uint8_t*>(indirectData.contents) +
@@ -1046,14 +1053,10 @@ public:
             if (!args.indexCount || !args.instanceCount) continue;
             // Instance IDs index the model uniform array. Reject malformed commands
             // before encoding an ICB that could access beyond its snapshot.
-            const auto& modelUniforms = indirectUniformSnapshots_[0];
-            constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
-            if (modelUniforms.empty() ||
-                uint64_t(args.firstInstance) + args.instanceCount > modelUniforms.size() / kModelInstanceBytes)
+            if (uint64_t(args.firstInstance) + args.instanceCount > instanceCapacity)
                 return false;
-            if (size_t(args.firstIndex) > (ib->size - std::min(ib->size,ibOffset_)) / indexBytes ||
-                ibOffset_ > ib->size ||
-                size_t(args.indexCount) > (ib->size - ibOffset_) / indexBytes - args.firstIndex)
+            if (size_t(args.firstIndex) > indexCapacity ||
+                size_t(args.indexCount) > indexCapacity - args.firstIndex)
                 return false;
             id<MTLIndirectRenderCommand> command = [icb indirectRenderCommandAtIndex:i];
             if (!command) return false;
