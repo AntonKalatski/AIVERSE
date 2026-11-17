@@ -191,6 +191,12 @@ public:
 
     void beginScene(const RTSCamera& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
+    // Editor Scene only: render selected geometry into a depth-tested mask
+    // and composite its exterior silhouette in screen pixels.
+    void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
+    bool sceneSelectionOutlineEnabled() const { return sceneSelectionOutline_; }
+    void drawSelectionMesh(const Mesh& m, const mat4& model,
+                           float4 color, float4 selection);
     void line(float3 a, float3 b, uint32_t color);
     void triangle(float3 a, float3 b, float3 c, uint32_t color);    // flat, alpha-blended
     void quadXZ(float3 a, float3 b, float width, uint32_t color, float y = 0.02f);
@@ -293,7 +299,11 @@ public:
     void bindBakedTerrain(int uniformSlot, int lightmapSlot, int maskSlot);
 
 private:
-    struct DrawItem { const Mesh* mesh; mat4 model; float4 color; uint32_t flags; float specular, emissive; };
+    struct DrawItem {
+        const Mesh* mesh; mat4 model; float4 color;
+        uint32_t flags; float specular, emissive;
+        float4 selection{0, 0, 0, 0};
+    };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
         bool rigid = false, castShadow = false;
@@ -320,6 +330,9 @@ private:
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced);
     void drawModelBatch(const uint32_t* items, uint32_t count, int phase);
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
+    bool initSelectionOutline();
+    void renderSelectionOutline(const gfx::PassDesc& scenePass, int width, int height);
+
     void renderReflection();        // water planar reflection (Renderer3DReflect.cpp, lighting agent)
     void renderSpotShadow();        // depth of the casters seen from the main spot light (same file)
     void computeShadowMatrix(const RTSCamera& cam, float aspect);
@@ -337,6 +350,13 @@ private:
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
     gfx::BufferHandle lineVB_, triVB_;
     gfx::TextureHandle shadowMap_;
+    gfx::TextureHandle sceneSelectionMask_;
+    gfx::ShaderHandle sceneSelectionEdgeShader_;
+    gfx::PipelineHandle sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_;
+    gfx::BufferHandle sceneSelectionTriangle_;
+    int sceneSelectionWidth_ = 0, sceneSelectionHeight_ = 0;
+    bool sceneSelectionOutline_ = false, selectionMaskPass_ = false;
+
     int shadowSize_ = 0;
     int highShadowSize_ = 2048;
     float shadowTexelWorld_ = 0.05f;   // world size of one shadow-map texel
