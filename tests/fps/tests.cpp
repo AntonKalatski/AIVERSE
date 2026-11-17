@@ -302,6 +302,68 @@ void ecsActorAuthorityParity(Json rules,Json map) {
     ecs->step();
     CHECK(state(*ecs).actors[0].pos.x==ecs->world().tryGetConst<fps::ActorRuntime>(e)->value.pos.x);
 }
+void ecsDynamicAuthorityParity(Json rules,Json map) {
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    fps::Projectile projectile;
+    projectile.id=9001;projectile.owner=1;projectile.expires=1000;
+    projectile.pos={40_fx,10_fx,40_fx};
+    fps::Loot loot;
+    loot.id=9002;loot.type=3;loot.count=2;loot.pos={40_fx,0_fx,40_fx};
+    fps::Vehicle vehicle;
+    vehicle.id=9003;vehicle.health=450;vehicle.pos={50_fx,0_fx,50_fx};
+    state(*legacy).projectiles.push_back(projectile);
+    state(*legacy).loot.push_back(loot);
+    state(*legacy).vehicles.push_back(vehicle);
+    auto& world=ecs->world();
+    auto* index=world.resource<fps::DynamicEntityIndex>();
+    CHECK(index);
+    auto add=[&](uint8_t kind,uint32_t id) {
+        Entity e=world.create();
+        index->byKey[(uint64_t(kind)<<32)|id]=e;
+        return e;
+    };
+    const Entity p=add(1,projectile.id),l=add(2,loot.id),v=add(3,vehicle.id);
+    world.add<fps::ProjectileRuntime>(p,fps::ProjectileRuntime{projectile,0});
+    world.add<fps::LootRuntime>(l,fps::LootRuntime{loot,0});
+    world.add<fps::VehicleRuntime>(v,fps::VehicleRuntime{vehicle,0});
+    CHECK(legacy->checksum()==ecs->checksum()); // authoritative ECS without a tick
+    SimSnapshot snapshot;
+    ecs->saveState(snapshot);
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();
+        CHECK(legacy->checksum()==ecs->checksum());
+        CHECK(state(*ecs).projectiles==state(*legacy).projectiles);
+        CHECK(state(*ecs).loot.size()==state(*legacy).loot.size());
+        CHECK(state(*ecs).vehicles.size()==state(*legacy).vehicles.size());
+    }
+    auto* authoritativeLoot=world.tryGet<fps::LootRuntime>(l);
+    CHECK(authoritativeLoot);
+    authoritativeLoot->value.count=9;
+    state(*legacy).loot[0].count=9;
+    CHECK(ecs->checksum()==legacy->checksum()); // direct ECS edit immediately visible
+    ecs->step();legacy->step();
+    CHECK(state(*ecs).loot[0].count==9);
+    CHECK(ecs->checksum()==legacy->checksum());
+    const auto encoded=ecs->serialize();
+    auto saved=simulation(ecsRules,map);
+    CHECK(saved->deserialize(encoded));
+    CHECK(saved->checksum()==ecs->checksum());
+    // Structural removal is controlled by ECS membership, not State arrays.
+    world.destroy(l);
+    state(*legacy).loot.clear();
+    ecs->step();legacy->step();
+    CHECK(state(*ecs).loot.empty());
+    CHECK(ecs->checksum()==legacy->checksum());
+    // A snapshot taken before the removal still restores all runtime payloads.
+    ecs->loadState(snapshot);
+    CHECK(ecs->world().alive(l));
+    CHECK(ecs->world().tryGetConst<fps::LootRuntime>(l)!=nullptr);
+    CHECK(ecs->world().tryGetConst<fps::ProjectileRuntime>(p)!=nullptr);
+    CHECK(ecs->world().tryGetConst<fps::VehicleRuntime>(v)!=nullptr);
+}
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
     auto a=simulation(rules,map),b=simulation(rules,map);
@@ -384,6 +446,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
