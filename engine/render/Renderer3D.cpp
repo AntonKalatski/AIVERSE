@@ -247,8 +247,9 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
     f.shadow[1] = zeroToOne ? 1.0f : 0.5f;
     f.shadow[2] = zeroToOne ? 0.0f : 0.5f;
     f.shadow[3] = 1.0f / float(std::max(shadowSize_, 16));
-    // Filter taps: High 16, Medium 8, Low 4. Medium/high add nine blocker-depth reads.
-    f.quality[0] = quality_ == ShadowQuality::High ? 16.0f : quality_ == ShadowQuality::Medium ? 8.0f : 4.0f;
+    // More PCF samples preserve fine shadow silhouettes in wide penumbrae.
+    // Low stays at four taps; medium/high retain the nine-sample blocker search.
+    f.quality[0] = quality_ == ShadowQuality::High ? 24.0f : quality_ == ShadowQuality::Medium ? 12.0f : 4.0f;
     {
         // Maximum search/filter radius; PCSS can narrow contacts to half a texel.
         float radiusWorld = std::max(lighting.shadowSoftness, shadowTexelWorld_ * 1.5f);
