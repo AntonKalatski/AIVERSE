@@ -171,7 +171,13 @@ void main() {
     v_uv = uvTransform(a_uv);
     v_col = a_col;
 #if defined(MATERIAL_PALETTE)
+#if defined(MATERIAL_INSTANCE_PALETTE)
+    // Each indirect command selects its own full-float PBR palette slot;
+    // node transforms and primitive geometry remain separate (no mesh merge).
+    v_material = int(I.lod.z + 0.5);
+#else
     v_material = int(a_weights.x * 255.0 + 0.5);
+#endif
 #endif
     v_tint = I.tint; v_team = I.team; v_draw = I.draw; v_lod = I.lod;
 #if defined(LIGHTMAP)
@@ -501,7 +507,14 @@ void main() {
     "#if defined(SKINNED) || defined(BAKED)\n#define SKIN_ARG , constant MU3& sk [[buffer(4)]]\n#else\n#define SKIN_ARG\n#endif\n" \
     "#if defined(BAKED)\n#define BAKED_ARG , texture2d<float> tex7 [[texture(7)]]\n#else\n#define BAKED_ARG\n#endif\n" \
     "#if defined(MORPH)\n#define MORPH_ARG , constant MU4& mo [[buffer(5)]], texture2d<float> tex8 [[texture(8)]]\n#else\n#define MORPH_ARG\n#endif\n" \
-    "#define VERTEX_ARGS VIn in [[stage_in]], uint iid [[instance_id]], uint vid [[vertex_id]], constant MU0& u [[buffer(1)]], " \
+    "#if defined(GPU_INSTANCE_BUFFER)\n" \
+    "#define INSTANCE_ARG device const Inst* gpuInstances [[buffer(1)]]\n" \
+    "#define INSTANCE gpuInstances[iid]\n" \
+    "#else\n" \
+    "#define INSTANCE_ARG constant MU0& u [[buffer(1)]]\n" \
+    "#if AIVERSE_INST > 1\n#define INSTANCE u.inst[iid]\n#else\n#define INSTANCE u.inst[0]\n#endif\n" \
+    "#endif\n" \
+    "#define VERTEX_ARGS VIn in [[stage_in]], uint iid [[instance_id]], uint vid [[vertex_id]], INSTANCE_ARG, " \
     "constant U1& f [[buffer(2)]], constant MU2& m [[buffer(3)]] SKIN_ARG BAKED_ARG MORPH_ARG GI_VARG PROBE_VARG\n" \
     "#if defined(SKINNED) || defined(BAKED)\n#define SKIN_PASS , sk\n#else\n#define SKIN_PASS\n#endif\n" \
     "#if defined(BAKED)\n#define BAKED_PASS , tex7\n#else\n#define BAKED_PASS\n#endif\n" \
@@ -552,7 +565,7 @@ void main() {
     "    float2 uv = uv0 * m.uv0.zw;\n" \
     "    return float2(c * uv.x + s * uv.y, -s * uv.x + c * uv.y) + m.uv0.xy;\n" \
     "}\n" \
-    "#if AIVERSE_INST > 1\n#define INSTANCE u.inst[iid]\n#else\n#define INSTANCE u.inst[0]\n#endif\n"
+    "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
     "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX
@@ -592,7 +605,11 @@ vertex VOut vs_main(VERTEX_ARGS) {
     o.uv = uvTransform(m, in.uv);
     o.col = in.col;
 #if defined(MATERIAL_PALETTE)
+#if defined(MATERIAL_INSTANCE_PALETTE)
+    o.material = uint(I.lod.z + 0.5);
+#else
     o.material = uint(in.weights.x * 255.0 + 0.5);
+#endif
 #endif
     o.tint = I.tint; o.team = I.team; o.draw = I.draw; o.lod = I.lod;
 #if defined(LIGHTMAP)
@@ -616,11 +633,42 @@ static float modelNoise3(float3 x) {
                mix(mix(hash3(i + float3(0, 0, 1)), hash3(i + float3(1, 0, 1)), fr.x), mix(hash3(i + float3(0, 1, 1)), hash3(i + float3(1, 1, 1)), fr.x), fr.y), fr.z);
 }
 
+#if defined(AIVERSE_ICB_PBR)
+struct IcbPbrTextures {
+    depth2d<float> tex0 [[id(0)]];
+    sampler s0 [[id(1)]];
+    texture2d<float> tex1 [[id(2)]];
+    sampler s1 [[id(3)]];
+    texture2d<float> tex2 [[id(4)]];
+    sampler s2 [[id(5)]];
+    texture2d<float> tex3 [[id(6)]];
+    sampler s3 [[id(7)]];
+    texture2d<float> tex4 [[id(8)]];
+    sampler s4 [[id(9)]];
+    texture2d<float> tex5 [[id(10)]];
+    sampler s5 [[id(11)]];
+    texture2d<float> tex6 [[id(12)]];
+    sampler s6 [[id(13)]];
+    texture2d<float> tex9 [[id(18)]];
+    sampler s9 [[id(19)]];
+    texture2d<float> tex10 [[id(20)]];
+    sampler s10 [[id(21)]];
+    texture2d<float> tex11 [[id(22)]];
+    sampler s11 [[id(23)]];
+    depth2d<float> tex12 [[id(24)]];
+    sampler s12 [[id(25)]];
+};
+#endif
+
 fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         constant U1& f [[buffer(2)]], constant MU2& sourceMaterial [[buffer(3)]],
+                        constant LightU& lu [[buffer(6)]],
 #if defined(MATERIAL_PALETTE)
                         constant float4* materials [[buffer(4)]],
 #endif
+#if defined(AIVERSE_ICB_PBR)
+                        constant IcbPbrTextures& icbTextures [[buffer(8)]]
+#else
                         depth2d<float> tex0 [[texture(0)]], sampler s0 [[sampler(0)]],
                         texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]],
                         texture2d<float> tex2 [[texture(2)]], sampler s2 [[sampler(2)]],
@@ -628,10 +676,36 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex4 [[texture(4)]], sampler s4 [[sampler(4)]],
                         texture2d<float> tex5 [[texture(5)]], sampler s5 [[sampler(5)]],
                         texture2d<float> tex6 [[texture(6)]], sampler s6 [[sampler(6)]],
-                        constant LightU& lu [[buffer(6)]], texture2d<float> tex9 [[texture(9)]], sampler s9 [[sampler(9)]],
+                        texture2d<float> tex9 [[texture(9)]], sampler s9 [[sampler(9)]],
                         texture2d<float> tex10 [[texture(10)]], sampler s10 [[sampler(10)]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
-                        depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]] GI_FARGS) {
+                        depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
+#endif
+                        GI_FARGS) {
+#if defined(AIVERSE_ICB_PBR)
+#define tex0 icbTextures.tex0
+#define s0 icbTextures.s0
+#define tex1 icbTextures.tex1
+#define s1 icbTextures.s1
+#define tex2 icbTextures.tex2
+#define s2 icbTextures.s2
+#define tex3 icbTextures.tex3
+#define s3 icbTextures.s3
+#define tex4 icbTextures.tex4
+#define s4 icbTextures.s4
+#define tex5 icbTextures.tex5
+#define s5 icbTextures.s5
+#define tex6 icbTextures.tex6
+#define s6 icbTextures.s6
+#define tex9 icbTextures.tex9
+#define s9 icbTextures.s9
+#define tex10 icbTextures.tex10
+#define s10 icbTextures.s10
+#define tex11 icbTextures.tex11
+#define s11 icbTextures.s11
+#define tex12 icbTextures.tex12
+#define s12 icbTextures.s12
+#endif
 #if defined(STUDIO_DEBUG_VIEW)
 #if STUDIO_DEBUG_VIEW == 2
     return float4(normalize(in.nrm) * .5 + .5, 1.0);
