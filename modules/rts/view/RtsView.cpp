@@ -271,7 +271,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
     placementCacheHits_ = placementCacheMisses_ = 0;
     staticAnimateFastHits_ = 0;
-    double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0;
+    double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0, objectShadowMs = 0.0;
     size_t tracedObjects = 0;
     for (size_t i = 0; i < s.objects.size(); ++i) {
         const auto objectStart = traceView ? std::chrono::steady_clock::now() : viewStart;
@@ -320,13 +320,22 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             objectDrawMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - beforeDraw).count();
             ++tracedObjects;
         }
-        EntityFxValues fx;
-        const bool hasFx = fxFor(o, fx);
-        if (!L.shadow.image.empty()) addGroundShadow(L, st, o.pos, ground, hasFx ? &fx : nullptr);
-        if (L.flyer && L.shadow.image.empty()) { // ground shadow blob helps reading the height (unless the type has its own)
-            const float k = hasFx ? fx.v[EntityFxValues::kShadowScale] : 1.0f, a = hasFx ? std::clamp(fx.opacity() * fx.v[EntityFxValues::kShadow], 0.0f, 1.0f) : 1.0f;
-            if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
+        const auto beforeShadow = traceView ? std::chrono::steady_clock::now() : viewStart;
+        // The model FX was handled by drawObject(). Query FX again only
+        // when an additional ground or flyer shadow actually needs it.
+        const bool groundShadow = !L.shadow.image.empty();
+        if (groundShadow || L.flyer) {
+            EntityFxValues fx;
+            const bool hasFx = fxFor(o, fx);
+            if (groundShadow) {
+                addGroundShadow(L, st, o.pos, ground, hasFx ? &fx : nullptr);
+            } else { // flyer blob, unless the type supplies an authored shadow
+                const float k = hasFx ? fx.v[EntityFxValues::kShadowScale] : 1.0f;
+                const float a = hasFx ? std::clamp(fx.opacity() * fx.v[EntityFxValues::kShadow], 0.0f, 1.0f) : 1.0f;
+                if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
+            }
         }
+        if (traceView) objectShadowMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - beforeShadow).count();
     }
     const auto afterObjects = std::chrono::steady_clock::now();
     drawTracers(r, dt, &grid);
@@ -387,7 +396,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};
-        static double objectTotals[3] = {};
+        static double objectTotals[4] = {};
         static size_t objectCount = 0;
         static uint64_t placementHits = 0, placementMisses = 0;
         static uint64_t staticFastHits = 0;
@@ -400,6 +409,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         objectTotals[0] += objectStateMs;
         objectTotals[1] += objectAnimateMs;
         objectTotals[2] += objectDrawMs;
+        objectTotals[3] += objectShadowMs;
         objectCount += tracedObjects;
         placementHits += placementCacheHits_;
         placementMisses += placementCacheMisses_;
@@ -409,9 +419,9 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\n",
                 totals[0]/samples, totals[1]/samples, totals[2]/samples,
                 totals[3]/samples, totals[4]/samples);
-            std::fprintf(stderr, "[view-objects] avg/120 state=%.3f animate=%.3f drawObject=%.3f ms objects/frame=%.1f\n",
+            std::fprintf(stderr, "[view-objects] avg/120 state=%.3f animate=%.3f drawObject=%.3f shadow=%.3f ms objects/frame=%.1f\n",
                          objectTotals[0]/samples, objectTotals[1]/samples, objectTotals[2]/samples,
-                         double(objectCount)/samples);
+                         objectTotals[3]/samples, double(objectCount)/samples);
             if (placementHits + placementMisses)
                 std::fprintf(stderr, "[rts-placement] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\n",
                     double(placementHits)/samples, double(placementMisses)/samples,
