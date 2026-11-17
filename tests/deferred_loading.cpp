@@ -159,8 +159,13 @@ int aiverseMain(int, char**) {
     check(dev.alive==beforeTextures+2,"sampler modes aliased");
     render::releaseModel(dev,texturedA);render::releaseModel(dev,texturedB);render::releaseModel(dev,nearest);
     check(dev.alive==beforeTextures+2,"model destroyed shared texture");
+    // Explicit model release must return the shared-image leases so a
+    // residency trim can free abandoned GPU images and decoded source bytes.
+    cache->trim(dev);
+    check(dev.alive==beforeTextures && cache->decodedBytes()==0 && cache->gpuCount()==0,
+          "trim did not release unreferenced GPU textures and CPU decoded cache");
     cache->shutdown(dev);
-    check(dev.alive==beforeTextures && cache->decodedBytes()==0,"shared texture leak / decoded cache not cleared");
+    check(dev.alive==beforeTextures,"shared texture shutdown leak");
     render::Model skin;
     render::Node node; node.skin=0; node.mesh=0; skin.nodes.push_back(node);
     render::Skin bones; bones.joints.push_back(0); bones.inverseBind.push_back(render::mat4{}); skin.skins.push_back(bones);
