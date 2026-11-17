@@ -137,6 +137,33 @@ struct ActorEntityVitals {
 struct ActorEntityIndex {
     std::vector<Entity> bySlot; // slot 1 -> index 0; stable across ticks
 };
+ 
+// Spawned FPS objects have ECS identities as well. IDs are stable source IDs
+// already present in the legacy save/net protocol. The ECS view is derived
+// until the authoritative simulation has migrated off State vectors.
+struct ProjectileEntity {
+    uint32_t id = 0;
+    uint8_t owner = 0, kind = 0;
+    Vec3 position{}, velocity{};
+    int32_t damage = 0;
+};
+struct LootEntity {
+    uint32_t id = 0;
+    Vec3 position{};
+    int32_t type = 0, count = 0;
+};
+struct VehicleEntity {
+    uint32_t id = 0;
+    Vec3 position{}, velocity{};
+    Fixed yaw{};
+    int32_t health = 0;
+    uint8_t driver = 0;
+};
+struct DynamicEntityIndex {
+    // Packed key: top 8 bits = kind, low 32 bits = existing object ID.
+    std::map<uint64_t, Entity> byKey;
+};
+
 
 struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
 struct State {
@@ -176,6 +203,7 @@ public:
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
     Entity actorEntity(Simulation& sim, uint8_t slot) const;
     void syncActorEntities(Simulation& sim) const; // compatibility mirror (not gameplay authority)
+    void syncDynamicEntities(Simulation& sim) const; // projectile, loot and vehicle ECS views
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
