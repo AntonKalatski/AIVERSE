@@ -287,6 +287,11 @@ void ecsActorAuthorityParity(Json rules,Json map) {
         }
         if(tick==49)ecs->saveState(restore);
     }
+    // The same v9 save must load across the storage-mode boundary.
+    const auto legacyBytes=legacy->serialize();
+    auto ecsFromLegacy=simulation(ecsRules,map);
+    CHECK(ecsFromLegacy->deserialize(legacyBytes));
+    CHECK(ecsFromLegacy->checksum()==legacy->checksum());
     auto bytes=ecs->serialize();
     auto reloaded=simulation(ecsRules,map);
     CHECK(reloaded->deserialize(bytes));
@@ -339,6 +344,19 @@ void ecsDamageAuthorityParity(Json rules,Json map) {
     CHECK(state(*legacy).actors[1].health==0);
     CHECK(state(*legacy).actors[0].kills==1);
     CHECK(state(*ecs).actors[0].hits>0);
+}
+void ecsDuplicateDynamicIdRejected(Json rules,Json map) {
+    rules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto sim=simulation(rules,map);
+    fps::Loot loot;loot.id=7001;loot.type=1;loot.count=1;
+    auto a=sim->world().create(),b=sim->world().create();
+    sim->world().add<fps::LootRuntime>(a,fps::LootRuntime{loot,0});
+    sim->world().add<fps::LootRuntime>(b,fps::LootRuntime{loot,1});
+    bool rejected=false;
+    try {sim->step();}
+    catch(const std::logic_error&){rejected=true;}
+    CHECK(rejected);
+    CHECK(sim->tick()==0);
 }
 void ecsDynamicAuthorityParity(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
@@ -483,6 +501,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
