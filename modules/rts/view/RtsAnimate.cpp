@@ -200,18 +200,24 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     st.castAge += dt;
     if (st.dead) st.eventAge[kProcEvDeath] = st.deathAge;
 
-    float locomotionSpeed = -1.f;
+    // The same entity animation entry is used for locomotion, stride and
+    // programmable animation. Resolve it once instead of three map lookups
+    // per visible object (especially costly in large editor scenes).
+    EntityAnimationEntry* control = nullptr;
     if (fx_) {
-        auto it = fx_->animations.find(o.entity.packed());
-        if (it != fx_->animations.end()) {
-            auto value = it->second.parameters.values.find("locomotionSpeed");
-            if (value != it->second.parameters.values.end()) locomotionSpeed = value->second;
-        }
+        auto found = fx_->animations.find(o.entity.packed());
+        if (found != fx_->animations.end()) control = &found->second;
+    }
+    float locomotionSpeed = -1.f;
+    float kingstonStride = 1.f;
+    if (control) {
+        const auto& values = control->parameters.values;
+        auto locomotion = values.find("locomotionSpeed");
+        if (locomotion != values.end()) locomotionSpeed = locomotion->second;
+        auto stride = values.find("strideScale");
+        if (stride != values.end()) kingstonStride = std::clamp(stride->second, .7f, 1.f);
     }
     if (locomotionSpeed >= 0.f) st.speed = locomotionSpeed;
-    // Kingston corner cadence scaling.
-    float kingstonStride=1.f;
-    if(fx_){auto a=fx_->animations.find(o.entity.packed());if(a!=fx_->animations.end()){auto v=a->second.parameters.values.find("strideScale");if(v!=a->second.parameters.values.end())kingstonStride=std::clamp(v->second,.7f,1.f);}}
     const bool moving = !st.dead && (locomotionSpeed >= 0.f ? st.speed > .015f : (o.moving || st.speed > .15f));
     const uint32_t state = stateBits(st, o, moving);
 
@@ -229,8 +235,6 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     Animator& A = st.anim;
     const Model& m = *ch.model;
     auto program=ch.graph;
-    EntityAnimationEntry* control=nullptr;
-    if(fx_){auto found=fx_->animations.find(o.entity.packed());if(found!=fx_->animations.end())control=&found->second;}
     if(control&&control->graph){
         if(!ch.programmableAnimation)control->error="type view.programmableAnimation must be enabled";
         else {
