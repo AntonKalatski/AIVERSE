@@ -321,6 +321,13 @@ public:
         double submitMs=0,occlusionMs=0;
         std::array<double,5> selectMs{},sortMs{},drawMs{};
         std::array<uint32_t,5> draws{},instances{},triangles{};
+        // One current-camera colour view only (opaque + blended).
+        // Excludes shadow/reflection, extra capture of opaque, outlines and
+        // depth-only passes. Drawn instances count multiplicatively.
+        // Custom renderers (terrain, sprites etc.) are not accounted for.
+        uint64_t cameraModelTriangles=0;
+        uint64_t cameraMeshTriangles=0;
+        uint64_t cameraOverlayTriangles=0;
         uint32_t cachedModels=0,lodNodes=0,lodTransitionNodes=0;
     };
     void setProfiling(bool enabled) { profiling_=enabled; }
