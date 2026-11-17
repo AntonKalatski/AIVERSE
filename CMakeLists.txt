@@ -109,8 +109,8 @@ add_library(aiverse_engine STATIC
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
 target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-// ECS 2.0 opt-in correctness suites imported from feature/ecs-architecture-benchmarks.
-// This does NOT enable production parallel scheduling or change default gameplay.
+# ECS 2.0 opt-in correctness suites imported from feature/ecs-architecture-benchmarks.
+# This does NOT enable production parallel scheduling or change default gameplay.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     enable_testing()
     find_package(Threads REQUIRED)
@@ -179,7 +179,7 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
-// Experimental RTS transform preprocessing remains OFF by default.
+# Experimental RTS transform preprocessing remains OFF by default.
 option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
     "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
 if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
