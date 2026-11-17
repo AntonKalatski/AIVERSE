@@ -352,6 +352,12 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - GitHub Actions had no associated pull-request workflow results exposed for commit `7149c7b` when checked. **No CI green status should be claimed.**
 - Current status: latest manual full ECS suite from user passed **before** these additions; rerun new branch after obtaining checkout and compare real RTS/FPS tests.
 
+## 2026-11-17 — Deterministic command lane producer safety
+
+- `44ef4ff`: `DeterministicCommands` queues now have per-lane mutexes and single-producer thread ownership until flush/discard. Mixed-thread calls to the same lane throw `std::logic_error` rather than corrupting vector storage or letting interleavings decide gameplay command order. A flush moves a stable batch out, resets producer ownership, then replays lane-major commands; commands enqueued from callbacks remain in the next batch. **Caller must still join all worker producers before flush/discard; this is not a concurrent flush protocol.**
+- `5ce3dbb`: `tests/ecs_experiments_test.cpp` validates same-lane mixed-thread rejection, separate lane acceptance, lane-major ordering, and ownership reset on subsequent flush.
+- These commits have not yet been built/tested on the user's Mac; previous green suite predates them.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
