@@ -793,6 +793,13 @@ void Renderer3D::renderModels(int phase) {
         identicalPointers.emplace(materialKey, id);
         materialGroup[i] = id;
     }
+    // Experimental opaque/shadow state ordering: put geometry sharing the same
+    // GPU vertex/index buffers together before primitive sorting. This can
+    // expose larger contiguous MDI candidates without crossing material groups.
+    // Disabled by default; A/B benchmark toggles modelMultiDrawEnabled_.
+    const bool mdiGeometrySort = modelMultiDrawEnabled_ && phase <= 1 &&
+        std::getenv("AIVERSE_MDI_GEOMETRY_SORT") &&
+        std::strcmp(std::getenv("AIVERSE_MDI_GEOMETRY_SORT"), "1") == 0;
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
@@ -801,6 +808,14 @@ void Renderer3D::renderModels(int phase) {
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
             if (materialGroup[a] != materialGroup[b]) return materialGroup[a] < materialGroup[b];
+            if (mdiGeometrySort) {
+                if (x.model->vb.id != y.model->vb.id) return x.model->vb.id < y.model->vb.id;
+                if (x.model->ib.id != y.model->ib.id) return x.model->ib.id < y.model->ib.id;
+                // Keep non-MDI-eligible material variants in their own runs.
+                if (x.flags != y.flags) return x.flags < y.flags;
+                if (x.gi != y.gi) return x.gi < y.gi;
+                if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
+            }
             if (x.prim != y.prim) return x.prim < y.prim;
             if (x.gi != y.gi) return x.gi < y.gi;
             if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
