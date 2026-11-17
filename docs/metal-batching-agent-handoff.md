@@ -168,6 +168,10 @@ Commits `8b42935`, `42abf98`, `cd37de8`: `Renderer3D` now reuses a member `indir
 
 **Not compiled or run on owner's Mac yet.** Check full and partial indirect updates, scene switching, command-count growth, multiple submissions per frame, ICB residency, GPU correctness, and memory high-watermark. Use `AIVERSE_ICB_PROFILE=1` and compare `[render-indirect] upload` to previous ~0.013–0.022 ms/submission. Repeat the fixed-camera OFF/ON 300-frame benchmark without profiling; the latest known overall ON penalty was +4.1% CPU in a different workload. Do not claim measured speedup until new logs arrive.
 
+## Repeated fixed-camera A/B benchmark (commit `1e6fec6`)
+
+Scene Batching now runs six 300-sample blocks in OFF/ON/ON/OFF/OFF/ON order, each preceded by 60 warmup frames, retaining the same captured camera and loaded geometry pool. It pools 900 samples per mode to report average, P95 and mean draw submissions. Alternating order reduces (but does not eliminate) time drift; scene simulation continues and GPU timings are asynchronous. The previous single-pair result after command snapshot pooling was OFF 12.084 ms vs ON 12.268 ms (+1.5%) with 415 vs 327 submissions. New benchmark code is committed but **not yet compiled or run on owner's Mac**. Confirm full completion, no crashes, and stable camera; report both means/P95/draws.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
