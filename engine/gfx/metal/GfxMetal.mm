@@ -82,6 +82,7 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
+    uint64_t frameSerial() const override { return frame_; }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
