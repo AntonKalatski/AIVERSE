@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run from any directory: bash tests/run_ecs_experiment_suite.sh [--bench] [--sanitize]
+# Keep this file LF-only; .gitattributes enforces eol=lf for *.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 CXX="${CXX:-c++}"
