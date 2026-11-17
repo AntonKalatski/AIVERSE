@@ -52,9 +52,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});
         fpsPreviewMesh_ = mesh.upload(*dev_);
     }
-    const uint64_t selectedKey =
-        fpsSelectedSceneObject_ >= 0 && fpsSelectedSceneObject_ < int(fpsSceneObjects_.size())
-            ? fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity : 0;
+    const uint64_t selectedKey = selection.kind == Selection::FpsObject ? selection.ref : 0;
     fpsSceneObjects_.clear();
     auto& instances = fpsSceneObjects_;
     const auto& fps = doc().data.fps;
@@ -124,7 +122,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
 bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
     if (fpsSelectedSceneObject_ < 0 || fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size()) ||
         !std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) return false;
-    const uint64_t key = fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity;
+    const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
     if (!key) return false;
     const bool spawn = (key & (uint64_t(1) << 63)) != 0;
     const size_t sourceIndex = size_t((key & ~(uint64_t(1) << 63)) - 1);
