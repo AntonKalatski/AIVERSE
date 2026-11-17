@@ -8,6 +8,7 @@
 #include <cmath>
 #include <filesystem>
 #include "Editor.h"
+#include "EditorSelectionAdapter.h"
 #include "core/SimTools.h"
 
 namespace fs = std::filesystem;
@@ -173,10 +174,10 @@ Selection Editor::pickObject(const Viewport& vp, const render::RTSCamera& cam, f
     if (ws_.project.isFps()) {
         const int index = pickFpsSceneObject(vp, cam, sx, sy);
         if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
-        Selection hit;
-        hit.kind = Selection::FpsObject;
-        hit.ref = fpsSceneObjects_[size_t(index)].entity;
-        return hit;
+        DocumentEntityRef ref;
+        if (!DocumentEntityRef::fromFpsKey(
+                fpsSceneObjects_[size_t(index)].entity, ref)) return {};
+        return selectionForDocumentEntity(ref);
     }
     if (!playing()) {
         const int n = pickEntity(vp, cam, sx, sy);
