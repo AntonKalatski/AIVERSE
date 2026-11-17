@@ -489,8 +489,35 @@ private:
                 float2 p;
                 if (!ed.sceneCam.worldToScreen({wx, wy, wz}, vp_.pointsW, vp_.pointsH, p)) continue;
                 const ImVec2 c(vp_.originX + p.x, vp_.originY + p.y);
-                dl->AddCircle(c, 12.0f, IM_COL32(88, 174, 255, 230), 32, 2.0f);
-                dl->AddCircleFilled(c, 2.5f, IM_COL32(170, 219, 255, 255));
+                // Screen-space selection pivot and projected XYZ transform axes.
+                // This is an editor overlay; a true occlusion-aware mesh silhouette
+                // requires a separate selection-mask pass in the scene renderer.
+                dl->AddCircle(c, 10.0f, IM_COL32(88, 174, 255, 225), 32, 1.8f);
+                dl->AddCircleFilled(c, 3.0f, IM_COL32(225, 238, 255, 255));
+                if (sel.kind == Selection::Entity || sel.kind == Selection::Live) {
+                    const float axisLength = 1.5f;
+                    const float3 origin = {wx, wy, wz};
+                    const float3 ends[3] = {
+                        {wx + axisLength, wy, wz},
+                        {wx, wy + axisLength, wz},
+                        {wx, wy, wz + axisLength}
+                    };
+                    const ImU32 colors[3] = {
+                        IM_COL32(245, 93, 91, 255),
+                        IM_COL32(102, 217, 131, 255),
+                        IM_COL32(91, 155, 250, 255)
+                    };
+                    const char* axisLabels[3] = {"X", "Y", "Z"};
+                    for (int axis = 0; axis < 3; ++axis) {
+                        float2 projected;
+                        if (!ed.sceneCam.worldToScreen(ends[axis], vp_.pointsW, vp_.pointsH, projected)) continue;
+                        const ImVec2 endpoint(vp_.originX + projected.x, vp_.originY + projected.y);
+                        dl->AddLine(c, endpoint, IM_COL32(14, 20, 29, 215), 5.0f);
+                        dl->AddLine(c, endpoint, colors[axis], 2.5f);
+                        dl->AddCircleFilled(endpoint, 4.0f, colors[axis]);
+                        dl->AddText(ImVec2(endpoint.x + 6, endpoint.y - 7), colors[axis], axisLabels[axis]);
+                    }
+                }
             }
             dl->PopClipRect();
         }
