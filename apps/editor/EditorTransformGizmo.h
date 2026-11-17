@@ -51,4 +51,45 @@ inline int pickMoveGizmoAxis(
     return nearest;
 }
 
+
+inline bool pickRotateYawGizmoRing(
+    const render::RTSCamera& camera,
+    float viewportWidth, float viewportHeight,
+    float viewportOriginX, float viewportOriginY,
+    float cursorX, float cursorY,
+    render::float3 pivot, float radius) {
+    if (!(radius > 0) || !std::isfinite(radius)) return false;
+    constexpr int segments = 64;
+    constexpr float tau = 6.2831853071795864769f;
+    render::float2 previous{};
+    bool previousValid = false;
+    for (int i = 0; i <= segments; ++i) {
+        const float angle = tau * float(i) / float(segments);
+        render::float2 current;
+        const bool valid = camera.worldToScreen(
+            pivot + render::float3{std::cos(angle) * radius, 0,
+                                   std::sin(angle) * radius},
+            viewportWidth, viewportHeight, current);
+        if (valid && previousValid) {
+            const float ax = previous.x + viewportOriginX;
+            const float ay = previous.y + viewportOriginY;
+            const float bx = current.x + viewportOriginX;
+            const float by = current.y + viewportOriginY;
+            const float vx = bx - ax, vy = by - ay;
+            const float len2 = vx * vx + vy * vy;
+            if (len2 > 1e-6f) {
+                const float t = std::clamp(
+                    ((cursorX - ax) * vx + (cursorY - ay) * vy) / len2,
+                    0.0f, 1.0f);
+                const float dx = cursorX - (ax + vx * t);
+                const float dy = cursorY - (ay + vy * t);
+                if (dx * dx + dy * dy < 100.0f) return true;
+            }
+        }
+        previous = current;
+        previousValid = valid;
+    }
+    return false;
+}
+
 } // namespace aiverse::editor
