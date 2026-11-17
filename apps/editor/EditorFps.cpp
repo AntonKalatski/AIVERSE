@@ -94,28 +94,18 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.pickable = true;
         instances.push_back(object);
     }
-    // Preserve the selected source identity when filtering or visibility changes
-    // shift the renderable indices (e.g. an invalid collider is skipped).
-    fpsSelectedSceneObject_ = -1;
-    if (selectedKey != 0) {
-        for (size_t i = 0; i < instances.size(); ++i) {
-            if (instances[i].entity == selectedKey) {
-                fpsSelectedSceneObject_ = int(i);
-                break;
-            }
-        }
-    }
-    if (fpsSelectedSceneObject_ >= 0) instances[size_t(fpsSelectedSceneObject_)].selected = true;
+    for (auto& object : instances)
+        object.selected = selectedKey != 0 && object.entity == selectedKey;
     submitSceneRenderables(r3d_, instances);
-    // Draw world-space XYZ handles at the selected object's centre. Unlike
-    // the bounds box, these retain a consistent apparent size while zooming.
-    if (fpsSelectedSceneObject_ >= 0) {
-        const auto& selected = instances[size_t(fpsSelectedSceneObject_)];
+    // Draw transform axes from the selected renderable, if visible.
+    for (const auto& selected : instances) {
+        if (!selected.selected) continue;
         const float3 centre = (selected.boundsMin + selected.boundsMax) * 0.5f;
         const float extent = std::max(0.35f, camera.distance * 0.075f);
         r3d_.line(centre, centre + float3{extent, 0, 0}, rgba(235, 84, 84));
         r3d_.line(centre, centre + float3{0, extent, 0}, rgba(93, 215, 113));
         r3d_.line(centre, centre + float3{0, 0, extent}, rgba(80, 153, 245));
+        break;
     }
 }
 
