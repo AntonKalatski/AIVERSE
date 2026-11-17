@@ -739,3 +739,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed: `tests/ecs_cross_genre_weapon_pipeline_test.cpp`. Saves a snapshot after the first shot and successful 8-tick replay, requests a dry fire with empty ammo, checks no projectile ID allocation or pending spawn and that the request is consumed; restores the post-shot snapshot, repeats the request and checks byte-stable simulation checksum. The template runs both ShooterTag and ArtilleryTag, with and without COW.
 - Verification: GitHub file update succeeded. **No native compilation, CTest, sanitizer or gameplay runtime verification executed**. Do not mark test passed.
 - Next action: run `bash tests/run_ecs_experiment_suite.sh`, targeted CTest and native consumer/catalog checks. Diagnose any failures before connecting real FPS/RTS weapon paths to the shared ECS systems.
+
+
+### 2026-11-18 — Cross-host dry-fire damage and checksum regression
+- Implementation SHA: `c75ff4e4f71da11f0bb8af2e55cb65e4797140c4`.
+- Changed: `tests/ecs_cross_genre_weapon_pipeline_test.cpp`. After snapshot restore and dry-fire replay, assert target health remains 65 and damage event summary remains exactly one 35-point hit. Return post-dry-fire checksum from each template host so ShooterTag vs ArtilleryTag and deep vs COW paths compare the **full** scenario, not only the first firing checkpoint. Original first-shot replay checksum equality is still asserted within each host.
+- Verification: GitHub source commit confirmed; C++ compilation and runtime test still **not verified**.
+- CI observation for prior documentation commit `a07dc450d875f1438d707bf2dd211a463dea9e42`: four GitHub Actions runs were queued (ECS 2.0 experimental checks #318, CI #1168, AIVERSE Studio validation #835, GPU batching focused regression #439), with no conclusions at time of inspection. This is not a passing test report.
+- Next: inspect the workflow outcomes and logs; run native suite/CTest, fix failures, and migrate FPS/RTS weapon adapters in isolated parity-checked increments.
