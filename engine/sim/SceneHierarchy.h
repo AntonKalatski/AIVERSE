@@ -183,10 +183,13 @@ public:
         w.eachExistingConst<Parent>([&](Entity e,const Parent& p){
             if(contains(e)&&contains(p.value))links.push_back({e,p.value});
         });
-        // Only mutate graph during rebuilding; ECS Parent storage remains
-        // untouched, even if a corrupt link was rejected. Caller may repair.
+        // Repair invalid/cyclic links after collecting the query results.
+        // This keeps authoritative Parent components consistent with graph.
         for(auto [child,parent]:links) {
-            if(cycle(child,parent))continue;
+            if(cycle(child,parent)) {
+                w.remove<Parent>(child);
+                continue;
+            }
             auto& node=nodes_.at(child.index);
             if(node.parent.valid())erase(nodes_.at(node.parent.index).children,child.index);
             else erase(roots_,child.index);
