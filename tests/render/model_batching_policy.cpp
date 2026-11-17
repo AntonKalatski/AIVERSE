@@ -412,6 +412,11 @@ int main() {
         CHECK(gpuIcbShouldFallbackToInstancing(true, 0));
         CHECK(!gpuIcbShouldFallbackToInstancing(true, 1));
         CHECK(!gpuIcbShouldFallbackToInstancing(false, 0));
+        // A conservative 0.5% noise deadband prefers baseline instancing.
+        CHECK(chooseSceneBatchMode({11.801, 11.953, 11.977}, 3) == 0);
+        CHECK(chooseSceneBatchMode({12.100, 11.800, 11.900}, 3) == 1);
+        CHECK(chooseSceneBatchMode({12.100, 12.020, 11.700}, 3) == 2);
+        CHECK(chooseSceneBatchMode({12.100, 12.070, 10.000}, 2) == 0);
     }
 
     std::puts("engine model batching policy: PASS");
