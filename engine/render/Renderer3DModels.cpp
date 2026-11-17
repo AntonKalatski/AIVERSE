@@ -886,6 +886,8 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
+    gpuAdaptiveInstancingFallback_ = false;
+    gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
 
@@ -904,8 +906,8 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* value = std::getenv("AIVERSE_GPU_ICB_RIGID");
         return value && std::strcmp(value, "1") == 0;
     }();
-    gpuModelSlots_.assign(modelItems_.size(), UINT32_MAX);
-    gpuModelRecords_.reserve(modelItems_.size() / 4);
+    std::vector<uint32_t> eligibleIndices;
+    eligibleIndices.reserve(modelItems_.size() / 4);
     for (uint32_t i = 0; i < modelItems_.size(); ++i) {
         const ModelItem& it = modelItems_[i];
         // This path is deliberately conservative: only opaque rigid static
@@ -924,6 +926,56 @@ void Renderer3D::prepareGpuModelDraws() {
             it.model->geometry || it.lodThreshold < 1.0f || it.lodInvert ||
             !it.model->vb.valid() || !it.model->ib.valid() || !it.indexCount)
             continue;
+        eligibleIndices.push_back(i);
+        if (!(it.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
+        if (it.gpuLodAvailable) ++gpuModelLodEligible_;
+    }
+    gpuModelEligible_ = uint32_t(eligibleIndices.size());
+    if (!gpuModelEligible_) return;
+    static const bool gpuIcb = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    static const bool adaptiveGpuIcb = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    static const uint32_t minGpuIcbCommands = [] {
+        const char* raw = std::getenv("AIVERSE_GPU_ICB_MIN_COMMANDS");
+        if (!raw || !*raw) return 2u;
+        char* end = nullptr;
+        const long value = std::strtol(raw, &end, 10);
+        return end != raw && *end == '\0' && value >= 2 && value <= 256
+            ? uint32_t(value) : 2u;
+    }();
+    const uint32_t groupCapacity = std::max(2u, instanceLimit_);
+    const uint32_t adaptiveMinimum = adaptiveGpuIcb ?
+        (gpuModelEligible_ < 256u ? 16u : 8u) : 2u;
+    const uint32_t effectiveMinimum = std::max(minGpuIcbCommands, adaptiveMinimum);
+    if (adaptiveGpuIcb && gpuIcb && modelInstancingEnabled_ &&
+        dev_->supportsMultiDrawIndirect()) {
+        // Coarse GPU-state keys are a necessary (not sufficient) condition:
+        // collisions only cause extra work; exact state is checked later.
+        std::map<std::pair<const Model*, const Material*>, uint64_t> hashes;
+        std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint64_t>, uint32_t> counts;
+        for (uint32_t i : eligibleIndices) {
+            const auto& x = modelItems_[i];
+            auto [it, fresh] = hashes.try_emplace({x.model, x.mat}, 0);
+            if (fresh) it->second = gpuMaterialStateHash(*x.model, *x.mat);
+            auto& count = counts[{x.model->vb.id, x.model->ib.id, x.flags, it->second}];
+            if (count < groupCapacity) ++count;
+        }
+        for (const auto& [key, count] : counts)
+            if (count >= effectiveMinimum) ++gpuPreflightGroups_;
+        if (gpuPreflightGroups_ == 0) {
+            gpuAdaptiveInstancingFallback_ = true;
+            return;
+        }
+    }
+    gpuModelSlots_.assign(modelItems_.size(), UINT32_MAX);
+    gpuModelRecords_.reserve(eligibleIndices.size());
+    for (uint32_t i : eligibleIndices) {
+        const ModelItem& it = modelItems_[i];
         GpuPrimitiveDrawRecord record{};
         std::memcpy(record.world, it.world.m, sizeof(record.world));
         record.boundsMin[0] = it.prim->boundsMin.x;
@@ -955,19 +1007,7 @@ void Renderer3D::prepareGpuModelDraws() {
         record.enabled = 1;
         gpuModelSlots_[i] = uint32_t(gpuModelRecords_.size());
         gpuModelRecords_.push_back(record);
-        if (!(it.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
-        if (record.lodEnabled) ++gpuModelLodEligible_;
     }
-    gpuModelEligible_ = uint32_t(gpuModelRecords_.size());
-    if (!gpuModelEligible_) return;
-    static const bool gpuIcb = [] {
-        const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
-        return flag && std::strcmp(flag, "1") == 0;
-    }();
-    static const bool adaptiveGpuIcb = [] {
-        const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
-        return flag && std::strcmp(flag, "1") == 0;
-    }();
     auto prepareGpuCommands = [&]() {
         gpuModelFrame_ = dev_->frameSerial();
         gpuModelCommandsReady_ = gpuModelCommands_.prepare(
@@ -1034,23 +1074,6 @@ void Renderer3D::prepareGpuModelDraws() {
     // GPU encoding has a compute-dispatch cost per batch, unlike CPU MDI.
     // Keep this threshold separately tunable; default 2 preserves the
     // previously validated path and permits a controlled 4/8/16 sweep.
-    static const uint32_t minGpuIcbCommands = [] {
-        const char* raw = std::getenv("AIVERSE_GPU_ICB_MIN_COMMANDS");
-        if (!raw || !*raw) return 2u;
-        char* end = nullptr;
-        const long value = std::strtol(raw, &end, 10);
-        return end != raw && *end == '\0' && value >= 2 && value <= 256
-            ? uint32_t(value) : 2u;
-    }();
-
-    // Conservative adaptive policy, based on expected amortization, not an
-    // unmeasured FPS claim. Under 256 eligible primitives, only groups of
-    // 16+ GPU draws offset the Metal compute/ICB setup overhead. For a large
-    // population, 8+ commands are worth trying. Manual minimum still applies.
-    const uint32_t adaptiveMinimum = adaptiveGpuIcb ?
-        (gpuModelEligible_ < 256u ? 16u : 8u) : 2u;
-    const uint32_t effectiveMinimum = std::max(minGpuIcbCommands, adaptiveMinimum);
-    const uint32_t groupCapacity = std::max(2u, instanceLimit_);
     // Decide the entire GPU stage before uploading any draw-record buffers.
     // The previous implementation always ran compute even if adaptive policy
     // selected zero ICB groups, wasting work for the CPU fallback.
