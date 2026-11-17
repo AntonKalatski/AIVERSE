@@ -216,6 +216,7 @@ public:
     PersistentSceneStats persistentSceneStats() const { return persistentStats_; }
     struct GpuModelDrawStats {
         uint32_t eligible = 0, submitted = 0;
+        uint32_t dynamicRigidEligible = 0;
         uint32_t gpuEncodedSubmissions = 0, gpuEncodedCommands = 0;
         uint32_t gpuIcbCandidates = 0, gpuIcbPrepared = 0;
         uint32_t gpuIcbRejected = 0, gpuIcbExecuteFailed = 0;
@@ -228,6 +229,7 @@ public:
             gpuModelCommands_.uploadStats(gpuModelFrame_, gpuModelSubmission_) :
             GpuSceneDrawCommands::UploadStats{};
         return {gpuModelEligible_, gpuModelDrawn_,
+                gpuModelDynamicEligible_,
                 gpuEncodedDrawCalls_, gpuEncodedCommands_,
                 gpuIcbCandidates_, gpuIcbPrepared_,
                 gpuIcbRejected_, gpuIcbExecuteFailed_,
@@ -475,6 +477,7 @@ private:
     uint32_t gpuIcbCandidates_ = 0, gpuIcbPrepared_ = 0;
     uint32_t gpuIcbRejected_ = 0, gpuIcbExecuteFailed_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
+    uint32_t gpuModelDynamicEligible_ = 0;
     PersistentGpuScene persistentScene_;
     std::unique_ptr<PersistentGpuSceneUpload> persistentUpload_;
     GpuSceneCulling persistentCull_;
