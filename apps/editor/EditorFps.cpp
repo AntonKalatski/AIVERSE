@@ -247,9 +247,25 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         const float3 centre{float(position.x), float(position.y),
                             float(position.z)};
         const float extent = std::max(0.35f, camera.distance * 0.075f);
-        r3d_.line(centre, centre + float3{extent, 0, 0}, rgba(235, 84, 84));
-        r3d_.line(centre, centre + float3{0, extent, 0}, rgba(93, 215, 113));
-        r3d_.line(centre, centre + float3{0, 0, extent}, rgba(80, 153, 245));
+        const Json* source = fpsDocumentEntity(doc().data.fps, ref);
+        const bool oriented = source && (*source)["yaw"].isNumber();
+        if (oriented && transformTool == TransformTool::Rotate) {
+            constexpr int segments = 64;
+            constexpr float tau = 6.283185307179586f;
+            for (int i = 0; i < segments; ++i) {
+                const float a = tau * float(i) / float(segments);
+                const float b = tau * float(i + 1) / float(segments);
+                r3d_.line(centre + float3{std::cos(a) * extent, 0,
+                                          std::sin(a) * extent},
+                          centre + float3{std::cos(b) * extent, 0,
+                                          std::sin(b) * extent},
+                          rgba(255, 188, 80));
+            }
+        } else {
+            r3d_.line(centre, centre + float3{extent, 0, 0}, rgba(235, 84, 84));
+            r3d_.line(centre, centre + float3{0, extent, 0}, rgba(93, 215, 113));
+            r3d_.line(centre, centre + float3{0, 0, extent}, rgba(80, 153, 245));
+        }
         break;
     }
 }
