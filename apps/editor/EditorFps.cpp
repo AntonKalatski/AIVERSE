@@ -155,7 +155,7 @@ void Editor::drawFpsSceneInspector() {
     const size_t sourceIndex = ref.index;
     Json& source = *sourcePtr;
     ImGui::TextDisabled("SCENE OBJECT");
-    ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
+    ImGui::Text("%s #%zu", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
     drawDocumentComponentInventory(doc(), ref);
     drawDocumentEditableComponents(doc(), ref);
