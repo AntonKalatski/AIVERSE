@@ -345,6 +345,11 @@ private:
         GeometryPolicy geometry;
         size_t geometryPrimitive = 0;
         uint32_t firstIndex = 0, indexCount = 0;
+        // Optional two-level, single-primitive GPU LOD choice. Always preserve
+        // the CPU-selected primitive for legacy draws and shadow passes.
+        bool gpuLodAvailable = false;
+        gfx::DrawIndexedIndirectCommand gpuLodNear{}, gpuLodFar{};
+        float gpuLodMaxPixels = 0, gpuLodError = 0;
         mat4 world; float4 tint; float3 team; float flash; uint32_t flags;
         int32_t joints;     // offset into jointData_ (floats), -1 when not palette-skinned
         bool baked;         // skinned from the baked texture (rows in anim)
