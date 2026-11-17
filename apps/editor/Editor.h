@@ -187,7 +187,14 @@ public:
     void enqueueFpsSceneGeometry(const render::RTSCamera&);
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void drawFpsSceneInspector();
-    void selectFpsSceneObject(int index) { fpsSelectedSceneObject_ = index; }
+    void selectFpsSceneObject(int index) {
+        if (index < 0 || index >= int(fpsSceneObjects_.size())) { select({}); return; }
+        Selection chosen;
+        chosen.kind = Selection::FpsObject;
+        chosen.ref = fpsSceneObjects_[size_t(index)].entity;
+        select(chosen);
+        fpsSelectedSceneObject_ = index;
+    }
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
     int selectedFpsSceneObject() const { return fpsSelectedSceneObject_; }
     bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;
