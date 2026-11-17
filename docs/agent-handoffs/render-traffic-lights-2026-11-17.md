@@ -109,6 +109,15 @@ Compare with `AIVERSE_EDITOR_EAGER_MODELS=1` (same binary/project/map). Check `�
 - Validation: `AIVERSE_FRAME_TRACE=1` prints `[view-stages]` (setup/ground/objects/animation/overlays), `[rts-visible-types]`, `[editor-window]`. Compare same project/map/camera and CPU frame stats before/after in Release. The previous Metal A/B baseline for MDI is NOT a baseline for these CPU changes.
 - New PR for this branch should target `fix/editor-lazy-model-residency` (PR #9), not main, to avoid mixing unrelated changes.
 
+## Step 11 — screenshot regression: editor is likely running old main binary (DIAGNOSED 2026-11-17)
+- User supplied a new Scene/Statistics screenshot showing **4** cards (FPS, CPU, draw calls, simulation) with **no** Batching button to the right of Shaded. They report all batching vanished and new metrics absent.
+- Verified current `main` source `apps/editor/windows/StatsWindow.cpp` calls `cardRow(cards, 4)` and `SceneWindow.cpp` contains **no** `Batching##scene` at all. This exactly matches the screenshot.
+- Verified `perf/rts-visible-type-frame-cache` (PR #10, based on PR #9 and #4) source has `cardRow(cards, 5)` with `Треугольников` and `SceneWindow::batchingControls` invoked immediately after the Shaded drop-down; its popup contains Shared Geometry Pool, GPU Instancing, Multi-Draw Indirect, profiling and A/B. This is **not** a code removal in the optimization branch.
+- Most likely stale/mismatched executable process, alternate checkout or .app bundle built from `main`. Screenshot alone does not reveal the executing binary path; must verify on the user's Mac before claiming certainty.
+- Diagnostic: `pgrep -fl AiverseEditor`, `ps -axo pid=,command= | grep '[A]iverseEditor'`, `git branch --show-current`, `git rev-parse --short HEAD`; look for installed .app outside the active build dir.
+- User should close the existing editor without losing unsaved changes, then fetch/switch `perf/rts-visible-type-frame-cache`, configure Release arm64, build target `aiverse_editor`, verify `strings -a build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor | grep -F 'Triangles in camera (tracked)'` and `grep -F 'Scene model batching'` (exact ASCII markers present in branch), and launch this binary directly, not `open -a AiverseEditor`.
+- If either marker is absent after successful compile, investigate stale CMake build directory, wrong source directory, accidentally different build target, or link configuration. **Do not claim any UI fixes are validated merely from GitHub source inspection.**
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
