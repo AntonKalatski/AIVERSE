@@ -89,8 +89,12 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
         } else {
             const Json& lo = (*object)["min"], &hi = (*object)["max"];
             if (!lo.isArray() || !hi.isArray() || lo.size() < 3 || hi.size() < 3) return false;
-            for (size_t axis = 0; axis < 3; ++axis)
+            for (size_t axis = 0; axis < 3; ++axis) {
                 if (!lo[axis].isNumber() || !hi[axis].isNumber()) return false;
+                const double minimum = lo[axis].toDouble(), maximum = hi[axis].toDouble();
+                if (!std::isfinite(minimum) || !std::isfinite(maximum) ||
+                    minimum >= maximum) return false;
+            }
             out = {(lo[0].toDouble() + hi[0].toDouble()) * 0.5,
                    (lo[1].toDouble() + hi[1].toDouble()) * 0.5,
                    (lo[2].toDouble() + hi[2].toDouble()) * 0.5};
