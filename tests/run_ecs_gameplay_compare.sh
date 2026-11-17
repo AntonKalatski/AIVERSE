@@ -78,7 +78,11 @@ for mode in off on; do
   elif [[ "$motor_batches" != 0 || "$motor_commits" != 0 ]]; then
     echo "Disabled FPS motor unexpectedly executed parallel jobs" >&2; exit 1
   fi
-  echo "FPS motor $mode: batches=$motor_batches commits=$motor_commits"
+  fps_motor_ms="$(sed -n 's/^FPS_MOTOR_TICKS_MS=//p' "$ROOT/fps-$mode.log" | tail -1)"
+  if ! [[ "$fps_motor_ms" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    echo "Missing FPS motor timing in $mode" >&2; exit 1
+  fi
+  echo "FPS motor $mode: batches=$motor_batches commits=$motor_commits 120-tick-ms=$fps_motor_ms"
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS and network tests: $mode ==="
     ctest --test-dir "$build" --no-tests=error -R "^aiverse_(tests|net_tests)$" --output-on-failure
