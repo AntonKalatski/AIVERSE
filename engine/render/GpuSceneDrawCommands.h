@@ -40,7 +40,8 @@ public:
     GpuSceneDrawCommands& operator=(const GpuSceneDrawCommands&) = delete;
 
     bool prepare(gfx::Device& device, const std::vector<GpuPrimitiveDrawRecord>& records,
-                 const mat4& viewProjection, uint64_t frameSerial) {
+                 const mat4& viewProjection, uint64_t frameSerial,
+                 size_t* submissionOut = nullptr) {
         if (device.info().backend != gfx::Backend::Metal ||
             !device.supportsCompute() || !frameSerial || records.empty() ||
             records.size() > UINT32_MAX) return false;
@@ -49,7 +50,18 @@ public:
                                               "GPU indexed draw command generator"});
             if (!pipeline_.valid()) return false;
         }
-        Slot& slot = slots_[frameSerial % slots_.size()];
+        const size_t frameSlot = frameSerial % slots_.size();
+        if (frameEpoch_[frameSlot] != frameSerial) {
+            // Metal's frame semaphore has retired this slot before reuse.
+            // Multiple Scene/Game render() calls in the SAME frame must never
+            // overwrite buffers referenced by earlier encoded GPU draws.
+            frameEpoch_[frameSlot] = frameSerial;
+            frameCursor_[frameSlot] = 0;
+        }
+        const size_t submission = frameCursor_[frameSlot]++;
+        auto& pool = slots_[frameSlot];
+        if (submission == pool.size()) pool.emplace_back();
+        Slot& slot = pool[submission];
         const size_t inputBytes = records.size() * sizeof(GpuPrimitiveDrawRecord);
         const size_t outputBytes = records.size() * sizeof(gfx::DrawIndexedIndirectCommand);
         static const bool compact = [] {
@@ -121,34 +133,43 @@ public:
         device.endCompute();
         slot.commandCount = params.count;
         slot.compactionActive = compact;
+        if (submissionOut) *submissionOut = submission;
         return true;
     }
 
-    bool compactedReady(uint64_t frameSerial) const {
-        const auto& slot = slots_[frameSerial % slots_.size()];
-        return slot.compactionActive && slot.commandCount > 0 &&
-               slot.compacted.valid() && slot.visibleCount.valid();
+    bool compactedReady(uint64_t frameSerial, size_t submission = 0) const {
+        const Slot* slot = find(frameSerial, submission);
+        return slot && slot->compactionActive && slot->commandCount > 0 &&
+               slot->compacted.valid() && slot->visibleCount.valid();
     }
-    gfx::BufferHandle compacted(uint64_t frameSerial) const {
-        return slots_[frameSerial % slots_.size()].compacted;
+    gfx::BufferHandle compacted(uint64_t frameSerial, size_t submission = 0) const {
+        const Slot* slot = find(frameSerial, submission);
+        return slot ? slot->compacted : gfx::BufferHandle{};
     }
-    gfx::BufferHandle visibleCount(uint64_t frameSerial) const {
-        return slots_[frameSerial % slots_.size()].visibleCount;
+    gfx::BufferHandle visibleCount(uint64_t frameSerial, size_t submission = 0) const {
+        const Slot* slot = find(frameSerial, submission);
+        return slot ? slot->visibleCount : gfx::BufferHandle{};
     }
-    UploadStats uploadStats(uint64_t frameSerial) const {
-        return slots_[frameSerial % slots_.size()].upload;
+    UploadStats uploadStats(uint64_t frameSerial, size_t submission = 0) const {
+        const Slot* slot = find(frameSerial, submission);
+        return slot ? slot->upload : UploadStats{};
     }
-    gfx::BufferHandle output(uint64_t frameSerial) const {
-        return slots_[frameSerial % slots_.size()].output;
+    gfx::BufferHandle output(uint64_t frameSerial, size_t submission = 0) const {
+        const Slot* slot = find(frameSerial, submission);
+        return slot ? slot->output : gfx::BufferHandle{};
     }
     void release(gfx::Device& device) {
-        for (Slot& slot : slots_) {
-            if (slot.input.valid()) device.destroyBuffer(slot.input);
-            if (slot.output.valid()) device.destroyBuffer(slot.output);
-            if (slot.compacted.valid()) device.destroyBuffer(slot.compacted);
-            if (slot.visibleCount.valid()) device.destroyBuffer(slot.visibleCount);
-            slot = {};
+        for (auto& pool : slots_) {
+            for (Slot& slot : pool) {
+                if (slot.input.valid()) device.destroyBuffer(slot.input);
+                if (slot.output.valid()) device.destroyBuffer(slot.output);
+                if (slot.compacted.valid()) device.destroyBuffer(slot.compacted);
+                if (slot.visibleCount.valid()) device.destroyBuffer(slot.visibleCount);
+            }
+            pool.clear();
         }
+        frameEpoch_.fill(0);
+        frameCursor_.fill(0);
         if (pipeline_.valid()) device.destroyCompute(pipeline_);
         pipeline_ = {};
     }
@@ -162,8 +183,17 @@ private:
         UploadStats upload{};
         bool compactionActive = false;
     };
-    std::array<Slot, 3> slots_{};
+    std::array<std::vector<Slot>, 3> slots_{};
+    std::array<uint64_t, 3> frameEpoch_{};
+    std::array<size_t, 3> frameCursor_{};
     gfx::ComputeHandle pipeline_{};
+    const Slot* find(uint64_t frame, size_t submission) const {
+        const size_t frameSlot = frame % slots_.size();
+        if (!frame || frameEpoch_[frameSlot] != frame ||
+            submission >= frameCursor_[frameSlot] ||
+            submission >= slots_[frameSlot].size()) return nullptr;
+        return &slots_[frameSlot][submission];
+    }
 
     static bool allocate(gfx::Device& device, gfx::BufferHandle& handle,
                          size_t& capacity, size_t required, const char* label) {
