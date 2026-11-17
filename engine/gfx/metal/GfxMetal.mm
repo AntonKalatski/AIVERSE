@@ -659,8 +659,10 @@ public:
         deliverBufferReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
-        indirectFrames_[frame_ % kFramesInFlight].clear(); // prior use of this slot has completed
-        indirectUniformFrames_[frame_ % kFramesInFlight].clear();
+        // The semaphore guarantees this slot is no longer in flight.
+        // Reuse its ICB and uniform allocations, but never reuse one twice
+        // within the same frame (different draws need different snapshots).
+        indirectCursor_[frame_ % kFramesInFlight] = 0;
         uniformPage_=uniformOffset_=0;
         layer_.drawableSize = CGSizeMake(w, h);
         drawable_ = [layer_ nextDrawable];
@@ -930,6 +932,11 @@ public:
 
         const bool traceIcb = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
         const auto profileStart = std::chrono::steady_clock::now();
+        const size_t frameSlot = frame_ % kFramesInFlight;
+        auto& pooled = indirectPool_[frameSlot];
+        const size_t submissionIndex = indirectCursor_[frameSlot]++;
+        if (submissionIndex == pooled.size()) pooled.emplace_back();
+        auto& resources = pooled[submissionIndex];
         // Build one fragment argument buffer containing all PBR texture and
         // sampler descriptors. The ICB can bind this buffer, whereas it cannot
         // encode the individual texture/sampler bindings used by direct draws.
@@ -939,8 +946,10 @@ public:
             if (!p->icbPbrEncoder) return false;
             for (int slot : pbrSlots)
                 if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot]) return false;
-            pbrArgs = [device_ newBufferWithLength:p->icbPbrEncoder.encodedLength
-                                           options:MTLResourceStorageModeShared];
+            const NSUInteger bytes = p->icbPbrEncoder.encodedLength;
+            if (!resources.pbrArgs || resources.pbrArgs.length < bytes)
+                resources.pbrArgs = [device_ newBufferWithLength:bytes options:MTLResourceStorageModeShared];
+            pbrArgs = resources.pbrArgs;
             if (!pbrArgs) return false;
             [p->icbPbrEncoder setArgumentBuffer:pbrArgs offset:0];
             for (int slot : pbrSlots) {
@@ -959,9 +968,14 @@ public:
         descriptor.inheritPipelineState = NO;
         descriptor.maxVertexBufferBindCount = 9; // vertex at 0; uniforms at 1..8
         descriptor.maxFragmentBufferBindCount = 9;
-        id<MTLIndirectCommandBuffer> icb = [device_ newIndirectCommandBufferWithDescriptor:descriptor
-            maxCommandCount:drawCount options:MTLResourceStorageModeShared];
-        if (!icb) return false;
+        if (!resources.icb || resources.icbCapacity < drawCount) {
+            resources.icb = [device_ newIndirectCommandBufferWithDescriptor:descriptor
+                maxCommandCount:drawCount options:MTLResourceStorageModeShared];
+            if (!resources.icb) return false;
+            resources.icbCapacity = drawCount;
+        }
+        id<MTLIndirectCommandBuffer> icb = resources.icb;
+        [icb resetWithRange:NSMakeRange(0, resources.icbCapacity)];
 
         // Uniform buffers are private to this submission. Preserve their lifetime
         // until the frame's GPU fence has completed; never reference setBytes
@@ -970,9 +984,12 @@ public:
         for (int slot = 0; slot < 8; ++slot) {
             const auto& bytes = indirectUniformSnapshots_[slot];
             if (bytes.empty()) continue;
-            uniforms[slot] = [device_ newBufferWithBytes:bytes.data() length:bytes.size()
-                                               options:MTLResourceStorageModeShared];
-            if (!uniforms[slot]) return false;
+            if (!resources.uniforms[slot] || resources.uniforms[slot].length < bytes.size())
+                resources.uniforms[slot] = [device_ newBufferWithLength:bytes.size()
+                                                options:MTLResourceStorageModeShared];
+            uniforms[slot] = resources.uniforms[slot];
+            if (!uniforms[slot] || !uniforms[slot].contents) return false;
+            std::memcpy(uniforms[slot].contents, bytes.data(), bytes.size());
         }
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
@@ -1014,16 +1031,13 @@ public:
         declareIndirectRead(indices, MTLRenderStageVertex);
         if (pbr) {
             declareIndirectRead(pbrArgs, MTLRenderStageFragment);
-            indirectUniformFrames_[frame_ % kFramesInFlight].push_back(pbrArgs);
             for (int slot : pbrSlots)
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
         }
         for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
             declareIndirectRead(uniforms[slot], MTLRenderStageVertex | MTLRenderStageFragment);
-            indirectUniformFrames_[frame_ % kFramesInFlight].push_back(uniforms[slot]);
         }
         [enc_ executeCommandsInBuffer:icb withRange:NSMakeRange(0, drawCount)];
-        indirectFrames_[frame_ % kFramesInFlight].push_back(icb);
         if (traceIcb) {
             static uint32_t submissions = 0;
             static uint64_t commandsEncoded = 0;
@@ -1065,7 +1079,17 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
-    std::vector<id<MTLIndirectCommandBuffer>> indirectFrames_[kFramesInFlight];
+    // Each frame slot is recycled only after its completion semaphore.
+    // Each submission gets its own reusable resources to avoid overwriting
+    // buffers referenced by earlier commands in the same frame.
+    struct IndirectResources {
+        id<MTLIndirectCommandBuffer> icb = nil;
+        uint32_t icbCapacity = 0;
+        id<MTLBuffer> uniforms[8] = {};
+        id<MTLBuffer> pbrArgs = nil;
+    };
+    std::vector<IndirectResources> indirectPool_[kFramesInFlight];
+    size_t indirectCursor_[kFramesInFlight] = {};
     bool firstPass_ = true;
     bool screenReadable_ = false;   // setScreenReadable: drawables stay copyable (copyColor)
     bool hdrPass_ = false;
@@ -1083,7 +1107,6 @@ private:
     uint32_t pipelineId_ = 0, vbId_ = 0, ibId_ = 0;
     size_t vbOffset_ = 0, ibOffset_ = 0;
     std::vector<uint8_t> indirectUniformSnapshots_[8];
-    std::vector<id<MTLBuffer>> indirectUniformFrames_[kFramesInFlight];
     int passW_ = 0, passH_ = 0;
 };
 
