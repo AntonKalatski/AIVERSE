@@ -111,6 +111,38 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     submitSceneRenderables(r3d_, instances);
 }
 
+bool Editor::moveSelectedFpsSceneObject(float dx, float dz) {
+    if (fpsSelectedSceneObject_ < 0 || fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size()) ||
+        !std::isfinite(dx) || !std::isfinite(dz)) return false;
+    const uint64_t key = fpsSceneObjects_[size_t(fpsSelectedSceneObject_)].entity;
+    if (!key) return false;
+    const bool spawn = (key & (uint64_t(1) << 63)) != 0;
+    const size_t sourceIndex = size_t((key & ~(uint64_t(1) << 63)) - 1);
+    auto& fps = doc().data.fps;
+    const char* group = spawn ? "spawns" : "colliders";
+    if (sourceIndex >= fps[group].size()) return false;
+    Json& item = fps.member(group)[sourceIndex];
+    auto shift = [&](Json& xyz) {
+        if (!xyz.isArray() || xyz.size() < 3) return false;
+        const double x = xyz[0].toDouble() + dx, z = xyz[2].toDouble() + dz;
+        if (!std::isfinite(x) || !std::isfinite(z)) return false;
+        Json updated = Json::array();
+        updated.push(Json::number(x, 3));
+        updated.push(xyz[1]);
+        updated.push(Json::number(z, 3));
+        xyz = updated;
+        return true;
+    };
+    if (spawn) {
+        if (!shift(item)) return false;
+    } else {
+        if (!item["min"].isArray() || !item["max"].isArray()) return false;
+        if (!shift(item.member("min")) || !shift(item.member("max"))) return false;
+    }
+    doc().touched();
+    return true;
+}
+
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
     if (fpsSelectedSceneObject_ < 0 ||
         fpsSelectedSceneObject_ >= int(fpsSceneObjects_.size())) return false;
