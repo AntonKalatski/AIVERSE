@@ -19,11 +19,12 @@ void actorEcsBridge(const Json& rules, const Json& map) {
     auto sim = simulation(rules, map);
     auto& module = dynamic_cast<fps::Module&>(sim->module());
     auto verify = [&](Simulation& running) {
+        auto& activeModule = dynamic_cast<fps::Module&>(running.module());
         const auto& actors = state(running).actors;
         CHECK(actors.size() == running.players().size());
         auto& world = running.world();
         for (const auto& actor : actors) {
-            const Entity entity = module.actorEntity(running, actor.slot);
+            const Entity entity = activeModule.actorEntity(running, actor.slot);
             CHECK(world.alive(entity));
             CHECK(world.has<fps::ActorEntityIdentity>(entity));
             CHECK(world.has<fps::ActorEntityTransform>(entity));
@@ -55,6 +56,12 @@ void actorEcsBridge(const Json& rules, const Json& map) {
     sim->loadState(snapshot);
     verify(*sim);
     CHECK(module.actorEntity(*sim, 0) == kNullEntity);
+    // Compatibility with a pre-ECS FPS save: the serialized allocator had
+    // no ActorEntity pools/ids. Module save loading restores this mirror.
+    auto legacy = simulation(rules, map);
+    legacy->world().restoreEntityState(World::EntityState{});
+    module.syncActorEntities(*legacy);
+    verify(*legacy);
 }
 
 void spatial() {
