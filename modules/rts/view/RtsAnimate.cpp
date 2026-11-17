@@ -193,6 +193,14 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         o.pos.x == st.lastPos.x && o.pos.y == st.lastPos.y &&
         o.pos.z == st.lastPos.z &&
         std::fabs(wrap(yawOf(o.facing) - st.yaw)) <= 1.0e-6f) {
+        // Preserve the original smoothing state even if a script starts
+        // moving this object later. Zero translation/turn means the fast
+        // update can skip square roots and complex animation evaluation.
+        if (dt > 0.0f) {
+            st.accel = -st.speed / dt;
+            st.speed += (-st.speed) * std::min(1.0f, dt * 12.0f);
+            st.turnRate += (-st.turnRate) * std::min(1.0f, dt * 8.0f);
+        }
         for (float& age : st.eventAge) age += dt;
         st.castAge += dt;
         st.objXf = mat4{};
