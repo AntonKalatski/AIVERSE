@@ -493,6 +493,16 @@ bash tests/run_ecs_gameplay_compare.sh --full
 ```
 Do not merge to main until latest CI tests and real Mac Studio RTS/FPS parity are confirmed.
 
+## 2026-11-18 — Exception safety, opt-in execution coverage and CI gate
+
+- `8c71e55`: paged `Pool<T>::emplace` now unwinds a new payload page and appended component when value construction or dense metadata push fails, so a subsequent insertion can safely retry at both page boundaries and partially filled pages.
+- `fc88ef6`: `tests/ecs_cow_exception_test.cpp` injects copy and move exceptions during default-to-COW conversion, single-page insertion, and new-page insertion at offset 256; verifies snapshot isolation, retry and structural recovery.
+- `2347eb2`, `8994301`: registers exception safety test in standalone ECS suite and CTest.
+- FPS diagnostics `0b6b66c`, `97642fc`, `7c52df8`, `9b31824`: Module exposes profiling-only precompute batch and commit counters. The real FPS comparator now **requires** both movement and combat checksum parity and asserts the enabled parallel-motor build actually schedules and commits results (and disabled build does neither).
+- Most recent GitHub workflow inspection: the ECS workflow run `44180927827` for source commit `9b318245` had six queued jobs (Linux+macOS normal/sanitized, Linux TSan, Ubuntu RTS/FPS gameplay). It had **no passing results**; newer source commits remain unverified. Prior main CI run for that commit was cancelled by subsequent pushes.
+- These features remain **OFF by default**. Full authoritative FPS AI/combat/projectile parallel execution and page-level COW of the monolithic FPS `State` are still not implemented. Generic ECS component payloads are paged; singleton resources copy whole objects on first write. This is deliberate in order not to destabilize existing gameplay without determinism proof.
+- Strict merge gate: run both `bash tests/run_ecs_experiment_suite.sh --sanitize` and `bash tests/run_ecs_gameplay_compare.sh --full` successfully, plus native Linux/macOS CI and TSan, inspect actual tick performance. Do not claim complete or merge on microbenchmarks alone.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
