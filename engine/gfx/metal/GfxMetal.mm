@@ -386,7 +386,7 @@ public:
         // Metal requires opt-in at pipeline creation for pipeline states
         // referenced by indirect render commands. Without this the driver may
         // silently discard ICB draws or fail an entire command buffer.
-        pd.supportIndirectCommandBuffers = YES;
+        if (supportsMultiDrawIndirect()) pd.supportIndirectCommandBuffers = YES;
         pd.colorAttachments[0].pixelFormat = d.depthOnly ? MTLPixelFormatInvalid
                                            : d.colorFormat == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
                                            : d.colorFormat == PixelFormat::RGBA8_sRGB ? MTLPixelFormatBGRA8Unorm_sRGB   // sRGB render targets
