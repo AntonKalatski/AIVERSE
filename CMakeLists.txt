@@ -118,6 +118,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_wave_executor_test
             ecs_guarded_world_test
             ecs_guarded_parallel_test
+            ecs_guarded_failure_test
             ecs_wave_replay_test
             ecs_simulation_bridge_test)
         add_executable(aiverse_${test_name} tests/${test_name}.cpp)
