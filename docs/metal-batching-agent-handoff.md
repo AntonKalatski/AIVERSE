@@ -140,6 +140,14 @@ Commits `8c31b10` and `41dd5de` add opt-in `AIVERSE_ICB_PROFILE=1` instrumentati
 
 Each log reports averages per **600 successful indirect submissions** (not 600 frames). This diagnostic does not instrument unsuccessful/fallback submissions, and is not a full GPU timestamp comparison. **No owner build or measurement yet**. Run with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_BENCH_UNCAPPED=1 AIVERSE_ICB_PROFILE=1` and grep both log prefixes. The Metal backend currently allocates a fresh ICB, uniform snapshot buffers and PBR argument buffer per indirect submission; this is a plausible CPU hotspot, not yet proven. Preserve resource lifetime, indirect bounds checks, and Apple AGX stability while optimizing.
 
+## Reusable Metal ICB resource pool (commit `4a2e9ce`)
+
+`engine/gfx/metal/GfxMetal.mm` now keeps per-frame-slot (`kFramesInFlight=3`) vectors of per-submission resources: ICB with capacity, eight uniform snapshot buffers and PBR fragment argument buffer. Each slot's cursor resets in `beginFrame` after the existing in-flight semaphore; each indirect submission gets a distinct resource entry for the frame. ICB is reset with `resetWithRange` before encoding; uniform snapshots are copied into reusable shared buffers; PBR arguments are rewritten into reusable storage. Larger command/uniform/argument capacities allocate only on demand. Previous per-frame vectors holding transient ICB/uniform objects are removed; the pool itself retains them. Existing bounds validation, explicit resource residency and `executeCommandsInBuffer` remain intact.
+
+**Critical validation:** this is an experimental Metal change and has NOT been built or exercised on the owner's Apple Silicon hardware yet. Confirm Objective-C++ ARC compilation, ICB reset behavior, multiple submissions per frame, PBR texture/sampler changes, geometry reload, resizing, and several minutes of camera movement without AGX faults. The pool retains high-watermark memory until device shutdown; monitor memory under changing scenes. The existing semaphore is global to in-flight frames, so verify slot reuse is safe under real command-buffer completion ordering. If errors occur, revert this commit rather than disabling GPU bounds checks.
+
+Re-run `AIVERSE_ICB_PROFILE=1`: prior `[metal-icb]` alloc ~0.0565 ms/submission, `[render-indirect]` backend ~0.068 ms/submission. Run fixed-camera 300-frame OFF/ON CPU benchmark again: prior OFF 12.939 ms, ON 13.609 ms (+5.2%). The new pool is intended to remove allocation overhead; a speedup is **not yet established**. GPU A/B timing is still not implemented.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
