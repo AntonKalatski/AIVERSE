@@ -372,38 +372,46 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
         }
         return best;
     }
-    // Nearest 3D bounds along the view ray: roof in front wins over a ground hit.
+    // RTS map entities and FPS scene objects now use the same ray/AABB hit
+    // tester. Genre adapters only provide their spatial bounds and identities.
     float3 rayOrigin{}, rayDirection{};
-    if (cam.screenRay(sx - vp.originX, sy - vp.originY, vp.pointsW, vp.pointsH, rayOrigin, rayDirection)) {
+    if (cam.screenRay(sx - vp.originX, sy - vp.originY,
+                      vp.pointsW, vp.pointsH, rayOrigin, rayDirection)) {
         const auto& candidates = ws_.map.data.entities;
-        float closest = 1.0e30f;
-        int picked = -1;
-        auto slab = [](float origin, float direction, float lo, float hi, float& nearT, float& farT) {
-            if (std::fabs(direction) < 0.000001f) return origin >= lo && origin <= hi;
-            const float a = (lo - origin) / direction, b = (hi - origin) / direction;
-            nearT = std::max(nearT, std::min(a, b));
-            farT = std::min(farT, std::max(a, b));
-            return nearT <= farT;
-        };
+        std::vector<SceneRenderable> proxies;
+        proxies.reserve(candidates.size());
         for (size_t i = 0; i < candidates.size(); ++i) {
             const auto& entity = candidates[i];
-            if (objectHidden(entity.owner, entity.type) || objectLocked(entity.owner, entity.type)) continue;
+            if (objectHidden(entity.owner, entity.type) ||
+                objectLocked(entity.owner, entity.type)) continue;
             const int ti = rules().findType(entity.type);
             const auto& allTypes = rules().types;
             const bool structure = ti >= 0 && allTypes[size_t(ti)].structure;
-            const float radius = ti >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(ti)) : .6f;
-            const float halfX = structure ? std::max(.5f, float(allTypes[size_t(ti)].footprintW) * .5f) : std::max(.35f, radius);
-            const float halfZ = structure ? std::max(.5f, float(allTypes[size_t(ti)].footprintH) * .5f) : std::max(.35f, radius);
-            const float baseY = const_cast<game::RtsView&>(view_).heightAt(editGrid(), entity.x, entity.z);
-            const float topY = baseY + (structure ? std::max(2.f, radius * 2.f) : std::max(.9f, radius * 2.f));
-            float nearT = 0.f, farT = closest;
-            if (!slab(rayOrigin.x, rayDirection.x, entity.x - halfX, entity.x + halfX, nearT, farT) ||
-                !slab(rayOrigin.y, rayDirection.y, baseY, topY, nearT, farT) ||
-                !slab(rayOrigin.z, rayDirection.z, entity.z - halfZ, entity.z + halfZ, nearT, farT)) continue;
-            if (nearT < closest) { closest = nearT; picked = int(i); }
+            const float radius = ti >= 0
+                ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(ti))
+                : 0.6f;
+            const float halfX = structure
+                ? std::max(.5f, float(allTypes[size_t(ti)].footprintW) * .5f)
+                : std::max(.35f, radius);
+            const float halfZ = structure
+                ? std::max(.5f, float(allTypes[size_t(ti)].footprintH) * .5f)
+                : std::max(.35f, radius);
+            const float baseY = const_cast<game::RtsView&>(view_)
+                .heightAt(editGrid(), entity.x, entity.z);
+            const float topY = baseY + (structure
+                ? std::max(2.f, radius * 2.f)
+                : std::max(.9f, radius * 2.f));
+            SceneRenderable proxy;
+            proxy.entity = uint64_t(i) + 1;
+            proxy.pickable = true;
+            proxy.boundsMin = {entity.x - halfX, baseY, entity.z - halfZ};
+            proxy.boundsMax = {entity.x + halfX, topY, entity.z + halfZ};
+            proxies.push_back(proxy);
         }
-        if (picked >= 0) return picked;
+        const int nearest = pickSceneRenderable(proxies, rayOrigin, rayDirection);
+        if (nearest >= 0) return int(proxies[size_t(nearest)].entity - 1);
     }
+
     // Use visual, screen-space picking before the legacy ground hit-test. A ground
     // ray can land behind a roof on angled cameras and select a neighbouring unit.
     // Pixel-sized hit areas remain usable when zoomed out, while footprints scale
