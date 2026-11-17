@@ -212,6 +212,55 @@ void Module::syncActorEntities(Simulation& sim) const {
     }
 }
 
+void Module::syncDynamicEntities(Simulation& sim) const {
+    World& world = sim.world();
+    const State* current = world.resource<State>();
+    auto* index = world.resource<DynamicEntityIndex>();
+    if (!current || !index) return;
+    std::set<uint64_t> observed;
+    auto ensure = [&](uint8_t kind, uint32_t id) {
+        const uint64_t key = (uint64_t(kind) << 32) | uint64_t(id);
+        observed.insert(key);
+        auto [it, inserted] = index->byKey.emplace(key, kNullEntity);
+        (void)inserted;
+        if (!world.alive(it->second)) it->second = world.create();
+        return it->second;
+    };
+    for (const Projectile& projectile : current->projectiles) {
+        const Entity entity = ensure(1, projectile.id);
+        if (!world.has<ProjectileEntity>(entity)) world.add<ProjectileEntity>(entity);
+        *world.tryGet<ProjectileEntity>(entity) = {
+            projectile.id, projectile.owner, projectile.kind,
+            projectile.pos, projectile.velocity, projectile.damage
+        };
+    }
+    for (const Loot& loot : current->loot) {
+        const Entity entity = ensure(2, loot.id);
+        if (!world.has<LootEntity>(entity)) world.add<LootEntity>(entity);
+        *world.tryGet<LootEntity>(entity) = {
+            loot.id, loot.pos, loot.type, loot.count
+        };
+    }
+    for (const Vehicle& vehicle : current->vehicles) {
+        const Entity entity = ensure(3, vehicle.id);
+        if (!world.has<VehicleEntity>(entity)) world.add<VehicleEntity>(entity);
+        *world.tryGet<VehicleEntity>(entity) = {
+            vehicle.id, vehicle.pos, vehicle.velocity,
+            vehicle.yaw, vehicle.health, vehicle.driver
+        };
+    }
+    // Retire vanished objects in deterministic source-ID order. Never keep
+    // a dead entity in the editor hierarchy across a save/rollback.
+    for (auto it = index->byKey.begin(); it != index->byKey.end();) {
+        if (!observed.contains(it->first)) {
+            if (world.alive(it->second)) world.destroy(it->second);
+            it = index->byKey.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
     if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
@@ -275,9 +324,14 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         sim.world().add<ActorEntityVitals>(entity);
     }
     sim.world().setResource<ActorEntityIndex>(std::move(actorIndex));
+    sim.world().setResource<DynamicEntityIndex>();
     syncActorEntities(sim);
+    syncDynamicEntities(sim);
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
-    sim.addSystem("fps.ecsMirror",[this](Simulation& s){syncActorEntities(s);});
+    sim.addSystem("fps.ecsMirror",[this](Simulation& s){
+        syncActorEntities(s);
+        syncDynamicEntities(s);
+    });
 }
 void Module::applyCommand(Simulation& sim,const Command& c) {
     auto& s=state(sim);Input input;
@@ -459,7 +513,9 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     for(const auto& frame:copy.history)for(const auto& actor:frame.actors)if(!valid(actor))return false;
     if(!archive.writing()) {
         state(sim)=std::move(copy);
-        syncActorEntities(sim); // restore the derived ECS view after save loading
+        // Derived ECS components must track legacy v9 save contents.
+        syncActorEntities(sim);
+        syncDynamicEntities(sim);
     }
     return true;
 }
