@@ -32,6 +32,16 @@ namespace aiverse::editor {
 constexpr size_t kMaxWorldComponents = 128;   // WorldRow::comps bits (tests check the described pools fit)
 struct WorldComponent { const char* id; const char* title; };
 const std::vector<WorldComponent>& worldComponents();
+// Type metadata for fields read directly from the ECS component registry.
+// This is not a DocEntity component and does not imply writable persistence.
+enum class WorldFieldKind : uint8_t { Number, Integer, Boolean, Text, Vec3, Turn, Unknown };
+struct WorldComponentField {
+    const char* id;
+    const char* title;
+    WorldFieldKind kind;
+};
+const std::vector<WorldComponentField>& worldComponentFields(const std::string& componentId);
+
 int findWorldComponent(const std::string& idOrTitle);   // case-insensitive id or title; -1
 // Creates every described pool in `w` and returns how many were described (tests compare it with the
 // pools a save state touches, so a new component type without a description is noticed).
