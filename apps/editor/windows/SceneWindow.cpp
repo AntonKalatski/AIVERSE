@@ -73,8 +73,10 @@ public:
             if (vp_.hovered && !io.WantTextInput && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
                 const Selection hovered = ed.pickObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
                 ed.setHover(hovered);
-                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    ed.selectFpsSceneObject(ed.pickFpsSceneObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y));
                     pickSelect(ed, hovered, io);
+                }
             }
         } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
         // The selection overlay is genre-independent (including FPS).
