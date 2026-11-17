@@ -397,6 +397,18 @@ public:
 
     // Resolve COW once on the caller before launching disjoint write lanes.
     // A null result means the type was never registered; no registry mutation.
+    // Scheduler barrier: prepare all declared writable component pools
+    // before launching worker lanes. No new pools are registered here.
+    void prepareExistingWriteIds(const std::vector<uint32_t>& typeIds) {
+        for(uint32_t id:typeIds) {
+            if(id>=pools_.size() || !pools_[id])continue;
+            auto& pool=pools_[id];
+            if(cowSnapshots_ && !pool.unique())
+                pool=std::shared_ptr<IPool>(pool->clone());
+            pool->prepareParallelWrite();
+        }
+    }
+
     template <class T> Pool<T>* prepareExistingWrite() {
         auto* pool=poolIfExists<T>();
         if(pool)pool->prepareParallelWrite();
