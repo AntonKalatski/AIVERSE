@@ -40,10 +40,9 @@ void Editor::startFpsPlay(bool listen,const std::string& address) {
         ws_.startCommand(cmd,cmd,"fps-play");status=genreText(ws_,"fps.editor.running");
     }catch(const std::exception& e){status=genreText(ws_,"fps.editor.invalid");ws_.log("fps",e.what(),true);}
 }
-void Editor::renderFpsScene(Viewport& vp,const render::RTSCamera& camera) {
+void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     using namespace render;
     if(!fpsPreviewMesh_.vb.valid()){MeshBuilder mesh;mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});fpsPreviewMesh_=mesh.upload(*dev_);}
-    r3d_.beginScene(camera,vp.w,vp.h);
     for(const auto& b:doc().data.fps["colliders"].items()) {
         auto lo=point(b["min"]),hi=point(b["max"]);
         float3 base{(lo.x+hi.x)*0.5f,lo.y,(lo.z+hi.z)*0.5f};
@@ -53,8 +52,5 @@ void Editor::renderFpsScene(Viewport& vp,const render::RTSCamera& camera) {
     for(const auto& spawn:doc().data.fps["spawns"].items()) {
         auto p=point(spawn);r3d_.drawMesh(fpsPreviewMesh_,mat4::translate(p)*mat4::scale({0.6f,1.8f,0.6f}),{0.1f,0.65f,0.85f,1});
     }
-    gfx::PassDesc pass;pass.colorTarget=vp.color;pass.depthTarget=vp.depth;
-    pass.clearColor[0]=0.12f;pass.clearColor[1]=0.16f;pass.clearColor[2]=0.2f;
-    r3d_.render(pass);dev_->endPass();
 }
 }
