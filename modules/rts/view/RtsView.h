@@ -81,6 +81,9 @@ struct SceneObject {
     // coordinates; kBodyTransit = between bodies: pos is the world position, facing the travel direction
     int16_t body = -1;
     static constexpr int16_t kBodyTransit = -2;
+    // Optional stable identity supplied by editor/native scene sources whose
+    // SceneObject::entity is invalid. Zero uses ECS entity identity or transient.
+    uint64_t persistentKey = 0;
 };
 
 struct RtsScene {
