@@ -1,0 +1,80 @@
+name: ECS 2.0 experimental checks
+
+on:
+  push:
+    branches: [feature/ecs-architecture-benchmarks]
+    paths:
+      - 'engine/core/ECS.h'
+      - 'engine/experiments/**'
+      - 'engine/sim/**'
+      - 'engine/net/Rollback.*'
+      - 'modules/fps/FpsModule.cpp'
+      - 'modules/fps/CMakeLists.txt'
+      - 'modules/rts/RtsUnits.cpp'
+      - 'tests/fps/tests.cpp'
+      - 'tests/run_ecs_gameplay_compare.sh'
+      - 'CMakeLists.txt'
+      - 'tests/ecs_*'
+      - 'tests/run_ecs_experiment_suite.sh'
+      - '.github/workflows/ecs-experiments.yml'
+  pull_request:
+    paths:
+      - 'engine/core/ECS.h'
+      - 'engine/experiments/**'
+      - 'engine/sim/**'
+      - 'engine/net/Rollback.*'
+      - 'modules/fps/FpsModule.cpp'
+      - 'modules/fps/CMakeLists.txt'
+      - 'modules/rts/RtsUnits.cpp'
+      - 'tests/fps/tests.cpp'
+      - 'tests/run_ecs_gameplay_compare.sh'
+      - 'CMakeLists.txt'
+      - 'tests/ecs_*'
+      - 'tests/run_ecs_experiment_suite.sh'
+      - '.github/workflows/ecs-experiments.yml'
+  workflow_dispatch:
+
+jobs:
+  ecs-experiments:
+    name: ECS checks (${{ matrix.os }}, ${{ matrix.mode }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        mode: [normal, sanitize]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          bash -n tests/run_ecs_experiment_suite.sh
+          bash -n tests/run_ecs_gameplay_compare.sh
+      - name: Compile and run ECS checks
+        shell: bash
+        run: |
+          if [[ "${{ matrix.mode }}" == "sanitize" ]]; then
+            bash tests/run_ecs_experiment_suite.sh --sanitize
+          else
+            bash tests/run_ecs_experiment_suite.sh
+          fi
+  ecs-threadsanitizer:
+    name: ECS thread race checks (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run under ThreadSanitizer
+        shell: bash
+        run: bash tests/run_ecs_experiment_suite.sh --tsan
+
+  ecs-gameplay:
+    name: RTS/FPS real-module checksum parity (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare baseline and opt-in RTS/FPS builds
+        shell: bash
+        run: bash tests/run_ecs_gameplay_compare.sh --full

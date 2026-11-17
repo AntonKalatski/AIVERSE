@@ -12,6 +12,8 @@ RollbackSession::RollbackSession(Simulation& sim, SessionConfig cfg, std::vector
                                  SendChecksum sendChecksum)
     : sim_(sim), cfg_(cfg), window_(controlled.empty() ? 0 : cfg.rollbackWindow), controlled_(std::move(controlled)),
       sendFrame_(std::move(sendFrame)), sendChecksum_(std::move(sendChecksum)) {
+    previousCowSnapshots_=sim_.world().cowSnapshotsEnabled();
+    if(cfg_.incrementalWorldSnapshots)sim_.world().enableCowSnapshots(true);
     ring_.resize(window_ + 2);
     ringTick_.assign(ring_.size(), UINT32_MAX);
     confirmedNext_ = sim_.tick();
@@ -19,7 +21,14 @@ RollbackSession::RollbackSession(Simulation& sim, SessionConfig cfg, std::vector
     sim_.setCommandSink([this](Command&& c) { return submitLocal(std::move(c)); });
 }
 
-RollbackSession::~RollbackSession() { sim_.setCommandSink(nullptr); }
+RollbackSession::~RollbackSession() {
+    sim_.setCommandSink(nullptr);
+    if(cfg_.incrementalWorldSnapshots && !previousCowSnapshots_) {
+        // Release shared snapshots before returning World to legacy deep-copy mode.
+        ring_.clear();
+        sim_.world().enableCowSnapshots(false);
+    }
+}
 
 uint32_t RollbackSession::submitLocal(Command&& c) {
     if (std::find(controlled_.begin(), controlled_.end(), c.player) == controlled_.end()) return 0; // not ours: ignore

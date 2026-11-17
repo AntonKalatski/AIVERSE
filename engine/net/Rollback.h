@@ -27,6 +27,7 @@ struct SessionConfig {
     uint32_t rollbackWindow = 8;
     uint32_t checksumInterval = 20;
     uint32_t catchUpBudgetMs = 12;   // max time per update() spent fast-forwarding when far behind
+    bool incrementalWorldSnapshots = false; // opt-in pool-level COW for predicted ticks
 };
 
 struct SessionStats {
@@ -119,6 +120,7 @@ private:
     uint64_t candHash_ = 0;
     SessionStats stats_;
     bool broken_ = false;
+    bool previousCowSnapshots_ = false;
     std::function<void(bool)> rollbackHook_;
 };
 

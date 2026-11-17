@@ -148,6 +148,7 @@ void Simulation::loadState(const SimSnapshot& in) {
     seqByPlayer_ = in.seqByPlayer;
     events_.clear();
     accumulator_ = 0.0;
+    for(auto& hook:stateRestoredHooks_)hook(*this);
 }
 
 // ---------------------------------------------------------------- save states
@@ -209,6 +210,7 @@ bool Simulation::deserialize(const std::string& bytes, std::string* err) {
     a(cs);
     if (!a.ok()) return fail("truncated save state");
     if (checksum() != cs) return fail("state checksum mismatch after loading (different rules or map?)");
+    for(auto& hook:stateRestoredHooks_)hook(*this);
     (void)seed;
     return true;
 }
