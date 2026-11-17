@@ -131,6 +131,47 @@ c++ -std=c++20 -O2 -pthread -I. tests/ecs_wave_replay_test.cpp -o /tmp/aiverse-e
 
 Next: validate new guarded/replay tests, address any failures, add simulation-level snapshot/rollback/lockstep regression coverage and enforce a no-raw-World contract before enabling production scheduled systems.
 
+## 2026-11-17 — Bulk step: opt-in Simulation integration and consolidated test suite
+
+User requested all outstanding work in one bundle, then will execute tests. Implemented several commits on the existing PR #8:
+
+- `ad8979f` — `engine/core/ECS.h`: added `World::eachExisting<T>(fn)`, which does **not register a missing pool**. This avoids a known concurrent mutation hazard from calling the previous `World::each<T>()` on previously unused types. Structural operations must still be excluded while jobs are active.
+- `54b4897` — `engine/experiments/EcsGuardedWorld.h`: `eachRead/eachWrite` now use `eachExisting`.
+- `b0ca3cf` and `91e2ce3` — `engine/experiments/EcsSimulationBridge.h`: opt-in `addGuardedGroup(Simulation&, name, vector<GuardedSystem>, workerCount)`. A group registers as **one ordinary system** through the existing `Simulation::addSystem` API. Internally executes compatible declared systems with `WaveExecutor` and `runChecked`. The bridge disallows structural and ordered-side-effect systems. All legacy systems retain their original sequential path and a single `World::flush()` after the group.
+- `689cd0f` — `tests/ecs_simulation_bridge_test.cpp`: exercises actual `Simulation::step()`, canonical player-command ordering, `SimSnapshot` save/load/replay, and matching checksums across 0/1/3/7 worker counts. Uses a small isolated `ToyModule` rather than RTS/FPS gameplay.
+- `3863b7d` — `engine/experiments/EcsExperiments.h`: command buffer `flush` swaps queued lane batches before replay to avoid callback invalidation; `discard()` for cancelled batches. Commands enqueued during flush remain for the next flush; a partial mutation on exception remains nontransactional.
+- `7eb318b` — `tests/ecs_experiments_test.cpp`: new command-buffer reentrant enqueue/discard tests.
+- `d083de2` — `tests/run_ecs_experiment_suite.sh`: builds and executes all five correctness/integration tests with one command, optionally runs all performance benchmarks via `--bench`, optionally enables ASan+UBSan via `--sanitize`.
+
+### Commands — run everything after pulling
+
+```bash
+git switch feature/ecs-architecture-benchmarks
+git pull --ff-only
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+bash tests/run_ecs_experiment_suite.sh --bench
+```
+
+**Verification status:** all new code is pushed through GitHub but not locally compiled by the assistant. Mac Studio previously passed wave and experiment tests *before these modifications*. User will run the full suite now. Do not claim this batch is verified yet.
+
+### Safety limits / remaining production work
+
+- This is **opt-in**, not default Simulation parallelism. It schedules groups of *independent systems*, not jobs within a single expensive system. For parallel entity iteration use separately profiled `eachAdaptive`, but it is not integrated with the guarded bridge.
+- `GuardedWorld` is a **runtime-checked facade only**. A job can escape via external captures, raw `World`, retained pointers, static globals, RNG or events; access declarations are not statically enforced. It is still unsafe to enable arbitrary gameplay modules.
+- No structural changes are allowed inside guarded groups. Use existing regular sequential systems before/after groups for spawning/deletion, or extend the staged command API with proper lifecycle semantics.
+- Snapshot rollback in the test uses `Simulation::saveState/loadState` full snapshots. `DirtyPageSnapshot` is still only a standalone prototype and cannot replace `SimSnapshot` without full dirty tracking of components, allocator, resources and nontrivial data.
+- There is no performance claim from the real grouped systems, and no production RTS/FPS integration yet. Benchmarking and regression suite still need a successful Mac Studio run.
+- Do not merge PR #8 to `main` until assertions, sanitizers and real-game replay/lockstep regressions pass.
+
+### Next agent actions
+
+1. Run suite on Mac Studio; fix compile errors and any checksum mismatches, updating this handoff in each fix.
+2. Expand opt-in safety with a restricted registration API and strict no-raw-World policy; instrument runtime access validation.
+3. Add RTS and FPS integration checks under an explicit opt-in flag, compare checksums with baseline.
+4. Design a safe per-entity parallel guarded job API that propagates `AccessScope` to workers without nested worker-pool deadlocks.
+5. Evaluate real-world performance and snapshot optimizations, ensuring a sequential fallback.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validate latest changes**: compile and execute new tests; fix compiler warnings or test failures in PR #8.
