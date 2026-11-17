@@ -53,7 +53,7 @@ struct WorldInspectorExtension {
     std::string title;
     std::vector<WorldComponentField> fields;
     std::function<bool(const World&, Entity)> has;
-    std::function<Json(const World&, Entity)> read;
+    std::function<Json(World&, Entity)> read;
 };
 bool registerWorldInspectorExtension(WorldInspectorExtension extension);
 bool unregisterWorldInspectorExtension(const std::string& id);
