@@ -259,15 +259,21 @@ private:
                     ImGui::Text("GPU ICB rigid dynamic candidates: %u",
                                 gpu.dynamicRigidEligible);
                 if (const char* icb = std::getenv("AIVERSE_GPU_ENCODED_ICB");
-                    icb && std::strcmp(icb, "1") == 0)
+                    icb && std::strcmp(icb, "1") == 0) {
                     ImGui::Text("GPU-encoded ICB: %u submissions / %u commands",
                                 gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
                     ImGui::Text("GPU ICB batches: %u candidates, %u prepared, %u rejected, %u execute failed",
                                 gpu.gpuIcbCandidates, gpu.gpuIcbPrepared,
                                 gpu.gpuIcbRejected, gpu.gpuIcbExecuteFailed);
+                    ImGui::Text("GPU instance buffer: %.2f KiB copied this GPU frame",
+                                double(ed.device().gpuIcbInstanceUploadBytes()) / 1024.0);
+                    if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+                        adaptive && std::strcmp(adaptive, "1") == 0)
+                        ImGui::TextDisabled("Adaptive GPU ICB grouping enabled.");
                     if (gpu.gpuIcbRejected || gpu.gpuIcbExecuteFailed)
                         ImGui::TextWrapped("Metal backend error: %s",
                                            ed.device().lastError().c_str());
+                }
                 ImGui::Text("GPU indirect args: %s",
                             gpu.prepared ? "compute generated" : "not ready / unsupported");
                 ImGui::Text("GPU draw record uploads: %u records / %u ranges (%.2f KiB)",
