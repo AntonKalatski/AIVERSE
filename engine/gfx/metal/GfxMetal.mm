@@ -1003,7 +1003,7 @@ public:
     // Commands inherit the current parent pipeline and buffer arguments when
     // executed later; the instance index maps to the caller's U0 array.
     uint32_t prepareGpuEncodedIndexedIcb(
-        BufferHandle gpuArguments, BufferHandle indexBuffer,
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count,
         const void* instanceData, size_t instanceBytes) override {
         static const bool enabled = [] {
@@ -1014,8 +1014,12 @@ public:
             !sourceSlots || !instanceData || count < 2 || count > 256 ||
             instanceBytes != size_t(count) * 36u * sizeof(float)) return 0;
         auto* commandData = buffers_.get(gpuArguments.id);
+        auto* vertexData = buffers_.get(vertexBuffer.id);
         auto* indexData = buffers_.get(indexBuffer.id);
-        if (!commandData || !indexData || commandData->type != BufferType::Storage ||
+        if (!commandData || !vertexData || !indexData ||
+            commandData->type != BufferType::Storage ||
+            (vertexData->type != BufferType::Vertex &&
+             vertexData->type != BufferType::Storage) ||
             (indexData->type != BufferType::Index &&
              indexData->type != BufferType::Storage)) return 0;
         // CPU knows the input slots and the original command buffer capacity.
@@ -1187,7 +1191,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         [encoder setBuffer:resources.slots offset:0 atIndex:3];
         // The model renderer supplies both geometry buffers from the same
         // pooled resource. Each indexed command selects its local firstIndex.
-        [encoder setBuffer:current(*indexData) offset:0 atIndex:4];
+        [encoder setBuffer:current(*vertexData) offset:0 atIndex:4];
         [encoder setBuffer:resources.instanceBuffer offset:0 atIndex:5];
         for (int slot = 1; slot < 8; ++slot)
             [encoder setBuffer:resources.uniforms[slot] offset:0

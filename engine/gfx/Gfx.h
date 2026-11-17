@@ -269,10 +269,10 @@ public:
     // so far in the current GPU frame (includes all scene viewports).
     virtual size_t gpuIcbInstanceUploadBytes() const { return 0; }
     virtual uint32_t prepareGpuEncodedIndexedIcb(
-        BufferHandle gpuArguments, BufferHandle indexBuffer,
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count,
         const void* instanceData, size_t instanceBytes) {
-        (void)gpuArguments; (void)indexBuffer; (void)sourceSlots; (void)count;
+        (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer; (void)sourceSlots; (void)count;
         (void)instanceData; (void)instanceBytes;
         return 0;
     }

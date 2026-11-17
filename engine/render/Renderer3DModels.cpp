@@ -1190,6 +1190,7 @@ void Renderer3D::prepareGpuModelDraws() {
                                   instanceRecords.data() + (j - first) * 36u);
             const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
                 gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
+                modelItems_[indices[first]].model->vb,
                 modelItems_[indices[first]].model->ib,
                 sourceSlots.data(), uint32_t(sourceSlots.size()),
                 instanceRecords.data(), instanceRecords.size() * sizeof(float));
