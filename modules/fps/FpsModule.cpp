@@ -289,30 +289,36 @@ void Module::tick(Simulation& sim) {
         Fixed yaw{},pitch{};
         bool grounded=false,crouched=false,prone=false;
     };
-    bool parallelMotor=s.actors.size()>=32 && !config_.systems.enabled &&
-        !config_.melee.enabled && !config_.royale && !s.royale.enabled &&
-        config_.mode=="deathmatch" && !streamedCollision_ &&
-        s.projectiles.empty() && s.vehicles.empty() && s.vehicleRuns.empty();
-    constexpr uint32_t movementButtons=Jump|Crouch|Sprint|Aim|Prone;
-    if(parallelMotor) {
+    // The parallel phase computes independent fixed-point movement only.
+    // The original Actor snapshot is compared at canonical commit time.
+    // Prior damage, bot decisions or other changes invalidate a precompute.
+    const bool motorWorldEligible=!config_.systems.enabled &&
+        !s.royale.enabled && !streamedCollision_ && s.vehicleRuns.empty();
+    std::vector<MotorResult> motorResults;
+    std::vector<Actor> motorOriginals;
+    std::vector<uint8_t> motorEligible;
+    bool parallelMotor=false;
+    if(motorWorldEligible && s.actors.size()>=32) {
+        motorEligible.assign(s.actors.size(),uint8_t(0));
+        size_t count=0;
         for(size_t i=0;i<s.actors.size();++i) {
             const Actor& actor=s.actors[i];
-            if(bots_[i] || actor.health<=0 || actor.vehicle ||
-               actor.activeAction!=Action::None ||
-               actor.input.action!=Action::None ||
-               (actor.input.buttons & ~movementButtons)!=0) {
-                parallelMotor=false;
-                break;
+            if(!bots_[i] && actor.health>0 && !actor.vehicle &&
+               !actor.frozen && !actor.climbing) {
+                motorEligible[i]=1;
+                ++count;
             }
         }
+        parallelMotor=count>=32;
     }
-    std::vector<MotorResult> motorResults;
     if(parallelMotor) {
         motorResults.resize(s.actors.size());
+        motorOriginals=s.actors;
         static thread_local ecs_experiment::PersistentWorkers motorWorkers{3};
         motorWorkers.parallelFor(s.actors.size(),[&](size_t begin,size_t end) {
             for(size_t i=begin;i<end;++i) {
-                Actor copy=s.actors[i];
+                if(!motorEligible[i])continue;
+                Actor copy=motorOriginals[i];
                 Input input=copy.input;
                 if(sim.tick()-copy.lastInputTick>config_.inputTimeout) {
                     input.forward=input.right=0;
@@ -359,8 +365,10 @@ void Module::tick(Simulation& sim) {
         if(sim.tick()-a.lastInputTick>config_.inputTimeout){input.forward=input.right=0;input.buttons=0;input.action=Action::None;}
         if(config_.systems.enabled)actorSystems(sim,a,input);
 #if defined(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
-        if(parallelMotor) {
-            const auto& m=motorResults[size_t(&a-s.actors.data())];
+        const size_t motorIndex=size_t(&a-s.actors.data());
+        if(parallelMotor && motorEligible[motorIndex] &&
+           a==motorOriginals[motorIndex]) {
+            const auto& m=motorResults[motorIndex];
             a.pos=m.pos;a.velocity=m.velocity;a.yaw=m.yaw;a.pitch=m.pitch;
             a.grounded=m.grounded;a.crouched=m.crouched;a.prone=m.prone;
         } else
