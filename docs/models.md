@@ -746,11 +746,21 @@ and checks pixel-identical A/B output when indirect rendering is switched on.
 
 A macOS 15.6 Apple G15 crash report showed a SIGSEGV inside
 `AGX::RenderContext::executeCommandsInBufferCommon`, called from
-`MetalDevice::drawIndexedIndirect`. The experimental Metal ICB command encoder
-is **disabled by default**, regardless of GPU family, until a corrected encoder
-and real-device validation are available. The automatic renderer falls back to
-ordinary/instanced draws; the shared geometry pool can remain enabled.
-For controlled engineering reproductions only, opt in with
-`AIVERSE_EXPERIMENTAL_METAL_ICB=1` (unsafe; can crash the editor).
+`MetalDevice::drawIndexedIndirect`. The Metal ICB encoder has been reworked to use explicit pipeline,
+vertex and per-draw uniform buffer bindings, plus explicit resource residency.
+This avoids relying on inherited `setVertexBytes` bindings when executing an
+indirect command buffer. It is **still disabled by default until real-device
+pixel A/B and stability tests pass**, including the original Apple G15 machine.
+The automatic renderer falls back to ordinary/instanced draws; the shared
+geometry pool currently requires an indirect-capable backend and will also
+be inactive in this mode. For controlled engineering validation only, opt in
+with `AIVERSE_EXPERIMENTAL_METAL_ICB=1` (can still crash until verified).
 The Scene's Batching popup reports indirect support accordingly. Vulkan's
 indirect path remains independently capability-gated.
+
+
+A focused `metal-icb-gpu` macOS CI job builds the real-backend A/B fixture
+(`AIVERSE_PALETTE_TEST_CASE=indirect`) with experimental ICB enabled. The
+fixture compares pixel buffers and expects reduced CPU draw submissions when
+an indirect-capable GPU is available. This CI alone does not certify stability
+on Apple G15; a passing result on the original Mac is the final release gate.
