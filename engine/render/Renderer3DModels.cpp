@@ -606,7 +606,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         triangles += uint64_t(part.indexCount / 3) * (end - n);
         n = end;
     }
-    if (commands.size() < 2) return false; // conventional instancing is cheaper
+    // Building CPU ICB commands on Metal has a measurable setup cost.
+    // Avoid switching to indirect for tiny groups where indexed draws win.
+    const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? 8u : 4u;
+    if (commands.size() < minimumCommands) return false;
     if (!drawModelBatch(items, count, phase, false)) return true; // pipeline warming: no fallback draw
     if (!indirectCommands_.valid()) {
         gfx::BufferDesc d;
@@ -685,6 +688,7 @@ void Renderer3D::renderModels(int phase) {
     std::vector<uint32_t> materialGroup(modelItems_.size(), 0);
     std::vector<uint32_t> representatives;
     std::map<std::pair<const Material*, const Model*>, uint32_t> identicalPointers;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> candidatesByHash;
     for (uint32_t i : order_) {
         const auto& item = modelItems_[i];
         const auto materialKey = std::make_pair(item.mat, item.model);
@@ -692,10 +696,15 @@ void Renderer3D::renderModels(int phase) {
         if (cached != identicalPointers.end()) {
             materialGroup[i] = cached->second; continue;
         }
+        const uint64_t key = gpuMaterialStateHash(*item.model, *item.mat);
+        auto& candidates = candidatesByHash[key];
         uint32_t id = uint32_t(representatives.size());
-        for (uint32_t j = 0; j < representatives.size(); ++j)
+        for (uint32_t j : candidates)
             if (sameGpuMaterial(item, modelItems_[representatives[j]])) { id = j; break; }
-        if (id == representatives.size()) representatives.push_back(i);
+        if (id == representatives.size()) {
+            representatives.push_back(i);
+            candidates.push_back(id);
+        }
         identicalPointers.emplace(materialKey, id);
         materialGroup[i] = id;
     }
