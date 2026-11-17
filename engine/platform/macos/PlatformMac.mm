@@ -9,6 +9,8 @@
 #import <Metal/Metal.h>
 
 #include <chrono>
+#include <cmath>
+#include <cstdio>
 #include <memory>
 
 using namespace aiverse;
@@ -198,7 +200,19 @@ static void updateSizes(NSView* view) {
         ((CAMetalLayer*)self.view.layer).displaySyncEnabled=NO;
         self.benchmarkActivity=[[NSProcessInfo processInfo] beginActivityWithOptions:NSActivityUserInitiated|NSActivityLatencyCritical reason:@"AIVERSE render benchmark"];
     }
-    self.timer = [NSTimer timerWithTimeInterval:uncapped?0.001:1.0/120.0 target:self selector:@selector(tick) userInfo:nil repeats:YES];
+    // NSTimer schedules opportunities to render; the display/GPU can still limit FPS.
+    // A configurable cadence makes frame pacing regressions reproducible.
+    double timerHz = 120.0;
+    if (const char* rate = std::getenv("AIVERSE_MAC_FRAME_HZ"); rate && *rate) {
+        char* end = nullptr;
+        const double requested = std::strtod(rate, &end);
+        if (end != rate && *end == '\0' && std::isfinite(requested) && requested >= 15.0 && requested <= 240.0)
+            timerHz = requested;
+    }
+    if (std::getenv("AIVERSE_FRAME_TRACE"))
+        std::fprintf(stderr, "[mac-frame] timer=%.1f Hz, uncapped=%d, displaySync=%d (not an FPS guarantee)\n",
+                     uncapped ? 1000.0 : timerHz, int(uncapped), int(!uncapped));
+    self.timer = [NSTimer timerWithTimeInterval:uncapped?0.001:1.0/timerHz target:self selector:@selector(tick) userInfo:nil repeats:YES];
     [[NSRunLoop currentRunLoop] addTimer:self.timer forMode:NSRunLoopCommonModes];
 }
 - (void)tick {
