@@ -1272,14 +1272,19 @@ void Renderer3D::renderModels(int phase) {
         identicalPointers.emplace(materialKey, id);
         materialGroup[i] = id;
     }
-    // Experimental opaque/shadow state ordering: put geometry sharing the same
-    // GPU vertex/index buffers together before primitive sorting. This can
-    // expose larger contiguous MDI candidates without crossing material groups.
-    // Disabled by default; A/B benchmark toggles modelMultiDrawEnabled_.
+    // Group compatible opaque/shadow geometry by shared GPU buffers before
+    // individual primitives. Distinct meshes with the same GPU material can
+    // then share one MDI submission instead of being separated by prim pointers.
+    // Metal benefits from this ordering; keep the prior ordering elsewhere
+    // (notably Vulkan's nonzero-base-vertex indirect fallback).
+    // AIVERSE_MDI_GEOMETRY_SORT=0 restores primitive-first order for A/B tests.
+    const char* geometrySortSetting = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
+    const bool geometrySortRequested = geometrySortSetting
+        ? std::strcmp(geometrySortSetting, "1") == 0
+        : dev_->info().backend == gfx::Backend::Metal;
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
         !gpuAdaptiveInstancingFallback_ && phase <= 1 &&
-        std::getenv("AIVERSE_MDI_GEOMETRY_SORT") &&
-        std::strcmp(std::getenv("AIVERSE_MDI_GEOMETRY_SORT"), "1") == 0;
+        geometrySortRequested;
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
