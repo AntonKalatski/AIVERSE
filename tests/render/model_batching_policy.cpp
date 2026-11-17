@@ -4,6 +4,7 @@
 #include "engine/render/ModelMerge.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/GlobalGeometryPool.h"
+#include "engine/render/PersistentGpuScene.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -241,6 +242,49 @@ int main() {
     releaseModel(legacy, legacyModel);
     CHECK(legacy.destroyed == 2);
 
+
+    // Persistent scene staging: stable handles, generation invalidation,
+    // unchanged-record elision, coalesced uploads, and full GPU-slot refresh.
+    {
+        PersistentGpuScene scene;
+        GpuSceneRecord record{};
+        record.geometry = 7;
+        auto a = scene.insert(record);
+        auto b = scene.insert(record);
+        CHECK(scene.liveCount() == 2 && scene.contains(a) && scene.contains(b));
+        std::vector<PersistentGpuScene::DirtyRange> ranges;
+        auto flush = [&](PersistentGpuScene::DirtyRange range, const GpuSceneRecord* values) {
+            ranges.push_back(range);
+            CHECK(values[0].geometry == 7 || values[0].geometry == 0);
+        };
+        scene.flush(flush);
+        CHECK(ranges.size() == 1 && ranges[0].first == 0 && ranges[0].count == 2);
+        ranges.clear();
+        CHECK(scene.update(a, record));
+        scene.flush(flush);
+        CHECK(ranges.empty());
+        record.geometry = 9;
+        CHECK(scene.update(a, record));
+        scene.flush([&](PersistentGpuScene::DirtyRange range, const GpuSceneRecord* values) {
+            ranges.push_back(range);
+            CHECK(values[0].geometry == 9);
+        });
+        CHECK(ranges.size() == 1 && ranges[0].first == 0 && ranges[0].count == 1);
+        ranges.clear();
+        CHECK(scene.erase(a) && !scene.contains(a) && !scene.update(a, record));
+        auto replacement = scene.insert(record);
+        CHECK(replacement.slot == a.slot && replacement.generation != a.generation);
+        scene.flush([&](PersistentGpuScene::DirtyRange range, const GpuSceneRecord*) {
+            ranges.push_back(range);
+        });
+        CHECK(ranges.size() == 1 && ranges[0].count == 1);
+        ranges.clear();
+        scene.invalidateAll();
+        scene.flush([&](PersistentGpuScene::DirtyRange range, const GpuSceneRecord*) {
+            ranges.push_back(range);
+        });
+        CHECK(ranges.size() == 1 && ranges[0].count == 2);
+    }
 
     std::puts("engine model batching policy: PASS");
     return 0;
