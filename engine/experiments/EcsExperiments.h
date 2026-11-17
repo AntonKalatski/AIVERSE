@@ -48,6 +48,8 @@ public:
     unsigned workers() const {return workers_;}
 
     template<class Fn> void parallelFor(size_t n,Fn&& callback) {
+        if (currentPool_==this)
+            throw std::logic_error("nested parallelFor on the same worker pool");
         if(n==0)return;
         if(workers_==0){callback(size_t(0),n);return;}
         std::function<void(unsigned)> local;
@@ -67,7 +69,12 @@ public:
             ++epoch_;
         }
         wake_.notify_all();
-        try {local(workers_);}
+        struct CallerScope {
+            const PersistentWorkers* previous;
+            CallerScope(const PersistentWorkers* pool):previous(currentPool_) {currentPool_=pool;}
+            ~CallerScope(){currentPool_=previous;}
+        };
+        try {CallerScope scope(this);local(workers_);}
         catch(...) {recordFailure(std::current_exception());}
         std::exception_ptr failure;
         {
@@ -104,8 +111,12 @@ private:
                 seen=epoch_;
                 fn=fn_;
             }
-            try {fn(index);}
-            catch(...) {recordFailure(std::current_exception());}
+            try {
+                const auto* previous=currentPool_;
+                currentPool_=this;
+                try {fn(index);} catch(...) {currentPool_=previous;throw;}
+                currentPool_=previous;
+            } catch(...) {recordFailure(std::current_exception());}
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 ++finished_;
@@ -113,6 +124,7 @@ private:
             }
         }
     }
+    static inline thread_local const PersistentWorkers* currentPool_=nullptr;
     const unsigned workers_;
     std::vector<std::thread> threads_;
     std::mutex mutex_;
