@@ -152,8 +152,24 @@ public:
     RtsView& operator=(const RtsView&) = delete;
     // reader: content files (models, textures); default platform::readContentFile.
     bool init(gfx::Device& dev, const Rules& rules, render::FileReader reader = {});
-    // Clients defer type assets until a map uses them; editor/model viewers remain eager.
+    // Editor also opts in to deferred assets: actual map objects and previews
+    // load their own types on demand, instead of allocating the entire catalog.
     void setDeferredLoading(bool on) { deferredLoading_ = on; }
+    struct AssetResidencyStats {
+        size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
+    };
+    // Excludes the terrain, special renderers, FX, dedicated buffers and
+    // textures not owned by ModelTextureCache.
+    AssetResidencyStats assetResidencyStats() const {
+        AssetResidencyStats stats;
+        for (bool loaded : loadedTypes_) if (loaded) ++stats.loadedTypes;
+        stats.cachedModels = models_.size(); // includes built-in shape fallbacks
+        if (textureCache_) {
+            stats.gpuTextures = textureCache_->gpuCount();
+            stats.decodedCpuBytes = textureCache_->decodedBytes();
+        }
+        return stats;
+    }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
     void trimTypes(const std::vector<bool>& keep, bool compact = false);
