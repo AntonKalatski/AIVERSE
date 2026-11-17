@@ -187,6 +187,7 @@ public:
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void drawFpsSceneInspector();
     void selectFpsSceneObject(int index) { fpsSelectedSceneObject_ = index; }
+    void selectFpsSceneSource(bool spawn, size_t sourceIndex);
     int selectedFpsSceneObject() const { return fpsSelectedSceneObject_; }
     void startPlay(int humanSlot = 0);
     void stopPlay();
