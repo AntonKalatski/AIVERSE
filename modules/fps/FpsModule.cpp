@@ -482,7 +482,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
                 runtime->value.health!=actor.health ||
                 runtime->value.armor!=actor.armor ||
                 runtime->value.weaponIndex!=actor.weaponIndex ||
-                runtime->value.magazine!=actor.magazine ||
+                runtime->value.ammo!=actor.ammo ||
                 runtime->value.reserve!=actor.reserve)
                 throw std::logic_error("FPS ECS actor mirror diverged after tick");
         }
