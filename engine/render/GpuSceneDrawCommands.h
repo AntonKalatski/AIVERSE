@@ -238,11 +238,17 @@ struct alignas(16) Record {
     DrawArgs draw;
     uint enabled;
     uint2 padding;
+    DrawArgs lodAlternate;
+    float lodMaxPixels;
+    float lodError;
+    uint lodEnabled;
+    uint4 lodPadding;
 };
 struct Params {
     float4x4 viewProjection;
     uint count;
     uint compactEnabled, pad1, pad2;
+    uint viewportWidth, viewportHeight, unused0, unused1;
 };
 struct CompactedDraw {
     DrawArgs args;
@@ -279,6 +285,43 @@ kernel void cs_main(device const Record* records [[buffer(0)]],
         if (v.z < 0.0) outside |= 16;
         if (v.z > v.w) outside |= 32;
         allOutside &= outside;
+    }
+    // Match the CPU geometryErrorPixels projection metric for the strict
+    // two-level, single-primitive LOD subset. Any near-plane crossing,
+    // invalid denominator or projected-size uncertainty keeps full detail.
+    if (r.lodEnabled != 0 && params.viewportWidth != 0 &&
+        params.viewportHeight != 0 && r.lodMaxPixels > 0 &&
+        allOutside == 0) {
+        float minW = INFINITY, maxAbsX = 0.0f, maxAbsY = 0.0f;
+        bool safe = true;
+        for (uint corner = 0; corner < 8; ++corner) {
+            const float3 p = float3(
+                (corner & 1) ? r.hi.x : r.lo.x,
+                (corner & 2) ? r.hi.y : r.lo.y,
+                (corner & 4) ? r.hi.z : r.lo.z);
+            const float4 q = clip * float4(p, 1.0);
+            if (!all(isfinite(q)) || q.w <= 0.0f || q.z < 0.0f) {
+                safe = false;
+                break;
+            }
+            minW = min(minW, q.w);
+            maxAbsX = max(maxAbsX, abs(q.x));
+            maxAbsY = max(maxAbsY, abs(q.y));
+        }
+        const float xNorm = length(float3(clip[0][0], clip[1][0], clip[2][0]));
+        const float yNorm = length(float3(clip[0][1], clip[1][1], clip[2][1]));
+        const float wNorm = length(float3(clip[0][3], clip[1][3], clip[2][3]));
+        const float deltaW = wNorm * r.lodError;
+        if (safe && minW > deltaW) {
+            const float pixels = 0.5f * max(
+                float(params.viewportWidth) * r.lodError *
+                    (xNorm * minW + maxAbsX * wNorm),
+                float(params.viewportHeight) * r.lodError *
+                    (yNorm * minW + maxAbsY * wNorm)) /
+                    (minW * (minW - deltaW));
+            if (isfinite(pixels) && pixels < r.lodMaxPixels)
+                args = r.lodAlternate;
+        }
     }
     args.instanceCount = (allOutside == 0) ? args.instanceCount : 0;
     output[idx] = args;
