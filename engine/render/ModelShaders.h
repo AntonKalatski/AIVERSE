@@ -264,6 +264,11 @@ void main() {
     if(v_lod.y>0.5 ? noise<v_lod.x : noise>=v_lod.x)discard;
 #endif
 #if defined(OUTLINE)
+#if defined(ALPHAMASK)
+    // Mask pass uses original geometry and must exclude discarded foliage,
+    // grills and other cutout surfaces from the selection silhouette.
+    if (texture(tex1, v_uv).a * PALETTE_BASE.a < m_misc.x) discard;
+#endif
     o_color = vec4(rtsEncodeScene(v_team.rgb), v_tint.a);
 #else
     // Actor aperture: dissolve only fragments strictly closer than the actor.
@@ -662,6 +667,10 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     if(in.lod.y>0.5 ? noise<in.lod.x : noise>=in.lod.x)discard_fragment();
 #endif
 #if defined(OUTLINE)
+#if defined(ALPHAMASK)
+    if (tex1.sample(s1, in.uv).a * m.base.a < m.misc.x)
+        discard_fragment();
+#endif
     return float4(rtsEncodeScene(in.team.rgb), in.tint.a);
 #else
     // Actor aperture: dissolve only fragments strictly closer than the actor.
