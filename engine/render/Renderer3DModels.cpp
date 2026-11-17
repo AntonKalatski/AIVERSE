@@ -937,6 +937,21 @@ void Renderer3D::prepareGpuModelDraws() {
         record.command.firstIndex = it.firstIndex + it.model->gpuFirstIndex;
         record.command.baseVertex = int32_t(it.model->gpuBaseVertex);
         record.command.firstInstance = 0;
+        if (it.gpuLodAvailable) {
+            record.command = it.gpuLodNear;
+            record.lodAlternate = it.gpuLodFar;
+            record.lodMaxPixels = it.gpuLodMaxPixels;
+            record.lodError = it.gpuLodError;
+            record.lodEnabled = 1;
+            // Culling and projected size must use the common base-mesh bounds,
+            // not the primitive bounds of the CPU-selected LOD.
+            record.boundsMin[0] = it.gpuLodBoundsMin.x;
+            record.boundsMin[1] = it.gpuLodBoundsMin.y;
+            record.boundsMin[2] = it.gpuLodBoundsMin.z;
+            record.boundsMax[0] = it.gpuLodBoundsMax.x;
+            record.boundsMax[1] = it.gpuLodBoundsMax.y;
+            record.boundsMax[2] = it.gpuLodBoundsMax.z;
+        }
         record.enabled = 1;
         gpuModelSlots_[i] = uint32_t(gpuModelRecords_.size());
         gpuModelRecords_.push_back(record);
@@ -946,7 +961,9 @@ void Renderer3D::prepareGpuModelDraws() {
     if (!gpuModelEligible_) return;
     gpuModelFrame_ = dev_->frameSerial();
     gpuModelCommandsReady_ = gpuModelCommands_.prepare(
-        *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_, &gpuModelSubmission_);
+        *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_,
+        &gpuModelSubmission_, uint32_t(std::max(sceneW_, 0)),
+        uint32_t(std::max(sceneH_, 0)));
     if (!gpuModelCommandsReady_ || !modelInstancingEnabled_) return;
     static const bool gpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
