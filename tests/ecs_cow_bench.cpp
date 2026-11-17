@@ -3,6 +3,7 @@
 #include "engine/core/ECS.h"
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 using namespace aiverse;
