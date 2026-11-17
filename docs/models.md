@@ -708,3 +708,36 @@ This implementation generates commands on the CPU and uploads them to a
 GPU indirect buffer. True GPU-driven command production, GPU Hi-Z/LOD/
 meshlet culling, bindless material tables and global geometry pooling across
 unrelated models still require separate verified implementations.
+
+
+### Automatic shared geometry pool (rigid model assets)
+
+AIVERSE now attempts to place eligible rigid imported meshes into shared
+8 MiB GPU pages during `uploadModel()`. Vertex bytes are packed from the
+front and uint32 indices from the back of each page. Each model retains its
+node hierarchy, independent node transforms and its original local indices.
+The renderer supplies a per-model vertex/index base for conventional indexed
+draws, while indirect command generation supplies those bases per GPU draw.
+This enables Multi-Draw across **different models** in one page when they
+also share equivalent shader, material parameters, textures and pipeline state.
+
+Automatic fallback to dedicated buffers applies to skinned/morph targets,
+clips, variants, authored LOD meshes, prepared geometry/cluster meshes,
+models larger than 16 MiB and uploads performed inside a Metal render or
+compute encoder. No gameplay code or per-model configuration is required.
+`AIVERSE_GEOMETRY_POOL=off` provides a process-level override for A/B tests.
+Scene View → **Batching → Shared Geometry Pool** reloads models to compare
+the paths with a fixed camera without restarting the editor.
+
+Current allocations are page-based and append-only; page buffers are freed
+when the last Model referencing them is explicitly released. Fine-grained
+hole reclamation, defragmentation, GPU-resident virtual-geometry streaming,
+and asynchronous eviction budgets are not implemented in this version.
+The scene profiler reports submissions, instances and indirect commands;
+GPU frame time must be checked separately on actual target hardware.
+
+Focused CI `GPU batching focused regression` includes a mock GPU device
+test verifying shared buffer IDs, original vertex/index bytes, offsets and
+last-owner release; the opt-in real-backend `AIVERSE_PALETTE_TEST_CASE=indirect`
+now renders two separate synthetic rigid models sharing one geometry page,
+and checks pixel-identical A/B output when indirect rendering is switched on.
