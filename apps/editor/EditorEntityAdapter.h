@@ -191,7 +191,9 @@ inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
             !(lo[axis] < hi[axis])) return false;
     Json* collider = fpsDocumentEntity(map.data.fps, ref);
     if (!collider || !(*collider)["min"].isArray() ||
-        !(*collider)["max"].isArray()) return false;
+        !(*collider)["max"].isArray() ||
+        (*collider)["min"].size() < 3 || (*collider)["max"].size() < 3)
+        return false;
     Json minJson = Json::array(), maxJson = Json::array();
     for (size_t axis = 0; axis < 3; ++axis) {
         minJson.push(Json::number(lo[axis], 3));
