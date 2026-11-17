@@ -4,6 +4,7 @@
 #pragma once
 #include "EditorEntityAdapter.h"
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace aiverse::editor {
