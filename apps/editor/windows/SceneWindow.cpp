@@ -28,6 +28,10 @@ public:
         if(ed.ws().project.isFps()) {
             if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
             ImGui::SameLine();ImGui::TextDisabled("%s",genreText(ed.ws(),"fps.editor.camera").c_str());
+            ImGui::SameLine();
+            batchingControls(ed);
+            ImGui::SameLine();
+            if (ImGui::Button("Draw Calls##fpsScene")) studioDebugMode_ = studioDebugMode_ == 1 ? 0 : 1;
         } else toolbar(ed);
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
@@ -97,6 +101,46 @@ public:
     }
 
 private:
+    void batchingControls(Editor& ed) {
+        if (ImGui::Button("Batching##scene")) ImGui::OpenPopup("##scene_batching");
+        if (ImGui::BeginPopup("##scene_batching")) {
+            ImGui::TextUnformatted("Scene model batching");
+            ImGui::Separator();
+            ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
+            ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
+            ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
+            ImGui::Checkbox("Model culling", &sceneCulling_);
+            ImGui::SetNextItemWidth(180.0f);
+            if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
+                sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
+            ImGui::Separator();
+            const uint32_t currentDraws = ed.renderer().drawCalls();
+            ImGui::Text("Renderer draws (all passes): %u", currentDraws);
+            const auto& modelStats = ed.renderer().modelStats();
+            ImGui::Text("Model instanced calls: %llu", (unsigned long long)modelStats.instancedDraws);
+            ImGui::Text("Indirect submissions: %llu (%llu commands)",
+                (unsigned long long)modelStats.multiDrawSubmissions,
+                (unsigned long long)modelStats.indirectCommands);
+            ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
+            if (ImGui::Button("Capture baseline##scene_batch")) baselineDraws_ = currentDraws;
+            if (baselineDraws_ >= 0) {
+                ImGui::SameLine();
+                ImGui::Text("baseline %lld, delta %+lld", (long long)baselineDraws_,
+                            (long long)currentDraws - baselineDraws_);
+            }
+            const auto& profile = ed.renderer().profile();
+            ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
+            ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
+            if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
+            ImGui::Separator();
+            ImGui::TextDisabled("Instance limit applies to the shared renderer (Scene and Game).");
+            ImGui::TextDisabled("Static/model material merge is decided at upload.");
+            if (ImGui::Button("Reload models from asset policies")) ed.reloadRules();
+            ImGui::TextWrapped("Use per-asset batching policy before upload; changing an uploaded model requires reload.");
+            ImGui::EndPopup();
+        }
+    }
+
     void toolbar(Editor& ed) {
         static const char* names[] = {"Выбор", "Объекты", "Клетки", "Уровни", "Высота", "Поля", "Регионы", "Зоны", "Старты", "Дороги", "Ластик"};
         static const char* icons[] = {ICON_SELECT, ICON_OBJECTS, ICON_CELLS, ICON_LEVELS, ICON_HEIGHT, ICON_FIELDS, ICON_REGIONS, ICON_ZONES,
@@ -137,43 +181,8 @@ private:
             ImGui::EndCombo();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Batching##scene")) ImGui::OpenPopup("##scene_batching");
-        if (ImGui::BeginPopup("##scene_batching")) {
-            ImGui::TextUnformatted("Scene model batching");
-            ImGui::Separator();
-            ImGui::Checkbox("GPU Instancing", &sceneInstancing_);
-            ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_);
-            ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
-            ImGui::Checkbox("Model culling", &sceneCulling_);
-            ImGui::SetNextItemWidth(180.0f);
-            if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
-                sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
-            ImGui::Separator();
-            const uint32_t currentDraws = ed.renderer().drawCalls();
-            ImGui::Text("Renderer draws (all passes): %u", currentDraws);
-            const auto& modelStats = ed.renderer().modelStats();
-            ImGui::Text("Model instanced calls: %llu", (unsigned long long)modelStats.instancedDraws);
-            ImGui::Text("Indirect submissions: %llu (%llu commands)",
-                (unsigned long long)modelStats.multiDrawSubmissions,
-                (unsigned long long)modelStats.indirectCommands);
-            ImGui::Text("Model instances submitted: %llu", (unsigned long long)modelStats.drawnInstances);
-            if (ImGui::Button("Capture baseline##scene_batch")) baselineDraws_ = currentDraws;
-            if (baselineDraws_ >= 0) {
-                ImGui::SameLine();
-                ImGui::Text("baseline %lld, delta %+lld", (long long)baselineDraws_,
-                            (long long)currentDraws - baselineDraws_);
-            }
-            const auto& profile = ed.renderer().profile();
-            ImGui::Text("Model pass draws: %u", profile.draws[1] + profile.draws[2]);
-            ImGui::TextDisabled("Draw Calls view: colours actual model draw submissions.");
-            if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
-            ImGui::Separator();
-            ImGui::TextDisabled("Instance limit applies to the shared renderer (Scene and Game).");
-            ImGui::TextDisabled("Static/model material merge is decided at upload.");
-            if (ImGui::Button("Reload models from asset policies")) ed.reloadRules();
-            ImGui::TextWrapped("Use per-asset batching policy before upload; changing an uploaded model requires reload.");
-            ImGui::EndPopup();
-        }
+        batchingControls(ed);
+        ImGui::SameLine();
         ImGui::SameLine();
         if (ui::toolButton(ICON_EYE, "Отладочные gizmo")) ImGui::OpenPopup("##studio_gizmos");
         if (ImGui::BeginPopup("##studio_gizmos")) {
