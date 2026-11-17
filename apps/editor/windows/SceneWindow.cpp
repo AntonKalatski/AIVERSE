@@ -119,6 +119,11 @@ private:
             if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
                 sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
             ImGui::Separator();
+            const auto geometryPool = render::geometryPoolStats(ed.device());
+            ImGui::Text("Geometry: %zu pages / %zu models", geometryPool.pages, geometryPool.liveModels);
+            ImGui::Text("GPU geometry: %.1f / %.1f MiB",
+                        double(geometryPool.occupiedBytes) / (1024.0 * 1024.0),
+                        double(geometryPool.allocatedBytes) / (1024.0 * 1024.0));
             const uint32_t currentDraws = ed.renderer().drawCalls();
             ImGui::Text("Renderer draws (all passes): %u", currentDraws);
             const auto& modelStats = ed.renderer().modelStats();
