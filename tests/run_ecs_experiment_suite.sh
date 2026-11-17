@@ -5,19 +5,28 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 CXX="${CXX:-c++}"
 SAN=""
+TSAN=0
 DO_BENCH=0
 for arg in "$@"; do
     case "$arg" in
         --bench) DO_BENCH=1 ;;
         --sanitize) SAN="-fsanitize=address,undefined -fno-omit-frame-pointer" ;;
+        --tsan) TSAN=1 ;;
         *) echo "Unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
+if [[ "$TSAN" == 1 && -n "$SAN" ]]; then
+    echo "Use --tsan and --sanitize in separate runs" >&2
+    exit 2
+fi
 BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aiverse-ecs-tests.XXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
 COMMON=(-std=c++20 -O2 -pthread -I. -Wall -Wextra)
 if [[ -n "$SAN" ]]; then
     COMMON+=(-fsanitize=address,undefined -fno-omit-frame-pointer)
+fi
+if [[ "$TSAN" == 1 ]]; then
+    COMMON+=(-fsanitize=thread -fno-omit-frame-pointer)
 fi
 compile_run() {
     local name="$1"
