@@ -47,6 +47,7 @@ struct Selection {
                 MapBlock,   // a block of the map document's extra JSON (key = path: "lights[2]", "gridFields")
                 Road,       // map road (index)
                 FpsObject,  // FPS document collider/spawn, stable source key in ref
+                FpsActor,   // FPS runtime actor snapshot (State resource; index is actor slot index)
                 Body } kind = None;   // planet map body (index)
     int index = -1;          // entity / player (0-based) / wave / trigger / road / body
     std::string key;         // area name, region letter, rule id, map block path
@@ -185,6 +186,7 @@ public:
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
     void enqueueFpsSceneGeometry(const render::RTSCamera&);
+    const Json& fpsRuntimeSnapshot(); // FPS World resource actors; cached by document/rules revision
     int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
     void selectFpsSceneSource(bool spawn, size_t sourceIndex);
     bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;
@@ -319,6 +321,11 @@ private:
     render::Renderer3D r3d_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;
+    Json fpsRuntimeCache_;
+    uint64_t fpsRuntimeRevision_ = UINT64_MAX;
+    uint64_t fpsRuntimeRulesRevision_ = UINT64_MAX;
+    std::string fpsRuntimeProjectDir_;
+
     render::PostFx postFx_;
     game::RtsView view_;
     bool showPicker_ = false;
