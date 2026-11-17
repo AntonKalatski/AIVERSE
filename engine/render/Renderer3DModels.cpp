@@ -798,10 +798,13 @@ void Renderer3D::renderModels(int phase) {
     currentPipe_ = {};
     lastItem_ = nullptr;
     auto batchable = [&](const ModelItem& x) { return modelInstancingEnabled_ && x.joints < 0 && x.morph < 0; };
-    auto sameBatch = [&](const ModelItem& x, const ModelItem& y) {
+    auto sameBatch = [&](uint32_t xIndex, uint32_t yIndex) {
+        const ModelItem& x = modelItems_[xIndex];
+        const ModelItem& y = modelItems_[yIndex];
         if((x.lodThreshold<1 || x.lodInvert)!=(y.lodThreshold<1 || y.lodInvert))return false;
         const bool bx = x.mat->alpha == AlphaMode::Blend || x.tint.w < 0.99f, by = y.mat->alpha == AlphaMode::Blend || y.tint.w < 0.99f;
-        return x.paletteMaterials == y.paletteMaterials && x.prim == y.prim && sameGpuMaterial(x, y) && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
+        return x.paletteMaterials == y.paletteMaterials && x.prim == y.prim &&
+               materialGroup[xIndex] == materialGroup[yIndex] && x.baked == y.baked && bx == by && x.gi == y.gi && x.lmPage == y.lmPage &&
                (x.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal)) == (y.flags & (kDrawFadeDepth | kDrawTransparent | kDrawActorReveal));
     };
     // Invariant across all model batches in this pass. Avoid environment
@@ -889,7 +892,7 @@ void Renderer3D::renderModels(int phase) {
         size_t j = i + 1;
         if (batchable(modelItems_[order_[i]]))
             while (j < order_.size() && j - i < size_t(instanceLimit_) && batchable(modelItems_[order_[j]]) &&
-                   sameBatch(modelItems_[order_[i]], modelItems_[order_[j]])) ++j;
+                   sameBatch(order_[i], order_[j])) ++j;
         drawGeometryBatch(order_.data() + i, uint32_t(j - i), phase);
         i = j;
     }
