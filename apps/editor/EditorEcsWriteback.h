@@ -4,6 +4,8 @@
 #pragma once
 #include "EditorEntityAdapter.h"
 #include "EditorWorldEdit.h"
+#include "modules/rts/RtsNative.h"
+#include <utility>
 #include <limits>
 #include <string>
 
