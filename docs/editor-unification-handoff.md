@@ -778,3 +778,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Finding:** independent shared ECS launch/flight/damage libraries exist but production RTS/FPS still use legacy gameplay; FPS ECS full-runtime payloads are canonical only between tick boundaries under an opt-in flag; RTS simulation registration is not itself genre-neutral component composition. Rendering, UI, offline tools and account meta are not simulation ECS migration targets.
 - **Verification executed:** successful GitHub connector source reads, `libraries/catalog.json` JSON parse and GitHub file creation responses. **No** native CMake build, CTest, sanitizer, FPS/RTS gameplay, checksum parity, Metal/GLES validation, editor visual test or CI results were run/verified here.
 - **Next action:** E00 baseline and golden RTS/FPS replay/event/save snapshots; coordinate ownership with active FPS and ECS agents before any implementation. Start incremental E01/E02/E03 integration, never mass-rewrite or replace live logic without parity proof. Keep this handoff updated after each subsequent implementation commit.
+
+
+### 2026-11-18 — Universal ECS whole-engine migration register
+- Implementation SHA: `0586878c1047c77401c870830330dfc32ab299b8`.
+- Changed: `docs/ecs-all-features-migration-plan.md`; catalog-based review of all 120 packages (78 simulation, 21 presentation, 21 tools), 41 RTS `Simulation` system registrations, FPS opt-in `ecsAuthority` and the three existing generic weapon packages. Records waves, source-of-truth contract, host parity gates, native/API/editor requirements and per-package dispositions.
+- Verification: read source via linked GitHub branch and parsed the catalog; **no native build, CTest or real RTS/FPS gameplay parity executed**. A migration plan is not a code migration. Library data may have changed since inspection; re-read before editing.
+- Next: add reusable ECS gameplay components/systems (weapon reload, timers, stats) and independent native/cross-genre rollback fixtures; integrate actual RTS/FPS paths incrementally with legacy-save parity.
