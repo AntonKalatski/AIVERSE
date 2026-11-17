@@ -741,3 +741,16 @@ test verifying shared buffer IDs, original vertex/index bytes, offsets and
 last-owner release; the opt-in real-backend `AIVERSE_PALETTE_TEST_CASE=indirect`
 now renders two separate synthetic rigid models sharing one geometry page,
 and checks pixel-identical A/B output when indirect rendering is switched on.
+
+### Metal ICB safety (November 2026)
+
+A macOS 15.6 Apple G15 crash report showed a SIGSEGV inside
+`AGX::RenderContext::executeCommandsInBufferCommon`, called from
+`MetalDevice::drawIndexedIndirect`. The experimental Metal ICB command encoder
+is **disabled by default**, regardless of GPU family, until a corrected encoder
+and real-device validation are available. The automatic renderer falls back to
+ordinary/instanced draws; the shared geometry pool can remain enabled.
+For controlled engineering reproductions only, opt in with
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1` (unsafe; can crash the editor).
+The Scene's Batching popup reports indirect support accordingly. Vulkan's
+indirect path remains independently capability-gated.
