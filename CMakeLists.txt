@@ -109,6 +109,22 @@ add_library(aiverse_engine STATIC
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
 target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# ECS architecture experiments are isolated from the main game runtime.
+# Keep all five correctness checks in CTest so CI and agents can run them.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    foreach(test_name IN ITEMS
+            ecs_experiments_test
+            ecs_wave_executor_test
+            ecs_guarded_world_test
+            ecs_wave_replay_test
+            ecs_simulation_bridge_test)
+        add_executable(aiverse_${test_name} tests/${test_name}.cpp)
+        target_link_libraries(aiverse_${test_name} PRIVATE aiverse_engine Threads::Threads)
+        add_test(NAME ${test_name} COMMAND aiverse_${test_name})
+    endforeach()
+endif()
+
+
 option(AIVERSE_ENABLE_PHYSICS "Build optional Box3D physics module" OFF)
 if(AIVERSE_ENABLE_PHYSICS)
     add_subdirectory(engine/physics)
