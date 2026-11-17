@@ -933,7 +933,11 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             for (double& v : sums) v = 0.0;
         }
     }
-    lastItem_ = &modelItems_[items[count - 1]];
+    // U2 / texture bindings come from items[0] for the whole indirect
+    // submission. In per-instance palette mode the final command may use
+    // different PBR factors, so pretending its state is still bound would
+    // incorrectly skip the U2 upload for the next ordinary draw.
+    lastItem_ = &modelItems_[items[instancePalette ? 0u : count - 1u]];
     modelStats_.triangles += triangles;
     for (const auto& c : commands) if (c.instanceCount > 1) {
         ++modelStats_.instancedDraws;
