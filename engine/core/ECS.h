@@ -109,13 +109,15 @@ public:
             data_.push_back(T{std::forward<Args>(args)...});
             return data_.back();
         }
-        ensureUnique(sparseCow_);
-        if(e.index>=sparseCow_->size())sparseCow_->resize(e.index+1,kNone);
-        if((*sparseCow_)[e.index]!=kNone) {
+        // Replacing an existing component only dirties its payload page.
+        // Do not clone the giant sparse index on ordinary component writes.
+        if(e.index<sparseCow_->size() && (*sparseCow_)[e.index]!=kNone) {
             T& current=dataAt((*sparseCow_)[e.index]);
             current=T{std::forward<Args>(args)...};
             return current;
         }
+        ensureUnique(sparseCow_);
+        if(e.index>=sparseCow_->size())sparseCow_->resize(e.index+1,kNone);
         ensureUnique(denseCow_);
         const size_t pos=denseCow_->size();
         if(pos%kCowPageElements==0) {
