@@ -249,6 +249,43 @@ static void verifyIndexLifecycle() {
     w.index.eachAny<Velocity,Health>([&](uint32_t){++matchedAny;});
     if(matchedNone!=0 || matchedAny!=1) throw std::runtime_error("bitmap filters failed");
 }
+// Structural mutation cost of maintaining bitmap membership (independent copies).
+static void churn(size_t n) {
+    constexpr int warmup=2, samples=7;
+    auto seed=makeIndexed(n);
+    for(int mode=0;mode<2;++mode) {
+        std::vector<double> timings;
+        for(int rep=-warmup;rep<samples;++rep) {
+            auto w=seed;
+            auto ms=elapsed([&] {
+                for(size_t i=1;i<n;i+=8) {
+                    Entity e{uint32_t(i),0};
+                    if(mode==0) {
+                        w.world.add<Health>(e,Health{});
+                        w.world.remove<Health>(e);
+                    } else {
+                        w.add<Health>(e,Health{});
+                        w.remove<Health>(e);
+                    }
+                }
+            });
+            if(mode==1) {
+                auto* mask=w.index.find<Health>();
+                for(size_t i=0;i<n;i+=8) {
+                    if(!mask || !mask->has(uint32_t(i)))
+                        throw std::runtime_error("bitmap churn damaged existing membership");
+                }
+                for(size_t i=1;i<n;i+=8) {
+                    if(mask && mask->has(uint32_t(i)))
+                        throw std::runtime_error("bitmap churn left stale membership");
+                }
+            }
+            if(rep>=0) timings.push_back(ms);
+        }
+        std::cout<<(mode==0?"sparse-churn":"bitmap-indexed-churn")<<","
+                 <<n<<","<<median(timings)<<",0,0\n";
+    }
+}
 static void run(size_t n) {
     constexpr int warmup=2, samples=7, steps=10;
     IndexedWorld seed=makeIndexed(n);
@@ -288,9 +325,9 @@ static void run(size_t n) {
 int main(int argc,char** argv) {
     try {
         verifyIndexLifecycle();
-        std::cout<<"variant,entities,query_10x_median_ms,checksum,extra_capacity_bytes\n";
-        if(argc>1) run(std::strtoull(argv[1],nullptr,10));
-        else for(size_t n:{size_t(10000),size_t(100000),size_t(1000000)}) run(n);
+        std::cout<<"variant,entities,query_10x_or_churn_median_ms,checksum,extra_capacity_bytes\n";
+        if(argc>1) { size_t n=std::strtoull(argv[1],nullptr,10); run(n); churn(n); }
+        else for(size_t n:{size_t(10000),size_t(100000),size_t(1000000)}) { run(n); churn(n); }
     } catch(const std::exception& e) {
         std::cerr<<"FAIL: "<<e.what()<<"\n"; return 1;
     }
