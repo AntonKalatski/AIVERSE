@@ -113,7 +113,9 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
     submitSceneRenderables(r3d_, instances);
     // Draw transform axes from the selected renderable, if visible.
     for (const auto& selected : instances) {
-        if (!selected.selected) continue;
+        // The gizmo belongs to the primary selected entity, not whichever
+        // selected collider happens to come first in source order.
+        if (!selected.selected || selected.entity != selectedKey) continue;
         DocumentEntityRef ref;
         DocumentTransform position;
         if (!DocumentEntityRef::fromFpsKey(selected.entity, ref) ||
