@@ -1437,9 +1437,13 @@ void Renderer3D::renderModels(int phase) {
         const char* flag = std::getenv("AIVERSE_MDI_INSTANCE_PALETTE");
         return flag && std::strcmp(flag, "1") == 0;
     }();
+    const char* paletteSafe = std::getenv("AIVERSE_RENDER_SAFE");
+    const char* paletteIndirectOff = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
     const bool paletteSort = instancePaletteRequested && phase == 1 &&
         modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() &&
-        !gpuAdaptiveInstancingFallback_;
+        !gpuAdaptiveInstancingFallback_ &&
+        !(paletteSafe && std::strcmp(paletteSafe, "1") == 0) &&
+        !(paletteIndirectOff && std::strcmp(paletteIndirectOff, "off") == 0);
     std::vector<uint32_t> paletteGroup;
     if (paletteSort) {
         paletteGroup.resize(modelItems_.size(), UINT32_MAX);
