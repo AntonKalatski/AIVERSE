@@ -52,7 +52,8 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         mesh.color(rgba(255,255,255)).box({0,0.5f,0},{1,1,1});
         fpsPreviewMesh_ = mesh.upload(*dev_);
     }
-    std::vector<SceneRenderable> instances;
+    fpsSceneObjects_.clear();
+    auto& instances = fpsSceneObjects_;
     const auto& fps = doc().data.fps;
     for (const auto& collider : fps["colliders"].items()) {
         if (!collider["min"].isArray() || !collider["max"].isArray() ||
@@ -86,8 +87,18 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.pickable = true;
         instances.push_back(object);
     }
-    // Both primitive and authored-model objects now share the same submitter.
+    // Selection is stable across frames while the source array ordering remains stable.
+    if (fpsSelectedSceneObject_ >= int(instances.size())) fpsSelectedSceneObject_ = -1;
+    if (fpsSelectedSceneObject_ >= 0) instances[size_t(fpsSelectedSceneObject_)].selected = true;
     submitSceneRenderables(r3d_, instances);
+}
+
+int Editor::pickFpsSceneObject(const Viewport& vp, const render::RTSCamera& camera,
+                               float sx, float sy) const {
+    render::float3 origin, direction;
+    if (!camera.screenRay(sx - vp.originX, sy - vp.originY,
+                          vp.pointsW, vp.pointsH, origin, direction)) return -1;
+    return pickSceneRenderable(fpsSceneObjects_, origin, direction);
 }
 
 }
