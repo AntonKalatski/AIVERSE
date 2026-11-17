@@ -184,6 +184,10 @@ Commits `658793d`, `1d45a81`: conventional instancing's `sameBatch` now compares
 
 The last owner balanced A/B before these commits: OFF 12.161 ms, ON 12.259 ms (+0.8% CPU), 410 vs 330 submissions. No owner build or validation yet. Rebuild once, check normal and ICB rendering, run 3x300 OFF/ON and compare; the code does NOT implement persistent GPU-generated draw lists, cross-material batch merging, or synchronized per-mode GPU timestamps. Those are larger architecture changes requiring correctness tests. Metal ICB remains experimental/off by default.
 
+## Metal indirect threshold tuning (commit `8129a4a`)
+
+Both the preflight primitive-run check in `renderModels` and the authoritative check in `drawModelIndirectBatch` now share a configurable Metal command threshold: `AIVERSE_METAL_MDI_MIN_COMMANDS` accepts integer 2..32 (default 8). Other backends retain threshold 4. This allows testing larger and smaller command groups without changing shader layouts or risking cross-material/geometry merges. It is read once per process; restart for each value. Test values 4, 8, 12, 16 in separate launches with identical camera and balanced 3x300 A/B. This is **threshold tuning**, not yet persistent GPU-driven batching or cross-group merging. No owner build/test yet.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
