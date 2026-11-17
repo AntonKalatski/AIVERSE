@@ -34,6 +34,9 @@ compile_run ecs-world-replay tests/ecs_wave_replay_test.cpp
 compile_run ecs-simulation-bridge tests/ecs_simulation_bridge_test.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+compile_run ecs-guarded-failure tests/ecs_guarded_failure_test.cpp \
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp \
+    engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
 if [[ "$DO_BENCH" == 1 ]]; then
     compile_run ecs-query-bench tests/ecs_architecture_bench.cpp
     compile_run ecs-bitmap-bench tests/ecs_bitmap_query_bench.cpp
