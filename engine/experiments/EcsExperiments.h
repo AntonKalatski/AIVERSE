@@ -143,29 +143,33 @@ struct ParallelPolicy {
 template<class A,class Fn>
 void eachAdaptive(World& world,PersistentWorkers& workers,ExecutionMode mode,
                   ParallelPolicy policy,Fn&& fn) {
-    const size_t n=world.countExisting<A>();
+    // Detach a shared COW pool once on the caller thread before scheduling.
+    auto* pool=world.prepareExistingWrite<A>();
+    if(!pool)return;
+    const size_t n=pool->size();
     const size_t lanes=size_t(workers.workers())+1;
     const bool useParallel=workers.workers()>0 &&
         (mode==ExecutionMode::Parallel ||
          (mode==ExecutionMode::Auto && n>=policy.minimumEntities &&
           n/lanes>=policy.minimumPerLane));
-    if(!useParallel) {
-        world.eachExistingRange<A>(0,n,std::forward<Fn>(fn));
-        return;
-    }
-    workers.parallelFor(n,[&](size_t begin,size_t end){
-        world.eachExistingRange<A>(begin,end,fn);
-    });
+    auto range=[&](size_t begin,size_t end) {
+        for(size_t i=begin;i<end;++i)
+            fn(pool->entityAt(i),pool->dataAt(i));
+    };
+    if(useParallel)workers.parallelFor(n,range);
+    else range(0,n);
 }
 
-// This helper follows the existing FIRST pool's dense order.
-// No filtered query: use only when all entries in A are eligible or filter in fn.
-// Do not add/remove/destroy any component while parallelFor is in progress.
+// Callers must declare all other component reads/writes and prohibit structure
+// changes while running. The lead component pool is detached before workers.
 template<class A,class Fn>
 void eachParallel(World& world,PersistentWorkers& workers,Fn&& fn) {
-    const size_t count=world.countExisting<A>();
+    auto* pool=world.prepareExistingWrite<A>();
+    if(!pool)return;
+    const size_t count=pool->size();
     workers.parallelFor(count,[&](size_t begin,size_t end) {
-        world.eachExistingRange<A>(begin,end,fn);
+        for(size_t i=begin;i<end;++i)
+            fn(pool->entityAt(i),pool->dataAt(i));
     });
 }
 
