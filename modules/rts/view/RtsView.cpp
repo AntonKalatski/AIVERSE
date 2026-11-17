@@ -315,12 +315,14 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         animate(st, o, dt, &grid);
         const auto beforeDraw = traceView ? std::chrono::steady_clock::now() : viewStart;
         drawObject(r, st, o, ground, 1.0f);
+        // Reuse the draw end timestamp as the shadow start timestamp.
+        // Tracing must not issue another clock read for every scene object.
+        const auto afterDraw = traceView ? std::chrono::steady_clock::now() : viewStart;
         if (traceView) {
             objectAnimateMs += std::chrono::duration<double, std::milli>(beforeDraw - beforeAnimate).count();
-            objectDrawMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - beforeDraw).count();
+            objectDrawMs += std::chrono::duration<double, std::milli>(afterDraw - beforeDraw).count();
             ++tracedObjects;
         }
-        const auto beforeShadow = traceView ? std::chrono::steady_clock::now() : viewStart;
         // The model FX was handled by drawObject(). Query FX again only
         // when an additional ground or flyer shadow actually needs it.
         const bool groundShadow = !L.shadow.image.empty();
@@ -334,8 +336,9 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 const float a = hasFx ? std::clamp(fx.opacity() * fx.v[EntityFxValues::kShadow], 0.0f, 1.0f) : 1.0f;
                 if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
             }
+            // No clock call for the common case with no additional shadow.
+            if (traceView) objectShadowMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - afterDraw).count();
         }
-        if (traceView) objectShadowMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - beforeShadow).count();
     }
     const auto afterObjects = std::chrono::steady_clock::now();
     drawTracers(r, dt, &grid);
