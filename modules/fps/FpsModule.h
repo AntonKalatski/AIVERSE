@@ -125,10 +125,11 @@ struct VehicleRun {
 // compatibility workspace for older simulation algorithms/save v9.
 struct ActorRuntime { Actor value; };
 
-// Stable ECS identities for FPS actors. A transitional compatibility layer:
-// State::actors is still authoritative for FPS gameplay/netcode/save v9.
-// These real World components mirror the current state after each tick so
-// generic editor systems can inspect actual ECS entities without inventing IDs.
+// Stable ECS identities for FPS actors. In default mode, State::actors
+// remains the gameplay authority and these are read-only ECS projections.
+// With fps.ecsAuthority=true, ActorRuntime holds canonical full actor payloads
+// between ticks; State::actors is a contiguous gameplay compatibility workspace.
+// Identity/Transform/Vitals remain lightweight editor projections.
 struct ActorEntityIdentity {
     uint8_t slot = 0, team = 0;
     uint32_t life = 0;
@@ -166,6 +167,13 @@ struct VehicleEntity {
     int32_t health = 0;
     uint8_t driver = 0;
 };
+// Full authoritative dynamic object payloads. The order field preserves
+// legacy vector iteration order (important for deterministic hits/drops).
+// When ecsAuthority is enabled, State arrays are tick-local workspaces only.
+struct ProjectileRuntime { Projectile value; uint32_t order=0; };
+struct LootRuntime { Loot value; uint32_t order=0; };
+struct VehicleRuntime { Vehicle value; uint32_t order=0; };
+
 struct DynamicEntityIndex {
     // Packed key: top 8 bits = kind, low 32 bits = existing object ID.
     std::map<uint64_t, Entity> byKey;
@@ -217,9 +225,12 @@ public:
     void syncActorEntities(Simulation& sim) const; // rebuild ECS actor state and inspector projections
     void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
     void syncDynamicEntities(Simulation& sim) const; // projectile, loot and vehicle ECS views
+    void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
+    State authoritativeStateCopy(Simulation& sim) const; // v9 save/hash assembled from ECS payloads
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
+    void moveActorEcs(Simulation&,Actor&,const Input&); // direct ECS motor, legacy workspace updated for other systems
     void shoot(Simulation&,Actor&);
     void equipInitial(Actor&) const;
     void setupSystems(Simulation&,const Json&,State&);
