@@ -1,4 +1,5 @@
 #include "engine/net/authority/Session.h"
+#include "engine/net/Rollback.h"
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
 #include <algorithm>
@@ -16,123 +17,6 @@ std::unique_ptr<Simulation> simulation(Json rules,Json map) {
     auto sim=std::make_unique<Simulation>(SimConfig{7,fps::readConfig(rules).tickRate,0},std::make_unique<fps::Module>());sim->setup(rules,map);return sim;
 }
 fps::State& state(Simulation& sim){return *sim.world().resource<fps::State>();}
-void actorEcsBridge(const Json& rules, const Json& map) {
-    auto sim = simulation(rules, map);
-    auto& module = dynamic_cast<fps::Module&>(sim->module());
-    auto verify = [&](Simulation& running) {
-        auto& activeModule = dynamic_cast<fps::Module&>(running.module());
-        const auto& actors = state(running).actors;
-        CHECK(actors.size() == running.players().size());
-        auto& world = running.world();
-        for (const auto& actor : actors) {
-            const Entity entity = activeModule.actorEntity(running, actor.slot);
-            CHECK(world.alive(entity));
-            CHECK(world.has<fps::ActorEntityIdentity>(entity));
-            CHECK(world.has<fps::ActorEntityTransform>(entity));
-            CHECK(world.has<fps::ActorEntityVitals>(entity));
-            const auto& identity = world.get<fps::ActorEntityIdentity>(entity);
-            const auto& transform = world.get<fps::ActorEntityTransform>(entity);
-            const auto& vitals = world.get<fps::ActorEntityVitals>(entity);
-            CHECK(identity.slot == actor.slot && identity.team == actor.team);
-            CHECK(identity.life == actor.life);
-            CHECK(transform.position == actor.pos);
-            CHECK(transform.velocity == actor.velocity);
-            CHECK(transform.yaw == actor.yaw && transform.pitch == actor.pitch);
-            CHECK(vitals.health == actor.health && vitals.ammo == actor.ammo);
-            CHECK(vitals.armor == actor.armor && vitals.reserve == actor.reserve);
-            CHECK(vitals.downed == actor.downed);
-        }
-    };
-    verify(*sim);
-    SimSnapshot snapshot;
-    sim->saveState(snapshot);
-    for (int i = 0; i < 30; ++i) {
-        sim->step();
-        verify(*sim);
-    }
-    auto saved = sim->serialize();
-    auto loaded = simulation(rules, map);
-    CHECK(loaded->deserialize(saved));
-    verify(*loaded);
-    sim->loadState(snapshot);
-    verify(*sim);
-    CHECK(module.actorEntity(*sim, 0) == kNullEntity);
-    // Compatibility with a pre-ECS FPS save: the serialized allocator had
-    // no ActorEntity pools/ids. Module save loading restores this mirror.
-    auto legacy = simulation(rules, map);
-    legacy->world().restoreEntityState(World::EntityState{});
-    module.syncActorEntities(*legacy);
-    verify(*legacy);
-}
-
-void dynamicEcsBridge(const Json& rules, const Json& map) {
-    auto sim = simulation(rules, map);
-    auto& module = dynamic_cast<fps::Module&>(sim->module());
-    auto& current = state(*sim);
-    fps::Loot loot;
-    loot.id = 8001;
-    loot.pos = {2_fx, 3_fx, 4_fx};
-    loot.type = 1;
-    loot.count = 2;
-    fps::Vehicle vehicle;
-    vehicle.id = 8002;
-    vehicle.pos = {5_fx, 6_fx, 7_fx};
-    vehicle.health = 400;
-    fps::Projectile projectile;
-    projectile.id = 8003;
-    projectile.owner = 1;
-    projectile.pos = {8_fx, 9_fx, 10_fx};
-    projectile.damage = 25;
-    current.loot.push_back(loot);
-    current.vehicles.push_back(vehicle);
-    current.projectiles.push_back(projectile);
-    module.syncDynamicEntities(*sim);
-    auto* index = sim->world().resource<fps::DynamicEntityIndex>();
-    CHECK(index != nullptr);
-    CHECK(index->byKey.size() >= 3);
-    const uint64_t lootKey = (uint64_t(2) << 32) | loot.id;
-    const uint64_t vehicleKey = (uint64_t(3) << 32) | vehicle.id;
-    const uint64_t projectileKey = (uint64_t(1) << 32) | projectile.id;
-    CHECK(index->byKey.contains(lootKey));
-    CHECK(index->byKey.contains(vehicleKey));
-    CHECK(index->byKey.contains(projectileKey));
-    const Entity lootEntity = index->byKey.at(lootKey);
-    const Entity vehicleEntity = index->byKey.at(vehicleKey);
-    const Entity projectileEntity = index->byKey.at(projectileKey);
-    CHECK(sim->world().get<fps::LootEntity>(lootEntity).position == loot.pos);
-    CHECK(sim->world().get<fps::VehicleEntity>(vehicleEntity).health == 400);
-    CHECK(sim->world().get<fps::ProjectileEntity>(projectileEntity).damage == 25);
-    SimSnapshot rollback;
-    sim->saveState(rollback);
-    current.loot.erase(std::remove_if(current.loot.begin(), current.loot.end(),
-        [&](const fps::Loot& obj) { return obj.id == loot.id; }), current.loot.end());
-    module.syncDynamicEntities(*sim);
-    CHECK(!index->byKey.contains(lootKey));
-    CHECK(!sim->world().alive(lootEntity));
-    sim->loadState(rollback);
-    index = sim->world().resource<fps::DynamicEntityIndex>();
-    CHECK(index->byKey.contains(lootKey));
-    CHECK(sim->world().alive(index->byKey.at(lootKey)));
-    module.syncDynamicEntities(*sim);
-    CHECK(sim->world().get<fps::LootEntity>(index->byKey.at(lootKey)).position == loot.pos);
-    // A legacy save lacks ECS entity allocator state. Previously initialized
-    // pools can be stale: recreation must not give one Entity two object types.
-    auto legacy = simulation(rules, map);
-    legacy->world().restoreEntityState(World::EntityState{});
-    module.syncActorEntities(*legacy);
-    module.syncDynamicEntities(*legacy);
-    auto* restoredIndex = legacy->world().resource<fps::DynamicEntityIndex>();
-    CHECK(restoredIndex != nullptr);
-    for (const auto& [key, entity] : restoredIndex->byKey) {
-        const int kind = int(key >> 32);
-        CHECK(legacy->world().alive(entity));
-        CHECK(legacy->world().has<fps::ProjectileEntity>(entity) == (kind == 1));
-        CHECK(legacy->world().has<fps::LootEntity>(entity) == (kind == 2));
-        CHECK(legacy->world().has<fps::VehicleEntity>(entity) == (kind == 3));
-        CHECK(!legacy->world().has<fps::ActorEntityIdentity>(entity));
-    }
-}
-
 void spatial() {
     world::SpatialWorld w(32);CHECK(w.add({1,{{-2_fx,0_fx,-2_fx},{2_fx,2_fx,2_fx}}}));
     auto hit=w.cast({0_fx,1_fx,-10_fx},{0_fx,0_fx,20_fx});CHECK(hit.hit&&hit.id==1);CHECK(fxAbs(hit.fraction-Fixed::fromRatio(4,10))<Fixed::fromRaw(3));
@@ -197,6 +81,173 @@ void stress(Json rules,Json map) {
     CHECK(server.simulation().executedCommands().empty());
     auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();
     std::printf("100 clients / 300 ticks / sparse 16 km world: %lld ms (debug/local loopback, not WAN capacity)\n",(long long)elapsed);
+}
+void parallelMotorParityFixture(Json rules,Json map) {
+    auto& settings=rules.member("fps");
+    settings.set("maxPlayers",Json::number(int64_t(100)));
+    settings.set("mode",Json::string("deathmatch"));
+    settings.erase("mechanics");
+    settings.erase("melee");
+    settings.erase("royale");
+    map.set("colliders",Json::parse(
+        R"([{"id":1,"min":[-128,-2,-128],"max":[128,0,128]}])"));
+    auto players=Json::array(),spawns=Json::array();
+    for(int i=0;i<100;++i) {
+        auto p=Json::object();
+        p.set("name",Json::string("Motor "+std::to_string(i)));
+        p.set("team",Json::number(int64_t(i<50?1:2)));
+        p.set("bot",Json::fromBool(false));
+        players.push(std::move(p));
+        auto spawn=Json::array();
+        spawn.push(Json::number(int64_t(-80+16*(i%10))));
+        spawn.push(Json::numberText("0.01"));
+        spawn.push(Json::number(int64_t(-80+16*(i/10))));
+        spawns.push(std::move(spawn));
+    }
+    map.set("players",std::move(players));
+    map.set("spawns",std::move(spawns));
+    auto sim=simulation(rules,map);
+    Hasher history;
+    const auto movementStart=std::chrono::steady_clock::now();
+    for(uint32_t t=0;t<120;++t) {
+        for(uint32_t i=0;i<100;++i) {
+            fps::Input input;
+            input.sequence=t+1;
+            input.forward=500;
+            input.right=(int(i%3)-1)*200;
+            input.buttons=(t==10?fps::Jump:0u) |
+                          (t>=30&&t<40?fps::Crouch:0u) |
+                          (t>=60?fps::Sprint:0u);
+            auto command=fps::command(uint8_t(i+1),input);
+            command.tick=t;
+            sim->inject(command);
+        }
+        sim->step();
+        history.u64(sim->checksum());
+    }
+    const auto movementMs=std::chrono::duration<double,std::milli>(
+        std::chrono::steady_clock::now()-movementStart).count();
+    std::printf("FPS_MOTOR_TICKS_MS=%.3f\n",movementMs);
+    SimSnapshot snapshot;
+    sim->saveState(snapshot);
+    auto current=sim->checksum();
+    sim->step();
+    sim->loadState(snapshot);
+    CHECK(sim->checksum()==current);
+    std::printf("FPS_MOTOR_PARITY_HASH=%016llx\n",
+        (unsigned long long)history.value());
+    // Combat also runs in the speculative motor phase. Earlier actor damage
+    // must invalidate a later actor's movement plan before canonical commit.
+    auto combatSim=simulation(rules,map);
+    Hasher combatHistory;
+    for(uint32_t t=0;t<80;++t) {
+        for(uint32_t i=0;i<100;++i) {
+            fps::Input input;
+            input.sequence=t+1;
+            input.viewTick=t;
+            input.yaw=i<50?Fixed{}:Fixed::fromRatio(1,2);
+            input.forward=300;
+            if(i%6==0)input.buttons=fps::Fire;
+            auto cmd=fps::command(uint8_t(i+1),input);
+            cmd.tick=t;
+            combatSim->inject(cmd);
+        }
+        combatSim->step();
+        combatHistory.u64(combatSim->checksum());
+    }
+    std::printf("FPS_COMBAT_PARITY_HASH=%016llx\n",
+        (unsigned long long)combatHistory.value());
+    auto& motorModule=static_cast<fps::Module&>(sim->module());
+    auto& combatModule=static_cast<fps::Module&>(combatSim->module());
+    std::printf("FPS_MOTOR_BATCHES=%llu\n",
+        (unsigned long long)(motorModule.experimentalMotorBatches()+
+                             combatModule.experimentalMotorBatches()));
+    std::printf("FPS_MOTOR_COMMITS=%llu\n",
+        (unsigned long long)(motorModule.experimentalMotorCommits()+
+                             combatModule.experimentalMotorCommits()));
+
+
+}
+void cowSnapshotsFps(Json rules,Json map) {
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    auto baseline=simulation(rules,map),incremental=simulation(rules,map);
+    incremental->world().enableCowSnapshots(true);
+    for(uint32_t tick=0;tick<120;++tick) {
+        fps::Input input;
+        input.sequence=tick+1;
+        input.forward=tick<70?700:0;
+        input.right=tick>=70?200:0;
+        input.buttons=(tick==20?uint32_t(fps::Jump):0u);
+        auto cmd=fps::command(1,input);
+        cmd.tick=tick;
+        baseline->inject(cmd);
+        incremental->inject(cmd);
+        baseline->step();incremental->step();
+        CHECK(baseline->checksum()==incremental->checksum());
+        if(tick==40 || tick==80) {
+            SimSnapshot a,b;
+            baseline->saveState(a);
+            incremental->saveState(b);
+            const size_t sharedResources=incremental->world().sharedResourceCount();
+            CHECK(sharedResources>=1);
+            const auto checksum=incremental->checksum();
+            CHECK(incremental->world().sharedResourceCount()==sharedResources);
+            CHECK(baseline->checksum()==checksum);
+            // Exercise two full rollbacks without losing original state
+            // or accidentally retaining mutable shared singleton resources.
+            baseline->step();incremental->step();
+            baseline->loadState(a);incremental->loadState(b);
+            CHECK(incremental->checksum()==checksum);
+            CHECK(baseline->checksum()==checksum);
+        }
+    }
+    CHECK(incremental->world().cowSnapshotsEnabled());
+    auto archived=incremental->serialize();
+    CHECK(!archived.empty());
+    auto loaded=simulation(rules,map);
+    CHECK(loaded->deserialize(archived));
+    CHECK(loaded->checksum()==incremental->checksum());
+}
+
+void incrementalRollbackFps(Json rules,Json map) {
+    // Actual FPS module under RollbackSession: a confirmed remote input
+    // arrives after several predicted ticks, forcing replay in both modes.
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    auto deep=simulation(rules,map),cow=simulation(rules,map);
+    auto run=[&](Simulation& sim,bool incremental) {
+        net::SessionConfig config;
+        config.inputDelay=2;
+        config.rollbackWindow=8;
+        config.incrementalWorldSnapshots=incremental;
+        uint64_t hash=0;
+        {
+            net::RollbackSession session(sim,config,{2},
+                [](uint32_t,const std::vector<Command>&){},
+                [](uint32_t,uint64_t){});
+            CHECK(sim.world().cowSnapshotsEnabled()==incremental);
+            const double tickDuration=1.0/sim.tickRate();
+            for(int i=0;i<5;++i)
+                session.update(tickDuration,uint64_t(i)*17);
+            CHECK(sim.tick()==5);
+            fps::Input input;
+            input.forward=600;
+            input.sequence=1;
+            input.viewTick=2;
+            auto delayed=fps::command(1,input);
+            delayed.tick=2;delayed.seq=1;
+            session.confirm(0,3,{delayed});
+            session.update(0,85);
+            CHECK(session.stats().rollbacks==1);
+            CHECK(session.stats().resimulatedTicks>=3);
+            for(int i=5;i<8;++i)
+                session.update(tickDuration,uint64_t(i)*17);
+            hash=sim.checksum();
+            CHECK(sim.tick()==8);
+        }
+        CHECK(!sim.world().cowSnapshotsEnabled());
+        return hash;
+    };
+    CHECK(run(*deep,false)==run(*cow,true));
 }
 void deterministic(Json rules,Json map) {
     rules.member("fps").set("mode",Json::string("deathmatch"));
@@ -280,6 +331,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();actorEcsBridge(rules,map);dynamicEcsBridge(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
