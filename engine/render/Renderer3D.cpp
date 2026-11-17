@@ -117,6 +117,7 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
+    gpuModelCommands_.release(*dev_);
     persistentCull_.release(*dev_);
     if (persistentUpload_) {
         persistentUpload_->release();
@@ -317,6 +318,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // Synchronize persistent scene staging before any rendering passes.
     // Model shader bindings and GPU culling remain on the legacy path.
     syncPersistentModels();
+    // GPU command generation must complete encoding before render passes.
+    // Metal guarantees command order between compute and render encoders.
+    prepareGpuModelDraws();
     prepareOcclusion();
     // ---- shadow pass
     if (quality_ != ShadowQuality::Off && shadowMap_.valid()) {
