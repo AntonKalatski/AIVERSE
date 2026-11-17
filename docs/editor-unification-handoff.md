@@ -341,3 +341,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Attempted to reach GitHub from the model's isolated build container, but the container could not resolve `github.com`; no repository checkout or compilation was possible there. GitHub connector changes were reviewed statically.
 - **Validation not completed:** full CMake/editor compile and all new CTest cases are still unverified by execution. User should pull and run `cmake --build build-metal --target aiverse_editor aiverse_editor_scene_adapter_tests aiverse_editor_scene_picking_tests aiverse_editor_scene_gizmo_tests -j 8` followed by `ctest --test-dir build-metal -R 'editor_scene_' --output-on-failure`. Check latest GitHub Actions independently (earlier runs were queued).
 - **Not yet universal:** FPS uses external-client runtime and `fps::State::actors` (a World resource, not ECS entities), FPS authored colliders/spawns are JSON; RTS uses `World` ECS plus `RtsView`. Editor runtime entity inspection, hierarchy and render extraction still differ; Rotate/Scale, native writeback, true screen-space object-mask outline and end-to-end macOS UI validation are missing. Do NOT mark the PR done.
+
+### 2026-11-17 — Ensure editor regression tests run in Release configurations
+- Commits: `06de5e88`, `8adaa963`, `f273b398` (the three `tests/editor/scene_*_tests.cpp` test files).
+- Replaced `assert(...)` with an always-active `require(...)` helper. On Release/NDEBUG builds, plain assert was compiled out, causing tests to falsely pass and skip side-effectful setup. Failed checks now call `std::abort()` regardless of build type.
+- Validation: GitHub source edits committed; **CTest run still outstanding**.
