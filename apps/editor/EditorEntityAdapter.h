@@ -23,7 +23,7 @@ struct DocumentEntityRef {
     // FPS refs use the high bit for spawns; zero is reserved for no entity.
     uint64_t fpsKey() const {
         if (source == Source::MapEntity) return 0;
-        if (index >= (uint64_t(1) << 63) - 1) return 0;
+        if (uint64_t(index) >= (uint64_t(1) << 63) - 1) return 0;
         return (source == Source::FpsSpawn ? (uint64_t(1) << 63) : 0)
                | (uint64_t(index) + 1);
     }
