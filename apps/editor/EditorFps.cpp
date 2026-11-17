@@ -7,6 +7,7 @@
 #include "EditorComponentPanel.h"
 #include "modules/fps/FpsModule.h"
 #include <filesystem>
+#include <algorithm>
 #include <cmath>
 namespace aiverse::editor {
 namespace {
