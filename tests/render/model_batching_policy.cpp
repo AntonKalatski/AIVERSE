@@ -412,6 +412,26 @@ int main() {
         CHECK(gpuIcbShouldFallbackToInstancing(true, 0));
         CHECK(!gpuIcbShouldFallbackToInstancing(true, 1));
         CHECK(!gpuIcbShouldFallbackToInstancing(false, 0));
+        // Per-group decisions are based on compatible primitive runs; material
+        // object identity is deliberately absent from these inputs.
+        CHECK(chooseDrawGroupMode(0, 0, true, true, true, 2, 2) ==
+              DrawGroupMode::Direct);
+        CHECK(chooseDrawGroupMode(1, 1, true, true, true, 2, 2) ==
+              DrawGroupMode::Direct);
+        CHECK(chooseDrawGroupMode(8, 1, true, true, true, 2, 2) ==
+              DrawGroupMode::Instancing);
+        CHECK(chooseDrawGroupMode(8, 4, true, true, false, 4, 8) ==
+              DrawGroupMode::CpuMultiDraw);
+        CHECK(chooseDrawGroupMode(8, 4, true, true, true, 4, 8) ==
+              DrawGroupMode::CpuMultiDraw);
+        CHECK(chooseDrawGroupMode(16, 8, true, true, true, 4, 8) ==
+              DrawGroupMode::GpuIcb);
+        CHECK(chooseDrawGroupMode(8, 4, true, false, false, 4, 8) ==
+              DrawGroupMode::Instancing);
+        CHECK(shouldUseCpuMultiDraw(12, 2, 2));
+        CHECK(!shouldUseCpuMultiDraw(12, 1, 2));
+        CHECK(shouldUseGpuIcb(16, 8, 8));
+        CHECK(!shouldUseGpuIcb(16, 1, 8));
         // A conservative 0.5% noise deadband prefers baseline instancing.
         CHECK(chooseSceneBatchMode({11.801, 11.953, 11.977}, 3) == 0);
         CHECK(chooseSceneBatchMode({12.100, 11.800, 11.900}, 3) == 1);

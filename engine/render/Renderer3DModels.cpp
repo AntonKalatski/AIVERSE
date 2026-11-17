@@ -16,6 +16,7 @@
 #include <string>
 #include <chrono>
 #include <unordered_map>
+#include <unordered_set>
 #include <tuple>
 #include <functional>
 
@@ -1158,13 +1159,29 @@ void Renderer3D::prepareGpuModelDraws() {
     // Decide the entire GPU stage before uploading any draw-record buffers.
     // The previous implementation always ran compute even if adaptive policy
     // selected zero ICB groups, wasting work for the CPU fallback.
+    static const bool groupAdaptive = [] {
+        const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    auto gpuGroupRuns = [&](const std::vector<uint32_t>& indices,
+                            size_t begin, size_t end) {
+        // Count unique source primitives; a 100-car instanced fleet is
+        // not a 100-command GPU ICB win. Pointer identity is sufficient to
+        // identify a source primitive inside this frame, never GPU material.
+        std::unordered_set<const Primitive*> unique;
+        for (size_t j = begin; j < end; ++j)
+            unique.insert(modelItems_[indices[j]].prim);
+        return uint32_t(unique.size());
+    };
     bool hasSuitableGroup = false;
-    for (const auto& group : groups)
-        if (std::min(group.items.size(), size_t(groupCapacity)) >=
-            size_t(effectiveMinimum)) {
-            hasSuitableGroup = true;
-            break;
-        }
+    for (const auto& group : groups) {
+        const size_t count = std::min(group.items.size(), size_t(groupCapacity));
+        if (count < size_t(effectiveMinimum)) continue;
+        if (groupAdaptive && !shouldUseGpuIcb(uint32_t(count),
+                gpuGroupRuns(group.items, 0, count), effectiveMinimum)) continue;
+        hasSuitableGroup = true;
+        break;
+    }
     if (gpuIcbShouldFallbackToInstancing(adaptiveGpuIcb, hasSuitableGroup ? 1u : 0u)) {
         gpuAdaptiveInstancingFallback_ = true;
         return;
@@ -1177,6 +1194,11 @@ void Renderer3D::prepareGpuModelDraws() {
             // Do not spend a GPU compute dispatch for undersized groups.
             // Remaining items fall back to conventional instancing.
             if (end - first < effectiveMinimum) break;
+            if (groupAdaptive && !shouldUseGpuIcb(uint32_t(end - first),
+                    gpuGroupRuns(indices, first, end), effectiveMinimum)) {
+                first = end; // leave these models for CPU instancing/MDI
+                continue;
+            }
             std::vector<uint32_t> sourceSlots;
             sourceSlots.reserve(end - first);
             for (size_t j = first; j < end; ++j)
@@ -1355,8 +1377,12 @@ void Renderer3D::renderModels(int phase) {
     // When the adaptive GPU plan cannot amortize ICB setup, choose ordinary
     // instancing for this frame (including shadow/opaque model submissions),
     // not the more expensive CPU MDI path. Existing A/B modes remain distinct.
+    static const bool groupAdaptive = [] {
+        const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
     const bool allowIndirect = modelMultiDrawEnabled_ &&
-        !gpuAdaptiveInstancingFallback_ &&
+        (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
         dev_->supportsMultiDrawIndirect() && phase <= 1;
@@ -1502,7 +1528,13 @@ void Renderer3D::renderModels(int phase) {
                     for (size_t k = i + 1; k < end && runs < minIndirectCommands; ++k)
                         if (modelItems_[order_[k - 1]].prim != modelItems_[order_[k]].prim)
                             ++runs;
-                    if (runs >= minIndirectCommands) {
+                    // With group-adaptive selection, reject MDI groups
+                    // consisting mostly of repeated identical primitives.
+                    // Instancing then avoids ICB setup and GPU command work.
+                    if (runs >= minIndirectCommands &&
+                        (!groupAdaptive || shouldUseCpuMultiDraw(
+                            uint32_t(end - i), uint32_t(runs),
+                            uint32_t(minIndirectCommands)))) {
                         const auto attemptBegin = std::chrono::steady_clock::now();
                         const bool accepted = drawModelIndirectBatch(
                             order_.data() + i, uint32_t(end - i), phase);

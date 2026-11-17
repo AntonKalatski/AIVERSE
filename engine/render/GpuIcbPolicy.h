@@ -19,6 +19,38 @@ inline bool gpuIcbShouldFallbackToInstancing(bool adaptive,
     return adaptive && suitableGroups == 0;
 }
 
+// An optional per-group selection policy. Its inputs describe the geometry
+// actually present in this compatible GPU state group, not the whole scene.
+// The policy refuses to pay an indirect-command setup cost when the same
+// primitive can be handled more cheaply by a conventional instanced draw.
+// "Runs" counts consecutive instances of the same primitive after sorting.
+// No timing estimates or promises of a GPU speedup are inferred from draw count.
+enum class DrawGroupMode : uint8_t { Direct, Instancing, CpuMultiDraw, GpuIcb };
+
+inline DrawGroupMode chooseDrawGroupMode(uint32_t instances, uint32_t primitiveRuns,
+                                         bool instancing, bool cpuMdi, bool gpuIcb,
+                                         uint32_t cpuMinCommands, uint32_t gpuMinCommands) {
+    if (!instances || !primitiveRuns) return DrawGroupMode::Direct;
+    if (gpuIcb && instances >= gpuMinCommands &&
+        primitiveRuns >= gpuMinCommands && primitiveRuns > 1)
+        return DrawGroupMode::GpuIcb;
+    if (cpuMdi && primitiveRuns >= std::max(2u, cpuMinCommands) &&
+        primitiveRuns > 1)
+        return DrawGroupMode::CpuMultiDraw;
+    return instancing && instances > 1
+        ? DrawGroupMode::Instancing : DrawGroupMode::Direct;
+}
+inline bool shouldUseCpuMultiDraw(uint32_t instances, uint32_t primitiveRuns,
+                                  uint32_t minCommands) {
+    return chooseDrawGroupMode(instances, primitiveRuns, true, true, false,
+                               minCommands, 2) == DrawGroupMode::CpuMultiDraw;
+}
+inline bool shouldUseGpuIcb(uint32_t instances, uint32_t primitiveRuns,
+                            uint32_t minCommands) {
+    return chooseDrawGroupMode(instances, primitiveRuns, true, false, true,
+                               2, minCommands) == DrawGroupMode::GpuIcb;
+}
+
 // Select from fixed-camera balanced Scene CPU measurements. Small differences
 // are treated as ties in favor of the cheaper/default earlier mode.
 // 0=Instancing, 1=CPU MDI, 2=GPU-authored. This does not assume that full
