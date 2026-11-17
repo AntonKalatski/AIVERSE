@@ -187,7 +187,18 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto viewStart = std::chrono::steady_clock::now();
     // Script spawns, reinforcements and restored entities need not exist at map load time.
-    if (!streamingTypes_) for (const auto& o : input.objects) if (!o.isProjectile) loadType(o.type);
+    if (!streamingTypes_) {
+        // loadType() may compare streaming model paths and check residency.
+        // A scene often has thousands of objects but only a handful of types:
+        // resolve each type at most once per frame, while still picking up
+        // types introduced by spawning/editor edits on the following frame.
+        std::vector<uint8_t> typeSeen(loadedTypes_.size(), 0);
+        for (const auto& o : input.objects) {
+            if (o.isProjectile || o.type >= typeSeen.size() || typeSeen[o.type]) continue;
+            typeSeen[o.type] = 1;
+            loadType(o.type);
+        }
+    }
     RtsScene resolved;
     const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
     if(hierarchy) {
