@@ -74,9 +74,12 @@ public:
                 const Selection hovered = ed.pickObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
                 ed.setHover(hovered);
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                    const int hit = ed.pickFpsSceneObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
-                    ed.selectFpsSceneObject(hit);
-                    fpsDragActive_ = hit >= 0 && ed.tool == Tool::Select && !io.KeyCtrl;
+                    // The same Selection now drives Scene, Hierarchy and Inspector.
+                    // Do not run a second genre-specific picker or overwrite a
+                    // cleared FPS selection with a stale RTS selection.
+                    pickSelect(ed, hovered, io);
+                    fpsDragActive_ = hovered.kind == Selection::FpsObject &&
+                                     ed.tool == Tool::Select && !io.KeyCtrl;
                     fpsDragEdited_ = false;
                     fpsDragLastX_ = io.MousePos.x;
                     fpsDragLastY_ = io.MousePos.y;
