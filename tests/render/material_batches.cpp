@@ -208,7 +208,32 @@ int aiverseMain(int argc, char** argv) {
                 if(!f)failed=true;
                 if(!batch)before=std::move(px);
                 else {size_t changed=0;for(size_t i=0;i<px.size();++i)changed+=i>=before.size()||px[i]!=before[i];
-                    std::printf("changed_channels=%zu\n",changed);failed|=changed!=0;finished=true;}
+                    std::printf("changed_channels=%zu\\n",changed);
+                    if (scenario == "indirect" && changed) {
+                        size_t changedPixels=0, beforeBright=0, afterBright=0;
+                        uint8_t beforeMin=255, beforeMax=0, afterMin=255, afterMax=0;
+                        for (size_t j=0;j+3<px.size();j+=4) {
+                            bool differs=false;
+                            for (int k=0;k<3;++k) {
+                                const uint8_t a=before[j+size_t(k)],b=px[j+size_t(k)];
+                                differs |= a!=b;
+                                beforeMin=std::min(beforeMin,a);beforeMax=std::max(beforeMax,a);
+                                afterMin=std::min(afterMin,b);afterMax=std::max(afterMax,b);
+                                beforeBright+=a;afterBright+=b;
+                            }
+                            changedPixels+=differs;
+                        }
+                        std::printf("indirect mismatch: pixels=%zu beforeRGB=%u..%u afterRGB=%u..%u beforeSum=%zu afterSum=%zu\\n",
+                                    changedPixels,unsigned(beforeMin),unsigned(beforeMax),
+                                    unsigned(afterMin),unsigned(afterMax),beforeBright,afterBright);
+                        for (size_t i=0;i<5;++i) {
+                            const size_t pos=(i==0?0:i==1?px.size()/8:i==2?px.size()/2:i==3?px.size()*3/4:px.size()-4)&~size_t(3);
+                            std::printf("sample[%zu] (%u,%u,%u) -> (%u,%u,%u)\\n",i,
+                                unsigned(before[pos]),unsigned(before[pos+1]),unsigned(before[pos+2]),
+                                unsigned(px[pos]),unsigned(px[pos+1]),unsigned(px[pos+2]));
+                        }
+                    }
+                    failed|=changed!=0;finished=true;}
             });
         }
         failed|=!renderer.modelError().empty();d.endPass();++frame;
