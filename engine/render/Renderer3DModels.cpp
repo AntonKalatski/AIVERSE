@@ -1361,7 +1361,7 @@ void Renderer3D::renderModels(int phase) {
         counts[1] += resolvedGroups;
         if (++samples == 600) {
             std::fprintf(stderr,
-                "[model-material-cache] enabled=%d avg/600 reused=%.1f resolved=%.1f unique-last=%zu\\n",
+                "[model-material-cache] enabled=%d avg/600 reused=%.1f resolved=%.1f unique-last=%zu\n",
                 int(frameCacheEnabled), double(counts[0]) / samples,
                 double(counts[1]) / samples, representatives.size());
             samples = 0;
