@@ -85,7 +85,6 @@ public:
                     fpsDragEdited_ = false;
                     fpsDragLastX_ = io.MousePos.x;
                     fpsDragLastY_ = io.MousePos.y;
-                    if (hit < 0) pickSelect(ed, hovered, io);
                 }
             }
             if (fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
