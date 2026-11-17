@@ -139,6 +139,7 @@ size_t generateMissingModelLods(Model& model) {
         for (const Primitive& p : original.primitives) baseIndices += p.indexCount;
         if (baseIndices < kMinPrimitiveIndices) continue;
 
+        const size_t levelsBefore = info.generatedLevels;
         size_t previousIndices = baseIndices;
         float previousPixels = std::numeric_limits<float>::max();
         for (size_t level = 0; level < kRatios.size(); ++level) {
@@ -198,12 +199,12 @@ size_t generateMissingModelLods(Model& model) {
             model.meshes[mi].lods.push_back({lodMesh, pixels});
             model.meshes.push_back(std::move(coarse));
             model.indices.insert(model.indices.end(), appended.begin(), appended.end());
-            ++info.generatedMeshes;
             ++info.generatedLevels;
             info.addedIndices += appended.size();
             previousIndices = total;
             previousPixels = pixels;
         }
+        if (info.generatedLevels > levelsBefore) ++info.generatedMeshes;
     }
     if (info.generatedLevels) {
         // Only new primitive bounds and node hierarchy are recalculated.
