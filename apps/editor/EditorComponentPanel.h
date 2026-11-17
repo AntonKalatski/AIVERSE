@@ -27,9 +27,14 @@ inline bool drawDocumentPositionField(MapDoc& map, DocumentEntityRef ref,
     if (!readDocumentTransform(map, ref, position)) return false;
     float xyz[3] = {float(position.x), float(position.y), float(position.z)};
     ImGui::PushID(label);
-    ImGui::TextDisabled("%s", label);
+    const bool planar = ref.source == DocumentEntityRef::Source::MapEntity;
+    ImGui::TextDisabled("%s", planar ? "Position XZ" : label);
     ImGui::SetNextItemWidth(-1);
-    const bool changed = ImGui::DragFloat3("##position", xyz, 0.05f, 0, 0, "%.3f");
+    float xz[2] = {xyz[0], xyz[2]};
+    const bool changed = planar
+        ? ImGui::DragFloat2("##positionXZ", xz, 0.05f, 0, 0, "%.3f")
+        : ImGui::DragFloat3("##position", xyz, 0.05f, 0, 0, "%.3f");
+    if (planar) { xyz[0] = xz[0]; xyz[2] = xz[1]; }
     if (ImGui::IsItemActivated()) map.beginEdit();
     bool applied = false;
     if (changed) {
