@@ -855,3 +855,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Published public native target `AIVERSE::lib_ecs_inventory` and `skills/gameplay/aiverse-ecs-inventory/SKILL.md`, reusing existing Inventory algorithms. Registered `ecs_cross_genre_inventory_test` on two unrelated game hosts, stable ordered commands, weight rejection, rollback and COW.
 - Verification: catalog JSON parsed to 123 records in editor operation. **No compiler/CTest/CI success yet**. FPS/RTS built-in inventories are not migrated; authorization remains host responsibility.
 - Next: run native CI, resolve issues, then migrate FPS loot/inventory and RTS gather/storehouses via explicit ECS owners and full save/network/checksum regression gates.
+
+
+### 2026-11-18 — Agents routing updated for all-feature ECS migration
+- Implementation SHA: `853a1f5d5f19c3aff06754622f7d74e838dc4d8f`.
+- Changed `AGENTS.md` to link the 120-package baseline audit, newly published public ECS packages (timed mechanics, locomotion, inventory), their skills and required real-world RTS/FPS migration gates. Explicitly distinguishes library availability from production gameplay migration.
+- Verification: GitHub source committed only. CI/build and user gameplay tests are still pending; latest workflow status check reported queued runs.
+- Next: check compilation/CTests; migrate an actual built-in host with source-of-truth ownership and validate golden save/network/replay parity before turning on defaults.
