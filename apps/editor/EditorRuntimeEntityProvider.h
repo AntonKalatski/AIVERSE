@@ -5,6 +5,8 @@
 #pragma once
 #include "Editor.h"
 #include <string>
+#include <cmath>
+#include <utility>
 #include <vector>
 
 namespace aiverse::editor {
