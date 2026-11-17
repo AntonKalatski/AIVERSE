@@ -106,6 +106,7 @@ void parallelMotorParityFixture(Json rules,Json map) {
     map.set("spawns",std::move(spawns));
     auto sim=simulation(rules,map);
     Hasher history;
+    const auto movementStart=std::chrono::steady_clock::now();
     for(uint32_t t=0;t<120;++t) {
         for(uint32_t i=0;i<100;++i) {
             fps::Input input;
@@ -122,6 +123,9 @@ void parallelMotorParityFixture(Json rules,Json map) {
         sim->step();
         history.u64(sim->checksum());
     }
+    const auto movementMs=std::chrono::duration<double,std::milli>(
+        std::chrono::steady_clock::now()-movementStart).count();
+    std::printf("FPS_MOTOR_TICKS_MS=%.3f\\n",movementMs);
     SimSnapshot snapshot;
     sim->saveState(snapshot);
     auto current=sim->checksum();
