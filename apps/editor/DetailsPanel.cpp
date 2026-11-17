@@ -199,9 +199,9 @@ void DetailsPanel::draw(Editor& ed) {
     if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
         const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
         drawDocumentComponentInventory(ed.doc(), ref);
-        // RTS map entities currently serialize X/Z only. The shared position
-        // writer refuses Y changes rather than discarding them.
-        drawDocumentPositionField(ed.doc(), ref);
+        // The same component-card dispatcher is used for RTS and FPS.
+        // Runtime ECS sections remain rendered by DetailsPanel below.
+        drawDocumentEditableComponents(ed.doc(), ref);
     }
     const float clear = filter_.empty() ? 0 : ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
     ui::searchField("##propfilter", filter_, "Фильтр свойств", std::max(40.0f, ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - 4 - clear));
