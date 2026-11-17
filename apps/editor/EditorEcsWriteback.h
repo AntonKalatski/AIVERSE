@@ -49,3 +49,5 @@ inline bool writeAuthoredEcsField(MapDoc& map, DocumentEntityRef ref,
     }
     return false;
 }
+
+} // namespace aiverse::editor
