@@ -148,6 +148,10 @@ Each log reports averages per **600 successful indirect submissions** (not 600 f
 
 Re-run `AIVERSE_ICB_PROFILE=1`: prior `[metal-icb]` alloc ~0.0565 ms/submission, `[render-indirect]` backend ~0.068 ms/submission. Run fixed-camera 300-frame OFF/ON CPU benchmark again: prior OFF 12.939 ms, ON 13.609 ms (+5.2%). The new pool is intended to remove allocation overhead; a speedup is **not yet established**. GPU A/B timing is still not implemented.
 
+## Full model-pass MDI diagnostics (commit `93f3396`)
+
+Opt-in `AIVERSE_MODEL_BATCH_PROFILE=1` in `engine/render/Renderer3DModels.cpp` emits `[model-batch]` per 120 nonempty renderModels() calls for each mode (ON/OFF) and phase. Columns: select, sort (includes material classification and sorting), draw, scan (compatible-group discovery), attempt (indirect batch submission), and candidate/accepted/rejected/short counts per pass. Run the editor with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_BENCH_UNCAPPED=1 AIVERSE_MODEL_BATCH_PROFILE=1`, use fixed-camera OFF/ON 300-frame benchmark, and collect `grep '\[model-batch\]'`. Timing instrumentation itself has overhead, and model pass timings are subsets of Scene CPU, not additional frame costs. Empty phases do not emit. No owner build/measurements yet.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
