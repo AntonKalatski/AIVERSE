@@ -259,6 +259,10 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
         // Keep receiver displacement tied to resolution, not penumbra width: thin folds must not detach.
         f.quality[3] = shadowTexelWorld_ * 1.5f;
     }
+    // Fractional tap count encodes temporal PCSS sampling without changing U1 layout.
+    // This flag is active only for the HDR ScreenLighting TAA path; static PCF stays stable elsewhere.
+    if (!forShadow && quality_ >= ShadowQuality::Medium && post_ && post_->temporalShadowResolve())
+        f.quality[0] += 0.5f;
     f.quality[1] = quality_ == ShadowQuality::Off || forShadow ? 0.0f : lighting.shadowContactHardening ? 2.0f : 1.0f;
     dev_->setUniforms(1, &f, sizeof f);
 }
