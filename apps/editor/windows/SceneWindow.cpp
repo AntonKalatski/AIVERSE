@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 #include "../Editor.h"
 #include "StudioContextMenus.h"
