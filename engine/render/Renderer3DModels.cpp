@@ -1064,9 +1064,10 @@ void Renderer3D::renderModels(int phase) {
             dev_->setGpuIcbUniformBinding(true);
             const bool submitted = drawModelBatch(
                 group.items.data(), uint32_t(group.items.size()), phase, false);
+            const bool executed = submitted &&
+                dev_->executeGpuEncodedIndexedIcb(group.token);
             dev_->setGpuIcbUniformBinding(false);
-            if (!submitted || !dev_->executeGpuEncodedIndexedIcb(group.token))
-                continue;
+            if (!executed) continue;
             lastItem_ = &modelItems_[group.items.back()];
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
