@@ -184,3 +184,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Collider midpoint calculation now uses half-scaled endpoints instead of adding two potentially huge finite values, avoiding spurious overflow. FPS source-key index bounds comparison is explicitly 64-bit.
 - Verification: source edits committed; **build/tests NOT RUN**. CI for `820ed35c` remained queued on latest check.
 - Next: run actual editor build and targeted component adapter tests; inspect CI queue/runner availability before claiming functional readiness.
+
+### 2026-11-17 — macOS build failure reported and fixed (awaiting rerun)
+- User ran `cmake --build build-metal -j 8` on macOS; compiler failed at `apps/editor/EditorEntityAdapter.h:69`: cannot convert `const Json*` to `Json*` when using `fps.member(collection)[ref.index]`.
+- Verified `engine/data/Json.h`: `operator[](size_t)` is const-only; `Json::at(size_t)` returns mutable `Json&`.
+- Fix commit `9f4493e`: changed to `&fps.member(collection).at(ref.index)`.
+- Verification: API signature inspected in source; **macOS rebuild NOT YET RUN after fix**. Ask user to pull branch and rerun `cmake --build build-metal -j 8`; collect subsequent errors.
+- Next: fix remaining compiler diagnostics, then launch editor and test RTS/FPS Inspector, selection and Undo.
