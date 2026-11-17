@@ -271,6 +271,9 @@ public:
         (void)gpuArguments; (void)indexBuffer; (void)sourceSlots; (void)count;
         return 0;
     }
+    // Finish batched GPU command encoding before opening a render pass.
+    // Backends may keep one compute encoder across multiple ICB groups.
+    virtual void finishGpuEncodedIcbPreparation() {}
     // Execute pre-encoded ICB with parent pipeline/buffers currently bound.
     virtual bool executeGpuEncodedIndexedIcb(uint32_t token) {
         (void)token; return false;
