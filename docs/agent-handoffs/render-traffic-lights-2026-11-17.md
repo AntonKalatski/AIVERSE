@@ -118,6 +118,13 @@ Compare with `AIVERSE_EDITOR_EAGER_MODELS=1` (same binary/project/map). Check `�
 - User should close the existing editor without losing unsaved changes, then fetch/switch `perf/rts-visible-type-frame-cache`, configure Release arm64, build target `aiverse_editor`, verify `strings -a build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor | grep -F 'Triangles in camera (tracked)'` and `grep -F 'Scene model batching'` (exact ASCII markers present in branch), and launch this binary directly, not `open -a AiverseEditor`.
 - If either marker is absent after successful compile, investigate stale CMake build directory, wrong source directory, accidentally different build target, or link configuration. **Do not claim any UI fixes are validated merely from GitHub source inspection.**
 
+## Step 12 — macOS compiler fix for editor residency (2026-11-18)
+- User compiled `aiverse_editor` on Apple Silicon and received `apps/editor/Editor.cpp:288:23: error: no member named 'Objects' in 'aiverse::editor::Tool'`.
+- Confirmed actual enum in `apps/editor/Editor.h`: `enum class Tool { Select, Place, Terrain, Level, Height, Field, Region, Area, Start, Road, Erase, Count };`. The "Объекты" editor toolbar corresponds to `Tool::Place`, not a nonexistent `Tool::Objects`.
+- Commit `754430547a6141f0b896a074ae16aacb99bfd2b6` on `perf/rts-visible-type-frame-cache` changes `Editor::reclaimEditorAssets` to test `Tool::Place` when preserving the selected placement type from eviction.
+- Source-level fix pushed to PR #10. **No successful macOS build claimed yet**; rebuild `aiverse_editor` with the same build directory, run `aiverse_deferred_loading_tests`, and report any next compiler or runtime error. This change does not modify batching availability.
+- The user's previously missing Batching control and triangle card were confirmed present in this PR's sources, while their older screenshot matched `main`; use direct new bundle executable path to avoid stale builds.
+
 ## Next
 - Build editor and test newest branch on Apple Silicon; verify camera triangle counters with movable camera + fixed camera A/B.
 - Re-run GTA signal installer and tests, then native client and actual Metal lighting/traffic signal changes; keep GTA draft PR #4.
