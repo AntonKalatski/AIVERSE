@@ -513,6 +513,11 @@ void prepareModelUpload(Model& m) {
             m.path.c_str(), m.batching.primitivesBefore, m.batching.primitivesAfter);
     }
 
+    // Generate missing imported LODs after final source tangents are
+    // prepared, but before shadow/material batching and GPU upload. This
+    // preserves LOD0 tangent values: the coarse index streams reuse the
+    // original vertices and must not recompute their normals/tangents.
+    ensureTangents(m);
     // Missing imported LODs are generated once per CPU model preparation,
     // before shadow/material batches and before GPU geometry upload.
     // Node hierarchy and LOD0 mesh data remain unchanged. An external
@@ -539,7 +544,6 @@ void prepareModelUpload(Model& m) {
 
         const char* shadowBatches = std::getenv("AIVERSE_AUTO_SHADOW_BATCHES");
         if (!shadowBatches || std::string(shadowBatches) != "off") prepareShadowBatches(m);
-        ensureTangents(m);
         const char* materialBatches = std::getenv("AIVERSE_AUTO_MATERIAL_BATCHES");
         if (!materialBatches || std::string(materialBatches) != "off") prepareMaterialBatches(m);
     m.uploadPrepared = true;
