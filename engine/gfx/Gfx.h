@@ -219,6 +219,8 @@ public:
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
+    // Zero if backend does not expose a completed-slot-safe frame serial.
+    virtual uint64_t frameSerial() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
