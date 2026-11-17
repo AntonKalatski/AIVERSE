@@ -698,6 +698,9 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     r3d_.beginScene(useCam, vp.w, vp.h);
+    // Scene selection outline is a depth-tested posteffect, not an
+    // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
+    r3d_.setSceneSelectionOutline(true);
     if (!ws_.project.isFps()) setOverlayContext(vp, useCam, false);
     // Scene-only silhouette outline through the existing ModelDraw outline path.
     // Keep the Game view unaffected by restoring the flag after draw.
@@ -719,6 +722,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
     r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &postFx_ : nullptr));
+    r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePostFx();
     dev_->endPass();
