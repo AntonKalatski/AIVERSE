@@ -105,6 +105,19 @@ uint64_t exercise(bool cow) {
     require(hp&&hp->current==65,"wrong projectile damage");
     require(gun&&gun->ammo==0,"weapon ammo not consumed");
     require(spawns&&spawns->nextShotId==2,"non-deterministic shot identity");
+    // A second request with an empty magazine must be consumed without
+    // spawning a projectile or advancing the shot sequence.
+    auto* retry=sim.world().tryGet<lg::FireIntentComponent>(host->gun);
+    require(retry!=nullptr,"missing fire intent after shot");
+    retry->requested=true;
+    sim.step();
+    const auto* afterDryFire=sim.world().resourceConst<lg::ProjectileSpawnQueue>();
+    const auto* afterDryState=sim.world().tryGetConst<lg::WeaponStateComponent>(host->gun);
+    const auto* afterDryIntent=sim.world().tryGetConst<lg::FireIntentComponent>(host->gun);
+    require(afterDryFire&&afterDryFire->nextShotId==2&&afterDryFire->pending.empty(),
+            "dry fire must not allocate projectile IDs");
+    require(afterDryState&&afterDryState->ammo==0,"dry fire changed ammo");
+    require(afterDryIntent&&!afterDryIntent->requested,"dry fire request was not consumed");
     require(summary&&summary->count==1&&summary->total==35,"damage event mismatch");
     require(world.countExisting<lg::ProjectileFlightComponent>()==0,
             "projectile not despawned");
