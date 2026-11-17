@@ -912,7 +912,7 @@ public:
         auto* cmdBuffer = buffers_.get(commands.id);
         auto* ib = buffers_.get(ibId_);
         auto* vb = buffers_.get(vbId_);
-        if (!cmdBuffer || !ib || !vb || cmdBuffer->storage ||
+        if (!cmdBuffer || !ib || !vb || cmdBuffer->type != BufferType::Indirect || cmdBuffer->storage ||
             offset > cmdBuffer->size ||
             size_t(drawCount - 1) * stride + sizeof(DrawIndexedIndirectCommand) > cmdBuffer->size - offset)
             return false;
@@ -922,7 +922,7 @@ public:
         const id<MTLBuffer> vertices = current(*vb);
         const bool pbr = p->icbPbrState != nil;
         id<MTLRenderPipelineState> indirectPipeline = pbr ? p->icbPbrState : p->state;
-        if (!indirectData || !indices || !vertices || !indirectPipeline ||
+        if (!indirectData || !indirectData.contents || !indices || !vertices || !indirectPipeline ||
             !indirectPipeline.supportIndirectCommandBuffers) return false;
 
         // Build one fragment argument buffer containing all PBR texture and
@@ -975,6 +975,13 @@ public:
             std::memcpy(&args, static_cast<const uint8_t*>(indirectData.contents) +
                                offset + size_t(i) * stride, sizeof(args));
             if (!args.indexCount || !args.instanceCount) continue;
+            // Instance IDs index the model uniform array. Reject malformed commands
+            // before encoding an ICB that could access beyond its snapshot.
+            const auto& modelUniforms = indirectUniformSnapshots_[0];
+            constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
+            if (modelUniforms.empty() ||
+                uint64_t(args.firstInstance) + args.instanceCount > modelUniforms.size() / kModelInstanceBytes)
+                return false;
             if (size_t(args.firstIndex) > (ib->size - std::min(ib->size,ibOffset_)) / indexBytes ||
                 ibOffset_ > ib->size ||
                 size_t(args.indexCount) > (ib->size - ibOffset_) / indexBytes - args.firstIndex)
