@@ -834,3 +834,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - New public target `AIVERSE::lib_ecs_locomotion` depends on existing `character-locomotion`; public `EcsLocomotionSystems.h` and skill cover stable state/input/result policy binding without FPS/RTS module linkage. Two-host test checks replay and COW; `stepMotion` is reused, not duplicated.
 - Verification: catalog parsed to 122 JSON entries during edit. **No native compile, native consumer build, CTest, nor runtime parity run**. Remaining collision, transformations and advanced locomotion modes are not yet ECS-integrated in built-in games.
 - Next: run catalog/check, complete CMake/test suite, and convert one actual RTS/FPS consumer with exact saved-state and deterministic replay parity before deleting a legacy path.
+
+
+### 2026-11-18 — Shared ECS inventory transaction system
+- Implementation SHA: `bbda102d6635edf170d83fe5a79280351a53d159`.
+- Added `libraries/include/aiverselib/genre/EcsInventorySystems.h`: per-Entity `InventoryComponent`; immutable `InventoryCatalog` world resource; ordered `InventoryCommandQueue`, `InventoryResultQueue`, generation-safe source/destination entities, and `addInventoryTransactionSystem`. Reuses transactional `gameplay::addItem/removeItem/transferItem` policies, preserving capacity and no-partial-write guarantees without FPS/RTS dependencies.
+- Verification: source committed; **not compiled or run**, not yet integrated into legacy built-in FPS `Actor::bag` or RTS inventories.
+- Next: cross-genre transaction/rollback tests, public package and CMake runner, skill; then migrate FPS loot/pickups and RTS item transfer by explicit authority cutover.
