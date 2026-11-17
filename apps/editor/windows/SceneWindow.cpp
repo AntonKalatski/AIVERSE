@@ -135,37 +135,79 @@ public:
             }
             if (fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
                 (io.MousePos.x != fpsDragLastX_ || io.MousePos.y != fpsDragLastY_)) {
-                float dx = 0.0f, dy = 0.0f, dz = 0.0f;
-                bool valid = false;
-                if (fpsGizmoAxis_ == 1 || (fpsGizmoAxis_ < 0 && io.KeyShift)) {
-                    // Y handle or Shift: vertical translation, even at low camera pitch.
-                    // whose rays cannot intersect the XZ ground plane.
-                    dy = (fpsDragLastY_ - io.MousePos.y) *
-                         std::max(0.01f, ed.sceneCam.distance * 0.002f);
-                    valid = std::isfinite(dy);
-                } else {
-                    float3 previous, current;
-                    valid = ed.sceneCam.screenToGround(fpsDragLastX_ - vp_.originX,
-                                                       fpsDragLastY_ - vp_.originY,
-                                                       vp_.pointsW, vp_.pointsH, previous) &&
-                            ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
-                                                       io.MousePos.y - vp_.originY,
-                                                       vp_.pointsW, vp_.pointsH, current);
-                    if (valid) {
-                        dx = current.x - previous.x;
-                        dz = current.z - previous.z;
-                        // X and Z constrain translation to a single world axis.
-                        // No modifier preserves free XZ dragging.
-                        if (fpsGizmoAxis_ == 0 || ImGui::IsKeyDown(ImGuiKey_X))
-                            dz = 0.0f;
-                        else if (fpsGizmoAxis_ == 2 || ImGui::IsKeyDown(ImGuiKey_Z))
-                            dx = 0.0f;
-                        valid = std::isfinite(dx) && std::isfinite(dz);
+                if (ed.transformTool != TransformTool::Move && fpsGizmoAxis_ >= 0) {
+                    DocumentEntityRef ref;
+                    const bool validRef = documentEntityFromSelection(ed.selection, ref) &&
+                        ref.source == DocumentEntityRef::Source::FpsCollider;
+                    const Json* source = validRef
+                        ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+                    if (source && (*source)["yaw"].isNumber()) {
+                        Json transform;
+                        if (readDocumentComponent(ed.doc(), ref,
+                                DocumentComponentKind::Transform, transform)) {
+                            Json patch = Json::object();
+                            if (ed.transformTool == TransformTool::Rotate &&
+                                fpsGizmoAxis_ == 3) {
+                                const double previous = transform["rotationY"].toDouble();
+                                const double next = previous +
+                                    double(io.MousePos.x - fpsDragLastX_) * 0.5;
+                                patch.set("rotationY", Json::number(next, 3));
+                            } else if (ed.transformTool == TransformTool::Scale &&
+                                       fpsGizmoAxis_ >= 0 && fpsGizmoAxis_ < 3) {
+                                const Json& size = transform["scale"];
+                                if (size.isArray() && size.size() == 3) {
+                                    Json scale = Json::array();
+                                    const double amount =
+                                        double(fpsDragLastY_ - io.MousePos.y) *
+                                        std::max(0.005, double(ed.sceneCam.distance) * 0.001);
+                                    for (int i = 0; i < 3; ++i) {
+                                        const double dimension = size[size_t(i)].toDouble();
+                                        scale.push(Json::number(i == fpsGizmoAxis_
+                                            ? std::max(0.01, dimension + amount)
+                                            : dimension, 3));
+                                    }
+                                    patch.set("scale", scale);
+                                }
+                            }
+                            if (patch.size() > 0) {
+                                if (!fpsDragEdited_) ed.doc().beginEdit();
+                                fpsDragEdited_ = writeDocumentComponent(
+                                    ed.doc(), ref, DocumentComponentKind::Transform,
+                                    patch) || fpsDragEdited_;
+                            }
+                        }
                     }
-                }
-                if (valid && (std::abs(dx) > 1e-5f || std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f)) {
-                    if (!fpsDragEdited_) ed.doc().beginEdit();
-                    fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) || fpsDragEdited_;
+                } else {
+                    float dx = 0.0f, dy = 0.0f, dz = 0.0f;
+                    bool valid = false;
+                    if (fpsGizmoAxis_ == 1 || (fpsGizmoAxis_ < 0 && io.KeyShift)) {
+                        dy = (fpsDragLastY_ - io.MousePos.y) *
+                             std::max(0.01f, ed.sceneCam.distance * 0.002f);
+                        valid = std::isfinite(dy);
+                    } else {
+                        float3 previous, current;
+                        valid = ed.sceneCam.screenToGround(fpsDragLastX_ - vp_.originX,
+                                                           fpsDragLastY_ - vp_.originY,
+                                                           vp_.pointsW, vp_.pointsH, previous) &&
+                                ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
+                                                           io.MousePos.y - vp_.originY,
+                                                           vp_.pointsW, vp_.pointsH, current);
+                        if (valid) {
+                            dx = current.x - previous.x;
+                            dz = current.z - previous.z;
+                            if (fpsGizmoAxis_ == 0 || ImGui::IsKeyDown(ImGuiKey_X))
+                                dz = 0.0f;
+                            else if (fpsGizmoAxis_ == 2 || ImGui::IsKeyDown(ImGuiKey_Z))
+                                dx = 0.0f;
+                            valid = std::isfinite(dx) && std::isfinite(dz);
+                        }
+                    }
+                    if (valid && (std::abs(dx) > 1e-5f ||
+                                  std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f)) {
+                        if (!fpsDragEdited_) ed.doc().beginEdit();
+                        fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) ||
+                                         fpsDragEdited_;
+                    }
                 }
                 fpsDragLastX_ = io.MousePos.x;
                 fpsDragLastY_ = io.MousePos.y;
