@@ -31,6 +31,16 @@ public:
     // rules apply, docs/native-modules.md). Errors inside them use luaL_error (no C++ object with a
     // destructor alive at that point).
     virtual void openLua(lua_State*) const {}
+    // Editor-only observation hook: expose REAL components owned by this
+    // module, keyed by their actual C++/ECS component IDs. The engine asks
+    // this only for loaded modules in the current Simulation. Do not mutate
+    // World or keep pointers to the editor's preview.
+    // components: { "MyComponent": { "field": value } }
+    // schemas: { "MyComponent": { "title": "...", "fields":
+    //             { "field": { "title": "...", "kind": "number" } } } }
+    // Modules must only report a component when World::has<T>(entity) is true.
+    virtual void inspectComponents(World&, Entity, Json& /*components*/,
+                                   Json& /*schemas*/) const {}
     // ---- optional hooks into built-in mechanics: declare the implemented ones in hooks() (NativeHook bits); a
     // module without hooks costs nothing. All of them run inside the simulation: deterministic, state in NativeState.
     virtual uint32_t hooks() const { return 0; }
@@ -99,6 +109,7 @@ public:
     void assault(RtsModule&, Simulation&, Entity structure, uint8_t attacker, uint8_t defender, int attackerLost, int defenderLost) const;
     bool allowDefeat(RtsModule&, Simulation&, uint8_t player) const;
     void sceneBodies(RtsModule&, Simulation&, std::vector<NativeModule::Body>&) const;
+    void inspectComponents(Simulation&, Entity, Json& components, Json& schemas) const;
 private:
     uint32_t hooks_ = 0;
     struct Entry {
