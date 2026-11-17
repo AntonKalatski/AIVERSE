@@ -1326,13 +1326,17 @@ void Renderer3D::renderModels(int phase) {
     // Sort by shared GPU buffers only when explicitly requested. It helps
     // heterogeneous pooled meshes once MDI is active, but is wasted work when
     // MDI is unavailable (and can regress ordinary instancing performance).
+    static const bool groupAdaptive = [] {
+        const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
     const char* geometrySortSetting = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
     const bool geometrySortRequested = geometrySortSetting &&
         std::strcmp(geometrySortSetting, "1") == 0;
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
         dev_->supportsMultiDrawIndirect() &&
-        !gpuAdaptiveInstancingFallback_ && phase <= 1 &&
-        geometrySortRequested;
+        (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
+        phase <= 1 && geometrySortRequested;
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
@@ -1377,10 +1381,7 @@ void Renderer3D::renderModels(int phase) {
     // When the adaptive GPU plan cannot amortize ICB setup, choose ordinary
     // instancing for this frame (including shadow/opaque model submissions),
     // not the more expensive CPU MDI path. Existing A/B modes remain distinct.
-    static const bool groupAdaptive = [] {
-        const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
-        return flag && std::strcmp(flag, "1") == 0;
-    }();
+
     const bool allowIndirect = modelMultiDrawEnabled_ &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
