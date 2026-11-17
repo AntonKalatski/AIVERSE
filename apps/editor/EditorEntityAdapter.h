@@ -382,6 +382,13 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         xyz.push(Json::number(position.y, 3));
         xyz.push(Json::number(position.z, 3));
         result.set("position", xyz);
+        if (ref.source == DocumentEntityRef::Source::MapEntity) {
+            const DocEntity* entity = documentMapEntity(map, ref);
+            if (entity && entity->extra["facing"].isNumber() &&
+                std::isfinite(entity->extra["facing"].toDouble()))
+                result.set("rotationY",
+                    Json::number(entity->extra["facing"].toDouble(), 3));
+        }
         if (ref.source == DocumentEntityRef::Source::FpsCollider) {
             const Json* object = fpsDocumentEntity(map.data.fps, ref);
             if (object && (*object)["yaw"].isNumber()) {
@@ -444,6 +451,19 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
         return true;
     };
     if (kind == DocumentComponentKind::Transform) {
+        if (ref.source == DocumentEntityRef::Source::MapEntity &&
+            value.has("rotationY")) {
+            DocEntity* entity = documentMapEntity(map, ref);
+            if (!entity || !entity->extra["facing"].isNumber() ||
+                !value["rotationY"].isNumber()) return false;
+            const double degrees = value["rotationY"].toDouble();
+            if (!std::isfinite(degrees)) return false;
+            const Json rotated = Json::number(degrees, 3);
+            if (entity->extra["facing"] == rotated) return false;
+            entity->extra.set("facing", rotated);
+            map.touched();
+            return true;
+        }
         if (ref.source == DocumentEntityRef::Source::FpsCollider) {
             const Json* object = fpsDocumentEntity(map.data.fps, ref);
             if (object && (*object)["yaw"].isNumber()) {
