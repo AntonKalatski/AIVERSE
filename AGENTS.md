@@ -51,6 +51,18 @@ mechanic MUST follow the **Components + Systems** model:
    skill, and update to living handoff. Do not mark production-ready without
    compiling and running applicable checks.
 
+**Required shared shooting package:** use
+`AIVERSE::lib_ecs_weapon_launch` (public
+`<aiverselib/genre/EcsWeaponLaunchSystems.h>`), composed with the existing
+`ecs-projectile-systems` and `ecs-impact-damage` packages, for new
+weapon/shot/impact gameplay. Do not implement separate projectile
+trajectory/collision/damage math in `modules/rts` and `modules/fps`.
+The native shooter/artillery cross-genre fixtures are
+`ecs_cross_genre_weapon_pipeline_test` and
+`ecs_cross_genre_projectile_test`. Existing RTS/FPS gameplay has NOT
+yet been fully redirected to this package: preserve legacy deterministic
+save/replay until actual parity tests pass.
+
 The ongoing universal FPS/RTS migration must gradually consume these generic
 mechanic libraries, not create new genre-specific gameplay engines.
 
