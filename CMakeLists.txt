@@ -112,6 +112,7 @@ target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # ECS architecture experiments are isolated from the main game runtime.
 # Keep all five correctness checks in CTest so CI and agents can run them.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
     foreach(test_name IN ITEMS
             ecs_experiments_test
             ecs_wave_executor_test
