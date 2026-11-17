@@ -198,6 +198,30 @@ void DetailsPanel::prepare() {
 }
 
 void DetailsPanel::draw(Editor& ed) {
+    // FPS authored objects are document sources; they do not have ECS snapshot
+    // rows yet. They nevertheless use the same Inspector panel and registered
+    // document-component card drawers as any other authored entity.
+    if (ed.selection.kind == Selection::FpsObject) {
+        DocumentEntityRef ref;
+        if (!DocumentEntityRef::fromFpsKey(ed.selection.ref, ref)) {
+            ui::hint("Invalid scene object reference");
+            return;
+        }
+        const Json* source = fpsDocumentEntity(ed.doc().data.fps, ref);
+        if (!source) {
+            ui::hint("Scene object no longer exists");
+            return;
+        }
+        const bool collider = ref.source == DocumentEntityRef::Source::FpsCollider;
+        ImGui::TextDisabled("SCENE OBJECT");
+        ImGui::Text("%s #%zu", collider ? "Box Collider" : "Spawn Point", ref.index + 1);
+        ImGui::Separator();
+        drawDocumentEditableComponents(ed.doc(), ref);
+        if (ImGui::CollapsingHeader("Raw data")) {
+            ImGui::TextWrapped("%s", source->dump().c_str());
+        }
+        return;
+    }
     auto prof = ed.prof.scope(EditorProfile::Details);   // all of it: reading + merging + drawing
     collect(ed);
     if (items_.empty()) { ui::emptyStateHere(ICON_INSPECTOR, "Объект исчез", "Его больше нет в мире игры."); return; }
