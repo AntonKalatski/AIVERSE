@@ -43,6 +43,10 @@ public:
             entityConstrained_=previousConstrained_;
         }
     };
+    static void requireOutsideEntityJob() {
+        if(entityConstrained_)
+            throw AccessViolation("shared mutation or nested traversal inside per-entity job");
+    }
     static void requireEntityLocal(AccessId id,Entity e) {
         if(entityConstrained_ && current_ &&
            containsWrite(current_->writes,id) && !(e==currentEntity_))
@@ -99,20 +103,24 @@ public:
         return world_.has<T>(e);
     }
     template<class T,class... Args> T& add(Entity e,Args&&... args) {
+        AccessScope::requireOutsideEntityJob();
         requireStructural();
         requireComponent(componentId<T>(),true);
         return world_.add<T>(e,std::forward<Args>(args)...);
     }
     template<class T> void remove(Entity e) {
+        AccessScope::requireOutsideEntityJob();
         requireStructural();
         requireComponent(componentId<T>(),true);
         world_.remove<T>(e);
     }
     Entity create() {
+        AccessScope::requireOutsideEntityJob();
         requireStructural();
         return world_.create();
     }
     void destroyLater(Entity e) {
+        AccessScope::requireOutsideEntityJob();
         requireStructural();
         world_.destroyLater(e);
     }
@@ -121,18 +129,21 @@ public:
         return const_cast<World&>(world_).resource<T>();
     }
     template<class T> T* writeResource() {
+        AccessScope::requireOutsideEntityJob();
         requireResource(componentId<T>(),true);
         return world_.resource<T>();
     }
     // Only the declared access is allowed. Other types must be queried through
     // this facade. No direct World& escapes from this API.
     template<class T,class Fn> void eachRead(Fn&& fn) const {
+        AccessScope::requireOutsideEntityJob();
         requireComponent(componentId<T>(),false);
         const_cast<World&>(world_).eachExisting<T>([&](Entity e,T& v){
             fn(e,static_cast<const T&>(v));
         });
     }
     template<class T,class Fn> void eachWrite(Fn&& fn) {
+        AccessScope::requireOutsideEntityJob();
         requireComponent(componentId<T>(),true);
         world_.eachExisting<T>(std::forward<Fn>(fn));
     }
@@ -143,6 +154,7 @@ public:
     template<class T,class Fn>
     void eachAdaptiveWrite(PersistentWorkers& workers,ExecutionMode mode,
                            ParallelPolicy policy,Fn&& fn) {
+        AccessScope::requireOutsideEntityJob();
         requireComponent(componentId<T>(),true);
         const auto* declaration=AccessScope::current();
         const size_t count=world_.countExisting<T>();
