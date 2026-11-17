@@ -53,7 +53,8 @@ public:
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
         renderer.setModelInstancingEnabled(sceneInstancing_);
-        renderer.setModelMultiDrawEnabled(benchmarkActive_ ? benchmarkMode_ == 1 : sceneIndirect_);
+        renderer.setModelMultiDrawEnabled(benchmarkActive_ ? benchmarkMode_ != 0 : sceneIndirect_);
+        renderer.setGpuAuthoredDrawEnabled(!benchmarkActive_ || benchmarkMode_ == 2);
         renderer.setModelCullingEnabled(sceneCulling_);
         // Pipeline layouts depend on instance limit. Apply only when the user changes
         // the control: resetting this after every Scene frame would recompile shaders.
@@ -93,18 +94,21 @@ public:
                 benchmarkDrawSum_[benchmarkMode_] += renderer.drawCalls();
                 benchmarkIndirectSum_[benchmarkMode_] += renderer.modelStats().multiDrawSubmissions;
                 benchmarkCommandSum_[benchmarkMode_] += renderer.modelStats().indirectCommands;
+                benchmarkGpuAuthoredSum_[benchmarkMode_] += renderer.gpuModelDrawStats().submitted;
                 ++benchmarkPhaseSamples_;
                 if (benchmarkPhaseSamples_ == 300) {
                     benchmarkPhaseSamples_ = 0;
                     ++benchmarkPhase_;
-                    if (benchmarkPhase_ == 6) {
+                    if (benchmarkPhase_ == benchmarkBlockCount_) {
                         benchmarkActive_ = false;
                         benchmarkDone_ = true;
                     } else {
-                        // ABBAAB: counterbalances time-dependent drift and
-                        // provides three independent 300-frame blocks per mode.
-                        static constexpr int modes[] = {0, 1, 1, 0, 0, 1};
-                        benchmarkMode_ = modes[benchmarkPhase_];
+                        // Two modes: ABBAAB. Three modes: ABC CBA ABC.
+                        // All modes get 3 x 300 samples with per-block warmup.
+                        static constexpr int twoModes[] = {0, 1, 1, 0, 0, 1};
+                        static constexpr int threeModes[] = {0, 1, 2, 2, 1, 0, 0, 1, 2};
+                        benchmarkMode_ = benchmarkThreeModes_ ?
+                            threeModes[benchmarkPhase_] : twoModes[benchmarkPhase_];
                         benchmarkWarmup_ = 60;
                     }
                 }
@@ -116,6 +120,7 @@ public:
         renderer.setProfiling(false);
         renderer.setModelInstancingEnabled(true);
         renderer.setModelMultiDrawEnabled(true);
+        renderer.setGpuAuthoredDrawEnabled(true);
         renderer.setModelCullingEnabled(true);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
@@ -245,24 +250,34 @@ private:
                 measureBatchingNextFrame_ = true;
             if (mdiBackend && !ed.playing()) {
                 if (!benchmarkActive_) {
-                    if (ImGui::Button("Benchmark MDI OFF / ON (3 x 300 frames each)")) {
+                    const bool threeModes = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS") &&
+                        std::strcmp(std::getenv("AIVERSE_GPU_AUTHORED_DRAWS"), "1") == 0;
+                    if (ImGui::Button(threeModes
+                        ? "Benchmark Instancing / CPU MDI / GPU-authored (3 x 300)"
+                        : "Benchmark MDI OFF / ON (3 x 300 frames each)")) {
                         benchmarkActive_ = true;
                         benchmarkDone_ = false;
+                        benchmarkThreeModes_ = threeModes;
+                        benchmarkBlockCount_ = threeModes ? 9 : 6;
                         benchmarkPhase_ = 0;
                         benchmarkMode_ = 0;
                         benchmarkPhaseSamples_ = 0;
                         benchmarkWarmup_ = 60;
                         benchmarkCamera_ = ed.sceneCam;
-                        benchmarkSamples_[0].clear();
-                        benchmarkSamples_[1].clear();
-                        benchmarkDrawSum_[0] = benchmarkDrawSum_[1] = 0;
-                        benchmarkIndirectSum_[0] = benchmarkIndirectSum_[1] = 0;
-                        benchmarkCommandSum_[0] = benchmarkCommandSum_[1] = 0;
+                        for (int mode = 0; mode < 3; ++mode) {
+                            benchmarkSamples_[mode].clear();
+                            benchmarkDrawSum_[mode] = 0;
+                            benchmarkIndirectSum_[mode] = 0;
+                            benchmarkCommandSum_[mode] = 0;
+                            benchmarkGpuAuthoredSum_[mode] = 0;
+                        }
                         measureBatchingNextFrame_ = false;
                     }
                 } else {
-                    ImGui::Text("Benchmark: block %d/6, %s, warmup %d, samples %d / 300",
-                                benchmarkPhase_ + 1, benchmarkMode_ == 0 ? "MDI OFF" : "MDI ON",
+                    const char* modeName = benchmarkMode_ == 0 ? "Instancing" :
+                        benchmarkMode_ == 1 ? "CPU MDI" : "GPU-authored";
+                    ImGui::Text("Benchmark: block %d/%d, %s, warmup %d, samples %d / 300",
+                                benchmarkPhase_ + 1, benchmarkBlockCount_, modeName,
                                 benchmarkWarmup_, benchmarkPhaseSamples_);
                     if (ImGui::Button("Cancel benchmark")) benchmarkActive_ = false;
                 }
@@ -283,7 +298,17 @@ private:
                     ImGui::Text("MDI ON: %.1f indirect submissions, %.1f GPU commands / frame",
                                 double(benchmarkIndirectSum_[1]) / 900.0,
                                 double(benchmarkCommandSum_[1]) / 900.0);
-                    ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
+                    if (benchmarkThreeModes_) {
+                        const auto gpu = stats(benchmarkSamples_[2]);
+                        ImGui::Text("GPU-authored CPU: avg %.3f / P95 %.3f ms, draws %.0f",
+                                    gpu.first, gpu.second, double(benchmarkDrawSum_[2]) / 900.0);
+                        ImGui::Text("GPU vs CPU MDI: %+.1f%%; GPU vs Instancing: %+.1f%%",
+                                    (gpu.first / std::max(on.first, 0.0001) - 1.0) * 100.0,
+                                    (gpu.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
+                        ImGui::Text("GPU-authored draws: %.1f/frame",
+                                    double(benchmarkGpuAuthoredSum_[2]) / 900.0);
+                        ImGui::TextDisabled("3 x 300 per mode; order ABC CBA ABC; P95 pooled.");
+                    } else ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
                     ImGui::TextDisabled("Fixed camera; Scene render CPU only. GPU timings are asynchronous.");
                     ImGui::TextDisabled("Same geometry pool in both modes; excludes asset upload.");
                 }
@@ -846,13 +871,15 @@ private:
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
     bool sceneProfiling_ = false;
-    bool benchmarkActive_ = false, benchmarkDone_ = false;
+    bool benchmarkActive_ = false, benchmarkDone_ = false, benchmarkThreeModes_ = false;
+    int benchmarkBlockCount_ = 6;
     int benchmarkPhase_ = 0, benchmarkMode_ = 0, benchmarkPhaseSamples_ = 0, benchmarkWarmup_ = 0;
     RTSCamera benchmarkCamera_{};
-    std::vector<double> benchmarkSamples_[2];
-    uint64_t benchmarkDrawSum_[2] = {0, 0};
-    uint64_t benchmarkIndirectSum_[2] = {0, 0};
-    uint64_t benchmarkCommandSum_[2] = {0, 0};
+    std::vector<double> benchmarkSamples_[3];
+    uint64_t benchmarkDrawSum_[3] = {};
+    uint64_t benchmarkIndirectSum_[3] = {};
+    uint64_t benchmarkCommandSum_[3] = {};
+    uint64_t benchmarkGpuAuthoredSum_[3] = {};
     bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
     int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
     int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
