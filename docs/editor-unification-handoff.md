@@ -582,3 +582,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Cross-genre audit: stage 3, public header contract
 - Commit `561bafa`: cross-genre test imports `<aiverselib/genre/EcsMechanicSystems.h>`, `Locomotion.h`, `Weapons.h`, `Match.h` via published `AIVERSE::libraries` include conventions instead of repository-internal relative include paths. This makes the test a useful native-project consumer contract.
 - Build and execution still pending. Next action: register the test in root CMake and standalone ECS runner.
+
+### 2026-11-18 — Cross-genre audit: stage 4, CMake consumer target
+- Commit `620920b`: root `CMakeLists.txt` now adds `aiverse_ecs_cross_genre_mechanics_test` after `add_subdirectory(libraries)`. Links only `aiverse_engine` and public `AIVERSE::libraries`, deliberately **not** `aiverse_fps` or `aiverse_game`. Registered as `ecs_cross_genre_mechanics_test` in CTest. This verifies that gameplay policies and ECS adapter do not require either genre module.
+- Build/CTest has not been run on native toolchain. The absence of genre linkage is a source/CMake check, not proof of runtime correctness until CI passes.
