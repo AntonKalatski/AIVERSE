@@ -822,6 +822,7 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
 void Renderer3D::prepareGpuModelDraws() {
     gpuModelCommandsReady_ = false;
     gpuModelFrame_ = 0;
+    gpuModelSubmission_ = 0;
     gpuModelEligible_ = gpuModelDrawn_ = 0;
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
@@ -871,7 +872,7 @@ void Renderer3D::prepareGpuModelDraws() {
     if (!gpuModelEligible_) return;
     gpuModelFrame_ = dev_->frameSerial();
     gpuModelCommandsReady_ = gpuModelCommands_.prepare(
-        *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_);
+        *dev_, gpuModelRecords_, viewProj_, gpuModelFrame_, &gpuModelSubmission_);
 }
 
 void Renderer3D::renderModels(int phase) {
@@ -1017,7 +1018,7 @@ void Renderer3D::renderModels(int phase) {
             gpuModelSlots_[modelIndex] != UINT32_MAX &&
             drawModelBatch(&modelIndex, 1, phase, false)) {
             if (dev_->drawIndexedGpuIndirect(
-                    gpuModelCommands_.output(gpuModelFrame_),
+                    gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                     size_t(gpuModelSlots_[modelIndex]) * sizeof(gfx::DrawIndexedIndirectCommand))) {
                 const ModelItem& item = modelItems_[modelIndex];
                 lastItem_ = &item;
