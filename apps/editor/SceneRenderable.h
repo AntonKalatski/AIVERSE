@@ -3,6 +3,9 @@
 #pragma once
 #include "../../engine/render/Renderer3D.h"
 #include <cstdint>
+#include <limits>
+#include <cmath>
+#include <algorithm>
 #include <vector>
 
 namespace aiverse::editor {
@@ -15,7 +18,46 @@ struct SceneRenderable {
     const render::Model* model = nullptr; // authored/skinned geometry
     bool selected = false;
     bool hovered = false;
+    // Optional world-space selection bounds. Extractors should provide these
+    // for picking; render-only effects may leave them disabled.
+    render::float3 boundsMin{};
+    render::float3 boundsMax{};
+    bool pickable = false;
 };
+
+// Shared world-space ray/AABB hit test. Returns the closest object index,
+// or -1; does not depend on a genre-specific ECS or camera implementation.
+inline int pickSceneRenderable(const std::vector<SceneRenderable>& objects,
+                               render::float3 origin, render::float3 direction) {
+    int nearest = -1;
+    float nearestT = std::numeric_limits<float>::infinity();
+    for (size_t i = 0; i < objects.size(); ++i) {
+        const auto& o = objects[i];
+        if (!o.pickable) continue;
+        float nearT = 0.0f, farT = nearestT;
+        const float mins[3] = {o.boundsMin.x, o.boundsMin.y, o.boundsMin.z};
+        const float maxs[3] = {o.boundsMax.x, o.boundsMax.y, o.boundsMax.z};
+        const float starts[3] = {origin.x, origin.y, origin.z};
+        const float dirs[3] = {direction.x, direction.y, direction.z};
+        bool hit = true;
+        for (int axis = 0; axis < 3; ++axis) {
+            if (!std::isfinite(mins[axis]) || !std::isfinite(maxs[axis]) || mins[axis] > maxs[axis]) { hit = false; break; }
+            if (std::abs(dirs[axis]) < 1e-8f) {
+                if (starts[axis] < mins[axis] || starts[axis] > maxs[axis]) { hit = false; break; }
+            } else {
+                const float inv = 1.0f / dirs[axis];
+                const float a = (mins[axis] - starts[axis]) * inv;
+                const float b = (maxs[axis] - starts[axis]) * inv;
+                nearT = std::max(nearT, std::min(a, b));
+                farT = std::min(farT, std::max(a, b));
+                if (nearT > farT) { hit = false; break; }
+            }
+        }
+        if (hit && nearT < nearestT) { nearestT = nearT; nearest = int(i); }
+    }
+    return nearest;
+}
+
 
 inline void submitSceneRenderables(render::Renderer3D& renderer,
                                    const std::vector<SceneRenderable>& objects) {
