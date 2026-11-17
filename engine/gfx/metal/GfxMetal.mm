@@ -1009,7 +1009,7 @@ struct DrawArgs {
 struct IcbContainer {
     command_buffer commands [[id(0)]];
 };
-struct Params { uint count; uint3 padding; };
+struct Params { uint count, pad0, pad1, pad2; };
 kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     device const uint* indices [[buffer(1)]],
                     device IcbContainer* container [[buffer(2)]],
