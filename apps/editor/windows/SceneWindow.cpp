@@ -270,10 +270,14 @@ private:
                     if (const char* lod = std::getenv("AIVERSE_GPU_ICB_LOD");
                         lod && std::strcmp(lod, "1") == 0)
                         ImGui::Text("GPU two-level LOD candidates: %u", gpu.gpuLodEligible);
+                    ImGui::Text("GPU ICB preflight: %u potential groups",
+                                gpu.preflightGroups);
+                    ImGui::Text("Persistent batch plan: %u hits / %u misses (this frame)",
+                                gpu.batchCacheHits, gpu.batchCacheMisses);
                     if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
                         adaptive && std::strcmp(adaptive, "1") == 0) {
-                        if (!gpu.gpuIcbCandidates && !gpu.prepared)
-                            ImGui::TextDisabled("Adaptive GPU ICB: no viable batch, GPU compute skipped.");
+                        if (gpu.adaptiveInstancing)
+                            ImGui::TextDisabled("Adaptive GPU ICB: direct instancing selected; GPU work skipped.");
                         else
                             ImGui::TextDisabled("Adaptive GPU ICB grouping enabled.");
                     }
