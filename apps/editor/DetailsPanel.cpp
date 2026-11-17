@@ -411,6 +411,17 @@ void DetailsPanel::rowMenu(const std::string& path, const Json& v) {
 
 void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, const std::string& path) {
     if (!matches(key, v)) return;
+    // Typed metadata is registered alongside the real ECS component dump.
+    // Unknown native/project fields remain visible through the generic JSON drawer.
+    const WorldComponentField* fieldSchema = nullptr;
+    if (const auto dot = path.find('.'); dot != std::string::npos &&
+        path.find('.', dot + 1) == std::string::npos) {
+        for (const auto& field : worldComponentFields(path.substr(0, dot)))
+            if (path.substr(dot + 1) == field.id) {
+                fieldSchema = &field;
+                break;
+            }
+    }
     ImGui::PushID(key.c_str());
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
@@ -426,7 +437,9 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGui::TreePop();
         }
     } else {
-        ImGui::TreeNodeEx(key.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAllColumns);
+        ImGui::TreeNodeEx(fieldSchema ? fieldSchema->title : key.c_str(),
+            ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+            ImGuiTreeNodeFlags_SpanAllColumns);
         rowMenu(path, v);
         ImGui::TableNextColumn();
         if (isMixed(v)) {
@@ -438,6 +451,9 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
                 if (const WorldRow* r = ed.world().find(uint64_t(v["$entity"].integer()))) ed.select(ed.worldSelection(*r));
             }
             ImGui::PopStyleColor();
+        } else if (fieldSchema && fieldSchema->kind == WorldFieldKind::Turn && v.isNumber()) {
+            ImGui::Text("%.2f°", v.toDouble() * 360.0);
+            ImGui::SetItemTooltip("ECS rotation is stored in turns; no persistent map rotation field exists.");
         } else if (v.type() == Json::Type::Bool) {
             // Read-only ECS snapshots should look like typed properties rather than JSON.
             bool checked = v.boolean();
