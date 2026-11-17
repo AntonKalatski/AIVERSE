@@ -262,4 +262,83 @@ inline bool translateDocumentEntities(MapDoc& map,
     return moved;
 }
 
+enum class DocumentComponentKind : uint8_t {
+    Transform, Renderable, Collider, Spawn, Gameplay
+};
+struct DocumentComponentDescriptor {
+    DocumentComponentKind kind;
+    const char* id;
+    const char* title;
+    bool editable;
+};
+
+// Editor-facing component inventory. This describes document-backed data,
+// not live ECS pools; runtime reflection/writeback is a separate next stage.
+inline std::vector<DocumentComponentDescriptor> documentComponents(
+    const MapDoc& map, DocumentEntityRef ref) {
+    std::vector<DocumentComponentDescriptor> components;
+    DocumentTransform transform;
+    if (!readDocumentTransform(map, ref, transform)) return components;
+    components.push_back({DocumentComponentKind::Transform, "Transform", "Transform", true});
+    switch (ref.source) {
+    case DocumentEntityRef::Source::MapEntity: {
+        const DocEntity* entity = documentMapEntity(map, ref);
+        if (!entity) return {};
+        components.push_back({DocumentComponentKind::Renderable, "Renderable", "Renderable", false});
+        components.push_back({DocumentComponentKind::Gameplay, "RtsObject", "RTS Object", false});
+        break;
+    }
+    case DocumentEntityRef::Source::FpsCollider:
+        components.push_back({DocumentComponentKind::Collider, "BoxCollider", "Box Collider", true});
+        break;
+    case DocumentEntityRef::Source::FpsSpawn:
+        components.push_back({DocumentComponentKind::Spawn, "SpawnPoint", "Spawn Point", true});
+        break;
+    }
+    return components;
+}
+
+inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
+                                  DocumentComponentKind kind, Json& result) {
+    DocumentTransform position;
+    if (!readDocumentTransform(map, ref, position)) return false;
+    result = Json::object();
+    if (kind == DocumentComponentKind::Transform) {
+        Json xyz = Json::array();
+        xyz.push(Json::number(position.x, 3));
+        xyz.push(Json::number(position.y, 3));
+        xyz.push(Json::number(position.z, 3));
+        result.set("position", xyz);
+        return true;
+    }
+    if (ref.source == DocumentEntityRef::Source::MapEntity) {
+        const DocEntity* entity = documentMapEntity(map, ref);
+        if (!entity) return false;
+        if (kind == DocumentComponentKind::Renderable) {
+            result.set("type", Json::string(entity->type));
+            return true;
+        }
+        if (kind == DocumentComponentKind::Gameplay) {
+            result.set("type", Json::string(entity->type));
+            result.set("owner", Json::number(int64_t(entity->owner)));
+            return true;
+        }
+        return false;
+    }
+    const Json* object = fpsDocumentEntity(map.data.fps, ref);
+    if (!object) return false;
+    if (kind == DocumentComponentKind::Collider &&
+        ref.source == DocumentEntityRef::Source::FpsCollider) {
+        result.set("min", (*object)["min"]);
+        result.set("max", (*object)["max"]);
+        return true;
+    }
+    if (kind == DocumentComponentKind::Spawn &&
+        ref.source == DocumentEntityRef::Source::FpsSpawn) {
+        result.set("position", *object);
+        return true;
+    }
+    return false;
+}
+
 } // namespace aiverse::editor
