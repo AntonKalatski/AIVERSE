@@ -119,6 +119,8 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_wave_executor_test
             ecs_guarded_world_test
             ecs_snapshot_delta_test
+            ecs_scene_hierarchy_test
+            ecs_scene_hierarchy_simulation_test
             ecs_cow_snapshot_test
             ecs_cow_exception_test
             ecs_cow_parallel_test
