@@ -353,7 +353,11 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         meleeAttacks_[1]={1,m.windup,m.active,m.recovery,total,m.bufferTicks,{1}};
         if(!lib::genre::valid(meleeAttacks_))throw JsonError("fps.melee: invalid attack timing");
     }
-    Hasher hash;hash.str(rules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
+    // ecsAuthority changes storage ownership, not gameplay rules. Keep the
+    // legacy content hash/save v9 checksum stable across both implementations.
+    Json hashRules=rules;
+    hashRules.member("fps").erase("ecsAuthority");
+    Hasher hash;hash.str(hashRules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
     sim.world().setResource<State>(std::move(s));
     // Allocate one deterministic ECS identity per actor slot. No FPS save,
     // command, rewind or network format changes: the existing State resource
