@@ -397,9 +397,16 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setIndexBuffer(it.mesh->ib);
         dev_->drawIndexed(it.mesh->indexCount);
         ++drawCalls_;
+        // drawItem is only used by the current camera's colour pass.
+        profile_.cameraMeshTriangles += uint64_t(it.mesh->indexCount) / 3;
     };
     for (auto& it : items_) if (it.color.w >= 0.99f) drawItem(it);
+    // The per-phase profile also includes reflection/SSR replay. Snapshot
+    // only the *first* main-camera opaque pass so a triangle is not counted
+    // twice when the same visible surface is drawn for another target.
+    const uint32_t opaqueStart = profile_.triangles[1];
     renderModels(1);
+    profile_.cameraModelTriangles += uint32_t(profile_.triangles[1] - opaqueStart);
     renderModels(3);
     if (capture) {
         endSceneCapture(mainPass, sw, sh); dev_->setViewport({0, 0, sw, sh});
@@ -415,7 +422,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         if (!any) { dev_->setPipeline(litBlendPipe_); uploadFrameUniforms(false); dev_->setTexture(0, shadowMap_); lights.bind(2, 1, 2); bindTraceTextures(); any = true; }
         drawItem(it);
     }
+    const uint32_t blendedStart = profile_.triangles[2];
     renderModels(2);
+    profile_.cameraModelTriangles += uint32_t(profile_.triangles[2] - blendedStart);
     renderModels(4);   // transparent objects (kDrawTransparent) write their depth now: later ground layers stay under them
     lights.drawHalos(viewProj_);   // additive glows, depth-tested against the scene
     // custom renderers (sprites) after translucent meshes: they don't write depth, so water drawn
@@ -428,6 +437,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setVertexBuffer(triVB_);
         dev_->draw(uint32_t(tris_.size()));
         ++drawCalls_;
+        profile_.cameraOverlayTriangles += uint64_t(tris_.size()) / 3;
     }
     if (!lines_.empty()) {
         dev_->updateBuffer(lineVB_, lines_.data(), lines_.size() * sizeof(ColorVertex));
