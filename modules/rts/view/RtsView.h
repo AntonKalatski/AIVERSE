@@ -395,6 +395,19 @@ private:
         std::vector<render::ProcRuntime> rt;
         render::mat4 objXf;                       // procedural whole-object offset
         render::mat4 drawn;                       // last world transform of the host model
+        // Reuse finished non-animated scenery placement without rebuilding
+        // translate/rotate/scale matrices. Every varying input is validated
+        // before reuse; animated/procedural/FX objects always use legacy code.
+        struct PlacementCache {
+            bool valid = false;
+            render::float3 pos{};
+            float ground = 0, yaw = 0, scale = 0, sx = 0, sz = 0;
+            bool structure = false, shape = false;
+            const render::Model* model = nullptr;
+            render::mat4 fix{};
+            render::mat4 world{};
+            render::mat4 drawn{};
+        } placement;
         float yaw = 0, speed = 0, distance = 0, turnRate = 0, accel = 0, phase = 0;
         float eventAge[render::kProcEvCount] = {1e9f, 1e9f, 1e9f, 1e9f};
         render::float3 attackDirection{};          // last shot in the animation tangent frame
