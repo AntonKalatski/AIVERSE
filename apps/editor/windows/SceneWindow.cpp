@@ -51,7 +51,7 @@ public:
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
         renderer.setModelInstancingEnabled(sceneInstancing_);
-        renderer.setModelMultiDrawEnabled(benchmarkActive_ ? benchmarkPhase_ == 1 : sceneIndirect_);
+        renderer.setModelMultiDrawEnabled(benchmarkActive_ ? benchmarkMode_ == 1 : sceneIndirect_);
         renderer.setModelCullingEnabled(sceneCulling_);
         // Pipeline layouts depend on instance limit. Apply only when the user changes
         // the control: resetting this after every Scene frame would recompile shaders.
@@ -87,15 +87,21 @@ public:
                 std::chrono::steady_clock::now() - benchmarkStart).count();
             if (benchmarkWarmup_ > 0) --benchmarkWarmup_;
             else {
-                benchmarkSamples_[benchmarkPhase_].push_back(cpuMs);
-                benchmarkDrawSum_[benchmarkPhase_] += renderer.drawCalls();
-                if (benchmarkSamples_[benchmarkPhase_].size() == 300) {
-                    if (benchmarkPhase_ == 0) {
-                        benchmarkPhase_ = 1;
-                        benchmarkWarmup_ = 60;
-                    } else {
+                benchmarkSamples_[benchmarkMode_].push_back(cpuMs);
+                benchmarkDrawSum_[benchmarkMode_] += renderer.drawCalls();
+                ++benchmarkPhaseSamples_;
+                if (benchmarkPhaseSamples_ == 300) {
+                    benchmarkPhaseSamples_ = 0;
+                    ++benchmarkPhase_;
+                    if (benchmarkPhase_ == 6) {
                         benchmarkActive_ = false;
                         benchmarkDone_ = true;
+                    } else {
+                        // ABBAAB: counterbalances time-dependent drift and
+                        // provides three independent 300-frame blocks per mode.
+                        static constexpr int modes[] = {0, 1, 1, 0, 0, 1};
+                        benchmarkMode_ = modes[benchmarkPhase_];
+                        benchmarkWarmup_ = 60;
                     }
                 }
             }
@@ -214,10 +220,12 @@ private:
                 measureBatchingNextFrame_ = true;
             if (mdiBackend && !ed.playing()) {
                 if (!benchmarkActive_) {
-                    if (ImGui::Button("Benchmark MDI OFF / ON (300 frames each)")) {
+                    if (ImGui::Button("Benchmark MDI OFF / ON (3 x 300 frames each)")) {
                         benchmarkActive_ = true;
                         benchmarkDone_ = false;
                         benchmarkPhase_ = 0;
+                        benchmarkMode_ = 0;
+                        benchmarkPhaseSamples_ = 0;
                         benchmarkWarmup_ = 60;
                         benchmarkCamera_ = ed.sceneCam;
                         benchmarkSamples_[0].clear();
@@ -226,9 +234,9 @@ private:
                         measureBatchingNextFrame_ = false;
                     }
                 } else {
-                    ImGui::Text("Benchmark: %s, warmup %d, samples %zu / 300",
-                                benchmarkPhase_ == 0 ? "MDI OFF" : "MDI ON",
-                                benchmarkWarmup_, benchmarkSamples_[benchmarkPhase_].size());
+                    ImGui::Text("Benchmark: block %d/6, %s, warmup %d, samples %d / 300",
+                                benchmarkPhase_ + 1, benchmarkMode_ == 0 ? "MDI OFF" : "MDI ON",
+                                benchmarkWarmup_, benchmarkPhaseSamples_);
                     if (ImGui::Button("Cancel benchmark")) benchmarkActive_ = false;
                 }
                 if (benchmarkDone_) {
@@ -241,10 +249,11 @@ private:
                     const auto off = stats(benchmarkSamples_[0]);
                     const auto on = stats(benchmarkSamples_[1]);
                     ImGui::Text("Scene CPU OFF: avg %.3f / P95 %.3f ms, draws %.0f",
-                                off.first, off.second, double(benchmarkDrawSum_[0]) / 300.0);
+                                off.first, off.second, double(benchmarkDrawSum_[0]) / 900.0);
                     ImGui::Text("Scene CPU ON:  avg %.3f / P95 %.3f ms, draws %.0f",
-                                on.first, on.second, double(benchmarkDrawSum_[1]) / 300.0);
+                                on.first, on.second, double(benchmarkDrawSum_[1]) / 900.0);
                     ImGui::Text("MDI CPU delta: %+.1f%%", (on.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
+                    ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
                     ImGui::TextDisabled("Fixed camera; Scene render CPU only. GPU timings are asynchronous.");
                     ImGui::TextDisabled("Same geometry pool in both modes; excludes asset upload.");
                 }
@@ -808,7 +817,7 @@ private:
     bool sceneInstanceLimitDirty_ = true;
     bool sceneProfiling_ = false;
     bool benchmarkActive_ = false, benchmarkDone_ = false;
-    int benchmarkPhase_ = 0, benchmarkWarmup_ = 0;
+    int benchmarkPhase_ = 0, benchmarkMode_ = 0, benchmarkPhaseSamples_ = 0, benchmarkWarmup_ = 0;
     RTSCamera benchmarkCamera_{};
     std::vector<double> benchmarkSamples_[2];
     uint64_t benchmarkDrawSum_[2] = {0, 0};
