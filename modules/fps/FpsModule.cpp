@@ -456,13 +456,32 @@ void Module::tick(Simulation& sim) {
     }
 }
 void Module::hashState(Simulation& sim,Hasher& hash) {
-    hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,state(sim));hash.str(bytes);
-    if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:state(sim).actors)meleeIo(m,actor);hash.str(extra);}
-    for(auto& p:state(sim).projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
-    if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
-    for(const auto& g:state(sim).gear)hash.u64(lib::systems::gearHash(g));
-    if(!state(sim).vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,state(sim).vehicleRuns);hash.str(extra);}
-    for(const auto& b:state(sim).botStates)hash.str(b);
+    // Hashing is read-only. Do not call mutable World::resource<State>()
+    // here: that detaches a shared COW snapshot and deep-copies the entire
+    // FPS State even when the tick itself has not changed a single actor.
+    const State* source=sim.world().resourceConst<State>();
+    if(!source)throw std::logic_error("fps state unavailable during checksum");
+    // Archive's writer API takes T&, but stateIo in writing mode only reads
+    // the State; it never mutates it. Keep this alias local to serialization.
+    State& stateForWriter=*const_cast<State*>(source);
+    hash.u64(contentHash_);
+    std::string bytes;Archive a(&bytes);stateIo(a,stateForWriter);hash.str(bytes);
+    if(config_.melee.enabled){std::string extra;Archive m(&extra);
+        for(auto& actor:stateForWriter.actors)meleeIo(m,actor);
+        hash.str(extra);
+    }
+    for(auto& p:stateForWriter.projectiles)if(p.program.enabled){
+        std::string extra;Archive e(&extra);
+        e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);
+    }
+    if(stateForWriter.royale.enabled){std::string extra;Archive r(&extra);
+        royaleIo(r,stateForWriter.royale);hash.str(extra);
+    }
+    for(const auto& g:stateForWriter.gear)hash.u64(lib::systems::gearHash(g));
+    if(!stateForWriter.vehicleRuns.empty()){std::string extra;Archive v(&extra);
+        ioVehicleRuns(v,stateForWriter.vehicleRuns);hash.str(extra);
+    }
+    for(const auto& b:stateForWriter.botStates)hash.str(b);
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
