@@ -238,7 +238,8 @@ static void run(size_t n,unsigned density) {
 
     // Filtered All(Position,Velocity) + None(Excluded). Compare final states.
     const auto s=sparse;
-    auto a=s,b=slots;
+    auto a = s;
+    auto b = slots;
     for(int i=0;i<10;++i){a.updateFiltered();b.updateFiltered();}
     if(hashPositions(a.pos)!=hashPositions(b.pos))throw std::runtime_error("None filter mismatch");
     observed=observed^hashPositions(a.pos);
