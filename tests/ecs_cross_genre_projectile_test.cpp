@@ -6,10 +6,15 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 using namespace aiverse;
 namespace lg=aiverse::lib::genre;
+static void require(bool condition,const char* message) {
+    if(!condition)throw std::runtime_error(message);
+}
+
 
 struct ShooterTag{};
 struct ArtilleryTag{};
@@ -24,7 +29,7 @@ public:
     void setup(Simulation& sim,const Json&,const Json&)override {
         World& w=sim.world();
         const world::Collider wall{42,{{3_fx,-1_fx,-1_fx},{4_fx,1_fx,1_fx}}};
-        assert(collision_.add(wall));
+        require(collision_.add(wall),"could not add collision surface");
         target=w.create();
         shot=w.create();
         w.add<Tag>(target);
@@ -73,7 +78,7 @@ public:
             hash.u32(shot.state.alive?1:0);
         });
         const auto* report=w.resourceConst<ImpactReport>();
-        assert(report);
+        require(report!=nullptr,"missing impact report");
         hash.u32(report->count);
         hash.u32(report->lastShot);
         hash.i64(report->totalDamage);
@@ -94,23 +99,23 @@ uint64_t run(bool cow) {
     const World& w=sim.world();
     const auto* hp=w.tryGetConst<lg::HitPointsComponent>(game->target);
     const auto* report=w.resourceConst<ImpactReport>();
-    assert(hp && hp->current==65);
-    assert(report && report->count==1 && report->totalDamage==35 && report->lastShot==19);
-    assert(!w.alive(game->shot));
+    require(hp && hp->current==65,"projectile did not apply expected damage");
+    require(report && report->count==1 && report->totalDamage==35 && report->lastShot==19,"ordered impact report mismatch");
+    require(!w.alive(game->shot),"expired projectile was not destroyed");
     const auto expected=sim.checksum();
 
     sim.loadState(start);
-    assert(sim.world().alive(game->shot));
-    assert(sim.world().tryGetConst<lg::HitPointsComponent>(game->target)->current==100);
+    require(sim.world().alive(game->shot),"rollback did not restore projectile");
+    require(sim.world().tryGetConst<lg::HitPointsComponent>(game->target) && sim.world().tryGetConst<lg::HitPointsComponent>(game->target)->current==100,"rollback did not restore health");
     for(int i=0;i<8;++i)sim.step();
-    assert(sim.checksum()==expected);
+    require(sim.checksum()==expected,"rollback continuation checksum mismatch");
     return expected;
 }
 
 int main() {
     const auto shooter=run<ShooterTag>(false);
-    assert(run<ArtilleryTag>(false)==shooter);
-    assert(run<ShooterTag>(true)==shooter);
-    assert(run<ArtilleryTag>(true)==shooter);
+    require(run<ArtilleryTag>(false)==shooter,"artillery versus shooter checksum mismatch");
+    require(run<ShooterTag>(true)==shooter,"shooter COW checksum mismatch");
+    require(run<ArtilleryTag>(true)==shooter,"artillery COW checksum mismatch");
     std::cout<<"PASS shared ECS bullet/artillery flight, collision, ordered damage and COW rollback\n";
 }
