@@ -179,6 +179,8 @@ target_link_libraries(aiverse_game PUBLIC aiverse_engine)
 option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
     "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
 if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_game PRIVATE Threads::Threads)
     target_compile_definitions(aiverse_game PRIVATE AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=1)
 endif()
 
