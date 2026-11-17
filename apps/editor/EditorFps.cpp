@@ -161,28 +161,7 @@ void Editor::drawFpsSceneInspector() {
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (collider) {
             drawDocumentPositionField(doc(), ref);
-            const Json& lo = source["min"];
-            const Json& hi = source["max"];
-            if (lo.isArray() && hi.isArray() && lo.size() >= 3 && hi.size() >= 3) {
-                float minimum[3] = {float(lo[0].toDouble()), float(lo[1].toDouble()), float(lo[2].toDouble())};
-                float maximum[3] = {float(hi[0].toDouble()), float(hi[1].toDouble()), float(hi[2].toDouble())};
-                ImGui::TextDisabled("Min XYZ");
-                ImGui::SetNextItemWidth(-1);
-                bool changedMin = ImGui::DragFloat3("##colliderMin", minimum, 0.05f, 0, 0, "%.3f");
-                if (ImGui::IsItemActivated()) doc().beginEdit();
-                ImGui::TextDisabled("Max XYZ");
-                ImGui::SetNextItemWidth(-1);
-                bool changedMax = ImGui::DragFloat3("##colliderMax", maximum, 0.05f, 0, 0, "%.3f");
-                if (ImGui::IsItemActivated()) doc().beginEdit();
-                if (changedMin || changedMax) {
-                    Json component = Json::object(), minArray = Json::array(), maxArray = Json::array();
-                    for (float coordinate : minimum) minArray.push(Json::number(double(coordinate), 3));
-                    for (float coordinate : maximum) maxArray.push(Json::number(double(coordinate), 3));
-                    component.set("min", minArray);
-                    component.set("max", maxArray);
-                    writeDocumentComponent(doc(), ref, DocumentComponentKind::Collider, component);
-                }
-            }
+            drawDocumentColliderBoundsField(doc(), ref);
             ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
         } else {
             drawDocumentPositionField(doc(), ref);
