@@ -66,6 +66,19 @@ for mode in off on; do
     echo "FPS movement and combat parity hashes are both required in $mode" >&2
     exit 1
   fi
+  motor_batches="$(sed -n 's/^FPS_MOTOR_BATCHES=//p' "$ROOT/fps-$mode.log" | tail -1)"
+  motor_commits="$(sed -n 's/^FPS_MOTOR_COMMITS=//p' "$ROOT/fps-$mode.log" | tail -1)"
+  if ! [[ "$motor_batches" =~ ^[0-9]+$ && "$motor_commits" =~ ^[0-9]+$ ]]; then
+    echo "FPS motor job coverage counters missing in $mode" >&2; exit 1
+  fi
+  if [[ "$mode" == on ]]; then
+    if [[ "$motor_batches" == 0 || "$motor_commits" == 0 ]]; then
+      echo "Parallel FPS motor path was never exercised" >&2; exit 1
+    fi
+  elif [[ "$motor_batches" != 0 || "$motor_commits" != 0 ]]; then
+    echo "Disabled FPS motor unexpectedly executed parallel jobs" >&2; exit 1
+  fi
+  echo "FPS motor $mode: batches=$motor_batches commits=$motor_commits"
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS and network tests: $mode ==="
     ctest --test-dir "$build" --no-tests=error -R "^aiverse_(tests|net_tests)$" --output-on-failure
