@@ -290,6 +290,21 @@ The Metal renderer's `createPipeline` deliberately falls back to **non-ICB** reg
 
 **Still unvalidated on owner's Mac.** Rebuild and run with `AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_ICB_TRACE=1`, check `GPU-encoded ICB submissions > 0`, and validate rendered materials/shadows/AGX stability before comparing FPS. GPU-generated command execution remains high-risk, may still fail if PBR variant absent, or exhibit Metal driver issues. Keep opt-in and fallback; do not merge as production or claim a speedup until verified.
 
+## Expanded rigid GPU ICB and shared Metal encoding pass (2026-11-17)
+
+New performance batch, commits `cfe261c`, `1ec0021`, `e19a0e6`, `c204177`, `432f5bb`, `259ef50`, `1d2425a`, `edc89ce`, `ee4b857`, `64a9cf3`:
+
+- `AIVERSE_GPU_ICB_RIGID=1` opts eligible opaque **rigid dynamic** primitives into GPU ICB in addition to the original static-only subset. It still excludes skinned/morphed/baked, alpha, GI, shader graphs, fade/actor-reveal, material/shadow batching, geometry-cluster policies, CPU occlusion policies and LOD transitions; CPU continues selecting LOD and providing fresh world transforms. Eligible rigid-dynamic primitives are never forced through the slower GPU single-draw fallback: those that fail to form a GPU ICB group use conventional CPU instancing. Shadows, reflections, and transparent passes stay legacy.
+- GPU material/geometry group discovery now buckets by `gpuMaterialStateHash` (cached per Model*/Material* pair per frame), and still verifies exact GPU geometry bindings, render flags and `equivalentGpuMaterial` on hash matches. This removes scanning all groups for each rigid instance.
+- `Device::finishGpuEncodedIcbPreparation()` lets Metal retain a **single compute encoder** across all compatible GPU ICB batch dispatches for a scene; `Renderer3D` finishes it before render passes. `beginCompute` refuses to overlap an unfinished GPU ICB encoder, `beginPass` defensively flushes it, and `endFrame` closes it as fallback. All ICB resources still use distinct frame/submission resource slots.
+- `AIVERSE_GPU_ICB_MIN_COMMANDS=2..256` is an independently tuned threshold (default 2 to preserve last known-good behavior). Test 2, 4, 8, 16 at the **same camera** using the existing balanced 3-way Scene benchmark. Batches smaller than the minimum remain on instancing.
+- `GpuModelDrawStats::dynamicRigidEligible` is exposed as `GPU ICB rigid dynamic candidates` in Scene Batching when the new flag is enabled.
+
+Last confirmed **before** this patch: GPU-encoded ICB 2 submissions / 21 commands, Instancing Scene CPU 11.815 ms, CPU MDI 11.928, GPU-encoded 11.935; full Metal editor GPU frames 1.310 / 1.367 / 1.438 ms. This new code has NOT been built or measured by the owner; treat it as an optimization hypothesis. During validation inspect shader outputs, moving unit transforms, occlusion and shadows, and ensure GPU ICB submitted commands grow above 21 and do not generate AGX faults. Do not enable by default or assert that GPU culling / LOD is fully GPU-driven. The full scene still builds `modelItems_` on CPU, CPU selects LOD and stages per-group uniforms; current GPU ICB only culls eligible prim bounds and writes indexed commands on GPU.
+
+Recommended test launch after rebuild and tests:
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=8 AIVERSE_MDI_GEOMETRY_SORT=1 AIVERSE_BENCH_UNCAPPED=1 ./build-metal/AiverseEditor.app/Contents/MacOS/AiverseEditor`.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
