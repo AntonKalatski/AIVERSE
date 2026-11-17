@@ -254,6 +254,10 @@ private:
                 const auto gpu = ed.renderer().gpuModelDrawStats();
                 ImGui::Text("GPU-authored opaque: %u eligible / %u single draws",
                             gpu.eligible, gpu.submitted);
+                if (const char* rigid = std::getenv("AIVERSE_GPU_ICB_RIGID");
+                    rigid && std::strcmp(rigid, "1") == 0)
+                    ImGui::Text("GPU ICB rigid dynamic candidates: %u",
+                                gpu.dynamicRigidEligible);
                 if (const char* icb = std::getenv("AIVERSE_GPU_ENCODED_ICB");
                     icb && std::strcmp(icb, "1") == 0)
                     ImGui::Text("GPU-encoded ICB: %u submissions / %u commands",
