@@ -36,6 +36,11 @@ compile_run() {
     "$BUILD_DIR/$name"
 }
 compile_run ecs-experiments tests/ecs_experiments_test.cpp
+# Public AIVERSE::libraries headers; unrelated shooter/strategy hosts must
+# compile without linking the genre modules.
+compile_run ecs-cross-genre -Ilibraries/include tests/ecs_cross_genre_mechanics_test.cpp \
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp \
+    engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
 compile_run ecs-waves tests/ecs_wave_executor_test.cpp
 compile_run ecs-guarded tests/ecs_guarded_world_test.cpp
 compile_run ecs-snapshot-delta tests/ecs_snapshot_delta_test.cpp
