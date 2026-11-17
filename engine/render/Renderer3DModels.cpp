@@ -880,7 +880,7 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuModelCommandsReady_ = false;
     gpuModelFrame_ = 0;
     gpuModelSubmission_ = 0;
-    gpuModelEligible_ = gpuModelDrawn_ = gpuModelDynamicEligible_ = 0;
+    gpuModelEligible_ = gpuModelDrawn_ = gpuModelDynamicEligible_ = gpuModelLodEligible_ = 0;
     gpuEncodedDrawCalls_ = gpuEncodedCommands_ = 0;
     gpuIcbCandidates_ = gpuIcbPrepared_ = 0;
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
@@ -956,6 +956,7 @@ void Renderer3D::prepareGpuModelDraws() {
         gpuModelSlots_[i] = uint32_t(gpuModelRecords_.size());
         gpuModelRecords_.push_back(record);
         if (!(it.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
+        if (record.lodEnabled) ++gpuModelLodEligible_;
     }
     gpuModelEligible_ = uint32_t(gpuModelRecords_.size());
     if (!gpuModelEligible_) return;
