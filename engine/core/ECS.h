@@ -160,7 +160,9 @@ public:
 
     void destroy(Entity e) {
         if (!alive(e)) return;
-        for (auto& p : pools_) if (p) {
+        for (auto& p : pools_) if (p && p->has(e.index)) {
+            // Unrelated pools remain shared; only pools containing this Entity
+            // need a structural detach before swap-remove.
             if (cowSnapshots_ && !p.unique()) p=std::shared_ptr<IPool>(p->clone());
             p->remove(e.index);
         }
