@@ -174,10 +174,15 @@ inline bool translateDocumentEntities(MapDoc& map,
         } else {
             const Json* object = fpsDocumentEntity(map.data.fps, ref);
             if (!object) return false;
-            auto validCoords = [](const Json& coords) {
+            auto validCoords = [&](const Json& coords) {
                 if (!coords.isArray() || coords.size() < 3) return false;
-                for (size_t axis = 0; axis < 3; ++axis)
+                const double offsets[3] = {delta.x, delta.y, delta.z};
+                for (size_t axis = 0; axis < 3; ++axis) {
                     if (!coords[axis].isNumber()) return false;
+                    const double value = coords[axis].toDouble();
+                    if (!std::isfinite(value) ||
+                        !std::isfinite(value + offsets[axis])) return false;
+                }
                 return true;
             };
             if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
