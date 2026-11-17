@@ -326,6 +326,12 @@ bash tests/run_ecs_gameplay_compare.sh --full
 5. Real gameplay timing, frame stability, memory, TSan and cross-platform performance require user verification. The CMake configure and gameplay comparison scripts have not been executed by this agent.
 6. Merge PR #8 only after normal/sanitized/regression tests, baseline-vs-opt-in RTS checksum equality, FPS tests and real gameplay checks.
 
+### Follow-up fixes after guarded parallel step
+
+- `5af921f`: simplified the caller-lane recursion guard in `PersistentWorkers` to avoid relying on a local class for private static member access; still prohibits nested calls into the same pool.
+- `65531e3`: `enable_testing()` now executes before adding ECS CTest targets. Other existing `enable_testing()` calls remain harmless.
+- These are **unverified code changes** until the latest full suite and gameplay build comparison run. The previous user-supplied successful suite predates these commits.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
