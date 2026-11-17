@@ -6,6 +6,7 @@
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/PersistentGpuScene.h"
 #include "engine/render/PersistentGpuSceneUpload.h"
+#include "engine/render/GpuSceneDrawCommands.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -315,6 +316,22 @@ int main() {
         }
         upload.release();
         CHECK(device.destroyed == 3);
+    }
+
+    // GPU-authored commands have the Metal indirect ABI and are strictly
+    // optional on non-Metal devices. No compute dispatch on the mock device.
+    {
+        static_assert(sizeof(GpuPrimitiveDrawRecord) == 128);
+        static_assert(sizeof(gfx::DrawIndexedIndirectCommand) == 20);
+        MockDevice mock;
+        GpuSceneDrawCommands generator;
+        std::vector<GpuPrimitiveDrawRecord> records(1);
+        records[0].command.indexCount = 24;
+        records[0].command.instanceCount = 1;
+        records[0].enabled = 1;
+        CHECK(!generator.prepare(mock, records, mat4::identity(), 1));
+        CHECK(!generator.output(1).valid());
+        generator.release(mock);
     }
 
     std::puts("engine model batching policy: PASS");
