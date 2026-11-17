@@ -652,7 +652,14 @@ std::string worldGroupValue(const WorldModel& m, const Rules& R, const WorldRow&
 
 std::string worldRowName(const WorldModel& m, const Rules& R, const MapData* doc, const WorldRow& r) {
     (void)m;
+    // Author-provided display names are metadata, not fabricated ECS fields.
+    // Preserve explicit script labels when a WorldRow supplies one.
     if (!r.label.empty()) return r.label;
+    if (doc && r.doc >= 0 && size_t(r.doc) < doc->entities.size()) {
+        const std::string displayName =
+            doc->entities[size_t(r.doc)].extra.getStr("displayName", "");
+        if (!displayName.empty()) return displayName;
+    }
     std::string n = r.type >= 0 && size_t(r.type) < R.types.size() ? R.types[size_t(r.type)].name
                   : r.kind == WorldKind::Projectile ? "Снаряд" : r.kind == WorldKind::Effect ? "Эффект" : "Объект";
     if (doc && r.doc >= 0 && size_t(r.doc) < doc->entities.size() && !doc->entities[size_t(r.doc)].id.empty()) n += "  #" + doc->entities[size_t(r.doc)].id;
