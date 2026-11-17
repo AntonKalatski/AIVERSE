@@ -178,29 +178,49 @@ class DeterministicCommands {
         uint64_t sequence;
         std::function<void(World&)> apply;
     };
+    // Each lane has exactly one producer thread until the next flush/discard.
+    // A lane mutex protects the vector against accidental simultaneous calls;
+    // a different producer fails immediately instead of silently changing order.
     std::vector<std::vector<Entry>> lanes_;
+    std::vector<std::mutex> locks_;
+    std::vector<std::thread::id> owner_;
 public:
-    explicit DeterministicCommands(size_t lanes):lanes_(lanes) {}
+    explicit DeterministicCommands(size_t lanes)
+        :lanes_(lanes),locks_(lanes),owner_(lanes) {}
+    DeterministicCommands(const DeterministicCommands&)=delete;
+    DeterministicCommands& operator=(const DeterministicCommands&)=delete;
     template<class Fn> void enqueue(size_t lane,Fn&& command) {
-        if(lane>=lanes_.size()) throw std::out_of_range("command lane");
+        if(lane>=lanes_.size())throw std::out_of_range("command lane");
+        std::lock_guard<std::mutex> lock(locks_[lane]);
+        const auto me=std::this_thread::get_id();
+        if(owner_[lane]==std::thread::id{})owner_[lane]=me;
+        if(owner_[lane]!=me)
+            throw std::logic_error("multiple producer threads on deterministic command lane");
         auto& list=lanes_[lane];
         list.push_back({uint32_t(lane),uint64_t(list.size()),std::forward<Fn>(command)});
     }
     void flush(World& world) {
-        // Only call after all producer jobs join. Move commands into a local
-        // batch so callbacks cannot invalidate vectors being iterated.
-        // Commands added during flush are deliberately kept for the next flush.
+        // Contract: all producer jobs have already joined. Locking prevents
+        // an accidental producer from corrupting the queue, but the caller must
+        // never flush concurrently with active producers.
         std::vector<std::vector<Entry>> batch(lanes_.size());
-        for(size_t lane=0;lane<lanes_.size();++lane)
+        for(size_t lane=0;lane<lanes_.size();++lane) {
+            std::lock_guard<std::mutex> lock(locks_[lane]);
             batch[lane].swap(lanes_[lane]);
+            owner_[lane]=std::thread::id{};
+        }
+        // Lane-major, per-lane submission order. Commands submitted from a
+        // callback are queued for the next flush, not appended to this batch.
         for(const auto& list:batch)
             for(const auto& entry:list)entry.apply(world);
         world.flush();
     }
-    // Cancel commands collected during a failed wave. A partially mutated
-    // World still requires rollback to a valid pre-wave snapshot.
     void discard() {
-        for(auto& list:lanes_)list.clear();
+        for(size_t lane=0;lane<lanes_.size();++lane) {
+            std::lock_guard<std::mutex> lock(locks_[lane]);
+            lanes_[lane].clear();
+            owner_[lane]=std::thread::id{};
+        }
     }
 };
 
