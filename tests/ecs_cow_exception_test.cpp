@@ -18,6 +18,15 @@ struct Fragile {
     Fragile& operator=(const Fragile&)=default;
     Fragile& operator=(Fragile&&)=default;
 };
+struct FragileResource {
+    int value=0;
+    static inline bool throwCopy=false;
+    explicit FragileResource(int v=0):value(v){}
+    FragileResource(const FragileResource& other):value(other.value) {
+        if(throwCopy)throw std::runtime_error("resource copy");
+    }
+    FragileResource& operator=(const FragileResource&)=default;
+};
 int main() {
     World world;
     Entity first=world.create();
@@ -61,5 +70,24 @@ int main() {
     assert(snapshot.alive(first));
     world.copyFrom(snapshot);
     assert(world.countExisting<Fragile>()==1 && world.get<Fragile>(first).value==1);
+    // Disabling COW must be atomic even if a shared singleton resource
+    // cannot be cloned. A failed mode switch must leave snapshots safe.
+    {
+        World resources;
+        resources.setResource<FragileResource>(7);
+        resources.enableCowSnapshots(true);
+        World saved=resources;
+        FragileResource::throwCopy=true;
+        bool rejected=false;
+        try {resources.enableCowSnapshots(false);}
+        catch(const std::runtime_error&) {rejected=true;}
+        assert(rejected && resources.cowSnapshotsEnabled());
+        assert(static_cast<const World&>(saved).resourceConst<FragileResource>()->value==7);
+        FragileResource::throwCopy=false;
+        resources.enableCowSnapshots(false);
+        assert(!resources.cowSnapshotsEnabled());
+        resources.resource<FragileResource>()->value=19;
+        assert(static_cast<const World&>(saved).resourceConst<FragileResource>()->value==7);
+    }
     std::cout<<"PASS COW page conversion, failed append recovery and shared snapshot isolation\n";
 }
