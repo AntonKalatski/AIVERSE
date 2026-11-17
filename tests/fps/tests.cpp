@@ -125,7 +125,7 @@ void parallelMotorParityFixture(Json rules,Json map) {
     }
     const auto movementMs=std::chrono::duration<double,std::milli>(
         std::chrono::steady_clock::now()-movementStart).count();
-    std::printf("FPS_MOTOR_TICKS_MS=%.3f\\n",movementMs);
+    std::printf("FPS_MOTOR_TICKS_MS=%.3f\n",movementMs);
     SimSnapshot snapshot;
     sim->saveState(snapshot);
     auto current=sim->checksum();
@@ -153,14 +153,14 @@ void parallelMotorParityFixture(Json rules,Json map) {
         combatSim->step();
         combatHistory.u64(combatSim->checksum());
     }
-    std::printf("FPS_COMBAT_PARITY_HASH=%016llx\\n",
+    std::printf("FPS_COMBAT_PARITY_HASH=%016llx\n",
         (unsigned long long)combatHistory.value());
     auto& motorModule=static_cast<fps::Module&>(sim->module());
     auto& combatModule=static_cast<fps::Module&>(combatSim->module());
-    std::printf("FPS_MOTOR_BATCHES=%llu\\n",
+    std::printf("FPS_MOTOR_BATCHES=%llu\n",
         (unsigned long long)(motorModule.experimentalMotorBatches()+
                              combatModule.experimentalMotorBatches()));
-    std::printf("FPS_MOTOR_COMMITS=%llu\\n",
+    std::printf("FPS_MOTOR_COMMITS=%llu\n",
         (unsigned long long)(motorModule.experimentalMotorCommits()+
                              combatModule.experimentalMotorCommits()));
 
