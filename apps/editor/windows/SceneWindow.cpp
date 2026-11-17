@@ -267,6 +267,9 @@ private:
                                 gpu.gpuIcbRejected, gpu.gpuIcbExecuteFailed);
                     ImGui::Text("GPU instance buffer: %.2f KiB copied this GPU frame",
                                 double(ed.device().gpuIcbInstanceUploadBytes()) / 1024.0);
+                    if (const char* lod = std::getenv("AIVERSE_GPU_ICB_LOD");
+                        lod && std::strcmp(lod, "1") == 0)
+                        ImGui::Text("GPU two-level LOD candidates: %u", gpu.gpuLodEligible);
                     if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
                         adaptive && std::strcmp(adaptive, "1") == 0)
                         ImGui::TextDisabled("Adaptive GPU ICB grouping enabled.");
