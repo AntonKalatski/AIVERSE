@@ -204,6 +204,9 @@ void Module::syncActorEntities(Simulation& sim) const {
         if (world.has<ProjectileEntity>(entity)) world.remove<ProjectileEntity>(entity);
         if (world.has<LootEntity>(entity)) world.remove<LootEntity>(entity);
         if (world.has<VehicleEntity>(entity)) world.remove<VehicleEntity>(entity);
+        if (world.has<ProjectileRuntime>(entity)) world.remove<ProjectileRuntime>(entity);
+        if (world.has<LootRuntime>(entity)) world.remove<LootRuntime>(entity);
+        if (world.has<VehicleRuntime>(entity)) world.remove<VehicleRuntime>(entity);
         if (!world.has<ActorEntityIdentity>(entity))
             world.add<ActorEntityIdentity>(entity);
         if (!world.has<ActorEntityTransform>(entity))
@@ -261,31 +264,53 @@ void Module::syncDynamicEntities(Simulation& sim) const {
         if (world.has<ActorEntityIdentity>(entity)) world.remove<ActorEntityIdentity>(entity);
         if (world.has<ActorEntityTransform>(entity)) world.remove<ActorEntityTransform>(entity);
         if (world.has<ActorEntityVitals>(entity)) world.remove<ActorEntityVitals>(entity);
+        if (world.has<ActorRuntime>(entity)) world.remove<ActorRuntime>(entity);
         if (kind != 1 && world.has<ProjectileEntity>(entity))
             world.remove<ProjectileEntity>(entity);
         if (kind != 2 && world.has<LootEntity>(entity))
             world.remove<LootEntity>(entity);
         if (kind != 3 && world.has<VehicleEntity>(entity))
             world.remove<VehicleEntity>(entity);
+        if (kind != 1 && world.has<ProjectileRuntime>(entity)) world.remove<ProjectileRuntime>(entity);
+        if (kind != 2 && world.has<LootRuntime>(entity)) world.remove<LootRuntime>(entity);
+        if (kind != 3 && world.has<VehicleRuntime>(entity)) world.remove<VehicleRuntime>(entity);
         return entity;
     };
+    uint32_t projectileOrder=0;
     for (const Projectile& projectile : current->projectiles) {
         const Entity entity = ensure(1, projectile.id);
+        if(config_.ecsAuthority) {
+            if(!world.has<ProjectileRuntime>(entity))world.add<ProjectileRuntime>(entity);
+            *world.tryGet<ProjectileRuntime>(entity)={projectile,projectileOrder};
+        }
+        ++projectileOrder;
         if (!world.has<ProjectileEntity>(entity)) world.add<ProjectileEntity>(entity);
         *world.tryGet<ProjectileEntity>(entity) = {
             projectile.id, projectile.owner, projectile.kind,
             projectile.pos, projectile.velocity, projectile.damage
         };
     }
+    uint32_t lootOrder=0;
     for (const Loot& loot : current->loot) {
         const Entity entity = ensure(2, loot.id);
+        if(config_.ecsAuthority) {
+            if(!world.has<LootRuntime>(entity))world.add<LootRuntime>(entity);
+            *world.tryGet<LootRuntime>(entity)={loot,lootOrder};
+        }
+        ++lootOrder;
         if (!world.has<LootEntity>(entity)) world.add<LootEntity>(entity);
         *world.tryGet<LootEntity>(entity) = {
             loot.id, loot.pos, loot.type, loot.count
         };
     }
+    uint32_t vehicleOrder=0;
     for (const Vehicle& vehicle : current->vehicles) {
         const Entity entity = ensure(3, vehicle.id);
+        if(config_.ecsAuthority) {
+            if(!world.has<VehicleRuntime>(entity))world.add<VehicleRuntime>(entity);
+            *world.tryGet<VehicleRuntime>(entity)={vehicle,vehicleOrder};
+        }
+        ++vehicleOrder;
         if (!world.has<VehicleEntity>(entity)) world.add<VehicleEntity>(entity);
         *world.tryGet<VehicleEntity>(entity) = {
             vehicle.id, vehicle.pos, vehicle.velocity,
@@ -302,6 +327,37 @@ void Module::syncDynamicEntities(Simulation& sim) const {
             ++it;
         }
     }
+}
+
+void Module::hydrateDynamicsFromEcs(Simulation& sim) const {
+    if(!config_.ecsAuthority)return;
+    World& world=sim.world();
+    auto* current=world.resource<State>();
+    if(!current)throw std::logic_error("FPS authoritative dynamic State unavailable");
+    auto projectiles=std::vector<std::pair<uint32_t,Projectile>>{};
+    auto loot=std::vector<std::pair<uint32_t,Loot>>{};
+    auto vehicles=std::vector<std::pair<uint32_t,Vehicle>>{};
+    world.eachExistingConst<ProjectileRuntime>([&](Entity e,const ProjectileRuntime& r) {
+        if(world.alive(e))projectiles.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<LootRuntime>([&](Entity e,const LootRuntime& r) {
+        if(world.alive(e))loot.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<VehicleRuntime>([&](Entity e,const VehicleRuntime& r) {
+        if(world.alive(e))vehicles.emplace_back(r.order,r.value);
+    });
+    auto ordered=[](auto& values,auto& target) {
+        std::sort(values.begin(),values.end(),[](const auto& a,const auto& b) {
+            if(a.first!=b.first)return a.first<b.first;
+            return a.second.id<b.second.id;
+        });
+        target.clear();
+        target.reserve(values.size());
+        for(auto& entry:values)target.push_back(std::move(entry.second));
+    };
+    ordered(projectiles,current->projectiles);
+    ordered(loot,current->loot);
+    ordered(vehicles,current->vehicles);
 }
 
 void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
@@ -376,7 +432,10 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     syncActorEntities(sim);
     syncDynamicEntities(sim);
     if (config_.ecsAuthority)
-        sim.addSystem("fps.ecsHydrate",[this](Simulation& s){hydrateActorsFromEcs(s);});
+        sim.addSystem("fps.ecsHydrate",[this](Simulation& s){
+            hydrateActorsFromEcs(s);
+            hydrateDynamicsFromEcs(s);
+        });
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
     sim.addSystem("fps.ecsMirror",[this](Simulation& s){
         syncActorEntities(s);
