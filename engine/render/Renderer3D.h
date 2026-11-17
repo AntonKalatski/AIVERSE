@@ -350,6 +350,7 @@ private:
         bool gpuLodAvailable = false;
         gfx::DrawIndexedIndirectCommand gpuLodNear{}, gpuLodFar{};
         float gpuLodMaxPixels = 0, gpuLodError = 0;
+        float3 gpuLodBoundsMin{}, gpuLodBoundsMax{};
         mat4 world; float4 tint; float3 team; float flash; uint32_t flags;
         int32_t joints;     // offset into jointData_ (floats), -1 when not palette-skinned
         bool baked;         // skinned from the baked texture (rows in anim)
