@@ -95,6 +95,46 @@ inline bool drawDocumentColliderBoundsField(MapDoc& map, DocumentEntityRef ref) 
     return applied;
 }
 
+// Rotation/scale are exposed ONLY when the authored object's real schema
+// contains them (FPS oriented-box center/half/yaw). AABB colliders and RTS
+// DocEntity have no generic 3D rotation/scale serialization.
+inline bool drawDocumentRotationScaleFields(MapDoc& map,
+                                             DocumentEntityRef ref) {
+    Json transform;
+    if (!readDocumentComponent(map, ref, DocumentComponentKind::Transform,
+                               transform) ||
+        !transform["rotationY"].isNumber() ||
+        !transform["scale"].isArray()) return false;
+    float rotation = float(transform["rotationY"].toDouble());
+    ImGui::TextDisabled("Rotation Y");
+    ImGui::SetNextItemWidth(-1);
+    const bool rotateChanged = ImGui::DragFloat("##rotationY", &rotation,
+                                                0.5f, 0, 0, "%.2f deg");
+    if (ImGui::IsItemActivated()) map.beginEdit();
+
+    const Json& scaleValues = transform["scale"];
+    if (scaleValues.size() != 3) return false;
+    float scale[3] = {float(scaleValues[0].toDouble()),
+                      float(scaleValues[1].toDouble()),
+                      float(scaleValues[2].toDouble())};
+    ImGui::TextDisabled("Scale XYZ");
+    ImGui::SetNextItemWidth(-1);
+    const bool scaleChanged = ImGui::DragFloat3("##scaleXYZ", scale,
+                                                0.05f, 0, 0, "%.3f");
+    if (ImGui::IsItemActivated()) map.beginEdit();
+    if (!rotateChanged && !scaleChanged) return false;
+    Json write = Json::object();
+    if (rotateChanged)
+        write.set("rotationY", Json::number(double(rotation), 3));
+    if (scaleChanged) {
+        Json values = Json::array();
+        for (float x : scale) values.push(Json::number(double(x), 3));
+        write.set("scale", values);
+    }
+    return writeDocumentComponent(map, ref, DocumentComponentKind::Transform,
+                                  write);
+}
+
 inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
     const auto components = documentComponents(map, ref);
     for (const auto& component : components) {
@@ -112,11 +152,21 @@ inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
             switch (component.kind) {
             case DocumentComponentKind::Transform:
                 drawDocumentPositionField(map, ref);
+                drawDocumentRotationScaleFields(map, ref);
                 break;
-            case DocumentComponentKind::Collider:
-                drawDocumentColliderBoundsField(map, ref);
-                ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
+            case DocumentComponentKind::Collider: {
+                const Json* object = fpsDocumentEntity(map.data.fps, ref);
+                if (object && (*object)["yaw"].isNumber()) {
+                    ImGui::TextDisabled("Oriented box uses the Transform rotation and scale.");
+                    if ((*object)["id"].isNumber())
+                        ImGui::TextDisabled("Collider ID: %lld",
+                            static_cast<long long>((*object)["id"].integer()));
+                } else {
+                    drawDocumentColliderBoundsField(map, ref);
+                    ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
+                }
                 break;
+            }
             case DocumentComponentKind::Spawn:
                 ImGui::TextDisabled("Spawn orientation and scale are not part of the current map schema.");
                 break;
