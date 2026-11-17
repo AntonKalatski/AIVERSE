@@ -233,6 +233,39 @@ inline bool setDocumentColliderBounds(MapDoc& map, DocumentEntityRef ref,
     return true;
 }
 
+// Rotated FPS boxes have an explicit center, half-extents and yaw in turns.
+// These fields are already supported by fps::Module::setup and are persisted
+// without converting the collider to a different map schema.
+inline bool setDocumentOrientedCollider(MapDoc& map, DocumentEntityRef ref,
+                                       DocumentTransform centre,
+                                       DocumentTransform half, double yawTurns) {
+    if (ref.source != DocumentEntityRef::Source::FpsCollider) return false;
+    const double c[3] = {centre.x, centre.y, centre.z};
+    const double h[3] = {half.x, half.y, half.z};
+    if (!std::isfinite(yawTurns)) return false;
+    for (size_t axis = 0; axis < 3; ++axis)
+        if (!std::isfinite(c[axis]) || !std::isfinite(h[axis]) ||
+            h[axis] <= 0.0 || (axis != 1 && h[axis] > 2048.0))
+            return false;
+    Json* object = fpsDocumentEntity(map.data.fps, ref);
+    if (!object || !(*object)["yaw"].isNumber()) return false;
+    Json centerJson = Json::array(), halfJson = Json::array();
+    for (size_t axis = 0; axis < 3; ++axis) {
+        centerJson.push(Json::number(c[axis], 3));
+        halfJson.push(Json::number(h[axis], 3));
+    }
+    double wrapped = std::fmod(yawTurns, 1.0);
+    if (wrapped < 0) wrapped += 1.0;
+    const Json yaw = Json::number(wrapped, 6);
+    if ((*object)["center"] == centerJson &&
+        (*object)["half"] == halfJson && (*object)["yaw"] == yaw) return false;
+    object->member("center") = centerJson;
+    object->member("half") = halfJson;
+    object->member("yaw") = yaw;
+    map.touched();
+    return true;
+}
+
 inline bool translateDocumentEntities(MapDoc& map,
                                       const std::vector<DocumentEntityRef>& refs,
                                       DocumentTransform delta) {
@@ -323,9 +356,14 @@ inline std::vector<DocumentComponentDescriptor> documentComponents(
         components.push_back({DocumentComponentKind::Renderable, "Renderable", "Renderable", false});
         break;
     }
-    case DocumentEntityRef::Source::FpsCollider:
-        components.push_back({DocumentComponentKind::Collider, "BoxCollider", "Box Collider", true});
+    case DocumentEntityRef::Source::FpsCollider: {
+        const Json* object = fpsDocumentEntity(map.data.fps, ref);
+        const bool rotated = object && (*object)["yaw"].isNumber();
+        components.push_back({DocumentComponentKind::Collider,
+                              rotated ? "OrientedBoxCollider" : "BoxCollider",
+                              rotated ? "Oriented Box Collider" : "Box Collider", true});
         break;
+    }
     case DocumentEntityRef::Source::FpsSpawn:
         components.push_back({DocumentComponentKind::Spawn, "SpawnPoint", "Spawn Point", true});
         break;
@@ -344,6 +382,18 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
         xyz.push(Json::number(position.y, 3));
         xyz.push(Json::number(position.z, 3));
         result.set("position", xyz);
+        if (ref.source == DocumentEntityRef::Source::FpsCollider) {
+            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            if (object && (*object)["yaw"].isNumber()) {
+                result.set("rotationY",
+                    Json::number((*object)["yaw"].toDouble() * 360.0, 3));
+                Json scale = Json::array();
+                for (size_t axis = 0; axis < 3; ++axis)
+                    scale.push(Json::number(
+                        (*object)["half"][axis].toDouble() * 2.0, 3));
+                result.set("scale", scale);
+            }
+        }
         return true;
     }
     if (ref.source == DocumentEntityRef::Source::MapEntity) {
@@ -364,8 +414,14 @@ inline bool readDocumentComponent(const MapDoc& map, DocumentEntityRef ref,
     if (!object) return false;
     if (kind == DocumentComponentKind::Collider &&
         ref.source == DocumentEntityRef::Source::FpsCollider) {
-        result.set("min", (*object)["min"]);
-        result.set("max", (*object)["max"]);
+        if ((*object)["yaw"].isNumber()) {
+            result.set("center", (*object)["center"]);
+            result.set("half", (*object)["half"]);
+            result.set("yaw", (*object)["yaw"]);
+        } else {
+            result.set("min", (*object)["min"]);
+            result.set("max", (*object)["max"]);
+        }
         return true;
     }
     if (kind == DocumentComponentKind::Spawn &&
@@ -388,6 +444,28 @@ inline bool writeDocumentComponent(MapDoc& map, DocumentEntityRef ref,
         return true;
     };
     if (kind == DocumentComponentKind::Transform) {
+        if (ref.source == DocumentEntityRef::Source::FpsCollider) {
+            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            if (object && (*object)["yaw"].isNumber()) {
+                DocumentTransform position, half;
+                if (!readDocumentTransform(map, ref, position) ||
+                    !readVec3((*object)["half"], half)) return false;
+                double yaw = (*object)["yaw"].toDouble();
+                if (value.has("position") &&
+                    !readVec3(value["position"], position)) return false;
+                if (value.has("rotationY")) {
+                    if (!value["rotationY"].isNumber() ||
+                        !std::isfinite(value["rotationY"].toDouble())) return false;
+                    yaw = value["rotationY"].toDouble() / 360.0;
+                }
+                if (value.has("scale")) {
+                    DocumentTransform scale;
+                    if (!readVec3(value["scale"], scale)) return false;
+                    half = {scale.x * 0.5, scale.y * 0.5, scale.z * 0.5};
+                }
+                return setDocumentOrientedCollider(map, ref, position, half, yaw);
+            }
+        }
         DocumentTransform position;
         return readVec3(value["position"], position) &&
                setDocumentPosition(map, ref, position);
