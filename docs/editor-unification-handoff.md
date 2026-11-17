@@ -657,3 +657,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS projectile + damage resolution, stage C
 - Commit `c957986`: registered `aiverse_ecs_cross_genre_projectile_test` in root `CMakeLists.txt` (after `modules/fps` creates `aiverse_world`), with public `AIVERSE::libraries`, `aiverse_engine` and **collision-only** `aiverse_world` linkage. No `aiverse_fps` or `aiverse_game`. This complements the existing flight-only `ecs_projectile_composition_test` with health/damage queue coverage.
 - **Verification:** no compiler/CTest result has yet been obtained. Next register standalone suite and add an explicit documented mechanics-composition recipe.
+
+### 2026-11-18 — Universal ECS projectile + damage resolution, stage D
+- Commit `c2e57ee`: added `ecs-cross-genre-projectile` to `tests/run_ecs_experiment_suite.sh` with public headers, `SpatialWorld/TriangleCollision`, `Simulation`, deterministic Fixed/Json source compilation. Keeps existing flight-only ECS composition test.
+- Still not verified by execution. Next: inspect shell continuation formatting and add a new agent-facing component/system composition recipe.
