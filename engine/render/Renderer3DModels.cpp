@@ -604,8 +604,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     const bool traceIndirect = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto indirectStart = std::chrono::steady_clock::now();
-    std::vector<gfx::DrawIndexedIndirectCommand> commands;
-    commands.reserve(count);
+    auto& commands = indirectCommandScratch_;
+    commands.clear();
+    if (commands.capacity() < count) commands.reserve(count);
     uint64_t triangles = 0;
     // Consecutive instances of one primitive form ONE indirect command.
     // Subsequent primitives share the same U0 data block; firstInstance
