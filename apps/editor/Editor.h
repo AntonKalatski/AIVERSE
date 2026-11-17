@@ -46,6 +46,7 @@ struct Selection {
                 Live,       // an object of the world tree that is not a map entity being edited (ref): created by the game, or play mode
                 MapBlock,   // a block of the map document's extra JSON (key = path: "lights[2]", "gridFields")
                 Road,       // map road (index)
+                FpsObject,  // FPS document collider/spawn, stable source key in ref
                 Body } kind = None;   // planet map body (index)
     int index = -1;          // entity / player (0-based) / wave / trigger / road / body
     std::string key;         // area name, region letter, rule id, map block path
@@ -321,7 +322,7 @@ private:
     render::Renderer3D r3d_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;
-    int fpsSelectedSceneObject_ = -1;
+    int fpsSelectedSceneObject_ = -1; // legacy render index, being phased out in favor of Selection::FpsObject
     render::PostFx postFx_;
     game::RtsView view_;
     bool showPicker_ = false;
