@@ -813,3 +813,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `tests/run_ecs_experiment_suite.sh` to compile/run the cross-genre timed mechanics test from public headers with only shared engine/world link inputs; no RTS/FPS game library dependency.
 - Verification: GitHub source edit succeeded. **No shell syntax check, native compilation, sanitizer or test execution available in this environment.** GitHub Actions on previous commit `3ad66dc1` returned all runs queued; not passing evidence.
 - Next: check CI completion and target build errors; proceed to controlled legacy host integration only after baseline parity and source-of-truth mapping.
+
+
+### 2026-11-18 — Universal ECS locomotion policy adapter
+- Implementation SHA: `7e48fd23d31cc82fbd791c755f7301bb18635a48`.
+- Added `libraries/include/aiverselib/genre/EcsLocomotionSystems.h`: `LocomotionParametersComponent`, `LocomotionStateComponent`, `LocomotionInputComponent`, `LocomotionOutputComponent` and `addLocomotionPolicySystem`. Uses the existing shared `stepMotion` fixed-point policy instead of duplicating movement math. Consumes jump edge, leaves persistent movement wishes, returns velocity; host collision/position integration is intentionally separate.
+- Verification: GitHub source committed, **native compiler and behavioral tests not executed**. Does not replace FPS `moveActor` or RTS `sysMovement` yet.
+- Next: native cross-genre tests and CMake/catalog/skill registration; then integrate collision sampling and movement into actual hosts behind parity gates.
