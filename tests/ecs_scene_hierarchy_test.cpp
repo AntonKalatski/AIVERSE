@@ -78,7 +78,7 @@ static void rollback() {
     w.add<Parent>(a,Parent{b});
     graph.rebuild(w);
     assert(graph.update(w)==2);
-    assert(!w.has<Parent>(a));
+    assert(!w.has<Parent>(b));
 }
 static void deep() {
     World w;SceneHierarchy graph;
