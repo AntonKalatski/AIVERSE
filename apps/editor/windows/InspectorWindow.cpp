@@ -77,7 +77,7 @@ public:
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Свойства карты");
         ImGui::Separator();
         ImGui::Spacing();
-        if (ed.ws().project.isFps() && ed.selectedFpsSceneObject() >= 0) {
+        if (s.kind == Selection::FpsObject) {
             ed.drawFpsSceneInspector();
             return;
         }
