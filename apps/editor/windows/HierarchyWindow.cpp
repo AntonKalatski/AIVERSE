@@ -59,7 +59,7 @@ public:
             ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
             if (ImGui::TreeNodeEx("Colliders", ImGuiTreeNodeFlags_DefaultOpen)) {
                 size_t index = 0;
-                for (const auto& box : fps["colliders"].items()) {
+                for (size_t count = fps["colliders"].size(); index < count; ++index) {
                     ImGui::PushID(int(index));
                     const std::string label = "Box Collider #" + std::to_string(index + 1);
                     if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(false, index))) {
@@ -69,13 +69,12 @@ public:
                             ed.sceneCam.target = {float(transform.x), float(transform.y), float(transform.z)};
                     }
                     ImGui::PopID();
-                    ++index;
                 }
                 ImGui::TreePop();
             }
             if (ImGui::TreeNodeEx("Spawn Points", ImGuiTreeNodeFlags_DefaultOpen)) {
                 size_t index = 0;
-                for (const auto& spawn : fps["spawns"].items()) {
+                for (size_t count = fps["spawns"].size(); index < count; ++index) {
                     ImGui::PushID(int(index));
                     const std::string label = "Spawn #" + std::to_string(index + 1);
                     if (ImGui::Selectable(label.c_str(), ed.isFpsSceneSourceSelected(true, index))) {
