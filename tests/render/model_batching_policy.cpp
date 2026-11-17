@@ -3,6 +3,7 @@
 #include "engine/render/Model.h"
 #include "engine/render/ModelMerge.h"
 #include "engine/render/GpuMaterialState.h"
+#include "engine/render/GlobalGeometryPool.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -199,6 +200,11 @@ int main() {
     CHECK(modelA.gpuFirstIndex != modelB.gpuFirstIndex);
     CHECK(modelA.gpuBaseVertex != modelB.gpuBaseVertex);
     CHECK(dev.created == 1);
+    {
+        const auto stats = geometryPoolStats(dev);
+        CHECK(stats.pages == 1 && stats.liveModels == 2);
+        CHECK(stats.occupiedBytes > 0 && stats.occupiedBytes < stats.allocatedBytes);
+    }
     const auto& bytes = dev.buffers.at(modelA.vb.id);
     for (auto* model : {&modelA, &modelB}) {
         const uint32_t first = model->gpuFirstIndex;
@@ -214,9 +220,10 @@ int main() {
         }
     }
     releaseModel(dev, modelA);
-    CHECK(dev.destroyed == 0);
+    CHECK(dev.destroyed == 0 && geometryPoolStats(dev).liveModels == 1);
     releaseModel(dev, modelB);
     CHECK(dev.destroyed == 1 && dev.buffers.empty());
+    CHECK(geometryPoolStats(dev).pages == 0);
 
     std::puts("engine model batching policy: PASS");
     return 0;
