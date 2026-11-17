@@ -114,6 +114,8 @@ uint64_t exercise(bool cow) {
             "rollback failed to restore ammo");
     for(int i=0;i<8;++i)sim.step();
     require(sim.checksum()==expected,"replayed firing checksum mismatch");
+    SimSnapshot afterFirstShot;
+    sim.saveState(afterFirstShot);
     // A second request with an empty magazine must be consumed without
     // spawning a projectile or advancing the shot sequence.
     auto* retry=sim.world().tryGet<lg::FireIntentComponent>(host->gun);
@@ -127,6 +129,13 @@ uint64_t exercise(bool cow) {
             "dry fire must not allocate projectile IDs");
     require(afterDryState&&afterDryState->ammo==0,"dry fire changed ammo");
     require(afterDryIntent&&!afterDryIntent->requested,"dry fire request was not consumed");
+    const auto dryChecksum=sim.checksum();
+    sim.loadState(afterFirstShot);
+    auto* replayIntent=sim.world().tryGet<lg::FireIntentComponent>(host->gun);
+    require(replayIntent!=nullptr,"dry fire replay lost intent component");
+    replayIntent->requested=true;
+    sim.step();
+    require(sim.checksum()==dryChecksum,"dry fire rollback/replay checksum mismatch");
 
     return expected;
 }
