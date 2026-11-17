@@ -10,6 +10,7 @@
 #include "EditorComponentPanel.h"
 #include "EditorEcsWriteback.h"
 #include "EditorSelectionAdapter.h"
+#include "EditorRuntimeEntityProvider.h"
 
 namespace aiverse::editor {
 
@@ -200,16 +201,18 @@ void DetailsPanel::prepare() {
 
 void DetailsPanel::draw(Editor& ed) {
     if (ed.selection.kind == Selection::FpsActor) {
-        const Json& runtime = ed.fpsRuntimeSnapshot();
-        const Json& actors = runtime["actors"];
-        const int index = ed.selection.index;
-        if (!actors.isArray() || index < 0 || size_t(index) >= actors.size()) {
+        const auto runtime = enumerateEditorRuntimeEntities(ed);
+        const auto found = std::find_if(runtime.begin(), runtime.end(),
+            [&](const EditorRuntimeEntity& item) {
+                return item.selection == ed.selection;
+            });
+        if (found == runtime.end()) {
             ui::hint("FPS runtime actor is unavailable; rebuild the preview.");
             return;
         }
-        const Json& actor = actors[size_t(index)];
+        const Json& actor = found->fields;
         ImGui::TextDisabled("FPS RUNTIME ACTOR · READ ONLY");
-        ImGui::Text("Actor #%lld", static_cast<long long>(actor["slot"].integer()));
+        ImGui::TextUnformatted(found->title.c_str());
         if (ImGui::CollapsingHeader("Actor State", ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::BeginTable("##fpsActorFields", 2,
                     ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
@@ -225,7 +228,7 @@ void DetailsPanel::draw(Editor& ed) {
                 ImGui::EndTable();
             }
         }
-        ImGui::TextDisabled("FPS actors are World resource records, not individual ECS entities.");
+        ImGui::TextDisabled("FPS actors are World resource records, not ECS Entity pools.");
         return;
     }
     // FPS authored objects are document sources; they do not have ECS snapshot
