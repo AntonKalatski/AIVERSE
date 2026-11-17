@@ -1107,20 +1107,31 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         return uint32_t(slotIndex + 1);
     }
     bool executeGpuEncodedIndexedIcb(uint32_t token) override {
-        if (!enc_ || token == 0) return false;
+        auto reject = [this](const char* cause) {
+            error_ = std::string("GPU-encoded ICB execute rejected: ") + cause;
+            if (std::getenv("AIVERSE_ICB_TRACE"))
+                std::fprintf(stderr, "[metal-gpu-icb] %s\\n", error_.c_str());
+            return false;
+        };
+        if (!enc_ || token == 0) return reject("render encoder missing or token zero");
         auto* pipeline = pipelines_.get(pipelineId_);
-        if (!pipeline || !pipeline->state ||
-            !pipeline->state.supportIndirectCommandBuffers) return false;
+        if (!pipeline || !pipeline->state)
+            return reject("active render pipeline missing");
+        if (!pipeline->state.supportIndirectCommandBuffers)
+            return reject("active Metal render pipeline lacks supportIndirectCommandBuffers");
         const size_t frameSlot = frame_ % kFramesInFlight;
         auto& pool = gpuEncodedIcbPool_[frameSlot];
-        if (size_t(token) > pool.size()) return false;
+        if (size_t(token) > pool.size())
+            return reject("ICB token outside current frame pool");
         auto& resources = pool[token - 1];
-        if (resources.frame != frame_ || !resources.icb ||
-            resources.count == 0 || !buffers_.get(ibId_) ||
-            !buffers_.get(vbId_)) return false;
+        if (resources.frame != frame_ || !resources.icb || resources.count == 0)
+            return reject("ICB not encoded for current frame");
+        if (!buffers_.get(ibId_) || !buffers_.get(vbId_))
+            return reject("index or vertex resource is not bound");
         // The Metal render pipeline must retain all parent vertex/fragment
         // bindings; no transient bytes may be inherited from earlier draws.
-        if (!gpuIcbUniformBinding_) return false;
+        if (!gpuIcbUniformBinding_)
+            return reject("persistent ICB uniform binding disabled");
         // ICB inherited parent bindings cannot rely on setBytes allocations
         // from earlier passes (especially U1 frame uniforms). Snapshot every
         // active uniform slot into resources owned by this frame/submission.
@@ -1133,7 +1144,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 resources.uniforms[slot] = [device_ newBufferWithLength:snapshot.size()
                                             options:MTLResourceStorageModeShared];
             id<MTLBuffer> stable = resources.uniforms[slot];
-            if (!stable || !stable.contents) return false;
+            if (!stable || !stable.contents)
+                return reject("uniform snapshot allocation failed");
             std::memcpy(stable.contents, snapshot.data(), snapshot.size());
             [enc_ setVertexBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
             [enc_ setFragmentBuffer:stable offset:0 atIndex:NSUInteger(slot + 1)];
