@@ -11,7 +11,8 @@
 namespace aiverse::editor {
 
 struct SceneRenderable {
-    uint64_t entity = 0;                 // stable entity reference; 0 = non-entity preview
+    uint64_t entity = 0;                 // authored source reference; 0 = non-document entity
+    int runtimeActor = -1;              // FPS World resource actor index; not an ECS Entity
     render::mat4 world{};
     render::float4 tint{1, 1, 1, 1};
     const render::Mesh* mesh = nullptr;   // editor/debug primitives
