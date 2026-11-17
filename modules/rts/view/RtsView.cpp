@@ -270,6 +270,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         }
     }
     placementCacheHits_ = placementCacheMisses_ = 0;
+    staticAnimateFastHits_ = 0;
     double objectStateMs = 0.0, objectAnimateMs = 0.0, objectDrawMs = 0.0;
     size_t tracedObjects = 0;
     for (size_t i = 0; i < s.objects.size(); ++i) {
@@ -389,6 +390,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         static double objectTotals[3] = {};
         static size_t objectCount = 0;
         static uint64_t placementHits = 0, placementMisses = 0;
+        static uint64_t staticFastHits = 0;
         const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b-a).count(); };
         totals[0] += ms(viewStart, afterSetup);
         totals[1] += ms(afterSetup, afterGround);
@@ -401,6 +403,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         objectCount += tracedObjects;
         placementHits += placementCacheHits_;
         placementMisses += placementCacheMisses_;
+        staticFastHits += staticAnimateFastHits_;
         if (++samples == 120) {
             std::fprintf(stderr,
                 "[view-stages] avg/120 setup=%.3f ground=%.3f objects=%.3f anim-cleanup=%.3f overlays=%.3f ms\n",
@@ -413,7 +416,11 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                 std::fprintf(stderr, "[rts-placement] avg/120 hits=%.1f misses=%.1f hit-rate=%.1f%%\n",
                     double(placementHits)/samples, double(placementMisses)/samples,
                     100.0 * double(placementHits)/double(placementHits+placementMisses));
-            placementHits = placementMisses = 0;
+            if (staticFastHits)
+                std::fprintf(stderr,
+                    "[rts-static-animate] avg/120 fast-path=%.1f objects/frame\n",
+                    double(staticFastHits) / samples);
+            placementHits = placementMisses = staticFastHits = 0;
             samples = 0;
             for (double& v : totals) v = 0.0;
             for (double& v : objectTotals) v = 0.0;
