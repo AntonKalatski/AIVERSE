@@ -211,24 +211,31 @@ void DetailsPanel::draw(Editor& ed) {
             return;
         }
         const Json& actor = found->fields;
-        ImGui::TextDisabled("FPS RUNTIME ACTOR · READ ONLY");
+        ImGui::TextDisabled("FPS ECS ACTOR · READ ONLY");
         ImGui::TextUnformatted(found->title.c_str());
-        if (ImGui::CollapsingHeader("Actor State", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (ImGui::BeginTable("##fpsActorFields", 2,
-                    ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
-                for (const auto& field : actor.members()) {
-                    ImGui::TableNextRow();
-                    ImGui::TableNextColumn();
-                    ImGui::TextUnformatted(field.first.c_str());
-                    ImGui::TableNextColumn();
-                    const std::string value = field.second.isString()
-                        ? field.second.str() : field.second.dump(-1);
-                    ImGui::TextWrapped("%s", value.c_str());
+        const Json& components = actor["components"];
+        if (components.isObject()) {
+            for (const auto& [componentId, values] : components.members()) {
+                if (!filter_.empty() &&
+                    !matches(componentId, values)) continue;
+                const bool expanded = ImGui::CollapsingHeader(
+                    componentId.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                if (!expanded || !values.isObject()) continue;
+                ImGui::PushID(componentId.c_str());
+                if (ImGui::BeginTable("##fpsEcsFields", 2,
+                        ImGuiTableFlags_SizingStretchProp |
+                        ImGuiTableFlags_RowBg)) {
+                    for (const auto& [field, value] : values.members())
+                        property(ed, field, value, componentId + "." + field);
+                    ImGui::EndTable();
                 }
-                ImGui::EndTable();
+                ImGui::PopID();
             }
+        } else {
+            ui::hint("No ECS components are present for this FPS actor.");
         }
-        ImGui::TextDisabled("FPS actors are World resource records, not ECS Entity pools.");
+        ImGui::TextDisabled("Preview ECS components; gameplay state remains "
+                            "backward-compatible with FPS save v9.");
         return;
     }
     // FPS authored objects are document sources; they do not have ECS snapshot
