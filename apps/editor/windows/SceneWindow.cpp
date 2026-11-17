@@ -272,6 +272,10 @@ private:
                 ? documentMapEntity(ed.doc(), ref) : nullptr;
             const bool rtsFacing = rtsSource &&
                 rtsSource->extra["facing"].isNumber();
+            if ((ed.transformTool == TransformTool::Rotate &&
+                 !fpsOriented && !rtsFacing) ||
+                (ed.transformTool == TransformTool::Scale && !fpsOriented))
+                ed.transformTool = TransformTool::Move;
             for (const auto mode : {TransformTool::Move,
                                     TransformTool::Rotate, TransformTool::Scale}) {
                 const char* title = mode == TransformTool::Move ? "Move" :
