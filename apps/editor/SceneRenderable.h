@@ -29,6 +29,12 @@ struct SceneRenderable {
 // or -1; does not depend on a genre-specific ECS or camera implementation.
 inline int pickSceneRenderable(const std::vector<SceneRenderable>& objects,
                                render::float3 origin, render::float3 direction) {
+    // Reject degenerate/invalid rays before entering the slab test. NaNs can
+    // otherwise silently select an arbitrary object.
+    const float len2 = direction.x * direction.x + direction.y * direction.y + direction.z * direction.z;
+    if (!std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
+        !std::isfinite(direction.x) || !std::isfinite(direction.y) || !std::isfinite(direction.z) ||
+        !std::isfinite(len2) || len2 < 1e-12f) return -1;
     int nearest = -1;
     float nearestT = std::numeric_limits<float>::infinity();
     for (size_t i = 0; i < objects.size(); ++i) {
@@ -53,7 +59,7 @@ inline int pickSceneRenderable(const std::vector<SceneRenderable>& objects,
                 if (nearT > farT) { hit = false; break; }
             }
         }
-        if (hit && nearT < nearestT) { nearestT = nearT; nearest = int(i); }
+        if (hit && farT >= 0.0f && nearT < nearestT) { nearestT = nearT; nearest = int(i); }
     }
     return nearest;
 }
