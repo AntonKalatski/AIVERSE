@@ -201,15 +201,30 @@ int aiverseMain(int argc, char** argv) {
                 // but PBR colour fragment shaders with direct textures cannot
                 // become ICB pipelines without converting textures to argument
                 // buffers. Validate the actual shadow + colour submission total.
-                if (supported &&
-                    (uint64_t(p.draws[0]) + p.draws[1] >= uint64_t(shadowBefore) + opaqueBefore ||
-                     renderer.modelStats().indirectCommands < 8)) failed = true;
-                if (!supported && (p.draws[1] != opaqueBefore || p.draws[0] != shadowBefore)) failed = true;
                 const bool expectGpu = std::getenv("AIVERSE_EXPECT_GPU_ICB") &&
                                         std::string(std::getenv("AIVERSE_EXPECT_GPU_ICB")) == "1";
-                if (expectGpu && d.supportsGpuEncodedIcb() &&
-                    renderer.gpuModelDrawStats().gpuEncodedSubmissions == 0) {
-                    std::fprintf(stderr, "[metal-gpu-icb] no GPU-encoded submissions executed; candidates do not count\\n");
+                const auto gpuDraw = renderer.gpuModelDrawStats();
+                const uint64_t indirectCommands = renderer.modelStats().indirectCommands;
+                // CPU-encoded MDI and GPU-encoded ICB account for separate
+                // command counters. Do not reject a successful GPU ICB draw
+                // merely because the CPU indirect-command counter is zero.
+                if (expectGpu && d.supportsGpuEncodedIcb()) {
+                    if (!gpuDraw.gpuEncodedSubmissions ||
+                        !gpuDraw.gpuEncodedCommands ||
+                        uint64_t(p.draws[0]) + p.draws[1] >=
+                            uint64_t(shadowBefore) + opaqueBefore) {
+                        std::fprintf(stderr,
+                            "[metal-gpu-icb] expected actual GPU submissions, got submissions=%u commands=%u shadow=%u opaque=%u\\n",
+                            gpuDraw.gpuEncodedSubmissions, gpuDraw.gpuEncodedCommands,
+                            p.draws[0], p.draws[1]);
+                        failed = true;
+                    }
+                } else if (supported) {
+                    if (uint64_t(p.draws[0]) + p.draws[1] >=
+                            uint64_t(shadowBefore) + opaqueBefore ||
+                        indirectCommands < 8) failed = true;
+                } else if (p.draws[1] != opaqueBefore ||
+                           p.draws[0] != shadowBefore) {
                     failed = true;
                 }
                 const bool demandPbr = std::getenv("AIVERSE_EXPECT_PBR_ICB") &&
