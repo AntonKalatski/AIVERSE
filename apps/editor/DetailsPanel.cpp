@@ -250,7 +250,10 @@ void DetailsPanel::header(Editor& ed) {
         std::string title = first.hasRow ? worldRowName(ed.world(), R, &d, first.row) : t >= 0 ? R.types[size_t(t)].name : "Объект";
         if (first.doc >= 0 && !ed.worldLive() && size_t(first.doc) < d.entities.size()) {
             title = t >= 0 ? R.types[size_t(t)].name : d.entities[size_t(first.doc)].type;
-            if (!d.entities[size_t(first.doc)].id.empty()) title += "  #" + d.entities[size_t(first.doc)].id;
+            const auto& authored = d.entities[size_t(first.doc)];
+            const std::string displayName = authored.extra.getStr("displayName", "");
+            if (!displayName.empty()) title = displayName;
+            if (!authored.id.empty()) title += "  #" + authored.id;
         }
         std::string sub = ownerName(ownerOf(first));
         if (first.hasRow) sub += "  ·  " + std::string(worldOriginTitle(first.row.origin)) + "  ·  #" + std::to_string(first.row.e.index);
@@ -368,6 +371,16 @@ void DetailsPanel::mapFields(Editor& ed) {
         const bool c3 = ImGui::DragFloat("##amount", &a, 10.0f, -1.0f, 1e7f, sameAmount ? "%.0f" : "—");
         if (ImGui::IsItemActivated()) doc.beginEdit();
         if (c3) { for (int i : idx) d.entities[size_t(i)].amount = a; doc.touched(); }
+    }
+    if (idx.size() == 1) {
+        ui::prop("Название", "Отображаемое имя объекта в редакторе; не меняет идентификатор для скриптов");
+        auto& authored = d.entities[size_t(idx[0])];
+        std::string displayName = authored.extra.getStr("displayName", "");
+        if (ui::inputString("##displayName", displayName)) {
+            doc.beginEdit();
+            authored.extra.set("displayName", Json::string(displayName));
+            doc.touched();
+        }
     }
     ui::prop("Имя (id)", "Необязательно. Имя объекта для дорог, триггеров и скриптов");
     if (idx.size() == 1) {
