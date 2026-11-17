@@ -187,7 +187,10 @@ void cowSnapshotsFps(Json rules,Json map) {
             SimSnapshot a,b;
             baseline->saveState(a);
             incremental->saveState(b);
+            const size_t sharedResources=incremental->world().sharedResourceCount();
+            CHECK(sharedResources>=1);
             const auto checksum=incremental->checksum();
+            CHECK(incremental->world().sharedResourceCount()==sharedResources);
             CHECK(baseline->checksum()==checksum);
             // Exercise two full rollbacks without losing original state
             // or accidentally retaining mutable shared singleton resources.
