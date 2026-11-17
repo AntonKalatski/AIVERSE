@@ -222,6 +222,8 @@ public:
         uint32_t gpuIcbRejected = 0, gpuIcbExecuteFailed = 0;
         uint32_t uploadedRecords = 0, uploadRanges = 0;
         size_t uploadBytes = 0;
+        uint32_t preflightGroups = 0, batchCacheHits = 0, batchCacheMisses = 0;
+        bool adaptiveInstancing = false;
         bool compacted = false, prepared = false;
     };
     GpuModelDrawStats gpuModelDrawStats() const {
@@ -234,6 +236,8 @@ public:
                 gpuIcbCandidates_, gpuIcbPrepared_,
                 gpuIcbRejected_, gpuIcbExecuteFailed_,
                 upload.records, upload.ranges, upload.bytes,
+                gpuPreflightGroups_, gpuBatchCacheHits_, gpuBatchCacheMisses_,
+                gpuAdaptiveInstancingFallback_,
                 gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
                 gpuModelCommandsReady_};
     }
@@ -475,6 +479,23 @@ private:
     std::vector<GpuPrimitiveDrawRecord> gpuModelRecords_;
     std::vector<uint32_t> gpuModelSlots_;
     bool gpuModelCommandsReady_ = false;
+    // Adaptive GPU ICB may choose the baseline instancing renderer before
+    // expensive material grouping and GPU command preparation.
+    bool gpuAdaptiveInstancingFallback_ = false;
+    uint32_t gpuPreflightGroups_ = 0;
+    uint32_t gpuBatchCacheHits_ = 0, gpuBatchCacheMisses_ = 0;
+    struct GpuBatchPlanItem {
+        const Model* model = nullptr;
+        const Material* material = nullptr;
+        uint32_t flags = 0, vb = 0, ib = 0;
+        uint64_t materialHash = 0;
+        bool operator==(const GpuBatchPlanItem&) const = default;
+    };
+    struct GpuBatchPlan {
+        std::vector<GpuBatchPlanItem> signature;
+        std::vector<std::vector<uint32_t>> groups;
+    };
+    GpuBatchPlan gpuBatchPlan_;
     uint64_t gpuModelFrame_ = 0;
     size_t gpuModelSubmission_ = 0;
     struct GpuEncodedBatch {
