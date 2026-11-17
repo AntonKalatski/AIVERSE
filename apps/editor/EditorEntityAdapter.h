@@ -148,8 +148,19 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
             if (!shifted(*entity, moved)) return false;
             *entity = moved;
         } else {
+            const Json& originalMin = (*entity)["min"];
+            const Json& originalMax = (*entity)["max"];
+            if (!originalMin.isArray() || !originalMax.isArray() ||
+                originalMin.size() < 3 || originalMax.size() < 3) return false;
+            for (size_t axis = 0; axis < 3; ++axis) {
+                if (!originalMin[axis].isNumber() || !originalMax[axis].isNumber() ||
+                    !std::isfinite(originalMin[axis].toDouble()) ||
+                    !std::isfinite(originalMax[axis].toDouble()) ||
+                    !(originalMin[axis].toDouble() < originalMax[axis].toDouble()))
+                    return false;
+            }
             Json lo, hi;
-            if (!shifted((*entity)["min"], lo) || !shifted((*entity)["max"], hi))
+            if (!shifted(originalMin, lo) || !shifted(originalMax, hi))
                 return false;
             entity->member("min") = lo;
             entity->member("max") = hi;
