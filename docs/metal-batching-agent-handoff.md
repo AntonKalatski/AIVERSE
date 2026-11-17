@@ -100,6 +100,12 @@ Previous warm sample agrees: objects=8.824, state=1.432, animate=2.113, drawObje
 
 **Next actions:** (1) Profile remaining ~3 ms with aggregate timestamps rather than 14k+ high-resolution clock calls; (2) inspect `stateFor`, `animate`, `drawObject` and identify truly static model cases; (3) avoid skipping `stateFor` or `animate` indiscriminately because `st.seen`, death/corpse cleanup, selection, hover, construction, animation and effects may depend on per-frame updates; (4) evaluate batched/static submission only after proving correctness; (5) compare scene with trace disabled and inspect GPU memory.
 
+## Latest animation CPU optimization (commit `3a03f93`)
+
+In `modules/rts/view/RtsAnimate.cpp`, computing procedural ground normal used four `heightAt` calls and a rotation even when the model had no procedural modifiers. The calculation now runs only when `!ch.procs.empty() && !st.graph.hasContacts()`, the same condition that consumes `ProcInputs` in `applyProcedural`. The previously resolved `kingstonStride` is also reused during pose correction instead of a repeated FX map lookup. **No animation states or idle clips are skipped.**
+
+Benchmark warm `[view-objects]` `animate` and `[view-stages]` `objects` against the previous ~2.1 ms and ~8.6 ms, with 14,772 objects. This change has not yet been compiled or measured on the owner's Mac; do not assert a performance win before checking. Keep testing programmable graphs, procedural models, contacts, foot IK and weapon poses.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
