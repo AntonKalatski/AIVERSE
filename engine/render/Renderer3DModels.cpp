@@ -977,7 +977,7 @@ void Renderer3D::prepareGpuModelDraws() {
         std::map<std::tuple<uint32_t, uint32_t, uint32_t, uint64_t>, uint32_t> counts;
         for (uint32_t i : eligibleIndices) {
             const auto& x = modelItems_[i];
-            auto [it, fresh] = hashes.try_emplace({x.model, x.mat}, 0);
+            auto [it, fresh] = hashes.try_emplace(std::make_pair(x.model, x.mat), 0);
             if (fresh) it->second = gpuMaterialStateHash(*x.model, *x.mat);
             auto& count = counts[{x.model->vb.id, x.model->ib.id, x.flags, it->second}];
             if (count < groupCapacity) ++count;
