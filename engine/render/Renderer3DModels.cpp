@@ -511,6 +511,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                             int32_t(m->gpuBaseVertex), 0};
                         it.gpuLodMaxPixels = lod.maxPixels;
                         it.gpuLodError = length(baseMesh.boundsMax - baseMesh.boundsMin);
+                        it.gpuLodBoundsMin = baseMesh.boundsMin;
+                        it.gpuLodBoundsMax = baseMesh.boundsMax;
                     }
                 }
             }
