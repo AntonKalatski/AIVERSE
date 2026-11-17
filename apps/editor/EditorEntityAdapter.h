@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <cmath>
+#include <vector>
 
 namespace aiverse::editor {
 
@@ -151,6 +152,44 @@ inline bool translateDocumentEntity(MapDoc& map, DocumentEntityRef ref,
     }
     map.touched();
     return true;
+}
+
+inline bool translateDocumentEntities(MapDoc& map,
+                                      const std::vector<DocumentEntityRef>& refs,
+                                      DocumentTransform delta) {
+    if (refs.empty() || !std::isfinite(delta.x) || !std::isfinite(delta.y) ||
+        !std::isfinite(delta.z) ||
+        (delta.x == 0 && delta.y == 0 && delta.z == 0)) return false;
+    // Validate the entire selection before modifying the map. No partial moves.
+    for (const auto& ref : refs) {
+        DocumentTransform current;
+        if (!readDocumentTransform(map, ref, current)) return false;
+        const DocumentTransform next{current.x + delta.x, current.y + delta.y,
+                                     current.z + delta.z};
+        if (!std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.z))
+            return false;
+        if (ref.source == DocumentEntityRef::Source::MapEntity) {
+            if (delta.y != 0 || !std::isfinite(float(next.x)) ||
+                !std::isfinite(float(next.z))) return false;
+        } else {
+            const Json* object = fpsDocumentEntity(map.data.fps, ref);
+            if (!object) return false;
+            auto validCoords = [](const Json& coords) {
+                if (!coords.isArray() || coords.size() < 3) return false;
+                for (size_t axis = 0; axis < 3; ++axis)
+                    if (!coords[axis].isNumber()) return false;
+                return true;
+            };
+            if (ref.source == DocumentEntityRef::Source::FpsSpawn) {
+                if (!validCoords(*object)) return false;
+            } else if (!validCoords((*object)["min"]) ||
+                       !validCoords((*object)["max"])) return false;
+        }
+    }
+    bool moved = false;
+    for (const auto& ref : refs)
+        moved = translateDocumentEntity(map, ref, delta) || moved;
+    return moved;
 }
 
 } // namespace aiverse::editor
