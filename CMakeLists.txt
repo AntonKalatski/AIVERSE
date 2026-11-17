@@ -1541,6 +1541,17 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+# Demonstrate that one ECS projectile/impact mechanic can serve unrelated
+# shooter and strategy hosts. Public libraries + shared collision only;
+# neither aiverse_game nor aiverse_fps is linked to the test.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_projectile_composition_test
+        tests/ecs_projectile_composition_test.cpp)
+    target_link_libraries(aiverse_ecs_projectile_composition_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_projectile_composition_test
+        COMMAND aiverse_ecs_projectile_composition_test)
+endif()
 add_subdirectory(modules/voxel)
 
 # Opt-in end-to-end reusable library host, excluded from normal builds.
