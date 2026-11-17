@@ -334,3 +334,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commits: `92dc34c3` (`tests/editor/scene_gizmo_tests.cpp`), `832d2d64` (`CMakeLists.txt`).
 - Registered CTest `editor_scene_gizmo`, checking projected axis handle hit selection, missing/disabled axes, invalid extent and offscreen cursor rejection. This exercises common mathematical gizmo picking, not full mouse gesture/Undo.
 - Verification: committed; **NOT COMPILED/RUN**. Build with `cmake --build build-metal --target aiverse_editor_scene_gizmo_tests -j 8` and run `ctest --test-dir build-metal -R editor_scene_gizmo --output-on-failure`.
+
+### 2026-11-17 — Static compile review and consistent map display names
+- Commits: `e328df1d` (`apps/editor/EditorFps.cpp` adds explicit `<algorithm>` dependency for FPS multi-selection) and `3aaa41f8` (`apps/editor/core/WorldInspect.cpp`).
+- World Hierarchy naming now respects `DocEntity.extra.displayName` when no explicit ECS script label is present. The display name remains authored metadata, not a fabricated ECS component.
+- Attempted to reach GitHub from the model's isolated build container, but the container could not resolve `github.com`; no repository checkout or compilation was possible there. GitHub connector changes were reviewed statically.
+- **Validation not completed:** full CMake/editor compile and all new CTest cases are still unverified by execution. User should pull and run `cmake --build build-metal --target aiverse_editor aiverse_editor_scene_adapter_tests aiverse_editor_scene_picking_tests aiverse_editor_scene_gizmo_tests -j 8` followed by `ctest --test-dir build-metal -R 'editor_scene_' --output-on-failure`. Check latest GitHub Actions independently (earlier runs were queued).
+- **Not yet universal:** FPS uses external-client runtime and `fps::State::actors` (a World resource, not ECS entities), FPS authored colliders/spawns are JSON; RTS uses `World` ECS plus `RtsView`. Editor runtime entity inspection, hierarchy and render extraction still differ; Rotate/Scale, native writeback, true screen-space object-mask outline and end-to-end macOS UI validation are missing. Do NOT mark the PR done.
