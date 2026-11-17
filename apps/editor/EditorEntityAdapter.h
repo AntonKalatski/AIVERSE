@@ -98,9 +98,11 @@ inline bool readDocumentTransform(const MapDoc& map, DocumentEntityRef ref,
                 if (!std::isfinite(minimum) || !std::isfinite(maximum) ||
                     minimum >= maximum) return false;
             }
-            out = {(lo[0].toDouble() + hi[0].toDouble()) * 0.5,
-                   (lo[1].toDouble() + hi[1].toDouble()) * 0.5,
-                   (lo[2].toDouble() + hi[2].toDouble()) * 0.5};
+            // Midpoint without summing two potentially huge finite endpoints.
+            // (lo + hi) / 2 can overflow even when the midpoint is finite.
+            out = {lo[0].toDouble() * 0.5 + hi[0].toDouble() * 0.5,
+                   lo[1].toDouble() * 0.5 + hi[1].toDouble() * 0.5,
+                   lo[2].toDouble() * 0.5 + hi[2].toDouble() * 0.5};
         }
     }
     return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
