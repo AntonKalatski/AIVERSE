@@ -639,9 +639,28 @@ void DetailsPanel::sections(Editor& ed) {
     if (sections_.empty()) {
         const auto& P = ed.worldPreview();
         ImGui::Spacing();
-        if (cursor_ < items_.size()) ui::hint(ICON_CLOCK "  Читаю данные объектов…");
-        else if (!ed.worldLive() && !P.error().empty()) ui::callout(ui::Tone::Warn, "Данные мира недоступны: " + P.error());
-        else if (!ed.worldLive() && (ed.worldPending() || !P.sim())) ui::hint(ICON_CLOCK "  Данные мира (компоненты, характеристики) появятся после обновления предпросмотра.");
+        if (cursor_ < items_.size()) {
+            ui::hint(ICON_CLOCK "  Читаю компоненты ECS…");
+        } else if (!ed.worldLive() && !P.error().empty()) {
+            ui::callout(ui::Tone::Warn,
+                "Компоненты ECS недоступны: " + P.error() +
+                ". Проверьте сборку редактора с native-модулями проекта.");
+        } else if (!ed.worldLive() && (ed.worldPending() || !ed.worldFresh() || !P.sim())) {
+            ui::hint(ICON_CLOCK "  Ожидание ECS World: компоненты появятся после обновления предпросмотра.");
+        } else if (withData_ == 0) {
+            // A map-authored object is NOT itself an ECS entity. If no runtime
+            // row exists, showing synthetic document components is misleading.
+            ui::callout(ui::Tone::Warn,
+                "Для выбранного объекта не найдена сущность в ECS World. "
+                "Компоненты не подменяются полями карты. Проверьте создание "
+                "объекта в модуле и соответствие map→ECS.");
+        } else {
+            ui::hint(ICON_CLOCK "  ECS не вернул компонентов для выбранной сущности.");
+        }
+        if (!ed.worldLive()) {
+            if (ImGui::SmallButton("Обновить ECS предпросмотр"))
+                ed.refreshWorld();
+        }
         return;
     }
     if (truncated_) ui::hint(("Данные показаны для первых " + std::to_string(withData_) + " объектов").c_str());
