@@ -577,7 +577,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count, int phase
     dev_->setVertexBuffer(it.model->vb);
     dev_->setIndexBuffer(it.model->ib);
     if (!submit) return true;  // Bind shared state for one indirect multi-draw.
-    dev_->drawIndexed(it.indexCount, it.firstIndex, 0, count);
+    dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
+                      int32_t(it.model->gpuBaseVertex), count);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
     if (count > 1) { ++modelStats_.instancedDraws; modelStats_.drawnInstances += count; }
@@ -602,7 +603,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         const auto& part = modelItems_[items[n]];
         uint32_t end = n + 1;
         while (end < count && modelItems_[items[end]].prim == part.prim) ++end;
-        commands.push_back({part.indexCount, end - n, part.firstIndex, 0, n});
+        commands.push_back({part.indexCount, end - n,
+                            part.firstIndex + part.model->gpuFirstIndex,
+                            int32_t(part.model->gpuBaseVertex), n});
         triangles += uint64_t(part.indexCount / 3) * (end - n);
         n = end;
     }
@@ -622,13 +625,17 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         indirectCommands_ = dev_->createBuffer(d);
     } else dev_->updateBuffer(indirectCommands_, commands.data(), commands.size() * sizeof(commands[0]));
     if (!indirectCommands_.valid() ||
-        !dev_->drawIndexedIndirect(indirectCommands_, 0, count)) {
+        !dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()))) {
         for (uint32_t n = 0; n < count; ++n)
             drawModelBatch(items + n, 1, phase);
         return true;
     }
     lastItem_ = &modelItems_[items[count - 1]];
     modelStats_.triangles += triangles;
+    for (const auto& c : commands) if (c.instanceCount > 1) {
+        ++modelStats_.instancedDraws;
+        modelStats_.drawnInstances += c.instanceCount;
+    }
     ++modelStats_.multiDrawSubmissions;
     modelStats_.indirectCommands += commands.size();
     ++drawCalls_;
@@ -744,8 +751,10 @@ void Renderer3D::renderModels(int phase) {
                 // through firstInstance into the shared instance uniform array.
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
-                return first.model == y.model &&
-                    !first.model->geometry && first.gi == 0 && y.gi == 0 &&
+                return first.model->vb == y.model->vb &&
+                    first.model->ib == y.model->ib &&
+                    !first.model->geometry && !y.model->geometry &&
+                    first.gi == 0 && y.gi == 0 &&
                     !first.materialRole && !y.materialRole &&
                     !first.shadowRole && !y.shadowRole &&
                     !first.baked && !y.baked &&
