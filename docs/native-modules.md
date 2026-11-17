@@ -31,6 +31,20 @@ CMakeLists. C++ is not included in the resource pack. To develop several games y
 `-DAIVERSE_NATIVE_DIR=/path/to/modules`. An empty value restores picking `native/` from `AIVERSE_CONTENT_DIR`. In the
 editor you must open the rebuilt version; the regular editor offers to build it itself (see "Editor with project modules").
 
+## Inspecting native ECS components in the editor
+
+A statically linked `NativeModule` can optionally implement
+`inspectComponents(World&, Entity, Json& components, Json& schemas) const`.
+The editor calls it for the **loaded module instances of the current
+Simulation**, after its built-in ECS inspection. Implementations should
+inspect real component pools with `World::tryGet<T>()`, report only
+components actually present, and provide field titles/types as schemas.
+
+This hook is observational and read-only. It does not register component
+storage, create components, or persist edits. See
+[`docs/editor-native-ecs-inspector.md`](editor-native-ecs-inspector.md)
+for the full contract and example.
+
 ## Editor with project modules
 
 The regular editor does not contain the project's C++. If, when a project is opened (hub, recent projects, command-line
