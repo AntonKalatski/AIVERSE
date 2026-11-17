@@ -661,3 +661,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Universal ECS projectile + damage resolution, stage D
 - Commit `c2e57ee`: added `ecs-cross-genre-projectile` to `tests/run_ecs_experiment_suite.sh` with public headers, `SpatialWorld/TriangleCollision`, `Simulation`, deterministic Fixed/Json source compilation. Keeps existing flight-only ECS composition test.
 - Still not verified by execution. Next: inspect shell continuation formatting and add a new agent-facing component/system composition recipe.
+
+### 2026-11-18 — Universal ECS projectile + damage resolution, stage E
+- Commit `008f01c`: created `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md` for agent reuse. It specifies data-only health/damage/collider-index/queue components, flight → impact staging → ordered damage resolve → optional project-specific policy, deterministic ownership and save/rollback, native C++ usage, tests, and explicit scope limits.
+- This skill **does not** imply the existing RTS/FPS combat modules have been migrated; they still require adapters and parity tests.
+- Next: add catalog entry to `libraries/catalog.json`, update normative composition docs and run the tests.
