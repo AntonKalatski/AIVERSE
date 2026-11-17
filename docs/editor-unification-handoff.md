@@ -586,3 +586,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Cross-genre audit: stage 4, CMake consumer target
 - Commit `620920b`: root `CMakeLists.txt` now adds `aiverse_ecs_cross_genre_mechanics_test` after `add_subdirectory(libraries)`. Links only `aiverse_engine` and public `AIVERSE::libraries`, deliberately **not** `aiverse_fps` or `aiverse_game`. Registered as `ecs_cross_genre_mechanics_test` in CTest. This verifies that gameplay policies and ECS adapter do not require either genre module.
 - Build/CTest has not been run on native toolchain. The absence of genre linkage is a source/CMake check, not proof of runtime correctness until CI passes.
+
+### 2026-11-18 — FPS ECS authority migration: stage T (agent instructions)
+- Commit `0c57aff` updates `AGENTS.md` with current integrated PR #7 branch, the staged `fps.ecsAuthority` source-of-truth contract, already-migrated direct ECS systems (command, motor, damage), and explicit acknowledgement that unconverted AI/projectiles/vehicles/loot still use `State` as a tick workspace.
+- It instructs any successor agent to update **this exact handoff after every implementation commit**, preserve save v9/net compatibility and deterministic side-effect order, and avoid replacing merged PR7 Editor/FPS code with stale PR8 file copies.
+- New code remains unverified by a completed native CI/Metal/FPS test run. Future tasks: compile, inspect any actual failures, migrate remaining FPS systems directly to ECS and eventually remove temporary ordered workspace vectors.
