@@ -455,6 +455,12 @@ public:
         // Only opt depth-only pipelines into ICB. PBR colour pipelines continue
         // through direct/instanced draws until shader textures use argument buffers.
         if (supportsMultiDrawIndirect() && s->fs == nil) pd.supportIndirectCommandBuffers = YES;
+        // GPU-created ICBs inherit the regular PBR parent pipeline. The
+        // feature is explicitly opt-in and never affects production shaders.
+        if (std::getenv("AIVERSE_GPU_ENCODED_ICB") &&
+            std::strcmp(std::getenv("AIVERSE_GPU_ENCODED_ICB"), "1") == 0 &&
+            supportsMultiDrawIndirect())
+            pd.supportIndirectCommandBuffers = YES;
         pd.colorAttachments[0].pixelFormat = d.depthOnly ? MTLPixelFormatInvalid
                                            : d.colorFormat == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
                                            : d.colorFormat == PixelFormat::RGBA8_sRGB ? MTLPixelFormatBGRA8Unorm_sRGB   // sRGB render targets
@@ -725,6 +731,7 @@ public:
         // Reuse its ICB and uniform allocations, but never reuse one twice
         // within the same frame (different draws need different snapshots).
         indirectCursor_[frame_ % kFramesInFlight] = 0;
+        gpuEncodedIcbCursor_[frame_ % kFramesInFlight] = 0;
         uniformPage_=uniformOffset_=0;
         layer_.drawableSize = CGSizeMake(w, h);
         drawable_ = [layer_ nextDrawable];
@@ -904,6 +911,8 @@ public:
     struct UniformPage { id<MTLBuffer> buffer; };
     std::vector<UniformPage> uniformPages_[kFramesInFlight];
     size_t uniformPage_=0, uniformOffset_=0;
+    bool gpuIcbUniformBinding_ = false;
+    void setGpuIcbUniformBinding(bool enabled) override { gpuIcbUniformBinding_ = enabled; }
     void setUniforms(int slot, const void* data, size_t size) override {
         if (!enc_ || !data || !size) return;
         // ICB commands cannot inherit setVertexBytes/setFragmentBytes when
@@ -912,7 +921,7 @@ public:
         if (supportsMultiDrawIndirect() && slot >= 0 && slot < 8)
             indirectUniformSnapshots_[slot].assign(static_cast<const uint8_t*>(data),
                                                    static_cast<const uint8_t*>(data) + size);
-        if(size>4096) {
+        if(size>4096 || gpuIcbUniformBinding_) {
             if(size>maxUniformBytes()) { error_="uniform block exceeds device limit"; return; }
             // Per-frame pages survive until this frame slot's GPU work has completed.
             constexpr size_t capacity=1024*1024;
