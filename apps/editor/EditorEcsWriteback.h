@@ -50,4 +50,27 @@ inline bool writeAuthoredEcsField(MapDoc& map, DocumentEntityRef ref,
     return false;
 }
 
+
+// Must be invoked by an activated typed Inspector control that already
+// called map.beginEdit() at gesture start (or by a caller managing its own
+// explicit undo transaction). The owning project module guarantees that the
+// updated DocEntity.extra recreates the edited runtime ECS component.
+inline bool writeNativeAuthoredEcsField(MapDoc& map,
+                                        const game::NativeModules& modules,
+                                        DocumentEntityRef ref,
+                                        const std::string& componentId,
+                                        const std::string& fieldId,
+                                        const Json& value) {
+    DocEntity* entity = documentMapEntity(map, ref);
+    if (!entity || !entity->extra.isObject()) return false;
+    Json updated = entity->extra;
+    if (!modules.inspectWriteback(componentId, fieldId, value,
+                                   entity->extra, updated) ||
+        !updated.isObject() || updated == entity->extra)
+        return false;
+    entity->extra = std::move(updated);
+    map.touched();
+    return true;
+}
+
 } // namespace aiverse::editor
