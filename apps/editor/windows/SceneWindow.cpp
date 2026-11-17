@@ -67,6 +67,15 @@ public:
                 if (ImGui::IsKeyDown(ImGuiKey_E)) ed.sceneCam.target.y += speed;
                 if (ImGui::IsKeyPressed(ImGuiKey_F, false)) ed.fitScene();
             }
+            // FPS previously rendered the shared selection HUD without ever
+            // updating the selection. Pick using the same scene model as RTS.
+            // During play the inspector stays read-only.
+            if (vp_.hovered && !io.WantTextInput && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+                const Selection hovered = ed.pickObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
+                ed.setHover(hovered);
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                    pickSelect(ed, hovered, io);
+            }
         } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
