@@ -63,6 +63,26 @@ int main() {
         auto reused=parallel.create();
         assert(reused.index==e.index && reused.gen!=e.gen);
     }
+    // Enqueue during a command callback must not invalidate the draining vector;
+    // the newly enqueued command is intentionally deferred to the next flush.
+    {
+        World w;
+        DeterministicCommands commands(2);
+        int count=0;
+        commands.enqueue(0,[&](World&) {
+            ++count;
+            commands.enqueue(0,[&](World&){count+=10;});
+        });
+        commands.enqueue(1,[&](World&){count+=2;});
+        commands.flush(w);
+        assert(count==3);
+        commands.flush(w);
+        assert(count==13);
+        commands.enqueue(0,[&](World&){count+=100;});
+        commands.discard();
+        commands.flush(w);
+        assert(count==13);
+    }
     // Dirty snapshot applies only marked pages; unmarked data is preserved.
     {
         std::vector<Position> before(1024),updated(1024);
