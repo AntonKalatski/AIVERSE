@@ -178,6 +178,12 @@ Commits `51764f5`, `b042852` apply together: `renderModels` computes environment
 
 **Intentional scope:** Do not reorder opaque/transparent geometry across groups or merge batches with different vertex/index buffers or per-draw uniform state. Larger cross-group merges would require a separate correctness audit and tests; not silently implemented here. No owner build or benchmark yet. Run the balanced 3x300 OFF/ON benchmark with diagnostics disabled and compare to OFF 12.120 / ON 12.253 ms (+1.1%, 406/343 draws). Validate shadows, PBR materials, GI, transparent objects, culling and ICB safety. This batch is an optimization hypothesis, not a measured gain.
 
+## Next bundled optimization: instancing + Metal ICB bounds (2026-11-17)
+
+Commits `658793d`, `1d45a81`: conventional instancing's `sameBatch` now compares per-pass GPU material equivalence IDs already calculated during classification rather than repeating `equivalentGpuMaterial` for each adjacent primitive. This affects both OFF and ON paths, so an improved absolute Scene CPU number does not necessarily imply a better MDI delta. Metal ICB resets only `drawCount` active commands rather than the entire pooled ICB capacity, since execute range is limited to active commands. Immutable per-submission uniform-instance capacity and index-buffer capacity checks are moved out of the per-command encoding loop; existing per-command bounds checks remain in place.
+
+The last owner balanced A/B before these commits: OFF 12.161 ms, ON 12.259 ms (+0.8% CPU), 410 vs 330 submissions. No owner build or validation yet. Rebuild once, check normal and ICB rendering, run 3x300 OFF/ON and compare; the code does NOT implement persistent GPU-generated draw lists, cross-material batch merging, or synchronized per-mode GPU timestamps. Those are larger architecture changes requiring correctness tests. Metal ICB remains experimental/off by default.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
