@@ -744,7 +744,11 @@ void Renderer3D::renderModels(int phase) {
         // Try MDI before conventional instancing, only when every command can
         // legally inherit the SAME uniforms/textures and rigid transform.
         // Draw-call colour mode uses one colour per indirect submission.
-        if (modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() && phase <= 1) {
+        const char* renderSafe = std::getenv("AIVERSE_RENDER_SAFE");
+        const char* indirectToggle = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+        const bool allowIndirect = !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
+                                   !(indirectToggle && std::strcmp(indirectToggle, "off") == 0);
+        if (modelMultiDrawEnabled_ && allowIndirect && dev_->supportsMultiDrawIndirect() && phase <= 1) {
             const auto& first = modelItems_[order_[i]];
             auto compatible = [&](const ModelItem& y) {
                 // Each indirect command selects its own world/tint/team/etc
