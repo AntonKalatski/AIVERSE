@@ -725,3 +725,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Commits `51d53d4553c5034f2a124b5511f107b97d377df2` and `a302652200d196b69b0f4057ae4071a52aa5653d`: extended `tests/ecs_cross_genre_weapon_pipeline_test.cpp` to request another shot after ammo reaches zero and after the initial 8-tick snapshot replay checksum parity checkpoint. It checks request consumption, unchanged ammo, unchanged nextShotId and empty pending spawn queue for both shooter and artillery hosts, including COW runs.
 - The second commit places the dry-fire scenario **after** the original replay checksum assertion to avoid comparing different tick counts.
 - Verification: GitHub source commits only; native compile, CTest, sanitizer and real FPS/RTS gameplay integration **not executed**. Next: compile and run the suite, address failures, then migrate real FPS/RTS launch paths to the shared weapon systems one at a time with save/network parity.
+
+
+### 2026-11-18 — Agent continuity protocol (user instruction)
+- User requires a durable handoff entry for **every completed implementation step**, not only at task completion. Record exact implementation SHA, touched paths, observable behavior, tests actually executed and their outcomes, limitations, and the next action. Commit this handoff entry separately immediately after the implementation commit.
+- Keep unverified code changes explicitly marked as unverified; do not claim successful native build, sanitizer, Metal rendering or FPS/RTS parity without evidence.
+- Current branch: `feature/universal-entity-inspector-fps`. Most recent code commits: `51d53d4553c5034f2a124b5511f107b97d377df2`, `a302652200d196b69b0f4057ae4071a52aa5653d`; preceding handoff commit: `6a780676d307b6121a76df23082d87088da064c4`.
+- Next: run cross-genre weapon pipeline tests in native environment, then integrate actual FPS/RTS adapters in small, parity-checked increments.
