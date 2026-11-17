@@ -102,37 +102,37 @@ inline bool drawDocumentRotationScaleFields(MapDoc& map,
                                              DocumentEntityRef ref) {
     Json transform;
     if (!readDocumentComponent(map, ref, DocumentComponentKind::Transform,
-                               transform) ||
-        !transform["rotationY"].isNumber() ||
-        !transform["scale"].isArray()) return false;
-    float rotation = float(transform["rotationY"].toDouble());
-    ImGui::TextDisabled("Rotation Y");
-    ImGui::SetNextItemWidth(-1);
-    const bool rotateChanged = ImGui::DragFloat("##rotationY", &rotation,
-                                                0.5f, 0, 0, "%.2f deg");
-    if (ImGui::IsItemActivated()) map.beginEdit();
-
-    const Json& scaleValues = transform["scale"];
-    if (scaleValues.size() != 3) return false;
-    float scale[3] = {float(scaleValues[0].toDouble()),
-                      float(scaleValues[1].toDouble()),
-                      float(scaleValues[2].toDouble())};
-    ImGui::TextDisabled("Scale XYZ");
-    ImGui::SetNextItemWidth(-1);
-    const bool scaleChanged = ImGui::DragFloat3("##scaleXYZ", scale,
-                                                0.05f, 0, 0, "%.3f");
-    if (ImGui::IsItemActivated()) map.beginEdit();
-    if (!rotateChanged && !scaleChanged) return false;
+                               transform)) return false;
+    const bool rotationAvailable = transform["rotationY"].isNumber();
+    const bool scaleAvailable = transform["scale"].isArray() &&
+                                transform["scale"].size() == 3;
+    if (!rotationAvailable && !scaleAvailable) return false;
     Json write = Json::object();
-    if (rotateChanged)
-        write.set("rotationY", Json::number(double(rotation), 3));
-    if (scaleChanged) {
-        Json values = Json::array();
-        for (float x : scale) values.push(Json::number(double(x), 3));
-        write.set("scale", values);
+    if (rotationAvailable) {
+        float rotation = float(transform["rotationY"].toDouble());
+        ImGui::TextDisabled("Rotation Y");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::DragFloat("##rotationY", &rotation, 0.5f, 0, 0, "%.2f deg"))
+            write.set("rotationY", Json::number(double(rotation), 3));
+        if (ImGui::IsItemActivated()) map.beginEdit();
     }
-    return writeDocumentComponent(map, ref, DocumentComponentKind::Transform,
-                                  write);
+    if (scaleAvailable) {
+        const Json& size = transform["scale"];
+        float scale[3] = {float(size[0].toDouble()),
+                          float(size[1].toDouble()),
+                          float(size[2].toDouble())};
+        ImGui::TextDisabled("Scale XYZ");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::DragFloat3("##scaleXYZ", scale, 0.05f, 0, 0, "%.3f")) {
+            Json values = Json::array();
+            for (float x : scale) values.push(Json::number(double(x), 3));
+            write.set("scale", values);
+        }
+        if (ImGui::IsItemActivated()) map.beginEdit();
+    }
+    return write.size() > 0 &&
+        writeDocumentComponent(map, ref, DocumentComponentKind::Transform,
+                               write);
 }
 
 inline void drawDocumentEditableComponents(MapDoc& map, DocumentEntityRef ref) {
