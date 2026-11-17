@@ -1,6 +1,7 @@
 #include "Editor.h"
 #include "EditorGenreUi.h"
 #include "SceneRenderable.h"
+#include "EditorEntityAdapter.h"
 #include "modules/fps/FpsModule.h"
 #include <filesystem>
 #include <cmath>
@@ -72,7 +73,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.world = mat4::translate(base)*mat4::scale(size);
         object.tint = {0.35f,0.42f,0.44f,1};
         object.mesh = &fpsPreviewMesh_;
-        object.entity = uint64_t(sourceIndex) + 1;
+        object.entity = DocumentEntityRef{DocumentEntityRef::Source::FpsCollider, sourceIndex}.fpsKey();
         object.boundsMin = lo;
         object.boundsMax = hi;
         object.pickable = true;
@@ -88,7 +89,7 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
         object.world = mat4::translate(pos)*mat4::scale({0.6f,1.8f,0.6f});
         object.tint = {0.1f,0.65f,0.85f,1};
         object.mesh = &fpsPreviewMesh_;
-        object.entity = (uint64_t(1) << 63) | (uint64_t(sourceIndex) + 1);
+        object.entity = DocumentEntityRef{DocumentEntityRef::Source::FpsSpawn, sourceIndex}.fpsKey();
         object.boundsMin = {pos.x - 0.3f, pos.y, pos.z - 0.3f};
         object.boundsMax = {pos.x + 0.3f, pos.y + 1.8f, pos.z + 0.3f};
         object.pickable = true;
@@ -114,12 +115,12 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
         !std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz)) return false;
     const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
     if (!key) return false;
-    const bool spawn = (key & (uint64_t(1) << 63)) != 0;
-    const size_t sourceIndex = size_t((key & ~(uint64_t(1) << 63)) - 1);
-    auto& fps = doc().data.fps;
-    const char* group = spawn ? "spawns" : "colliders";
-    if (sourceIndex >= fps[group].size()) return false;
-    Json& item = fps.member(group)[sourceIndex];
+    DocumentEntityRef ref;
+    if (!DocumentEntityRef::fromFpsKey(key, ref)) return false;
+    const bool spawn = ref.source == DocumentEntityRef::Source::FpsSpawn;
+    Json* itemPtr = fpsDocumentEntity(doc().data.fps, ref);
+    if (!itemPtr) return false;
+    Json& item = *itemPtr;
     // Validate every affected endpoint before changing the document. A failed
     // second endpoint must never leave a collider half-translated.
     auto shifted = [&](const Json& xyz, Json& out) {
@@ -148,7 +149,7 @@ bool Editor::moveSelectedFpsSceneObject(float dx, float dy, float dz) {
 }
 
 bool Editor::isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const {
-    const uint64_t key = (spawn ? (uint64_t(1) << 63) : 0) | (uint64_t(sourceIndex) + 1);
+    const uint64_t key = DocumentEntityRef{spawn ? DocumentEntityRef::Source::FpsSpawn : DocumentEntityRef::Source::FpsCollider, sourceIndex}.fpsKey();
     return selection.kind == Selection::FpsObject && selection.ref == key;
 }
 
@@ -173,11 +174,13 @@ void Editor::drawFpsSceneInspector() {
     auto& fps = doc().data.fps;
     const uint64_t key = selection.kind == Selection::FpsObject ? selection.ref : 0;
     if (!key) return;
-    const bool collider = (key & (uint64_t(1) << 63)) == 0;
-    const size_t sourceIndex = size_t((key & ~(uint64_t(1) << 63)) - 1);
-    if (sourceIndex >= fps[collider ? "colliders" : "spawns"].size()) return;
-    Json& source = collider ? fps.member("colliders")[sourceIndex]
-                            : fps.member("spawns")[sourceIndex];
+    DocumentEntityRef ref;
+    if (!DocumentEntityRef::fromFpsKey(key, ref)) return;
+    Json* sourcePtr = fpsDocumentEntity(fps, ref);
+    if (!sourcePtr) return;
+    const bool collider = ref.source == DocumentEntityRef::Source::FpsCollider;
+    const size_t sourceIndex = ref.index;
+    Json& source = *sourcePtr;
     ImGui::TextDisabled("SCENE OBJECT");
     ImGui::Text("%s #%d", collider ? "Box Collider" : "Spawn Point", sourceIndex + 1);
     ImGui::Separator();
