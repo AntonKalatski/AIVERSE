@@ -162,7 +162,6 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     materialHashCandidates_.clear();
     materialRepresentatives_.clear();
     materialItemIds_.clear();
-    materialStateCacheHits_ = materialStateCacheMisses_ = 0;
     geometryStats_ = {}; profile_ = {}; geometryMainView_ = true;
     RTSCamera shadowCamera = cam; shadowCamera.jitter = {};
     computeShadowMatrix(shadowCamera, aspect);
