@@ -5,6 +5,7 @@
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/PersistentGpuScene.h"
+#include "engine/render/PersistentGpuSceneUpload.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
 #include <cstdio>
@@ -284,6 +285,35 @@ int main() {
             ranges.push_back(range);
         });
         CHECK(ranges.size() == 1 && ranges[0].count == 2);
+    }
+
+    // Triple-slot GPU staging: first use uploads all slots; unchanged frame
+    // revisits upload nothing; a changed object propagates to each slot.
+    {
+        MockDevice device;
+        PersistentGpuScene scene;
+        GpuSceneRecord record{};
+        record.geometry = 11;
+        const auto handle = scene.insert(record);
+        PersistentGpuSceneUpload upload(device);
+        for (uint64_t frame = 0; frame < 3; ++frame) {
+            const auto stats = upload.sync(scene, frame);
+            CHECK(stats.records == 1 && stats.ranges == 1);
+        }
+        CHECK(device.created == 3);
+        CHECK(upload.sync(scene, 3).records == 0);
+        record.geometry = 12;
+        CHECK(scene.update(handle, record));
+        for (uint64_t frame = 3; frame < 6; ++frame) {
+            const auto stats = upload.sync(scene, frame);
+            CHECK(stats.records == 1);
+            uint32_t stored = 0;
+            const auto& bytes = device.buffers.at(upload.buffer(frame).id);
+            std::memcpy(&stored, bytes.data() + offsetof(GpuSceneRecord, geometry), sizeof(stored));
+            CHECK(stored == 12);
+        }
+        upload.release();
+        CHECK(device.destroyed == 3);
     }
 
     std::puts("engine model batching policy: PASS");
