@@ -268,7 +268,7 @@ static void updateSizes(NSView* view) {
             totals[4] += ms(afterCallback, afterEnd);
             if (++samples == 120) {
                 std::fprintf(stderr,
-                    "[mac-frame] avg/120 events=%.3f ms prep=%.3f ms begin=%.3f ms editor=%.3f ms end=%.3f ms gpu=%.3f ms\\n",
+                    "[mac-frame] avg/120 events=%.3f ms prep=%.3f ms begin=%.3f ms editor=%.3f ms end=%.3f ms gpu=%.3f ms\n",
                     totals[0]/samples, totals[1]/samples, totals[2]/samples,
                     totals[3]/samples, totals[4]/samples, g_device->gpuFrameMs());
                 samples = 0;
