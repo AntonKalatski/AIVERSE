@@ -114,8 +114,10 @@ public:
                     if (!inGroup || (!filter_.empty() &&
                         !ui::contains(entity.title, filter_) &&
                         !ui::contains(group, filter_))) continue;
-                    ImGui::PushID(actor ? uint64_t(entity.selection.index) :
-                                 entity.selection.ref);
+                    const std::string runtimeId = actor
+                        ? std::to_string(entity.selection.index)
+                        : std::to_string(entity.selection.ref);
+                    ImGui::PushID(runtimeId.c_str());
                     if (ImGui::Selectable(entity.title.c_str(),
                                           ed.isSelected(entity.selection))) {
                         selectNode(entity.selection);
