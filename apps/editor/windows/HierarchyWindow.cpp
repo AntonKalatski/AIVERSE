@@ -79,6 +79,35 @@ public:
                 }
                 ImGui::TreePop();
             }
+            const Json& runtime = ed.fpsRuntimeSnapshot();
+            const Json& actors = runtime["actors"];
+            if (runtime["error"].isString())
+                ImGui::TextWrapped("Runtime preview: %s",
+                                   runtime["error"].str().c_str());
+            if (actors.isArray() &&
+                ImGui::TreeNodeEx("Runtime Actors", ImGuiTreeNodeFlags_DefaultOpen)) {
+                for (size_t i = 0; i < actors.size(); ++i) {
+                    ImGui::PushID(int(i));
+                    const Json& actor = actors[i];
+                    const std::string label = "Actor #" + std::to_string(
+                        actor["slot"].integer(int64_t(i + 1)));
+                    const bool selected = ed.selection.kind == Selection::FpsActor &&
+                                          ed.selection.index == int(i);
+                    if (ImGui::Selectable(label.c_str(), selected)) {
+                        Selection chosen;
+                        chosen.kind = Selection::FpsActor;
+                        chosen.index = int(i);
+                        ed.select(chosen);
+                        const Json& pos = actor["position"];
+                        if (pos.isArray() && pos.size() == 3)
+                            ed.sceneCam.target = {float(pos[0].toDouble()),
+                                                  float(pos[1].toDouble()),
+                                                  float(pos[2].toDouble())};
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::TreePop();
+            }
             return;
         }
         // the rows are read for us (play: 5 Hz) only while we are shown; script data only when the label, a
