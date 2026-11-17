@@ -74,10 +74,36 @@ public:
                 const Selection hovered = ed.pickObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
                 ed.setHover(hovered);
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                    ed.selectFpsSceneObject(ed.pickFpsSceneObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y));
-                    pickSelect(ed, hovered, io);
+                    const int hit = ed.pickFpsSceneObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
+                    ed.selectFpsSceneObject(hit);
+                    fpsDragActive_ = hit >= 0 && ed.tool == Tool::Select && !io.KeyCtrl && !io.KeyShift;
+                    fpsDragEdited_ = false;
+                    fpsDragLastX_ = io.MousePos.x;
+                    fpsDragLastY_ = io.MousePos.y;
+                    if (hit < 0) pickSelect(ed, hovered, io);
                 }
             }
+            if (fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+                (io.MousePos.x != fpsDragLastX_ || io.MousePos.y != fpsDragLastY_)) {
+                // FPS map colliders/spawns currently expose translation on XZ.
+                // Project consecutive pointer positions onto the ground plane.
+                float3 previous, current;
+                if (ed.sceneCam.screenToGround(fpsDragLastX_ - vp_.originX,
+                                                fpsDragLastY_ - vp_.originY,
+                                                vp_.pointsW, vp_.pointsH, previous) &&
+                    ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
+                                                io.MousePos.y - vp_.originY,
+                                                vp_.pointsW, vp_.pointsH, current)) {
+                    const float dx = current.x - previous.x, dz = current.z - previous.z;
+                    if (std::abs(dx) > 1e-5f || std::abs(dz) > 1e-5f) {
+                        if (!fpsDragEdited_) ed.doc().beginEdit();
+                        fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dz) || fpsDragEdited_;
+                    }
+                }
+                fpsDragLastX_ = io.MousePos.x;
+                fpsDragLastY_ = io.MousePos.y;
+            }
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) fpsDragActive_ = false;
         } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
@@ -93,6 +119,9 @@ public:
     }
 
 private:
+    bool fpsDragActive_ = false, fpsDragEdited_ = false;
+    float fpsDragLastX_ = 0, fpsDragLastY_ = 0;
+
     void toolbar(Editor& ed) {
         static const char* names[] = {"Выбор", "Объекты", "Клетки", "Уровни", "Высота", "Поля", "Регионы", "Зоны", "Старты", "Дороги", "Ластик"};
         static const char* icons[] = {ICON_SELECT, ICON_OBJECTS, ICON_CELLS, ICON_LEVELS, ICON_HEIGHT, ICON_FIELDS, ICON_REGIONS, ICON_ZONES,
