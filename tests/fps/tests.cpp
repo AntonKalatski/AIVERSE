@@ -115,6 +115,22 @@ void dynamicEcsBridge(const Json& rules, const Json& map) {
     CHECK(sim->world().alive(index->byKey.at(lootKey)));
     module.syncDynamicEntities(*sim);
     CHECK(sim->world().get<fps::LootEntity>(index->byKey.at(lootKey)).position == loot.pos);
+    // A legacy save lacks ECS entity allocator state. Previously initialized
+    // pools can be stale: recreation must not give one Entity two object types.
+    auto legacy = simulation(rules, map);
+    legacy->world().restoreEntityState(World::EntityState{});
+    module.syncActorEntities(*legacy);
+    module.syncDynamicEntities(*legacy);
+    auto* restoredIndex = legacy->world().resource<fps::DynamicEntityIndex>();
+    CHECK(restoredIndex != nullptr);
+    for (const auto& [key, entity] : restoredIndex->byKey) {
+        const int kind = int(key >> 32);
+        CHECK(legacy->world().alive(entity));
+        CHECK(legacy->world().has<fps::ProjectileEntity>(entity) == (kind == 1));
+        CHECK(legacy->world().has<fps::LootEntity>(entity) == (kind == 2));
+        CHECK(legacy->world().has<fps::VehicleEntity>(entity) == (kind == 3));
+        CHECK(!legacy->world().has<fps::ActorEntityIdentity>(entity));
+    }
 }
 
 void spatial() {
