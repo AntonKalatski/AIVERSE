@@ -73,6 +73,10 @@ public:
         return contains(handle) ? &slots_[handle.slot].value : nullptr;
     }
     uint32_t liveCount() const { return liveCount_; }
+    // Includes tombstones, so GPU slot indices remain stable after deletion.
+    const GpuSceneRecord* slotRecord(uint32_t slot) const {
+        return slot < slots_.size() ? &slots_[slot].value : nullptr;
+    }
     size_t capacity() const { return slots_.size(); }
 
     // Flush a coherent CPU snapshot and coalesced dirty ranges. The caller
