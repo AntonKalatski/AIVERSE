@@ -340,6 +340,12 @@ New commits `bd9f8d3`, `c1d71f6`, `f08ef42`, `c28b9a1`, `0322a58`, `552f97a`, `6
 
 **Boundary:** The real GPU-native batch grouping and GPU-driven LOD/scene selection are still incomplete. These changes reduce the wasted CPU overhead of choosing a GPU path, but do not migrate preparation of `Renderer3D::modelItems_` or heterogeneous shader/material/pipeline grouping onto GPU. A genuinely GPU-native grouping system requires GPU-resident material/pipeline descriptor tables, visibility compaction and driver-validated command encoding. Do not claim that all those features have been implemented. New commits have **not been built/tested on the owner's Mac**; run build/tests and benchmark before claiming a speedup. Monitor shadows, alpha, HDR, changing visibility, asset reload and multiple viewports for correctness.
 
+## Balanced benchmark auto-selection (2026-11-17)
+
+Commits `473645a`, `bfccc14`, `922d199` add a measured **Scene-only** batching choice. The Batching popup enables `Auto-select fastest mode after benchmark` by default. After all 3 x 300 or 2 x 300 samples/mode have been collected, the Scene viewport selects Instancing / CPU MDI / GPU-authored based on lowest fixed-camera Scene CPU mean, with a conservative 0.5% minimum-gain deadband favoring simpler paths when the timing difference is within noise. It does **not** compare whole-editor GPU-frame milliseconds to isolated Scene CPU time, does not change Game render policy, and does not automatically rerun measurements when the scene/camera or workload changes. Manual GPU Instancing/MDI checkbox changes or `Restore manual batching` clears the override. The prior baseline (Instancing 11.801 vs CPU MDI 11.953 vs GPU-authored 11.977 ms) would select Instancing; that is a prediction of the selection policy, not a new Mac benchmark.
+
+The renderer still has the independent `AIVERSE_GPU_ICB_ADAPTIVE=1` group-size heuristic that declines GPU ICB when no compatible large groups exist. The Scene measured policy and engine heuristic are distinct controls; do not misrepresent either as a GPU-driven universal dynamic optimizer. The old CPU instancing remains default when no benchmark selection has been made.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
