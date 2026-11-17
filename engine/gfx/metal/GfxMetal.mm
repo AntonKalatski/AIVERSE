@@ -774,6 +774,12 @@ public:
     }
 
     bool supportsMultiDrawIndirect() const override {
+        // Disabled by default until the Metal ICB encoder has completed
+        // driver-level validation. On Apple G15 the previous encoder crashed
+        // in AGX executeCommandsInBufferCommon during Scene rendering.
+        // Keep an explicit opt-in for engineering reproductions only.
+        const char* experimental = std::getenv("AIVERSE_EXPERIMENTAL_METAL_ICB");
+        if (!experimental || std::strcmp(experimental, "1") != 0) return false;
 #if TARGET_OS_IPHONE
         if (@available(iOS 14.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3];
 #else
