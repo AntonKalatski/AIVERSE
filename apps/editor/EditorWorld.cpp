@@ -9,6 +9,7 @@
 #include <filesystem>
 #include "Editor.h"
 #include "EditorSelectionAdapter.h"
+#include "EditorRuntimeEntityProvider.h"
 #include "core/SimTools.h"
 
 namespace fs = std::filesystem;
@@ -117,6 +118,25 @@ bool Editor::selectionPos(const Selection& s, float& x, float& z) const {
         if (s.index < 0 || s.index >= int(d.entities.size())) return false;
         x = d.entities[size_t(s.index)].x; z = d.entities[size_t(s.index)].z;
         return true;
+    case Selection::FpsObject: {
+        DocumentEntityRef ref;
+        DocumentTransform transform;
+        if (!documentEntityFromSelection(s, ref) ||
+            !readDocumentTransform(doc(), ref, transform)) return false;
+        x = float(transform.x); z = float(transform.z);
+        return true;
+    }
+    case Selection::FpsActor:
+    case Selection::FpsRuntimeObject: {
+        const auto runtime = enumerateEditorRuntimeEntities(
+            *const_cast<Editor*>(this));
+        for (const auto& item : runtime)
+            if (item.selection == s && item.hasPosition) {
+                x = item.position.x; z = item.position.z;
+                return true;
+            }
+        return false;
+    }
     case Selection::Live:
         if (worldLive_) {   // the running world itself: the rows may be old (or not read when nobody shows them)
             Simulation* sim = const_cast<Editor*>(this)->worldSim();
