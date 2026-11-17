@@ -87,6 +87,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         cached.pos.z == o.pos.z && cached.ground == ground &&
         cached.yaw == st.yaw && cached.scale == k &&
         cached.sx == L.sx && cached.sz == L.sz &&
+        cached.flyHeight == L.flyHeight && cached.air == L.air &&
         cached.structure == t.structure && cached.shape == L.shape &&
         std::memcmp(cached.fix.m, ch.fix.m, sizeof(ch.fix.m)) == 0;
     if (immutablePlacement) {
@@ -136,6 +137,8 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         cached.scale = k;
         cached.sx = L.sx;
         cached.sz = L.sz;
+        cached.flyHeight = L.flyHeight;
+        cached.air = L.air;
         cached.structure = t.structure;
         cached.shape = L.shape;
         cached.model = show->model;
