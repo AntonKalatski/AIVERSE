@@ -194,6 +194,12 @@ Commits `3fe9f45`, `0ace2b6` add opt-in `AIVERSE_MDI_GEOMETRY_SORT=1` for MDI-en
 
 This is an experimental grouping improvement, **not** the complete proposed GPU-driven architecture: no persistent batch-layout cache, dirty-only updates, cross-material merging or accurately paired GPU timestamps were implemented. These require stronger invalidation/versioning and GPU completion tracking to avoid stale transforms and buffer races. Keep ICB opt-in and default behavior unchanged.
 
+## Experimental dirty indirect snapshot updates (commits `4d61879`, `c8bef87`)
+
+`GfxMetal.mm` adds valid-byte tracking per per-frame-slot/per-submission indirect snapshot. With `AIVERSE_METAL_ICB_DIRTY_UPDATES=1`, a full indirect command update compares the new bytes to the corresponding previously completed slot/submission buffer; if identical, it avoids the CPU memcpy. New/reallocated snapshots reset valid bytes. This retains frame-fence and per-submission isolation. **Default OFF** to avoid adding memcmp overhead without evidence of stable repeated commands. Partial updates continue to copy and preserve previous submission data. This is a narrow dirty-command-copy optimization; instance uniforms, culling and model batch layout are still rebuilt per frame, and no GPU compute culling or per-mode GPU timestamp attribution exists.
+
+No owner build or measurements yet. Verify compilation and correctness under camera movement, scene reload and multiple submissions, and compare fixed-camera 3x300 A/B with the env flag ON/OFF in otherwise identical launches. The prior geometry-sort ON result was OFF 12.080 / ON 12.122 ms (+0.3%), 377/296 submissions, ~8 ICB submissions/89 commands per frame. The change may be neutral or slower because comparing 20-byte commands costs CPU too. Do not claim GPU-driven architecture is complete.
+
 ## Completion criteria
 
 Identify and materially reduce the warm ~24 ms `renderScene()` CPU hotspot, demonstrate repeatable same-scene timing and draw-count A/B, preserve visual output, validate stability on Apple Silicon, and report remaining GPU-memory/mobile limitations. GPU-driven culling and geometry streaming are **not yet implemented as part of this PR**.
