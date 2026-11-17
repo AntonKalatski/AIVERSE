@@ -30,6 +30,14 @@ const Json& Editor::fpsRuntimeSnapshot() {
         fpsRuntimeRulesRevision_ == rulesRevision_ &&
         fpsRuntimeProjectDir_ == ws_.project.dir + "\n" + doc().path;
     if (current) return fpsRuntimeCache_;
+    // Do not repeatedly construct the entire simulation while the user drags
+    // a Transform or paints. Refresh on release, as the RTS preview does.
+    if (fpsRuntimeRevision_ != UINT64_MAX && ImGui::GetCurrentContext() &&
+        (ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
+         ImGui::IsMouseDown(ImGuiMouseButton_Right) ||
+         ImGui::IsMouseDown(ImGuiMouseButton_Middle)) &&
+        fpsRuntimeProjectDir_ == ws_.project.dir + "\n" + doc().path)
+        return fpsRuntimeCache_;
     fpsRuntimeRevision_ = doc().revision;
     fpsRuntimeRulesRevision_ = rulesRevision_;
     fpsRuntimeProjectDir_ = ws_.project.dir + "\n" + doc().path;
