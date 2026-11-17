@@ -41,7 +41,7 @@ struct WorldComponentField {
     const char* title;
     WorldFieldKind kind;
 };
-const std::vector<WorldComponentField>& worldComponentFields(const std::string& componentId);
+std::vector<WorldComponentField> worldComponentFields(const std::string& componentId);
 
  
 // Project-specific component readers are registered explicitly. They inspect
