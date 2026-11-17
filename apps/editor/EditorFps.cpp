@@ -160,20 +160,7 @@ void Editor::drawFpsSceneInspector() {
     drawDocumentComponentInventory(doc(), ref);
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (collider) {
-            DocumentTransform position;
-            if (readDocumentTransform(doc(), ref, position)) {
-                float xyz[3] = {float(position.x), float(position.y), float(position.z)};
-                ImGui::TextDisabled("Position XYZ");
-                ImGui::SetNextItemWidth(-1);
-                const bool changed = ImGui::DragFloat3("##colliderPosition", xyz, 0.05f, 0, 0, "%.3f");
-                if (ImGui::IsItemActivated()) doc().beginEdit();
-                if (changed) {
-                    Json component = Json::object(), position = Json::array();
-                    for (float coordinate : xyz) position.push(Json::number(double(coordinate), 3));
-                    component.set("position", position);
-                    writeDocumentComponent(doc(), ref, DocumentComponentKind::Transform, component);
-                }
-            }
+            drawDocumentPositionField(doc(), ref);
             const Json& lo = source["min"];
             const Json& hi = source["max"];
             if (lo.isArray() && hi.isArray() && lo.size() >= 3 && hi.size() >= 3) {
@@ -198,15 +185,7 @@ void Editor::drawFpsSceneInspector() {
             }
             ImGui::TextDisabled("Collider bounds are defined by Min/Max.");
         } else {
-            DocumentTransform position;
-            if (readDocumentTransform(doc(), ref, position)) {
-                float xyz[3] = {float(position.x), float(position.y), float(position.z)};
-                ImGui::TextDisabled("Position XYZ");
-                ImGui::SetNextItemWidth(-1);
-                const bool changed = ImGui::DragFloat3("##spawnPosition", xyz, 0.05f, 0, 0, "%.3f");
-                if (ImGui::IsItemActivated()) doc().beginEdit();
-                if (changed) setDocumentPosition(doc(), ref, {xyz[0], xyz[1], xyz[2]});
-            }
+            drawDocumentPositionField(doc(), ref);
             ImGui::TextDisabled("Spawn orientation and scale are not part of the current map schema.");
         }
     }
