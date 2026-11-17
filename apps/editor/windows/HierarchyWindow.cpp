@@ -84,8 +84,7 @@ public:
                             ed.sceneCam.target = {float(transform.x), float(transform.y), float(transform.z)};
                     }
                     ImGui::PopID();
-                    ++index;
-                }
+                                    }
                 ImGui::TreePop();
             }
             return;
