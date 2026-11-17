@@ -42,8 +42,8 @@ inline void addGuardedGroup(Simulation& simulation,
             WaveExecutor executor{*pool};
             std::vector<WaveExecutor::SystemFn> jobs;
             jobs.reserve(systems.size());
-            for(const auto& system:systems)
-                jobs.emplace_back([&world,&system] {system.run(world);});
+            for(size_t i=0;i<systems.size();++i)
+                jobs.emplace_back([&world,&systems,i] {systems[i].run(world);});
             // No structural changes inside this group, so barrier is no-op.
             // Simulation::step() continues to flush once after the group.
             runChecked(executor,plan,jobs);
