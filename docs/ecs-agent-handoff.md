@@ -437,6 +437,33 @@ bash tests/run_ecs_gameplay_compare.sh --full
 - Current COW is still whole-pool/resource detach-on-write (not page dirty tracking) and OFF by default. The default FPS gameplay loop remains sequential except its restricted movement-only opt-in precompute stage. Do not describe full FPS parallelization or page-granular incremental rollback as finished.
 - Verification: `bash -n tests/run_ecs_gameplay_compare.sh`, `bash tests/run_ecs_experiment_suite.sh`, `bash tests/run_ecs_gameplay_compare.sh --full` with exact checksum comparison and sanitizer checks before any merge.
 
+## 2026-11-18 — Page-level opt-in COW + wider speculative FPS motor stage (latest)
+
+Following the user's request to finish production incremental rollback and FPS parallel work, the following changes were made to PR #8:
+
+- `99c87d4`: `engine/core/ECS.h` implements optional **256-component element pages** in `Pool<T>`, while leaving the default non-COW Sparse Set's contiguous `sparse_/dense_/data_` storage intact. When COW is enabled, dense/sparse metadata is shared and payload pages use copy-on-write. `World::copyFrom` still shares outer pools for snapshots, but the first mutation now clones only the relevant page, not the entire payload pool. Structural changes clone metadata and touched pages. `Pool<T>` implements `setPaged`, `prepareParallelWrite`, and `sharedPageCount`.
+- `2c41d47`: replacing an existing component no longer unnecessarily clones the entire sparse metadata.
+- `7118822`: conversion between contiguous and paged storage builds a complete replacement before committing, preventing partial conversion on throwing allocations or component copies.
+- `f726be5`: COW snapshot tests now cover 800 entities across four pages, one-page detach, swap removal, generation recycling, nontrivial string components and rollback.
+- `2a90016`, `8f2514e`: `World::prepareExistingWriteIds` detaches every component type declared writable by a parallel checked job before scheduling the workers, including all shared pages. This closes a race when a job writes two component types rather than only the iteration driver.
+- `bb73a4f`: COW-parallel test now writes both Position and Audit per Entity and compares checksums, snapshot immutability and rollback across worker counts.
+- `a9c876b`: FPS opt-in motor stage now speculatively precomputes movement of eligible human-controlled actors even during combat. At the original sequential actor slot it compares that actor with a pre-tick snapshot; if earlier actor interactions changed the actor, the motor is recomputed sequentially. All authoritative damage, RNG, AI, effects and combat application retain their original sequence.
+- `89acfd9`, `4ae7443`: FPS tests compare both movement-only and combat (80 ticks with firing) checksums of baseline vs experimental builds.
+
+**Important:** the above newest changes are pushed but *not yet compiled/run*. Strong source-level invariants were reviewed, but no Mac Studio or CI pass has been observed. This is an opt-in 256-component page-COW implementation for generic ECS pools, not for all mutable data: singleton resources (notably FPS State) are still whole-resource COW; their actors/history remain one mutable State resource. Full end-to-end FPS Job Scheduling across AI/shooting/projectiles is not yet implemented.
+
+To validate:
+```sh
+git switch feature/ecs-architecture-benchmarks && git pull --ff-only
+bash -n tests/run_ecs_experiment_suite.sh tests/run_ecs_gameplay_compare.sh
+bash tests/run_ecs_experiment_suite.sh
+bash tests/run_ecs_experiment_suite.sh --sanitize
+bash tests/run_ecs_experiment_suite.sh --bench
+bash tests/run_ecs_gameplay_compare.sh --full
+```
+
+**Remaining safety gate:** compile and run the above; then verify TSan on Linux and actual FPS/RTS production matches with both feature flags OFF and ON. Any failure must be fixed before this PR merges or either opt-in becomes a default.
+
 ## Outstanding work and risks (priority order)
 
 1. **Validation accomplished:** five correctness suites and normal/sanitizer/benchmark runs passed on Mac Studio; rerun after any further change.
