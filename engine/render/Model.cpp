@@ -574,7 +574,15 @@ void releaseModel(gfx::Device& dev, Model& m) {
         if (m.ib.valid()) dev.destroyBuffer(m.ib);
     }
     m.vb = {}; m.ib = {};
-    for (auto& img : m.images) if (img.tex.valid()) { if(!img.borrowedTexture)dev.destroyTexture(img.tex); img.tex = {}; }
+    for (auto& img : m.images) {
+        if (img.tex.valid() && !img.borrowedTexture) dev.destroyTexture(img.tex);
+        img.tex = {};
+        // Drop the shared cache lease at explicit release, not only when the
+        // Model object itself happens to be destroyed. The texture cache's
+        // trim() can then free images no remaining model references.
+        img.textureLease.reset();
+        img.borrowedTexture = false;
+    }
     if (m.morphTex.valid()) dev.destroyTexture(m.morphTex);
     if (m.baked.tex.valid()) dev.destroyTexture(m.baked.tex);
     m.morphTex = {}; m.baked = Model::Baked{};
