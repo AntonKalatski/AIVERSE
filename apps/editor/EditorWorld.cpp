@@ -174,6 +174,12 @@ Selection Editor::pickObject(const Viewport& vp, const render::RTSCamera& cam, f
     if (ws_.project.isFps()) {
         const int index = pickFpsSceneObject(vp, cam, sx, sy);
         if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
+        if (fpsSceneObjects_[size_t(index)].runtimeObject != 0) {
+            Selection object;
+            object.kind = Selection::FpsRuntimeObject;
+            object.ref = fpsSceneObjects_[size_t(index)].runtimeObject;
+            return object;
+        }
         if (fpsSceneObjects_[size_t(index)].runtimeActor >= 0) {
             Selection actor;
             actor.kind = Selection::FpsActor;
