@@ -483,7 +483,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
             const auto* vitals=s.world().tryGetConst<ActorEntityVitals>(entity);
             if (!identity || identity->slot!=actor.slot ||
                 identity->team!=actor.team || identity->life!=actor.life ||
-                !transform || transform->pos!=actor.pos ||
+                !transform || transform->position!=actor.pos ||
                 transform->velocity!=actor.velocity ||
                 transform->yaw!=actor.yaw || transform->pitch!=actor.pitch ||
                 !vitals || vitals->health!=actor.health ||
