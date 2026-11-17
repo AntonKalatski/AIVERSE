@@ -878,7 +878,6 @@ public:
         auto* p = pipelines_.get(pipelineId_);
         auto* ib = buffers_.get(ibId_);
         if (!enc_ || !p || !ib) return;
-        const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         [enc_ drawIndexedPrimitives:prim() indexCount:count indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
                         indexBuffer:current(*ib) indexBufferOffset:ibOffset_ + size_t(firstIndex) * (u32 ? 4 : 2)
@@ -975,6 +974,7 @@ public:
                                                options:MTLResourceStorageModeShared];
             if (!uniforms[slot]) return false;
         }
+        const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
         for (uint32_t i = 0; i < drawCount; ++i) {
