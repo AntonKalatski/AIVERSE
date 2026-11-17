@@ -733,6 +733,7 @@ public:
         indirectCursor_[frame_ % kFramesInFlight] = 0;
         gpuEncodedIcbCursor_[frame_ % kFramesInFlight] = 0;
         uniformPage_=uniformOffset_=0;
+        gpuIcbInstanceUploadedBytes_ = 0;
         layer_.drawableSize = CGSizeMake(w, h);
         drawable_ = [layer_ nextDrawable];
         if (!depth_ || int(depth_.width) != w || int(depth_.height) != h) {
@@ -916,7 +917,9 @@ public:
     std::vector<UniformPage> uniformPages_[kFramesInFlight];
     size_t uniformPage_=0, uniformOffset_=0;
     bool gpuIcbUniformBinding_ = false;
+    size_t gpuIcbInstanceUploadedBytes_ = 0;
     void setGpuIcbUniformBinding(bool enabled) override { gpuIcbUniformBinding_ = enabled; }
+    size_t gpuIcbInstanceUploadBytes() const override { return gpuIcbInstanceUploadedBytes_; }
     void setUniforms(int slot, const void* data, size_t size) override {
         if (!enc_ || !data || !size) return;
         // ICB commands cannot inherit setVertexBytes/setFragmentBytes when
@@ -1099,6 +1102,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                         instanceData, instanceBytes) != 0) {
             std::memcpy(resources.instanceBuffer.contents, instanceData, instanceBytes);
             resources.instanceValidBytes = instanceBytes;
+            gpuIcbInstanceUploadedBytes_ += instanceBytes;
         }
         std::memcpy(resources.slots.contents, sourceSlots, count * sizeof(uint32_t));
         [gpuIcbArgumentEncoder_ setArgumentBuffer:resources.argBuffer offset:0];
