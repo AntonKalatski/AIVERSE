@@ -825,6 +825,8 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuModelSubmission_ = 0;
     gpuModelEligible_ = gpuModelDrawn_ = 0;
     gpuEncodedDrawCalls_ = gpuEncodedCommands_ = 0;
+    gpuIcbCandidates_ = gpuIcbPrepared_ = 0;
+    gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
     gpuModelSlots_.clear();
@@ -883,21 +885,42 @@ void Renderer3D::prepareGpuModelDraws() {
     }();
     if (!gpuIcb || !dev_->supportsMultiDrawIndirect()) return;
 
-    // Group by exact model/material identity and opaque render flags. Each
-    // group inherits ONE pipeline, texture set and uniform block from its
-    // parent render encoder. Never merge GI, fade, animated or alpha items.
-    // Each GPU command gets its own baseInstance within this uniform block.
-    using BatchKey = std::tuple<const Model*, const Material*, uint32_t>;
-    std::map<BatchKey, std::vector<uint32_t>> groups;
+    // Pooling means different Model/Material objects can share the same GPU
+    // vertex/index buffers and exact material state. Group by *GPU state*,
+    // not pointer identity, otherwise static scene props never reach 2 draws.
+    // Hash is only a prefilter: exact equivalence is required to avoid
+    // mixing samplers, textures, material params, or shader variants.
+    struct Group {
+        uint64_t materialHash = 0;
+        std::vector<uint32_t> items;
+    };
+    std::vector<Group> groups;
+    groups.reserve(gpuModelRecords_.size() / 2 + 1);
     for (uint32_t item = 0; item < gpuModelSlots_.size(); ++item) {
         if (gpuModelSlots_[item] == UINT32_MAX) continue;
         const auto& m = modelItems_[item];
-        groups[{m.model, m.mat, m.flags}].push_back(item);
+        const uint64_t hash = gpuMaterialStateHash(*m.model, *m.mat);
+        bool found = false;
+        for (auto& group : groups) {
+            if (group.materialHash != hash) continue;
+            const auto& first = modelItems_[group.items.front()];
+            if (first.model->vb != m.model->vb ||
+                first.model->ib != m.model->ib ||
+                first.model->baked.tex != m.model->baked.tex ||
+                first.model->morphTex != m.model->morphTex ||
+                first.flags != m.flags ||
+                !equivalentGpuMaterial(*first.model, *first.mat, *m.model, *m.mat))
+                continue;
+            group.items.push_back(item);
+            found = true;
+            break;
+        }
+        if (!found) groups.push_back({hash, {item}});
     }
     gpuEncodedCovered_.assign(modelItems_.size(), 0);
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
-    for (auto& [key, indices] : groups) {
-        (void)key;
+    for (auto& group : groups) {
+        const auto& indices = group.items;
         for (size_t first = 0; first < indices.size();) {
             const size_t end = std::min(indices.size(), first + groupCapacity);
             // Avoid a GPU compute/ICB submission for single-primitive groups.
@@ -906,16 +929,18 @@ void Renderer3D::prepareGpuModelDraws() {
             sourceSlots.reserve(end - first);
             for (size_t j = first; j < end; ++j)
                 sourceSlots.push_back(gpuModelSlots_[indices[j]]);
+            ++gpuIcbCandidates_;
             const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
                 gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                 modelItems_[indices[first]].model->ib,
                 sourceSlots.data(), uint32_t(sourceSlots.size()));
             if (token) {
+                ++gpuIcbPrepared_;
                 GpuEncodedBatch group;
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
                 gpuEncodedBatches_.push_back(std::move(group));
-            }
+            } else ++gpuIcbRejected_;
             first = end;
         }
     }
@@ -1067,7 +1092,10 @@ void Renderer3D::renderModels(int phase) {
             const bool executed = submitted &&
                 dev_->executeGpuEncodedIndexedIcb(group.token);
             dev_->setGpuIcbUniformBinding(false);
-            if (!executed) continue;
+            if (!executed) {
+                ++gpuIcbExecuteFailed_;
+                continue;
+            }
             lastItem_ = &modelItems_[group.items.back()];
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
