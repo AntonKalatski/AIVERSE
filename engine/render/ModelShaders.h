@@ -611,11 +611,41 @@ static float modelNoise3(float3 x) {
                mix(mix(hash3(i + float3(0, 0, 1)), hash3(i + float3(1, 0, 1)), fr.x), mix(hash3(i + float3(0, 1, 1)), hash3(i + float3(1, 1, 1)), fr.x), fr.y), fr.z);
 }
 
+#if defined(AIVERSE_ICB_PBR)
+struct IcbPbrTextures {
+    depth2d<float> tex0 [[id(0)]];
+    sampler s0 [[id(1)]];
+    texture2d<float> tex1 [[id(2)]];
+    sampler s1 [[id(3)]];
+    texture2d<float> tex2 [[id(4)]];
+    sampler s2 [[id(5)]];
+    texture2d<float> tex3 [[id(6)]];
+    sampler s3 [[id(7)]];
+    texture2d<float> tex4 [[id(8)]];
+    sampler s4 [[id(9)]];
+    texture2d<float> tex5 [[id(10)]];
+    sampler s5 [[id(11)]];
+    texture2d<float> tex6 [[id(12)]];
+    sampler s6 [[id(13)]];
+    texture2d<float> tex9 [[id(18)]];
+    sampler s9 [[id(19)]];
+    texture2d<float> tex10 [[id(20)]];
+    sampler s10 [[id(21)]];
+    texture2d<float> tex11 [[id(22)]];
+    sampler s11 [[id(23)]];
+    depth2d<float> tex12 [[id(24)]];
+    sampler s12 [[id(25)]];
+};
+#endif
+
 fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         constant U1& f [[buffer(2)]], constant MU2& sourceMaterial [[buffer(3)]],
 #if defined(MATERIAL_PALETTE)
                         constant float4* materials [[buffer(4)]],
 #endif
+#if defined(AIVERSE_ICB_PBR)
+                        constant IcbPbrTextures& icbTextures [[buffer(8)]],
+#else
                         depth2d<float> tex0 [[texture(0)]], sampler s0 [[sampler(0)]],
                         texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]],
                         texture2d<float> tex2 [[texture(2)]], sampler s2 [[sampler(2)]],
@@ -626,7 +656,33 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         constant LightU& lu [[buffer(6)]], texture2d<float> tex9 [[texture(9)]], sampler s9 [[sampler(9)]],
                         texture2d<float> tex10 [[texture(10)]], sampler s10 [[sampler(10)]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
-                        depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]] GI_FARGS) {
+                        depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]],
+#endif
+                        GI_FARGS) {
+#if defined(AIVERSE_ICB_PBR)
+#define tex0 icbTextures.tex0
+#define s0 icbTextures.s0
+#define tex1 icbTextures.tex1
+#define s1 icbTextures.s1
+#define tex2 icbTextures.tex2
+#define s2 icbTextures.s2
+#define tex3 icbTextures.tex3
+#define s3 icbTextures.s3
+#define tex4 icbTextures.tex4
+#define s4 icbTextures.s4
+#define tex5 icbTextures.tex5
+#define s5 icbTextures.s5
+#define tex6 icbTextures.tex6
+#define s6 icbTextures.s6
+#define tex9 icbTextures.tex9
+#define s9 icbTextures.s9
+#define tex10 icbTextures.tex10
+#define s10 icbTextures.s10
+#define tex11 icbTextures.tex11
+#define s11 icbTextures.s11
+#define tex12 icbTextures.tex12
+#define s12 icbTextures.s12
+#endif
 #if defined(STUDIO_DEBUG_VIEW)
 #if STUDIO_DEBUG_VIEW == 2
     return float4(normalize(in.nrm) * .5 + .5, 1.0);
