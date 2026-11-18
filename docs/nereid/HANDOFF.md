@@ -765,3 +765,91 @@ stage-8 secondary water Y levels suppress invalid planar sampling.
 Verification: source reviewed and committed only; **full C++ compile,
 graphics runtime and CI remain NOT VERIFIED**. Next agent must include
 mixed glass/NEREID scene in OpenGL/Metal validation.
+
+## Stage 9 — transactional water surface GPU residency (feature implementation)
+
+**Branch:** `feature/nereid-water-core`; **PR:** #23 (Draft).
+**Implementation commits:** `1ca61ff311930b3c0ac5c1d69f2d5539b0c7f012`
+(residency API), `4fd5d9f469d13a19a8ac7b1e9ba4a338c8953c62`
+(contract fixture update).
+
+**Changed files:**
+- Added `engine/render/NereidSurfaceResident.h` — renderer-only,
+  backend-neutral GPU-resident water mesh controller.
+- Extended `tests/ecs_nereid_renderer_contract_test.cpp` with
+  patch-grid, revision, camera and style invalidation cases.
+- Updated this handoff separately after implementation.
+
+### Public API and expected usage
+
+`render::NereidSurfaceResident` owns one uploaded water VB/IB pair and
+is deliberately noncopyable/nonmovable to prevent double buffer destruction.
+`update(device,body,optionalGeometry,sourceRevision,meshOptions,style)`
+returns `NereidSurfaceUpdate::{Unchanged,Uploaded,Failed}`.
+`draw(renderer)` queues the existing flagged water draw;
+`release(device)` explicitly releases VB/IB (also mandatory **before**
+destroying or replacing the underlying RHI device).
+
+`sourceRevision` is **supplied by the scene host**, never generated
+from GPU or simulation state. Increment it whenever the authoritative
+body or optional geometry changes, including when restoring a different
+rollback snapshot. Do not pass a fixed revision for changing objects.
+For infinite water with no enabled custom geometry, the patch center is
+snapped to a camera-relative grid with cell width `oceanPatchRadius`;
+within the same cell, camera motion alone does not re-upload a mesh.
+Finite water ignores camera changes for cache invalidation.
+
+Changed visual style, LOD, tessellation budget, foam width, UV scale
+or ocean patch radius invalidates the mesh. The old GPU buffers remain
+resident until a full replacement VB/IB is uploaded, then are released.
+An invalid/empty new mesh or unsuccessful upload returns `Failed`
+and retains the previous view. A disabled source reports `Failed`;
+the host should call `release` to hide a retired water body.
+
+Example native scene ownership:
+```cpp
+#include "engine/render/NereidSurfaceResident.h"
+aiverse::render::NereidSurfaceResident waterVisual;
+// During scene update, using a host-owned geometry revision:
+waterVisual.update(device,body,geometry,geometryRevision,options,style);
+// Between Renderer3D::beginScene and Renderer3D::render:
+waterVisual.draw(renderer);
+// During scene/device shutdown (before device teardown):
+waterVisual.release(device);
+```
+
+**Key boundaries:** no new ECS schemas, gameplay state, dynamic wave
+solver, renderer backend or genre dependency. One instance per visible
+water body; caller chooses draw/discovery order, LOD and culling.
+A changed geometry source with unchanged revision violates cache
+invalidation, and a device replacement requires explicit release.
+Cache still builds CPU triangulation synchronously on a valid invalidation;
+no async generation, upload budget, dynamic geometry streaming, per-pixel
+shore foam or true multi-plane reflection yet.
+
+### Verification
+
+**Actually performed:** connector wrote both commits, source examined;
+test cases are **authored only**.
+**NOT RUN / UNVERIFIED:** complete native C++ compilation, CTest,
+GLSL and MSL compilation, GL/Metal runtime, device-loss recovery
+and timing/memory benchmarks. The current environment has no local
+AIVERSE checkout. This does **not** establish passing tests.
+
+Run in an AIVERSE checkout:
+```sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target \
+  aiverse_ecs_nereid_renderer_contract_test \
+  aiverse_ecs_nereid_surface_mesh_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_.*_test$'
+```
+Also run the legacy `water_*` test suites, both graphics backends,
+and a native-game smoke scene exercising 2 water elevations, rollback,
+resizing, release/recreate and moving ocean camera at negative X/Z.
+
+**Next agent:** first obtain C++ build and fixture results, fix failures.
+Then integrate the resident into an opt-in native WorldScene or renderer
+adapter with bounded per-frame rebuild scheduling and optional culling,
+without changing RTS `waterNetwork` or its baked map. Add a new handoff
+section after the implementation and record actual verification status.
