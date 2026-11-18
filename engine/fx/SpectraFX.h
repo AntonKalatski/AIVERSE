@@ -9,6 +9,7 @@
 #include "SpectraModuleSchema.h"
 #include "SpectraGpuParticles.h"
 #include "SpectraGraphRuntime.h"
+#include "SpectraBatchWorld.h"
 
 namespace aiverse::spectra {
 
