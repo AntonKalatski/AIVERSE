@@ -2050,3 +2050,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Source `f90242ec4c02eaad89b02f2c92d61273db6366de` was found on `incoming-f90242ec4`; it changes only this handoff document, documenting namespace-closure fix `393e778f`.
 - The exact historical note and the closed namespace are already present in PR #7. Recorded an empty cherry-pick `f5d9d65eeb1fc26a1b247a93230ad213849552ba` against the current target tree instead of merging 171 divergent source-branch commits. **No code or test changes; no native tests run.**
 - Detailed resume notes: `docs/agent-handoffs/f90242ec4-integration.md`.
+
+### 2026-11-18 — Mac Studio CTest 106/106 PASS, extras unverified
+- Owner's uploaded `configure(3).log`, `build(3).log`, `ctest(2).log`, JUnit XML and `summary(3).txt` confirm local tested SHA `dd711f5e`: configure/build PASS, CTest 106 passed / 0 failed in 869.69s. All previous seven CTest failures are resolved. Current incremental build log has no warning/error diagnostics; not evidence for a clean rebuild.
+- Summary ends immediately after `PASS ctest`; standalone `extra-*` results **NOT VERIFIED**. No game or test code changes. See `docs/agent-handoffs/unified-test-runner.md` for exact evidence and next validation.
