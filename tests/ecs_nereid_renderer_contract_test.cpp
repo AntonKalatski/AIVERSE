@@ -237,6 +237,21 @@ int main() {
     check(world::NereidWaterScene::selectedLod(lodSurface,&farCam)==
           lib::nereid::WaterSurfaceLod::Far,
           "far-distance water should select far LOD");
+    Vec3 boundaryCam{31_fx,0_fx,0_fx};
+    check(world::NereidWaterScene::selectedLod(
+              lodSurface,&boundaryCam,lib::nereid::WaterSurfaceLod::Near)==
+          lib::nereid::WaterSurfaceLod::Near,
+          "LOD hysteresis must retain near detail at transition boundary");
+    Vec3 crossCam{56_fx,0_fx,0_fx};
+    check(world::NereidWaterScene::selectedLod(
+              lodSurface,&crossCam,lib::nereid::WaterSurfaceLod::Near)==
+          lib::nereid::WaterSurfaceLod::Medium,
+          "LOD hysteresis must step down after positive threshold");
+    Vec3 backCam{38_fx,0_fx,0_fx};
+    check(world::NereidWaterScene::selectedLod(
+              lodSurface,&backCam,lib::nereid::WaterSurfaceLod::Medium)==
+          lib::nereid::WaterSurfaceLod::Medium,
+          "LOD hysteresis must resist oscillation when moving back");
     lodSurface.autoLod=false;
     check(world::NereidWaterScene::selectedLod(lodSurface,&farCam)==
           lib::nereid::WaterSurfaceLod::Medium,
@@ -254,5 +269,10 @@ int main() {
       "surfaceY":2,"bottomY":1,"shape":"box","halfExtents":[1,1],
       "autoLod":true,"mediumDistance":500,"farDistance":100
     }]}})"),"reversed LOD thresholds must be rejected");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[{
+      "surfaceY":2,"bottomY":1,"shape":"box","halfExtents":[1,1],
+      "autoLod":true,"mediumDistance":30,"farDistance":40,
+      "lodHysteresis":20
+    }]}})"),"hysteresis larger than transition band must fail");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
