@@ -232,6 +232,45 @@ void editorBridge() {
     CHECK(!link.connected());
 }
 
+
+void appliedReceiptAfterRollback() {
+    auto sim=make();
+    SimSnapshot original;
+    sim->saveState(original);
+    ServerGateway gateway;
+    RemoteClient client(22288);
+    CHECK(client.begin(edit(Fixed::fromInt(29)),kEdit,4));
+    auto [c1,s1]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c1,*s1,0,2200);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    c1->close();s1->close();
+    sim->loadState(original);
+    CHECK(registry(*sim).revision==0);
+    gateway.observe(*sim);
+    auto [c2,s2]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c2,*s2,2300,3800);
+    CHECK(client.status()==ClientStatus::Conflict);
+    CHECK(registry(*sim).revision==0);
+}
+void initialRevisionProbe() {
+    auto sim=make();
+    ServerGateway gateway;
+    RemoteClient client(12555);
+    CHECK(client.requestRevision());
+    auto [c,s]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c,*s,0,800,false);
+    CHECK(client.hasRemoteRevision());
+    CHECK(client.remoteRevision()==0);
+    CHECK(!client.probingRevision());
+    CHECK(registry(*sim).revision==0);
+    CHECK(client.begin(edit(Fixed::fromInt(8)),kEdit,4));
+    drive(client,gateway,*sim,*c,*s,800,2600);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    CHECK(client.remoteRevision()==1);
+}
+
 void conflictAfterServerRestart() {
     auto sim=make();
     ServerGateway gateway;
@@ -261,6 +300,8 @@ int main() {
     duplicatedPayloadConflict();
     reconnectAndRestore();
     editorBridge();
+    initialRevisionProbe();
+    appliedReceiptAfterRollback();
     denied();
     conflictAfterServerRestart();
     std::printf("PHYSIS remote edit: %s\n",fails?"FAIL":"PASS");
