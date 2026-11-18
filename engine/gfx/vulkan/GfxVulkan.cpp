@@ -277,6 +277,11 @@ void VulkanDevice::destroyDeviceObjects() {
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    for (auto& read : textureReads_) {
+        if (read.buffer) vkDestroyBuffer(device_, read.buffer, nullptr);
+        memory_.release(read.alloc);
+    }
+    textureReads_.clear();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
     // Views must be destroyed before the parent VkImage, after device idle.
@@ -456,8 +461,35 @@ VkCommandBuffer VulkanDevice::transferCmd() {
     return s.pre;
 }
 
+void VulkanDevice::deliverTextureReads() {
+    // Completed serials are advanced only after a frame-slot fence is waited.
+    // Never touch mapped staging data while the GPU can still write to it,
+    // and never run the user's callback inside garbage collection.
+    struct Done { TextureReadFn callback; TextureReadbackResult result; };
+    std::vector<Done> ready;
+    for (size_t i=0; i<textureReads_.size();) {
+        TextureRead& r = textureReads_[i];
+        if (r.serial > completed_) { ++i; continue; }
+        TextureReadbackResult result;
+        result.format = r.format;
+        if (healthy_ && r.alloc.mapped && r.bytes) {
+            result.width = r.width;
+            result.height = r.height;
+            result.pixels.resize(r.bytes);
+            std::memcpy(result.pixels.data(), r.alloc.mapped, r.bytes);
+        }
+        if (r.buffer) vkDestroyBuffer(device_, r.buffer, nullptr);
+        memory_.release(r.alloc);
+        ready.push_back({std::move(r.callback), std::move(result)});
+        textureReads_.erase(textureReads_.begin()+ptrdiff_t(i));
+    }
+    for (auto& item : ready)
+        if (item.callback) item.callback(std::move(item.result));
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
+    deliverTextureReads();
     FrameSlot& s = slots_[size_t(slot_)];
     auto bi = vkStruct<VkCommandBufferBeginInfo>(VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

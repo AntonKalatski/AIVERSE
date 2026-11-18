@@ -562,6 +562,58 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     return {textures_.add(t)};
 }
 
+bool VulkanDevice::readTextureAsync(TextureHandle h, TextureReadbackDesc request,
+                                    TextureReadFn callback) {
+    const VTexture* texture = textures_.get(h.id);
+    if (!recording_ || inPass_ || !callback || !texture || !texture->image ||
+        texture->samples != 1 || texture->compressed || texture->depth ||
+        request.mipLevel < 0 || request.mipLevel >= texture->levels ||
+        request.arrayLayer < 0 || request.arrayLayer >= texture->layers ||
+        textureReads_.size() >= 32)
+        return false;
+    if (texture->dimension != TextureDimension::Texture2D &&
+        texture->dimension != TextureDimension::Texture2DArray &&
+        texture->dimension != TextureDimension::Cube &&
+        texture->dimension != TextureDimension::CubeArray)
+        return false;
+    if (texture->format != PixelFormat::RGBA8 &&
+        texture->format != PixelFormat::RGBA8_sRGB &&
+        texture->format != PixelFormat::RGBA16F)
+        return false;
+    const int width = std::max(1, texture->width >> request.mipLevel);
+    const int height = std::max(1, texture->height >> request.mipLevel);
+    const size_t bpp = texture->format == PixelFormat::RGBA16F ? 8u : 4u;
+    const size_t bytes = size_t(width) * size_t(height) * bpp;
+    if (!bytes || bytes > (size_t(256) << 20)) return false;
+    VkBuffer staging = VK_NULL_HANDLE;
+    Allocation allocation;
+    if (!createBufferObject(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true,
+                            staging, allocation))
+        return false;
+    VkCommandBuffer cb = slots_[size_t(slot_)].main;
+    // Each selected mip is otherwise shader-readable; transition the full
+    // array-layer range for this mip before/after the buffer copy.
+    barrierImage(cb, texture->image, false,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 1, uint32_t(request.mipLevel), uint32_t(texture->layers));
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0; // tightly packed GPU row and image pitch
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT,
+        uint32_t(request.mipLevel), uint32_t(request.arrayLayer), 1};
+    region.imageExtent = {uint32_t(width), uint32_t(height), 1};
+    vkCmdCopyImageToBuffer(cb, texture->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           staging, 1, &region);
+    barrierImage(cb, texture->image, false,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 1, uint32_t(request.mipLevel), uint32_t(texture->layers));
+    textureReads_.push_back({staging, allocation, bytes, width, height,
+                             texture->format, serial_, std::move(callback)});
+    return true;
+}
+
 void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) {
     VTexture* t = textures_.get(h.id);
     if (!t || t->samples > 1 || t->dimension != TextureDimension::Texture2D ||

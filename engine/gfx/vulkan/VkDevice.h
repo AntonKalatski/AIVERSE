@@ -150,6 +150,7 @@ public:
     PipelineHandle createPipeline(const PipelineDesc& d) override;
     void destroyPipeline(PipelineHandle h) override;
     bool copyColor(TextureHandle from, TextureHandle to) override;
+    bool readTextureAsync(TextureHandle, TextureReadbackDesc, TextureReadFn) override;
     bool gpuHealthy() const override { return healthy_; }
 
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
@@ -185,6 +186,7 @@ private:
     void collectGarbage();
     void present();
     void readBackBuffer();
+    void deliverTextureReads();
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
     VkBufferUsageFlags bufferUsage(BufferType t) const;
@@ -292,6 +294,16 @@ private:
     std::vector<FramebufferKey> framebuffers_;
     struct StagingChunk { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; size_t size = 0, used = 0; uint64_t serial = 0; };
     std::vector<StagingChunk> staging_;
+    struct TextureRead {
+        VkBuffer buffer = VK_NULL_HANDLE;
+        Allocation alloc;
+        size_t bytes = 0;
+        int width = 0, height = 0;
+        PixelFormat format = PixelFormat::RGBA8;
+        uint64_t serial = 0;
+        TextureReadFn callback;
+    };
+    std::vector<TextureRead> textureReads_;
 
     // pass state
     bool inPass_ = false, passSkipped_ = false, hdrPass_ = false;
