@@ -376,3 +376,51 @@ and expand Vulkan tests to select a nonzero array slice/mip with a
 custom sampler. Confirm GLES3 compile on Windows loader and device
 lifetime semantics, especially sampler unbinding and anisotropic
 feature query. Keep handoff and source as separate commits.
+
+## Stage 3D — Vulkan native subresource views and independent samplers (2026-11-18)
+
+**Code commit:** `0d32b65c464e1e4c768253a412fa3176f347227d`.
+**Paths:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkResources.cpp`,
+`engine/gfx/vulkan/VkDraw.cpp`,
+`engine/gfx/vulkan/GfxVulkan.cpp`.
+
+**Implemented in source:** `createTextureView` selects a validated
+mip/layer range with a real `VkImageView` matching 1D/2D/3D,
+array and cubemap dimensions. `createSampler` exposes separate
+`VkSampler` resources with filtering, address modes,
+compare op, LOD range, bias and anisotropy (enabled only when
+physical-device feature is present). `bindTextureView` overrides
+the combined image/sampler descriptor for a selected texture slot
+without affecting the legacy `setTexture` API. Parent texture
+deletion destroys all child views, and explicit view/sampler deletion
+invalidates active bindings. Native Vulkan destruction is deferred
+through the existing frame-completion queue for GPU lifetime safety.
+Device shutdown destroys extra views before parent images and
+independent samplers before the Vulkan device.
+
+**Compatibility:** Descriptor layouts unchanged (combined sampler).
+`setTexture` clears any prior view/sampler override so existing
+RTS/FPS render paths continue to use their default resources.
+No save, ECS, serialization or project content changes.
+
+**Limitations:** RHI permits view bindings for direct render passes,
+not layered render-target attachment views. No MSAA/resolve, MRT,
+storage image or async texture readback. Actual GPU feature support
+still needs validation. The Vulkan backend uses combined
+image-sampler descriptors, so separate samplers are selected by
+rebinding a view, not by an independent sampler-only command.
+
+**Verification:** GitHub code commit succeeded; native Vulkan
+compiler, Vulkan validation layers and real GPU tests: **NOT RUN**.
+The prior workflow executions were queued; do not mark green.
+Check C++ declaration/definition linkage (especially new
+`bindTextureView` override) in a native build.
+
+**Next actionable verification:** Extend
+`tests/render/vulkan_tests.cpp` to test nonzero array-layer,
+explicit mip and separate sampler bindings, then build/execute
+`aiverse_vulkan_tests` on Vulkan SDK+Lavapipe. Also test parent
+destruction invalidation and sampler destruction during a frame.
+After that, validate Metal and GL native tests, then tackle layered
+render targets/MSAA and format/importer stages.
