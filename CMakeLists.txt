@@ -2105,6 +2105,8 @@ endif()
 # Split rules files from Python tools: rules_io (read / write back) and split_rules.
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME rules_files COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/rules/test_rules.py)
+    add_test(NAME virtual_texture_pack
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/virtual_texture_pack.py)
 endif()
 
 # GPU-independent descriptor validation; a foundation for subsequent texture backends.

@@ -40,7 +40,7 @@ class VirtualTexturePackTests(unittest.TestCase):
             self.assertEqual(tuple(page[:4]), (0, 0, 0, 255))
             self.assertEqual(tuple(page[4:8]), (0, 0, 0, 255))
             self.assertEqual(tuple(page[8:12]), (30, 0, 0, 255))
-            self.assertEqual(tuple(page[4 * (4 + 2):4 * (4 + 3)]),
+            self.assertEqual(tuple(page[4 * (2 * 4 + 2):4 * (2 * 4 + 3)]),
                              (30, 40, 0, 255))
             page2 = (out / "m0/l1/x1_y1.rgba").read_bytes()
             self.assertEqual(tuple(page2[-4:]), (91, 120, 100, 255))
