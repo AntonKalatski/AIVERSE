@@ -240,6 +240,44 @@ preflight. These sources have **not** been compiled or run in this agent
 environment; Metal/GL screenshots and GPU timings are also **NOT RUN**.
 See `docs/handoffs/prisma-stage-15.md`.
 
+
+## Stage 16 — opt-in full Bloom down/up RenderGraph
+
+`AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN=1` enables an experimental full Bloom
+**Prefilter → Downsample → Upsample** graph inside `Prisma::resolve()`.
+The flag is off by default. The graph declares one external Scene input and
+external per-level down/up targets backed by the existing `Prisma::Sized`
+per-view texture cache. Every downsample reads the previous mip; each upsample
+reads the lower intermediate plus the matching down mip. All passes use the
+existing `kPrefilter`, `kDown` and `kUp` GPU shader programs, exactly
+the original size-dependent uniforms, tint/radius normalization, source
+bindings and texture formats (SDR RGBA8; HDR RGBA16F). The host creates
+the depth attachments for each output size before execution.
+
+The RHI executor now accepts an optional trailing
+`std::function<gfx::TextureHandle(PrismaGraphId)> rasterDepthForPass`.
+When supplied, that attachment replaces the shared `rasterDepth` for each
+pass; this is necessary on Metal for different Bloom mip dimensions.
+Existing Stage 14/15 executor users continue to use the previous optional
+shared depth and legacy-compatible clear defaults.
+
+**Scope/limitations:** this is real RHI graph scheduling of Bloom raster
+passes, but it is **not yet** adoption of Stage 12's transient graph pool:
+the host supplies externally cached target textures, which already persist
+per viewport. There is no automatic RHI in-flight retirement queue or
+resource barrier API. The complete graph is rebuilt on each opt-in frame,
+and `Prisma::resolve()` retains the old path as fallback when graph
+preflight fails. On any unexpected failure **after** GPU pass submission,
+the graph is not replayed (partial rendering must not be double-submitted).
+No effect outside Bloom was migrated during this stage. If both
+`AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN` and the Stage 15 prefilter-only flag
+are set, the full-chain flag takes precedence on success.
+
+New GPU-free graph tests check 1/2/4 downsample levels for SDR/HDR,
+topological order, valid binding resolution, and rejection of missing
+mip targets before pass execution. Those sources have **NOT RUN** in a
+native compiler or on a GPU; see `docs/handoffs/prisma-stage-16.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
