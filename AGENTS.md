@@ -235,6 +235,21 @@ reload), `ecsProjectileProgramStageParity`, `ecs_projectile_composition_test`,
 `fps` and `fps_transport` before merging or enabling by default.
 All these native results are currently unverified.
 
+**Critical FPS projectile single-writer rule (2026-11-18):**
+When `fps.ecsAuthority=true`, the **entire live FPS projectile lifecycle**
+(accepted weapon and grenade spawn, programmed/ordinary flight, impacts,
+smoke expiry and bomb-round reset) now writes canonical
+`ProjectileRuntime` ECS components. `fps.ecsMirror` must use
+`syncDynamicEntities(sim,true)` to derive `State::projectiles` as a
+one-way legacy/save/network representation, **never** copying stale
+State values back onto Runtime. Preserve the original
+`syncDynamicEntities(Simulation&)` overload for legacy v9 load/setup,
+which is intentionally State→Runtime. New projectile features must
+write ECS components/commands, not the State vector. Native proof is
+still required; `tests/fps/projectile_spawn.inc` includes a
+Runtime=17 / stale-State=777 mirror regression plus deep/COW save and
+round-reset fixtures.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
