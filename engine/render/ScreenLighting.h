@@ -1,6 +1,6 @@
 // Optional screen-space diffuse bounce and temporal accumulation before HDR tone mapping.
 #pragma once
-#include "PostFx.h"
+#include "Prisma.h"
 #include <algorithm>
 namespace aiverse::render {
 // Sunlit in-scattering through the sun shadow map (High post quality only). The scene's exponential
@@ -20,7 +20,7 @@ struct VolumetricLight {
 };
 class ScreenLighting : public PostProcess {
 public:
-    bool init(gfx::Device& dev, PostFx& post);
+    bool init(gfx::Device& dev, Prisma& post);
     void shutdown();
     void setEnabled(bool on) { if (enabled_ != on) reset(); enabled_ = on; }
     void setDiffuseBounceEnabled(bool on) { if(diffuseBounce_!=on){diffuseBounce_=on;reset();} }
@@ -39,7 +39,7 @@ public:
 private:
     void releaseTargets();
     gfx::Device* dev_ = nullptr;
-    PostFx* post_ = nullptr;
+    Prisma* post_ = nullptr;
     gfx::PassDesc scene_;
     gfx::TextureHandle bounce_, scatter_, history_[2], depth_;
     gfx::BufferHandle triangle_;
