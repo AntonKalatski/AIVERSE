@@ -127,6 +127,11 @@ public:
         visibilityRange_=metres;
     }
     uint32_t maxUploadsPerFrame()const{return maxUploadsPerFrame_;}
+    size_t surfaceCount()const{return slots_.size();}
+    uint64_t surfaceRevision(uint64_t id)const {
+        for(const auto& slot:slots_)if(slot.source.id==id)return slot.revision;
+        return 0;
+    }
     size_t maxEstimatedUploadBytes()const{return maxEstimatedUploadBytes_;}
     const NereidSceneStats& stats()const{return stats_;}
 
@@ -141,7 +146,8 @@ public:
                             float distance) {
         if(!s.body.enabled)return false;
         if(!observer || distance<=0)return true;
-        if(!s.useGeometry && s.body.footprint==lib::nereid::WaterFootprint::Infinite)
+        if((!s.useGeometry || !s.geometry.enabled) &&
+           s.body.footprint==lib::nereid::WaterFootprint::Infinite)
             return true;
         double minX=0,maxX=0,minZ=0,maxZ=0;
         if(s.useGeometry && s.geometry.enabled) {
