@@ -330,3 +330,49 @@ parent invalidates views, and review view handle recycling in long
 sessions. Next implement native Vulkan and GL sampler/view support;
 GL ES3/WebGL2 lacks general texture-view extensions, so report
 unsupported there rather than silently creating aliases.
+
+## Stage 3C — GL33/GLES3 independent sampler objects + identity views (2026-11-18)
+
+**Code commit:** `b945c6a6c24d571e29e31f70a7534cafca13e7ee`.
+**Paths:** `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/gl/GLApi.h`.
+
+**Implemented in source:** Windows GL33 loader gains the core 3.3
+`glGenSamplers/glDeleteSamplers/glBindSampler/glSamplerParameteri/
+glSamplerParameterf` entry points and relevant enum values.
+`GLDevice::createSampler` exposes independent min/mag/mip filtering,
+U/V/W address modes, compare function, min/max LOD and optional
+anisotropic sampling where an extension is available. Desktop-only
+LOD bias and clamp-to-border are rejected in GLES3/WebGL2.
+`bindTextureView` binds a supported identity view of the parent
+texture and an independent sampler object; legacy `setTexture`
+explicitly unbinds any prior custom sampler for predictable
+compatibility. Destroying the parent removes dependent identity views.
+
+**Portable limitation (important):** OpenGL 3.3 / GLES3 / WebGL2
+cannot provide a general subresource alias with the portable API.
+`createTextureView` therefore **only** accepts an identity view
+covering the full native mip range and all layers. Requests for
+per-face or per-mip views fail, not silently collapse to the parent.
+`supportsTextureViews()` reports false to communicate that full
+subresource views are absent, although explicit identity view handles
+are available for independent sampler binding. Full GL texture views
+would require GL 4.3 / ARB_texture_view / platform-specific support
+and separate resource allocation rules.
+
+**Compatibility:** Existing 2D texture binding still uses
+`setTexture`; its sampler reset prevents a previous explicit
+`bindTextureView` from leaking state into legacy renderer calls.
+`Texture2D` resources record actual requested mip count for
+identity-view validation. No data format, save or ECS changes.
+
+**Verification:** Source commit recorded. Windows GL loader,
+Linux GLES, Android and WebGL2 compilation: **NOT RUN**.
+Native GPU creation/bind/filter tests: **NOT RUN**.
+Do not mark backend support production-complete without these tests.
+
+**Next:** Implement native Vulkan `TextureView` + `SamplerHandle`
+with descriptor-set binding overrides and GPU-safe deferred destruction,
+and expand Vulkan tests to select a nonzero array slice/mip with a
+custom sampler. Confirm GLES3 compile on Windows loader and device
+lifetime semantics, especially sampler unbinding and anisotropic
+feature query. Keep handoff and source as separate commits.
