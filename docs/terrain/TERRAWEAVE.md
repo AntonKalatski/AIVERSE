@@ -1593,3 +1593,16 @@ changes or inner near-terrain cutout mismatches. GPU
 screenshots, builds, CTest and platform performance have
 **not been run by this agent**; testing belongs to the
 dedicated validation agent. See Stage 16 handoff.
+
+### Public world-lattice helper
+
+`makeHorizonTerrainLattice(settings,cameraXcm,cameraZcm)` is a
+reusable, genre-independent helper for third-party native
+terrain producers and offline tools. The returned
+`HorizonTerrainLattice` provides `worldX(i)` and
+`worldZ(i)` for vertex indices `0..terrainResolution`
+(and ghost indices `-1`, `N+1`) plus the nominal
+grid step. The Horizon CPU baker calls that same API.
+It avoids reimplementing camera-local rounding in other
+engine/world modules. All API and rendering tests are
+delegated to the separate test agent.
