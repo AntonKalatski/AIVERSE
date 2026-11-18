@@ -4098,3 +4098,30 @@ No passing result is claimed.
 Next: Synthetic CTest fixture covering valid layered Basis transcode,
 truncated index, mismatched topology/levels, unknown format, failure,
 callback exception and exact mip payloads. Commit source and handoff separately.
+
+## Stage 6O — KTX2 transcoder CPU contract fixture (2026-11-18)
+
+Code commit: 89c146f5b079f9a952d3001786d1f6f904671ceb.
+Branch: feature/texture-rhi-unification; Draft PR #21.
+Files: tests/render/ktx2_transcode.cpp, CMakeLists.txt.
+
+Source: register aiverse_ktx2_transcode_test / ktx2_transcode with
+the existing aiverse_models and aiverse_zstd_dec link targets.
+Synthetic KTX2 tests model two-mip twelve-face Basis data and
+verify complete mip-major output through an injected callback.
+Negative fixtures cover missing codec, callback errors/exceptions,
+payload offset pointing inside the header, truncated file index,
+unsupported supercompression, illegal faces, wrong array extent,
+truncated/oversized mip output and unknown BlockFormat enums.
+An ordinary non-Basis RGBA8 KTX2 bypasses the plugin and uses
+the standard parser. No decoder implementation is bundled.
+
+Verification performed: GitHub source + CMake commit and fast-forward
+ref update succeeded. C++ build NOT RUN; CTest NOT RUN; GPU NOT RUN.
+No verified PASS claim is made for the unexecuted fixture.
+
+Next: Ensure the focused texture verification script includes
+ktx2_transcode, then implement only a genuine licensed Basis codec
+when its dependency is available. Before approval, run a native
+build/CTest and a real GPU upload covering normal/sRGB, arrays,
+cubemaps and mip chains. Follow the per-stage separate handoff policy.
