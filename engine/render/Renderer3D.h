@@ -155,6 +155,10 @@ struct ModelDraw {
     float flash = 0;                               // additive highlight (hit feedback)
     float teamGlow = 0;                            // emission = team colour (linear) * teamGlow on team-coloured surfaces
     int variant = -1;                              // KHR_materials_variants index
+    // Optional draw-time selector for the source Primitive::material slot.
+    // -1: all primitives (default). Disables aggregate material/shadow
+    // batches for partial draws without duplicating GPU models or meshes.
+    int primitiveMaterialFilter = -1;
     uint32_t flags = 0;                            // DrawFlags (no cast / no receive shadow)
     const std::vector<NodePose>* pose = nullptr;   // morph weights (node weights when null)
     const BakedSample* baked = nullptr;            // skin from Model::baked instead of nodeWorld
