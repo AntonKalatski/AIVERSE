@@ -2135,3 +2135,12 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME vfx_graph_assets COMMAND aiverse_vfx_assets_tests)
     set_tests_properties(vfx_graph_assets PROPERTIES LABELS "SpectraFX")
 endif()
+
+
+# TerraWeave genre-independent deterministic terrain/biome/foliage core.
+# Header-only engine/world API: also usable from native project modules.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_terraweave_test tests/terraweave_test.cpp)
+    target_link_libraries(aiverse_terraweave_test PRIVATE aiverse_engine Threads::Threads)
+    add_test(NAME terraweave COMMAND aiverse_terraweave_test)
+endif()
