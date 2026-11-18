@@ -252,9 +252,9 @@ void Module::hydrateActorsFromEcs(Simulation& sim) const {
     }
 }
 
-void Module::syncDynamicEntities(Simulation& sim) const {
+void Module::syncDynamicEntities(Simulation& sim,bool projectProjectilesFromEcs) const {
     World& world = sim.world();
-    const State* current = world.resource<State>();
+    State* current = world.resource<State>();
     auto* index = world.resource<DynamicEntityIndex>();
     if (!current || !index) return;
     std::set<uint64_t> observed;
@@ -282,19 +282,66 @@ void Module::syncDynamicEntities(Simulation& sim) const {
         if (kind != 3 && world.has<VehicleRuntime>(entity)) world.remove<VehicleRuntime>(entity);
         return entity;
     };
-    uint32_t projectileOrder=0;
-    for (const Projectile& projectile : current->projectiles) {
-        const Entity entity = ensure(1, projectile.id);
-        if(config_.ecsAuthority) {
-            if(!world.has<ProjectileRuntime>(entity))world.add<ProjectileRuntime>(entity);
-            *world.tryGet<ProjectileRuntime>(entity)={projectile,projectileOrder};
+    if(config_.ecsAuthority && projectProjectilesFromEcs) {
+        // End-of-tick ECS mirror is a ONE-WAY projection for projectiles.
+        // The component is canonical: never overwrite ProjectileRuntime
+        // from State::projectiles just because a compatibility consumer
+        // retained a stale vector. Setup and v9 deserialize still use the
+        // legacy->ECS reconstruction branch below.
+        struct RuntimeRef {Entity entity;uint32_t order,id;};
+        std::vector<RuntimeRef> ordered;
+        std::set<uint32_t> uniqueIds;
+        const World& read=world;
+        read.eachExistingConst<ProjectileRuntime>(
+            [&](Entity entity,const ProjectileRuntime& runtime) {
+                if(!read.alive(entity))return;
+                if(!runtime.value.id || !uniqueIds.insert(runtime.value.id).second)
+                    throw std::logic_error("FPS ECS duplicate/zero projectile ID at mirror");
+                ordered.push_back({entity,runtime.order,runtime.value.id});
+            });
+        std::sort(ordered.begin(),ordered.end(),
+            [](const RuntimeRef& a,const RuntimeRef& b) {
+                return a.order!=b.order ? a.order<b.order : a.id<b.id;
+            });
+        std::vector<Projectile> projected;
+        projected.reserve(ordered.size());
+        for(const RuntimeRef& item:ordered) {
+            const auto* runtime=read.tryGetConst<ProjectileRuntime>(item.entity);
+            if(!runtime)throw std::logic_error("FPS ECS projectile missing at mirror");
+            const Projectile& projectile=runtime->value;
+            const uint64_t key=(uint64_t(1)<<32)|projectile.id;
+            observed.insert(key);
+            auto [it,inserted]=index->byKey.emplace(key,item.entity);
+            if(!inserted && world.alive(it->second) && !(it->second==item.entity))
+                throw std::logic_error("FPS ECS projectile index conflict at mirror");
+            it->second=item.entity;
+            if(!world.has<ProjectileEntity>(item.entity))
+                world.add<ProjectileEntity>(item.entity);
+            *world.tryGet<ProjectileEntity>(item.entity)={
+                projectile.id,projectile.owner,projectile.kind,
+                projectile.pos,projectile.velocity,projectile.damage
+            };
+            projected.push_back(projectile);
         }
-        ++projectileOrder;
-        if (!world.has<ProjectileEntity>(entity)) world.add<ProjectileEntity>(entity);
-        *world.tryGet<ProjectileEntity>(entity) = {
-            projectile.id, projectile.owner, projectile.kind,
-            projectile.pos, projectile.velocity, projectile.damage
-        };
+        current->projectiles=std::move(projected);
+    } else {
+        // Legacy/default source-of-truth and v9 load migration.
+        uint32_t projectileOrder=0;
+        for (const Projectile& projectile : current->projectiles) {
+            const Entity entity=ensure(1,projectile.id);
+            if(config_.ecsAuthority) {
+                if(!world.has<ProjectileRuntime>(entity))
+                    world.add<ProjectileRuntime>(entity);
+                *world.tryGet<ProjectileRuntime>(entity)={projectile,projectileOrder};
+            }
+            ++projectileOrder;
+            if(!world.has<ProjectileEntity>(entity))
+                world.add<ProjectileEntity>(entity);
+            *world.tryGet<ProjectileEntity>(entity)={
+                projectile.id,projectile.owner,projectile.kind,
+                projectile.pos,projectile.velocity,projectile.damage
+            };
+        }
     }
     uint32_t lootOrder=0;
     for (const Loot& loot : current->loot) {
@@ -489,7 +536,7 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
     sim.addSystem("fps.ecsMirror",[this](Simulation& s){
         syncActorEntities(s);
-        syncDynamicEntities(s);
+        syncDynamicEntities(s,config_.ecsAuthority);
         if (!config_.ecsAuthority) return;
         // Migration invariant: after the commit barrier, the complete legacy
         // workspace actor must match its authoritative ECS payload.
