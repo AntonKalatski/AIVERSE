@@ -38,7 +38,7 @@ public:
     }
 
     // A missing profile is valid; bad data leaves both runtime and cache untouched.
-    bool load(UserId user,lib::gameplay::enhanced::InputSystem& input,
+    bool load(UserId user,lib::gameplay::inputflow::InputFlow& input,
               std::string* error=nullptr) {
         std::error_code ec;
         const auto file=path(user);
@@ -46,21 +46,21 @@ public:
         if(ec)return detail::inputFileError(error,ec.message());
         if(!exists){profiles_[user]={};return true;}
         Profile loaded;
-        lib::gameplay::enhanced::InputSystem staged=input;
+        lib::gameplay::inputflow::InputFlow staged=input;
         if(!loadProfileFile(file,loaded,error) || !applyProfile(staged,loaded,error))return false;
         input=std::move(staged);
         profiles_[user]=std::move(loaded);
         return true;
     }
 
-    bool rebind(UserId user,lib::gameplay::enhanced::InputSystem& input,
+    bool rebind(UserId user,lib::gameplay::inputflow::InputFlow& input,
                 const std::string& context,std::uint64_t id,
-                lib::gameplay::enhanced::Control control,
-                lib::gameplay::enhanced::RebindPolicy policy=
-                    lib::gameplay::enhanced::RebindPolicy::Swap,
+                lib::gameplay::inputflow::Control control,
+                lib::gameplay::inputflow::RebindPolicy policy=
+                    lib::gameplay::inputflow::RebindPolicy::Swap,
                 std::string* error=nullptr) {
-        using System=lib::gameplay::enhanced::InputSystem;
-        using Policy=lib::gameplay::enhanced::RebindPolicy;
+        using System=lib::gameplay::inputflow::InputFlow;
+        using Policy=lib::gameplay::inputflow::RebindPolicy;
         const auto* original=input.context(context);
         if(!original)return detail::inputFileError(error,"unknown context");
         System staged=input;
@@ -89,8 +89,8 @@ public:
         return true;
     }
 
-    bool reset(UserId user,lib::gameplay::enhanced::InputSystem& input,
-               const lib::gameplay::enhanced::InputSystem& projectDefaults,
+    bool reset(UserId user,lib::gameplay::inputflow::InputFlow& input,
+               const lib::gameplay::inputflow::InputFlow& projectDefaults,
                std::string* error=nullptr) {
         Profile empty;
         if(!saveProfileFile(path(user),empty,error))return false;
