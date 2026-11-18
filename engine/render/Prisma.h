@@ -3,6 +3,7 @@
 // PostFx.h and PostFx.cpp remain as implementation/compatibility files.
 // Serialized "postfx" and editor "postfx_*" operations are intentionally stable.
 #include "PostFx.h"
+#include "PrismaVolumes.h"
 
 namespace aiverse::render {
 using PrismaSettings = PostFxSettings;
