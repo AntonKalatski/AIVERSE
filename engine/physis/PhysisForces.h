@@ -43,9 +43,17 @@ inline ForceResult evaluateForces(const World& world, const ForceReceiver& recei
     const Fixed mass = fxClamp(receiver.massKg, Fixed{}, Fixed::fromInt(100000));
     out.gravityAcceleration = gravityAt(world, receiver.position);
     out.windVelocity = windWithStormsAt(world, receiver.position);
-    const Vec3 relative = out.windVelocity - receiver.velocity;
-    const Fixed speedSq = relative.lengthSq();
-    const Fixed speed = fxClamp(fxSqrt(speedSq), Fixed{}, Fixed::fromInt(200));
+    // Fixed-point squared length must not see untrusted/unbounded velocity.
+    // Clamp individual source components *before* subtraction and squaring:
+    // max |relative| <= 400 m/s per axis, well inside Q47.16 multiplication.
+    const Fixed velocityCap = Fixed::fromInt(200);
+    const auto bounded = [velocityCap](Vec3 v) {
+        return Vec3{fxClamp(v.x, -velocityCap, velocityCap),
+                    fxClamp(v.y, -velocityCap, velocityCap),
+                    fxClamp(v.z, -velocityCap, velocityCap)};
+    };
+    const Vec3 relative = bounded(out.windVelocity) - bounded(receiver.velocity);
+    const Fixed speed = fxMin(fxSqrt(relative.lengthSq()), velocityCap);
     const Fixed cd = fxClamp(receiver.dragCoefficient, Fixed{}, Fixed::fromInt(10));
     const Fixed area = fxClamp(receiver.areaSqMeters, Fixed{}, Fixed::fromInt(1000));
     const Fixed density = fxClamp(receiver.airDensity, Fixed{}, Fixed::fromInt(10));
