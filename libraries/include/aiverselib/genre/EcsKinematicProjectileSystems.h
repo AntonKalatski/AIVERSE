@@ -45,12 +45,13 @@ inline bool advanceKinematicPursuit(Vec3& position,Vec3 destination,
 // The arrived bit distinguishes a hit from a projectile that merely timed out.
 inline bool stepKinematicProjectile(KinematicProjectileComponent& shot) {
     if(!shot.alive || shot.duration==0 || shot.duration>100000 ||
-       shot.elapsed>shot.duration)return false;
+       shot.elapsed>shot.duration ||
+       (shot.mode==KinematicMotionMode::Pursuit &&
+        shot.distancePerTick<=Fixed{}))return false;
     shot.arrived=false;
     if(shot.elapsed==shot.duration){shot.alive=false;return true;}
     ++shot.elapsed;
     if(shot.mode==KinematicMotionMode::Pursuit) {
-        if(shot.distancePerTick<=Fixed{})return false;
         shot.arrived=advanceKinematicPursuit(shot.position,shot.destination,
                                             shot.distancePerTick);
     } else {
