@@ -1478,3 +1478,67 @@ or a depth-aware geomorph. It is unverified on
 real render backends. The user assigned all
 CMake/CTest, GPU screenshots and performance
 testing to a separate agent.
+
+## Stage 15 — opaque far-ground ownership during Horizon transitions
+
+The previous Horizon crossfade blended **two entire combined
+terrain+canopy models**. On overlapping coarse ground grids
+this could cause semi-transparent terrain to double-composite,
+incorrect depth ordering or Z-fighting.
+
+Now `render::ModelDraw::primitiveMaterialFilter` is an optional
+**engine-generic source material selector** (`-1` default,
+`0` only source material 0, `1` only source material 1).
+The standard `Renderer3D::drawModel` skips unrelated
+`Primitive` entries, disabling aggregate material/shadow
+batches and static-cache acceleration only for these
+filtered calls. All ordinary unfiltered model submissions
+keep their existing batching, LOD and shadow logic. The new
+field is placed at the end of `ModelDraw` to preserve
+source compatibility with positional aggregate initializers.
+
+Horizon has two established material slots in one GPU
+model: **0 = distant terrain**, **1 = canopy cluster cards**.
+During short `regionTransitionMs` crossfades:
+
+1. Submit **incoming** terrain only, opaque, once, with
+   `primitiveMaterialFilter=0`. It writes the depth surface.
+2. Submit **outgoing** canopy material 1 at alpha `1 - t`
+   through the existing transparent pass.
+3. Submit **incoming** canopy material 1 at alpha `t`
+   through that same pass.
+4. Once the fade is over, go back to one full combined
+   model draw with filter `-1`.
+
+The GPU model is **not copied or split into multiple GPU
+allocations**; draw calls reuse its existing buffers and
+texture atlas. Temporarily drawing two forest materials
+costs two transparent model submissions plus one opaque
+ground submission. Shadow/light-bake capture is skipped
+for partial transient draws. This is still alpha
+blending and may show canopy sorting artifacts, but it
+prevents simultaneous semi-transparent far-ground meshes.
+
+Navigation also supports direct A→B→A reversal during
+the fade: the old region is reclaimed from its temporary
+transition slot rather than being evicted by an
+over-subscribed LRU. When camera teleporting far outside
+the current region's safe footprint, an obsolete proxy
+is not submitted while the async worker prepares
+the replacement, even on low-memory devices whose
+`maxCachedRegions=0`.
+
+Remaining functional/visual caveats:
+- Far terrain changes instantly (instead of crossfading
+  its geometry). Large mountain skyline changes may
+  still pop at a region boundary.
+- Transparent canopy cards may intersect/sort poorly;
+  real Metal/GL/Vulkan recordings are needed to decide
+  whether shared shader-driven dither is worthwhile.
+- The safe-footprint teleport gate may temporarily leave
+  no horizon when a new region is not ready. This is
+  preferable to drawing a distant proxy around a
+  camera tens of kilometres away.
+- All compilation, CTest, GPU validation and FPS
+  measurements belong to the separate test agent;
+  code is currently **NOT RUN / UNVERIFIED**.
