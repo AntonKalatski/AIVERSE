@@ -222,7 +222,7 @@ void testGroupRotationAndScale() {
     CHECK(doc.revision==stableRev && read(doc)==after);
     CHECK(!transformFields(doc,{wind,storm},0,0,0,0,-1,&error));
     CHECK(doc.revision==stableRev && read(doc)==after);
-    CHECK(!transformFields(doc,{wind,storm},0,0,0,0,100,&error));
+    CHECK(!transformFields(doc,{wind,storm},0,0,0,0,0.001,&error));
     CHECK(doc.revision==stableRev && read(doc)==after);
 }
 void testFpsAndDuplicateIds() {

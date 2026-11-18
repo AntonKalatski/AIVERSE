@@ -21,6 +21,8 @@ struct PhysisFieldEditorState {
     bool draggingRadius = false;
     bool snapEnabled = false;
     float snapStepMeters = 5.f;
+    float groupYawDegrees = 0.f;
+    float groupUniformScale = 1.f;
     int gizmoMode = 0; // 0: translate, 1: radius
     double dragRawY = 0;
     std::string selectedId;
@@ -569,6 +571,32 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
             setPhysisFieldSelection({});
     }
     ImGui::EndDisabled();
+
+    if (!state.selectedIds.empty()) {
+        ImGui::Separator();
+        ImGui::TextDisabled("Поворот и размер зон вокруг активного маркера");
+        ImGui::DragFloat("Поворот вокруг Y, град##physisGroup",
+                         &state.groupYawDegrees,1.f,-360.f,360.f,"%.1f");
+        ImGui::DragFloat("Масштаб геометрии##physisGroup",
+                         &state.groupUniformScale,0.01f,0.01f,20.f,"%.2f");
+        if (ImGui::Button("Применить к выбранным##physisGroup")) {
+            std::string collection;
+            std::size_t index=0;
+            Json active;
+            if (findField(read(ed.doc()),state.selectedId,collection,index,&active) &&
+                active["center"].isArray() && active["center"].size()==3) {
+                const auto& pivot=active["center"];
+                if (transformFields(ed.doc(),state.selectedIds,
+                     pivot[0].toDouble(),pivot[1].toDouble(),pivot[2].toDouble(),
+                     double(state.groupYawDegrees),double(state.groupUniformScale),
+                     &state.error)) {
+                    state.draftId.clear();
+                    state.error.clear();
+                }
+            } else state.error="PHYSIS group pivot field not found";
+        }
+        ImGui::TextDisabled("Меняются позиции и размеры полей, но не скорости и силы.");
+    }
     if (!state.error.empty()) ui::toneText(ui::Tone::Error,"%s",state.error.c_str());
 
     if (ImGui::BeginChild("##physisFields",ImVec2(0,140),ImGuiChildFlags_Borders)) {
