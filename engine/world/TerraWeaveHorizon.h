@@ -30,7 +30,9 @@ struct HorizonSettings {
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
     uint32_t crownDetail = 2;         // 1..3 CPU-only crown silhouette quality
     uint32_t orientationViews = 1;    // 1 cheap shared, 2 orthogonal canopy projections
-    uint32_t maxCachedRegions = 2;    // 0=disable, 1..4 recent CPU atlases; no extra GPU models
+    uint32_t maxCachedRegions = 2;    // 0=disable, 1..4 recent CPU atlases
+    uint32_t maxCachedGpuRegions = 1; // 0=disable, 1..3 additional GPU-resident regions
+    uint32_t gpuCacheBudgetMiB = 32;  // hard LRU allowance for cached models, not active/staging
     int32_t regionHysteresisCm = 3200; // camera must pass cell edge by this margin
     int32_t nearBlendCm = 6000;       // masked silhouette fade-in before near trees end
     int32_t tierBlendCm = 16000;      // stochastic mid-to-far overlap around 1 km
@@ -134,7 +136,9 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.terrainResolution>96 || s.canopyHeightCm<100 ||
         s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3 ||
         (s.orientationViews!=1 && s.orientationViews!=2) ||
-        s.maxCachedRegions>4 || s.regionHysteresisCm<0 ||
+        s.maxCachedRegions>4 || s.maxCachedGpuRegions>3 ||
+        s.gpuCacheBudgetMiB<8 || s.gpuCacheBudgetMiB>96 ||
+        s.regionHysteresisCm<0 ||
         s.regionHysteresisCm>=s.middleTileCm/2 ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
         int64_t(s.nearBlendCm)>s.middleForestEndCm-s.closeForestEndCm ||
@@ -170,6 +174,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
             settings.terrainResolution=16;
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
+            settings.maxCachedGpuRegions=0;
             settings.regionHysteresisCm=4800;
             break;
         case HorizonQualityPreset::Mobile:
@@ -177,6 +182,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
             settings.terrainResolution=24;
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
+            settings.maxCachedGpuRegions=0;
             settings.regionHysteresisCm=4000;
             break;
         case HorizonQualityPreset::Balanced:
@@ -187,6 +193,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
             settings.crownDetail=3;
             settings.orientationViews=2;
             settings.maxCachedRegions=2;
+            settings.maxCachedGpuRegions=2;
             break;
         default:
             throw std::invalid_argument("TerraWeave Horizon quality preset");
