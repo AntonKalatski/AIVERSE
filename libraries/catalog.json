@@ -2593,6 +2593,28 @@
       "packageDependencies": [
         "inventory"
       ]
+    },
+    {
+      "id": "ecs-impact-queue",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsImpactQueueSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-impact-queue/SKILL.md",
+      "summary": "Composable ECS ordered impact resolution stage with bounded rollback-owned request queue, stable sequence IDs and host-injected direct/on-hit/splash policies",
+      "notes": "Opt-in separately scheduled impact barrier. Callback-submitted requests execute on next invocation. Existing RTS immediate per-projectile damage and FPS hit paths must not be switched until real save/checksum/rollback parity is proven.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_impact_queue",
+      "dependencies": [
+        "tests/ecs_cross_genre_impact_queue_test.cpp",
+        "docs/ecs-all-features-migration-plan.md",
+        "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-ordered-impact"
+      ]
     }
   ]
 }
