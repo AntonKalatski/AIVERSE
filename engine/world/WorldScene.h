@@ -1,6 +1,7 @@
 #pragma once
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/world/NereidWaterScene.h"
 
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
@@ -11,6 +12,9 @@ public:
     void update(gfx::Device&,std::span<const Vec3> observers,int radius=2);
     void draw(render::Renderer3D&,Cell renderOrigin,int originCellSize);
     void shutdown(gfx::Device&);
+    // Opt-in presentation-only water; call before update. Never mutates ECS.
+    void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
+    size_t nereidVisibleSurfaceCount()const;
     const AsyncChunkStream::Status& status()const{return stream_->status();}
 private:
     struct Instance { size_t model=0;render::mat4 transform; };
@@ -29,6 +33,7 @@ private:
     size_t uploadBytes_=16*1024*1024;
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;
+    NereidWaterScene nereidWater_;
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);
 };
 }
