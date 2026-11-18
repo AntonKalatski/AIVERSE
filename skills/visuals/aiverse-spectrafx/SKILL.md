@@ -146,6 +146,33 @@ not prove Metal parity, timing or performance. The stage-12 source
 tests and workflows have not run to confirmed success in this
 execution context. Preserve per-stage handoffs.
 
+## Dense Metal billboard gather (Stage 13 — unverified)
+
+The optional `spectra::ComputeParticles` Metal subset now uses a
+**CPU-published live-slot index buffer** plus an MSL compute gather
+to emit **contiguous GPU vertices**. Regular RHI draw count becomes
+`stats().alive * 6` indices instead of the physical-pool high-water
+mark. Earlier Stage-12 text about `submittedSlots` including dead
+holes is superseded: `stats().submittedSlots` now counts **actual
+dense GPU quads** and matches `alive` after a successful step.
+
+The CPU owns only particle-slot lifespan bookkeeping and uploads
+4 bytes per live slot each frame; particle movement and vertex
+construction remain GPU-resident, with no GPU→CPU readback.
+This is **not GPU-side prefix-sum/atomic compaction** and not
+GPU-authored indirect draw. Do not claim their performance benefits.
+The RHI bind contract now uses compute storage slot **4** for
+`liveSlots` and `Uniforms.meta.w` for the post-step alive count.
+Stage 13 changes MSL and GLSL sources, the GPU emitter and recording
+RHI tests; real Metal shader compilation and visuals are **NOT RUN**.
+
+Keep the GPU path opt-in and restricted to the strict
+`GraphRuntime::inspectGraphGpuEligibility` subset. All other
+graphs retain their full CPU effects. To verify locally, run
+`aiverse_vfx_gpu_tests`, all `ctest -L SpectraFX` tests, then
+real Apple Silicon compute/render/readback smoke with staggered
+births and expirations. Continue the mandatory handoff log.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
