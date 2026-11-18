@@ -47,8 +47,12 @@ horizonSceneFromManifest(
         j,"distantTileCm",settings.distantTileCm,1000,400000));
     settings.distantTilesPerSide=static_cast<uint32_t>(worldInteger(
         j,"distantTilesPerSide",settings.distantTilesPerSide,4,32));
+    // Align the handover with the actual detail-forest radius, avoiding
+    // an uncovered annulus when both optional modules are enabled.
+    const int32_t nearForestEnd = forest ?
+        forest->settings().view.cullRangeCm : settings.closeForestEndCm;
     settings.closeForestEndCm=static_cast<int32_t>(worldInteger(
-        j,"closeForestEndCm",settings.closeForestEndCm,0,10000000));
+        j,"closeForestEndCm",nearForestEnd,0,10000000));
     settings.middleForestEndCm=static_cast<int32_t>(worldInteger(
         j,"middleForestEndCm",settings.middleForestEndCm,0,10000000));
     settings.terrainBeginCm=static_cast<int32_t>(worldInteger(
@@ -59,6 +63,12 @@ horizonSceneFromManifest(
         j,"atlasTilePixels",settings.atlasTilePixels,16,64));
     settings.canopyHeightCm=static_cast<int32_t>(worldInteger(
         j,"canopyHeightCm",settings.canopyHeightCm,100,10000));
+    settings.crownDetail=static_cast<uint32_t>(worldInteger(
+        j,"crownDetail",settings.crownDetail,1,3));
+    settings.nearBlendCm=static_cast<int32_t>(worldInteger(
+        j,"nearBlendCm",settings.nearBlendCm,0,10000000));
+    settings.tierBlendCm=static_cast<int32_t>(worldInteger(
+        j,"tierBlendCm",settings.tierBlendCm,0,10000000));
     settings.distantTerrain=j.getBool("distantTerrain",true);
     terraweave::validateHorizonSettings(settings);
     return std::make_unique<terraweave::TerraWeaveHorizonScene>(
