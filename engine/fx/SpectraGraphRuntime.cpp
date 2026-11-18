@@ -9,6 +9,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.capacity=options.capacity;
     result.gpu.quality=options.quality;
     result.gpu.backend=options.preference;
+    result.gpu.gpuIndirect=options.gpuIndirect;
 
     const auto reject=[&](const char* why) {
         result.reason=why;
