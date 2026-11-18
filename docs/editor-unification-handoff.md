@@ -1757,3 +1757,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Replaced all 13 occurrences preserving the original boolean predicate: `shared.unique()` => `(shared.use_count() == 1)`, `!shared.unique()` => `(shared.use_count() != 1)`. This retains the previous behavior for empty handles and same single-owner vs shared-owner decisions. No gameplay component schema, save, network wire or scheduler changes.
 - Verified by source transformation count: exactly 13 expressions replaced and zero `.unique()` occurrences remain in `engine/core/ECS.h`. **No native compilation or test run in this environment**; user's Mac build is the next verification step.
 - Rebuild from branch: `git pull --ff-only origin feature/universal-entity-inspector-fps` then `cmake --build build/ecs-test --parallel 4 --target aiverse_fps_tests aiverse_ecs_projectile_composition_test aiverse_ecs_hitscan_resolution_test`. Run `ctest --test-dir build/ecs-test --output-on-failure -R '^(fps|ecs_projectile_composition_test|ecs_hitscan_resolution_test)$'` when compile succeeds.
+
+
+### 2026-11-18 — Direct ECS projectile round-reset cleanup declaration
+- **Implementation SHA:** `957fdd8d4e329df855b0aca59cbca474c12a7dba`.
+- Added `Module::clearProjectiles(Simulation&)` declaration to `modules/fps/FpsModule.h`, intended to remove authoritative `ProjectileRuntime` ECS entities synchronously at bomb-round reset rather than leaving stale entities until `fps.ecsMirror`. The default legacy path must retain its existing vector reset behavior.
+- **Verification:** declaration committed; definition + actual call are pending. **Native compilation not yet performed**. Next implementation must keep stable Entity destroy/source ID ordering and v9 compatibility.
