@@ -604,3 +604,34 @@ before calling this stage validated.
 - Next: connect these project assets to optional FPS visual actions
   (shot/reload/death) using confirmed replicated actor state, still cosmetic;
   preserve existing fallback and handle actor lifecycle cleanup.
+
+## Stage 31 — explicit every-stage agent continuity rule (2026-11-18)
+
+- Branch: `feature/universal-ecs-animation-pipeline`, draft PR #22
+  targeting `feature/universal-entity-inspector-fps`.
+- Implementation / policy commit: `e0c15721f97f90a074bc20971c36f590a0492d99`.
+- Changed file: `AGENTS.md` only. Its active animation section now specifies
+  that **every** code/editor/tool/performance stage, including partial or
+  failing work, must be followed by a **separate committed handoff** in
+  `docs/agent-handoffs/animation-universal.md` BEFORE another stage begins.
+  Every handoff must contain exact code SHA, branch, affected files, behavior
+  and design, public API / asset / save compatibility, exact test status,
+  unfinished work/risks and the next agent's concrete first task.
+- Existing Stage 25 **already** documents FPS baked-crowd and
+  significance-budget integration (`3b452909ae88077cdf5869a166aaa0837b1545af`);
+  earlier Stages 24–30 are retained, not rewritten.
+- API/runtime/save changes: none; this stage is process documentation only.
+- Tests: **NOT RUN** (documentation-only change; user requested to defer
+  animation tests). CI passes are not asserted.
+- Current feature checkpoint: latest substantive code from Stage 30,
+  `09ea93e785c195195039944d675feccdcfbb9214`, provides the shared
+  Montage asset compiler `AnimationAssetLoader.h`. Existing Stage 30
+  lists its limitations and deferred test `animation_montage_asset_loader`.
+- **Next actionable stage for another agent:** inspect
+  `libraries/include/aiverselib/animation/AnimationAssetLoader.h`,
+  `apps/fps/client.cpp`, and `docs/fps.md`; integrate optional authored
+  Montage assets for cosmetic FPS shot/reload/death sequences driven by
+  replicated authoritative state. Avoid double-firing cosmetic events,
+  preserve cube/palette/baked fallbacks and remote-actor lifecycle cleanup.
+  Add a focused test fixture, do not claim test success before execution,
+  commit code first and append a Stage 32 handoff in a separate commit.
