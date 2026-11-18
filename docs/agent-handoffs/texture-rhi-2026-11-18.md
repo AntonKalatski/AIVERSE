@@ -1643,3 +1643,31 @@ validation **NOT RUN**. No passing CI claim.
 Vulkan; verify row/slice pitch with actual GPU readback.
 Then extend typed color render targets and remaining
 integer/depth formats only after building and testing.
+
+## Stage 5G — canonical typed/compressed texture documentation and test commands (2026-11-18)
+
+**Documentation commit:** `9bb6fd6fd5d1ecd1cb09f02241c0efe7831c9a9e`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Changed:** `docs/texture-rhi.md`.
+
+**Documentation changes:** Update actual source-stage status to
+include the later DDS and typed-format work, describe native
+BC4/BC5/EAC R11 with safe compressed mip/face validation,
+RG8/R16F/RG16F/R32F/RG32F sampled-only scope, manual
+mip upload, and float32 nearest filtering. Clarify remaining
+integer/packed/HDR targets, Basis transcoding, MSAA, streaming
+and WebGL/Android/desktop GPU gaps. Add exact CMake/CTest
+commands for the five texture-focused CPU tests and Vulkan
+backend integration tests, including real GPU-vs-skipped
+distinction.
+
+**Verification:** GitHub documentation commit completed.
+No source C++ files changed in this stage.
+Native builds, tests and GPU execution **NOT RUN**;
+CI completion not confirmed. Do not infer production readiness.
+
+**Next:** On a native checkout, run listed targeted
+CMake/CTest commands and write actual outcomes here.
+Fix any compiler/API/test failures before merging.
+Then implement remaining GL/Vulkan MSAA and typed/HDR
+formats, each with separate code/handoff commits.
