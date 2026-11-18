@@ -1569,3 +1569,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `ecsProjectileBranchAuthorityParityCase(bool cow)` and runner to `tests/fps/projectiles.inc`: a real 4-player FPS shot uses the existing split/damage/flyThrough modifier chain, compares default State and `ProjectileRuntime` ECS-authoritative simulation on every tick, checks `DynamicEntityIndex`, stable `ProjectileRuntime.order` and ID, branch allocation (`nextObject`), final health, v9 save cross-loading and replay from a pre-flight deep/COW snapshot with identical ECS generations/order.
 - **Verification:** test source committed only; not yet invoked by `aiverse_fps_tests`, **native compilation and assertions unverified**. The expected 90 HP for each target comes from the pre-existing legacy FPS projectile-program fixture; validate execution.
 - **Next:** add test entrypoint to FPS suite and verify C++ compilation, COW + save/network replay.
+
+
+### 2026-11-18 — FPS ECS branch split parity fixture enabled in test main
+- **Code SHA:** `4374480daacdc1beb69bd531287dd4f131822bc5`.
+- Updated `tests/fps/tests.cpp` to invoke `ecsProjectileBranchAuthorityParity()` after the existing `ecsProjectileProgramStageParity()` fixture. Native FPS tests now cover real programmed branch-spawn ordering, `ProjectileRuntime` source ownership, Entity identity/index, v9 cross-loading and deep/COW rollback by source.
+- **Verification:** GitHub update only, **native compilation/CTest/assertions not yet executed**. Continue with static code review, then native build, FPS/RTS save and transport tests before merge.
