@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace aiverse;
@@ -61,7 +62,7 @@ int main(int argc,char** argv) {
         AnimChannel c;c.node=0;c.times={0,1};c.values={0,0,0,1,0,0};
         clip.channels.push_back(c);model.clips.push_back(clip);
         const Json graphDef=ik?Json::parse(R"({
-            "parameters":{"target":[.5,1.7,0]},
+            "parameters":{"target":[0.5,1.7,0]},
             "nodes":[{"id":"move","kind":"clip","clip":"Move"},
               {"id":"ik","kind":"rig","input":"move","units":[{
                 "op":"fullBodyIK","bone":"root",
