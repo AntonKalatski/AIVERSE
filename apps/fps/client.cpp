@@ -52,6 +52,15 @@ struct App {
     // Universal engine View receives generic renderer packets from FPS.
     // Server/net/player semantics remain entirely in this host adapter.
     ::aiverse::View genericSceneView;
+    void drawSceneMesh(const render::mat4& world,render::float4 color,
+                       uint32_t flags=0) {
+        ::aiverse::view::MeshObject packet;
+        packet.mesh=&cube;
+        packet.world=world;
+        packet.color=color;
+        packet.flags=flags;
+        genericSceneView.submitMesh(renderer,packet);
+    }
     // Client-only visual ECS: never add float poses to the authoritative FPS Simulation.
     World characterPresentation;
     std::unique_ptr<render::Model> characterModel;
@@ -556,7 +565,7 @@ struct App {
             (void)cell;
             auto base=Vec3{(b.min.x+b.max.x)/2,b.min.y,(b.min.z+b.max.z)/2};
             auto transform=render::mat4::translate(visual(world::relativeTo(base,origin,32)))*render::mat4::scale(visual(b.max-b.min));
-            renderer.drawMesh(cube,transform,{0.4f,0.46f,0.5f,1});
+            drawSceneMesh(transform,{0.4f,0.46f,0.5f,1});
         }
         Vec3 extent{600_fx,600_fx,600_fx};
         for(auto id:geometry.query({actor.pos-extent,actor.pos+extent})) {
@@ -565,7 +574,7 @@ struct App {
             // Draw relative to the observer before converting coordinates to floating point.
             auto base=Vec3{(b.min.x+b.max.x)/2,b.min.y,(b.min.z+b.max.z)/2};
             auto transform=render::mat4::translate(visual(world::relativeTo(base,origin,32)))*render::mat4::scale(visual(b.max-b.min));
-            renderer.drawMesh(cube,transform,id==1?render::float4{0.18f,0.23f,0.22f,1}:render::float4{0.4f,0.46f,0.5f,1});
+            drawSceneMesh(transform,id==1?render::float4{0.18f,0.23f,0.22f,1}:render::float4{0.4f,0.46f,0.5f,1});
         }
         for(const auto& remote:client->snapshot().actors)
             if(remote.slot!=actor.slot &&
@@ -617,10 +626,10 @@ struct App {
             }
             if(!animated) {
                 auto transform=render::mat4::translate(position)*render::mat4::scale({0.6f,float(fps::stanceHeight(remote,config.motor).toDouble()),0.6f});
-                renderer.drawMesh(cube,transform,remote.team==actor.team?render::float4{0.1f,0.5f,0.9f,1}:render::float4{0.9f,0.2f,0.1f,1});
+                drawSceneMesh(transform,remote.team==actor.team?render::float4{0.1f,0.5f,0.9f,1}:render::float4{0.9f,0.2f,0.1f,1});
             }
         }
-        auto box=[&](Vec3 pos,render::float3 size,render::float4 color){renderer.drawMesh(cube,render::mat4::translate(visual(world::relativeTo(pos,origin,32)))*render::mat4::scale(size),color);};
+        auto box=[&](Vec3 pos,render::float3 size,render::float4 color){drawSceneMesh(render::mat4::translate(visual(world::relativeTo(pos,origin,32)))*render::mat4::scale(size),color);};
         for(const auto& loot:client->snapshot().loot)box(loot.pos,{0.35f,0.35f,0.35f},{0.9f,0.75f,0.15f,1});
         for(const auto& v:client->snapshot().vehicles)if(v.health>0)box(v.pos,{2,1.4f,4},{0.2f,0.5f,0.25f,1});
         for(const auto& projectile:client->snapshot().projectiles){

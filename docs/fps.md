@@ -385,3 +385,15 @@ confirmed replicated animation-action history across backend
 changes, so shot/reload/death cosmetics do not replay. The
 transition still cannot preserve arbitrary controller blends or
 motion-matching state and remains limited to simple clips.
+
+### Engine View for models and primitives
+
+The FPS reference client maps both animated models and ordinary
+scene meshes (cube fallback actors, collider debug shapes, world boxes)
+to the shared **genre-independent** `aiverse::View`.
+The renderer still receives the same world transforms, color and
+draw flags: `View::submitOne` for ModelDraw and
+`View::submitMesh` for simple Mesh packets. No FPS state is ever
+read by the core View, and a missing animated character continues
+to fall back to the visible cube.
+
