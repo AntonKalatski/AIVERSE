@@ -183,3 +183,36 @@ genre's collision data. Use the optional generic ForestScene hooks:
 See `docs/terrain/TERRAWEAVE.md` and the latest
 `docs/terrain/AGENT_HANDOFF.md` stage. Verify on real scenes
 before claiming trees match ground physics.
+
+
+## Authored WorldScene terrain + persistent tree state (Stage 6)
+
+- When a forest is hosted by `WorldScene` with the optional
+  `terraweaveForest` block, the world-streamed authored
+  `ChunkCollision::terrain` samples are converted to integer cm and
+  interpolated along the **same diagonal** as its actual physics
+  terrain triangles by `AuthoredWorldHeightSnapshot`. Do not
+  re-interpolate a bilinear heightfield for forest positions.
+- `WorldScene::update` publishes one immutable snapshot of resident
+  authored height tiles and collision box footprints through
+  `forest.setLandscapeSources(height, mask)`. That single operation
+  invalidates async work once and preserves previously published
+  snapshots through shared ownership for pending worker jobs.
+  An absent/unloaded tile falls back to procedural TerraWeave height;
+  document potential seam/pop when streaming.
+- Collision boxes are projected to XY-free world X/Z exclusion
+  footprints. `FoliageExclusionMask` uses 64 m buckets for building
+  rectangles; roads/water/polygons still use their existing policies.
+  Standalone `setPlacementMask` is now applied even when no other
+  callback is provided, in both sync and async scatter paths.
+- Gameplay interactions should use
+  `ForestTreeIdentity { key, speciesId }` plus
+  `removeTree` / `restoreTree` /
+  `setRemovedTrees` / `removedTrees`. The forest only filters
+  presentation; a native game owns versioned persistence,
+  server authority, ECS health/resource mechanics, physics/navmesh
+  and replication. Do not allocate ECS entities for every branch or
+  blade of grass.
+- No stage-6 compilation/GPU/CTest was run, at user request. Cite
+  `docs/terrain/AGENT_HANDOFF.md` for exact commits, limitations
+  and verification status.
