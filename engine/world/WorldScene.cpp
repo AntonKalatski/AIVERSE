@@ -255,6 +255,13 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 if(const auto sample=heights->sample(x,z))return *sample;
                 return terraweave::heightAtCm(fallback,x,z);
             };
+            // An authored near terrain quad is removed from the Horizon
+            // only when every intersecting near terrain tile is resident.
+            // Missing tiles intentionally keep their far ground visible.
+            surface->ownsNearTerrainRect=[heights](
+                    int64_t x0,int64_t z0,int64_t x1,int64_t z1){
+                return heights->coversRect(x0,z0,x1,z1);
+            };
             if(mask)surface->allowsCanopyAt=[mask](int64_t x,int64_t z){
                 return !mask->excludes(x,z);
             };
