@@ -1265,3 +1265,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `2c52e9b5260fb9630bce76be9ec1745d3da8527a`.
 - `modules/fps/CMakeLists.txt` links `AIVERSE::lib_ecs_hitscan` and `AIVERSE::lib_ecs_ordered_impact` explicitly. Live FPS `traceShot` now uses both generic policies but keeps its ECS ActorRuntime damage and vehicle, armor, rewind and penetration adapters.
 - Verification: source commit only. Attempt to access GitHub from the available native container failed because DNS for github.com was not available; therefore no repository clone, compilation or tests were run. GitHub Actions status still needs a completed run; never treat queued/cancelled as passed.
+
+
+### 2026-11-18 — Mandatory agent guidance for impact queue system
+- **Implementation SHA:** `aea335dc94568437f45d3f53c4ea4b36f5fe18e0`.
+- Updated `AGENTS.md` to direct subsequent agents to `AIVERSE::lib_ecs_impact_queue`, its skill and CTest, explicitly defining World-backed sequencer/pending impact ownership and the callback-next-barrier semantics. It prohibits replacing live RTS immediate direct/on-hit/splash effects with an end-of-tick batch without golden save/replay parity.
+- **Verification:** docs-only commit, gameplay still not migrated to the queued barrier.
+- **Next:** check package/test wiring, issue tracker and native CI; keep phased rollout gates.
