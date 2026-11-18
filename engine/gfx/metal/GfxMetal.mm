@@ -370,6 +370,10 @@ public:
             error_ = "Metal: requested MSAA sample count is unsupported by the device";
             return {};
         }
+        if (d.renderTarget && isExtendedDataTextureFormat(d.format)) {
+            error_ = "Metal: typed R/RG render targets require pipeline format support";
+            return {};
+        }
         const MTLPixelFormat cf = compressedFormat(d.format);
         const bool compressed = cf != MTLPixelFormatInvalid;
         if (isCompressedTextureFormat(d.format) &&
@@ -386,6 +390,11 @@ public:
         if (compressed && !supports(d.format)) { error_ = "Metal: compressed format unavailable"; return {}; }
 
         const MTLPixelFormat pf = compressed ? cf
+            : d.format == PixelFormat::RG8 ? MTLPixelFormatRG8Unorm
+            : d.format == PixelFormat::R16F ? MTLPixelFormatR16Float
+            : d.format == PixelFormat::RG16F ? MTLPixelFormatRG16Float
+            : d.format == PixelFormat::R32F ? MTLPixelFormatR32Float
+            : d.format == PixelFormat::RG32F ? MTLPixelFormatRG32Float
             : d.format == PixelFormat::R8 ? MTLPixelFormatR8Unorm
             : d.format == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
             : d.format == PixelFormat::RGBA32F ? MTLPixelFormatRGBA32Float
@@ -445,8 +454,7 @@ public:
                 }
             }
         } else if (d.data && d.format != PixelFormat::Depth) {
-            const int bpp = d.format == PixelFormat::R8 ? 1 : d.format == PixelFormat::RGBA32F ? 16 :
-                            d.format == PixelFormat::RGBA16F ? 8 : 4;
+            const int bpp = uncompressedTexturePixelBytes(d.format);
             const NSUInteger row = NSUInteger(d.width) * NSUInteger(bpp);
             const NSUInteger sliceBytes = row * NSUInteger(d.height);
             const auto* pixels = static_cast<const uint8_t*>(d.data);
@@ -508,8 +516,7 @@ public:
             (t->dimension != TextureDimension::Texture3D && (u.depth != 1 || u.z != 0)) ||
             (t->dimension == TextureDimension::Texture1D && (u.y != 0 || u.height != 1)))
             return false;
-        const int bpp = t->fmt == PixelFormat::R8 ? 1 : t->fmt == PixelFormat::RGBA32F ? 16 :
-                        t->fmt == PixelFormat::RGBA16F ? 8 : 4;
+        const int bpp = uncompressedTexturePixelBytes(t->fmt);
         if (u.rowPitchBytes < u.width * bpp) return false;
         const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
         if (imagePitch < u.rowPitchBytes * u.height) return false;

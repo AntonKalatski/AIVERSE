@@ -166,6 +166,17 @@ int main() {
     bc.levelSize = cubeSize;
     check(validateTextureDesc(bc) == TextureDescError::None,
           "BC5 six-face compressed cube payload");
+    check(uncompressedTexturePixelBytes(PixelFormat::RGBA8) == 4 &&
+          uncompressedTexturePixelBytes(PixelFormat::RG8) == 2 &&
+          uncompressedTexturePixelBytes(PixelFormat::R16F) == 2 &&
+          uncompressedTexturePixelBytes(PixelFormat::RG16F) == 4 &&
+          uncompressedTexturePixelBytes(PixelFormat::R32F) == 4 &&
+          uncompressedTexturePixelBytes(PixelFormat::RG32F) == 8 &&
+          uncompressedTexturePixelBytes(PixelFormat::RGBA32F) == 16,
+          "typed single/dual-channel data texture strides");
+    check(uncompressedTexturePixelBytes(PixelFormat::BC5) == 0 &&
+          uncompressedTexturePixelBytes(PixelFormat::Depth) == 0,
+          "compressed/depth formats do not have CPU color stride");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }

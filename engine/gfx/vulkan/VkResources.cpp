@@ -95,6 +95,11 @@ VkFormat VulkanDevice::vkFormat(PixelFormat f) const {
     switch (f) {
         case PixelFormat::RGBA8: return VK_FORMAT_R8G8B8A8_UNORM;
         case PixelFormat::R8: return VK_FORMAT_R8_UNORM;
+        case PixelFormat::RG8: return VK_FORMAT_R8G8_UNORM;
+        case PixelFormat::R16F: return VK_FORMAT_R16_SFLOAT;
+        case PixelFormat::RG16F: return VK_FORMAT_R16G16_SFLOAT;
+        case PixelFormat::R32F: return VK_FORMAT_R32_SFLOAT;
+        case PixelFormat::RG32F: return VK_FORMAT_R32G32_SFLOAT;
         case PixelFormat::Depth: return depthFormat_;
         case PixelFormat::RGBA32F: return VK_FORMAT_R32G32B32A32_SFLOAT;
         case PixelFormat::ETC2_RGB8: return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
@@ -286,7 +291,9 @@ namespace {
 size_t texelBytes(PixelFormat f) {
     switch (f) {
         case PixelFormat::R8: return 1;
-        case PixelFormat::RGBA16F: return 8;
+        case PixelFormat::RG8: case PixelFormat::R16F: return 2;
+        case PixelFormat::RG16F: case PixelFormat::R32F: return 4;
+        case PixelFormat::RG32F: case PixelFormat::RGBA16F: return 8;
         case PixelFormat::RGBA32F: return 16;
         default: return 4;
     }
@@ -422,6 +429,10 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     }
     if (!supportsTextureDimension(d.dimension)) {
         error_ = "Vulkan: requested texture dimension unsupported by the physical device";
+        return {};
+    }
+    if (d.renderTarget && isExtendedDataTextureFormat(d.format)) {
+        error_ = "Vulkan: R/RG render targets require matching pipeline color formats";
         return {};
     }
     if (d.sampleCount != 1 || d.storage ||

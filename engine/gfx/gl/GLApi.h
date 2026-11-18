@@ -44,6 +44,12 @@
   #define GL_TEXTURE0 0x84C0
   #define GL_CLAMP_TO_EDGE 0x812F
   #define GL_R8 0x8229
+  #define GL_RG8 0x822B
+  #define GL_RG 0x8227
+  #define GL_R16F 0x822D
+  #define GL_RG16F 0x822F
+  #define GL_R32F 0x822E
+  #define GL_RG32F 0x8230
   #define GL_RED 0x1903
   #define GL_RGBA8 0x8058
   #define GL_FUNC_ADD 0x8006

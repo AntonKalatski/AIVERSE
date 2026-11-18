@@ -41,6 +41,42 @@ constexpr GLenum kGL_MIRRORED_REPEAT = 0x8370;
 constexpr GLenum kGL_ETC2_RGB8 = 0x9274, kGL_ETC2_RGBA8 = 0x9278, kGL_DXT1_RGBA = 0x83F1, kGL_DXT5 = 0x83F3,
                  kGL_BPTC_UNORM = 0x8E8C, kGL_ASTC_4x4 = 0x93B0, kGL_ASTC_6x6 = 0x93B4;
 constexpr GLenum kGL_BC4_RGTC1 = 0x8DBB, kGL_BC5_RGTC2 = 0x8DBD, kGL_EAC_R11 = 0x9270;
+GLenum uncompressedInternal(PixelFormat f) {
+    switch (f) {
+    case PixelFormat::Depth: return GL_DEPTH_COMPONENT24;
+    case PixelFormat::R8: return GL_R8;
+    case PixelFormat::RG8: return GL_RG8;
+    case PixelFormat::R16F: return GL_R16F;
+    case PixelFormat::RG16F: return GL_RG16F;
+    case PixelFormat::R32F: return GL_R32F;
+    case PixelFormat::RG32F: return GL_RG32F;
+    case PixelFormat::RGBA16F: return GL_RGBA16F;
+    case PixelFormat::RGBA32F: return GL_RGBA32F;
+    case PixelFormat::RGBA8_sRGB: return GL_SRGB8_ALPHA8;
+    case PixelFormat::RGBA8: return GL_RGBA8;
+    default: return 0;
+    }
+}
+GLenum uncompressedExternal(PixelFormat f) {
+    if (f == PixelFormat::Depth) return GL_DEPTH_COMPONENT;
+    if (f == PixelFormat::R8 || f == PixelFormat::R16F || f == PixelFormat::R32F)
+        return GL_RED;
+    if (f == PixelFormat::RG8 || f == PixelFormat::RG16F || f == PixelFormat::RG32F)
+        return GL_RG;
+    return GL_RGBA;
+}
+GLenum uncompressedType(PixelFormat f) {
+    if (f == PixelFormat::Depth) return GL_UNSIGNED_INT;
+    if (f == PixelFormat::R16F || f == PixelFormat::RG16F ||
+        f == PixelFormat::RGBA16F) return GL_HALF_FLOAT;
+    if (f == PixelFormat::R32F || f == PixelFormat::RG32F ||
+        f == PixelFormat::RGBA32F) return GL_FLOAT;
+    return GL_UNSIGNED_BYTE;
+}
+bool needsNearestFloatFilter(PixelFormat f) {
+    return f == PixelFormat::R32F || f == PixelFormat::RG32F ||
+           f == PixelFormat::RGBA32F;
+}
 GLenum compressedEnum(PixelFormat f) {
     switch (f) {
         case PixelFormat::ETC2_RGB8: return kGL_ETC2_RGB8;
@@ -213,6 +249,10 @@ public:
             error_ = "GL: texture dimension or usage unsupported"; return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "GL: HDR textures unsupported"; return {}; }
+        if (d.renderTarget && isExtendedDataTextureFormat(d.format)) {
+            error_ = "GL: typed R/RG render targets are not wired into the pipeline";
+            return {};
+        }
         if (isCompressedTextureFormat(d.format) && !supports(d.format)) {
             error_ = "GL: compressed texture not supported by this GPU"; return {};
         }
@@ -225,22 +265,15 @@ public:
         }
         const int z = d.dimension == TextureDimension::Texture3D ? d.depth : d.arrayLayers;
         const bool autoMips = d.mipmaps && !compressed &&
-                              d.format != PixelFormat::RGBA16F && d.format != PixelFormat::RGBA32F;
+                              d.format != PixelFormat::RGBA16F &&
+                              !needsNearestFloatFilter(d.format) &&
+                              !isExtendedDataTextureFormat(d.format);
         const int levels = compressed ? d.levelCount : d.mipLevels > 0 ? d.mipLevels :
                            autoMips ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
-        const GLenum internal = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT24 :
-                                d.format == PixelFormat::R8 ? GL_R8 :
-                                d.format == PixelFormat::RGBA16F ? GL_RGBA16F :
-                                d.format == PixelFormat::RGBA32F ? GL_RGBA32F :
-                                d.format == PixelFormat::RGBA8_sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8;
-        const GLenum format = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT :
-                              d.format == PixelFormat::R8 ? GL_RED : GL_RGBA;
-        const GLenum type = d.format == PixelFormat::Depth ? GL_UNSIGNED_INT :
-                            d.format == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
-                            d.format == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
-        const size_t bpp = d.format == PixelFormat::R8 ? 1 :
-                           d.format == PixelFormat::RGBA16F ? 8 :
-                           d.format == PixelFormat::RGBA32F ? 16 : 4;
+        const GLenum internal = uncompressedInternal(d.format);
+        const GLenum format = uncompressedExternal(d.format);
+        const GLenum type = uncompressedType(d.format);
+        const size_t bpp = size_t(uncompressedTexturePixelBytes(d.format));
         GLTexture t;
         t.fmt = d.format; t.dimension = d.dimension; t.target = target;
         t.w = d.width; t.h = d.height; t.depth = d.depth; t.layers = d.arrayLayers;
@@ -278,7 +311,7 @@ public:
             }
         }
         glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, levels - 1);
-        const bool linear = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F;
+        const bool linear = d.filter == Filter::Linear && !needsNearestFloatFilter(d.format);
         glTexParameteri(target, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
         glTexParameteri(target, GL_TEXTURE_MIN_FILTER, levels > 1 ?
             (linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) :
@@ -309,6 +342,10 @@ public:
             return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
+        if (d.renderTarget && isExtendedDataTextureFormat(d.format)) {
+            error_ = "GL: typed R/RG render targets unsupported by current pipelines";
+            return {};
+        }
         if (isCompressedTextureFormat(d.format) &&
             (!compressedEnum(d.format) || !supports(d.format))) {
             error_ = "GL: requested compressed pixel format unsupported";
@@ -316,7 +353,10 @@ public:
         }
         GLTexture t; t.fmt = d.format; t.w = d.width; t.h = d.height;
         t.renderTarget = d.renderTarget || d.format == PixelFormat::Depth;
-        t.mips = d.mipmaps && d.format != PixelFormat::Depth && !d.renderTarget;
+        t.mips = d.mipmaps && d.format != PixelFormat::Depth &&
+                 d.format != PixelFormat::RGBA16F &&
+                 !needsNearestFloatFilter(d.format) &&
+                 !isExtendedDataTextureFormat(d.format) && !d.renderTarget;
         t.compressed = compressedEnum(d.format) != 0;
         t.levels = t.compressed ? std::max(1, d.levelCount) :
                    d.mipLevels > 0 ? d.mipLevels :
@@ -344,31 +384,24 @@ public:
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
             }
-        } else if (d.format == PixelFormat::R8) glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, d.width, d.height, 0, GL_RED, GL_UNSIGNED_BYTE, d.data);
-        else if (d.format == PixelFormat::RGBA16F) { t.mips = false; glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, d.width, d.height, 0, GL_RGBA, GL_HALF_FLOAT, d.data); }
-        else if (d.format == PixelFormat::RGBA32F) { t.mips = false; glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, d.width, d.height, 0, GL_RGBA, GL_FLOAT, d.data); }
-        else if (d.format == PixelFormat::RGBA8_sRGB) glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, d.width, d.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, d.data);
-        else glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, d.width, d.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, d.data);
+        } else {
+            glTexImage2D(GL_TEXTURE_2D, 0, GLint(uncompressedInternal(d.format)),
+                         d.width, d.height, 0, uncompressedExternal(d.format),
+                         uncompressedType(d.format), d.data);
+        }
         // Explicit mip allocations are independent from automatic mip generation.
         // Every allocated subresource must exist before attaching a nonzero mip to an FBO.
         if (!t.compressed && t.levels > 1) {
-            const GLenum internal = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT24 :
-                                    d.format == PixelFormat::R8 ? GL_R8 :
-                                    d.format == PixelFormat::RGBA16F ? GL_RGBA16F :
-                                    d.format == PixelFormat::RGBA32F ? GL_RGBA32F :
-                                    d.format == PixelFormat::RGBA8_sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8;
-            const GLenum format = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT :
-                                  d.format == PixelFormat::R8 ? GL_RED : GL_RGBA;
-            const GLenum type = d.format == PixelFormat::Depth ? GL_UNSIGNED_INT :
-                                d.format == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
-                                d.format == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+            const GLenum internal = uncompressedInternal(d.format);
+            const GLenum format = uncompressedExternal(d.format);
+            const GLenum type = uncompressedType(d.format);
             for (int mip = 1; mip < t.levels; ++mip)
                 glTexImage2D(GL_TEXTURE_2D, mip, GLint(internal),
                              std::max(1,d.width >> mip), std::max(1,d.height >> mip),
                              0, format, type, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, t.levels - 1);
         }
-        GLint f = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F ? GL_LINEAR : GL_NEAREST; // float textures are not filterable on ES3
+        GLint f = d.filter == Filter::Linear && !needsNearestFloatFilter(d.format) ? GL_LINEAR : GL_NEAREST; // float32 textures may not be linearly filterable on ES3
         if (t.mips && d.data) glGenerateMipmap(GL_TEXTURE_2D);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, t.levels > 1 ?
                         (d.filter == Filter::Linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) : f);
@@ -392,9 +425,9 @@ public:
         if (!t || t->dimension != TextureDimension::Texture2D || t->compressed || t->fmt == PixelFormat::Depth) return;
         glBindTexture(GL_TEXTURE_2D, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        const int bpp = t->fmt == PixelFormat::R8 ? 1 : t->fmt == PixelFormat::RGBA32F ? 16 : t->fmt == PixelFormat::RGBA16F ? 8 : 4;
-        const GLenum fmt = t->fmt == PixelFormat::R8 ? GL_RED : GL_RGBA;
-        const GLenum type = t->fmt == PixelFormat::RGBA32F ? GL_FLOAT : t->fmt == PixelFormat::RGBA16F ? GL_HALF_FLOAT : GL_UNSIGNED_BYTE;
+        const int bpp = uncompressedTexturePixelBytes(t->fmt);
+        const GLenum fmt = uncompressedExternal(t->fmt);
+        const GLenum type = uncompressedType(t->fmt);
         if (rowPitch == w * bpp) {
             glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, hh, fmt, type, pixels);
         } else { // GL_UNPACK_ROW_LENGTH exists in ES3 but upload row by row for maximum portability
@@ -418,15 +451,12 @@ public:
             (t->dimension == TextureDimension::Cube && u.arrayLayer >= 6) ||
             (t->dimension == TextureDimension::Texture2DArray && u.arrayLayer >= t->layers))
             return false;
-        const int bpp = t->fmt == PixelFormat::R8 ? 1 :
-                        t->fmt == PixelFormat::RGBA16F ? 8 :
-                        t->fmt == PixelFormat::RGBA32F ? 16 : 4;
-        if (u.rowPitchBytes < u.width * bpp) return false;
+        const int bpp = uncompressedTexturePixelBytes(t->fmt);
+        if (bpp < 1 || u.rowPitchBytes < u.width * bpp) return false;
         const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
         if (imagePitch < u.rowPitchBytes * u.height) return false;
-        const GLenum format = t->fmt == PixelFormat::R8 ? GL_RED : GL_RGBA;
-        const GLenum type = t->fmt == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
-                            t->fmt == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+        const GLenum format = uncompressedExternal(t->fmt);
+        const GLenum type = uncompressedType(t->fmt);
         glBindTexture(t->target, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         const auto* src = static_cast<const uint8_t*>(u.data);

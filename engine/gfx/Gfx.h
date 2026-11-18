@@ -53,7 +53,8 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                                                         // (bone matrices, morph deltas), nearest only, read with texelFetch / read()
                          RGBA8_sRGB, // sampling decodes sRGB; render targets encode on write and blend in linear; alpha stays linear
                          RGBA16F, // linear HDR radiance, 8 bytes/pixel; check supports()
-                         BC4, BC5, EAC_R11 }; // one/two-channel compressed data maps; check supports()
+                         BC4, BC5, EAC_R11, // one/two-channel compressed data maps; check supports()
+                         RG8, R16F, RG16F, R32F, RG32F }; // single/dual-channel sampled data textures
 // Shared compression metadata used by all texture backends. A requested
 // compressed format must NEVER be allocated as RGBA8 when unsupported.
 constexpr bool isCompressedTextureFormat(PixelFormat f) {
@@ -76,6 +77,22 @@ constexpr int compressedTextureBlockBytes(PixelFormat f) {
 constexpr int compressedTextureBlockSize(PixelFormat f) {
     return !isCompressedTextureFormat(f) ? 0 :
            f == PixelFormat::ASTC_6x6 ? 6 : 4;
+}
+constexpr bool isExtendedDataTextureFormat(PixelFormat f) {
+    return f == PixelFormat::RG8 || f == PixelFormat::R16F ||
+           f == PixelFormat::RG16F || f == PixelFormat::R32F ||
+           f == PixelFormat::RG32F;
+}
+constexpr int uncompressedTexturePixelBytes(PixelFormat f) {
+    switch (f) {
+    case PixelFormat::R8: return 1;
+    case PixelFormat::RG8: case PixelFormat::R16F: return 2;
+    case PixelFormat::RG16F: case PixelFormat::R32F: return 4;
+    case PixelFormat::RG32F: case PixelFormat::RGBA16F: return 8;
+    case PixelFormat::RGBA32F: return 16;
+    case PixelFormat::RGBA8: case PixelFormat::RGBA8_sRGB: return 4;
+    default: return 0; // depth/compressed formats are not CPU-interleaved pixel data
+    }
 }
 enum class Filter { Nearest, Linear };
 // Resource dimension is separate from the sampled view dimension. Array layers are physical
