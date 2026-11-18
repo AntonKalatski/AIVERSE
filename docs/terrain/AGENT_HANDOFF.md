@@ -2398,3 +2398,13 @@ precisely generated *remaining far-ground triangles*, not
 the number of near-geometry triangles. When source/cap
 fallback is used, `nearClipFallback=true` is explicit
 rather than silently presenting the geometry as exact.
+
+### Stage 18c follow-up — portable clip helper include (CODE COMMITTED; NOT TESTED)
+
+- `a83421dc0e1c3ff933e65022a73f0da0697997d0`:
+  `engine/render/TerraWeaveHorizonClip.h` now explicitly
+  includes `<utility>` for `std::pair/std::move`, instead
+  of relying on indirect inclusions. No runtime behavior
+  or persisted TWH5 data changed.
+
+**Tests:** NOT RUN per separate validation-agent ownership.
