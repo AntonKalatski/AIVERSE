@@ -21,6 +21,7 @@ struct NereidUnderwaterView {
     float transmission=1;
     float deepR=0,deepG=0,deepB=0;
     float turbidity=0;
+    float distortion=0, scattering=0;
 };
 
 // Priority semantics follow shared NEREID samples where possible, but only
@@ -60,6 +61,8 @@ inline NereidUnderwaterView sampleNereidUnderwaterFrom(
     out.deepG=std::clamp(style.deepG,0.f,1.f);
     out.deepB=std::clamp(style.deepB,0.f,1.f);
     out.turbidity=1.f-out.transmission;
+    out.distortion=std::clamp(style.underwaterDistortion,0.f,1.f);
+    out.scattering=std::clamp(style.underwaterScattering,0.f,1.f);
     return out;
 }
 inline NereidUnderwaterView sampleNereidUnderwater(
