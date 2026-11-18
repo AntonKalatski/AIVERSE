@@ -2204,4 +2204,13 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_include_directories(aiverse_virtual_texture_feedback_pass_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_virtual_texture_feedback_pass_test PRIVATE Threads::Threads)
     add_test(NAME virtual_texture_feedback_pass COMMAND aiverse_virtual_texture_feedback_pass_test)
+    # Optional shader compiler: do not fail platforms that do not ship
+    # glslangValidator, but register a real failing test when it is present.
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    find_program(AIVERSE_GLSLANG_VALIDATOR NAMES glslangValidator)
+    if(Python3_Interpreter_FOUND AND AIVERSE_GLSLANG_VALIDATOR)
+        add_test(NAME virtual_texture_feedback_shaders
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_feedback_shaders.py")
+    endif()
 endif()
