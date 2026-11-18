@@ -1,0 +1,70 @@
+name: PHYSIS nature + Box3D integration checks
+
+on:
+  push:
+    branches:
+      - feature/physis-nature-simulation
+    paths:
+      - 'engine/physis/**'
+      - 'engine/physics/PhysisBox3D.h'
+      - 'tests/physis_*.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/physis.yml'
+  pull_request:
+    paths:
+      - 'engine/physis/**'
+      - 'engine/physics/PhysisBox3D.h'
+      - 'tests/physis_*.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/physis.yml'
+  workflow_dispatch:
+
+jobs:
+  physis-native:
+    name: PHYSIS CPU and optional Box3D (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure focused native tests
+        shell: bash
+        run: |
+          cmake -S . -B build/physis-ci -DCMAKE_BUILD_TYPE=Debug \
+            -DAIVERSE_BUILD_TESTS=ON \
+            -DAIVERSE_ENABLE_PHYSICS=ON \
+            -DAIVERSE_BUILD_EDITOR=OFF \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_BUILD_CLIENT=OFF \
+            -DAIVERSE_BUILD_HEADLESS=OFF \
+            -DAIVERSE_BUILD_SERVER=OFF \
+            -DAIVERSE_BUILD_PHYSICS_DEMO=OFF
+      - name: Build every PHYSIS test target
+        shell: bash
+        run: |
+          cmake --build build/physis-ci --parallel 4 --target \
+            aiverse_physis_core_test \
+            aiverse_physis_climate_test \
+            aiverse_physis_environment_test \
+            aiverse_physis_disasters_test \
+            aiverse_physis_integration_test \
+            aiverse_physis_wind_test \
+            aiverse_physis_gravity_test \
+            aiverse_physis_storm_test \
+            aiverse_physis_forces_test \
+            aiverse_physis_box3d_test
+      - name: CTest PHYSIS (includes real Box3D Scene)
+        shell: bash
+        run: ctest --test-dir build/physis-ci --output-on-failure -R '^physis_'
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: physis-test-logs-${{ matrix.os }}
+          path: |
+            build/physis-ci/Testing/
+            build/physis-ci/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: ignore
