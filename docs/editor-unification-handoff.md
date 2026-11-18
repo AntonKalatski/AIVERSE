@@ -1860,3 +1860,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - CI and actual native test execution are unverified; source wiring checked. See `docs/agent-handoffs/native-ecs-persistence.md` for follow-up commands.
 - Next agent: obtain completed workflow logs and fix any failure, then record an exact handoff.
 
+
+
+### 2026-11-18 — FPS end-of-tick projectile mirror converted to one-way ECS → State projection
+- **Implementation SHA:** `bbf42ceaa8974216dda3a0a0404d33c2377b23ad`.
+- Changed `modules/fps/FpsModule.cpp::syncDynamicEntities(sim,bool)` and the **live** `fps.ecsMirror` call. Under `fps.ecsAuthority`, the mirror now obtains **canonical live `ProjectileRuntime` components** (stable `order`/ID sort), validates unique nonzero source IDs and matching `DynamicEntityIndex` Entity links, refreshes the read-only `ProjectileEntity` Editor view, and derives `State::projectiles` as a compatibility presentation. It **never writes `ProjectileRuntime` from `State::projectiles` at this barrier**. Thus stale legacy vector mutations cannot silently overwrite the canonical ProjectileRuntime after the native flight or actor stages.
+- Setup and existing legacy v9 `deserialize` still call the default `syncDynamicEntities(sim)` mode: State → ECS reconstruction remains mandatory for old saves. Default `ecsAuthority=false` still uses the original source-vector sync. Loot and vehicle mirror paths are unchanged and still legacy workspace writers; this change is limited to projectiles.
+- This is the key **single-writer end-of-tick ownership** cutover for FPS projectile state. Actual shooting, grenade actions, programmed flight, ordinary flight and bomb-round reset have already been routed through direct `ProjectileRuntime` ECS paths when the gate is ON. Existing synchronous damage/hit/round stages and v9 format are retained.
+- **Verification:** source committed only; **no successful native compiler, CTest, FPS simultaneous hits, serialized entity allocator replay, network rollback or Editor regression yet**. The one-way mirror may expose remaining undocumented native/legacy projectile writes: investigate failures rather than reverting ownership. Must add fixture deliberately poisoning the State vector then invoking `syncDynamicEntities(sim,true)` to prove a canonical ECS value survives.
