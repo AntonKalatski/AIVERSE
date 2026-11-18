@@ -2168,3 +2168,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_core COMMAND aiverse_physis_core_test)
     set_tests_properties(physis_core PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 2: independent climate zones and weather fronts.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_climate_test tests/physis_climate_test.cpp)
+    target_link_libraries(aiverse_physis_climate_test PRIVATE aiverse_engine)
+    add_test(NAME physis_climate COMMAND aiverse_physis_climate_test)
+    set_tests_properties(physis_climate PROPERTIES LABELS "PHYSIS")
+endif()

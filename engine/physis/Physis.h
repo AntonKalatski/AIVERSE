@@ -157,7 +157,19 @@ inline bool sample(const World& world, std::int32_t x, std::int32_t z, Sample& o
 // Stage-1 baseline evolution: localized seeded forcing, temperature / humidity
 // relaxation, precipitation split and simple wetness/snow accumulation. This is
 // NOT a physical weather-front solver, regional climate or fluid simulation.
-inline void advance(World& world) {
+// Optional deterministic forcing from independent climate / environmental modules.
+struct Forcing {
+    Fixed temperatureOffset{};
+    Fixed humidityOffset{};
+    Fixed pressureOffset{};
+    Vec2 wind{};
+    Fixed precipitationBoost{};
+};
+
+// A single deterministic scheduler entry point, independently extendable by
+// any data-only forcing provider. Each grid cell is written exactly once.
+template<class ForcingProvider>
+inline void advanceWith(World& world, ForcingProvider&& getForcing) {
     auto* state = world.resource<State>();
     if (!state) throw std::logic_error("PHYSIS not initialized");
     if (state->tick == std::numeric_limits<std::uint64_t>::max())
@@ -173,25 +185,34 @@ inline void advance(World& world) {
         auto* atmosphere = world.tryGet<Atmosphere>(entity);
         auto* surface = world.tryGet<Surface>(entity);
         if (!atmosphere || !surface) continue;
+        const Forcing forcing = getForcing(*coord, tick);
         const auto key = mix64(cellKey(seed, coord->x, coord->z) ^
                                mix64(tick + 0x6a09e667f3bcc909ull));
         const auto a = std::int64_t(key & 1023ull) - 512;
         const auto b = std::int64_t((key >> 10) & 1023ull) - 512;
         const auto c = std::int64_t((key >> 20) & 1023ull) - 512;
         atmosphere->temperature = fxClamp(
-            atmosphere->temperature + (baselineTemperature - atmosphere->temperature) / 64 +
+            atmosphere->temperature + (baselineTemperature + forcing.temperatureOffset -
+                 atmosphere->temperature) / 64 +
                 Fixed::fromRaw(a * 8), Fixed::fromInt(-80), Fixed::fromInt(80));
         atmosphere->humidity = fxClamp(
-            atmosphere->humidity + (baselineHumidity - atmosphere->humidity) / 32 +
+            atmosphere->humidity + (fxClamp(baselineHumidity + forcing.humidityOffset,
+                 Fixed{}, Fixed::fromInt(1)) - atmosphere->humidity) / 32 +
                 Fixed::fromRaw(b * 4), Fixed{}, Fixed::fromInt(1));
         atmosphere->wind.x = fxClamp(
-            atmosphere->wind.x - atmosphere->wind.x / 32 + Fixed::fromRaw(b * 32),
+            atmosphere->wind.x + (forcing.wind.x - atmosphere->wind.x) / 32 +
+                Fixed::fromRaw(b * 32),
             Fixed::fromInt(-30), Fixed::fromInt(30));
         atmosphere->wind.y = fxClamp(
-            atmosphere->wind.y - atmosphere->wind.y / 32 + Fixed::fromRaw(c * 32),
+            atmosphere->wind.y + (forcing.wind.y - atmosphere->wind.y) / 32 +
+                Fixed::fromRaw(c * 32),
             Fixed::fromInt(-30), Fixed::fromInt(30));
+        atmosphere->pressure = fxClamp(
+            atmosphere->pressure + (Fixed::fromInt(1013) + forcing.pressureOffset -
+                atmosphere->pressure) / 64,
+            Fixed::fromInt(800), Fixed::fromInt(1200));
         const auto precipitation = fxClamp(
-            (atmosphere->humidity - Fixed::fromRatio(3, 4)) * 4,
+            (atmosphere->humidity - Fixed::fromRatio(3, 4)) * 4 + forcing.precipitationBoost,
             Fixed{}, Fixed::fromInt(1));
         atmosphere->rain = atmosphere->temperature > Fixed{} ? precipitation : Fixed{};
         atmosphere->snow = atmosphere->temperature <= Fixed{} ? precipitation : Fixed{};
@@ -203,6 +224,11 @@ inline void advance(World& world) {
                                     Fixed{}, Fixed::fromInt(10));
     }
     ++state->tick;
+}
+
+// Simple seeded environment: no forcing source or genre-specific behavior.
+inline void advance(World& world) {
+    advanceWith(world, [](const Cell&, std::uint64_t) { return Forcing{}; });
 }
 
 } // namespace aiverse::physis
