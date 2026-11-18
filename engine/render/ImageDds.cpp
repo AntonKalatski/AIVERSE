@@ -226,4 +226,198 @@ bool decodeDds(const std::string& bytes, Image& out) {
     return true;
 }
 
+// Container-level DDS parser for dimension-aware native texture resources.
+// Unlike decodeDds(Model::Image), this preserves all mip/layer/face data.
+// DDS 2D arrays are stored surface-major, while CompressedImage uses mip-major.
+bool parseDdsTexture(const std::string& bytes, CompressedImage& out, std::string& err) {
+    out = CompressedImage{};
+    err.clear();
+    auto fail = [&](const char* message) {
+        err = message;
+        out = {};
+        return false;
+    };
+    if (bytes.size() < 128 || bytes.compare(0, 4, "DDS ") != 0 ||
+        rd32(bytes, 4) != 124 || rd32(bytes, 76) != 32)
+        return fail("DDS: invalid or truncated header");
+    const uint32_t flags = rd32(bytes, 8);
+    const uint32_t width = rd32(bytes, 16), height = rd32(bytes, 12);
+    const uint32_t depthField = rd32(bytes, 24);
+    const uint32_t mipCount = (flags & 0x20000u) ? rd32(bytes, 28) : 1;
+    const uint32_t pfFlags = rd32(bytes, 80), four = rd32(bytes, 84);
+    const uint32_t caps2 = rd32(bytes, 112);
+    if (!width || !height || width > 16384 || height > 16384 ||
+        mipCount == 0 || mipCount > 32)
+        return fail("DDS: invalid size or mip count");
+
+    const bool dx10 = (pfFlags & 4u) && four == fourcc("DX10");
+    if (dx10 && bytes.size() < 148) return fail("DDS: truncated DX10 header");
+    const uint32_t dxgi = dx10 ? rd32(bytes, 128) : 0;
+    const uint32_t dimension = dx10 ? rd32(bytes, 132) : 3;
+    const uint32_t misc = dx10 ? rd32(bytes, 136) : 0;
+    const uint32_t arrayCount = dx10 ? rd32(bytes, 140) : 1;
+    const bool isCube = dx10 ? (misc & 4u) != 0 : (caps2 & 0x200u) != 0;
+    const bool volume = dx10 ? dimension == 4 :
+        (caps2 & 0x200000u) != 0 || ((flags & 0x800000u) && depthField > 1);
+    const bool oneD = dx10 && dimension == 2;
+    if ((dx10 && dimension != 2 && dimension != 3 && dimension != 4) ||
+        (oneD && (height != 1 || isCube || volume)) ||
+        (volume && (isCube || arrayCount != 1 || depthField == 0)) ||
+        (isCube && (dimension != 3 || width != height)) ||
+        (dx10 && (arrayCount == 0 || arrayCount > 2048)) ||
+        (isCube && !dx10 && (caps2 & 0xFC00u) != 0xFC00u))
+        return fail("DDS: unsupported dimensional combination or partial cubemap");
+    const uint32_t depth = volume ? depthField : 1;
+    if (depth > 16384) return fail("DDS: unsupported volume depth");
+    uint32_t maxMip = 1;
+    for (uint32_t size = std::max(width, std::max(height, depth)); size > 1; size >>= 1)
+        ++maxMip;
+    if (mipCount > maxMip) return fail("DDS: mip count exceeds dimension chain");
+
+    Kind kind = Kind::Unknown;
+    Masks masks;
+    bool srgb = false;
+    bool alphaBC1 = (pfFlags & 1u) != 0;
+    auto useMasks = [&](uint32_t bits, uint32_t r, uint32_t g, uint32_t b,
+                        uint32_t a, bool lum = false) {
+        kind = Kind::Masks;
+        masks = {bits, r, g, b, a, lum};
+    };
+    if (dx10) {
+        switch (dxgi) {
+        case 70: case 71: case 72:
+            kind = Kind::BC1; alphaBC1 = true; srgb = dxgi == 72; break;
+        case 73: case 74: case 75:
+            kind = Kind::BC2; srgb = dxgi == 75; break;
+        case 76: case 77: case 78:
+            kind = Kind::BC3; srgb = dxgi == 78; break;
+        case 79: case 80: kind = Kind::BC4; break;
+        case 82: case 83: kind = Kind::BC5; break;
+        case 97: case 98: case 99:
+            kind = Kind::BC7; srgb = dxgi == 99; break;
+        case 27: case 28: case 29:
+            useMasks(32, 0xffu, 0xff00u, 0xff0000u, 0xff000000u);
+            srgb = dxgi == 29; break;
+        case 87: case 90: case 91:
+            useMasks(32, 0xff0000u, 0xff00u, 0xffu, 0xff000000u);
+            srgb = dxgi == 91; break;
+        case 88: case 92: case 93:
+            useMasks(32, 0xff0000u, 0xff00u, 0xffu, 0u);
+            srgb = dxgi == 93; break;
+        case 85: useMasks(16, 0xf800u, 0x7e0u, 0x1fu, 0u); break;
+        case 86: useMasks(16, 0x7c00u, 0x3e0u, 0x1fu, 0x8000u); break;
+        case 115: useMasks(16, 0xf00u, 0xf0u, 0xfu, 0xf000u); break;
+        case 61: case 62: useMasks(8, 0xffu, 0u, 0u, 0u, true); break;
+        case 65: useMasks(8, 0u, 0u, 0u, 0xffu); break;
+        default: return fail("DDS: unsupported DXGI format for layered container");
+        }
+    } else if (pfFlags & 4u) {
+        switch (four) {
+        case fourcc("DXT1"): kind = Kind::BC1; break;
+        case fourcc("DXT2"): case fourcc("DXT3"): kind = Kind::BC2; break;
+        case fourcc("DXT4"): case fourcc("DXT5"): kind = Kind::BC3; break;
+        case fourcc("ATI1"): case fourcc("BC4U"): kind = Kind::BC4; break;
+        case fourcc("ATI2"): case fourcc("BC5U"): kind = Kind::BC5; break;
+        case 20: useMasks(24, 0xff0000u, 0xff00u, 0xffu, 0); break;
+        case 21: useMasks(32, 0xff0000u, 0xff00u, 0xffu, 0xff000000u); break;
+        case 22: useMasks(32, 0xff0000u, 0xff00u, 0xffu, 0); break;
+        case 23: useMasks(16, 0xf800u, 0x7e0u, 0x1fu, 0); break;
+        case 24: useMasks(16, 0x7c00u, 0x3e0u, 0x1fu, 0); break;
+        case 25: useMasks(16, 0x7c00u, 0x3e0u, 0x1fu, 0x8000u); break;
+        case 26: useMasks(16, 0xf00u, 0xf0u, 0xfu, 0xf000u); break;
+        case 28: useMasks(8, 0, 0, 0, 0xffu); break;
+        case 32: useMasks(32, 0xffu, 0xff00u, 0xff0000u, 0xff000000u); break;
+        case 50: useMasks(8, 0xffu, 0, 0, 0, true); break;
+        case 51: useMasks(16, 0xffu, 0, 0, 0xff00u, true); break;
+        default: return fail("DDS: unsupported legacy FourCC");
+        }
+    } else if (pfFlags & (0x40u | 0x20000u | 0x2u)) {
+        const bool alpha = (pfFlags & 1u) || (pfFlags & 2u);
+        useMasks(rd32(bytes, 88), rd32(bytes, 92), rd32(bytes, 96),
+                 rd32(bytes, 100), alpha ? rd32(bytes, 104) : 0u,
+                 (pfFlags & 0x20000u) != 0);
+    } else return fail("DDS: unsupported pixel format flags");
+
+    if (kind == Kind::Masks &&
+        ((masks.bits % 8) != 0 || masks.bits < 8 || masks.bits > 32))
+        return fail("DDS: unsupported channel bit layout");
+
+    out.format = kind == Kind::BC1 ? BlockFormat::BC1 :
+                 kind == Kind::BC3 ? BlockFormat::BC3 :
+                 kind == Kind::BC4 ? BlockFormat::BC4 :
+                 kind == Kind::BC7 ? BlockFormat::BC7 : BlockFormat::None;
+    out.vkFormat = kind == Kind::BC1 ? (alphaBC1 ? (srgb ? 134u : 133u) : (srgb ? 132u : 131u)) :
+                   kind == Kind::BC3 ? (srgb ? 138u : 137u) :
+                   kind == Kind::BC4 ? 139u :
+                   kind == Kind::BC7 ? (srgb ? 146u : 145u) :
+                   srgb ? 43u : 37u;
+    out.width = int(width);
+    out.height = int(height);
+    out.depth = int(depth);
+    out.arrayLayers = int(arrayCount);
+    out.faces = isCube ? 6 : 1;
+    out.oneDimensional = oneD;
+    out.srgb = srgb;
+    out.levels.resize(mipCount);
+
+    constexpr size_t kMaxMipBytes = size_t(512) << 20;
+    const size_t surfaceCount = size_t(arrayCount) * size_t(out.faces);
+    for (uint32_t mip = 0; mip < mipCount; ++mip) {
+        const int w = levelWidth(out, int(mip)), h = levelHeight(out, int(mip));
+        const size_t outSlice = levelByteSize(out.format, w, h);
+        const size_t slices = surfaceCount * size_t(levelDepth(out, int(mip)));
+        if (!outSlice || !slices || outSlice > kMaxMipBytes / slices)
+            return fail("DDS: mip payload exceeds safety limit");
+        out.levels[mip].resize(outSlice * slices);
+    }
+
+    const size_t start = dx10 ? 148 : 128;
+    size_t cursor = start;
+    for (size_t surface = 0; surface < surfaceCount; ++surface) {
+        for (uint32_t mip = 0; mip < mipCount; ++mip) {
+            const int w = levelWidth(out, int(mip)), h = levelHeight(out, int(mip));
+            const int zCount = levelDepth(out, int(mip));
+            const size_t sourceSlice = kind == Kind::Masks ?
+                size_t(w) * size_t(h) * size_t(masks.bits / 8) :
+                size_t((w + 3) / 4) * size_t((h + 3) / 4) *
+                size_t(kind == Kind::BC1 || kind == Kind::BC4 ? 8 : 16);
+            const size_t destSlice = levelByteSize(out.format, w, h);
+            for (int z = 0; z < zCount; ++z) {
+                if (cursor > bytes.size() || sourceSlice > bytes.size() - cursor)
+                    return fail("DDS: truncated array/face/volume mip payload");
+                const auto* src = reinterpret_cast<const uint8_t*>(bytes.data()) + cursor;
+                uint8_t* dst = out.levels[mip].data() +
+                    (surface * size_t(zCount) + size_t(z)) * destSlice;
+                if (out.format != BlockFormat::None) {
+                    std::memcpy(dst, src, sourceSlice);
+                } else if (kind == Kind::Masks) {
+                    std::vector<uint8_t> rgba;
+                    if (!decodeMasks(src, sourceSlice, w, h, masks, rgba))
+                        return fail("DDS: unsupported uncompressed pixel layout");
+                    std::memcpy(dst, rgba.data(), destSlice);
+                } else {
+                    // BC2 and BC5 are converted to RGBA8 using the legacy
+                    // block decoders; their layout is preserved across mips.
+                    const int bw = (w + 3) / 4, bh = (h + 3) / 4;
+                    uint8_t pixels[64];
+                    for (int by = 0; by < bh; ++by)
+                        for (int bx = 0; bx < bw; ++bx) {
+                            const uint8_t* block = src + size_t(by * bw + bx) * 16;
+                            if (kind == Kind::BC2) decodeBc2(block, pixels);
+                            else decodeBc5(block, pixels);
+                            for (int row = 0; row < 4 && by * 4 + row < h; ++row) {
+                                const int cols = std::min(4, w - bx * 4);
+                                std::memcpy(dst + (size_t(by * 4 + row) * size_t(w) +
+                                                   size_t(bx * 4)) * 4,
+                                            pixels + row * 16, size_t(cols) * 4);
+                            }
+                        }
+                }
+                cursor += sourceSlice;
+            }
+        }
+    }
+    return true;
+}
+
 } // namespace aiverse::render
