@@ -4788,3 +4788,46 @@ Next: verify compare main...feature reports zero commits behind,
 then proceed with texture feature source work only after the merge.
 Run full native compilation/tests and check InputFlow/Texture RHI
 integration before marking the Draft PR ready for merge.
+
+## Stage 7AI — owned linear RGBA8 virtual texture feedback pass (2026-11-18)
+
+Source commit: 156c82a3db86bae26a645e9ca3634fbb5201ea5b.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+New public header: engine/gfx/VirtualTextureFeedbackPass.h.
+Main integration merge parent: 2dc38b95d7525786c98b966113267047666a0290.
+
+API: VirtualTextureFeedbackPass::initialize(Device&,width,height,
+VirtualTextureFeedbackConfig,VirtualTexturePrefetchConfig) allocates
+a single-sample single-mip Texture2D RGBA8 UNORM offscreen color
+target, and validates pixel budget/descriptor/backend capabilities.
+begin() clears the buffer to zero (invalid feedback ID), opens
+the standard RenderTargetSet render pass and configures a matching
+viewport/scissor. The caller supplies a fragment shader writing
+the Stage 7AA 32-bit packed virtual-page IDs, one opaque color
+output and no sRGB/MSAA/blending/postprocess. endAndCapture()
+closes the pass and requests the existing nonblocking
+Device::readTextureAsync callback. submitVisiblePages(fileStreamer)
+forwards decoded UV visibility through the pre-existing
+feedback runtime and disk-backed prefetch adapter in a later
+graphics frame. This helper never starts a graphics frame,
+does disk I/O, or writes ECS/network/save state.
+
+Lifetime: fully owns the temporary feedback render target;
+shutdown invalidates runtime's weak callback state and frees
+target via RenderTargetSet. It refuses to start a new capture
+when the previous async request is pending or awaits consumption.
+Device must outlive this owner. Unsupported RHI async readback
+fails explicitly instead of implying a successful feedback pass.
+
+Compatibility: additive, opt-in header-only C++ API. Existing
+graphics render paths, shader graph and gameplay are unchanged.
+Open issues: no renderer/camera invokes this helper automatically;
+shader compilation/feedback render fidelity remain unverified.
+
+Actual verification: GitHub file commit succeeded. Native C++
+compile NOT RUN, CTest NOT RUN, real Metal/GL/Vulkan GPU NOT RUN.
+Next: add deterministic mock-device tests for allocation rollback,
+clear state, begin/end/capture ordering, async completion,
+unsupported backend and weak callback destruction. Register
+the test in CMake and focused Texture RHI verifier before
+integrating in a live renderer.
