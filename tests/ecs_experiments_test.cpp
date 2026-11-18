@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <atomic>
+#include <thread>
 #include <vector>
 // Assertions must remain active in Release/NDEBUG CI builds. Plain assert()
 // disappears under -DNDEBUG, silently skips test expressions and turns
