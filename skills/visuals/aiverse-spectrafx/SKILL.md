@@ -27,7 +27,15 @@ Use the universal editor-core tools when authoring graphs for an open game:
 4. `fx_graph_bake {name, effect, overrides?, overwrite?}` creates `fx/<effect>.json`, consumed by the original CPU renderer and `fx_preview {effect}`. Existing baked effects are protected unless `overwrite:true`.
 5. `fx_graph_delete {name}` removes only the graph source; baked effects remain separate.
 
-The MCP commands work in editor and headless `aiversemcp` via `Workspace::call`; they do not depend on RTS or FPS modules. Baked effects do **not** automatically track graph changes. Do not call this a Niagara-equivalent visual node editor.
+The MCP commands work in editor and headless `aiversemcp` via `Workspace::call`; they do not depend on RTS or FPS modules. Baked effects do **not** automatically track graph changes. The separate **SpectraFX** window adds a basic graph-v1 canvas, but it is not a full Niagara-equivalent programmable editor.
+
+## Visual editor and ephemeral preview (stage 8, committed but unverified)
+
+- Open **Графика → SpectraFX** in the editor. Select/create a graph, add Spawn/Initialize/Update/Output nodes, drag and connect their pins. Middle mouse pans; the right panel edits properties and exposed parameters as JSON.
+- Save calls `fx_graph_set` and reports the exact graph-v1 compiler errors.
+- `fx_graph_preview {graph:<JSON>, name?, overrides?, advance?, x?, y?, z?, loop?, freeze?}` is a GUI-only MCP operation. It compiles the **unsaved graph** in memory into the existing CPU particle backend, without creating `fx/*.json`.
+- Node `position:[x,y]` is authoring metadata; compilation and runtime effects ignore it. Older graphs without positions remain compatible.
+- Check `view_screenshot {window:"scene"}` after a successful preview. All interactive GUI results still require macOS/Windows manual validation; unit-test source presence alone is not verification.
 
 ## Boundaries and tests
 
