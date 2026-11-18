@@ -1150,3 +1150,22 @@ TextureAsset resource upload for KTX2 layered payloads
 independently of the 2D-only model material path.
 Continue with DDS cubemap/array decoding and BasisU
 transcoding in separately documented stages.
+
+## Stage 6B — KTX2 test standalone include correction (2026-11-18)
+
+**Code commit:** `7a70493331e54a974d4125aa3ff9159c3a141fba`.
+**Path:** `tests/render/ktx2_layers.cpp`.
+
+**Fix:** Add `#include <algorithm>` explicitly; the test uses
+`std::max` when calculating synthetic KTX2 slice offsets.
+This avoids relying on transitive standard-library includes.
+
+**Verification:** GitHub source commit confirmed. C++ compiler
+and the `ktx2_layers` CTest **NOT RUN**. Still requires a
+normal clone/native build; no passing result asserted.
+
+**Next:** Add a dimension-aware KTX2 GPU importer that can
+create actual texture array/cube/3D resources using the full
+retained payload. Keep model-material sampler2D compatibility
+separate. Validate import on all actual backends before
+describing it as production support.
