@@ -90,6 +90,13 @@ Json graphEvaluation(const Json& graph, const Json& overrides, fx::EffectDef* co
             if (e.trail.enabled && !e.trail.texture.empty()) textures.insert(e.trail.texture);
         }
         response.set("textures", graphStrings({textures.begin(), textures.end()}));
+        // GPU eligibility is a *schema* assessment only: the user's RHI
+        // device might still lack Metal compute, or shader setup might fail.
+        const auto eligibility = spectra::inspectGraphGpuEligibility(def);
+        response.set("metalGpuEligible", Json::fromBool(eligibility.eligible));
+        response.set("metalGpuReason", strGraph(eligibility.eligible
+            ? "Metal compute subset compatible; device/runtime still unverified"
+            : eligibility.reason));
         if (compiled) *compiled = std::move(def);
     }
     return response;
