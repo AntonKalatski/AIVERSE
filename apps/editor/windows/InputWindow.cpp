@@ -129,6 +129,10 @@ public:
     const char* dockArea() const override {return "right";}
     int order() const override {return 45;}
     bool openByDefault() const override {return false;}
+    bool captureGlobalShortcuts() const override {return capture_.has_value();}
+    void update(Editor& ed,double) override {
+        if(!open || !ed.isWindowInFront(this)) capture_.reset();
+    }
 
     void draw(Editor& ed) override {
         const std::string dir=ed.ws().project.dir;
