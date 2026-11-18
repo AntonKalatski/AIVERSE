@@ -38,9 +38,9 @@ forestSceneFromManifest(const Json& manifest) {
     settings.scatter.densityPermille = static_cast<uint32_t>(worldInteger(
         j, "densityPermille", 850, 0, 1000));
     settings.chunkSizeCm = static_cast<int32_t>(worldInteger(
-        j, "chunkSizeCm", 3200, 100, 100000));
+        j, "chunkSizeCm", 6400, 100, 100000));
     settings.radiusChunks = static_cast<uint32_t>(worldInteger(
-        j, "radiusChunks", 3, 0, 8));
+        j, "radiusChunks", 4, 0, 8));
     settings.maxResidentChunks = static_cast<uint32_t>(worldInteger(
         j, "maxResidentChunks", 64, 1, 289));
     settings.view.highRangeCm = static_cast<int32_t>(worldInteger(
@@ -48,9 +48,9 @@ forestSceneFromManifest(const Json& manifest) {
     settings.view.mediumRangeCm = static_cast<int32_t>(worldInteger(
         j, "mediumRangeCm", 9000, 0, 100000000));
     settings.view.lowRangeCm = static_cast<int32_t>(worldInteger(
-        j, "lowRangeCm", 18000, 0, 100000000));
+        j, "lowRangeCm", 12000, 0, 100000000));
     settings.view.cullRangeCm = static_cast<int32_t>(worldInteger(
-        j, "cullRangeCm", 50000, 0, 100000000));
+        j, "cullRangeCm", 24000, 0, 100000000));
     settings.view.farDensityPermille = static_cast<uint32_t>(worldInteger(
         j, "farDensityPermille", 650, 0, 1000));
     settings.view.impostorBlendWidthCm = static_cast<int32_t>(worldInteger(
