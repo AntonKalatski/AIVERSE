@@ -346,7 +346,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     layers.append("surface links",LayerPhase::Overlay,[&] {
         if(tiles || !groundFx_.drawsLinks())
             for(const auto& [a,b]:s.roads)
-                r.quadXZ(a,b,.5f,rgba(196,164,112,235),.04f);
+                ::aiverse::View::submitQuadXZ(r,{
+                    a,b,.5f,rgba(196,164,112,235),.04f});
     });
     // Synchronous flush is the GPU pass boundary: callback captures cannot
     // escape this RtsView::draw frame; there is no parallel render submission.
