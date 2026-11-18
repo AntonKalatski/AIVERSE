@@ -1242,3 +1242,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `441bc126ec4f568bca99b826949fcce11dab5a3f`.
 - In `EcsImpactQueueSystems.h`, explicitly included `<cstddef>` and used `std::size_t` for queue capacity instead of relying on an incidental global `size_t` declaration from another standard header. No gameplay semantics change.
 - **Verification:** source edit only; no native compiler result yet. Run cross-genre impact queue CTest and standalone suite.
+
+### 2026-11-18 — Cross-genre hitscan to ordered-impact integration regression
+- Implementation SHA: `761beb341cd796b72cf7f9f3656d025c236bdaae`.
+- `tests/ecs_hitscan_selection_test.cpp` now composes the shared `selectClosestHitscanCandidate` with `resolveOrderedProjectileImpact` in two independent host-style fixtures. The accepted nearest hit dispatches exactly one immediate damage callback against an ECS target entity; accidental on-hit/splash callbacks throw; the obstructed ray invokes no damage. Existing tie, stale-life and rewind-eligibility coverage stays intact. No RTS/FPS gameplay modules are linked.
+- This is a standalone integration *test source*, not a native test pass or full authoritative client/server replay proof. Test registration was previously committed for CMake and standalone suite; validate link and CTest before accepting.
