@@ -1905,3 +1905,58 @@ resolve with strict sample-count/format validation, and Vulkan MSAA
 render pass support; then revisit mixed-format MRT across Vulkan/Metal
 and independent blend policy. Keep every subsequent stage's source
 commit and append-only handoff commit separate.
+
+## Stage 4S — GL33/GLES3 multisample renderbuffers and per-color resolve (2026-11-18)
+
+**Code commit:** `769f7d9d83ced30b3daf0bcccae642223e3a97e7`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/gl/GLApi.h`, `engine/gfx/gl/GfxGL.cpp`.
+
+**Implementation:** The GL33/GLES3/WebGL2 portable MSAA path now
+creates multisampled `Texture2D` render attachments as native
+`GL_RENDERBUFFER` objects. The existing `TextureHandle` stores this
+presentation-only renderbuffer and carries its sample count; sampled
+binding, updating pixels, and constructing texture views of such
+renderbuffers fail explicitly instead of treating renderbuffer IDs as
+GL texture IDs. Destruction uses `glDeleteRenderbuffers`.
+`GLApi.h` adds Windows GL33 function-loader entries for
+renderbuffer creation/deletion/storage/framebuffer attachment.
+
+`beginRenderTargets` validates homogeneous sample counts across
+all color and depth attachments; resolve destinations must be distinct
+single-sample 2D texture targets with matching mip extent and pixel
+format. `createPipeline` checks the sample count against device
+`GL_MAX_SAMPLES`; `setPipeline` enforces the active pass sample count.
+The FBO attaches renderbuffers or existing mip/layer texture views
+as appropriate; attachment formats remain per slot (Stage 4R).
+
+At `endPass`, for every color slot with a resolve destination,
+a temporary single-sample draw FBO receives a
+`glBlitFramebuffer(..., GL_COLOR_BUFFER_BIT, GL_NEAREST)` from the
+selected multisample source color attachment. This uses ES3/GL33
+renderbuffers and blit rather than unsupported ES3 multisample
+sampled texture objects. The legacy `copyColor` path refuses raw
+renderbuffer handles; `RenderTargetSet::sampledColor(i)` yields the
+allocated single-sample resolve texture. Transient MSAA outputs
+without an explicit resolve remain un-sampleable.
+
+**Compatibility and limits:** RHI `TextureDesc` validation already
+requires 2D, renderTarget=true, no initial data/storage/mips for MSAA.
+Only RGBA8/RGBA8_sRGB/RGBA16F color and Depth targets are wired;
+the GPU may still reject a requested format/sample count. GL per-slot
+resolve supports selected 2D mip destinations, but not layered
+multisampled textures or depth resolve. State and FBO cleanup are
+implemented in source; actual behavior on GL33, GLES3, WebGL2 and
+Android remains unverified.
+
+**Verification:** Connector wrote code commit and updated branch.
+**No build executed. No CTest executed. No GPU rendering executed.**
+No passing CI results asserted.
+
+**Next:** Implement Vulkan MSAA attachment allocation/pipeline and
+per-color renderpass resolves, plus native GPU verification on Vulkan
+and GLES3/WebGL2. On macOS/Windows/Android tests, verify no GL errors,
+sample-count mismatch rejection, multi-target clear/resolve, sRGB
+conversion, depth attachments, and lifetime cleanup. Revisit mixed
+attachment blend policies and sample-count flexibility separately.
+Always append a new handoff after each code stage.
