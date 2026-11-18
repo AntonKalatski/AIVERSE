@@ -103,3 +103,33 @@ need separate scene adapters. Preview is currently numeric, not
 a GPU screenshot. Before reporting success, verify the map can undo,
 redo, save, reload, and display updated terrain; log all actual test
 results in `docs/terrain/AGENT_HANDOFF.md`.
+
+
+## Stage 3b–3e: multi-view Arbor and opt-in native WorldScene host
+
+- Use `makeArborImpostorAtlas(profile, seed, settings)` for 4/8/16
+  camera azimuth slices in **one atlas texture** and **one Model**.
+  `ArborForestAdapter` selects the tree-local view via stable
+  per-species `Material` overrides and `ModelDraw::materials`;
+  preserve those vectors until Renderer3D finishes its frame.
+- To reduce forest-wide pop without per-tree transparent overdraw,
+  set `FloraView::impostorBlendWidthCm` to an allowed nonzero band;
+  the radius is deterministic for each instance. This is **not** a
+  per-tree fade.
+- Native users can opt in via `TerraWeaveForestScene`: add species
+  before first stream/upload, update with `streamAt(cameraCm)`,
+  then use `uploadModels(gfxDevice)`, `submit(renderer, originCm)`
+  and `releaseModels(gfxDevice)` on the GPU-owning thread.
+  `setExclusions` invalidates cached patches.
+- `WorldScene` now accepts an OPTIONAL root `terraweaveForest`
+  JSON block (see `docs/terrain/TERRAWEAVE.md`) and handles
+  chunk cache/update/model lifecycle/draw when explicitly enabled.
+  Never apply it silently to existing maps; the legacy RTS
+  MapDoc editor is a separate path.
+- Scatter work is bounded across the entire scene; invalid density/
+  spacing or excessive resident candidate budgets are rejected.
+  This initial forest scene is still **synchronous** and uses the
+  first observer only. Do not claim worker async streaming, authored
+  heightmap matching, navmesh/collision, or GPU validation.
+- **No tests ran at user request.** Record every implementation stage
+  and exact unverified status in `docs/terrain/AGENT_HANDOFF.md`.
