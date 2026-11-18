@@ -895,3 +895,36 @@ order. Wire an opt-in editor forest preview, inspect model LOD and
 GPU batching, and only afterward perform CMake/CTest, headless,
 Metal/GL/Vulkan screenshots, FPS/RTS regressions and benchmarks.
 Append a new handoff after each phase.
+
+
+## Stage 3e — bounded residency work and upload rollback (COMMITTED; TESTS DEFERRED)
+
+**Commits:**
+- `e48735049c7b702142cdc59eac4f8f85a2043cce` —
+  `engine/world/TerraWeaveForestScene.h`: validates candidate
+  lattice density across the full resident cache. Caps one chunk
+  at 65,536 candidate cells and the maximum scene allocation/work
+  estimate at 1,000,000 candidates. Validates `FloraView` LOD
+  ranges early. On partial GPU prototype upload failure, releases
+  already uploaded model resources rather than leaking them.
+- `07836187c1f5109d60f65c7b21cfb15a647ddab0` —
+  `skills/world/aiverse-terraweave/SKILL.md`: instructs agents
+  how to use the new atlas/forest host, and warns of deferred tests.
+
+**Architecture:** CPU scatter bound is validated in
+`TerraWeaveForestScene` constructor. No change to deterministic
+scatter algorithm, global lattice positions, ECS simulation or
+legacy projects. GPU ownership remains the render/update thread
+via `gfx::Device`. No new direct graphics backend calls.
+
+**Actually tested:** no binary compile/test, live scene or screenshot
+run, as requested. GitHub commit succeeded. This cap is a guard
+against pathological configurations, *not* a measured latency
+guarantee.
+
+**Next agent:** during formal verification, check that
+`AIVERSE_BUILD_TESTS=ON` compiles the new WorldScene integration,
+run `terraweave_model`/`terraweave_flora` and true runtime
+WorldScene capture, validate memory/draw count under the bounds.
+Implement asynchronous streaming with bounded pending job queue and
+stale revision tokens before marketing this as non-blocking.
