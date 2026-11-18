@@ -270,3 +270,24 @@ The current client HUD/viewmodel/smoke and audio changes require a successful li
 visual/audio check. The automated GUI launch was interrupted; do not treat a compiled
 client or the headless scenarios as proof of visual quality. Windows, web and mobile
 integration of these new controls has not been verified.
+
+### Opt-in animated remote FPS characters
+
+The reference FPS client now supports an optional character model without
+changing authoritative FPS simulation, saves, or network protocol:
+
+```json
+{ "fps": { "visual": { "model": "models/hero.glb", "scale": 1.0,
+                       "heightOffset": 0.0 } } }
+```
+
+Place the model under the FPS project directory. An optional
+`fps.visual.animationGraph` object uses the existing AnimationGraph JSON
+format; otherwise, the client builds a basic Idle/Walk or Idle/Run blend
+graph from recognized clip names. Input parameters projected from snapshots:
+`speed`, `moving`, `dead`, `grounded`, `reloading`.
+
+The reference client runs a separate presentation ECS World, not a gameplay
+world, and computes remote actor poses per render frame. Invalid model/graph
+assets retain the previous box rendering fallback. The procedural first-person
+weapon remains unchanged. This path requires a real model and visual testing.

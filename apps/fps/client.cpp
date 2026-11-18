@@ -10,6 +10,7 @@
 #include "engine/world/WorldScene.h"
 #include "engine/platform/ContentReader.h"
 #include "engine/render/Renderer3D.h"
+#include "libraries/include/aiverselib/animation/EcsAnimationSystems.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
@@ -17,6 +18,9 @@
 #include "engine/audio/Audio.h"
 #include "engine/platform/EngineDir.h"
 #include <fstream>
+#include <algorithm>
+#include <map>
+#include <memory>
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
@@ -36,6 +40,13 @@ struct App {
     platform::ContentReader contentReader;
     render::GeometryScene staticGeometry;
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
+    // Client-only visual ECS: never add float poses to the authoritative FPS Simulation.
+    World characterPresentation;
+    std::unique_ptr<render::Model> characterModel;
+    std::shared_ptr<const render::AnimationGraph> characterGraph;
+    std::map<uint8_t,Entity> characterEntities;
+    std::map<uint8_t,uint32_t> characterLives;
+    float characterScale=1.f,characterHeightOffset=0.f;
     i18n::Localization lang;
     std::set<platform::Key> keys;
     fps::Input input;
@@ -56,6 +67,7 @@ struct App {
         }
         gui.init(device,"engine/assets/fonts/ui.ttf",17);
         render::MeshBuilder builder;builder.color(render::rgba(255,255,255)).box({0,0.5f,0},{1,1,1});cube=builder.upload(device);
+        loadAnimatedCharacter(device);
         lang.load([](const auto& path,auto& out){return platform::readContentFile(path,out);},"en",{"engine/assets/lang"});
         Simulation sim({1,config.tickRate,0},std::make_unique<fps::Module>());sim.setup(rules,map);
         geometry=static_cast<fps::Module&>(sim.module()).collision();
@@ -66,6 +78,116 @@ struct App {
         if(const char* wav=std::getenv("AIVERSE_AUDIO_CAPTURE"))ac.capturePath=wav;
         audio.init(ac);std::string bank,error;
         if(platform::readContentFile(projectRoot+"/audio.json",bank)||platform::readContentFile("engine/assets/fps_audio.json",bank))if(!audio.loadBank(Json::parse(bank),[](const auto& file,auto& out){return platform::readContentFile(file,out);},&error))std::fprintf(stderr,"FPS audio: %s\n",error.c_str());
+    }
+
+    // Opt-in model for FPS remote players. Existing box fallback remains when
+    // fps.visual.model is unset or the asset fails to load.
+    void loadAnimatedCharacter(gfx::Device& device) {
+        const auto& view=rules["fps"]["visual"];
+        const std::string file=view.getStr("model");
+        if (file.empty()) return;
+        try {
+            std::vector<std::string> warnings;
+            auto reader=[](const std::string& path,std::string& text) {
+                return platform::readContentFile(path,text);
+            };
+            auto model=render::loadModel(projectRoot+"/"+file,reader,&warnings);
+            if (!model || !render::uploadModel(device,*model))
+                throw std::runtime_error("model upload failed");
+            Json def=view["animationGraph"];
+            if (!def.isObject()) {
+                // Generate a useful idle/walk graph from imported clip names.
+                // Projects can supply their own full graph with parameters.
+                Json nodes=Json::array();
+                Json bind=Json::object();
+                bind.set("id",Json::string("bind"));
+                bind.set("kind",Json::string("bind"));
+                nodes.push(bind);
+                std::string output="bind";
+                const int idle=model->findClip("Idle")>=0?model->findClip("Idle"):model->findClip("Stand");
+                const int move=model->findClip("Run")>=0?model->findClip("Run"):model->findClip("Walk");
+                auto addClip=[&](const char* id,int index){
+                    Json node=Json::object();
+                    node.set("id",Json::string(id));
+                    node.set("kind",Json::string("clip"));
+                    node.set("clip",Json::string(model->clips[size_t(index)].name));
+                    nodes.push(node);
+                };
+                if (idle>=0) {addClip("idle",idle);output="idle";}
+                if (move>=0) {
+                    addClip("move",move);
+                    if (output=="bind")output="move";
+                    else {
+                        Json blend=Json::object();
+                        blend.set("id",Json::string("locomotion"));
+                        blend.set("kind",Json::string("blend"));
+                        blend.set("a",Json::string("idle"));
+                        blend.set("b",Json::string("move"));
+                        blend.set("parameter",Json::string("moving"));
+                        nodes.push(blend);
+                        output="locomotion";
+                    }
+                }
+                def=Json::object();
+                def.set("nodes",nodes);
+                def.set("output",Json::string(output));
+                def.set("parameters",Json::parse(R"({"moving":0,"speed":0})"));
+            }
+            const auto compiled=render::AnimationGraph::compile(*model,def);
+            const double scale=view["scale"].toDouble(1.0);
+            if (std::isfinite(scale) && scale>0.001 && scale<100)
+                characterScale=float(scale);
+            const double offset=view["heightOffset"].toDouble(0.0);
+            if (std::isfinite(offset) && std::abs(offset)<100)
+                characterHeightOffset=float(offset);
+            characterGraph=compiled;
+            characterModel=std::move(model);
+            for (const auto& warning:warnings)
+                std::fprintf(stderr,"FPS animation import: %s\n",warning.c_str());
+        } catch (const std::exception& e) {
+            std::fprintf(stderr,"FPS animation disabled (box fallback): %s\n",e.what());
+            if (characterModel) render::releaseModel(device,*characterModel);
+            characterGraph.reset();
+            characterModel.reset();
+        }
+    }
+    void updateCharacterAnimations(double dt,const fps::Actor& local) {
+        if (!characterModel || !characterGraph) return;
+        for (const auto& remote:client->snapshot().actors) {
+            if (remote.slot==local.slot) continue;
+            Entity e;
+            const auto found=characterEntities.find(remote.slot);
+            if (found==characterEntities.end()) {
+                e=characterPresentation.create();
+                characterEntities.emplace(remote.slot,e);
+                auto& asset=characterPresentation.add<lib::animation::AnimationAssetComponent>(e);
+                asset.model=characterModel.get();
+                asset.graph=characterGraph;
+                characterPresentation.add<lib::animation::AnimationPlayerComponent>(e);
+                characterPresentation.add<lib::animation::AnimationPoseComponent>(e);
+                characterPresentation.add<lib::animation::AnimationInputsComponent>(e);
+                characterPresentation.add<lib::animation::AnimationBudgetComponent>(e);
+            } else e=found->second;
+            auto& player=characterPresentation.get<lib::animation::AnimationPlayerComponent>(e);
+            const auto knownLife=characterLives.find(remote.slot);
+            if (knownLife==characterLives.end() || knownLife->second!=remote.life)
+                player.restart=true;
+            characterLives[remote.slot]=remote.life;
+            auto& inputs=characterPresentation.get<lib::animation::AnimationInputsComponent>(e).overrides;
+            inputs.values.clear();
+            const auto speed=render::length(visual(remote.velocity));
+            inputs.set("speed",speed);
+            inputs.set("moving",speed>.1f?1.f:0.f);
+            inputs.set("dead",remote.health<=0?1.f:0.f);
+            inputs.set("grounded",remote.grounded?1.f:0.f);
+            inputs.set("reloading",remote.reloadUntil?1.f:0.f);
+            auto& lod=characterPresentation.get<lib::animation::AnimationBudgetComponent>(e);
+            const float range=render::length(visual(remote.pos-local.pos));
+            lod.interval=range>80.f?.1f:range>25.f?1.f/30.f:0.f;
+            lod.visible=remote.health>0;
+        }
+        lib::animation::stepAnimationPresentation(characterPresentation,
+            float(std::clamp(dt,0.,.25)));
     }
     void event(const platform::Event& e) {
         using E=platform::EventType;using K=platform::Key;
@@ -133,6 +255,7 @@ struct App {
         if(!platform::pointerLocked()){keys.clear();input.buttons=0;fireHeld=fireQueued=aimHeld=false;input.action=fps::Action::None;}
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());gui.newFrame(dt);
         auto actor=client->predicted();viewTime+=dt;
+        updateCharacterAnimations(dt,actor);
         if(actor.reloadUntil&&!lastReload)audio.play("reload");
         lastReload=actor.reloadUntil;
         stepSound+=dt;
@@ -190,8 +313,31 @@ struct App {
             for(const auto& old:previousSnapshot.actors)if(old.slot==remote.slot&&old.life==remote.life&&old.health>0) {
                 auto before=visual(world::relativeTo(old.pos,origin,32));position=before+(position-before)*interpolation;break;
             }
-            auto transform=render::mat4::translate(position)*render::mat4::scale({0.6f,float(fps::stanceHeight(remote,config.motor).toDouble()),0.6f});
-            renderer.drawMesh(cube,transform,remote.team==actor.team?render::float4{0.1f,0.5f,0.9f,1}:render::float4{0.9f,0.2f,0.1f,1});
+            bool animated=false;
+            if(characterModel) {
+                const auto found=characterEntities.find(remote.slot);
+                if(found!=characterEntities.end()) {
+                    const auto* posed=characterPresentation.tryGetConst<lib::animation::AnimationPoseComponent>(found->second);
+                    if(posed && posed->valid) {
+                        render::ModelDraw draw;
+                        draw.model=characterModel.get();
+                        draw.persistentId=uint64_t(remote.slot);
+                        const float yaw=float(remote.yaw.toDouble()*6.283185307179586);
+                        draw.world=render::mat4::translate(position+render::float3{0,characterHeightOffset,0})
+                            *render::mat4::rotateY(yaw)
+                            *render::mat4::scale({characterScale,characterScale,characterScale});
+                        draw.nodeWorld=&posed->matrices;
+                        draw.pose=&posed->local;
+                        draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
+                        renderer.drawModel(draw);
+                        animated=true;
+                    }
+                }
+            }
+            if(!animated) {
+                auto transform=render::mat4::translate(position)*render::mat4::scale({0.6f,float(fps::stanceHeight(remote,config.motor).toDouble()),0.6f});
+                renderer.drawMesh(cube,transform,remote.team==actor.team?render::float4{0.1f,0.5f,0.9f,1}:render::float4{0.9f,0.2f,0.1f,1});
+            }
         }
         auto box=[&](Vec3 pos,render::float3 size,render::float4 color){renderer.drawMesh(cube,render::mat4::translate(visual(world::relativeTo(pos,origin,32)))*render::mat4::scale(size),color);};
         for(const auto& loot:client->snapshot().loot)box(loot.pos,{0.35f,0.35f,0.35f},{0.9f,0.75f,0.15f,1});
@@ -252,7 +398,7 @@ struct App {
         fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
         gui.render();device.endPass();device.endFrame();
     }
-    void shutdown(gfx::Device& device){if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
+    void shutdown(gfx::Device& device){characterEntities.clear();characterLives.clear();characterGraph.reset();if(characterModel){render::releaseModel(device,*characterModel);characterModel.reset();}if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
 };
 }
 int aiverseMain(int argc,char** argv) {
