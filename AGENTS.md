@@ -107,6 +107,31 @@ this stage. Continue the required separate handoff file after every
 bounded implementation stage. Do not claim GPU-resident lifecycle,
 FPS/RTS production integration or GPU performance measurements.
 
+**Stage 14B — universal cross-instance SpectraFX batching (source
+committed, not build-verified):** `engine/fx/SpectraBatchWorld.{h,cpp}`
+owns a *single shared* `fx::ParticleSystem` and reuses the
+`ParticleSystem::batchFor` material key (GPU atlas texture handle,
+blend, shader-graph identity, primitive type). Independent graph
+instances can opt into the same context via
+`GraphRuntime::initEffect(BatchWorld&, ...)` or
+`GraphRuntime::initGraph(BatchWorld&, ...)`. The common host must
+call `BatchWorld::setView/update/draw` exactly once per frame;
+per-instance `GraphRuntime::step/draw` must NOT re-render/tick
+the shared particle world. `GraphRuntime::clear/shutdown` kill
+only their own effect handles, not the whole scene. One
+`drawIndexed` call can cover particles of different effects and
+UV rects sharing one atlas; incompatible blend/pipeline states or
+mesh vs quad must remain separate, and large runs split at the
+16-bit index cap. Do **not** create a fresh CPU particle renderer
+per effect source in native integrations that need batching.
+Existing FPS/RTS one-world renderers already share this behavior.
+GPU graph execution remains experimental; the new shared API
+does not coalesce separate Metal compute emitters, and rejects
+`RequireGpu` rather than silently changing the requested backend.
+The `vfx_shared_batch_world` regression source exists, but no
+confirmed CTest result was available when authored. See
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
