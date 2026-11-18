@@ -255,3 +255,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Smoke-test checklist:** editor opens Input Actions, selects FPS/RTS defaults and saves valid `input/actions.json`; FPS F10 rebinding persists across restart; gamepad/mouse/touch modifiers and profile IDs remain stable; Game→Inspector tab focus releases held RTS movement; RTS script-command overrides and network Commands unchanged. Run all AGENTS.md engine regression and determinism suites before merge. Cross-platform macOS/Linux/Windows/Web/Android/iOS remain unverified.
 
 **Next agent entry point:** read this document and `docs/enhanced-input.md`; obtain build logs/CI results, fix warnings and failures, then write Stage 16 with exact test evidence. Avoid re-implementing the input core; remaining high-level gestures and non-hotkey RTS controls can follow as additive stages.
+
+## Stage 16 — transactional user profile write/rebind (2026-11-18)
+
+**Problem:** FPS `rebindInput` previously modified `actions` and `inputProfile` before saving; failed file writes could leave runtime keys changed without a matching durable profile. Existing Windows overwrite fallback also removed the original file before confirming replacement.
+
+**Fix:** new `engine/platform/EnhancedInputProfileIO.h` provides `enhanced_config::loadProfileFile/saveProfileFile` with validated JSON, temporary writing, atomic POSIX replacement and backup/restore fallback for Windows. FPS stages both a copy of the current `InputSystem` and user `Profile`, validates/applyProfile into staging, persists the profile, then swaps the in-memory state and calls `syncUserData`. Invalid controls, unknown mapping IDs and disk errors leave the prior live mapping untouched. FPS initial profile load also uses staging, so invalid stored overrides are ignored without affecting defaults.
+
+**Tests:** `enhanced_input_config_tests.cpp` adds host-file roundtrip plus failed invalid-profile overwrite retention using a temporary file. Runs on the existing `library_enhanced_input_config` target; test execution pending.
+
+**Verification:** source changed and committed, CI jobs were still queued at inspection time, no local full checkout due blocked GitHub networking. Do not claim a passing build. Next agent: compile and run this test on Windows and POSIX, then check editor and RTS focus/profile parity before PR readiness.
