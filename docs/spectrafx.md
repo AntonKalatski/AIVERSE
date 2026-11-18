@@ -690,11 +690,118 @@ updates. CTest: `vfx_shared_batch_world`, target
 The focused CI workflow builds this test on Linux and macOS;
 actual CI/CTest results remain **unverified** in this session.
 
+## Genre-neutral cue scheduling and ECS source bridge (Stage 15)
+
+The opt-in **`spectra::CueScheduler`** in
+`engine/fx/SpectraCueScheduler.{h,cpp}` coordinates many independent
+event/attached-effect sources over the already existing **`BatchWorld`**.
+It does **not** create another ParticleSystem or issue `update`/`draw`
+itself; the owning presentation host still calls `BatchWorld` once
+per frame. All scheduling and particle handles stay outside gameplay
+ECS, deterministic hashes and rollback state.
+
+Use the canonical include `engine/fx/SpectraFX.h` for the pure
+presentation API, or `<aiverselib/genre/SpectraFX.h>` in native
+ECS projects to also access `syncEcsCueSources` and
+`acceptSimCueTick`. The ECS adapter **reuses**
+`SpectraSourceComponent` (no new ECS component type or ID).
+The host supplies the same generic render-pose resolver as the
+existing `SpectraPresentationSystem`. Source keys use
+`Entity::packed()` so recycled indices with new generations
+cannot reuse an old effect handle.
+
+```cpp
+#include <aiverselib/genre/SpectraFX.h>
+
+// BatchWorld and CueScheduler must outlive each other's handles in this
+// order: shared BatchWorld initialized first, CueScheduler destroyed first.
+aiverse::spectra::BatchWorld shared;
+shared.init(device, aiverse::fx::FxQuality::High);
+aiverse::spectra::CueBudgets limits;
+limits.maxQueued = 512;
+limits.maxPerTick = 64;
+limits.maxPerFrame = 128;
+limits.maxAttachments = 1024;
+limits.maxTrackedOneShots = 2048;
+aiverse::spectra::CueScheduler cues(shared, limits);
+
+cues.registerEffect("impact", impactEffectDef); // or registerGraph(...)
+cues.registerEffect("engine_fire", loopingEffectDef);
+cues.bindCue(72, "impact"); // game-defined event type, not an FPS/RTS enum
+
+// On the presentation thread, after a committed gameplay tick:
+aiverse::spectra::acceptSimCueTick(cues, tick, simEvents);
+
+// ONCE per presentation frame, with graphics Device in a valid frame:
+shared.setView(camera, viewProj, width, height);
+aiverse::spectra::syncEcsCueSources(world, cues, resolvePose);
+cues.flush();          // deferred one-shots, bounded per frame
+shared.update(dt);     // exactly once for ALL sources
+// With the scene render pass open:
+shared.draw(fog);      // exactly once, batches compatible materials
+
+// Before replaying restored ticks after rollback/new match:
+cues.resetForRollback();  // kills only this scheduler's cues/sources
+// Do not call shared.clear() unless resetting ALL other presentation owners.
+// Destroy cues BEFORE shared.shutdown()/gfx::Device destruction.
+```
+
+### Budgets and ownership rules
+
+`CueBudgets` bounds outstanding events, per-tick admissions,
+per-frame one-shot starts, simultaneous ECS attachments and the
+rollback-tracked one-shot handle ring. Inputs are clamped to safe
+hard ceilings; tracked one-shot capacity cannot be zero.
+`CueScheduler::acceptTick(tick, events)` ignores duplicate or
+decreasing ticks until `resetForRollback()`, but **does not**
+advance the underlying particle renderer. `flush()` starts up to
+the frame budget and leaves the remaining bounded queue for later
+frames. The queue stores resolved effect IDs at acceptance time
+to avoid silent behavior changes during an asset hot-reload.
+
+When the tracked one-shot handle ring fills, the oldest effect
+is **killed before** its slot is reused, so its particles cannot
+escape rollback ownership. `syncAttachments` consumes the complete
+set of active sources for the current frame, moves existing handles,
+restarts on effect/revision/scale change and retires absent sources
+**before** applying the attachment cap to newcomers. Normal detach
+uses each component's stop-vs-kill policy; **rollback always kills**
+the scheduler's own handles and clears its pending queue, allowing
+older restored committed ticks to play again. Other producers using
+the same `BatchWorld` are untouched.
+
+`CueSchedulerStats` reports accepted/duplicate ticks, accepted
+and emitted cues, queued/attached counts, budget drops, unbound
+effects, failed spawns, evicted one-shot handles and source restarts.
+Call `registerGraph`/ `registerEffect` once during setup or asset
+reload, not every tick; `bindCue` maps generic unsigned event
+types to registered effect names. For custom colour, scale or direction
+per event, call `acceptTick` directly with `CueEvent`;
+`acceptSimCueTick` uses the default up-direction, scale and tint
+and converts SimEvent fixed-point positions into presentation floats.
+
+This scheduler currently uses the mature **shared CPU particle
+backend** plus RHI rendering/batching. It is deliberately
+**not** a multi-emitter Metal compute scheduler and does not
+enable `gpuIndirect` for ordinary graph assets. Custom GPU
+per-instance scheduling, automatic native RTS/FPS client migration,
+full rollback visual parity and actual platform performance remain
+future verification/work items.
+
+Tests: `tests/vfx_cue_scheduler_test.cpp`, target
+`aiverse_vfx_cue_scheduler_tests`, CTest `vfx_cue_scheduler` with
+label `SpectraFX`. Scenarios cover two unrelated ECS genres,
+generation-safe attachment replacement, committed tick dedup,
+queue/frame/attachment caps, one-shot eviction, rollback cleanup
+without affecting an unrelated BatchWorld effect, and graph
+registration diagnostics. **Tests are source-committed but not
+confirmed executed** until native CI results are available.
+
 ## Validation checklist
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests aiverse_vfx_cue_scheduler_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
