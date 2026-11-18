@@ -16,7 +16,7 @@ struct NereidSurfaceKey {
     lib::nereid::WaterSurfaceLod lod=lib::nereid::WaterSurfaceLod::Medium;
     float uvScale=0, foamWidth=0, oceanPatchRadius=0;
     uint32_t maxVertices=0;
-    float patchX=0,patchZ=0; // relevant for infinite ocean only
+    double patchX=0,patchZ=0; // relevant for infinite ocean only
     double originX=0,originZ=0; // local vertex basis, retained with GPU mesh
     lib::nereid::WaterSurfaceStyle style{};
     bool infinite=false;
@@ -35,6 +35,12 @@ inline float nereidPatchAnchor(float camera,float radius) {
     return float(snapped);
 }
 
+inline double nereidPatchAnchor64(double camera,double radius) {
+    if(!std::isfinite(camera) || !std::isfinite(radius) || radius<=0)
+        return std::numeric_limits<double>::quiet_NaN();
+    return std::floor(camera/radius)*radius;
+}
+
 inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
         lib::nereid::WaterSurfaceMeshOptions opts,
         lib::nereid::WaterSurfaceStyle style={}) {
@@ -50,8 +56,12 @@ inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
     key.style=style;
     if(infinite) {
         key.oceanPatchRadius=opts.oceanPatchRadius;
-        key.patchX=nereidPatchAnchor(opts.cameraX,opts.oceanPatchRadius);
-        key.patchZ=nereidPatchAnchor(opts.cameraZ,opts.oceanPatchRadius);
+        key.patchX=nereidPatchAnchor64(
+            opts.preciseCamera?opts.cameraX64:double(opts.cameraX),
+            double(opts.oceanPatchRadius));
+        key.patchZ=nereidPatchAnchor64(
+            opts.preciseCamera?opts.cameraZ64:double(opts.cameraZ),
+            double(opts.oceanPatchRadius));
     }
     return key;
 }
@@ -122,8 +132,9 @@ public:
         NereidPreparedSurface out;
         out.key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
         if(infinite) {
-            opts.cameraX=out.key.patchX;
-            opts.cameraZ=out.key.patchZ;
+            opts.preciseCamera=true;
+            opts.cameraX64=out.key.patchX;
+            opts.cameraZ64=out.key.patchZ;
         }
         out.cpu=lib::nereid::buildWaterSurfaceMesh(body,geometry,opts);
         if(out.cpu.empty())return std::nullopt;
