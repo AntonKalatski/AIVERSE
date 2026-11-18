@@ -1202,6 +1202,65 @@ All changes above are committed source; neither native compile,
 CTest, GUI preview nor cross-platform GPU execution was run for
 Stage 20. Do not claim source completeness or parity until verified.
 
+## CPU VM custom particle attributes in shader materials (Stage 21 — source committed, tests deferred)
+
+Emitters may now opt into a **four-channel shader-graph input map**
+via `graphInputs`. The renderer reuses the preexisting 40-byte vertex
+layout and its `float4 graphData` field, so compatible draw batching
+and legacy sprite/mesh vertex formats remain unchanged. The source
+mapping is validated by `fx::parseEffect`, serialized by
+`fx::effectToJson`, and precomputed once in
+`ParticleSystem::Impl::build` into four small integer selectors.
+It adds no JSON evaluation in the per-particle draw loop.
+
+Example inside any emitter in `fx/<name>.json` or a graph-v2
+`MaterialModule` / output node's flat properties:
+
+```json
+{
+  "graphInputs": ["attribute0", "attribute1", "param0", "age"]
+}
+```
+
+Exactly **four** source names are required. Valid names:
+`age`, `lifetime`, `random`, `zero`,
+`attribute0` through `attribute7`, and
+`param0` through `param7`. The scalar user attributes are
+written by the CPU `particleProgram` at Spawn/Update/event stages.
+The instance parameters are captured at emission or updated by the
+per-instance setters from Stage 20. Both are presentation-only.
+
+`shaderGraph` already consumes the four vertex channels as
+`sg_particle` in the built-in material graph compiler. This
+Stage 21 maps chosen VM values into those channels; authors
+can combine them with the graph's math/colour/texture nodes.
+It does **not** change the material graph language, the number
+of vertex channels or shader/texture slot budgets.
+
+**Source compatibility:** when `graphInputs` is absent,
+the generated vertex data is exactly
+`[particle age, particle lifetime, stable random, zero]`,
+matching the original shader graph contract. This mapping is
+opt-in for CPU-backed particles and does not alter the generic
+non-shader particle material's output. A newly authored mapping
+is included in the fully serialized effect identity for
+`BatchWorld` deduplication; effects with different vertex
+inputs still share draw calls when their actual material/render
+state matches, as each vertex carries its own data.
+
+The experimental Metal simple-billboard backend does not execute
+the CPU particle VM or arbitrary shader graphs. Modified effects
+that use nondefault `graphInputs` are rejected by the strict GPU
+eligibility gate and retain the existing full CPU renderer.
+No automatic GPU shader VM compiler, GPU graph-param binding,
+full custom-attribute register file, or guaranteed visual parity
+is claimed.
+
+**Verification:** user deferred building/testing while finishing
+functional work. Stage 21 comprises committed C++ source only:
+no CMake/CTest, editor screenshot, cross-backend shader compilation,
+GPU timing or material output comparison was actually run.
+
 ## Validation checklist
 
 ```bash
