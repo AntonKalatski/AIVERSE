@@ -86,3 +86,14 @@ HEAD and append; do not force-push or replace their entries.
 - **Validation actually executed:** inspected live `Json.h` (has `Type::Bool` and `type()`, no `isBool()`), reviewed owner build output, and committed one-line fix. **Post-fix macOS build/CTest NOT RUN here** (remote checkout not mounted in container). No passing CI claimed.
 - **Next:** `git pull --ff-only`, then `./run-tests.sh --quick` (or `./run-tests.sh` full); inspect new `build.log` if another compiler error appears and record full test output after completion. Separately inspect test-build flags: many `assert`-only test locals were flagged unused, suggesting `RelWithDebInfo` defines `NDEBUG` and disables assertions — change the runner's test configuration to preserve assertions before accepting green runs.
 
+
+## Stage 4 — Ensure assertions execute in all CTest binaries (2026-11-18)
+- **Implementation SHA:** `9b44e6d540101df79ab42bb1aa6738c3967070dd` on `feature/universal-entity-inspector-fps` PR #7.
+- **Files:** `run-tests.sh`, `tests/test_unified_runner.py`, `docs/testing.md`.
+- **Observed issue:** Mac Studio's `build.log` reported numerous `unused variable` warnings for test variables referenced only from `assert(...)`. The runner had configured `RelWithDebInfo`, which commonly defines `NDEBUG`, removing these assertions and potentially yielding meaningless green results.
+- **Fix:** root runner now configures/builds/executes tests in **Debug** instead of `RelWithDebInfo`, preserving `assert` checks. `--no-build` rejects cached single-config builds that are not Debug and rejects multi-config caches without Debug; prevents silently running previously built no-assert test binaries.
+- **Smoke coverage:** expanded `tests/test_unified_runner.py` from six to eight cases, including exact `CMAKE_BUILD_TYPE=Debug` / `--config Debug` invocation and refusing `RelWithDebInfo` reuse. Fake CMake cache updated accordingly.
+- **Compatibility:** no gameplay logic, ECS schema, save files or game runtime changed. Previously configured `build/all-tests` is reconfigured from `RelWithDebInfo` to Debug when `./run-tests.sh` is next executed; expect a one-time rebuild and more assertion-sensitive failures.
+- **Verification:** source reviewed/committed through GitHub connector. Real native `bash -n`, Python smoke fixture, CMake/CTest, full macOS runtime **NOT RUN** by this agent; no checkout available locally and CI not confirmed green. The user's uploaded logs establish only the original RelWithDebInfo build behavior and earlier Model.cpp error.
+- **Next:** `git pull --ff-only`, `bash -n run-tests.sh`, `python3 tests/test_unified_runner.py`, `./run-tests.sh --quick`. If that builds and CTest passes, execute full `./run-tests.sh` and record results. Do not claim full suite passed until observed.
+

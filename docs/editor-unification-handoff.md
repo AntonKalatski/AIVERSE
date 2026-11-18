@@ -1986,3 +1986,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Post-fix build/CTest NOT RUN** in connector-only environment. Follow up with full build. Review `RelWithDebInfo` potentially disabling `assert` in CTest binaries (many unused assert-only vars in owner build).
 - Detailed handoff in `docs/agent-handoffs/unified-test-runner.md`. Next: pull, rerun one-command test script, fix further errors using first compiler diagnostic.
 
+
+### 2026-11-18 — Unified CTest Debug assertions policy
+- **Code SHA:** `9b44e6d540101df79ab42bb1aa6738c3967070dd` on PR #7, `run-tests.sh`, `tests/test_unified_runner.py`, `docs/testing.md`.
+- Root unified runner now builds CTest in **Debug** (assertions enabled), and `--no-build` rejects optimized build caches. Added two test-runner smoke cases. Motivation: owner's RelWithDebInfo build disabled `assert` checks, visible through unused-variable warnings.
+- **Post-fix tests NOT RUN**; next user commands `python3 tests/test_unified_runner.py`, `./run-tests.sh --quick`. Detailed handoff in `docs/agent-handoffs/unified-test-runner.md`.
+
