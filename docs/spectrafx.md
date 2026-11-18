@@ -1036,6 +1036,82 @@ existing CPU emitter definitions; they do not yet define
 per-particle mutable attribute bytecode or programmable GPU
 simulation kernels.
 
+## Compiled per-particle CPU programs (Stage 19)
+
+The existing `fx::ParticleSystem` can now execute an optional
+`EmitterDef::particleProgram`: a small compiled, bounded expression
+program running at **individual particle** lifecycle stages. It
+does NOT reinterpret JSON for every particle or run any C++/Lua
+script from the effect file. The compiler validates opcodes,
+targets, nesting, finite constants and budgets, and converts
+the JSON into precompiled instructions in
+`engine/fx/SpectraParticleProgram.h`. On every particle step,
+the VM uses a fixed-size stack with **no dynamic allocation**.
+No gameplay ECS state is read or written.
+
+Use the `ParticleProgramModule` pipeline node in a v2 graph
+before an output, or provide `particleProgram` in an ordinary
+legacy emitter definition. Supported named program stages are
+`spawn`, `update`, `death`, `collision`, `trigger`.
+Each stage contains at most 32 assignments/updates and 256
+postfix VM instructions. An expression is a finite number,
+`{"var":"field"}`, or a tree of built-in arithmetic, clamp,
+lerp, comparison and trigonometric operations. Recursion
+depth is bounded by 16. No arbitrary executable source,
+network, file access or plugin invocation is allowed.
+
+```json
+{
+  "version":1,
+  "spawn":[
+    {"target":"attribute0","value":0.75}
+  ],
+  "update":[
+    {"op":"addRate","target":"velocity.y",
+     "value":{"op":"multiply",
+       "a":2.2,
+       "b":{"op":"subtract","a":1,
+            "b":{"var":"ageNormalized"}}}},
+    {"op":"set","target":"tint.a",
+     "value":{"op":"saturate","a":{
+       "op":"subtract","a":1,"b":{"var":"ageNormalized"}}}}
+  ]
+}
+```
+
+Supported scalar reads include `age`, `ageNormalized`,
+`dt`, `uid`, world-space `position.x/y/z`,
+`velocity.x/y/z`, `size`, `rotation`,
+`tint.r/g/b/a`, and eight independent user-defined
+`attribute0..7` floats stored with each visual particle.
+Read-only lifecycle fields cannot be written by a program.
+Actions `set`, `add`, `multiply`, `addRate`
+(`value * dt` per second) apply to writable fields.
+Output values are finite/bounded, tint channels clamp to
+0..1 and size clamps to nonnegative.
+
+`spawn` is invoked after built-in particle initialization
+and before trails/birth handlers; `update` runs after
+existing gravity/forces/integration and before collision
+and trigger testing; event stages run at the
+corresponding collision, trigger and death boundaries.
+The legacy velocity/size/light/noise/trail mechanics still
+run for any effect lacking a program with no new script
+evaluation. Dynamic attributes can drive size, rotation,
+tint and motion through subsequent VM statements.
+Function graphs v2 remain a separate compile-time
+subgraph feature; arbitrary graph-to-GPU kernel codegen
+is not implied.
+
+**Example**: `examples/spectrafx/runtime_particle_program_v2.vfx.json`
+uses a custom attribute, age-dependent rising force, alpha fade,
+variable size and a death handler. Advanced effects using this
+CPU-only VM are automatically excluded from the restricted
+experimental Metal GPU subset: `GraphRuntime` must preserve
+the full source effect on CPU, not silently drop the program.
+User requested postponing builds/tests; source is committed
+but **not compiled or runtime verified**.
+
 ## Validation checklist
 
 ```bash
