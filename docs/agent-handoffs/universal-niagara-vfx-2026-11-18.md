@@ -853,3 +853,92 @@ python3 tools/skills/catalog.py check
 3. The existing CPU renderer orders alpha-like particles by its own batch/depth rules; do not claim globally correct sorting across different alpha materials without a separate order/parity review.
 4. Current SpectraFX Stage 14 experimental GPU-indirect work may have unverified in-progress source edits on the same branch from the prior conversation; do not conflate that work with this Stage 14B CPU batching feature. Avoid force push or overwriting other agents.
 5. **Next bounded step:** run the focused CTest and native editor build; inspect/fix actual compiler and RHI mock failures. After that, attach native project VFX presentation to the shared world, verify two simultaneous graph instances and on-screen RHI draw statistics, and develop an opt-in GPU shared material-pool scheduler with accurate `GraphRuntime` source resets. For each new code stage, append a **separate** handoff commit to this same file.
+
+## Stage 15 — bounded cue scheduler, ECS bridge and rollback ownership (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** complete a **genre-neutral** presentation scheduler with data-driven per-tick one-shot cues, generation-safe entity attachments, bounded admission/queue/handle budgets, and rollback cleanup. Build upon the **concurrently added** `spectra::BatchWorld` (Stage 14B, see earlier entry), never create another particle simulation core. Keep all VFX graphics handles outside deterministic gameplay ECS and avoid rewriting existing RTS/FPS clients.
+
+### Commits actually created for this stage
+
+| SHA | File | Change |
+|---|---|---|
+| `ebd5640c0b70beee0c12bdb0d45a8a4acc212982` | `engine/fx/SpectraCueScheduler.h` | Generic `CueEvent`, `AttachedCue`, `CueBudgets`, `CueSchedulerStats` and scheduler public API |
+| `fcb92fdc0f3815c789fdd2af7d03c336b23f400e` | `engine/fx/SpectraCueScheduler.h` | Diagnostics, bounded tracked one-shot eviction accounting |
+| `375ce9651c7c5212ce4fcc51d52a72dd71b645fd` | `engine/fx/SpectraCueScheduler.cpp` | Effect/graph registration, tick deduplication, deferred queue/flush, attachment lifecycle, rollback-scoped handle reset |
+| `84916eb15435b9b5149e0913455807948ffb9be1` | `engine/fx/SpectraCueScheduler.cpp` | Retire vanished sources before applying attachment capacity to new sources |
+| `5185844174f77a326223c7dc76d18c5182c380e0` | `libraries/include/aiverselib/genre/SpectraCueEcsAdapter.h` | Read-only ECS source and `SimEvent` tick helpers |
+| `3d21e163769b710c57a4e1170daaf38250a15b9a` | `libraries/include/aiverselib/genre/SpectraCueEcsAdapter.h` | Explicit C++ utility include for move semantics |
+| `72febf114b98cdbc5a93256dda8521011208502a` | `tests/vfx_cue_scheduler_test.cpp` | Two unrelated ECS genres, generation reuse, budgets, events, rollback and shared-world ownership regressions |
+| `01449af89ad9645d0d9aa2eebc4b2415f3d553d1` | `tests/vfx_cue_scheduler_test.cpp` | Verify attachment budget is freed immediately when source disappears |
+| `f53d5ac388acec7309fab5455fafbf51ad240a9f` | `tests/vfx_cue_scheduler_test.cpp` | Correct tests: burst particles appear after `ParticleSystem::update()`, not immediately on `play()` |
+| `c3d807be7b3ab1b9901cc60409a6d9632d311a20` | `engine/fx/SpectraFX.h` | Export `CueScheduler` from canonical public header |
+| `850fba98ca63eba2a49f1b58423374d1a746fb57` | `libraries/include/aiverselib/genre/SpectraFX.h` | Export native read-only ECS cue adapter using the existing component type |
+| `0e772d5a1b2f88170c444c159e8ecb78fec72f10` | `CMakeLists.txt` | Compile scheduler into `aiverse_fx` / `AIVERSE::spectrafx` and register `vfx_cue_scheduler` CTest |
+| `055024ac529f967eb55fd7e17d4363f977f0da68`, `7385c2bc3a66e92d52fc27b5a7de5537ea6dbf49` | `.github/workflows/spectrafx-validation.yml` | Add shared-batch + cue-scheduler regressions to Linux/macOS focused builds; remove duplicate target entry |
+| `65267f4d4d50dcd11835648f829804aa9bd352df` | `docs/spectrafx.md` | Native C++ usage, tick/attachment/rollback contract, budgets and CPU-only batching scope |
+| `f5a996cdb465d21430240cbf98fe96acee478b88` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Teach AI agents how to use the scheduler with generic ECS modules |
+| `7f9794b781c1b6f81b7ff50e01bec24398fd7ae4` | `AGENTS.md` | Stage-15 cross-genre scheduler and mandatory handoff rules |
+
+### Architecture / API / serialization
+
+`CueScheduler` references exactly one caller-owned `spectra::BatchWorld`; it creates no extra `fx::ParticleSystem`, renderer or new genre-specific component. Effect data can be registered once through `registerEffect(name, fx::EffectDef)` or `registerGraph(name, versionedGraph, overrides)`; `bindCue(moduleDefinedType, name)` maps any unsigned event type to an effect. `acceptTick(committedTick, span<CueEvent>)` accepts monotonically increasing ticks only, copies accepted cues into a bounded deferred queue and captures resolved effect IDs so later asset name changes do not rewrite pending events. `flush()` starts at most `maxPerFrame` queued one-shots; the host owns the **single** `BatchWorld::update(dt)` and `BatchWorld::draw(fog)` per presentation frame.
+
+`syncAttachments(span<AttachedCue>)` receives all currently visible/attached source descriptions, keyed by stable `uint64_t`. It moves an existing handle, restarts it when effect/revision/scale changes, or detaches vanished sources with their stop-or-kill policy. Retiring vanished sources **before** admitting new ones prevents one-frame starvation when the attachment budget was full. `CueBudgets` limits queue length, admissions per tick/frame, attachment count and rollback-tracked one-shot handles. Safe upper bounds clamp caller-provided capacities. When the tracked cue handle ring fills, the oldest handle is **killed**, never simply forgotten, to prevent residual particles escaping the next rollback reset.
+
+`resetForRollback()` force-kills *all handles owned by this scheduler*, clears its queued future events and presented-tick cursor; it does NOT clear particles or definitions belonging to other users of the same `BatchWorld`. After reset the host may replay ticks from a restored earlier tick. No scheduler state is written into authoritative ECS or serialization.
+
+Opt-in native helper `syncEcsCueSources(world, scheduler, resolvePose)` reads the exact existing `lib::genre::SpectraSourceComponent` and uses `Entity::packed()` (index+generation) for source identity. It takes a caller-provided render-pose resolver instead of assuming an FPS actor, RTS unit, camera or vehicle shape. `acceptSimCueTick(scheduler, tick, SimEventSpan)` translates fixed-point `SimEvent.pos` to float visual cues. Both helpers are read-only with respect to the `World`; generic custom events with explicit tint/scale/axis can be fed directly via `CueEvent`.
+
+**Native usage:**
+```cpp
+#include <aiverselib/genre/SpectraFX.h>
+aiverse::spectra::BatchWorld shared;
+shared.init(device, aiverse::fx::FxQuality::High);
+aiverse::spectra::CueScheduler scheduler(shared);
+scheduler.registerEffect("impact", impactDefinition);
+scheduler.registerEffect("engine_fire", loopingEngineFire);
+scheduler.bindCue(72, "impact");                 // type belongs to the game
+
+// After the gameplay tick commits:
+aiverse::spectra::acceptSimCueTick(scheduler, tick, events);
+// Per presentation frame: same shared world for ALL genre-independent cues.
+shared.setView(cam, viewProjection, width, height);
+aiverse::spectra::syncEcsCueSources(world, scheduler, resolvePose);
+scheduler.flush();                              // spawn queued one-shots
+shared.update(dt);                             // ONCE per frame
+// During one open RHI scene render pass:
+shared.draw(fog);                              // ONCE per frame
+// On rollback (before replaying ticks):
+scheduler.resetForRollback();
+// Destroy scheduler BEFORE shared.shutdown().
+```
+
+### Actual verification and CI observations — NOT RUN
+
+During this stage, GitHub source files were read and the listed commits were successfully written. **No local AIVERSE checkout/clang/CMake build, CTest execution, editor launch or Metal GPU/device smoke was performed by this agent.** Therefore added tests and code have **not** been proven to compile or pass. Source review confirmed that `ParticleSystem::play()` allocates an instance but burst particles are created by `ParticleSystem::update()`; the new test fixtures were amended accordingly. This source inspection is not a passing runtime test.
+
+GitHub Actions run metadata for Stage-14 handoff commit `b377a83f43b8aa6b7d80591d88fc313c8d1b8a32` showed `CI` and `SpectraFX validation` **completed/cancelled**, not failed compiler logs or passing results. The stage-15 AGENTS commit `7f9794b781c1b6f81b7ff50e01bec24398fd7ae4` likewise had `CI` and `SpectraFX validation` **completed/cancelled** and Studio/ECS/GPU batching workflows queued. The active branch receives concurrent commits, so run cancellation alone is not evidence of a C++ compiler regression.
+
+**Next agent must run with real checkout:**
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_vfx_cue_scheduler_tests aiverse_vfx_shared_batch_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_gpu_tests aiverse_editor -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+# On macOS also:
+cmake --build build/vfx-test --target aiverse_vfx_metal_smoke -j4
+ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_metal_compaction_smoke$'
+```
+
+Validate native ECS behavior for more than two genres, command-line/headless context and actual editor screenshots. Ensure one continuous source moving across frames does not restart, generation reuse detaches the old source, budget limits apply during bursts, completed one-shots are owned for rollback, and a different BatchWorld producer's particles are untouched by `resetForRollback()`.
+
+### Known limitations / precise next stage
+
+1. **No passing build/CTest/Metal execution** yet. Do not enable new scheduling or GPU options automatically in production RTS/FPS loops before actual compiler/visual validation.
+2. This scheduler is for **shared CPU particle simulation with RHI batching**. It does not batch heterogeneous `ComputeParticles` GPU compute emitters or schedule `gpuIndirect` across a pooled Metal resource. Stage 14's experimental Metal mode remains opt-in and separate.
+3. The `acceptSimCueTick` helper materializes one presentation `CueEvent` per incoming `SimEvent` before `acceptTick` applies budget limits; a very large input event vector therefore has transient allocation proportional to the input. For extreme event volumes, add a bounded/lazy conversion path without breaking admission-order and drop telemetry.
+4. Handle source ordering and contention in large worlds; per-tick and attachment admission are bounded, but current input iteration still walks every provided event/source. No multithreaded presentation submission or distributed world support is implemented.
+5. **Next bounded Stage 16:** obtain actual CI logs, fix compile/CTest failures and add a real native-client ECS integration test that uses one shared `BatchWorld` for projectile impact and persistent vehicle/character effects, verifies rollback visual parity and counts draw submissions. Only after these gates, consider a cross-instance Metal GPU material pool and GPU memory/quality benchmarks. Continue appending separate handoff commits **to this same living file**.
