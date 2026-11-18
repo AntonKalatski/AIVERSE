@@ -79,6 +79,13 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("focusRange", 0.08f, 0.001f, 1, "sharp depth interval around focus", "Диапазон резкости"),
         num("maxBlur", 8.0f, 0, 16, "maximum blur radius in output pixels", "Радиус размытия"),
         num("intensity", 1.0f, 0, 1, "defocus blend strength", "Сила размытия")}});
+    c.push_back({T::AutoExposure, "autoExposure", "Автоэкспозиция", "HDR-only GPU log-luminance measurement and temporal eye adaptation. Uses per-viewport exposure history.", C::Heavy, kHigh, {
+        num("keyValue", 0.18f, 0.01f, 1.0f, "target middle-grey luminance in linear HDR", "Целевая яркость"),
+        num("minEV", -6.0f, -12.0f, 0.0f, "minimum automatic exposure in EV stops", "Минимум EV"),
+        num("maxEV", 6.0f, 0.0f, 12.0f, "maximum automatic exposure in EV stops", "Максимум EV"),
+        num("speedUp", 3.0f, 0.01f, 20.0f, "adaptation speed when exposure increases (1/seconds)", "Скорость осветления"),
+        num("speedDown", 1.0f, 0.01f, 20.0f, "adaptation speed when exposure decreases (1/seconds)", "Скорость затемнения"),
+        num("compensation", 0.0f, -5.0f, 5.0f, "exposure compensation in EV stops", "Коррекция EV")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -357,6 +364,7 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::Sharpen: return {2.0f, 0};
     case T::Fxaa: return {6.0f, 1};
     case T::DepthOfField: return {10.0f, 1};
+    case T::AutoExposure: return {5.0f, 12}; // upper-bound pyramid: size-dependent passes
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel
