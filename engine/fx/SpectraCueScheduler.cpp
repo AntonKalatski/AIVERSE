@@ -22,6 +22,26 @@ bool valid(fx::float4 a) { return valid(a.x) && valid(a.y) && valid(a.z) && vali
 bool validPose(fx::float3 pos, fx::float3 dir, float scale) {
     return valid(pos) && valid(dir) && valid(scale) && scale > 0 && scale <= 1000.f;
 }
+bool validParams(const std::array<float,8>& params,uint8_t mask) {
+    for(uint32_t i=0;i<8;++i)
+        if((mask&(1u<<i)) &&
+           (!valid(params[i]) || std::abs(params[i])>1.0e7f))return false;
+    return true;
+}
+void writeParams(BatchWorld& world,fx::FxHandle handle,
+                 const std::array<float,8>& params,uint8_t mask,
+                 bool affectExisting) {
+    for(uint32_t i=0;i<8;++i)
+        if(mask&(1u<<i))
+            (void)world.setProgramParameter(handle,i,params[i],affectExisting);
+}
+bool changedParams(const std::array<float,8>& a,uint8_t am,
+                   const std::array<float,8>& b,uint8_t bm) {
+    if(am!=bm)return true;
+    for(uint32_t i=0;i<8;++i)
+        if((am&(1u<<i)) && a[i]!=b[i])return true;
+    return false;
+}
 } // namespace
 
 CueScheduler::CueScheduler(BatchWorld& world, CueBudgets budgets)
@@ -75,7 +95,8 @@ bool CueScheduler::acceptTick(uint64_t tick, std::span<const CueEvent> events) {
         if(binding==bindings_.end()) {++stats_.droppedUnbound;continue;}
         const auto effect=effects_.find(binding->second);
         if(effect==effects_.end() || effect->second.id<0 ||
-           !validPose(cue.position,cue.direction,cue.scale) || !valid(cue.tint)) {
+           !validPose(cue.position,cue.direction,cue.scale) ||
+           !valid(cue.tint) || !validParams(cue.programParams,cue.programParamMask)) {
             ++stats_.droppedUnbound;continue;
         }
         if(tickAccepted>=budgets_.maxPerTick || queue_.size()>=budgets_.maxQueued) {
@@ -116,6 +137,7 @@ size_t CueScheduler::flush() {
         const fx::FxHandle handle=world_.play(item.effectId,item.cue.position,
             item.cue.direction,item.cue.scale,item.cue.tint);
         if(handle.valid()) {
+            writeParams(world_,handle,item.cue.programParams,item.cue.programParamMask,false);
             trackOneShot(handle);
             ++spawned;
             ++stats_.emittedCues;
@@ -136,6 +158,7 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
     std::set<uint64_t> desired;
     for(const AttachedCue& src:sources)
         if(!src.effect.empty() && validPose(src.position,src.direction,src.scale) &&
+           validParams(src.programParams,src.programParamMask) &&
            effects_.count(src.effect)) desired.insert(src.key);
     for(auto it=active_.begin();it!=active_.end();) {
         if(desired.count(it->first)){++it;continue;}
@@ -144,7 +167,8 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
     }
     std::set<uint64_t> seen;
     for(const AttachedCue& src:sources) {
-        if(src.effect.empty() || !validPose(src.position,src.direction,src.scale))
+        if(src.effect.empty() || !validPose(src.position,src.direction,src.scale) ||
+           !validParams(src.programParams,src.programParamMask))
             continue;
         const auto effect=effects_.find(src.effect);
         if(effect==effects_.end()) {++stats_.droppedUnbound;continue;}
@@ -164,6 +188,18 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
         if(existing!=active_.end()) {
             existing->second.killOnDetach=src.killOnDetach;
             if(world_.playing(existing->second.handle)) {
+                if(changedParams(existing->second.programParams,
+                                 existing->second.programParamMask,
+                                 src.programParams,src.programParamMask)) {
+                    // Removed overrides return to zero, not the previous
+                    // source's potentially stale value.
+                    for(uint32_t i=0;i<8;++i)
+                        if((existing->second.programParamMask|src.programParamMask)&(1u<<i))
+                            (void)world_.setProgramParameter(existing->second.handle,i,
+                                (src.programParamMask&(1u<<i))?src.programParams[i]:0.f,true);
+                    existing->second.programParams=src.programParams;
+                    existing->second.programParamMask=src.programParamMask;
+                }
                 world_.move(existing->second.handle,src.position,src.direction);
                 continue;
             }
@@ -183,8 +219,12 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
             ++stats_.failedSpawns;
             continue;
         }
-        active_.emplace(src.key,Active{handle,effect->second.id,src.effect,
-                                     src.revision,src.scale,src.killOnDetach});
+        writeParams(world_,handle,src.programParams,src.programParamMask,false);
+        Active active{handle,effect->second.id,src.effect,
+                      src.revision,src.scale,src.killOnDetach};
+        active.programParams=src.programParams;
+        active.programParamMask=src.programParamMask;
+        active_.emplace(src.key,std::move(active));
     }
     stats_.attached=active_.size();
 }
