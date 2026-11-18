@@ -1,4 +1,4 @@
-// GPU uploader for parsed KTX2 arrays, cubes and volumes.
+// GPU uploader for parsed KTX2 / DDS arrays, cubes and volumes.
 // Keeps the existing Model sampler2D path unchanged. This helper belongs to
 // rendering/presentation; never use GPU textures as deterministic ECS state.
 #pragma once
@@ -18,9 +18,9 @@ struct TextureUploadOptions {
 
 // TextureHandle is owned by the caller. Returns invalid and sets error on
 // unsupported dimensions/formats, corrupt input, or GPU allocation/update failure.
-// KTX2 blocks and CPU data remain owned by CompressedImage; all data is consumed
+// Container blocks and CPU data remain owned by CompressedImage; all data is consumed
 // synchronously before returning. Anisotropy/sampler state is configured separately.
-inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImage& in,
+inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const CompressedImage& in,
                                            const TextureUploadOptions& opt, std::string& error) {
     error.clear();
     if (in.width < 1 || in.height < 1 || in.depth < 1 ||
@@ -28,7 +28,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
         in.levels.empty() || in.levels.size() > 31 ||
         (in.faces == 6 && (in.width != in.height || in.depth != 1)) ||
         (in.depth > 1 && (in.faces != 1 || in.arrayLayers != 1))) {
-        error = "invalid KTX2 texture dimensions or mip metadata";
+        error = "invalid texture container dimensions or mip metadata";
         return {};
     }
     gfx::TextureDesc td;
@@ -45,7 +45,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
                    in.arrayLayers > 1 ? gfx::TextureDimension::Texture2DArray :
                                         gfx::TextureDimension::Texture2D;
     if (gfx::validateTextureDesc(td) != gfx::TextureDescError::None) {
-        error = "KTX2 dimensions are not representable by the RHI";
+        error = "container dimensions are not representable by the RHI";
         return {};
     }
     for (size_t l = 0; l < in.levels.size(); ++l) {
@@ -53,7 +53,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
                                             levelHeight(in, int(l)));
         const size_t count = size_t(levelImageCount(in, int(l)));
         if (!slice || !count || slice > in.levels[l].size() / count) {
-            error = "truncated KTX2 array/cubemap/volume mip payload";
+            error = "truncated array/cubemap/volume mip payload";
             return {};
         }
     }
@@ -104,7 +104,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
         const size_t stride = size_t(levelWidth(in, int(level))) *
                               size_t(levelHeight(in, int(level))) * 4;
         if (stride > (size_t(512) << 20) / size_t(count)) {
-            error = "decoded KTX2 mip exceeds memory budget";
+            error = "decoded texture mip exceeds memory budget";
             return {};
         }
         auto& output = decoded[level];
@@ -113,7 +113,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
             std::vector<uint8_t> rgba;
             if (!decodeBlocksSlice(in, int(level), slice, rgba) ||
                 rgba.size() != stride) {
-                error = "KTX2 CPU fallback unavailable for this format (ASTC requires native GPU)";
+                error = "container CPU fallback unavailable for this format (ASTC requires native GPU)";
                 return {};
             }
             std::copy(rgba.begin(), rgba.end(),
@@ -125,7 +125,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
     gfx::TextureHandle tex = dev.createTexture(td);
     if (!tex.valid()) {
         error = dev.lastError();
-        if (error.empty()) error = "RHI could not allocate KTX2 image";
+        if (error.empty()) error = "RHI could not allocate texture container image";
         return {};
     }
     // The initial allocation consumes level zero; upload remaining manually
@@ -147,7 +147,7 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
             u.data = decoded[level].data() + stride * size_t(slice);
             if (!dev.updateTextureRegion(tex, u)) {
                 error = dev.lastError();
-                if (error.empty()) error = "KTX2 mip or subresource GPU upload failed";
+                if (error.empty()) error = "container mip or subresource GPU upload failed";
                 dev.destroyTexture(tex);
                 return {};
             }
@@ -155,4 +155,13 @@ inline gfx::TextureHandle uploadKtx2Image(gfx::Device& dev, const CompressedImag
     }
     return tex;
 }
+inline gfx::TextureHandle uploadKtx2Image(gfx::Device& device, const CompressedImage& image,
+                                           const TextureUploadOptions& options, std::string& error) {
+    return uploadContainerTexture(device, image, options, error);
+}
+inline gfx::TextureHandle uploadDdsImage(gfx::Device& device, const CompressedImage& image,
+                                         const TextureUploadOptions& options, std::string& error) {
+    return uploadContainerTexture(device, image, options, error);
+}
+
 } // namespace aiverse::render
