@@ -195,6 +195,8 @@ struct ParticleSystem::Impl {
         float3 pos, prev, dir{0, 1, 0};
         float scale = 1;
         float4 tint{1, 1, 1, 1};
+        // Changeable per-instance scalar uniforms for the visual particle VM.
+        std::array<float,8> programParams{};
         float time = 0;
         std::array<float, kMaxEmitters> accum{};
         std::array<bool, kMaxEmitters> burstDone{};
@@ -214,7 +216,8 @@ struct ParticleSystem::Impl {
     };
     struct Particle {
         float3 pos, vel;
-        std::array<float,8> customAttributes{}; // arbitrary scalar VFX attributes
+        std::array<float,8> customAttributes{}; // writable, per-particle
+        std::array<float,8> programParams{};    // read-only VM instance snapshot
         float age, invLife;
         float size, rot, spin, scale;
         float4 tint;
@@ -319,6 +322,7 @@ struct ParticleSystem::Impl {
         if(!bytecode.enabled(stage))return;
         spectra::program::Context ctx{p.pos,p.vel,p.tint,p.size,p.rot,
             p.customAttributes,p.age,lifeT(p),dt,float(p.uid)};
+        ctx.instanceParams=&p.programParams;
         // Runtime math failures are bounded and ignored for this visual cue;
         // never allow NaN or unbounded values to poison renderer resources.
         (void)spectra::program::execute(bytecode,stage,ctx);
