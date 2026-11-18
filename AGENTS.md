@@ -4,6 +4,21 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Universal Niagara-style VFX (cross-genre, in progress)
+
+**Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).  
+**AI skill:** [skills/visuals/aiverse-niagara-vfx/SKILL.md](skills/visuals/aiverse-niagara-vfx/SKILL.md).
+
+New cross-genre opt-in VFX layers are `engine/fx/VfxGraph.h` (graph -> existing CPU effect compiler),
+`engine/fx/VfxGraphAssets.h` (versioned assets, parameter variants and hot reload) and
+`libraries/include/aiverselib/genre/EcsVfxPresentation.h` (read-only ECS renderer bridge,
+tick-event bindings). Never put renderer handles, float particles or graphics timing into
+authoritative gameplay ECS, never duplicate an FPS-only/RTS-only VFX engine, and do not remove
+legacy `RtsFx` before production parity tests. **GPU VFX, visual graph editor and automatic
+native-client integration are not complete.** Current test targets are committed but not
+verified as passing. Every new VFX stage MUST append a separate handoff commit after code and
+tests and record exact SHA, verification status and next work.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
