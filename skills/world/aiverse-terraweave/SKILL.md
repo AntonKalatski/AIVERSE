@@ -382,3 +382,34 @@ only. The separate testing agent owns CTest,
 GPU row-pitch/mipmap validation, screenshots and
 performance benchmarks. Log all outcomes in
 `docs/terrain/AGENT_HANDOFF.md`.
+
+## In-place GPU Horizon terrain updates (Stage 12)
+
+When an authored distant terrain tile changes, first try the
+CPU partial Horizon bake and the **existing** GPU atlas patch path.
+For a terrain vertex-only or mixed atlas+terrain edit, use
+`engine/render/TerraWeaveHorizonVertexPatch.h`:
+
+- The Horizon Model MUST have
+  `batching.allowGeometryPool=false` prior to GPU upload.
+  Never update a shared pool page using model-relative offsets.
+- `planHorizonVertexUpload` rejects changed topology/index
+  streams, altered cluster card geometry, relocated UV slots
+  and any increase beyond existing conservative model/mesh/
+  primitive bounds. It limits work to 20 contiguous ranges
+  and 35% of terrain vertices by default.
+- Check `horizonCanApplyVertexUpload` on the RHI-owning
+  thread, then apply planned `gfx::Device::updateBuffer`
+  calls. If the planner rejects the edit, do the safe full
+  model upload rather than forcing an in-place change.
+- Track `vertexPatchCount`, `vertexPatchBytes`,
+  `vertexPatchRanges` and `fullUploadCount`. They do
+  not establish measured performance until tests run.
+- GL/Vulkan/Metal updateBuffer has a void return and GPU
+  device loss isn't transactional. Test agent must validate
+  offsets, bounds/culling and driver synchronization.
+
+**Testing ownership:** Another agent runs all build/CTest,
+GPU and performance checks. The current feature agent should
+update `docs/terrain/AGENT_HANDOFF.md` with implementation
+commits and `NOT RUN`, but must not claim success.
