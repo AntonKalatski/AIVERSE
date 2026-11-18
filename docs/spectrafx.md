@@ -873,6 +873,75 @@ event graph execution remain separate implementation steps.
 The code is committed, but no CMake build, test run, screenshot
 or Metal validation has yet been executed in this stage.
 
+## Visual authoring and safe drafts for graph v2 (Stage 17)
+
+The optional **SpectraFX** ImGui editor now creates graph version 2
+by default. Graph version 1 assets can still be opened and edited,
+and the **v1 → v2** button upgrades a draft in memory without
+immediately overwriting its source file.
+
+The shared pure C++ model `engine/fx/SpectraAuthoring.h`
+provides `spectra::authoring::nodeCatalog`, `newGraphV2`,
+`addNode`, `connectExec`, `connectData`, `disconnect`,
+`inputPorts`, `node`, `isData`, `isOutput` and
+`reaches`. It lives outside the editor and can be reused
+by native C++ tooling or agents through
+`engine/fx/SpectraFX.h`. Node definitions contain
+categories, default properties and typed input port names.
+The editor shows a grouped catalog for value, math, vector,
+logic, simulation, force, event and renderer nodes.
+Execution links and typed data links use different canvas colours;
+the right inspector lets the author choose and connect input
+properties (including nested paths) to a selected value node.
+Cycle prevention applies to both link kinds.
+
+The right inspector offers fast editors for numeric, integer,
+bool, vector and colour literal nodes, module-specific field
+controls for noise, collision, force, trails, light, rendering,
+sorting and shape settings, and keyframe editing for
+`Curve` and `Gradient` value nodes. A curve can add/remove
+keys and edit time/value; a gradient can edit RGBA keys.
+Unknown modules, $node expressions and complex nested fields
+remain accessible through the existing raw JSON inspector,
+without lossy coercion.
+
+### Safe incomplete graph workflow
+
+A graph need not compile successfully at every intermediate
+authoring step. Draft assets live under
+`fx/graphs/_drafts/<name>.vfx.json` and are *not*
+enumerated or loaded by the production graph registry.
+The editor has separate **Черновик** / **Опубликовать**
+actions and a draft list. A draft is saved even while links
+or modules are incomplete; publishing compiles the exact
+saved draft and refuses to replace a published graph if
+the compiler returns errors. Existing
+`fx/graphs/<name>.vfx.json` and legacy `fx/*.json`
+remain unchanged by saving an incomplete draft.
+
+Additional MCP actions:
+
+- `fx_graph_node_catalog`: node types, categories, default
+  property JSON, data input port names, and a new default graph.
+- `fx_graph_edit`: pure in-memory `new`, `upgrade`, `add`,
+  `connect`/`disconnect`, `deleteNode`, `setProperty`
+  operations. Returns edited graph and compiler diagnostics;
+  no file is written.
+- `fx_graph_draft_set`, `fx_graph_draft_get`,
+  `fx_graph_draft_list`, `fx_graph_draft_publish`:
+  non-destructive authoring, validation and explicit publication.
+- Existing `fx_graph_get/set/list/validate/bake` continue
+  working for both graph versions; published graphs always
+  undergo strict compilation.
+
+The code is committed; **GUI launch, CMake build and CTest are
+intentionally deferred** until functional work is finished.
+Current advanced editing is still a basic ImGui canvas and
+raw JSON fallback, not a complete commercial Niagara editor;
+function subgraphs, custom per-particle attribute debugging,
+profiler timelines and shader node codegen remain further
+work items.
+
 ## Validation checklist
 
 ```bash
