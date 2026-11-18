@@ -3987,3 +3987,37 @@ manifest sanity check in the disk-backed facade and
 configure input conversion to PNG via an optional image
 provider later. Each bounded code stage requires a distinct
 handoff commit.
+
+## Stage 7T — correct Python packer gutter assertion and register CTest (2026-11-18)
+
+**Code commit:** `e3618dd816b063ccf4af9ce74ef2180824ce444e`.
+**Branch / PR:** `feature/texture-rhi-unification`, Draft #21.
+**Paths:** `tests/render/virtual_texture_pack.py`,
+`CMakeLists.txt`, `tools/verify-texture-rhi.sh`.
+
+**Fix:** Correct the synthetic 4×4 gutter assertion's source
+row coordinate from a row-one offset to the intended row-two
+offset, `(2*4+2)*4`, matching the actual edge-clamped tile
+sampling. Register `virtual_texture_pack` under the existing
+`AIVERSE_BUILD_TESTS && Python3_Interpreter_FOUND` CTest gate,
+with a direct Python test runner and no third-party packages.
+Add this test name to both normal and optional-Vulkan filters
+in the canonical `tools/verify-texture-rhi.sh` runner.
+Other pure Python tests include odd sizes/multi-layer metadata,
+mip generation and transactional failure rollback.
+
+**Compatibility:** Testing and verification tooling only.
+No native engine, GPU/scene, ECS, save/network or asset schema change.
+
+**Verification:** GitHub source commit succeeded. Real Python
+test process and CTest build/test: **NOT RUN at commit time**.
+The test's source code is present and registered but not
+assumed passing.
+
+**Next:** Execute the Python unittest from a real checkout,
+and test the same source logic in an isolated local sandbox
+if the code can be supplied there. Record actual commands,
+exit codes and failure diagnostics. Then add a safe game
+asset manifest loader/validator to match the disk queue
+configuration, and validate the whole file→GPU flow.
+Separate implementation and handoff commits for each stage.
