@@ -3,6 +3,9 @@
 // This file intentionally does NOT create anonymous sockets or credentials.
 #pragma once
 #include "engine/physis/PhysisRemoteClient.h"
+#ifndef __EMSCRIPTEN__
+#include "engine/physis/PhysisAdminEndpoint.h"
+#endif
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -15,6 +18,42 @@ namespace aiverse::editor::physis_remote {
 class EditorLink {
 public:
     bool attached() const {return bool(connection_) && bool(client_);}
+    bool authenticating() const {
+#ifndef __EMSCRIPTEN__
+        return bool(pendingAdmin_);
+#else
+        return false;
+#endif
+    }
+#ifndef __EMSCRIPTEN__
+    // Host-owned secret is supplied by trusted configuration/secure storage.
+    // The native WebSocket client does NOT support WSS yet. This helper only
+    // connects to loopback, using challenge-response authentication.
+    bool connectLocalAdmin(const std::string& loopbackUrl,
+                           const std::string& principal,net::Key key,
+                           std::uint64_t clientInstance,
+                           std::uint8_t playerSlot,
+                           std::uint16_t commandType,
+                           std::string* error=nullptr) {
+        if(!clientInstance || !playerSlot || !commandType) {
+            if(error)*error="PHYSIS invalid admin connection identity";
+            net::wipe(key.data(),key.size());
+            return false;
+        }
+        auto dialer=std::make_unique<physis::remote::admin::LoopbackAdminConnector>();
+        if(!dialer->connect(loopbackUrl,principal,key,error)) {
+            net::wipe(key.data(),key.size());
+            return false;
+        }
+        net::wipe(key.data(),key.size());
+        pendingInstance_=clientInstance;
+        pendingSlot_=playerSlot;
+        pendingCommandType_=commandType;
+        pendingAdmin_=std::move(dialer);
+        message_="PHYSIS admin connection authenticating";
+        return true;
+    }
+#endif
     bool connected() const {
         return attached() && connection_->state()==net::ConnState::Connected;
     }
@@ -63,6 +102,22 @@ public:
         message_="PHYSIS network disconnected; pending request retained";
     }
     void poll(std::uint64_t nowMs) {
+#ifndef __EMSCRIPTEN__
+        if(pendingAdmin_) {
+            pendingAdmin_->poll(nowMs);
+            if(pendingAdmin_->ready()) {
+                auto conn=pendingAdmin_->takeAuthenticated();
+                pendingAdmin_.reset();
+                std::string error;
+                if(!attachAuthenticated(std::move(conn),pendingInstance_,
+                        pendingSlot_,pendingCommandType_,&error))
+                    message_=error;
+            } else if(pendingAdmin_->rejected()) {
+                message_="PHYSIS administrative authentication rejected";
+                pendingAdmin_.reset();
+            }
+        }
+#endif
         if(!attached())return;
         client_->poll(*connection_,nowMs);
         if(client_->status()==physis::remote::ClientStatus::Applied ||
@@ -113,6 +168,12 @@ private:
     std::uint8_t editorPlayerSlot_=0;
     std::uint16_t commandType_=0;
     std::string message_;
+#ifndef __EMSCRIPTEN__
+    std::unique_ptr<physis::remote::admin::LoopbackAdminConnector> pendingAdmin_;
+    std::uint64_t pendingInstance_=0;
+    std::uint8_t pendingSlot_=0;
+    std::uint16_t pendingCommandType_=0;
+#endif
 };
 
 // Editor/network project host attaches a trusted link here after its own
