@@ -336,7 +336,7 @@ private:
     std::vector<SceneRenderable> fpsSceneObjects_;
     Json fpsRuntimeCache_;
     uint64_t fpsRuntimeRevision_ = UINT64_MAX;
-    uint64_t fpsRuntimeRulesRevision_ = UINT64_MAX;
+    int fpsRuntimeRulesRevision_ = -1; // same signed revision domain as rulesRevision_
     std::string fpsRuntimeProjectDir_;
 
     render::PostFx postFx_;

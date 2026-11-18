@@ -361,7 +361,6 @@ void Editor::enqueueFpsSceneGeometry(const render::RTSCamera& camera) {
                             point.z + size.z * 0.5f};
         instances.push_back(object);
     }
-    const uint64_t hoveredKey = hover.kind == Selection::FpsObject ? hover.ref : 0;
     for (auto& object : instances) {
         Selection candidate;
         if (object.runtimeObject) {

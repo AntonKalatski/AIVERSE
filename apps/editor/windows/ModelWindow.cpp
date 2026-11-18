@@ -106,10 +106,11 @@ public:
     void draw(Editor& ed) override {
         const auto& types = ed.rules().types;
         if (types.empty()) { ImGui::TextDisabled("Нет типов"); return; }
-        if (ed.selection.kind == Selection::Type)
-            for (size_t i = 0; i < types.size(); ++i)
+        if (ed.selection.kind == Selection::Type) {
+            for (size_t i = 0; i < types.size(); ++i) {
                 if (types[i].id == ed.selection.key) type_ = int(i);
-        else if (ed.selection.kind == Selection::Entity &&
+            }
+        } else if (ed.selection.kind == Selection::Entity &&
                  ed.selection.index >= 0 &&
                  size_t(ed.selection.index) < ed.doc().data.entities.size()) {
             const int chosen = ed.rules().findType(
