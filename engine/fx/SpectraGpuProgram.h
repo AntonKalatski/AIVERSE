@@ -40,6 +40,25 @@ struct Payload {
 };
 static_assert(sizeof(Instruction)==16);
 static_assert(sizeof(Statement)==32);
+static_assert(sizeof(Payload)==16+64*32+512*16,
+              "Metal VM payload layout changed: update the MSL ABI");
+static_assert(uint32_t(program::Field::Age)==0 &&
+              uint32_t(program::Field::PositionX)==4 &&
+              uint32_t(program::Field::VelocityX)==7 &&
+              uint32_t(program::Field::TintA)==15 &&
+              uint32_t(program::Field::Param0)==24 &&
+              uint32_t(program::Field::Param7)==31,
+              "Metal VM field IDs changed: update vmRead/vmWrite");
+static_assert(uint32_t(program::Op::Constant)==0 &&
+              uint32_t(program::Op::Read)==1 &&
+              uint32_t(program::Op::Clamp)==17 &&
+              uint32_t(program::Op::Lerp)==18,
+              "Metal VM opcode IDs changed: update vmEvaluate");
+static_assert(uint32_t(program::Action::Set)==0 &&
+              uint32_t(program::Action::Add)==1 &&
+              uint32_t(program::Action::AddRate)==2 &&
+              uint32_t(program::Action::Multiply)==3,
+              "Metal VM actions changed: update vmRun");
 
 // Deliberately conservative: only data the current simple-billboard state
 // could represent after a matching GPU interpreter has been implemented.
