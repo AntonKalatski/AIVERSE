@@ -56,6 +56,33 @@ Native projects may use `spectra::fieldsForNode(type)`,
 source of truth. CTest source was extended but real compilation/tests
 have **NOT RUN** in this session. See stage 9 handoff.
 
+## Metal GPU compute prototype (stage 10 — unverified)
+
+The public `engine/fx/SpectraFX.h` also includes
+`engine/fx/SpectraGpuParticles.h`. Native presentation clients can
+create `spectra::ComputeParticles` with `ComputeEmitterDesc` and
+`ComputePreference::Automatic`, then call `burstAt`, `setView`,
+`step` **before the render pass** and `draw` **inside the pass**.
+Shutdown must precede destruction of `gfx::Device`.
+
+- Metal with `Device::supportsCompute()`: opt-in GPU simulation and
+  soft additive quads. The first version supports only burst count,
+  speed, lifetime, size, gravityY, drag and tint.
+- GL33/GLES3/WebGL2 and current Vulkan: **CPU fallback** via the legacy
+  `fx::ParticleSystem`. `RequireGpu` fails without Metal compute.
+- This is **not** automatic graph-v1 GPU code generation. Do not route
+  arbitrary `EffectDef`, trails, ribbon meshes, collisions, GPU light
+  events or untested graph operations into this subset.
+- Track `ComputeStats` and `reason()` for diagnostics. No measured
+  performance or real Metal shader-compile verification yet.
+- Use `aiverse_vfx_gpu_tests` / CTest `vfx_gpu_backend` for CPU,
+  capability selection and lifecycle regressions. A native Metal
+  offscreen render/readback test and multi-frame fences are still
+  mandatory before shipping.
+
+See `docs/spectrafx.md` stage 10 and the last handoff entry for
+the exact implementation status and follow-up checks.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
@@ -64,7 +91,7 @@ Use CMake target `AIVERSE::spectrafx` in a native project. Validate with:
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
