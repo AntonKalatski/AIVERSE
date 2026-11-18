@@ -308,31 +308,120 @@ void Module::finishRound(Simulation& sim,int32_t team) {
     for(auto& a:s.actors){a.money=std::min(16000,a.money+(a.team==team?config_.systems.winReward:config_.systems.lossReward));a.activeAction=Action::None;a.actionUntil=0;}
     if(s.match.scoreA>=int(config_.systems.roundsToWin)||s.match.scoreB>=int(config_.systems.roundsToWin))s.winner=team;
 }
-void Module::tickOrdinaryProjectiles(Simulation& sim) {
-    auto& s=state(sim);auto now=sim.tick();const auto& c=config_.systems;
-    for(auto it=s.projectiles.begin();it!=s.projectiles.end();) {
-        if(it->program.enabled){++it;continue;}
-        bool remove=false;
-        if(it->kind==0) {
-            auto delta=it->velocity*sim.dt();auto length=delta.length();if(length>it->remaining&&length>Fixed{})delta=delta*(it->remaining/length);
-            remove=traceShot(sim,it->owner,it->pos,delta,it->damage,config_.weapons[it->weapon],s.actors,&*it);
-            it->pos+=delta;it->remaining-=length;it->velocity.y-=config_.weapons[it->weapon].bulletGravity*sim.dt();remove|=it->remaining<=Fixed{}||now>=it->expires;
-        } else if(it->kind==4)remove=now>=it->expires;
-        else if(now<it->expires) {
-            it->velocity.y-=10_fx*sim.dt();auto delta=it->velocity*sim.dt();auto hit=collision_.cast(it->pos,delta,{Fixed::fromRatio(1,10),Fixed::fromRatio(1,10),Fixed::fromRatio(1,10)});
-            if(hit.hit){it->pos+=delta*fxMax(Fixed{},hit.fraction-Fixed::fromRatio(1,100));it->velocity=(it->velocity-hit.normal*it->velocity.dot(hit.normal)*2_fx)/2_fx;}else it->pos+=delta;
+// The existing non-programmed flight/impact behavior is one deterministic
+// policy, regardless of whether the shot is owned by the legacy compatibility
+// array or by a canonical ProjectileRuntime ECS component.
+bool Module::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
+    auto& s=state(sim);
+    const auto now=sim.tick();
+    const auto& c=config_.systems;
+    bool remove=false;
+    if(p.kind==0) {
+        auto delta=p.velocity*sim.dt();
+        auto length=delta.length();
+        if(length>p.remaining&&length>Fixed{})
+            delta=delta*(p.remaining/length);
+        remove=traceShot(sim,p.owner,p.pos,delta,p.damage,
+                         config_.weapons[p.weapon],s.actors,&p);
+        p.pos+=delta;
+        p.remaining-=length;
+        p.velocity.y-=config_.weapons[p.weapon].bulletGravity*sim.dt();
+        remove|=p.remaining<=Fixed{}||now>=p.expires;
+    } else if(p.kind==4) {
+        remove=now>=p.expires;
+    } else if(now<p.expires) {
+        p.velocity.y-=10_fx*sim.dt();
+        auto delta=p.velocity*sim.dt();
+        auto hit=collision_.cast(p.pos,delta,{Fixed::fromRatio(1,10),
+                                             Fixed::fromRatio(1,10),
+                                             Fixed::fromRatio(1,10)});
+        if(hit.hit) {
+            p.pos+=delta*fxMax(Fixed{},hit.fraction-Fixed::fromRatio(1,100));
+            p.velocity=(p.velocity-hit.normal*p.velocity.dot(hit.normal)*2_fx)/2_fx;
+        } else p.pos+=delta;
+    } else {
+        if(p.kind==2) {
+            p.kind=4;
+            p.expires=now+c.smokeTicks;
+            p.velocity={};
         } else {
-            if(it->kind==2){it->kind=4;it->expires=now+c.smokeTicks;it->velocity={};}
-            else {
-                for(auto& target:s.actors)if(target.health>0){auto eye=target.pos+Vec3{{},stanceHeight(target,config_.motor)-Fixed::fromRatio(1,10),{}};auto delta=eye-it->pos;auto distance=delta.length();auto radius=it->kind==1?c.blastRadius:c.flashRadius;if(distance>radius||collision_.cast(it->pos,delta).hit)continue;
-                    if(it->kind==1)damage(sim,it->owner,target,int32_t((100_fx*(1_fx-distance/radius)).floorInt()));
-                    else {auto facing=direction(target.yaw,target.pitch).dot(Vec3{}-delta);auto duration=facing>Fixed{}?c.flashTicks:c.flashTicks/4;target.blindUntil=std::max(target.blindUntil,now+duration);}
+            for(auto& target:s.actors)if(target.health>0) {
+                auto eye=target.pos+Vec3{{},stanceHeight(target,config_.motor)
+                                                  -Fixed::fromRatio(1,10),{}};
+                auto delta=eye-p.pos;
+                auto distance=delta.length();
+                auto radius=p.kind==1?c.blastRadius:c.flashRadius;
+                if(distance>radius||collision_.cast(p.pos,delta).hit)continue;
+                if(p.kind==1)
+                    damage(sim,p.owner,target,
+                           int32_t((100_fx*(1_fx-distance/radius)).floorInt()));
+                else {
+                    auto facing=direction(target.yaw,target.pitch).dot(Vec3{}-delta);
+                    auto duration=facing>Fixed{}?c.flashTicks:c.flashTicks/4;
+                    target.blindUntil=std::max(target.blindUntil,now+duration);
                 }
-                remove=true;
             }
+            remove=true;
         }
-        remove|=fxAbs(it->pos.x)>config_.worldLimit||fxAbs(it->pos.y)>config_.worldLimit||fxAbs(it->pos.z)>config_.worldLimit;
-        if(remove)it=s.projectiles.erase(it);else ++it;
+    }
+    remove|=fxAbs(p.pos.x)>config_.worldLimit||
+            fxAbs(p.pos.y)>config_.worldLimit||
+            fxAbs(p.pos.z)>config_.worldLimit;
+    return remove;
+}
+
+void Module::tickOrdinaryProjectiles(Simulation& sim) {
+    auto& current=state(sim);
+    if(!config_.ecsAuthority) {
+        // Keep the default OFF path exactly in its old vector order.
+        for(auto it=current.projectiles.begin();it!=current.projectiles.end();) {
+            if(it->program.enabled) {++it;continue;}
+            if(stepOrdinaryProjectile(sim,*it))
+                it=current.projectiles.erase(it);
+            else ++it;
+        }
+        return;
+    }
+
+    // On the authority path every ordinary projectile is advanced directly
+    // in its writable ECS payload. The State vector is a read projection
+    // between this barrier and the main FPS round/actor stage.
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)
+        throw std::logic_error("FPS DynamicEntityIndex missing in ordinary projectile stage");
+    struct Ordered {Entity entity;uint32_t order,id;};
+    std::vector<Ordered> ordered;
+    world.eachExistingConst<ProjectileRuntime>(
+        [&](Entity entity,const ProjectileRuntime& runtime) {
+            if(world.alive(entity))
+                ordered.push_back({entity,runtime.order,runtime.value.id});
+        });
+    std::sort(ordered.begin(),ordered.end(),[](const Ordered& a,const Ordered& b) {
+        return a.order!=b.order?a.order<b.order:a.id<b.id;
+    });
+    std::vector<std::pair<Entity,uint32_t>> expired;
+    for(const auto& item:ordered) {
+        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
+        if(!runtime)
+            throw std::logic_error("FPS ordinary projectile runtime vanished");
+        if(runtime->value.program.enabled)continue;
+        if(stepOrdinaryProjectile(sim,runtime->value))
+            expired.emplace_back(item.entity,item.id);
+    }
+    // Defer structural changes until the entire source ordering is traversed.
+    for(const auto& [entity,id]:expired) {
+        world.destroy(entity);
+        index->byKey.erase((uint64_t(1)<<32)|id);
+    }
+    current.projectiles.clear();
+    current.projectiles.reserve(ordered.size()-expired.size());
+    uint32_t position=0;
+    for(const auto& item:ordered) {
+        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
+        if(!runtime)continue;
+        runtime->order=position++;
+        current.projectiles.push_back(runtime->value);
     }
 }
 
