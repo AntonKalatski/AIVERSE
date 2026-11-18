@@ -846,7 +846,7 @@ if(AIVERSE_BUILD_EDITOR)
     add_executable(aiverse_editor apps/editor/main.cpp apps/editor/Editor.cpp apps/editor/EditorShell.cpp apps/editor/EditorAgent.cpp apps/editor/EditorPlayOps.cpp apps/editor/EditorTheme.cpp apps/editor/EditorProjects.cpp apps/editor/EditorNativeBuild.cpp apps/editor/EditorGameWizard.cpp apps/editor/EditorMcpConnect.cpp apps/editor/EditorWorld.cpp apps/editor/DetailsPanel.cpp
                    ${AIVERSE_EDITOR_WINDOWS} $<TARGET_OBJECTS:aiverse_runtime>)
     target_link_libraries(aiverse_editor PRIVATE aiverse_runtime aiverse_game_view aiverse_editor_core)
-    target_link_libraries(aiverse_editor PRIVATE aiverse_game_fx)
+    target_link_libraries(aiverse_editor PRIVATE aiverse_game_fx AIVERSE::lib_input)
     target_compile_definitions(aiverse_editor PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     if(WIN32)
         target_sources(aiverse_editor PRIVATE apps/editor/branding/editor.rc)   # exe + window icon
