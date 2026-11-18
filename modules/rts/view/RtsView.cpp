@@ -1,4 +1,5 @@
 #include "RtsView.h"
+#include "engine/view/View.h"
 #include "RtsRoadView.h"
 #include "RtsShoreView.h"
 #include "../../../engine/data/JsonCompose.h"
@@ -82,6 +83,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         }
     }
     for (auto& w : overlays_.set().warnings) warnings_.push_back(w);
+    if(genericView_)genericView_->clear();
     anims_.clear(); streamingChoices_.clear(); animationCache_.clear();
     tracers_.clear();
     looks_.resize(rules.types.size());
@@ -115,6 +117,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     geometryScene_.shutdown(dev);
     for (auto& [k, m] : models_) if (m) releaseModel(dev, *m);
     textureCache_->shutdown(dev);
+    if(genericView_) { genericView_->clear(); genericView_.reset(); }
     models_.clear(); looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
     drawTypeStamps_.clear(); drawTypes_.clear(); drawTypeEpoch_ = 0;
     for (Mesh* m : {&projectile_}) { dev.destroyBuffer(m->vb); dev.destroyBuffer(m->ib); *m = Mesh{}; }
@@ -303,6 +306,74 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     events_.clear();
     effects_.clear();
     handleEvents(s);
+    // Legacy display adapter -> generic engine View, for simple pure pose
+    // graphs ONLY. All genre-specific intents, contact queries, IK,
+    // procedural effects, attachments and rendering styling stay here.
+    // The core View receives only identity, model, graph and named values.
+    for(auto& [key,st]:anims_) { (void)key;st.genericViewPose=false; }
+    std::vector<::aiverse::view::Object> genericObjects;
+    if(genericViewEnabled_) {
+        genericObjects.reserve(s.objects.size());
+        for(size_t oi=0;oi<s.objects.size();++oi) {
+            const auto& o=s.objects[oi];
+            if(!o.visible || o.isProjectile || o.parented || o.body!=-1 ||
+               o.type>=looks_.size() || !typeLoaded(o.type))continue;
+            if(twoD_ && twoD_->hasSprite(o.type))continue;
+            const auto& look=looks_[o.type];
+            if(!look.stages.empty() || !look.lods.empty() ||
+               look.models.empty())continue;
+            const uint64_t key=o.entity.valid()?o.entity.packed():
+                (uint64_t(1)<<63)|uint64_t(oi);
+            auto& st=stateFor(key,o);
+            const auto& ch=look.models[size_t(st.choice)];
+            if(!ch.graph || !ch.model || !ch.needsPose ||
+               ch.baked || !ch.procs.empty() || !ch.legs.empty() ||
+               !ch.additive.empty() || !ch.attach.empty() ||
+               !ch.fx.empty() || !ch.weaponPoses.empty() ||
+               ch.graph->hasContacts() || ch.graph->states().size()!=1 ||
+               !ch.graph->states()[0].transitions.empty())
+                continue;
+            // Unknown/custom parameters and callback-bound features are
+            // deliberately left on the legacy path until parity is proven.
+            bool supported=true;
+            for(const auto& [name,value]:ch.graph->defaults().values) {
+                (void)value;
+                if(name!="speed" && name!="moving" && name!="dead")
+                    supported=false;
+            }
+            for(const auto& node:ch.graph->nodes()) {
+                using Kind=render::AnimationGraph::Kind;
+                if(node.kind!=Kind::Bind && node.kind!=Kind::Clip &&
+                   node.kind!=Kind::Blend && node.kind!=Kind::Additive)
+                    supported=false;
+                if(!node.traits.empty())supported=false;
+            }
+            if(!supported)continue;
+            if(fx_ && !fx_->animations.empty() &&
+               fx_->animations.count(o.entity.packed()))continue;
+            ::aiverse::view::Object packet;
+            packet.id=key;packet.generation=(uint64_t(o.type)<<32)|
+                uint32_t(st.choice);
+            packet.draw.model=ch.model;
+            packet.graph=ch.graph;
+            packet.parameters=ch.graph->defaults();
+            packet.parameters.set("speed",st.speed);
+            packet.parameters.set("moving",o.moving?1.f:0.f);
+            packet.parameters.set("dead",st.dead?1.f:0.f);
+            packet.significance.visible=true;
+            packet.significance.pixels=64.f;
+            genericObjects.push_back(std::move(packet));
+            st.genericViewId=key;
+            st.genericViewPose=true;
+        }
+    }
+    // Remove presentation entities for no-longer-eligible objects every
+    // frame. No model draws here; RtsViewDraw still applies materials,
+    // terrain height, outlines, shadow, effects and other scene features.
+    if(!genericObjects.empty() && !genericView_)
+        genericView_=std::make_unique<::aiverse::view::View>(
+            ::aiverse::lib::animation::MotionWeaveWorkerPool::recommendedWorkers());
+    if(genericView_)genericView_->update(genericObjects,dt);
     for (auto& b : shadowDraws_) b.verts.clear();
     // objects the spline roads stand in for (roadNetwork.replaces: tags or type id prefixes) are not drawn
     std::vector<uint8_t> replacedByRoads;

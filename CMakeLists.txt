@@ -849,6 +849,9 @@ add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp 
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
+# Transitional host adapter consumes the engine View. The dependency points
+# from the game module into the engine, never back into an RTS implementation.
+target_link_libraries(aiverse_game_view PUBLIC AIVERSE::view)
 
 # Helper: package content + platform metadata around an executable.
 include(platform/cmake/ThirdPartyNotices.cmake)

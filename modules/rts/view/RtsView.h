@@ -42,6 +42,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsTerrainRender.h"
 #include "EntityFx.h"
 
+namespace aiverse::view { class View; }
 namespace aiverse::game {
 
 struct Lane;
@@ -251,6 +252,11 @@ public:
     void setAnimationEnvironment(std::function<void(Entity,render::AnimationEnvironment&)> query) { animationEnvironmentQuery_=std::move(query); }
     void setAnimationTraits(render::AnimationTraits traits) { animationTraits_=std::move(traits); }
     void setAnimationLod(bool on) { animLod_ = on; }
+    // Temporary compatibility: the new aiverse::View takes ownership of
+    // simple Graph poses, while legacy specialized authoring stays in this
+    // game adapter. Once all specialized presentation is extracted, this
+    // wrapper can be renamed/removed without changing the generic View.
+    void setGenericViewEnabled(bool on) { genericViewEnabled_=on; }
     // Model files referenced by the view blocks (editor hot reload watches them).
     std::vector<std::string> modelFiles() const;
 
@@ -411,6 +417,8 @@ private:
         int choice = 0;
         render::Animator anim;
         render::AnimationGraphInstance graph;
+        bool genericViewPose=false,wasGenericViewPose=false;
+        uint64_t genericViewId=0;
         render::Pose pose;
         std::vector<render::mat4> world;
         std::vector<render::ProcRuntime> rt;
@@ -538,6 +546,8 @@ private:
     // Only entities first seen while variants stream need a stable choice override.
     std::unordered_map<uint64_t, std::pair<uint16_t, int>> streamingChoices_;
     std::unordered_map<uint64_t, EntityAnim> anims_;   // presentation only: iteration order never matters
+    std::unique_ptr<::aiverse::view::View> genericView_;
+    bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
     TerrainRenderer terrain_;    // chunked terrain + water (RtsTerrainRender.cpp)
     bool hasTerrain_ = false;

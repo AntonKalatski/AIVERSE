@@ -4,6 +4,7 @@
 // entity. Presentation only; reads the scene, never the simulation.
 #include "RtsView.h"
 #include "engine/render/AnimationLod.h"
+#include "engine/view/View.h"
 #include "../RtsModule.h"
 
 #include <algorithm>
@@ -295,8 +296,29 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
             if(found->second.graph)program=found->second.graph;
         }
     }
+    if(!st.genericViewPose && st.wasGenericViewPose && program) {
+        // Returning from the generic engine View to the legacy specialized
+        // path must never resume a stale GraphInstance state.
+        st.graph.reset(program);
+        st.poseValid=false;
+        updatePose=true;
+    }
+    st.wasGenericViewPose=st.genericViewPose;
     if(st.graph.graph()!=program.get()){st.graph.reset(program);st.poseValid=false;updatePose=true;}
-    if (program) {
+    if(st.genericViewPose && genericView_) {
+        const Entity presentation=genericView_->presentationEntity(st.genericViewId);
+        const auto* evaluated=genericView_->presentation().tryGetConst<
+            ::aiverse::lib::animation::AnimationPoseComponent>(presentation);
+        if(evaluated && evaluated->valid && evaluated->local.size()==m.nodes.size()) {
+            st.pose=evaluated->local;
+            st.world=evaluated->matrices;
+            st.poseValid=true;
+        } else {
+            // An invalid or pending pose falls back to legacy Graph updates.
+            st.genericViewPose=false;
+        }
+    }
+    if (program && !st.genericViewPose) {
         // Rebuild defaults each frame so removing a Lua override restores automatic inputs.
         auto& p = st.graph.parameters();
         p = program->defaults();
@@ -456,7 +478,8 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         // stride override for pose correction rather than searching again.
         const float stride = kingstonStride;
         if(moving&&stride<1.f)for(const auto&leg:ch.legs)for(int node:{leg.hip,leg.knee})st.pose[node].r=slerp(m.nodes[node].r,st.pose[node].r,stride);
-        worldMatrices(m, st.pose, st.world);
+        if(!st.genericViewPose)
+            worldMatrices(m, st.pose, st.world);
         // foot IK: plant two-bone legs on the terrain under each foot (ramps, cliffs, slopes)
         if (grid && grid->w > 0 && !ch.legs.empty() && (!moving || locomotionSpeed >= 0.f) && !st.graph.hasContacts()) {
             auto support=animationEnvironment(o,st,ch,*grid);
