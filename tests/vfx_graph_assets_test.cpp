@@ -1,5 +1,5 @@
 // Versioned graph asset registry, parameter variants and safe hot reload.
-#include "engine/fx/VfxGraphAssets.h"
+#include "engine/fx/SpectraFX.h"
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -21,11 +21,11 @@ int main() {
       "links":[{"from":"spawn","to":"init"},{"from":"init","to":"out"}],
       "outputs":["out"]
     })JSON";
-    fx::ParticleSystem ps;
+    spectra::Runtime ps;
     ps.setQuality(fx::FxQuality::High);
     check(ps.init(nullptr),"init CPU backend");
     int readCount=0;
-    fx::VfxGraphAssets assets(ps,[&](const std::string& path,std::string& contents) {
+    spectra::GraphAssets assets(ps,[&](const std::string& path,std::string& contents) {
         ++readCount;
         if(path!="fx/graphs/smoke.vfx.json")return false;
         contents=file;
