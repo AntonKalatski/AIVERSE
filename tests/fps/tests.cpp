@@ -3,6 +3,7 @@
 #include "libraries/include/aiverselib/bots/Persistence.h"
 #include <cstdio>
 #include <algorithm>
+#include <array>
 #include "engine/audio/Audio.h"
 #include <chrono>
 #include "engine/net/LatestChannel.h"
@@ -403,6 +404,72 @@ void ecsDamageAuthorityParity(Json rules,Json map) {
     CHECK(state(*legacy).actors[0].kills==1);
     CHECK(state(*ecs).actors[0].hits>0);
 }
+// Live, simultaneous FPS hitscan is intentionally synchronous: killing a
+// target earlier in the actor tick can suppress its later fire. The shared
+// intent resolver must preserve the full legacy order, including shotgun
+// pellets, historical views, save v9 and replay after a rollback.
+void ecsSimultaneousHitscanRollbackParity(Json rules,Json map) {
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("fps").set("weapons",Json::parse(
+        R"([{"automatic":true,"damage":8,"magazine":24,"reserve":0,"reloadTicks":4,"intervalTicks":1,"pellets":3,"spread":0,"bulletSpeed":0}])"));
+    map.member("players").itemsMut().resize(2);
+    map.member("players").at(1).set("team",Json::number(int64_t(2)));
+    map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    std::vector<std::array<fps::Input,2>> inputs(12);
+    for(uint32_t tick=0;tick<inputs.size();++tick) {
+        for(uint32_t player=0;player<2;++player) {
+            auto& in=inputs[tick][player];
+            in.sequence=tick+1;
+            in.viewTick=tick>1?tick-1:0; // intentionally rewound target poses
+            in.buttons=tick<8?fps::Fire:0u;
+            in.yaw=player==0?Fixed{}:Fixed::fromRatio(1,2);
+        }
+    }
+    const auto runTick=[&](uint32_t tick) {
+        for(uint32_t player=0;player<2;++player) {
+            auto cmd=fps::command(uint8_t(player+1),inputs[tick][player]);
+            cmd.tick=tick;
+            legacy->inject(cmd);
+            ecs->inject(cmd);
+        }
+        legacy->step();
+        ecs->step();
+        CHECK(legacy->checksum()==ecs->checksum());
+        CHECK(state(*legacy).actors==state(*ecs).actors);
+        for(uint8_t slot=1;slot<=2;++slot) {
+            const auto e=static_cast<fps::Module&>(ecs->module()).actorEntity(*ecs,slot);
+            const auto* actor=ecs->world().tryGetConst<fps::ActorRuntime>(e);
+            CHECK(actor&&actor->value==state(*ecs).actors[size_t(slot-1)]);
+        }
+    };
+    SimSnapshot legacySnapshot,ecsSnapshot;
+    for(uint32_t tick=0;tick<inputs.size();++tick) {
+        runTick(tick);
+        if(tick==2) {
+            legacy->saveState(legacySnapshot);
+            ecs->saveState(ecsSnapshot);
+        }
+    }
+    CHECK(state(*ecs).actors[0].shots>0);
+    CHECK(state(*ecs).actors[0].hits+state(*ecs).actors[1].hits>0);
+    const auto expected=ecs->checksum();
+    const auto oldSave=legacy->serialize(),ecsSave=ecs->serialize();
+    auto ecsRestored=simulation(ecsRules,map),legacyRestored=simulation(rules,map);
+    CHECK(ecsRestored->deserialize(oldSave));
+    CHECK(legacyRestored->deserialize(ecsSave));
+    CHECK(ecsRestored->checksum()==expected);
+    CHECK(legacyRestored->checksum()==expected);
+    // A real completed-tick rollback must reproduce the same two-shooter
+    // combat after restoring both storage modes from the original snapshot.
+    legacy->loadState(legacySnapshot);
+    ecs->loadState(ecsSnapshot);
+    CHECK(legacy->checksum()==ecs->checksum());
+    for(uint32_t tick=3;tick<inputs.size();++tick)runTick(tick);
+    CHECK(ecs->checksum()==expected);
+}
 void ecsDuplicateDynamicIdRejected(Json rules,Json map) {
     rules.member("fps").set("ecsAuthority",Json::fromBool(true));
     auto sim=simulation(rules,map);
@@ -569,6 +636,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsReloadAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();ecsProjectileProgramStageParity();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsReloadAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsSimultaneousHitscanRollbackParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();ecsProjectileProgramStageParity();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
