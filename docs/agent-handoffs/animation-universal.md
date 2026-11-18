@@ -475,3 +475,25 @@ before calling this stage validated.
   FPS/RTS use the previous serial integration.
 - Next: reusable hot-reload asset registry, graph notify support, GPU
   crowd/pose-sharing profiling and full editor/run-time validation.
+
+
+## Stage 22 — AnimationGraph Clip Notifies and ECS export (2026-11-18)
+
+- Implementation `073be2eb7b99c4e79c7cd8e9914a72f73ed947c0`,
+  test boundary correction `925daf6e5e35b37fdcc9916bf518a7a261a32713`.
+- `AnimationGraph::Node` accepts `notifies:[{time,name}]` on
+  `kind:"clip"`. Compiles bounded, validated keys, supports loops,
+  speed changes, start-at-zero and multiple loops in one frame.
+- `AnimationGraphInstance::update()` now preserves unwrapped per-clip
+  clocks, emits per-frame `AnimationGraphNotify` with node/name,
+  frame-relative phase and cycle; nested graph events are prefixed.
+  Event quota is 1024/frame and overflow marks unhealthy.
+- Opt-in `AnimationGraphNotifiesComponent` receives graph events in
+  separate presentation ECS alongside Montage notifies.
+- Regression source `tests/animation/graph_notifies.cpp`,
+  CTest `animation_graph_notifies`. **NOT RUN** by user choice.
+- Compatibility: previous JSON graphs remain valid; existing
+  RtsView legacy clip event mechanism unaffected. Controller-specific
+  state-machine notifies and audio routing still require integration.
+  Notifies never directly authorize hits/damage/reload commits.
+- Next: asset registry hot-reload & performance and integration.
