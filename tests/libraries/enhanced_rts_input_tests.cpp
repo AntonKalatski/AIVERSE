@@ -36,7 +36,7 @@ int main() {
     route.onEvent(key(p::Key::H,false),true);
     CHECK(contains(route.onEvent(key(p::Key::Space),true),"FocusCamera"));
     route.onEvent(key(p::Key::Space,false),true);
-    CHECK(route.system().registeredContexts().size()==3);
+    CHECK(route.system().registeredContexts().size()==4);
     CHECK(!route.system().state("CameraPan")->active);
     route.onEvent(key(p::Key::Up),true);
     CHECK(route.system().state("CameraPan")->value.y==1.0f);
