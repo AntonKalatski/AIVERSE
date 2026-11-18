@@ -19,6 +19,8 @@ namespace aiverse::render {
 
 struct PostFxStats { int passes = 0; int effects = 0; int width = 0, height = 0; };
 
+class PrismaVolumeStack;
+
 class Prisma : public PostProcess {
 public:
     bool init(gfx::Device& dev);
@@ -28,6 +30,13 @@ public:
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
     void setSettings(PostFxSettings s);
     const PostFxSettings& settings() const { return settings_; }
+    const PostFxSettings& baseSettings() const { return baseSettings_; }
+
+    // Native/ECS users choose per-camera profiles without modifying game.json.
+    // Call before Renderer3D::render(); uses original configured settings as base.
+    void applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye,
+                            uint32_t cameraMask = 0xffffffffu);
+    void clearCameraVolumes();
 
     void setQuality(PostFxQuality q) { quality_ = q; }
     PostFxQuality quality() const { return quality_; }
@@ -72,6 +81,7 @@ private:
 
     gfx::Device* dev_ = nullptr;
     PostFxSettings settings_;
+    PostFxSettings baseSettings_;
     PostFxQuality quality_ = PostFxQuality::Medium;
     bool enabled_ = true;
     bool hdrFrame_ = false, sceneReady_ = false;
