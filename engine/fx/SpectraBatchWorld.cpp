@@ -67,6 +67,10 @@ fx::FxHandle BatchWorld::play(int effect, fx::float3 position,
     return initialized_ ? particles_.play(effect, position, direction, scale, tint)
                         : fx::FxHandle{};
 }
+bool BatchWorld::setProgramParameter(fx::FxHandle h,uint32_t slot,float value,
+                                     bool affectExisting) {
+    return initialized_ && particles_.setProgramParameter(h,slot,value,affectExisting);
+}
 void BatchWorld::move(fx::FxHandle h, fx::float3 pos) {
     if (initialized_) particles_.move(h, pos);
 }
