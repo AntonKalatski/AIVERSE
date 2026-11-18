@@ -2172,3 +2172,35 @@ were queued, not passed. Do not claim Vulkan MSAA is validated.
 on real Vulkan SDK/Lavapipe, inspect validation errors and screen captures.
 Then complete GL/GLES MSAA and cross-platform regression tests.
 Commit the next code stage and a separate handoff as always.
+
+## Stage 5I — BC6H signed/unsigned HDR container and RHI contracts (2026-11-18)
+
+**Code commit:** `bdbc6f618a6419801757169de65bdbec69b8b2a3`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/Gfx.h`, `engine/render/TextureCodec.h`,
+`engine/render/TextureCodec.cpp`, `engine/render/TextureAsset.h`.
+
+**Implemented source contract:** Added
+`gfx::PixelFormat::BC6H_UFloat` and `BC6H_SFloat` as 4×4
+16-byte compressed GPU formats and matching `BlockFormat` values.
+KTX2 VkFormats 143 (UFLOAT) and 144 (SFLOAT) now preserve native
+BC6H compressed levels, faces and layers in `CompressedImage`.
+`uploadContainerTexture` maps both to the corresponding GPU format.
+BC6H represents HDR float radiance, so there is intentionally
+**no unsafe RGBA8 CPU decoder/fallback**: when the backend rejects
+native support, import fails explicitly instead of truncating HDR.
+The common compressed mip/layer payload validator applies.
+
+**Integration note:** This is the format/codec stage. Native
+Metal/GL/Vulkan mappings and DDS DX10 95/96 are the separate next
+stage, so do not claim native HDR BC6H sampling yet. Existing
+2D material import, ECS, saves and unrelated formats are unchanged.
+
+**Verification:** GitHub code commit confirmed. **Build NOT RUN,
+CTest NOT RUN, GPU validation NOT RUN**, per the deferred testing
+request. Test source and GPU fixture work is still pending.
+
+**Next:** Add BC6H_UFloat/SFloat to native Metal pixel formats
+(macOS only), Vulkan VkFormat, GL BPTC compressed enums and
+capability gates, DDS DX10 layered parser, and synthetic import
+tests. Record this as Stage 5J with its own handoff immediately.
