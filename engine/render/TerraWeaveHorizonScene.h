@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/render/TerraWeaveHorizonModel.h"
 #include "engine/render/TerraWeaveHorizonGpuPatch.h"
+#include "engine/render/TerraWeaveHorizonVertexPatch.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -43,6 +44,8 @@ struct HorizonRuntimeStats {
     size_t archiveHits=0; // full re-use across game launches, when configured
     size_t atlasPatchCount=0, atlasPatchBytes=0; // successful incremental RHI uploads
     size_t atlasPatchRegions=0, fullUploadCount=0; // last patch region count, full model uploads
+    size_t vertexPatchCount=0, vertexPatchBytes=0; // successful partial VB commits
+    size_t vertexPatchRanges=0; // last successful vertex update run count
 };
 
 class TerraWeaveHorizonScene {
@@ -255,23 +258,39 @@ public:
                     if(model_)render::releaseModel(device,*model_);
                     model_.reset();
                     activeBake_.reset();
+                    activeVertices_.clear();
+                    activeIndices_.clear();
                     clusters_=0;
                     terrainQuads_=0;
                     runtime_={};
                     runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                     return true;
                 }
-                // Fast path: if the region and all terrain/forest geometry
-                // are unchanged, patch only changed atlas pixels. Never
-                // update the mesh in place on structure/height changes.
-                // The RHI performs mip regeneration for partial updates.
-                if(model_&&activeBake_&&model_->images.size()==1){
-                    const auto patch=planHorizonAtlasUpload(
-                        *activeBake_,*prepared->bake,settings_.atlasTilePixels);
-                    if(patch){
+                // Fast path: patch both forest atlas and terrain vertices
+                // when index topology, crosscards, UVs and old culling bounds
+                // are still valid. Preflight both resources BEFORE the first
+                // GPU write; never write into the shared geometry pool.
+                if(model_ && activeBake_ && !activeVertices_.empty() &&
+                   model_->images.size()==1) {
+                    const auto atlas=planHorizonAtlasUpload(
+                        *activeBake_,*prepared->bake,
+                        settings_.atlasTilePixels,6,25,true);
+                    const auto vertices=planHorizonVertexUpload(
+                        *activeBake_,*prepared->bake,*model_,
+                        activeVertices_,activeIndices_,*prepared->model);
+                    if(atlas && vertices &&
+                       horizonCanApplyVertexUpload(device,*model_,
+                                                    *prepared->model,*vertices)){
+                        // Allocate the replacement CPU snapshot before changing
+                        // the GPU; allocation failures leave the old model intact.
+                        std::vector<render::ModelVertex> replacement=
+                            prepared->model->vertices;
                         const auto patchStart=std::chrono::steady_clock::now();
                         if(applyHorizonAtlasUpload(device,*model_,
-                                                   *prepared->bake,*patch)){
+                                                   *prepared->bake,*atlas) &&
+                           applyHorizonVertexUpload(device,*model_,
+                                                     *prepared->model,*vertices)){
+                            activeVertices_.swap(replacement);
                             activeBake_=prepared->bake;
                             originXcm_=prepared->bake->originXcm;
                             originZcm_=prepared->bake->originZcm;
@@ -285,11 +304,16 @@ public:
                                 double,std::milli>(
                                     std::chrono::steady_clock::now()-patchStart
                                 ).count();
-                            if(!patch->regions.empty()){
+                            if(!atlas->regions.empty()){
                                 ++runtime_.atlasPatchCount;
-                                runtime_.atlasPatchBytes+=patch->updatedBytes;
+                                runtime_.atlasPatchBytes+=atlas->updatedBytes;
                             }
-                            runtime_.atlasPatchRegions=patch->regions.size();
+                            runtime_.atlasPatchRegions=atlas->regions.size();
+                            if(!vertices->ranges.empty()){
+                                ++runtime_.vertexPatchCount;
+                                runtime_.vertexPatchBytes+=vertices->updatedBytes;
+                            }
+                            runtime_.vertexPatchRanges=vertices->ranges.size();
                             return true;
                         }
                     }
@@ -300,6 +324,14 @@ public:
                 const size_t nextAtlasBytes=prepared->bake->atlasRgba.size();
                 const size_t nextVertices=next->vertices.size();
                 const size_t nextTriangles=next->indices.size()/3;
+                // Preserve the packed post-prepare model arrays only when
+                // CPU region caching is enabled. uploadModel clears them.
+                std::vector<render::ModelVertex> keptVertices;
+                std::vector<uint32_t> keptIndices;
+                if(settings_.maxCachedRegions){
+                    keptVertices=next->vertices;
+                    keptIndices=next->indices;
+                }
                 const auto uploadStart=std::chrono::steady_clock::now();
                 if(!render::uploadModel(device,*next)){
                     render::releaseModel(device,*next);
@@ -309,6 +341,8 @@ public:
                 model_=std::move(next);
                 activeBake_=settings_.maxCachedRegions ?
                     prepared->bake : std::shared_ptr<const HorizonBake>{};
+                activeVertices_.swap(keptVertices);
+                activeIndices_.swap(keptIndices);
                 originXcm_=prepared->bake->originXcm;
                 originZcm_=prepared->bake->originZcm;
                 clusters_=prepared->bake->clusters.size();
@@ -322,6 +356,7 @@ public:
                 runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
                     std::chrono::steady_clock::now()-uploadStart).count();
                 runtime_.atlasPatchRegions=0;
+                runtime_.vertexPatchRanges=0;
                 ++runtime_.fullUploadCount;
                 return true;
             },[](world::Cell){});
@@ -348,6 +383,8 @@ public:
         }
         if(model_){render::releaseModel(device,*model_);model_.reset();}
         activeBake_.reset();
+        activeVertices_.clear();
+        activeIndices_.clear();
         { std::lock_guard lock(cacheMutex_); cache_.clear(); }
     }
     bool ready() const {return model_!=nullptr;}
@@ -397,6 +434,10 @@ private:
     std::unique_ptr<world::AsyncChunkStream> stream_;
     std::unique_ptr<render::Model> model_;
     std::shared_ptr<const HorizonBake> activeBake_; // optional previous source
+    // Compact dedicated CPU reference (~0.5 MB for defaults). This enables
+    // exact packed-vertex comparisons while uploadModel itself drops CPU data.
+    std::vector<render::ModelVertex> activeVertices_;
+    std::vector<uint32_t> activeIndices_;
     world::Cell cell_{};
     bool cataloged_=false;
     int64_t originXcm_=0,originZcm_=0;
