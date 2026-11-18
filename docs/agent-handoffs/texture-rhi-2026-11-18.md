@@ -5304,3 +5304,26 @@ No runtime/ECS/network changes. Source docs GitHub commit
 succeeded, native skill audit NOT RUN, GPU tests NOT RUN.
 Next: run CI/test on native SDKs and verify half-pixel fidelity
 and full mip topology. Keep PR #21 Draft until verified.
+
+
+## Stage 8R — bounded feedback retry lifecycle fixture (2026-11-18)
+
+Test source commit: 060cdb49cbf094cd943ab7e07f819a9412c11e05.
+Changed file: tests/render/virtual_texture_file_streamer.cpp.
+Extended asynchronousGpuFeedbackRuntime with a one-frame deferred budget
+scenario, verifying that already pending pages remain deduplicated and
+that subsequent submit calls do not issue new requests after expiration.
+Also verifies initialize rejects maxDeferredFrames=0 and 1025, with
+diagnostic errors. Existing normal 8-frame test still checks deferred
+fine-mip request on the next submit and safe callback shutdown.
+
+Scope: native mock-GPU CTest fixture only. No runtime, ECS, material,
+serialization, or backend behavior changes.
+Verification: GitHub commit succeeded. Native C++ build and CTest
+NOT RUN because no local repository checkout and github.com DNS fails
+in the available container. No GPU pass claimed.
+Next: execute aiverse_virtual_texture_file_streamer_test and
+ctest -R virtual_texture_file_streamer on a native checkout; fix
+any compiler or assertion failures. Then add replacement-camera
+visibility fixture and integrate GPU feedback capture into a real
+renderer pass, validating Metal/GL/Vulkan separately.
