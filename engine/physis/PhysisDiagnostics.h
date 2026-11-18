@@ -138,9 +138,11 @@ inline bool diagnosticNeeds3DField(DiagnosticLayer layer) {
 
 // Bounded, pure, row-major read. Optional layer has no outside-world fallback:
 // a valid result means the cell belongs to the climate grid.
-inline bool sampleDiagnosticRaster(const World& world,
-                                   const DiagnosticRequest& request,
-                                   DiagnosticRaster& output) {
+template<class Sample3D>
+inline bool sampleDiagnosticRasterWith(const World& world,
+                                       const DiagnosticRequest& request,
+                                       DiagnosticRaster& output,
+                                       Sample3D&& sample3D) {
     const auto* state = world.resourceConst<State>();
     if (!state) return false;
     if (request.width <= 0 || request.height <= 0 || request.stride <= 0 ||
@@ -190,7 +192,7 @@ inline bool sampleDiagnosticRaster(const World& world,
                 NatureFieldSample sampleValue;
                 const Vec3 query{Fixed::fromInt(xMeters),
                                  coord->elevation, Fixed::fromInt(zMeters)};
-                if (!sampleNatureField(world, query, sampleValue) ||
+                if (!sample3D(world, query, sampleValue) ||
                     !sampleValue.hasAtmosphere)
                     continue;
                 value = diagnosticValue(sampleValue, request.layer);
@@ -213,6 +215,16 @@ inline bool sampleDiagnosticRaster(const World& world,
     }
     output = std::move(next);
     return true;
+}
+
+// Existing unindexed API keeps the same signature and exact reference behavior.
+inline bool sampleDiagnosticRaster(const World& world,
+                                   const DiagnosticRequest& request,
+                                   DiagnosticRaster& output) {
+    return sampleDiagnosticRasterWith(world, request, output,
+        [](const World& source, Vec3 p, NatureFieldSample& sample) {
+            return sampleNatureField(source, p, sample);
+        });
 }
 
 } // namespace aiverse::physis
