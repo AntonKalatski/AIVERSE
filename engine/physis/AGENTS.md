@@ -10,3 +10,12 @@ Scope: `engine/physis/`, `tests/physis_*.cpp`, `docs/agent-handoffs/physis-*.md`
 6. Existing gameplay/genre modules must remain unaffected unless their integration is explicitly tested and reviewed. Respect concurrent branches; never force push.
 
 Current Stage 1: `docs/agent-handoffs/physis-core-2026-11-18.md`.
+
+## PHYSIS / NEREID / TerraWeave coordination (2026-11-18)
+
+Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership matrix) before editing flood/water/terrain integrations.
+- PHYSIS agent owns weather, dynamic precipitation, surface wetness/snow/ice, fire/quake and independent nature ECS. NEREID Water agent (PR #23, `feature/nereid-water-core`) exclusively owns canonical lake/river/ocean ECS water, water-body geometry, flow, water sampling, buoyancy and water surface pipeline. TerraWeave agent (`feature/terraweave`) owns terrain heights/biomes/foliage and later consumes both through **optional** adapters; PHYSIS PR #25 is `feature/physis-nature-simulation`.
+- The local `HazardCell::waterDepth` shallow flood is **experimental standalone gameplay simulation**. It must not run as a second canonical water level for NEREID-managed water bodies. Before shared use, design and test a PHYSIS flood ownership switch or explicit one-way transfer with the Water agent; never invent competing water sources or integrate rainfall intensity directly into NEREID metres.
+- PHYSIS core must NOT include NEREID or TerraWeave headers; TerraWeave core must not depend on PHYSIS/NEREID. Host-level integration owns conversions: Terra signed centimetres -> common signed Fixed metres, X/Z horizontal and Y vertical; floor division for negative world positions, elevation and shoreline coherence, explicit scheduler and persistence ownership.
+- PHYSIS read-only `EnvironmentalResponse` is the input for Terra terrain material, wetness/snow masks and foliage wind; NEREID `WaterSample`/water bodies are the source for Terra waterline, exclusion/shoreline and buoyancy. No presentation feedback into authoritative state.
+- On each subsequent implementation stage: code + unit/cross-system tests in a code commit, **separate** handoff documentation commit, scope/owner coordination and verified native build status. Do not edit the Water agent's or Terra agent's active branches and do not merge their PRs automatically.
