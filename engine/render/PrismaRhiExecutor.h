@@ -42,8 +42,9 @@ public:
     const PrismaGraphResourcePool<gfx::TextureHandle>& pool() const { return pool_; }
 
     // External resource handles must be indexed by graph resource ID.
-    // Raster: bool(Device&, PassDesc&, passId, DispatchView&) with an already
-    // OPEN pass. The host binds its own pipeline, textures and uniforms.
+    // Raster: bool(Device&, passId, DispatchView&) INSIDE an open pass.
+    // The host binds its own pipeline, textures and uniforms. The pass has
+    // one color output, no implicit clearing and optional depth attachment.
     // Compute: bool(Device&, passId, DispatchView&) OUTSIDE any render pass.
     // Caller must not call beginPass/endPass inside either callback.
     // Copy passes use Device::copyColor and require one source and destination.
@@ -53,7 +54,8 @@ public:
     PrismaRhiExecution execute(const PrismaRenderGraph& graph,
                               const PrismaGraphPlan& plan,
                               const std::vector<gfx::TextureHandle>& external,
-                              RasterFn&& raster, ComputeFn&& compute) {
+                              RasterFn&& raster, ComputeFn&& compute,
+                              gfx::TextureHandle rasterDepth = {}) {
         PrismaRhiExecution result;
         if (!plan.valid || plan.resources.size() != graph.resources().size() ||
             plan.order.size() != graph.passes().size() ||
@@ -134,13 +136,13 @@ public:
                 desc.colorTarget = view.resource(pass.writes.front());
                 desc.clearColorEnabled = false; // shader must fully write target
                 desc.clearDepthEnabled = false;
-                // Metal may require a depth attachment and the caller knows its
-                // size/format. Do not silently fabricate one or assume screen depth.
-                // Caller can set desc.depthTarget before returning true.
-                if (!raster(device_, desc, id, view)) return false;
-                // Raster callback must only configure PassDesc and not draw.
-                // See executeRaster() for callbacks that draw inside the pass.
-                return true;
+                // Metal may require a depth attachment. The host supplies one
+                // sized for the output, or leaves invalid where backend permits.
+                desc.depthTarget = rasterDepth;
+                device_.beginPass(desc);
+                const bool ok = raster(device_, id, view);
+                device_.endPass();
+                return ok;
             });
         result.success = dispatched.success;
         result.passes = dispatched.executedPasses;
