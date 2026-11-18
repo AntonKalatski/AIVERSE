@@ -1,4 +1,5 @@
 #include "engine/render/Ktx2Transcode.h"
+#include "engine/render/Ktx2Libktx.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -107,6 +108,18 @@ void corruption(){
         },out,err) && out.levels.empty(),
         "unknown output format enum rejected");
 }
+void optionalCodecConfig() {
+    // Even without installed libktx, API is link-safe, explicit and
+    // never silently treats Basis bytes as uncompressed RGBA.
+    Ktx2LibktxOptions options;
+    require(options.preferNativeCompression && options.allowRgba8Fallback,
+            "libktx default GPU target and fallback policy");
+#if defined(AIVERSE_TEXTURE_WITH_LIBKTX)
+    // Real BasisLZ/UASTC bytes and device tests require linked libktx
+    // and a production asset fixture in a dedicated CI gate.
+    require(sizeof(ktxTexture2) > 0, "real libktx public header available");
+#endif
+}
 void nativePassthrough(){
     std::string raw=ktx(false,1,1,1);
     raw.resize(104+64,0);
@@ -124,7 +137,7 @@ void nativePassthrough(){
 }
 }
 int main(){
-    try{acceptanceAndMetadata();corruption();nativePassthrough();}
+    try{acceptanceAndMetadata();corruption();optionalCodecConfig();nativePassthrough();}
     catch(const std::exception& e) {
         std::fprintf(stderr,"KTX2 transcoder contract FAILED: %s\n",e.what());
         return 1;

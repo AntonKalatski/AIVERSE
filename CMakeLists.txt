@@ -43,6 +43,18 @@ option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_TOOLS "Build aiversebuild packager" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_SERVER "Build the network game server and the network bot client" ${AIVERSE_DESKTOP})
 
+# Explicit system Khronos libktx support for BasisLZ/ETC1S and UASTC.
+# OFF by default: no hidden vendoring, network fetch or platform dependency.
+option(AIVERSE_TEXTURE_WITH_LIBKTX "Use installed libktx Basis Universal KTX2 transcoder" OFF)
+if(AIVERSE_TEXTURE_WITH_LIBKTX)
+    find_path(AIVERSE_LIBKTX_INCLUDE_DIR NAMES ktx.h REQUIRED)
+    find_library(AIVERSE_LIBKTX_LIBRARY NAMES ktx REQUIRED)
+    add_library(aiverse_texture_libktx INTERFACE)
+    target_include_directories(aiverse_texture_libktx INTERFACE "${AIVERSE_LIBKTX_INCLUDE_DIR}")
+    target_link_libraries(aiverse_texture_libktx INTERFACE "${AIVERSE_LIBKTX_LIBRARY}")
+    target_compile_definitions(aiverse_texture_libktx INTERFACE AIVERSE_TEXTURE_WITH_LIBKTX=1)
+endif()
+
 # Game being built (aiversebuild overrides these).
 set(AIVERSE_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/templates/skirmish" CACHE PATH "Game content folder (contains game.json)")
 # build folders configured before games/ became templates/ keep the old cached path
@@ -582,6 +594,9 @@ if(AIVERSE_VULKAN)
 endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
+if(AIVERSE_TEXTURE_WITH_LIBKTX)
+    target_link_libraries(aiverse_runtime PUBLIC aiverse_texture_libktx)
+endif()
 if(APPLE)
     set_source_files_properties(engine/platform/macos/PlatformMac.mm engine/platform/ios/PlatformIOS.mm
         engine/gfx/metal/GfxMetal.mm engine/platform/apple/PluginsApple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
@@ -2122,6 +2137,9 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_test(NAME ktx2_layers COMMAND aiverse_ktx2_layers_test)
     add_executable(aiverse_ktx2_transcode_test tests/render/ktx2_transcode.cpp)
     target_link_libraries(aiverse_ktx2_transcode_test PRIVATE aiverse_models aiverse_zstd_dec)
+    if(AIVERSE_TEXTURE_WITH_LIBKTX)
+        target_link_libraries(aiverse_ktx2_transcode_test PRIVATE aiverse_texture_libktx)
+    endif()
     add_test(NAME ktx2_transcode COMMAND aiverse_ktx2_transcode_test)
     add_executable(aiverse_texture_asset_test tests/render/texture_asset.cpp)
     target_link_libraries(aiverse_texture_asset_test PRIVATE aiverse_models aiverse_zstd_dec)
