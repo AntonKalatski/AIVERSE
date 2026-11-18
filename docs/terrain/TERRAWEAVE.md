@@ -1429,3 +1429,52 @@ the inactive LRU due to count/byte limits or stale terrain
 revisions. This excludes active-region replacement when no
 cache could retain the old model and does not measure GPU
 driver allocations or frame time.
+
+## Stage 14 — temporal transition between GPU Horizon regions
+
+Horizon now has an optional **neighbor-only temporal crossfade**
+when the camera crosses a 128m-region key and the next proxy
+has been uploaded (or found in the GPU residency LRU).
+`HorizonSettings::regionTransitionMs` is a bounded
+`0..1000` milliseconds, default `240`. It can be
+overridden through `terraweaveHorizon.regionTransitionMs`.
+`0` disables the fade for all platforms. The Minimal
+and Mobile quality presets choose `0` automatically
+to conserve GPU memory and avoid alpha-overdraw costs.
+
+During the bounded transition only, the renderer draws
+the outgoing and incoming already-uploaded `render::Model`
+proxies with complementary smoothstep alpha using
+**existing** `Renderer3D::ModelDraw.tint.w` and
+`kDrawTransparent` rendering flags. Both are
+non-shadow-casting during the effect. The normal
+single, opaque, static model draw path resumes
+immediately afterwards. There is no new shader,
+per-tree foliage model, framebuffer or RHI backend.
+
+The outgoing model occupies ONE of the existing
+inactive GPU residency slots and is subject to
+`maxCachedGpuRegions` and `gpuCacheBudgetMiB`.
+`HorizonGpuRegionCache::reserveTransient` evicts
+inactive LRU models as necessary. On completion,
+the outgoing model is stored back into that GPU LRU
+when the authored source revision still matches;
+otherwise it is explicitly freed using
+`render::releaseModel(device)`. Camera changes
+across more than one grid cell, updates to terrain/
+water/road masks or insufficient GPU budget skip
+temporal blending to avoid stale/outlandish visuals.
+
+New diagnostics:
+`HorizonRuntimeStats::transitionStarts`,
+`transitioning` and `transitionProgressPermille`.
+
+**Important:** Conventional alpha blending can
+produce sorting/depth artifacts when two terrain
+rings overlap or when crossed forest billboards
+intersect. This is a short, bounded visual
+transition, **not** order-independent transparency
+or a depth-aware geomorph. It is unverified on
+real render backends. The user assigned all
+CMake/CTest, GPU screenshots and performance
+testing to a separate agent.
