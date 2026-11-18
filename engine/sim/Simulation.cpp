@@ -200,6 +200,8 @@ bool Simulation::deserialize(const std::string& bytes, std::string* err) {
     World::EntityState es;
     a(es.gens,es.alive,es.free,es.pendingDestroy);
     if(!a.ok())return fail("truncated save state");
+    if(!World::validEntityState(es))
+        return fail("invalid entity allocator state");
     if(players.size()!=players_.size())
         return fail("player count differs (load into simulation set up from same map)");
 

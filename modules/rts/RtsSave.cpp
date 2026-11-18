@@ -198,6 +198,14 @@ template <class T> void ioPool(Archive& a, World& w) {
     for (uint32_t i = 0; i < n && a.ok(); ++i) {
         Entity e; T v{};
         io(a, e); io(a, v);
+        // The allocator is restored before built-in pools. Never admit
+        // duplicate rows, stale generations or destroyed entities from disk.
+        // Without this check a corrupt file can construct an inconsistent
+        // sparse set and break subsequent ECS queries, even before checksum.
+        if(!a.ok() || !w.alive(e) || p.has(e.index)) {
+            a.fail();
+            return;
+        }
         p.emplace(e, std::move(v));
     }
 }

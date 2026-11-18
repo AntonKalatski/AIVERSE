@@ -518,6 +518,26 @@ public:
         return count;
     }
 
+    // Validate the entity allocator BEFORE applying untrusted disk state.
+    // Dead slots are exactly the unique free-list entries; deferred destroys
+    // may contain stale handles because flush() deliberately ignores them.
+    static bool validEntityState(const EntityState& s) {
+        constexpr size_t kMaxSavedEntities = 16u * 1024u * 1024u;
+        const size_t n=s.gens.size();
+        if(n>kMaxSavedEntities || s.alive.size()!=n || s.free.size()>n)return false;
+        size_t live=0;
+        for(uint8_t a:s.alive) {
+            if(a>1)return false;
+            live+=a;
+        }
+        if(live+s.free.size()!=n)return false;
+        std::vector<uint8_t> seen(n,0);
+        for(uint32_t index:s.free) {
+            if(index>=n || s.alive[index] || seen[index])return false;
+            seen[index]=1;
+        }
+        return true;
+    }
     void restoreEntityState(EntityState s) { gens_ = std::move(s.gens); alive_ = std::move(s.alive); free_ = std::move(s.free); pendingDestroy_ = std::move(s.pendingDestroy); }
 
     void clear() {

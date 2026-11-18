@@ -108,6 +108,30 @@ int main(){
     check(!victim->deserialize(legacyBytes,&error),"accepted v9 without native data");
     check(victim->checksum()==originalHash,"bad v9 load mutated state");
 
+
+    // A malformed allocator must be rejected before mutating World. Entity
+    // generations, free indices and alive flags form one invariant.
+    World probe;
+    const Entity dead=probe.create();
+    (void)probe.create();
+    probe.destroy(dead);
+    auto good=probe.entityState();
+    check(World::validEntityState(good),"valid allocator rejected");
+    auto bad=good;
+    bad.alive.pop_back();
+    check(!World::validEntityState(bad),"mismatched allocator columns accepted");
+    bad=good;
+    bad.free.push_back(dead.index);
+    check(!World::validEntityState(bad),"duplicate free-list slot accepted");
+    bad=good;
+    bad.free[0]=uint32_t(bad.gens.size()+10);
+    check(!World::validEntityState(bad),"out-of-range free-list slot accepted");
+    bad=good;
+    bad.alive[dead.index]=1;
+    check(!World::validEntityState(bad),"live entity also on free-list accepted");
+    bad=good;
+    bad.alive[dead.index]=2;
+    check(!World::validEntityState(bad),"invalid alive marker accepted");
     s->world().destroy(e);Entity reused=s->world().create();
     check(reused.index==e.index && reused.gen!=e.gen,"entity generation not incremented");
     std::cout<<"PASS native ECS v9/v10, migration with original hash, COW, simulated peer parity, failed-load rollback\n";
