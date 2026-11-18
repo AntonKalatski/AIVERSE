@@ -2135,3 +2135,16 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME vfx_graph_assets COMMAND aiverse_vfx_assets_tests)
     set_tests_properties(vfx_graph_assets PROPERTIES LABELS "SpectraFX")
 endif()
+
+# SpectraFX graph CRUD is shared by the GUI Workspace and standalone MCP server.
+# It is deliberately independent of RTS/FPS and reuses the CPU EffectDef compiler.
+if(TARGET aiverse_editor_core)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraGraphOps.cpp)
+endif()
+if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
+    add_executable(aiverse_vfx_ops_tests tests/vfx_graph_ops_test.cpp)
+    target_include_directories(aiverse_vfx_ops_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_vfx_ops_tests PRIVATE aiverse_editor_core aiverse_fx)
+    add_test(NAME vfx_graph_ops COMMAND aiverse_vfx_ops_tests)
+    set_tests_properties(vfx_graph_ops PROPERTIES LABELS "SpectraFX")
+endif()
