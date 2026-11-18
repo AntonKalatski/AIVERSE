@@ -850,7 +850,7 @@ close-up rocks or detailed tree meshes.
 Default `estimateHorizonBudget(HorizonSettings{})`:
 - 832 possible forest cluster slots in total (16×16 middle + 24×24 distant).
 - One 1392×1392 RGBA8 texture, **7,750,656 bytes** before mipmaps.
-- At most 9,057 vertices and 7,936 triangles (terrain and two crossed
+- At most 9,253 vertices and 8,320 triangles (including outer skirts and two crossed
   quads per forest cluster; many clusters skipped in sparse biomes).
 - One `Model` with at most **two material primitives**. Actual main-pass
   draw count varies by renderer/backends/visibility; shadows,
@@ -874,6 +874,7 @@ upload, memory and shadow/atmospheric composition still cost resources.
     "closeForestEndCm": 25000,
     "middleForestEndCm": 100000,
     "terrainBeginCm": 110000,
+    "terrainSkirtDepthCm": 1200,
     "terrainResolution": 48,
     "atlasTilePixels": 48,
     "canopyHeightCm": 1800,
@@ -1133,7 +1134,7 @@ terraweave::HorizonBake decoded =
     terraweave::decodeHorizonArchive(bytes, fingerprint);
 ```
 
-Archive wire format is versioned `TWH1`, explicit little-endian
+Archive wire format is currently versioned `TWH3`, explicit little-endian
 integer fields, packed RGBA atlas, terrain vertices and cluster
 metadata, with a 64-bit FNV payload checksum and 20 MiB maximum
 serialized size. It is intended for *trusted application assets*;
@@ -1542,3 +1543,53 @@ Remaining functional/visual caveats:
 - All compilation, CTest, GPU validation and FPS
   measurements belong to the separate test agent;
   code is currently **NOT RUN / UNVERIFIED**.
+
+## Stage 16 — globally aligned Horizon terrain and edge skirts
+
+Horizon terrain vertices now lie on a **globally anchored, signed
+rational world lattice**, using `floorDiv(gridIndex * regionSide,
+terrainResolution)`. Adjacent camera regions therefore sample the
+same terrain positions even at High 64×64 or custom resolutions
+where the 512m camera-region shift is not divisible by the
+coarse grid spacing. Negative world coordinates remain stable.
+
+Each `HorizonTerrainVertex` stores `slopeXPermille` and
+`slopeZPermille`. Normals are obtained from height samples
+one global grid step on either side of the vertex, including
+outside the current region. Authoring a small terrain edit
+also marks the surrounding one-grid-step normal footprint
+dirty for partial CPU re-baking. This avoids the old
+region-dependent one-sided lighting normals.
+
+`terrainSkirtDepthCm` is an optional **downward, outer-edge
+skirt** on the coarse terrain material, from 0 to 5000cm.
+It preserves sampled top heights and adds no new material
+primitive or separate draw call. Default Balanced/High
+1200cm, Mobile 600cm and Minimal off. From a high vantage
+point, downward geometry can be visible and should be
+tuned with atmospheric fog; it is not terrain geomorphing.
+
+With default 48×48 terrain and 832 possible forest clusters,
+analytic worst-case geometry is **9,253 vertices and 8,320
+triangles**, including 196 outer-skirt vertices and 384 skirt
+triangles. The 1392×1392 shared one-view RGBA atlas still
+uses 7,750,656 bytes before mipmaps. Top terrain and
+forest remain in the same standard GPU Model.
+
+**Archive format:** TWH3 (version/magic 3) stores both global
+slopes and skirt depth; its fingerprint also changes to reflect
+the new lattice. Previous TWH1/TWH2 binaries are deliberately
+rejected. Use `aiverse_horizon_bake` to rebuild static-world
+`.twh` assets or rely on the existing runtime regeneration
+fallback. Earlier TWH1/TWH2 references in this document describe
+historical stages, **not the current on-disk format**.
+
+**Limitations:** matching border geometry requires the same
+immutable source heightfield in the overlapping area. Authored
+terrain streaming changes may still require incremental
+re-baking; a source swap can visibly change the true landform.
+The skirt hides small outer-edge cracks, not abrupt skyline
+changes or inner near-terrain cutout mismatches. GPU
+screenshots, builds, CTest and platform performance have
+**not been run by this agent**; testing belongs to the
+dedicated validation agent. See Stage 16 handoff.
