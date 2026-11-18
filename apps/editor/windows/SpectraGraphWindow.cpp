@@ -727,6 +727,23 @@ private:
                 editValueNode();
                 editCurveNode();
             }
+            if(n.getStr("type")=="FunctionCall") {
+                const std::string active=n["properties"].getStr("function");
+                if(ImGui::BeginCombo("Функция",active.c_str())) {
+                    for(const auto& [name,definition]:doc_["functions"].members()) {
+                        (void)definition;
+                        if(ImGui::Selectable(name.c_str(),active==name)) {
+                            remember();
+                            Json props=doc_["nodes"][size_t(selected_)]["properties"];
+                            props.set("function",Json::string(name));
+                            doc_.find("nodes")->at(size_t(selected_)).set("properties",props);
+                            propertyText_=props.dump(2);
+                            refreshDiagnostics();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
             if(ImGui::CollapsingHeader("Типизированные модули",ImGuiTreeNodeFlags_DefaultOpen))
                 typedFields();
             ImGui::Separator();
@@ -763,16 +780,64 @@ private:
             if(ImGui::Button("Отмена"))ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
+        if(doc_.getInt("version")==2) {
+            ImGui::SeparatorText("Переиспользуемые функции");
+            if(ImGui::Button("Редактировать функции")) {
+                functionText_=(doc_["functions"].isObject()?
+                               doc_["functions"]:Json::object()).dump(2);
+                ImGui::OpenPopup("##spectra_functions");
+            }
+            if(ImGui::BeginPopupModal("##spectra_functions",nullptr,
+                                     ImGuiWindowFlags_AlwaysAutoResize)) {
+                ui::inputMultiline("##spectra_functions_json",functionText_,
+                                   ImVec2(550,320));
+                if(ImGui::Button("Применить определения")) {
+                    try {
+                        const Json functions=Json::parse(functionText_);
+                        if(!functions.isObject())
+                            throw std::runtime_error("functions must be a JSON object");
+                        remember();
+                        doc_.set("functions",functions);
+                        refreshDiagnostics();
+                        message_="Функции обновлены. Компилятор проверяет рекурсию и типы.";
+                        ImGui::CloseCurrentPopup();
+                    } catch(const std::exception& ex){message_=ex.what();}
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Отмена##fn"))ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+            ui::inputString("Библиотека##spectra_fn_library",functionLibraryName_);
+            if(ImGui::Button("Импортировать библиотеку") && !functionLibraryName_.empty()) {
+                Json req=Json::object();
+                req.set("library",Json::string(functionLibraryName_));
+                req.set("graph",doc_);
+                const Json result=ed.ws().call("fx_function_import",req);
+                if(checkResult(result) && result["graph"].isObject()) {
+                    remember();doc_=result["graph"];
+                    refreshDiagnostics();
+                    message_="Библиотека функций импортирована в граф.";
+                }
+            }
+            if(ImGui::Button("Экспортировать функции") && !functionLibraryName_.empty()) {
+                Json req=Json::object();
+                req.set("library",Json::string(functionLibraryName_));
+                req.set("graph",doc_);
+                const Json result=ed.ws().call("fx_function_export",req);
+                if(checkResult(result))
+                    message_="Библиотека функций сохранена.";
+            }
+        }
         ImGui::Separator();
         ImGui::Text("CPU emitters: %d",emitters_);
         ImGui::Text("Metal GPU subset: %s",gpuEligible_?"compatible":"CPU fallback");
         if(!gpuReason_.empty())ImGui::TextWrapped("%s",gpuReason_.c_str());
-        ImGui::TextWrapped("V1: Spawn -> Initialize -> Update* -> Output. "
-                           "Положение узлов не влияет на симуляцию. "
-                           "GPU compute и математические dataflow узлы пока не поддерживаются.");
+        ImGui::TextWrapped("V2: типизированные math/dataflow узлы, "
+                           "модули FxEffect и функции компилируются в CPU. "
+                           "Metal GPU доступен только для совместимого billboard-подмножества.");
     }
 
-    std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,pendingFrom_,pendingDataFrom_,linkPort_;
+    std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,functionText_,functionLibraryName_="common_math",pendingFrom_,pendingDataFrom_,linkPort_;
     std::vector<std::string> names_,draftNames_,errors_;
     Json doc_=defaultGraph();
     std::vector<Json> undo_,redo_;
