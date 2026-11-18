@@ -487,3 +487,45 @@ selecting mip/layer using Metal render pass descriptors, validating
 actual allocation usage/format/sizes, then add Metal multi-color
 targets and capability-specific pipeline variants. Make a separate
 code commit and immediately append a handoff commit.
+
+## Stage 4B — Metal color/depth rendering into selected mips and layers (2026-11-18)
+
+**Code commit:** `dfbc5421d4da59e533cf9a9cc8e07121914f8a46`.
+**Changed:** `engine/gfx/metal/GfxMetal.mm`.
+
+**Implementation in source:** Metal `createTexture` permits texture
+2D arrays/cubes/cube arrays with `renderTarget=true`, preserving
+Metal's explicit native `MTLTextureUsageRenderTarget` allocation.
+`supportsRenderTargetPasses()` reports true.
+`beginRenderTargets` validates the requested subresource against
+the actual native texture's mip levels, layers/faces, dimensions,
+render-target usage, pixel format, and samples; it requires matching
+extent for color/depth. On success the Metal render-pass descriptor
+uses the requested `level`/`slice` and per-attachment clear/load/store,
+then opens an encoder ended via existing `endPass`.
+Both color-only and depth-only are supported. The existing screen
+and legacy 2D `beginPass` remain unchanged.
+
+**Explicit limits:** Maximum **one** color attachment is supported
+by this stage; multi-target passes return false with a clear error,
+since current Metal pipeline descriptors only configure color slot 0.
+3D slice and 1D render targets are rejected. Only color RGBA8,
+RGBA8_sRGB and RGBA16F are allowed, matching supported pipeline
+pixel formats; depth format uses existing `Depth`.
+No MSAA or resolve operation. The high-level
+`render::RenderTexture` remains a legacy RGBA8 canvas.
+
+**Compatibility:** Adds opt-in offscreen rendering only.
+No existing render path or save/network/ECS file is changed.
+
+**Verification:** GitHub code update committed; native
+macOS/iOS compilation and execution **NOT RUN**.
+Render-to-nonzero-mip/layer GPU fidelity and layout/resource
+lifetime validation are still required. No CI pass claimed.
+
+**Next:** Stage 4C — add GL33/GLES3 selected mip/layer color/depth
+FBO passes, with strict checking before changing active render
+state. Then validate native API calls and attach-layer path
+using offscreen GPU tests. Stage 4D adds multi-color pipeline
+output formats/MRT, Stage 4E Vulkan and MSAA/resolve.
+Commit source and handoff separately after each.
