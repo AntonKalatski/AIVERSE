@@ -1049,3 +1049,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Actual RTS integration:** existing RTS `Projectile` and `Transform` are ECS components and the live `projectiles` system now consumes the shared library's deterministic motion policy; hit/damage/splash/onHit ordering is still unchanged within legacy `sysProjectiles`. This does **not** yet register `addKinematicProjectileSystem` for RTS or move its damage stage into standalone generic systems. Legacy save/checksum layout unaffected by this source change, but native parity is still unverified.
 - Verification: pushed to GitHub only. Native compile, save v9, rollback and in-game projectile parity have **not** run.
 - Next: fix invalid-pursuit input mutation behavior if needed, add moving-target/timeout parity tests and register them, run native builds/CTest. Refactor `sysProjectiles` by behavior only after parity evidence; preserve ability and program variants.
+
+
+### 2026-11-18 — Non-mutating validation of pursuit projectile speed
+- Code SHA: `58b3447e1a4ce439d52fda6a059e386d1af9016e`.
+- `stepKinematicProjectile` now rejects invalid/nonpositive pursuit distance-per-tick *before* incrementing elapsed ticks or changing the projectile. TimedEndpoint semantics remain unchanged.
+- Verification: source commit only, C++ build and execution not run. Follow up with moving-target/timeout/invalid-input snapshot tests.
