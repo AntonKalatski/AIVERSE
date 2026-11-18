@@ -193,3 +193,11 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Validation:** code/asset API inspected; FPS visual/interactive behavior and compilation have **not** been verified. Check F10 pointer lock, keyboard+mouse capture, pad buttons and axes, profile reload, duplicate mapping conflicts, and focus loss on macOS and web. The UI intentionally does not modify project assets.
 
 **Next agent:** review CI failures and run CMake/CTest, complete any remaining RTS camera/selection mappings and hosted-game input focus gating. Decide whether mobile touch gesture profiles need dedicated schema in a separate feature. Do not mark this PR ready without green CI.
+
+## Stage 11 — explicit link wiring and agent skill refresh (2026-11-18)
+
+**Changes:** root `CMakeLists.txt` now links `AIVERSE::lib_input` into both desktop `aiverse_client` and web/mobile `main` target, so `apps/client/ClientInputRouting.h` and `EnhancedInputConfig.h` resolve the public `<aiverselib/...>` include path in all build variants. Editor target already links the library. `skills/ui/aiverse-input/SKILL.md` now routes agents to the editor authoring UI, FPS player settings UI and RTS shortcut adapter; mandatory input validation now covers `library_enhanced_rts_input`.
+
+**Verification:** GitHub connector source audit only. CI on last commit was queued at check time; compilation and CTest remain unverified. Do not mark these links compile-verified before CI/local build completes.
+
+**Next agent:** check CI logs, run `aiverse_enhanced_input_tests`, adapter/config/RTS tests plus `aiverse_editor`, `aiverse_client`, `aiverse_fps_client`; test interactive rebind and hosted GameWindow/Scene focus. Fix compiler/warning failures immediately, append another handoff stage.
