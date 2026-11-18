@@ -43,6 +43,19 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     if(e.gravity.x!=0.0f||e.gravity.z!=0.0f)
         return reject("GPU v1 implements only world Y gravity");
 
+    // GPU fading is hardcoded to linear white→transparent. Verify all color
+    // keys exactly; rounding in JSON serialization alone must not make an
+    // authored custom gradient eligible by accident.
+    const fx::EmitterDef baseline;
+    if(e.color.size()!=baseline.color.size())
+        return reject("GPU v1 requires the default white alpha fade");
+    for(size_t i=0;i<e.color.size();++i) {
+        const auto& a=e.color[i],&b=baseline.color[i];
+        if(a.t!=b.t || a.rgba.x!=b.rgba.x || a.rgba.y!=b.rgba.y ||
+           a.rgba.z!=b.rgba.z || a.rgba.w!=b.rgba.w)
+            return reject("GPU v1 requires the default white alpha fade");
+    }
+
     // Compare the COMPLETE normalized effect schema with a fresh emitter
     // containing only fields actually implemented by the GPU kernel. This
     // rejects nested modules, texture animation, custom colors, spawn delay,
