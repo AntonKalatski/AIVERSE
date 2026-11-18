@@ -115,8 +115,9 @@ struct GLTexture {
     PixelFormat fmt = PixelFormat::RGBA8;
     TextureDimension dimension = TextureDimension::Texture2D;
     GLenum target = GL_TEXTURE_2D;
-    int w = 0, h = 0, depth = 1, layers = 1, levels = 1;
+    int w = 0, h = 0, depth = 1, layers = 1, levels = 1, samples = 1;
     bool mips = false, compressed = false, renderTarget = false;
+    bool renderbuffer = false; // GL ES3 portability: multisample storage cannot be sampled
 };
 struct GLTextureView { uint32_t parentId = 0; };
 struct GLSampler { GLuint native = 0; };
@@ -337,8 +338,42 @@ public:
         }
         if (d.dimension != TextureDimension::Texture2D)
             return createDimensionalTexture(d);
-        if (d.sampleCount != 1 || d.storage) {
-            error_ = "GL: 2D multisampling and storage images are unsupported";
+        if (d.sampleCount > 1) {
+            // GLES3/WebGL2 lack a portable multisample sampled texture target.
+            // Store MSAA render attachments in renderbuffers; resolve into
+            // single-sample TextureHandle resources at endPass().
+            if (d.format != PixelFormat::Depth && d.format != PixelFormat::RGBA8 &&
+                d.format != PixelFormat::RGBA8_sRGB &&
+                (d.format != PixelFormat::RGBA16F || !hdr_)) {
+                error_ = "GL: unsupported multisample attachment format";
+                return {};
+            }
+            GLint maxSamples = 0;
+            glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+            if (d.sampleCount > maxSamples) {
+                error_ = "GL: requested multisample count exceeds device limit";
+                return {};
+            }
+            GLuint rb = 0;
+            glGenRenderbuffers(1, &rb);
+            if (!rb) { error_ = "GL: multisample renderbuffer allocation failed"; return {}; }
+            glBindRenderbuffer(GL_RENDERBUFFER, rb);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, GLsizei(d.sampleCount),
+                                             uncompressedInternal(d.format),
+                                             d.width, d.height);
+            glBindRenderbuffer(GL_RENDERBUFFER, 0);
+            if (glGetError() != GL_NO_ERROR) {
+                glDeleteRenderbuffers(1, &rb);
+                error_ = "GL: multisample renderbuffer storage failed";
+                return {};
+            }
+            GLTexture t;
+            t.id = rb; t.fmt = d.format; t.w = d.width; t.h = d.height;
+            t.samples = d.sampleCount; t.renderTarget = true; t.renderbuffer = true;
+            return {textures_.add(t)};
+        }
+        if (d.storage) {
+            error_ = "GL: storage images are unsupported";
             return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
@@ -422,7 +457,7 @@ public:
     }
     void updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) override {
         auto* t = textures_.get(h.id);
-        if (!t || t->dimension != TextureDimension::Texture2D || t->compressed || t->fmt == PixelFormat::Depth) return;
+        if (!t || t->renderbuffer || t->dimension != TextureDimension::Texture2D || t->compressed || t->fmt == PixelFormat::Depth) return;
         glBindTexture(GL_TEXTURE_2D, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         const int bpp = uncompressedTexturePixelBytes(t->fmt);
@@ -438,7 +473,7 @@ public:
     }
     bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override {
         auto* t = textures_.get(h.id);
-        if (!t || !u.data || t->compressed || t->fmt == PixelFormat::Depth ||
+        if (!t || !u.data || t->renderbuffer || t->compressed || t->fmt == PixelFormat::Depth ||
             u.mipLevel < 0 || u.mipLevel >= t->levels || u.arrayLayer < 0 ||
             u.x < 0 || u.y < 0 || u.z < 0 || u.width < 1 || u.height < 1 || u.depth < 1)
             return false;
@@ -483,7 +518,7 @@ public:
         // Real aliases of individual mips/faces require GL_ARB_texture_view / GL 4.3
         // and must not be silently reinterpreted as the whole parent.
         const GLTexture* t = textures_.get(h.id);
-        if (!t) { error_ = "GL texture view: invalid parent"; return {}; }
+        if (!t || t->renderbuffer) { error_ = "GL texture view: invalid or multisampled parent"; return {}; }
         TextureDesc parent;
         parent.width = t->w; parent.height = t->h; parent.depth = t->depth;
         parent.arrayLayers = t->layers; parent.dimension = t->dimension;
@@ -588,7 +623,11 @@ public:
             if (view.parentId == h.id) children.push_back(id);
         });
         for (uint32_t id : children) views_.remove(id);
-        if (auto* t = textures_.get(h.id)) { glDeleteTextures(1, &t->id); textures_.remove(h.id); }
+        if (auto* t = textures_.get(h.id)) {
+            if (t->renderbuffer) glDeleteRenderbuffers(1, &t->id);
+            else glDeleteTextures(1, &t->id);
+            textures_.remove(h.id);
+        }
         for (size_t i = 0; i < fbos_.size();) {
             if (fbos_[i].color == h.id || fbos_[i].depth == h.id) { glDeleteFramebuffers(1, &fbos_[i].fbo); fbos_.erase(fbos_.begin() + long(i)); }
             else ++i;
@@ -599,8 +638,16 @@ public:
         GLFramebuffer f; f.color = color; f.depth = depth;
         glGenFramebuffers(1, &f.fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, f.fbo);
-        if (auto* c = textures_.get(color)) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, c->id, 0);
-        if (auto* d = textures_.get(depth)) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, d->id, 0);
+        if (auto* c = textures_.get(color)) {
+            if (c->renderbuffer)
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, c->id);
+            else glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, c->id, 0);
+        }
+        if (auto* d = textures_.get(depth)) {
+            if (d->renderbuffer)
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, d->id);
+            else glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, d->id, 0);
+        }
         GLenum none = GL_NONE, c0 = GL_COLOR_ATTACHMENT0;
         glDrawBuffers(1, textures_.get(color) ? &c0 : &none);
         glReadBuffer(textures_.get(color) ? GL_COLOR_ATTACHMENT0 : GL_NONE);
@@ -671,9 +718,18 @@ public:
             error_ = "GL: pipeline color output count must be 1..4";
             return {};
         }
-        if (d.sampleCount != 1) {
-            error_ = "GL: multisample pipeline variants are not implemented";
+        if (d.sampleCount != 1 && d.sampleCount != 2 && d.sampleCount != 4 &&
+            d.sampleCount != 8 && d.sampleCount != 16) {
+            error_ = "GL: invalid pipeline multisample count";
             return {};
+        }
+        if (d.sampleCount > 1) {
+            GLint maxSamples = 0;
+            glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+            if (d.sampleCount > maxSamples) {
+                error_ = "GL: multisample pipeline exceeds device limit";
+                return {};
+            }
         }
         auto* s = shaders_.get(d.shader.id);
         if (!s) { error_ = "pipeline: invalid shader"; return {}; }
@@ -783,18 +839,11 @@ public:
             error_ = "GL: MRT attachment count exceeds device limits";
             return false;
         }
-        // GL33/GLES3 don't expose a portable multisample texture resolve
-        // through this API. Do not accept the pass and lose the resolve silently.
-        for (int i = 0; i < desc.colorCount; ++i) {
-            if (desc.colors[size_t(i)].resolveTexture.valid()) {
-                error_ = "GL: explicit MSAA color resolve is not implemented";
-                return false;
-            }
-        }
         auto validate = [&](const RenderTargetAttachment& a, bool wantDepth, int& w, int& h) {
             const GLTexture* t = textures_.get(a.texture.id);
             if (!t || !t->id || !t->renderTarget || t->compressed ||
                 a.mipLevel < 0 || a.mipLevel >= t->levels || a.arrayLayer < 0 ||
+                (t->renderbuffer && (a.mipLevel != 0 || a.arrayLayer != 0)) ||
                 t->dimension == TextureDimension::Texture1D ||
                 (wantDepth ? t->fmt != PixelFormat::Depth :
                              (t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB &&
@@ -810,7 +859,9 @@ public:
         int width = 0, height = 0;
         const GLTexture* colors[kMaxRenderTargetColors]{};
         const GLTexture* depth = nullptr;
+        int sampleCount = 0;
         bool allHdr = desc.colorCount > 0, anySrgb = false;
+        std::array<GLResolve, kMaxRenderTargetColors> resolves{};
         for (int i = 0; i < desc.colorCount; ++i) {
             int w = 0, h = 0;
             const auto& attachment = desc.colors[size_t(i)];
@@ -824,6 +875,38 @@ public:
             // Each slot is checked against its corresponding PipelineDesc
             // format at setPipeline(); do not force attachment 0's format on
             // the other outputs.
+            if (sampleCount && sampleCount != t->samples) {
+                error_ = "GL: MRT attachments have mismatched sample counts";
+                return false;
+            }
+            sampleCount = t->samples;
+            if (attachment.resolveTexture.valid()) {
+                const GLTexture* destination = textures_.get(attachment.resolveTexture.id);
+                const bool validResolve = t->renderbuffer && t->samples > 1 &&
+                    destination && !destination->renderbuffer &&
+                    destination->samples == 1 && destination->renderTarget &&
+                    !destination->compressed && destination->fmt == t->fmt &&
+                    destination->dimension == TextureDimension::Texture2D &&
+                    attachment.resolveArrayLayer == 0 &&
+                    attachment.resolveMipLevel >= 0 &&
+                    attachment.resolveMipLevel < destination->levels &&
+                    std::max(1, destination->w >> attachment.resolveMipLevel) == w &&
+                    std::max(1, destination->h >> attachment.resolveMipLevel) == h;
+                if (!validResolve) {
+                    error_ = "GL: resolve requires multisampled source and matching single-sample destination";
+                    return false;
+                }
+                for (int prior = 0; prior < i; ++prior)
+                    if (resolves[size_t(prior)].dst == attachment.resolveTexture.id) {
+                        error_ = "GL: resolve destination cannot alias another output";
+                        return false;
+                    }
+                resolves[size_t(i)] = {attachment.resolveTexture.id,
+                                       attachment.resolveMipLevel, attachment.resolveArrayLayer};
+            } else if (t->samples > 1) {
+                // A multisample attachment without a resolve is legal for
+                // transient outputs, but cannot later be sampled as a texture.
+            }
             explicitPassFormats_[size_t(i)] = t->fmt;
             allHdr &= t->fmt == PixelFormat::RGBA16F;
             anySrgb |= t->fmt == PixelFormat::RGBA8_sRGB;
@@ -838,13 +921,20 @@ public:
                 return false;
             }
             depth = textures_.get(desc.depth.texture.id);
+            if (sampleCount && sampleCount != depth->samples) {
+                error_ = "GL: depth and MRT sample counts differ";
+                return false;
+            }
+            sampleCount = depth->samples;
             if (!width) { width = w; height = h; }
         }
         if (!width || !height) return false;
         auto attach = [&](GLenum attachment, const GLTexture* tex,
                           const RenderTargetAttachment& a) {
             if (!tex) return;
-            if (tex->dimension == TextureDimension::Texture2D) {
+            if (tex->renderbuffer) {
+                glFramebufferRenderbuffer(GL_FRAMEBUFFER, attachment, GL_RENDERBUFFER, tex->id);
+            } else if (tex->dimension == TextureDimension::Texture2D) {
                 glFramebufferTexture2D(GL_FRAMEBUFFER, attachment,
                                        GL_TEXTURE_2D, tex->id, a.mipLevel);
             } else if (tex->dimension == TextureDimension::Cube) {
@@ -886,7 +976,9 @@ public:
             return false;
         }
         scopedFbo_ = framebuffer;
+        scopedResolves_ = resolves;
         inPass_ = true;
+        explicitPassSamples_ = sampleCount;
         explicitPassColors_ = desc.colorCount;
         passW_ = width; passH_ = height;
         // Auto-create the old uniform HDR shader variant only for all-HDR MRT.
@@ -918,6 +1010,8 @@ public:
 
     void beginPass(const PassDesc& d) override {
         explicitPassColors_ = -1;
+        explicitPassSamples_ = 0;
+        scopedResolves_ = {};
         inPass_ = true;
         const auto* color = textures_.get(d.colorTarget.id);
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
@@ -953,9 +1047,46 @@ public:
         pipelineId_ = 0;
     }
     void endPass() override {
+        // Resolve each color output independently. GL blits read from the
+        // selected multisample color attachment into a temporary single-
+        // sample framebuffer. This works on GL3.3, GLES3 and WebGL2 without
+        // sampling multisample textures (which are not portable on GLES3).
+        if (scopedFbo_ && explicitPassSamples_ > 1) {
+            for (int i = 0; i < explicitPassColors_; ++i) {
+                const GLResolve& res = scopedResolves_[size_t(i)];
+                if (!res.dst) continue;
+                const GLTexture* dst = textures_.get(res.dst);
+                if (!dst || dst->renderbuffer) {
+                    error_ = "GL: resolve destination was destroyed before endPass";
+                    continue;
+                }
+                GLuint fbo = 0;
+                glGenFramebuffers(1, &fbo);
+                if (!fbo) { error_ = "GL: resolve framebuffer allocation failed"; continue; }
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+                glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                       GL_TEXTURE_2D, dst->id, res.mip);
+                const GLenum draw = GL_COLOR_ATTACHMENT0;
+                glDrawBuffers(1, &draw);
+                if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+                    glBindFramebuffer(GL_READ_FRAMEBUFFER, scopedFbo_);
+                    glReadBuffer(GL_COLOR_ATTACHMENT0 + GLenum(i));
+                    glBlitFramebuffer(0, 0, passW_, passH_, 0, 0, passW_, passH_,
+                                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+                    if (glGetError() != GL_NO_ERROR)
+                        error_ = "GL: multisample resolve blit failed";
+                } else {
+                    error_ = "GL: resolve destination framebuffer incomplete";
+                }
+                glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+                glDeleteFramebuffers(1, &fbo);
+            }
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         if (scopedFbo_) { glDeleteFramebuffers(1, &scopedFbo_); scopedFbo_ = 0; }
+        scopedResolves_ = {};
         inPass_ = false;
+        explicitPassSamples_ = 0;
         explicitPassColors_ = -1;
         glDisable(GL_POLYGON_OFFSET_FILL);
         if (srgbWrite_) { glDisable(kGL_FRAMEBUFFER_SRGB); srgbWrite_ = false; }
@@ -964,11 +1095,11 @@ public:
 
     bool copyColor(TextureHandle from, TextureHandle to) override {
         auto* dst = textures_.get(to.id);
-        if (!dst || dst->fmt != PixelFormat::RGBA8) return false;
+        if (!dst || dst->renderbuffer || dst->fmt != PixelFormat::RGBA8) return false;
         int sw = fbW_, sh = fbH_;
         if (from.valid()) {
             auto* src = textures_.get(from.id);
-            if (!src) return false;
+            if (!src || src->renderbuffer) return false;
             sw = src->w; sh = src->h;
         }
         if (sw != dst->w || sh != dst->h) return false;
@@ -998,6 +1129,11 @@ public:
         if (!p) return;
         const auto& d = p->desc;
         if (explicitPassColors_ >= 0) {
+            if (d.sampleCount != explicitPassSamples_) {
+                error_ = "GL: pipeline and MRT sample counts differ";
+                pipelineId_ = 0;
+                return;
+            }
             const int pipelineColors = d.depthOnly ? 0 : d.colorAttachmentCount;
             if (pipelineColors != explicitPassColors_) {
                 error_ = "GL: pipeline color output count differs from active MRT pass";
@@ -1060,8 +1196,10 @@ public:
         // Default texture-specific filtering must not inherit a previously bound
         // independent sampler from bindTextureView.
         glBindSampler(GLuint(slot), 0);
-        if (t) glBindTexture(t->target, t->id);
+        if (t && !t->renderbuffer) glBindTexture(t->target, t->id);
         else {
+            if (t && t->renderbuffer)
+                error_ = "GL: multisample renderbuffers cannot be bound as sampled textures";
             glBindTexture(GL_TEXTURE_2D, 0);
             glBindTexture(GL_TEXTURE_3D, 0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
@@ -1160,8 +1298,11 @@ private:
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
     std::vector<GLFramebuffer> fbos_;
+    struct GLResolve { uint32_t dst = 0; int mip = 0, layer = 0; };
     GLuint scopedFbo_ = 0;
+    std::array<GLResolve, kMaxRenderTargetColors> scopedResolves_{};
     bool inPass_ = false;
+    int explicitPassSamples_ = 0;
     int explicitPassColors_ = -1;
     std::array<PixelFormat, kMaxRenderTargetColors> explicitPassFormats_{};
     Pool<GLBuffer> buffers_;

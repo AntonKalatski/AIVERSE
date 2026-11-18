@@ -87,6 +87,8 @@
   #define GL_DEPTH 0x1801
   #define GL_DEPTH_ATTACHMENT 0x8D00
   #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+  #define GL_RENDERBUFFER 0x8D41
+  #define GL_MAX_SAMPLES 0x8D57
   #define GL_TIME_ELAPSED 0x88BF
   #define GL_QUERY_RESULT 0x8866
   #define GL_QUERY_RESULT_AVAILABLE 0x8867
@@ -146,6 +148,11 @@
     X(void, glBlendEquationSeparate, (GLenum rgb, GLenum alpha)) \
     X(void, glGenFramebuffers, (GLsizei n, GLuint* f)) \
     X(void, glDeleteFramebuffers, (GLsizei n, const GLuint* f)) \
+    X(void, glGenRenderbuffers, (GLsizei n, GLuint* r)) \
+    X(void, glDeleteRenderbuffers, (GLsizei n, const GLuint* r)) \
+    X(void, glBindRenderbuffer, (GLenum target, GLuint r)) \
+    X(void, glRenderbufferStorageMultisample, (GLenum target, GLsizei samples, GLenum format, GLsizei w, GLsizei h)) \
+    X(void, glFramebufferRenderbuffer, (GLenum target, GLenum attachment, GLenum renderbufferTarget, GLuint r)) \
     X(void, glBindFramebuffer, (GLenum t, GLuint f)) \
     X(void, glFramebufferTexture2D, (GLenum t, GLenum a, GLenum tt, GLuint tex, GLint l)) \
     X(void, glFramebufferTextureLayer, (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer)) \
