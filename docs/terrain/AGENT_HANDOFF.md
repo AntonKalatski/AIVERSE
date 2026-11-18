@@ -195,3 +195,24 @@ not hardened); wire geometry into real editor/runtime renderer,
 stabilize save formats and scene regeneration, integrate road
 exclusion masks and biome painting. Maintain the stage-by-stage
 handoff here.
+
+## Stage 2c — bounded world extent hardening (COMMITTED; NOT TESTED YET)
+
+- `c0e4fc1fc84d9e500b53631a374693ec5d36f979`:
+  `engine/world/TerraWeave.h` defines `kWorldLimitCm = 1000000000`
+  and pre-validates noise sampling, chunk key/span, slope neighbouring
+  samples and scatter bounding box before signed coordinate arithmetic.
+- `7820438062da8639ba55fc23675745bce5fd9b4f`:
+  `tests/terraweave_test.cpp` adds extreme signed-coordinate exception
+  cases; run test to confirm.
+- `c0e336f344d1f09cbdac90830c72fd8edd31490c`:
+  `docs/terrain/TERRAWEAVE.md` documents finite coordinate range.
+
+**Verification:** still not compiled or executed in runtime; CTest and
+CI results must be recorded after a successful run. World extent is
+a validation limit, not proof of scalable streaming/rebasing.
+
+**Next:** compile all three standalone CTest targets, fix any compiler
+or runtime errors, and report checked platforms. Then implement
+the first `gfx::Device` mesh upload/render adapter to display a tree
+inside a real editor scene; add screenshot and FPS/RTS no-regression.
