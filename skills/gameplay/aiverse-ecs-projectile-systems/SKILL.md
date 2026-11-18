@@ -181,3 +181,35 @@ future shared `ProjectileSpawnQueue` integration after order parity.
 Keep impact callbacks synchronous where the existing FPS/RTS game uses
 same-tick damage, and do not conflate nonphysical RTS kinematics with
 FPS physical grenade motion.
+
+
+## One-way live FPS projectile mirror and legacy restore
+
+After the weapon/throwable/flight/round cleanup migrations,
+`fps.ecsAuthority=true` now treats `ProjectileRuntime` as the **only
+live projectile source of truth, even at the `fps.ecsMirror` barrier**.
+The end-of-tick registered system calls
+`Module::syncDynamicEntities(sim,true)`, enumerates Runtime Entity
+payloads in stable saved order, checks nonzero unique projectile IDs
+and generation-safe `DynamicEntityIndex` mappings, then derives
+`State::projectiles` and `ProjectileEntity` editor projections.
+It **does not** mirror State values back onto Runtime.
+
+The historical native method `Module::syncDynamicEntities(sim)`
+retains its original one-argument ABI, and intentionally imports
+`State::projectiles` into ECS for legacy setup and v9
+deserialization. These are separate ownership barriers. Never invoke
+the import overload as the authoritative end-of-tick mirror.
+
+The production fixture `tests/fps/projectile_spawn.inc` writes
+canonical Runtime damage 17, deliberately poisons State damage to 777
+and invokes the ECS projection overload; it asserts the Runtime wins
+and that the view is corrected. Additional fixtures cover actual
+weapon and throwable spawns, bomb round reset, deep/COW snapshots,
+rollback and v9 cross-mode load. **All are committed but native
+compile/runtime outcomes are not yet verified.**
+
+Remaining unrelated FPS domains (ActorRuntime, loot/vehicles, game
+mode state, network prediction) still have compatibility writes and
+their own migration backlog; the FPS projectile cutover does not
+constitute completion of the whole engine-wide ECS migration.
