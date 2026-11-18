@@ -44,7 +44,7 @@ public:
     // External resource handles must be indexed by graph resource ID.
     // Raster: bool(Device&, passId, DispatchView&) INSIDE an open pass.
     // The host binds its own pipeline, textures and uniforms. The pass has
-    // one color output, no implicit clearing and optional depth attachment.
+    // one color output, legacy-compatible clear by default, and optional depth attachment.
     // Compute: bool(Device&, passId, DispatchView&) OUTSIDE any render pass.
     // Caller must not call beginPass/endPass inside either callback.
     // Copy passes use Device::copyColor and require one source and destination.
@@ -55,7 +55,8 @@ public:
                               const PrismaGraphPlan& plan,
                               const std::vector<gfx::TextureHandle>& external,
                               RasterFn&& raster, ComputeFn&& compute,
-                              gfx::TextureHandle rasterDepth = {}) {
+                              gfx::TextureHandle rasterDepth = {},
+                              bool clearRasterTargets = true) {
         PrismaRhiExecution result;
         if (!plan.valid || plan.resources.size() != graph.resources().size() ||
             plan.order.size() != graph.passes().size() ||
@@ -148,8 +149,15 @@ public:
                     return compute(device_, id, view);
                 gfx::PassDesc desc;
                 desc.colorTarget = view.resource(pass.writes.front());
-                desc.clearColorEnabled = false; // shader must fully write target
-                desc.clearDepthEnabled = false;
+                // Match Prisma::draw() by default: clear opaque black and depth.
+                // The opt-out is for full-screen pipelines which explicitly
+                // guarantee full target coverage and depth preservation.
+                desc.clearColorEnabled = clearRasterTargets;
+                desc.clearDepthEnabled = clearRasterTargets;
+                desc.clearColor[0] = 0.0f;
+                desc.clearColor[1] = 0.0f;
+                desc.clearColor[2] = 0.0f;
+                desc.clearColor[3] = 1.0f;
                 // Metal may require a depth attachment. The host supplies one
                 // sized for the output, or leaves invalid where backend permits.
                 desc.depthTarget = rasterDepth;
