@@ -1308,3 +1308,54 @@ crossfade, or eliminate the CPU worker's model preparation.
 The user assigned validation to another agent: test partial
 uploads including mips/row-pitch on Metal, GL, Vulkan and
 real mobile/desktop workloads before marking production-ready.
+
+### Stage 12 — GPU terrain vertex subrange updates (geometry-safe)
+
+Horizon may now commit **small terrain height/normal/vertex-colour edits**
+directly into the existing GPU vertex buffer, instead of reuploading an
+entire distant forest/terrain Model. This uses the same cross-genre RHI:
+
+- `render::Model::batching.allowGeometryPool` is a generic bool,
+  default `true`. `TerraWeaveHorizonModel` sets it to `false`
+  to guarantee a dedicated GPU vertex/index allocation. Never blindly
+  call `updateBuffer` with model-relative offsets when
+  `model.geometryPoolPage` is present: the pooled VB can contain
+  several unrelated models with nonzero base offsets.
+- `TerraWeaveHorizonGpuPatch.h` has
+  `horizonCanReuseHorizonLayout()`: preserves source camera region,
+  terrain X/Z positions, atlas footprint, all cluster crosscard/UV
+  geometry and index topology while allowing changes in *terrain*
+  height/colour/normal.
+- `TerraWeaveHorizonVertexPatch.h` exports the pure CPU
+  `planHorizonVertexUpload()`, and owner-thread
+  `horizonCanApplyVertexUpload()` /
+  `applyHorizonVertexUpload()`. Planning requires exact
+  unchanged index data, node and primitive topology, unchanged
+  crossed-card vertex bytes, and new computed model/primitive
+  bounds contained in the resident conservative bounds.
+  Other changes trigger the existing full RHI model upload.
+- The default vertex patch budget is at most **20 contiguous ranges**
+  and **35% of terrain vertices**. A successful patch issues
+  `gfx::Device::updateBuffer` on the same owning thread that
+  publishes the CPU forest atlas and renders models; changed atlas
+  tiles can be patched in the same publication.
+- The previous CPU `ModelVertex` and index snapshots are captured
+  **after** `prepareModelUpload`, before `uploadModel` discards
+  its CPU arrays. They are retained only with an enabled Horizon
+  CPU cache (`maxCachedRegions>0`). This avoids keeping an extra
+  7–15 MiB atlas CPU copy inside the resident GPU Model. Minimal
+  and mobile presets keep full-upload fallback to minimize memory.
+- `HorizonRuntimeStats` adds `vertexPatchCount`,
+  `vertexPatchBytes`, and `vertexPatchRanges` alongside atlas
+  patch/full upload counters.
+
+**Important safety limits:** `gfx::Device::updateBuffer` is a
+void/nontransactional device API; a backend or GPU device loss cannot
+provide a partial-patch success guarantee. All geometry/data/range
+validation happens before issuing GPU writes, but true rollback
+requires general RHI device-loss recovery. Renderer culling bound
+expansion is deliberately NOT part of this optimization; edits that
+would grow any draw bounds use the full upload. This is a
+correctness-first fast path. GPU/device/CTest testing is owned by
+another agent and **has not been executed** in this development
+stage.
