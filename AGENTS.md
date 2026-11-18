@@ -1267,7 +1267,7 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   tests passed. Record all tests as NOT RUN until the testing agent
   provides actual build/report evidence.
 - New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
-  Horizon quality presets and `TWH3` prebaked atlas archive interfaces
+  Horizon quality presets and `TWH4` prebaked atlas archive interfaces
   are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
   versions/fingerprints consistent whenever the bake format changes.
   Don't introduce file-system writes or game-authority mutations
@@ -1288,3 +1288,25 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
 - After each functionality stage, append to
   `docs/terrain/AGENT_HANDOFF.md`. Another agent runs ALL
   compiler/CTest/platform-GPU validations; label them NOT RUN here.
+
+### TerraWeave Horizon near/far terrain ownership (2026-11-18)
+
+- The current Horizon archive is **TWH4**, not TWH3.
+  It stores an optional authored near-ground ownership map,
+  inner seam lip and stable skyline settings; all previous
+  TWH1–TWH3 binaries must be regenerated. Maintain archive
+  version/fingerprint whenever changing geometry layout.
+- Do not remove far terrain merely because it lies
+  within a near-camera radius if `WorldScene` exposes
+  actual authored terrain coverage. Use immutable
+  `HorizonSurfaceSources::ownsNearTerrainRect` and
+  conservative `AuthoredWorldHeightSnapshot::coversRect`;
+  absent near tiles must keep far ground visible.
+- Inner near/far seam lips are strictly bounded to
+  512 segments, share the original GPU Model/material 0,
+  and do not create gameplay ECS data.
+- Horizon outer grid snaps to a **nearest global lattice
+  anchor** in coarse steps to stabilize mountain silhouette;
+  forest radius must not extend beyond guaranteed far
+  terrain coverage. Separate agent owns all build/CTest/
+  Metal/GL/Vulkan screenshots and benchmarks.
