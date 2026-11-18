@@ -905,3 +905,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed: `tests/fps/tests.cpp`. Moved accidental `if(i==0)` block (which referenced undefined `i`, `world`, `projectile`, `loot`, `vehicle`, `p`, `l`, `v`) out of `ecsActorAuthorityParity` and into the correct `ecsDynamicAuthorityParity` fixture, after its first synchronized tick. Added map `contains` checks before `at` lookups to report missing indexes as fixture assertions instead of uncaught out_of_range.
 - Verification: static inspection of current branch + exact anchored GitHub edit; **native compile, CTest, sanitizer and gameplay parity still unverified**. Git clone from this execution environment failed DNS resolution. GitHub Actions check was previously queued/cancelled, not a pass.
 - Next action: compile `aiverse_fps_tests` on native macOS/Linux; validate existing ECS actor/dynamic authority fixtures; inspect any additional malformed merged test blocks before replacing real gameplay authority.
+
+
+### 2026-11-18 — Shared reload policy extracted for direct native host integration
+- Implementation SHA: `930cdf4ae80aa0cc80a845d3c5d2a31f086119fa`.
+- Changed `libraries/include/aiverselib/genre/EcsTimedMechanics.h` to extract `stepWeaponReload(WeaponStateComponent&,WeaponReloadComponent&,tick,request)`; `addWeaponReloadSystem` now calls the same deterministic function. Explicitly preserves normal FPS behavior including completion before a same-tick new request. No added system-level double-owner.
+- Verification: static source modification only. **Native compiler/CTest unavailable so far**, no live FPS parity yet. The shared function uses the pre-existing FPS transfer arithmetic, so any invalid negative state handling must be checked in host validators.
+- Next: convert the legacy FPS reload step to a temporary typed adapter invoking this policy with canonical fields, then add native golden parity fixtures covering weapon switching, ammo/reserve, replay and save v9.
