@@ -1271,3 +1271,40 @@ Both require actual backend quality/performance validation.
 The separate testing agent is responsible for builds, CTest,
 archive round trips, moving-camera snapshots, memory and GPU
 captures. None were executed by the feature agent.
+
+### Stage 11b — incremental GPU atlas subregion uploads
+
+Horizon can now skip replacing an entire GPU `render::Model` for
+**atlas-only** changes that preserve every terrain vertex
+(including colour), camera-clipped near terrain topology, forest
+cluster positions, heights, sizes and UV slots. This is a
+conservative optimization, not a new shading backend:
+
+- `engine/render/TerraWeaveHorizonGpuPatch.h`:
+  `horizonCanReuseModelGeometry(oldBake,newBake)`,
+  `planHorizonAtlasUpload(oldBake,newBake,atlasTilePixels)`,
+  `applyHorizonAtlasUpload(gfx::Device&,Model&,newBake,plan)`.
+- The pure CPU planner identifies changed fixed atlas slots,
+  coalesces horizontally adjacent/vertically equal runs, and
+  defaults to **at most six** rectangle updates totalling at
+  most 25% of the current atlas RGBA bytes. Larger updates,
+  invalid resident atlas textures or any changed geometry
+  use the existing full `uploadModel` path.
+- On the GPU owner thread, `gfx::Device::updateTexture`
+  updates RGBA8 subregions. The engine's existing GL/Metal/
+  Vulkan implementations regenerate mipmaps as required.
+  No new graphics backend calls or per-tree draw calls.
+- `TerraWeaveHorizonScene::runtimeStats()` exposes
+  `atlasPatchCount`, `atlasPatchBytes`,
+  `atlasPatchRegions` and `fullUploadCount`. The
+  counters are meaningful only when an actual scene runs;
+  no frame-rate claims have been made.
+
+Only atlas pixels are patched; changes to cluster count,
+geometry, base colour, far terrain vertices or authored
+heightfield force a full model swap. This stage **does not**
+provide partial GPU vertex buffers, continuous per-frame
+crossfade, or eliminate the CPU worker's model preparation.
+The user assigned validation to another agent: test partial
+uploads including mips/row-pitch on Metal, GL, Vulkan and
+real mobile/desktop workloads before marking production-ready.
