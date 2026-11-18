@@ -71,6 +71,8 @@ horizonSceneFromManifest(
         j,"terrainGridSnapSteps",settings.terrainGridSnapSteps,1,16));
     settings.innerTerrainLipCm=static_cast<int32_t>(worldInteger(
         j,"innerTerrainLipCm",settings.innerTerrainLipCm,0,200));
+    settings.maxNearClipTriangles=static_cast<uint32_t>(worldInteger(
+        j,"maxNearClipTriangles",settings.maxNearClipTriangles,0,8192));
     settings.terrainResolution=static_cast<uint32_t>(worldInteger(
         j,"terrainResolution",settings.terrainResolution,8,96));
     settings.atlasTilePixels=static_cast<uint32_t>(worldInteger(
