@@ -341,6 +341,43 @@ and transient Bloom pool migration remain future features.
 Testing/build/GPU verification deliberately deferred at user request.
 See `docs/handoffs/prisma-stage-18.md`.
 
+
+## Stage 19 — opt-in graph-owned Bloom mip allocation
+
+With both `AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN=1` and
+`AIVERSE_PRISMA_GRAPH_BLOOM_POOL=1`, the complete Bloom RenderGraph
+can now allocate its own downsample/upsample targets through
+`PrismaGraphResourcePool` in the persistent per-viewport RHI executor.
+Only the input Scene/FXAA color is external. The graph declares every
+Bloom mip as an **internal** resource, enabling the planner to alias
+identical-format/size GPU textures when their lifetimes do not overlap.
+Without the new pool flag, the existing Stage 16 graph still uses
+`Sized::targets` as external resources. Both experimental flags are
+off by default.
+
+`PrismaRhiExecution::resources` now maps each logical graph resource
+to its actual external or pooled RHI texture handle. The final Bloom
+composite samples `resources[cache.outputId()]` when pooled mode
+succeeds. Per-pass depth attachments still come from the established
+`Sized::depths` cache; thresholds, scatter, shader pipelines and
+source UV conventions are unchanged. On graph preflight/allocation
+failure before GPU submission, the code allocates legacy mip targets
+and uses the existing Bloom fallback. A failure after GPU submission
+does not attempt to replay partial passes.
+
+**Ownership:** pooled RHI textures persist with their viewport executor,
+rather than being released after each frame. Reconfiguration keeps
+unselected allocations until explicit safe retirement; their eventual
+release depends on GPU-completion reporting or a confirmed GPU-idle
+shutdown. No portable completed-fence backend is yet wired, so
+automatic mid-flight eviction is deliberately not used. Existing
+view eviction still follows legacy release assumptions, and memory
+benefits are not quantified. This experimental path needs build/GPU
+verification before being enabled by default.
+
+Implementation-only stage: testing intentionally postponed at user
+request. See `docs/handoffs/prisma-stage-19.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
