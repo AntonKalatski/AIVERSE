@@ -104,6 +104,13 @@ void testFpsAndDuplicateIds() {
     CHECK(read(fps)["storms"].isNull());
     fps.redo();
     CHECK(read(fps)["storms"].size()==1);
+    const Json fpsBeforeResize=read(fps);
+    CHECK(resizeField(fps,id,350.5,true,&error));
+    CHECK(read(fps)["storms"][0]["outerRadiusMeters"].fx()==Fixed::fromRatio(701,2));
+    fps.undo();
+    CHECK(read(fps)==fpsBeforeResize);
+    fps.redo();
+    CHECK(read(fps)["storms"][0]["outerRadiusMeters"].fx()==Fixed::fromRatio(701,2));
 
     Json invalid=read(fps);
     auto storms=invalid["storms"];

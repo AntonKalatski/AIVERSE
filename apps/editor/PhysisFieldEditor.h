@@ -213,9 +213,13 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
                 z = double(hit.z)+state.grabOffsetZ;
             }
             if (state.snapEnabled) {
-                x = physis_authoring::snapMeters(x, double(state.snapStepMeters));
-                y = physis_authoring::snapMeters(y, double(state.snapStepMeters));
-                z = physis_authoring::snapMeters(z, double(state.snapStepMeters));
+                // An X/Z translation must never silently snap the unedited Y.
+                if (io.KeyShift)
+                    y = physis_authoring::snapMeters(y, double(state.snapStepMeters));
+                else {
+                    x = physis_authoring::snapMeters(x, double(state.snapStepMeters));
+                    z = physis_authoring::snapMeters(z, double(state.snapStepMeters));
+                }
             }
             if ((std::abs(x-current.x)>0.001 || std::abs(y-current.y)>0.001 ||
                  std::abs(z-current.z)>0.001) &&
@@ -411,7 +415,7 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
     ImGui::Checkbox("Редактировать маркеры мышью", &state.editMode);
     if (state.editMode) {
         ImGui::Combo("Gizmo##physis", &state.gizmoMode,
-                     "Перемещение\\0Радиус\\0");
+                     "Перемещение\0Радиус\0");
         ImGui::Checkbox("Привязка к сетке##physis", &state.snapEnabled);
         if (state.snapEnabled) {
             ImGui::DragFloat("Шаг привязки, м##physis", &state.snapStepMeters,
