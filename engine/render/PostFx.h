@@ -129,13 +129,13 @@ private:
         int w = 0, h = 0;
         uint64_t lastUse = 0;
         std::map<int, Target> targets;     // by role
-        std::map<uint64_t, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
+        std::map<std::pair<uint64_t,int>, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
     enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kProgCount };
 
     Target& target(Sized& s, int role, int w, int h);
-    gfx::TextureHandle depthFor(Sized& s, int w, int h);
+    gfx::TextureHandle depthFor(Sized& s, int w, int h, int role=0);
     Sized& sized(int w, int h);
     gfx::PipelineHandle program(Prog p);
     gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
