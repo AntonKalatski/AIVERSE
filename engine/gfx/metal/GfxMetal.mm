@@ -109,6 +109,7 @@ public:
             case PixelFormat::ASTC_6x6: return apple;
             case PixelFormat::BC1: case PixelFormat::BC3: case PixelFormat::BC4:
             case PixelFormat::BC5: case PixelFormat::BC7:
+            case PixelFormat::BC6H_UFloat: case PixelFormat::BC6H_SFloat:
                 return bc && compressedFormat(f) != MTLPixelFormatInvalid;
             default: return true;
         }
@@ -164,6 +165,8 @@ public:
             case PixelFormat::BC4: return MTLPixelFormatBC4_RUnorm;
             case PixelFormat::BC5: return MTLPixelFormatBC5_RGUnorm;
             case PixelFormat::BC7: return MTLPixelFormatBC7_RGBAUnorm;
+            case PixelFormat::BC6H_UFloat: return MTLPixelFormatBC6H_RGBUfloat;
+            case PixelFormat::BC6H_SFloat: return MTLPixelFormatBC6H_RGBFloat;
 #endif
             default: return MTLPixelFormatInvalid;
         }

@@ -25,7 +25,7 @@ uint32_t rd32(const std::string& b, size_t at) {
 }
 constexpr uint32_t fourcc(const char* s) { return uint32_t(uint8_t(s[0])) | uint32_t(uint8_t(s[1])) << 8 | uint32_t(uint8_t(s[2])) << 16 | uint32_t(uint8_t(s[3])) << 24; }
 
-enum class Kind { Unknown, BC1, BC2, BC3, BC4, BC5, BC7, Masks };
+enum class Kind { Unknown, BC1, BC2, BC3, BC4, BC5, BC7, BC6HU, BC6HS, Masks };
 
 struct Masks { uint32_t bits = 0, r = 0, g = 0, b = 0, a = 0; bool lum = false; };
 
@@ -293,6 +293,8 @@ bool parseDdsTexture(const std::string& bytes, CompressedImage& out, std::string
             kind = Kind::BC3; srgb = dxgi == 78; break;
         case 79: case 80: kind = Kind::BC4; break;
         case 82: case 83: kind = Kind::BC5; break;
+        case 95: kind = Kind::BC6HU; break; // DXGI_FORMAT_BC6H_UF16
+        case 96: kind = Kind::BC6HS; break; // DXGI_FORMAT_BC6H_SF16
         case 97: case 98: case 99:
             kind = Kind::BC7; srgb = dxgi == 99; break;
         case 27: case 28: case 29:
@@ -346,11 +348,15 @@ bool parseDdsTexture(const std::string& bytes, CompressedImage& out, std::string
                  kind == Kind::BC3 ? BlockFormat::BC3 :
                  kind == Kind::BC4 ? BlockFormat::BC4 :
                  kind == Kind::BC5 ? BlockFormat::BC5 :
+                 kind == Kind::BC6HU ? BlockFormat::BC6H_UFloat :
+                 kind == Kind::BC6HS ? BlockFormat::BC6H_SFloat :
                  kind == Kind::BC7 ? BlockFormat::BC7 : BlockFormat::None;
     out.vkFormat = kind == Kind::BC1 ? (alphaBC1 ? (srgb ? 134u : 133u) : (srgb ? 132u : 131u)) :
                    kind == Kind::BC3 ? (srgb ? 138u : 137u) :
                    kind == Kind::BC4 ? 139u :
                    kind == Kind::BC5 ? 141u :
+                   kind == Kind::BC6HU ? 143u :
+                   kind == Kind::BC6HS ? 144u :
                    kind == Kind::BC7 ? (srgb ? 146u : 145u) :
                    srgb ? 43u : 37u;
     out.width = int(width);

@@ -41,6 +41,7 @@ constexpr GLenum kGL_MIRRORED_REPEAT = 0x8370;
 constexpr GLenum kGL_ETC2_RGB8 = 0x9274, kGL_ETC2_RGBA8 = 0x9278, kGL_DXT1_RGBA = 0x83F1, kGL_DXT5 = 0x83F3,
                  kGL_BPTC_UNORM = 0x8E8C, kGL_ASTC_4x4 = 0x93B0, kGL_ASTC_6x6 = 0x93B4;
 constexpr GLenum kGL_BC4_RGTC1 = 0x8DBB, kGL_BC5_RGTC2 = 0x8DBD, kGL_EAC_R11 = 0x9270;
+constexpr GLenum kGL_BC6H_SIGNED = 0x8E8E, kGL_BC6H_UNSIGNED = 0x8E8F;
 GLenum uncompressedInternal(PixelFormat f) {
     switch (f) {
     case PixelFormat::Depth: return GL_DEPTH_COMPONENT24;
@@ -87,6 +88,8 @@ GLenum compressedEnum(PixelFormat f) {
         case PixelFormat::BC5: return kGL_BC5_RGTC2;
         case PixelFormat::EAC_R11: return kGL_EAC_R11;
         case PixelFormat::BC7: return kGL_BPTC_UNORM;
+        case PixelFormat::BC6H_UFloat: return kGL_BC6H_UNSIGNED;
+        case PixelFormat::BC6H_SFloat: return kGL_BC6H_SIGNED;
         case PixelFormat::ASTC_4x4: return kGL_ASTC_4x4;
         case PixelFormat::ASTC_6x6: return kGL_ASTC_6x6;
         default: return 0;
@@ -190,7 +193,9 @@ public:
             case PixelFormat::EAC_R11: return etc2_;
             case PixelFormat::BC1: case PixelFormat::BC3: return s3tc_;
             case PixelFormat::BC4: case PixelFormat::BC5: return rgtc_;
-            case PixelFormat::BC7: return bptc_;
+            case PixelFormat::BC7:
+            case PixelFormat::BC6H_UFloat:
+            case PixelFormat::BC6H_SFloat: return bptc_;
             case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6: return astc_;
             case PixelFormat::RGBA16F: return hdr_;
             default: return true;
