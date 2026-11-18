@@ -98,6 +98,36 @@ public:
         ImGui::SameLine();
         ImGui::Checkbox("Largest first", &sortByBytes_);
 
+        // Preview is read-only: use the same texture-handle ImGui binding
+        // used by Viewport::image, never create/destroy the selected texture.
+        // Restrict to ordinary 2D single-sampled formats with a known
+        // portable ImGui sampler2D path. Arrays/cubes/depth need readback.
+        const gfx::TextureResourceInfo* chosen = nullptr;
+        for (const auto& item : resources)
+            if (item.handle.id == selectedId_) { chosen = &item; break; }
+        if (!chosen) selectedId_ = 0;
+        if (chosen) {
+            ImGui::Separator();
+            ImGui::Text("Selected #%u", selectedId_);
+            const bool previewable =
+                chosen->dimension == gfx::TextureDimension::Texture2D &&
+                chosen->sampleCount == 1 &&
+                !gfx::isCompressedTextureFormat(chosen->format) &&
+                chosen->format != gfx::PixelFormat::Depth;
+            if (previewable) {
+                const bool flip = chosen->renderTarget &&
+                                  !editor.device().info().renderTargetFlipY;
+                ImGui::Image(ImTextureRef(ImTextureID(chosen->handle.id)),
+                             ImVec2(160.f, 160.f),
+                             ImVec2(0.f, flip ? 1.f : 0.f),
+                             ImVec2(1.f, flip ? 0.f : 1.f));
+            } else {
+                ImGui::TextDisabled("Preview needs a 2D single-sample color resource.");
+                ImGui::TextDisabled("Arrays, cubes and MSAA require an explicit readback.");
+            }
+            ImGui::Separator();
+        }
+
         if (sortByBytes_)
             std::sort(resources.begin(), resources.end(), [](const auto& a, const auto& b) {
                 if (a.estimatedBytes != b.estimatedBytes)
@@ -126,7 +156,10 @@ public:
                 if (!matchesTextureFilter(info, filter_.data())) continue;
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%u", info.handle.id);
+                char handleLabel[32]{};
+                std::snprintf(handleLabel, sizeof handleLabel, "%u", info.handle.id);
+                if (ImGui::Selectable(handleLabel, selectedId_ == info.handle.id))
+                    selectedId_ = info.handle.id;
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextUnformatted(textureDimensionName(info.dimension));
                 ImGui::TableSetColumnIndex(2);
@@ -151,6 +184,7 @@ private:
     std::array<char, 96> filter_{};
     bool renderTargetsOnly_ = false;
     bool sortByBytes_ = true;
+    uint32_t selectedId_ = 0;
 };
 
 AIVERSE_EDITOR_WINDOW(TextureResourcesWindow);
