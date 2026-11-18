@@ -41,6 +41,7 @@ struct HorizonSettings {
     // Trailing to preserve older aggregate HorizonSettings initializers.
     int32_t terrainSkirtDepthCm = 1200; // 0=off, lower outer edge by 12m
     uint32_t terrainGridSnapSteps = 4; // 1..16 grid steps; stabilize distant mountain silhouettes
+    int32_t innerTerrainLipCm = 40; // 0..200cm, modest seam lip around owned near-ground quads
 };
 
 struct HorizonCluster {
@@ -91,6 +92,7 @@ struct HorizonBake {
     // FULL quad and its two triangles must be omitted from distant ground.
     // Empty = legacy radial cutout mode, for procedural worlds.
     std::vector<uint8_t> nearOwnedQuads;
+    int32_t innerTerrainLipCm = 0;
 };
 
 namespace horizon_detail {
@@ -158,6 +160,7 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.gpuCacheBudgetMiB<8 || s.gpuCacheBudgetMiB>96 ||
         s.regionTransitionMs>1000 ||
         s.terrainGridSnapSteps==0 || s.terrainGridSnapSteps>16 ||
+        s.innerTerrainLipCm<0 || s.innerTerrainLipCm>200 ||
         s.regionHysteresisCm<0 ||
         s.regionHysteresisCm>=s.middleTileCm/2 ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
@@ -243,12 +246,17 @@ inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
         size_t(horizon_detail::checkedSquareRootCeil(
             static_cast<uint32_t>(clusters*s.orientationViews)))*
             s.atlasTilePixels;
+    // Up to 512 near ownership seam segments, two new bottom vertices
+    // and two triangles each. This is a conservative upper bound.
+    const size_t innerEdges=s.innerTerrainLipCm>0 ? 512u:0u;
     const size_t terrainVertices=s.distantTerrain ?
         size_t(s.terrainResolution+1)*(s.terrainResolution+1) +
-        (s.terrainSkirtDepthCm>0 ? size_t(4)*(s.terrainResolution+1):0):0;
+        (s.terrainSkirtDepthCm>0 ? size_t(4)*(s.terrainResolution+1):0) +
+        innerEdges*2 : 0;
     const size_t terrainTriangles=s.distantTerrain ?
         size_t(s.terrainResolution)*s.terrainResolution*2 +
-        (s.terrainSkirtDepthCm>0 ? size_t(8)*s.terrainResolution:0):0;
+        (s.terrainSkirtDepthCm>0 ? size_t(8)*s.terrainResolution:0) +
+        innerEdges*2 : 0;
     // Two crossed cards per cluster, each with 4 vertices and 2 triangles.
     return {atlasSide*atlasSide*4,terrainVertices+clusters*8,
             terrainTriangles+clusters*4,clusters};
@@ -339,6 +347,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.originZcm=lattice.worldZ(0);
     out.sideCm=static_cast<int32_t>(regionSide);
     out.terrainSkirtDepthCm=s.terrainSkirtDepthCm;
+    out.innerTerrainLipCm=s.innerTerrainLipCm;
     if (out.originXcm < -kWorldLimitCm+100 ||
         out.originZcm < -kWorldLimitCm+100 ||
         out.originXcm+out.sideCm>kWorldLimitCm-100 ||
@@ -361,6 +370,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         previous->terrainResolution==s.terrainResolution &&
         previous->terrainBeginCm==s.terrainBeginCm &&
         previous->terrainSkirtDepthCm==s.terrainSkirtDepthCm &&
+        previous->innerTerrainLipCm==s.innerTerrainLipCm &&
         (source && source->ownsNearTerrainRect
             ? previous->nearOwnedQuads.size()==size_t(s.terrainResolution)*
                                               s.terrainResolution
