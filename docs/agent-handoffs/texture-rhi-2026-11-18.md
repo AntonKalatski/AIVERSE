@@ -5515,3 +5515,27 @@ CTest, GLSL compilation and GPU execution NOT RUN.
 Next: run cmake configure with glslangValidator installed, check
 ctest -N -R virtual_texture_feedback_shaders includes exactly
 one test, execute it, then compile MSL with xcrun metal on macOS.
+
+
+## Stage 9A — Metal feedback shader compile validation (2026-11-19)
+
+Source commit: dec5d88d3380800232176f956a6dcb12e090e9ab.
+CMake commit: 539d07fa08f58f47144b4273d5880b01d4720ff1.
+Files: tests/render/check_virtual_texture_feedback_msl.py,
+CMakeLists.txt.
+New macOS Python verifier extracts the actual embedded
+kVirtualTextureFeedbackMSL and kVirtualTextureFeedbackMaterialMSL
+strings from VirtualTextureFeedback.h, composes a minimal Metal
+fragment entry point, and invokes xcrun -sdk macosx metal -c
+to emit AIR. Compiler errors and missing AIR fail the script.
+CMake conditionally registers virtual_texture_feedback_msl when
+APPLE, Python3 and xcrun are available. A missing test does not
+count as a pass. No production renderer source changed.
+
+Verification: GitHub source commits succeeded. macOS xcrun,
+CMake configure, CTest, GPU readback and real shader execution
+NOT RUN. MSL shader syntax is not yet certified.
+Next: run ctest -N -R virtual_texture_feedback_msl and the
+test itself on a macOS Metal SDK; fix any compiler diagnostics.
+Then add a real Metal/GL/Vulkan offscreen feedback render fixture
+and compare readback bytes with CPU encodeVirtualTextureFeedback.
