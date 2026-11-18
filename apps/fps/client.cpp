@@ -49,6 +49,7 @@ struct App {
     bool settingsOpen=false;
     std::string rebindContext, settingsError;
     std::uint64_t rebindMapping=0;
+    ein::RebindPolicy rebindPolicy=ein::RebindPolicy::Swap;
     fps::Input input;
     bool fireHeld=false,fireQueued=false,jumpQueued=false,aimHeld=false,prone=false;uint32_t buySelection=0;
     audio::AudioEngine audio;double stepSound=0,viewTime=0;uint32_t lastReload=0;
@@ -100,25 +101,44 @@ struct App {
     }
     // Rebinding is transactional: both the persisted profile and active mappings
     // change together, or neither changes (including when disk/permissions fail).
-    bool rebindInput(const std::string& context,std::uint64_t id,ein::Control control) {
+    bool rebindInput(const std::string& context,std::uint64_t id,ein::Control control,
+                     ein::RebindPolicy policy) {
         namespace cfg=platform::enhanced_config;
-        cfg::Profile stagedProfile=inputProfile;
-        auto it=std::find_if(stagedProfile.rebindings.begin(),stagedProfile.rebindings.end(),
-            [&](const auto& entry){return entry.context==context&&entry.mappingId==id;});
-        if(it!=stagedProfile.rebindings.end())it->control=control;
-        else stagedProfile.rebindings.push_back({context,id,control});
-        ein::InputSystem stagedActions=actions;
-        std::string error;
-        cfg::Profile validated;
-        if(!cfg::readProfile(cfg::writeProfile(stagedProfile),validated,&error) ||
-           !cfg::applyProfile(stagedActions,validated,&error) ||
-           !cfg::saveProfileFile(inputProfilePath(),validated,&error)) {
-            std::fprintf(stderr,"Enhanced Input rebind rejected: %s\n",error.c_str());
+        const auto* original=actions.context(context);
+        if(!original){settingsError="Unknown mapping context";return false;}
+        ein::InputSystem staged=actions;
+        if(!staged.rebind(context,id,control,policy)){
+            settingsError=policy==ein::RebindPolicy::Reject
+                ? "Key is already bound in this context."
+                : "Cannot swap an ambiguous or unknown binding.";
             return false;
         }
-        inputProfile=std::move(validated);
-        actions=std::move(stagedActions);
+        cfg::Profile next=inputProfile;
+        // A Swap changes two mappings. Persist both IDs, otherwise the next
+        // launch would restore only half the exchange.
+        const auto* updated=staged.context(context);
+        for(const auto& mapping:updated->mappings) {
+            const auto before=std::find_if(original->mappings.begin(),original->mappings.end(),
+                [&](const auto& previous){return previous.id==mapping.id;});
+            if(before==original->mappings.end() || before->control==mapping.control)continue;
+            auto entry=std::find_if(next.rebindings.begin(),next.rebindings.end(),
+                [&](const auto& previous){return previous.context==context&&previous.mappingId==mapping.id;});
+            if(entry!=next.rebindings.end())entry->control=mapping.control;
+            else next.rebindings.push_back({context,mapping.id,mapping.control});
+        }
+        std::string error;
+        cfg::Profile checked;
+        ein::InputSystem verified=actions;
+        if(!cfg::readProfile(cfg::writeProfile(next),checked,&error) ||
+           !cfg::applyProfile(verified,checked,&error) ||
+           !cfg::saveProfileFile(inputProfilePath(),checked,&error)){
+            settingsError=error.empty()?"Could not save input profile":error;
+            return false;
+        }
+        actions=std::move(verified);
+        inputProfile=std::move(checked);
         platform::syncUserData();
+        settingsError.clear();
         return true;
     }
 
@@ -134,7 +154,19 @@ struct App {
         if(ImGui::Button("Resume (click viewport to capture mouse)")){
             settingsOpen=false;rebindMapping=0;
         }
+        int policy=int(rebindPolicy);
+        if(ImGui::Combo("Binding conflicts",&policy,
+                        "Allow duplicate\0Reject duplicate\0Swap keys\0\0"))
+            rebindPolicy=ein::RebindPolicy(policy);
         if(!settingsError.empty())ImGui::TextWrapped("Input: %s",settingsError.c_str());
+        const auto conflicts=actions.conflicts();
+        if(!conflicts.empty() && ImGui::CollapsingHeader("Detected conflicts")) {
+            for(const auto& c:conflicts) {
+                ImGui::TextWrapped("%s:%s / %s:%s %s",c.higherContext.c_str(),
+                    c.higherAction.c_str(),c.lowerContext.c_str(),
+                    c.lowerAction.c_str(),c.shadowed?"(shadowed)":"(shared)");
+            }
+        }
         ImGui::Separator();
         if(ImGui::BeginChild("##bindings")) {
             for(const auto& name:actions.registeredContexts()) {
@@ -168,9 +200,7 @@ struct App {
     }
     bool finishRebind(ein::Control control){
         if(!rebindMapping)return false;
-        const bool ok=rebindInput(rebindContext,rebindMapping,control);
-        if(!ok)settingsError="Failed to persist this binding.";
-        else settingsError.clear();
+        const bool ok=rebindInput(rebindContext,rebindMapping,control,rebindPolicy);
         rebindMapping=0;rebindContext.clear();
         return ok;
     }
