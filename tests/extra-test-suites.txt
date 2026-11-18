@@ -1,0 +1,9 @@
+# name|runner|repository-relative-script|optional space-separated arguments
+# All CMake add_test() entries are discovered automatically by the root runner.
+# Add standalone checks here; no shell eval or arbitrary command strings.
+ecs-experiments|bash|tests/run_ecs_experiment_suite.sh|
+ecs-sanitizers|bash|tests/run_ecs_experiment_suite.sh|--sanitize
+ecs-gameplay-parity|bash|tests/run_ecs_gameplay_compare.sh|--full
+third-party-notices|python3|tests/notices/notices_test.py|
+readme-translations|python3|tools/readme/check.py|
+skill-catalog|python3|tests/skills/catalog_test.py|
