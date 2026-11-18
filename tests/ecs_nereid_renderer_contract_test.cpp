@@ -566,5 +566,55 @@ int main() {
     auto sanitized=render::advancePostFxUnderwater({},invalidUnderwater,0.1f);
     check(sanitized.absorption<=4.f && sanitized.depthMetres==0.f,
           "untrusted volume optics must be clamped before compositor");
+    // Stage 19: optional per-water underwater optical effects and transitions.
+    world::NereidSceneSurface opticalCamera=underwaterLake;
+    opticalCamera.style.underwaterDistortion=0.7f;
+    opticalCamera.style.underwaterScattering=0.5f;
+    auto cameraEffects=world::sampleNereidUnderwater({opticalCamera},
+                                                      {0_fx,8_fx,0_fx});
+    check(cameraEffects.submerged && cameraEffects.distortion==0.7f &&
+          cameraEffects.scattering==0.5f,
+          "camera optical snapshot should preserve per-water effect settings");
+    auto withDistortion=style;
+    withDistortion.underwaterDistortion=1.f;
+    withDistortion.underwaterScattering=0.4f;
+    check(render::validNereidWaterStyle(withDistortion),
+          "NEREID must accept bounded distortion/scattering");
+    check(!render::sameNereidSurfaceKey(
+          render::makeNereidSurfaceKey(30,false,highOpts,style),
+          render::makeNereidSurfaceKey(30,false,highOpts,withDistortion)),
+          "water presentation cache must notice underwater optical changes");
+    withDistortion.underwaterScattering=2.f;
+    check(!render::validNereidWaterStyle(withDistortion),
+          "NEREID must reject unbounded underwater scattering");
+    const auto opticsManifest=world::parseNereidWaterManifest(Json::parse(R"({
+      "nereidWater":{"surfaces":[{"kind":"lake","shape":"box",
+        "surfaceY":4,"bottomY":-10,"halfExtents":[5,5],
+        "style":{"underwaterDistortion":0.7,"underwaterScattering":0.5}}]}
+    )"));
+    check(opticsManifest.surfaces[0].style.underwaterDistortion>0.69f &&
+          opticsManifest.surfaces[0].style.underwaterScattering==0.5f,
+          "manifest must expose underwater settings per surface");
+    render::PostFxUnderwater cameraTarget{};
+    cameraTarget.submerged=true;
+    cameraTarget.distortion=0.8f;
+    cameraTarget.scattering=0.6f;
+    auto cameraFade=render::advancePostFxUnderwater({},cameraTarget,0.1f);
+    check(cameraFade.distortion>0.f && cameraFade.distortion<0.8f &&
+          cameraFade.scattering>0.f && cameraFade.crossing>0.f,
+          "entering water should start a bounded ripple and smooth optical settings");
+    float oldPulse=cameraFade.crossing;
+    cameraFade=render::advancePostFxUnderwater(cameraFade,cameraTarget,0.1f);
+    check(cameraFade.crossing<oldPulse,
+          "surface-crossing impulse should decay without a second crossing");
+    cameraTarget.submerged=false;
+    cameraFade=render::advancePostFxUnderwater(cameraFade,cameraTarget,0.1f);
+    check(cameraFade.crossing>0.f && cameraFade.blend>0.f,
+          "leaving water should generate ripple while tint fades out");
+    const std::string compositeShader(render::postfx::kComposite);
+    check(compositeShader.find("graphFrame.y")!=std::string::npos &&
+          compositeShader.find("TEX0(warped)")!=std::string::npos &&
+          compositeShader.find("scatterWeight")!=std::string::npos,
+          "shared GLSL/Metal compositor must contain ripple and scattering");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
