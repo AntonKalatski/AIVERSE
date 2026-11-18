@@ -265,3 +265,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Tests:** `enhanced_input_config_tests.cpp` adds host-file roundtrip plus failed invalid-profile overwrite retention using a temporary file. Runs on the existing `library_enhanced_input_config` target; test execution pending.
 
 **Verification:** source changed and committed, CI jobs were still queued at inspection time, no local full checkout due blocked GitHub networking. Do not claim a passing build. Next agent: compile and run this test on Windows and POSIX, then check editor and RTS focus/profile parity before PR readiness.
+
+## Stage 17 — two-finger pinch and centroid pan (2026-11-18)
+
+**Code:** `EnhancedInputAdapter::updateGesture` recognizes exactly two active touches, sampling distance and centroid. `Device::Touch` control codes 3 (pinch distance delta), 4 (midpoint pan X), and 5 (midpoint pan Y) publish frame-accumulated relative values on `deviceIndex=0`. Re-baselines when a second finger joins, fingers leave/cancel or focus is lost, so no jump is emitted from contact changes. Per-finger 0/1/2 codes remain backward compatible. Add standard Action mappings to these codes in any project, including user-authored JSON.
+
+**Tests:** `enhanced_input_adapter_tests.cpp` verifies two-finger activation without ghost delta, pinch +5, centroid pan -2.5, release completion, no jump on replacing a finger and focus-loss reset. Compile and CTest not yet verified.
+
+**Limits:** gestures are input signals (not simulation commands), and UI must capture/fence touches first. Rotation gestures and multi-finger gestures other than exactly two are not implemented. The existing genre-specific RTS region gesture remains unchanged until it is migrated.
+
+**Next agent:** verify builds and add a reference action-driven camera path; integrate RTS pointer/zoom and editor GameWindow where current behavior can be preserved, then update docs.
