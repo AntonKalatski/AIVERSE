@@ -7,6 +7,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
+#include <atomic>
 #include <cstdint>
 #include <chrono>
 #include <limits>
@@ -42,7 +43,11 @@ public:
                                 settings_.middleTileCm/2;
                 const int64_t z=int64_t(cell.z)*settings_.middleTileCm+
                                 settings_.middleTileCm/2;
-                result->bake=bakeHorizon(terrain_,biomes_,settings_,x,z);
+                // Each work item keeps its own immutable source alive even
+                // if the editor/world updates its authored landscape.
+                const auto source=sources_.load(std::memory_order_acquire);
+                result->bake=bakeHorizon(terrain_,biomes_,settings_,x,z,
+                                         source.get());
                 result->model=makeHorizonModel(result->bake);
                 if(result->model)render::prepareModelUpload(*result->model);
                 const auto end=std::chrono::steady_clock::now();
@@ -57,6 +62,19 @@ public:
         if(stream_)stream_->shutdown([](world::Cell){});
         // Call shutdown(device) before destroying the RHI for GPU cleanup.
     }
+
+    // The owner thread publishes an immutable snapshot. Canceled workers
+    // retain their captured shared_ptr until they finish; old GPU proxy
+    // remains in place until a replacement is uploaded.
+    void setSurfaceSources(std::shared_ptr<const HorizonSurfaceSources> source) {
+        sources_.store(std::move(source),std::memory_order_release);
+        if(stream_ && cataloged_) {
+            stream_->remove(cell_,[](world::Cell){});
+            cataloged_=false; // update() schedules a new revision for this cell
+        }
+    }
+    const TerrainSettings& terrainSettings() const {return terrain_;}
+    const BiomeSettings& biomeSettings() const {return biomes_;}
 
     void update(gfx::Device& device,ForestCameraCm observer) {
         if(observer.x<-kWorldLimitCm||observer.x>kWorldLimitCm||
@@ -175,6 +193,7 @@ private:
     int64_t originXcm_=0,originZcm_=0;
     size_t clusters_=0,terrainQuads_=0;
     HorizonRuntimeStats runtime_{};
+    std::atomic<std::shared_ptr<const HorizonSurfaceSources>> sources_{};
 };
 
 } // namespace aiverse::terraweave
