@@ -1272,3 +1272,30 @@ may cause repeated updates. Follow-up should address async staged work,
 hysteresis and precision, then implement separately validated depth/refraction
 with GLSL and Metal parity. Every subsequent implementation stage must
 append its own handoff with actual test evidence.
+
+### Stage 13B — distance LOD hysteresis (incremental follow-up)
+
+**Implementation commit:** `3871ad7cf188b5f5a5d75a4634c16464b10cdfe8`
+(`engine/world/NereidWaterScene.h`).
+**Manifest commit:** `372d93693035d073718138c99c67bf713aff3c45`
+(`engine/world/NereidWaterManifest.h`).
+**Authored test commit:** `47d658800947f4e51a42bc7b876875f262df8c98`
+(`tests/ecs_nereid_renderer_contract_test.cpp`).
+
+`NereidSceneSurface::lodHysteresis` defaults to 12 metres. With opt-in
+`autoLod`, each stable water ID keeps its previous selected LOD across
+snapshot reorder and uses threshold hysteresis to avoid switching detail
+on camera jitter. `setSurfaces` resets the selected LOD only for that
+changed surface. The manifest accepts optional `lodHysteresis` and
+rejects impossible threshold/hysteresis combinations; it may be 0 to
+disable hysteresis. Manual authored LOD and infinite oceans do not
+use distance selection.
+
+**Status:** Source/test commit written through GitHub; compiled C++,
+CTest, Metal/GL visual verification and runtime performance tests were
+**NOT RUN / UNVERIFIED**. No GPU output was inspected. Run
+`./run-tests.sh --filter '^ecs_nereid_'` and the full runner; investigate
+any failures before merging PR #23. Next: resolve real build/test findings,
+then profile CPU mesh staging and implement optional background preparation
+with bounded retained CPU memory. Depth/refraction shaders must be separately
+validated on GLSL and MSL and coordinated with Prisma (postprocess owner).
