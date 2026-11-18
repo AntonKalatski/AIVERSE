@@ -1,12 +1,11 @@
-#include "engine/platform/EnhancedInputAdapter.h"
-#include "engine/platform/EnhancedInputUsers.h"
+#include "engine/platform/InputFlow.h"
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <span>
 #include <string_view>
 namespace p = aiverse::platform;
-namespace in = aiverse::lib::gameplay::enhanced;
+namespace in = aiverse::lib::gameplay::inputflow;
 #define CHECK(x) do { if(!(x)) { std::cerr << "Input adapter failed " << __LINE__ << ": " #x "\n"; std::abort(); } } while(false)
 
 namespace aiverse::platform::detail {
@@ -22,7 +21,7 @@ static bool has(std::span<const in::ActionEvent> events, std::string_view name, 
     return false;
 }
 int main() {
-    in::InputSystem actions;
+    in::InputFlow actions;
     actions.defineAction({"Walk",in::ValueType::Boolean});
     actions.defineAction({"Click",in::ValueType::Boolean});
     actions.defineAction({"MouseX",in::ValueType::Axis1D});
@@ -48,7 +47,7 @@ int main() {
     controls.bind("TwoFingerPanX",{in::Device::Touch,4});
     CHECK(actions.registerContext(controls));
     CHECK(actions.activateContext("Test"));
-    p::EnhancedInputAdapter adapter(actions);
+    p::InputFlowAdapter adapter(actions);
     p::Event e;
     e.type=p::EventType::KeyDown; e.key=p::Key::W;
     adapter.onEvent(e);
@@ -111,8 +110,8 @@ int main() {
     CHECK(has(actions.events(),"PadJump",in::Phase::Canceled));
     CHECK(!actions.state("Stick"));
     // Local multiplayer: events and controllers belong to only one logical user.
-    p::EnhancedInputUsers users;
-    in::InputSystem u0,u1;
+    p::InputFlowUsers users;
+    in::InputFlow u0,u1;
     CHECK(u0.defineAction({"Walk",in::ValueType::Boolean}));
     CHECK(u1.defineAction({"PadJump",in::ValueType::Boolean}));
     in::MappingContext kb{"Keyboard"};
@@ -141,5 +140,5 @@ int main() {
     CHECK(!users.input(0)->state("Walk"));
     p::detail::setGamepadBackend(nullptr);
 
-    std::cout << "Enhanced Input platform adapter passed\n";
+    std::cout << "InputFlow platform adapter passed\n";
 }
