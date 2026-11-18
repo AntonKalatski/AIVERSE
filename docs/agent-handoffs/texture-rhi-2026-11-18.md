@@ -1562,3 +1562,51 @@ atlas/model callers supply full `levelCount/levelData/levelSize`.
 Run Vulkan/Metal/GL compressed texture regression tests, fix any
 remaining GPU-specific upload bugs, and continue the other feature
 stages only with separate source+handoff commits.
+
+## Stage 5E — single/dual-channel data texture formats (2026-11-18)
+
+**Implementation commit:** `b1da7f8059cc651ba7c240ba5cfea71ce572dd3d`.
+**Branch:** `feature/texture-rhi-unification`, draft PR #21.
+**Paths:** `engine/gfx/Gfx.h`, Metal/GL/Vulkan RHI texture
+implementations, Windows `engine/gfx/gl/GLApi.h` and
+`tests/render/texture_contract.cpp`.
+
+**Source implementation:** Append `PixelFormat::RG8`,
+`R16F`, `RG16F`, `R32F`, `RG32F` without renumbering
+existing public format values. Add shared
+`uncompressedTexturePixelBytes` and
+`isExtendedDataTextureFormat` helpers. Metal maps native
+RG8/R16F/RG16F/R32F/RG32F pixel formats and uses the
+accurate CPU row/slice byte stride for uploads/subresources.
+GL33/GLES3 maps matching sized internal formats, RED/RG
+external formats and byte/half/float transfer types for 2D,
+3D and array resources; Windows loader enum coverage
+extended. GLES3 float32 formats use nearest filtering by
+default on platforms without float-linear support. Vulkan
+maps matching VkFormats and staging byte strides. Source
+contract test checks all new and existing byte sizes.
+
+**Scope / compatibility:** New formats are for sampled data
+textures, LUTs and normal/height/physics data only at this
+stage. `renderTarget=true` for these formats intentionally
+fails closed until graphics pipelines and render pass
+format-matching support them. Existing render target,
+save/network/ECS/legacy 2D behavior unchanged.
+
+**Risks requiring next correction:** Metal default sampler
+still treats new R32F/RG32F as linearly filterable, while
+the conservative GL path forces nearest. Align this policy
+and explicitly reject unsupported automatic mip generation
+for new typed formats instead of silently allocating a
+single level (manual `mipLevels`/subresource updates remain
+available). This is the next bounded source stage.
+
+**Verification:** GitHub code commit confirmed. Native
+C++ compile, GPU sampling, CTest and CI success:
+**NOT RUN**; no successful workflow result asserted.
+
+**Next:** Fix float32 filtering/automatic-mip portability,
+add corresponding tests, then validate on Mac Metal,
+Windows GL33, mobile GLES3 and Vulkan. Avoid describing
+typed render targets as supported before per-format
+renderpass tests.
