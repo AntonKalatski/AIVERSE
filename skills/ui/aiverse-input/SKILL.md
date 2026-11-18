@@ -46,6 +46,14 @@ active keyboard camera movement. The RTS client also blocks legacy
 `keys_` fallback on RmlUi/text/modal capture and clears it when gameplay
 keyboard input is disabled. Real UI/native regressions NOT RUN.
 
+**Stage 53 editor direct GameWindow:** editor direct play samples keyboard,
+mouse buttons/axes and wheel through the same InputFlow runtime before
+script-card pointer processing. Use `InputFlow::actionDefinition(name)`
+to inspect a read-only Action's trigger rules; semantic `Triggered` handles
+Hold/Tap/DoubleTap/etc. instead of unconditionally using raw
+`ImGui::IsMouseClicked`. Do not sample twice in hosted ClientHost mode.
+ImGui/native smoke NOT RUN.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
