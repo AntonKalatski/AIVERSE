@@ -506,4 +506,82 @@ inline bool removeFields(MapDoc& doc, const std::vector<std::string>& ids,
     return apply(doc,config,error);
 }
 
+
+// Geometry-only group operation around an explicit world-space pivot.
+// Yaw changes the horizontal arrangement; scale changes distances and field
+// extents, but NOT wind speed, direction, storm strength or gravity strength.
+// The editor operation is deliberately non-authoritative, and all outputs
+// are committed as one validated MapDoc Undo transaction.
+inline bool transformFields(MapDoc& doc, const std::vector<std::string>& ids,
+                            double pivotX, double pivotY, double pivotZ,
+                            double yawDegrees, double uniformScale,
+                            std::string* error = nullptr) {
+    const auto fail = [&](const char* why) {
+        if (error) *error = why;
+        return false;
+    };
+    if (ids.empty()) return fail("PHYSIS select fields to transform");
+    if (!std::isfinite(pivotX) || !std::isfinite(pivotY) ||
+        !std::isfinite(pivotZ) || !std::isfinite(yawDegrees) ||
+        !std::isfinite(uniformScale) || uniformScale <= 0 ||
+        uniformScale > 100 || std::abs(yawDegrees) > 3600)
+        return fail("PHYSIS group transform parameters out of bounds");
+    const std::set<std::string> selected(ids.begin(),ids.end());
+    if (selected.size()!=ids.size())
+        return fail("PHYSIS duplicate group selection ID");
+    Json config = read(doc);
+    if (!validate(config,error)) return false;
+    const double radians = yawDegrees * 3.14159265358979323846 / 180.0;
+    const double cosine = std::cos(radians);
+    const double sine = std::sin(radians);
+    std::size_t found = 0;
+    for (const char* key:{"windZones","storms","gravityFields"}) {
+        const Json& original = config[key];
+        if (!original.isArray()) continue;
+        Json fields = original;
+        bool modified = false;
+        for (std::size_t i=0;i<fields.size();++i) {
+            Json field=fields[i];
+            if (!selected.count(field.getStr("id"))) continue;
+            ++found;
+            const auto& center=field["center"];
+            const double dx=center[0].toDouble()-pivotX;
+            const double dy=center[1].toDouble()-pivotY;
+            const double dz=center[2].toDouble()-pivotZ;
+            const double x=pivotX+uniformScale*(cosine*dx-sine*dz);
+            const double y=pivotY+uniformScale*dy;
+            const double z=pivotZ+uniformScale*(sine*dx+cosine*dz);
+            if (!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z)||
+                std::abs(x)>1000000||std::abs(y)>1000000||std::abs(z)>1000000)
+                return fail("PHYSIS group transform moves field out of bounds");
+            field.set("center",point(x,y,z));
+            if (uniformScale != 1.0) {
+                const auto scaleLength = [&](const char* fieldKey, double fallback) {
+                    const double value=field[fieldKey].isNumber() ?
+                        field[fieldKey].toDouble() : fallback;
+                    field.set(fieldKey,Json::number(value*uniformScale,3));
+                };
+                if (std::string(key)=="storms") {
+                    const aiverse::physis::StormEvent defaults{};
+                    scaleLength("eyeRadiusMeters",defaults.eyeRadiusMeters.toDouble());
+                    scaleLength("outerRadiusMeters",defaults.outerRadiusMeters.toDouble());
+                    scaleLength("heightMeters",defaults.heightMeters.toDouble());
+                } else if (std::string(key)=="windZones") {
+                    const aiverse::physis::WindZone defaults{};
+                    scaleLength("radiusMeters",defaults.radiusMeters.toDouble());
+                } else {
+                    const aiverse::physis::GravityField defaults{};
+                    scaleLength("radiusMeters",defaults.radiusMeters.toDouble());
+                }
+            }
+            fields.at(i)=std::move(field);
+            modified=true;
+        }
+        if (modified) config.set(key,std::move(fields));
+    }
+    if (found!=selected.size())
+        return fail("PHYSIS group transform contains unknown field ID");
+    return apply(doc,config,error);
+}
+
 } // namespace aiverse::editor::physis_authoring

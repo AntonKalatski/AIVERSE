@@ -185,6 +185,46 @@ void testGroupFpsMap() {
     fps.undo();
     CHECK(read(fps)["windZones"].size()==2);
 }
+
+void testGroupRotationAndScale() {
+    MapDoc doc;doc.reset(8,8);
+    std::string error;
+    CHECK(apply(doc,defaultConfig(),&error));
+    std::string wind,storm,gravity;
+    CHECK(addField(doc,physis::AuthoredFieldKind::Wind,0,0,0,wind,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Storm,10,0,0,storm,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Gravity,-10,0,0,gravity,&error));
+    const Json before=read(doc);
+    const auto rev=doc.revision;
+    CHECK(transformFields(doc,{gravity,wind,storm},0,0,0,90.0,2.0,&error));
+    CHECK(doc.revision>rev);
+    std::string key;std::size_t index=0;Json field;
+    CHECK(findField(read(doc),wind,key,index,&field));
+    CHECK(field["center"][0].fx()==Fixed{});
+    CHECK(field["radiusMeters"].fx()==Fixed::fromInt(200));
+    CHECK(findField(read(doc),storm,key,index,&field));
+    CHECK(field["center"][0].fx()==Fixed{});
+    CHECK(field["center"][2].fx()==Fixed::fromInt(20));
+    CHECK(field["eyeRadiusMeters"].fx()==Fixed::fromInt(40));
+    CHECK(field["outerRadiusMeters"].fx()==Fixed::fromInt(400));
+    CHECK(field["heightMeters"].fx()==Fixed::fromInt(800));
+    CHECK(findField(read(doc),gravity,key,index,&field));
+    CHECK(field["center"][2].fx()==Fixed::fromInt(-20));
+    CHECK(field["radiusMeters"].fx()==Fixed::fromInt(240));
+    doc.undo();
+    CHECK(read(doc)==before); // rotation + scale = one Undo
+    doc.redo();
+    CHECK(findField(read(doc),storm,key,index,&field));
+    CHECK(field["center"][2].fx()==Fixed::fromInt(20));
+    const Json after=read(doc);
+    const auto stableRev=doc.revision;
+    CHECK(!transformFields(doc,{wind,"missing"},0,0,0,20,1.0,&error));
+    CHECK(doc.revision==stableRev && read(doc)==after);
+    CHECK(!transformFields(doc,{wind,storm},0,0,0,0,-1,&error));
+    CHECK(doc.revision==stableRev && read(doc)==after);
+    CHECK(!transformFields(doc,{wind,storm},0,0,0,0,100,&error));
+    CHECK(doc.revision==stableRev && read(doc)==after);
+}
 void testFpsAndDuplicateIds() {
     MapDoc fps;
     std::string error;
@@ -219,5 +259,5 @@ void testFpsAndDuplicateIds() {
     CHECK(fps.revision==revision);
 }
 }
-int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testFpsAndDuplicateIds();
+int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testGroupRotationAndScale();testFpsAndDuplicateIds();
 std::printf("PHYSIS Field Authoring: %s\n",failures?"FAIL":"PASS");return failures?1:0;}
