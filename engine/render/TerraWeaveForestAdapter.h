@@ -1,7 +1,8 @@
 // TerraWeave Arbor/Flora -> existing Renderer3D submission path.
 // Pure placement transforms are CPU-only. Model GPU upload/release MUST run on
 // the owning gfx::Device thread; the caller owns renderer frame/scene lifetime.
-// This adapter intentionally creates ONE Model per species, not per tree.
+// This adapter intentionally creates ONE near model + ONE impostor per species,
+// not unique models per tree.
 #pragma once
 
 #include "engine/render/TerraWeaveModelAdapter.h"
