@@ -239,3 +239,21 @@ sample signatures with the linear reference. Invoke CMake target
 `aiverse_ecs_nereid_sampling_bench` or
 `tests/run_ecs_experiment_suite.sh --bench`. Results are NOT YET
 available; default adaptive thresholds remain heuristics.
+
+## Stage 7B — reusable presentation geometry, not gameplay authority
+
+`<aiverselib/water/NereidWaterSurfaceMesh.h>` provides independent
+CPU mesh creation for NEREID water bodies using only generic ECS water
+data: rectangles/discs, bounded infinite-ocean patches, simple concave
+polygons and variable-width river ribbons. LOD controls tessellation
+rather than entity/genre semantics. UVs and shoreline proximity
+(`WaterSurfaceVertex.shore`) are outputs for rendering only.
+`WaterSurfaceStyle` describes tint/foam/specular/alpha, without
+imposing a backend. Invalid shapes are rejected rather than silently
+rendered with an alternate footprint.
+
+This is a read-only **presentation projection** of authoritative
+`WaterBodyComponent`/`WaterGeometryComponent`, never persisted, hashed,
+networked or read back into sim. Existing RTS/editor water surfaces,
+shader effects, baked cells and shoreline models remain untouched.
+New test `ecs_nereid_surface_mesh_test` was authored but NOT RUN.

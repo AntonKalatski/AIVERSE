@@ -163,3 +163,18 @@ The test reports microseconds per tick for 16/64/256 bodies with
 8/128/1024 probes, explicitly including index rebuild time.
 It is a benchmark with gameplay parity checks, not a CI timing gate.
 No measurements were run during stage 7A.
+
+## Stage 7B — surface meshes for any genre
+
+Include `<aiverselib/water/NereidWaterSurfaceMesh.h>` for a
+read-only, backend-agnostic water mesh. Call
+`buildWaterSurfaceMesh(body, optionalGeometry, options)` in
+presentation/assets preparation, NOT authoritative Simulation
+updates. Outputs vertices (X,Y,Z,UV,shore factor) and 32-bit indices.
+Supported: box/disc/infinite patch, simple polygons (concave allowed)
+and variable-width river strips. Near/Medium/Far modes control LOD;
+ocean patch is camera-relative, so rebuild when its reference moves.
+Zero/invalid polygons return empty. GPU material hookup is a separate
+renderer stage; never present this as completed refractive water.
+
+Test `ecs_nereid_surface_mesh_test` is authored but UNVERIFIED.

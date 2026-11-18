@@ -535,3 +535,62 @@ transform stages. Do not change adaptive defaults until real results
 show a defensible break-even. Next: implement a universal presentation
 mesh adapter; then obtain actual CI and benchmark output. Update this
 handoff immediately after that stage with SHA/files/tests/limits.
+
+## Stage 7B — backend-neutral water surface mesh
+
+**Implementation commit:** `5957287763ca3879d58bb0507755aa5dbe7e26ff`,
+branch `feature/nereid-water-core`. Files added:
+`libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h` and
+`tests/ecs_nereid_surface_mesh_test.cpp`; files updated:
+`CMakeLists.txt` and `tests/run_ecs_experiment_suite.sh`.
+
+### Public API / ownership
+
+`buildWaterSurfaceMesh(body,optionalGeometry,WaterSurfaceMeshOptions)`
+returns an entirely **presentation-only** `WaterSurfaceMesh`, with
+`WaterSurfaceVertex {x,y,z,u,v,shore}` and 32-bit triangle indices.
+`WaterSurfaceLod` = Near / Medium / Far controls subdivisions and
+disc polygonal resolution; `cameraX,Z` and `oceanPatchRadius` bound an
+otherwise infinite ocean to a movable square patch. `foamWidth`
+determines vertex proximity to shore segments; `uvScale` controls
+texture-space units. `maxVertices` limits memory.
+
+Shapes: box, disc, infinite camera patch, concave simple polygons with
+ear clipping (+Y triangle winding for either polygon orientation), and
+river ribbons with variable half-width and capped miter joins.
+Self-intersecting and degenerate polygons return empty meshes, rather
+than incorrect triangles. Source ECS water body and optional geometry
+are read-only. Positions/Y come from fixed authoritative data, but
+presentation coordinates/UVs/foam are floating-point and **must never
+feed back into the deterministic simulation**.
+
+`WaterSurfaceStyle` provides an opt-in material-input default
+(color, foam tint/strength, alpha and specular) for the renderer
+adapter to consume in a subsequent isolated stage. No new ECS schema,
+shader binding, material persistence or scene draw path was added yet.
+This code deliberately does **not** alter the existing RTS terrain water
+or waterNetwork/bake, and does not introduce per-genre water mesh logic.
+
+### Verification and next action
+
+CMake executable / CTest `ecs_nereid_surface_mesh_test` tests box area,
++Y winding, near/far disc LOD, capped vertices, concave/reversed
+polygons, invalid self-intersection, varying-width river, shore
+factor and camera-relative ocean bounds. The ECS experimental shell
+runner also builds/runs this fixture. **Actual C++ build and CTest: NOT
+RUN / UNVERIFIED.** GitHub connector push succeeded; Actions status
+needs separate confirmation.
+
+```sh
+cmake --build build/ecs-test --target aiverse_ecs_nereid_surface_mesh_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_surface_mesh_test$'
+```
+
+Limits: static surface sheet only; wave vertex displacement, depth
+refraction, underwater treatment and native renderer integration are
+not implemented. GPU vertex lifetime, camera-dependent patch rebuild,
+CPU upload churn and platform-specific rendering need explicit
+profiling and testing. **Next:** add a small RHI renderer bridge using
+existing Renderer3D/MeshBuilder with a clean ownership/rebuild
+contract. Keep shader effects as a separate change. First fix any
+failed native CI tests before declaring this production-ready.
