@@ -259,3 +259,42 @@ python3 tools/skills/catalog.py check
 3. Add GPU compute particle backend with explicit RHI capability checks and CPU fallback; never call existing graph v1 a full Niagara dataflow/GPU implementation.
 4. Validate genre-neutral actual host usage for FPS and RTS (not only header-level fixtures), entity attachment, effect IDs, rollback and visuals, then migration/parity.
 5. Continue appending handoff entries **in this same file**, separately committed after each implementation stage; preserve all other agents' changes to this active branch.
+
+## Stage 7 — SpectraFX MCP graph authoring and CPU preview bake (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** make SpectraFX graph-v1 frontend available through both editor Workspace and headless MCP without genre-specific simulation dependencies.
+
+### Implementation and documentation commits
+
+| SHA | File | Change |
+|---|---|---|
+| `cceac6c08471785a19b3556f474ad276616c23f3` | `apps/editor/core/SpectraGraphOps.cpp` | Six universal `fx_graph_*` operations |
+| `b71ad7b6dd00c4b44b09312b430c272089011968` | `apps/editor/core/FxOps.cpp` | Register graph operations with existing FX tools |
+| `13ffbf60776c71681603bde2381c9b1ddc40b3f5` | `tests/vfx_graph_ops_test.cpp` | Workspace graph CRUD, validation, bake, safety regression |
+| `a8609363e7eed3ee7d53b64af4d2884a8d350f65` | `CMakeLists.txt` | Build and CTest target `aiverse_vfx_ops_tests` / `vfx_graph_ops` |
+| `510bd7e11fbf6c8269334f94c7abc3cd04245f35` | `docs/spectrafx.md` | Document MCP graph API |
+| `4d7856a46d4e47130d7cb56718bb3227bffeeb4b` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent graph-edit workflow |
+
+### API, architecture and compatibility
+
+Registered in `registerFxOps` through `registerSpectraGraphOps`: `fx_graph_list`, `fx_graph_get`, `fx_graph_validate`, `fx_graph_set`, `fx_graph_delete`, `fx_graph_bake`. Graph validation uses `aiverse::spectra::compileGraph` and is CPU-only. Graphs live in `fx/graphs/<name>.vfx.json` and are limited to 1 MiB. `fx_graph_set` rejects invalid compilation without overwriting the source; valid changes call `Workspace::note(Change::Fx)`. `fx_graph_bake {name,effect,overrides?,overwrite?}` materializes a separate `fx/<effect>.json` compatible with existing `fx_preview` and legacy clients; old effect files are not overwritten unless `overwrite:true`. Bake is a snapshot: editing source graphs does not automatically refresh baked effects.
+
+Game simulation, deterministic ECS authority, rollback state and old `RtsFx` are untouched. There is no node-canvas editor and no GPU simulation in this stage.
+
+### Verification status — NOT RUN
+
+GitHub connector files and commits were created. No local AIVERSE checkout, build, CTest result or screenshot was available in this stage. **No test is claimed passing.** New `vfx_graph_ops` test was added but has not executed.
+
+Commands for the next agent:
+
+```bash
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+Review the new `SpectraGraphOps.cpp` and `vfx_graph_ops_test.cpp` for actual build/runtime errors before production usage. This must be done independently of GitHub source presence.
+
+**Next bounded stage:** editor node-canvas for the exact graph-v1 schema (select/add/move/link/delete nodes, exposed parameters, compile diagnostics, preview through `fx_graph_bake`/existing CPU renderer); then standalone GPU RHI capability and compute-stage design. After each implementation stage append a **separate handoff commit** to this same file, listing SHAs, tests actually executed and the next action.
