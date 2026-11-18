@@ -1,4 +1,5 @@
 #include "FpsModule.h"
+#include "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h"
 #include "engine/experiments/EcsExperiments.h"
 #include <algorithm>
 #include <set>
@@ -536,14 +537,15 @@ void Module::shoot(Simulation& sim,Actor& p) {
         runtime->value.ammo=p.ammo;
         runtime->value.shots=p.shots;
         runtime->value.nextFire=p.nextFire;
-        --runtime->value.ammo;
-        ++runtime->value.shots;
-        runtime->value.nextFire=sim.tick()+weapon.interval;
+        lib::genre::commitAcceptedShot(runtime->value.ammo,
+            runtime->value.nextFire,sim.tick(),weapon.interval,
+            &runtime->value.shots);
         p.ammo=runtime->value.ammo;
         p.shots=runtime->value.shots;
         p.nextFire=runtime->value.nextFire;
     } else {
-        --p.ammo;++p.shots;p.nextFire=sim.tick()+weapon.interval;
+        lib::genre::commitAcceptedShot(p.ammo,p.nextFire,sim.tick(),
+                                       weapon.interval,&p.shots);
     }
     for(uint32_t pellet=0;pellet<weapon.pellets;++pellet) {
         auto yaw=p.yaw,pitch=p.pitch;
