@@ -1,4 +1,5 @@
 #include "engine/gfx/VirtualTextureFileStreamer.h"
+#include "engine/gfx/VirtualTexturePrefetchAdapter.h"
 
 #include <algorithm>
 #include <chrono>
@@ -261,6 +262,82 @@ void cancellationMissingAndGpuFailure() {
     require(gpu.live.empty(), "failed facade cleanup releases GPU resources");
 }
 
+
+void automaticPrefetchAndPinPromotion() {
+    TestFiles files;
+    const VirtualPageKey coarse{2,0,0,0}, middle{1,1,1,0}, fine{0,3,3,0};
+    files.page(coarse,13);
+    files.page(middle,37);
+    files.page(fine,91);
+    MockGpu gpu;
+    VirtualTextureFileStreamer stream(gpu,gpuLimits());
+    auto atlas=gpuConfig();
+    atlas.physicalPages=3; // no forced LRU eviction of visible mips
+    require(stream.initialize(atlas,diskConfig(files),3),"prefetch streaming init");
+    VirtualTexturePrefetchPlanner planner;
+    VirtualTexturePrefetchConfig cfg;
+    cfg.tilesX=cfg.tilesY=4;
+    cfg.mipLevels=3; cfg.virtualLayers=1;
+    cfg.maxCandidates=16;cfg.maxRequestsPerFrame=2;
+    require(planner.initialize(cfg),"prefetch planner init");
+    const std::vector<VirtualTextureVisibleRegion> visible{
+        {0.75,0.75,1.,1.,0,0,9}
+    };
+    auto first=prefetchVisibleVirtualPages(stream,planner,visible);
+    require(first.submittedNewRequests==2 &&
+            first.tickets.size()==2 && first.refusedRequests==0,
+            "coarse then intermediate page requests fit the first frame");
+    require(stream.pendingPage(coarse) && stream.pendingPage(middle) &&
+            !stream.pendingPage(fine),
+            "request budget stops before the finest tile");
+    auto next=prefetchVisibleVirtualPages(stream,planner,visible);
+    require(next.submittedNewRequests==1 && stream.pendingPage(fine) &&
+            next.planning.alreadyResident==2,
+            "pending pages are deduplicated; next frame requests only detail");
+    auto none=prefetchVisibleVirtualPages(stream,planner,visible);
+    require(none.submittedNewRequests==0 && none.planning.alreadyResident==3,
+            "no reread while disk or GPU writes are still pending");
+    struct Watch {
+        int count=0;
+        bool done=false;
+        void operator()(VirtualDiskPageTicket,VirtualPageKey,
+                        bool ok,const std::string& error) {
+            require(ok && error.empty(),"visibility page upload success");
+            if(++count==3)done=true;
+        }
+    } watch;
+    pumpUntil(stream,watch);
+    require(stream.exactResidentPage(coarse) &&
+            stream.exactResidentPage(middle) &&
+            stream.exactResidentPage(fine) &&
+            stream.stats().pages.pinned==1,
+            "all visible mip levels resident, only coarse fallback pinned");
+    auto resident=prefetchVisibleVirtualPages(stream,planner,visible);
+    require(resident.submittedNewRequests==0 &&
+            resident.planning.alreadyResident==3,
+            "actual resident pages do not trigger more disk I/O");
+    stream.shutdown();
+    require(gpu.live.empty(),"prefetch completes and releases GPU allocations");
+
+    // A coarse request created by another presentation subsystem may already
+    // be pending, but a new view must still promote it to pinned fallback.
+    MockGpu secondGpu;
+    VirtualTextureFileStreamer second(secondGpu,gpuLimits());
+    require(second.initialize(gpuConfig(),diskConfig(files),2),
+            "separate pending pin promotion fixture");
+    const auto weak=second.requestPage(coarse,false);
+    require(weak.valid() && second.pendingPage(coarse),"un-pinned request pending");
+    auto promotion=prefetchVisibleVirtualPages(second,planner,visible);
+    require(promotion.planning.alreadyResident >= 1,
+            "pending coarse page filtered and promoted");
+    Observe promoted;
+    pumpUntil(second,promoted);
+    require(promoted.success && promoted.key==coarse &&
+            second.stats().pages.pinned==1,
+            "coarsest page promoted before GPU residency publication");
+    second.shutdown();
+}
+
 void rejectMismatchedConfig() {
     TestFiles files;
     MockGpu gpu;
@@ -276,6 +353,7 @@ int main() {
     try {
         fileGpuPublishAndEviction();
         cancellationMissingAndGpuFailure();
+        automaticPrefetchAndPinPromotion();
         rejectMismatchedConfig();
     } catch (const std::exception& e) {
         std::fprintf(stderr,"VirtualTextureFileStreamer test FAILED: %s\n",e.what());
