@@ -158,3 +158,7 @@ The shared engine header `engine/platform/EnhancedInputPresets.h` provides `enha
 ## Editor-hosted Game focus
 
 Game window forwards keyboard input only while focused. Switching from Game to Inspector, Input Actions or another tab forwards synthetic `FocusLost` to the hosted client and cancels Enhanced Input and legacy RTS held keys/pointer capture. Returning to Game forwards `FocusGained`; the embedded client still preserves HostedView and ImGui context isolation.
+
+## User-profile file integrity
+
+`engine/platform/EnhancedInputProfileIO.h` implements validated `loadProfileFile` and `saveProfileFile`. A profile must pass the JSON schema before disk replacement; a temporary file is written first, with backup+restore handling where atomic rename-overwrite is unavailable. The FPS Settings UI applies a rebinding to a staged `InputSystem` copy and commits live input only **after** successful persistence. A write error leaves the old binding and profile active.
