@@ -1576,3 +1576,44 @@ before calling this stage validated.
   immutable draw collections if needed. Code commit, then
   Stage 56 handoff separately before advancing.
 
+## Stage 56 — generic lines and triangles in universal View (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22; base `feature/universal-entity-inspector-fps`.
+- **Implementation code SHA:** `45eb5b9237b4f2b623de1e91259092437f101a5c`.
+- **Changed files:** `engine/view/View.h`,
+  `modules/rts/view/RtsViewDraw.cpp`,
+  `tests/view/view.cpp` and `docs/view.md`.
+- **Generic scene API:** new `view::LineObject` and
+  `view::TriangleObject` contain only scene-space vertices
+  and RGBA colors. Static `View::submitLine` /
+  `View::submitTriangle` route generic packets to
+  Renderer3D's existing immediate geometry pipeline;
+  neither API knows which gameplay event or genre caused
+  the draw.
+- **Host integration:** three previous direct
+  `r.triangle` / `r.line` calls for compatible tracer effects
+  in RtsViewDraw were updated to use the new universal
+  draw packet API. The other camera/fog blip direct
+  triangle in RtsView.cpp was not changed in this stage
+  because its exact source string differed; host behavior
+  remains unchanged there.
+- **Compatibility:** no change to gameplay, source entity
+  identity, saved levels, model formats, renderer shaders,
+  batching and CMake target aliases. Old `game::RtsView`
+  remains a specialized compatibility adapter.
+- **Test status:** only source edits via connected GitHub;
+  **NOT RUN** per user deferral. View API test now has
+  packet field assertions. No CTest/TSAN/graphics pass
+  is claimed.
+- **Limits:** this is a simple render submission API;
+  advanced scene layers, viewport state, terrain/fog
+  authoring and removal of old RtsView dependencies
+  remain to be implemented.
+- **Next actionable step:** inspect `RtsView.cpp` near
+  its blip triangle renderer, migrate eligible graphics
+  to generic View packet submission and begin moving
+  camera/layer composition without gameplay semantics.
+  Keep rebuilding test fixtures but do not execute tests
+  until instructed. Code commit then Stage 57 handoff.
+
