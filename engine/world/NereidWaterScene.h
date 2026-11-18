@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
+#include <algorithm>
 
 namespace aiverse::world {
 
@@ -31,6 +32,14 @@ public:
         ++revision_;
         // Preserve prior GPU meshes until update commits the replacements.
     }
+    void setMaxUploadsPerFrame(uint32_t count) {
+        if(count==0 || count>16)
+            throw std::invalid_argument("nereid.scene: upload count must be 1..16");
+        maxUploadsPerFrame_=count;
+    }
+    uint32_t maxUploadsPerFrame()const{return maxUploadsPerFrame_;}
+    // Round-robin scheduling caps rebuilds per frame, including failed attempts.
+    // Retiring disabled/removed surfaces is immediate and does not consume budget.
     void update(gfx::Device& device,const Vec3* observer=nullptr) {
         while(resident_.size()>surfaces_.size()) {
             resident_.back()->release(device);
@@ -38,20 +47,28 @@ public:
         }
         while(resident_.size()<surfaces_.size())
             resident_.push_back(std::make_unique<render::NereidSurfaceResident>());
-        for(size_t i=0;i<surfaces_.size();++i) {
+        if(surfaces_.empty()){nextUpload_=0;return;}
+        // Remove disabled bodies immediately; they must not retain stale images.
+        for(size_t i=0;i<surfaces_.size();++i)
+            if(!surfaces_[i].body.enabled)resident_[i]->release(device);
+        uint32_t attempts=0;
+        const size_t count=surfaces_.size();
+        for(size_t scanned=0;scanned<count && attempts<maxUploadsPerFrame_;++scanned) {
+            const size_t i=(nextUpload_+scanned)%count;
+            if(!surfaces_[i].body.enabled)continue;
             auto opts=surfaces_[i].mesh;
             if(observer) {
                 opts.cameraX=float(observer->x.toDouble());
                 opts.cameraZ=float(observer->z.toDouble());
             }
             const auto* geometry=surfaces_[i].useGeometry?&surfaces_[i].geometry:nullptr;
-            if(!surfaces_[i].body.enabled) {
-                resident_[i]->release(device);
+            if(!resident_[i]->needsUpdate(surfaces_[i].body,geometry,
+                                          revision_,opts,surfaces_[i].style))
                 continue;
-            }
-            // Geometry generation/upload can fail: preserve the last valid GPU surface.
+            ++attempts;
             resident_[i]->update(device,surfaces_[i].body,geometry,revision_,
                                  opts,surfaces_[i].style);
+            nextUpload_=(i+1)%count;
         }
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize)const {
@@ -63,6 +80,7 @@ public:
     void shutdown(gfx::Device& device) {
         for(auto& surface:resident_)surface->release(device);
         resident_.clear();
+        nextUpload_=0;
     }
     size_t visibleSurfaceCount() const {
         size_t count=0;
@@ -73,6 +91,8 @@ private:
     std::vector<NereidSceneSurface> surfaces_;
     std::vector<std::unique_ptr<render::NereidSurfaceResident>> resident_;
     uint64_t revision_=0;
+    uint32_t maxUploadsPerFrame_=2;
+    size_t nextUpload_=0;
 };
 
 } // namespace aiverse::world
