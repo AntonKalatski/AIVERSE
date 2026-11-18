@@ -68,16 +68,31 @@ inline Forcing forcingAt(const World& world, const Cell& cell, std::uint64_t tic
     return result;
 }
 
-template<class SurfaceProvider>
-inline void advanceClimateWithSurface(World& world, SurfaceProvider&& surfaceProvider) {
-    // Exactly ONE atmosphere pass + ONE surface pass + ONE committed tick.
+template<class SurfaceProvider, class ExtraForcingProvider>
+inline void advanceClimateWithSurfaceAndForcing(World& world,
+                                                 SurfaceProvider&& surfaceProvider,
+                                                 ExtraForcingProvider&& extraForcing) {
+    // Exactly one atmosphere/surface pass. Additional forcing is still pure
+    // Fixed ECS data and cannot move weather fronts during cell iteration.
     advanceWith(world, [&](const Cell& cell, std::uint64_t tick) {
-        return forcingAt(static_cast<const World&>(world), cell, tick);
+        Forcing base = forcingAt(static_cast<const World&>(world), cell, tick);
+        const Forcing extra = extraForcing(cell, tick);
+        base.temperatureOffset += extra.temperatureOffset;
+        base.humidityOffset += extra.humidityOffset;
+        base.pressureOffset += extra.pressureOffset;
+        base.wind += extra.wind;
+        base.precipitationBoost += extra.precipitationBoost;
+        return base;
     }, surfaceProvider);
-    // Weather fronts move only after all affected cells see the same positions.
     world.eachExisting<WeatherFront>([](Entity, WeatherFront& front) {
         front.center += front.velocity;
     });
+}
+
+template<class SurfaceProvider>
+inline void advanceClimateWithSurface(World& world, SurfaceProvider&& surfaceProvider) {
+    advanceClimateWithSurfaceAndForcing(world, surfaceProvider,
+        [](const Cell&, std::uint64_t) { return Forcing{}; });
 }
 
 inline void advanceClimate(World& world) {
