@@ -1260,3 +1260,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Appended implementation status and compatibility caveats to `docs/ecs-all-features-migration-plan.md`; distinguishes the immutable 120-package audit baseline from the current catalog, and the new opt-in separately scheduled queue system from legacy RTS/FPS immediate hit implementations.
 - **Verification:** docs-only source commit, native gameplay migration remains pending.
 - **Next:** update AGENTS and issue tracker, perform static wiring audit, obtain compile/test evidence.
+
+### 2026-11-18 — FPS native target now links both shared ECS impact and hitscan packages
+- Implementation SHA: `2c52e9b5260fb9630bce76be9ec1745d3da8527a`.
+- `modules/fps/CMakeLists.txt` links `AIVERSE::lib_ecs_hitscan` and `AIVERSE::lib_ecs_ordered_impact` explicitly. Live FPS `traceShot` now uses both generic policies but keeps its ECS ActorRuntime damage and vehicle, armor, rewind and penetration adapters.
+- Verification: source commit only. Attempt to access GitHub from the available native container failed because DNS for github.com was not available; therefore no repository clone, compilation or tests were run. GitHub Actions status still needs a completed run; never treat queued/cancelled as passed.
