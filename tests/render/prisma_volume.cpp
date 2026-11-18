@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 using namespace aiverse;
 using namespace aiverse::render;
@@ -95,6 +97,25 @@ int main() {
     expect(disabled.find(PrismaType::ColorGrade)!=nullptr &&
            !disabled.find(PrismaType::ColorGrade)->enabled,
            "explicit effect disable works without changing other values");
+
+    for (auto shape : {PrismaVolumeShape::Global, PrismaVolumeShape::Sphere,
+                       PrismaVolumeShape::Box}) {
+        Json root = Json::object(), items = Json::array();
+        items.push(makePrismaVolumeJson("editor_test",shape,{4.f,5.f,6.f}));
+        root.set("volumes",std::move(items));
+        issues.clear();
+        auto created = parsePrismaVolumes(root,Json(),&issues);
+        expect(issues.empty() && created.volumes.size()==1,
+               "editor/native default volume recipe parses");
+        if (created.volumes.size()==1) {
+            expect(created.volumes[0].shape==shape,"default recipe preserves shape");
+            expect(created.volumes[0].id=="editor_test","default recipe preserves stable id");
+        }
+    }
+    try {
+        (void)makePrismaVolumeJson("",PrismaVolumeShape::Sphere,{0,0,0});
+        expect(false,"volume with empty stable id rejected");
+    } catch (const std::invalid_argument&) {}
 
     const Json bad = Json::parse(R"({"volumes":[{"shape":"sphere","center":[0,0,0],"radius":-4,
                           "profile":{"effects":[]}}]})");
