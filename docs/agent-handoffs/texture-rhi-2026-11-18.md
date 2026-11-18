@@ -1101,3 +1101,52 @@ fix compilation and GPU validation errors. Only then finish
 GL/Vulkan MSAA/resolve, mixed formats, DDS/KTX2 and
 async/streaming improvements. Append precise results and
 new stage handoffs.
+
+## Stage 6A — full KTX2 array, cubemap and volume payload preservation (2026-11-18)
+
+**Code commit:** `dbb6dfd1f32b40d4b002fd184c5db11be28d13f1`.
+**Files:** `engine/render/TextureCodec.h`,
+`engine/render/TextureCodec.cpp`, `engine/render/Model.cpp`,
+`tests/render/ktx2_layers.cpp`, `CMakeLists.txt`.
+
+**Source implementation:** `CompressedImage` now retains
+`depth`, `arrayLayers`, `faces` and `oneDimensional`
+metadata; the KTX2 reader preserves all layer/face/3D
+z-slices within every mip, in order, for both raw and
+Zstandard-supercompressed payloads. It checks dimensional
+combinations, mip count, file bounds, expected lengths and
+a 512 MiB per-level allocation ceiling. CPU API adds
+`levelDepth`, `levelImageCount` and `decodeBlocksSlice`;
+the existing `decodeBlocks` continues to decode slice 0.
+Model texture upload stays **2D** for shader compatibility:
+when a model references layered/cube KTX2 data it submits
+only the first 2D slice of each compressed mip. Other
+layers remain available in CPU memory to future generic
+texture asset importers.
+
+**Tests:** New GPU-independent `ktx2_layers` CTest,
+linked against existing models + zstd decoder,
+synthesizes KTX2 cube array and 3D RGBA8 payloads and
+checks metadata, slice decoding, legacy first-slice
+fallback, 1D metadata and corrupted/truncated inputs.
+
+**NOT done:** Generic runtime KTX2 array/cubemap/volume
+asset creation and binding to matching shaders; DDS
+multi-layer parity; BasisLZ/UASTC transcode; HDR/EXR.
+Parser does not automatically reinterpret glTF material
+texture2D references as cubemaps. No changes to ECS/saves.
+
+**Validation:** GitHub code commit successful. Native
+C++ build and `ktx2_layers` CTest: **NOT RUN**.
+GitHub Actions success not confirmed. Before compiling,
+check that the new test source explicitly includes
+`<algorithm>` for `std::max`; the current fixture
+may need that include (identified during static review).
+Do not claim test success.
+
+**Next:** Fix the include, build/test KTX2 parser on
+a proper clone, then implement generic dimension-aware
+TextureAsset resource upload for KTX2 layered payloads
+independently of the 2D-only model material path.
+Continue with DDS cubemap/array decoding and BasisU
+transcoding in separately documented stages.
