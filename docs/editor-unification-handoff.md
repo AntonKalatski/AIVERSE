@@ -1452,3 +1452,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Documentation SHA: `c05d2c4856216d6d372cf98e77290a0503b20a75`.
 - Updated `docs/ecs-all-features-migration-plan.md` with current real FPS common HP primitive adoption, versioned `DamageQueue` byte/hash API, test coverage and explicit non-completeness of actual per-feature ECS health authority.
 - Verification: source documentation only, no native build result.
+
+
+### 2026-11-18 — Real FPS two-shooter rewind, save and rollback authority regression
+- Implementation SHA: `c2ea67c2d089426e1fdcaa89012b4d9a4f40307b`.
+- Extended `tests/fps/tests.cpp` with `ecsSimultaneousHitscanRollbackParity` and called it in the standard `fps` CTest suite. Configures two opposing players aiming at each other, an explicitly nonphysical hitscan weapon (3 pellets, 8 damage, zero bullet speed, one-tick interval), and both source inputs each tick with deliberately rewound `viewTick`. Runs 12 ticks under legacy and opt-in `fps.ecsAuthority`, compares checksums and entire Actor vectors each tick, verifies every authoritative `ActorRuntime` equals its compatibility view, and requires actual shooting/hits. Takes snapshots after tick 2, compares cross-mode v9 save reload in both directions, replays ticks 3..11 and asserts final checksums are identical.
+- This fixture is intended to catch incorrect deferred same-tick hits, snapshot ownership mistakes, and lag-compensated damage regressions when changing live FPS. **No native compile or execution has occurred**, so expected target hit outcomes and all asserted equalities remain unverified.
+- Next: run `ctest -R '^fps$'` on native debug+Release, confirm fixture, then compare real transport replay. Do not change the save v9 network wire or synchronously dispatched damage while this is unverified.
