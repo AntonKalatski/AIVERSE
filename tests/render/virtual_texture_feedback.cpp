@@ -28,6 +28,27 @@ void roundtrip() {
             decodeVirtualTextureFeedbackId(0).mip < 0,
             "invalid page key or clear value cannot encode as a valid page");
 }
+void materialUvPageSelection() {
+    require(virtualTextureFeedbackPageAtUV(0.0,0.0,0,0,8,8)==
+                VirtualPageKey{0,0,0,0},
+            "UV origin selects first page");
+    require(virtualTextureFeedbackPageAtUV(1.0,1.0,0,1,8,8)==
+                VirtualPageKey{0,7,7,1},
+            "upper UV boundary selects last page without overflow");
+    require(virtualTextureFeedbackPageAtUV(0.75,0.75,1,0,8,8)==
+                VirtualPageKey{1,3,3,0},
+            "material mip selects correctly reduced page grid");
+    require(virtualTextureFeedbackPageAtUV(1.0,1.0,2,0,5,3)==
+                VirtualPageKey{2,1,0,0},
+            "non-power-of-two base page grid uses ceil division");
+    require(virtualTextureFeedbackPageAtUV(-0.1,0.5,0,0,8,8).mip<0 &&
+            virtualTextureFeedbackPageAtUV(0.5,0.5,31,0,8,8).mip<0 &&
+            virtualTextureFeedbackPageAtUV(0.5,0.5,0,16,8,8).mip<0,
+            "out-of-range material feedback never aliases a valid page");
+    require(encodeVirtualTextureFeedback(
+                virtualTextureFeedbackPageAtUV(1.0,1.0,0,1,8,8))!=0,
+            "material page selection produces a valid packed GPU ID");
+}
 void frequencyAndPlanner() {
     VirtualTextureFeedbackConfig cfg;
     cfg.tilesX=cfg.tilesY=8;
@@ -116,7 +137,7 @@ void invalidAndLimits() {
 }
 }
 int main() {
-    try{roundtrip();frequencyAndPlanner();invalidAndLimits();}
+    try{roundtrip();materialUvPageSelection();frequencyAndPlanner();invalidAndLimits();}
     catch(const std::exception& e){
         std::fprintf(stderr,"Virtual texture GPU feedback FAILED: %s\n",e.what());
         return 1;
