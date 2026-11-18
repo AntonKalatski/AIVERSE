@@ -5,9 +5,9 @@ Implementation branch: `feature/texture-rhi-unification`.
 
 ## Status — staged source implementation (not GPU-validated)
 
-Stages 1–6L include committed source changes on this branch; stages 5A–5F
-and 6F–6I extend the earlier baseline (stage numbers follow feature areas,
-not chronological order). **No native C++ build,
+The append-only stage log covers substantial source work through 7G
+(including stages 4R–4W, 5I–5O, and 7A–7G). Stage numbers track feature
+areas rather than chronological order. **No native C++ build,
 GPU validation or CTest result has been confirmed passing for these changes.**
 Do not call the entire texture stack production-ready merely because a C++ method exists.
 Read the append-only `docs/agent-handoffs/texture-rhi-2026-11-18.md` for per-stage
@@ -19,15 +19,16 @@ SHA, unverified platforms and the next exact task.
   samplers; GL has independent samplers but only *whole-resource identity* views.
 - **Offscreen passes and MRT:** `RenderTargetPassDesc` selects mips/layers and
   1–4 color attachments, each with its own clear operation, plus optional depth.
-  Metal, GL33/GLES3 and Vulkan now have source implementations for same-format
-  multi-target rendering. Metal and Vulkan graphics pipelines expose explicit
+  Metal, GL33/GLES3 and Vulkan have source implementations for 1–4
+  color outputs, including mixed-format MRT with per-slot pipeline checks. Metal and Vulkan graphics pipelines expose explicit
   color output counts and additional per-slot formats. GLSL/MSL shaders must
   explicitly write the corresponding fragment output locations. Native
   cross-backend GPU validation is still outstanding.
 - **MSAA:** the shared descriptor/resolve contract and Metal allocation, pipeline
   sample counts and per-color resolve operations are implemented in source.
-  GL/Vulkan still reject explicit MSAA resolves; none of these paths has a
-  verified GPU result. Tests in `tests/render/vulkan_tests.cpp` include
+  GL uses multisample renderbuffers with per-color framebuffer blit resolves;
+  Vulkan has multisample images and renderpass resolve attachments. None
+  of these paths has a confirmed passing cross-backend GPU result. Tests in `tests/render/vulkan_tests.cpp` include
   MRT clear/output and nonzero mip/layer rendering, but remain unexecuted.
 - **Reusable native owner:** `engine/gfx/RenderTargetSet.h` provides a
   genre-agnostic owner of color/depth targets and optional MSAA resolve targets.
@@ -49,8 +50,11 @@ SHA, unverified platforms and the next exact task.
   also has 12-face regression coverage. Malformed layer-count overflow and
   contradictory 1D/3D metadata are rejected before resource creation.
   These are source-level fixes, not GPU-certified behavior.
-  DDS signed/exotic formats, non-tight pitch, BasisLZ/UASTC transcoding,
-  HDR/EXR and complete compressed-sRGB native formats remain unavailable.
+  HDR RGBE and a limited uncompressed single-part scanline OpenEXR
+  HALF/FLOAT RGB(A) importer are now available in native C++; BC6H signed
+  and unsigned native HDR compression is mapped by backend. Complete EXR
+  compression (ZIP/PIZ/etc.), DDS signed/exotic formats, non-tight pitch,
+  BasisLZ/UASTC transcoding and all compressed-sRGB variants remain unavailable.
 - **Compressed formats:** source-level native mapping now includes BC4,
   BC5 (RGTC) and EAC_R11 across Metal/GL/Vulkan, subject to GPU capability.
   Shared block-size helpers reject missing/truncated mip and face payloads
@@ -78,6 +82,35 @@ SHA, unverified platforms and the next exact task.
 | 6 | Complete KTX2 and DDS array/cubemap/3D payloads, transcoding, import rules | Container roundtrip, bounds/fuzz tests, material/glTF integration |
 | 7 | Async texture upload/readback, streaming/budget/residency, optional virtual textures | Resource-lifetime stress tests, no read-after-free, deterministic fallback |
 | 8 | Editor resource inspection + feature tests and docs | GPU validation (Metal/Vulkan/GL), mobile/web compatibility gate, README translations |
+
+## Native streaming and HDR import — source-only additions
+
+- `engine/gfx/TextureStreaming.h`: owned GPU texture allocation, deep-copied
+  CPU staging, FIFO per-frame byte/update limits and GPU completion callbacks.
+- `engine/gfx/TextureMipResidency.h`: generation-safe coarse-to-fine residency
+  tracking per mip and array/cube face; no sampler until every coarsest face
+  completes; clamp LOD to contiguous populated levels.
+- `engine/gfx/TextureResidentStreamer.h`: combines both APIs into a
+  `gfx::TextureResidentStreamer` native facade. `stageNext` obtains packed
+  mip/layer/volume bytes from a caller-provided producer, and `drain`
+  submits them on the render/device thread. `sampledTexture` never exposes
+  incomplete or failed resources. `destroy` cancels pending uploads.
+- `engine/render/HdrTexture.h`: `parseRadianceHdr` / `loadRadianceHdr`
+  for Radiance RGBE in linear RGBA16F.
+- `engine/render/ExrTexture.h`: `parseOpenExr` / `loadOpenExr`
+  for single-part uncompressed scanline OpenEXR with HALFs and FLOATs.
+  Compressed/tiled/deep/multipart EXR is deliberately rejected.
+- `BC6H_UFloat` and `BC6H_SFloat` preserve signed/unsigned HDR block
+  payloads for DDS/KTX2 and map them to capable Metal/GL/Vulkan hardware.
+
+**VRAM caveat:** Ordinary streaming allocates the full texture mip chain
+up front; it budgets and defers *uploads* rather than physically releasing
+unresident mip memory. Real sparse/virtual textures with GPU page tables,
+feedback and physical-page eviction are **not implemented**.
+
+**Testing caveat:** Headers and test fixtures have been committed, but
+native compilation, CTest, API validation and GPU sampling remain
+**NOT RUN**. Keep PR #21 Draft until all verification gates pass.
 
 ## Current compatibility constraints
 
@@ -225,9 +258,32 @@ cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
 cmake --build build/texture-rhi --target \
   aiverse_texture_contract_test aiverse_render_target_set_test \
   aiverse_ktx2_layers_test aiverse_dds_layers_test \
-  aiverse_texture_asset_test
+  aiverse_texture_asset_test aiverse_texture_streaming_test \
+  aiverse_texture_mip_residency_test aiverse_texture_resident_streamer_test \
+  aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|hdr_texture|exr_texture)
+```
+
+On Vulkan-enabled Linux/Windows hosts, also build
+`aiverse_vulkan_tests` and run `ctest -R '^vulkan_backend$'` with
+a working Vulkan driver (Mesa Lavapipe is acceptable). Distinguish
+real GPU execution from a driver's-unavailable skip. macOS Metal,
+Windows GL33, Android GLES3 and WebGL2 require separate builds
+and actual visual/capture tests. **None of these results is claimed
+as passed here.**
+
+## References and handoff
+
+- `engine/gfx/Gfx.h` — public resource contract and descriptor validation
+- `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/metal/GfxMetal.mm`,
+  `engine/gfx/vulkan/VkResources.cpp` — fail-closed allocation until backend support
+- `tests/render/texture_contract.cpp` — CPU-only descriptor checks
+- The append-only stage log is `docs/agent-handoffs/texture-rhi-2026-11-18.md`.
+
+Keep code stage commits separate from handoff commits, record exact SHA and test statuses
+in the handoff **after every stage**, and preserve upstream inspector/ECS changes.
+
 ```
 
 On Vulkan-enabled Linux/Windows hosts, also build

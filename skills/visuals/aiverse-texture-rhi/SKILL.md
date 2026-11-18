@@ -23,53 +23,51 @@ never equate source presence with a passing GPU test.**
 | DDS DX10, KTX2 arrays/cubes/volumes | `parseDdsTexture`, `parseKtx2`, `uploadContainerTexture` | `CompressedImage` keeps all faces/mips |
 | Budgeted deferred texture upload | `gfx::TextureStreamQueue` | Owns GPU texture and staged bytes; `drain()` on device thread |
 | Safe coarse-to-fine sampling | `gfx::TextureMipResidency` | Only create/bind sampler when complete coarse-to-fine mips resident |
+| Unified native streaming | `gfx::TextureResidentStreamer` | Owns queue+residency; gates sampling, tracks completions and retries |
+| Radiance `.hdr` / limited EXR | `render::loadRadianceHdr`, `render::loadOpenExr` | Linear RGBA16F; EXR is uncompressed scanline HALF/FLOAT RGB[A] only |
 
-### Example: mip-streamed Texture2DArray
+### Example: mip-streamed Texture2DArray (native C++)
 
 ```cpp
-#include "engine/gfx/TextureStreaming.h"
-#include "engine/gfx/TextureMipResidency.h"
+#include "engine/gfx/TextureResidentStreamer.h"
 
-gfx::TextureStreamQueue streamer(device);
+gfx::TextureResidentStreamer stream(device);
 gfx::TextureDesc desc;
 desc.width = desc.height = 256;
 desc.dimension = gfx::TextureDimension::Texture2DArray;
 desc.arrayLayers = 4;
 desc.mipLevels = 9;
-const auto id = streamer.createTexture(desc);
-gfx::TextureMipResidency residency;
-if (id.valid() && residency.initialize(desc)) {
-    // First claim is mip 8, array layer 0 (coarsest first).
-    gfx::TextureMipRequest request = residency.claimNext();
-    // The asset loader provides the full mip/layer payload and dimensions.
-    // Do not read texture bytes from disk on the GPU render thread.
-    auto upload = gfx::TextureUploadDesc{};
-    upload.mipLevel = request.mip;
-    upload.arrayLayer = request.layer;
-    upload.width = std::max(1, desc.width >> request.mip);
-    upload.height = std::max(1, desc.height >> request.mip);
-    // Upload only if CPU data exists; use exactly the RGBA8 source byte count.
-    auto ticket = streamer.enqueue(id, upload, assetBytes.data(), assetBytes.size());
-    if (!ticket.valid()) residency.complete(request, false);
-    streamer.drain([&](gfx::TextureUploadTicket done, gfx::TextureStreamId resource, bool ok) {
-        if (resource == id && done == ticket) residency.complete(request, ok);
-    });
-    gfx::SamplerDesc sampler, clamped;
-    if (residency.residentSampler(sampler, clamped)) {
-        // Create and bind a sampler with clamped LOD, never sample absent mips.
-        auto nativeSampler = device.createSampler(clamped);
-        // Use nativeSampler with a compatible dimension-aware texture/view.
-        if (nativeSampler.valid()) device.destroySampler(nativeSampler);
+const auto resource = stream.create(desc);
+if (resource.valid()) {
+    // Demo producer. Replace with pre-decoded packed mip/layer data from
+    // your game's asset loader; avoid file I/O on the GPU render thread.
+    auto ticket = stream.stageNext(resource,
+        [](gfx::TextureMipRequest, int w, int h, int depth,
+           std::vector<uint8_t>& out) {
+            out.assign(size_t(w) * size_t(h) * size_t(depth) * 4u, 255);
+            return true;
+        });
+    if (ticket.valid()) stream.drain();
+    gfx::SamplerDesc requested, resident;
+    const auto sampled = stream.sampledTexture(resource);
+    if (sampled.valid() && stream.residentSampler(resource, requested, resident)) {
+        // Create independent GPU sampler using the returned safe mip limits.
+        // Bind it with an identity/full-resource TextureViewDesc on GL or
+        // a compatible subresource view on Metal/Vulkan.
+        auto sampler = device.createSampler(resident);
+        if (sampler.valid()) device.destroySampler(sampler);
     }
-    streamer.destroy(id);
+    stream.destroy(resource);
 }
 ```
 
-The snippet shows one upload; real schedulers track **every** ticket to its
-`TextureMipRequest`, issue all layers of each mip and create a new sampler
-only after a complete mip range becomes safe. A completion callback runs
-after a `drain` loop on the render thread. If a ticket is cancelled,
-call `residency.complete(request, false)` yourself.
+The first request contains **one** face of the coarsest mip. Stage
+remaining faces and finer mips during subsequent frames. `drain()`
+submits bounded updates on the render thread; it does not load assets
+from disk asynchronously. For per-face/full-volume data you must provide
+a producer that fills exactly the requested packed byte count. Bind
+nothing until `sampledTexture` becomes valid. The facade owns its GPU
+texture handles and must be destroyed before `gfx::Device`.
 
 ### Correctness and compatibility
 
@@ -95,9 +93,12 @@ cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
 cmake --build build/texture-rhi --target \
   aiverse_texture_contract_test aiverse_render_target_set_test \
   aiverse_texture_streaming_test aiverse_texture_mip_residency_test \
+  aiverse_texture_resident_streamer_test aiverse_hdr_texture_test \
+  aiverse_exr_texture_test \
+
   aiverse_ktx2_layers_test aiverse_dds_layers_test aiverse_texture_asset_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|ktx2_layers|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|hdr_texture|exr_texture|ktx2_layers|dds_layers|texture_asset)$'
 ```
 
 Build the editor and native client to catch API/layout regressions.

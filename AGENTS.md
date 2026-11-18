@@ -44,7 +44,8 @@ offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
 `skills/visuals/aiverse-texture-rhi/SKILL.md` and
 `docs/texture-rhi.md`. Use the existing `gfx::Device`,
 `gfx::RenderTargetSet`, `gfx::TextureStreamQueue`,
-`gfx::TextureMipResidency`, `render::parseKtx2`,
+`gfx::TextureMipResidency`, `gfx::TextureResidentStreamer`,
+`render::loadRadianceHdr`, `render::loadOpenExr`, `render::parseKtx2`,
 `render::parseDdsTexture` and `render::uploadContainerTexture`.
 Do not regenerate or fork genre-specific texture managers in FPS,
 RTS or other projects. Rendering/streaming is presentation state:
