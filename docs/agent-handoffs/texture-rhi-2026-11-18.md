@@ -958,3 +958,35 @@ immediate next code change before claiming backward compatibility.
 add a Vulkan test with two fragment outputs and distinct
 color clears, then compile and execute on a validation-layer
 GPU. Keep code and handoff as separate commits.
+
+## Stage 4N — restore permissive legacy Vulkan pipeline binding (2026-11-18)
+
+**Implementation commit:** `a207beab197b5d2c2556d94072b9f653d3bac8df`.
+**Paths:** `engine/gfx/vulkan/VkDevice.h`, `engine/gfx/vulkan/VkDraw.cpp`.
+
+**Fix:** Strict color output count/format validation introduced for
+new MRT passes in Stage 4M was also running on legacy
+`beginPass(PassDesc)`. That could reject existing depth-only
+rendering, sRGB render targets or HDR shader variants.
+Track a separate `explicitMrtPass_` flag, set only by
+successful `beginRenderTargets`, reset by legacy
+`beginPass` and `endPass`. Enforce exact count/format
+checks only while that flag is set. Legacy pipelines still
+select their variants using the actual number of color
+attachments in the legacy pass, preserving old permissive
+shader/pipeline policy.
+
+**Compatibility:** No data format, saves or gameplay changes.
+Existing screen/legacy shadow/depth passes retain their
+previous source semantics while new MRT correctly enforces
+explicit format/count contracts.
+
+**Verification:** GitHub code commit confirmed; native Vulkan
+build, lavapipe, integration GPU tests and CI: **NOT RUN**.
+This is a source-level regression fix pending a real compiler.
+
+**Next:** Add MRT test that creates two RGBA8 color textures,
+renders two distinct fragment outputs, and samples both
+textures afterward. Check Vulkan validation layers for
+VkRenderPass/graphics pipeline compatibility. Then address
+MSAA/resolve for GL and Vulkan and update handoff separately.
