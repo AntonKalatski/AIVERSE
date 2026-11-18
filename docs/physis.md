@@ -14,6 +14,7 @@ PHYSIS is the **genre-independent** nature simulation for AIVERSE. Weather, loca
 | `engine/physis/PhysisGravity.h` | World gravity baseline, additive/priority gravity fields, `gravityAt` |
 | `engine/physis/PhysisStorm.h` | Opt-in hurricane/tornado vortex, storm tracks, climate rain/pressure forcing |
 | `engine/physis/PhysisForces.h` | Quadratic wind drag, force receiver/output ECS and pure force sampling |
+| `engine/physis/PhysisPresentation.h` | Unified read-only `NatureFieldSample` for native Terrain/FX/Physics hosts |
 | `engine/physics/PhysisBox3D.h` | **Optional Box3D** physics::Scene adapter; does not modify PHYSIS core |
 | `engine/physis/PhysisIntegration.h` | Generic Simulation::addSystem, persistent ECS schemas, read-only presentation feed |
 
@@ -27,8 +28,10 @@ void MyGame::setup(aiverse::Simulation& sim, const aiverse::Json&, const aiverse
     options.climate.width = 32;
     options.climate.height = 32;
     options.enableDisasters = true;
-    options.enableStorms = true;  // optional hurricane/tornado update
-    options.enableForces = true;  // optional ECS ForceReceiver/ForceOutput pass
+    options.enableStorms = true;        // optional hurricane/tornado update
+    options.enableForces = true;        // optional ECS ForceReceiver/ForceOutput pass
+    options.enableWindZones = true;     // persist WindZone/WindShelter when used
+    options.enableGravityFields = true; // persist GravityField/GravitySettings when used
     // When NEREID owns water: options.floodMode = physis::FloodMode::ExternalAuthority;
     aiverse::physis::install(sim, options);
 }
@@ -73,6 +76,8 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Stage 9: [Gravity fields](agent-handoffs/physis-gravity-2026-11-18.md)
 - Stage 10: [Hurricane and tornado events](agent-handoffs/physis-storm-2026-11-18.md)
 - Stage 11: [Forces and Box3D adapter](agent-handoffs/physis-forces-box3d-2026-11-18.md)
+- Stage 12: [Numeric safety and CI](agent-handoffs/physis-numerical-ci-2026-11-18.md)
+- Stage 13: [Unified nature field sampling and save-schema compatibility](agent-handoffs/physis-sampling-persistence-2026-11-18.md)
 
 Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
 
@@ -133,3 +138,40 @@ Physics is opt-in. Run `./run-tests.sh --filter '^physis_'` and, with
 There are no physically accurate Navier–Stokes hurricanes, tornado debris
 destruction, N-body orbital solvers, Terra foliage wind deform or water surge
 in the current implementation.
+
+## Read-only combined sampling (for Terra, VFX, Physics and tools)
+
+```cpp
+#include "engine/physis/PhysisPresentation.h"
+
+aiverse::physis::NatureFieldSample nature;
+if (aiverse::physis::sampleNatureField(sim.world(), queryPosition, nature)) {
+    const auto wind = nature.windVelocity; // 3D Fixed metres per second
+    const auto gravity = nature.gravityAcceleration; // m/s squared
+    if (nature.hasAtmosphere) {
+        const auto rain = nature.environment.rain; // normalized, not water volume
+        const auto snow = nature.environment.snowpack;
+    }
+    if (nature.hasHazards) {
+        const auto fire = nature.hazards.fire;
+    }
+}
+```
+
+`sampleNatureField` is immutable and returns true when PHYSIS is initialized,
+including outside the climate grid; `hasAtmosphere`/`hasHazards` indicate
+which grid data is present. It does not depend on TerraWeave/NEREID/Box3D
+headers. Terra should consume this as a read-only environment overlay and
+sample NEREID's canonical waterline separately. **No production Terra/NEREID
+adapter or render scene is linked yet.**
+
+**Save compatibility:** `Simulation::PersistentEcsRegistry` stores a strict
+list of schema IDs. Therefore PHYSIS **does not register** the new optional
+wind/gravity/storm/force component types by default. Set
+`InstallOptions.enableWindZones` when persisting `WindZone`/`WindShelter`,
+`enableGravityFields` for `GravityField`/`GravitySettings`,
+`enableStorms` for `StormEvent`, and `enableForces` for
+`ForceReceiver`/`ForceOutput`. Existing Stage 1–5 save registry remains
+unchanged when these switches are off. **Switching flags on an existing saved
+game changes the manifest and is not an automatic save migration.** Save and
+load must use the same feature flags. Tests are authored, not run.
