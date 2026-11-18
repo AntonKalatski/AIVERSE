@@ -2,6 +2,7 @@
 // Authored by any genre's editor map; never depends on editor, RTS/FPS or Box3D.
 #pragma once
 #include "PhysisFieldAssets.h"
+#include "PhysisRuntimeFields.h"
 #include "engine/data/Json.h"
 #include <optional>
 #include <stdexcept>
@@ -86,6 +87,20 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
     const auto fields = parseFieldAssets(map["physis"], *options);
     install(sim, *options);
     spawnFieldAssets(sim.world(), fields);
+    return true;
+}
+
+// Opt-in alternative to installFromMap for projects requiring stable authored
+// field identities across snapshots and native ECS save/replay. This changes
+// the persistence manifest intentionally; do not switch existing saves silently.
+inline bool installTrackedFromMap(Simulation& sim, const Json& map) {
+    const auto options = optionsFromMap(map);
+    if (!options) return false;
+    const auto fields = parseFieldAssets(map["physis"], *options);
+    install(sim, *options);
+    sim.registerPersistentResource<RuntimeFieldRegistry>(
+        "physis.authored_field_registry", 1);
+    reconcileTrackedRuntimeFields(sim.world(), fields);
     return true;
 }
 
