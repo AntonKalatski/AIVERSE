@@ -673,6 +673,11 @@ if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
     add_executable(aiverse_motionweave_bench tools/animation/motionweave_bench.cpp)
     target_link_libraries(aiverse_motionweave_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_replication_cues_tests tests/animation/replicated_cues.cpp)
+    target_link_libraries(aiverse_motionweave_replication_cues_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_replicated_cues COMMAND aiverse_motionweave_replication_cues_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
