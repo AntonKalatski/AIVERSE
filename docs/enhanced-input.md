@@ -190,3 +190,7 @@ When the embedded Game tab is hidden behind another dock tab, `Editor::event` no
 ### Modifier-to-trigger ordering
 
 Action-level modifiers run before the final action value determines lifecycle. For example, an Axis1D action with an Action `DeadZone(0.3)` is inactive for stick values below the threshold and cannot emit a normal `Triggered`; moving past the threshold starts it, dropping below completes it. Mapping-level Pressed/Tap/Released pulses retain their momentary event behavior.
+
+## Input-specific CI
+
+`.github/workflows/enhanced-input.yml` checks standalone input core, platform adapter, JSON/profile persistence and RTS routing on Linux, macOS and Windows. It is a focused cross-platform gate, **not** a substitute for full `aiverse_editor`, `aiverse_client`, `aiverse_fps_client`, mobile/web builds or interactive editor validation. Review the workflow run itself before claiming these tests have passed.
