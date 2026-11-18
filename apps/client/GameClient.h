@@ -323,6 +323,7 @@ private:
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
     int worldRadius_ = 2;
+    render::PrismaVolumeStack prismaVolumes_; // camera-local PRISMA presentation profiles, nonauthoritative
     render::Prisma prisma_;               // post-processing: game.json / map "postfx" (engine/render/Prisma.h)
     render::PrismaQuality prismaBase_ = render::PrismaQuality::Medium;   // tier before the governor stepped down
     void configurePrisma(const Json& map);
