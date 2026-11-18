@@ -1142,3 +1142,50 @@ before calling this stage validated.
   `tests/animation/replicated_cues.cpp` accordingly. After committing
   that change, append Stage 46 in a separate handoff commit.
 
+## Stage 46 — remove FPS action semantics from MotionWeave core (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Code SHA:** `2d809da0267463b0bf7be8b460d79f6dfd6d0eb8`.
+- **Code paths:** new `libraries/include/aiverselib/animation/AnimationActionEdges.h`;
+  new `modules/fps/view/FpsAnimationEvents.h`;
+  `libraries/include/aiverselib/animation/EcsAnimationSystems.h`;
+  `apps/fps/client.cpp`, root `CMakeLists.txt` and
+  `modules/fps/CMakeLists.txt`; new `tests/animation/action_edges.cpp` and
+  `tests/fps/animation_actions.cpp`.
+  Deleted FPS-only `libraries/include/aiverselib/animation/ReplicatedAnimationActions.h`
+  and moved its old regression from `tests/animation/replicated_cues.cpp`
+  into the FPS test directory.
+- **Core design/API:** `AnimationActionFrame` contains opaque
+  `generation`, `revision` and named counters/booleans.
+  `AnimationActionEdges::observe` reports generic increased counters,
+  flag activation/deactivation and source-generation change, with
+  stale-revision suppression. It knows NO gameplay terms or FPS/RTS
+  types. `playAnimationSlot` was placed alongside
+  `AnimationMontageSlotsComponent` in the common ECS header.
+- **Host-only behavior:** `aiverse::fps::view::ReplicatedAnimationActions`
+  translates FPS `tick/life/shots/reloadUntil/health` to generic
+  named action edges and retains existing cosmetic shot/reload/death
+  flags. FPS client now includes the FPS-host header.
+- **Compatibility:** no gameplay, rendering math, animation Graph,
+  server/net protocol, save/rollback, or editor schema changes.
+  This unmerged feature branch intentionally **relocates** the
+  FPS-specific experimental helper; consumers of the old
+  `aiverselib/animation/ReplicatedAnimationActions.h` must adopt the
+  FPS-host include `modules/fps/view/FpsAnimationEvents.h`.
+  The core is now independent of this genre-specific event logic.
+- **Tests:** `motionweave_action_edges` (generic) and
+  `fps_animation_actions` (FPS host) are registered. **NOT RUN**
+  because the user deferred builds/tests. CI status not asserted.
+- **Risks/limitations:** generic event edges compare counters and
+  boolean states rather than interpreting absolute gameplay actions;
+  a host must use a stable revision/generation and do its own mapping.
+  Old external consumers of the deleted unmerged header need migration.
+- **Next concrete action:** use `MotionWeaveSourceBridge.h` to build a
+  *genre-independent* animation host adapter for the RTS presentation
+  pipeline. Keep RTS order/unit data translation confined to
+  `modules/rts/view`, project generic named graph values, and keep
+  its existing contact IK/procedural effects until parity is known.
+  No new FPS/RTS conditionals or include dependencies in MotionWeave.
+  Commit code first, then Stage 47 handoff before another stage.
+
