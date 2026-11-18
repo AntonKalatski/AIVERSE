@@ -1359,3 +1359,65 @@ would grow any draw bounds use the full upload. This is a
 correctness-first fast path. GPU/device/CTest testing is owned by
 another agent and **has not been executed** in this development
 stage.
+
+## Stage 13 — bounded GPU residency for Horizon regions
+
+`TerraWeaveHorizonScene` now reuses previously **uploaded**
+region `render::Model` resources after the observer returns
+to an earlier camera cell. This GPU residency is **distinct**
+from the existing CPU `maxCachedRegions` atlas LRU and from
+the streaming/staging worker budget.
+
+`engine/render/TerraWeaveHorizonGpuCache.h` implements
+render-thread-only `HorizonGpuRegionCache`. An inactive
+entry owns its uploaded RHI `Model`, matching immutable
+CPU bake when available, optional terrain CPU
+vertex/index data for incremental updates, camera
+coordinates, model bounds-related metadata and a
+source-generation tag. `take` transfers model ownership
+without copying or reuploading geometry; `retain` can
+evict LRU entries by count and estimated GPU bytes;
+`prune` rejects authored-terrain revisions, and
+`clear(device)` explicitly destroys cached buffers
+and textures.
+
+Configurable `terraweaveHorizon` manifest properties:
+- `maxCachedGpuRegions`: 0–3 additional GPU region
+  models (Balanced default 1; Minimal/Mobile 0,
+  High requests 2).
+- `gpuCacheBudgetMiB`: 8–96 MiB for the **additional**
+  cached regions (default 32 MiB). The current visible
+  model and async upload staging are separate, bounded
+  through their existing contracts. Approximate byte
+  accounting includes vertex/index buffers, atlas RGBA8
+  and 4/3 mip allowance, but not exact driver overhead.
+
+Navigation A→B retains the visible A model while B
+is prepared. On successful B publication, A can
+enter the bounded GPU cache. On B→A cache hit, A
+becomes active immediately with **no new CPU region
+bake and no full GPU model upload**; meanwhile
+canceled background jobs are still drained to
+release staging reservations. Source revisions
+invalidate all stale cache entries and reject late
+CPU results from old landscape snapshots.
+
+`TerraWeaveHorizonScene::runtimeStats()`
+now reports `gpuCachedRegions`, `gpuCachedBytes`
+(estimated extra GPU use), and `gpuCacheHits`.
+These are instrumented counters, not measured FPS.
+
+**Lifecycle and correctness:** all GPU resource
+retirement goes through `render::releaseModel(device)`
+on the owning RHI thread and explicit `shutdown(device)`.
+No per-tree ECS entities, separate renderer,
+backend-specific calls, or unbounded GPU caching.
+A disabled/opt-out Horizon creates no new caches.
+Quality presets and native projects can opt out by
+setting `maxCachedGpuRegions=0`.
+
+**Status:** source code was committed, but builds,
+CTest, platform GPU screenshots, GPU memory tracking,
+and frame-time measurements are the separate
+validation agent's responsibility. Runtime GPU
+reuse and lifecycle are not yet verified.
