@@ -4997,3 +4997,35 @@ Verification: GitHub commit/ref update only; no native build
 or GPU test RUN. Next: complete shader/pipeline/descriptors
 dispatch, read/write layout barriers, ownership cleanup;
 then compile and fix native tests.
+
+## Stage 8E — Vulkan compute pipeline + synchronized storage images (2026-11-18)
+
+Code commit: e47e11eeb8213204f0305bcbbc569c75bc87bc84.
+Files: new engine/gfx/vulkan/VkCompute.cpp and CMakeLists.txt.
+Adds real VulkanDevice::createCompute/destroyCompute/beginCompute/
+setComputeBuffer/setComputeTexture/bindComputeStorageTexture/
+setComputeUniforms/dispatch/endCompute definitions, completing
+Stage 8D backend virtual methods. CMake compiles VkCompute.cpp.
+Compiles GLSL compute via Stage 8C, creates VkComputePipeline
+with descriptors set0 binding0..3 STORAGE_IMAGE, 4..11
+COMBINED_IMAGE_SAMPLER, 12..15 STORAGE_BUFFER, 16 UBO.
+Descriptor pools are bounded, one dispatch per pool and
+deferred until the completed GPU frame serial. A 4KB max
+uniform staging buffer is GPU-owned until completion.
+dispatch uses 64 X threads per group, validates GPU group
+counts, checks read/write alias, transitions storage images
+SHADER_READ_ONLY->GENERAL and back with conservative
+all-commands memory barriers. GPU queue must expose compute
+and storage formats RGBA8/RGBA16F, 2D/array/3D.
+Limitations: this is a constrained Vulkan shader resource
+binding ABI, not automatic translation of legacy Metal
+ComputeDesc.msl. GLSL source must use the documented
+Vulkan binding layout; 4 writable image slots, 8 sampled
+slots and 4 storage buffers. No transparent emulation in GL.
+Compatibility: additive Vulkan backend; other RHI unchanged.
+Verification: GitHub commit/ref succeeded. Native Vulkan SDK
+compiler/glslang compile NOT RUN; real GPU descriptor validation
+NOT RUN. Explicit PASS cannot be claimed.
+Next: add Vulkan compute tests with GLSL shader writing
+rgba8/rgba16f, readback exact pixel values and verify barriers.
+Review compile + device limits before releasing.
