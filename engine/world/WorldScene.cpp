@@ -53,6 +53,12 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
 }
 WorldScene::~WorldScene()=default;
+void WorldScene::setNereidSurfaces(std::vector<NereidSceneSurface> surfaces) {
+    nereidWater_.setSurfaces(std::move(surfaces));
+}
+size_t WorldScene::nereidVisibleSurfaceCount()const {
+    return nereidWater_.visibleSurfaceCount();
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
@@ -136,13 +142,16 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             resident_[cell]=prepared;return true;
         }catch(...){releaseChunk(device,*prepared);throw;}
     },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
+    nereidWater_.update(device,observers.empty()?nullptr:&observers.front());
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
+    nereidWater_.draw(renderer,origin,size);
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
 }
 void WorldScene::shutdown(gfx::Device& device) {
+    nereidWater_.shutdown(device);
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
 }
 }
