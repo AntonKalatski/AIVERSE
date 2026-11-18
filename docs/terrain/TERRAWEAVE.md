@@ -431,3 +431,56 @@ mesh and silhouette image, material cutout, transparent/bark/leaf pixels,
 model switching, camera orientation and stable identity. Isolated CI
 contains this target. See `docs/terrain/AGENT_HANDOFF.md` for commands
 and exact verification status.
+
+## Stage 3a — editor and MCP integration (opt-in heightfield baking)
+
+The legacy RTS `TerrainWindow` now has a **TerraWeave** section with
+seed, average height, relief, noise period and octaves. It exposes two
+actions using the same `Workspace::call` operations as agents:
+
+- `terraweave_preview`: returns an integer-cm 9×9 height sample grid
+  plus `minCm` and `maxCm`; does **not** edit the map.
+- `terraweave_generate`: explicitly bakes a full heightfield into the
+  existing `MapDoc::corners`, creates an undo snapshot, calls
+  `MapDoc::touched()`, queues a `Change::Map` invalidation and writes
+  sanitized generator metadata into `map.extra.terraweave` (version 1).
+
+Both operations are registered in
+`apps/editor/core/TerraWeaveOps.h` via `registerTerrainOps`
+and are reachable through the existing editor/MCP registry. Example:
+
+```json
+{
+  "seed": 42,
+  "baseHeightCm": 0,
+  "reliefCm": 5000,
+  "basePeriodCm": 6400,
+  "octaves": 5,
+  "originXcm": 0,
+  "originZcm": 0,
+  "cellSizeCm": 100,
+  "overwrite": false
+}
+```
+
+**Safety/compatibility:** Without explicit `overwrite: true`, the
+adapter refuses to replace either an existing corner heightfield or an
+authored detail surface. With explicit replacement, the previous
+detail layer (including splat/file/scale) is cleared *after* recording
+the undo snapshot so it cannot mask the new corners in the renderer.
+Planet and FPS maps are rejected by this legacy `MapDoc` adapter;
+TerraWeave's generic C++ world generator and ForestAdapter still work
+independently of genre. The operation does **not** silently change
+`rules.terrain.model`; game authors choose whether corners influence
+simulation. No project changes occur until the user calls Generate.
+
+**Limitations:** `preview` is a 9×9 numeric sample, not a live 3D
+preview. Generation is a one-shot bake, not procedural streaming,
+a persistent non-destructive graph or a paintable biome editor.
+The `terraweave` map block records generator inputs but is not yet
+automatically re-evaluated on load.
+
+**Testing:** `tests/terraweave_ops_test.cpp` checks param defaults,
+bounds rejection, versioned metadata and deterministic preview.
+The test does not construct a live `Workspace` or render screenshots;
+an end-to-end editor/GUI/MCP regression remains mandatory.
