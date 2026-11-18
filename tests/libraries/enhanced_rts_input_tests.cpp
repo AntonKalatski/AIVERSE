@@ -36,7 +36,7 @@ int main() {
     route.onEvent(key(p::Key::H,false),true);
     CHECK(contains(route.onEvent(key(p::Key::Space),true),"FocusCamera"));
     route.onEvent(key(p::Key::Space,false),true);
-    CHECK(route.system().registeredContexts().size()==2);
+    CHECK(route.system().registeredContexts().size()==3);
     CHECK(!route.system().state("CameraPan")->active);
     route.onEvent(key(p::Key::Up),true);
     CHECK(route.system().state("CameraPan")->value.y==1.0f);
@@ -45,6 +45,14 @@ int main() {
     route.onEvent(key(p::Key::Up,false),true);
     route.onEvent(key(p::Key::Right,false),true);
 
+    p::Event wheel;wheel.type=p::EventType::MouseWheel;wheel.wheelY=2.0f;
+    auto zoom=route.onEvent(wheel,true);
+    CHECK(contains(zoom,"CameraZoom"));
+    CHECK(route.system().state("CameraZoom")->value.x==2.0f);
+    CHECK(route.onEvent(wheel,false).empty()); // UI owns this wheel
+    p::Event click;click.type=p::EventType::MouseDown;click.button=0;
+    CHECK(contains(route.onEvent(click,true),"Select"));
+    click.type=p::EventType::MouseUp;route.onEvent(click,true);
     // An active UI/modal context must prevent keys from leaking into gameplay.
     CHECK(route.onEvent(key(p::Key::A),false).empty());
     CHECK(contains(route.onEvent(key(p::Key::A),true),"AttackMove"));
