@@ -12,6 +12,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <set>
 #include <vector>
 
 namespace aiverse::gfx {
@@ -30,7 +31,8 @@ struct VirtualTexturePrefetchConfig {
     int mipLevels = 0, virtualLayers = 1;
     // Strict CPU and work bounds even for viewport-wide mip-zero requests.
     size_t maxRegions = 256;
-    size_t maxCandidates = 4096;
+    size_t maxCandidates = 4096; // nonresident pages held for priority sorting
+    size_t maxExaminedPages = 16384; // resident+nonresident key lookups per plan
     size_t maxRequestsPerFrame = 32;
     bool pinCoarsest = true;
 };
@@ -42,6 +44,7 @@ struct VirtualTexturePrefetchRequest {
 struct VirtualTexturePrefetchStats {
     size_t invalidRegions = 0;
     size_t uniqueCandidates = 0;
+    size_t examinedPages = 0;
     size_t alreadyResident = 0;
     size_t deferredByBudget = 0;
     size_t produced = 0;
@@ -63,6 +66,7 @@ public:
             cfg.virtualLayers < 1 || cfg.virtualLayers > 65536 ||
             cfg.maxRegions == 0 || cfg.maxRegions > 4096 ||
             cfg.maxCandidates == 0 || cfg.maxCandidates > (size_t(1) << 20) ||
+            cfg.maxExaminedPages == 0 || cfg.maxExaminedPages > (size_t(1) << 20) ||
             cfg.maxRequestsPerFrame == 0 ||
             cfg.maxRequestsPerFrame > cfg.maxCandidates)
             return false;
@@ -130,6 +134,11 @@ public:
             bool pin = false;
         };
         std::map<VirtualPageKey,Candidate> unique;
+        // Skip already resident or in-flight tiles during enumeration, not
+        // only after the candidate cap fills with already-known coarse mip
+        // pages. A separate visit budget prevents huge resident regions from
+        // causing unbounded map lookups and callback invocations.
+        std::set<VirtualPageKey> skipped;
         bool full = false;
         for (int mip=config_.mipLevels-1; mip>=0 && !full; --mip) {
             for (const auto& region : valid) {
@@ -156,7 +165,17 @@ public:
                                                  mip == config_.mipLevels-1;
                             continue;
                         }
-                        if(unique.size()==config_.maxCandidates) {
+                        if (skipped.find(key)!=skipped.end()) continue;
+                        if (stats_.examinedPages == config_.maxExaminedPages) {
+                            full=true; break;
+                        }
+                        ++stats_.examinedPages;
+                        if (exactResident && exactResident(key)) {
+                            skipped.emplace(key);
+                            ++stats_.alreadyResident;
+                            continue;
+                        }
+                        if (unique.size()==config_.maxCandidates) {
                             full=true; break;
                         }
                         unique.emplace(key,Candidate{
@@ -181,10 +200,6 @@ public:
             return a.key.x<b.key.x;
         });
         for(const auto& candidate:ordered) {
-            if (exactResident && exactResident(candidate.key)) {
-                ++stats_.alreadyResident;
-                continue;
-            }
             if (output.size() == config_.maxRequestsPerFrame) {
                 ++stats_.deferredByBudget;
                 continue;
