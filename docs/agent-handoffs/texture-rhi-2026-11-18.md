@@ -4326,3 +4326,35 @@ views, coarse-first order, clipping, exact-resident exclusion and
 candidate/request limits, then integrate with the existing
 VirtualTextureFileStreamer requestPage API. Keep per-stage
 implementation/handoff separate.
+
+## Stage 7W — UV visibility prefetch CPU fixture and verification target (2026-11-18)
+
+Source commits: 568a75fe6f2f08cb6c82b66f73d2be18e9a498a5
+(fixture + test registration), 445f393060671c79760c367f5b3ad17b53f5e814
+(correct overlapping visible-region candidate count).
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+Files: tests/render/virtual_texture_prefetch.cpp, CMakeLists.txt,
+tools/verify-texture-rhi.sh.
+
+Implementation: Register aiverse_virtual_texture_prefetch_test as
+CTest virtual_texture_prefetch and add it to the focused verifier.
+CPU-only tests exercise coarsest-mip priority, multiple virtual
+layers, exact-resident omission rather than parent-fallback omission,
+UV clamping, overlapping rectangle deduplication, invalid/nonfinite
+coverage, stable ordering, pinned fallbacks, maxRegions,
+maxCandidates and maxRequestsPerFrame. Test fixture count was
+corrected after source review: 8 distinct pages for overlapping
+regions in the tested mip geometry, not 12.
+
+Compatibility: No native renderer, graphics backend, game ECS or
+save/network changes. Test code only; planner remains the Stage 7V
+engine/gfx/VirtualTexturePrefetch.h source.
+
+Actual verification: GitHub source and correction commits succeeded.
+CMake compile NOT RUN, CTest NOT RUN, full native build NOT RUN,
+GPU sampling NOT RUN; no passing status is claimed.
+
+Next: Provide optional, genre-independent requestPage integration
+with VirtualTextureFileStreamer. It must not interpret parent
+fallback as exact residency. Then document native game integration,
+with a source commit and a separate append-only handoff.
