@@ -50,11 +50,18 @@ offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
 `gfx::VirtualTextureFeedbackPass`,
 `Device::readTextureAsync`,
 `render::loadRadianceHdr`, `render::loadOpenExr`, `render::parseKtx2`,
-`render::parseDdsTexture` and `render::uploadContainerTexture`.
+`render::parseDdsTexture`, `render::uploadContainerTexture`,
+`render::uploadKtx2WithLibktx`, and `render::loadOpenExrWithLibrary`.
 Do not regenerate or fork genre-specific texture managers in FPS,
 RTS or other projects. Rendering/streaming is presentation state:
 do not make it ECS-authoritative or add it to deterministic save hashes.
 Native project modules can include these public C++ headers directly.
+Optional BasisLZ/UASTC LDR and compressed OpenEXR decoding use
+explicit system Khronos libktx and OpenEXR 3 build flags; do not
+copy codecs into genre modules. Vulkan writable compute textures
+are opt-in and require capability checks; do not assume GL33/GLES3
+or WebGL2 support. The GPU inspector now permits bounded 3D
+mip-slice readback on native backends, not compressed/depth/MSAA.
 
 Texture format/dimension feature support differs per backend:
 explicitly check `supports`, `supportsTextureDimension` and resource

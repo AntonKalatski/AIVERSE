@@ -384,8 +384,8 @@ and an approximate `estimateTextureFootprint` size. It is an estimate,
 dummy resources are excluded.
 
 In the editor, open **Графика → GPU Текстуры**. The window is closed by
-default; it supports filtering, sorting and a basic 2D single-sample
-thumbnail (not array/cubemap/depth/MSAA preview). Neither the editor
+default; it supports filtering, sorting and an optional async mip/layer/face/volume-slice
+CPU preview on supported uncompressed formats (not depth/MSAA/blocks). Neither the editor
 window nor the backend enumeration has been compiled or tested on a native
 target in this environment.
 
@@ -419,11 +419,86 @@ return the same dimensions, layers, faces and number of mip levels.
 Unknown native block formats, incorrect mip sizes and excessive
 decoded memory fail closed. Regular KTX2 bypasses the callback.
 
-This is an **integration boundary only**, not the actual
-Basis Universal transcoding implementation. An approved external
-codec must be added and tested separately, with license notices.
+This standalone callback is only an integration boundary. To use a
+**real** Basis Universal LDR transcoder, opt in to the system Khronos
+`libktx` adapter in `engine/render/Ktx2Libktx.h`:
+
+```sh
+cmake -S . -B build/texture-rhi -DAIVERSE_TEXTURE_WITH_LIBKTX=ON
+```
+
+Install the matching system `ktx.h` / `libktx` development package
+first. `render::uploadKtx2WithLibktx(device,ktxBytes,options,error)`
+selects BC7, ASTC 4x4, ETC2 RGBA or BC3 using the RHI capability
+query; it otherwise falls back to RGBA8 if permitted. The adapter
+is completely opt-in; no codec is vendored and default builds
+still fail Basis input explicitly. UASTC HDR beyond the LDR
+adapter requires a separate RGBA16F/BC6H path. Check the upstream
+license and real GPU output before releasing.
 Test source: `tests/render/ktx2_transcode.cpp` (`ktx2_transcode`).
 
+## Optional OpenEXR 3 compressed HDR import
+
+With `-DAIVERSE_TEXTURE_WITH_OPENEXR=ON` and a compatible
+system OpenEXR 3 package, include `engine/render/ExrOpenExr.h`
+and use `parseOpenExrWithLibrary(bytes,image,error)` or
+`loadOpenExrWithLibrary(device,bytes,error)`. The external
+library decodes scanline ZIP/ZIPS/PIZ and other supported
+first-part RGBA files to linear RGBA16F; no exposure/tone
+mapping is implicit. Multipart/deep workflows remain
+unsupported by this adapter. Default builds still use
+the narrow dependency-free uncompressed EXR parser.
+CTest `exr_texture` includes conditional real compressed
+image fixtures when OpenEXR is enabled, but they are
+NOT RUN on a native OpenEXR SDK in this branch.
+
+## Vulkan writable compute textures
+
+`VulkanDevice` now has opt-in `Device::supportsCompute`,
+`Device::supportsStorageTexture`, and the normal
+`createCompute` / `beginCompute` / `bindComputeStorageTexture` /
+`dispatch` / `endCompute` methods. Vulkan compute source is
+GLSL450 **without** a `#version` directive; the shared
+glslang compiler emits SPIR-V. Bindings: set 0, storage
+images 0..3, sampled images 4..11, storage buffers 12..15,
+uniform buffer 16. Storage images are conservatively
+limited to RGBA8/RGBA16F and 2D/2DArray/3D devices that
+advertise STORAGE_IMAGE and SAMPLED_IMAGE format features.
+Default X workgroup size is 64, as on Metal. GLSL shader
+bindings must match these declarations; neither Vulkan
+nor GL silently emulates Metal shader source.
+
+The Vulkan test `vulkan_backend` now contains an authored
+compute shader writing known RGBA8 colors and reading them
+back asynchronously. All Vulkan shader compilation and
+hardware/lavapipe test execution remain **NOT RUN** until
+a runner actually executes them. GL33/GLES3/WebGL2 currently
+retain explicit `supportsCompute=false` rather than
+pretending to support 4.3+ compute.
+
+## Editor volume texture inspection
+
+The GPU Texture Resources window now has a per-mip depth
+slice selector for Texture3D, in addition to existing
+2DArray/Cube face/layer selection. Native Metal, GL and
+Vulkan async readback code supports uncompressed 3D
+RGBA8/sRGB/16F slices (GL still limited to RGBA8/sRGB),
+subject to the 16MiB preview staging cap. The preview
+remains a CPU thumbnail/diagnostic and is not a driver
+VRAM residency query; compressed/depth/MSAA readback
+still fails explicitly. WebGL2 has no native async
+readback and should instead use CPU UV prefetch.
+
+## Focused automated verification
+
+`.github/workflows/texture-rhi.yml` defines an opt-in
+OpenEXR OFF/ON Linux test matrix and a Vulkan CMake/CTest
+job with uploaded logs. The existing
+`tools/verify-texture-rhi.sh [--vulkan] [--editor]`
+may also be run locally. A queued/cancelled CI run is not
+a PASS. Vulkan CTest may skip the driver if no Vulkan
+device is available; inspect the job logs before
+claiming real storage-image validation.
 ## Native build and targeted tests (pending execution)
 
 ```sh
@@ -468,6 +543,9 @@ need separate native builds and visual/readback validation.
 - `engine/gfx/VirtualTextureFeedbackPass.h` — owned RGBA8 offscreen feedback pass
 - `engine/gfx/VirtualTextureSampling.h` — GLSL/MSL virtual page lookup
 - `engine/render/TextureAsset.h` — DDS/KTX2 GPU uploads
+- `engine/render/Ktx2Libktx.h` — opt-in native Khronos libktx ETC1S/UASTC LDR adapter
+- `engine/render/ExrOpenExr.h` — opt-in OpenEXR 3 compressed HDR reader
+- `engine/gfx/vulkan/VkCompute.cpp` — Vulkan writable image and compute pipeline backend
 - `apps/editor/windows/TextureResourcesWindow.cpp` — live GPU inspector
 - `docs/agent-handoffs/texture-rhi-2026-11-18.md` — append-only handoff log
 

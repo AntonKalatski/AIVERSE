@@ -22,6 +22,8 @@ never equate source presence with a passing GPU test.**
 | Low-level mip/face render | `RenderTargetPassDesc`, `Device::beginRenderTargets` | Call `endPass()` only on successful begin |
 | DDS DX10, KTX2 arrays/cubes/volumes | `parseDdsTexture`, `parseKtx2`, `uploadContainerTexture` | `CompressedImage` keeps all faces/mips |
 | Optional BasisU KTX2 import | `render::parseKtx2WithTranscoder`, `render::uploadKtx2WithTranscoder` | Inject a real licensed codec; exact mip/face validation |
+| Real BasisLZ/UASTC LDR | `render::makeLibktxBasisTranscoder`, `render::uploadKtx2WithLibktx` | Requires `AIVERSE_TEXTURE_WITH_LIBKTX=ON` and system Khronos libktx |
+| Compressed OpenEXR 3 HDR | `render::parseOpenExrWithLibrary`, `render::loadOpenExrWithLibrary` | Requires `AIVERSE_TEXTURE_WITH_OPENEXR=ON` and system OpenEXR 3 |
 | Budgeted deferred texture upload | `gfx::TextureStreamQueue` | Owns GPU texture and staged bytes; `drain()` on device thread |
 | Safe coarse-to-fine sampling | `gfx::TextureMipResidency` | Only create/bind sampler when complete coarse-to-fine mips resident |
 | Unified native streaming | `gfx::TextureResidentStreamer` | Owns queue+residency; gates sampling, tracks completions and retries |
@@ -264,10 +266,46 @@ Include `engine/render/Ktx2Transcode.h` and supply a callback of type
 The callback must return all mip-major slices/faces with the same
 source dimensions/layers/mip chain. It must select a format the
 GPU supports, or return RGBA8 for the existing CPU-upload path.
-Without a codec, Basis input fails explicitly. **No Basis encoder
-or transcoder is bundled with AIVERSE.** Never claim a callback
-is equivalent to implementing the codec. Check the license and
-actual target GPU capabilities before importing production assets.
+Without a codec, Basis input fails explicitly. A real **external**
+Khronos `libktx` adapter now exists in `Ktx2Libktx.h`, but
+requires an explicit system library build:
+
+```sh
+cmake -S . -B build/texture-rhi -DAIVERSE_TEXTURE_WITH_LIBKTX=ON
+```
+
+Call `render::uploadKtx2WithLibktx(device,encoded,options,error)`.
+The adapter prefers native BC7/ASTC/ETC2/BC3 if the GPU supports
+the matching linear/sRGB format; it can fall back to RGBA8.
+This is LDR Basis/ETC1S/UASTC, not UASTC HDR BC6H decoding.
+No codec is bundled; license/packaging and GPU fidelity
+must be verified with the installed upstream package.
+
+### Compressed OpenEXR import and Vulkan compute images
+
+When using `render::parseOpenExrWithLibrary` from
+`engine/render/ExrOpenExr.h`, enable the explicit
+`AIVERSE_TEXTURE_WITH_OPENEXR=ON` CMake option and install
+OpenEXR 3 first. This supports ZIP/ZIPS/PIZ and other
+OpenEXR-library scanline RGBA sources, but not deep/multipart.
+Without it, the existing uncompressed HALF/FLOAT parser remains.
+
+Vulkan now implements the optional compute/storage texture
+methods. `ComputeDesc.glsl` is a GLSL450 body with
+`layout(set=0,binding=0,rgba8) uniform writeonly image2D image0;`
+for writable output. The binding layout is storage images
+0..3; sampled images 4..11; storage buffers 12..15; UBO 16.
+Use `Device::supportsCompute`,
+`Device::supportsStorageTexture(PixelFormat::RGBA8,TextureDimension::Texture2D)`,
+and check every returned handle and bool before dispatch.
+Metal already has its own MSL compute implementation; GLES3/GL33/
+WebGL2 do not silently emulate compute. Actual GPU tests
+remain pending.
+
+Feedback visibility regions may be reused for up to eight
+later frames if detail requests exceed the prefetch budget;
+the runtime drops stale regions when a fresher GPU feedback
+result arrives and never queues these into authoritative ECS.
 
 ### Correctness and compatibility
 
