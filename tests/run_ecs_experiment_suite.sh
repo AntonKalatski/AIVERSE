@@ -56,6 +56,11 @@ compile_run ecs-cross-genre-weapon-pipeline -Ilibraries/include \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+compile_run ecs-kinematic-projectile -Ilibraries/include \
+    tests/ecs_kinematic_projectile_test.cpp \
+    engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp \
+    engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
 compile_run ecs-cross-genre-timed-mechanics -Ilibraries/include \
     tests/ecs_cross_genre_timed_mechanics_test.cpp \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
