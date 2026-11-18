@@ -12985,7 +12985,11 @@ TEST(world_tree_describes_every_component_pool) {
     World described;
     const size_t n = editor::touchWorldComponentPools(described);
     CHECK(described.poolCount() == n);
-    CHECK(pv.sim()->world().poolCount() == n);
+    // Three general-purpose hierarchy pools (Parent, LocalTransform,
+    // WorldTransform) are exposed by the editor but remain opt-in: ordinary
+    // RTS v9 saves intentionally touch only the 65 legacy kPools.
+    constexpr size_t kOptInHierarchyComponents = 3;
+    CHECK(pv.sim()->world().poolCount() + kOptInHierarchyComponents == n);
     CHECK(editor::worldComponents().size() == n && editor::findWorldComponent("unit") >= 0 && editor::findWorldComponent("Гарнизон") >= 0);
     fs::remove_all(root);
 }

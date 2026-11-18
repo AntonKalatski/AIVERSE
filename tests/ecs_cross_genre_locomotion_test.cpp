@@ -62,7 +62,11 @@ uint64_t exercise(bool cow) {
             const auto* state=world.tryGetConst<lg::LocomotionStateComponent>(host->mover);
             const auto* output=world.tryGetConst<lg::LocomotionOutputComponent>(host->mover);
             const auto* input=world.tryGetConst<lg::LocomotionInputComponent>(host->mover);
-            require(state&&state->value.velocity.x==Fixed::fromRatio(3,2),
+            // Tick dt is quantized to Fixed; 1/20 is not exact in Q16.
+            // The deterministic expected delta is acceleration * sim.dt(),
+            // not the ideal-number ratio 3/2.
+            const Fixed stepAcceleration=lg::MotionConfig{}.acceleration*sim.dt();
+            require(state&&state->value.velocity.x==stepAcceleration,
                     "wrong initial ground acceleration");
             require(output&&output->accepted&&output->value.jumped,"jump result lost");
             require(input&&!input->value.jumpPressed,"jump edge not consumed");
@@ -74,7 +78,10 @@ uint64_t exercise(bool cow) {
         const auto& world=sim.world();
         const auto* state=world.tryGetConst<lg::LocomotionStateComponent>(host->mover);
         const auto* output=world.tryGetConst<lg::LocomotionOutputComponent>(host->mover);
-        require(state&&state->value.velocity.x==Fixed::fromRatio(9,2),
+        // Per-tick fixed-point vector normalization can add a few raw
+        // rounding units, so compare against the quantized three-tick rate.
+        const Fixed threeSteps=lg::MotionConfig{}.acceleration*sim.dt()*3;
+        require(state&&fxAbs(state->value.velocity.x-threeSteps)<=Fixed::fromRaw(16),
                 "three ticks of horizontal acceleration mismatch");
         require(output&&output->accepted&&output->tick==2,
                 "locomotion output not published at tick 2");

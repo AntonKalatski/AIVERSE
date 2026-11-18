@@ -13,7 +13,7 @@ Do not copy these algorithms into a particular genre module.
 ## Compose from components and systems
 
 - `KinematicProjectileComponent`: origin/current position, destination, source/target entity, stable shot ID, simulation-tick lifetime, motion mode, fixed-point speed for pursuit.
-- `addKinematicProjectileSystem`: progresses components in stable ECS dense order, optionally resolves updated destination per simulation tick, emits `KinematicArrivalEvent` at arrival, defers despawn. Wire damage/area effects to a **separate ordered impact stage**; a timeout is not a hit.
+- `addKinematicProjectileSystem`: progresses components in stable ECS dense order, optionally resolves updated destination per simulation tick, emits `KinematicArrivalEvent` in stable **Entity-index order** at arrival (independent of sparse-set swap-removal), and defers despawn. Wire damage/area effects to a **separate ordered impact stage**; a timeout is not a hit.
 - `KinematicMotionMode::TimedEndpoint`: finish at a static endpoint after `duration` ticks. No collision queries or dynamic retargeting unless you explicitly write a different motion policy.
 - `KinematicMotionMode::Pursuit`: chase the latest target position with `distancePerTick` and `duration` as an expiry limit. Provide a destination resolver that reads canonical simulation entities, e.g. `[](Simulation& sim, const KinematicProjectileComponent& shot) -> Vec3`. Missing targets should use a game-defined rule, such as preserving last known position.
 - `advanceKinematicPursuit(position, aim, step)` is the stateless fixed-point movement policy reused by the live RTS `sysProjectiles` for ordinary weapon and non-arc ability shots. It intentionally preserves prior `moveTowards` semantics.
