@@ -1777,3 +1777,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed the actual `modules/fps/FpsSystems.cpp::tickSystems` bomb-round reset branch to invoke `clearProjectiles(sim)` rather than writing only `State::projectiles.clear()`. Under `fps.ecsAuthority`, all existing projectile Runtime entities and source-ID keys are retired at the round-reset barrier. Legacy mode retains its vector clear. Loot/vehicle reset logic and actor/bomb/round event ordering remain at their previous source location, no new save field.
 - **Verification:** source committed; **native compilation, bomb round resets, same-tick player input, v9 cross-mode save, deep/COW rollback and network parity not yet run**. Full authority remains default-OFF, and external World allocator lifetime must be checked.
 - **Next:** add FPS regression focused on immediate reset of Runtime/index, ordering, and cross-storage snapshot parity.
+
+
+### 2026-11-18 — Built-in FPS bomb round reset ECS destruction/save/COW fixture
+- **Implementation SHA:** `291ac6b9253190599c7eed173fd68ac6be2f10fe`.
+- Extended `tests/fps/projectile_spawn.inc` with `ecsProjectileRoundResetParityCase(bool cow)`: runs real bomb-mode FPS to create a grenade by input action, explicitly ends the round at an identical tick in default/ECS hosts, verifies the actual `tickSystems` reset removes every `ProjectileRuntime` plus kind-1 ID index while preserving normal state/checksum parity, cross-loads save v9 in both storage modes, restores a pre-reset snapshot and repeats reset, then spawns a new grenade to verify increasing game object IDs after ECS Entity removal/reuse. Runs in deep and COW snapshot modes.
+- **Verification:** source committed but **test entrypoint is not yet called by FPS main**; native compiler, gameplay assertions and transport rollback not run. Call from the built-in FPS suite and inspect actual failure modes, especially mandatory bomb sites and freeze/round event ordering.
