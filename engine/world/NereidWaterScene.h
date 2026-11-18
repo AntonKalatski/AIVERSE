@@ -266,6 +266,16 @@ public:
     };
     // Poll without waiting. A result is adopted only when identity + full
     // presentation key still match; rollback/reorder/LOD changes discard it.
+    size_t retainedPreparedBytes()const {
+        size_t total=0;
+        for(const auto& slot:slots_)
+            if(slot.prepared) {
+                const auto bytes=slot.prepared->bufferBytes;
+                if(bytes>SIZE_MAX-total)return SIZE_MAX;
+                total+=bytes;
+            }
+        return total;
+    }
     void pollPreparation() {
         if(!pendingJob_)return;
         if(pendingJob_->future.wait_for(std::chrono::seconds(0))!=
@@ -277,7 +287,9 @@ public:
             bool accepted=false;
             for(auto& slot:slots_)if(slot.source.id==pendingJob_->id) {
                 if(slot.revision==prepared->key.sourceRevision &&
-                   render::sameNereidSurfaceKey(prepared->key,pendingJob_->key)) {
+                   render::sameNereidSurfaceKey(prepared->key,pendingJob_->key) &&
+                   prepared->bufferBytes<=maxStagingBytes_ &&
+                   retainedPreparedBytes()<=maxStagingBytes_-prepared->bufferBytes) {
                     slot.prepared=std::move(prepared);
                     accepted=true;
                 }
@@ -343,7 +355,9 @@ public:
                 if(asyncPrepare_) {
                     if(pendingJob_)continue;
                     const size_t reservation=maxCpuReservation(slot.source);
-                    if(reservation>maxStagingBytes_) {
+                    const size_t retained=retainedPreparedBytes();
+                    if(reservation>maxStagingBytes_ ||
+                       retained>maxStagingBytes_-reservation) {
                         ++stats_.budgetDeferred;continue;
                     }
                     // Capture immutable copies; worker must never touch
@@ -367,8 +381,16 @@ public:
                     continue;
                 }
 #endif
+                const size_t retained=retainedPreparedBytes();
+                const size_t reservation=maxCpuReservation(slot.source);
+                if(reservation>maxStagingBytes_ ||
+                   retained>maxStagingBytes_-reservation) {
+                    ++stats_.budgetDeferred;continue;
+                }
                 slot.prepared=render::NereidSurfaceResident::prepare(
                     slot.source.body,geometry,slot.revision,opts,slot.source.style);
+                if(slot.prepared && slot.prepared->bufferBytes>
+                    maxStagingBytes_-retained)slot.prepared.reset();
                 if(!slot.prepared) {
                     ++stats_.uploadsAttempted; // failed geometry still counts as an attempt
                     nextUpload_=(i+1)%slots_.size();
@@ -392,6 +414,8 @@ public:
             nextUpload_=(i+1)%slots_.size();
         }
         for(const auto& slot:slots_)if(slot.gpu->resident())++stats_.resident;
+        stats_.stagingReservedBytes=retainedPreparedBytes()+
+            (pendingJob_?pendingJob_->reservation:0);
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize)const {
         const auto transform=render::mat4::translate({
