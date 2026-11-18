@@ -2781,3 +2781,46 @@ Then integrate a texture array atlas + page-table lookup in a
 native sample, stage uploads through TextureStreamQueue and
 release a slot only after cancellation or GPU completion.
 Continue separate code and handoff commits per stage.
+
+## Stage 7G — mip residency streaming coordinator mock tests (2026-11-18)
+
+**Code commit:** `cc5ff6852ae7c72a7df8b9752be95df359d5cc08`.
+**Branch:** `feature/texture-rhi-unification`, PR #21 still Draft.
+**Files:** `tests/render/texture_resident_streamer.cpp`, `CMakeLists.txt`.
+
+**Test source and API coverage:** New GPU-independent CTest target
+`aiverse_texture_resident_streamer_test` / `texture_resident_streamer`
+exercises the Stage 7F facade against a strict mock
+`gfx::Device`. It covers 2D array coarse-to-fine mip/face
+sequencing, unavailable sampling while a coarse face is
+missing, callback delivery after GPU completion, per-frame
+byte/upload limits, LOD sampler clamps on complete mip
+ranges, entire 3D volume mip uploads, packed source ownership
+with no source-pointer lifetime dependency, invalid producer
+bytes, rejected/throw-free producer retry, ticket cancellation
+and replay, destroy/recreate with non-recycled logical
+resources, full GPU shutdown, and quarantine after failed
+GPU updates. Assertions inspect the mock's submitted
+mip/layer coordinates and pixel values.
+
+**Implementation:** Test code only; no changes to existing render
+paths or ECS/network state. The production facade remains
+`engine/gfx/TextureResidentStreamer.h`.
+
+**Tests actually performed:** GitHub test and CMake commit completed.
+**CMake configure NOT RUN, C++ compile NOT RUN, CTest NOT RUN,
+Metal/GL/Vulkan GPU sampling NOT RUN.** The test was prepared
+for a later native checkout as requested, not reported passing.
+
+**Native verification commands:**
+```sh
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_texture_resident_streamer_test
+ctest --test-dir build/texture-rhi --output-on-failure -R '^texture_resident_streamer$'
+```
+
+**Next:** Document new native API and adapt AI skill entry points,
+then implement bounded image readback interfaces/backends and
+editor diagnostics; realistic sparse/virtual physical-page
+streaming is still a separate unimplemented subsystem.
+Keep source/handoff commits separate and update tests status.
