@@ -1189,3 +1189,39 @@ before calling this stage validated.
   No new FPS/RTS conditionals or include dependencies in MotionWeave.
   Commit code first, then Stage 47 handoff before another stage.
 
+## Stage 47 — automated MotionWeave genre dependency guard (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22,
+  base `feature/universal-entity-inspector-fps`.
+- **Implementation commit:** `663ab7d2988aa9bbd2ff8ad69b788e3d55366c46`.
+- **Files:** new `tools/animation/check_motionweave_dependencies.py`,
+  root `CMakeLists.txt` CTest registration.
+- **Architecture:** the automated source checker scans
+  `libraries/include/aiverselib/animation`,
+  `libraries/include/aiverselib/motionweave` and
+  `engine/render/Animation*.{h,cpp}` for forbidden direct
+  includes from game modules (modules, apps, projects/examples,
+  genre trees), and typed FPS/RTS/game namespace dependencies.
+  This enforces the user requirement that the animation engine
+  never branches on the game genre. Host-specific adapters remain
+  OUTSIDE the core.
+- **API:** no C++ runtime API, ECS schema, save, protocol or graph
+  JSON changes. Optional CTest `motionweave_genre_boundary` is
+  registered if Python3 interpreter is available.
+- **Tests:** **NOT RUN**, per user's explicit deferred-test policy.
+  When approved, run
+  `ctest --test-dir build/ecs-test --output-on-failure -R '^motionweave_genre_boundary$'`
+  or invoke the script with the repository root path.
+- **Limitations:** the guard is intentionally a lightweight include /
+  namespace source scan, not a complete compile-time dependency-graph
+  analyzer. It cannot detect indirect violations through new
+  shared libraries that are mislabeled or hidden in generated code;
+  PR review must still enforce reverse-only host dependencies.
+- **Next step:** make the RTS **host** consume the universal
+  `MotionWeaveSourceBridge` in `modules/rts/view` where safe,
+  rather than introducing any RTS class/conditional inside
+  `libraries/include/aiverselib/animation`. Compare event/IK and
+  procedural needs before bypassing legacy RtsView animation; do
+  not double-evaluate or change gameplay authority. Commit code
+  separately and append Stage 48.
+
