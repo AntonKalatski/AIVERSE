@@ -479,3 +479,15 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Test authored (deferred):** adapter test checks a deliberate rotated two-finger segment produces nonzero twist and does not lose pinch handling. No execution as requested.
 
 **Next:** use normalized `CameraTwist` with planet orbit camera, and wire planet/possession movement to semantic Actions. Keep scripting and world projection genre-specific.
+
+## Stage 38 — planet orbit and possessed-unit Action contexts (2026-11-18)
+
+**Presets:** `RTS.Planet` (inactive except planet view) defines `PlanetRotate` Axis1D (Q/E), `PlanetPitch` Axis1D (PageUp/Down), `PlanetNextBody` Pressed (Tab). `RTS.Possession` (inactive except controlled unit) defines `PossessedMove` Axis2D (WASD/arrows), `PossessedFire` (left mouse) and `PossessedWalk` (right mouse). All previously published context IDs remain stable; default RTS now has **seven** contexts. `ClientInputRouting::setPlanetEnabled`/`setPossessionEnabled` maintain active contexts by game mode from both `GameClient::event` and `frame`.
+
+**Possession:** `ClientActions.cpp::steerPossessed` computes camera-relative motion from semantic axis when available, otherwise legacy keys. Mouse fire/walk holds use semantic Action state with legacy fallback. The pointer logical LMB/RMB remapping path excludes possession to avoid stealing its gameplay controls.
+
+**Planet:** `ClientPlanet.cpp::planetCameraKeys` uses shared `CameraPan`/ `IdleCameraPan` plus new `PlanetRotate/Pitch` and retains edge scroll/selection-dependent gating. `planetCameraEvent` takes semantic Triggered action names so rebinding Tab to `PlanetNextBody` and Space to FocusCamera works without repeat on unrelated keydown. Wheel zoom and one/two-finger pan/pinch/twist now consume `CameraZoom`, `CameraTouchDrag`, `CameraTouchPan`, `CameraPinch`, `CameraTwist` state, with legacy fallback for complete custom project assets lacking semantic actions.
+
+**Tests authored (execution postponed):** RTS routing expectations updated to seven contexts; verify planet/possession activation and Axis2D motion. Follow-up smoke list: Q/E with selections, orbit body cycle, remapped wheel pinch/twist, possession fire/steer, reset on leaving view.
+
+**Next:** audit contextual activation and C++ headers; finish docs/agent handoff. Then code is feature-complete for the stated scope, pending dedicated build/test/bugfix pass.
