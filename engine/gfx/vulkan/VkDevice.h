@@ -92,7 +92,12 @@ struct VShader {
 
 struct VPipeline {
     PipelineDesc desc;
-    struct Variant { uint64_t key; VkPipeline pipeline; int colorCount = 1; };
+    struct Variant {
+        uint64_t key;
+        VkPipeline pipeline;
+        int colorCount = 1;
+        std::array<VkFormat, kMaxRenderTargetColors> formats{};
+    };
     std::vector<Variant> variants;               // per render pass format (and HDR shader)
 };
 
@@ -191,11 +196,13 @@ private:
     void initImageLayout(VTexture& t, VkCommandBuffer cb, bool clear);
     // VkDraw.cpp
     VkRenderPass renderPassFor(VkFormat color, VkFormat depth, bool clearColor, bool clearDepth);
-    VkRenderPass renderPassForMrt(VkFormat color, VkFormat depth, int colors,
-                                 uint32_t clearMask, bool clearDepth);
+    VkRenderPass renderPassForMrt(
+        const std::array<VkFormat, kMaxRenderTargetColors>& formats,
+        VkFormat depth, int colors, uint32_t clearMask, bool clearDepth);
     VkFramebuffer framebufferFor(VkImageView color, VkImageView depth, VkRenderPass rp, int w, int h, uint32_t colorId, uint32_t depthId);
-    VkPipeline pipelineFor(VPipeline& p, VkFormat color, VkFormat depth, bool hdr,
-                           int colorCount = 1);
+    VkPipeline pipelineFor(VPipeline& p,
+                           const std::array<VkFormat, kMaxRenderTargetColors>& formats,
+                           VkFormat depth, bool hdr, int colorCount = 1);
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
 
@@ -266,7 +273,8 @@ private:
     struct RenderPassKey { uint64_t key; VkRenderPass pass; };
     std::vector<RenderPassKey> renderPasses_;
     struct MrtRenderPass {
-        VkFormat color = VK_FORMAT_UNDEFINED, depth = VK_FORMAT_UNDEFINED;
+        std::array<VkFormat, kMaxRenderTargetColors> formats{};
+        VkFormat depth = VK_FORMAT_UNDEFINED;
         int colorCount = 0;
         uint32_t clearMask = 0;
         bool clearDepth = false;
@@ -289,6 +297,7 @@ private:
     bool explicitMrtPass_ = false;
     int passW_ = 0, passH_ = 0;
     VkFormat passColor_ = VK_FORMAT_UNDEFINED, passDepth_ = VK_FORMAT_UNDEFINED;
+    std::array<VkFormat, kMaxRenderTargetColors> passFormats_{};
     uint32_t pipelineId_ = 0;
     VkPipeline boundPipeline_ = VK_NULL_HANDLE;
     uint32_t vbId_ = 0, ibId_ = 0;

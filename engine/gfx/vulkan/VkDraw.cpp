@@ -123,12 +123,15 @@ VkRenderPass VulkanDevice::renderPassFor(VkFormat color, VkFormat depth, bool cl
     return rp;
 }
 
-VkRenderPass VulkanDevice::renderPassForMrt(VkFormat color, VkFormat depth,
-                                            int colors, uint32_t clearMask, bool clearDepth) {
-    if (colors < 2 || colors > kMaxRenderTargetColors || color == VK_FORMAT_UNDEFINED)
+VkRenderPass VulkanDevice::renderPassForMrt(
+        const std::array<VkFormat, kMaxRenderTargetColors>& formats,
+        VkFormat depth, int colors, uint32_t clearMask, bool clearDepth) {
+    if (colors < 2 || colors > kMaxRenderTargetColors)
         return VK_NULL_HANDLE;
+    for (int i = 0; i < colors; ++i)
+        if (formats[size_t(i)] == VK_FORMAT_UNDEFINED) return VK_NULL_HANDLE;
     for (const auto& rp : mrtRenderPasses_)
-        if (rp.color == color && rp.depth == depth &&
+        if (rp.formats == formats && rp.depth == depth &&
             rp.colorCount == colors && rp.clearMask == clearMask &&
             rp.clearDepth == clearDepth)
             return rp.pass;
@@ -138,7 +141,7 @@ VkRenderPass VulkanDevice::renderPassForMrt(VkFormat color, VkFormat depth,
     VkAttachmentReference depthRef{uint32_t(colors), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     for (int i = 0; i < colors; ++i) {
         auto& a = attachments[i];
-        a.format = color;
+        a.format = formats[size_t(i)];
         a.samples = VK_SAMPLE_COUNT_1_BIT;
         a.loadOp = (clearMask & (1u << i)) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         a.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -186,7 +189,7 @@ VkRenderPass VulkanDevice::renderPassForMrt(VkFormat color, VkFormat depth,
         error_ = "Vulkan: vkCreateRenderPass MRT failed";
         return VK_NULL_HANDLE;
     }
-    mrtRenderPasses_.push_back({color, depth, colors, clearMask, clearDepth, result});
+    mrtRenderPasses_.push_back({formats, depth, colors, clearMask, clearDepth, result});
     return result;
 }
 
@@ -234,6 +237,8 @@ void VulkanDevice::beginPass(const PassDesc& d) {
     const VTexture& ref = color ? *color : *depth;
     passW_ = ref.width; passH_ = ref.height;
     passColor_ = color ? color->vkFormat : VK_FORMAT_UNDEFINED;
+    passFormats_.fill(VK_FORMAT_UNDEFINED);
+    passFormats_[0] = passColor_;
     passDepth_ = depth ? depth->vkFormat : VK_FORMAT_UNDEFINED;
     hdrPass_ = color && color->format == PixelFormat::RGBA16F;
     VkRenderPass rp = renderPassFor(passColor_, passDepth_, d.clearColorEnabled, d.clearDepthEnabled);
@@ -283,8 +288,9 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
     VTexture* colors[kMaxRenderTargetColors]{};
     VTexture* depth = nullptr;
     int width = 0, height = 0;
-    VkFormat sharedColor = VK_FORMAT_UNDEFINED;
-    PixelFormat sharedFormat = PixelFormat::RGBA8;
+    std::array<VkFormat, kMaxRenderTargetColors> activeFormats{};
+    activeFormats.fill(VK_FORMAT_UNDEFINED);
+    bool allHdr = desc.colorCount > 0;
     uint32_t clearMask = 0;
     for (int i = 0; i < desc.colorCount; ++i) {
         const auto& a = desc.colors[size_t(i)];
@@ -295,14 +301,10 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
             return false;
         }
         VTexture* c = textures_.get(a.texture.id);
-        if (i && c->vkFormat != sharedColor) {
-            error_ = "Vulkan: mixed color formats require a specialized MRT pipeline";
-            return false;
-        }
         colors[i] = c;
         width = w; height = h;
-        sharedColor = c->vkFormat;
-        sharedFormat = c->format;
+        activeFormats[size_t(i)] = c->vkFormat;
+        allHdr &= c->format == PixelFormat::RGBA16F;
         if (a.clear) clearMask |= 1u << i;
     }
     if (desc.depth.texture.valid()) {
@@ -349,8 +351,8 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
     const VkFormat df = depth ? depth->vkFormat : VK_FORMAT_UNDEFINED;
     const bool clearDepth = depth && desc.depth.clear;
     const VkRenderPass rp = desc.colorCount > 1 ?
-        renderPassForMrt(sharedColor, df, desc.colorCount, clearMask, clearDepth) :
-        renderPassFor(sharedColor, df, (clearMask & 1u) != 0, clearDepth);
+        renderPassForMrt(activeFormats, df, desc.colorCount, clearMask, clearDepth) :
+        renderPassFor(activeFormats[0], df, (clearMask & 1u) != 0, clearDepth);
     if (!rp) { cleanupViews(); return false; }
     auto fi = vkStruct<VkFramebufferCreateInfo>(VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO);
     fi.renderPass = rp;
@@ -392,9 +394,12 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
     descriptorsDirty_ = true;
     passW_ = width;
     passH_ = height;
-    passColor_ = sharedColor;
+    passColor_ = activeFormats[0];
+    passFormats_ = activeFormats;
     passDepth_ = df;
-    hdrPass_ = desc.colorCount > 0 && sharedFormat == PixelFormat::RGBA16F;
+    // Legacy auto-HDR shader specialization is only valid for all-HDR MRT.
+    // Heterogeneous MRT uses an explicitly typed PipelineDesc instead.
+    hdrPass_ = allHdr;
     setViewport({0,0,width,height});
     setScissor({});
     return true;
@@ -487,12 +492,15 @@ void blendState(BlendMode m, VkPipelineColorBlendAttachmentState& a) {
 }
 } // namespace
 
-VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat depth,
-                                     bool hdr, int colorCount) {
+VkPipeline VulkanDevice::pipelineFor(
+        VPipeline& p, const std::array<VkFormat, kMaxRenderTargetColors>& formats,
+        VkFormat depth, bool hdr, int colorCount) {
+    const VkFormat color = formats[0];
     const uint64_t key = uint64_t(uint32_t(color)) |
         (uint64_t(uint32_t(depth) & 0x3FFFFFFFu) << 32) | (uint64_t(hdr) << 62);
     for (const auto& v : p.variants)
-        if (v.key == key && v.colorCount == colorCount) return v.pipeline;
+        if (v.key == key && v.colorCount == colorCount && v.formats == formats)
+            return v.pipeline;
     const PipelineDesc& d = p.desc;
     VShader* s = shaders_.get(d.shader.id);
     if (!s) return VK_NULL_HANDLE;
@@ -567,7 +575,7 @@ VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat dept
     ci.pDynamicState = &dy;
     ci.layout = pipelineLayout_;
     ci.renderPass = colorCount > 1 ?
-        renderPassForMrt(color, depth, colorCount, (1u << colorCount) - 1u, true) :
+        renderPassForMrt(formats, depth, colorCount, (1u << colorCount) - 1u, true) :
         renderPassFor(color, depth, true, true);   // any compatible load-op variant
     VkPipeline pipe = VK_NULL_HANDLE;
     if (vkCreateGraphicsPipelines(device_, pipelineCache_, 1, &ci, nullptr, &pipe) != VK_SUCCESS) {
@@ -575,7 +583,7 @@ VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat dept
         std::fprintf(stderr, "[gfx] Vulkan pipeline %s failed\n", d.label ? d.label : "");
         pipe = VK_NULL_HANDLE;
     }
-    p.variants.push_back({key, pipe, colorCount});
+    p.variants.push_back({key, pipe, colorCount, formats});
     return pipe;
 }
 
@@ -594,14 +602,11 @@ void VulkanDevice::setPipeline(PipelineHandle h) {
             error_ = "Vulkan: pipeline color output count differs from MRT pass";
             return;
         }
-        if (expected > 0 && !hdr && vkFormat(p->desc.colorFormat) != passColor_) {
-            error_ = "Vulkan: pipeline color format differs from MRT pass";
-            return;
-        }
-        for (int i = 1; i < expected; ++i) {
-            const PixelFormat fmt = p->desc.additionalColorFormats[i - 1];
-            if (!hdr && vkFormat(fmt) != passColor_) {
-                error_ = "Vulkan: additional pipeline format differs from MRT pass";
+        for (int i = 0; i < expected; ++i) {
+            const PixelFormat fmt = i == 0 ?
+                p->desc.colorFormat : p->desc.additionalColorFormats[i - 1];
+            if (!hdr && vkFormat(fmt) != passFormats_[size_t(i)]) {
+                error_ = "Vulkan: pipeline format differs from MRT color slot";
                 return;
             }
         }
@@ -609,7 +614,7 @@ void VulkanDevice::setPipeline(PipelineHandle h) {
     // Legacy beginPass remains permissive: existing color/depth-only and sRGB
     // callers select pipeline variants by the real attachment configuration.
     const int actualColors = passColors_;
-    VkPipeline vp = pipelineFor(*p, passColor_, passDepth_, hdr, actualColors);
+    VkPipeline vp = pipelineFor(*p, passFormats_, passDepth_, hdr, actualColors);
     if (!vp) return;
     pipelineId_ = h.id;
     boundPipeline_ = vp;
