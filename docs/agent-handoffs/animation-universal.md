@@ -885,3 +885,37 @@ before calling this stage validated.
   CMake/CTest yet; document any static fixes in a new code commit,
   then append Stage 38 before advancing to a different feature.
 
+## Stage 38 — static correctness pass: worker callable lifetime and FPS GPU release (2026-11-18)
+
+- **Branch / PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Code SHA:** `029c25494e68d6145d92494942516249bf306a25`.
+- **Paths:** `MotionWeaveWorkers.h`,
+  `apps/fps/client.cpp`, new
+  `tests/animation/motionweave_worker_reuse.cpp`, root `CMakeLists.txt`.
+- **Worker implementation:** a `parallelFor` call now creates one
+  submitting-thread-owned std::function, and workers borrow a pointer
+  under the scheduler barrier instead of copying std::function on every
+  wake-up (which could allocate/throw in a noexcept worker). The pointer
+  remains valid until ALL background threads have completed the
+  outstanding batch. The pool is still persistent; concurrency, errors
+  and World mutation restrictions remain the same.
+- **FPS implementation:** `loadAnimatedCharacter` now keeps a
+  `pendingModel` unique_ptr alive across import, GPU upload, graph
+  compilation and bake. If an intermediate step throws, partially
+  uploaded GPU model resources are released instead of silently leaking.
+  Existing cube fallback remains. Asset, save and network formats
+  unchanged; rendering and GPU resource lifetime stay on main thread.
+- **Test:** CTest `motionweave_worker_reuse` added for 40 repeated
+  dispatch frames, per-index exactly-once work, worker exception
+  propagation and reuse. **NOT RUN**, per user's test deferral.
+- **Remaining limitations:** this was static inspection, NOT compilation
+  or TSAN; no claim the new scheduler outperforms serial graph updates.
+  Actual editor/FPS builds, GPU screenshots and concurrent snapshot
+  misuse checks must still be executed later. The old opt-in helper
+  `stepAnimationPresentationParallel` still uses per-frame jthreads;
+  new code must use the persistent `MotionWeaveScheduler` instead.
+- **Next first task:** review CMake target link/dependency placement
+  (desktop/Android/WebAssembly) and introduce a performance smoke
+  fixture to compare serial vs persistent workers at realistic actor
+  counts, without executing it yet; document that stage separately.
+
