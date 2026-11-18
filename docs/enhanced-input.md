@@ -129,7 +129,7 @@ python3 tests/libraries/native_consumer.py
 
 Plus FPS build and sample matches on all supported platforms, plus engine full tests per \`AGENTS.md\`. Do not mark any platform verified without a successful build and tests.
 
-Known remaining items: editor mapping UI and live rebind capture, RTS/default client context migration, hosted viewport event arbitration, a mobile touch gesture mapper, multiple local players, advanced chord/conflict semantics, configuration package generator validation and final cross-platform CI. These should be tracked in \`docs/enhanced-input-agent-handoff.md\` after each stage.
+Remaining before release: complete RTS camera/selection (legacy paths intentionally preserved), high-level pinch/two-finger gesture recognizers, multiplayer split-screen routing, advanced chord/conflict policies, scripted-game rebinding UI, and verified cross-platform CI / manual editor focus/pointer-lock checks. Basic editor action authoring, FPS player rebind, RTS semantic command actions, hosted focus edges and touch delta axes are implemented. These should be tracked in \`docs/enhanced-input-agent-handoff.md\` after each stage.
 
 ## Authoring mappings in AIVERSE Editor
 

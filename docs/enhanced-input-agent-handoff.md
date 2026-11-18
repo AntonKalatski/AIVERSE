@@ -231,3 +231,27 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Build/testing:** code updates only, not yet compiled or manually verified; CI pending. Test Game→Inspector→Input Actions→Game with held WASD, RmlUi modal, touch dragging, and scoped context restoration. Network Command schemas unchanged.
 
 **Next agent:** compile and run CI and manual hosted game tests, then document exact results.
+
+## Stage 15 — upstream inspector sync and verification gate (2026-11-18)
+
+`feature/universal-entity-inspector-fps` advanced one additional docs-only commit, `cf650a02d22890cbc3b27280762e8c0d96502bed`. The new `docs/editor-unification-handoff.md` was merged as-is with the Enhanced Input feature changes; no ECS/API conflict. PR #20 targets the inspector branch so reviewers see an input-focused diff, not the entire ECS history.
+
+**Current validation gate:** the latest input-head GitHub workflows were `queued` for CI, AIVERSE Studio and ECS experimental at inspection time; older feature-head CI runs were canceled by newer commits. A complete CMake/CTest run was not available: the local isolated container cannot resolve github.com to clone AIVERSE, and the connected GitHub service only accesses source/CI metadata. Do **not** report green build, Apple Silicon integration success or all platforms verified. Keep PR draft until compilation/tests/manual smoke checks pass.
+
+**Required local commands (from AIVERSE checkout):**
+
+```sh
+git fetch origin
+git switch feature/aiv990_enhanced_input
+git pull --ff-only origin feature/aiv990_enhanced_input
+cmake -S tests/libraries -B build/enhanced-input-check -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/enhanced-input-check --target aiverse_enhanced_input_tests aiverse_enhanced_input_adapter_tests aiverse_enhanced_input_config_tests aiverse_enhanced_rts_input_tests
+ctest --test-dir build/enhanced-input-check --output-on-failure -R 'library_enhanced_(input|rts_input)'
+python3 tools/libraries/catalog.py check
+cmake --preset macos
+cmake --build build/macos --config Release --target aiverse_editor aiverse_client aiverse_fps_client
+```
+
+**Smoke-test checklist:** editor opens Input Actions, selects FPS/RTS defaults and saves valid `input/actions.json`; FPS F10 rebinding persists across restart; gamepad/mouse/touch modifiers and profile IDs remain stable; Game→Inspector tab focus releases held RTS movement; RTS script-command overrides and network Commands unchanged. Run all AGENTS.md engine regression and determinism suites before merge. Cross-platform macOS/Linux/Windows/Web/Android/iOS remain unverified.
+
+**Next agent entry point:** read this document and `docs/enhanced-input.md`; obtain build logs/CI results, fix warnings and failures, then write Stage 16 with exact test evidence. Avoid re-implementing the input core; remaining high-level gestures and non-hotkey RTS controls can follow as additive stages.

@@ -2038,3 +2038,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — CI validates root test runner before ECS suites
 - **Code SHA:** `3aca181ca15dcce2b0c4412c3242eb4ce21bc4cf`. `.github/workflows/ecs-experiments.yml` now runs `bash -n run-tests.sh` and `python3 tests/test_unified_runner.py` on macOS/Linux, with pull-request triggers for root runner, extras manifest and smoke fixture.
 - **Actual CI results not yet known**; the change prevents repeating earlier source-edit corruption. Full handoff in `docs/agent-handoffs/unified-test-runner.md`.
+
+### 2026-11-18 — Requested commit f90242ec4 unavailable for merge
+- **Request:** merge abbreviated commit `f90242ec4` into shared `feature/universal-entity-inspector-fps` PR #7.
+- **Investigation:** GitHub REST `GET /repos/chromealex/AIVERSE/commits/f90242ec4` returned 422 (`No commit found for SHA`); Git data commit lookup returned 404; compare in both directions returned 404; repository-scoped and global GitHub commit search returned no matches. Also checked `chromealex/gta`, unavailable there. Current remote branch head before this note was `dd711f5e2a7f66ed25bd7330875e6e87b7109e55`.
+- **Outcome:** source commit is **not accessible** via the GitHub connection; no merge/cherry-pick, conflicts resolution, or code files changed. Do not claim merged. It may be an unpushed local commit or from a different repository.
+- **Next:** publish the source commit to the AIVERSE remote (from a local checkout containing it): `git push origin f90242ec4:refs/heads/incoming-f90242ec4`; alternatively provide the remote repository and full SHA or an accessible branch. Then inspect the commit parents/changed files, do a conflict-aware merge into the latest shared branch and document the merge SHA, actual tests, and remaining issues.
+- **Validation:** GitHub queries only, no local compile/CTest; tests **NOT RUN**.
