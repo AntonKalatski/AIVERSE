@@ -1616,3 +1616,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `6738e47bbb48648638aeb2d15ac3b51f44b69f81`.
 - `tests/fps/projectiles.inc` now records `State::nextObject` at the pre-flight snapshot and requires subsequent branch child IDs to advance beyond that exact value. Replaces the weak fixed threshold `maxAllocated>3` which could be satisfied by unrelated preexisting objects.
 - **Verification:** GitHub edit committed only; no native test execution. The existing direct ECS mixed and save/rollback fixture remains active in the main FPS test suite.
+
+### 2026-11-18 — Shared FPS ordinary projectile step declaration completes header wiring
+- Implementation SHA: `813fa4631d6480101fd57e7085fbcd744882e38b`.
+- Added private `Module::stepOrdinaryProjectile(Simulation&,Projectile&)` declaration to `modules/fps/FpsModule.h`, matching the implementation introduced in SHA `8e54368`. Both legacy vector and direct ECS runtime paths call the same solver. The stage remains registered between programmed projectile and main round/actor systems.
+- Verification: GitHub code update only; no native build or tests.
