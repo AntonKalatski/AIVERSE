@@ -22,6 +22,7 @@ struct NereidUnderwaterView {
     float deepR=0,deepG=0,deepB=0;
     float turbidity=0;
     float distortion=0, scattering=0;
+    float surfaceBlend=0; // soft camera crossing opacity, 0..1
 };
 
 // Priority semantics follow shared NEREID samples where possible, but only
@@ -34,7 +35,8 @@ inline NereidUnderwaterView sampleNereidUnderwaterFrom(
     each([&](const NereidSceneSurface& s,size_t i) {
         const auto& body=s.body;
         if(!body.enabled || body.surfaceY<=body.bottomY ||
-           camera.y>=body.surfaceY || camera.y<body.bottomY)return;
+           camera.y>body.surfaceY+Fixed::fromRatio(2,5) ||
+           camera.y<body.bottomY)return;
         const auto* geometry=s.useGeometry?&s.geometry:nullptr;
         if(!lib::nereid::coversWaterBody(body,geometry,camera))return;
         const uint64_t id=s.id?s.id:
@@ -50,10 +52,12 @@ inline NereidUnderwaterView sampleNereidUnderwaterFrom(
     if(!winner)return out;
     const auto& body=winner->body;
     const auto& style=winner->style;
-    out.submerged=true;
+    out.submerged=camera.y<body.surfaceY;
+    const double signedDepth=(body.surfaceY-camera.y).toDouble();
+    out.surfaceBlend=float(std::clamp(0.5+signedDepth/0.8,0.0,1.0));
     out.waterId=winnerId;
     out.waterSurfaceY=body.surfaceY.toDouble();
-    out.depthMetres=(body.surfaceY-camera.y).toDouble();
+    out.depthMetres=std::max(0.0,signedDepth);
     out.absorption=std::clamp(style.absorption,0.f,4.f);
     out.transmission=float(std::exp(-std::clamp(out.depthMetres,0.0,10000.0)*
                                      double(out.absorption)));
