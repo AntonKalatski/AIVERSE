@@ -1337,3 +1337,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `tests/ecs_hitscan_resolution_test.cpp` so each independent ShooterStyle/StrategyStyle host creates an authoritative `HitPointsComponent` on its ECS target and a `DamageQueue` resource. `addHitscanResolutionSystem` stages `DamageRequest` from successful ECS hit events; the next registered `addDamageResolutionSystem` applies two 25-point hits in stable source order. Test asserts `DamageApplied` shot IDs [1,4], remaining HP [75,50], target HP=50, drained queue, no duplicate damage after the next tick, and checksum parity through deep/COW snapshot restore.
 - Both systems are actual shared ECS systems with no FPS/RTS module dependency. This validates intended end-to-end damage composition *in test source* but does not migrate authoritative FPS `traceShot` to staged damage; doing so would alter same-tick feedback without a parity gate.
 - Verification: GitHub commit only; C++ compilation and test execution still not performed. CTest and standalone runner already include this test target.
+
+### 2026-11-18 — Hitscan catalog dependency order hardened for CMake
+- Implementation SHA: `9794f5583d014a933a683d5a29387514af711927`.
+- Reordered catalog entries so `ecs-hitscan` is declared immediately before dependent `ecs-hitscan-resolution`. The per-package CMake INTERFACE target generation now encounters `AIVERSE::lib_ecs_hitscan` before `AIVERSE::lib_ecs_hitscan_resolution` links to it; this avoids any reliance on deferred namespaced target resolution. JSON parsed after the reorder and adjacent package ordering was validated.
+- Verification: GitHub commit only; no CMake configure or actual native build.
