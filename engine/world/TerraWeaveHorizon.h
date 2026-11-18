@@ -9,6 +9,9 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <tuple>
+#include <span>
+#include <map>
 #include <stdexcept>
 #include <vector>
 
@@ -224,7 +227,9 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                               const BiomeSettings& biomes,
                               const HorizonSettings& s,
                               int64_t cameraXcm, int64_t cameraZcm,
-                              const HorizonSurfaceSources* source = nullptr) {
+                              const HorizonSurfaceSources* source = nullptr,
+                              const HorizonBake* previous = nullptr,
+                              std::span<const RectCm> edited = {}) {
     validateHorizonSettings(s);
     const auto heightSample = [&](int64_t x, int64_t z) -> int32_t {
         const int32_t h = source && source->heightAtCm ?
@@ -266,8 +271,41 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     const uint32_t atlasSide=horizon_detail::checkedSquareRootCeil(
                                  possible*s.orientationViews)*s.atlasTilePixels;
     out.atlasWidth=atlasSide;out.atlasHeight=atlasSide;
-    out.atlasRgba.assign(size_t(atlasSide)*atlasSide*4,0);
+    const bool compatible = previous && !edited.empty() &&
+        previous->cameraXcm==cameraXcm && previous->cameraZcm==cameraZcm &&
+        previous->originXcm==out.originXcm &&
+        previous->originZcm==out.originZcm &&
+        previous->sideCm==out.sideCm &&
+        previous->atlasWidth==atlasSide &&
+        previous->atlasHeight==atlasSide &&
+        previous->atlasRgba.size()==size_t(atlasSide)*atlasSide*4 &&
+        previous->terrainResolution==s.terrainResolution &&
+        previous->terrainBeginCm==s.terrainBeginCm &&
+        (!s.distantTerrain || previous->terrainVertices.size()==
+          size_t(s.terrainResolution+1)*(s.terrainResolution+1));
+    for (const RectCm& r : edited) {
+        if (r.maxX<=r.minX || r.maxZ<=r.minZ ||
+            r.minX<-kWorldLimitCm || r.maxX>kWorldLimitCm ||
+            r.minZ<-kWorldLimitCm || r.maxZ>kWorldLimitCm)
+            throw std::invalid_argument("TerraWeave Horizon edited region bounds");
+    }
+    if(compatible)out.atlasRgba=previous->atlasRgba;
+    else out.atlasRgba.assign(size_t(atlasSide)*atlasSide*4,0);
     out.clusters.reserve(possible);
+    using ClusterId=std::tuple<int64_t,int64_t,int32_t>;
+    std::map<ClusterId,HorizonCluster> original;
+    if(compatible)for(const auto& cluster:previous->clusters)
+        original.emplace(ClusterId{cluster.centerXcm,cluster.centerZcm,
+                                    cluster.tileSizeCm},cluster);
+    // Samples span the full cluster plus nearby slope/canopy neighbours.
+    // Conservative extra half-tile prevents a modified boundary from
+    // retaining stale silhouettes in the adjacent tile.
+    const auto dirtyAt = [&](int64_t x,int64_t z,int64_t padding)->bool {
+        for(const RectCm& r:edited)
+            if(x+padding>=r.minX && x-padding<r.maxX &&
+               z+padding>=r.minZ && z-padding<r.maxZ)return true;
+        return false;
+    };
 
     const auto addLayer = [&](int32_t cell,uint32_t count,int32_t minDistance,
                               int32_t maxDistance,uint64_t salt,bool middle,uint32_t atlasBase) {
@@ -311,6 +349,32 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                     x+cell/2>kWorldLimitCm-100 ||
                     z+cell/2>kWorldLimitCm-100)continue;
 
+                const uint32_t firstSlot=
+                    (atlasBase+iz*count+ix)*s.orientationViews;
+                const uint32_t slotsPerRow=atlasSide/s.atlasTilePixels;
+                const uint32_t px=(firstSlot%slotsPerRow)*s.atlasTilePixels;
+                const uint32_t py=(firstSlot/slotsPerRow)*s.atlasTilePixels;
+                const uint32_t sideSlot=firstSlot+
+                    (s.orientationViews==2?1u:0u);
+                const uint32_t pxSide=(sideSlot%slotsPerRow)*s.atlasTilePixels;
+                const uint32_t pySide=(sideSlot/slotsPerRow)*s.atlasTilePixels;
+                if(compatible && !dirtyAt(x,z,cell)) {
+                    const auto old=original.find(ClusterId{x,z,cell});
+                    if(old!=original.end())out.clusters.push_back(old->second);
+                    continue; // old atlas pixels and metadata remain valid
+                }
+                if(compatible) {
+                    for(uint32_t view=0;view<s.orientationViews;++view) {
+                        const uint32_t slot=firstSlot+view;
+                        const uint32_t tileX=(slot%slotsPerRow)*s.atlasTilePixels;
+                        const uint32_t tileY=(slot/slotsPerRow)*s.atlasTilePixels;
+                        for(uint32_t row=0;row<s.atlasTilePixels;++row) {
+                            const size_t at=(size_t(tileY+row)*atlasSide+tileX)*4;
+                            std::fill_n(out.atlasRgba.begin()+at,
+                                        size_t(s.atlasTilePixels)*4,uint8_t(0));
+                        }
+                    }
+                }
                 // Coarse vegetation sample: one evaluation per column. Never
                 // instantiate individual distant trees or their ECS components.
                 const auto biome=biomeSample(x,z);
@@ -330,14 +394,6 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 // Atlas position is derived from the fixed region lattice
                 // rather than the number of visible clusters. Changing a
                 // road mask or biome can no longer move unrelated UV tiles.
-                const uint32_t firstSlot=
-                    (atlasBase+iz*count+ix)*s.orientationViews;
-                const uint32_t slotsPerRow=atlasSide/s.atlasTilePixels;
-                const uint32_t px=(firstSlot%slotsPerRow)*s.atlasTilePixels;
-                const uint32_t py=(firstSlot/slotsPerRow)*s.atlasTilePixels;
-                const uint32_t sideSlot=firstSlot+(s.orientationViews==2?1u:0u);
-                const uint32_t pxSide=(sideSlot%slotsPerRow)*s.atlasTilePixels;
-                const uint32_t pySide=(sideSlot/slotsPerRow)*s.atlasTilePixels;
                 for(uint32_t orientation=0;orientation<s.orientationViews;++orientation) {
                     const uint32_t tileSlot=firstSlot+orientation;
                     const uint32_t tilePx=(tileSlot%slotsPerRow)*s.atlasTilePixels;
@@ -473,16 +529,18 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
 
     if(s.distantTerrain) {
         const uint32_t n=s.terrainResolution;
-        out.terrainVertices.reserve(size_t(n+1)*(n+1));
+        if(compatible)out.terrainVertices=previous->terrainVertices;
+        else out.terrainVertices.resize(size_t(n+1)*(n+1));
         for(uint32_t z=0;z<=n;++z)
             for(uint32_t x=0;x<=n;++x) {
                 const int64_t wx=out.originXcm+int64_t(x)*out.sideCm/n;
                 const int64_t wz=out.originZcm+int64_t(z)*out.sideCm/n;
+                if(compatible && !dirtyAt(wx,wz,0))continue;
                 const int32_t h=heightSample(wx,wz);
                 const auto biome=biomeSample(wx,wz);
                 const uint32_t color=horizon_detail::biomeColor(
                     biome,h,detail::hash2(wx/51200,wz/51200,terrain.seed));
-                out.terrainVertices.push_back({wx,wz,h,color});
+                out.terrainVertices[size_t(z)*(n+1)+x]={wx,wz,h,color};
             }
     }
     return out;
