@@ -1,4 +1,4 @@
-// AIVERSE universal Niagara-style VFX graph frontend, version 1.
+// AIVERSE SpectraFX: universal Niagara-style VFX graph compiler, version 1.
 // It compiles graph assets to the existing CPU particle backend (EffectDef).
 // A graph is presentation-only; it never changes authoritative ECS state.
 // This is deliberately a small, validated IR; GPU execution is NOT implemented here.
@@ -90,7 +90,7 @@ inline bool resolve(const Json& input, const Json& defaults, const Json& overrid
 // Properties are existing FxEffect.h emitter fields; later nodes override earlier.
 // Nested module objects merge recursively. Unknown properties are rejected by parseEffect.
 // Graph validation does not perform any IO, shader compilation, or runtime mutation.
-inline bool compileVfxGraph(const Json& graph, const Json& overrides, EffectDef& out,
+inline bool compileSpectraGraph(const Json& graph, const Json& overrides, EffectDef& out,
                             std::vector<std::string>& errors) {
     errors.clear();
     out = {};
@@ -228,9 +228,21 @@ inline bool compileVfxGraph(const Json& graph, const Json& overrides, EffectDef&
     return true;
 }
 
+inline bool compileSpectraGraph(const Json& graph, EffectDef& out,
+                            std::vector<std::string>& errors) {
+    return compileSpectraGraph(graph, Json::object(), out, errors);
+}
+
+
+// Compatibility aliases for code written before the SpectraFX public API.
+// Keep until dependent native projects have migrated.
+inline bool compileVfxGraph(const Json& graph, const Json& overrides,
+                            EffectDef& out, std::vector<std::string>& errors) {
+    return compileSpectraGraph(graph, overrides, out, errors);
+}
 inline bool compileVfxGraph(const Json& graph, EffectDef& out,
                             std::vector<std::string>& errors) {
-    return compileVfxGraph(graph, Json::object(), out, errors);
+    return compileSpectraGraph(graph, out, errors);
 }
 
 } // namespace aiverse::fx
