@@ -179,3 +179,34 @@ parent validity, LOD topology, independent parallel evaluation, render geometry
 index validity, and invalid profiles. Compilation/CTest results are tracked
 in `docs/terrain/AGENT_HANDOFF.md`.
 
+
+## Stage 2b: Flora CPU visibility and instancing prep
+
+`engine/world/TerraWeaveFlora.h` contains a presentation-only draw-list
+organizer that does **not** add one ECS entity per grass blade or tree.
+
+```cpp
+#include "engine/world/TerraWeaveFlora.h"
+using namespace aiverse::terraweave;
+FloraView view;
+view.cameraXcm = cameraXcm;
+view.cameraZcm = cameraZcm;
+auto batches = buildFloraBatches(placements, view);
+for (const FloraBatch& batch : batches) {
+    // Resolve species prototype + TreeLOD, pack instance transforms.
+    // Upload/submit via gfx::Device in a future renderer adapter.
+}
+```
+
+`FloraView` selects radial ranges for High/Medium/Low/Impostor mesh tiers,
+a hard culling radius, and stable seeded far-density thinning.
+`FloraBatch` groups copies of `FoliageInstance` by `(speciesId, lod)`.
+Ordering is canonical regardless of worker/chunk completion order, and
+overlapping identical placements are deduplicated within the resulting group.
+This is draw-list preparation **only**, not GPU instancing/culling/indirect
+drawing, frustum/Hi-Z occlusion or crossfade. Screen-space LOD,
+camera-frustum culling and distance-field shadows remain future stages.
+
+Never feed visibility decisions back into authoritative ECS state or
+network simulation; gameplay placement continues to use `scatter`.
+Test source: `tests/terraweave_flora_test.cpp`; CTest `terraweave_flora`.
