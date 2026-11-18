@@ -219,6 +219,28 @@ control phases rather than the mapping's consumption policy.
 Stage 47–48 tests are authored, but compilation and runtime execution have
 **not** yet been confirmed.
 
+## Stage 56 — validation evidence and remaining release gate
+
+The implementation branch has now entered the validation phase. At commit
+`cf26d02d0343`, GitHub Actions scheduled targeted InputFlow builds on
+Linux, macOS and Windows; **those jobs were still queued when inspected**,
+so they do not establish a PASS.
+
+One *full CI* Linux ARM64 job reached compilation and failed in unrelated
+ECS regression tests, because `assert(...)` checks in
+`tests/ecs_wave_executor_test.cpp` and
+`tests/ecs_experiments_test.cpp` disappeared in Release with `-DNDEBUG`,
+leaving check-only variables unused under `-Werror`. Stage 56 replaced
+those asserts with always-on `CHECK` assertions, preserving execution and
+test validity in Release instead of weakening compiler warnings.
+**The fixed commit has not yet received a green full CI verification.**
+
+The agent handoff contains exact failing job IDs, correction commits and the
+final build/test matrix. InputFlow remains a Draft PR pending successful
+CTest, editor/FPS/RTS native builds, multi-device input smoke and integration
+with the newest inspector branch. A queued or pending CI job is never
+evidence of a passing test.
+
 ## C++ basics
 
 \`\`\`cpp
