@@ -1621,3 +1621,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `813fa4631d6480101fd57e7085fbcd744882e38b`.
 - Added private `Module::stepOrdinaryProjectile(Simulation&,Projectile&)` declaration to `modules/fps/FpsModule.h`, matching the implementation introduced in SHA `8e54368`. Both legacy vector and direct ECS runtime paths call the same solver. The stage remains registered between programmed projectile and main round/actor systems.
 - Verification: GitHub code update only; no native build or tests.
+
+
+### 2026-11-18 — Whole-engine ECS plan acknowledges live direct FPS ProjectileRuntime flight ownership
+- **Documentation SHA:** `7655c80b0530b5af136e4ff36f182f5ceff03ec0`.
+- Updated `docs/ecs-all-features-migration-plan.md` with the new source-of-truth cutover: programmed flight now executes directly in the `ProjectileRuntime` ECS pool under `ecsAuthority`, preserving ordered ECS identities, split child creation and immediate impact; default legacy mode uses the same solver. Clearly marks remaining `State::projectiles` compatibility projection/writeback for grenades, round logic, spawn code, and v9 save/network.
+- **Verification:** documentation commit only; native build and actual FPS gameplay/rollback tests unverified.
+- **Next:** update AGENTS and projectile skill for the new ownership rule; update Epic, then inspect test harness/static code and CI.
