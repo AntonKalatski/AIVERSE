@@ -5,7 +5,8 @@ Implementation branch: `feature/texture-rhi-unification`.
 
 ## Status — staged source implementation (not GPU-validated)
 
-Stages 1–4H have source commits on this feature branch. **No native C++ build,
+Stages 1–6H have source commits on this feature branch (numbered in implementation
+order, with some stages revisited). **No native C++ build,
 GPU validation or CTest result has been confirmed passing for these changes.**
 Do not call the entire texture stack production-ready merely because a C++ method exists.
 Read the append-only `docs/agent-handoffs/texture-rhi-2026-11-18.md` for per-stage
@@ -33,13 +34,21 @@ SHA, unverified platforms and the next exact task.
   back all created handles. `tests/render/render_target_set.cpp` is a CPU-only
   mock-device lifetime and rollback test registered as `render_target_set`.
   This is separate from the existing Lua `render::RenderTexture` paint canvas.
-- **Import:** the KTX2 parser now preserves all array layers, cube faces and
-  3D slices, and `TextureAsset.h::uploadKtx2Image` offers an opt-in,
-  dimension-aware GPU upload with authored mips and CPU fallback.
-  The legacy model material path deliberately still selects the first 2D
-  slice, since its shaders are sampler2D. DDS still drops arrays/cube faces;
-  BasisLZ/UASTC transcoding, HDR/EXR and color-space-complete compressed
-  texture formats remain unimplemented.
+- **Import:** KTX2 and the new `DdsTexture.h::parseDdsTexture` both preserve
+  array layers, cube faces and volume slices in a shared `CompressedImage`
+  representation. DDS surface-major mip chains are reordered to mip-major.
+  `TextureAsset.h::uploadContainerTexture` converts either format to
+  GPU resources (or CPU RGBA8 fallback) with authored mipmaps, while
+  `uploadKtx2Image`/`uploadDdsImage` remain convenience aliases. Existing
+  model `sampler2D` imports intentionally keep their first 2D slice.
+  DDS signed/exotic formats, non-tight pitch, BasisLZ/UASTC transcoding,
+  HDR/EXR and complete compressed-sRGB native formats remain unavailable.
+- **Compressed formats:** source-level native mapping now includes BC4,
+  BC5 (RGTC) and EAC_R11 across Metal/GL/Vulkan, subject to GPU capability.
+  For BC5 normal maps, native GPU sampling produces RG without reconstructed
+  blue normal Z; the default generic importer therefore uses CPU RGBA
+  reconstruction. Set `TextureUploadOptions.shaderReconstructsBc5NormalZ=true`
+  only when the consuming shader reconstructs tangent-space Z.
 
 
 | Stage | Deliverable | Acceptance |
@@ -68,8 +77,8 @@ SHA, unverified platforms and the next exact task.
 - New GPU texture handles are presentation state only, not ECS-authoritative.
   No changes to serialization, game saves or replication.
 - **Known missing pieces:** mixed-format MRT and independent blend policies,
-  GL/Vulkan MSAA creation/resolve, virtual/streamed textures, expanded formats
-  and file import/transcoding, and real-device validation.
+  GL/Vulkan MSAA creation/resolve, virtual/streamed textures, many typed/HDR
+  pixel formats, Basis transcoding, exotic DDS variants, real-device validation.
 - The old `TextureCache` and `render::RenderTexture` still use 2D-only paths.
 
 ## Example: selected array layer and mip
@@ -160,6 +169,34 @@ if (aiverse::render::parseKtx2(ktx2Bytes, source, error)) {
 2D slice for CPU processing. The generic uploader does **not**
 automatically convert a glTF material's existing 2D sampler into an
 array/cubemap shader. Native SDK builds and GPU tests are still pending.
+
+## DDS DX10 arrays/cubes/volumes
+
+```cpp
+#include "engine/render/DdsTexture.h"
+#include "engine/render/TextureAsset.h"
+
+aiverse::render::CompressedImage dds;
+std::string err;
+if (aiverse::render::parseDdsTexture(ddsBytes, dds, err)) {
+    aiverse::render::TextureUploadOptions options;
+    // BC5 default: CPU reconstructs normal Z into RGBA8.
+    // Opt in to native BC5 ONLY if the texture shader reconstructs Z.
+    options.shaderReconstructsBc5NormalZ = false;
+    auto handle = aiverse::render::uploadDdsImage(device, dds, options, err);
+    if (handle.valid()) {
+        // Bind a matching shader sampler; release after GPU usage ends.
+        device.destroyTexture(handle);
+    }
+}
+```
+
+The old `decodeDds` material adapter still reads the first face and uses
+the 2D model-shader path. The new `parseDdsTexture` is the separate
+dimension-aware container API; it intentionally does not support every
+historical DDS pixel format. DDS layout is reordered from per-surface
+mip chains into complete mip levels for the RHI. No GPU tests have been
+run on this branch.
 
 ## References and handoff
 
