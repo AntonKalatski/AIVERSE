@@ -120,6 +120,36 @@ PrismaVolume one(const Json& j, const std::string& fallback, std::vector<std::st
 }
 } // namespace
 
+Json makePrismaVolumeJson(const std::string& id, PrismaVolumeShape shape, float3 center) {
+    if (id.empty() || id.size() > 96)
+        throw std::invalid_argument("PRISMA volume id must be 1..96 characters");
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z))
+        throw std::invalid_argument("PRISMA volume center must be finite");
+    Json v = Json::object();
+    v.set("id", Json::string(id));
+    v.set("shape", Json::string(shape == PrismaVolumeShape::Global ? "global" :
+                                 shape == PrismaVolumeShape::Sphere ? "sphere" : "box"));
+    if (shape != PrismaVolumeShape::Global) {
+        Json c = Json::array();
+        c.push(Json::number(double(center.x), 3));
+        c.push(Json::number(double(center.y), 3));
+        c.push(Json::number(double(center.z), 3));
+        v.set("center", std::move(c));
+    }
+    if (shape == PrismaVolumeShape::Sphere)
+        v.set("radius", Json::number(8.0));
+    if (shape == PrismaVolumeShape::Box) {
+        Json e = Json::array();
+        for (int i = 0; i < 3; ++i) e.push(Json::number(8.0));
+        v.set("halfExtents", std::move(e));
+    }
+    v.set("blendDistance", Json::number(2.0));
+    Json profile = Json::object();
+    profile.set("effects", Json::array());
+    v.set("profile", std::move(profile));
+    return v;
+}
+
 PrismaVolumeStack parsePrismaVolumes(const Json& game, const Json& map,
                                     std::vector<std::string>* issues) {
     PrismaVolumeStack stack;
