@@ -49,6 +49,7 @@ struct HorizonRuntimeStats {
     size_t vertexPatchCount=0, vertexPatchBytes=0; // successful partial VB commits
     size_t vertexPatchRanges=0; // last successful vertex update run count
     size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
+    size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
 };
 
 class TerraWeaveHorizonScene {
@@ -458,6 +459,7 @@ public:
         out.gpuCachedRegions=gpuCache_.size();
         out.gpuCachedBytes=gpuCache_.bytes();
         out.gpuCacheHits=gpuCacheHits_;
+        out.gpuCacheEvictions=gpuCache_.evictions();
         return out;
     }
     const world::AsyncChunkStream::Status& status() const {
