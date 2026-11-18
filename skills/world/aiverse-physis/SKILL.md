@@ -110,3 +110,13 @@ This is a query-time broadphase, **not** a new streaming/grid simulation,
 destruction engine or validated benchmark. Stage 16 test code checks reference
 versus indexed Fixed values; actual CTest/CI PASS remains unverified until run.
 See `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
+
+## Spatial index total reference cap — Stage 17
+
+The canonical `FieldSpatialIndex` (not a second index) now supports
+`FieldIndexSettings::maxTotalBucketReferences`, default 65,536 **per field
+type**, in addition to `maxTilesPerVolume`. If memory limits are reached,
+fields fall back to the existing ordered global list: they must never be
+dropped or sampled in the wrong order. This caps bucket growth, **not** total
+World/field memory. See `docs/agent-handoffs/physis-spatial-budget-2026-11-18.md`;
+tight-budget reference parity tests are authored but NOT RUN.
