@@ -117,13 +117,24 @@ private:
         valid_=spectra::compileGraph(doc_,result,errors_);
         emitters_=valid_?int(result.emitters.size()):0;
         gpuEligible_=false;
+        gpuVmEligible_=false;
         gpuReason_.clear();
+        gpuVmReason_.clear();
         if(valid_) {
             const auto eligibility=spectra::inspectGraphGpuEligibility(result);
             gpuEligible_=eligibility.eligible;
             gpuReason_=eligibility.eligible
                 ? "Metal compute subset compatible (device check still required)"
                 : eligibility.reason;
+            spectra::GraphRuntimeOptions vmOptions;
+            vmOptions.gpuProgram=true;
+            const auto vm=spectra::inspectGraphGpuEligibility(result,vmOptions);
+            const bool hasProgram=result.emitters.size()==1 &&
+                !result.emitters[0].particleProgram.isNull();
+            gpuVmEligible_=hasProgram && vm.eligible;
+            gpuVmReason_=!hasProgram?"Нет программы частиц"
+                :vm.eligible?"Совместимо (экспериментально, GPU не проверен)"
+                :vm.reason;
         }
     }
     void remember() {
@@ -899,6 +910,8 @@ private:
         ImGui::Text("CPU emitters: %d",emitters_);
         ImGui::Text("Metal GPU subset: %s",gpuEligible_?"compatible":"CPU fallback");
         if(!gpuReason_.empty())ImGui::TextWrapped("%s",gpuReason_.c_str());
+        ImGui::Text("Metal scalar VM (opt-in): %s",gpuVmEligible_?"compatible":"CPU fallback");
+        if(!gpuVmReason_.empty())ImGui::TextWrapped("%s",gpuVmReason_.c_str());
         ImGui::TextWrapped("V2: типизированные math/dataflow узлы, "
                            "модули FxEffect и функции компилируются в CPU. "
                            "Metal GPU доступен только для совместимого billboard-подмножества.");
@@ -913,8 +926,8 @@ private:
     std::map<std::string,bool> draftModes_;
     ImVec2 pan_{10,10};
     int selected_=-1,revision_=-1,emitters_=0;
-    bool dirty_=false,valid_=false,dragging_=false,gpuEligible_=false,editingDraft_=false;
-    std::string gpuReason_;
+    bool dirty_=false,valid_=false,dragging_=false,gpuEligible_=false,gpuVmEligible_=false,editingDraft_=false;
+    std::string gpuReason_,gpuVmReason_;
 };
 
 AIVERSE_EDITOR_WINDOW(SpectraGraphWindow);
