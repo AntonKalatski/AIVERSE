@@ -647,3 +647,39 @@ After GPU validation, implement MRT with color formats and multiple
 pipeline attachment slots, then multisampled textures and resolve
 operations. The current native APIs still support only one color
 target and no MSAA resolve.
+
+## Stage 4F — MSAA resource and resolve contract (2026-11-18)
+
+**Code commit:** `ffe532d8f6deb2d8884b4c687fb867fbd478708f`.
+**Paths:** `engine/gfx/Gfx.h`, `tests/render/texture_contract.cpp`.
+
+**Implemented in source:** Extended `PipelineDesc` with an
+appended `sampleCount=1` field (legacy-compatible), and
+`RenderTargetAttachment` with optional resolve destination,
+resolve mip and layer. CPU descriptor validation now permits only
+sampleCount 1/2/4/8/16 and rejects multisample compressed formats,
+depth-compare multisample textures, and invalid MSAA usage.
+`validateRenderTargetPassDesc` rejects resolve to the same
+source image, invalid resolve coordinates, and portable-unsupported
+depth resolves. Contract test cases added.
+
+**What is NOT implemented:** MSAA GPU allocations, resolve
+load/store actions and sample-count-aware graphics pipelines
+are not implemented by this contract alone. Pixel format,
+extent, sample-count compatibility must be checked by backends.
+Native Metal implementation follows, others will still reject.
+
+**Compatibility:** `PipelineDesc` gains only a default-initialized
+final field. Old `TextureDesc.sampleCount=1` and no-resolve passes
+remain unchanged. No game content/save/network/ECS impact.
+
+**Validation:** GitHub source commit recorded. C++ compile,
+CTest and GPU validation **NOT RUN**. CI previous jobs queued
+or cancelled, no passing status reported.
+
+**Next:** Stage 4G — Metal 2D MSAA resources, pipeline raster
+sample count and color resolve in `beginRenderTargets`.
+Then add a device-driven MSAA rendering/resolve test, verify
+samples 2/4/8 on supported GPU and document fallback.
+Do not silently enable sample count on GL/Vulkan before their
+pipeline/renderpass implementation is ready.
