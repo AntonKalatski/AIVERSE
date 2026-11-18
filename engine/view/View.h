@@ -160,14 +160,14 @@ public:
     }
     // Ordinary mesh/collision visualization, terrain tiles, gizmo backing
     // meshes and other plain draw packets use the SAME generic View API.
-    void submitMesh(render::Renderer3D& renderer,
-                    const MeshObject& object) const {
+    static void submitMesh(render::Renderer3D& renderer,
+                           const MeshObject& object) {
         if(!object.visible || !object.mesh)return;
         renderer.drawMesh(*object.mesh,object.world,object.color,
             object.flags,object.specular,object.emissive);
     }
-    void submitMeshes(render::Renderer3D& renderer,
-                      std::span<const MeshObject> objects) const {
+    static void submitMeshes(render::Renderer3D& renderer,
+                             std::span<const MeshObject> objects) {
         for(const auto& object:objects)submitMesh(renderer,object);
     }
     // Immediate geometry is genre-free: editors, diagnostics, debug

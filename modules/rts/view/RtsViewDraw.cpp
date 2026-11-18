@@ -319,7 +319,15 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
         const TypeLook& SL = looks_[o.shooterType];
         size = o.shotWeapon >= 0 && size_t(o.shotWeapon) < SL.projectileScale.size() ? SL.projectileScale[size_t(o.shotWeapon)] : SL.projectileScaleDefault;
     }
-    if (size > 0) r.drawMesh(projectile_, mat4::translate(o.pos + ps.launch) * mat4::scale({size, size, size}), {1, 0.95f, 0.8f, 1}, kDrawUnlit);
+    if(size>0) {
+        ::aiverse::view::MeshObject packet;
+        packet.mesh=&projectile_;
+        packet.world=mat4::translate(o.pos+ps.launch)*
+                     mat4::scale({size,size,size});
+        packet.color={1,0.95f,0.8f,1};
+        packet.flags=kDrawUnlit;
+        ::aiverse::View::submitMesh(r,packet);
+    }
 }
 
 void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const MapGrid& grid, double time) {

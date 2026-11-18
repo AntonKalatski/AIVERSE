@@ -218,3 +218,20 @@ Link the optional compiled presentation effect target
 visibility system. This is a render effect, not the
 authoritative visibility or enemy-detection algorithm.
 
+### Portraits, previews and projectiles
+
+The legacy game's portrait off-screen renderer now enters its
+existing render-target frame through `View::beginScene` and
+submits material previews and CPU poses through
+`View::submitModel`. The view does not own color/depth
+render targets or change graphics pass ordering.
+
+Ordinary flat-map, procedural and planetary projectile meshes
+are submitted as generic `view::MeshObject` packets through
+`View::submitMesh`, including their existing transforms,
+unlit flags and colors. `submitMesh` and `submitMeshes`
+are stateless static entry points; legacy object calls remain
+source-compatible. This is a **render submission migration**:
+the game host still owns projectile gameplay, planet tangent
+frames, and previews' simulation-specific data.
+

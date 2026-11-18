@@ -450,7 +450,14 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         if (!o.isProjectile && o.type < replacedByRoads.size() && replacedByRoads[o.type]) continue;
         if (o.isProjectile) {
             if (o.visible && o.entity.valid()) drawProjectile(r, o.entity.packed(), o, dt);
-            else if (o.visible) r.drawMesh(projectile_, mat4::translate(o.pos), {1, 0.95f, 0.8f, 1}, kDrawUnlit);
+            else if(o.visible) {
+                ::aiverse::view::MeshObject packet;
+                packet.mesh=&projectile_;
+                packet.world=mat4::translate(o.pos);
+                packet.color={1,0.95f,0.8f,1};
+                packet.flags=kDrawUnlit;
+                ::aiverse::View::submitMesh(r,packet);
+            }
             continue;
         }
         if (twoD_ && twoD_->hasSprite(o.type)) { // 2D games: sprites instead of models
