@@ -422,17 +422,41 @@ public:
 
     void submit(render::Renderer3D& renderer,ForestRenderOriginCm origin = {}) const {
         if(!model_)return;
-        render::ModelDraw draw;
-        draw.model=model_.get();
-        draw.world=render::mat4::translate({
-            float(originXcm_-origin.x)*0.01f,
-            float(-origin.y)*0.01f,
-            float(originZcm_-origin.z)*0.01f
-        });
-        draw.flags=render::kDrawStatic;
-        draw.persistentId=detail::hash2(originXcm_,originZcm_,
-                                          0x5445525241484c4fULL)|1u;
-        renderer.drawModel(draw); // renderer groups two materials into few draws
+        // The existing Renderer3D tint-alpha + transparent draw flags
+        // provide a bounded two-model crossfade. No new shader/backend,
+        // per-tree billboard or ECS data is created for the transition.
+        const auto drawRegion=[&](const render::Model* model,
+                                  int64_t xCm,int64_t zCm,
+                                  float alpha,bool blending) {
+            if(!model || alpha<=0.0f)return;
+            render::ModelDraw draw;
+            draw.model=model;
+            draw.world=render::mat4::translate({
+                float(xCm-origin.x)*0.01f,
+                float(-origin.y)*0.01f,
+                float(zCm-origin.z)*0.01f
+            });
+            draw.tint={1.0f,1.0f,1.0f,alpha};
+            draw.flags=blending ?
+                (render::kDrawTransparent | render::kDrawNoCastShadow |
+                 render::kDrawNoReceiveShadow) :
+                render::kDrawStatic;
+            draw.persistentId=detail::hash2(xCm,zCm,
+                0x5445525241484c4fULL)|1u;
+            renderer.drawModel(draw);
+        };
+        if(transition_.model && transitionRevision_==sourceRevision_ &&
+           settings_.regionTransitionMs && activeCell_) {
+            const float t=transitionFraction();
+            if(t<1.0f) {
+                drawRegion(transition_.model.get(),
+                    transition_.originXcm,transition_.originZcm,
+                    1.0f-t,true);
+                drawRegion(model_.get(),originXcm_,originZcm_,t,true);
+                return;
+            }
+        }
+        drawRegion(model_.get(),originXcm_,originZcm_,1.0f,false);
     }
     void shutdown(gfx::Device& device) {
         if(stream_){
