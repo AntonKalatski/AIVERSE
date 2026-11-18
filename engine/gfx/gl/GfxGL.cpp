@@ -724,8 +724,9 @@ public:
         if (!validateRenderTargetPassDesc(desc) || inPass_) {
             error_ = "GL: invalid or nested render target pass"; return false;
         }
-        if (desc.colorCount > 1) {
-            error_ = "GL: MRT pipeline binding requires multi-color stage";
+        if (desc.colorCount > 1 ||
+            (desc.colorCount == 1 && desc.colors[0].resolveTexture.valid())) {
+            error_ = "GL: MRT and explicit MSAA resolves are not yet supported";
             return false;
         }
         auto attachment = [&](const RenderTargetAttachment& a, bool isDepth, int& w, int& h) {

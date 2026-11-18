@@ -185,8 +185,9 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
         error_ = "Vulkan: invalid or nested render-target pass";
         return false;
     }
-    if (desc.colorCount > 1) {
-        error_ = "Vulkan: multi-color pipelines are not implemented";
+    if (desc.colorCount > 1 ||
+        (desc.colorCount == 1 && desc.colors[0].resolveTexture.valid())) {
+        error_ = "Vulkan: MRT and explicit MSAA resolves are not yet supported";
         return false;
     }
     auto check = [&](const RenderTargetAttachment& a, bool wantDepth, int& w, int& h) {
