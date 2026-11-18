@@ -403,3 +403,26 @@ Do **not** also call `update(objects,dt)` in the same frame: that would
 advance animation twice. All packet resources remain host-owned until
 synchronous render submission. This is an API convenience, not a new
 render pass or a change to authoritative gameplay.
+
+## RTS single-writer animation boundary
+
+The legacy RTS scene adapter selects only simple, pure pose graphs
+(no procedural bones, contact IK, custom traits, attachments, stage/LOD
+switches or host-injected animation overrides). It stages those sources
+in one `ScenePacketBatch` and calls `View::update(batch,dt)` once
+before ordinary scene rendering. View's presentation World is the
+single evaluator for each selected source.
+
+`RtsAnimate.cpp` then obtains the evaluated pose from View. When
+`EntityAnim::genericViewPose` is true, legacy `Animator::update` and
+bind-pose fallback **must not execute**, even if the model has imported
+clips. Objects that fail eligibility or pose validation keep the existing
+legacy graph/clip/procedural path, including terrain contact IK. RTS
+still supplies material, world transform and draw style to View's
+`submitOne`; no second MotionWeave evaluation is requested during
+submission. This is a presentation-only migration: simulation,
+network/save formats and deterministic checksums are unchanged.
+
+**Verification pending:** the integrated RTS regression suite,
+animated-model visual comparisons and macOS Metal path have not been
+executed for this stage.
