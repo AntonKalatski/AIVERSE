@@ -559,10 +559,82 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         resetAutoExposure(viewId_);
     }
 
+    // ---- Stage 25: view-specific camera/object motion vectors and blur.
+    // Motion history stores matrices only (never prior gameplay/ECS values).
+    // Signed velocities require RGBA16F: no implicit RGBA8 quantization.
+    Target src = scene;
+    auto& motionView = motionViews_[viewId_];
+    const bool previousValid = motionView.valid &&
+        motionView.width == w && motionView.height == h;
+    const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
+    const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
+    if (motionEffect && motionFlag && std::strcmp(motionFlag, "1") == 0 &&
+        hdrFrame_ && previousValid && motionEffect->get("intensity") > 0 &&
+        motionEffect->get("maxPixels") > 0 &&
+        program(kMotionVectors).valid() && program(kMotionBlur).valid()) {
+        const Target velocity = target(set, kMotionVelocity, w, h);
+        const Target blurred = target(set, kMotionColor, w, h);
+        const auto sceneDepth = depthFor(set, w, h);
+        const auto scratchDepth = depthFor(set, w, h, true);
+        if (velocity.tex.valid() && blurred.tex.valid() &&
+            scene.tex.valid() && sceneDepth.valid() && scratchDepth.valid()) {
+            MotionUniforms vectors{};
+            put(vectors.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
+            put(vectors.p0, dev.info().clipDepthZeroToOne ? 1.0f : 0.0f,
+                motionView.objectVelocity.valid() ? 1.0f : 0.0f, 0, 0);
+            const mat4 inverseViewProj = f.viewProj.inverse();
+            std::memcpy(vectors.inv0, inverseViewProj.m, sizeof inverseViewProj.m);
+            std::memcpy(vectors.prev0, motionView.previousViewProj.m,
+                        sizeof motionView.previousViewProj.m);
+            // Explicit RHI pass, not Prisma::draw(), because the scene depth
+            // texture is simultaneously sampled: a different scratch depth
+            // attachment prevents read/write feedback.
+            auto raster = [&](const Target& output, gfx::PipelineHandle pipeline,
+                              const void* uniforms, size_t bytes,
+                              gfx::TextureHandle input0,
+                              gfx::TextureHandle input1,
+                              gfx::TextureHandle input2) {
+                gfx::PassDesc pass;
+                pass.colorTarget = output.tex;
+                pass.depthTarget = scratchDepth;
+                pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0;
+                pass.clearColor[3] = 1;
+                dev.beginPass(pass);
+                dev.setViewport({0, 0, w, h});
+                dev.setPipeline(pipeline);
+                dev.setVertexBuffer(triangle_);
+                dev.setUniforms(0, uniforms, bytes);
+                dev.setTexture(0, input0);
+                dev.setTexture(1, input1);
+                dev.setTexture(2, input2);
+                dev.draw(3);
+                dev.endPass();
+                ++stats_.passes;
+            };
+            raster(velocity, pipes_[kMotionVectors], &vectors, sizeof vectors,
+                   scene.tex, sceneDepth,
+                   motionView.objectVelocity.valid() ? motionView.objectVelocity : black_);
+            SimpleU blur{};
+            put(blur.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
+            put(blur.p0, motionEffect->get("shutterScale"),
+                motionEffect->get("maxPixels"),
+                motionEffect->get("samples"), motionEffect->get("intensity"));
+            raster(blurred, pipes_[kMotionBlur], &blur, sizeof blur,
+                   scene.tex, velocity.tex, black_);
+            src = blurred;
+        }
+    }
+    // Snapshot once per rendered view. A cut invalidates the previous data,
+    // so the first subsequent frame presents sharp color and seeds history.
+    motionView.previousViewProj = f.viewProj;
+    motionView.width = w;
+    motionView.height = h;
+    motionView.valid = true;
+    motionView.objectVelocity = {};
+
     // ---- experimental depth of field: device-depth driven defocus
     // The scene depth texture must NEVER be attached for depth writes while
     // sampled, so a separate scratch depth attachment is used for this pass.
-    Target src = scene;
     if (const PrismaEffect* dof = find(PrismaType::DepthOfField)) {
         const char* flag = std::getenv("AIVERSE_PRISMA_DOF");
         if (flag && std::strcmp(flag, "1") == 0 &&
@@ -588,7 +660,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 dev.setPipeline(pipes_[kDepthOfField]);
                 dev.setVertexBuffer(triangle_);
                 dev.setUniforms(0, &dofU, sizeof dofU);
-                dev.setTexture(0, scene.tex);
+                dev.setTexture(0, src.tex);
                 dev.setTexture(1, sceneDepth);
                 dev.draw(3);
                 dev.endPass();
