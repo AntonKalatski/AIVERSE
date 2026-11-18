@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 #include "PrismaData.h"
+#include "PostFxData.h" // legacy aliases used by existing clients and editor
+#include "PrismaVolumes.h"
 #include "Renderer3D.h"
 
 namespace aiverse::render {
