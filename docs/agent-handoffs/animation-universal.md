@@ -1373,3 +1373,46 @@ before calling this stage validated.
   than adding FPS/RTS special cases to `View`. Commit Stage 51
   implementation then separate handoff before other work.
 
+## Stage 51 — FPS and game View share engine-level draw submission (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  PR #22 Draft, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `5b7f14c4e83063e5cf03d8165b5718055590b599`.
+- **Changed files:** `apps/fps/client.cpp`,
+  `modules/fps/CMakeLists.txt`, root `CMakeLists.txt`,
+  `docs/motionweave.md`.
+- **Architecture:** FPS now uses an independent
+  `aiverse::View` instance as a genre-neutral renderer gateway:
+  it passes each skinned remote-character `render::ModelDraw`
+  packet to `View::submitOne`. CPU Graph and GPU Baked
+  animation are still evaluated only once by the existing host,
+  and their per-frame pose/baked pointers are forwarded rather
+  than recomputed by a second animation World.
+  Legacy `game::RtsView` delegates a narrowly supported subset
+  of compiled Graph models to the same method (Stage 50).
+- **Public API:** new canonical CMake alias `AIVERSE::View`
+  alongside previous `AIVERSE::view` for the same engine-level
+  `aiverse_view` target. Public header remains
+  `<engine/view/View.h>`. No simulation/backend protocol change.
+- **Compatibility:** FPS weapon counters, lighting, world
+  streaming, audio, health and networking remain in the FPS
+  adapter. Scene View does not import FPS/RTS or select a genre.
+  The old game-side `RtsView` stays available as a migration
+  compatibility wrapper.
+- **Validation:** **NOT RUN**, including CMake, all CTests,
+  FPS/RTS graphics screenshots, TSAN, benchmarks. This was
+  source-only GitHub work.
+- **Risks:** generic View currently delegates to the existing
+  Renderer3D for actual draw calls; model packet data and
+  CPU/GPU textures are borrowed and must outlive the
+  `submitOne` call. Not all legacy geometry/fog/terrain/camera
+  selection has been unified. Do not claim that `RtsView` has
+  already been completely removed or renamed.
+- **Next actionable stage:** add a genre-independent source-level
+  boundary guard for `engine/view`, and expand the
+  `aiverse::View` convenience API to take precomputed and
+  animated model packets without host-specific branching.
+  Then migrate additional common camera/layer operations
+  and keep legacy game adapters compatibility-only.
+  Follow each code commit with Stage 52 handoff.
+
