@@ -2257,3 +2257,23 @@ insufficient. Do not duplicate the generic renderer.
 **Tester agent work:** update assertions that assumed old TWH2 and exactly 9,057 vertices/7,936 triangles; verify TWH3 round-trip and invalid-old-version fallback; compare global-grid heights/normals for overlapping regions at 16,24,48,64 and nondividing 47 resolutions, including negative X/Z; validate partial-edit neighborhood normal re-evaluation and unchanged atlas offsets; validate skirt indices/orientation/topology/bounds, material 0 opacity and no extra draw calls; test RHI partial vertex updates vs full fallback; inspect screenshots at extreme terrain relief, near-region boundaries, high camera elevation, teleport and transitions; check atlas memory/fps bounds. Append observed results to this file.
 
 **Next implementation-only scope:** share a generic stitch/geomorph policy with independently authored near-ground terrain and add optional distance-fog/horizon-edge treatment if those contracts exist in the renderer. Avoid creating a parallel terrain renderer. Testing agent owns all CTest/GPU evidence.
+
+### Stage 16 continuation — reusable public Horizon terrain lattice (COMMITTED, NOT TESTED)
+- `ae5cb9a1f2519e18df7ef8b13bf42cd4592298d2`:
+  `engine/world/TerraWeaveHorizon.h` exports a small
+  `HorizonTerrainLattice` POD and
+  `makeHorizonTerrainLattice(settings,cameraXcm,cameraZcm)`.
+  Native terrain producers and offline asset-bakers can obtain the
+  same world-space X/Z sample coordinates via `worldX(index)`,
+  `worldZ(index)` and `nominalStepCm()`; the CPU Horizon
+  baker itself now uses this shared API instead of a local
+  duplicate formula. Ghost neighbors use -1 / N+1.
+- `873fd8495cf8ef72481d7a369feb0e3e7bfc5067`:
+  `HorizonTerrainLattice::validate()` rejects zero/negative
+  step or zero/invalid resolution before signed division.
+
+**Actual verification:** GitHub source review and commits only.
+No compiler, CTest, native execution or GPU checks have run.
+The test agent should add direct lattice-coordinate tests for
+48/64/47 resolutions, negative and adjacent region keys, and
+TWH3 round-trip seam parity. Keep PR Draft.
