@@ -38,6 +38,10 @@ struct ComputeEmitterDesc {
     // Experimental Metal-only option; no effect on existing CPU/host-gather
     // paths. Requires RHI supportsGpuAuthoredIndirectDraw().
     bool gpuIndirect = false;
+    // Experimental Metal GPU scalar VM (requires strict Stage-22 eligibility).
+    // Off by default; unsupported stages/operations execute the full CPU VM.
+    bool gpuProgram = false;
+    Json particleProgram; // compiled once to fixed ABI, never executed as JSON
 };
 
 bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullptr);
@@ -76,12 +80,19 @@ public:
     bool ready() const { return initialized_; }
     bool gpuActive() const { return initialized_ && backend_ == ComputeBackend::Metal; }
     bool gpuIndirectActive() const { return gpuActive() && gpuIndirectActive_; }
+    bool gpuProgramActive() const {
+        return gpuActive() && desc_.gpuProgram && !desc_.particleProgram.isNull();
+    }
+    bool setProgramParameter(uint32_t slot,float value,bool affectExisting=false);
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
 private:
     struct ParticleState {
         render::float4 positionAge, velocityLife, tint, size;
+    };
+    struct ProgramParams {
+        render::float4 p0{}, p1{};
     };
     struct Vertex {
         float x,y,z,u,v;
@@ -97,6 +108,7 @@ private:
         float fog[4], camera[4], params[4];
     };
     static_assert(sizeof(ParticleState)==64);
+    static_assert(sizeof(ProgramParams)==32);
     static_assert(sizeof(Vertex)==40);
     static_assert(sizeof(Uniforms)==64);
     static_assert(sizeof(DrawUniforms)==112);
@@ -115,11 +127,16 @@ private:
     gfx::PipelineHandle pipeline_;
     gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
     gfx::BufferHandle aliveCounter_, gpuDrawArgs_;
+    gfx::BufferHandle seedProgramParams_, stateProgramParams_, gpuVmPayload_;
     gfx::TextureHandle texture_;
     std::vector<float> ages_;
     uint32_t drawCount_ = 0; // dense vertices emitted this frame (<= alive)
     std::vector<uint32_t> freeSlots_, pendingSlots_, aliveSlots_;
     std::vector<ParticleState> pendingStates_;
+    std::vector<ProgramParams> pendingProgramParams_, programStateCache_;
+    std::array<float,8> programParams_{};
+    std::vector<fx::FxHandle> cpuHandles_;
+    bool programParamsDirty_ = false;
     render::mat4 viewProj_;
     fx::float3 eye_{}, right_{1,0,0}, up_{0,1,0};
     bool initialized_ = false, viewReady_ = false, verticesReady_ = false;
