@@ -1020,3 +1020,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `libraries/catalog.json`: the existing `ecs-timed-mechanics` package now explicitly tracks `FixedRegeneration.h` and its policy test; still 123 catalog entries. Preserves existing package source paths and public target.
 - Verification: JSON parsed with 123 packages during the edit; **native catalog filesystem check/CTest not run**.
 - Next: keep source pins/skills synchronized and finish engine-wide test validation before production enablement.
+
+
+### 2026-11-18 — Timed ECS skill updated for live FPS/RTS adopters
+- Implementation SHA: `373600d3047bbf6979c1b0ec7e4f6ba0e5a424fb`.
+- Updated `skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md`: names real FPS `stepWeaponReload` and RTS `stepFixedResourceRegeneration` adoption; forbids parallel authoritative component copies and preserves tick-order parity requirements. Specifies `ecsReloadAuthorityParity` and `ecs_fixed_regeneration_policy_test` as incremental gates.
+- Verification: docs-only commit; native execution remains unverified.
+- Next: fix any native CI failure, then isolate full FPS/RTS subsystem stages with explicit component ownership.
