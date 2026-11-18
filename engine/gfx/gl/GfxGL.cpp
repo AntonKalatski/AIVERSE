@@ -404,7 +404,7 @@ public:
         GLint f = d.filter == Filter::Linear && !needsNearestFloatFilter(d.format) ? GL_LINEAR : GL_NEAREST; // float32 textures may not be linearly filterable on ES3
         if (t.mips && d.data) glGenerateMipmap(GL_TEXTURE_2D);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, t.levels > 1 ?
-                        (d.filter == Filter::Linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) : f);
+                        (f == GL_LINEAR ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) : f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
         if (d.format == PixelFormat::RGBA16F && d.renderTarget) {
             GLint oldDraw=0, oldRead=0;
