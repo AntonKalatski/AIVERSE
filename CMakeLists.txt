@@ -2262,3 +2262,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_spatial_index COMMAND aiverse_physis_spatial_index_test)
     set_tests_properties(physis_spatial_index PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 17: renderer-independent heatmap palette and editor preview fixture.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_editor_view_test tests/physis_editor_view_test.cpp)
+    target_link_libraries(aiverse_physis_editor_view_test PRIVATE aiverse_engine)
+    add_test(NAME physis_editor_view COMMAND aiverse_physis_editor_view_test)
+    set_tests_properties(physis_editor_view PROPERTIES LABELS "PHYSIS")
+endif()
