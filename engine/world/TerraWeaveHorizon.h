@@ -270,7 +270,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.clusters.reserve(possible);
 
     const auto addLayer = [&](int32_t cell,uint32_t count,int32_t minDistance,
-                              int32_t maxDistance,uint64_t salt,bool middle) {
+                              int32_t maxDistance,uint64_t salt,bool middle,uint32_t atlasBase) {
         const int64_t centerCellX=detail::floorDiv(cameraXcm,cell);
         const int64_t centerCellZ=detail::floorDiv(cameraZcm,cell);
         const int64_t half=count/2;
@@ -327,8 +327,11 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 const int32_t bottom=low-250;
                 const int32_t top=high+s.canopyHeightCm+500;
                 if (top-bottom>200000)continue; // prevent absurd giant billboard
+                // Atlas position is derived from the fixed region lattice
+                // rather than the number of visible clusters. Changing a
+                // road mask or biome can no longer move unrelated UV tiles.
                 const uint32_t firstSlot=
-                    static_cast<uint32_t>(out.clusters.size())*s.orientationViews;
+                    (atlasBase+iz*count+ix)*s.orientationViews;
                 const uint32_t slotsPerRow=atlasSide/s.atlasTilePixels;
                 const uint32_t px=(firstSlot%slotsPerRow)*s.atlasTilePixels;
                 const uint32_t py=(firstSlot/slotsPerRow)*s.atlasTilePixels;
@@ -460,12 +463,13 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     addLayer(s.middleTileCm,s.middleTilesPerSide,
              std::max(0,s.closeForestEndCm-s.nearBlendCm),
              s.middleForestEndCm+s.tierBlendCm/2,
-             0x9c6f54574d49444dULL,true);
+             0x9c6f54574d49444dULL,true,0u);
     const int32_t farRadius=static_cast<int32_t>(
         int64_t(s.distantTilesPerSide)*s.distantTileCm/2);
     addLayer(s.distantTileCm,s.distantTilesPerSide,
              s.middleForestEndCm-s.tierBlendCm/2,
-             farRadius,0x9c6f54574641524dULL,false);
+             farRadius,0x9c6f54574641524dULL,false,
+             s.middleTilesPerSide*s.middleTilesPerSide);
 
     if(s.distantTerrain) {
         const uint32_t n=s.terrainResolution;
