@@ -1529,3 +1529,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation/docs SHA: `62eb55759951fb9d20980c1122c48616bfa3dcf4`.
 - Updated `AGENTS.md`: for new gameplay and agents, live FPS `FpsProjectiles.cpp` uses shared swept collision (`EcsSweepQuerySystems.h`) from physical ECS projectile package with endpoint/tie invariants; live FPS `traceShot` uses shared `resolveHitscanIntent` (same as separately schedulable ECS resolver) and generic vehicle ray selection but retains synchronous damage. Explicitly references existing v9/deep-COW programmed projectile tests and new two-shooter FPS rewind/save/rollback parity fixture; requires actual native execution before default-on or queued-impact changes. Motion policy is per weapon, never RTS/FPS.
 - This is documentation-only; no compiled tests or gameplay runtime changed in this commit.
+
+
+### 2026-11-18 — FPS per-projectile ECS executor declaration
+- Code SHA: `b853ab8fd414375e76b99c40e5ac3b3a32df1c9a`.
+- Declared private `Module::stepProgrammedProjectile(Simulation&,Projectile&,std::vector<Projectile>&,std::size_t liveCount)` in `modules/fps/FpsModule.h` as the shared per-projectile solver boundary for both legacy vector iteration and direct ECS `ProjectileRuntime` iteration. It will retain the legacy collision, movement, spawn, immediate damage, status and event order.
+- Verification: source-only declaration; **native compilation not run**. The definition and callers are still pending in the next implementation step; do not build this intermediate commit.
+- Next: extract old solver once, then implement ECS Runtime direct iteration and compatibility read projection, preserving `State::projectiles` only for later legacy mechanics.
