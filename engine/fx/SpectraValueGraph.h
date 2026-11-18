@@ -24,7 +24,7 @@ inline bool valueNodeType(std::string_view type) {
         "Add","Subtract","Multiply","Divide","Min","Max","Clamp","Lerp",
         "Sin","Cos","Abs","Negate","Sqrt","Pow","Floor","Ceil",
         "Length","Normalize","Dot","Cross","ComposeVec2","ComposeVec3",
-        "ComposeVec4","Select","Greater","Less","Equal"
+        "ComposeVec4","Select","Greater","Less","Equal","FunctionCall"
     }) if(type == n) return true;
     return false;
 }
@@ -34,8 +34,12 @@ inline bool finiteValue(double x) { return std::isfinite(x) && std::abs(x) <= 10
 class ValueGraph {
 public:
     ValueGraph(const Json& nodes, const Json& defaults, const Json& overrides,
-               std::vector<std::string>& errors)
-        : nodes_(nodes), defaults_(defaults), overrides_(overrides), errors_(errors) {}
+               std::vector<std::string>& errors,
+               const Json* functions=nullptr,
+               std::set<std::string>* activeFunctions=nullptr)
+        : nodes_(nodes), defaults_(defaults), overrides_(overrides),
+          errors_(errors), functions_(functions),
+          activeFunctions_(activeFunctions?activeFunctions:&ownedFunctionCalls_) {}
 
     bool initialize() {
         if(!nodes_.isArray() || nodes_.size()>256) return fail("invalid v2 nodes");
@@ -142,6 +146,42 @@ public:
         const std::string type=node.getStr("type");
         const Json& p=node["properties"];
         const auto done=[&](bool ok){visiting_.erase(id);return ok;};
+        if(type=="FunctionCall") {
+            // A function is a pure local value graph; arguments are resolved
+            // in the caller's context and must match the function's declared
+            // typed default parameters. Calls share a recursion guard.
+            const Json& props=node["properties"];
+            const std::string name=props.getStr("function",node.getStr("function"));
+            if(!functions_ || !functions_->isObject() || !functions_->has(name))
+                return done(fail("unknown function '"+name+"'"));
+            if(activeFunctions_->size()>=8 ||
+               !activeFunctions_->insert(name).second)
+                return done(fail("recursive/excessive function call '"+name+"'"));
+            const Json& fn=(*functions_)[name];
+            Json args=Json::object();
+            bool ok=fn.isObject()&&fn["nodes"].isArray()&&fn["parameters"].isObject();
+            if(ok && props.has("arguments"))
+                ok=resolve(props["arguments"],args,depth+1,haveAge,age);
+            if(ok && !args.isObject())ok=fail("function arguments must be an object");
+            if(ok) {
+                ValueGraph nested(fn["nodes"],fn["parameters"],args,
+                                  errors_,functions_,activeFunctions_);
+                ok=nested.initialize() && nested.validateAll() &&
+                   nested.evaluate(fn.getStr("output"),out,depth+1,haveAge,age);
+            }
+            if(ok && fn.has("returns")) {
+                const std::string declared=fn.getStr("returns");
+                ok=(declared=="number"&&out.isNumber())||
+                   (declared=="bool"&&out.type()==Json::Type::Bool)||
+                   (declared=="string"&&out.isString())||
+                   (declared=="vec2"&&vectorOf(out,2))||
+                   (declared=="vec3"&&vectorOf(out,3))||
+                   (declared=="vec4"&&vectorOf(out,4));
+                if(!ok)fail("function '"+name+"' returned wrong declared type");
+            }
+            activeFunctions_->erase(name);
+            return done(ok);
+        }
         if(type=="AgeNormalized") {
             if(!haveAge)return done(fail("AgeNormalized needs a $curve sampling context"));
             out=Json::number(age,6);
@@ -378,7 +418,9 @@ private:
     const Json& overrides_;
     std::vector<std::string>& errors_;
     std::map<std::string,const Json*> all_;
-    std::set<std::string> data_,visiting_;
+    std::set<std::string> data_,visiting_,ownedFunctionCalls_;
+    const Json* functions_=nullptr;
+    std::set<std::string>* activeFunctions_=nullptr;
 };
 
 } // namespace aiverse::fx::vfx2
