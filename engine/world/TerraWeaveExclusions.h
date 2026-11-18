@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
+#include <utility>
 #include <stdexcept>
 #include <vector>
 
@@ -31,7 +33,24 @@ class FoliageExclusionMask {
 public:
     void addBuilding(RectCm rect) {
         validateRect(rect);
+        const size_t index = buildings_.size();
         buildings_.push_back(rect);
+        // Most collision boxes cover a handful of 64m buckets. Index
+        // those locally instead of scanning every building in a streamed
+        // city for each candidate tree. Very large shapes stay in one
+        // overflow list to bound indexing allocations.
+        const int64_t firstX = detail::floorDiv(rect.minX, kBucketCm);
+        const int64_t lastX = detail::floorDiv(rect.maxX - 1, kBucketCm);
+        const int64_t firstZ = detail::floorDiv(rect.minZ, kBucketCm);
+        const int64_t lastZ = detail::floorDiv(rect.maxZ - 1, kBucketCm);
+        const int64_t cells = (lastX - firstX + 1) * (lastZ - firstZ + 1);
+        if (cells > 256) {
+            broadBuildings_.push_back(index);
+            return;
+        }
+        for (int64_t z = firstZ; z <= lastZ; ++z)
+            for (int64_t x = firstX; x <= lastX; ++x)
+                buildingBuckets_[{x, z}].push_back(index);
     }
     void addRoad(BufferedRoadCm road) {
         validate(road.a); validate(road.b);
@@ -48,7 +67,15 @@ public:
 
     bool excludes(int64_t x, int64_t z) const {
         validate({x, z});
-        for (const RectCm& r : buildings_) if (r.contains(x, z)) return true;
+        for (size_t i : broadBuildings_)
+            if (buildings_[i].contains(x, z)) return true;
+        const auto bucket = buildingBuckets_.find({
+            detail::floorDiv(x, kBucketCm),
+            detail::floorDiv(z, kBucketCm)
+        });
+        if (bucket != buildingBuckets_.end())
+            for (size_t i : bucket->second)
+                if (buildings_[i].contains(x, z)) return true;
         for (const auto& p : water_) if (insidePolygon(p.vertices, x, z)) return true;
         for (const auto& p : footprints_) if (insidePolygon(p.vertices, x, z)) return true;
         for (const BufferedRoadCm& r : roads_)
@@ -60,6 +87,7 @@ public:
                water_.size() + footprints_.size();
     }
 private:
+    static constexpr int64_t kBucketCm = 6400;
     static void validate(MaskPointCm p) {
         if (p.x < -kWorldLimitCm || p.x > kWorldLimitCm ||
             p.z < -kWorldLimitCm || p.z > kWorldLimitCm)
@@ -115,6 +143,8 @@ private:
         return inside;
     }
     std::vector<RectCm> buildings_;
+    std::map<std::pair<int64_t, int64_t>, std::vector<size_t>> buildingBuckets_;
+    std::vector<size_t> broadBuildings_;
     std::vector<BufferedRoadCm> roads_;
     std::vector<ExclusionPolygonCm> water_, footprints_;
 };
