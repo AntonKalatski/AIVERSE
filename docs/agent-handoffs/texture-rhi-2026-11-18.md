@@ -2288,3 +2288,39 @@ allocation rollback, row/slice validation, failed update quarantine and stale
 resource-ID rejection. Execute compiler/CTest on a native checkout and write
 actual outcomes. Afterwards consider optional readback and streaming residence
 policy, keeping code and handoff as separate commits.
+
+## Stage 7B — CPU staging and streaming scheduler regression tests (2026-11-18)
+
+**Code commit:** `3ee65b1b522b8b40250889eb98cfc3436eaf2c3f`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Paths:** `tests/render/texture_streaming.cpp`, `CMakeLists.txt`.
+
+**Test source:** Register GPU-independent `texture_streaming` CTest.
+A mock gfx::Device verifies bounded texture GPU allocation, staging
+byte caps, per-frame transfer/update limits, deep-copy of caller-owned
+CPU source before it changes, sequential FIFO drains, ticket
+cancellation, logical IDs not reused, stale-token rejection, cleanup
+on shutdown, 3D volume upload with padded rows/slices, out-of-bounds
+and truncated upload rejection, GPU update failure quarantine and
+cancellation of subsequent jobs for the failed texture. The mock
+uses the public Device interface so it also tests native C++ include/
+link viability once compiled.
+
+**Runtime/code changes:** Test-only, apart from registration in
+CMake. Existing render paths, serialization, ECS/gameplay, and
+resources unchanged. Staged uploads remain render-thread
+synchronous GPU transfers, not actual asynchronous readbacks.
+
+**Verification:** GitHub source commit/ref update succeeded.
+Native C++ compilation and CTest execution: **NOT RUN** (no checkout;
+container network DNS cannot resolve github.com). CI not confirmed
+passing. Do not report fixture green until actually executed.
+
+**Next:** Run
+`cmake --build build/texture-rhi --target aiverse_texture_streaming_test`
+and
+`ctest --test-dir build/texture-rhi --output-on-failure -R '^texture_streaming$'`.
+Correct compiler/behavior failures. Then add streaming texture
+residency/LOD policy and a separate skill for native game agents;
+continue with GL MSAA/resolve and editor resource views in
+independent stage/handoff commits.
