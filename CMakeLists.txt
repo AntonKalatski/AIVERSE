@@ -557,6 +557,15 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_ragdoll_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_ragdoll_asset COMMAND aiverse_animation_ragdoll_tests)
 endif()
+if((AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS) AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT IOS)
+    add_executable(aiverse_root_motion_bake tools/animation/root_motion_bake.cpp)
+    target_link_libraries(aiverse_root_motion_bake PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_root_motion_bake_tests tests/animation/root_motion_bake.cpp)
+    target_link_libraries(aiverse_root_motion_bake_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_root_motion_bake COMMAND aiverse_root_motion_bake_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
