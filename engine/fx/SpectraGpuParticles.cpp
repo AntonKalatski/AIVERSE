@@ -291,14 +291,48 @@ void ComputeParticles::clear() {
     stats_.alive=0;
     drawCount_=0;stats_.submittedSlots=0;
 }
+bool ComputeParticles::setProgramParameter(uint32_t slot,float value,
+                                            bool affectExisting) {
+    if(!initialized_ || slot>=8 || !spectra::program::number(value) ||
+       desc_.particleProgram.isNull())return false;
+    programParams_[slot]=value;
+    if(backend_==ComputeBackend::Cpu) {
+        if(affectExisting)
+            for(const fx::FxHandle h:cpuHandles_)
+                (void)cpu_.setProgramParameter(h,slot,value,true);
+        return true;
+    }
+    if(affectExisting) {
+        const auto write=[&](ProgramParams& params) {
+            render::float4& p=slot<4?params.p0:params.p1;
+            switch(slot%4) {
+            case 0:p.x=value;break;
+            case 1:p.y=value;break;
+            case 2:p.z=value;break;
+            default:p.w=value;break;
+            }
+        };
+        for(size_t i=0;i<ages_.size();++i)
+            if(ages_[i]>0.f)write(programStateCache_[i]);
+        for(ProgramParams& seed:pendingProgramParams_)write(seed);
+        programParamsDirty_=true; // uploaded outside active render passes
+    }
+    return true;
+}
 bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::float4 tint) {
     if(!initialized_||desc_.quality==fx::FxQuality::Off||!finite(position)||!finite(direction)||!finite(tint))return false;
     const float length=render::length(direction);
     const fx::float3 normal=length>1e-5f?direction*(1.0f/length):fx::float3{0,1,0};
     if(backend_==ComputeBackend::Cpu) {
-        const bool success=cpu_.play(cpuEffect_,position,normal,1.f,tint).valid();
-        if(!success)stats_.dropped+=desc_.burst;
-        return success;
+        const fx::FxHandle h=cpu_.playWithProgramParameters(
+            cpuEffect_,position,normal,1.f,tint,programParams_);
+        if(!h.valid()) {stats_.dropped+=desc_.burst;return false;}
+        if(cpuHandles_.size()>=65536) {
+            cpu_.kill(cpuHandles_.front());
+            cpuHandles_.erase(cpuHandles_.begin());
+        }
+        cpuHandles_.push_back(h);
+        return true;
     }
     if(freeSlots_.size()<desc_.burst) {
         stats_.dropped+=desc_.burst;return false;
@@ -312,6 +346,13 @@ bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::floa
         particle.tint={tint.x,tint.y,tint.z,tint.w};
         particle.size={desc_.size,0,0,0};
         pendingStates_.push_back(particle);pendingSlots_.push_back(slot);
+        ProgramParams parameters{};
+        parameters.p0={programParams_[0],programParams_[1],
+                       programParams_[2],programParams_[3]};
+        parameters.p1={programParams_[4],programParams_[5],
+                       programParams_[6],programParams_[7]};
+        pendingProgramParams_.push_back(parameters);
+        programStateCache_[slot]=parameters;
     }
     stats_.alive=desc_.capacity-uint32_t(freeSlots_.size());
     return true;
@@ -373,10 +414,19 @@ bool ComputeParticles::step(float dt) {
         reason_.clear();
         return true; // no live GPU particles, no compute work or draw
     }
+    if(programParamsDirty_) {
+        device_->updateBuffer(stateProgramParams_,programStateCache_.data(),
+                              programStateCache_.size()*sizeof(ProgramParams));
+        stats_.uploadedBytes+=programStateCache_.size()*sizeof(ProgramParams);
+        programParamsDirty_=false;
+    }
     if(count>0) {
         device_->updateBuffer(seeds_,pendingStates_.data(),size_t(count)*sizeof(ParticleState));
         device_->updateBuffer(slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t));
-        stats_.uploadedBytes+=size_t(count)*(sizeof(ParticleState)+sizeof(uint32_t));
+        device_->updateBuffer(seedProgramParams_,pendingProgramParams_.data(),
+                              size_t(count)*sizeof(ProgramParams));
+        stats_.uploadedBytes+=size_t(count)*(sizeof(ParticleState)+
+                               sizeof(uint32_t)+sizeof(ProgramParams));
     }
     if(compactCount>0 && !gpuIndirectActive_) {
         device_->updateBuffer(liveSlots_,aliveSlots_.data(),size_t(compactCount)*sizeof(uint32_t));
@@ -393,6 +443,9 @@ bool ComputeParticles::step(float dt) {
     device_->setComputeBuffer(4,liveSlots_);
     device_->setComputeBuffer(5,aliveCounter_);
     device_->setComputeBuffer(6,gpuDrawArgs_);
+    device_->setComputeBuffer(7,seedProgramParams_);
+    device_->setComputeBuffer(9,stateProgramParams_);
+    device_->setComputeBuffer(10,gpuVmPayload_);
     Uniforms u{};
     u.gravityDt={desc_.gravityY,dt,desc_.drag,0};
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
@@ -431,7 +484,7 @@ bool ComputeParticles::step(float dt) {
         device_->dispatch(compactCount);++stats_.gpuDispatches;
     }
     device_->endCompute();
-    pendingStates_.clear();pendingSlots_.clear();
+    pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
     // Commit CPU lifespan/free-slot changes only after GPU dispatch submission.
     for(uint32_t i=0;i<desc_.capacity;++i) {
         if(ages_[i]<=0.f)continue;
