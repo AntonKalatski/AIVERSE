@@ -1992,3 +1992,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Root unified runner now builds CTest in **Debug** (assertions enabled), and `--no-build` rejects optimized build caches. Added two test-runner smoke cases. Motivation: owner's RelWithDebInfo build disabled `assert` checks, visible through unused-variable warnings.
 - **Post-fix tests NOT RUN**; next user commands `python3 tests/test_unified_runner.py`, `./run-tests.sh --quick`. Detailed handoff in `docs/agent-handoffs/unified-test-runner.md`.
 
+
+### 2026-11-18 — Const-correct Simulation world for NativeModule CTest
+- **Code SHA:** `4054a0eede2ec089a0327e36ed0aab7bde1d5292`; `engine/sim/Simulation.h` now exposes `const World& world() const` in addition to `World& world()`.
+- **Owner's compile log:** `tests/ecs_native_rts_integration_test.cpp:60` could not call nonconst `Simulation::world()` from `marker(const Simulation&)` (unified build reached 58%); therefore no CTest run occurred. No cast or fixture weakening.
+- **Post-fix native compilation/CTest NOT RUN** in remote-only environment. Next: pull and run `./run-tests.sh --quick`, then full `./run-tests.sh`; log any next diagnostics in `docs/agent-handoffs/native-ecs-persistence.md`.
