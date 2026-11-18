@@ -232,7 +232,8 @@ private:
     bool topDownActive() const;
     bool topDownTouchUi() const;
     void topDownConfigure();
-    bool topDownEvent(const platform::Event& e, bool uiWants);   // true: consumed
+    bool topDownEvent(const platform::Event& e, bool uiWants,
+                      const std::vector<std::string>& actions);   // true: consumed
     void topDownFrame(double dt);    // input -> kCmdTopDown / kCmdTopDownAbility
     void topDownCamera(double dt);   // after the scene is built (interpolated hero position)
     void topDownDraw();              // screen canvas: sticks and buttons
