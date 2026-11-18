@@ -197,6 +197,9 @@ void GraphRuntime::shutdown() {
         for (const auto h : sharedHandles_) sharedWorld_->kill(h);
     }
     sharedHandles_.clear();
+    cpuHandles_.clear();
+    paramValues_={};
+    paramSet_={};
     sharedWorld_ = nullptr;
     gpu_.shutdown();
     cpu_.shutdown();
@@ -206,6 +209,27 @@ void GraphRuntime::shutdown() {
     initialized_=false;
     reason_.clear();
     errors_.clear();
+}
+bool GraphRuntime::setProgramParameter(uint32_t slot,float value,
+                                       bool affectExisting) {
+    if(!initialized_ || useComputeWrapper_ || slot>=8 ||
+       !spectra::program::number(value)) {
+        reason_="SpectraFX per-source VM parameters need an initialized CPU runtime and a finite scalar";
+        return false;
+    }
+    paramValues_[slot]=value;
+    paramSet_[slot]=true;
+    if(affectExisting) {
+        if(sharedWorld_) {
+            for(const auto h:sharedHandles_)
+                (void)sharedWorld_->setProgramParameter(h,slot,value,true);
+        } else {
+            for(const auto h:cpuHandles_)
+                (void)cpu_.setProgramParameter(h,slot,value,true);
+        }
+    }
+    reason_.clear();
+    return true;
 }
 bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
     if(!initialized_)return false;
@@ -218,11 +242,24 @@ bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
             sharedWorld_->kill(sharedHandles_.front());
             sharedHandles_.pop_front();
         }
+        for(uint32_t slot=0;slot<8;++slot)
+            if(paramSet_[slot])
+                (void)sharedWorld_->setProgramParameter(handle,slot,paramValues_[slot]);
         sharedHandles_.push_back(handle);
         return true;
     }
     if(useComputeWrapper_)return gpu_.burstAt(position,dir,tint);
-    return cpu_.play(cpuEffect_,position,dir,1.f,tint).valid();
+    const fx::FxHandle handle=cpu_.play(cpuEffect_,position,dir,1.f,tint);
+    if(!handle.valid())return false;
+    for(uint32_t slot=0;slot<8;++slot)
+        if(paramSet_[slot])
+            (void)cpu_.setProgramParameter(handle,slot,paramValues_[slot]);
+    if(cpuHandles_.size()>=65536) {
+        cpu_.kill(cpuHandles_.front());
+        cpuHandles_.pop_front();
+    }
+    cpuHandles_.push_back(handle);
+    return true;
 }
 void GraphRuntime::setView(const render::RTSCamera& camera,const render::mat4& viewProj,
                             int width,int height) {
@@ -257,7 +294,10 @@ void GraphRuntime::clear() {
         return;
     }
     if(useComputeWrapper_)gpu_.clear();
-    else cpu_.clear();
+    else {
+        cpu_.clear();
+        cpuHandles_.clear();
+    }
 }
 
 } // namespace aiverse::spectra
