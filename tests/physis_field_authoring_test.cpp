@@ -88,6 +88,103 @@ void testRadiusResizeAndSnapping() {
     CHECK(findField(read(doc),gravity,key,index,&field));
     CHECK(field["radiusMeters"].fx() == Fixed::fromInt(10));
 }
+
+void testGroupOperations() {
+    MapDoc doc; doc.reset(8,8);
+    std::string error;
+    CHECK(apply(doc,defaultConfig(),&error));
+    std::string wind,storm,gravity;
+    CHECK(addField(doc,physis::AuthoredFieldKind::Wind,-10,3,0,wind,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Storm,20,5,-30,storm,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Gravity,1,-2,4,gravity,&error));
+    std::string collection; std::size_t index=0;
+    Json source;
+    CHECK(findField(read(doc),wind,collection,index,&source));
+    source.set("customTag",Json::string("keep"));
+    CHECK(replaceField(doc,wind,source,&error));
+    const Json before = read(doc);
+    const auto revBefore = doc.revision;
+    CHECK(moveFields(doc,{{wind,-5,3,10},{storm,25,5,-20},{gravity,6,-2,14}},true,&error));
+    CHECK(moveFields(doc,{{wind,0,3,12},{storm,30,5,-18},{gravity,11,-2,16}},false,&error));
+    CHECK(doc.revision>revBefore);
+    CHECK(findField(read(doc),storm,collection,index,&source));
+    CHECK(source["center"][0].fx()==Fixed::fromInt(30));
+    doc.undo();
+    CHECK(read(doc)==before);
+    doc.redo();
+    CHECK(findField(read(doc),wind,collection,index,&source));
+    CHECK(source["center"][0].fx()==Fixed::fromInt(0));
+    CHECK(source["customTag"].str()=="keep");
+    const Json moved = read(doc);
+    const auto rev=doc.revision;
+    CHECK(moveFields(doc,{{wind,0,3,12},{storm,30,5,-18}},true,&error));
+    CHECK(doc.revision==rev);
+    CHECK(!moveFields(doc,{{wind,100,0,0},{"missing",20,0,0}},true,&error));
+    CHECK(read(doc)==moved && doc.revision==rev);
+    CHECK(!moveFields(doc,{{wind,100,0,0},{storm,2000000,0,0}},true,&error));
+    CHECK(read(doc)==moved && doc.revision==rev);
+    CHECK(!moveFields(doc,{{wind,100,0,0},{wind,200,0,0}},true,&error));
+    CHECK(read(doc)==moved && doc.revision==rev);
+
+    std::vector<std::string> copies;
+    CHECK(duplicateFields(doc,{gravity,storm,wind},5,0,5,copies,&error));
+    CHECK(copies.size()==3);
+    CHECK(read(doc)["windZones"].size()==2);
+    CHECK(read(doc)["storms"].size()==2);
+    CHECK(read(doc)["gravityFields"].size()==2);
+    CHECK(findField(read(doc),wind+"-copy",collection,index,&source));
+    CHECK(source["customTag"].str()=="keep");
+    CHECK(source["center"][0].fx()==Fixed::fromInt(5));
+    doc.undo();
+    CHECK(read(doc)==moved);
+    doc.redo();
+    CHECK(read(doc)["windZones"].size()==2);
+    const Json duplicated=read(doc);
+    const auto dupeRev=doc.revision;
+    CHECK(!duplicateFields(doc,{wind,"missing"},5,0,5,copies,&error));
+    CHECK(read(doc)==duplicated && doc.revision==dupeRev);
+    CHECK(!duplicateFields(doc,{wind,storm},2000000,0,0,copies,&error));
+    CHECK(read(doc)==duplicated && doc.revision==dupeRev);
+    std::vector<std::string> secondCopies;
+    CHECK(duplicateFields(doc,{wind},0,0,0,secondCopies,&error));
+    CHECK(secondCopies.size()==1);
+    CHECK(secondCopies[0]==wind+"-copy-2");
+    doc.undo();
+    CHECK(read(doc)==duplicated);
+    CHECK(removeFields(doc,{wind,storm},&error));
+    CHECK(!findField(read(doc),wind,collection,index));
+    CHECK(!findField(read(doc),storm,collection,index));
+    CHECK(findField(read(doc),wind+"-copy",collection,index));
+    doc.undo();
+    CHECK(read(doc)==duplicated);
+    const auto safeRev=doc.revision;
+    CHECK(!removeFields(doc,{wind,"unknown"},&error));
+    CHECK(read(doc)==duplicated && doc.revision==safeRev);
+}
+void testGroupFpsMap() {
+    MapDoc fps;
+    std::string error;
+    CHECK(fps.loadJson(Json::parse(R"({"name":"fps","colliders":[],"spawns":[],"other":"unchanged"})"),&error));
+    CHECK(apply(fps,defaultConfig(),&error));
+    std::string wind,gravity;
+    CHECK(addField(fps,physis::AuthoredFieldKind::Wind,0,0,0,wind,&error));
+    CHECK(addField(fps,physis::AuthoredFieldKind::Gravity,10,0,10,gravity,&error));
+    const Json before=read(fps);
+    CHECK(moveFields(fps,{{wind,5,0,5},{gravity,15,0,15}},true,&error));
+    CHECK(fps.toJson().getStr("other")=="unchanged");
+    fps.undo();
+    CHECK(read(fps)==before);
+    std::vector<std::string> copies;
+    CHECK(duplicateFields(fps,{wind,gravity},4,0,4,copies,&error));
+    MapDoc roundtrip;
+    CHECK(roundtrip.loadJson(fps.toJson(),&error));
+    CHECK(read(roundtrip)["windZones"].size()==2);
+    CHECK(read(roundtrip)["gravityFields"].size()==2);
+    CHECK(removeFields(fps,copies,&error));
+    CHECK(read(fps)==before);
+    fps.undo();
+    CHECK(read(fps)["windZones"].size()==2);
+}
 void testFpsAndDuplicateIds() {
     MapDoc fps;
     std::string error;
@@ -122,5 +219,5 @@ void testFpsAndDuplicateIds() {
     CHECK(fps.revision==revision);
 }
 }
-int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testFpsAndDuplicateIds();
+int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testFpsAndDuplicateIds();
 std::printf("PHYSIS Field Authoring: %s\n",failures?"FAIL":"PASS");return failures?1:0;}

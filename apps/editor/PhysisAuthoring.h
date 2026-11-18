@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
+#include <map>
+#include <set>
+#include <vector>
 
 namespace aiverse::editor::physis_authoring {
 
@@ -343,6 +346,164 @@ inline bool resizeField(MapDoc& doc, const std::string& id, double radiusMeters,
     Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
     container.set("physis", std::move(config));
     return true;
+}
+
+
+// Batch position write used by the Scene's multi-selection drag. The complete
+// batch is validated BEFORE a single map transaction; callers must provide
+// absolute coordinates relative to the drag's original snapshot, not frame-to-
+// frame deltas, to avoid accumulating quantisation errors.
+struct FieldPosition {
+    std::string id;
+    double x = 0, y = 0, z = 0;
+};
+
+inline bool moveFields(MapDoc& doc, const std::vector<FieldPosition>& positions,
+                       bool firstEdit, std::string* error = nullptr) {
+    if (positions.empty()) return true;
+    const auto fail = [&](const char* why) {
+        if (error) *error = why;
+        return false;
+    };
+    std::map<std::string, FieldPosition> requested;
+    for (const auto& p : positions) {
+        if (p.id.empty() || !std::isfinite(p.x) ||
+            !std::isfinite(p.y) || !std::isfinite(p.z) ||
+            std::abs(p.x) > 1000000 || std::abs(p.y) > 1000000 ||
+            std::abs(p.z) > 1000000)
+            return fail("PHYSIS invalid group position");
+        if (!requested.emplace(p.id,p).second)
+            return fail("PHYSIS duplicate group selection ID");
+    }
+    Json config = read(doc);
+    std::size_t found = 0;
+    bool changed = false;
+    for (const char* key : {"windZones","storms","gravityFields"}) {
+        const Json& existing = config[key];
+        if (!existing.isArray()) continue;
+        Json fields = existing;
+        bool modified = false;
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+            const auto it = requested.find(fields[i].getStr("id"));
+            if (it == requested.end()) continue;
+            ++found;
+            const auto& p = it->second;
+            const Json next = point(p.x,p.y,p.z);
+            Json field = fields[i];
+            if (field["center"] == next) continue;
+            field.set("center", next);
+            fields.at(i) = std::move(field);
+            modified = changed = true;
+        }
+        if (modified) config.set(key,std::move(fields));
+    }
+    if (found != requested.size())
+        return fail("PHYSIS group contains an unknown field ID");
+    if (!changed) return true;
+    if (!validate(config,error)) return false;
+    if (firstEdit) doc.beginEdit();
+    else doc.touched();
+    Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
+    container.set("physis", std::move(config));
+    return true;
+}
+
+// Duplicate selected assets across any field types in one Undo step. The
+// deterministic IDs are document keys, NOT ECS entity IDs. Copies preserve
+// all unknown authored properties and differ only in ID and position.
+inline bool duplicateFields(MapDoc& doc, const std::vector<std::string>& ids,
+                            double dx, double dy, double dz,
+                            std::vector<std::string>& newIds,
+                            std::string* error = nullptr) {
+    const auto fail = [&](const char* why) {
+        if (error) *error = why;
+        return false;
+    };
+    if (ids.empty()) return fail("PHYSIS select fields to duplicate");
+    if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz))
+        return fail("PHYSIS duplicate offset must be finite");
+    Json config = read(doc);
+    if (!validate(config,error)) return false;
+    std::set<std::string> used;
+    std::size_t count = 0;
+    for (const char* key : {"windZones","storms","gravityFields"}) {
+        const auto& fields = config[key];
+        if (!fields.isArray()) continue;
+        count += fields.size();
+        for (const auto& field : fields.items())
+            used.insert(field.getStr("id"));
+    }
+    std::vector<std::string> ordered = ids;
+    std::sort(ordered.begin(),ordered.end());
+    if (std::adjacent_find(ordered.begin(),ordered.end()) != ordered.end())
+        return fail("PHYSIS group contains duplicate IDs");
+    if (ordered.size() > 2048 - count)
+        return fail("PHYSIS duplication exceeds field count limit");
+    std::vector<std::string> added;
+    added.reserve(ordered.size());
+    for (const auto& oldId : ordered) {
+        std::string collection;
+        std::size_t index = 0;
+        Json field;
+        if (!findField(config,oldId,collection,index,&field))
+            return fail("PHYSIS duplicate source ID not found");
+        std::string newId;
+        for (std::size_t attempt = 1; attempt <= 2049; ++attempt) {
+            const std::string suffix = attempt == 1 ?
+                "-copy" : "-copy-" + std::to_string(attempt);
+            const std::string base = oldId.substr(0,64 - suffix.size());
+            const std::string candidate = base + suffix;
+            if (used.insert(candidate).second) { newId = candidate; break; }
+        }
+        if (newId.empty()) return fail("PHYSIS no unique duplicate ID available");
+        const auto& previous = field["center"];
+        if (!previous.isArray() || previous.size() != 3)
+            return fail("PHYSIS duplicate source has no center");
+        const double x = previous[0].toDouble()+dx;
+        const double y = previous[1].toDouble()+dy;
+        const double z = previous[2].toDouble()+dz;
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
+            std::abs(x)>1000000 || std::abs(y)>1000000 || std::abs(z)>1000000)
+            return fail("PHYSIS duplicate position exceeds bounds");
+        field.set("id",Json::string(newId));
+        field.set("center",point(x,y,z));
+        Json fields = config[collection];
+        fields.push(std::move(field));
+        config.set(collection,std::move(fields));
+        added.push_back(std::move(newId));
+    }
+    if (!validate(config,error)) return false;
+    if (!apply(doc,config,error)) return false;
+    newIds = std::move(added);
+    return true;
+}
+
+// Delete all selected map assets in a single, validated Undo transaction.
+inline bool removeFields(MapDoc& doc, const std::vector<std::string>& ids,
+                         std::string* error = nullptr) {
+    const auto fail = [&](const char* why) {
+        if (error) *error = why;
+        return false;
+    };
+    if (ids.empty()) return fail("PHYSIS select fields to delete");
+    const std::set<std::string> requested(ids.begin(),ids.end());
+    if (requested.size() != ids.size())
+        return fail("PHYSIS duplicate group selection ID");
+    Json config = read(doc);
+    std::size_t removed = 0;
+    for (const char* key : {"windZones","storms","gravityFields"}) {
+        const Json& old = config[key];
+        if (!old.isArray()) continue;
+        Json filtered = Json::array();
+        for (const auto& field : old.items()) {
+            if (requested.count(field.getStr("id"))) ++removed;
+            else filtered.push(field);
+        }
+        config.set(key,std::move(filtered));
+    }
+    if (removed != requested.size())
+        return fail("PHYSIS deletion contains unknown field ID");
+    return apply(doc,config,error);
 }
 
 } // namespace aiverse::editor::physis_authoring
