@@ -1469,3 +1469,43 @@ origin/mesh transforms. Multi-plane refraction and underwater view
 are not implemented; coordinate with Prisma for shared post effects,
 while NEREID owns water geometry and material bindings. Retain
 legacy RTS water and PHYSIS/Terra ownership boundaries.
+
+### Stage 15B — far-world ocean patch precision
+
+**Implementation commits:**
+- `23f198137ef643efb7a679e1b7512a071ba1c4d3` —
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h`:
+  optional `preciseCamera` and `cameraX64/cameraZ64` double fields,
+  used for infinite ocean patch positions.
+- `d92496014041d344edaeddf2c81206e798cbeabd` —
+  `engine/render/NereidSurfaceResident.h`:
+  `nereidPatchAnchor64(double,double)` and double-precision
+  `NereidSurfaceKey::patchX/patchZ`; CPU preparation preserves
+  the precise snapped patch rather than truncating it through float.
+- `c825952a3df781ac6c749d82cb66fbc8e96a130f` —
+  `engine/world/NereidWaterScene.h`:
+  observer Fixed-point X/Z converted directly to double, precise camera
+  mode enabled, and double-snapped ocean mesh origin.
+- `3e1192365a47877c242f84ead288c7bed1a58024` —
+  `tests/ecs_nereid_renderer_contract_test.cpp`:
+  authored 100-million-metre ocean patch snapping, vertex-local
+  positions, negative coordinates, and one-metre patch transition.
+
+**Compatibility:** standalone callers using legacy float camera inputs
+continue to work with `preciseCamera=false`; the universal scene
+supplies double camera coordinates when an observer exists. The same
+surface key includes snapped patch and origin; async preparation uses
+the copied options. NEREID remains presentation-only, and changing
+the render origin does not change authoritative ECS water coordinates.
+
+**Verification:** GitHub connector writes completed; C++ build, CTest,
+GPU screenshots, GLSL/MSL compilation, FPS/RTS regressions and timing
+**NOT RUN / UNVERIFIED**. Execute `./run-tests.sh --filter
+'^ecs_nereid_'` and the full runner in an AIVERSE checkout.
+Precision at high world Y remains limited by the current Renderer3D
+origin contract, and UV phase is surface-relative.
+
+**Next functional owner:** implement high-Y visual origin support,
+then isolate water refraction/depth inputs (and optional underwater
+compositing via Prisma). Verify both Metal and GLSL and preserve the
+single-reflection-plane fallback before merging PR #23.
