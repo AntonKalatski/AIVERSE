@@ -919,3 +919,36 @@ before calling this stage validated.
   fixture to compare serial vs persistent workers at realistic actor
   counts, without executing it yet; document that stage separately.
 
+## Stage 39 — parallel pure Rig / FullBodyIK classification (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Implementation SHA:** `e45337af0cd664ef6ade261c3fcb4f6b60e1cec8`.
+- **Files:** updated `libraries/include/aiverselib/animation/AnimationJobScheduler.h`,
+  new `tests/animation/motionweave_parallel_rig.cpp`, root `CMakeLists.txt`.
+- **Architecture:** compile-time Rig units of kinds Transform/Copy/Aim,
+  TwoBoneIK/Limit/AngularLimit and FullBodyIK **without contact constraints**
+  may now run in the persistent worker pool. This code was inspected:
+  `AnimationRig::execute` and contact-free `FullBodyIK::solve` use
+  per-instance state and local scratch, not a shared callback registry.
+  Rig units containing `SurfaceLocomotion` or contact-aware FullBodyIK
+  are still classified as caller-thread work. Graph
+  `Native`, `Stack`, Lua trait callbacks and externally supplied
+  `AnimationEnvironment` remain strictly serial.
+- **Public API:** `workerSafeGraph` now includes Rig/FullBodyIK headers
+  for explicit unit inspection; existing MotionWeave API and FPS
+  three-argument scheduler overload are unchanged.
+- **Compatibility:** all existing save/network/schema formats remain.
+  No simulation ECS or physics authority changes. Workers only
+  touch presentation pose state owned by their entities.
+- **Tests:** `motionweave_parallel_rig` compares serial and multi-lane
+  solutions of 80 identical imported FullBodyIK graph instances.
+  **NOT RUN** per user instruction (including TSAN/Metal rendering).
+- **Risk:** pure-rig safety is based on the currently implemented
+  rig and IK operations. Any future Rig unit that invokes host callbacks
+  must be added to the unsafe classification. Input/World mutations
+  during worker evaluation remain forbidden.
+- **Next:** add an opt-in executable CPU-only benchmark for actor
+  counts ~100/1000/5000 and representative graph/IK workloads.
+  Do not execute it yet; document benchmark command and limitations.
+  Commit implementation first, then Stage 40 handoff separately.
+
