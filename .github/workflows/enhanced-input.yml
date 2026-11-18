@@ -1,4 +1,4 @@
-name: Enhanced Input targeted checks
+name: AIVerse InputFlow targeted checks
 
 on:
   push:
@@ -8,7 +8,9 @@ on:
       - "apps/editor/**"
       - "apps/fps/**"
       - "engine/platform/EnhancedInput*"
+      - "engine/platform/InputFlow.h"
       - "libraries/include/aiverselib/gameplay/EnhancedInput.h"
+      - "libraries/include/aiverselib/gameplay/InputFlow.h"
       - "tests/libraries/enhanced_*"
       - "tests/libraries/CMakeLists.txt"
       - ".github/workflows/enhanced-input.yml"
@@ -18,7 +20,9 @@ on:
       - "apps/editor/**"
       - "apps/fps/**"
       - "engine/platform/EnhancedInput*"
+      - "engine/platform/InputFlow.h"
       - "libraries/include/aiverselib/gameplay/EnhancedInput.h"
+      - "libraries/include/aiverselib/gameplay/InputFlow.h"
       - "tests/libraries/enhanced_*"
       - "tests/libraries/CMakeLists.txt"
       - ".github/workflows/enhanced-input.yml"
@@ -29,7 +33,7 @@ permissions:
 
 jobs:
   input-core:
-    name: Enhanced Input (${{ matrix.os }})
+    name: InputFlow (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
