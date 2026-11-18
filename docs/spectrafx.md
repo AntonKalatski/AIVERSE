@@ -456,6 +456,51 @@ Metal compute shader or GPU image correctness. Actual compilation,
 CI results, Apple Silicon rendering, screenshots and performance
 measurements remain **NOT VERIFIED** until they run.
 
+## Dense billboard gathering (Stage 13 — source committed, GPU validation pending)
+
+The optional Metal `spectra::ComputeParticles` backend now **gathers
+only live physical particle slots into contiguous GPU billboard
+vertices**. The persistent particle-state pool still uses stable indices
+for spawn/recycle; one additional 4-byte-per-slot storage buffer maps
+dense draw ordinal → physical state slot. The CPU already owns
+lifetime/slot bookkeeping and publishes the live-index list to GPU
+before the compute encoder starts. The GPU reads each selected
+particle's position/velocity/tint from its own resident state buffer
+and writes a contiguous block of four vertices. Motion state is
+**never read back to CPU**.
+
+The frame order is: upload any new particle states and slot indices →
+upload the current live slot map → compute births → integrate the
+physical-slot range that was live *before* the step → GPU gather and
+expand exactly the particles still alive *after* the step → regular
+RHI indexed draw of `alive * 6` indices. The compute kernel uses
+slot 4 for the live-index buffer and `Uniforms.meta.w` for the
+alive count; both MSL and future GLSL sources use the same layout.
+GPU updates stay between `beginFrame` and `beginPass`; draw remains
+inside the scene render pass.
+
+`ComputeStats::submittedSlots` now equals the densely emitted live
+count (not the high-water physical slot index). For example, after
+slots 0–2 expire while slots 3–5 survive, the GPU receives
+`[3,4,5]` and submits 18 indices, not 36. The recording-RHI
+regression verifies this map and the draw count across staggered
+birth/death frames. The new live-slot upload is `4 * alive` bytes
+each active frame and is tracked under `ComputeStats::uploadedBytes`.
+An idle particle pool continues to skip compute and draw.
+
+**Scope and limitations:** This is GPU *vertex gathering* from a
+CPU-maintained live-slot list. It eliminates sparse-dead-slot rendering,
+but it is **not a fully GPU-resident atomic/prefix-sum compaction**
+or GPU-authored indirect draw. CPU still scans at most 4096 age
+records per frame, and live-index uploads incur bandwidth. The
+fixed 16-bit index buffer still limits the pool to 4096 billboards.
+The backend is restricted to additive soft sprites eligible under
+`GraphRuntime` and is not enabled by default in existing RTS/FPS
+clients. Metal shader compilation, image output and performance on
+Apple Silicon remain **NOT VERIFIED** until native CI/device tests
+complete. Non-Metal RHI paths continue using the original CPU
+`ParticleSystem`.
+
 ## Validation checklist
 
 ```bash
