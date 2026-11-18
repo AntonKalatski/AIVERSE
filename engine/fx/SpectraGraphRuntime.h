@@ -7,6 +7,7 @@
 #include "VfxGraph.h"
 #include "SpectraGpuParticles.h"
 #include "SpectraBatchWorld.h"
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -65,6 +66,11 @@ public:
                    const GraphRuntimeOptions& options = {});
     void shutdown();
 
+    // Read-only VM variables param0..param7, scoped to THIS GraphRuntime.
+    // Updating a source never recompiles its graph; affectExisting also
+    // updates all live particles this source still owns.
+    // Restricted Metal GPU billboard path does not execute the VM.
+    bool setProgramParameter(uint32_t slot,float value,bool affectExisting=false);
     bool burstAt(fx::float3 worldPosition,
                  fx::float3 direction = {0,1,0},
                  fx::float4 tint = {1,1,1,1});
@@ -92,6 +98,9 @@ private:
     // Bounded history: on overflow an older handle is killed before reuse.
     // Use one GraphRuntime per logical effect source, not per burst.
     std::deque<fx::FxHandle> sharedHandles_;
+    std::deque<fx::FxHandle> cpuHandles_;
+    std::array<float,8> paramValues_{};
+    std::array<bool,8> paramSet_{};
     ComputeBackend backend_ = ComputeBackend::Cpu;
     fx::ParticleSystem cpu_;
     ComputeParticles gpu_;
