@@ -130,6 +130,18 @@ void CueScheduler::retire(const Active& active) {
     ++stats_.stoppedSources;
 }
 void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
+    // Release vanished sources BEFORE accepting newcomers. Otherwise a full
+    // attachment budget would incorrectly reject replacement entities for
+    // one frame even though the retired sources no longer exist.
+    std::set<uint64_t> desired;
+    for(const AttachedCue& src:sources)
+        if(!src.effect.empty() && validPose(src.position,src.direction,src.scale) &&
+           effects_.count(src.effect)) desired.insert(src.key);
+    for(auto it=active_.begin();it!=active_.end();) {
+        if(desired.count(it->first)){++it;continue;}
+        retire(it->second);
+        it=active_.erase(it);
+    }
     std::set<uint64_t> seen;
     for(const AttachedCue& src:sources) {
         if(src.effect.empty() || !validPose(src.position,src.direction,src.scale))
@@ -173,11 +185,6 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
         }
         active_.emplace(src.key,Active{handle,effect->second.id,src.effect,
                                      src.revision,src.scale,src.killOnDetach});
-    }
-    for(auto it=active_.begin();it!=active_.end();) {
-        if(seen.count(it->first)) {++it;continue;}
-        retire(it->second);
-        it=active_.erase(it);
     }
     stats_.attached=active_.size();
 }
