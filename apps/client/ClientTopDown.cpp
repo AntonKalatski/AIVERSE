@@ -24,6 +24,7 @@ void GameClient::topDownConfigure() {
     tdMouseHeld_ = tdFireHeld_ = false;
     tdHooked_ = nullptr;
     tdInput_ = {};
+    tdAbilityKeysHeld_.clear();
     const TopDown* td = sim_ ? mod().topDown() : nullptr;
     if (!td || !td->active()) { topDown_ = {}; tdPredict_.reset(); return; }
     topDown_.configure(manifest_, td->rules(), mod().rules(), mapCamera_);   // game.json topDown.camera + the map's "camera"
@@ -39,6 +40,26 @@ void GameClient::topDownConfigure() {
         } else if (!pj.isNull()) pc.enabled = pj.boolean(true);
         tdPredict_.configure(pc);
     }
+    // Project-authored TopDownAbilities contexts always take precedence.
+    // Otherwise synthesize Actions from game.json's game-specific ability
+    // keys. Abilities still belong to the top-down module, not input core.
+    auto& inputSystem=inputShortcuts_.system();
+    if(!inputSystem.context("RTS.TopDownAbilities")){
+        namespace ei=lib::gameplay::enhanced;
+        ei::MappingContext abilityBindings{"RTS.TopDownAbilities"};
+        for(std::size_t i=0;i<topDown_.config().buttons.size();++i) {
+            const auto& button=topDown_.config().buttons[i];
+            const std::string name="TopDownAbility"+std::to_string(i);
+            inputSystem.defineAction({name,ei::ValueType::Boolean});
+            if(button.key>0 && button.key<int(Key::Count))
+                abilityBindings.bind(name,{ei::Device::Keyboard,button.key},{},
+                                     {ei::Trigger::pressed()},false);
+        }
+        std::uint64_t next=1;
+        for(auto& mapping:abilityBindings.mappings)mapping.id=next++;
+        inputSystem.registerContext(std::move(abilityBindings));
+    }
+    tdAbilityKeysHeld_.assign(topDown_.config().buttons.size(),false);
     if (!topDownActive()) return;
     Entity h = td->heroOf(*sim_, human_);
     auto& g = mod().state(*sim_).grid;
@@ -59,6 +80,7 @@ bool GameClient::topDownEvent(const Event& e, bool uiWants,
     switch (e.type) {
     case EventType::FocusLost:   // held buttons cancel; the escape preview stops (Drone Fall: losing focus stops it)
         topDown_.cancelAll(); topDown_.escape().cancel(); tdMouseHeld_ = tdFireHeld_ = false;
+        std::fill(tdAbilityKeysHeld_.begin(),tdAbilityKeysHeld_.end(),false);
         return false;
     case EventType::TouchBegin:
         if (uiWants) return false;
@@ -83,8 +105,14 @@ bool GameClient::topDownEvent(const Event& e, bool uiWants,
     case EventType::KeyDown:
         if (uiWants || e.repeat || ui_.textInputFocused()) return false;
         if (e.key == Key::Escape) return false;   // pause menu
-        for (size_t i = 0; i < topDown_.config().buttons.size(); ++i)
-            if (topDown_.config().buttons[i].key != 0 && int(e.key) == topDown_.config().buttons[i].key) { topDown_.buttonDown(int(i)); return true; }
+        for(std::size_t i=0;i<topDown_.config().buttons.size();++i) {
+            const auto name="TopDownAbility"+std::to_string(i);
+            if(triggered(name)) {
+                topDown_.buttonDown(int(i));
+                tdAbilityKeysHeld_[i]=true;
+                return true;
+            }
+        }
         if (commerceKey(e.key)) return true;   // deals at a door (rules "commerce"): E, then 1..9
         if (mod().arsenal() && mod().arsenal()->active()) {   // weapons (rules "arsenal"): Z / X cycle, 1..9 pick a slot
             int64_t pick = 0;
@@ -110,8 +138,15 @@ bool GameClient::topDownEvent(const Event& e, bool uiWants,
         }
         return true;   // WASD etc. steer the hero, not RTS hotkeys
     case EventType::KeyUp:
-        for (size_t i = 0; i < topDown_.config().buttons.size(); ++i)
-            if (topDown_.config().buttons[i].key != 0 && int(e.key) == topDown_.config().buttons[i].key) topDown_.buttonUp(int(i));
+        for(std::size_t i=0;i<tdAbilityKeysHeld_.size();++i) {
+            if(!tdAbilityKeysHeld_[i])continue;
+            const auto* state=inputShortcuts_.system().state(
+                "TopDownAbility"+std::to_string(i));
+            if(!state || !state->active) {
+                topDown_.buttonUp(int(i));
+                tdAbilityKeysHeld_[i]=false;
+            }
+        }
         return !uiWants;
     default: return false;
     }
