@@ -286,6 +286,7 @@ private:
     std::array<VkImageView, kMaxRenderTargetColors> scopedPassColors_{};
     VkImageView scopedPassDepth_ = VK_NULL_HANDLE;
     int passColors_ = 1;
+    bool explicitMrtPass_ = false;
     int passW_ = 0, passH_ = 0;
     VkFormat passColor_ = VK_FORMAT_UNDEFINED, passDepth_ = VK_FORMAT_UNDEFINED;
     uint32_t pipelineId_ = 0;

@@ -210,6 +210,7 @@ VkFramebuffer VulkanDevice::framebufferFor(VkImageView color, VkImageView depth,
 
 void VulkanDevice::beginPass(const PassDesc& d) {
     if (!recording_ || inPass_) return;
+    explicitMrtPass_ = false;
     VTexture* color = nullptr;
     VTexture* depth = nullptr;
     uint32_t colorId = 0, depthId = 0;
@@ -383,6 +384,7 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
         scopedPassColors_[size_t(i)] = imageViews[i];
     scopedPassDepth_ = depth ? imageViews[depthSlot] : VK_NULL_HANDLE;
     passColors_ = desc.colorCount;
+    explicitMrtPass_ = true;
     inPass_ = true;
     passSkipped_ = false;
     pipelineId_ = 0;
@@ -421,6 +423,7 @@ void VulkanDevice::endPass() {
     passSkipped_ = false;
     hdrPass_ = false;
     passColors_ = 1;
+    explicitMrtPass_ = false;
     pipelineId_ = 0;
     boundPipeline_ = VK_NULL_HANDLE;
 }
@@ -582,26 +585,31 @@ void VulkanDevice::setPipeline(PipelineHandle h) {
     pipelineId_ = 0;
     boundPipeline_ = VK_NULL_HANDLE;
     if (!p) return;
-    const int expectedColors = p->desc.depthOnly ? 0 : p->desc.colorAttachmentCount;
-    if (expectedColors != passColors_ || expectedColors < 0 ||
-        expectedColors > kMaxRenderTargetColors) {
-        error_ = "Vulkan: pipeline color output count differs from MRT pass";
-        return;
-    }
     const bool hdr = hdrPass_ && !p->desc.depthOnly &&
                      p->desc.colorFormat != PixelFormat::RGBA16F;
-    if (expectedColors > 0 && !hdr && vkFormat(p->desc.colorFormat) != passColor_) {
-        error_ = "Vulkan: pipeline color format differs from MRT pass";
-        return;
-    }
-    for (int i = 1; i < expectedColors; ++i) {
-        const PixelFormat fmt = p->desc.additionalColorFormats[i - 1];
-        if (!hdr && vkFormat(fmt) != passColor_) {
-            error_ = "Vulkan: additional pipeline format differs from MRT pass";
+    if (explicitMrtPass_) {
+        const int expected = p->desc.depthOnly ? 0 : p->desc.colorAttachmentCount;
+        if (expected != passColors_ || expected < 0 ||
+            expected > kMaxRenderTargetColors) {
+            error_ = "Vulkan: pipeline color output count differs from MRT pass";
             return;
         }
+        if (expected > 0 && !hdr && vkFormat(p->desc.colorFormat) != passColor_) {
+            error_ = "Vulkan: pipeline color format differs from MRT pass";
+            return;
+        }
+        for (int i = 1; i < expected; ++i) {
+            const PixelFormat fmt = p->desc.additionalColorFormats[i - 1];
+            if (!hdr && vkFormat(fmt) != passColor_) {
+                error_ = "Vulkan: additional pipeline format differs from MRT pass";
+                return;
+            }
+        }
     }
-    VkPipeline vp = pipelineFor(*p, passColor_, passDepth_, hdr, expectedColors);
+    // Legacy beginPass remains permissive: existing color/depth-only and sRGB
+    // callers select pipeline variants by the real attachment configuration.
+    const int actualColors = passColors_;
+    VkPipeline vp = pipelineFor(*p, passColor_, passDepth_, hdr, actualColors);
     if (!vp) return;
     pipelineId_ = h.id;
     boundPipeline_ = vp;
