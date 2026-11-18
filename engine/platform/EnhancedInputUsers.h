@@ -47,9 +47,12 @@ public:
         return it==users_.end()?nullptr:&it->second->input;
     }
 
-    bool setKeyboardOwner(UserId id) { return moveOwner(keyboardOwner_,id); }
-    bool setPointerOwner(UserId id) { return moveOwner(pointerOwner_,id); }
-    bool setTouchOwner(UserId id) { return moveOwner(touchOwner_,id); }
+    bool setKeyboardOwner(UserId id) { return moveOwner(keyboardOwner_,id,OwnerKind::Keyboard); }
+    bool setPointerOwner(UserId id) { return moveOwner(pointerOwner_,id,OwnerKind::Pointer); }
+    bool setTouchOwner(UserId id) { return moveOwner(touchOwner_,id,OwnerKind::Touch); }
+    void clearKeyboardOwner() { clearOwner(keyboardOwner_,OwnerKind::Keyboard); }
+    void clearPointerOwner() { clearOwner(pointerOwner_,OwnerKind::Pointer); }
+    void clearTouchOwner() { clearOwner(touchOwner_,OwnerKind::Touch); }
     UserId keyboardOwner() const { return keyboardOwner_; }
     UserId pointerOwner() const { return pointerOwner_; }
     UserId touchOwner() const { return touchOwner_; }
@@ -64,9 +67,14 @@ public:
         auto previous=gamepadOwner_.find(pad);
         if(previous!=gamepadOwner_.end()){
             if(previous->second==id)return true;
-            users_.at(previous->second)->adapter.focusLost();
+            if(auto old=users_.find(previous->second); old!=users_.end())
+                old->second->input.cancelDevices(
+                    {lib::gameplay::inputflow::Device::GamepadButton,
+                     lib::gameplay::inputflow::Device::GamepadAxis},0);
         }
-        users_.at(id)->adapter.focusLost();
+        users_.at(id)->input.cancelDevices(
+            {lib::gameplay::inputflow::Device::GamepadButton,
+             lib::gameplay::inputflow::Device::GamepadAxis},0);
         gamepadOwner_[pad]=id;
         return true;
     }
@@ -74,7 +82,9 @@ public:
         auto it=gamepadOwner_.find(pad);
         if(it==gamepadOwner_.end())return;
         if(auto player=users_.find(it->second);player!=users_.end())
-            player->second->adapter.focusLost();
+            player->second->input.cancelDevices(
+                {lib::gameplay::inputflow::Device::GamepadButton,
+                 lib::gameplay::inputflow::Device::GamepadAxis},0);
         gamepadOwner_.erase(it);
     }
     UserId gamepadOwner(int pad) const {
@@ -98,7 +108,19 @@ public:
         const auto it=users_.find(owner);
         if(it==users_.end())return;
         if(gameplayAllowed)it->second->adapter.onEvent(e);
-        else it->second->adapter.focusLost();
+        else {
+            switch(e.type) {
+            case EventType::KeyDown:case EventType::KeyUp:
+                it->second->adapter.cancelKeyboard();break;
+            case EventType::MouseDown:case EventType::MouseUp:
+            case EventType::MouseMove:case EventType::MouseWheel:
+                it->second->adapter.cancelPointer();break;
+            case EventType::TouchBegin:case EventType::TouchMove:
+            case EventType::TouchEnd:case EventType::TouchCancel:
+                it->second->adapter.cancelTouch();break;
+            default:break;
+            }
+        }
     }
 
     // Poll the physical backend ONCE per frame; unlike one adapter per user,
@@ -132,15 +154,29 @@ public:
 
     static constexpr UserId kUnassigned=~UserId{0};
 private:
+    enum class OwnerKind : std::uint8_t { Keyboard, Pointer, Touch };
     struct User {
         Core input;
         InputFlowAdapter adapter{input};
     };
-    bool moveOwner(UserId& target,UserId id) {
+    void cancelOwnedDevice(UserId owner,OwnerKind kind) {
+        const auto it=users_.find(owner);
+        if(it==users_.end())return;
+        switch(kind) {
+        case OwnerKind::Keyboard:it->second->adapter.cancelKeyboard();break;
+        case OwnerKind::Pointer:it->second->adapter.cancelPointer();break;
+        case OwnerKind::Touch:it->second->adapter.cancelTouch();break;
+        }
+    }
+    void clearOwner(UserId& target,OwnerKind kind) {
+        cancelOwnedDevice(target,kind);
+        target=kUnassigned;
+    }
+    bool moveOwner(UserId& target,UserId id,OwnerKind kind) {
         if(!users_.contains(id))return false;
         if(target==id)return true;
-        if(auto old=users_.find(target);old!=users_.end())old->second->adapter.focusLost();
-        users_.at(id)->adapter.focusLost();
+        cancelOwnedDevice(target,kind);
+        cancelOwnedDevice(id,kind);
         target=id;
         return true;
     }
