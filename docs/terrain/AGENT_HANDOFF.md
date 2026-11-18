@@ -334,3 +334,79 @@ wiring yet beyond existing `MapDoc::touched()` rebuild semantics.
 test with `undo()`, `redo()`, save/load, `terrain.model` opt-in and
 screenshot view. Add UI/MCP to preview/commit and persistent
 generation settings; do not overwrite legacy maps automatically.
+
+
+## Stage 2f — reusable ArborForestAdapter (COMMITTED; GPU/CTest UNVERIFIED)
+
+**Branch:** `feature/terraweave` (PR #24, leave Draft).
+
+**Commits (chronological):**
+- `088027762542230e8260255182c215710736fe11`:
+  `engine/render/TerraWeaveForestAdapter.h` — shared species prototype
+  registry, GPU upload/release entry points, CPU model draw transforms,
+  stable per-instance identities, origin rebasing, standard Renderer3D submit.
+- `8d6a88d1880eb39ea40e075bae3e1816b08fb0f5` and
+  `3019a72d02fb32ca53a79dc328fe479bb03e09bf`:
+  `tests/terraweave_model_test.cpp` — assertions for prototype reuse,
+  duplicate species rejection, per-tree world transforms, camera origin,
+  impostor fallback, stable IDs and invalid inputs.
+- `873d69ea785bc92bcfd77c5c90ce56e082d1ed48`:
+  `docs/terrain/TERRAWEAVE.md` — new host integration/API section.
+- This handoff update is another commit following the above; use the
+  current `feature/terraweave` HEAD to locate the exact handoff SHA.
+
+**Architecture and units:** `ArborForestAdapter` remains genre-neutral;
+no ECS structural writes, no RTTI-specific or GPU-backend-specific code.
+`addPrototype` creates one shared `render::Model` for each species.
+`forEachDraw` emits lightweight `render::ModelDraw` descriptors with
+persistent IDs and floats in relative metres, after subtracting an int64
+centimetre origin. `submit` sends them through the *existing* Renderer3D
+LOD/batching/shadow path. `uploadModels` / `releaseModels` run on the
+render thread and use existing `gfx::Device` upload code. No per-tree
+`render::Model` allocation. Caller must keep the registry alive while any
+draw references its model. No new gameplay ECS component is required for
+non-interactable foliage.
+
+**Actual verification (this stage):** GitHub source files were read and
+commits were created successfully. **No local compilation, CTest execution,
+engine scene launch or GPU screenshots were run or observed** in this stage.
+`tests/terraweave_model_test.cpp` was extended but is *not* yet known to
+pass. The isolated GCC/Clang workflow may run after pushes; inspect its
+actual run/job logs before marking tests as passing.
+
+**Verification commands:**
+```sh
+cmake -S . -B build/terraweave-test -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF \
+  -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_SERVER=OFF \
+  -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_BUILD_TOOLS=OFF -DAIVERSE_FBX=OFF
+cmake --build build/terraweave-test --parallel 2 --target \
+  aiverse_terraweave_test aiverse_terraweave_arbor_test \
+  aiverse_terraweave_flora_test aiverse_terraweave_model_test
+ctest --test-dir build/terraweave-test --output-on-failure \
+  -R '^terraweave(_arbor|_flora|_model)?$'
+```
+
+**Known limitations:** the adapter is a bridge API, not a host runtime/editor
+integration. No generated terrain or forest is drawn in a real AIVERSE scene
+until a host constructs `ArborForestAdapter`, uploads its prototypes, builds
+Flora batches and invokes `submit` between `beginScene` and `render`.
+CPU `FloraView` distance LOD buckets are advisory; the renderer selects LOD
+by pixel size. `TreeLOD::Impostor` falls back to lowest geometric LOD
+because a billboard atlas is not implemented. Leaf material is still an
+opaque green placeholder; alpha masking and wind remain outstanding.
+GPU instance/draw-call numbers and perf have not been measured. No changes
+were made to legacy RTS terrain, save/replay/networking or editors.
+
+**Next agent, exactly:**
+1. Check current PR #24 isolated GCC+Clang CI run results and fix any
+   TerraWeave compile/runtime failures first. Report exact commands/logs.
+2. Wire an **opt-in** WorldScene/scene manifest or editor preview to this
+   adapter using the standard model upload/renderer order, without
+   changing legacy maps when TerraWeave is absent.
+3. Add a real camera/render-frame smoke test and screenshot for a
+   multi-species forest on Metal + at least one non-Apple backend. Verify
+   model prototype reuse and actual draw/instance stats at 100/10k trees.
+4. Then connect terrain corner heightfield and road/building exclusion
+   adapters; verify FPS/RTS regression checksums and save/replay determinism.
+5. Append a new stage to this exact handoff file after each phase.
