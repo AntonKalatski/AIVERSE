@@ -42,7 +42,7 @@ bool resolveStaticPreviewModel(const Look& look,const Type& type,
     result.shape=look.shape;
     result.air=look.air;
     result.transparent=look.transparent;
-    result.staticObject=type.structure || type.speed<=Fixed{};
+    result.staticObject=type.structure || type.speed<=decltype(type.speed){};
     result.scale=look.scale;
     result.sx=look.sx;
     result.sz=look.sz;
