@@ -65,3 +65,12 @@ executed by one Mac. Do not claim those passed based on this runner.
 The authoritative entry point is `run-tests.sh`, not a hand-maintained list
 of CTest test names. The registry is only for standalone suites not already
 covered by CTest.
+
+## Validate the runner itself
+
+The standalone extra suite `tests/test_unified_runner.py` uses fake
+CMake/CTest commands and six local Python unittest cases to check the runner's
+CLI, Bash syntax, CTest and extra execution, nonzero failure propagation and
+handling of a bad manifest. Run it directly with
+`python3 tests/test_unified_runner.py` before full compilation, or use the
+normal full `./run-tests.sh` to run it automatically.

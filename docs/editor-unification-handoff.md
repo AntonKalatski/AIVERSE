@@ -1966,3 +1966,16 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Next:** user runs `./run-tests.sh --quick` then `./run-tests.sh`
   on the Mac Studio, provides the first error from the timestamped report;
   fix and append handoff for each stage.
+
+### 2026-11-18 — Test runner self-test coverage
+
+- **Code SHA:** `c5c7001554a70a2626d7aebd8ac2ad48a593a49e`, branch `feature/universal-entity-inspector-fps`.
+- **Files:** `tests/test_unified_runner.py`,
+  `tests/extra-test-suites.txt`. Added six offline smoke checks covering
+  syntax, CTest discovery, manifest execution, errors and build-stop
+  semantics; these tests run automatically in full `./run-tests.sh`.
+- **Verified:** source and manifest edited/published; native unittest
+  execution **NOT RUN** in current environment due unavailable GitHub
+  checkout. `docs/agent-handoffs/unified-test-runner.md` gives test commands.
+- **Next:** `python3 tests/test_unified_runner.py`, then
+  `./run-tests.sh --quick`, followed by full `./run-tests.sh`.

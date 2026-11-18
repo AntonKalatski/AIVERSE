@@ -54,3 +54,26 @@ Handoff commit SHA:
 Each implementation stage is followed by a separate handoff commit. If
 another agent updates the document concurrently, fetch the latest shared
 HEAD and append; do not force-push or replace their entries.
+
+## Stage 2 — Runner smoke regression fixture (2026-11-18)
+
+- **Implementation SHA:** `c5c7001554a70a2626d7aebd8ac2ad48a593a49e`.
+- **Files:** `tests/test_unified_runner.py` (new self-contained Python
+  unittest), `tests/extra-test-suites.txt` (adds the suite
+  `unified-runner-smoke|python3|tests/test_unified_runner.py|`).
+- **Coverage in fixture (6 cases):** syntax-check Bash; quick run uses
+  all CTest without invoking standalone; default run invokes registered
+  extras; a failing CTest still allows extra checks but final exit is
+  nonzero; a build failure halts before testing; path traversal in
+  standalone registry is rejected. Uses temporary fake cmake/ctest binaries
+  so no full engine build, SDK or graphics device is needed.
+- **Verification actually executed:** test source and manifest checked
+  against repository versions through GitHub connector. Python unittest
+  execution and `bash -n run-tests.sh`: **NOT RUN** in this session
+  (GitHub source cannot be downloaded to the local container; its
+  `raw.githubusercontent.com` DNS lookup fails).
+- **Next agent:** first run `python3 tests/test_unified_runner.py` and
+  `bash -n run-tests.sh`, repair any fixture/shell issues, then run
+  `./run-tests.sh --quick` and `./run-tests.sh` on a developer Mac.
+  Record the exact tested SHA, first failure and report directory after
+  each stage.
