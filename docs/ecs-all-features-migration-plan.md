@@ -228,3 +228,27 @@ nor the FPS authoritative damage/hitscan path. Replacing immediate damage
 with a global end-of-tick batch would change hit-shield/kill/script ordering.
 Require real RTS/FPS golden replay, save, rollback, network and mixed-mechanics
 tests before switching source ownership or system barriers.
+
+
+## Migration checkpoint: shared integer HP and ECS damage queue (2026-11-18)
+
+- The real `fps::Module::damage` and generic `addDamageResolutionSystem`
+  now use one `applyIntegerHitPointDamage` fixed-integer HP subtraction
+  policy from `EcsDamageSystems.h`. The existing FPS gear/armor,
+  knockdown, kill credit, loot and event ordering are preserved by calling
+  the shared helper at the prior immediate HP commit point. This is
+  **shared-policy adoption**, not separate FPS `HitPointsComponent`
+  authority: `ActorRuntime` remains canonical in `fps.ecsAuthority`.
+- The generic `DamageQueue` now provides explicit v1 endian-independent
+  `saveDamageQueue` / transactional `loadDamageQueue` /
+  `hashDamageQueue` helpers with size bounds and generation-safe Entity
+  fields. A GameModule must opt in to these helpers from its serialization
+  and hashing hooks; the old FPS save v9 has not been changed.
+- The independent `ecs_integer_health_commit_test` verifies 0..100 HP
+  and 0..1000 incoming damage parity with original FPS arithmetic,
+  nonpositive/maximum integer boundaries, queue byte roundtrip,
+  truncation/corruption rejection, checksum sensitivity and bounds.
+  CMake CTest and standalone ECS runner register it.
+- **Unverified:** all native compiler executions, sanitizer, FPS/RTS
+  scenario replay, save migration and network rollback. Do not mark
+  combat wave complete or delete synchronous legacy damage logic.
