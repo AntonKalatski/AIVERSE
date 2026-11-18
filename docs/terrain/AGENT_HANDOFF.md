@@ -2062,3 +2062,86 @@ This is NOT implemented; do not claim it is.
 only. **No CMake/CTest/platform GPU run**, by the user's
 explicit separate-test-agent policy. Add eviction/revision and
 GPU memory accounting tests to the acceptance list above.
+
+## Stage 14a — neighboring Horizon GPU-region transition crossfade (CODE COMMITTED; TESTS NOT RUN)
+
+**Scope / branch:** `feature/terraweave`, Draft PR #24; user delegated CMake/CTest, screenshots and benchmarks to a separate testing agent. Keep both the feature and its transitions generic and independent of RTS/FPS gameplay. Re-fetch current HEAD and per-file SHAs before editing because multiple agents work concurrently.
+
+**Commits/files:**
+- `c7151ab765e57e95df26eaac7886afc023ce07c8`:
+  `engine/world/TerraWeaveHorizon.h`: adds
+  `HorizonSettings::regionTransitionMs` (0–1000ms, default 240).
+  Minimal and Mobile presets explicitly disable transitioning
+  to avoid two models / alpha overdraw on constrained hardware.
+  `validateHorizonSettings` bounds the new option.
+- `27f718a76e539ae36d703b02d2bb4f76ff178806`:
+  `engine/world/TerraWeaveHorizonManifest.h`: adds optional
+  `terraweaveHorizon.regionTransitionMs` JSON key.
+- `fb069ee868cb5b5902e88729813a203fd058195d`:
+  `engine/render/TerraWeaveHorizonGpuCache.h`:
+  `reserveTransient(device, estimatedGpuBytes,
+  maxInactiveGpuRegions, gpuBudget)` retires old inactive LRU
+  entries if necessary to accommodate ONE fade-out model inside
+  the existing **extra GPU residency budget**. It does not
+  allocate any new GPU buffers or alter the active model.
+- `51befc1077fea0c051ca9b5a6fed716033e3918a`:
+  `engine/render/TerraWeaveHorizonScene.h` stores at most
+  one outgoing `HorizonGpuRegion`, with old source revision,
+  cell and monotonic start time. Neighbor-only transitions
+  require one-cell distance in X/Z, matching authored
+  source generation, nonzero transition duration and the
+  ability to reserve the extra GPU budget. A previous transition
+  settles into the normal LRU (or releases stale GPU assets)
+  before starting another. A return to the outgoing cell can
+  settle/retrieve its cached GPU model without rebaking.
+  `finishTransition(device)` runs on the render owner thread;
+  shutdown forces resource release. Stats:
+  `transitionStarts`, `transitioning`,
+  `transitionProgressPermille`.
+- `bde25305027deb0198cfd5daf2a1cf1f3c57ddfb`:
+  `TerraWeaveHorizonScene::submit` now draws outgoing
+  and incoming proxy with per-model tint alpha and the
+  existing `kDrawTransparent|kDrawNoCastShadow|
+  kDrawNoReceiveShadow` flags while the time-based
+  smoothstep transition is active, then returns to the
+  ordinary single opaque/static Horizon model. No new
+  shader or backend implementation.
+
+**Behavior:** A→B remains single model while B is baking;
+when B is ready and GPU-resident, A fades out while B
+fades in. Maximum overlap duration 1000ms, default 240ms.
+The extra GPU fade model is accounted against the same
+inactive residency count/byte budget as the regular GPU
+LRU, rather than being a free third tier. Fast teleports
+and source-revision changes intentionally skip the
+transition to prevent misleading stale landscape visuals.
+The transition is presentation-only: it neither changes
+tree ECS IDs nor collision/navmesh/authoritative simulation.
+
+**Important limitations:** This uses standard transparent
+alpha blending and two model submissions for a short time.
+On overlapping triangulated far terrain and alpha-masked
+cluster cards, conventional sorting/depth policies can
+still produce transparency artifacts. Avoid claiming true
+order-independent transparency or perfect temporal
+alpha-coverage. The outgoing model remains resident
+until `finishTransition(device)` can retire it. GPU
+driver cost/latency and visual quality are unmeasured.
+`gfx::Device` still owns device-loss recovery.
+Minimal/Mobile default transition off.
+
+**Actually verified:** commits written via GitHub connector,
+source contract inspected. **NOT RUN:** compiler, full
+AIVERSE build, CTest, shader capture, renderer screenshots,
+memory/FPS measurements, sanitizer or native runtime.
+Dedicated testing agent owns these and must report real
+results here before the Draft PR is merged.
+
+**Tester acceptance:** move camera by one cell on
+high/balanced and capture alpha overdraw; A→B→A
+during transition; jump several region cells
+(should hard-switch); disable transition; no GPU budget;
+device shutdown halfway through; road/terrain source
+revision while fading (old proxy must not render again);
+vary frame pacing; validate resource counts/opacity on
+Metal/Vulkan/GL and mobile default.
