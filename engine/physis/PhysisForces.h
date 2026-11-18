@@ -52,7 +52,7 @@ inline ForceResult evaluateForces(const World& world, const ForceReceiver& recei
     const Fixed gain = density * cd * area * speed / 2;
     out.aerodynamicForce = relative * gain;
     out.gravityForce = out.gravityAcceleration * mass *
-        fxClamp(receiver.gravityScale, Fixed{}, Fixed::fromInt(100));
+        fxClamp(receiver.gravityScale, Fixed::fromInt(-100), Fixed::fromInt(100));
     const auto clampForces=[](Vec3 v) {
         const Fixed cap = Fixed::fromInt(10000000);
         return Vec3{fxClamp(v.x,-cap,cap),fxClamp(v.y,-cap,cap),fxClamp(v.z,-cap,cap)};
