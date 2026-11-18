@@ -531,3 +531,90 @@ ctest --test-dir build/terraweave-ci --output-on-failure \
 
 As always, no untested claim of a passing build, GPU visual quality,
 or runtime integration is permitted.
+
+## Stage 3a — editor/MCP procedural terrain controls (COMMITTED, TESTS UNVERIFIED)
+
+**Branch:** `feature/terraweave`, PR #24 (Draft), base
+`feature/universal-entity-inspector-fps`. This stage adds the first opt-in
+user-visible editor control for terrain. It intentionally does not change
+existing RTS/FPS maps unless a user invokes the generation action.
+
+**Commits / changed files:**
+- `2df5b10676bf83a521b7b2ab42ac38de9ba2b906` —
+  `apps/editor/core/TerraWeaveMapAdapter.h`: refuse silently overwriting
+  existing detail layers; when explicitly replacing, clear detail/splat/
+  detailFile/scale after MapDoc undo snapshot, so corners become visible.
+- `3fd0bab8de98ebdb27cafc36113706af7abec447` —
+  `apps/editor/core/TerraWeaveOps.h`: `terraweave_preview` and
+  `terraweave_generate` registerable `Workspace` operations with
+  validated generator settings; version 1 generator metadata stored in
+  `map.data.extra.terraweave`.
+- `2d6e621e6968e7da7822746b73a2377309cdf960` —
+  `apps/editor/core/TerrainOps.cpp`: registers the operations in
+  `registerTerrainOps`, automatically used by editor and MCP.
+- `2686779f35e5b44241605f6b54b74b248e4f1302` —
+  `apps/editor/windows/TerrainWindow.cpp`: UI controls for seed,
+  base height, relief, period, octaves; Preview and Generate buttons.
+  Overwrite requires an explicit checkbox.
+- `0aab2e0d2b6d5002aafb4577acecb631801dcfaf` —
+  `tests/terraweave_ops_test.cpp`: deterministic 9×9 preview, versioned
+  metadata, invalid configuration checks.
+- `308aed89ce74076cb447637b80f18f9a696702b4` —
+  `CMakeLists.txt`: `aiverse_terraweave_ops_test` / CTest `terraweave_ops`.
+- `a34e7cde606cb75160ccc176027fb889743bb1ca` —
+  `.github/workflows/terraweave.yml`: six independent TerraWeave
+  CTest targets and paths for editor changes.
+- `afa8e34ac57c119c688a127a84adb41b44981727` —
+  `docs/terrain/TERRAWEAVE.md`: new public API, safety and limitations.
+
+**Architecture:** `Workspace::call` is the single mutation entrypoint
+for both GUI and AI/MCP. `terraweave_preview` samples without changing
+MapDoc, `terraweave_generate` bakes to the existing corner pipeline,
+invalidates views with `Change::Map`, records generator version/settings
+for future regen and supports Undo. Detail data is *not* preserved in
+the new map but is contained in the Undo snapshot. No simulation model
+changes. These operations apply **only to flat RTS grid maps** because
+`MapDoc::corners` is legacy RTS data; generic Terrain/Flora/Arbor code
+remains cross-genre. No new GPU or shader code.
+
+**Tests ACTUALLY performed:** source inspection and successful GitHub
+commits via connector. **No build, CTest, live editor launch, screenshot,
+MCP functional invocation, or FPS/RTS regression was observed** in this
+authoring runtime. Do not claim passing tests; retrieve current isolated
+workflow logs and record actual results before merging.
+
+**How to test immediately:**
+```sh
+cmake -S . -B build/terraweave-test -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF \
+  -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_SERVER=OFF \
+  -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_BUILD_TOOLS=OFF -DAIVERSE_FBX=OFF
+cmake --build build/terraweave-test --parallel 2 --target \
+  aiverse_terraweave_test aiverse_terraweave_arbor_test \
+  aiverse_terraweave_flora_test aiverse_terraweave_model_test \
+  aiverse_terraweave_heightmap_test aiverse_terraweave_ops_test
+ctest --test-dir build/terraweave-test --output-on-failure \
+  -R '^terraweave(_arbor|_flora|_model|_heightmap|_ops)?$'
+```
+
+**Risks/limitations:** undo/restoration not verified in a live editor;
+numeric preview only, not a 3D preview; material/detail regenerated only
+when user approves overwrite. Existing maps are unchanged unless opt-in.
+Any async worker runtime must use revision tokens and deterministic ECS
+commit order. Parameter metadata is versioned but loading does not
+auto-regenerate it. Do not touch unrelated concurrent RTS/FPS/graphics
+feature branches.
+
+**Next agent task:**
+1. Compile and run all 6 CTest targets, investigate fail logs and update
+   handoff with platform, commands and final pass/fail.
+2. Add an end-to-end editor/Workspace test: preview leaves revision/data
+   unchanged; generate mutates corners; existing detail refuses by default,
+   overwrite removes detail and single Undo/Redo restores; save/reload keeps
+   `map.extra.terraweave` metadata and corners. Run a real editor screenshot.
+3. Connect `ArborForestAdapter` to opt-in runtime/editor scene preview:
+   cache shared prototypes, use `buildFloraBatches`, call existing
+   `gfx::Device` and Renderer3D, measure draw calls and frame times.
+4. Follow with biome masks, painted exclusion regions, terrain+water/roads
+   ownership, camera-relative chunk streaming and shader alpha material.
+5. Append another stage to this file with exact commits and verification.
