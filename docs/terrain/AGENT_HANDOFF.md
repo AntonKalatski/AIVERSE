@@ -2323,3 +2323,16 @@ This is **conservative quad-granularity ownership**, not exact polygon intersect
 **Test-agent checklist:** add and run authoritative tile `coversRect` tests including adjacent/missing/negative keys; WorldScene terrain tile loads/unloads and handoff masks; compare near-owned vs legacy radial cutout; near lip edge winding, material/topology, 512-segment cap and no output with fully-owned terrain; TWH4 encode/decode, corrupt near mask and TWH3 rejection; conservative GPU patch fallbacks on nearOwned changes; nearest snapped terrain lattice 16/24/48/64 and negative positions, far forest no-hole bound, fast observer teleport and source revision invalidation; screenshot near/far Z-fighting and opaque material ownership on Metal/GL/Vulkan. Record real outcomes here.
 
 **Next function-focused stage:** if screenshots show unacceptable partial-cell Z-fighting, introduce bounded CPU clipping against rectangular authored near coverage (or a common terrain-stitch mesh) in the same Horizon Model, rather than another renderer or unbounded GPU mesh. Consider steady-state far outer skyline GPU geomorph after measurement. Do not duplicate tests.
+
+## Stage 18a — bounded precise near-ground coverage inputs (COMMITTED; NOT TESTED)
+
+**Branch:** `feature/terraweave`, Draft PR #24; code-first scope, all CMake/CTest/GPU tests by a separate validation agent.
+
+**Commits and files:**
+- `a37d6d1f5f2757f1bd8a9a9c2d852b43d082c0b1`: `TerraWeaveWorldHeightSource.h` adds `AuthoredWorldHeightSnapshot::coveredRectsIn(area,out,maxRects=1024)`, collecting the exact, nonoverlapping, clipped world-space rectangles of resident authored height tiles. Deterministically sorts them by geometry position, rejects invalid world extents and falls back safely if tile count exceeds configured cap.
+- `18f818dbb48e841ccbb91e24bcfc3d45bae260a2`: `TerraWeaveHorizon.h` adds optional `HorizonSurfaceSources::collectNearTerrainRects`, trailing `HorizonBake::nearClipRects` and `maxNearClipTriangles` (0 disables, default 2048, mobile 512, minimal 0). The CPU baker captures at most 1024 immutable coverage rectangles once per region and verifies they are bounded to the far field. The old full-quad `nearOwnedQuads` is retained separately. Analytic vertex/triangle bounds include the maximum extra partial geometry.
+- `f6fcd1ac1d3a9b762294ecf3098185693b6483a9`: `WorldScene.cpp` connects the existing immutable authored terrain snapshot as the rectangle provider, without accessing mutable ECS/physics state on the worker.
+
+**Architecture:** near-coverage lists are strictly bounded, sorted world-centimetre rectangles, not per-vertex individual tree objects or a new terrain renderer. They can be used to replace only the portion of a coarse Horizon cell that is NOT owned by near terrain. If unavailable or overflowed, the old conservative full-quad ownership policy remains. This stage adds the input contract and data capture **only**; the following stage must implement actual mesh clipping, archive migration and GPU topology invalidation.
+
+**Actual verification:** successful GitHub code commits and source inspection; compiler, CTest, GPU screenshots, runtime and benchmarks **NOT RUN** (testing agent owns them). Continue to the implementation of the bounded partial-quads geometry and update this handoff after committing it.
