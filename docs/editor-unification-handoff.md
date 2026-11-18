@@ -1585,3 +1585,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Ordinary FPS projectile system declared
 - Implementation SHA: `de1c9842115cadfe716096773be642eed95fc8f1`.
 - Declared `Module::tickOrdinaryProjectiles(Simulation&)` in `modules/fps/FpsModule.h`. The method is implemented by the previous `FpsSystems.cpp` commit, and still needs its own correctly ordered Simulation system registration. No native build executed.
+
+### 2026-11-18 — Ordinary FPS bullets/grenades now registered as separate Simulation stage
+- Implementation SHA: `9812d420052e5157d7bc03cdc41b71621143087a`.
+- `modules/fps/FpsModule.cpp::setup` registers `fps.compat.ordinaryProjectiles` after the programmed projectile stage and before the main `fps` stage. When mechanics are enabled and no winner has been latched, it executes `tickOrdinaryProjectiles` from the extracted `FpsSystems.cpp` method. This preserves the original gameplay sequence: program flight/impacts -> ordinary bullet/grenade flight/impacts -> bomb/round rules -> royale -> actor update.
+- This first extraction uses legacy `State::projectiles` as its workspace; it is a genuinely separate ECS Simulation stage, but still needs direct `ProjectileRuntime` ownership in `fps.ecsAuthority` to complete the next migration wave. No new fields or save/transport schema.
+- Verification: GitHub source commits only; native build, FPS/RTS game tests, v9 rollback and editor checks not run.
