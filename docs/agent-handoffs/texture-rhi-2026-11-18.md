@@ -2897,3 +2897,51 @@ RGBA8/RGBA16F (including BGRA render-target swizzle), with
 callback dispatch at later `beginFrame`; then implement a
 GL/GLES3 and Vulkan backend where portable. Add lifecycle
 and invalid-subresource tests in distinct code/handoff stages.
+
+## Stage 7I — virtual texture page-table CPU encoding and bounded GPU upload (2026-11-18)
+
+**Code commit:** `750313df432b011d4df9dc375b8d1e6bc78839f6`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Files:** new `engine/gfx/VirtualTexturePageTable.h`,
+`engine/gfx/VirtualTexturePages.h` (metadata getters).
+
+**Implementation:** `VirtualTexturePageTable` converts the CPU page
+cache into an RGBA8 mip-zero page-table texture, one 2DArray layer per
+logical virtual texture layer. RGBA8 entry encodes physical atlas
+slice (16-bit split into R/G), resident fallback mip (B), and valid
+mask (A=255). For a missing detail tile, `rebuild` searches
+resident parents only within the same virtual layer; no valid
+parent emits an invalid table entry. Changes mark only affected
+CPU rows dirty. `textureDescriptor` and `createGpuTexture`
+allocate a suitable nearest-filtered Texture2DArray with all table
+bytes. `flush(Device&,TextureHandle,maxBytes)` submits contiguous
+dirty row groups under the requested byte budget via
+`updateTextureRegion`, preserves rows on GPU failure for retry
+and exposes read-only `entry`/dirty stats for editor diagnostics.
+No GPU table is owned by this helper; caller destroys its handle.
+
+**Scope:** CPU page table and render-thread uploads only.
+There is not yet a GLSL/MSL virtual page-table sampler,
+GPU feedback/readback, sparse hardware texture binding or
+disk worker. VirtualPageCache physical atlas must be created
+and uploaded independently (e.g. TextureStreamQueue). This
+stage does not modify deterministic ECS, saves or netcode.
+
+**Static review follow-up:** `flush` currently limits chunks
+by byte budget but must also cap chunk size to
+`INT_MAX / (width * 4)` because `TextureUploadDesc.slicePitchBytes`
+is an `int`. Add this before native compilation and test it.
+The platform runtime must ensure no sampling of page-table
+rows until their GPU uploads finish.
+
+**Verification:** GitHub source/tree/branch updates succeeded.
+C++ build, CTest and Metal/GL/Vulkan page sampling:
+**NOT RUN** (container lacks GitHub repo checkout and network clone).
+No passing CI assertion.
+
+**Next:** Fix int slicePitch limit, add GPU-independent
+`virtual_texture_page_table` tests using a mock `gfx::Device`,
+exercise mapped RGBA bytes, unchanged dirty rows, bounded
+successive uploads, GPU failure retry and wrong-layer fallback.
+Then create GLSL/MSL sampling helper and validate actual GPU
+2DArray texture lookup.
