@@ -7,6 +7,7 @@
 
 #include "VfxGraph.h"
 #include "ParticleSystem.h"
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -36,6 +37,9 @@ public:
     fx::FxHandle play(int effect, fx::float3 position,
                       fx::float3 direction = {0,1,0}, float scale = 1,
                       fx::float4 tint = {1,1,1,1});
+    fx::FxHandle playWithProgramParameters(
+        int effect,fx::float3 position,fx::float3 direction,float scale,
+        fx::float4 tint,const std::array<float,8>& params);
 
     // Presentation-only runtime parameters for a specific effect handle.
     // No graph rebuild and no new ECS component type.
