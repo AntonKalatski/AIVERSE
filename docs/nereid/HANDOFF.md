@@ -400,3 +400,100 @@ Also run legacy `water_*` tests, FPS and RTS ECS tests.
   rectangle counts/import time and indexed sampling. Then add a native
   opt-in migration path or independent render/shoreline adapter, with
   further per-stage handoff.
+ 
+## Stage 6 — adaptive sampling, native setup, CI coverage
+
+**Branch**: `feature/nereid-water-core` (base:
+`feature/universal-entity-inspector-fps`). Implementation in successive
+commits (all on the same branch):
+- `4ecb353964c0eb01b0626375039731c291830f4d`: adaptive water sampler
+- `83081b60e98e8ce484655b20f0db1900fa3e33db`: native-game setup helper
+- `e58e814ebf8d56a21c5054270ccd3fc22aef9417`: independent-host test
+- `505c0fcb0fc07fa613c2662f2fe314caac8e799e`: CTest target
+- `bc867d1df4791e2e519f409c14c50af8bedf07e1`: CI invokes all six NEREID tests
+- `2b48e15d68a1dd99fbb88517dce2ec58cde10390`: catalog note
+
+### Files, API, architecture
+
+- Added `libraries/include/aiverselib/water/NereidAdaptiveWater.h`.
+  Public `AdaptiveWaterSamplingConfig{minWaterBodies=16,minProbes=8}`,
+  pure `chooseIndexedWaterSampling(bodies,probes,config)`, and
+  `addAdaptiveWaterSamplingSystem(sim,name,config)`. The decision uses only
+  deterministic ECS counts, **never FPS, time or platform measurements**.
+  It chooses reference scanning for small workloads and stage-4 BVH for
+  larger ones, preserving the existing `WaterContactComponent` and
+  priority selection. Install only ONE sampling system.
+- Added `libraries/include/aiverselib/water/NereidNativeWater.h`.
+  `NativeWaterPipelineConfig`: optional geometry persistence, optional
+  buoyancy persistence+system, optional Transform-to-probe stage,
+  adaptive thresholds. `registerNativeWaterPipeline(sim,prefix,config)`
+  registers components and the stage order in any native GameModule.
+  `spawnNativeWaterBodies(world, vector<WaterBodyComponent>)` creates
+  water-only entities in canonical input order (call at setup or a
+  structural-change barrier). The host keeps canonical physics and
+  entity lifecycle ownership.
+- Added `tests/ecs_nereid_native_pipeline_test.cpp`:
+  two unrelated host tags, reference vs forced-indexed configs, same-tick
+  samples, native persistence, checksum parity, rollback, COW.
+- Updated `CMakeLists.txt`:
+  `aiverse_ecs_nereid_native_pipeline_test`.
+- Updated `tests/run_ecs_experiment_suite.sh`:
+  all SIX NEREID tests are now compiled and executed in the ECS
+  experimental GitHub Actions suite. Prior CI suite omitted them, so
+  previous CI checks were not evidence about NEREID.
+- Updated `libraries/catalog.json`; API remains public through the
+  `AIVERSE::lib_nereid_water` and
+  `AIVERSE::lib_nereid_buoyancy` targets.
+
+### Minimal native consumption
+
+```cpp
+#include <aiverselib/water/NereidNativeWater.h>
+namespace nw=aiverse::lib::nereid;
+// Inside GameModule::setup -- register once before sealing persistence:
+nw::NativeWaterPipelineConfig options;
+options.enableGeometry=true;    // optional custom shore polygons
+options.enableBuoyancy=true;    // optional force OUTPUT only
+nw::registerNativeWaterPipeline(sim,"water",options);
+// Attach WaterProbeComponent + WaterContactComponent to query entities.
+// Supply Transform or write WaterProbeComponent::position yourself.
+// For baked maps, import waterBodiesFromRaster() at LOAD TIME and:
+auto ids=nw::spawnNativeWaterBodies(sim.world(),waterBodies);
+```
+
+### Verification / blockers
+
+**C++ build, six-test CTest run, and shell CI execution: NOT RUN in this
+execution environment.** Source and CI registrations were updated via the
+GitHub connector; this does NOT establish successful compilation.
+At start of stage 6, Actions jobs for stage 5 were queued, not green.
+Check latest Actions for the current branch. Do NOT merge until actual CI
+and FPS/RTS legacy regression results are available.
+
+```sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target aiverse_ecs_nereid_water_test \
+ aiverse_ecs_nereid_buoyancy_test aiverse_ecs_nereid_geometry_test \
+ aiverse_ecs_nereid_query_index_test aiverse_ecs_nereid_legacy_raster_test \
+ aiverse_ecs_nereid_native_pipeline_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_.*_test$'
+# Experimental CI-equivalent (runs other ECS tests too):
+bash tests/run_ecs_experiment_suite.sh
+```
+
+### Limits and next step
+
+Adaptive thresholds are heuristic, not measured; forced-index parity is
+authored but unverified. Dynamic imports and reconfiguration must occur
+through a deterministic structural barrier, not a renderer or parallel
+sampling callback. The helper does not migrate existing RTS or FPS
+runtime and adds no water render backend. Existing `waterNetwork` and
+tile baking remain untouched.
+
+**Next agent**: inspect the six NEREID results and fix compiler/runtime
+failures first, then benchmark index rebuild and linear/indexed/adaptive
+sampling for different body/probe counts. Verify native-project target
+usage and old `water_*` baking parity; only then consider connecting
+existing game examples or water presentation. After the next code stage
+append exact commit/branch, files, tests actually run, limitations and
+the following action to this document.

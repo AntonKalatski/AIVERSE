@@ -199,3 +199,31 @@ multiple semantic water levels, source distinct masks explicitly.
 Fixture: `ecs_nereid_legacy_raster_test` (authored, NOT RUN)
 compares all centres of an 80x64 legacy river/sea/strait map against
 both NEREID sampling policies and verifies native save/COW/rollback.
+
+## Stage 6 — native pipeline and adaptive sampling
+
+The new `NereidAdaptiveWater.h` is an optional **deterministic**
+selection policy. `addAdaptiveWaterSamplingSystem` evaluates ECS
+water-body and contact-pool counts each tick; it uses reference scanning
+below `minWaterBodies` or `minProbes`, or the transient stage-4 BVH
+otherwise. This choice is not driven by elapsed time or presentation
+frame rate, and both paths write identical `WaterContactComponent`
+data under the same overlap/tick semantics. It introduces no persistence
+schema. Only one contact-sampling system may be scheduled.
+
+`NereidNativeWater.h` composes the existing reusable components and
+systems from any native `GameModule::setup` without RTS/FPS/renderer
+dependencies: `registerNativeWaterPipeline(sim,prefix,cfg)`.
+Optional switches enable geometry persistence, buoyancy persistence and
+force calculation, and transform-probe synchronization; the adaptive
+sampler is the one contact stage. Physics integration remains the host's
+responsibility. `spawnNativeWaterBodies(world,bodies)` creates water
+body Entities deterministically; it deliberately does not invent an
+independently writable water map. Attach probe/contact to any Entity
+irrespective of genre.
+
+CTest `ecs_nereid_native_pipeline_test` checks two unrelated hosts,
+forced linear/indexed equivalent results, native save/load and COW
+rollback. The ECS experimental shell runner now also compiles and
+executes all six NEREID tests, including the legacy raster bridge.
+**All results remain unverified until CI actually runs.**

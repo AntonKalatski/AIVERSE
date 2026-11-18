@@ -130,3 +130,25 @@ The generic raster conversion lives in
 `aiverselib/water/NereidRasterImport.h` and does **not** depend
 on RTS. Test: `ecs_nereid_legacy_raster_test` (authored, NOT RUN).
 Record actual results and any fixes in `docs/nereid/HANDOFF.md`.
+
+## Stage 6 — easiest opt-in native water setup
+
+Include `<aiverselib/water/NereidNativeWater.h>`, link public
+`AIVERSE::lib_nereid_water` and (when buoyancy is enabled)
+`AIVERSE::lib_nereid_buoyancy`. From native GameModule::setup, call
+`registerNativeWaterPipeline(sim,"water",cfg)` exactly once.
+`NativeWaterPipelineConfig` toggles geometry persistence, buoyancy
+output and optional Transform->WaterProbe synchronization.
+`spawnNativeWaterBodies(sim.world(),bodies)` creates ECS-only water
+body entities in deterministic source order. Host still owns velocity,
+gravity, collision, structural changes and entity lifecycle.
+
+`addAdaptiveWaterSamplingSystem(sim,name,AdaptiveWaterSamplingConfig{})`
+is available if manually composing a pipeline. It uses only ECS
+water-body/probe counts to select reference or indexed sampling, not
+frame timings; tune thresholds via profile data. Do not register it
+alongside other NEREID sampling systems. No extra persistence schema.
+
+New test: `ecs_nereid_native_pipeline_test`. All six NEREID
+fixtures are also included in `tests/run_ecs_experiment_suite.sh`,
+which CI runs. Do not claim green until GitHub Actions completes.
