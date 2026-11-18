@@ -594,11 +594,107 @@ timing or GPU visual parity claim is made. A real image-level Metal
 and multiple-frames-in-flight test is still required before a
 shipping/default GPU selection.
 
+## Cross-instance material batching (Stage 14B — source committed, unverified)
+
+Multiple `GraphRuntime` instances previously owned separate
+`fx::ParticleSystem` objects and could each submit the same sprite
+material as a separate GPU draw call. The opt-in **`spectra::BatchWorld`**
+(`engine/fx/SpectraBatchWorld.{h,cpp}`) puts arbitrary graph/effect
+definitions into **one shared presentation ParticleSystem**. This
+reuses the existing global `ParticleSystem::Impl::batchFor` and
+`FxRender.cpp` render queue, which already groups particles
+**independent of effect and instance IDs**.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::BatchWorld shared;
+shared.init(device, aiverse::fx::FxQuality::High);
+
+aiverse::spectra::GraphRuntime smoke, fire;
+// smokeJson and fireJson may represent different effects/parameters.
+smoke.initGraph(shared, smokeJson);
+fire.initGraph(shared, fireJson);
+
+// Each GraphRuntime keeps its OWN handles; no CPU renderer per source.
+smoke.burstAt({0,1,0});
+fire.burstAt({2,1,0});
+
+// ONCE PER FRAME (not once per GraphRuntime):
+shared.setView(camera, viewProjection, width, height);
+shared.update(dt);
+// INSIDE the existing scene render pass, ONCE:
+shared.draw(fog);
+
+// Kill smoke's particles without affecting fire:
+smoke.clear();
+// Full scene/match reset: shared.clear().
+smoke.shutdown();
+fire.shutdown();
+shared.shutdown(); // MUST outlive all attached GraphRuntime instances.
+```
+
+`BatchWorld::defineEffect` caches equivalent fully serialized effect
+definitions while preserving distinct emitter data. `defineGraph`
+compiles v1 JSON through the canonical compiler and registers its
+effect in the same world. `play`, `move`, `stop`, `kill` and
+`playing` are the underlying ParticleSystem handle operations.
+The caller can set texture/mesh loaders on the shared world before
+registering effects, retrieve `stats()`, call `collectLights`, and
+use its existing global quality budget. These APIs are **independent
+of FPS, RTS or any particular game module** and live outside
+authoritative ECS/rollback state.
+
+**Draw batching key:** the actual underlying RHI texture/atlas
+handle, **blend mode**, compiled shader-graph identity and
+primitive kind (mesh vs quad). Effects with distinct animations,
+sizes, instances or spawn parameters can use the same draw call
+when these render-state requirements match. Even different
+sprites in the **same atlas** can batch because their UVs are
+encoded independently in vertex data. The same texture with
+different alpha/additive blending or shader graph must NOT batch.
+A draw is split at the 16-bit-index limit of 16,384 quads.
+Alpha sorting still follows the current renderer's existing
+ordering rules; a single cross-texture globally sorted transparent
+render queue is a different architectural task.
+
+`GraphRuntime::initGraph(BatchWorld&, ...)` and
+`initEffect(BatchWorld&, ...)` explicitly opt the instance into
+this shared renderer. Its `burstAt` captures handles and
+`clear()/shutdown()` kills **only those handles**, not all the
+world's particles. The source handle list is bounded at 65,536:
+the oldest handle is killed before overflowing the bound.
+In shared mode, per-source `step`, `setView` and `draw`
+are no-ops to prevent double updates and duplicate draw calls.
+**The host must call the shared world's methods once per frame.**
+`RequireGpu` is rejected for shared-world registration, not
+silently downgraded; current pooling is for the mature
+CPU-simulated/RHI-rendered emitter path.
+
+**Existing game apps:** RTS/FPS clients already use one central
+`ParticleSystem` and benefit from its built-in batching.
+This feature addresses **new native/graph instance contexts**
+that formerly created separate renderers. It does not override
+individual GPU `ComputeParticles` instances. Shared Metal
+GPU-particle pools across multiple independent effects still
+need a dedicated multi-emitter GPU scheduler and actual device QA.
+
+**Regression source:** `tests/vfx_shared_batch_world_test.cpp`
+records RHI indexed draw calls and verifies 5 + 7 particles
+from distinct effect definitions sharing one atlas texture
+produce **one** draw. Different blend modes produce **two**
+draws. It also checks independent source cleanup, graph
+registration, deduplication and no accidental per-source
+updates. CTest: `vfx_shared_batch_world`, target
+`aiverse_vfx_shared_batch_tests`, label `SpectraFX`.
+The focused CI workflow builds this test on Linux and macOS;
+actual CI/CTest results remain **unverified** in this session.
+
 ## Validation checklist
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
