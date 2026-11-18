@@ -603,6 +603,7 @@ void weapons(Json rules,Json map) {
 }
 #include "systems.inc"
 #include "projectiles.inc"
+#include "projectile_spawn.inc"
 #include "melee.inc"
 void network(Json rules,Json map) {
     rules.member("fps").set("weapons",Json::parse(R"([{"magazine":12},{"magazine":30}])"));
@@ -636,6 +637,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsReloadAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsSimultaneousHitscanRollbackParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();ecsProjectileProgramStageParity();ecsOrdinaryProjectileAuthorityParity();ecsProjectileBranchAuthorityParity();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsReloadAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsSimultaneousHitscanRollbackParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();ecsProjectileProgramStageParity();ecsProjectileSpawnAuthorityParity();ecsOrdinaryProjectileAuthorityParity();ecsProjectileBranchAuthorityParity();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
