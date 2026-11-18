@@ -760,3 +760,28 @@ Metal path and all earlier texture stages through compiler
 and real-device tests first; do not stack untested features
 on broken backends. Continue append-only handoff with separate
 implementation and docs commits per stage.
+
+## Stage 4I — refresh canonical texture RHI architecture docs (2026-11-18)
+
+**Documentation commit:** `fc1886681cc2909e24f3c85a0a742bb5d5f51c4f`.
+**Changed:** `docs/texture-rhi.md`.
+
+**Work:** Replaced obsolete "Stage 1 only" document status
+with precise staged source progress through 4H. Recorded
+Metal/GL/Vulkan dimension differences, texture views/samplers,
+one-color-pass limitation, Metal-only source MSAA/resolve,
+unimplemented MRT/import/streaming, legacy API compatibility and
+an example for rendering into a Texture2DArray mip/layer.
+Every feature remains explicitly **UNVERIFIED** until native
+compiler and GPU testing is observed.
+
+**Validation:** Documentation update committed. No native code
+changed by this stage; renderer builds and tests were **NOT RUN**.
+No CI results claimed.
+
+**Next:** Run native builds first (Metal/GL/Vulkan and
+`texture_contract`/Vulkan tests) and fix any errors. Then
+complete MRT with format-aware pipeline variants,
+GL/Vulkan multisampling/resolve and high-level RenderTexture,
+followed by extended formats, KTX2/DDS imports and streaming.
+Always append a new handoff after each bounded source stage.
