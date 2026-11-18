@@ -154,6 +154,23 @@ inline ecfg::Asset rtsReference() {
     id=1;
     for(auto& mapping:topdown.mappings) mapping.id=id++;
     result.contexts.push_back({std::move(topdown),100,false});
+
+    // Gesture signals are independent of touch picking and world coordinates.
+    // Native clients still own their camera projection and target transforms.
+    result.actions.push_back({"CameraTouchDrag",ei::ValueType::Axis2D});
+    result.actions.push_back({"CameraTouchPan",ei::ValueType::Axis2D});
+    result.actions.push_back({"CameraPinch",ei::ValueType::Axis1D});
+    ei::MappingContext gestures{"RTS.Gestures"};
+    gestures.bind("CameraTouchDrag",{ei::Device::Touch,1,0},{},{},false);
+    gestures.bind("CameraTouchDrag",{ei::Device::Touch,2,0},
+                  {ei::Modifier::swapXY()},{},false);
+    gestures.bind("CameraTouchPan",{ei::Device::Touch,4,0},{},{},false);
+    gestures.bind("CameraTouchPan",{ei::Device::Touch,5,0},
+                  {ei::Modifier::swapXY()},{},false);
+    gestures.bind("CameraPinch",{ei::Device::Touch,3,0},{},{},false);
+    id=1;
+    for(auto& mapping:gestures.mappings)mapping.id=id++;
+    result.contexts.push_back({std::move(gestures),0,true});
     return result;
 }
 } // namespace aiverse::platform::enhanced_presets
