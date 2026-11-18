@@ -188,7 +188,8 @@ inline VirtualPageKey virtualTextureFeedbackPageAtUV(
 // Explicit mip is supplied by the renderer/material LOD policy.
 inline constexpr const char* kVirtualTextureFeedbackMaterialGLSL = R"VTF(
 vec4 aiverseMaterialFeedback(vec2 uv, int mip, int layer, ivec2 baseTiles) {
-    if (any(lessThan(uv,vec2(0.0))) ||
+    if (any(isnan(uv)) || any(isinf(uv)) ||
+        any(lessThan(uv,vec2(0.0))) ||
         any(greaterThan(uv,vec2(1.0))) ||
         any(lessThanEqual(baseTiles,ivec2(0))) ||
         any(greaterThan(baseTiles,ivec2(2048))) ||
@@ -204,7 +205,8 @@ vec4 aiverseMaterialFeedback(vec2 uv, int mip, int layer, ivec2 baseTiles) {
 inline constexpr const char* kVirtualTextureFeedbackMaterialMSL = R"VTF(
 inline float4 aiverse_material_feedback(float2 uv, int mip, int layer,
                                         int2 baseTiles) {
-    if (any(uv<float2(0.0)) || any(uv>float2(1.0)) ||
+    if (!all(isfinite(uv)) ||
+        any(uv<float2(0.0)) || any(uv>float2(1.0)) ||
         any(baseTiles<=int2(0)) || any(baseTiles>int2(2048)) ||
         mip<0 || mip>=31 || layer<0 || layer>=16)
         return float4(0.0);
