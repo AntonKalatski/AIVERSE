@@ -1,4 +1,5 @@
 #include "SpectraGraphRuntime.h"
+#include "SpectraGpuProgram.h"
 #include <utility>
 
 namespace aiverse::spectra {
@@ -10,6 +11,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.quality=options.quality;
     result.gpu.backend=options.preference;
     result.gpu.gpuIndirect=options.gpuIndirect;
+    result.gpu.gpuProgram=options.gpuProgram;
 
     const auto reject=[&](const char* why) {
         result.reason=why;
@@ -21,6 +23,18 @@ GraphGpuEligibility inspectGraphGpuEligibility(
         return reject("GPU v1 has no effect force fields");
 
     const fx::EmitterDef& e=effect.emitters[0];
+    // VM capability is opt-in and must cover the entire program. A prepared
+    // payload alone never implies a passing real Metal GPU shader test.
+    if(!e.particleProgram.isNull()) {
+        if(!options.gpuProgram)
+            return reject("particle VM needs explicit GPU program opt-in; CPU fallback");
+        gpu_program::Payload payload;
+        std::string why;
+        if(!gpu_program::prepareForMetal(e.particleProgram,payload,why)) {
+            result.reason=why.empty()?"GPU VM cannot execute this program":why;
+            return result;
+        }
+    }
     // Nothing is inferred from a node's name or visual layout. We require a
     // materially identical EffectDef, not just a compatible-looking output.
     if(e.burst<=0||e.burst>64)
@@ -71,6 +85,10 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     supported.spread=0;
     supported.gravity=e.gravity;
     supported.drag=e.drag;
+    // A full-program eligibility check above has already validated every
+    // operation/stage. Keep it in the normalized effect comparison so other
+    // authored emitter fields cannot disappear.
+    supported.particleProgram=e.particleProgram;
     fx::EffectDef limited;
     limited.emitters.push_back(std::move(supported));
     if(!(fx::effectToJson(effect)==fx::effectToJson(limited)))
@@ -82,6 +100,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.size=e.size.min;
     result.gpu.gravityY=e.gravity.y;
     result.gpu.drag=e.drag.min;
+    result.gpu.particleProgram=e.particleProgram;
     std::string why;
     if(!validComputeEmitter(result.gpu,&why)) {
         result.reason="GPU v1 configuration: "+why;
@@ -105,12 +124,14 @@ bool GraphRuntime::initGraph(gfx::Device* dev,const Json& graph,
         reason_="SpectraFX graph compilation failed";
         return false;
     }
-    if(!schema.empty() && options.preference==ComputePreference::RequireGpu) {
-        reason_="runtime instance parameter VM is CPU-only; RequireGpu rejected";
+    if(!schema.empty() && !options.gpuProgram &&
+       options.preference==ComputePreference::RequireGpu) {
+        reason_="runtime instance parameters need opt-in GPU VM; RequireGpu rejected";
         return false;
     }
     GraphRuntimeOptions actual=options;
-    if(!schema.empty())actual.preference=ComputePreference::CpuOnly;
+    if(!schema.empty() && !options.gpuProgram)
+        actual.preference=ComputePreference::CpuOnly;
     if(!initEffect(dev,compiled,actual))return false;
     namedParams_=std::move(schema);
     for(const auto& [name,definition]:namedParams_) {
@@ -243,10 +264,15 @@ void GraphRuntime::shutdown() {
 }
 bool GraphRuntime::setProgramParameter(uint32_t slot,float value,
                                        bool affectExisting) {
-    if(!initialized_ || useComputeWrapper_ || slot>=8 ||
-       !spectra::program::number(value)) {
-        reason_="SpectraFX per-source VM parameters need an initialized CPU runtime and a finite scalar";
+    if(!initialized_ || slot>=8 || !spectra::program::number(value)) {
+        reason_="SpectraFX per-source VM parameters need an initialized runtime and finite scalar";
         return false;
+    }
+    if(useComputeWrapper_) {
+        const bool ok=gpu_.setProgramParameter(slot,value,affectExisting);
+        if(!ok)reason_="Metal VM parameter not supported by this GPU effect";
+        else reason_.clear();
+        return ok;
     }
     paramValues_[slot]=value;
     paramSet_[slot]=true;
