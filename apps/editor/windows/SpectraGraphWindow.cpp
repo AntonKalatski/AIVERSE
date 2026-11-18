@@ -111,6 +111,15 @@ private:
         fx::EffectDef result;
         valid_=spectra::compileGraph(doc_,result,errors_);
         emitters_=valid_?int(result.emitters.size()):0;
+        gpuEligible_=false;
+        gpuReason_.clear();
+        if(valid_) {
+            const auto eligibility=spectra::inspectGraphGpuEligibility(result);
+            gpuEligible_=eligibility.eligible;
+            gpuReason_=eligibility.eligible
+                ? "Metal compute subset compatible (device check still required)"
+                : eligibility.reason;
+        }
     }
     void remember() {
         if(undo_.size()==64)undo_.erase(undo_.begin());
@@ -485,6 +494,8 @@ private:
         }
         ImGui::Separator();
         ImGui::Text("CPU emitters: %d",emitters_);
+        ImGui::Text("Metal GPU subset: %s",gpuEligible_?"compatible":"CPU fallback");
+        if(!gpuReason_.empty())ImGui::TextWrapped("%s",gpuReason_.c_str());
         ImGui::TextWrapped("V1: Spawn -> Initialize -> Update* -> Output. "
                            "Положение узлов не влияет на симуляцию. "
                            "GPU compute и математические dataflow узлы пока не поддерживаются.");
@@ -497,7 +508,8 @@ private:
     std::map<std::string,std::pair<std::string,Json>> drafts_;
     ImVec2 pan_{10,10};
     int selected_=-1,revision_=-1,emitters_=0;
-    bool dirty_=false,valid_=false,dragging_=false;
+    bool dirty_=false,valid_=false,dragging_=false,gpuEligible_=false;
+    std::string gpuReason_;
 };
 
 AIVERSE_EDITOR_WINDOW(SpectraGraphWindow);
