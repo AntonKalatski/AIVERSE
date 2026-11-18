@@ -188,6 +188,11 @@ public:
         return {};
     }
 
+    int baseTilesX() const { return tilesX_; }
+    int baseTilesY() const { return tilesY_; }
+    int mipLevels() const { return levels_; }
+    int virtualLayers() const { return layers_; }
+
     VirtualPageStats stats() const {
         VirtualPageStats s;
         s.capacity = slots_.size();
