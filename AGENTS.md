@@ -220,6 +220,31 @@ rules. The user explicitly deferred tests, so record them
 NOT RUN, and continue the separate handoff after every
 bounded code stage.
 
+**Stage 19 — SpectraFX per-particle program runtime (source committed,
+tests intentionally deferred):**
+`engine/fx/SpectraParticleProgram.h` defines a bounded
+pure scalar expression VM (fixed stack, precompiled
+instructions, no allocations on particle update).
+`EmitterDef::particleProgram` is validated in
+`engine/fx/FxEffect.cpp`, compiled into each
+`ParticleSystem::Impl::EmitterRT`, and invoked on
+Spawn, Update, Death, Collision and Trigger hooks
+in `FxEmit.cpp`/`ParticleSystem.cpp`.
+Eight custom float attributes belong to each
+*visual* particle, not to authoritative ECS.
+Graph-v2 `ParticleProgramModule` lowers to
+`particleProgram`, preserving the CPU fallback for
+advanced effects and legacy compatibility for
+old effect files. Never interpret JSON in a
+per-particle hot loop or allow arbitrary user
+code/external IO from the VM. Program effects are
+unsupported by the experimental limited Metal
+backend and must retain the full CPU EffectDef.
+Example: `examples/spectrafx/runtime_particle_program_v2.vfx.json`.
+User deferred testing; keep recorded status NOT RUN.
+A separate handoff commit is mandatory before the
+next implementation stage.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
