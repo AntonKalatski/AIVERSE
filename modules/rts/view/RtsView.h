@@ -549,6 +549,7 @@ private:
     // Only entities first seen while variants stream need a stable choice override.
     std::unordered_map<uint64_t, std::pair<uint16_t, int>> streamingChoices_;
     std::unordered_map<uint64_t, EntityAnim> anims_;   // presentation only: iteration order never matters
+    EntityAnim ghostAnim_; // transient placement preview state; never shared across Views
     std::unique_ptr<::aiverse::view::View> genericView_;
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
