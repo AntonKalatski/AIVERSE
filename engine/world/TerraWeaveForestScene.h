@@ -199,7 +199,7 @@ public:
                 settings_.terrain, settings_.biomes, settings_.scatter,
                 {minX, minZ, minX + side, minZ + side},
                 species_, exclusions_);
-            if (heightSource_ || placementFilter_) {
+            if (heightSource_ || placementFilter_ || placementMask_) {
                 size_t write = 0;
                 for (auto instance : instances) {
                     if (heightSource_)
@@ -329,7 +329,7 @@ private:
         auto instances = scatter(s.terrain, s.biomes, s.scatter,
             {minX, minZ, minX + s.side, minZ + s.side},
             s.species, s.exclusions);
-        if (s.heightSource || s.placementFilter) {
+        if (s.heightSource || s.placementFilter || s.placementMask) {
             size_t write = 0;
             for (auto instance : instances) {
                 if (s.heightSource)
