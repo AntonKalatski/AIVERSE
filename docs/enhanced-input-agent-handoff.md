@@ -383,3 +383,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Tests added (deferred):** `enhanced_input_adapter_tests.cpp` checks isolated keyboard vs pad events, assignment validation, canceled pad state on detach and focus cleanup. `libraries/catalog.json` and the input AI skill include the new reusable native module.
 
 **Next:** connect to optional split-screen sample/preset and expose player-specific profile storage; then continue top-down client migration. Runtime validation and CTest explicitly deferred by user.
+
+## Stage 29 — top-down combat/movement migration (2026-11-18)
+
+**New preset context:** `RTS.TopDown` (priority 100, inactive until a top-down hero is controlled) supplies semantic Actions `TopDownMove` Axis2D (WASD/arrows), `TopDownFire` (Space/right mouse), `TopDownAim` (left mouse), `TopDownEnter` (F/Enter), `TopDownWeaponNext` (X/Tab), `TopDownWeaponPrev` (Z), and `TopDownWeapon1..9` (number keys). Existing RTS.Gameplay/RTS.Camera/RTS.Pointer mapping IDs are unchanged. `ClientInputRouting::setTopDownEnabled` activates/deactivates this context without mixing genres into the core library.
+
+**Client:** `GameClient::event` updates that context before normal event routing. `GameClient::topDownEvent` now consumes semantic one-shot Actions for weapon cycling, weapon slots and entering vehicles (legacy key fallback if a project-supplied scheme lacks RTS.TopDown). `topDownFrame` samples semantic `TopDownMove`, `TopDownFire`, `TopDownAim` from existing input state, preserving keyboard fallback for older action schemas. It still sends existing `kCmdTopDown` / arsenal Commands and continues using touch-stick/aim assistance/prediction calculations and project-specific ability buttons from `TopDownControls`.
+
+**Scope limits:** project-authored `input/actions.json` is a full replacement: rebind named TopDown Actions there to customize the hero. Dynamic game-specific ability button keys and commerce script keys still use their explicit game.json/script mapping rules; these are not interchangeable generic camera/weapon actions. Keyboard is captured after UI filtering. Run top-down regression after user-requested implementation phase.
+
+**Next:** expose conflicts and policies in editor FPS settings, improve per-player profiles, map RTS touch gesture deltas through Actions, then perform static review and defer actual CTest/CI until requested.
