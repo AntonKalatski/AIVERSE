@@ -511,7 +511,6 @@ void GameClient::event(const Event& e) {
     bool uiWants = ui_.handleEvent(e);
     if (e.type == EventType::FocusLost)
         std::fill_n(keys_,int(platform::Key::Count),false);
-    const auto inputActions = inputShortcuts_.onEvent(e, screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
     if(screen_!=Screen::Playing || e.type==EventType::FocusLost){entityActions_.cancel();entityPointer_=false;mapTapPending_=false;}
     if (e.type == EventType::KeyDown && e.key == Key::F8 && !e.repeat) ui_.toggleDebugger();
     // a press that started on the UI keeps the pointer until release (dragging out of a panel
@@ -519,6 +518,7 @@ void GameClient::event(const Event& e) {
     if (e.type == EventType::MouseDown || e.type == EventType::TouchBegin) uiOwnsPointer_ = uiWants;
     if (e.type == EventType::MouseMove || e.type == EventType::TouchMove) uiWants = uiWants && !boxing_ && !sendDrag_ && !panning_;
     if (e.type == EventType::MouseUp || e.type == EventType::TouchEnd || e.type == EventType::TouchCancel) uiWants = uiOwnsPointer_;
+    const auto inputActions=inputShortcuts_.onEvent(e,screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
     if (!uiWants) overlay_.handleEvent(e);
     mapDragEvent(e, uiWants);   // rules "mapClick": drag from a map-drag HUD element onto the map (ClientScriptCmd.cpp)
     if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) keys_[int(e.key)] = e.type == EventType::KeyDown;
@@ -700,7 +700,11 @@ void GameClient::event(const Event& e) {
         break;
     case EventType::MouseWheel:
         if (uiWants) return;
-        cam_.distance = std::clamp(cam_.distance * std::pow(0.88f, e.wheelY), cam_.minDistance, cam_.maxDistance);
+        // Mouse wheel drives semantic CameraZoom (potentially rebound/scaled per project).
+        const auto* zoom=inputShortcuts_.system().state("CameraZoom");
+        if(zoom && zoom->value.x!=0.0f)
+            cam_.distance=std::clamp(cam_.distance*std::pow(0.88f,zoom->value.x),
+                                     cam_.minDistance,cam_.maxDistance);
         break;
     case EventType::TouchBegin:
         if (uiWants && touches_.empty()) return;
