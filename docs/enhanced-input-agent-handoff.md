@@ -415,3 +415,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Tests authored and obvious stale assumptions fixed (execution deferred):** `enhanced_input_config_tests.cpp` no longer assumes RTS has exactly one context (it grew Gameplay/Camera/Pointer/TopDown); checks all contexts' stable IDs. New profile tests cover two isolated player paths, swapping two FPS keys, restart/restore and reset to defaults. `enhanced_rts_input_tests.cpp` expects four default RTS contexts. Catalog and agent skill updated.
 
 **Next:** close remaining RTS touch/gesture routing and player UI input focus; inspect source/CI only, no tests until user requests test phase.
+
+## Stage 32 — RTS single- and two-finger gestures via Actions (2026-11-18)
+
+**New default context:** `RTS.Gestures` (active/non-consuming) defines `CameraTouchDrag` Axis2D (per-finger slot 0 delta codes 1,2), `CameraTouchPan` Axis2D (two-finger centroid codes 4,5), and `CameraPinch` Axis1D (two-finger distance code 3). Existing `EnhancedInputAdapter` has produced these channels since Stage 17, and RTS now maps them explicitly like other input assets.
+
+**RTS client:** `GameClient::event` keeps world-ground projection, touch selection/drag logic and camera distance clamping, but uses the Action values for single-finger pan, two-finger centroid pan and relative pinch zoom. `CameraPinch` modifiers can tune sensitivity without changing raw contact baseline. If a custom project's full `input/actions.json` lacks these actions, it falls back to legacy world-space touch deltas for compatibility.
+
+**Tests authored (deferred):** `enhanced_rts_input_tests.cpp` expects five default RTS contexts and verifies TopDown context toggling, `RTS.Gestures` active. Existing platform adapter test covers raw two-finger motion. No CI/CTest run requested now.
+
+**Next:** source audit, remove unnecessary duplicate legacy state where safe, document what project-owned touch HUD/Script abilities intentionally remain specialized. Do not move gesture projection or network Commands into the platform input library.
