@@ -143,6 +143,15 @@ bool ComputeParticles::initGpu() {
                   nullptr,"SpectraFX GPU particle spawn queue");
     slots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
                   nullptr,"SpectraFX GPU spawn slots");
+    programStateCache_.assign(cap,ProgramParams{});
+    seedProgramParams_=buffer(*device_,gfx::BufferType::Storage,
+                               cap*sizeof(ProgramParams),nullptr,
+                               "SpectraFX GPU VM spawn parameters");
+    stateProgramParams_=buffer(*device_,gfx::BufferType::Storage,
+                                cap*sizeof(ProgramParams),programStateCache_.data(),
+                                "SpectraFX GPU VM live parameters");
+    gpuVmPayload_=buffer(*device_,gfx::BufferType::Storage,sizeof(vmPayload),
+                         &vmPayload,"SpectraFX GPU VM validated program");
     liveSlots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
                       nullptr,"SpectraFX GPU live-slot gather map");
     const uint32_t zero=0;
@@ -202,7 +211,9 @@ bool ComputeParticles::initGpu() {
         pipeline_=device_->createPipeline(pd);
     }
     if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||
-       !aliveCounter_.valid()||!gpuDrawArgs_.valid()||!vertices_.valid()||
+       !aliveCounter_.valid()||!gpuDrawArgs_.valid()||
+       !seedProgramParams_.valid()||!stateProgramParams_.valid()||
+       !gpuVmPayload_.valid()||!vertices_.valid()||
        !indices_.valid()||!texture_.valid()||!vertexShader_.valid()||!pipeline_.valid()) {
         reason_="GPU resource/pipeline allocation failed: "+device_->lastError();
         return false;
@@ -212,9 +223,11 @@ bool ComputeParticles::initGpu() {
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     pendingStates_.reserve(cap);
     pendingSlots_.reserve(cap);
+    pendingProgramParams_.reserve(cap);
     aliveSlots_.reserve(cap);
     stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+2*sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
-                    +size_t(n*n*4)+sizeof(zero)+sizeof(zeroArgs);
+                    +size_t(n*n*4)+sizeof(zero)+sizeof(zeroArgs)
+                    +size_t(cap)*2*sizeof(ProgramParams)+sizeof(vmPayload);
     return true;
 }
 void ComputeParticles::releaseGpu() {
@@ -228,6 +241,9 @@ void ComputeParticles::releaseGpu() {
         if(liveSlots_.valid())device_->destroyBuffer(liveSlots_);
         if(aliveCounter_.valid())device_->destroyBuffer(aliveCounter_);
         if(gpuDrawArgs_.valid())device_->destroyBuffer(gpuDrawArgs_);
+        if(seedProgramParams_.valid())device_->destroyBuffer(seedProgramParams_);
+        if(stateProgramParams_.valid())device_->destroyBuffer(stateProgramParams_);
+        if(gpuVmPayload_.valid())device_->destroyBuffer(gpuVmPayload_);
         if(vertices_.valid())device_->destroyBuffer(vertices_);
         if(indices_.valid())device_->destroyBuffer(indices_);
         if(texture_.valid())device_->destroyTexture(texture_);
@@ -235,7 +251,10 @@ void ComputeParticles::releaseGpu() {
     pipeline_={};vertexShader_={};compute_={};states_={};seeds_={};slots_={};
     vertices_={};indices_={};texture_={};liveSlots_={};
     aliveCounter_={};gpuDrawArgs_={};gpuIndirectActive_=false;
+    seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
+    pendingProgramParams_.clear();programStateCache_.clear();cpuHandles_.clear();
+    programParamsDirty_=false;
     aliveSlots_.clear();
     drawCount_=0;
 }
@@ -243,6 +262,7 @@ void ComputeParticles::shutdown() {
     cpu_.shutdown();cpuEffect_=-1;releaseGpu();device_=nullptr;
     initialized_=false;viewReady_=false;verticesReady_=false;
     drawCount_=0;
+    programParams_={};
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
@@ -255,11 +275,16 @@ void ComputeParticles::clear() {
         reason_="SpectraFX GPU clear must run outside render/compute passes";
         return;
     }
-    pendingStates_.clear();pendingSlots_.clear();aliveSlots_.clear();verticesReady_=false;
+    pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
+    aliveSlots_.clear();verticesReady_=false;
     const uint32_t cap=desc_.capacity;
     std::vector<ParticleState> empty(cap);
     for(auto& s:empty){s.positionAge={0,0,0,-1};s.velocityLife={0,0,0,1};}
     device_->updateBuffer(states_,empty.data(),empty.size()*sizeof(ParticleState));
+    programStateCache_.assign(cap,ProgramParams{});
+    device_->updateBuffer(stateProgramParams_,programStateCache_.data(),
+                          programStateCache_.size()*sizeof(ProgramParams));
+    programParamsDirty_=false;
     ages_.assign(cap,-1.f);
     freeSlots_.clear();
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
