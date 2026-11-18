@@ -2,6 +2,7 @@
 #pragma once
 #include "engine/core/ECS.h"
 #include "engine/render/AnimationGraph.h"
+#include "AnimationMontage.h"
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -26,6 +27,11 @@ struct AnimationPoseComponent {
     std::vector<render::mat4> matrices;
     bool valid = false;
 };
+// Optional overlay montage slots, shared across native FPS/RTS/RPG views.
+struct AnimationMontageSlotsComponent {
+    std::vector<MontagePlayer> players;
+    std::vector<AnimationNotifyEvent> events; // last frame, for audio/VFX only
+};
 struct AnimationBudgetComponent {
     float interval = 0.f, elapsed = 0.f;
     bool visible = true;
@@ -43,6 +49,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
     auto* poses=world.prepareExistingWrite<AnimationPoseComponent>();
     auto* budgets=world.prepareExistingWrite<AnimationBudgetComponent>();
     auto* statuses=world.prepareExistingWrite<AnimationDiagnosticsComponent>();
+    auto* montages=world.prepareExistingWrite<AnimationMontageSlotsComponent>();
     if (!players || !poses) return;
     const World& read=world;
     for (size_t i=0;i<players->size();++i) {
@@ -53,6 +60,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
         auto& player=players->dataAt(i);
         auto* budget=budgets?budgets->tryGet(e.index):nullptr;
         auto* status=statuses?statuses->tryGet(e.index):nullptr;
+        auto* slots=montages?montages->tryGet(e.index):nullptr;
         const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
         if (!asset || !asset->model || !asset->graph ||
             asset->graph->model()!=asset->model) {
@@ -84,6 +92,14 @@ inline void stepAnimationPresentation(World& world,float dt) {
             inst.parameters().environment=input->overrides.environment;
         }
         inst.update(dt);
+        if (slots) {
+            slots->events.clear();
+            for (auto& montage:slots->players) {
+                montage.update(dt);
+                const auto& notifications=montage.events();
+                slots->events.insert(slots->events.end(),notifications.begin(),notifications.end());
+            }
+        }
         if (status) ++status->updates;
         bool evaluate=!pose->valid || !budget;
         if (!evaluate && budget->visible) {
@@ -97,7 +113,11 @@ inline void stepAnimationPresentation(World& world,float dt) {
         if (evaluate) {
             inst.evaluate(pose->local);
             pose->valid=inst.healthy();
-            if (pose->valid) render::worldMatrices(*asset->model,pose->local,pose->matrices);
+            if (pose->valid) {
+                if (slots) for (auto& montage:slots->players)
+                    montage.apply(*asset->model,pose->local);
+                render::worldMatrices(*asset->model,pose->local,pose->matrices);
+            }
             else { pose->local.clear(); pose->matrices.clear(); }
             if (budget) budget->elapsed=0;
             if (status) ++status->evaluations;

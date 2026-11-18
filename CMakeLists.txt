@@ -516,6 +516,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_generic_retarget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_generic_retarget COMMAND aiverse_generic_retarget_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_montage_tests tests/animation/montage.cpp)
+    target_link_libraries(aiverse_animation_montage_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_montage COMMAND aiverse_animation_montage_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
