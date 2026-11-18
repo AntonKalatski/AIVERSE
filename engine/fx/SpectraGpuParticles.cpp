@@ -1,5 +1,6 @@
 #include "SpectraGpuParticles.h"
 #include "SpectraGpuShaders.h"
+#include "SpectraGpuProgram.h"
 #include "ParticleShaders.h"
 #include <algorithm>
 #include <array>
@@ -52,14 +53,31 @@ bool ComputeParticles::init(gfx::Device* dev,const ComputeEmitterDesc& config) {
     shutdown();
     desc_=config;
     if(!validComputeEmitter(config,&reason_))return false;
+    programParams_={};
     device_=dev;
     backend_=ComputeBackend::Cpu;
-    const bool canGpu=dev&&dev->supportsCompute()&&desc_.quality>=fx::FxQuality::Medium;
+    const bool wantsProgram=!desc_.particleProgram.isNull();
+    std::string vmReason;
+    bool vmCompatible=true;
+    if(wantsProgram) {
+        if(!desc_.gpuProgram) {
+            vmCompatible=false;
+            vmReason="GPU VM is disabled for this source; CPU particle program required";
+        } else {
+            gpu_program::Payload candidate;
+            vmCompatible=gpu_program::prepareForMetal(desc_.particleProgram,
+                                                       candidate,vmReason);
+        }
+    }
+    const bool canGpu=dev&&dev->supportsCompute()&&
+                      desc_.quality>=fx::FxQuality::Medium&&vmCompatible;
     const auto selected=dev
         ?chooseComputeBackend(dev->info().backend,canGpu,desc_.backend)
         :ComputeBackend::Cpu;
     if(desc_.backend==ComputePreference::RequireGpu && selected!=ComputeBackend::Metal) {
-        reason_="Metal compute is unavailable; RequireGpu forbids CPU fallback";
+        reason_=vmReason.empty()
+            ?"Metal compute is unavailable; RequireGpu forbids CPU fallback"
+            :vmReason+"; RequireGpu forbids CPU fallback";
         device_=nullptr;return false;
     }
     if(selected==ComputeBackend::Metal) {
@@ -75,7 +93,8 @@ bool ComputeParticles::init(gfx::Device* dev,const ComputeEmitterDesc& config) {
         }
         reason_="Metal GPU unavailable, CPU fallback: "+gpuFailure;
     } else if(desc_.backend!=ComputePreference::CpuOnly) {
-        reason_="Metal compute unavailable or low-tier quality; CPU fallback";
+        reason_=vmReason.empty()?"Metal compute unavailable or low-tier quality; CPU fallback"
+                                :vmReason+"; CPU fallback";
     }
     if(!initCpu()) {
         if(reason_.empty())reason_="CPU particle fallback init failed";
@@ -101,6 +120,7 @@ bool ComputeParticles::initCpu() {
     emitter.drag={desc_.drag,desc_.drag};
     emitter.spread=0;
     emitter.color={{0.f,{1,1,1,1}},{1.f,{1,1,1,0}}};
+    if(!desc_.particleProgram.isNull())emitter.particleProgram=desc_.particleProgram;
     effect.emitters.push_back(std::move(emitter));
     cpuEffect_=cpu_.define("__spectrafx_compute_cpu_fallback",effect);
     return cpuEffect_>=0;
@@ -108,6 +128,9 @@ bool ComputeParticles::initCpu() {
 bool ComputeParticles::initGpu() {
     if(!device_) {reason_="no RHI Device";return false;}
     const uint32_t cap=desc_.capacity;
+    gpu_program::Payload vmPayload;
+    if(!gpu_program::prepareForMetal(desc_.particleProgram,vmPayload,reason_))
+        return false;
     gpuIndirectActive_=desc_.gpuIndirect && device_->supportsGpuAuthoredIndirectDraw();
     compute_=device_->createCompute({shaders::kMetal,shaders::kGLSL,"SpectraFX Metal particle simulation"});
     if(!compute_.valid()) {reason_=device_->lastError();return false;}
