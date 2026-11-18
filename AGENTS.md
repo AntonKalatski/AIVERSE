@@ -137,6 +137,31 @@ FPS to it requires same-tick damage ordering golden tests and network/save
 checksum parity. The kinematic no-physics RTS path and physical-ballistic
 path remain independently composable; no `isFPS`/`isRTS` motion flag.
 
+**Actual shared projectile collision adoption (2026-11-18):** the live FPS
+`FpsProjectiles.cpp` programmed-projectile stage now calls
+`selectSweptProjectileContact` in
+`AIVERSE::lib_ecs_projectile_systems` (`EcsSweepQuerySystems.h`).
+Selects nearest dynamic target with fixed-point swept bounds, endpoint
+fraction=1 and stable semantic-ID ties. It keeps the older wall, penetration,
+damage and projectile-program side effects in the original order. Its
+existing `tests/fps/projectiles.inc::ecsProjectileProgramStageParity` tests
+legacy/ECS actor and projectile state plus save v9 and deep/COW snapshots;
+`ecs_projectile_composition_test` additionally covers swept contact
+selection in independent genre hosts. Neither has been executed in this
+workspace.
+
+`FpsSystems.cpp::traceShot` now synchronously calls the **same**
+`resolveHitscanIntent` pure policy as the standalone
+`addHitscanResolutionSystem`, and uses the generic ray selection policy for
+vehicles too. The live FPS damage still commits immediately and uses
+`applyIntegerHitPointDamage` after gear/armor and knockdown rules.
+For any future conversion to queued impacts or scheduled FPS fire, first run
+`tests/fps/tests.cpp::ecsSimultaneousHitscanRollbackParity` and network
+rollback/parity tests. The standalone resolution system uses deferred callback
+order and must not silently replace synchronous FPS multi-pellet execution.
+Select physical sweep, non-physical pursuit or instant hitscan per *weapon
+capability*, never per genre.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
