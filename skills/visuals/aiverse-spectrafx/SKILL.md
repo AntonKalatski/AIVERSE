@@ -538,6 +538,48 @@ expression compiler or shader material feature parity
 has been implemented. Tests are deferred by user request,
 so real material output and platform builds remain NOT RUN.
 
+## Experimental GPU particle VM (Stage 22 — opt-in, not tested)
+
+Metal-only `GraphRuntimeOptions::gpuProgram` defaults to
+**false**. When explicitly enabled, the compiled graph may
+execute one bounded CPU `particleProgram` in GPU compute
+provided the **whole** `EffectDef` passes GPU eligibility.
+The existing `SpectraGpuProgram.h` fixed ABI `Payload`
+is interpreted by the Stage-22 MSL Spawn/Update kernel;
+no general material/JIT shader source is generated.
+
+Only scalar finite +,-,*,min,max,abs,negate,saturate,
+clamp,lerp and field loads can execute; numeric assignment
+actions set/add/addRate/multiply modify position, velocity,
+size and tint. Read-only values include age, normalized
+age, dt and `param0..param7`. Any collision/trigger/death
+stage, attribute0..7, uid, rotation, division, trig,
+comparisons, arbitrary shader graph, multiple emitters,
+ribbons/mesh effects, or complex fields must use **full CPU
+fallback**. `RequireGpu` must reject incompatible programs.
+
+The Metal shader uses storage buffer slots **7** (32-byte
+seed parameter blocks), **9** (32-byte persistent per-particle
+parameters), **10** (10,256-byte validated VM program) and
+existing slot **8** for frame uniforms. Positions/velocity
+remain entirely GPU-resident; per-instance scalar values
+are captured before Spawn and existing particle values can
+be updated via
+`GraphRuntime::setNamedProgramParameter(name,value,true)`
+with a bounded queued buffer update before the render pass.
+The program is limited to 24 statements/192 instructions
+and 48 instructions per statement.
+
+`examples/spectrafx/gpu_vm_lift_v2.vfx.json` demonstrates
+the strict eligible program. `metalVmEligible` and
+`metalVmReason` in graph MCP ops and the editor describe
+**asset compatibility**, not real Metal availability.
+CPU remains the default, editor preview remains CPU, and
+non-Metal RHI still uses CPU. The user requested functions
+first and tests later: no native build, CTest, shader
+compilation or GPU benchmark has been run for Stage 22.
+See the living handoff for exact commits and follow-up work.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
