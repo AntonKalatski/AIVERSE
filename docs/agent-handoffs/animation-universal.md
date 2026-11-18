@@ -1617,3 +1617,37 @@ before calling this stage validated.
   Keep rebuilding test fixtures but do not execute tests
   until instructed. Code commit then Stage 57 handoff.
 
+## Stage 57 — FPS View camera entry and last immediate triangle adapter (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Code SHA:** `e92dc4cd0c66a4cceb66b535bdc1043891ff81ee`.
+- **Paths:** `apps/fps/client.cpp` and
+  `modules/rts/view/RtsView.cpp`.
+- **API/design:** the FPS reference client now opens its frame
+  through the generic `View::beginScene(Renderer3D&,
+  Camera3D&,fbW,fbH)` entry rather than calling the renderer
+  directly, preserving all existing camera and graphics flags.
+  The old RTS-host radar/blip immediate triangle passes through
+  the core `View::submitTriangle` with a generic triangle packet.
+  The actual fog-of-war decision stays inside the host, never
+  the engine View.
+- **Compatibility:** no simulation, networking, save schema,
+  graphics RHI, pipeline order or game logic changes.
+  All wrapper methods use the same lower-level Renderer3D
+  functions; no duplicate GPU scene submission.
+- **Tests:** **NOT RUN** per user instruction. Required later:
+  FPS scene camera/shadow screenshot parity and legacy RTS
+  blip/tracer rendering; TSAN and View boundary checks.
+- **Remaining architecture gap:** the canonical
+  `aiverse::View` and `render::Camera3D` are genre-free,
+  but `game::RtsView` remains a large compatibility adapter
+  with terrain/fog/roads/planet/procedural logic and public
+  callers. Full retirement still requires moving or rehosting
+  those features as generic scene systems.
+- **Next step:** identify the next stable transferable group
+  of common rendering features in legacy RtsView, implement
+  generic component data contract without drawing twice,
+  and add targeted deferred fixtures. Record a separate
+  Stage 58 handoff after code.
+
