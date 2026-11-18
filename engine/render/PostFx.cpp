@@ -17,19 +17,20 @@ enum : uint32_t {
     kPfPixelate = 1u << 0, kPfCa = 1u << 1, kPfSharpen = 1u << 2, kPfTilt = 1u << 3, kPfBloom = 1u << 4,
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
+    kPfUnderwater = 1u << 13,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_UNDERWATER"};
 
 // Target roles inside one Sized set.
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -143,6 +144,27 @@ void PostFx::configure(const Json& game, const Json& map, std::vector<std::strin
 
 void PostFx::setSettings(PostFxSettings s) { settings_ = std::move(s); error_.clear(); }
 
+void PostFx::setUnderwater(PostFxUnderwater target,float deltaSeconds) {
+    const float dt=std::isfinite(deltaSeconds)?
+        std::clamp(deltaSeconds,0.f,0.25f):0.f;
+    const float alpha=1.f-std::exp(-dt*6.f);
+    auto smooth=[alpha](float& v,float goal){v+=alpha*(goal-v);};
+    auto finite=[](float v,float lo,float hi) {
+        return std::isfinite(v)?std::clamp(v,lo,hi):lo;
+    };
+    smooth(underwater_.blend,target.submerged?1.f:0.f);
+    if(target.submerged) {
+        smooth(underwater_.tintR,finite(target.tintR,0.f,1.f));
+        smooth(underwater_.tintG,finite(target.tintG,0.f,1.f));
+        smooth(underwater_.tintB,finite(target.tintB,0.f,1.f));
+        smooth(underwater_.absorption,finite(target.absorption,0.f,4.f));
+        smooth(underwater_.depthMetres,finite(target.depthMetres,0.f,10000.f));
+    }
+    if(underwater_.blend<0.0001f && !target.submerged)
+        underwater_={};
+}
+
+
 bool PostFx::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PostFxQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
     HdrMode mode = settings_.hdr;
@@ -156,7 +178,9 @@ bool PostFx::hdrRequested() const {
 }
 
 bool PostFx::active() const {
-    return dev_ && triangle_.valid() && enabled_ && (hdrRequested() || settings_.anyActive(quality_));
+    return dev_ && triangle_.valid() && enabled_ && settings_.enabled &&
+        quality_!=PostFxQuality::Off &&
+        (hdrRequested() || settings_.anyActive(quality_) || underwater_.blend>0.001f);
 }
 
 PostFx::Sized& PostFx::sized(int w, int h) {
@@ -248,7 +272,7 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
-    for (int i = 0; i < 13; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
+    for (int i = 0; i < 14; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
     if (mask & kPfBloom) tex |= 2;
     if (mask & kPfTilt) tex |= 4;
@@ -269,7 +293,7 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
             body.replace(body.find(marker),marker.size(),macros+"vec2 sg_uv=s,sg_screen=s;vec4 sg_input=vec4(col,1.0);float sg_time=graphFrame.x;\n// SG_CODE\nRETURN("+graphProgram.outputs.at("color")+");\n");
         }catch(const std::exception& ex){error_=ex.what();compositeFailed_[key]=true;return {};}
     }
-    Built b=buildProgram(kCompositeFields,15,tex,defines,postfx::kCompositeHelpers,body.c_str());
+    Built b=buildProgram(kCompositeFields,17,tex,defines,postfx::kCompositeHelpers,body.c_str());
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
         at=b.msl.find("// SG_CODE");b.msl.replace(at,10,graphProgram.msl);
@@ -574,6 +598,14 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         case PostFxType::Letterbox: { mask |= kPfLetterbox; const float* c = e->color("color"); put(u.lbox, c[0], c[1], c[2], e->get("amount")); break; }
         default: break;
         }
+    }
+    if(underwater_.blend>0.001f && quality_!=PostFxQuality::Off) {
+        mask|=kPfUnderwater;
+        put(u.underwater0,underwater_.tintR,underwater_.tintG,
+            underwater_.tintB,underwater_.blend);
+        put(u.underwater1,underwater_.absorption,
+            underwater_.depthMetres,0,0);
+        ++stats_.effects;
     }
     const auto* graphEffect = find(PostFxType::ShaderGraph);
     gfx::PipelineHandle pipe = composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
