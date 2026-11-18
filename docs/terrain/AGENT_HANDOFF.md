@@ -1469,3 +1469,51 @@ Follow with stable region caching and transition ownership.
 **Tester handoff:** add coverage for supplied sample callbacks,
 water/road suppression, same terrain snapshot in near/far paths,
 GPU atlas preview and mobile fallback.
+
+## Stage 9b — Horizon worker source ownership and authored WorldScene integration (CODE COMMITTED; NOT TESTED)
+
+**Branch:** `feature/terraweave`, draft PR #24.
+**Commits/files:**
+- `37d8b85a5c357fdaa5216823a8bfc10595009085`:
+  `engine/render/TerraWeaveHorizonScene.h` introduces
+  `setSurfaceSources(shared_ptr<const HorizonSurfaceSources>)`,
+  atomically captured by an async worker. Cancels old region
+  selection on source changes but keeps the last uploaded model
+  until successful GPU replacement. Adds read-only
+  `terrainSettings()/biomeSettings()` for owning host adapters.
+- `b124382a81888673a9d14ce4db68c5a7916d805d`:
+  `engine/world/WorldScene.cpp`: authored collision terrain
+  height snapshot and obstacle mask are now assembled for either
+  opt-in near forest or opt-in Horizon, not only near forest.
+  `Horizon` captures the resident immutable height tiles and
+  collision-box mask; unloaded far terrain falls back to its own
+  procedural height seed.
+- Stage notes appended to `docs/terrain/TERRAWEAVE.md`
+  and this agent handoff.
+
+**Behavior/API:** The user can create a far landscape using
+their actual authored collision heightfield within loaded regions
+and suppress distant tree canopy where buildings/obstacles
+have authored boxes. No new GPU shaders or per-tree entities.
+Callbacks are resolved only in background CPU preparation and
+own read-only snapshots via shared pointers. Source changes
+cancel stale region jobs; main-thread GPU resource handling
+remains unchanged.
+
+**Actual verification:** GitHub connector writes and source review
+only. **No tests/build/CTest/CI/screenshot executed**, per explicit
+user decision: another agent is responsible for all validation.
+
+**Next scoped functionality:** reduce recomputation of nearly
+identical Horizon atlases when the camera crosses a small
+streaming cell: add bounded atlas/model caching and stable
+region-key hysteresis; consider static asset bake/cache
+fingerprints. Additional incomplete behavior: far terrain only
+matches *resident* authored height tiles, not unloaded chunks;
+terrain ownership overlap and true temporal crossfade still
+require design and renderer validation.
+
+**Tester handoff:** validate terrain matching, road/building
+mask discontinuities, snapshot change during pending CPU job,
+old GPU proxy retention and destruction order, optional
+Horizon-only scenes, and no-effects when both modules absent.
