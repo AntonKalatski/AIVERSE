@@ -5,6 +5,8 @@
 #include "TextureCodec.h"
 #include "engine/gfx/Gfx.h"
 
+#include <algorithm>
+
 #include <string>
 #include <vector>
 
