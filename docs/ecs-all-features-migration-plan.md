@@ -194,3 +194,37 @@ Track `id`, `owner source path`, `legacy state`, `ECS canonical state`, `compone
 3. Replace FPS `State::actors` authority field by field (rather than keeping `ActorRuntime{Actor}` as the final design), then vehicles, loot, projectiles. No two mutable owners.
 4. Split RTS `GameState` into world resources for match/global grids and Entity components for per-entity state; remove `RtsModule&` dependency from shared mechanics.
 5. Extend inspector/schemas and reflect from actual registered components; test mixed RTS/FPS/native entities.
+
+
+## Incremental execution: queued ECS impact resolution (2026-11-18)
+
+The original 120-entry inventory above is a **baseline snapshot**, not the
+current mutable catalog count. New packages added on the working branch must
+be checked against `libraries/catalog.json` before counting or marking work
+complete.
+
+**New independent, opt-in ECS system:** `ecs-impact-queue` (public
+`AIVERSE::lib_ecs_impact_queue` and
+`libraries/include/aiverselib/genre/EcsImpactQueueSystems.h`). It builds on
+the shared synchronous `ecs-ordered-impact` pure policy. Weapon/projectile
+adapters can enqueue `OrderedProjectileImpact` records into a bounded
+rollback-owned `OrderedImpactQueue` World resource. A separately registered
+`addOrderedImpactResolutionSystem` resolves direct hit, on-hit policy and
+splash candidates in stable enqueue order, using injected faction/armor/
+spatial callbacks rather than hardcoded genre branches. Callback-generated
+requests wait for the next barrier; sequence ownership is in ECS World.
+
+**Tests:** `tests/ecs_cross_genre_impact_queue_test.cpp` and CTest
+`ecs_cross_genre_impact_queue_test` exercise shooter/strategy hosts,
+callback ordering, friendly-fire filtering, nested submission and COW
+rollback. The standalone experiment suite also references the fixture.
+These fixtures exist in source; their native compilation, execution and
+cross-platform reproducibility are **not yet verified**.
+
+**Do not mark wave 1 complete:** built-in RTS uses immediate damage within
+its projectile ECS traversal and programmed impacts may have different
+on-hit/splash ordering. The queue system is not wired into that gameplay,
+nor the FPS authoritative damage/hitscan path. Replacing immediate damage
+with a global end-of-tick batch would change hit-shield/kill/script ordering.
+Require real RTS/FPS golden replay, save, rollback, network and mixed-mechanics
+tests before switching source ownership or system barriers.
