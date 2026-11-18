@@ -150,43 +150,9 @@ if (( RUN_EXTRA )); then
     [[ -f "$MANIFEST" ]] || die "Missing extra suite registry: $MANIFEST"
     suite_count=0
     while IFS='|' read -r name runner relative args || [[ -n "$name" ]]; do
-        # The manifest may be checked out as CRLF (Git/editor configuration).
-        # Bash read strips LF but retains the terminal CR as an *argument*.
-        # Strip it before testing emptiness and splitting optional flags.
-        args="${args% ""|\#*) continue ;; esac
-        if ! [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
-            die "Invalid suite name in $MANIFEST: $name"
-        fi
-        if [[ "$relative" == /* || "$relative" == *..* || ! -f "$ROOT/$relative" ]]; then
-            die "Invalid or absent suite script: $relative"
-        fi
-        case "$runner" in
-            bash|python3) ;;
-            *) die "Unsupported suite runner for $name: $runner" ;;
-        esac
-        case "$args" in *'|'*) die "Extra pipe in suite $name" ;; esac
-        suite_count=$((suite_count + 1))
-        suite_args=()
-        if [[ -n "$args" ]]; then
-            read -r -a suite_args <<< "$args"
-        fi
-        stage "extra-$name" "$runner" "$ROOT/$relative" "${suite_args[@]}" || true
-    done < "$MANIFEST"
-    if (( suite_count == 0 )); then
-        printf 'ERROR: no extra suites registered\n' | tee -a "$SUMMARY" >&2
-        FAILED+=("extra-empty-registry")
-    fi
-fi
-
-printf '\n========== SUMMARY ==========\n' | tee -a "$SUMMARY"
-printf 'Passed stages: %s | Failed stages: %s\n' "${#PASSED[@]}" "${#FAILED[@]}" | tee -a "$SUMMARY"
-printf 'Logs: %s\n' "$LOG_DIR" | tee -a "$SUMMARY"
-if (( ${#FAILED[@]} )); then
-    printf 'Failed: %s\n' "${FAILED[*]}" | tee -a "$SUMMARY" >&2
-    exit 1
-fi
-printf 'PASS: all selected test stages\n' | tee -a "$SUMMARY"
-\r'}"
+        # Bash read strips LF but preserves a terminal CR from a CRLF manifest.
+        # Strip it before interpreting optional script arguments.
+        args="${args%$'\r'}"
         case "$name" in ""|\#*) continue ;; esac
         if ! [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
             die "Invalid suite name in $MANIFEST: $name"
