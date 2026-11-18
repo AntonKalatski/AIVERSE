@@ -5,6 +5,7 @@
 #include "PhysisRuntimeFields.h"
 #include <algorithm>
 #include <cstdint>
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -56,17 +57,23 @@ public:
     std::size_t applyAtTick(World& world, std::uint64_t tick) {
         if (!pending_.empty() && pending_.front().tick < tick)
             throw std::invalid_argument("PHYSIS late field command");
-        std::size_t applied = 0;
-        while (!pending_.empty() && pending_.front().tick == tick) {
-            const auto& command = pending_.front();
-            reconcileTrackedRuntimeFields(world, command.fields);
-            hasApplied_ = true;
-            lastAppliedTick_ = tick;
-            lastAppliedSequence_ = command.sequence;
-            pending_.erase(pending_.begin());
-            ++applied;
-        }
-        return applied;
+        std::size_t count = 0;
+        while (count < pending_.size() && pending_[count].tick == tick)
+            ++count;
+        if (!count) return 0;
+
+        // A single transaction for ALL commands scheduled at this tick.
+        // Do not consume any queue entry if a later command fails.
+        World staged(world);
+        for (std::size_t i = 0; i < count; ++i)
+            reconcileTrackedRuntimeFields(staged, pending_[i].fields);
+        world = std::move(staged);
+        hasApplied_ = true;
+        lastAppliedTick_ = tick;
+        lastAppliedSequence_ = pending_[count - 1].sequence;
+        pending_.erase(pending_.begin(), pending_.begin() +
+                       static_cast<std::ptrdiff_t>(count));
+        return count;
     }
 
     bool empty() const { return pending_.empty(); }
