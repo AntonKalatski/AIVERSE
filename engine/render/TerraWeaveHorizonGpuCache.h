@@ -69,6 +69,27 @@ public:
         return std::optional<HorizonGpuRegion>{std::move(result)};
     }
 
+    // A crossfading old region is an *additional* GPU resident, just
+    // like a cache entry. Evict LRU entries first so transition memory
+    // never silently exceeds the configured inactive-residency budget.
+    // No GPU allocation takes place here; only explicit RHI retirements.
+    bool reserveTransient(gfx::Device& device,size_t bytes,
+                          size_t maxInactiveModels,size_t budgetBytes) {
+        if(!bytes||bytes>budgetBytes||maxInactiveModels==0)
+            return false;
+        while(!entries_.empty() &&
+              (entries_.size()>=maxInactiveModels ||
+               bytes>budgetBytes-occupiedBytes_)) {
+            auto oldest=entries_.begin();
+            for(auto it=entries_.begin();it!=entries_.end();++it)
+                if(it->second.stamp<oldest->second.stamp)
+                    oldest=it;
+            release(device,oldest);
+        }
+        return entries_.size()<maxInactiveModels &&
+               bytes<=budgetBytes-occupiedBytes_;
+    }
+
     void retain(gfx::Device& device,world::Cell cell,uint64_t revision,
                 HorizonGpuRegion region,size_t limit,size_t budgetBytes) {
         if(!region.model)return;
