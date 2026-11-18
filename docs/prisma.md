@@ -278,6 +278,32 @@ topological order, valid binding resolution, and rejection of missing
 mip targets before pass execution. Those sources have **NOT RUN** in a
 native compiler or on a GPU; see `docs/handoffs/prisma-stage-16.md`.
 
+
+## Stage 17 — per-view compiled Bloom topology cache
+
+`engine/render/PrismaBloomGraph.h` provides a GPU-free
+`PrismaBloomGraphCache`. `configure(sourceWidth,sourceHeight,format,mips)`
+compiles the complete Bloom topology once per source size, HDR/SDR format
+and mip shape list. Repeated frames with the same structure reuse
+`graph()`, `plan()` and `operations()`; changed quality/mip sizes
+trigger compilation of a replacement graph. Failed reconfiguration leaves
+the previous valid configuration intact, but the renderer never executes
+that stale graph for the incompatible current layout.
+
+The main `Prisma::Sized` viewport cache now owns a
+`PrismaBloomGraphCache`, so Scene/Game views have separate graph
+layouts and no cross-view history. The Stage 16 opt-in path
+`AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN=1` uses the cached immutable graph
+and rebuilds only the *frame bindings*: threshold/knee/scatter,
+shader uniforms, source and output texture handles, and per-mip
+depth attachments. The existing fallback and default-off behavior
+are preserved. Stage 12 transient target pooling remains a separate
+future integration; cached topology itself allocates **no** GPU textures.
+
+This is implementation-only work; CMake, CTest and real GPU validation
+were intentionally deferred at the user's request. See
+`docs/handoffs/prisma-stage-17.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
