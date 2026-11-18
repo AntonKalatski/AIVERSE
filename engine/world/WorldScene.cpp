@@ -1,5 +1,6 @@
 #include "WorldScene.h"
 #include "engine/render/ModelTextureCache.h"
+#include "engine/world/NereidWaterManifest.h"
 #include <algorithm>
 #include <cmath>
 #include <mutex>
@@ -48,6 +49,11 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     shareModels_=manifest.getBool("shareModels");
     overhang_=float(worldInteger(manifest,"meshOverhang",0,0,4096));
     uploadBytes_=size_t(worldInteger(manifest,"maxUploadBytes",16*1024*1024,1024,1024*1024*1024));
+    // Static opt-in water snapshots are presentation-only; native ECS hosts
+    // can later override them via setNereidSurfaces().
+    const auto water=parseNereidWaterManifest(manifest);
+    nereidWater_.setMaxUploadsPerFrame(water.maxUploadsPerFrame);
+    if(manifest.has("nereidWater"))nereidWater_.setSurfaces(water.surfaces);
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
