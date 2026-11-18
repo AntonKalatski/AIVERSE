@@ -112,6 +112,37 @@ int main() {
     std::printf("%s\n", d.info().name.c_str());
     CHECK(d.info().backend == Backend::Vulkan && !d.info().clipDepthZeroToOne && !d.info().renderTargetFlipY);
 
+    {   // Texture resource inspector reports only living GPU allocations.
+        TextureDesc inventoryDesc;
+        inventoryDesc.width = inventoryDesc.height = 8;
+        inventoryDesc.dimension = TextureDimension::Texture2DArray;
+        inventoryDesc.arrayLayers = 2;
+        inventoryDesc.mipLevels = 4;
+        const TextureHandle inventoryTexture = d.createTexture(inventoryDesc);
+        CHECK(inventoryTexture.valid());
+        if (inventoryTexture.valid()) {
+            bool found = false;
+            for (const auto& entry : d.textureResources()) {
+                if (entry.handle == inventoryTexture) {
+                    found = true;
+                    CHECK(entry.dimension == TextureDimension::Texture2DArray);
+                    CHECK(entry.format == PixelFormat::RGBA8);
+                    CHECK(entry.width == 8 && entry.height == 8);
+                    CHECK(entry.depth == 1 && entry.arrayLayers == 2);
+                    CHECK(entry.mipLevels == 4 && entry.sampleCount == 1);
+                    CHECK(!entry.renderTarget && !entry.storage);
+                    CHECK(entry.estimatedBytes == 680); // 2*(8²+4²+2²+1)*4
+                }
+            }
+            CHECK(found);
+            d.destroyTexture(inventoryTexture);
+            bool stillReported = false;
+            for (const auto& entry : d.textureResources())
+                stillReported |= entry.handle == inventoryTexture;
+            CHECK(!stillReported);
+        }
+    }
+
     ShaderDesc sd;
     sd.glslVertex = kVs; sd.glslFragment = kColorFs; sd.uniformSlots = 1;
     const ShaderHandle color = d.createShader(sd);
