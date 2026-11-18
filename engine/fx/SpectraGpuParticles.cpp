@@ -108,6 +108,7 @@ bool ComputeParticles::initCpu() {
 bool ComputeParticles::initGpu() {
     if(!device_) {reason_="no RHI Device";return false;}
     const uint32_t cap=desc_.capacity;
+    gpuIndirectActive_=desc_.gpuIndirect && device_->supportsGpuAuthoredIndirectDraw();
     compute_=device_->createCompute({shaders::kMetal,shaders::kGLSL,"SpectraFX Metal particle simulation"});
     if(!compute_.valid()) {reason_=device_->lastError();return false;}
 
@@ -121,6 +122,12 @@ bool ComputeParticles::initGpu() {
                   nullptr,"SpectraFX GPU spawn slots");
     liveSlots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
                       nullptr,"SpectraFX GPU live-slot gather map");
+    const uint32_t zero=0;
+    const gfx::DrawIndexedIndirectCommand zeroArgs{0,1,0,0,0};
+    aliveCounter_=buffer(*device_,gfx::BufferType::Storage,sizeof(zero),
+                         &zero,"SpectraFX GPU atomic alive count");
+    gpuDrawArgs_=buffer(*device_,gfx::BufferType::Storage,sizeof(zeroArgs),
+                        &zeroArgs,"SpectraFX GPU authored draw args");
     vertices_=buffer(*device_,gfx::BufferType::Storage,
                      cap*4*sizeof(Vertex),nullptr,"SpectraFX GPU quad vertices");
 
@@ -171,7 +178,8 @@ bool ComputeParticles::initGpu() {
         pd.label="SpectraFX GPU additive";
         pipeline_=device_->createPipeline(pd);
     }
-    if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||!vertices_.valid()||
+    if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||
+       !aliveCounter_.valid()||!gpuDrawArgs_.valid()||!vertices_.valid()||
        !indices_.valid()||!texture_.valid()||!vertexShader_.valid()||!pipeline_.valid()) {
         reason_="GPU resource/pipeline allocation failed: "+device_->lastError();
         return false;
@@ -183,7 +191,7 @@ bool ComputeParticles::initGpu() {
     pendingSlots_.reserve(cap);
     aliveSlots_.reserve(cap);
     stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+2*sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
-                    +size_t(n*n*4);
+                    +size_t(n*n*4)+sizeof(zero)+sizeof(zeroArgs);
     return true;
 }
 void ComputeParticles::releaseGpu() {
@@ -195,12 +203,15 @@ void ComputeParticles::releaseGpu() {
         if(seeds_.valid())device_->destroyBuffer(seeds_);
         if(slots_.valid())device_->destroyBuffer(slots_);
         if(liveSlots_.valid())device_->destroyBuffer(liveSlots_);
+        if(aliveCounter_.valid())device_->destroyBuffer(aliveCounter_);
+        if(gpuDrawArgs_.valid())device_->destroyBuffer(gpuDrawArgs_);
         if(vertices_.valid())device_->destroyBuffer(vertices_);
         if(indices_.valid())device_->destroyBuffer(indices_);
         if(texture_.valid())device_->destroyTexture(texture_);
     }
     pipeline_={};vertexShader_={};compute_={};states_={};seeds_={};slots_={};
     vertices_={};indices_={};texture_={};liveSlots_={};
+    aliveCounter_={};gpuDrawArgs_={};gpuIndirectActive_=false;
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
     aliveSlots_.clear();
     drawCount_=0;
