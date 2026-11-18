@@ -48,6 +48,7 @@ struct WaterSurfaceStyle {
     float foamStrength=0.65f;
     float opacity=0.73f;
     float specular=0.95f;
+    float refractionStrength=0.f; // opt-in trace-tier opaque-scene refraction
 };
 
 namespace water_mesh_detail {
