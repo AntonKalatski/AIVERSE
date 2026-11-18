@@ -272,3 +272,119 @@ void ecsProjectileBranchAuthorityParity() {
     ecsProjectileBranchAuthorityParityCase(false);
     ecsProjectileBranchAuthorityParityCase(true);
 }
+
+
+void ecsOrdinaryProjectileAuthorityParityCase(bool cow) {
+    // Bullets, timed smoke and bouncing grenades are now processed in the
+    // separate ordinary-projectile stage. Mutate the live ECS payload only
+    // (not its stale State projection) and verify default/ECS tick parity.
+    const auto rules=Json::parse(R"({
+        "fps":{"tickRate":20,"mode":"deathmatch",
+               "weapon":{"damage":10,"intervalTicks":1000,
+                         "bulletSpeed":40,"bulletGravity":0},
+               "mechanics":{"enabled":true,"smokeTicks":10,
+                            "grenadeFuse":3},
+               "motor":{"gravity":1}}
+    })");
+    const auto map=Json::parse(R"({
+        "players":[{"team":1},{"team":2}],
+        "spawns":[[0,0.01,0],[0,0.01,4]],
+        "colliders":[{"id":1,"min":[-100,-2,-100],
+                                 "max":[100,0,100]}]
+    })");
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    if(cow) {
+        legacy->world().enableCowSnapshots(true);
+        ecs->world().enableCowSnapshots(true);
+    }
+    fps::Projectile bullet;
+    bullet.id=9001;bullet.owner=1;bullet.kind=0;bullet.weapon=0;
+    bullet.pos={0_fx,1_fx,0_fx};bullet.velocity={0_fx,0_fx,40_fx};
+    bullet.remaining=100_fx;bullet.expires=100;bullet.damage=10;
+    fps::Projectile smoke;
+    smoke.id=9002;smoke.owner=1;smoke.kind=4;
+    smoke.pos={20_fx,5_fx,20_fx};smoke.expires=5;
+    fps::Projectile grenade;
+    grenade.id=9003;grenade.owner=1;grenade.kind=2;
+    grenade.pos={30_fx,4_fx,30_fx};grenade.expires=2;
+    grenade.velocity={1_fx,2_fx,0_fx};
+    const fps::Projectile objects[]{bullet,smoke,grenade};
+    for(uint32_t i=0;i<3;++i) {
+        state(*legacy).projectiles.push_back(objects[i]);
+        const Entity e=ecs->world().create();
+        ecs->world().add<fps::ProjectileRuntime>(
+            e,fps::ProjectileRuntime{objects[i],i});
+    }
+    auto checkBoth=[&]() {
+        CHECK(legacy->checksum()==ecs->checksum());
+        const auto& a=state(*legacy);
+        const auto& b=state(*ecs);
+        CHECK(a.actors==b.actors);
+        CHECK(a.projectiles.size()==b.projectiles.size());
+        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+        CHECK(index);
+        for(size_t i=0;i<a.projectiles.size();++i) {
+            CHECK(a.projectiles[i].id==b.projectiles[i].id);
+            CHECK(a.projectiles[i].kind==b.projectiles[i].kind);
+            CHECK(a.projectiles[i].pos==b.projectiles[i].pos);
+            CHECK(a.projectiles[i].velocity==b.projectiles[i].velocity);
+            CHECK(a.projectiles[i].expires==b.projectiles[i].expires);
+            const uint64_t key=(uint64_t(1)<<32)|b.projectiles[i].id;
+            CHECK(index->byKey.contains(key));
+            const Entity e=index->byKey.at(key);
+            const auto* runtime=ecs->world().tryGetConst<fps::ProjectileRuntime>(e);
+            CHECK(runtime&&runtime->order==i);
+            CHECK(runtime->value.id==b.projectiles[i].id);
+            CHECK(runtime->value.pos==b.projectiles[i].pos);
+        }
+    };
+    for(int i=0;i<2;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+    CHECK(state(*legacy).actors[1].health==90); // direct bullet hit
+    CHECK(!state(*legacy).projectiles.empty());
+    SimSnapshot beforeLegacy,beforeEcs;
+    legacy->saveState(beforeLegacy);
+    ecs->saveState(beforeEcs);
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+    const auto expected=legacy->checksum();
+    const auto savedLegacy=legacy->serialize(),savedEcs=ecs->serialize();
+    auto fromLegacy=simulation(ecsRules,map),fromEcs=simulation(rules,map);
+    CHECK(fromLegacy->deserialize(savedLegacy));
+    CHECK(fromEcs->deserialize(savedEcs));
+    CHECK(fromLegacy->checksum()==expected);
+    CHECK(fromEcs->checksum()==expected);
+    // Test rollback of the real projectile stage, including component
+    // removal and deterministic smoke conversion/expiry.
+    legacy->loadState(beforeLegacy);
+    ecs->loadState(beforeEcs);
+    checkBoth();
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+    CHECK(ecs->checksum()==expected);
+    legacy->loadState(beforeLegacy);
+    ecs->loadState(beforeEcs);
+    // An ECS-only native write takes priority over the stale State vector.
+    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+    const uint64_t key=(uint64_t(1)<<32)|smoke.id;
+    CHECK(index&&index->byKey.contains(key));
+    auto* canonical=ecs->world().tryGet<fps::ProjectileRuntime>(
+        index->byKey.at(key));
+    CHECK(canonical&&canonical->value.kind==4);
+    canonical->value.expires+=3;
+    for(auto& p:state(*legacy).projectiles)
+        if(p.id==smoke.id)p.expires+=3;
+    CHECK(legacy->checksum()==ecs->checksum()); // canonical ECS before sync
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+}
+void ecsOrdinaryProjectileAuthorityParity() {
+    ecsOrdinaryProjectileAuthorityParityCase(false);
+    ecsOrdinaryProjectileAuthorityParityCase(true);
+}
