@@ -36,6 +36,7 @@ jobs:
             aiverse_physis_authoring_test \
             aiverse_physis_field_authoring_test \
             aiverse_physis_field_assets_test \
+            aiverse_physis_field_runtime_test \
             aiverse_physis_project_config_test \
             aiverse_physis_scene_geometry_test --parallel 2
       - name: Run PHYSIS editor tests

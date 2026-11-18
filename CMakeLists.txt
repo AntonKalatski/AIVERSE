@@ -2295,6 +2295,11 @@ endif()
 # PHYSIS Stage 19: deterministic authored field assets and editor Move gizmo
 # transaction contracts. No genre module dependency; authoring uses MapDoc.
 if(AIVERSE_BUILD_TESTS)
+    # Stage 23: native field registry and tick-boundary command reconciliation.
+    add_executable(aiverse_physis_field_runtime_test tests/physis_field_runtime_test.cpp)
+    target_link_libraries(aiverse_physis_field_runtime_test PRIVATE aiverse_engine)
+    add_test(NAME physis_field_runtime COMMAND aiverse_physis_field_runtime_test)
+    set_tests_properties(physis_field_runtime PROPERTIES LABELS "PHYSIS")
     add_executable(aiverse_physis_field_assets_test tests/physis_field_assets_test.cpp)
     target_link_libraries(aiverse_physis_field_assets_test PRIVATE aiverse_engine)
     add_test(NAME physis_field_assets COMMAND aiverse_physis_field_assets_test)

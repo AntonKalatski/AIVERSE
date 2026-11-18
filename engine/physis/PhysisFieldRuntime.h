@@ -166,7 +166,8 @@ inline bool encodeFieldEditCommand(const FieldEditBatch& request,
     Archive archive(&binary);
     std::uint32_t version=kFieldEditProtocol;
     std::uint32_t count=std::uint32_t(request.desired.size());
-    archive(version, request.expectedRevision, count);
+    std::uint64_t revision=request.expectedRevision;
+    archive(version,revision,count);
     for (const auto& item:request.desired) {
         auto copy=item;
         io(archive,copy);

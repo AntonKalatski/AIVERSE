@@ -62,6 +62,7 @@ jobs:
             aiverse_physis_scene_geometry_test \
             aiverse_physis_project_config_test \
             aiverse_physis_field_assets_test \
+            aiverse_physis_field_runtime_test \
             aiverse_physis_box3d_test
       - name: CTest PHYSIS (includes real Box3D Scene)
         shell: bash
