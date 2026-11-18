@@ -983,3 +983,52 @@ When the user authorizes testing, first compile `aiverse_vfx_graph_tests`, edito
 ### Next bounded FUNCTIONAL stage
 
 **Stage 17:** upgrade the ImGui SpectraFX editor to use graph v2 as its normal new-asset format, add value/data-node creation, typed data-pin linking and value inspector, curve/gradient tools and graphical module insertion/sequence reordering, plus MCP graph-v2 authoring helpers. Maintain original v1 view/edit support. Then continue richer runtime function graphs and GPU capabilities. Every finished stage must append a separately committed handoff entry to this file, with exact source SHAs, deferred-test status and concrete next step.
+
+## Stage 17 — visual graph v2 authoring and safe drafts (FUNCTIONAL CODE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Scope:** complete the initial graph-v2 editor authoring workflow without changing ECS simulation, GPU performance policy, or the existing validated-published-effect contract. The user explicitly requested functionality first, tests later; continue doing separate code and handoff commits per stage.
+
+### Implementation SHAs
+
+| SHA | Files | Change |
+|---|---|---|
+| `0022b7b7d4a037a2f12fb265e3cea716f5928567` | `engine/fx/SpectraAuthoring.h` | New reusable pure C++ graph node catalog, default v2 graph, execution/data link editing, cycle protection, node creation/lookup |
+| `c16ef4c54d31f6f9647debe11d0e3982a5fc0053` | `engine/fx/SpectraAuthoring.h` | Align spinBySpeed/lifeBySpeed presets with strict FxEffect schema |
+| `2df0128a720391facd3c9b19a7a9c688534e12cc` | `engine/fx/SpectraAuthoring.h` | Guard malformed graph arrays before node insertion |
+| `d1c7faf075667aedac4300f4ca1a31b9286ef9e2` | `apps/editor/windows/SpectraGraphWindow.cpp` | New v2 node catalog, visual typed data links, connection property selector, v1-compatible old canvas |
+| `9f17d352600f9342fd8690edc574586b7a983e98` | `apps/editor/windows/SpectraGraphWindow.cpp` | Numeric/bool/vector/color literals, curve/gradient time/value and RGBA editors |
+| `4ab6bdc407070060131d3e9b0ab5c59b1a1481c5` | `engine/fx/SpectraModuleSchema.h` | Common typed fields for noise/collision/trails/light/force/velocity/shape/sorting/material/trigger modules |
+| `f7f96893a6f02cb19d4ce196dbf0cac1073e6517` | `apps/editor/windows/SpectraGraphWindow.cpp` | Typed light color picker |
+| `81b01b3485a6d8f4d0a535d94e2876bac39b583c` | `apps/editor/windows/SpectraGraphWindow.cpp` | In-memory, nondestructive v1→v2 upgrade |
+| `43c02ccd8df69b795385f9502ddfa430d0df508c` | `apps/editor/core/SpectraGraphOps.cpp` | MCP catalog/edit and private draft get/set/list/publish operations |
+| `47ebb187cc57b35075be457248168be8642e3328` | `apps/editor/windows/SpectraGraphWindow.cpp` | Draft list, draft load/save, explicit publish in the editor |
+| `4186efd0db7cf62fd33b2e092a77cfb52ec7268f` | `engine/fx/SpectraFX.h` | Expose common SpectraAuthoring model to native C++ |
+| `98d6152692167faad3f388cb155637171e410937` | `docs/spectrafx.md` | Editor and MCP graph-v2 authoring documentation |
+| `5e294f5024f9acccabac058a57ba21ec32c9143f` | `skills/visuals/aiverse-spectrafx/SKILL.md` | AI agent graph authoring instructions |
+| `aa774d198539f5bf656c79cbcc741267b8c02a0d` | `AGENTS.md` | Long-term ownership, dataflow/editor and draft publication rules |
+
+### API, architecture and asset contract
+
+`spectra::authoring::nodeCatalog()/newGraphV2()/addNode()/connectExec()/connectData()/disconnect()/inputPorts()/node()` live in the pure `engine/fx/SpectraAuthoring.h` with no ImGui, RHI, ECS or genre dependencies. They are exported from the canonical `engine/fx/SpectraFX.h`, so a native game-specific AI or content tool can construct v2 graphs without writing a new parser.
+
+The SpectraFX ImGui window creates v2 assets by default, opens existing v1 assets unchanged, permits a no-write v1→v2 migration, displays grouped value/math/vector/logic/stage modules and distinguishes data-port edges from execution links. The right property inspector has exact data input port selection, typed controls for common emitter modules and editable Curve/Gradient value nodes. Unsupported/complex fields retain their full JSON content.
+
+New MCP operations:
+- `fx_graph_node_catalog` returns node types, groups, starter JSON and input names.
+- `fx_graph_edit` edits a graph in **memory only** (new, upgrade, add, connect, disconnect, deleteNode, setProperty), returns the modified graph and compiler diagnostic object; deliberately supports temporarily invalid intermediate authoring.
+- `fx_graph_draft_set/get/list/publish` store incomplete graph JSON under `fx/graphs/_drafts/<safe-name>.vfx.json`. Drafts never enter production asset registry and never replace published graphs. `draft_publish` writes `fx/graphs/<name>.vfx.json` only after successful full graph compilation, preserving the previous published effect when invalid. Existing strict `fx_graph_set/get/list/validate/bake` remain active for both versions.
+- In-editor **Черновик** saves incomplete work; **Опубликовать** validates and publishes; draft and published names have separately selectable listings. The normal editor preset is v2 but older v1 files are accepted by the same public compiler.
+
+No deterministic ECS component, physics, renderer handle or network code was touched. No accidental genre-specific dependency introduced. Graph v2 still lowers to existing CPU FxEffect, and advanced modules continue to use CPU fallback until GPU parity exists.
+
+### Test status (as requested: DEFERRED, NOT RUN)
+
+No local AIVERSE checkout was made and no native compilation, GUI run, CTest, CI success check or real Metal rendering was performed. Source commits are **not** proof of compilation/GUI usability. User explicitly asked to finish functions before tests. Do not change the status to PASS without executing a test. In the future, validate the v2 catalog/MCP draft roundtrip and editor data pin wiring/undo, use both valid and incomplete graphs, test v1 migration and compiled v2 GPU eligibility, and verify that published effects remain intact on invalid drafts.
+
+### Known limitations and next FUNCTIONAL stage
+
+1. The editor uses ImGui direct-mode drawing with a typed property selector, not a sophisticated full-sized Niagara pin grid or searchable node library. Curves/gradients can edit keys, but do not yet provide tangent/Bezier manipulation or shared function libraries.
+2. The compiler evaluates static math and age-sampled curves at compilation. It does not execute arbitrary user-defined particle attribute bytecode or per-particle GPU expression kernels; expressive full runtime graphs and user-defined functions remain open.
+3. The MCP draft path is intentionally outside published asset files. Production `GraphAssets` must never read from `fx/graphs/_drafts` by default.
+4. Explicit next Stage 18: add reusable typed function subgraphs with bounded call graphs, parameter binding, function-library authoring and native runtime integration, then add custom per-particle attributes/program stages as a separate bounded feature. After each code stage add **another handoff commit** to this file. Preserve all concurrent branch modifications.
