@@ -1,5 +1,6 @@
 #include "WorldScene.h"
 #include "TerraWeaveForestManifest.h"
+#include "TerraWeaveWorldHeightSource.h"
 #include "engine/render/ModelTextureCache.h"
 #include <algorithm>
 #include <cmath>
@@ -62,6 +63,21 @@ std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetR
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
     auto json=Json::parse(text);auto collision=readChunkCollision(json,assets_.cellSize);
     auto out=std::make_shared<Prepared>();size_t bytes=4096;
+    if(terraForest_){
+        out->terrainResolution=uint32_t(collision.terrain.resolution);
+        out->terrainHeightsCm.reserve(collision.terrain.heights.size());
+        for(const Fixed& height:collision.terrain.heights){
+            out->terrainHeightsCm.push_back(
+                static_cast<int32_t>(std::llround(height.toDouble()*100.0)));
+        }
+        out->placementBoxes=collision.boxes;
+        // Authored source snapshots are resident CPU data only in explicit
+        // forest-enabled worlds; charge them to the chunk reservation.
+        bytes+=out->terrainHeightsCm.size()*sizeof(int32_t)+
+               out->placementBoxes.size()*sizeof(Bounds);
+        if(bytes>asset.bytes)throw JsonError(
+            "world.terraweaveForest: chunk reservation too small for terrain snapshot");
+    }
     auto append=[&](std::shared_ptr<render::Model> model,const std::string& sharedKey=std::string(),bool charge=true,bool fresh=true){
         // a model reused from the cache was checked when it was decoded (and its CPU arrays are gone after the upload)
         if(!fresh){bytes+=4096;if(bytes>asset.bytes)throw JsonError("world.scene: reservedBytes too small");out->models.push_back(std::move(model));out->sharedKeys.push_back(sharedKey);return out->models.size()-1;}
@@ -128,6 +144,7 @@ void WorldScene::releaseChunk(gfx::Device& device,Prepared& chunk) {
     }
 }
 void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int radius) {
+    bool landscapeChanged=false;
     std::vector<StreamObserver> interests;for(auto p:observers)interests.push_back({assets_.cell(p),radius});
     stream_->update(interests,{},4,2,[&](Cell cell,const AsyncChunkStream::Payload& payload){
         auto prepared=std::static_pointer_cast<Prepared>(payload);
@@ -137,9 +154,77 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 if(!render::uploadModel(device,*model)||!model->vb.valid()||!model->ib.valid())throw JsonError("world.mesh: GPU buffer upload failed");
                 for(auto& image:model->images)if(!image.tex.valid())throw JsonError("world.mesh: GPU texture upload failed");
             }
-            resident_[cell]=prepared;return true;
+            resident_[cell]=prepared;
+            if(terraForest_ &&
+               (prepared->terrainResolution || !prepared->placementBoxes.empty()))
+                landscapeChanged=true;
+            return true;
         }catch(...){releaseChunk(device,*prepared);throw;}
-    },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
+    },[&](Cell cell){
+        auto it=resident_.find(cell);
+        if(it==resident_.end())return;
+        if(terraForest_ &&
+           (it->second->terrainResolution || !it->second->placementBoxes.empty()))
+            landscapeChanged=true;
+        releaseChunk(device,*it->second);
+        resident_.erase(it);
+    },uploadBytes_);
+    if(terraForest_ && landscapeChanged){
+        // Publish a single immutable snapshot for both terrain heights and
+        // obstacle footprints. Async foliage jobs keep old snapshots alive
+        // until canceled; revision checks discard their stale results.
+        auto mutableHeights=std::make_shared<terraweave::AuthoredWorldHeightSnapshot>(
+            assets_.cellSize);
+        auto mutableMask=std::make_shared<terraweave::FoliageExclusionMask>();
+        size_t boxes=0;
+        for(const auto& [cell,prepared]:resident_){
+            if(prepared->terrainResolution){
+                terraweave::AuthoredHeightTileCm tile;
+                tile.resolution=prepared->terrainResolution;
+                tile.heightsCm=prepared->terrainHeightsCm;
+                mutableHeights->setTile(cell,std::move(tile));
+            }
+            const int64_t baseX=int64_t(cell.x)*assets_.cellSize*100;
+            const int64_t baseZ=int64_t(cell.z)*assets_.cellSize*100;
+            for(const Bounds& box:prepared->placementBoxes){
+                const int64_t x0=baseX+static_cast<int64_t>(
+                    std::floor(box.min.x.toDouble()*100.0));
+                const int64_t x1=baseX+static_cast<int64_t>(
+                    std::ceil(box.max.x.toDouble()*100.0));
+                const int64_t z0=baseZ+static_cast<int64_t>(
+                    std::floor(box.min.z.toDouble()*100.0));
+                const int64_t z1=baseZ+static_cast<int64_t>(
+                    std::ceil(box.max.z.toDouble()*100.0));
+                if(x1<=-terraweave::kWorldLimitCm ||
+                   x0>=terraweave::kWorldLimitCm ||
+                   z1<=-terraweave::kWorldLimitCm ||
+                   z0>=terraweave::kWorldLimitCm)continue;
+                const terraweave::RectCm footprint{
+                    std::max(x0,-terraweave::kWorldLimitCm),
+                    std::max(z0,-terraweave::kWorldLimitCm),
+                    std::min(x1,terraweave::kWorldLimitCm),
+                    std::min(z1,terraweave::kWorldLimitCm)};
+                if(footprint.maxX>footprint.minX &&
+                   footprint.maxZ>footprint.minZ){
+                    mutableMask->addBuilding(footprint);
+                    ++boxes;
+                }
+            }
+        }
+        const std::shared_ptr<const terraweave::AuthoredWorldHeightSnapshot> heights =
+            std::move(mutableHeights);
+        const terraweave::TerrainSettings fallback=terraForest_->settings().terrain;
+        std::shared_ptr<const terraweave::FoliageExclusionMask> mask;
+        if(boxes)mask=std::move(mutableMask);
+        terraForest_->setLandscapeSources(
+            [heights,fallback](int64_t x,int64_t z)->int32_t{
+                if(const auto sample=heights->sample(x,z))return *sample;
+                // Unloaded heightfield chunks remain procedural. The world
+                // host may supply a complete custom provider to avoid seams.
+                return terraweave::heightAtCm(fallback,x,z);
+            },
+            std::move(mask));
+    }
     if(terraForest_){
         if(!observers.empty()) {
             const Vec3 observer=observers.front();
