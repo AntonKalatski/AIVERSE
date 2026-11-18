@@ -1,6 +1,6 @@
 # TerraWeave — procedural terrain, biomes and vegetation (AIVERSE)
 
-Status (2026-11-18): **Phase 1 core implemented**, renderer/editor integration pending.
+Status (2026-11-18): **Core + Arbor/Flora + hierarchical BranchLOD and far-tree billboard adapters implemented**; runtime scene/editor integration and GPU verification pending.
 Implementation: `engine/world/TerraWeave.h`. Test: `tests/terraweave_test.cpp`.
 Handoff: `docs/terrain/AGENT_HANDOFF.md`.
 
@@ -327,8 +327,9 @@ path. It does not own or replace Renderer3D, ECS, streaming or shaders.
   rebased coordinate frame; model draw transforms are metres.
 - `ModelDraw::persistentId` is a namespaced stable hash of
   `FoliageInstance::key` and species, independent of the draw index.
-  Draw flags are `kDrawStatic`. An `Impostor` Flora batch currently uses
-  the existing lowest geometry LOD as fallback: no billboard atlas exists.
+  Draw flags are `kDrawStatic`. An `Impostor` Flora batch now selects a separate camera-facing alpha-mask
+  tree billboard model (one quad and one procedural RGBA silhouette), not the
+  lowest geometry mesh. This is a single-view silhouette, not a multi-angle atlas.
 
 Minimal native / host render integration sketch:
 
@@ -355,3 +356,78 @@ counts, actual impostors, material cutout textures, scene screenshots,
 GPU validation, or an opt-in manifest format. Existing projects remain
 untouched. Validation is added to `tests/terraweave_model_test.cpp`;
 see `AGENT_HANDOFF.md` for observed test results and next task.
+
+
+## Hierarchical BranchLOD — independent tree parts (Stage 2g)
+
+The new `engine/world/TerraWeaveBranchLod.h` and
+`makeArborBranchLodModel(profile, seed, BranchLodSettings)` in
+`engine/render/TerraWeaveModelAdapter.h` build a reusable native
+`render::Model` containing **one render node per tree branch**. Each node
+retains `TreeBranch::parent` and has its own three `MeshDef` variants.
+`Renderer3D` already chooses a node's LOD by its projected size using
+its existing `selectModelLod` path, considering camera and shadow views.
+This allows, e.g., a large near-side trunk to remain fully detailed while
+individual smaller background branches switch to their cheapest shape.
+There is no whole-tree mesh switch for these three geometric tiers.
+
+Per-branch geometry levels:
+- `BranchDetail::Full`: full radial bark mesh, local foliage clusters
+  with crossed leaf cards.
+- `BranchDetail::Reduced`: about half the bark radial segments, one
+  distal local foliage cluster, crossed cards.
+- `BranchDetail::Minimal`: three bark radial sides, one distal cluster
+  represented by one card plane.
+- `BranchLodSettings::reducedPixels` (default 96) and `minimalPixels`
+  (default 30) set independent projected screen-diameter thresholds.
+  The renderer's own LOD fade settings control transition blending.
+
+`LeafCluster::parentBranch` is the original high-detail structural
+branch index (new metadata). It is used by
+`buildArborBranchMesh(tree, branchIndex, BranchDetail, ArborMeshSettings)`.
+No branch is dropped, and tree skeleton generation/gameplay remains
+deterministic; branch geometry and resolution choices are presentation
+only. A single prototype is shared by all instances of a species; do
+not create a distinct `render::Model` for each tree. Tree silhouette
+geometry still uses the existing opaque leaf material if no project
+alpha-cutout texture is assigned.
+
+## Whole-tree final billboard (Stage 2h)
+
+`engine/render/TerraWeaveArborBillboard.h` provides
+`makeArborBillboardModel(TreeProfile, seed, ArborBillboardSettings)`.
+It projects the procedural bark/leaf silhouette to an RGBA8 image
+(default 128x256), creates a full-tree XY quad, and assigns the image
+to a standard `render::Material` with `AlphaMode::Mask`.
+Transparent pixels are genuine alpha holes, not a green rectangle;
+no new GLSL, MSL or custom rendering backend is required.
+
+`ArborForestAdapter` now caches two models per species: a hierarchical
+near model via `prototype(speciesId)`, and a full-tree far quad via
+`billboardPrototype(speciesId)`. `uploadModels(device)` and
+`releaseModels(device)` manage both through the engine's existing
+GPU model uploader. `forEachDraw` selects the billboard model only for
+`FloraBatch::lod == TreeLOD::Impostor`, while near/medium/low batches
+use the per-branch LOD chain. The far quad's rotation faces the
+horizontal camera direction; the native `submit` path reads
+`Renderer3D::cameraPos()`. For CPU draw-list tests / custom callers,
+pass `ForestCameraCm` to the optional fourth argument of
+`forEachDraw(batches, origin, callback, camera)`.
+Billboard and near representations retain the same stable instance ID.
+
+The billboard image is intentionally a **single-view, deterministic
+silhouette**, not yet a high-quality baked 8/16-view albedo+normal/depth
+impostor atlas. Near-to-far switching presently follows `FloraView`
+distance buckets and has no whole-tree temporal crossfade; the
+per-branch transitions are handled independently by Renderer3D.
+The billboard currently disables cast shadows to avoid fake flat
+shadows. Test screen-space pop, alpha halo/mipmaps and multi-angle
+visual quality on actual GPUs before claiming production readiness.
+
+**Tests added but not confirmed executed:**
+`tests/terraweave_model_test.cpp` now verifies branch counts, parent
+graph, three independent geometry tiers, index bounds, deterministic
+mesh and silhouette image, material cutout, transparent/bark/leaf pixels,
+model switching, camera orientation and stable identity. Isolated CI
+contains this target. See `docs/terrain/AGENT_HANDOFF.md` for commands
+and exact verification status.
