@@ -30,6 +30,12 @@ void testZonesAndShelter() {
     CHECK(windAt(world, p) == Vec3{});
     CHECK(windAt(world, {60_fx, 10_fx, 50_fx}).x > Fixed{});
 }
+void testLargeRadiusNoOverflow() {
+    // > 10 km used to overflow squared Q47.16 distance in radialWeight().
+    const Fixed large = Fixed::fromInt(20000000);
+    CHECK(radialWeight({10000000_fx, 0_fx, 0_fx}, large) > Fixed{});
+    CHECK(radialWeight({20000000_fx, 0_fx, 0_fx}, large) == Fixed{});
+}
 void testSeededGustAndCopy() {
     World a, b;
     Settings cfg;
@@ -61,6 +67,7 @@ void testSeededGustAndCopy() {
 }
 int main() {
     testZonesAndShelter();
+    testLargeRadiusNoOverflow();
     testSeededGustAndCopy();
     std::printf("PHYSIS Wind: %s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
