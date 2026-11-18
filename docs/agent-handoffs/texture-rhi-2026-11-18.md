@@ -89,3 +89,45 @@ changed files, what is implemented vs only declared, binary/API/save
 compatibility, tests actually executed and results, CI links/status,
 known risks, blockers, and next actionable stage. Never delete this log
 or rewrite another agent's entry.
+
+## Stage 2A — Metal sampled dimensions and subresource upload (2026-11-18)
+
+**Code commits:** `d50a8abf1806703fbc5ba09462f9eb598dc3098a`,
+`414dc591377a2d5017cfaa4e8062f5c80fd81ff4`.
+**Path:** `engine/gfx/metal/GfxMetal.mm` (only).
+
+**Implemented in source:** Metal texture storage now maps `TextureDimension` to native
+`MTLTextureType1D/2D/3D/2DArray/Cube/CubeArray`; uses depth/arrayLength/mip
+levels when allocating, handles contiguous uncompressed face/slice/volume data,
+and accepts compressed mip payloads across all array/cube faces for GPU-compressed
+2D/2DArray/Cube/CubeArray types. `updateTextureRegion` supports uncompressed
+mip/array-layer/volume subregions with bounds/pitch checks. Existing
+`setTexture` can bind these native resources to matching MSL texture
+types; `supportsTextureDimension` returns true on the Metal backend.
+
+**Explicitly not implemented:** `TextureView` and independent
+`SamplerHandle` still return unsupported defaults. Multisample textures
+and non-2D render attachments still reject creation, pending render-pass/view
+work. Texture containers (DDS/KTX2) still discard layers/faces; external assets
+cannot leverage these new Metal capabilities until importer stages. GL/GLES and
+Vulkan still reject non-2D requests. No explicit per-slice compressed updates;
+compressed sources require a full level payload. 1D/volume compression is
+rejected. Metal device-family-specific limits are not queried.
+
+**Compatibility:** Existing 2D callers keep their legacy descriptor defaults;
+native 2D, atlas and render canvas paths should remain the same. No changes to
+gameplay/ECS/saves/assets. The Metal implementation chooses native texture
+dimensions only when explicitly requested in `TextureDesc`.
+
+**Validation:** Source change committed. Native macOS/iOS compilation: **NOT RUN**;
+GPU correctness, array/cubemap sampling, mip generation, layered texture upload
+and Metal validation: **NOT RUN**. No successful CI result is asserted.
+
+**Next actionable step:** Build `aiverse_editor` and run an explicit Metal
+device test creating a `Texture3D`, `Texture2DArray`, `Cube` and `CubeArray`,
+binding to matching MSL shader texture types, reading back rendered colour,
+testing mip levels and all slices. Fix any Objective-C++ SDK errors before
+proceeding. Then implement GL/GLES native dimensions with explicit feature
+queries (GL33/GLES3/WebGL2 have different array/cube capabilities); follow
+with Vulkan image/view types, layers and barriers. Keep these as individually
+handed-off stages, with exact code commits and actual test outcomes.
