@@ -1773,14 +1773,14 @@
       "package": "input",
       "path": "skills/ui/aiverse-input/SKILL.md",
       "domain": "gameplay",
-      "summary": "Context and priority input routing, axis deadzones, selection, control groups and drag gestures",
+      "summary": "AIVerse InputFlow: typed Input Actions, mapping contexts, modifiers, triggers, local multiplayer, user profiles and legacy Input.h compatibility",
       "side": "presentation",
       "runtime": "header",
       "target": "AIVERSE::lib_input",
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/Input.h",
+      "source": "libraries/include/aiverselib/gameplay/InputFlow.h",
       "keywords": []
     },
     {
