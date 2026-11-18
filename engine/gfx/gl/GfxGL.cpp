@@ -76,7 +76,7 @@ struct GLTexture {
     TextureDimension dimension = TextureDimension::Texture2D;
     GLenum target = GL_TEXTURE_2D;
     int w = 0, h = 0, depth = 1, layers = 1, levels = 1;
-    bool mips = false, compressed = false;
+    bool mips = false, compressed = false, renderTarget = false;
 };
 struct GLTextureView { uint32_t parentId = 0; };
 struct GLSampler { GLuint native = 0; };
@@ -200,8 +200,9 @@ public:
     // Native ES3 / GL3.3 dimension support. Keep the existing Texture2D path below
     // unchanged; non-2D targets are sampled through matching GLSL sampler types.
     TextureHandle createDimensionalTexture(const TextureDesc& d) {
-        if (!supportsTextureDimension(d.dimension) || d.renderTarget || d.storage ||
-            d.sampleCount != 1 || d.format == PixelFormat::Depth) {
+        if (!supportsTextureDimension(d.dimension) || d.storage || d.sampleCount != 1 ||
+            (d.dimension == TextureDimension::Texture3D && d.format == PixelFormat::Depth) ||
+            (d.format == PixelFormat::Depth && d.data)) {
             error_ = "GL: texture dimension or usage unsupported"; return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "GL: HDR textures unsupported"; return {}; }
@@ -217,12 +218,15 @@ public:
                               d.format != PixelFormat::RGBA16F && d.format != PixelFormat::RGBA32F;
         const int levels = compressed ? d.levelCount : d.mipLevels > 0 ? d.mipLevels :
                            autoMips ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
-        const GLenum internal = d.format == PixelFormat::R8 ? GL_R8 :
+        const GLenum internal = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT24 :
+                                d.format == PixelFormat::R8 ? GL_R8 :
                                 d.format == PixelFormat::RGBA16F ? GL_RGBA16F :
                                 d.format == PixelFormat::RGBA32F ? GL_RGBA32F :
                                 d.format == PixelFormat::RGBA8_sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8;
-        const GLenum format = d.format == PixelFormat::R8 ? GL_RED : GL_RGBA;
-        const GLenum type = d.format == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
+        const GLenum format = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT :
+                              d.format == PixelFormat::R8 ? GL_RED : GL_RGBA;
+        const GLenum type = d.format == PixelFormat::Depth ? GL_UNSIGNED_INT :
+                            d.format == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
                             d.format == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
         const size_t bpp = d.format == PixelFormat::R8 ? 1 :
                            d.format == PixelFormat::RGBA16F ? 8 :
@@ -231,6 +235,7 @@ public:
         t.fmt = d.format; t.dimension = d.dimension; t.target = target;
         t.w = d.width; t.h = d.height; t.depth = d.depth; t.layers = d.arrayLayers;
         t.levels = levels; t.mips = autoMips; t.compressed = compressed != 0;
+        t.renderTarget = d.renderTarget || d.format == PixelFormat::Depth;
         glGenTextures(1, &t.id);
         if (!t.id) { error_ = "GL: texture allocation failed"; return {}; }
         glBindTexture(target, t.id);
@@ -272,6 +277,10 @@ public:
         glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap);
         glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap);
         glTexParameteri(target, GL_TEXTURE_WRAP_R, wrap);
+        if (d.format == PixelFormat::Depth && d.compare) {
+            glTexParameteri(target, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+            glTexParameteri(target, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+        }
         if (autoMips && d.data && levels > 1) glGenerateMipmap(target);
         if (glGetError() != GL_NO_ERROR) {
             glDeleteTextures(1, &t.id); error_ = "GL: unsupported dimensional texture allocation"; return {};
@@ -285,15 +294,17 @@ public:
         }
         if (d.dimension != TextureDimension::Texture2D)
             return createDimensionalTexture(d);
-        if (d.sampleCount != 1 || d.storage || d.mipLevels > 1) {
-            error_ = "GL: 2D multisampling, storage images and explicit mip allocations are unsupported";
+        if (d.sampleCount != 1 || d.storage) {
+            error_ = "GL: 2D multisampling and storage images are unsupported";
             return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
         GLTexture t; t.fmt = d.format; t.w = d.width; t.h = d.height;
+        t.renderTarget = d.renderTarget || d.format == PixelFormat::Depth;
         t.mips = d.mipmaps && d.format != PixelFormat::Depth && !d.renderTarget;
         t.compressed = compressedEnum(d.format) != 0;
         t.levels = t.compressed ? std::max(1, d.levelCount) :
+                   d.mipLevels > 0 ? d.mipLevels :
                    t.mips ? maxTextureMipLevels(d.width, d.height) : 1;
         glGenTextures(1, &t.id);
         glBindTexture(GL_TEXTURE_2D, t.id);
@@ -323,11 +334,29 @@ public:
         else if (d.format == PixelFormat::RGBA32F) { t.mips = false; glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, d.width, d.height, 0, GL_RGBA, GL_FLOAT, d.data); }
         else if (d.format == PixelFormat::RGBA8_sRGB) glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, d.width, d.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, d.data);
         else glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, d.width, d.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, d.data);
+        // Explicit mip allocations are independent from automatic mip generation.
+        // Every allocated subresource must exist before attaching a nonzero mip to an FBO.
+        if (!t.compressed && t.levels > 1) {
+            const GLenum internal = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT24 :
+                                    d.format == PixelFormat::R8 ? GL_R8 :
+                                    d.format == PixelFormat::RGBA16F ? GL_RGBA16F :
+                                    d.format == PixelFormat::RGBA32F ? GL_RGBA32F :
+                                    d.format == PixelFormat::RGBA8_sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8;
+            const GLenum format = d.format == PixelFormat::Depth ? GL_DEPTH_COMPONENT :
+                                  d.format == PixelFormat::R8 ? GL_RED : GL_RGBA;
+            const GLenum type = d.format == PixelFormat::Depth ? GL_UNSIGNED_INT :
+                                d.format == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
+                                d.format == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+            for (int mip = 1; mip < t.levels; ++mip)
+                glTexImage2D(GL_TEXTURE_2D, mip, GLint(internal),
+                             std::max(1,d.width >> mip), std::max(1,d.height >> mip),
+                             0, format, type, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, t.levels - 1);
+        }
         GLint f = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F ? GL_LINEAR : GL_NEAREST; // float textures are not filterable on ES3
-        if (t.mips) {
-            if (d.data) glGenerateMipmap(GL_TEXTURE_2D);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, d.filter == Filter::Linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST);
-        } else glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
+        if (t.mips && d.data) glGenerateMipmap(GL_TEXTURE_2D);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, t.levels > 1 ?
+                        (d.filter == Filter::Linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) : f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
         if (d.format == PixelFormat::RGBA16F && d.renderTarget) {
             GLint oldDraw=0, oldRead=0;
@@ -685,7 +714,117 @@ public:
     }
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
 
+    bool supportsRenderTargetPasses() const override { return true; }
+
+    bool beginRenderTargets(const RenderTargetPassDesc& desc) override {
+        if (!validateRenderTargetPassDesc(desc) || inPass_) {
+            error_ = "GL: invalid or nested render target pass"; return false;
+        }
+        if (desc.colorCount > 1) {
+            error_ = "GL: MRT pipeline binding requires multi-color stage";
+            return false;
+        }
+        auto attachment = [&](const RenderTargetAttachment& a, bool isDepth, int& w, int& h) {
+            const GLTexture* t = textures_.get(a.texture.id);
+            if (!t || !t->id || !t->renderTarget ||
+                t->compressed || a.mipLevel >= t->levels || a.mipLevel < 0 ||
+                a.arrayLayer < 0 || t->dimension == TextureDimension::Texture1D ||
+                (isDepth ? t->fmt != PixelFormat::Depth :
+                           (t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB &&
+                            t->fmt != PixelFormat::RGBA16F))) return false;
+            const int slices = t->dimension == TextureDimension::Texture3D ?
+                               std::max(1, t->depth >> a.mipLevel) :
+                               t->dimension == TextureDimension::Cube ? 6 : t->layers;
+            if (a.arrayLayer >= slices) return false;
+            w = std::max(1, t->w >> a.mipLevel);
+            h = std::max(1, t->h >> a.mipLevel);
+            return true;
+        };
+        int w = 0, h = 0;
+        const GLTexture* color = nullptr;
+        const GLTexture* depth = nullptr;
+        if (desc.colorCount) {
+            int cw = 0, ch = 0;
+            if (!attachment(desc.colors[0], false, cw, ch)) {
+                error_ = "GL: unsupported color attachment or subresource"; return false;
+            }
+            w = cw; h = ch;
+            color = textures_.get(desc.colors[0].texture.id);
+        }
+        if (desc.depth.texture.valid()) {
+            int dw = 0, dh = 0;
+            if (!attachment(desc.depth, true, dw, dh) ||
+                (w && (w != dw || h != dh))) {
+                error_ = "GL: unsupported depth attachment or extent mismatch"; return false;
+            }
+            if (!w) { w = dw; h = dh; }
+            depth = textures_.get(desc.depth.texture.id);
+        }
+        auto bindAttachment = [&](GLenum slot, const GLTexture* t, const RenderTargetAttachment& a) {
+            if (!t) return;
+            if (t->dimension == TextureDimension::Texture2D) {
+                glFramebufferTexture2D(GL_FRAMEBUFFER, slot, GL_TEXTURE_2D, t->id, a.mipLevel);
+            } else if (t->dimension == TextureDimension::Cube) {
+                glFramebufferTexture2D(GL_FRAMEBUFFER, slot,
+                    GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(a.arrayLayer), t->id, a.mipLevel);
+            } else {
+                // GLES3 / GL33 core layer attachment: works on 2D arrays and 3D volumes.
+                glFramebufferTextureLayer(GL_FRAMEBUFFER, slot, t->id,
+                                          a.mipLevel, a.arrayLayer);
+            }
+        };
+        GLint previousFbo = 0;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
+        GLuint framebuffer = 0;
+        glGenFramebuffers(1, &framebuffer);
+        if (!framebuffer) { error_ = "GL: framebuffer allocation failed"; return false; }
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        if (color) bindAttachment(GL_COLOR_ATTACHMENT0, color, desc.colors[0]);
+        if (depth) bindAttachment(GL_DEPTH_ATTACHMENT, depth, desc.depth);
+        const GLenum draw = color ? GL_COLOR_ATTACHMENT0 : GL_NONE;
+        glDrawBuffers(1, &draw);
+        glReadBuffer(color ? GL_COLOR_ATTACHMENT0 : GL_NONE);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
+                              glGetError() == GL_NO_ERROR;
+        if (!complete) {
+            glBindFramebuffer(GL_FRAMEBUFFER, GLuint(previousFbo));
+            glDeleteFramebuffers(1, &framebuffer);
+            error_ = "GL: selected mip/layer framebuffer incomplete";
+            return false;
+        }
+        scopedFbo_ = framebuffer;
+        inPass_ = true;
+        passW_ = w; passH_ = h;
+        hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
+        glBindVertexArray(vao_);
+        glDisable(GL_SCISSOR_TEST);
+        if (color && color->fmt == PixelFormat::RGBA8_sRGB &&
+            info_.backend == Backend::GL33 && !srgbWrite_) {
+            glEnable(kGL_FRAMEBUFFER_SRGB);
+            srgbWrite_ = true;
+        }
+        glViewport(0, 0, w, h);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        if (color && desc.colors[0].clear)
+            glClearColor(desc.colors[0].clearColor[0], desc.colors[0].clearColor[1],
+                         desc.colors[0].clearColor[2], desc.colors[0].clearColor[3]);
+        GLbitfield mask = color && desc.colors[0].clear ? GL_COLOR_BUFFER_BIT : 0;
+        if (depth && desc.depth.clear) {
+            glDepthMask(GL_TRUE);
+#if defined(AIVERSE_GL_LOADER)
+            glClearDepth(desc.clearDepth);
+#else
+            glClearDepthf(desc.clearDepth);
+#endif
+            mask |= GL_DEPTH_BUFFER_BIT;
+        }
+        if (mask) glClear(mask);
+        pipelineId_ = 0;
+        return true;
+    }
+
     void beginPass(const PassDesc& d) override {
+        inPass_ = true;
         const auto* color = textures_.get(d.colorTarget.id);
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
         glBindVertexArray(vao_);
@@ -720,7 +859,9 @@ public:
         pipelineId_ = 0;
     }
     void endPass() override {
-        if (passW_ != fbW_ || passH_ != fbH_ || true) glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (scopedFbo_) { glDeleteFramebuffers(1, &scopedFbo_); scopedFbo_ = 0; }
+        inPass_ = false;
         glDisable(GL_POLYGON_OFFSET_FILL);
         if (srgbWrite_) { glDisable(kGL_FRAMEBUFFER_SRGB); srgbWrite_ = false; }
         passW_ = fbW_; passH_ = fbH_;
@@ -907,6 +1048,8 @@ private:
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
     std::vector<GLFramebuffer> fbos_;
+    GLuint scopedFbo_ = 0;
+    bool inPass_ = false;
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
     Pool<GLTextureView> views_;

@@ -138,6 +138,7 @@
     X(void, glDeleteFramebuffers, (GLsizei n, const GLuint* f)) \
     X(void, glBindFramebuffer, (GLenum t, GLuint f)) \
     X(void, glFramebufferTexture2D, (GLenum t, GLenum a, GLenum tt, GLuint tex, GLint l)) \
+    X(void, glFramebufferTextureLayer, (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer)) \
     X(GLenum, glCheckFramebufferStatus, (GLenum t)) \
     X(void, glDrawBuffers, (GLsizei n, const GLenum* b)) \
     X(void, glBlitFramebuffer, (GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield m, GLenum f))
