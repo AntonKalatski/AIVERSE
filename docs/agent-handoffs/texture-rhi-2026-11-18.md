@@ -3119,3 +3119,52 @@ constructs a physical 2DArray atlas, uploads a CPU page-table
 entry, runs the shader helper and checks fallback/mapped pixel
 colors. Compile C++ CPU tests and record actual outcomes.
 Continue stages for GPU feedback/readback and budgeted page uploads.
+
+## Stage 7K — Vulkan async texture readback with frame-fence staging (2026-11-18)
+
+**Code commit:** `5d8d6da68932f8d1f22e59c0b1c1f5f43ef7d353`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Files:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkResources.cpp`,
+`engine/gfx/vulkan/GfxVulkan.cpp`.
+
+**Implementation/API:** Implements `Device::readTextureAsync` for
+single-sample, color RGBA8, RGBA8_sRGB and RGBA16F 2D/2DArray/Cube/
+CubeArray mip/face subresources. An accepted request allocates a
+host-visible+coherent `VK_BUFFER_USAGE_TRANSFER_DST_BIT` staging
+buffer, transitions the selected mip's array-layer range to
+`TRANSFER_SRC_OPTIMAL`, issues `vkCmdCopyImageToBuffer`
+with one requested layer and a tight row pitch, then restores
+the image to `SHADER_READ_ONLY_OPTIMAL`. The staging buffer
+and `TextureReadFn` remain owned by a pending request
+associated with the current `serial_`.
+
+`prepareSlot` already waits a Vulkan fence and updates
+`completed_`. At a later `beginFrame`, `deliverTextureReads`
+copies only fence-completed buffers to packed CPU result vectors,
+releases staging buffers/allocations, and invokes user callbacks
+on the owner thread **after** collection. GPU device shutdown
+frees all remaining staging buffers after `vkDeviceWaitIdle`.
+A destroyed source texture remains alive until the frame serial
+completes via the existing deferred texture destruction policy.
+Unsupported depth/MSAA/3D/compressed textures and invalid mip/layer
+requests return false without callbacks.
+
+**Compatibility:** Existing screenshot/backbuffer capture path
+stays unchanged. This source stage does not add sparse/virtual page
+allocation or GPU texture query UI. Vulkan packed row orientation
+follows the image subresource texel order; no display-specific
+Y-flip or tone mapping is applied to raw texture data.
+
+**Actual verification:** Source commit to GitHub succeeded.
+**Vulkan C++ build NOT RUN, CTest NOT RUN, validation layers and
+GPU readback NOT RUN**; no driver correctness claims.
+Check source-texture destruction, frame-slot recycling, sRGB/HDR
+byte sizes, depth rejection, failed staging allocation, and
+callback delivery on the render owner thread under a real Vulkan
+device or Lavapipe.
+
+**Next:** Add tests using Metal, GL33, GLES3 and Vulkan devices
+for the new RHI readback contract. Integrate editor texture
+preview/diagnostics and optional virtual texturing page cache
+only after native compile and format validation.
