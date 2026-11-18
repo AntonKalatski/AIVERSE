@@ -190,3 +190,30 @@ before calling this stage validated.
 - Verification: inspected affected Markdown source, no build/test run.
 - Next: CI CMake/build failures and real FPS visual integration. Do not
   call the PR complete while any animation CTest or CI job is pending.
+
+
+## Stage 8: opt-in FPS skinned character visualization — 2026-11-18
+
+- Implementation commit: `19ec502d7f78bb095180234b106e614d2f96158f`.
+- `apps/fps/client.cpp`: optional `fps.visual.model`/`animationGraph`
+  import; fallback compiled Idle/Walk/Run graph; separate presentation
+  ECS World for remote actor models. Snapshot speed, moving, grounded,
+  dead, reloading are projected into animation params per frame.
+- A presentation entity is created for each remote actor slot; an FPS
+  actor life change resets its animation player. Distance-based
+  AnimationBudgetComponent throttles pose evaluation without stopping
+  graph clocks. `Renderer3D::drawModel(ModelDraw)` consumes poses/matrices.
+- If no model asset or compilation fails, the original cube placeholder
+  path remains. First-person weapon viewmodel is untouched.
+- CMake links `aiverse_fps_client` to `AIVERSE::animation_ecs`.
+- Public JSON opt-in documented in `docs/fps.md`. Nothing is added to
+  authoritative `fps::Module`, save/replication, or gameplay ECS.
+- Validation: NOT RUN, including GPU visual preview; compile/test
+  `aiverse_fps_client` alongside `aiverse_fps_tests`, then run CTest `fps`.
+- Known limitations: no default FPS template contains a skinned model,
+  model import still requires actual project assets, no weapon/hand IK,
+  ragdoll, synchronized melee animation, authoritative Root Motion,
+  montage/notify integration with FPS gameplay or animation retarget UI.
+- Next: CI compile pass and optional real-model screenshot/replay fixture.
+  Check imported graph parameter names (the host provides common defaults)
+  and ensure no graphics regression or invalid asset handling.
