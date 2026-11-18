@@ -799,6 +799,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_geometry_bounds COMMAND aiverse_view_geometry_bounds_tests)
 endif()
 
+# RTS presentation adapter uses Rules but never constructs the legacy RtsView.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_rts_selection_presentation_tests tests/view/rts_selection_presentation.cpp)
+    target_link_libraries(aiverse_rts_selection_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_rts_selection_presentation COMMAND aiverse_rts_selection_presentation_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
