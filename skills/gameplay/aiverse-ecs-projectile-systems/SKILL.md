@@ -79,3 +79,37 @@ endpoint hits and no-hit cases. Actual native result remains unverified.
 
 When implementing another mechanic, repeat the same decomposition:
 **components + reusable systems + pure policies + thin project adapters**.
+
+
+## Built-in FPS direct runtime ownership (2026-11-18)
+
+The live `fps.compat.projectilePrograms` stage in
+`modules/fps/FpsModule.cpp` now advances programmed projectile flight
+**directly on canonical ECS `ProjectileRuntime` components** when
+`fps.ecsAuthority=true`. The source `Module::stepProgrammedProjectile`
+in `modules/fps/FpsProjectiles.cpp` is shared with legacy
+`State::projectiles` mode, and composes the existing projectile modifier
+policy with `selectSweptProjectileContact`. No second or forked physical
+solver is allowed. Source order is taken from runtime `order` and legacy
+projectile ID, not incidental ECS dense order. Collision, damage,
+on-hit/loot side effects and branching still happen synchronously while
+the source projectile is stepped. ECS Entity destroys/spawns happen only
+after the ordered loop, with stable `DynamicEntityIndex` keys.
+
+The EOS compatibility view `State::projectiles` is still rebuilt from
+`ProjectileRuntime` because unrelated grenade, weapon spawn and round
+logic in the **following** main FPS tick need it. Those consumers may
+still modify the vector and are reconciled by `fps.ecsMirror` (an
+explicitly temporary two-stage ownership handoff). Future code should
+migrate those consumers to direct ECS updates, then remove the writeback.
+Do NOT turn the independently queued impact resolver on for built-in
+FPS without proving identical same-tick effects.
+
+Regression entrypoints `ecsProjectileProgramStageParity` and
+`ecsProjectileBranchAuthorityParity` in `tests/fps/projectiles.inc`
+are registered in `aiverse_fps_tests`; they cover COW/deep rollback,
+direct `ProjectileRuntime` edits overriding stale State projections,
+branch allocation, passive nonprogrammed projectiles, stable ECS
+identities/orders, v9 cross-save and per-tick legacy parity. All remain
+**unverified by native execution**; do not claim passes until compiled
+and run.
