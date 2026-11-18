@@ -114,11 +114,51 @@ Use the actual `GraphLoadResult.runtimeName` for continuous graph assets after `
 
 The new branded `Spectra*` types were introduced without changing the identity of the old `Vfx*` aliases. Existing `fx/<effect>.json`, `fx/fx.json`, `aiverse_fx` and `compileVfxGraph` remain available. Engine runtime files stay under `engine/fx` during migration. Do not remove compatibility aliases or change persistent binary save identifiers until native project adoption and regression tests pass.
 
+## MCP graph asset authoring (stage 7)
+
+The editor-core `registerFxOps` also registers universal `fx_graph_*`
+operations through `apps/editor/core/SpectraGraphOps.cpp`. They are available
+from the GUI Workspace and the standalone MCP server, independent of the
+project's gameplay genre. No editor GPU context is required to validate graphs.
+
+| Operation | Inputs | Result |
+|---|---|---|
+| `fx_graph_list` | none | All `fx/graphs/*.vfx.json`, per-file compile diagnostics |
+| `fx_graph_get` | `name` | Graph JSON, source text and validation |
+| `fx_graph_validate` | `graph` or `text` or `name`, optional `overrides` | Strict compiler errors, emitter count and textures; read-only |
+| `fx_graph_set` | `name`, `graph` or `text` | Validated file creation/update, `Change::Fx` notification |
+| `fx_graph_delete` | `name` | Deletes only the graph source asset |
+| `fx_graph_bake` | `name`, `effect`, optional `overrides`, `overwrite` | Compiles graph into `fx/<effect>.json` for existing `fx_preview` and legacy runtime |
+
+Graph names are limited to lowercase letters, digits and underscores (1–48
+characters) for editor compatibility. Graph documents have a 1 MiB input
+limit. Invalid compilation returns `ok:false` and does not overwrite a
+previous valid graph; `fx_graph_bake` refuses to replace an existing legacy
+effect unless `overwrite:true` is explicitly supplied.
+
+Example MCP workflow:
+
+```text
+fx_graph_set {"name":"engine_fire","graph":<graph v1 object>}
+fx_graph_validate {"name":"engine_fire","overrides":{"color":[[0,"#ffffffff"],[1,"#ffffff00"]]}}
+fx_graph_bake {"name":"engine_fire","effect":"engine_fire_cpu"}
+fx_preview {"effect":"engine_fire_cpu","advance":1,"freeze":true}
+view_screenshot {"window":"scene"}
+```
+
+**Scope:** baking is a CPU-compatible materialization step, not GPU graph
+execution and not a live reference: editing the graph again does not update
+an already baked effect until re-baked. Graphs still have no dedicated node
+canvas in the editor; that is the next authoring stage. The old
+`fx/<name>.json`, `fx/fx.json` and RTS event bindings are unaffected.
+The new `vfx_graph_ops` test requires `aiverse_editor_core` to be built;
+the test is committed but was **NOT RUN** in the connector-only environment.
+
 ## Validation checklist
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
