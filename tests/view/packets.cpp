@@ -46,4 +46,23 @@ int main() {
     batch.clear();assert(batch.size()==0);
     const auto empty=scene.update(batch,1.f/60.f);
     assert(empty.visible==0 && empty.animated==0);
+    // A host with a separate presentation World (e.g. montage/crowd
+    // controller) can stage precomputed model packets without supplying
+    // their graph to View. The mixed order is not sorted or deduplicated.
+    ScenePacketBatch precomputed;
+    Object alive;alive.id=5;alive.generation=2;
+    MeshObject fallback;fallback.flags=73;
+    Object dead;dead.id=9;dead.generation=3;
+    precomputed.add(alive);
+    precomputed.add(fallback);
+    precomputed.add(dead);
+    assert(precomputed.size()==3);
+    assert(std::get<Object>(precomputed.packets()[0]).id==5);
+    assert(std::get<MeshObject>(precomputed.packets()[1]).flags==73);
+    assert(std::get<Object>(precomputed.packets()[2]).id==9);
+    // Without an attached graph, View does not create a second player.
+    const auto staged=scene.update(precomputed,1.f/60.f);
+    assert(staged.animated==0);
+    assert(scene.presentationEntity(5)==kNullEntity);
+    assert(scene.presentationEntity(9)==kNullEntity);
 }
