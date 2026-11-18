@@ -279,3 +279,48 @@ after execution on a real GPU and do not substitute
 for frame-capture screenshots or render-pass statistics.
 See Stage 8 of `docs/terrain/AGENT_HANDOFF.md`
 for exact unverified checks and next tasks.
+
+
+## Horizon asset baking, authored surfaces and quality control (Stages 9a–9e)
+
+The implementation agent should focus on shipping function/API changes;
+a separate test agent owns all actual build/CTest/GPU verification
+for these stages. Update `docs/terrain/AGENT_HANDOFF.md` on each
+implementation stage, stating `NOT RUN` explicitly.
+
+- Use `HorizonSurfaceSources` with snapshot-owned
+  `heightAtCm`, `biomeAt` and `allowsCanopyAt`
+  to align far trees/ground with authored surfaces and
+  exclude roads, structures and water. In `WorldScene`, use
+  `setSurfaceSources(shared_ptr<const...>)` only on
+  landscape snapshot changes, not on every frame. Existing
+  `AuthoredWorldHeightSnapshot` supplies resident height tiles,
+  procedural height is the fallback outside resident tiles.
+- `maxCachedRegions` (0–4) keeps bounded immutable CPU
+  Horizon bakes and reports `cacheHits` in `runtimeStats()`.
+  `regionHysteresisCm` reduces back-and-forth rebuilds at a
+  camera grid boundary. CPU retention does not eliminate GPU
+  upload cost.
+- Select the `HorizonQualityPreset` minimal/mobile/balanced/high
+  or `terraweaveHorizon.quality` manifest string, then override
+  individual fields as appropriate. All presets reuse one
+  standard renderer and **do not** spawn distant tree ECS
+  entities.
+- Static worlds can `encodeHorizonArchive(bake, fingerprint)`
+  and `decodeHorizonArchive(bytes, fingerprint)` using
+  `TerraWeaveHorizonArchive.h` (format `TWH1`,
+  explicit little-endian, bounded bytes, source hash and
+  noncryptographic payload checksum). Default runtime has
+  NO filesystem access; optionally set `HorizonArchiveStore`
+  before update, or use manifest `archivePrefix` for
+  **read-only** assets `<prefix>/<cellX>_<cellZ>.twh`.
+- For authored terrains/masks, archive loading requires
+  `authoredContentHash` / `archiveContentHash` to be
+  nonzero and to change whenever the authored source
+  content changes. Never silently use a procedural archive
+  for a newly sculpted terrain. Missing/stale/corrupt
+  archives must fall back to bounded CPU regeneration.
+- Stage 9e handoff lists concrete race/round-trip/corruption,
+  Metal/GL/Vulkan and FPS/RTS tests for the **testing agent**.
+  The feature agent must not claim measured FPS or validation
+  without those results.
