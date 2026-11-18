@@ -3,6 +3,7 @@
 #include "engine/core/ECS.h"
 #include "engine/render/AnimationGraph.h"
 #include "AnimationMontage.h"
+#include "PhysicalPoseBlend.h"
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -31,6 +32,13 @@ struct AnimationPoseComponent {
 struct AnimationMontageSlotsComponent {
     std::vector<MontagePlayer> players;
     std::vector<AnimationNotifyEvent> events; // last frame, for audio/VFX only
+};
+// Host-supplied LOCAL bone pose from an independent physics simulation.
+struct AnimationPhysicalPoseComponent {
+    render::Pose local;
+    std::vector<float> boneWeights;
+    float weight = 1.f;
+    bool enabled = false;
 };
 struct AnimationBudgetComponent {
     float interval = 0.f, elapsed = 0.f;
@@ -61,6 +69,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
         auto* budget=budgets?budgets->tryGet(e.index):nullptr;
         auto* status=statuses?statuses->tryGet(e.index):nullptr;
         auto* slots=montages?montages->tryGet(e.index):nullptr;
+        const auto* physical=read.tryGetConst<AnimationPhysicalPoseComponent>(e);
         const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
         if (!asset || !asset->model || !asset->graph ||
             asset->graph->model()!=asset->model) {
@@ -101,7 +110,8 @@ inline void stepAnimationPresentation(World& world,float dt) {
             }
         }
         if (status) ++status->updates;
-        bool evaluate=!pose->valid || !budget;
+        bool evaluate=!pose->valid || !budget ||
+            (physical && physical->enabled && physical->weight>0.f);
         if (!evaluate && budget->visible) {
             if (!std::isfinite(budget->interval) || budget->interval<=0.f)
                 evaluate=true;
@@ -116,6 +126,11 @@ inline void stepAnimationPresentation(World& world,float dt) {
             if (pose->valid) {
                 if (slots) for (auto& montage:slots->players)
                     montage.apply(*asset->model,pose->local);
+                if (physical && physical->enabled &&
+                    !blendPhysicalPose(pose->local,physical->local,
+                        physical->boneWeights,physical->weight)) {
+                    validInputs=false;
+                }
                 render::worldMatrices(*asset->model,pose->local,pose->matrices);
             }
             else { pose->local.clear(); pose->matrices.clear(); }
@@ -124,7 +139,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
         }
         if (status) {
             status->healthy=validInputs && inst.healthy();
-            status->error=validInputs?inst.error():"invalid animation parameter";
+            status->error=validInputs?inst.error():"invalid animation or physical pose input";
             status->state=inst.state();
         }
     }
