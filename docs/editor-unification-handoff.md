@@ -1459,3 +1459,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Extended `tests/fps/tests.cpp` with `ecsSimultaneousHitscanRollbackParity` and called it in the standard `fps` CTest suite. Configures two opposing players aiming at each other, an explicitly nonphysical hitscan weapon (3 pellets, 8 damage, zero bullet speed, one-tick interval), and both source inputs each tick with deliberately rewound `viewTick`. Runs 12 ticks under legacy and opt-in `fps.ecsAuthority`, compares checksums and entire Actor vectors each tick, verifies every authoritative `ActorRuntime` equals its compatibility view, and requires actual shooting/hits. Takes snapshots after tick 2, compares cross-mode v9 save reload in both directions, replays ticks 3..11 and asserts final checksums are identical.
 - This fixture is intended to catch incorrect deferred same-tick hits, snapshot ownership mistakes, and lag-compensated damage regressions when changing live FPS. **No native compile or execution has occurred**, so expected target hit outcomes and all asserted equalities remain unverified.
 - Next: run `ctest -R '^fps$'` on native debug+Release, confirm fixture, then compare real transport replay. Do not change the save v9 network wire or synchronously dispatched damage while this is unverified.
+
+
+### 2026-11-18 — Agent instructions for live FPS health and pending ECS damage
+- Implementation SHA: `1c6324e1728b358ecc31d04974f912ce84aeb03f`.
+- Updated `AGENTS.md` to require common `applyIntegerHitPointDamage` after mitigation, versioned World `DamageQueue` persistence from GameModule, FPS ECS authority ON/OFF and save v9 parity, and prohibition against introducing an independent writable FPS `HitPointsComponent` while `ActorRuntime` remains canonical.
+- Verification: docs-only edit. Next: native CMake/CTest and real FPS/RTS integration tests before any default cutover.
