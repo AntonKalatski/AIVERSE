@@ -115,6 +115,10 @@ void Prisma::shutdown() {
         for (auto& [k, d] : s.depths) release(d);
     }
     sizes_.clear();
+    for (auto& [id, view] : exposureViews_) {
+        for (auto& history : view.history) release(history);
+    }
+    exposureViews_.clear();
     for (auto& [p, l] : luts_) release(l.tex);
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
@@ -160,7 +164,17 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
 void Prisma::resetAutoExposure() {
-    for (auto& s : sizes_) { s.exposureValid = false; s.exposureTime = 0; }
+    for (auto& [id, view] : exposureViews_) {
+        view.valid = false;
+        view.time = 0;
+    }
+}
+void Prisma::resetAutoExposure(uint64_t id) {
+    auto it = exposureViews_.find(id);
+    if (it != exposureViews_.end()) {
+        it->second.valid = false;
+        it->second.time = 0;
+    }
 }
 
 bool Prisma::hdrRequested() const {
@@ -462,35 +476,50 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         }
         // Avoid running the history filter with a partially reduced image.
         valid = valid && pw == 1 && ph == 1;
-        const int nextIndex = 1 - set.exposureCurrent;
-        const Target nextExposure = target(set, kExposureHistory + nextIndex, 1, 1);
-        const Target prevExposure = target(set, kExposureHistory + set.exposureCurrent, 1, 1);
-        if (valid && nextExposure.tex.valid() && prevExposure.tex.valid() &&
+        auto& exposureView = exposureViews_[viewId_];
+        // History belongs to the stable view ID, not to the shared 1x1
+        // Sized cache: same-resolution Scene/Game views never ping-pong
+        // against each other's exposure or time delta.
+        for (auto& handle : exposureView.history) {
+            if (handle.valid()) continue;
+            gfx::TextureDesc desc;
+            desc.width = desc.height = 1;
+            desc.format = gfx::PixelFormat::RGBA16F;
+            desc.renderTarget = true;
+            desc.filter = gfx::Filter::Nearest;
+            desc.label = "prisma exposure camera history";
+            handle = dev.createTexture(desc);
+        }
+        const int nextIndex = 1 - exposureView.current;
+        const gfx::TextureHandle nextExposure = exposureView.history[nextIndex];
+        const gfx::TextureHandle prevExposure = exposureView.history[exposureView.current];
+        if (valid && nextExposure.valid() && prevExposure.valid() &&
             depthFor(set, 1, 1).valid()) {
             const double timeNow =
                 std::chrono::duration<double>(std::chrono::steady_clock::now()
                     .time_since_epoch()).count();
-            const float dt = set.exposureValid && set.exposureTime > 0
-                ? std::clamp(float(timeNow - set.exposureTime), 0.0f, 0.1f)
+            const float dt = exposureView.valid && exposureView.time > 0
+                ? std::clamp(float(timeNow - exposureView.time), 0.0f, 0.1f)
                 : 0.0f;
             SimpleU adapt{};
             put(adapt.px, 1, 1, flip, 0);
             put(adapt.p0, dt, autoEffect->get("speedUp"),
-                autoEffect->get("speedDown"), set.exposureValid ? 1.0f : 0.0f);
+                autoEffect->get("speedDown"), exposureView.valid ? 1.0f : 0.0f);
             put(adapt.sun, autoEffect->get("keyValue"),
                 autoEffect->get("minEV"), autoEffect->get("maxEV"),
                 autoEffect->get("compensation"));
-            draw(set, nextExposure, pipes_[kExposureAdapt], &adapt, sizeof adapt,
-                 {{0, source}, {1, set.exposureValid ? prevExposure.tex : black_}});
-            set.exposureCurrent = nextIndex;
-            set.exposureValid = true;
-            set.exposureTime = timeNow;
-            automaticExposure = nextExposure.tex;
+            const Target exposureOutput{nextExposure, 1, 1, gfx::PixelFormat::RGBA16F};
+            draw(set, exposureOutput, pipes_[kExposureAdapt], &adapt, sizeof adapt,
+                 {{0, source}, {1, exposureView.valid ? prevExposure : black_}});
+            exposureView.current = nextIndex;
+            exposureView.valid = true;
+            exposureView.time = timeNow;
+            automaticExposure = nextExposure;
         } else {
-            set.exposureValid = false;
+            exposureView.valid = false;
         }
     } else {
-        set.exposureValid = false;
+        resetAutoExposure(viewId_);
     }
 
     // ---- experimental depth of field: device-depth driven defocus
