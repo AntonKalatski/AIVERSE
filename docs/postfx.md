@@ -1,4 +1,4 @@
-# Post effects (`postfx`)
+# PRISMA post-processing (`postfx` compatibility format)
 
 The scene can now use a linear RGBA16F HDR pipeline; see [HDR rendering](hdr.md)
 for `postfx.hdr`, quality fallback, colour contracts and GPU validation. Descriptions
@@ -8,6 +8,8 @@ Full-screen effects over the 3D scene: bloom, colour grading, LUTs, vignette, ti
 shafts, FXAA, film grain and a few stylistic ones. They are data (`game.json`, overridable per map),
 edited in the editor window **Постэффекты** or over MCP (`postfx_*`). HUD, overlays and the game UI
 are drawn after the effects and are never post-processed.
+
+Public C++ class: `aiverse::render::Prisma` (`engine/render/Prisma.h`); the `PostFx` type alias, `postfx` JSON block and `postfx_*` editor commands remain compatible.
 
 Code: `engine/render/PostFxData.*` (format, catalog, presets, cost model; GPU-free),
 `engine/render/PostFx.*` + `PostFxShaders.h` (renderer), `apps/editor/core/PostFxOps.*` (MCP),
