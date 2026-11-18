@@ -346,3 +346,32 @@ execute on the submitting thread after a barrier. Set
 `fps.visual.animationStats: true` to see CPU/GPU path, worker count,
 work estimates, jobs, and CPU timings in the FPS HUD. This is
 presentation profiling, not deterministic simulation state.
+
+
+### MotionWeave cosmetic Montages from replicated FPS actions
+
+Optional project-local JSON assets can be authored in the editor
+(`animations/montage/`) or through Workspace/MCP:
+
+```json
+{"fps":{"visual":{
+  "model":"models/hero.glb",
+  "montages":{
+    "shot":"animations/montage/fire.json",
+    "reload":"animations/montage/reload.json",
+    "death":"animations/montage/death.json"
+  }
+}}}
+```
+
+Montage files reference imported clip names, sections, optional masks,
+blend-in/out and cosmetic notifies. Missing or invalid files are logged
+and skipped; no crash or authoritative gameplay action is generated.
+While a death Montage is active the dead actor may still render
+until its visual section completes. Replicated shot count, reload
+deadline and health/life transitions are used for one-shot visual
+triggers; stale/duplicate snapshots never replay the same Montage.
+A newly visible actor doesn't invent a shot. The FPS game server,
+hit detection, ammo, damage and reloading remain authoritative.
+When any valid Montage is configured, the backend stays on the
+CPU Graph path so its upper-body mask/sections can be evaluated.
