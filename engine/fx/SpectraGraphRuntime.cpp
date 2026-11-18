@@ -278,7 +278,8 @@ bool GraphRuntime::setNamedProgramParameter(const std::string& name,float value,
 bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
     if(!initialized_)return false;
     if(sharedWorld_) {
-        const fx::FxHandle handle=sharedWorld_->play(cpuEffect_,position,dir,1.f,tint);
+        const fx::FxHandle handle=sharedWorld_->playWithProgramParameters(
+            cpuEffect_,position,dir,1.f,tint,paramValues_);
         if(!handle.valid())return false;
         // Bound bookkeeping even for very high event rates; prevent old
         // continuous emitters from escaping this source's reset ownership.
@@ -286,18 +287,13 @@ bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
             sharedWorld_->kill(sharedHandles_.front());
             sharedHandles_.pop_front();
         }
-        for(uint32_t slot=0;slot<8;++slot)
-            if(paramSet_[slot])
-                (void)sharedWorld_->setProgramParameter(handle,slot,paramValues_[slot]);
         sharedHandles_.push_back(handle);
         return true;
     }
     if(useComputeWrapper_)return gpu_.burstAt(position,dir,tint);
-    const fx::FxHandle handle=cpu_.play(cpuEffect_,position,dir,1.f,tint);
+    const fx::FxHandle handle=cpu_.playWithProgramParameters(
+        cpuEffect_,position,dir,1.f,tint,paramValues_);
     if(!handle.valid())return false;
-    for(uint32_t slot=0;slot<8;++slot)
-        if(paramSet_[slot])
-            (void)cpu_.setProgramParameter(handle,slot,paramValues_[slot]);
     if(cpuHandles_.size()>=65536) {
         cpu_.kill(cpuHandles_.front());
         cpuHandles_.pop_front();
