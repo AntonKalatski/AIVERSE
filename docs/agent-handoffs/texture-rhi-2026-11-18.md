@@ -5171,3 +5171,26 @@ NOT RUN, CTest NOT RUN, real GPU feedback NOT RUN.
 Next: test maxDeferredFrames edge and freshness of a replaced
 view, then document the retry semantics. Native CI and GPU
 tests remain mandatory before release.
+
+## Stage 8L — Vulkan compute GLSL and real GPU storage-image fixture (2026-11-18)
+
+Code/test commit: e38b4109f2899a64d3649afdeaa1500556065554.
+Path: tests/render/vulkan_tests.cpp.
+Extended the Vulkan test suite with real compileComputeProgram
+valid/invalid GLSL checks (runs even when device is skipped).
+When an offscreen Vulkan device and RGBA8 storage capability
+are present, the GPU test creates a 4x4 storage texture,
+compiles a compute pipeline using binding0 rgba8 writeonly
+image2D, dispatches four rows of 64 X lanes with bounds
+checks, then records asynchronous texture readback in the
+same frame after the pipeline has completed. Subsequent
+frames must receive a callback and exactly 64 RGBA8 bytes
+matching (255,64,128,255) to one byte tolerance.
+Explicitly rejects BC7 storage image capability.
+The test always destroys its compute program and image.
+Missing device/format prints a SKIPPED marker, not GPU PASS.
+No engine runtime or public API changes in this stage.
+Verification: GitHub source commit succeeded. glslang compilation,
+CTest, Vulkan driver storage readback NOT RUN. No PASS claims.
+Next: run `ctest -R vulkan_backend` with Lavapipe and a real
+driver, inspect SKIPPED lines, fix any shader/pipeline errors.
