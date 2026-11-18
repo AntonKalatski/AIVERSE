@@ -623,6 +623,13 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
     }
     gfx::PipelineHandle pipe = composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
+    if(!pipe.valid() && (mask & kPfUnderwaterDepth)) {
+        // Depth sampling/shader may not be supported by this GPU/backend.
+        // Preserve the normal underwater composite rather than dropping
+        // all postprocessing effects because a depth variant failed.
+        mask &= ~kPfUnderwaterDepth;
+        pipe=composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
+    }
     if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
     std::vector<gfx::TextureHandle> graphImages;
     if(graphEffect) {
