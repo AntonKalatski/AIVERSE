@@ -1979,3 +1979,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
   checkout. `docs/agent-handoffs/unified-test-runner.md` gives test commands.
 - **Next:** `python3 tests/test_unified_runner.py`, then
   `./run-tests.sh --quick`, followed by full `./run-tests.sh`.
+
+### 2026-11-18 — Unified runner build blocked by nonexistent Json::isBool
+- **Code SHA:** `6d9f46c5ff64a3178be571f22d6b2980125ff358` on PR #7, file `engine/render/Model.cpp:185`.
+- Owner's `./run-tests.sh`: CMake **PASS**, build **FAIL** exit 2 before running CTest; compiler: `Json` has no `isBool` method. Switched to `Json::type() != Json::Type::Bool`, preserving strict boolean validation for model batching sidecar `autoLod`.
+- **Post-fix build/CTest NOT RUN** in connector-only environment. Follow up with full build. Review `RelWithDebInfo` potentially disabling `assert` in CTest binaries (many unused assert-only vars in owner build).
+- Detailed handoff in `docs/agent-handoffs/unified-test-runner.md`. Next: pull, rerun one-command test script, fix further errors using first compiler diagnostic.
+
