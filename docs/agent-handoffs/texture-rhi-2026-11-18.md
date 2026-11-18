@@ -5472,3 +5472,27 @@ backend fix until shader toolchains compile both snippets.
 Next: run texture feedback CPU CTest, compile GLSL 330/ES 300 and
 MSL material helpers with their encoder definitions, then integrate
 a concrete renderer draw and compare GPU RGBA8 IDs to CPU results.
+
+
+## Stage 8Y — embedded GLSL feedback material compilation fixture (2026-11-19)
+
+Source commit: e77767b1e64aef3292dc2dbceae7c9c4aa05e916.
+New file: tests/render/check_virtual_texture_feedback_shaders.py.
+The standalone Python 3 verifier extracts the actual embedded
+kVirtualTextureFeedbackGLSL encoder and
+kVirtualTextureFeedbackMaterialGLSL source from
+engine/gfx/VirtualTextureFeedback.h. It composes full fragment shaders
+for GLSL 330 core and GLES 300 with uniform inputs and one RGBA8
+output, and invokes glslangValidator -S frag. Any missing shader
+symbol, compiler absence or compilation failure exits nonzero.
+Run: python3 tests/render/check_virtual_texture_feedback_shaders.py.
+This is an opt-in validation script, not yet registered in CTest;
+it does not compile the MSL helper or run actual GPU readback.
+
+Verification: GitHub file creation succeeded. The compiler is not
+installed in the available execution environment; no GLSL PASS
+or native CTest is claimed.
+Next: run this verifier with glslangValidator and correct shader
+syntax/precision issues; integrate with CMake/CTest on an environment
+with a compiler; compile MSL on macOS and compare rendered feedback
+RGBA8 bytes to the CPU page-ID encoder on real devices.
