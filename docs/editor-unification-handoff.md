@@ -1684,3 +1684,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `434ea5bf99d6705f940bd618bc9a2a5fc62871be`.
 - Included `<utility>` explicitly in `modules/fps/FpsProjectiles.cpp` for direct child `std::move` / container operations. No gameplay semantics change.
 - **Verification:** GitHub source commit only; native compilation and CTest pending.
+
+
+### 2026-11-18 — Fixed-point grenade bounce equivalence regression fixture
+- Implementation SHA: `e06ec4f168b72c8e6d1599b3ddf57368300a8ded`.
+- Extended `tests/ecs_projectile_composition_test.cpp` with `exerciseSharedBounceMotion()` run by the existing projectile CTest and standalone ECS suite. Checks shared `stepBouncingProjectile` against the exact former FPS formula independently implemented in the test on a floor collider, non-colliding upward flight, and a near-ground contact. Compares full fixed-point position and velocity; preserves velocity-before-cast, swept half-extent 0.1, contact fraction inset 0.01, and reflection divided by 2 rather than multiplication by 0.5.
+- Fixture source committed; **no native C++ build/test execution**. It is a parity expectation, not observed proof. Follow with native `ecs_projectile_composition_test`, `fps`, `fps_transport` tests.
