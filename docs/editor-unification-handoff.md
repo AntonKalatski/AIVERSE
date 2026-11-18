@@ -1366,3 +1366,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `47e9f8123a67d2b26812c62a21d51cc4afa34b63`.
 - Added `tests/ecs_integer_health_commit_test.cpp` comparing the new common HP commit against the former FPS `std::max(0,hp-damage)` for valid 0..100 health and 0..1000 incoming damage; tests applied-damage amount, zero/dead/negative health behavior, nonpositive damage and INT32_MAX overflow safety. The header-only test intentionally links no built-in genre modules.
 - Verification: GitHub test source committed only. **Compiler and test execution not yet performed**; register it in CMake/standalone test suite next and run alongside existing FPS ECS-authority and transport regressions.
+
+
+### 2026-11-18 — Integer HP shared policy CMake/CTest integration
+- Implementation SHA: `01b97620a62f1e1106330a22e72bcb9c35a5160e`.
+- `CMakeLists.txt` now declares `aiverse_ecs_integer_health_commit_test` using public `AIVERSE::lib_ecs_impact_damage` and `aiverse_engine`, registered as CTest `ecs_integer_health_commit_test`. It does not link genre-specific RTS/FPS targets.
+- Verification: GitHub CMake source edit succeeded; **native configure/build/CTest execution not yet verified**. Next: standalone suite registration and link check.
