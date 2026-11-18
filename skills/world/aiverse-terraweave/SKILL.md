@@ -449,3 +449,12 @@ Build, sanitizer/CTest, Metal/GL/Vulkan,
 WebGL, and benchmark execution are assigned
 to the dedicated test agent. Record
 `NOT RUN` until that agent provides logs.
+
+
+The inactive GPU LRU also reports `gpuCacheEvictions`
+alongside `gpuCacheHits`, `gpuCachedRegions` and
+`gpuCachedBytes`. High eviction counts during
+back-and-forth camera movement indicate an overly small
+budget or frequent authored-source invalidations; adjust
+`maxCachedGpuRegions`/`gpuCacheBudgetMiB` only after
+the test agent collects real FPS and memory evidence.
