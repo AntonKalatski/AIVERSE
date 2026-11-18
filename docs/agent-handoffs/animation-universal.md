@@ -1970,3 +1970,60 @@ before calling this stage validated.
 - **Tests:** added compile-time signature fixture to `tests/view/view.cpp`; **NOT RUN** per user instruction, including CMake, CTest, graphics screenshots, TSAN, GPU batching measurements. CI status NOT verified.
 - **Risks:** static source review only, no compilation. Some game-side direct `drawMesh` for projectiles and preview/portrait paths remain; the legacy compatibility wrapper is NOT fully removed and still contains fog, terrain, planet and game-specific rendering. There is not yet a complete mapping of all host systems to generic scene passes.
 - **Exact next agent action:** inspect `modules/rts/view/RtsPortrait.cpp`, `RtsPlanetView.cpp` and generic `engine/view/View.h`. Migrate portrait/preview and projectile-model submissions to the same `aiverse::View` entry points, retaining off-screen framebuffer pass behavior, pose/baked GPU sample and graphics resource lifetimes; commit implementation, then append **Stage 66** handoff in a separate commit. Do not run tests yet.
+
+## Stage 66 — reusable View visibility/fog effect extraction (2026-11-18)
+
+- **Branch / PR:** `feature/universal-ecs-animation-pipeline`,
+  draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `52a543ccd6eb225a9ea9f461ec15788589c89c6d`.
+  This code was committed after the parallel agent's Stage 65
+  implementation `4ea00237423c2fe4633c95c5a5bb5e81f4c3d230`
+  but before its documentation `f4f459769fc3753ad87e10cbdda372c0730ccff5`;
+  this append-only Stage 66 handoff explicitly retains BOTH authors'
+  changes and does not overwrite their earlier stage.
+- **Changed code:** new `engine/view/VisibilityField.h`
+  and `engine/view/VisibilityField.cpp`, replacing
+  `modules/rts/view/RtsFog.cpp`; compatibility-only
+  `modules/rts/view/RtsFog.h`, root `CMakeLists.txt`,
+  deferred `tests/view/visibility_alias.cpp` and
+  `docs/view.md`.
+- **Architecture:** the existing visual fog/visibility
+  rendering (byte visibility mask, fade, smoothing/blur,
+  GPU texture upload, height-sampled sheet and renderer
+  submission) is now the shared engine-level
+  `aiverse::view::VisibilityField` with
+  `aiverse::view::VisibilityLook` and
+  `parseVisibilityLook(baseConfig,overrides)`.
+  No game, RTS/FPS, AI, network or gameplay module types
+  are included in the reusable View implementation.
+  Visibility authority stays in the owning host.
+- **Compatibility:** the original game-facing
+  `FogOfWar` and `FogLook` are C++ aliases to the
+  canonical View classes in `RtsFog.h`; the old
+  `parseFogLook` name is an inline forwarding function.
+  `aiverse_game_view` links the new optional compiled
+  `AIVERSE::view_visibility` static library instead of
+  compiling the former game-local RtsFog.cpp.
+  C++ source compatibility is intended, but plugin binaries
+  using old mangled names will need rebuilding; no
+  binary ABI compatibility is claimed. Existing JSON
+  settings, simulation save/protocol and shaders unchanged.
+- **Tests:** registered deferred CTest `view_visibility_alias`
+  for legacy/generic type identity. **NOT RUN**:
+  user requested builds, CTest, Metal visual QA and TSAN
+  only after implementation.
+- **Risks:** the shader body still calls the existing
+  renderer's historically named `rtsDisplay` color helper;
+  it is provided by the shared shader pipeline, not a
+  game module, but requires later shader/backend validation.
+  Visual fade and texture upload must be checked on
+  macOS and GLES/WebGPU after all implementation changes.
+- **Next agent action:** update `docs/view.md` and
+  `skills/gameplay/aiverse-view/SKILL.md` with
+  visibility-layer asset/setup contracts, audit all
+  game-local render resource imports for other genuinely
+  reusable algorithms, and ensure the View dependency
+  guard covers the extracted files. Code stage first,
+  separate Stage 67 handoff before proceeding. Do not
+  claim test success until execution.
+
