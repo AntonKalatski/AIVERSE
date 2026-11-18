@@ -723,6 +723,17 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_genre_independent COMMAND aiverse_view_core_tests)
 endif()
 
+# Enforce that engine-level View never includes genre-specific game modules.
+if(AIVERSE_BUILD_TESTS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME view_genre_boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/view/check_view_dependencies.py
+                ${PROJECT_SOURCE_DIR})
+    endif()
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp

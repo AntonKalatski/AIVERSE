@@ -24,6 +24,16 @@ struct Object {
     lib::animation::AnimationSignificanceComponent significance;
     bool visible=true;
 };
+// Any host may submit geometry without assuming a Model or skeleton.
+// Mesh ownership/lifetime remains external; this packet has no genre data.
+struct MeshObject {
+    const render::Mesh* mesh=nullptr;
+    render::mat4 world;
+    render::float4 color{1,1,1,1};
+    uint32_t flags=0;
+    float specular=.25f,emissive=0.f;
+    bool visible=true;
+};
 struct Stats {
     lib::animation::AnimationBridgeStats source;
     lib::animation::MotionWeaveScheduleStats animation;
@@ -32,7 +42,8 @@ struct Stats {
 };
 class View final {
 public:
-    explicit View(size_t animationWorkers=0)
+    explicit View(size_t animationWorkers=
+            lib::animation::MotionWeaveWorkerPool::recommendedWorkers())
         :workerCount_(animationWorkers){}
     View(const View&)=delete;
     View& operator=(const View&)=delete;
@@ -104,6 +115,18 @@ public:
     void submit(render::Renderer3D& renderer,
                 std::span<const Object> objects) const {
         for(const auto& obj:objects)submitOne(renderer,obj);
+    }
+    // Ordinary mesh/collision visualization, terrain tiles, gizmo backing
+    // meshes and other plain draw packets use the SAME generic View API.
+    void submitMesh(render::Renderer3D& renderer,
+                    const MeshObject& object) const {
+        if(!object.visible || !object.mesh)return;
+        renderer.drawMesh(*object.mesh,object.world,object.color,
+            object.flags,object.specular,object.emissive);
+    }
+    void submitMeshes(render::Renderer3D& renderer,
+                      std::span<const MeshObject> objects) const {
+        for(const auto& object:objects)submitMesh(renderer,object);
     }
 
     const Stats& stats() const noexcept{return stats_;}

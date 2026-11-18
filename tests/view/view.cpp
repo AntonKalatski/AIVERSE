@@ -38,6 +38,11 @@ int main() {
     result=view.update(objects,.016f);
     assert(result.source.removed==1);
     assert(!view.presentation().alive(id));
+    // A generic View also accepts ordinary mesh render packets without
+    // adding RTS/FPS-specific components or behavior.
+    view::MeshObject mesh;
+    mesh.visible=false;mesh.mesh=nullptr;
+    assert(!mesh.visible && mesh.mesh==nullptr);
     view.clear();
     assert(view.presentation().countExisting<lib::animation::AnimationPlayerComponent>()==0);
 }
