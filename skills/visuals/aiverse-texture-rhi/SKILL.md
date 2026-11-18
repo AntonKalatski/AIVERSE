@@ -29,6 +29,7 @@ never equate source presence with a passing GPU test.**
 | Virtual texture atlas | `gfx::VirtualTextureStreamer` | Fixed physical Texture2DArray pages, GPU page table, LRU and pinning |
 | Disk page I/O worker | `gfx::VirtualTextureDiskQueue` | Deduplicated, cancelable, bounded filesystem page results |
 | Disk-backed virtual atlas | `gfx::VirtualTextureFileStreamer` | Explicit page requests, render-thread pump and GPU page-table publication |
+| Bounded UV visibility prefetch | `gfx::VirtualTexturePrefetchPlanner`, `prefetchVisibleVirtualPages` | Clips and deduplicates visible UV rectangles; requests coarse mips first |
 | GPU subresource readback | `Device::readTextureAsync` | Metal/Vulkan/GL33/GLES3 source; unsupported on WebGL2 |
 | Live texture inventory | `Device::textureResources()` | Optional live GPU resource snapshot; byte size is estimated |
 
@@ -134,6 +135,44 @@ Automatic GPU-feedback-driven page requests, file packing
 and real-device shader validation are still separate work.
 No native GPU tests have been confirmed passing.
 
+### Visibility-driven prefetch without a genre dependency
+
+On the graphics/streaming owner thread, include
+`engine/gfx/VirtualTexturePrefetchAdapter.h`. A game projects
+its visible surfaces (terrain, object, UI atlas, etc.) to normalized
+UV rectangles. The planner never depends on a camera component,
+FPS/RTS mechanic or ECS authority:
+
+```cpp
+gfx::VirtualTexturePrefetchPlanner planner;
+gfx::VirtualTexturePrefetchConfig prefetch;
+prefetch.tilesX = atlas.tilesX;
+prefetch.tilesY = atlas.tilesY;
+prefetch.mipLevels = atlas.mipLevels;
+prefetch.virtualLayers = atlas.virtualLayers;
+prefetch.maxCandidates = 1024;
+prefetch.maxRequestsPerFrame = 16;
+if (planner.initialize(prefetch)) {
+    gfx::VirtualTextureVisibleRegion visible;
+    visible.u0 = .25; visible.v0 = .25;
+    visible.u1 = .50; visible.v1 = .50;
+    visible.desiredMip = 1;
+    visible.layer = 0;
+    const auto plan = gfx::prefetchVisibleVirtualPages(
+        streaming, planner, {visible});
+    // Plan submits disk tickets only; `pump` performs GPU uploads.
+    streaming.pump(8);
+}
+```
+
+`prefetchVisibleVirtualPages` skips exact resident or already
+pending virtual pages, not just pages with a coarser resident
+ancestor. It upgrades coarsest pinned fallbacks, respects the
+planner's finite region/candidate/request budgets, and stops
+on streaming-queue backpressure. It does NOT implement hardware
+GPU feedback, sparse images, occlusion queries or camera projection;
+the game owns UV visibility and desired mip determination.
+
 ### Optional Basis Universal codec boundary
 
 Include `engine/render/Ktx2Transcode.h` and supply a callback of type
@@ -179,11 +218,12 @@ cmake --build build/texture-rhi --target \
   aiverse_texture_resident_streamer_test aiverse_virtual_texture_pages_test \
   aiverse_virtual_texture_page_table_test aiverse_virtual_texture_streamer_test \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
+  aiverse_virtual_texture_prefetch_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test \
   aiverse_ktx2_layers_test aiverse_ktx2_transcode_test \
   aiverse_dds_layers_test aiverse_texture_asset_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture|ktx2_layers|ktx2_transcode|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|hdr_texture|exr_texture|ktx2_layers|ktx2_transcode|dds_layers|texture_asset)$'
 ```
 
 Build the editor and native client to catch API/layout regressions.

@@ -292,6 +292,31 @@ New CPU CTests \`virtual_texture_disk_queue\` and
 \`virtual_texture_file_streamer\` exercise actual temporary files
 and a mock GPU, respectively.
 
+## Visibility-based virtual texture prefetch
+
+`engine/gfx/VirtualTexturePrefetch.h` defines a CPU-only, genre-agnostic
+UV visibility planner. A game passes normalized visible UV rectangles,
+logical virtual layer, desired mip and priority. It validates/clamps
+bounds, deduplicates overlapping regions, plans coarsest mip tiles
+first, optionally pins fallback pages, and limits the work using
+`maxRegions`, `maxCandidates` and `maxRequestsPerFrame`.
+
+`engine/gfx/VirtualTexturePrefetchAdapter.h` connects those plans
+to the disk-backed `VirtualTextureFileStreamer` without putting
+disk file reads or GPU uploads on the visibility thread. It uses
+**exact** page residency and pending-request checks, not just
+sampleability through a coarser fallback. Coarse pending requests
+can be promoted to pinned fallbacks. `prefetchVisibleVirtualPages`
+returns disk request tickets; the caller still invokes
+`VirtualTextureFileStreamer::pump` once per render frame.
+
+Visibility projection, asset UV-to-world mapping, per-surface
+LOD selection and optional GPU-feedback passes remain game/editor
+choices. The planner is presentation state, not authoritative ECS.
+Coverage is source-level only: native C++/CTest/GPU validation remains
+outstanding. The `virtual_texture_prefetch` CTest and the existing
+`virtual_texture_file_streamer` CTest contain authored cases.
+
 ## Live GPU texture inspector — source-only
 
 `Device::textureResources()` now enumerates user-created live textures from
@@ -357,9 +382,10 @@ cmake --build build/texture-rhi --target \
   aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test \
   aiverse_virtual_texture_streamer_test \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
+  aiverse_virtual_texture_prefetch_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture)$'
+  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|hdr_texture|exr_texture)$'
 ```
 
 Build `aiverse_editor` and a native client to detect editor/renderer
@@ -377,6 +403,8 @@ need separate native builds and visual/readback validation.
 - `engine/gfx/VirtualTextureStreamer.h` — bounded physical atlas streaming
 - `engine/gfx/VirtualTextureDiskQueue.h` — asynchronous packed page file reads
 - `engine/gfx/VirtualTextureFileStreamer.h` — disk-to-GPU physical atlas coordinator
+- `engine/gfx/VirtualTexturePrefetch.h` — bounded normalized UV visibility planner
+- `engine/gfx/VirtualTexturePrefetchAdapter.h` — disk-page request integration
 - `engine/gfx/VirtualTextureSampling.h` — GLSL/MSL virtual page lookup
 - `engine/render/TextureAsset.h` — DDS/KTX2 GPU uploads
 - `apps/editor/windows/TextureResourcesWindow.cpp` — live GPU inspector
