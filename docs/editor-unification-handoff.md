@@ -1581,3 +1581,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `030c814405beda3293967f1127547bcacd26d3c2`.
 - `modules/fps/FpsSystems.cpp` split the previous `tickSystems` projectile iteration into `Module::tickOrdinaryProjectiles`, preserving the same per-projectile tick loop, traceShot collision/impact timing, grenade bounce/fuse/flash/smoke rules, order, and immediate effect callbacks. `tickSystems` now owns round/bomb logic only.
 - **Transitional code state:** declaration and Simulation registration of `tickOrdinaryProjectiles` are still required in the following code commits; do not build the intermediate SHA alone. Preserve original order `fps.compat.projectilePrograms -> fps.compat.ordinaryProjectiles -> fps` (round mechanics, royale, actor tick). No native build run yet.
+
+### 2026-11-18 — Ordinary FPS projectile system declared
+- Implementation SHA: `de1c9842115cadfe716096773be642eed95fc8f1`.
+- Declared `Module::tickOrdinaryProjectiles(Simulation&)` in `modules/fps/FpsModule.h`. The method is implemented by the previous `FpsSystems.cpp` commit, and still needs its own correctly ordered Simulation system registration. No native build executed.
