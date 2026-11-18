@@ -1171,3 +1171,104 @@ and large-world origin rebasing, followed by GLSL/MSL scene screenshots
 at multiple Y heights. Preserve a separate per-stage handoff.
 
 **Stage 12 follow-up:** `AGENTS.md` ownership/status refresh commit `f6a4f6fdd0eb16a98a9b7f7dfd3ba91bf5310e5c`; `engine/world/NereidWaterScene.h` follow-up commit `b1b2f0cd645260730e24199f4f0cb3dae8e4d8b2` reserves retired GPU storage before moving residency owners in `setSurfaces`, avoiding allocation failure mid-transfer. Source changes committed; C++/CTest/graphics validation remains NOT RUN.
+
+## Stage 13A — exact CPU mesh upload accounting and camera-distance LOD
+
+**Branch:** `feature/nereid-water-core` (PR #23, Draft).
+**Starting head:** `329e7c7f99b7d02e3b0eba76aa3f0206d2ba665b`.
+**No additional branches merged.** The existing main merge remains the
+Stage-10 merge `04860b76cdf3bd26d0e45dcfc71cbb7d02159c78`.
+
+**Implementation commits:**
+- `99a41b6d15d9e520e096403ec6bea6755ba18320` —
+  `engine/render/NereidSurfaceResident.h`: split pure CPU preparation from
+  RHI upload, add `NereidPreparedSurface` and exact `nereidMeshBufferBytes`.
+- `a24d6acc301e2bbbf55be84f69ca7193d0852476` —
+  `engine/world/NereidWaterScene.h`: prepared mesh cache by stable ID
+  and render revision, byte admission and auto LOD.
+- `9175bff5ba0b1691fd8e96e06deb466a98169a5b` —
+  `engine/world/NereidWaterManifest.h`: opt-in LOD JSON fields.
+- `18a3f94f63db0b575b36a22625e6957c75a675a8` —
+  `engine/world/NereidWaterScene.h`: polygon/river distance uses
+  geometry bounds, not uninitialized WaterBody center.
+- `a57133bcec7dcb359446d663958f5fe4b66f7b7a` —
+  `tests/ecs_nereid_renderer_contract_test.cpp`: exact byte and LOD
+  regression cases (authored, **not executed**).
+
+### Architecture/API
+
+`render::NereidSurfaceResident::prepare(body,geometry,revision,options,style)`
+is CPU-only and returns `std::optional<NereidPreparedSurface>` containing
+the immutable mesh, its key, and exact **vertex + index array payload bytes**.
+`uploadPrepared(device,prepared)` is the explicit GPU publication point,
+retaining the previous resident surface on failed upload. Existing
+`update(...)` remains available for native hosts as an immediate wrapper
+around prepare + upload. `nereidMeshBufferBytes(mesh)` counts
+`mesh.vertices.size()*sizeof(render::MeshVertex)` and
+`mesh.indices.size()*sizeof(uint32_t)` with overflow checks.
+
+`NereidWaterScene` caches a CPU prepared mesh per water ID and invalidates
+it only when its source revision, camera ocean patch, style or selected LOD
+changes. **Admission is strict**: the sum of admitted VB/IB bytes in the
+current update does not exceed `maxEstimatedUploadBytes` (legacy public
+name retained for compatibility). An individual upload larger than the
+configured budget remains staged and deferred until the host increases the
+budget or lowers LOD; this replaces Stage 12's "admit one oversized"
+heuristic. `stats().estimatedBytesAdmitted` now reports exact CPU VB+IB
+payload bytes; `stats().preparedBytes` and `stats().budgetDeferred`
+are diagnostic counters. This does not include driver allocation overhead,
+RHI padding, GPU texture memory or transient staging copies.
+
+`NereidSceneSurface::autoLod` defaults to **false** so old scenes keep
+their manually specified LOD. With opt-in, the observer selects
+Near / Medium / Far using `mediumDistance` (default 120m) and
+`farDistance` (default 400m). Finite box/disc bodies use their center;
+polygon/river geometry uses its bounding rectangle (nearest AABB point);
+infinite oceans retain the authored LOD. This is CPU presentation-only,
+not GPU tessellation or an adaptive screen-space error metric.
+
+Example in an existing `WorldScene` manifest:
+```json
+{
+  "nereidWater": {
+    "maxUploadsPerFrame": 2,
+    "maxEstimatedUploadBytes": 8388608,
+    "surfaces": [
+      {
+        "id": 7, "shape": "box", "kind": "lake",
+        "center": [0, 0, 0], "halfExtents": [100, 50],
+        "surfaceY": 3, "bottomY": -4,
+        "autoLod": true, "mediumDistance": 120,
+        "farDistance": 400
+      }
+    ]
+  }
+}
+```
+
+### Verification and follow-up
+
+**Actually performed:** reviewed existing API and authored/committed C++
+source, manifest handling, test assertions and this handoff through the
+GitHub connector. **NOT RUN / UNVERIFIED:** native compilation, CTest,
+OpenGL/Metal shader builds, visual GPU screenshots, real upload-byte
+inspection, FPS/RTS parity, persistence and performance. No passing CI
+status was observed for this stage.
+
+Commands for the testing agent:
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+**Important limitations:** staged CPU water meshes are still computed
+synchronously on the render/update thread; no async worker, cancellation
+or total staging-memory budget across all resident surfaces. The byte cap
+is exact for MeshBuilder arrays, NOT actual driver/transfer memory. No
+underwater/refraction pass, shore depth attenuation, GPU displacement of
+collision geometry, frustum/HiZ culling or large-world origin rebake.
+Auto LOD currently has no hysteresis, so a moving camera near thresholds
+may cause repeated updates. Follow-up should address async staged work,
+hysteresis and precision, then implement separately validated depth/refraction
+with GLSL and Metal parity. Every subsequent implementation stage must
+append its own handoff with actual test evidence.
