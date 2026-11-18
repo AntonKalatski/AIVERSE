@@ -1678,3 +1678,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `70b98ff0c80aa27d403e2e9422c4235215bf00e1`.
 - `modules/fps/FpsSystems.cpp::stepOrdinaryProjectile` now calls public `lib::genre::stepBouncingProjectile` (default `BounceMotionConfig`) for non-programmed kind 1/2/3 grenades before fuse expiry. The shared policy matches the previous deterministic computation sequence: velocity.y -= 10*dt, cast swept box of half extent 0.1, position advance by max(0, hit.fraction-0.01), reflect normal and divide velocity by 2; otherwise full delta advance. Fuse conversions, smoke/flash/blast target effects, round systems and event order are unchanged. Works on direct `ProjectileRuntime` with ecsAuthority ON and legacy State baseline OFF via the same per-projectile caller.
 - This is **live physical gameplay** sharing a general engine policy, unlike the no-physics RTS projectile path. No new serialized fields or network messages. Native compilation, exact replay hash and collision/penetration tests still NOT run.
+
+
+### 2026-11-18 — Explicit std::move header for direct ECS projectile spawn
+- **Code SHA:** `434ea5bf99d6705f940bd618bc9a2a5fc62871be`.
+- Included `<utility>` explicitly in `modules/fps/FpsProjectiles.cpp` for direct child `std::move` / container operations. No gameplay semantics change.
+- **Verification:** GitHub source commit only; native compilation and CTest pending.
