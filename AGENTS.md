@@ -70,6 +70,22 @@ CI gate for headless regression and editor compilation, **not**
 proof of a real shader/GPU render. Mandatory continuation log:
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
 
+**Stage 13 — SpectraFX Metal dense vertex gather (source committed,
+NOT TESTED):** `engine/fx/SpectraGpuShaders.h` uses compute storage
+slot 4 for a per-frame CPU-published list of live particle slot IDs,
+and `Uniforms.meta.w` for the post-step alive count. The shader
+gathers physical GPU particle state into contiguous GPU quad vertices;
+`ComputeParticles` draws exactly the live count. No GPU state is
+read back to CPU, but the live-slot list costs 4 bytes per live
+particle per frame and the CPU still owns lifetime bookkeeping.
+**This is NOT GPU-resident prefix-sum/atomic compaction or indirect
+drawing.** `ComputeStats::submittedSlots` now means dense emitted
+quads, superseding Stage 12 sparse-prefix semantics. GPU implementation
+and recording tests have been committed but **real Metal GPU execution
+and CTest have not been verified**. Continue the fixed handoff protocol
+in `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` and
+keep existing CPU/native RTS/FPS behavior unchanged by default.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
