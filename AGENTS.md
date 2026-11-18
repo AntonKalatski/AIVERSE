@@ -1195,3 +1195,18 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+
+
+## NEREID universal water framework (2026-11-18)
+
+New opt-in, genre-independent ECS water capability: `AIVERSE::lib_nereid_water`
+with `<aiverselib/water/NereidWaterSystems.h>`. It samples Fixed-point
+water-body volumes for native shooter/strategy/vehicle/other hosts; it must not
+be reimplemented in FPS or RTS. Existing editor `waterNetwork`, baked tiles,
+shore geometry and RTS water paths are still authoritative for legacy games.
+**Implementation status is EXPERIMENTAL / NATIVE TESTS UNVERIFIED.**
+Read `docs/nereid/ARCHITECTURE.md`, mandatory living
+`docs/nereid/HANDOFF.md`, and
+`skills/gameplay/aiverse-nereid-water/SKILL.md`.
+After each NEREID implementation commit, append exact SHA, changes, API,
+test status, limits and next step to its handoff as the next separate commit.

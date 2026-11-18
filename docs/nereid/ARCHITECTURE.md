@@ -1,0 +1,87 @@
+# AIVERSE NEREID — architecture and integration contract
+
+NEREID is the universal, genre-independent water framework of AIVERSE. It is
+**not** a fork of RTS water nor a renderer-only material. Existing legacy
+water remains active until explicit, tested migration.
+
+## Existing water (do not remove)
+
+- `modules/rts/view/RtsWater.{h,cpp}`: spline networks, shores, geometry, water cells.
+- `modules/rts/view/RtsShoreView.{h,cpp}`: shores, props and foam rendering.
+- `apps/editor/core/WaterOps.{h,cpp}`: editor bake and water operations.
+- `apps/editor/windows/WaterWindow.cpp`: water editing UI.
+- `tests/tests_water.inc`: existing water/shore/map behavior.
+- `docs/water.md`: existing scene/map representation.
+
+The previous `waterNetwork` is baked into map tiles and the RTS simulation
+consumes these tiles, **not** the source water body splines. Do not change
+baked tile semantics, game saves, terrain generation or shore placement by
+introducing NEREID.
+
+## Stage 1 — authoritative gameplay data + sampling
+
+Public C++ headers:
+- `<aiverselib/water/NereidWater.h>`
+- `<aiverselib/water/NereidWaterSystems.h>`
+- Package: `AIVERSE::lib_nereid_water` from `libraries/catalog.json`.
+
+Namespace: `aiverse::lib::nereid`.
+
+ECS component contract:
+- `WaterBodyComponent`: authoritative definition, fixed-point coordinates
+  (X/Z horizontal, Y up), kind (Ocean/Lake/River/Pool/Puddle), footprint
+  (Infinite/Box/Disc), surface/bottom Y, flow, overlap priority, enabled.
+- `WaterProbeComponent`: authoritative query point provided by host input,
+  physics, transform sync or game-specific policy.
+- `WaterContactComponent`: ECS-owned sampled result and tick; not kept as
+  independent FPS/RTS vector state.
+- `WaterSample`: selected generation-safe body Entity, kind, surface/bottom,
+  clamped immersion depth, flow, priority and found/submerged bits.
+
+Only point-in-footprint sampling is implemented at this stage. A water
+`kind` does not automatically supply a spline, hydrodynamics or waves.
+
+## Selection / gameplay ordering
+
+1. Host input/movement/physics writes `Transform` or `WaterProbeComponent`.
+2. Optional `addWaterProbeFromTransformSystem(sim,name)` copies the shared
+   `Transform::pos` into probes; it is not needed for custom probe producers.
+3. `addWaterSamplingSystem(sim,name)` scans water bodies and updates
+   `WaterContactComponent`. Higher priority wins; same priority takes higher
+   surface, then lowest packed Entity ID. Query does not depend on pool order.
+4. Game-specific swim, buoyancy, currents and damage stages consume contact.
+5. Renderer may consume presentation snapshots and add GPU-only detail.
+
+This is O(body count * probe count); spatial acceleration is planned.
+No bodies or probes are structurally changed during the sampling pass.
+
+## Determinism, persistence and native code
+
+- Authoritative values use `aiverse::Fixed` / integer, never floats or GPU
+  wave samples. No RNG or genre branches in NEREID core.
+- Register `registerNereidWaterPersistence(sim)` during the host module's
+  `setup`, before stepping/sealing, to add versioned native ECS schemas:
+  `nereid.water_body`, `nereid.water_probe`, `nereid.water_contact`.
+- World-native snapshots, hashes and serialization are host-integration
+  concerns: do not add a second mutable mirror. The host must also persist
+  any independent Transform/movement state affecting future probes.
+- Add water to an arbitrary native game's public target by linking
+  `AIVERSE::lib_nereid_water`. Do not link FPS/RTS for the library.
+- `tests/ecs_nereid_water_test.cpp` exercises two unrelated hosts, rollback,
+  COW, native save/load and checksum for NEREID components. These are
+  authored tests, **not yet executed** in the current implementation.
+
+## Roadmap and constraints
+
+Stage 2: shared water-body geometry adapters (legacy `waterNetwork`,
+spline river, closed lake polygon), explicit world position/terrain height
+contract, accelerated spatial queries; test old water editor/bake parity.
+Stage 3: render backend with low/medium/high profiles, depth/shore foam,
+SSR/planar reflection fallback, LOD and underwater view.
+Stage 4: composable water mechanics (buoyancy, swimming, drag, currents, wakes,
+impulses, waterfalls), deterministic CPU game state + GPU visual layering.
+Stage 5: editor UX, auto-shores, weather coupling, serialization upgrades,
+native and existing FPS/RTS adoption, platform performance/CI.
+
+Do not claim stage 3/4 features exist because corresponding `WaterKind`
+values are present in the enum.

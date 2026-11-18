@@ -5042,6 +5042,21 @@
       "requiresOwner": null,
       "source": "modules/rts/RtsModule.h",
       "keywords": []
+    },
+    {
+      "id": "aiverse-nereid-water",
+      "package": "nereid-water",
+      "path": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID fixed-point water bodies and ECS contact sampling for any native game genre",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_water",
+      "dependencies": [],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
+      "keywords": ["water", "ocean", "lake", "river", "swim", "nereid", "вода", "река", "океан"]
     }
   ]
 }
