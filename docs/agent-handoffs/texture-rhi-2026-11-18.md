@@ -990,3 +990,33 @@ renders two distinct fragment outputs, and samples both
 textures afterward. Check Vulkan validation layers for
 VkRenderPass/graphics pipeline compatibility. Then address
 MSAA/resolve for GL and Vulkan and update handoff separately.
+
+## Stage 4O — Vulkan MRT multi-output renderpass GPU test source (2026-11-18)
+
+**Implementation commit:** `025ede7251cf2230462345ebcdca3f30ca6356f1`.
+**Path:** `tests/render/vulkan_tests.cpp`.
+
+**Source additions:** GPU fixture creates two RGBA8 color targets
+and an explicit two-color `RenderTargetPassDesc`. First it clears
+target0 red and target1 green, samples each into a different
+screen half with a texture shader, and checks pixel values.
+Then it draws a GLSL fragment shader with two independently
+declared outputs (`layout(location=0)`, `layout(location=1)`)
+through a `PipelineDesc.colorAttachmentCount=2`, with
+distinct blue/yellow results. It verifies each target via
+another rendered screen capture. This test catches MRT
+renderpass clear policy, pipeline attachment count and
+fragment output location binding.
+
+**Verification:** GitHub test source commit confirmed. Native
+Vulkan compilation, Lavapipe execution, validation layers and
+image comparisons: **NOT RUN** in this environment (GitHub
+repository cannot be cloned by the local execution container).
+The fixture does not constitute a pass until it runs on a GPU.
+
+**Next:** Compile `aiverse_vulkan_tests` and execute
+`ctest --test-dir build/texture-rhi --output-on-failure -R
+'^vulkan_backend$'` on an actual Vulkan device / Lavapipe.
+Investigate shader output mapping, pipeline renderpass variant
+cache and attachment load/store synchronization. Add matching
+Metal/GL MRT fixtures; then continue MSAA/resolve.
