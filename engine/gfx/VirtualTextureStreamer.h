@@ -179,6 +179,12 @@ public:
     VirtualPageAllocation resolve(VirtualPageKey key) const {
         return ready()?pages_.resolveWithCoarseFallback(key):VirtualPageAllocation{};
     }
+    // Exact resident page lookup without the coarser fallback. The
+    // disk-backed coordinator must still request missing detail pages,
+    // even when an ancestor makes the virtual sample temporarily valid.
+    VirtualPageAllocation resolveExact(VirtualPageKey key) const {
+        return ready()?pages_.resolve(key):VirtualPageAllocation{};
+    }
     std::array<uint8_t,4> encodedPageTable(int x,int y,int layer) const {
         return table_.entry(x,y,layer);
     }
