@@ -200,7 +200,13 @@ capability*, never per genre.
 immediate hits before actor updates. The default FPS mode calls that **same**
 solver from the legacy source vector. New branches/expiry are committed to
 the ECS World at a structural barrier and projected into
-`State::projectiles` only for still-unmigrated grenade/spawn/round logic.
+`State::projectiles` for remaining legacy game mode/save/network readers.
+**Live accepted weapon shots, Frag/Smoke/Flash actions, and bomb-round reset
+now use direct `Module::spawnProjectile` / `clearProjectiles` ECS
+Entity creation/deletion when `ecsAuthority` is enabled.**
+The State array remains a compatibility workspace for other FPS systems;
+do not reintroduce legacy-only spawns or a second solver. See
+`tests/fps/projectile_spawn.inc` for deep/COW, v9 and reset parity.
 **Do not switch a second projectile solver or reintroduce a writable State
 source into this phase.** Mixed nonprogrammed objects, Entity-generation
 recycling, COW, v9 saves, rewind and synchronous damage order must retain
