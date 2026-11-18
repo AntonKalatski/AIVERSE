@@ -24,7 +24,8 @@ inline bool valueNodeType(std::string_view type) {
         "Add","Subtract","Multiply","Divide","Min","Max","Clamp","Lerp",
         "Sin","Cos","Abs","Negate","Sqrt","Pow","Floor","Ceil",
         "Length","Normalize","Dot","Cross","ComposeVec2","ComposeVec3",
-        "ComposeVec4","Select","Greater","Less","Equal","FunctionCall"
+        "ComposeVec4","Select","Greater","Less","Equal","FunctionCall",
+        "ParticleRead","Saturate"
     }) if(type == n) return true;
     return false;
 }
@@ -182,6 +183,8 @@ public:
             activeFunctions_->erase(name);
             return done(ok);
         }
+        if(type=="ParticleRead")
+            return done(fail("ParticleRead is a runtime-only data node; use $runtime in ParticleProgramModule"));
         if(type=="AgeNormalized") {
             if(!haveAge)return done(fail("AgeNormalized needs a $curve sampling context"));
             out=Json::number(age,6);
@@ -221,6 +224,7 @@ public:
         if(!arg("a",a))return done(false);
         const bool unary=type=="Sin"||type=="Cos"||type=="Abs"||
              type=="Negate"||type=="Sqrt"||type=="Floor"||type=="Ceil"||
+             type=="Saturate"||
              type=="Length"||type=="Normalize";
         if(!unary && type!="ComposeVec2"&&type!="ComposeVec3"&&type!="ComposeVec4" &&
            !arg("b",b))return done(false);
@@ -326,6 +330,7 @@ public:
         } else if(type=="Pow")z=std::pow(x,y);
         else if(type=="Floor")z=std::floor(x);
         else if(type=="Ceil")z=std::ceil(x);
+        else if(type=="Saturate")z=std::clamp(x,0.0,1.0);
         else if(type=="Greater"||type=="Less"||type=="Equal") {
             out=Json::fromBool(type=="Greater"?x>y:type=="Less"?x<y:x==y);
             return done(true);
