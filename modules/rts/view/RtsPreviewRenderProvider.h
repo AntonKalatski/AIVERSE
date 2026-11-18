@@ -20,13 +20,14 @@ public:
         return true;
     }
 
-    template<class Ready,class Draw>
+    template<class Ready,class PreviousTime,class Draw>
     static bool submitModelPreview(uint16_t type,uint8_t owner,
-            double time,float yaw,double previousTime,
-            Ready&& ready,Draw&& draw) {
+            double time,float yaw,Ready&& ready,
+            PreviousTime&& previousTime,Draw&& draw) {
         if(!ready(type))return false;
         const auto description=makeModelPreviewPresentation(type,owner,yaw);
-        draw(description,previewFrameDt(time,previousTime));
+        const float dt=previewFrameDt(time,previousTime(description));
+        draw(description,dt);
         return true;
     }
 };
