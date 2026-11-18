@@ -1863,3 +1863,52 @@ before calling this stage validated.
   hardwired into the canonical View; keep legacy host adapter
   backward compatible. Commit code, append Stage 63 handoff.
 
+## Stage 63 — external genre-neutral View scene layer providers (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `605a8e07d24061e150ab195663283297962151b5`.
+- **Paths:** new `engine/view/SceneLayerProviders.h`
+  and `tests/view/layer_providers.cpp`;
+  `modules/rts/view/RtsView.cpp`,
+  `CMakeLists.txt` and `docs/view.md`.
+- **Architecture/API:** `view::ViewLayerProviders` registers
+  externally owned named pass providers via
+  `add(name, callback, enabled)`, optional
+  `setEnabled`, `clear` and
+  `collect(ViewLayerQueue&, ViewFrameInfo)`.
+  `ViewFrameInfo` carries only seconds, dt and revision.
+  Providers schedule work into the genre-free queue;
+  the frame host controls its synchronous flush.
+  The core does NOT import terrain, roads, fog,
+  planet classes or any game module.
+- **Host migration:** legacy `game::RtsView` registers
+  its path and shoreline providers from its own
+  source using two callbacks, then collects them
+  between ground effects and paint layers.
+  Actual height/mesh generation stays in the host;
+  pass evaluation and draw ordering remain as before.
+- **Compatibility:** no changes to serialization,
+  simulation World, networking, authoritative
+  collision or renderer backend. Existing
+  `ViewLayerQueue`/ModelDraw paths remain available.
+- **Tests:** CTest `view_layer_providers` added for
+  registration order, enable/disable, duplicate
+  rejection and provider collection. **NOT RUN**,
+  because the user requested completing implementation
+  before testing. TSAN/screenshots also NOT RUN.
+- **Risks:** providers may borrow host resources;
+  they must execute and finish before those resources
+  die. This generic interface is a composition seam,
+  not a migration of complicated map/planet/visibility
+  algorithms. The RTS compatibility view still holds
+  substantial specialized code.
+- **Next agent action:** inspect remaining planet/fog
+  and special-effects providers in `modules/rts/view`,
+  register additional independent render passes
+  through `ViewLayerProviders` without changing their
+  gameplay-derived selection. Then separate code and
+  Stage 64 handoff. Eventually move reusable geometry
+  generation into neutral engine algorithms and keep
+  old `game::RtsView` as a thin compatibility adapter.
+
