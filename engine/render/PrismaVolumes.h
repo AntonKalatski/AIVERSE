@@ -1,7 +1,7 @@
 #pragma once
 // PRISMA volume/profile resolver. No RHI, no game genre, no ECS dependency.
 // Coordinates use the rendering world's float3 (never simulation Fixed).
-#include "PostFxData.h"
+#include "PrismaData.h"
 #include "Math3D.h"
 #include <algorithm>
 #include <cmath>
@@ -26,7 +26,7 @@ struct PrismaVolume {
     int priority = 0;             // ascending order, later higher priority wins
     uint32_t layerMask = 0xffffffffu;
     bool enabled = true;
-    PostFxSettings profile;
+    PrismaSettings profile;
 };
 
 // Deterministic: priority-ascending, insertion order for equal priorities.
@@ -62,9 +62,9 @@ public:
         return weight * std::clamp(1.f - distance / v.blendDistance, 0.f, 1.f);
     }
 
-    PostFxSettings resolve(const PostFxSettings& base, float3 camera,
+    PrismaSettings resolve(const PrismaSettings& base, float3 camera,
                            uint32_t cameraMask = 0xffffffffu) const {
-        PostFxSettings out = base;
+        PrismaSettings out = base;
         std::vector<const PrismaVolume*> sorted;
         sorted.reserve(volumes.size());
         for (const auto& v : volumes) sorted.push_back(&v);
@@ -78,9 +78,9 @@ public:
             // HDR, chain enabled, LUT paths, graphs and boolean settings are discrete:
             // choose the incoming value at the halfway point.
             if (t >= .5f) { out.enabled = v->profile.enabled; out.hdr = v->profile.hdr; }
-            for (const PostFxEffect& incoming : v->profile.effects) {
+            for (const PrismaEffect& incoming : v->profile.effects) {
                 auto it = std::find_if(out.effects.begin(), out.effects.end(),
-                                       [&](const PostFxEffect& e){ return e.type == incoming.type; });
+                                       [&](const PrismaEffect& e){ return e.type == incoming.type; });
                 if (!incoming.enabled) {
                     if (it != out.effects.end() && t >= .5f) it->enabled = false;
                     continue;
@@ -89,20 +89,20 @@ public:
                     // Newly introduced effects that expose a strength can fade in from zero.
                     // Other effects require a discrete activation; see docs/prisma.md.
                     bool supportsFade = false;
-                    for (const auto& def : postFxType(incoming.type).params)
+                    for (const auto& def : prismaType(incoming.type).params)
                         supportsFade |= !std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount");
                     if (!supportsFade && t < .5f) continue; // binary activation, no strength param
-                    PostFxEffect neutral = defaultPostFxEffect(incoming.type);
+                    PrismaEffect neutral = defaultPrismaEffect(incoming.type);
                     size_t at = 0;
-                    for (const auto& def : postFxType(incoming.type).params) {
+                    for (const auto& def : prismaType(incoming.type).params) {
                         if ((!std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount")) &&
                             at < neutral.values.size()) neutral.values[at] = 0;
-                        at += def.kind == PostFxParamKind::Color ? 3u : def.kind == PostFxParamKind::Text ? 0u : 1u;
+                        at += def.kind == PrismaParamKind::Color ? 3u : def.kind == PrismaParamKind::Text ? 0u : 1u;
                     }
                     out.effects.push_back(std::move(neutral));
                     it = out.effects.end() - 1;
                 }
-                if (incoming.type == PostFxType::ShaderGraph) {
+                if (incoming.type == PrismaType::ShaderGraph) {
                     if (t >= .5f) *it = incoming;
                     continue;
                 }
