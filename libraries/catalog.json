@@ -2394,6 +2394,28 @@
       ]
     },
     {
+      "id": "ecs-kinematic-projectiles",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-kinematic-projectiles/SKILL.md",
+      "summary": "Shared nonphysical ECS projectiles with deterministic fixed-tick endpoint arrival or moving-target pursuit; canonical arrival events and deferred despawn",
+      "notes": "Header-only motion without SpatialWorld or ballistics. Real RTS uses the common pursuit policy but still owns legacy damage/effect ordering. Full RTS migration and native build parity remain pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_kinematic_projectiles",
+      "dependencies": [
+        "docs/ecs-mechanic-composition.md",
+        "tests/ecs_kinematic_projectile_test.cpp",
+        "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
       "id": "ecs-projectile-systems",
       "version": "0.1.0",
       "layer": "simulation",
