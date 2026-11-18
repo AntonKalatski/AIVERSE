@@ -13,6 +13,7 @@
 #include "libraries/include/aiverselib/animation/EcsAnimationSystems.h"
 #include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
 #include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
+#include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
@@ -186,6 +187,7 @@ struct App {
                     characterPresentation.add<lib::animation::AnimationPlayerComponent>(e);
                     characterPresentation.add<lib::animation::AnimationPoseComponent>(e);
                     characterPresentation.add<lib::animation::AnimationInputsComponent>(e);
+                    characterPresentation.add<lib::animation::AnimationGraphNotifiesComponent>(e);
                     characterPresentation.add<lib::animation::AnimationBudgetComponent>(e);
                     characterPresentation.add<lib::animation::AnimationSignificanceComponent>(e);
                 }
@@ -226,6 +228,23 @@ struct App {
             lib::animation::assignAnimationBudgets(characterPresentation,budget);
             lib::animation::stepAnimationPresentation(characterPresentation,
                 float(std::clamp(dt,0.,.25)));
+            lib::animation::dispatchAnimationCues(characterPresentation,
+                [&](const lib::animation::AnimationCue& cue) {
+                    if(cue.name!="step" && cue.name!="footstep" && cue.name!="land")
+                        return; // weapon hits/reloads remain server-authoritative
+                    for(const auto& [slot,entity]:characterEntities)
+                        if(entity==cue.entity) {
+                            for(const auto& remote:client->snapshot().actors)
+                                if(remote.slot==slot && remote.health>0) {
+                                    audio::PlayParams params;params.positional=true;
+                                    params.x=float(remote.pos.x.toDouble());
+                                    params.y=float(remote.pos.y.toDouble());
+                                    params.z=float(remote.pos.z.toDouble());
+                                    audio.play("step",params);
+                                }
+                            break;
+                        }
+                });
         }
     }
     void event(const platform::Event& e) {
