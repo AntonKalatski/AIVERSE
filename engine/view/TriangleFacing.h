@@ -17,6 +17,11 @@ inline TriangleFacing orientTriangleTo(
     const float areaSq=render::dot(normal,normal);
     if(!(areaSq>=1.e-14f) || !std::isfinite(areaSq))
         return {};
+    // A non-finite outward hint must not silently select an arbitrary winding.
+    // Reject before the dot product; a NaN comparison would otherwise be false.
+    if(!std::isfinite(outwardHint.x) || !std::isfinite(outwardHint.y) ||
+       !std::isfinite(outwardHint.z))
+        return {};
     const bool flip=render::dot(normal,outwardHint)<0.f;
     return {render::normalize(flip?-normal:normal),true,flip};
 }
