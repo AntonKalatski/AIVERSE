@@ -597,6 +597,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_graph_notify_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME animation_graph_notifies COMMAND aiverse_animation_graph_notify_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_hot_reload_tests tests/animation/hot_reload.cpp)
+    target_link_libraries(aiverse_animation_hot_reload_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_hot_reload COMMAND aiverse_animation_hot_reload_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
