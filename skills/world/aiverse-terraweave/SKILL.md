@@ -159,3 +159,27 @@ may stutter on first prototype upload or camera tile changes.
 Scene screenshots and GPU benchmark measurements must be collected
 before considering this feature production ready. Report tests
 actually run in `docs/terrain/AGENT_HANDOFF.md`.
+
+## Authored world terrain and exclusions (Stage 5)
+
+When a native project/WorldScene forest must sit on an already-authored
+heightfield, do not rewrite TerraWeave terrain noise or duplicate a
+genre's collision data. Use the optional generic ForestScene hooks:
+
+- `forest.setHeightSource(fn)`: `fn(worldXcm,worldZcm)->int32 heightCm`.
+  Use a **snapshot** from the project's terrain/physics provider,
+  not direct unsynchronised ECS state.
+- `forest.setPlacementFilter(fn)`: `fn(const FoliageInstance&)->bool`.
+  Reject roads, water, structures and unsafe slopes as necessary.
+  The filter receives final sampled tree height.
+- Both callbacks invalidate cached forest chunks; call
+  `forest.streamAt(observer)` on the safe owning CPU stage.
+  Reuse stable per-instance keys for persistence.
+- The callbacks are **visual**, not a substitute for deterministic
+  authoritative gameplay placement or collision. `scatter` still
+  uses its own procedural noise for initial biome/height/slope
+  checks; explain this limitation in agent handoff.
+
+See `docs/terrain/TERRAWEAVE.md` and the latest
+`docs/terrain/AGENT_HANDOFF.md` stage. Verify on real scenes
+before claiming trees match ground physics.
