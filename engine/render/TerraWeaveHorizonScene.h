@@ -51,6 +51,8 @@ struct HorizonRuntimeStats {
     size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
     size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
     size_t transitionStarts=0;
+    size_t nearClipQuads=0, nearClipTriangles=0;
+    bool nearClipFallback=false;
     bool transitioning=false;
     uint32_t transitionProgressPermille=1000;
 };
@@ -154,7 +156,8 @@ public:
                     }
                 }
                 result->bake=std::move(baked);
-                result->model=makeHorizonModel(*result->bake);
+                result->model=makeHorizonModel(*result->bake,
+                                                &result->clipStats);
                 if(result->model)render::prepareModelUpload(*result->model);
                 const auto end=std::chrono::steady_clock::now();
                 result->cpuPrepareMs=
@@ -338,6 +341,9 @@ public:
                     terrainQuads_=0;
                     runtime_={};
                     runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
+                    runtime_.nearClipQuads=prepared->clipStats.clippedQuads;
+                    runtime_.nearClipTriangles=prepared->clipStats.clippedTriangles;
+                    runtime_.nearClipFallback=prepared->clipStats.clipBudgetFallback;
                     return true;
                 }
                 // Fast path: patch both forest atlas and terrain vertices
@@ -376,6 +382,9 @@ public:
                             runtime_.clusters=clusters_;
                             runtime_.atlasBytes=prepared->bake->atlasRgba.size();
                             runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
+                            runtime_.nearClipQuads=prepared->clipStats.clippedQuads;
+                            runtime_.nearClipTriangles=prepared->clipStats.clippedTriangles;
+                            runtime_.nearClipFallback=prepared->clipStats.clipBudgetFallback;
                             runtime_.gpuUploadMs=std::chrono::duration<
                                 double,std::milli>(
                                     std::chrono::steady_clock::now()-patchStart
@@ -430,6 +439,9 @@ public:
                 runtime_.atlasBytes=nextAtlasBytes;
                 runtime_.vertices=nextVertices;
                 runtime_.triangles=nextTriangles;
+                runtime_.nearClipQuads=prepared->clipStats.clippedQuads;
+                runtime_.nearClipTriangles=prepared->clipStats.clippedTriangles;
+                runtime_.nearClipFallback=prepared->clipStats.clipBudgetFallback;
                 runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                 runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
                     std::chrono::steady_clock::now()-uploadStart).count();
@@ -617,6 +629,9 @@ private:
         previous.atlasBytes=runtime_.atlasBytes;
         previous.vertexCount=runtime_.vertices;
         previous.triangleCount=runtime_.triangles;
+        previous.nearClipQuads=runtime_.nearClipQuads;
+        previous.nearClipTriangles=runtime_.nearClipTriangles;
+        previous.nearClipFallback=runtime_.nearClipFallback;
         previous.estimatedGpuBytes=estimateHorizonGpuResidencyBytes(
             previous.atlasBytes,previous.vertexCount,previous.triangleCount);
         if(activeCell_ && !(*activeCell_==incoming) &&
@@ -658,6 +673,9 @@ private:
         runtime_.atlasBytes=region.atlasBytes;
         runtime_.vertices=region.vertexCount;
         runtime_.triangles=region.triangleCount;
+        runtime_.nearClipQuads=region.nearClipQuads;
+        runtime_.nearClipTriangles=region.nearClipTriangles;
+        runtime_.nearClipFallback=region.nearClipFallback;
         runtime_.gpuUploadMs=0;
         runtime_.atlasPatchRegions=0;
         runtime_.vertexPatchRanges=0;
@@ -687,6 +705,7 @@ private:
     struct Prepared final : world::AsyncChunkStream::Resource {
         std::shared_ptr<const HorizonBake> bake;
         std::unique_ptr<render::Model> model;
+        HorizonModelBuildStats clipStats;
         double cpuPrepareMs=0;
         uint64_t sourceRevision=0;
     };
