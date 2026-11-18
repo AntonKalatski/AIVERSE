@@ -126,6 +126,18 @@ public:
         invalidate();
     }
 
+    // Publish one coherent immutable authored-world snapshot (terrain height
+    // and footprint mask) with ONE revision change. This is cheaper and safer
+    // than invalidating asynchronous jobs twice for the same chunk update.
+    // Both providers must retain their captured data until they are released
+    // by the last pending worker job.
+    void setLandscapeSources(HeightSource height,
+                             std::shared_ptr<const FoliageExclusionMask> mask) {
+        heightSource_ = std::move(height);
+        placementMask_ = std::move(mask);
+        invalidate();
+    }
+
     // Invalidate resident foliage if generation settings / landscape are
     // explicitly changed. Game-specific persistent harvest/removal sets
     // should be applied by the caller before presentation submission.
