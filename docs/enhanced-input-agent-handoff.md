@@ -211,3 +211,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Tests:** Added preset JSON write/read/install roundtrips and stable mapping ID assertions (ID 1..N) to `enhanced_input_config_tests.cpp`. Validation is not yet backed by a compiler or successful CTest; GitHub CI was queued. Run tests before promoting PR #20 out of draft.
 
 **Next agent:** check CI errors, verify initialized FPS key controls parity and mouse look, verify project preset editing/saving plus runtime profiles and RTS UI focus, then run full cross-platform validation.
+
+## Stage 13 — mobile touch movement axes and multi-touch safety (2026-11-18)
+
+**Changes:** `EnhancedInputAdapter.h` now tracks each finger's previous position and emits accumulated per-frame X/Y motion through `Device::Touch` codes 1 and 2 (code 0 remains touch-down). Slot allocator reuses free indices 0..31; duplicate TouchBegin ignored; TouchEnd releases and can emit final delta, TouchCancel only releases, FocusLost clears everything. No device-specific backend change. The InputWindow numeric Touch code field can already author channels 0,1,2; JSON validates device indices.
+
+**Test additions:** `enhanced_input_adapter_tests.cpp` now verifies two coalesced TouchMove events, transient movement completion, duplicate begin and slot recycling, TouchCancel release.
+
+**Verification:** committed source/test changes; no running CTest or live iOS/Android verification. Need capture multi-touch motion on physical devices and hosted editor events, especially when UI owns touch.
+
+**Next agent:** finish host/view focus arbitration and cross-platform build; run all tests, review modifiers/triggers for repeat-state parity, and record CI and manual checks in handoff before ending.
