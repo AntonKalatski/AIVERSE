@@ -487,3 +487,84 @@ Then run a **real Metal** offscreen smoke: execute `step()` in a frame *before* 
 3. **Single pool and material.** Implement a reusable emitter scheduler, per-emitter storage ranges, batching by material, dead-particle compaction, scalable indirect draw, alpha sort and transparent rendering before targeting large particle counts.
 4. **CPU-only backends.** Vulkan compute is not wired through the current RHI; GLSL 430 kernel text is only a placeholder. Do not pretend it runs under GL33/GLES3/WebGL2.
 5. **Next bounded stage:** native compile/CTest/Apple Metal validation and fixes, then opt-in integration of `ComputeParticles` into native presentation/ECS bridge with explicit GPU eligibility/fallback for graph-v1 effects. Record actual benchmark numbers only after using GPU timing and representative scenes; update this same handoff with a separate commit after each bounded stage.
+
+## Stage 11 — capability-routed graph runtime with lossless CPU fallback (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Aim:** provide a **genre-independent, opt-in** bridge from compiled SpectraFX graph-v1 effects to the Stage-10 Metal compute prototype **only** when the complete graph effect can run without silently dropping any modules. For all other graphs retain the original CPU `EffectDef`. No change to authoritative gameplay ECS, save/rollback, existing `RtsFx`, or production FPS/RTS clients.
+
+### Implementation commits and affected paths
+
+| SHA | Path | Change |
+|---|---|---|
+| `2f0365999a3423155db79573d461e91c3ea03c98` | `engine/fx/SpectraGraphRuntime.h` | Public `GraphRuntime`, options and schema eligibility |
+| `22eb34d5c90e3b6954b3e8527b77fa972889e7f7` | `engine/fx/SpectraGraphRuntime.h` | Preserve wrapper ownership after GPU health recovery |
+| `86ea5f3d76e53753c97c1600b131b2c4df8f996e` | `engine/fx/SpectraGraphRuntime.cpp` | Runtime selection, exact CPU graph fallback, startup/burst/update/render/clear lifecycle |
+| `591030a4684782f3559c232c038f352154db1f71` | `CMakeLists.txt` | Link adapter to `aiverse_fx`, add `aiverse_vfx_graph_runtime_tests` / `vfx_graph_runtime` CTest |
+| `cb059574a1a1cc576dfee90bdef409054d3d30f0` | `tests/vfx_graph_runtime_test.cpp` | Test GPU eligibility, unsupported module rejection, headless CPU mode, RequireGpu errors |
+| `3b9a6bf70c6ef8b5404f2aabc619facea7a4638d` | `engine/fx/SpectraFX.h` | Expose native `GraphRuntime` API |
+| `fe13539788dfa1fcab809f76c069d0068c981b56` | `engine/fx/SpectraGraphRuntime.cpp` | Explicit rejection of advanced modules and MinMaxCurve variants |
+| `d2f0fe01adb36aef4140ab46b3180f1355414d4a` | `engine/fx/SpectraGraphRuntime.cpp` | Exact default white alpha fade required for GPU |
+| `d4ac32e37ac8c1942a8316165df49fdbe7e502b8` | `engine/fx/SpectraGpuParticles.cpp` | Guard GPU clear against active render/compute encoder to prevent CPU-slot/desynced GPU buffer state |
+| `c8c299e2e6507ac4399c2a131950f2fbffb8fa01` | `apps/editor/core/SpectraGraphOps.cpp` | `metalGpuEligible` / `metalGpuReason` in graph get/list/validate |
+| `144c66d36702b6b4d8144021aac58c7faeeec072` | `apps/editor/windows/SpectraGraphWindow.cpp` | Show GPU schema eligibility and CPU fallback explanation |
+| `eb036eb2e4a7f3a5a8cac8b1a0c7b209ee62ec17` | `tests/vfx_graph_ops_test.cpp` | Assert new MCP GPU eligibility diagnostics |
+| `1c3399e779bca3423033b458202c7826a4344112` | `docs/spectrafx.md` | Graph runtime usage, strict support policy, RHI limitations |
+| `6bb91ec35831143c780ebdcf35a7ad32be8b7c98` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent native C++ usage and cross-genre fallback rules |
+| `b7042eedd06d0a79fe824b5a9201b22f4c6b5625` | `AGENTS.md` | Add stage-11 contracts and no-unsupported-GPU claims |
+
+### Architecture / native C++ API
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+aiverse::spectra::GraphRuntime view;
+aiverse::spectra::GraphRuntimeOptions opts;
+opts.preference = aiverse::spectra::ComputePreference::Automatic;
+opts.capacity = 1024;
+opts.quality = aiverse::fx::FxQuality::High;
+
+if(!view.initGraph(device, graphJson, aiverse::Json::object(), opts)) {
+    // reason() and errors(); RequireGpu never silently falls back.
+}
+// After gfx::Device::beginFrame, before render pass:
+view.setView(camera, viewProjection, width, height);
+view.burstAt(worldPosition, direction, tint);
+view.step(1.f/60.f);
+// Inside the existing depth-tested render pass:
+view.draw(fog);
+// Before gfx::Device destruction, after matching encoder scopes:
+view.shutdown();
+```
+
+- `inspectGraphGpuEligibility(const fx::EffectDef&, GraphRuntimeOptions)` is a **pure schema check**, not a GPU capability probe. `GraphGpuEligibility {eligible, gpu, reason}` exposes an option-independent evaluation of the compiled graph's actual emitter modules. GPU v1 allows exactly one additive `builtin:soft` camera-facing point burst (1..64 particles), constant life/speed/size/drag, zero spread, only Y-gravity, default white alpha fade, and no other modules. The canonical `effectToJson` comparison against a known-supported template plus explicit complex-module/colour checks prevents dropping authoring data. Any additional emitter/output, shader graph, texture, gradient, noise, force field, collisions, sub-emitter, trail/light, random range, size curve, etc. rejects GPU.
+- `GraphRuntime::initGraph(device,graph,overrides,options)` calls existing graph compiler; `initEffect(device,compiled,options)` accepts native-compiled `EffectDef` directly. For **eligible + Metal** graphs, the class attempts `ComputeParticles` and only reports `Metal` if its GPU init succeeds. For unsupported device, unsupported graph, shader-creation failure or low quality, `Automatic`/`PreferGpu` use the **original full** `fx::ParticleSystem`, not the Stage-10 simplified fallback emitter. `CpuOnly` explicitly uses CPU. `RequireGpu` fails with diagnostics.
+- `burstAt/setView/step/draw/clear/shutdown` own one presentation runtime instance; production clients and editor preview are **not** transparently replaced. The internal Stage-10 GPU wrapper may fall back to its simplified CPU equivalent after a GPU health failure only for an already-compatible graph; `GraphRuntime` preserves the wrapper's lifetime and reports its actual backend.
+- No authoritative ECS `World` changes; no new deterministic simulation component or cross-genre fork. Legacy `fx/*.json`, `fx/graphs/*.vfx.json`, `RtsFx` and existing C++ aliases are untouched.
+- The graph editor and MCP `fx_graph_validate/get/list` now expose **schema** `metalGpuEligible` and `metalGpuReason`, which **do not confirm a real Metal device or successful GPU pipeline**. GUI preview deliberately stays CPU-only.
+
+### Verification status (actual)
+
+**NOT RUN:** the current container has no local AIVERSE checkout (`/mnt/data/AIVERSE` does not exist). A direct `git ls-remote https://github.com/chromealex/AIVERSE.git HEAD` attempt failed with `Could not resolve host: github.com`. GitHub connector writes/reads succeeded. No CMake/CTest, clang compilation, Metal shader compile, GPU render readback, FPS/RTS native-client integration, benchmarks or screenshots were run. Tests are committed **test sources only**, not passing results.
+
+On the stage-11 AGENTS SHA `b7042eedd06d0a79fe824b5a9201b22f4c6b5625`, the GitHub combined status query returned an empty status list; four workflows (GPU batching regression, Studio validation, ECS experimental checks, general CI) were **queued**, not passed.
+
+**Next agent must run:**
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_editor aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+Then run actual Apple Silicon Metal shaders on a real GPU frame and capture images. Compare full CPU effects against all rejected graph features and the supported Metal subset, including alpha/depth and multiple frames-in-flight; exercise burst/clear/reinit, malformed graph/override, RequireGpu failure, RHI allocation/encoder failure and performance/quality tiers. The recording fake-RHI test from stage 10 does **not** execute real MSL.
+
+### Known limitations and immediate next action
+
+1. **Zero build proof.** Run/fix the native targets before asserting that the source compiles. Specifically inspect the new `effectToJson` equivalence gate, public includes, editor registrations and MSL compute/storage binding. CI queued is not CI passing.
+2. **GPU v1 deliberately narrow.** No GPU compaction/indirect count/alpha sort, mesh/ribbon trails, collision, events, advanced graph dataflow or per-emitter materials. Current GPU draw submits all allocated slots (dead slots degenerate), capped at 4096. No benchmark or battery/mobile cost claim.
+3. **Opt-in only.** GraphRuntime is not wired to production FPS/RTS host loops or native ECS presenter yet. The host must decide tick-boundary event delivery, attached transform resolution, GPU update scheduling before render passes, resource lifecycle and rollback presentation reset. Preserve existing CPU VFX parity until migration tests.
+4. **Next bounded stage:** build and test stages 7–11 on macOS + real Metal, fix compiler and runtime defects with a **separate stage-12 implementation and handoff**, then opt-in one real native cross-genre presentation host using graph instances. Only after successful GPU stress/visual QA consider allocator compaction, indirect drawing and richer GPU graph execution.
+5. Append to **this same living handoff** after each next code stage in a separate commit. Never replace or lose other agents' progress in `feature/universal-entity-inspector-fps`.
