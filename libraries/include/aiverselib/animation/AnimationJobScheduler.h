@@ -2,6 +2,8 @@
 // No worker may invoke Lua/native callbacks or environment contacts.
 #pragma once
 #include "EcsAnimationSystems.h"
+#include "engine/render/AnimationRig.h"
+#include "engine/render/FullBodyIK.h"
 #include <algorithm>
 #include <functional>
 #include <thread>
@@ -11,9 +13,20 @@ inline bool workerSafeGraph(const render::AnimationGraph& graph) {
     for(const auto& node:graph.nodes()) {
         switch(node.kind) {
             case render::AnimationGraph::Kind::Native:
-            case render::AnimationGraph::Kind::Rig:
             case render::AnimationGraph::Kind::Stack:
-                return false; // callbacks, IK environment and VM are host-bound
+                return false; // native/Lua traits and VM are host-bound
+            case render::AnimationGraph::Kind::Rig:
+                // A pure forward rig (including FullBodyIK without
+                // contacts) operates on the owning GraphInstance only.
+                // Environmental contact and surface locomotion may call
+                // host callbacks and remain on the caller thread.
+                if(!node.rig)return false;
+                for(const auto& unit:node.rig->units()) {
+                    if(unit.locomotion ||
+                       (unit.fullBody && unit.fullBody->contacts()))
+                        return false;
+                }
+                break;
             case render::AnimationGraph::Kind::Subgraph:
                 if(!node.subgraph || !workerSafeGraph(*node.subgraph))return false;
                 break;
