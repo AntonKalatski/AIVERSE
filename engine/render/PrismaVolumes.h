@@ -17,6 +17,12 @@ enum class PrismaVolumeShape { Global, Sphere, Box };
 
 // ECS/native projects may store these values in their own components.
 // No genre-specific entity, actor or camera class is required.
+struct PrismaVolumeEffectMask {
+    PrismaType type = PrismaType::ColorGrade;
+    std::vector<uint8_t> numeric; // flattened catalog params, 1 = explicitly authored
+    bool enabled = false, minQuality = false, text = false, graph = false;
+};
+
 struct PrismaVolume {
     std::string id;            // optional stable name for map overrides
     bool overrideEnabled = false; // partial profiles must not reset camera HDR/enable
@@ -31,6 +37,7 @@ struct PrismaVolume {
     uint32_t layerMask = 0xffffffffu;
     bool enabled = true;
     PrismaSettings profile;
+    std::vector<PrismaVolumeEffectMask> effectMasks; // empty => native C++ full-profile behavior
 };
 
 // Deterministic: priority-ascending, insertion order for equal priorities.
@@ -86,13 +93,20 @@ public:
                 if (v->overrideHdr) out.hdr = v->profile.hdr;
             }
             for (const PrismaEffect& incoming : v->profile.effects) {
+                const auto maskIt = std::find_if(v->effectMasks.begin(), v->effectMasks.end(),
+                    [&](const PrismaVolumeEffectMask& m){ return m.type == incoming.type; });
+                const PrismaVolumeEffectMask* authored =
+                    maskIt == v->effectMasks.end() ? nullptr : &*maskIt;
                 auto it = std::find_if(out.effects.begin(), out.effects.end(),
                                        [&](const PrismaEffect& e){ return e.type == incoming.type; });
                 if (!incoming.enabled) {
-                    if (it != out.effects.end() && t >= .5f) it->enabled = false;
+                    if (it != out.effects.end() && t >= .5f &&
+                        (!authored || authored->enabled)) it->enabled = false;
                     continue;
                 }
-                if (it == out.effects.end()) {
+                bool newEffect = it == out.effects.end();
+                std::vector<uint8_t> syntheticFade;
+                if (newEffect) {
                     // Newly introduced effects that expose a strength can fade in from zero.
                     // Other effects require a discrete activation; see docs/prisma.md.
                     bool supportsFade = incoming.type == PrismaType::ColorGrade ||
@@ -106,27 +120,41 @@ public:
                         continue;
                     }
                     PrismaEffect neutral = defaultPrismaEffect(incoming.type);
+                    syntheticFade.resize(neutral.values.size(), 0);
                     size_t at = 0;
                     for (const auto& def : prismaType(incoming.type).params) {
-                        if ((!std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount") ||
-                             (incoming.type == PrismaType::TiltShift && !std::strcmp(def.name, "blur"))) &&
-                            at < neutral.values.size()) neutral.values[at] = 0;
-                        at += def.kind == PrismaParamKind::Color ? 3u : def.kind == PrismaParamKind::Text ? 0u : 1u;
+                        const bool fade = !std::strcmp(def.name, "intensity") ||
+                                          !std::strcmp(def.name, "amount") ||
+                            (incoming.type == PrismaType::TiltShift && !std::strcmp(def.name, "blur"));
+                        const size_t count = def.kind == PrismaParamKind::Color ? 3u :
+                                             def.kind == PrismaParamKind::Text ? 0u : 1u;
+                        for (size_t k=0;k<count && at+k<neutral.values.size();++k)
+                            if (fade) { neutral.values[at+k] = 0; syntheticFade[at+k] = 1; }
+                        at += count;
                     }
                     out.effects.push_back(std::move(neutral));
                     it = out.effects.end() - 1;
                 }
                 if (incoming.type == PrismaType::ShaderGraph) {
-                    if (t >= .5f) *it = incoming;
+                    if (t >= .5f) {
+                        if (!authored || authored->graph) it->shaderGraph = incoming.shaderGraph;
+                        if (!authored || authored->enabled) it->enabled = incoming.enabled;
+                        if (!authored || authored->minQuality) it->minQuality = incoming.minQuality;
+                    }
                     continue;
                 }
                 const size_t n = std::min(it->values.size(), incoming.values.size());
-                for (size_t j = 0; j < n; ++j)
-                    it->values[j] += (incoming.values[j] - it->values[j]) * t;
+                for (size_t j = 0; j < n; ++j) {
+                    const bool explicitValue = !authored ||
+                        (j < authored->numeric.size() && authored->numeric[j] != 0);
+                    const bool initialFade = newEffect && j < syntheticFade.size() && syntheticFade[j];
+                    if (explicitValue || initialFade)
+                        it->values[j] += (incoming.values[j] - it->values[j]) * t;
+                }
                 if (t >= .5f) {
-                    it->enabled = true;
-                    it->minQuality = incoming.minQuality;
-                    it->text = incoming.text;
+                    if (!authored || authored->enabled) it->enabled = true;
+                    if (!authored || authored->minQuality) it->minQuality = incoming.minQuality;
+                    if (!authored || authored->text) it->text = incoming.text;
                 }
             }
         }
