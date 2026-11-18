@@ -1,5 +1,6 @@
 // Kinematic projectile system: fixed-tick travel and replay in unrelated hosts.
 #include <aiverselib/genre/EcsKinematicProjectileSystems.h>
+#include <aiverselib/genre/EcsOrderedImpactSystems.h>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -118,7 +119,61 @@ template<class Tag> uint64_t exercise(bool cow) {
     check(sim.checksum()==expected,"snapshot replay mismatch");
     return expected;
 }
+// Impact ordering is synchronous by design: legacy RTS damage/armor hooks
+// can affect the next projectile in the same ECS iteration.
+static void exerciseOrderedImpacts() {
+    World world;
+    const Entity projectile=world.create();
+    const Entity shooter=world.create();
+    const Entity primary=world.create();
+    const Entity ally=world.create();
+    const Entity enemyA=world.create();
+    const Entity enemyB=world.create();
+    std::vector<int> stages;
+    const lg::OrderedProjectileImpact impact{
+        projectile,shooter,primary,Vec3{},10_fx,3_fx
+    };
+    bool directCommitted=false;
+    lg::resolveOrderedProjectileImpact(impact,
+        [&](Entity e) {
+            check(e==primary,"wrong primary impact target");
+            directCommitted=true;
+            stages.push_back(1);
+        },
+        [&](Entity e) {
+            check(e==primary&&directCommitted,"on-hit preceded direct damage");
+            stages.push_back(2);
+        },
+        [&](Vec3 center,Fixed radius,auto&& visit) {
+            check(center==Vec3{}&&radius==3_fx,"incorrect impact radius");
+            stages.push_back(3);
+            visit(primary); // primary must not receive splash twice
+            visit(ally);    // filtered by genre-specific faction policy
+            visit(enemyA);
+            visit(enemyB);
+        },
+        [&](Entity e) {return e!=ally;},
+        [&](Entity e) {
+            check(directCommitted,"splash preceded primary impact");
+            stages.push_back(e==enemyA?4:e==enemyB?5:0);
+        });
+    check(stages==std::vector<int>({1,2,3,4,5}),
+          "direct/on-hit/splash dispatch order diverged");
+    // Hitscan/direct-only impacts must never query an area.
+    stages.clear();
+    auto noSplash=impact;
+    noSplash.splashRadius=Fixed{};
+    lg::resolveOrderedProjectileImpact(noSplash,
+        [&](Entity e) {check(e==primary,"wrong direct target");stages.push_back(1);},
+        [&](Entity) {stages.push_back(2);},
+        [&](Vec3,Fixed,auto&&) {stages.push_back(99);},
+        [&](Entity) {return true;},
+        [&](Entity) {stages.push_back(98);});
+    check(stages==std::vector<int>({1,2}),
+          "direct-only projectile incorrectly triggered splash");
+}
 int main() {
+    exerciseOrderedImpacts();
     // Validation failure must leave the component byte-level state alone.
     lg::KinematicProjectileComponent invalid;
     invalid.mode=lg::KinematicMotionMode::Pursuit;
