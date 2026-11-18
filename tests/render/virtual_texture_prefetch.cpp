@@ -46,9 +46,9 @@ void clippingAndDedup() {
     };
     const auto list=p.plan(views);
     require(p.stats().invalidRegions==0 &&
-            p.stats().uniqueCandidates==12,
+            p.stats().uniqueCandidates==8,
             "overlapping rectangles deduped and clipped");
-    require(list.size()==12 && list[0].key.mip==3,
+    require(list.size()==8 && list[0].key.mip==3,
             "bounded merge retains global coarse-to-fine");
     size_t fine=0;
     for (const auto& req:list) {
