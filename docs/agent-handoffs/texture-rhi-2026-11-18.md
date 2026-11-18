@@ -4975,3 +4975,25 @@ No native or driver tests claimed passed.
 Next: Add Vulkan compute resource/pipeline/descriptor/dispatch
 backend, appropriate VkApi loader commands and storage-image
 capability and memory barriers; document fallbacks.
+## Stage 8D — Vulkan compute and storage allocation scaffolding (2026-11-18)
+
+Code commit: 45056f91b0df88315afb79f19c4abf688ede038f.
+Paths: VkApi.h, VkDevice.h, VkResources.cpp, GfxVulkan.cpp.
+Added Vulkan compute entry points (vkCreateComputePipelines,
+vkCmdDispatch), VulkanDevice public compute overrides and
+VCompute resource pool, queue-family compute capability
+selection, and cleanup for owned compute resources.
+Storage texture allocation now conditionally enables
+VK_IMAGE_USAGE_STORAGE_BIT, advertises storage in GPU
+resource inventory, and checks RGBA8/RGBA16F 2D/2DArray/3D
+against VkFormat STORAGE_IMAGE and SAMPLED_IMAGE features.
+Reject unsupported storage usages rather than silent fallback.
+Status: INCOMPLETE until next code stage implements all new
+VulkanDevice compute method bodies in VkCompute.cpp and
+adds that file to aiverse_gfx_vulkan source target. Do not
+compile this intermediate HEAD; missing method definitions
+would cause a linker failure. No change to GL/Metal behavior.
+Verification: GitHub commit/ref update only; no native build
+or GPU test RUN. Next: complete shader/pipeline/descriptors
+dispatch, read/write layout barriers, ownership cleanup;
+then compile and fix native tests.
