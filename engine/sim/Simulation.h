@@ -102,6 +102,14 @@ public:
     template<class T> void registerPersistentResource(std::string id,uint32_t version=1) {
         persistentEcs_.registerResource<T>(std::move(id),version);
     }
+    template<class T,class Fn> void registerPersistentComponentMigration(
+            const std::string& id,uint32_t oldVersion,Fn&& reader) {
+        persistentEcs_.registerComponentMigration<T>(id,oldVersion,std::forward<Fn>(reader));
+    }
+    template<class T,class Fn> void registerPersistentResourceMigration(
+            const std::string& id,uint32_t oldVersion,Fn&& reader) {
+        persistentEcs_.registerResourceMigration<T>(id,oldVersion,std::forward<Fn>(reader));
+    }
     const PersistentEcsRegistry& persistentEcs()const{return persistentEcs_;}
 
     // Queue a command. If cmd.tick == 0 it is scheduled for currentTick + inputDelay.

@@ -180,41 +180,95 @@ std::string Simulation::serialize() {
 }
 
 bool Simulation::deserialize(const std::string& bytes, std::string* err) {
-    auto fail = [&](const std::string& why) { if (err) *err = why; return false; };
+    auto fail=[&](const std::string& why){if(err)*err=why;return false;};
     Archive a(bytes);
-    uint32_t magic = 0, version = 0, rate = 0, tick = 0;
-    uint64_t seed = 0, st = 0, inc = 0;
-    a(magic, version, seed, rate);
-    if (!a.ok() || magic != kSaveMagic) return fail("not a save state");
-    if (version < 4 || version > kSaveVersion) return fail("save state version " + std::to_string(version) + ", this build reads versions 4.." + std::to_string(kSaveVersion));
-    a.formatVersion = version;
-    if(version<10 && !persistentEcs_.empty())return fail("save predates native ECS v10 schema");
-    if (rate != tickRate_) return fail("tick rate differs");
+    uint32_t magic=0,version=0,rate=0,tick=0;
+    uint64_t seed=0,st=0,inc=0;
+    a(magic,version,seed,rate);
+    if(!a.ok() || magic!=kSaveMagic)return fail("not a save state");
+    if(version<4 || version>kSaveVersion)
+        return fail("save state version "+std::to_string(version)+", reads 4.."+std::to_string(kSaveVersion));
+    a.formatVersion=version;
+    if(version<10 && !persistentEcs_.empty())
+        return fail("save predates native ECS v10 schema");
+    if(rate!=tickRate_)return fail("tick rate differs");
     std::vector<PlayerInfo> players;
-    std::map<uint32_t, std::vector<Command>> pending;
+    std::map<uint32_t,std::vector<Command>> pending;
     std::vector<Command> executed;
-    std::map<uint8_t, uint32_t> seq;
-    a(tick, st, inc, players, pending, executed, seq);
+    std::map<uint8_t,uint32_t> seq;
+    a(tick,st,inc,players,pending,executed,seq);
     World::EntityState es;
-    a(es.gens, es.alive, es.free, es.pendingDestroy);
-    if (!a.ok()) return fail("truncated save state");
-    if (players.size() != players_.size()) return fail("player count differs (load into a simulation set up from the same map)");
-    tick_ = tick;
-    rng_.restore(st, inc);
-    players_ = std::move(players);
-    pending_ = std::move(pending);
-    executed_ = std::move(executed);
-    seqByPlayer_ = std::move(seq);
-    world_.restoreEntityState(std::move(es));
-    events_.clear();
-    accumulator_ = 0.0;
-    if (!module_->serializeState(*this, a) || !a.ok()) return fail("corrupt module state");
-    if(version>=10 && !persistentEcs_.serialize(a,world_,err))return false;
-    uint64_t cs = 0;
-    a(cs);
-    if (!a.ok()) return fail("truncated save state");
-    if (checksum() != cs) return fail("state checksum mismatch after loading (different rules or map?)");
-    for(auto& hook:stateRestoredHooks_)hook(*this);
+    a(es.gens,es.alive,es.free,es.pendingDestroy);
+    if(!a.ok())return fail("truncated save state");
+    if(players.size()!=players_.size())
+        return fail("player count differs (load into simulation set up from same map)");
+
+    // Disk load is infrequent; prioritize strong failure recovery over a
+    // minimal allocation count. A bad payload must never leave a partially
+    // updated World, RNG, pending commands or replay history.
+    const World oldWorld=world_;
+    const Random oldRng=rng_;
+    const uint32_t oldTick=tick_;
+    const auto oldPlayers=players_;
+    const auto oldPending=pending_;
+    const auto oldExecuted=executed_;
+    const auto oldSeq=seqByPlayer_;
+    const auto oldEvents=events_;
+    const double oldAccumulator=accumulator_;
+    auto restore=[&](const std::string& why){
+        world_=oldWorld;
+        rng_=oldRng;
+        tick_=oldTick;
+        players_=oldPlayers;
+        pending_=oldPending;
+        executed_=oldExecuted;
+        seqByPlayer_=oldSeq;
+        events_=oldEvents;
+        accumulator_=oldAccumulator;
+        for(auto& hook:stateRestoredHooks_)hook(*this);
+        return fail(why);
+    };
+
+    try {
+        tick_=tick;
+        rng_.restore(st,inc);
+        players_=std::move(players);
+        pending_=std::move(pending);
+        executed_=std::move(executed);
+        seqByPlayer_=std::move(seq);
+        world_.restoreEntityState(std::move(es));
+        events_.clear();
+        accumulator_=0.0;
+        if(!module_->serializeState(*this,a) || !a.ok())
+            return restore("corrupt module state");
+        PersistentEcsRegistry::LoadedHash sourceHash;
+        if(version>=10 && !persistentEcs_.serialize(a,world_,err,&sourceHash))
+            return restore(err && !err->empty()?*err:"invalid native ECS schema");
+        uint64_t savedChecksum=0; a(savedChecksum);
+        if(!a.ok() || a.remaining()!=0)
+            return restore("truncated save state or trailing bytes");
+        if(sourceHash.migrated) {
+            // The original checksum includes the original field stream, not
+            // the upgraded in-memory representation. Never silently disable
+            // verification when a schema migration runs.
+            Hasher original;
+            original.u32(tick_);
+            original.u64(rng_.state());
+            for(const auto& player:players_) {
+                original.u32(player.slot);
+                original.u32(player.team);
+                original.u32(player.alive?1:0);
+            }
+            module_->hashState(*this,original);
+            sourceHash.hash(original);
+            if(original.value()!=savedChecksum)
+                return restore("original checksum mismatch during native ECS migration");
+        } else if(checksum()!=savedChecksum)
+            return restore("state checksum mismatch after loading (different rules or map?)");
+        for(auto& hook:stateRestoredHooks_)hook(*this);
+    } catch(const std::exception& e) {
+        return restore(std::string("failed to deserialize state: ")+e.what());
+    }
     (void)seed;
     return true;
 }

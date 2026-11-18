@@ -1665,3 +1665,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `d2504f112e8455160e715f80cd9fa926f2f9db5b`.
 - `libraries/include/aiverselib/genre/EcsProjectileSystems.h` now defines `BounceMotionConfig` (gravity, bounce velocity divisor, contact-fraction inset, collision box half-extent) and `stepBouncingProjectile`. This is a pure physics-motion policy over explicit position, velocity and a read-only `SpatialWorld` collision provider. It does not own a timer, apply damage, spawn/despawn or change projectile Entity ownership. Its default values intentionally match existing FPS grenade bounce: gravity 10, half-extent 0.1, contact inset 0.01, reflection divided by 2 exactly (fixed-point division, not multiplication by 0.5).
 - Native result **unverified**; next implementation commit replaces only the real FPS ordinary grenade bounce branch with this shared policy, keeping effects/fuses and nonphysical RTS projectiles independent.
+
+### 2026-11-18 — Native ECS migration integrity and failed-load rollback
+- Extended `PersistentEcsRegistry` with optional explicit exact-version old-value readers for both custom components and resources; versioned chunks are validated and staged before commit.
+- Original save checksum is verified from original schema IDs/versions and field bytes even after an upgrade, rather than silently skipping integrity verification on migration. This requires modules not to hash registered native fields independently.
+- `Simulation::deserialize` now backs up Simulation-owned World/tick/RNG/players/commands/events and restores them on invalid payload/checksum or exception; GameModule private caches still require restore hooks.
+- Expanded `ecs_native_persistence_test` with v1->v2 upgrade, re-save, unsupported version, corrupt-load unchanged state and simulated two-peer checksum/rollback parity. Standalone/CTest target already wired.
+- Validation: GitHub source edits prepared, **no native compiler, CTest, real RTS integration, sanitizer or network socket run in this session**. Do not merge until validation.
