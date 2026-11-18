@@ -2,6 +2,7 @@
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
 
+namespace aiverse::terraweave { class TerraWeaveForestScene; }
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
 class WorldScene {
@@ -24,6 +25,9 @@ private:
     std::shared_ptr<render::ModelTextureCache> textures_;
     std::shared_ptr<ModelCache> cache_;                       // "shareModels": one decoded / uploaded model per file
     bool shareModels_=false;
+    // Null unless the manifest explicitly opts in to procedural forests.
+    std::unique_ptr<terraweave::TerraWeaveForestScene> terraForest_;
+    bool terraForestReady_=false;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
