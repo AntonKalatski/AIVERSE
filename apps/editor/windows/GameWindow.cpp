@@ -16,6 +16,7 @@
 #include "engine/i18n/Localization.h"
 #include "engine/platform/EnhancedInputPresets.h"
 #include <filesystem>
+#include <string_view>
 #include "modules/rts/RtsScript.h"
 
 namespace aiverse::editor {
@@ -117,6 +118,7 @@ public:
         if (int ability = gameHud_.takePointAbility(); ability >= 0) {
             scriptPointAbility_ = ability; scriptDragStart_ = ImGui::GetIO().MousePos; region_.cancel();
         }
+        refreshCameraActions(ed); // project bindings must be active before scripts handle clicks
         const bool cardClick = scriptCard(ed, sx + sw, sy + sh);
         if (!cardClick) input(ed);
         if (boxing_) dl->AddRect(boxA_, ImGui::GetIO().MousePos, IM_COL32(120, 255, 120, 220));
@@ -208,6 +210,31 @@ private:
         std::string error;
         if(!platform::enhanced_config::installAsset(cameraActions_,asset,&error))
             ed.ws().log("input","Game camera action install failed: "+error,true);
+    }
+
+    ImGuiMouseButton boundButton(std::string_view action,ImGuiMouseButton fallback) const {
+        const auto* context=cameraActions_.context("RTS.Pointer");
+        if(!context||!cameraActions_.isContextActive("RTS.Pointer"))return fallback;
+        for(const auto& mapping:context->mappings)
+            if(mapping.action==action &&
+               mapping.control.device==InputDevice::MouseButton &&
+               mapping.control.deviceIndex==0 &&
+               mapping.control.code>=0 &&
+               mapping.control.code<int(ImGuiMouseButton_COUNT))
+                return ImGuiMouseButton(mapping.control.code);
+        return ImGuiMouseButton_COUNT; // an intentionally unbound mouse action
+    }
+    bool actionMouseClicked(std::string_view action,ImGuiMouseButton fallback) const {
+        const auto bound=boundButton(action,fallback);
+        return bound!=ImGuiMouseButton_COUNT && ImGui::IsMouseClicked(bound);
+    }
+    bool actionMouseReleased(std::string_view action,ImGuiMouseButton fallback) const {
+        const auto bound=boundButton(action,fallback);
+        return bound!=ImGuiMouseButton_COUNT && ImGui::IsMouseReleased(bound);
+    }
+    bool actionMouseDown(std::string_view action,ImGuiMouseButton fallback) const {
+        const auto bound=boundButton(action,fallback);
+        return bound!=ImGuiMouseButton_COUNT && ImGui::IsMouseDown(bound);
     }
 
     void updateCameraActions(bool focused,float dt) {
@@ -404,7 +431,10 @@ private:
         ImGuiIO& io = ImGui::GetIO();
         RTSCamera& cam = ed.gameCam;
         if (vp_.hovered && io.MouseWheel != 0) cam.distance = std::clamp(cam.distance * std::pow(0.88f, io.MouseWheel), cam.minDistance, cam.maxDistance);
-        if (vp_.hovered && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+        if (vp_.hovered &&
+            boundButton("Select",ImGuiMouseButton_Left)!=ImGuiMouseButton_Middle &&
+            boundButton("Command",ImGuiMouseButton_Right)!=ImGuiMouseButton_Middle &&
+            ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
             float x0, z0, x1, z1;
             if (ed.groundAt(vp_, cam, io.MousePos.x - io.MouseDelta.x, io.MousePos.y - io.MouseDelta.y, x0, z0) && ed.groundAt(vp_, cam, io.MousePos.x, io.MousePos.y, x1, z1))
                 cam.target += float3{x0 - x1, 0, z0 - z1};
@@ -439,9 +469,9 @@ private:
         };
         // a structure chosen on the command card: the next ground click places it (as the client's Place mode)
         if (const int place = gameHud_.placeType(); place >= 0) {
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape)) { gameHud_.clearPlace(); return; }
+            if (actionMouseClicked("Command",ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape)) { gameHud_.clearPlace(); return; }
             float x, z;
-            if (vp_.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ed.groundAt(vp_, cam, io.MousePos.x, io.MousePos.y, x, z)) {
+            if (vp_.hovered && actionMouseClicked("Select",ImGuiMouseButton_Left) && ed.groundAt(vp_, cam, io.MousePos.x, io.MousePos.y, x, z)) {
                 Command c;
                 c.type = game::kCmdBuild;
                 c.param = place;
@@ -458,8 +488,8 @@ private:
             }
             return;
         }
-        if (vp_.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { boxing_ = true; boxA_ = io.MousePos; }
-        if (boxing_ && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (vp_.hovered && actionMouseClicked("Select",ImGuiMouseButton_Left)) { boxing_ = true; boxA_ = io.MousePos; }
+        if (boxing_ && actionMouseReleased("Select",ImGuiMouseButton_Left)) {
             boxing_ = false;
             ImVec2 b = io.MousePos;
             if (!io.KeyShift) ed.gameSelection.clear();
@@ -477,7 +507,7 @@ private:
                 });
             }
         }
-        if (vp_.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !ed.gameSelection.empty()) {
+        if (vp_.hovered && actionMouseClicked("Command",ImGuiMouseButton_Right) && !ed.gameSelection.empty()) {
             float x, z;
             if (ed.groundAt(vp_, cam, io.MousePos.x, io.MousePos.y, x, z)) {
                 Command c;
@@ -511,32 +541,32 @@ private:
         region_.fit(cam,vp_.pointsW,vp_.pointsH,ed.sim()->tick()<regionTick_);regionTick_=ed.sim()->tick();
         auto point=[&]{float x=-1,z=-1;ed.groundAt(vp_,cam,io.MousePos.x,io.MousePos.y,x,z);return float3{x,.2f,z};};
         if(vp_.hovered&&!region_.dragging)region_.cursor=point();
-        if(vp_.hovered&&!gameHud_.blocked()&&(ImGui::IsMouseClicked(ImGuiMouseButton_Right)||ImGui::IsMouseClicked(ImGuiMouseButton_Middle))){regionPanning_=true;regionPanPoint_=io.MousePos;region_.cancel();}
+        if(vp_.hovered&&!gameHud_.blocked()&&(actionMouseClicked("Command",ImGuiMouseButton_Right)||ImGui::IsMouseClicked(ImGuiMouseButton_Middle))){regionPanning_=true;regionPanPoint_=io.MousePos;region_.cancel();}
         if(regionPanning_){
             float3 a,b;
             if(cam.screenToGround(regionPanPoint_.x-vp_.originX,regionPanPoint_.y-vp_.originY,vp_.pointsW,vp_.pointsH,a)&&cam.screenToGround(io.MousePos.x-vp_.originX,io.MousePos.y-vp_.originY,vp_.pointsW,vp_.pointsH,b))cam.target+=a-b;
             regionPanPoint_=io.MousePos;
-            if(!ImGui::IsMouseDown(ImGuiMouseButton_Right)&&!ImGui::IsMouseDown(ImGuiMouseButton_Middle))regionPanning_=false;
+            if(!actionMouseDown("Command",ImGuiMouseButton_Right)&&!ImGui::IsMouseDown(ImGuiMouseButton_Middle))regionPanning_=false;
         }
         bool buttons=gameHud_.blocked();
         if(vp_.hovered&&!buttons&&io.MouseWheel!=0){auto before=point();cam.distance=std::clamp(cam.distance*std::exp(-.14f*io.MouseWheel),cam.minDistance,cam.maxDistance);auto after=point();if(before.x>=0&&after.x>=0)cam.target+=before-after;}
         const bool targetWorld=!gameHud_.pointerOverUi()&&!ed.playPaused&&io.MousePos.x>=vp_.originX&&io.MousePos.y>=vp_.originY&&io.MousePos.x<vp_.originX+vp_.pointsW&&io.MousePos.y<vp_.originY+vp_.pointsH&&ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-        if(entityPointer_ && (ed.playPaused || !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsMouseClicked(ImGuiMouseButton_Right))){entityActions_.cancel();entityPointer_=false;buttons=true;}
+        if(entityPointer_ && (ed.playPaused || !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || ImGui::IsKeyPressed(ImGuiKey_Escape) || actionMouseClicked("Command",ImGuiMouseButton_Right))){entityActions_.cancel();entityPointer_=false;buttons=true;}
         if(entityPointer_){
             buttons=true;
             if(const auto* source=entityActions_.source()){auto p=point();ed.scriptTargeting={source->abilityId,p.x,p.z,true,targetWorld};ed.scriptTargeting.caster=source->entity.packed();}
-            if(ImGui::IsMouseReleased(ImGuiMouseButton_Left)){
+            if(actionMouseReleased("Select",ImGuiMouseButton_Left)){
                 auto cmd=entityActions_.release(point(),targetWorld,std::hypot(io.MousePos.x-entityStart_.x,io.MousePos.y-entityStart_.y)>=6);
                 if(cmd)ed.issueCommand(*cmd);
                 entityPointer_=false;
             }
-        } else if(targetWorld && !buttons && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+        } else if(targetWorld && !buttons && actionMouseClicked("Select",ImGuiMouseButton_Left) &&
             entityActions_.press(cam,vp_.pointsW,vp_.pointsH,io.MousePos.x-vp_.originX,io.MousePos.y-vp_.originY)){
             entityPointer_=true;entityStart_=io.MousePos;region_.cancel();buttons=true;
         }
         if(scriptPointAbility_>=0){
-            if(ImGui::IsMouseClicked(ImGuiMouseButton_Right)||ImGui::IsKeyPressed(ImGuiKey_Escape))scriptPointAbility_=-1;
-            else if(ImGui::IsMouseReleased(ImGuiMouseButton_Left)){
+            if(actionMouseClicked("Command",ImGuiMouseButton_Right)||ImGui::IsKeyPressed(ImGuiKey_Escape))scriptPointAbility_=-1;
+            else if(actionMouseReleased("Select",ImGuiMouseButton_Left)){
                 auto p=point();
                 if(targetWorld&&std::hypot(io.MousePos.x-scriptDragStart_.x,io.MousePos.y-scriptDragStart_.y)>=6){
                 Command c;c.type=game::kCmdPlayerAbility;c.param=scriptPointAbility_;
@@ -550,9 +580,9 @@ private:
             }
         }
         if(ed.humanSlot()>0){
-            if(vp_.hovered&&!buttons&&ImGui::IsMouseClicked(ImGuiMouseButton_Left)){boxA_=io.MousePos;region_.begin(point());}
-            if(region_.dragging&&ImGui::IsMouseDown(ImGuiMouseButton_Left))region_.move(point());
-            if(ImGui::IsMouseReleased(ImGuiMouseButton_Left)){
+            if(vp_.hovered&&!buttons&&actionMouseClicked("Select",ImGuiMouseButton_Left)){boxA_=io.MousePos;region_.begin(point());}
+            if(region_.dragging&&actionMouseDown("Select",ImGuiMouseButton_Left))region_.move(point());
+            if(actionMouseReleased("Select",ImGuiMouseButton_Left)){
                 auto p=point();if(vp_.hovered&&!buttons&&region_.region(p.x,p.z)<0&&std::hypot(io.MousePos.x-boxA_.x,io.MousePos.y-boxA_.y)<6){if(ed.time()-emptyClick_<.3)region_.fit(cam,vp_.pointsW,vp_.pointsH,true);emptyClick_=ed.time();}
                 if(!buttons&&std::hypot(io.MousePos.x-boxA_.x,io.MousePos.y-boxA_.y)<6)region_.cancelFlow(*ed.sim(),*ed.simModule(),p,[&](Command c){ed.issueCommand(c);});
                 if(buttons)region_.cancel();else{region_.cursor=p;region_.release(ed.time(),[&](Command c){ed.issueCommand(c);});}
@@ -625,7 +655,7 @@ private:
         auto start = [&](int i) { if (cs[size_t(i)].pick >= 0) pending_ = i; else send(i, kNullEntity, Vec3{}, false); };
         bool used = false;
         ImGuiIO& io = ImGui::GetIO();
-        if (pending_ >= 0 && size_t(pending_) < cs.size() && vp_.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (pending_ >= 0 && size_t(pending_) < cs.size() && vp_.hovered && actionMouseClicked("Select",ImGuiMouseButton_Left)) {
             float x, z;
             Vec3 pt{};
             const bool have = ed.groundAt(vp_, ed.gameCam, io.MousePos.x, io.MousePos.y, x, z);
@@ -640,9 +670,9 @@ private:
             if (!io.KeyShift) pending_ = -1;
             used = true;
         }
-        if (pending_ >= 0 && (ImGui::IsMouseClicked(ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape))) { pending_ = -1; used = true; }
+        if (pending_ >= 0 && (actionMouseClicked("Command",ImGuiMouseButton_Right) || ImGui::IsKeyPressed(ImGuiKey_Escape))) { pending_ = -1; used = true; }
         // rules "mapClick": a plain left click on the map sends the game's tap command
-        if (const int tap = game::mapClickCommand(cs); !used && pending_ < 0 && tap >= 0 && vp_.hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (const int tap = game::mapClickCommand(cs); !used && pending_ < 0 && tap >= 0 && vp_.hovered && actionMouseClicked("Select",ImGuiMouseButton_Left)) {
             float x, z;
             if (ed.groundAt(vp_, ed.gameCam, io.MousePos.x, io.MousePos.y, x, z)) {
                 if (se->commandCooldown(*sim, me, tap).raw <= 0)
