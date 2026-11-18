@@ -28,6 +28,15 @@ int main() {
     settings.atlasTilePixels=16;
     settings.canopyHeightCm=1000;
 
+    const auto budget=estimateHorizonBudget(settings);
+    assert(budget.atlasBytes<=16u*1024u*1024u);
+    assert(budget.maxTriangles<=settings.terrainResolution*
+           settings.terrainResolution*2+budget.maxForestClusters*4);
+    const auto defaults=estimateHorizonBudget(HorizonSettings{});
+    assert(defaults.atlasBytes<=8u*1024u*1024u);
+    assert(defaults.maxTriangles<10000);
+    assert(defaults.maxForestClusters==832);
+
     const auto bake=bakeHorizon(terrain,climate,settings,0,0);
     assert(bake.atlasWidth==bake.atlasHeight);
     assert(bake.atlasRgba.size()==size_t(bake.atlasWidth)*bake.atlasHeight*4);
