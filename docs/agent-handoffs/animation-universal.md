@@ -2037,3 +2037,54 @@ before calling this stage validated.
 - **Deferred validation:** compile-time signature assertion added to `tests/view/view.cpp`. All builds, CTest, TSAN, macOS/GLES screenshots, off-screen portraits and planet visuals **NOT RUN** per user request. CI success not asserted.
 - **Risks:** lifetime of borrowed mesh/model data must extend through synchronous submit; graphics render-target behavior needs visual validation. Stage 66 visibility helper still needs shader/backend verification, as separately documented.
 - **Next action:** inspect `engine/view/VisibilityField.h/.cpp` and the current `docs/view.md` after both authors' edits, extend the new View skill with visibility setup/ownership contracts, and examine additional generic render resource extraction opportunities. Commit code changes then append the next free handoff stage (**68** unless another agent commits first), never rewrite existing entries.
+
+## Stage 68 — zero-copy View visibility mask interface and updated agent skill (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `54c2993c058d3f280f9351f1a550e80dc3da33d0`.
+- **Files:** `engine/view/VisibilityField.h` and
+  `VisibilityField.cpp`, `tests/view/visibility_alias.cpp`,
+  `skills/gameplay/aiverse-view/SKILL.md`, `docs/view.md`.
+- **API / behavior:** `VisibilityField::update(span<const uint8_t>,
+  int width,int height,double time)` now consumes any
+  contiguous host-owned visibility mask without copying
+  to an intermediate std::vector. An inline overload
+  preserves the existing `update(const vector<uint8_t>&,
+  width,height,time)` source contract and forwards
+  directly to the span implementation. Pixel state,
+  fade/blur logic, texture upload and shader path are
+  unchanged. Explicit `<span>` and `<utility>` includes
+  were added for portable C++20 compilation.
+- **Architecture:** visibility remains an opaque
+  presentation-only data stream. RTS/FPS/RPG/editor
+  hosts decide how each byte is produced; core View
+  blends and renders it with no gameplay or
+  network dependencies. The updated `aiverse-view`
+  AI skill documents lifecycle/init/build/update/draw/
+  shutdown, external layer providers, scene packets
+  and generic height sampling.
+- **Compatibility:** `game::FogOfWar` and
+  `game::FogLook` are still aliases to canonical View
+  types, old vector callers remain valid; no gameplay
+  or renderer GPU buffer format, save/network or
+  serialization changes. Existing compiled binaries
+  requiring old mangled symbols must be rebuilt.
+- **Tests:** `view_visibility_alias` gained a
+  compile-time expression check for the span API.
+  **NOT RUN**, per user's request to complete
+  implementation before CMake/CTest/TSAN/graphics QA.
+- **Risks:** producer bytes must outlive the synchronous
+  update; row stride is still tightly packed
+  width × height. C++20 span requires compatible
+  compiler flags; the existing View target already
+  requests C++20. Graphics correctness and shader
+  helper linkage require later actual builds.
+- **Next agent action:** inspect remaining
+  `RtsTerrainRender.cpp`, `RtsRoadView.cpp`,
+  `RtsPlanetRender.cpp` and shared `engine/view`.
+  Extract reusable geometric/frustum/LOD primitives
+  while keeping game-specific procedural rules and
+  type catalogs in host adapters. Commit code, then
+  Stage 69 separately; tests remain deferred.
+
