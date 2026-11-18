@@ -7,6 +7,7 @@
 #include "VirtualTextureFeedback.h"
 #include "VirtualTexturePrefetchAdapter.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -24,8 +25,13 @@ public:
     VirtualTextureFeedbackRuntime& operator=(VirtualTextureFeedbackRuntime&&)=delete;
 
     bool initialize(Device& device, VirtualTextureFeedbackConfig feedback,
-                    VirtualTexturePrefetchConfig prefetch) {
+                    VirtualTexturePrefetchConfig prefetch,
+                    size_t maxDeferredFrames=8) {
         shutdown();
+        if (maxDeferredFrames<1 || maxDeferredFrames>1024) {
+            error_="virtual feedback deferred frame budget must be 1..1024";
+            return false;
+        }
         if (feedback.tilesX!=prefetch.tilesX ||
             feedback.tilesY!=prefetch.tilesY ||
             feedback.mipLevels!=prefetch.mipLevels ||
@@ -42,6 +48,7 @@ public:
         }
         state_=std::move(state);
         device_=&device;
+        maxDeferredFrames_=maxDeferredFrames;
         error_.clear();
         return true;
     }
@@ -85,11 +92,27 @@ public:
     // after beginFrame has delivered ready async readback callbacks.
     // Then call stream.pump() to transfer staged physical pages.
     VirtualTexturePrefetchDispatch submit(VirtualTextureFileStreamer& stream) {
-        if (!state_ || !state_->ready || !stream.ready()) return {};
-        state_->ready=false;
-        auto visible=std::move(state_->views);
-        state_->views.clear();
-        const auto dispatch=prefetchVisibleVirtualPages(stream,planner_,visible);
+        if (!state_ || !stream.ready()) return {};
+        if (state_->ready) {
+            // A new feedback capture replaces the previous camera view's
+            // leftover work. Never keep accumulating stale visibility.
+            deferredViews_=std::move(state_->views);
+            state_->views.clear();
+            state_->ready=false;
+            remainingDeferredFrames_=maxDeferredFrames_;
+        }
+        if (deferredViews_.empty() || !remainingDeferredFrames_) return {};
+        --remainingDeferredFrames_;
+        const auto dispatch=prefetchVisibleVirtualPages(
+            stream,planner_,deferredViews_);
+        // A pending/in-flight page is filtered by the adapter, so zero
+        // unresolved candidates means there is nothing more to submit.
+        // Otherwise retry at most maxDeferredFrames, avoiding an infinite
+        // queue if the GPU/FS is persistently backpressured.
+        const bool complete=dispatch.planning.deferredByBudget==0 &&
+            !dispatch.planning.candidateLimitReached &&
+            dispatch.refusedRequests==0;
+        if (complete || !remainingDeferredFrames_) deferredViews_.clear();
         return dispatch;
     }
 
@@ -113,6 +136,9 @@ public:
         state_.reset();
         device_=nullptr;
         planner_.reset();
+        deferredViews_.clear();
+        remainingDeferredFrames_=0;
+        maxDeferredFrames_=0;
         error_.clear();
     }
 private:
@@ -125,6 +151,9 @@ private:
     };
     Device* device_=nullptr; // must outlive this helper
     VirtualTexturePrefetchPlanner planner_;
+    std::vector<VirtualTextureVisibleRegion> deferredViews_;
+    size_t maxDeferredFrames_=0;
+    size_t remainingDeferredFrames_=0;
     std::shared_ptr<State> state_;
     std::string error_;
 };
