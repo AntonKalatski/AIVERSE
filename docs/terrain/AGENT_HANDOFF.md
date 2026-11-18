@@ -1603,3 +1603,74 @@ cache for static-world Horizon regions to avoid CPU rasterization
 across restarts, with version/fingerprint and strict size bounds;
 full per-frame crossfade would need shared Renderer3D shader
 semantics and actual visual validation.
+
+## Stage 9e — static Horizon archive format and game-pack read path (CODE COMMITTED; TESTING DELEGATED)
+
+**Branch:** `feature/terraweave`, draft PR #24.
+
+**Commits/files:**
+- `05d3c91caf799ebc7e2ab74505bb26743b8f96a5`:
+  new `engine/world/TerraWeaveHorizonArchive.h`,
+  pure little-endian versioned TWH1 archive encoder/decoder,
+  bounded data size, FNV integrity and deterministic settings
+  fingerprint with optional authored content hash.
+- `936a55fea569ff6e38d2bcc4420523c3163e3ede`:
+  atlas-frame bounds hardening in archive parser.
+- `b1bf905092dcc15b4ae3e4689bd815151d7479bc`:
+  `engine/render/TerraWeaveHorizonScene.h` adds
+  optional `HorizonArchiveStore` callbacks, source fingerprint
+  admission, cache-first → archive-read → CPU-bake flow,
+  best-effort fallback on corrupted/missing assets and
+  `HorizonRuntimeStats::archiveHits`.
+- `73d338f50913d4b03ea1a3c1785732462d1fa067`:
+  `engine/world/TerraWeaveHorizonManifest.h` accepts opt-in
+  `archivePrefix` and optional `archiveContentHash`,
+  builds a read-only `AssetReader` callback for files
+  `<archivePrefix>/<cellX>_<cellZ>.twh`.
+- `e338715df9be50641905f458986a0ffb568e9758`:
+  `engine/world/WorldScene.cpp` passes its content reader
+  to the Horizon manifest adapter.
+- API/manifest/limitations detailed in
+  `docs/terrain/TERRAWEAVE.md` § Prebaked Horizon archive assets.
+
+**Functional behavior:** Native project build pipelines can
+encode stable region atlases at asset-build time and ship them
+for runtime reuse. The old codepath is entirely unchanged
+unless archivePrefix or setArchiveStore is opted in.
+Archive reads are performed on the existing background worker,
+using a trusted game-supplied reader rather than direct filesystem
+operations. A valid cache skips expensive biome/crown sampling;
+the ordinary render::Model conversion/upload still occurs.
+Any invalid archive simply falls back to baking; missing data
+must never crash a scene. Authored external sources require a
+nonzero stable authored-content fingerprint for disk cache use.
+
+**Actual verification:** GitHub source writes and static code
+inspection. **No compilation, CTest, CI run, GPU capture,
+native app invocation, archive round-trip or performance run**:
+the user explicitly assigned tests to another agent. The
+implementation is unverified. Do not merge the Draft PR.
+
+**Tester agent exact work:**
+1. Configure and compile `aiverse_world`,
+   `aiverse_terraweave_horizon_test` and the editor for
+   AppleClang/GCC/Clang; expand tests for round-trip, magic,
+   wrong content hash, FNV checksum, out-of-bounds fields,
+   truncated arrays and two-view atlases.
+2. Confirm archivePrefix path safety and packed asset
+   load, missing/invalid asset regeneration, async worker
+   shutdown when read callback is slow, no stale archive
+   after source generation changes, and GPU upload rollback.
+3. Compare actual tree and terrain geometry of
+   `encode→decode` vs regenerated Horizon, including
+   negative region coordinates, 16 MiB atlas budget and
+   mobile preset.
+4. Record test logs and actual GPU/CPU benchmark
+   metrics and update this handoff; testing owner may fix
+   implementation defects found.
+
+**Next function-focused agent:** engine-native offline asset
+bake command/pack integration and optional per-region patch
+invalidations instead of invalidating a whole 12km atlas when
+only one authored terrain tile changes. Preserve
+genre independence and the per-stage handoff rule.
