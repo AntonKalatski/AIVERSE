@@ -2739,3 +2739,45 @@ checkout unavailable in this session). No passing CI asserted.
 CPU tests for eviction, pinned roots, generation rejection, pending
 upload non-eviction, correct coarser same-layer lookup and page
 allocation bounds; each stage requires its own code/handoff commits.
+
+## Stage 7H — virtual-texture LRU and pending-write safety tests (2026-11-18)
+
+**Code commit:** `2b0c207234e75b3213db26e7b1503aba96f1f596`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/VirtualTexturePages.h`,
+new `tests/render/virtual_texture_pages.cpp`, `CMakeLists.txt`.
+
+**Fix:** Repeated `reserve` on an already-pending virtual page
+now returns `needsUpload=false` (and not-ready), preventing the
+caller from queuing a second GPU write to the same physical
+array slice. New allocations still return `needsUpload=true`.
+Resident lookups return `ready=true`.
+
+**Test source:** Register GPU-independent `virtual_texture_pages`
+CTest. Synthetic tests cover valid physical `Texture2DArray`
+atlas descriptors, pinned coarse root residency, in-flight
+non-eviction, no duplicate pending upload, root fallback only
+within the same virtual array layer, LRU replacement of ready
+unpinned detail pages, stale generation rejection after eviction/
+abandon/reinit, failure releasing physical slots, touch ordering,
+mip geometry bounds and explicit invalid requests.
+No GPU or shader-based VT test exists at this stage.
+
+**Compatibility:** Opt-in CPU-only virtual page cache; unchanged
+`gfx::Device`, gameplay/ECS/save and existing rendering.
+This is a physical slice management foundation, **NOT**
+a full virtual texture shader page-table/feedback pipeline.
+
+**Verification:** GitHub source commit/branch update succeeded.
+C++ compiler and CTest `virtual_texture_pages`: **NOT RUN**;
+real Metal/GL/Vulkan GPU validation: **NOT RUN**.
+Latest CI status has not been confirmed passing.
+
+**Next:** Run
+`cmake --build build/texture-rhi --target aiverse_virtual_texture_pages_test`
+and `ctest --test-dir build/texture-rhi --output-on-failure
+-R '^virtual_texture_pages$'`.
+Then integrate a texture array atlas + page-table lookup in a
+native sample, stage uploads through TextureStreamQueue and
+release a slot only after cancellation or GPU completion.
+Continue separate code and handoff commits per stage.
