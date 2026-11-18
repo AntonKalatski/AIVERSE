@@ -120,10 +120,13 @@ publishes uploaded pages only after successful transfer. The
 physical pages. This is not a sparse image API, feedback pass or
 background disk worker; these remain separate work.
 
-**VRAM caveat:** Ordinary streaming allocates the full texture mip chain
-up front; it budgets and defers *uploads* rather than physically releasing
-unresident mip memory. Real sparse/virtual textures with GPU page tables,
-feedback and physical-page eviction are **not implemented**.
+**VRAM and virtual texture caveat:** Ordinary TextureResidentStreamer
+allocates the full mip chain up front and budgets *uploads* rather than
+physically uncommitting mip memory. The separate VirtualTextureStreamer
+now contains a fixed physical Texture2DArray atlas, an LRU physical-page
+cache, a GPU-uploadable page table and reusable GLSL/MSL lookup helpers.
+Hardware sparse textures, automatic GPU feedback, a disk I/O worker and
+production GPU sampling validation are **not implemented/verified**.
 
 **Testing caveat:** Headers and test fixtures have been committed, but
 native compilation, CTest, API validation and GPU sampling remain
@@ -143,10 +146,10 @@ native compilation, CTest, API validation and GPU sampling remain
   multisample attachments; default 1x pipelines cannot draw into MSAA targets.
 - New GPU texture handles are presentation state only, not ECS-authoritative.
   No changes to serialization, game saves or replication.
-- **Known missing pieces:** mixed-format MRT and independent blend policies,
-  GL/Vulkan MSAA creation/resolve, virtual/streamed textures, integer/packed
-  formats, typed color targets, Basis transcoding, exotic DDS variants,
-  HDR/EXR and real-device validation.
+- **Known missing pieces:** automatic GPU feedback/disk paging, sparse
+  hardware residency, fully verified virtual texture shaders, integer/packed
+  formats, typed color targets, Basis transcoding, compressed/tiled/multipart
+  EXR, exotic DDS variants and real-device validation of MRT/MSAA/readback.
 - The old `TextureCache` and `render::RenderTexture` still use 2D-only paths.
 
 ## Example: selected array layer and mip
@@ -266,6 +269,21 @@ historical DDS pixel format. DDS layout is reordered from per-surface
 mip chains into complete mip levels for the RHI. No GPU tests have been
 run on this branch.
 
+## Live GPU texture inspector — source-only
+
+`Device::textureResources()` now enumerates user-created live textures from
+Metal, GL and Vulkan backend pools. The returned `TextureResourceInfo`
+contains dimension, format, extent, mip/layer/sample counts, resource flags
+and an approximate `estimateTextureFootprint` size. It is an estimate,
+**not a driver VRAM allocation/residency query**; swapchain and internal
+dummy resources are excluded.
+
+In the editor, open **Графика → GPU Текстуры**. The window is closed by
+default; it supports filtering, sorting and a basic 2D single-sample
+thumbnail (not array/cubemap/depth/MSAA preview). Neither the editor
+window nor the backend enumeration has been compiled or tested on a native
+target in this environment.
+
 ## Native build and targeted tests (pending execution)
 
 ```sh
@@ -278,48 +296,29 @@ cmake --build build/texture-rhi --target \
   aiverse_texture_asset_test aiverse_texture_streaming_test \
   aiverse_texture_mip_residency_test aiverse_texture_resident_streamer_test \
   aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test \
-  aiverse_virtual_texture_streamer_test aiverse_hdr_texture_test \
-  aiverse_exr_texture_test
+  aiverse_virtual_texture_streamer_test \
+  aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|hdr_texture|exr_texture)
+  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|hdr_texture|exr_texture)$'
 ```
 
-On Vulkan-enabled Linux/Windows hosts, also build
-`aiverse_vulkan_tests` and run `ctest -R '^vulkan_backend$'` with
-a working Vulkan driver (Mesa Lavapipe is acceptable). Distinguish
-real GPU execution from a driver's-unavailable skip. macOS Metal,
-Windows GL33, Android GLES3 and WebGL2 require separate builds
-and actual visual/capture tests. **None of these results is claimed
-as passed here.**
+Build `aiverse_editor` and a native client to detect editor/renderer
+ABI regressions. Build and run `aiverse_vulkan_tests`/`vulkan_backend`
+with Vulkan SDK and a working GPU or Lavapipe; distinguish a real GPU
+run from driver-unavailable skips. Metal, GL33, Android GLES3 and WebGL2
+need separate native builds and visual/readback validation.
+**No tests are claimed as passed for this feature branch.**
 
 ## References and handoff
 
-- `engine/gfx/Gfx.h` — public resource contract and descriptor validation
-- `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/metal/GfxMetal.mm`,
-  `engine/gfx/vulkan/VkResources.cpp` — fail-closed allocation until backend support
-- `tests/render/texture_contract.cpp` — CPU-only descriptor checks
-- The append-only stage log is `docs/agent-handoffs/texture-rhi-2026-11-18.md`.
+- `engine/gfx/Gfx.h` — public resources, descriptors and inspection
+- `engine/gfx/RenderTargetSet.h` — MRT/MSAA render-target owner
+- `engine/gfx/TextureResidentStreamer.h` — bounded complete-mip streaming
+- `engine/gfx/VirtualTextureStreamer.h` — bounded physical atlas streaming
+- `engine/gfx/VirtualTextureSampling.h` — GLSL/MSL virtual page lookup
+- `engine/render/TextureAsset.h` — DDS/KTX2 GPU uploads
+- `apps/editor/windows/TextureResourcesWindow.cpp` — live GPU inspector
+- `docs/agent-handoffs/texture-rhi-2026-11-18.md` — append-only handoff log
 
-Keep code stage commits separate from handoff commits, record exact SHA and test statuses
-in the handoff **after every stage**, and preserve upstream inspector/ECS changes.
-
-```
-
-On Vulkan-enabled Linux/Windows hosts, also build
-`aiverse_vulkan_tests` and run `ctest -R '^vulkan_backend$'` with
-a working Vulkan driver (Mesa Lavapipe is acceptable). Distinguish
-real GPU execution from a driver's-unavailable skip. macOS Metal,
-Windows GL33, Android GLES3 and WebGL2 require separate builds
-and actual visual/capture tests. **None of these results is claimed
-as passed here.**
-
-## References and handoff
-
-- `engine/gfx/Gfx.h` — public resource contract and descriptor validation
-- `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/metal/GfxMetal.mm`,
-  `engine/gfx/vulkan/VkResources.cpp` — fail-closed allocation until backend support
-- `tests/render/texture_contract.cpp` — CPU-only descriptor checks
-- The append-only stage log is `docs/agent-handoffs/texture-rhi-2026-11-18.md`.
-
-Keep code stage commits separate from handoff commits, record exact SHA and test statuses
-in the handoff **after every stage**, and preserve upstream inspector/ECS changes.
+Every implementation stage requires a code commit and a **separate**
+handoff commit with exact SHAs, actual test results and next steps.
