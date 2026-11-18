@@ -49,7 +49,13 @@ struct MTBuffer {
     std::vector<size_t> indirectSnapshotValid[kFramesInFlight];
     size_t indirectCursor = 0;
 };
-struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
+struct MTTexture {
+    id<MTLTexture> tex;
+    id<MTLSamplerState> sampler;
+    PixelFormat fmt = PixelFormat::RGBA8;
+    TextureDimension dimension = TextureDimension::Texture2D;
+    bool mips = false;
+};
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
 struct MTShaderCompilation { MTShader value; std::string error; std::atomic<bool> done{false}; };
 struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
@@ -98,6 +104,20 @@ public:
             default: return true;
         }
     }
+    bool supportsTextureDimension(TextureDimension) const override { return true; }
+
+    static MTLTextureType textureType(TextureDimension d) {
+        switch (d) {
+        case TextureDimension::Texture1D: return MTLTextureType1D;
+        case TextureDimension::Texture2D: return MTLTextureType2D;
+        case TextureDimension::Texture3D: return MTLTextureType3D;
+        case TextureDimension::Texture2DArray: return MTLTextureType2DArray;
+        case TextureDimension::Cube: return MTLTextureTypeCube;
+        case TextureDimension::CubeArray: return MTLTextureTypeCubeArray;
+        }
+        return MTLTextureType2D;
+    }
+
     static MTLPixelFormat compressedFormat(PixelFormat f) {
         switch (f) {
             case PixelFormat::ETC2_RGB8: return MTLPixelFormatETC2_RGB8;
@@ -305,73 +325,166 @@ public:
         if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
             error_ = textureDescErrorString(e); return {};
         }
-        if (d.dimension != TextureDimension::Texture2D || d.depth != 1 || d.arrayLayers != 1 ||
-            d.sampleCount != 1 || d.mipLevels > 1) {
-            error_ = "texture dimension, array, multisampling or explicit mips not yet supported by this backend";
+        // Stage 2A: sampleable dimensions with explicit per-face/slice writes. MSAA and
+        // attachment slices require the later view/render-pass stage.
+        if (d.sampleCount != 1 || (d.renderTarget && d.dimension != TextureDimension::Texture2D)) {
+            error_ = "Metal: multisample and array/volume render targets require texture views";
             return {};
         }
-        if (MTLPixelFormat cf = compressedFormat(d.format); cf != MTLPixelFormatInvalid) {
-            MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:cf
-                width:NSUInteger(d.width) height:NSUInteger(d.height) mipmapped:d.levelCount > 1 ? YES : NO];
-            td.mipmapLevelCount = NSUInteger(std::max(1, d.levelCount));
-            td.usage = MTLTextureUsageShaderRead;
-            MTTexture t;
-            t.fmt = d.format;
-            t.tex = [device_ newTextureWithDescriptor:td];
-            if (!t.tex) { error_ = "compressed texture not supported by this GPU"; return {}; }
-            const bool bc = d.format == PixelFormat::BC1 || d.format == PixelFormat::BC3 || d.format == PixelFormat::BC7;
-            const NSUInteger blockBytes = d.format == PixelFormat::ETC2_RGB8 || d.format == PixelFormat::BC1 ? 8 : 16;
-            const NSUInteger blockDim = d.format == PixelFormat::ASTC_6x6 ? 6 : 4;
-            for (int l = 0; l < d.levelCount; ++l) {
-                const NSUInteger w = NSUInteger(std::max(1, d.width >> l)), h = NSUInteger(std::max(1, d.height >> l));
-                [t.tex replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:NSUInteger(l)
-                           withBytes:d.levelData[l] bytesPerRow:((w + blockDim - 1) / blockDim) * blockBytes];
-            }
-            (void)bc;
-            MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
-            sd.minFilter = sd.magFilter = d.filter == Filter::Linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
-            if (d.levelCount > 1) sd.mipFilter = MTLSamplerMipFilterLinear;
-            sd.sAddressMode = sd.tAddressMode = d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
-            t.sampler = [device_ newSamplerStateWithDescriptor:sd];
-            return {textures_.add(t)};
+        const MTLPixelFormat cf = compressedFormat(d.format);
+        const bool compressed = cf != MTLPixelFormatInvalid;
+        if (compressed && (d.dimension == TextureDimension::Texture1D ||
+                           d.dimension == TextureDimension::Texture3D || d.storage ||
+                           d.renderTarget || d.levelCount < 1 || !d.levelData || !d.levelSize)) {
+            error_ = "Metal: compressed texture requires 2D/array/cube mip payloads";
+            return {};
         }
-        MTLPixelFormat pf = d.format == PixelFormat::R8 ? MTLPixelFormatR8Unorm
-                          : d.format == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
-                          : d.format == PixelFormat::RGBA32F ? MTLPixelFormatRGBA32Float
-                          : d.format == PixelFormat::Depth ? MTLPixelFormatDepth32Float
-                          : d.format == PixelFormat::RGBA8_sRGB ? (d.renderTarget ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatRGBA8Unorm_sRGB)
-                          : d.renderTarget ? MTLPixelFormatBGRA8Unorm   // same format as the screen: pipelines are shared
-                          : MTLPixelFormatRGBA8Unorm;
-        const bool mips = d.mipmaps && d.format != PixelFormat::Depth && d.format != PixelFormat::RGBA32F && !d.renderTarget;
-        MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pf
-            width:NSUInteger(d.width) height:NSUInteger(d.height) mipmapped:mips ? YES : NO];
-        td.usage = MTLTextureUsageShaderRead | (d.storage ? MTLTextureUsageShaderWrite : 0) | (d.renderTarget || d.format == PixelFormat::Depth ? MTLTextureUsageRenderTarget : 0);
+        if (compressed && !supports(d.format)) { error_ = "Metal: compressed format unavailable"; return {}; }
+
+        const MTLPixelFormat pf = compressed ? cf
+            : d.format == PixelFormat::R8 ? MTLPixelFormatR8Unorm
+            : d.format == PixelFormat::RGBA16F ? MTLPixelFormatRGBA16Float
+            : d.format == PixelFormat::RGBA32F ? MTLPixelFormatRGBA32Float
+            : d.format == PixelFormat::Depth ? MTLPixelFormatDepth32Float
+            : d.format == PixelFormat::RGBA8_sRGB
+                ? (d.renderTarget ? MTLPixelFormatBGRA8Unorm_sRGB : MTLPixelFormatRGBA8Unorm_sRGB)
+            : d.renderTarget ? MTLPixelFormatBGRA8Unorm
+            : MTLPixelFormatRGBA8Unorm;
+        const bool generate = d.mipmaps && !compressed && d.format != PixelFormat::Depth &&
+                              d.format != PixelFormat::RGBA32F && !d.renderTarget;
+        const int levels = compressed ? d.levelCount
+            : d.mipLevels > 0 ? d.mipLevels
+            : generate ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
+        MTLTextureDescriptor* td = [MTLTextureDescriptor new];
+        td.textureType = textureType(d.dimension);
+        td.pixelFormat = pf;
+        td.width = NSUInteger(d.width);
+        td.height = NSUInteger(d.height);
+        td.depth = NSUInteger(d.dimension == TextureDimension::Texture3D ? d.depth : 1);
+        td.arrayLength = NSUInteger(d.dimension == TextureDimension::Texture2DArray ? d.arrayLayers :
+                                    d.dimension == TextureDimension::CubeArray ? d.arrayLayers / 6 : 1);
+        td.mipmapLevelCount = NSUInteger(levels);
+        td.usage = MTLTextureUsageShaderRead | (d.storage ? MTLTextureUsageShaderWrite : 0) |
+                   (d.renderTarget || d.format == PixelFormat::Depth ? MTLTextureUsageRenderTarget : 0);
         if (d.format == PixelFormat::Depth) td.storageMode = MTLStorageModePrivate;
         MTTexture t;
-        t.fmt = d.format;
+        t.fmt = d.format; t.dimension = d.dimension;
         t.tex = [device_ newTextureWithDescriptor:td];
-        if(!t.tex){error_="texture allocation failed";return {};}
-        if (d.data && d.format != PixelFormat::Depth) {
-            int bpp = d.format == PixelFormat::R8 ? 1 : d.format == PixelFormat::RGBA32F ? 16 : d.format == PixelFormat::RGBA16F ? 8 : 4;
-            [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height)) mipmapLevel:0
-                       withBytes:d.data bytesPerRow:NSUInteger(d.width * bpp)];
-            if (mips) generateMips(t.tex);
+        if (!t.tex) { error_ = "Metal: requested texture type, dimensions or pixel format unavailable"; return {}; }
+
+        const int faces = d.arrayLayers;
+        if (compressed) {
+            const NSUInteger blockDim = d.format == PixelFormat::ASTC_6x6 ? 6 : 4;
+            const NSUInteger blockBytes = d.format == PixelFormat::ETC2_RGB8 || d.format == PixelFormat::BC1 ? 8 : 16;
+            for (int l = 0; l < d.levelCount; ++l) {
+                const NSUInteger w = NSUInteger(std::max(1, d.width >> l));
+                const NSUInteger h = NSUInteger(std::max(1, d.height >> l));
+                const NSUInteger bytesPerRow = ((w + blockDim - 1) / blockDim) * blockBytes;
+                const NSUInteger bytesPerImage = bytesPerRow * ((h + blockDim - 1) / blockDim);
+                if (d.levelSize[l] < size_t(bytesPerImage) * size_t(faces) || !d.levelData[l]) {
+                    error_ = "Metal: compressed mip payload does not cover all faces";
+                    return {};
+                }
+                const auto* pixels = static_cast<const uint8_t*>(d.levelData[l]);
+                if (d.dimension == TextureDimension::Texture2D) {
+                    [t.tex replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:NSUInteger(l)
+                               withBytes:pixels bytesPerRow:bytesPerRow];
+                } else {
+                    for (int face = 0; face < faces; ++face)
+                        [t.tex replaceRegion:MTLRegionMake2D(0, 0, w, h)
+                                 mipmapLevel:NSUInteger(l) slice:NSUInteger(face)
+                                   withBytes:pixels + size_t(face) * size_t(bytesPerImage)
+                                bytesPerRow:bytesPerRow bytesPerImage:bytesPerImage];
+                }
+            }
+        } else if (d.data && d.format != PixelFormat::Depth) {
+            const int bpp = d.format == PixelFormat::R8 ? 1 : d.format == PixelFormat::RGBA32F ? 16 :
+                            d.format == PixelFormat::RGBA16F ? 8 : 4;
+            const NSUInteger row = NSUInteger(d.width) * NSUInteger(bpp);
+            const NSUInteger sliceBytes = row * NSUInteger(d.height);
+            const auto* pixels = static_cast<const uint8_t*>(d.data);
+            if (d.dimension == TextureDimension::Texture1D) {
+                [t.tex replaceRegion:MTLRegionMake1D(0, NSUInteger(d.width)) mipmapLevel:0
+                           withBytes:pixels bytesPerRow:row];
+            } else if (d.dimension == TextureDimension::Texture3D) {
+                [t.tex replaceRegion:MTLRegionMake3D(0, 0, 0, NSUInteger(d.width), NSUInteger(d.height), NSUInteger(d.depth))
+                          mipmapLevel:0 withBytes:pixels bytesPerRow:row bytesPerImage:sliceBytes];
+            } else if (d.dimension == TextureDimension::Texture2D) {
+                [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height))
+                          mipmapLevel:0 withBytes:pixels bytesPerRow:row];
+            } else {
+                for (int face = 0; face < faces; ++face)
+                    [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height))
+                             mipmapLevel:0 slice:NSUInteger(face)
+                               withBytes:pixels + size_t(face) * size_t(sliceBytes)
+                            bytesPerRow:row bytesPerImage:sliceBytes];
+            }
+            if (generate && levels > 1) generateMips(t.tex);
         }
-        t.mips = mips;
+        t.mips = generate && levels > 1;
         MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
-        sd.minFilter = sd.magFilter = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
-        if (mips) sd.mipFilter = d.filter == Filter::Linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
-        sd.sAddressMode = sd.tAddressMode = d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
+        const bool linear = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F;
+        sd.minFilter = sd.magFilter = linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+        if (levels > 1) sd.mipFilter = linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
+        sd.sAddressMode = sd.tAddressMode = sd.rAddressMode =
+            d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
         if (d.compare) sd.compareFunction = MTLCompareFunctionLessEqual;
         t.sampler = [device_ newSamplerStateWithDescriptor:sd];
+        if (!t.sampler) { error_ = "Metal: sampler allocation failed"; return {}; }
         return {textures_.add(t)};
     }
+
     void updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) override {
         auto* t = textures_.get(h.id);
-        if (!t) return;
+        if (!t || t->dimension != TextureDimension::Texture2D || t->fmt == PixelFormat::Depth) return;
         [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(x), NSUInteger(y), NSUInteger(w), NSUInteger(hh)) mipmapLevel:0
                     withBytes:pixels bytesPerRow:NSUInteger(rowPitch)];
         if (t->mips) generateMips(t->tex);
+    }
+
+    bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override {
+        auto* t = textures_.get(h.id);
+        if (!t || !u.data || u.width < 1 || u.height < 1 || u.depth < 1 ||
+            u.x < 0 || u.y < 0 || u.z < 0 || u.mipLevel < 0 || u.arrayLayer < 0 ||
+            t->fmt == PixelFormat::Depth || compressedFormat(t->fmt) != MTLPixelFormatInvalid)
+            return false;
+        const int mw = std::max(1, int(t->tex.width) >> u.mipLevel);
+        const int mh = std::max(1, int(t->tex.height) >> u.mipLevel);
+        const int md = t->dimension == TextureDimension::Texture3D ?
+                       std::max(1, int(t->tex.depth) >> u.mipLevel) : 1;
+        const int slices = t->dimension == TextureDimension::Texture2DArray ? int(t->tex.arrayLength) :
+                           t->dimension == TextureDimension::CubeArray ? int(t->tex.arrayLength) * 6 :
+                           t->dimension == TextureDimension::Cube ? 6 : 1;
+        if (u.mipLevel >= int(t->tex.mipmapLevelCount) ||
+            u.x > mw - u.width || u.y > mh - u.height || u.z > md - u.depth ||
+            u.arrayLayer >= slices ||
+            (t->dimension != TextureDimension::Texture3D && (u.depth != 1 || u.z != 0)) ||
+            (t->dimension == TextureDimension::Texture1D && (u.y != 0 || u.height != 1)))
+            return false;
+        const int bpp = t->fmt == PixelFormat::R8 ? 1 : t->fmt == PixelFormat::RGBA32F ? 16 :
+                        t->fmt == PixelFormat::RGBA16F ? 8 : 4;
+        if (u.rowPitchBytes < u.width * bpp ||
+            (u.depth > 1 && u.slicePitchBytes < u.rowPitchBytes * u.height)) return false;
+        if (t->dimension == TextureDimension::Texture1D) {
+            [t->tex replaceRegion:MTLRegionMake1D(NSUInteger(u.x), NSUInteger(u.width))
+                       mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
+                       bytesPerRow:NSUInteger(u.rowPitchBytes)];
+        } else if (t->dimension == TextureDimension::Texture3D) {
+            [t->tex replaceRegion:MTLRegionMake3D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.z),
+                    NSUInteger(u.width), NSUInteger(u.height), NSUInteger(u.depth))
+                       mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
+                       bytesPerRow:NSUInteger(u.rowPitchBytes) bytesPerImage:NSUInteger(u.slicePitchBytes)];
+        } else if (t->dimension == TextureDimension::Texture2D) {
+            [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
+                       mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data bytesPerRow:NSUInteger(u.rowPitchBytes)];
+        } else {
+            [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
+                       mipmapLevel:NSUInteger(u.mipLevel) slice:NSUInteger(u.arrayLayer)
+                         withBytes:u.data bytesPerRow:NSUInteger(u.rowPitchBytes)
+                      bytesPerImage:NSUInteger(u.slicePitchBytes ? u.slicePitchBytes : u.rowPitchBytes * u.height)];
+        }
+        if (t->mips && u.mipLevel == 0) generateMips(t->tex);
+        return true;
     }
     // Own command buffer: textures are usually created while loading, outside of a frame.
     void generateMips(id<MTLTexture> tex) {
