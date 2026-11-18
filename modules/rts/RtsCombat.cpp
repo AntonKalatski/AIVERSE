@@ -2,6 +2,7 @@
 // abilities (autocast, auras, buffs, stuns, summons, blink), hero experience, death (bounty, score,
 // wrecks, depleted extractors).
 #include "RtsInternal.h"
+#include "../../libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h"
 #include <algorithm>
 #include <map>
 
@@ -303,11 +304,11 @@ void RtsModule::sysProjectiles(Simulation& sim) {
                 return;
             }
             Vec3 aim = lift(sim, pr.aim, Fixed::fromRatio(4, 10));
-            if (moveTowards(tr.pos, aim, step)) impacts.push_back(p);
+            if (lib::genre::advanceKinematicPursuit(tr.pos, aim, step)) impacts.push_back(p);
             return;
         }
         if (w.alive(pr.target) && w.has<Unit>(pr.target)) { pr.aim = lift(sim, w.get<Transform>(pr.target).pos, Fixed::fromRatio(4, 10)); }
-        if (!moveTowards(tr.pos, pr.aim, pr.speed * dt)) return;
+        if (!lib::genre::advanceKinematicPursuit(tr.pos, pr.aim, pr.speed * dt)) return;
         const WeaponDef* pwd = projectileWeapon(pr);
         if (w.alive(pr.target) && w.has<Unit>(pr.target)) dealDamage(sim, pr.target, pr.damage, pr.damageType, pr.source, pr.owner, pwd);
         if (pr.onHit >= 0 && w.alive(pr.target)) onHits.push_back({pr.onHit, pr.source, pr.target, pr.owner, pr.sourceType, pr.aim});
