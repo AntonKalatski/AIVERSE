@@ -173,6 +173,42 @@ graphs retain their full CPU effects. To verify locally, run
 real Apple Silicon compute/render/readback smoke with staggered
 births and expirations. Continue the mandatory handoff log.
 
+## Opt-in GPU atomic compact and indirect draw (Stage 14)
+
+`spectra::ComputeEmitterDesc::gpuIndirect` and
+`spectra::GraphRuntimeOptions::gpuIndirect` default to **false**.
+When explicitly enabled and the Metal device supports
+`supportsGpuAuthoredIndirectDraw()`, SpectraFX runs the
+GPU-resident alive counter / dense vertex compaction / indexed
+argument generation. GPU compute modes are 3 reset, 0 spawn,
+1 integrate, 4 compact and 5 author indirect arguments.
+Storage buffers 5 and 6 carry the atomic count and 20-byte
+`gfx::DrawIndexedIndirectCommand`. A separate dispatch
+barrier is required between modes. Rendering calls
+`drawIndexedGpuIndirect`, not the experimental ICB path.
+
+On unsupported devices the GPU emitter retains the earlier
+CPU-published live-index gather (or the full CPU particle
+backend when compute is unavailable). Never silently enable
+GPU indirect on all platforms. The simple additive sprite
+eligibility gate remains mandatory. No GPU-resident slot
+allocator, alpha sorting, trails, custom shader graphs or
+production FPS/RTS migration is implemented.
+
+`gpuIndirectActive()` tells whether the feature was selected;
+`stats().gpuIndirectDraws` reports submitted RHI commands.
+`stats().alive` and `stats().submittedSlots` are CPU
+estimates in GPU-indirect mode, NOT actual GPU counter readbacks.
+A failed indirect submission skips the frame's draw and exposes
+a reason, rather than using potentially stale CPU-indexed
+geometry.
+
+Validation includes the recording RHI regression and
+`tests/vfx_metal_compaction_smoke.mm`, built as
+`aiverse_vfx_metal_smoke` on macOS. Lack of a Metal device
+is a CTest **SKIP**, not PASS. Real Metal rendering and
+performance are not verified. See the Stage-14 handoff.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
