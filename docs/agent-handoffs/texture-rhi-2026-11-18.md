@@ -2204,3 +2204,39 @@ request. Test source and GPU fixture work is still pending.
 (macOS only), Vulkan VkFormat, GL BPTC compressed enums and
 capability gates, DDS DX10 layered parser, and synthetic import
 tests. Record this as Stage 5J with its own handoff immediately.
+
+## Stage 5J — native BC6H HDR sampling and DDS DX10 import metadata (2026-11-18)
+
+**Code commit:** `db07550957cb09e710eefdfd7492fa6687224842`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/render/ImageDds.cpp`,
+`engine/gfx/gl/GfxGL.cpp`, `engine/gfx/metal/GfxMetal.mm`,
+`engine/gfx/vulkan/VkResources.cpp`.
+
+**Implementation:** Finish the Stage 5I format contract. DX10
+DDS layered parser recognizes 95/96 (`BC6H_UF16` /
+`BC6H_SF16`) and preserves native mip-major compressed blocks
+across array/cube faces as `BlockFormat::BC6H_UFloat/SFloat`.
+The classic DDS-to-`Model::Image` 2D RGBA8 adapter deliberately
+remains unchanged: it has no decoder for HDR BC6H.
+
+GL33/GLES3 backend maps to BPTC unsigned/signed float 4×4
+compressed enums, gated on the BPTC extension. Vulkan maps to
+`VK_FORMAT_BC6H_UFLOAT_BLOCK` and
+`VK_FORMAT_BC6H_SFLOAT_BLOCK`, with existing format-capability
+query. Metal maps macOS BC6H formats (Ufloat/RGBFloat), using
+the existing BC support probe and failing closed on iOS.
+All backends retain the complete compressed mip payload contract.
+The content requires a GPU with native BC6H support; no CPU HDR
+fallback is silently substituted.
+
+**Verification:** GitHub source commit succeeded. **No native
+build, CTest, or GPU texture sampling run.** Test source for synthetic
+BC6H DDS/KTX2 and actual macOS/Windows/Vulkan device sampling is
+pending, along with other HDR/EXR import features.
+
+**Next:** Add synthetic unsigned/signed BC6H import, byte-bound,
+and GPU capability fallback coverage, and a native shader capture
+with HDR radiance values above 1.0. Then implement HDR/EXR
+uncompressed float import and runtime texture streaming. Continue
+append-only per-stage handoffs.
