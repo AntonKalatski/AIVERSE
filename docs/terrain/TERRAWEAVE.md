@@ -131,3 +131,51 @@ headless, replay and editor view suites per `AGENTS.md`.
 - **TerraWeave Stream**: bounded streaming residency, chunk jobs and persistence.
 
 See the handoff file for exact priorities and integration hazards.
+
+## Stage 2a: Arbor procedural tree geometry
+
+Added `engine/world/TerraWeaveArbor.h` (integer-authoritative tree skeleton)
+and `engine/world/TerraWeaveArborMesh.h` (render-only CPU tessellation).
+This is independent of any genre, and a native C++ module can include it.
+
+```cpp
+#include "engine/world/TerraWeaveArborMesh.h"
+using namespace aiverse::terraweave;
+
+TreeProfile oak;
+oak.speciesId = 1001;
+oak.shape = CrownShape::Broadleaf;
+oak.primaryBranches = 22;
+const TreeSkeleton skeleton = generateTree(oak, instance.key, TreeLOD::High);
+const ArborMesh renderGeometry = buildArborMesh(skeleton, {6, true});
+// Upload through gfx::Device (not implemented in this stage).
+```
+
+`TreeProfile` defines tree height range, trunk radius, crown start, primary
+branches, branch reach/rise, leaf-cluster radius and broadleaf/conifer/columnar
+shape. Tree seed is derived from stable foliage instance key + species ID; the
+same inputs yield the same integer local-space structure regardless of worker
+thread or scene partition. `TreeLOD` High/Medium/Low reduce branch counts
+and leaf clusters. Impostor returns bounds only; actual billboard atlas baking
+is **not implemented**.
+
+`TreeSkeleton` contains a root trunk, child branch segments with parent
+indices, leaf clusters and conservative height/crown radius bounds.
+`buildArborMesh` converts branches to cylindrical bark tubes and clusters to
+crossed alpha-card quads with UVs, normals and a bark/leaf material discriminator.
+The returned mesh uses float only for **presentation**, not gameplay state.
+Meshes have no tangents or GPU material binding yet. The first visual pass is
+simple card foliage, not photorealistic SpeedTree-equivalent geometry.
+
+The mesh is local-space in **centimetres**. Instance translation, rotation and
+scale are supplied by `FoliageInstance` externally. If gameplay needs tree
+collision/hitboxes, derive deterministic proxies from `TreeSkeleton`, not from
+float render vertices. View LOD selection and GPU uploads must live in a
+renderer adapter and not in lockstep ECS simulation.
+
+Test source: `tests/terraweave_arbor_test.cpp`. CTest name:
+`terraweave_arbor`. Check seeded determinism, all crown archetypes, branch
+parent validity, LOD topology, independent parallel evaluation, render geometry
+index validity, and invalid profiles. Compilation/CTest results are tracked
+in `docs/terrain/AGENT_HANDOFF.md`.
+
