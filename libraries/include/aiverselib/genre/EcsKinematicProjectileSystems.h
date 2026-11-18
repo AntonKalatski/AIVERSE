@@ -10,13 +10,20 @@
 
 namespace aiverse::lib::genre {
 
+enum class KinematicMotionMode : uint8_t {
+    TimedEndpoint, // travel completes after a fixed number of simulation ticks
+    Pursuit        // move by a fixed distance each tick toward the current aim
+};
+
 struct KinematicProjectileComponent {
     Vec3 origin{}, position{}, destination{};
     Entity owner=kNullEntity;
     Entity target=kNullEntity;
     uint32_t shotId=0;
-    uint32_t elapsed=0, duration=1;
-    bool alive=true;
+    uint32_t elapsed=0, duration=1; // also the maximum lifetime for Pursuit
+    Fixed distancePerTick{};        // only used by Pursuit, not by TimedEndpoint
+    KinematicMotionMode mode=KinematicMotionMode::TimedEndpoint;
+    bool alive=true, arrived=false;
 };
 
 struct KinematicArrivalEvent {
@@ -25,31 +32,56 @@ struct KinematicArrivalEvent {
     Vec3 position{};
 };
 
-// Fixed endpoint interpolation: no collision query, no gravity and no RNG.
-// Duration is measured in simulation ticks, so the result is independent of
-// render frame rate and worker scheduling. A moving target is NOT followed:
-// use a separate target-tracking policy if that behavior is desired.
+// Pure non-physical pursuit step shared by real RTS Projectile/Transform ECS
+// and by the generic kinematic component. This intentionally preserves the
+// engine moveTowards rounding and arrival semantics, including a moving aim.
+inline bool advanceKinematicPursuit(Vec3& position,Vec3 destination,
+                                   Fixed distancePerTick) {
+    return moveTowards(position,destination,distancePerTick);
+}
+
+// No physics, raycasts or RNG. The caller resolves moving targets before each
+// Pursuit step. TimedEndpoint preserves its original fixed-tick interpolation.
+// The arrived bit distinguishes a hit from a projectile that merely timed out.
 inline bool stepKinematicProjectile(KinematicProjectileComponent& shot) {
     if(!shot.alive || shot.duration==0 || shot.duration>100000 ||
        shot.elapsed>shot.duration)return false;
+    shot.arrived=false;
     if(shot.elapsed==shot.duration){shot.alive=false;return true;}
     ++shot.elapsed;
-    const Fixed fraction=Fixed::fromRatio(shot.elapsed,shot.duration);
-    shot.position=shot.origin+(shot.destination-shot.origin)*fraction;
-    if(shot.elapsed==shot.duration)shot.alive=false;
+    if(shot.mode==KinematicMotionMode::Pursuit) {
+        if(shot.distancePerTick<=Fixed{})return false;
+        shot.arrived=advanceKinematicPursuit(shot.position,shot.destination,
+                                            shot.distancePerTick);
+    } else {
+        const Fixed fraction=Fixed::fromRatio(shot.elapsed,shot.duration);
+        shot.position=shot.origin+(shot.destination-shot.origin)*fraction;
+        shot.arrived=shot.elapsed==shot.duration;
+    }
+    if(shot.arrived || shot.elapsed==shot.duration)shot.alive=false;
     return true;
 }
+
+// Games can substitute a deterministic target resolver that returns an updated
+// destination every tick. A dead target may keep its last known destination.
+struct KeepKinematicDestination {
+    Vec3 operator()(Simulation&,const KinematicProjectileComponent& shot) const {
+        return shot.destination;
+    }
+};
 
 // ArrivalSink: void(Simulation&,const KinematicArrivalEvent&).
 // Events are emitted after stable ECS dense-order traversal; despawn is
 // deferred. The sink decides whether a stale/dead target should take damage.
 // Do not register this system and the physical flight system for the same
 // projectile entity.
-template<class ArrivalSink>
+template<class ArrivalSink,class DestinationResolver=KeepKinematicDestination>
 void addKinematicProjectileSystem(Simulation& sim,std::string name,
-                                  ArrivalSink onArrival) {
+                                  ArrivalSink onArrival,
+                                  DestinationResolver resolveDestination={}) {
     sim.addSystem(std::move(name),
-        [onArrival=std::move(onArrival)](Simulation& current) mutable {
+        [onArrival=std::move(onArrival),
+         resolveDestination=std::move(resolveDestination)](Simulation& current) mutable {
             std::vector<KinematicArrivalEvent> arrivals;
             std::vector<Entity> expired;
             World& world=current.world();
@@ -57,10 +89,13 @@ void addKinematicProjectileSystem(Simulation& sim,std::string name,
                 [&](Entity entity,KinematicProjectileComponent& shot) {
                     if(!world.alive(entity))return;
                     if(!shot.alive){expired.push_back(entity);return;}
+                    if(shot.mode==KinematicMotionMode::Pursuit)
+                        shot.destination=resolveDestination(current,shot);
                     if(!stepKinematicProjectile(shot))return;
                     if(!shot.alive) {
-                        arrivals.push_back({entity,shot.owner,shot.target,
-                                            shot.shotId,shot.position});
+                        if(shot.arrived)
+                            arrivals.push_back({entity,shot.owner,shot.target,
+                                                shot.shotId,shot.position});
                         expired.push_back(entity);
                     }
                 });
