@@ -170,3 +170,29 @@ Handoff: `docs/agent-handoffs/physis-editor-scene-inspector-2026-11-18.md`.
 Actual `physis_authoring`, `physis_project_config`, `physis_scene_geometry`
 CTest and interactive editor screenshot/launch: **NOT RUN**. Do not advertise
 a verified UI or migrated runtime until CI/checkout evidence exists.
+
+## Stage 19 — reusable authored wind/storm/gravity assets and Gizmos
+
+Native project maps may author `physis.windZones`, `physis.storms`,
+`physis.gravityFields`, each with a unique stable ASCII `id`, `center`
+[X,Y,Z] in metres, appropriate radius and type-specific properties.
+`engine/physis/PhysisFieldAssets.h` uses the SAME validation as
+`apps/editor/PhysisAuthoring.h`, sorts all assets by ID and creates their
+PHYSIS ECS components on explicit `installFromMap`. Nonempty collections
+require `enableWindZones`, `enableStorms` or `enableGravityFields` true
+to register the correct save schemas. The stable authored ID is NOT a new
+persisted ECS identity and edits are not automatically hot-reloaded.
+
+Editor: **Мир → PHYSIS · Природа** → **PHYSIS — объекты и Gizmo** can
+create WindZone/Tornado/Hurricane/GravityField, select/delete/adjust typed
+properties and advanced JSON. Enable `Редактировать маркеры мышью`, then
+drag W/S/G markers in Scene, Shift-drag for height. The selected asset also
+appears in the common MapProps Inspector. Every nontrivial drag gets one
+MapDoc Undo snapshot, but never changes active game ECS directly.
+See `docs/physis.md` and Stage 19
+`docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`.
+
+`physis_field_assets`, `physis_field_authoring` and the extended native
+`physis_project_config` test are registered but have **NO actual CTest PASS**.
+Do not state validated in-game rendering, GUI interaction or load/replay
+until verified on an actual native checkout.
