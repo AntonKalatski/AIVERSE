@@ -909,3 +909,52 @@ locations and per-color readback (including clearing only one
 color). Then implement Vulkan MRT with render pass + pipeline
 compatibility and source test. Follow the mandatory separate
 code and handoff commit protocol.
+
+## Stage 4M — Vulkan 2–4 color MRT pipeline/renderpass source (2026-11-18)
+
+**Implementation commit:** `4ceab89b0742143418bf84f8e15613638d66dd9c`.
+**Paths:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkDraw.cpp`, `engine/gfx/vulkan/GfxVulkan.cpp`.
+
+**Implemented in source:** Add a dedicated cached Vulkan
+`renderPassForMrt` with 2–4 color attachments sharing a VkFormat,
+per-attachment `clearMask` and optional depth, without changing
+the existing single-color renderpass cache. Rewrite the explicit
+`beginRenderTargets` path to validate all array/mip attachment
+extents, color formats, and depth, allocate 2D VkImageViews
+for the selected subresources, and build an MRT VkFramebuffer.
+Multiple per-slot clear values flow into VkRenderPassBeginInfo.
+New `VPipeline::Variant.colorCount` differentiates pipeline
+variants by number of render-target attachments.
+`pipelineFor` uses a Vulkan blend-state array and compatible
+MRT renderpass when count > 1. Active pass count is tracked
+and checked on `setPipeline`. Scoped framebuffer/views
+are destroyed after the GPU completion fence. Shutdown also
+destroys the dedicated MRT renderpass cache.
+
+**Constraints:** Same color format across all active MRT slots,
+matching extents, sample count 1, at most four color targets.
+GLSL fragment shaders must declare outputs at locations 0..N-1.
+GL/Vulkan MSAA resolve and mixed-color formats are still
+unimplemented. No new ECS/save/network data.
+
+**Validation:** Source commit confirmed through GitHub connector.
+Native Vulkan compiler, Lavapipe, GPU validation layer and
+vulkan_backend CTest **NOT RUN**; no green CI can be asserted.
+Pay particular attention to Vulkan pipeline renderpass
+compatibility, the newly added variant cache key and color-only
+versus depth-only passes.
+
+**Known possible regression to fix next:** The new
+`setPipeline` color-count/format validation currently runs
+for both explicit MRT and **legacy** single-target passes.
+Legacy depth-only, sRGB or HDR-compatible calls may previously
+have used a pipeline with a different colorFormat/count.
+Scope these strict checks to explicit MRT only; the legacy
+`beginPass` semantics must remain unchanged. This is the
+immediate next code change before claiming backward compatibility.
+
+**Next:** Implement the legacy/explicit policy separation,
+add a Vulkan test with two fragment outputs and distinct
+color clears, then compile and execute on a validation-layer
+GPU. Keep code and handoff as separate commits.
