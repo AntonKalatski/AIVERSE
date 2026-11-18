@@ -598,3 +598,38 @@ The existing `view_rts_preview_presentation` CTest source now tests
 provider callback order, unavailable type short-circuiting and preview
 clock forwarding, with no `RtsView` linkage. **NOT RUN**: source and
 CMake setup have not been compiled or executed on this stage.
+
+## Static previews without legacy animation ownership (Stage 86)
+
+A new standalone header `modules/rts/view/RtsStaticPreviewModel.h`
+accepts a `view_adapter::StaticPreviewModel` description of an
+already-resolved model, geometry/material overrides, type presentation
+style and model-space correction. Its
+`buildStaticPreviewPacket(spec,yaw,packet)` emits a genre-free
+`view::Object` with a complete borrowed `render::ModelDraw`.
+`submitStaticPreview(renderer,packet)` delegates to
+`aiverse::View::submitModel`. It does **not** construct an ECS
+animation player, simulate gameplay or depend on `RtsView`.
+
+`RtsView::drawPreview` now uses this independent renderer path
+for models satisfying **all** of these requirements: one resolved
+model variant; no build/damage stages or distance LOD; no imported
+clips, AnimationGraph, bake, pose or procedural bones; no attachments,
+weapon poses, additive overlays, FX or leg IK. The host still loads
+the model and resolves the authored look. The resulting ModelDraw
+preserves the resolved materials, node material map, geometry policy,
+KHR variant, model-space correction, world transform, team colour,
+tint and static/transparent flags.
+
+Models that need animation, dynamic stages, custom procedural effects,
+contact solving or LOD keep the legacy preview path unchanged.
+Static-preview submission uses the existing View renderer directly,
+so no second MotionWeave World can evaluate the same entity.
+The renderer/resource owner must keep borrowed material and model
+pointers alive through synchronous submission. This is not complete
+`RtsView` retirement; host/editor/client/portrait entrypoints and
+resource/terrain providers still need migration.
+
+Per the user's implementation-first instruction, **NO TESTS RUN**
+on this stage. Compile, native visual parity and platform validation
+remain pending.
