@@ -3840,3 +3840,50 @@ repeated request, cancellation, staging backpressure, and a
 quarantined atlas. Register a CTest and then compile on the native
 checkout. Add actual virtual-page GPU feedback/prefetch policy
 and disk asset packer only in separate documented stages.
+
+## Stage 7Q — integrated real file-to-GPU virtual texture fixture (2026-11-18)
+
+**Code commit:** `b21a5ba93df731174b8f287bf91e6d58511bb9cd`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Paths:** new `tests/render/virtual_texture_file_streamer.cpp`,
+`CMakeLists.txt`.
+
+**Test source:** Register
+`aiverse_virtual_texture_file_streamer_test` /
+CTest `virtual_texture_file_streamer` and link `Threads::Threads`.
+The integration fixture uses actual immutable page files in a
+temporary directory plus a deterministic mock `gfx::Device`.
+Exercises the new `VirtualTextureFileStreamer`: constructing a
+physical `Texture2DArray` atlas and GPU-backed page table,
+deduplication and exact-residency distinction, a coarse fallback
+pinned until its disk read and GPU upload complete, independent
+fine page upload that overrides the ancestor, deterministic LRU
+eviction of an unpinned detail page, restoration of coarse
+fallback in the shader table, GPU texture/resource cleanup,
+cancel of disk requests, missing file errors without
+quarantining healthy GPU resources, and GPU update failure
+quarantining the atlas so no partially updated texture can
+be sampled. Invalid disk/atlas dimensions fail before allocation.
+All tests are source-level and need CMake compilation.
+
+**Compatibility:** Test/CMake only. No new gameplay, ECS,
+save/netcode or public rendering API. Existing `VirtualTextureFileStreamer`
+production facade from Stage 7P is unchanged.
+
+**Actual verification:** GitHub source commit/ref update succeeded.
+Native compiler, CTest and real GPU backend execution:
+**NOT RUN**; the container has no clone and cannot resolve
+github.com, and prior GitHub runners remain queued.
+The test is not a passing verification until it executes.
+
+**Next:** Compile the integrated fixture:
+`cmake --build build/texture-rhi --target aiverse_virtual_texture_file_streamer_test`,
+`ctest --test-dir build/texture-rhi --output-on-failure
+-R '^(virtual_texture_disk_queue|virtual_texture_file_streamer)$'`.
+Fix compiler/behavior failures. Update `tools/verify-texture-rhi.sh`,
+the native texture RHI agent skill and `docs/texture-rhi.md`
+to include disk worker/facade and new tests, each with a
+separate code/docs and handoff commit.
+After that implement an optional camera/CPU visibility-based
+prefetch planner and/or real GPU feedback; do not imply
+automatic sparse GPU feedback or complete BasisU transcoding.
