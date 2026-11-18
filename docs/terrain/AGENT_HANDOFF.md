@@ -994,3 +994,46 @@ not saved as authored trees and does not become ECS entities.
 4. Add species/biome authoring and persistent interactive tree ECS
    integration as separate opt-in packages, not per-grass entities.
 5. Append another handoff after every stage with tested outcomes.
+
+## Stage 4c — correct map-unit scaling and preview lifetime (COMMITTED; UNVERIFIED)
+
+**Changes/commits:**
+- `3127556ebc92e2168379112b0cac9d3990fa5c51`:
+  `apps/editor/Editor.cpp` releases and disables forest preview on
+  project/map changes; automatically releases stale GPU resources if
+  an Undo removes the generator recipe while the Terrain window
+  is closed.
+- `6d00097e2b7b817b50099d0acc5102e2deb4b38e`:
+  `apps/editor/TerraWeaveForestPreview.h` fixes camera-to-global
+  and world-to-map coordinate conversion when
+  `LegacyHeightfieldOptions.cellSizeCm != 100`.
+- `2fd0b6c628439fbedc0081e1c44581c035ebd99d`:
+  `apps/editor/TerraWeavePlacementMask.h` adds validated
+  `terraWeaveWorldFromEditorCm` and
+  `terraWeaveEditorFromWorldCm`.
+- `e13006e86020624a42d80c16321d6032b5f2f0e0`:
+  `apps/editor/TerraWeaveForestPreview.h` uses those helpers
+  for source sampling and renderer placement.
+- `eed584129006e7d77677e9d16c6438f316a32bab`:
+  `tests/terraweave_preview_test.cpp` adds 150/200-cm
+  generator spacing, signed-origin and invalid-spacing cases.
+
+**Why:** MapDoc's renderer always treats each authored map cell as
+one metre. TerraWeave can use an arbitrary positive world-cm
+sample spacing for the procedural source. Without a conversion,
+tree positions and camera-based chunk selection move incorrectly
+relative to the existing map when cell size differs from 100 cm.
+The current code normalizes trees into editor-local 100 cm/cell
+before building GPU transforms and placement masks.
+
+**Actual verification:** source pushed through GitHub connector;
+no complete checkout, compile, CTest or GPU screenshot observed.
+Local GitHub clone remains blocked by DNS resolution in this
+runtime. Keep PR Draft until verified.
+
+**Next:** run all seven CPU/compile tests plus
+`terraweave_editor` and a full editor build. Add a visual
+comparison for `cellSizeCm=100` vs `200`, and verify that
+the world-space camera tracking/LOD selection remains stable.
+Move costly per-tile scatter to the existing async chunk scheduler
+once baseline GPU behaviour is measured.
