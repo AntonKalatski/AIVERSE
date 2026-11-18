@@ -25,6 +25,15 @@ initializes Mapping press history from current held controls. Do not treat
 physical down as sufficient for `ActionState.active`; inspect `state()`
 after the Action-level gates. Tests authored, not run. See handoff Stage 49.
 
+**Stage 50 multi-user:** use `InputFlowUsers` for logical per-player
+device owners and poll the physical gamepad backend once per frame. A keyboard,
+pointer, touch or gamepad ownership transfer now cancels **only** the affected
+device family (`InputFlow::cancelDevices`), leaving the user's other held
+devices active. Consume resulting `Canceled` events on the next `update`.
+For global window FocusLost use `cancelAll`, not selective cancellation.
+New `clearKeyboardOwner/clearPointerOwner/clearTouchOwner` unassign ownership.
+Check `docs/enhanced-input.md` and Stage 50 handoff. Tests not executed.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
