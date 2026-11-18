@@ -393,6 +393,23 @@ This stage does not yet migrate physical Tilt targets to the graph-owned pool,
 nor does it activate Tilt Shift by default. Native/GPU tests deliberately
 NOT RUN per user request. Handoff: `docs/handoffs/prisma-stage-20.md`.
 
+
+## Stage 21 — Sun Shafts graph opt-in
+
+`AIVERSE_PRISMA_GRAPH_SUN_SHAFTS=1` enables a two-pass graph for
+the existing sunlight prefilter mask and radial scattering operation.
+The sun position, offscreen edge fallback, visibility threshold, color,
+quality tier, sample count and shader uniforms are unchanged. Three
+externally owned textures represent the source, mask and radial output,
+with the existing per-size depth attachment. The two-pass graph executes
+through the per-viewport RHI executor. Failure before any submission uses
+the legacy two-draw path; a partially submitted graph is never replayed.
+The path remains off by default and the HUD is still drawn after postprocessing.
+
+No new serialised settings or shader variants were introduced.
+This stage is code-only, intentionally NOT compiled or GPU-tested yet.
+See `docs/handoffs/prisma-stage-21.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
