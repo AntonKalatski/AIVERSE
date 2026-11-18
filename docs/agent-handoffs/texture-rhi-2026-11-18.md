@@ -286,3 +286,47 @@ addition to CPU descriptor helpers. Destroy dependent views safely
 when parent texture dies and explicitly invalidate stale handles.
 Add native tests, verify no regressions in legacy setTexture path.
 Commit each backend stage and a separate handoff.
+
+## Stage 3B — Metal native texture views and samplers (2026-11-18)
+
+**Code commit:** `7984d46490ab3f8e59acaa00ad69fd62fadfcfe3`.
+**Path:** `engine/gfx/metal/GfxMetal.mm`.
+
+**Implemented in source:** `MetalDevice::createTextureView` validates a
+requested mip/slice/aspect against the actual native texture's mip levels,
+creates a Metal texture view with `newTextureViewWithPixelFormat:
+textureType:levels:slices:`, and tracks its parent by texture ID.
+`createSampler` maps min/mag/mip filters, U/V/W address modes,
+depth-compare function, LOD range and anisotropy (capped at 16)
+to `MTLSamplerDescriptor`. Metal has no independent sampler LOD bias
+in this API; nonzero `lodBias` is rejected instead of ignored.
+`bindTextureView` binds the selected view + selected sampler (or the
+texture's original sampler if none supplied) to vertex and fragment
+stages for slots 0..15. Parent texture destruction invalidates all
+dependent view handles before the texture ID can be reused; views and
+independent samplers have explicit destroy operations.
+
+**Compatibility:** Existing `setTexture` still uses a texture's original
+sampler. The new APIs are opt-in; no existing shaders need rewriting.
+This does not add new save/network/ECS state. The generic RHI allows
+views of selected array slices/mips; Metal implementation additionally
+checks physical backing allocation.
+
+**Not done:** No non-2D render-target attachments yet. View binding
+does not rewrite `PassDesc`, and storage/compute binding of an explicit
+view is not exposed. Independent samplers are exposed only for direct
+render encoder bindings; the ICB path needs separate verification.
+No Metal GPU tests are added or executed in this stage.
+Other backends still have the default unsupported view/sampler methods.
+
+**Validation:** GitHub commit succeeded; actual macOS/iOS compilation,
+GPU texture view/sampler sampling and existing scene regression tests:
+**NOT RUN**. No successful CI result claimed.
+
+**Next:** Compile Metal (especially SDK availability of border
+addressing and texture view APIs), run MSL shaders sampling nonzero
+array layers and mip levels with separate samplers, test that destroying
+parent invalidates views, and review view handle recycling in long
+sessions. Next implement native Vulkan and GL sampler/view support;
+GL ES3/WebGL2 lacks general texture-view extensions, so report
+unsupported there rather than silently creating aliases.
