@@ -105,6 +105,17 @@ inline NereidSceneSurface surface(const Json& j) {
             throw JsonError("nereidWater.geometry: insufficient or invalid points");
     }
     if(j.has("lod"))s.mesh.lod=lod(j.getStr("lod"));
+    if(j.has("autoLod")) {
+        if(j["autoLod"].type()!=Json::Type::Bool)
+            throw JsonError("nereidWater.autoLod: expected boolean");
+        s.autoLod=j.getBool("autoLod");
+    }
+    if(j.has("mediumDistance"))
+        s.mediumDistance=scalar(j["mediumDistance"],"mediumDistance",1.f,1000000.f);
+    if(j.has("farDistance"))
+        s.farDistance=scalar(j["farDistance"],"farDistance",1.f,1000000.f);
+    if(s.farDistance<=s.mediumDistance)
+        throw JsonError("nereidWater: farDistance must exceed mediumDistance");
     if(j.has("oceanPatchRadius"))
         s.mesh.oceanPatchRadius=scalar(j["oceanPatchRadius"],"oceanPatchRadius",1.f,100000.f);
     if(j.has("uvScale"))s.mesh.uvScale=scalar(j["uvScale"],"uvScale",0.0001f,128.f);
