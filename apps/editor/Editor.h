@@ -272,6 +272,10 @@ public:
 
     // windows
     EditorWindow* window(const std::string& id);
+    // Windows may query dock-tab visibility from update() to cancel pending
+    // key captures when another tab becomes active. Uses the same check as
+    // hosted-client input routing.
+    bool isWindowInFront(EditorWindow* w) const;
     const std::vector<std::unique_ptr<EditorWindow>>& windows() const { return windows_; }
     void resetLayout() { resetLayout_ = true; }
     void launchOnDevice(const std::string& device, bool landscape);
@@ -296,7 +300,6 @@ public:
 private:
     void drawMenuBar();
     void drawWindowItems(const std::string& group);
-    bool isWindowInFront(EditorWindow* w) const;
     void drawTopBarControls();   // breadcrumb, play controls, MCP pill (inside the main menu bar)
     void drawPlayControls();
     void drawDockspace();
