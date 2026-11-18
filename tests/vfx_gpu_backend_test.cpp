@@ -209,6 +209,39 @@ int main() {
     emitter.shutdown();
     mock.healthy=true;
 
+    // Multiple-frame reuse: holes in the pool remain degenerate vertices,
+    // but the unused tail must never be submitted or simulated. This proves
+    // high-water-mark culling is not incorrectly presented as compaction.
+    RecordingMetalDevice sparseDevice;
+    spectra::ComputeParticles sparse;
+    config.backend=ComputePreference::Automatic;
+    config.capacity=16;config.burst=3;config.lifetime=0.75f;
+    check(sparse.init(&sparseDevice,config),"sparse GPU recording init");
+    sparse.setView(cam,cam.proj(800.f/600.f,false)*cam.view(),800,600);
+    const auto sparseFrame=[&](bool spawn) {
+        sparseDevice.lastDrawCount=0;
+        sparseDevice.beginFrame(800,600);
+        if(spawn)check(sparse.burstAt({0,2,0}),"sparse GPU birth failed");
+        check(sparse.step(0.1f),"sparse GPU step failed");
+        sparseDevice.beginPass(gfx::PassDesc{});
+        sparse.draw();
+        sparseDevice.endPass();
+        sparseDevice.endFrame();
+    };
+    sparseFrame(true);sparseFrame(true);
+    for(int i=0;i<6;++i)sparseFrame(false);
+    check(sparse.stats().alive==3 && sparse.stats().submittedSlots==6,
+          "sparse pool should retain live high-index slots and dead holes");
+    check(sparseDevice.lastDrawCount==36,
+          "sparse prefix must draw through last live slot (not only alive count)");
+    sparseFrame(false);
+    check(sparse.stats().alive==0 && sparse.stats().submittedSlots==0,
+          "all expired GPU particles must release draw prefix");
+    check(sparseDevice.lastDrawCount==0,
+          "expired sparse GPU pool still submitted geometry");
+    check(!sparseDevice.badOrder,"sparse GPU mock encountered encoder/order violation");
+    sparse.shutdown();
+
     // Explicit hard GPU requirement never silently reports a CPU implementation.
     config.backend=ComputePreference::RequireGpu;
     check(!emitter.init(nullptr,config),"RequireGpu should fail without a Device");
