@@ -242,11 +242,14 @@ public:
         const std::string name = context.name;
         contexts_[name] = std::move(context);
         eraseContextRuntime(name);
+        if (active_.contains(name)) seedHeldMappings(name);
         return true;
     }
     bool activateContext(const std::string& name, int priority = 0) {
         if (!contexts_.contains(name)) return false;
+        const bool firstActivation = !active_.contains(name);
         active_[name] = priority;
+        if (firstActivation) seedHeldMappings(name);
         return true;
     }
     void deactivateContext(const std::string& name) {
@@ -284,6 +287,7 @@ public:
         }
         target->control=control;
         mappingRuntime_.erase({contextName,id});
+        if (active_.contains(contextName)) seedHeldMappings(contextName);
         return true;
     }
 
@@ -466,20 +470,25 @@ public:
                 if (actionIt == actions_.end()) continue;
                 auto& runtime = mappingRuntime_[{name,mapping.id}];
                 const Raw raw = sample(mapping.control);
+                const Value physicalValue = applyModifiers({raw.value,0,0}, mapping.modifiers);
+                const bool physicalDown = physicalValue.actuated();
                 const bool blocked = consumed[mapping.control];
-                const Value converted = blocked ? Value{} : applyModifiers({raw.value,0,0}, mapping.modifiers);
-                const bool down = converted.actuated();
-                const bool pressed = !blocked && (raw.pressed || (down && !runtime.wasDown));
-                const bool released = !blocked && (raw.released || (!down && runtime.wasDown));
-                const bool tapWithinFrame = pressed && released;
                 const bool chordOK = chordSatisfied(mapping.triggers, chordLevels);
-                // Track the unblocked source even if a chord isn't yet available.
-                const bool fired = !blocked && chordOK &&
-                    evaluateTriggers(mapping.triggers, runtime, down, pressed, released,
-                                     tapWithinFrame, dt, chordLevels);
-                if (blocked || !chordOK) {
-                    runtime.wasDown = down;
-                    if (!down) { runtime.seconds = 0; runtime.holdFired = false; }
+                const bool eligible = !blocked && chordOK;
+                const Value converted = eligible ? physicalValue : Value{};
+                const bool down = converted.actuated();
+                const bool pressed = eligible && (raw.pressed || (physicalDown && !runtime.wasDown));
+                const bool released = eligible && (raw.released || (!physicalDown && runtime.wasDown));
+                const bool tapWithinFrame = pressed && released;
+                // A disabled mapping must not age a Hold/Pulse timer behind a
+                // modal or a chord, nor fire a phantom Pressed on re-entry.
+                bool fired = false;
+                if (eligible)
+                    fired = evaluateTriggers(mapping.triggers, runtime, down, pressed, released,
+                                             tapWithinFrame, dt, chordLevels);
+                else {
+                    resetTiming(runtime);
+                    runtime.wasDown = physicalDown;
                 }
                 if (down && chordOK) {
                     auto& aggregate = result[mapping.action];
@@ -500,29 +509,36 @@ public:
             // checking whether the resulting action is active or triggered.
             // An axis dead zone or scalar-zero must not emit a phantom Triggered.
             Value value = constrain(applyModifiers(aggregate.value, action.modifiers), action.type);
-            const bool actionDown = value.actuated();
-            const bool press = (actionDown && !runtime.wasDown) ||
-                               (aggregate.began && (!aggregate.active || actionDown));
-            const bool release = !actionDown && runtime.wasDown;
-            bool triggered = aggregate.triggered && (!aggregate.active || actionDown);
-            if (!action.triggers.empty()) {
-                const bool chordOK = chordSatisfied(action.triggers, chordLevels);
-                const bool actionGate = evaluateTriggers(action.triggers, runtime, actionDown,
+            const bool sourceDown = value.actuated();
+            const bool chordOK = chordSatisfied(action.triggers, chordLevels);
+            const bool actionDown = sourceDown && chordOK;
+            const bool press = chordOK && ((sourceDown && !runtime.wasDown) ||
+                               (aggregate.began && (!aggregate.active || sourceDown)));
+            const bool release = chordOK && !sourceDown && runtime.wasDown;
+            bool triggered = aggregate.triggered && (!aggregate.active || sourceDown);
+            if (!chordOK) {
+                resetTiming(runtime);
+                runtime.wasDown = sourceDown;
+                triggered = false;
+            } else if (!action.triggers.empty()) {
+                const bool actionGate = evaluateTriggers(action.triggers, runtime, sourceDown,
                                                          press, release, press && release, dt, chordLevels);
-                triggered = triggered && chordOK && actionGate;
+                triggered = triggered && actionGate;
             } else {
-                runtime.wasDown = actionDown;
-                if (!actionDown) { runtime.seconds = 0; runtime.holdFired = false; }
+                runtime.wasDown = sourceDown;
+                if (!sourceDown) { runtime.seconds = 0; runtime.holdFired = false; }
             }
 
             const auto previous = states_[name];
             const bool quickPulse = !actionDown && aggregate.began && triggered;
+            if (!chordOK) value = {};
             if ((actionDown && !previous.active) || quickPulse)
                 events_.push_back({name, Phase::Started, value});
             if (triggered) events_.push_back({name, Phase::Triggered, value});
             else if (actionDown) events_.push_back({name, Phase::Ongoing, value});
             if ((!actionDown && previous.active) || quickPulse)
-                events_.push_back({name, previous.triggered || triggered ? Phase::Completed : Phase::Canceled, {}});
+                events_.push_back({name, !chordOK ? Phase::Canceled :
+                    (previous.triggered || triggered ? Phase::Completed : Phase::Canceled), {}});
             states_[name] = {value, actionDown, triggered || (actionDown && previous.triggered)};
         }
 
@@ -563,6 +579,25 @@ private:
         bool wasDown=false, holdFired=false, releaseArmed=false;
         float seconds=0, sinceRelease=1000000.0f, lastPulse=0;
     };
+
+    static void resetTiming(Runtime& runtime) {
+        runtime.seconds=0;
+        runtime.holdFired=false;
+        runtime.releaseArmed=false;
+        runtime.sinceRelease=1000000.0f;
+        runtime.lastPulse=0;
+    }
+    void seedHeldMappings(const std::string& name) {
+        const auto it=contexts_.find(name);
+        if (it==contexts_.end()) return;
+        for (const auto& binding : it->second.mappings) {
+            const Raw raw=sample(binding.control);
+            if (raw.transient) continue;
+            // A held control predating this context is not a new key press.
+            auto& runtime=mappingRuntime_[{name,binding.id}];
+            runtime.wasDown=applyModifiers({raw.value,0,0},binding.modifiers).actuated();
+        }
+    }
 
     Raw sample(Control key) const {
         const auto it = controls_.find(key);
