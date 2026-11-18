@@ -450,3 +450,40 @@ compile all major client/editor targets with Metal and GLES3 to
 check cross-platform RHI changes, then proceed to layered
 RenderTexture/MRT/MSAA implementation in independently documented
 stages.
+
+## Stage 4A — explicit offscreen attachment-pass contract (2026-11-18)
+
+**Code commit:** `7f05e9eccf0b01897f7cc61d7fa17efee34ba46e`.
+**Paths:** `engine/gfx/Gfx.h`, `tests/render/texture_contract.cpp`.
+
+**Source changes:** New `RenderTargetAttachment` (texture, mipLevel,
+arrayLayer/face, clear, RGBA clear value) and `RenderTargetPassDesc`
+(up to four color attachments, optional depth, depth clear), plus
+`validateRenderTargetPassDesc`. The CPU-only helper rejects empty
+passes, invalid handles and negative coordinates, duplicate writes
+to the same subresource, the same resource as color and depth,
+and invalid clear values. The public RHI has opt-in
+`supportsRenderTargetPasses` and
+`beginRenderTargets(RenderTargetPassDesc)` returning false by
+default. A successful call opens a pass ended by existing
+`endPass()`; errors must leave no active pass and must never fall
+back to an unintended target. New structural contract tests added.
+
+**Compatibility:** Existing `PassDesc` and `beginPass` are unchanged.
+The new API is offscreen-only, never implicitly the swapchain.
+No gameplay/ECS, save or external game format changes.
+
+**NOT implemented yet:** Native Metal/GL/Vulkan implementation of
+`beginRenderTargets`; MRT, mip/layer rendering, MSAA and resolves
+are still unsupported by this initial contract.
+
+**Validation:** Source commit confirmed through GitHub connector.
+Native compile, CTest and GPU test: **NOT RUN**.
+GitHub Actions for prior HEAD were in `queued` state; no CI pass
+verified. Do not claim the contract is production ready.
+
+**Next stage:** 4B — Metal native single color + optional depth,
+selecting mip/layer using Metal render pass descriptors, validating
+actual allocation usage/format/sizes, then add Metal multi-color
+targets and capability-specific pipeline variants. Make a separate
+code commit and immediately append a handoff commit.
