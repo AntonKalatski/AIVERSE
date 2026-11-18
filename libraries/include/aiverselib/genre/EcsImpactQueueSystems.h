@@ -4,6 +4,7 @@
 // No RTS/FPS module dependency; no secondary health or projectile owner.
 #pragma once
 #include "EcsOrderedImpactSystems.h"
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -20,7 +21,7 @@ struct QueuedProjectileImpact {
 // Rollback-owned, bounded world resource. Sequence numbers and pending
 // requests must be included in authoritative snapshots/checksums.
 struct OrderedImpactQueue {
-    static constexpr size_t kMaximumPending=8192;
+    static constexpr std::size_t kMaximumPending=8192;
     uint64_t nextSequence=1;
     std::vector<QueuedProjectileImpact> pending;
 };
