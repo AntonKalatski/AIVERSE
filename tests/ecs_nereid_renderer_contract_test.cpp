@@ -3,6 +3,7 @@
 #include "engine/render/NereidSurfaceResident.h"
 #include "engine/world/NereidWaterScene.h"
 #include "engine/world/NereidWaterManifest.h"
+#include "engine/world/NereidEcsPresentation.h"
 #include "engine/render/Shaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
 #include <iostream>
@@ -136,5 +137,72 @@ int main() {
     catch(const std::invalid_argument&){rejectedQuota=true;}
     check(rejectedQuota && sceneWater.maxUploadsPerFrame()==1,
           "out-of-range upload budget must preserve last valid value");
+    // Stable identity retains only changed per-body revisions.
+    world::NereidWaterScene identity;
+    world::NereidSceneSurface lakeA,lakeB;
+    lakeA.id=10;lakeA.body.center.x=4_fx;
+    lakeB.id=20;lakeB.body.center.x=30_fx;
+    identity.setSurfaces({lakeA,lakeB});
+    const auto initialA=identity.surfaceRevision(10);
+    const auto initialB=identity.surfaceRevision(20);
+    check(initialA!=0 && initialB!=0,"surface revisions must initialize");
+    identity.setSurfaces({lakeB,lakeA});
+    check(identity.surfaceRevision(10)==initialA &&
+          identity.surfaceRevision(20)==initialB,
+          "reordering surfaces must not invalidate stable GPU owners");
+    lakeA.body.center.x=8_fx;
+    identity.setSurfaces({lakeA,lakeB});
+    check(identity.surfaceRevision(10)!=initialA &&
+          identity.surfaceRevision(20)==initialB,
+          "a changed water body must not invalidate unrelated surfaces");
+    bool duplicate=false;
+    try {identity.setSurfaces({lakeA,lakeA});}
+    catch(const std::invalid_argument&){duplicate=true;}
+    check(duplicate && identity.surfaceCount()==2,
+          "duplicate id must reject snapshot transactionally");
+    identity.setMaxEstimatedUploadBytes(4096);
+    check(identity.maxEstimatedUploadBytes()==4096,
+          "estimated byte quota must be configurable");
+    check(identity.estimatedUploadBytes(lakeA)>0,
+          "estimated surface upload must account for geometry budget");
+    identity.setVisibilityRange(20.f);
+    Vec3 camera{0_fx,0_fx,0_fx};
+    check(world::NereidWaterScene::visibleFrom(lakeA,&camera,20.f),
+          "near water footprint should be visible");
+    lakeB.body.center.x=1000_fx;
+    check(!world::NereidWaterScene::visibleFrom(lakeB,&camera,20.f),
+          "far water must be distance culled");
+    lakeB.body.footprint=lib::nereid::WaterFootprint::Infinite;
+    check(world::NereidWaterScene::visibleFrom(lakeB,&camera,20.f),
+          "infinite ocean must remain visible");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[
+      {"id":1,"surfaceY":2,"bottomY":1,"shape":"box","halfExtents":[2,2]},
+      {"id":1,"surfaceY":3,"bottomY":1,"shape":"box","halfExtents":[2,2]}
+    ]}})"),"manifest must reject duplicate explicit water ids");
+    const auto budgets=world::parseNereidWaterManifest(Json::parse(R"({
+      "nereidWater":{"maxEstimatedUploadBytes":8192,"visibilityRange":200,
+        "surfaces":[{"id":17,"surfaceY":2,"bottomY":1,
+                     "shape":"box","halfExtents":[10,20]}]}
+    })"));
+    check(budgets.surfaces[0].id==17 &&
+          budgets.maxEstimatedUploadBytes==8192 &&
+          budgets.visibilityRange==200.f,
+          "manifest stable ID and culling/upload quota not applied");
+    // ECS snapshots use generation-safe Entity IDs and copy geometry.
+    World ecsWorld;
+    const Entity bodyEntity=ecsWorld.create();
+    lib::nereid::WaterBodyComponent ecsBody;
+    ecsBody.center.x=12_fx;
+    ecsWorld.add<lib::nereid::WaterBodyComponent>(bodyEntity,ecsBody);
+    lib::nereid::WaterGeometryComponent ecsGeometry;
+    ecsGeometry.points={
+        {0_fx,0_fx,0_fx},{20_fx,0_fx,0_fx},{20_fx,10_fx,0_fx}};
+    ecsWorld.add<lib::nereid::WaterGeometryComponent>(bodyEntity,ecsGeometry);
+    const auto ecsSnapshot=world::snapshotNereidEcsWater(ecsWorld);
+    check(ecsSnapshot.size()==1 &&
+          ecsSnapshot[0].id==uint64_t(bodyEntity.packed())+1 &&
+          ecsSnapshot[0].useGeometry &&
+          ecsSnapshot[0].geometry.points.size()==3,
+          "ECS snapshot must copy water and geometry with stable entity ID");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
