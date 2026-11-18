@@ -37,6 +37,34 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+## Shared texture RHI / streaming — reuse instead of regenerating (2026-11-18)
+
+For any native game project needing Texture2D/3D/arrays/cubes,
+offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
+`skills/visuals/aiverse-texture-rhi/SKILL.md` and
+`docs/texture-rhi.md`. Use the existing `gfx::Device`,
+`gfx::RenderTargetSet`, `gfx::TextureStreamQueue`,
+`gfx::TextureMipResidency`, `render::parseKtx2`,
+`render::parseDdsTexture` and `render::uploadContainerTexture`.
+Do not regenerate or fork genre-specific texture managers in FPS,
+RTS or other projects. Rendering/streaming is presentation state:
+do not make it ECS-authoritative or add it to deterministic save hashes.
+Native project modules can include these public C++ headers directly.
+
+Texture format/dimension feature support differs per backend:
+explicitly check `supports`, `supportsTextureDimension` and resource
+creation results. Unavailable features must fail visibly, never silently
+reinterpret Cube/Array/3D as 2D, ignore resolve requests or misread
+compressed mip payloads. A streaming queue owns its textures and must
+be destroyed before the GPU Device. Do not sample mips until the
+residency planner reports every required layer/face resident.
+Metal/GL/Vulkan API branches and 7A–7E streaming work are source changes,
+**NOT verified production behavior** until native build/CTest/GPU checks
+pass. After each implementation stage append
+`docs/agent-handoffs/texture-rhi-2026-11-18.md` in a separate commit
+with actual (not assumed) test results. PR #21 must remain Draft
+until source integration and graphics validation gates pass.
+
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
 **Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`
