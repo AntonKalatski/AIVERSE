@@ -6,6 +6,7 @@
 #include "Editor.h"
 #include "EditorUtil.h"
 #include "PhysisAuthoring.h"
+#include "PhysisGizmoGeometry.h"
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -25,6 +26,12 @@ struct PhysisFieldEditorState {
     float groupYawDegrees = 0.f;
     float groupUniformScale = 1.f;
     int gizmoMode = 0; // 0: translate, 1: radius
+    int pivotMode = 0;
+    float customPivot[3] = {};
+    bool boxSelectEnabled = false;
+    bool boxSelecting = false;
+    bool boxAdditive = false;
+    ImVec2 boxStart{}, boxEnd{};
     double dragRawY = 0;
     std::string selectedId;
     std::vector<std::string> selectedIds; // sorted authored IDs
@@ -92,6 +99,38 @@ inline bool physisFieldSelected(const std::string& id) {
     return std::binary_search(ids.begin(),ids.end(),id);
 }
 
+
+inline bool physisCurrentPivot(const Editor& ed,physis_authoring::FieldPivot& result) {
+    const auto& st=physisFieldEditorState();
+    return physis_authoring::computeFieldPivot(
+        physis_authoring::read(ed.doc()),st.selectedIds,st.selectedId,
+        static_cast<physis_authoring::FieldPivotMode>(st.pivotMode),
+        {double(st.customPivot[0]),double(st.customPivot[1]),
+         double(st.customPivot[2])},result);
+}
+inline render::float3 physisPivot3(const physis_authoring::FieldPivot& p) {
+    return {float(p.x),float(p.y),float(p.z)};
+}
+inline std::vector<physis_gizmo::ScreenMarker> physisVisibleMarkers(
+    const Json& config,const Viewport& vp,const render::RTSCamera& camera) {
+    std::vector<physis_gizmo::ScreenMarker> output;
+    for (const char* key:{"windZones","storms","gravityFields"}) {
+        const Json& fields=config[key];
+        if (!fields.isArray()) continue;
+        for (const auto& entry:fields.items()) {
+            render::float3 position{};
+            render::float2 point{};
+            if (!physisFieldPosition(entry,position) ||
+                !camera.worldToScreen(position,vp.pointsW,vp.pointsH,point) ||
+                !std::isfinite(point.x)||!std::isfinite(point.y)) continue;
+            const double x=vp.originX+point.x,y=vp.originY+point.y;
+            if (x>=vp.originX && x<=vp.originX+vp.pointsW &&
+                y>=vp.originY && y<=vp.originY+vp.pointsH)
+                output.push_back({entry.getStr("id"),x,y});
+        }
+    }
+    return output;
+}
 inline bool physisFieldRadius(const Json& field, double& radius) {
     const Json& value = field["outerRadiusMeters"].isNull() ?
                         field["radiusMeters"] : field["outerRadiusMeters"];
@@ -178,6 +217,14 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
             draw->AddText({p.x+10,p.y-8},color,symbol);
         }
     }
+    if (state.boxSelecting) {
+        const ImVec2 a{std::clamp(state.boxStart.x,vp.originX,vp.originX+vp.pointsW),
+                       std::clamp(state.boxStart.y,vp.originY,vp.originY+vp.pointsH)};
+        const ImVec2 b{std::clamp(state.boxEnd.x,vp.originX,vp.originX+vp.pointsW),
+                       std::clamp(state.boxEnd.y,vp.originY,vp.originY+vp.pointsH)};
+        draw->AddRectFilled(a,b,IM_COL32(100,180,255,40));
+        draw->AddRect(a,b,IM_COL32(130,190,255,230),0,0,1.5f);
+    }
     draw->PopClipRect();
 }
 
@@ -192,8 +239,29 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
     if (!state.editMode || !state.showMarkers || ed.playing()) {
         state.dragging=false;
         state.draggingRadius=false;
+        state.boxSelecting=false;
         state.dragOriginal.clear();
         return false;
+    }
+    if (state.boxSelecting) {
+        state.boxEnd=io.MousePos;
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) ||
+            !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            const float dx=std::abs(state.boxEnd.x-state.boxStart.x);
+            const float dy=std::abs(state.boxEnd.y-state.boxStart.y);
+            if (dx>=4.f || dy>=4.f) {
+                const auto visible=physisVisibleMarkers(physis_authoring::read(ed.doc()),vp,camera);
+                auto chosen=physis_gizmo::idsInScreenRect(visible,
+                    state.boxStart.x,state.boxStart.y,state.boxEnd.x,state.boxEnd.y);
+                if (state.boxAdditive)
+                    chosen.insert(chosen.end(),state.selectedIds.begin(),state.selectedIds.end());
+                setPhysisFieldSelection(std::move(chosen));
+                if (!state.selectedIds.empty())
+                    ed.select({Selection::MapProps,-1,{}});
+            } else if (!state.boxAdditive) selectPhysisField("");
+            state.boxSelecting=false;
+        }
+        return true;
     }
     if (state.dragging) {
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) ||
@@ -344,7 +412,15 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
             if (d<nearest) {nearest=d;chosen=position;picked=entry.getStr("id");}
         }
     }
-    if (picked.empty()) return false;
+    if (picked.empty()) {
+        if (state.boxSelectEnabled) {
+            state.boxSelecting=true;
+            state.boxAdditive=additive;
+            state.boxStart=state.boxEnd=io.MousePos;
+            return true;
+        }
+        return false;
+    }
     if (additive) {
         selectPhysisField(picked,true);
         ed.select({Selection::MapProps,-1,{}});
@@ -511,6 +587,8 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
     ImGui::Checkbox("Показать маркеры в Сцене", &state.showMarkers);
     ImGui::Checkbox("Редактировать маркеры мышью", &state.editMode);
     if (state.editMode) {
+        ImGui::Checkbox("Выделение рамкой##physis", &state.boxSelectEnabled);
+        ImGui::TextDisabled("Рамка с пустого места; Shift/Ctrl добавляет.");
         ImGui::Combo("Gizmo##physis", &state.gizmoMode,
                      "Перемещение\0Радиус\0");
         ImGui::Checkbox("Привязка к сетке##physis", &state.snapEnabled);
@@ -523,6 +601,14 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
             "Тяните выбранную группу (Shift — высота). Один drag = одно Undo." :
             "Радиус изменяет только активное поле.");
         ImGui::TextDisabled("Ctrl/Shift + клик — добавить или убрать поле из группы.");
+        const char* pivots[]={"Активное поле","Средняя точка","Центр границ","Начало мира","Заданный"};
+        ImGui::Combo("Pivot##physis",&state.pivotMode,pivots,5);
+        if (state.pivotMode==4) ImGui::InputFloat3("Pivot XYZ, м##physis",state.customPivot);
+        if (!state.selectedIds.empty()) {
+            physis_authoring::FieldPivot p{};
+            if (physisCurrentPivot(ed,p))
+                ImGui::TextDisabled("Pivot: %.2f, %.2f, %.2f м",p.x,p.y,p.z);
+        }
     }
 
     const double x = std::clamp(double(ed.sceneCam.target.x),-1000000.0,1000000.0);
@@ -581,20 +667,19 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
         ImGui::DragFloat("Масштаб геометрии##physisGroup",
                          &state.groupUniformScale,0.01f,0.01f,20.f,"%.2f");
         if (ImGui::Button("Применить к выбранным##physisGroup")) {
-            std::string collection;
-            std::size_t index=0;
-            Json active;
-            if (findField(read(ed.doc()),state.selectedId,collection,index,&active) &&
-                active["center"].isArray() && active["center"].size()==3) {
-                const auto& pivot=active["center"];
+            physis_authoring::FieldPivot pivot{};
+            if (computeFieldPivot(read(ed.doc()),state.selectedIds,state.selectedId,
+                static_cast<FieldPivotMode>(state.pivotMode),
+                {double(state.customPivot[0]),double(state.customPivot[1]),
+                 double(state.customPivot[2])},pivot,&state.error)) {
                 if (transformFields(ed.doc(),state.selectedIds,
-                     pivot[0].toDouble(),pivot[1].toDouble(),pivot[2].toDouble(),
+                     pivot.x,pivot.y,pivot.z,
                      double(state.groupYawDegrees),double(state.groupUniformScale),
                      &state.error)) {
                     state.draftId.clear();
                     state.error.clear();
                 }
-            } else state.error="PHYSIS group pivot field not found";
+            }
         }
         ImGui::TextDisabled("Меняются позиции и размеры полей, но не скорости и силы.");
     }
