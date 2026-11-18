@@ -19,7 +19,7 @@ namespace aiverse::render {
 
 struct PostFxStats { int passes = 0; int effects = 0; int width = 0, height = 0; };
 
-class PostFx : public PostProcess {
+class Prisma : public PostProcess {
 public:
     bool init(gfx::Device& dev);
     void shutdown();
@@ -94,5 +94,9 @@ private:
     PostFxStats stats_;
     std::string error_;
 };
+
+// Source-compatible legacy name; new engine code should use Prisma.
+// The serialized `postfx` block and postfx_* editor operations remain stable.
+using PostFx = Prisma;
 
 } // namespace aiverse::render
