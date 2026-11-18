@@ -189,6 +189,11 @@ if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
 endif()
 
 add_subdirectory(libraries)
+# RTS projectile motion and impact use the public, genre-independent packages
+# rather than implementing their own physics or duplicating damage ordering.
+target_link_libraries(aiverse_game PRIVATE
+    AIVERSE::lib_ecs_kinematic_projectiles
+    AIVERSE::lib_ecs_ordered_impact)
 # Prove public shared mechanics can execute in unrelated native genre hosts.
 # The target uses AIVERSE::libraries, never aiverse_game or aiverse_fps.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
