@@ -405,7 +405,10 @@ void main() {
         if (mode == 9) { o_color = vec4(fract(abs(v_wpos) * .05), 1.0); return; }
     }
     if (u_params.x > 1.5 && u_params.x < 9.5) { o_color = vec4(rtsEncodeScene(u_color.rgb), 1.0); return; }
-    vec4 albedo = u_color * v_col;
+    // NEREID tags repurpose u_color.rgb as optical coefficients; old
+    // non-water draws preserve their tint without changing uniform layouts.
+    vec4 albedo = vec4(v_col.rgb * (u_params.x < -0.5 ? vec3(1.0) : u_color.rgb),
+                       v_col.a * u_color.a);
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
     vec3 n = normalize(v_nrm);
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
@@ -456,9 +459,12 @@ void main() {
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
     vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V,
                              u_params.x < -1.5 ? 0.0 : u_params.y);   // planar reflection (water, High)
-    // NEREID refraction: opt-in, reuses the opaque SSR colour/depth capture.
-    // No feedback sampling of the target currently being rendered.
-    if (u_params.x < -0.5 && u_params.w > 0.001 && u_trace2.w > 0.5) {
+    // NEREID optics: sample the existing opaque colour/depth capture only.
+    // u_color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
+    // Captured background depth must be below the water plane.
+    if (u_params.x < -0.5 && u_trace2.w > 0.5 &&
+        (u_params.w > 0.001 || u_color.r > 0.001 ||
+         u_color.g > 0.001 || u_color.b > 0.001)) {
         vec4 projected = u_viewProj * vec4(v_wpos, 1.0);
         if (projected.w > 0.0) {
             vec2 screen = projected.xy / projected.w * 0.5 + 0.5;
@@ -473,9 +479,20 @@ void main() {
                     float thickness = v_wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         vec3 background = texture(tex4, sampleUV).rgb;
-                        float transmission = exp(-thickness * 0.18);
-                        float blendAmount = u_params.w * (0.25 + 0.65 * transmission);
-                        outc = mix(outc, background, clamp(blendAmount, 0.0, 0.85));
+                        float transmission = exp(-thickness * u_color.r);
+                        vec3 absorbed = background * transmission +
+                            rtsEncodeScene(base) * (1.0 - transmission) * u_color.b;
+                        float blendAmount = clamp(u_params.w * 0.85 +
+                            u_color.b * (1.0-transmission), 0.0, 0.85);
+                        outc = mix(outc, absorbed, blendAmount);
+                        // Depth-derived shore foam: shallow intersections only.
+                        // Vertex-tinted foam remains as the authored fallback.
+                        if (u_color.g > 0.001) {
+                            float shallow = clamp(1.0 - thickness / u_color.g, 0.0, 1.0);
+                            float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
+                            outc = mix(outc, vec3(0.82, 0.91, 0.92),
+                                       clamp(foamWeight * 0.65, 0.0, 0.65));
+                        }
                     }
                 }
             }
@@ -524,7 +541,8 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         if (mode == 9) return float4(fract(abs(in.wpos) * .05), 1.0);
     }
     if (u.params.x > 1.5 && u.params.x < 9.5) return float4(rtsEncodeScene(u.color.rgb), 1.0);
-    float4 albedo = u.color * in.col;
+    float4 albedo = float4(in.col.rgb * (u.params.x < -0.5 ? float3(1.0) : u.color.rgb),
+                           in.col.a * u.color.a);
     float3 base = rtsDecodeScene(albedo.rgb);
     float3 n = normalize(in.nrm);
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
@@ -574,9 +592,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col),
                                in.wpos, n, V, u.params.x < -1.5 ? 0.0 : u.params.y);
-    // Same NEREID depth-gated refraction as GLSL; only the captured opaque
-    // colour/depth targets are sampled, never the active water target.
-    if (u.params.x < -0.5 && u.params.w > 0.001 && f.trace2.w > 0.5) {
+    // NEREID optics: share captured opaque tex4/tex5 with SSR, no feedback.
+    // u.color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
+    if (u.params.x < -0.5 && f.trace2.w > 0.5 &&
+        (u.params.w > 0.001 || u.color.r > 0.001 ||
+         u.color.g > 0.001 || u.color.b > 0.001)) {
         float4 projected = f.viewProj * float4(in.wpos, 1.0);
         if (projected.w > 0.0) {
             float2 screen = projected.xy / projected.w * 0.5 + 0.5;
@@ -591,9 +611,18 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                     float thickness = in.wpos.y - opaquePos.y;
                     if (thickness > 0.02 && thickness < 1000.0) {
                         float3 background = tex4.sample(s4, sampleUV).rgb;
-                        float transmission = exp(-thickness * 0.18);
-                        float blendAmount = u.params.w * (0.25 + 0.65 * transmission);
-                        outc = mix(outc, background, clamp(blendAmount, 0.0, 0.85));
+                        float transmission = exp(-thickness * u.color.r);
+                        float3 absorbed = background * transmission +
+                            rtsEncodeScene(base) * (1.0 - transmission) * u.color.b;
+                        float blendAmount = clamp(u.params.w * 0.85 +
+                            u.color.b * (1.0-transmission), 0.0, 0.85);
+                        outc = mix(outc, absorbed, blendAmount);
+                        if (u.color.g > 0.001) {
+                            float shallow = clamp(1.0 - thickness / u.color.g, 0.0, 1.0);
+                            float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
+                            outc = mix(outc, float3(0.82, 0.91, 0.92),
+                                       clamp(foamWeight * 0.65, 0.0, 0.65));
+                        }
                     }
                 }
             }
