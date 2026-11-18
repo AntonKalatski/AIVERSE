@@ -4431,3 +4431,36 @@ Next: Document prefetchVisibleVirtualPages in the native texture
 skill, along with the UV visibility adapter ownership and
 coarse fallback pinning guarantees, then hand off. Later
 compile/run CTest and fix actual failures.
+
+## Stage 7Z — native visibility prefetch agent guidance and test routing (2026-11-18)
+
+Documentation code commit: f9e7e8640529fb45b461b6e33ec7b0dc6b5c694f.
+Branch: feature/texture-rhi-unification, PR #21 remains Draft.
+Paths: skills/visuals/aiverse-texture-rhi/SKILL.md,
+docs/texture-rhi.md and AGENTS.md.
+
+Implementation: Native texture skill has a genre-independent
+example projecting a visible UV rectangle into
+VirtualTexturePrefetchPlanner and prefetchVisibleVirtualPages,
+then pumping the existing disk-backed GPU streamer. It documents
+exact residency vs coarse fallback, pin promotion, bounded
+CPU region/candidate and frame-request budgets, request tickets
+and caller ownership of camera/terrain/world visibility projection.
+The canonical architecture doc adds an explicit prefetch section,
+references both new public headers and includes
+aiverse_virtual_texture_prefetch_test and virtual_texture_prefetch
+in native CMake/CTest commands. AGENTS.md instructs all game agents
+to reuse the generic prefetch APIs, not to build per-genre streamers.
+
+Compatibility: Documentation and AI skill only, no C++ engine
+runtime, asset formats, ECS authority, saves or networking changed.
+
+Actual verification: GitHub doc/tree/ref update succeeded.
+C++ compile, CTest, skill audit and real driver validation NOT RUN.
+No green CI or GPU verification claimed.
+
+Next: Build the feature branch and execute the expanded focused
+texture tests. Fix any compile/test failures, especially
+disk->GPU prefetch callback ordering and backend source integration.
+Add GPU feedback only as a separate bounded pipeline with
+safe synchronization and a separate handoff.
