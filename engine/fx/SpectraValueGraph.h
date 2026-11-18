@@ -59,6 +59,16 @@ public:
         }
         return true;
     }
+    // Validate ALL value branches, including disconnected authoring nodes.
+    // Only checking evaluation from live outputs would miss dormant data
+    // cycles that become dangerous after a user reconnects a graph.
+    bool validateAll() {
+        std::set<std::string> done,active;
+        for(const auto& id:data_)
+            if(!validateData(id,done,active))return false;
+        return true;
+    }
+
     bool isValue(const std::string& name) const {return data_.count(name)!=0;}
     bool hasNode(const std::string& name) const {return all_.count(name)!=0;}
 
@@ -291,6 +301,45 @@ public:
     }
 
 private:
+    bool collectDependencies(const Json& tree,std::vector<std::string>& deps,unsigned depth=0) {
+        if(depth>40)return fail("data dependency nesting exceeds 40");
+        if(tree.isObject()) {
+            if(tree.has("$node")) {
+                if(!tree["$node"].isString())return fail("$node reference must be a string");
+                deps.push_back(tree["$node"].str());
+                return true;
+            }
+            if(tree.has("$curve")) {
+                if(!tree["$curve"].isString())return fail("$curve reference must be a string");
+                deps.push_back(tree["$curve"].str());
+                return true;
+            }
+            for(const auto& [key,value]:tree.members()) {
+                (void)key;
+                if(!collectDependencies(value,deps,depth+1))return false;
+            }
+        } else if(tree.isArray()) {
+            for(const auto& value:tree.items())
+                if(!collectDependencies(value,deps,depth+1))return false;
+        }
+        return true;
+    }
+    bool validateData(const std::string& id,std::set<std::string>& done,
+                      std::set<std::string>& active) {
+        if(done.count(id))return true;
+        if(!isValue(id))return fail("unknown data dependency '"+id+"'");
+        if(!active.insert(id).second)return fail("cycle in data graph involving '"+id+"'");
+        std::vector<std::string> deps;
+        const Json& node=*all_.at(id);
+        if(!collectDependencies(node["properties"],deps))return false;
+        for(const auto& ref:deps) {
+            if(!validateData(ref,done,active))return false;
+        }
+        active.erase(id);
+        done.insert(id);
+        return true;
+    }
+
     static bool sameType(const Json& a,const Json& b) {
         if(a.type()!=b.type())return false;
         if(a.isArray()) {
