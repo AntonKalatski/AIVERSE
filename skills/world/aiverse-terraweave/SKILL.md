@@ -645,3 +645,38 @@ is exact in X/Z, not a height-aware vertical weld;
 keep that documented until real GPU tests prove
 a stitched seam. Separate test agent owns all
 build/CTest/platform rendering/performance work.
+
+## Height-aware Horizon near/far seam welding (Stage 19 / TWH6)
+
+For authored near terrain, supply **all three callbacks from the same
+immutable snapshot**: `ownsNearTerrainRect`,
+`collectNearTerrainRects`, and
+`nearGroundHeightAtCm` (optional signed-centimetre surface
+height, nullopt outside resident near-ground tiles).
+
+The CPU worker or offline `bakeHorizonBatch` must call
+`populateHorizonNearSeamSamples(bake,source)` after
+`bakeHorizon` and before converting to a render Model,
+caching or archiving it. Do not query mutable collision/ECS
+data from `makeHorizonModel` or the renderer. The sample
+table uses Q16 world-centimetre X/Z keys and max 4096
+unique near-edge positions; a missing required height
+must disable the *whole* optional height-weld table rather
+than leaving a half-welded seam.
+
+`makeHorizonModel` replaces only exact clipped-edge Y
+with the baked near-tile surface height and retains the
+far-source plane on interior clipped vertices. This is
+still the **same** bounded triangles and single
+material-0 terrain primitive. Observe
+`weldedNearVertices` and `maxNearWeldDeltaCm`
+in `HorizonRuntimeStats` when deciding whether extra
+normal/slope smoothing is needed.
+
+The current archive is **TWH6**, not TWH5. It persists
+all bounded seam samples and changes the generator
+fingerprint; TWH1–TWH5 static assets must be
+rebaked. Tests, CPU clipping fixtures, CTest, MSVC/Clang,
+Metal/GL/Vulkan captures and benchmarks belong to the
+dedicated testing agent; do not mark them passed from
+source code review alone.
