@@ -24,7 +24,7 @@ struct PrismaGraphResource {
     PrismaGraphFormat format = PrismaGraphFormat::RGBA16F;
     uint32_t width = 1, height = 1;
     bool external = false;    // supplied by caller, never allocated/aliased by the graph
-    bool history = false;     // persists across frames; cannot share a transient slot
+    bool history = false;     // owned history persists across frames; external history is caller-managed
     bool allowAlias = true;
 };
 struct PrismaGraphPass {
@@ -41,7 +41,7 @@ struct PrismaGraphSlot {
     PrismaGraphFormat format = PrismaGraphFormat::RGBA16F;
     uint32_t width = 0, height = 0;
     int lastUse = -1;
-    bool persistent = false;
+    bool dedicated = false;   // history or aliasing-disabled resource
     uint64_t bytes = 0;
 };
 struct PrismaGraphPlan {
@@ -89,8 +89,6 @@ public:
                 return fail("PRISMA graph: duplicate/empty resource name '" + r.name + "'");
             if (r.width == 0 || r.height == 0 || r.width > 16384 || r.height > 16384)
                 return fail("PRISMA graph: resource '" + r.name + "' has invalid dimensions");
-            if (r.external && r.history)
-                return fail("PRISMA graph: resource '" + r.name + "' cannot be both external and history");
         }
         names.clear();
         for (const auto& p : passes_)
@@ -184,7 +182,7 @@ public:
             if (r.allowAlias && !r.history) {
                 for (size_t si = 0; si < plan.slots.size(); ++si) {
                     const auto& s = plan.slots[si];
-                    if (!s.persistent && s.lastUse < life.first && s.format == r.format &&
+                    if (!s.dedicated && s.lastUse < life.first && s.format == r.format &&
                         s.width == r.width && s.height == r.height) {
                         slot = static_cast<int>(si);
                         break;
