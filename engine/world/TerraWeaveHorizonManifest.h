@@ -77,6 +77,10 @@ horizonSceneFromManifest(
         j,"orientationViews",settings.orientationViews,1,2));
     settings.maxCachedRegions=static_cast<uint32_t>(worldInteger(
         j,"maxCachedRegions",settings.maxCachedRegions,0,4));
+    settings.maxCachedGpuRegions=static_cast<uint32_t>(worldInteger(
+        j,"maxCachedGpuRegions",settings.maxCachedGpuRegions,0,3));
+    settings.gpuCacheBudgetMiB=static_cast<uint32_t>(worldInteger(
+        j,"gpuCacheBudgetMiB",settings.gpuCacheBudgetMiB,8,96));
     settings.regionHysteresisCm=static_cast<int32_t>(worldInteger(
         j,"regionHysteresisCm",settings.regionHysteresisCm,0,100000));
     settings.nearBlendCm=static_cast<int32_t>(worldInteger(
