@@ -5,6 +5,7 @@
 #include "engine/physis/PhysisFieldRuntime.h"
 #include <cstdint>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>

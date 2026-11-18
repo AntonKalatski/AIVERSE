@@ -5,6 +5,7 @@
 #include "../EditorUtil.h"
 #include "../PhysisSceneOverlay.h"
 #include "../PhysisFieldEditor.h"
+#include "../PhysisLiveEdit.h"
 #include "engine/physis/PhysisDebugPalette.h"
 #include <algorithm>
 #include <cstdint>
@@ -64,6 +65,7 @@ public:
         // Project-authored wind/storm/gravity sources are always editable,
         // including edit mode where no running PHYSIS ECS World exists.
         drawPhysisFieldsPanel(ed);
+        drawLiveEdit(ed);
 
         const aiverse::World* world = showDemo_ && demo_ ? demo_.get() : live;
         if (!world) {
@@ -222,6 +224,46 @@ public:
     }
 
 private:
+    // Live edits go through a GameModule-opted-in Simulation command, never
+    // from the Scene overlay into the authoritative World directly.
+    void drawLiveEdit(Editor& ed) {
+        ui::section(ICON_PENCIL, "PHYSIS · Live Editing");
+        auto* sim=ed.sim();
+        liveEdit_.observe(sim);
+        std::string reason;
+        const bool available=physis_live::canSubmit(sim,&reason);
+        if (sim && sim->world().resourceConst<FieldRuntimeState>()) {
+            const auto& current=*sim->world().resourceConst<FieldRuntimeState>();
+            ImGui::TextDisabled("Текущая ECS ревизия: %llu · тик: %u",
+                                static_cast<unsigned long long>(current.revision),sim->tick());
+            if (liveEdit_.status==physis_live::EditStatus::Queued)
+                ImGui::TextDisabled("Ожидаем тик: %u · исходная ревизия: %llu",
+                    liveEdit_.scheduledTick,
+                    static_cast<unsigned long long>(liveEdit_.expectedRevision));
+        }
+        const bool pending=liveEdit_.status==physis_live::EditStatus::Queued;
+        ImGui::BeginDisabled(!available || pending);
+        if (ImGui::Button("Применить поля в игровую симуляцию##physisLive")) {
+            std::string error;
+            if (liveEdit_.submit(*sim,ed.doc().toJson(),&error)) {
+                dirty_=true;
+                physisSceneOverlayState().dirty=true;
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("Статус: %s",
+            physis_live::statusName(liveEdit_.status));
+        if (!liveEdit_.message.empty())
+            ImGui::TextWrapped("%s",liveEdit_.message.c_str());
+        if (!available) {
+            ui::hint(reason.c_str());
+            ui::hint("Необходим GameModule с явным разрешением на локальные правки.");
+        } else if (pending) {
+            ui::hint("Отправлено не означает применено. Статус обновится после нужного тика.");
+        }
+        ui::hint("Только поле ветра/шторма/гравитации; климат и вода здесь не обновляются.");
+    }
+
     void makeDemo() {
         demo_ = std::make_unique<aiverse::World>();
         Settings config;
@@ -359,6 +401,7 @@ private:
                       ImGui::GetColorU32(ImGuiCol_Border), 3);
     }
 
+    physis_live::FieldEditSession liveEdit_;
     std::unique_ptr<aiverse::World> demo_;
     DiagnosticRaster raster_{};
     DiagnosticLayer layer_ = DiagnosticLayer::TemperatureCelsius;
