@@ -1439,3 +1439,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `2bb9af0beb062fd49644de817cfcbccc25b187e8`.
 - Updated `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md`: document `saveDamageQueue/loadDamageQueue/hashDamageQueue`, v1 bounds-checked byte format, transactional load, generation-safe hash and the GameModule serializer/hash integration requirement. World COW snapshots are not enough for persistent saves.
 - Verification: documentation commit, **native C++ execution not confirmed**. Next: execute CTest and regression suite; keep old FPS/RTS save paths untouched until migration parity evidence.
+
+
+### 2026-11-18 — FPS programmed projectile stage parity checks deep and COW snapshots
+- **Implementation SHA:** `d4fd11dc5984f4ceebbf4c427a4517c5ba113504`.
+- Updated `tests/fps/projectiles.inc`: extracted `ecsProjectileProgramStageParityCase(bool cow)`; the `ecsProjectileProgramStageParity` entrypoint now tests both default deep snapshots and explicit ECS COW snapshots. Both validate tick-by-tick default-versus-`ecsAuthority` programmed projectile state/health, v9 cross-load and replay restore.
+- **Verification:** source committed only; native compile, FPS CTest, COW and platform parity **not run**. COW enablement uses supported `World::enableCowSnapshots` API.
+- **Next:** native compile/CTest and transport/Editor regression; resolve any differences before replacing `fps.compat.projectilePrograms` workspace with direct `ProjectileRuntime` ECS iteration.
