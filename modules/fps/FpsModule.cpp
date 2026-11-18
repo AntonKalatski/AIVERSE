@@ -469,6 +469,15 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
             hydrateActorsFromEcs(s);
             hydrateDynamicsFromEcs(s);
         });
+    // Transitional system boundary: preserve the exact original FPS tick order.
+    // With ecsAuthority enabled, ECS is hydrated before this stage and the
+    // dynamic projectile components are committed after the main actor tick.
+    // Do not batch weapon impact events later: immediate hits here must still
+    // precede tickSystems(), royale, rewind capture and player movement.
+    sim.addSystem("fps.compat.projectilePrograms",[this](Simulation& s) {
+        if(state(s).winner)return;
+        tickProjectilePrograms(s);
+    });
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
     sim.addSystem("fps.ecsMirror",[this](Simulation& s){
         syncActorEntities(s);
@@ -606,7 +615,8 @@ void Module::moveActorEcs(Simulation& sim,Actor& actor,const Input& input) {
 
 void Module::tick(Simulation& sim) {
     auto& s=state(sim);if(s.winner)return;
-    tickProjectilePrograms(sim);
+    // Programmed projectiles have already advanced in the immediately
+    // preceding Simulation stage (after optional ECS hydration).
     if(config_.systems.enabled)tickSystems(sim);
     tickRoyale(sim);
     if(s.winner)return;
