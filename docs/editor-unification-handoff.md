@@ -1783,3 +1783,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `291ac6b9253190599c7eed173fd68ac6be2f10fe`.
 - Extended `tests/fps/projectile_spawn.inc` with `ecsProjectileRoundResetParityCase(bool cow)`: runs real bomb-mode FPS to create a grenade by input action, explicitly ends the round at an identical tick in default/ECS hosts, verifies the actual `tickSystems` reset removes every `ProjectileRuntime` plus kind-1 ID index while preserving normal state/checksum parity, cross-loads save v9 in both storage modes, restores a pre-reset snapshot and repeats reset, then spawns a new grenade to verify increasing game object IDs after ECS Entity removal/reuse. Runs in deep and COW snapshot modes.
 - **Verification:** source committed but **test entrypoint is not yet called by FPS main**; native compiler, gameplay assertions and transport rollback not run. Call from the built-in FPS suite and inspect actual failure modes, especially mandatory bomb sites and freeze/round event ordering.
+
+
+### 2026-11-18 — FPS ECS projectile reset regression registered in native suite
+- **Implementation SHA:** `f5f61276826a3a5f5fa32388413e3a47b5013d8d`.
+- Updated `tests/fps/tests.cpp` main to execute `ecsProjectileRoundResetParity()` alongside weapon/grenade spawn parity. The new regression is called in the standard `aiverse_fps_tests` executable, not a standalone unused source fixture.
+- **Verification:** source edit committed; native compile, CTest execution and actual bomb-mode checks remain unverified. Review both default and COW runs before making ECS authority default.
