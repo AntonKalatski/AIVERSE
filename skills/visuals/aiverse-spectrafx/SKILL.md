@@ -83,6 +83,37 @@ Shutdown must precede destruction of `gfx::Device`.
 See `docs/spectrafx.md` stage 10 and the last handoff entry for
 the exact implementation status and follow-up checks.
 
+## Graph GPU eligibility and transparent CPU fallback (Stage 11)
+
+Use `spectra::GraphRuntime` (public `engine/fx/SpectraFX.h`) for
+opt-in **per-graph** backend selection from any native game genre.
+It accepts either `initGraph(device, graphJson, overrides, options)`
+or `initEffect(device, compiledEffect, options)` and owns one
+`ComputeParticles` or full `fx::ParticleSystem` instance. Call
+`burstAt`, `setView`, `step` (before scene render pass),
+`draw` (inside pass), `clear` (outside encoders) and `shutdown`
+(before device destruction).
+
+Never route a graph to GPU based on output node alone. Use
+`spectra::inspectGraphGpuEligibility(effect, options)` to check
+whether the **whole** effect fits the Metal prototype. Unsupported
+shader graphs, random ranges, noise, trails, collisions, lights,
+subemitters, custom colours, non-soft textures and multi-emitters
+keep all data via original `EffectDef` in the CPU runtime.
+`ComputePreference::RequireGpu` returns an error rather than
+silently simplifying the graph.
+
+`fx_graph_validate`/`get`/`list` now expose
+`metalGpuEligible` and `metalGpuReason`; the SpectraFX graph
+editor shows the same result. **Eligibility is not device support
+or measured GPU performance.** The existing editor preview is CPU.
+
+Run `aiverse_vfx_graph_runtime_tests`, `aiverse_vfx_gpu_tests`
+and the full `ctest -L SpectraFX` suite once a native checkout
+is available. Stage 11 is committed but tests and real Metal
+shaders have not been verified in this session. Preserve the
+per-stage handoff rule.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
@@ -91,7 +122,7 @@ Use CMake target `AIVERSE::spectrafx` in a native project. Validate with:
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
