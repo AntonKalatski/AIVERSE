@@ -1257,3 +1257,53 @@ No CI pass asserted.
 C++ compiler issues and test actual GPU sampling.
 Then migrate DDS with multi-face/array metadata and
 complete the missing render-target and format features.
+
+## Stage 6F — DDS arrays/cubemaps/volumes preserved by a new container reader (2026-11-18)
+
+**Code commit:** `c5faf209d8f7c82e9a3a276337de5219078fcb30`.
+**Working branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Changed paths:** `engine/render/ImageDds.cpp`, new
+`engine/render/DdsTexture.h`, new `tests/render/dds_layers.cpp`,
+`CMakeLists.txt`.
+
+**Implementation:** New public `parseDdsTexture(bytes, CompressedImage&, err)`
+supports DX10 DDS 2D arrays, cubemaps/cubemap arrays and volume textures,
+plus complete legacy cubemaps and 2D cases. It retains all faces/layers/z
+slices/mips in `CompressedImage` (mip-major, slice-major within each mip),
+transposing native DDS **surface-major mip order** to the shared KTX2
+representation. BC1/BC3/BC4/BC7 remain compressed; BC2/BC5 are decoded
+per slice into RGBA8, as are common legacy and DX10 8/16/24/32-bit masked
+RGBA/BGRA formats. Handles sRGB DX10 variants and BC1 RGB-vs-RGBA
+sampling semantics. Enforces dimension/cube-face consistency, mip count,
+byte bounds and 512 MiB max decoded allocation per mip. No file format
+or save/network/ECS changes; `decodeDds(Model::Image&)` remains the
+old first-face 2D material pathway.
+
+**Test source:** Registered `dds_layers` CTest with synthetic DX10 BC1
+two-cube array (checks 12 faces and per-mip surface-to-mip reordering),
+three-layer RGBA8 array, 3D RGBA8 volume with shrinking depth,
+and malformed/partial cubemap/truncated payload rejection.
+
+**Compatibility:** New opt-in container API; existing model importer and
+sampler2D textures remain unchanged. Caller may pass the resulting
+`CompressedImage` to `uploadKtx2Image` (format-agnostic uploader) for
+native dimensional GPU resources, subject to backend capabilities.
+
+**Unsupported:** DDS signed/float/packed DXGI formats not already decoded
+in this subset; non-tightly-packed DDS pitch variants; BasisU transcoding;
+HDR/EXR; GL/Vulkan MSAA resolves. The function does **not** make all DDS
+formats supported, and does not auto-rewrite 2D model shader bindings.
+
+**Verification:** GitHub file/tree/commit/ref update succeeded.
+CMake/C++ build: **NOT RUN** (full repository checkout unavailable in
+this environment). `dds_layers`, other CTests and GPU validation:
+**NOT RUN**. CI last checked: queued (not passing); recheck current SHA.
+No build or performance claim.
+
+**Next:** Compile `aiverse_dds_layers_test` and run
+`ctest --test-dir build/texture-rhi --output-on-failure -R
+'^(dds_layers|ktx2_layers|texture_asset|texture_contract|render_target_set)$'`.
+Fix any static/API errors. Add direct `uploadDdsImage` name/format
+documentation or alias in the shared `TextureAsset.h`, then test DDS
+cubemap and 3D resource creation on Metal/Vulkan/GL. Continue the
+separate code-commit + handoff-commit protocol after every stage.
