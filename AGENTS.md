@@ -200,6 +200,26 @@ VFX editor. No CMake/CTest/ImGui runtime verification was executed
 because user prioritizes closing functionality first.
 Follow the separate per-stage handoff protocol.
 
+**Stage 18 — SpectraFX reusable typed function graphs and libraries
+(source committed, tests deferred):** V2 graph assets may define
+pure functions under root `functions`, called using data node
+`FunctionCall` with typed arguments and a declared output.
+`engine/fx/SpectraValueGraph.h` evaluates nested functions with
+bounded depth and recursion guards; `engine/fx/SpectraGraphV2.h`
+validates function definitions, types and call DAGs even if
+dormant. `engine/fx/SpectraFunctionAssets.h` provides
+I/O-injected last-good hot reload and safe import of version-1
+function library packages `fx/functions/*.vfxfn.json`.
+`apps/editor/core/SpectraFunctionOps.cpp` implements
+`fx_function_list/get/set/import/export` and the graph
+editor exposes embedded function editing and import/export.
+Never execute arbitrary source code as a VFX function;
+compile into the existing FxEffect schema, preserve the
+published/draft separation and no-genre/no-ECS-mutation
+rules. The user explicitly deferred tests, so record them
+NOT RUN, and continue the separate handoff after every
+bounded code stage.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
