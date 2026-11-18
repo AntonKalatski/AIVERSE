@@ -78,8 +78,12 @@ public:
         // Camera/render coordinates are map-local; generator coordinates are
         // world-absolute and may have a nonzero origin in the saved recipe.
         const auto origin = terraweave_ops_detail::origin(recipe);
-        const int64_t globalCameraXcm = cameraXcm + origin.worldOriginXcm;
-        const int64_t globalCameraZcm = cameraZcm + origin.worldOriginZcm;
+        // cameraXcm/Zcm are map-local render units (100 cm per cell).
+        // A recipe may sample each authored corner at a different world spacing.
+        const int64_t globalCameraXcm = origin.worldOriginXcm +
+            cameraXcm * origin.cellSizeCm / 100;
+        const int64_t globalCameraZcm = origin.worldOriginZcm +
+            cameraZcm * origin.cellSizeCm / 100;
         if (globalCameraXcm < -terraweave::kWorldLimitCm ||
             globalCameraXcm > terraweave::kWorldLimitCm ||
             globalCameraZcm < -terraweave::kWorldLimitCm ||
@@ -130,14 +134,16 @@ public:
                     for (auto& item : items) {
                         // Authoritative/editor terrain may have been sculpted since
                         // the original seed. Sample the actual map for the overlay.
-                        const int64_t localXcm = item.xCm - origin.worldOriginXcm;
-                        const int64_t localZcm = item.zCm - origin.worldOriginZcm;
-                        if (!terraWeavePreviewAllowsPlacement(doc.data, localXcm,
-                                                               localZcm, origin.cellSizeCm))
+                        const int64_t sourceXcm = item.xCm - origin.worldOriginXcm;
+                        const int64_t sourceZcm = item.zCm - origin.worldOriginZcm;
+                        const int64_t mapXcm = sourceXcm * 100 / origin.cellSizeCm;
+                        const int64_t mapZcm = sourceZcm * 100 / origin.cellSizeCm;
+                        if (!terraWeavePreviewAllowsPlacement(doc.data, mapXcm,
+                                                               mapZcm, 100))
                             continue;
-                        item.heightCm = sampleHeightCm(localXcm, localZcm);
-                        item.xCm = localXcm;
-                        item.zCm = localZcm;
+                        item.heightCm = sampleHeightCm(mapXcm, mapZcm);
+                        item.xCm = mapXcm;
+                        item.zCm = mapZcm;
                         placements_.push_back(item);
                     }
                 }
