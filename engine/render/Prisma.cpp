@@ -1080,13 +1080,32 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         }
     }
     const auto* graphEffect = find(PrismaType::ShaderGraph);
-    gfx::PipelineHandle pipe = composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
-    if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
+    const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
     std::vector<gfx::TextureHandle> graphImages;
-    if(graphEffect) {
-        const auto it=graphPaths_.find(graphEffect->shaderGraph.dump(-1));
-        if(it!=graphPaths_.end())for(const auto& path:it->second)graphImages.push_back(graphTexture(path));
+    if (graphEffect) {
+        // Populate the shader graph texture list before deciding whether
+        // fixed slot 8 is available for the HDR exposure history texture.
+        // Existing compiled composite variants are cached by mask+graph.
+        composite(mask, graphData);
+        const auto it = graphPaths_.find(graphEffect->shaderGraph.dump(-1));
+        if (it != graphPaths_.end())
+            for (const auto& path : it->second)
+                graphImages.push_back(graphTexture(path));
     }
+    // Custom graph textures occupy consecutive slots 5..8; never bind
+    // automatic exposure over one of them. The shader path remains valid,
+    // but auto exposure is omitted for graphs using all four slots.
+    const bool useAutomaticExposure = automaticExposure.valid() &&
+        graphImages.size() <= 3;
+    if (useAutomaticExposure) mask |= kPfAutoExposure;
+    gfx::PipelineHandle pipe = composite(mask, graphData);
+    if (!pipe.valid()) {
+        // A failed exposure variant may fall back to identical non-auto
+        // color processing without binding an absent TEX8 sampler.
+        mask &= ~kPfAutoExposure;
+        pipe = composite(mask, graphData);
+    }
+    if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
     const PrismaEffect* finalAa = hdrFrame_ ? find(PrismaType::Fxaa) : nullptr;
     bool aaAfter = finalAa && program(kFxaa).valid();
     gfx::PassDesc compositeOut = out;
@@ -1110,6 +1129,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const Lut* l = (mask & kPfLut) ? lut(find(PrismaType::Lut)->text) : nullptr;
         dev.setTexture(4, l ? l->tex : black_);
         for(size_t i=0;i<graphImages.size();++i)dev.setTexture(int(i)+5,graphImages[i]);
+        if (mask & kPfAutoExposure) dev.setTexture(8, automaticExposure);
         dev.draw(3);
     }
     ++stats_.passes;
