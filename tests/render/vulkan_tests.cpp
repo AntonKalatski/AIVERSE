@@ -97,6 +97,21 @@ void translation() {
     aiverse::gfx::vk::SpirvProgram p;
     CHECK(aiverse::gfx::vk::compileProgram(kVs, kColorFs, false, p) && !p.vertex.empty() && !p.fragment.empty());
     CHECK(!aiverse::gfx::vk::compileProgram(kVs, "void main() { undefined_call(); }", false, p) && !p.error.empty());
+    std::vector<uint32_t> computeSpv;
+    std::string computeError;
+    const char* computeSource = R"(
+layout(set=0,binding=0,rgba8) uniform writeonly image2D image0;
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x>=4 || pixel.y>=4) return;
+    imageStore(image0,pixel,vec4(1.0,0.25,0.5,1.0));
+})";
+    CHECK(aiverse::gfx::vk::compileComputeProgram(
+        computeSource,computeSpv,computeError) && !computeSpv.empty());
+    CHECK(!aiverse::gfx::vk::compileComputeProgram(
+        "void main() { invalid_storage_image_call(); }",computeSpv,
+        computeError) && !computeError.empty());
+
 }
 } // namespace
 
@@ -141,6 +156,69 @@ int main() {
                 stillReported |= entry.handle == inventoryTexture;
             CHECK(!stillReported);
         }
+    }
+
+
+    {   // Real Vulkan compute storage texture, barrier and async GPU readback.
+        // This runs only when the physical queue and format support image stores.
+        CHECK(!d.supportsStorageTexture(PixelFormat::BC7,
+                                        TextureDimension::Texture2D));
+        if (d.supportsCompute() &&
+            d.supportsStorageTexture(PixelFormat::RGBA8,
+                                     TextureDimension::Texture2D)) {
+            TextureDesc image;
+            image.width=image.height=4;
+            image.mipLevels=1;
+            image.storage=true;
+            image.format=PixelFormat::RGBA8;
+            const TextureHandle output=d.createTexture(image);
+            CHECK(output.valid());
+            ComputeDesc desc;
+            desc.glsl=R"(
+layout(set=0,binding=0,rgba8) uniform writeonly image2D image0;
+void main() {
+    ivec2 pixel=ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x>=4 || pixel.y>=4) return;
+    imageStore(image0,pixel,vec4(1.0,0.25,0.5,1.0));
+})";
+            const ComputeHandle program=d.createCompute(desc);
+            CHECK(program.valid());
+            if (program.valid() && output.valid()) {
+                bool callback=false;
+                TextureReadbackResult pixels;
+                d.beginFrame(W,H);
+                CHECK(d.beginCompute(program));
+                CHECK(d.bindComputeStorageTexture(0,output));
+                d.dispatch(4,4);
+                d.endCompute();
+                const bool queued=d.readTextureAsync(
+                    output,{},[&](TextureReadbackResult result) {
+                        callback=true;
+                        pixels=std::move(result);
+                    });
+                CHECK(queued);
+                d.endFrame();
+                for(int wait=0;wait<12 && queued && !callback;++wait) {
+                    d.beginFrame(W,H);
+                    d.endFrame();
+                }
+                CHECK(callback && pixels.success() &&
+                      pixels.width==4 && pixels.height==4 &&
+                      pixels.format==PixelFormat::RGBA8 &&
+                      pixels.pixels.size()==64);
+                if(pixels.success() && pixels.pixels.size()==64) {
+                    for(size_t i=0;i<pixels.pixels.size();i+=4) {
+                        CHECK(std::abs(int(pixels.pixels[i])-255)<=1);
+                        CHECK(std::abs(int(pixels.pixels[i+1])-64)<=1);
+                        CHECK(std::abs(int(pixels.pixels[i+2])-128)<=1);
+                        CHECK(std::abs(int(pixels.pixels[i+3])-255)<=1);
+                    }
+                }
+            }
+            if (program.valid()) d.destroyCompute(program);
+            if (output.valid()) d.destroyTexture(output);
+        } else
+            std::printf("Vulkan compute storage texture: SKIPPED (queue/format unavailable)\\n");
     }
 
     ShaderDesc sd;
