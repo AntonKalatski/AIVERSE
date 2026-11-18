@@ -594,3 +594,15 @@ profiling and testing. **Next:** add a small RHI renderer bridge using
 existing Renderer3D/MeshBuilder with a clean ownership/rebuild
 contract. Keep shader effects as a separate change. First fix any
 failed native CI tests before declaring this production-ready.
+
+### Stage 7B immediate source review correction
+
+**Fix commit:** `652ca2f3358f1384ee805cc2bdda72666910c449`.
+In `NereidWaterSurfaceMesh.h`, the simple-polygon validator
+incorrectly checked distance from vertex A to its **own A-B segment**
+(which is always zero). That caused every polygon to be rejected
+before ear clipping. Replaced it with the actual A-B segment-length
+check, and explicitly included `<cstddef>` and `<iterator>`.
+This was found by source review, **not by an executed C++ test**.
+The authored concave/reversed polygon fixture must still be compiled
+and run. All other stage-7B verification limitations remain.
