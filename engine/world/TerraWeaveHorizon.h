@@ -257,9 +257,18 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 const int32_t bottom=low-250;
                 const int32_t top=high+s.canopyHeightCm+500;
                 if (top-bottom>200000)continue; // prevent absurd giant billboard
-                const uint32_t slot=static_cast<uint32_t>(out.clusters.size());
-                const uint32_t px=(slot%(atlasSide/s.atlasTilePixels))*s.atlasTilePixels;
-                const uint32_t py=(slot/(atlasSide/s.atlasTilePixels))*s.atlasTilePixels;
+                const uint32_t firstSlot=
+                    static_cast<uint32_t>(out.clusters.size())*s.orientationViews;
+                const uint32_t slotsPerRow=atlasSide/s.atlasTilePixels;
+                const uint32_t px=(firstSlot%slotsPerRow)*s.atlasTilePixels;
+                const uint32_t py=(firstSlot/slotsPerRow)*s.atlasTilePixels;
+                const uint32_t sideSlot=firstSlot+(s.orientationViews==2?1u:0u);
+                const uint32_t pxSide=(sideSlot%slotsPerRow)*s.atlasTilePixels;
+                const uint32_t pySide=(sideSlot/slotsPerRow)*s.atlasTilePixels;
+                for(uint32_t orientation=0;orientation<s.orientationViews;++orientation) {
+                    const uint32_t tileSlot=firstSlot+orientation;
+                    const uint32_t tilePx=(tileSlot%slotsPerRow)*s.atlasTilePixels;
+                    const uint32_t tilePy=(tileSlot/slotsPerRow)*s.atlasTilePixels;
                 // A canopy is a mixture of small overlapping crowns, not
                 // one vertical rectangle per image column. All shapes use
                 // stable world-cell hashes and integer pixel coverage:
@@ -271,14 +280,21 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 for(uint32_t crown=0;crown<crownCount;++crown) {
                     const uint64_t h=detail::hash2(
                         gx*257+int64_t(crown),gz*131+int64_t(crown)/3,
-                        terrain.seed^salt^0x4c45414643524f57ULL);
+                        terrain.seed^salt^0x4c45414643524f57ULL^
+                        (uint64_t(orientation)*0x9e3779b97f4a7c15ULL));
                     const uint32_t column=2u+static_cast<uint32_t>(
                         (h&65535ULL)*(p-4u)/65536ULL);
-                    const int64_t sampleX=gx*cell+int64_t(column)*cell/(p-1);
-                    const auto subBiome=climateAt(terrain,biomes,sampleX,z).biome;
+                    const int64_t axisSample=
+                        int64_t(column)*cell/(p-1);
+                    const int64_t sampleX=orientation==0 ?
+                        gx*cell+axisSample : x;
+                    const int64_t sampleZ=orientation==1 ?
+                        gz*cell+axisSample : z;
+                    const auto subBiome=climateAt(
+                        terrain,biomes,sampleX,sampleZ).biome;
                     const uint32_t coverage=horizon_detail::canopyStrength(subBiome);
                     if (((h>>16)&255ULL)>=coverage)continue;
-                    const int32_t surface=heightAtCm(terrain,sampleX,z);
+                    const int32_t surface=heightAtCm(terrain,sampleX,sampleZ);
                     const int32_t crownCm=std::max<int32_t>(220,
                         int64_t(s.canopyHeightCm)*
                         (68+int32_t((h>>27)%60))/100);
@@ -322,8 +338,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                                 (detail::hash2(gx*4096+col,gz*4096+row,
                                     terrain.seed^salt^0x4449544845524c4fULL)
                                     &255ULL)>=visibility)continue;
-                            const size_t at=(size_t(py+uint32_t(row))*
-                                atlasSide+px+uint32_t(col))*4;
+                            const size_t at=(size_t(tilePy+uint32_t(row))*
+                                atlasSide+tilePx+uint32_t(col))*4;
                             const int32_t shade=std::clamp<int32_t>(
                                 12-int32_t(ellipse/260)+
                                 (imageY-row)*3+int32_t((h>>52)%17)-8,
@@ -355,8 +371,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                         const int32_t trunkStart=std::max(imageY,0);
                         for(int32_t row=trunkStart;row<=std::min<int32_t>(
                                 groundRow,int32_t(p)-2);++row) {
-                            const size_t at=(size_t(py+uint32_t(row))*
-                                atlasSide+px+column)*4;
+                            const size_t at=(size_t(tilePy+uint32_t(row))*
+                                atlasSide+tilePx+column)*4;
                             if(out.atlasRgba[at+3])continue;
                             out.atlasRgba[at]=47;
                             out.atlasRgba[at+1]=37;
@@ -365,7 +381,9 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                         }
                     }
                 }
-                out.clusters.push_back({x,z,cell,bottom,top,px,py,p,
+                }
+                out.clusters.push_back({x,z,cell,bottom,top,
+                    px,py,pxSide,pySide,s.atlasTilePixels,
                     static_cast<uint8_t>(density)});
             }
     };
