@@ -945,3 +945,107 @@ and root `AGENTS.md` are consistent. Then add a manifest/asset adapter
 or immutable ECS presentation bridge with bounded upload budgets and
 camera-relative geometry for large worlds. Preserve the universal ECS
 water owner and leave older RTS water tile bakes unchanged.
+
+## Stage 11 — declarative water manifest and bounded GPU updates
+
+**Branch:** `feature/nereid-water-core`, NEREID PR #23 (Draft).
+**Baseline:** main-only merge `04860b76cdf3bd26d0e45dcfc71cbb7d02159c78`.
+
+**Implementation commits:**
+- `4d8ae573dbfa700cfb908401d7af1783f0b545ca`: new `engine/world/NereidWaterManifest.h`
+- `ba302b10b2cbd4ed17f9b594ad8f2ceacd719f2c`: `NereidSurfaceResident::needsUpdate` (read-only)
+- `1d3127243d88df4750b59bd5c90db4321dfecac6`: `NereidWaterScene` per-frame upload scheduler
+- `a84470479ae57f7583d3af074492bb431d281adb`: stable round-robin scan fix
+- `cdab63b9eca788e43479d1870f4e9c90dd2dd08f`: `WorldScene` constructor manifest opt-in
+- `3479ebd4c44a683d49cac92c4c504b60a3c81139`: extended renderer contract fixture
+
+### API and manifest
+
+`world::parseNereidWaterManifest(const Json&)` parses an optional
+top-level `nereidWater` block into `NereidManifest {surfaces,
+maxUploadsPerFrame}`. It is separate from **authoritative ECS data**:
+only world presentation is configured and no persistence schema changes.
+If `nereidWater` is absent, older manifest paths behave as before.
+
+Minimal example (coordinates and widths are in world metres, Y is up):
+```json
+{
+  "nereidWater": {
+    "maxUploadsPerFrame": 2,
+    "surfaces": [
+      {
+        "kind": "ocean", "shape": "infinite",
+        "surfaceY": 0, "bottomY": -500,
+        "oceanPatchRadius": 256, "lod": "medium",
+        "style": {"opacity": 0.73, "specular": 0.95}
+      },
+      {
+        "kind": "lake", "shape": "polygon",
+        "surfaceY": 7, "bottomY": -8,
+        "points": [[0,0],[30,0],[40,20],[0,20]],
+        "foamWidth": 2
+      },
+      {
+        "kind": "river", "shape": "river",
+        "surfaceY": 5, "bottomY": -2,
+        "points": [[0,0,3],[25,10,5],[40,20,4]],
+        "lod": "near"
+      }
+    ]
+  }
+}
+```
+
+Supported `kind` values: `ocean/lake/river/pool/puddle`.
+Supported `shape` values: `infinite/box/disc/polygon/river`.
+`box` requires `halfExtents:[x,z]`; `disc` requires positive
+`radius`; `polygon` uses 2D X/Z nodes; `river` uses X/Z/halfWidth
+nodes. Optional `center:[x,y,z]`, `flow:[x,y,z]`, `priority`,
+`enabled`, `lod`, `uvScale`, `foamWidth`, `maxVertices`,
+`oceanPatchRadius` and `style.deepColor/foamColor` RGB triples.
+Positive extents, heights, color ranges and node counts are validated.
+Up to **64** scene surfaces; geometry nodes <=256.
+`maxUploadsPerFrame` range 1..16, default 2.
+
+`WorldScene` reads config in its constructor. Native hosts can
+override the initial water snapshot by calling
+`WorldScene::setNereidSurfaces(...)` before `update`.
+`NereidWaterScene::setMaxUploadsPerFrame` configures a fair
+round-robin rebuild-attempt quota. It inspects resident keys using
+`NereidSurfaceResident::needsUpdate` and only consumes a quota slot
+when an upload/rebuild is needed (including failed attempts).
+Disabled or removed surfaces release immediately on `update`.
+GPU publication and eviction remain on the caller's device thread.
+
+### Verification and limits
+
+**Actually done:** source review, GitHub connector commits, authored
+contract assertions for valid/invalid JSON and upload-quota bounds.
+A local `git ls-remote` check failed due to
+`Could not resolve host: github.com`; no checkout is available.
+
+**NOT RUN / UNVERIFIED:** C++ CMake configuration, compilation, CTest,
+OpenGL/Metal visual scene, asynchronous chunk streaming regression,
+FPS/RTS parity, shader compilation and GPU upload/failure test.
+Tests are source fixtures only until run on a checkout.
+Use the unified runner:
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+**Limitations:** quota bounds *attempts per frame*, not CPU ms or bytes.
+Triangulation/upload is still synchronous, so a single very large
+surface may spike. Finite surfaces lack frustum culling, and
+setSurfaces invalidates the whole list; avoid resubmitting unchanged
+snapshots every frame. Water imported from legacy RTS maps remains
+explicit opt-in. Rendering is still vertex-tinted foam, wave normals,
+single-plane reflection fallback, no underwater/refraction pipeline.
+Coordinates are absolute floats at mesh-build time, with known
+far-origin precision limitations.
+
+**Next agent:** run compiled NEREID and full regression suites first;
+correct any failures, including CMake/catalog merge conflicts. Then add
+per-body stable revision identities, bounded upload **byte** budget and
+camera visibility selection; provide immutable ECS snapshot importer.
+After each stage commit/update this handoff with actual results.
