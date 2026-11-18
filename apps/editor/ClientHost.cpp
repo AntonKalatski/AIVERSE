@@ -85,6 +85,15 @@ void ClientHost::place(float x,float y,float k,bool focused) {
     client_->event(focus);
 }
 
+void ClientHost::suspendInput() {
+    const bool held=focused_||captured_;
+    focused_=captured_=finger_=false;
+    if(!held || !client_ || step_<kSteps)return;
+    Event e;e.type=EventType::FocusLost;
+    Scope scope(*this);
+    client_->event(e);
+}
+
 void ClientHost::event(const Event& in) {
     if (!client_ || step_ < kSteps) return;
     Event e = in;
