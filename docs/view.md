@@ -162,3 +162,20 @@ raycasts or procedural floors without modifying View core.
 This query is **presentation-only**, not a replacement
 for deterministic character or vehicle collision.
 
+## External scene layer providers
+
+`engine/view/SceneLayerProviders.h` introduces
+`ViewLayerProviders`. A host registers opaque named callbacks
+and decides when they are enabled. `collect(ViewLayerQueue&,
+ViewFrameInfo)` schedules frame work in registration order.
+`ViewLayerQueue::flush()` invokes it synchronously on the
+render thread, before any borrowed model/terrain/camera state
+may expire.
+
+The generic layer API knows only names, frame seconds, dt,
+revision and presentation callbacks. No genre-specific
+resource schemas live in engine View. The compatibility
+game-view host now registers its separate path and
+shoreline presentation passes as outside providers while
+retaining their existing geometry algorithms and order.
+

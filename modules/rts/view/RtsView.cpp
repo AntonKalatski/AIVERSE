@@ -1,6 +1,7 @@
 #include "RtsView.h"
 #include "engine/view/View.h"
 #include "engine/view/SceneLayers.h"
+#include "engine/view/SceneLayerProviders.h"
 #include "RtsRoadView.h"
 #include "RtsShoreView.h"
 #include "../../../engine/data/JsonCompose.h"
@@ -304,19 +305,26 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     layers.append("surface effects",LayerPhase::Effects,[&] {
         if(!tiles)groundFx_.draw(r,s,time,vision,grid,*this);
     });
-    layers.append("paths",LayerPhase::Geometry,[&] {
-        // Rebuilding a deleted network must also flush stale ground heights.
-        if(roads_->active() || roads_->needsRebuild())
-            roads_->draw(r,[this,&grid](float x,float z) {
-                return heightAt(grid,x,z);
-            });
+    // External host-only layer providers. The engine View doesn't know
+    // what roads, shorelines or the game map mean.
+    ::aiverse::view::ViewLayerProviders surfaceProviders;
+    surfaceProviders.add("path surface",[&](auto& queue,const auto&){
+        queue.append("paths",LayerPhase::Geometry,[&]{
+            if(roads_->active() || roads_->needsRebuild())
+                roads_->draw(r,[this,&grid](float x,float z){
+                    return heightAt(grid,x,z);
+                });
+        });
     });
-    layers.append("shorelines",LayerPhase::Geometry,[&] {
-        if(shores_->active())
-            shores_->draw(r,[this,&grid](float x,float z) {
-                return heightAt(grid,x,z);
-            },terrain_.look().waterOffset,grid.w,grid.h);
+    surfaceProviders.add("shore surface",[&](auto& queue,const auto&){
+        queue.append("shorelines",LayerPhase::Geometry,[&]{
+            if(shores_->active())
+                shores_->draw(r,[this,&grid](float x,float z){
+                    return heightAt(grid,x,z);
+                },terrain_.look().waterOffset,grid.w,grid.h);
+        });
     });
+    surfaceProviders.collect(layers,{time,0.f,frame_});
     layers.append("surface paint",LayerPhase::Effects,[&] {
         paintLayers_.draw(r,*dev_,s.paintLayers,grid,*this,vision,time,s.viewer);
     });

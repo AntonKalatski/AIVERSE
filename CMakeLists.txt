@@ -755,6 +755,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_surface_composition COMMAND aiverse_view_surface_tests)
 endif()
 
+# Generic external View layer-provider API.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_provider_tests tests/view/layer_providers.cpp)
+    target_link_libraries(aiverse_view_provider_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_layer_providers COMMAND aiverse_view_provider_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
