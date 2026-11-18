@@ -214,3 +214,7 @@ RTS sample includes an optional `RTS.TopDown` mapping context (disabled for ordi
 ### Editor/FPS rebinding collision policies
 
 The project Input Actions editor and FPS F10 Settings each expose Allow duplicate, Reject duplicate and Swap keys. Swap exchanges controls between exactly two colliding mappings while preserving their mapping IDs; a three-way collision is intentionally rejected. The FPS user profile persists **both swapped mapping overrides** transactionally, and the UI shows conflicts across mapping contexts, including whether an earlier binding consumes input and shadows a later Action. Trigger-based shared buttons remain valid when Allow is chosen.
+
+## Project-specific per-user profiles
+
+`engine/platform/EnhancedInputUserProfiles.h` exposes `UserProfiles` for any local user ID. It saves validated, atomic profile overrides per project and player, including both mappings changed by Swap. `load` applies them transactionally, `rebind` persists and commits atomically, and `reset(userId,system,projectDefaults)` restores the project binding scheme without editing it. Player 0 uses the original FPS profile filename for compatibility; other local users receive separate `-user-<id>` files. FPS F10 Settings now uses this shared service and includes Restore project defaults.
