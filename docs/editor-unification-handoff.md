@@ -1068,3 +1068,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `184b186977d7fb00944ecb7613015c43b89bdfec`.
 - Changed `EcsKinematicProjectileSystems.h` direct includes to `EcsMechanicSystems.h` + `engine/core/Fixed.h` instead of `EcsProjectileSystems.h`. RTS clients no longer pull the physical `Weapons.h` / `SpatialWorld.h` headers transitively just to run nonphysical kinematic pursuit; neither collision provider nor physics simulation is required. Generic `Simulation` and deterministic fixed-point movement remain required.
 - Verification: GitHub commit only, compilation and existing RTS/FPS project validation **not run**. Previous test SHA `281cf92` had CI #1265, ECS experimental #415, Studio #932 and GPU batching #536 queued at inspection.
+
+
+### 2026-11-18 — Public kinematic projectile AI skill
+- Implementation SHA: `6f1f007f96cb9c4326e7d37c86e1de401fb9c62a`.
+- New `skills/gameplay/aiverse-ecs-kinematic-projectiles/SKILL.md` documents TimedEndpoint and Pursuit modes, public native API, impact/damage composition, moving/dead target behavior, and RTS compatibility boundaries. It explicitly distinguishes shared movement policy reuse in live RTS from a full `addKinematicProjectileSystem` RTS integration.
+- **Verification:** documentation commit only; skill not auto-registered through library catalog until follow-up commit. The skill's CMake package name is the planned catalog target, which must be registered next.
