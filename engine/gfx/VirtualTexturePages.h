@@ -78,7 +78,9 @@ public:
             Slot& s = slots_[size_t(found->second)];
             s.lastUsed = tick();
             if (pin) s.pinned = true;
-            return {found->second, s.generation, s.ready, !s.ready};
+            // An in-flight page already has an upload owner. Repeated
+            // lookups must never schedule a duplicate write to the slice.
+            return {found->second, s.generation, s.ready, false};
         }
         int slot = -1;
         for (size_t i = 0; i < slots_.size(); ++i)
