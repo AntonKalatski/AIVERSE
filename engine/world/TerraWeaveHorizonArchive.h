@@ -4,6 +4,7 @@
 #pragma once
 #include "engine/world/TerraWeaveHorizon.h"
 #include <bit>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -13,8 +14,8 @@
 namespace aiverse::terraweave {
 namespace horizon_archive_detail {
 
-inline constexpr uint32_t kMagic=0x33485754u; // "TWH3" in little endian
-inline constexpr uint32_t kVersion=3;
+inline constexpr uint32_t kMagic=0x34485754u; // "TWH4" in little endian
+inline constexpr uint32_t kVersion=4;
 inline constexpr size_t kHeaderBytes=24; // magic,version,fingerprint,checksum
 inline constexpr size_t kMaxBytes=20u*1024u*1024u;
 
@@ -66,6 +67,13 @@ inline void validate(const HorizonBake& b) {
        b.sideCm<=0||b.sideCm>kWorldLimitCm||
        b.terrainBeginCm<0||b.terrainBeginCm>kWorldLimitCm||
        b.terrainSkirtDepthCm<0||b.terrainSkirtDepthCm>5000||
+       b.innerTerrainLipCm<0||b.innerTerrainLipCm>200 ||
+       (!b.nearOwnedQuads.empty() &&
+        (b.terrainResolution==0 ||
+         b.nearOwnedQuads.size()!=size_t(b.terrainResolution)*
+                                 b.terrainResolution)) ||
+       std::any_of(b.nearOwnedQuads.begin(),b.nearOwnedQuads.end(),
+                   [](uint8_t v){return v>1;}) ||
        b.originXcm<-kWorldLimitCm||b.originXcm>kWorldLimitCm||
        b.originZcm<-kWorldLimitCm||b.originZcm>kWorldLimitCm||
        b.cameraXcm<-kWorldLimitCm||b.cameraXcm>kWorldLimitCm||
@@ -127,6 +135,8 @@ inline uint64_t horizonArchiveFingerprint(
     add(static_cast<uint32_t>(settings.middleForestEndCm));
     add(static_cast<uint32_t>(settings.terrainBeginCm));
     add(static_cast<uint32_t>(settings.terrainSkirtDepthCm));
+    add(settings.terrainGridSnapSteps);
+    add(static_cast<uint32_t>(settings.innerTerrainLipCm));
     add(settings.terrainResolution);
     add(settings.atlasTilePixels);
     add(static_cast<uint32_t>(settings.canopyHeightCm));
@@ -147,7 +157,8 @@ inline std::vector<uint8_t> encodeHorizonArchive(
         throw std::invalid_argument("TerraWeave Horizon archive fingerprint");
     std::vector<uint8_t> out;
     out.reserve(kHeaderBytes+bake.atlasRgba.size()+
-                bake.clusters.size()*60+bake.terrainVertices.size()*32+104);
+                bake.clusters.size()*60+bake.terrainVertices.size()*32+
+                bake.nearOwnedQuads.size()+116);
     put32(out,kMagic);
     put32(out,kVersion);
     put64(out,fingerprint);
@@ -156,10 +167,12 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     putI32(out,bake.sideCm);put32(out,bake.terrainResolution);
     putI32(out,bake.terrainBeginCm);
     putI32(out,bake.terrainSkirtDepthCm);
+    putI32(out,bake.innerTerrainLipCm);
     putI64(out,bake.cameraXcm);putI64(out,bake.cameraZcm);
     put32(out,bake.atlasWidth);put32(out,bake.atlasHeight);
     put32(out,static_cast<uint32_t>(bake.terrainVertices.size()));
     put32(out,static_cast<uint32_t>(bake.clusters.size()));
+    put32(out,static_cast<uint32_t>(bake.nearOwnedQuads.size()));
     out.insert(out.end(),bake.atlasRgba.begin(),bake.atlasRgba.end());
     for(const auto& v:bake.terrainVertices) {
         putI64(out,v.xCm);putI64(out,v.zCm);
@@ -174,6 +187,8 @@ inline std::vector<uint8_t> encodeHorizonArchive(
         put32(out,c.atlasSideY);put32(out,c.atlasSize);
         put32(out,c.coverage);
     }
+    out.insert(out.end(),bake.nearOwnedQuads.begin(),
+               bake.nearOwnedQuads.end());
     if(out.size()>kMaxBytes)
         throw std::invalid_argument("TerraWeave Horizon archive exceeds budget");
     const uint64_t hash=checksum(
@@ -200,12 +215,16 @@ inline HorizonBake decodeHorizonArchive(
     b.sideCm=getI32(bytes,at);b.terrainResolution=get32(bytes,at);
     b.terrainBeginCm=getI32(bytes,at);
     b.terrainSkirtDepthCm=getI32(bytes,at);
+    b.innerTerrainLipCm=getI32(bytes,at);
     b.cameraXcm=getI64(bytes,at);b.cameraZcm=getI64(bytes,at);
     b.atlasWidth=get32(bytes,at);b.atlasHeight=get32(bytes,at);
     const uint32_t terrainCount=get32(bytes,at);
     const uint32_t clusterCount=get32(bytes,at);
+    const uint32_t nearQuadCount=get32(bytes,at);
     if(!b.atlasWidth||b.atlasWidth!=b.atlasHeight||
-       b.atlasWidth>2048||terrainCount>10000||clusterCount>2048)
+       b.atlasWidth>2048||terrainCount>10000||clusterCount>2048 ||
+       (nearQuadCount!=0 &&
+        nearQuadCount!=size_t(b.terrainResolution)*b.terrainResolution))
         throw std::invalid_argument("TerraWeave Horizon archive declared sizes");
     const size_t pixelBytes=size_t(b.atlasWidth)*b.atlasHeight*4;
     if(pixelBytes>16u*1024u*1024u||
@@ -242,6 +261,12 @@ inline HorizonBake decodeHorizonArchive(
         c.coverage=static_cast<uint8_t>(cov);
         b.clusters.push_back(c);
     }
+    if(at>bytes.size() || nearQuadCount>bytes.size()-at)
+        throw std::invalid_argument("TerraWeave Horizon near quad mask truncated");
+    b.nearOwnedQuads.assign(bytes.begin()+static_cast<std::ptrdiff_t>(at),
+                            bytes.begin()+static_cast<std::ptrdiff_t>(
+                                at+nearQuadCount));
+    at+=nearQuadCount;
     if(at!=bytes.size())
         throw std::invalid_argument("TerraWeave Horizon archive trailing bytes");
     validate(b);
