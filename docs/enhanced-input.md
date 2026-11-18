@@ -29,6 +29,27 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## Unified conditional consumption and deep chord dependencies (Stage 54)
+
+Mapping **and Action-level** `Chord`/`NotChord` gates now participate in
+the same effective-control preview and priority arbitration. A high-priority
+Action that is disabled by its own Action-level chord no longer blocks a
+lower-priority mapping of the same physical control. Both the recursive
+Action resolver and the main event-dispatch pass use identical chord
+eligibility for Mapping consumption.
+
+Conditional refinement is no longer artificially limited to eight passes:
+the bound scales with the number of Actions (capped at 512 to prevent
+unbounded work for malformed native configurations), with deterministic
+fallback on a repeated/non-convergent state. A normal acyclic Action
+prerequisite chain can therefore exceed eight levels without a declaration
+order dependency. Cyclic JSON/native graphs remain rejected.
+
+The dedicated core tests for Action-level priority fallback and a
+12-Action positive chain are authored, **not executed**. Performance under
+thousands of live conditionally consuming mappings and native compiler
+behavior still need measured validation before release.
+
 ## Direct editor GameWindow pointer Action parity (Stage 53)
 
 The editor's **direct RTS play-test** now samples keyboard, supported mouse
@@ -186,7 +207,8 @@ Stage 48, InputFlow refines that snapshot against the effective chord gates:
 a higher-priority mapping whose `Chord` condition is false no longer hides a
 lower-priority binding of the same key. Chained prerequisites can then resolve
 from the lower Action in the same presentation frame. This is a bounded
-fixed-point refinement (maximum eight passes); when mutually dependent
+fixed-point refinement (up to the declared Action count plus one, capped at
+512 passes for pathological native graphs); when mutually dependent
 priority/consumption patterns have no consistent fixed point, it
 deterministically falls back to the conservative original priority snapshot.
 For intentional simultaneous sharing, prefer `consume=false`; do not rely on
