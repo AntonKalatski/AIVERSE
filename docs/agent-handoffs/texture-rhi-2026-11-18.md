@@ -529,3 +529,51 @@ state. Then validate native API calls and attach-layer path
 using offscreen GPU tests. Stage 4D adds multi-color pipeline
 output formats/MRT, Stage 4E Vulkan and MSAA/resolve.
 Commit source and handoff separately after each.
+
+## Stage 4C — GL33/GLES3 single attachment mip/layer offscreen passes (2026-11-18)
+
+**Code commit:** `962e4b7fdaa9f1be51d8b24be19cbaebaeeba71c`.
+**Changed:** `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/gl/GLApi.h`.
+
+**Source implementation:** `GLDevice::beginRenderTargets` checks
+actual texture usage, target format, mip/layer and matching
+color/depth extents, rejects nested or multi-color passes, attaches
+the chosen `Texture2D` mip, cubemap face, `Texture2DArray`
+layer or `Texture3D` depth plane to a temporary framebuffer.
+The Windows GL3.3 loader now exposes `glFramebufferTextureLayer`.
+Only after framebuffer completeness is verified does it update
+renderer pass state, viewport and color/depth clear state.
+The framebuffer is deleted on `endPass`; invalid attachment
+requests return false rather than rendering to an unintended
+target. Existing `beginPass` continues to function.
+
+`createDimensionalTexture` now permits color render-target
+allocation, plus depth arrays/cubes (not depth 3D).
+Legacy 2D allocation now allocates all explicitly requested
+mip levels, rather than quietly ignoring `mipLevels > 1`,
+with its own maximum mip and filter settings.
+
+**Limits:** MRT (more than one color attachment) rejected;
+GL multisample texture allocation/resolve and storage textures
+still unsupported; cube array/1D not available on portable
+GL33/GLES3. The new pass builds a temporary FBO per invocation
+rather than caching it; this is correctness-first and may
+need a performance pass. No texture readback API added.
+
+**Compatibility:** Existing GL texture binding and legacy
+2D passes remain available. The GL new-pass guard tracks
+`inPass_`, so callers should always use `endPass`.
+No gameplay/saves/network/ECS changes.
+
+**Verification:** Source commit completed through GitHub connector;
+Linux/Android/WebGL2/Windows GL compiler and actual framebuffer
+completeness tests **NOT RUN**. CI previously queued, no
+passing outcome asserted.
+
+**Next:** Implement explicit `beginRenderTargets` for Vulkan
+with view selection and renderpass/framebuffer lifetime,
+then add GPU tests to verify nonzero mip/layer and depth.
+MRT requires pipeline format/layout-aware variants in
+Metal/Vulkan; MSAA/resolve requires sample-count and
+multisample resource allocation. Implement in separate
+code/handoff stages. Fix any native failures first.
