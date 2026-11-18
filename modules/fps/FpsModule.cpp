@@ -567,6 +567,41 @@ void Module::spawnProjectile(Simulation& sim,Projectile projectile) {
     s.projectiles.push_back(std::move(projectile));
 }
 
+// End-of-round objects are retired from the authoritative ECS World at the
+// same logical barrier as the round reset, not recreated from a stale State
+// projection at the end of the frame. Deterministic source-ID order matches
+// the former DynamicEntityIndex map walk in fps.ecsMirror.
+void Module::clearProjectiles(Simulation& sim) {
+    State& current=state(sim);
+    if(!config_.ecsAuthority) {
+        current.projectiles.clear();
+        return;
+    }
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)throw std::logic_error("FPS projectile reset missing dynamic ECS index");
+    std::vector<std::pair<uint32_t,Entity>> expired;
+    const World& read=world;
+    read.eachExistingConst<ProjectileRuntime>(
+        [&](Entity entity,const ProjectileRuntime& runtime) {
+            if(read.alive(entity))
+                expired.emplace_back(runtime.value.id,entity);
+        });
+    std::sort(expired.begin(),expired.end(),
+        [](const auto& a,const auto& b){return a.first<b.first;});
+    for(const auto& [id,entity]:expired) {
+        world.destroy(entity);
+        index->byKey.erase((uint64_t(1)<<32)|id);
+    }
+    // Drop stale projectile keys as well (e.g. an externally destroyed
+    // Runtime). Non-projectile loot/vehicle keys must remain untouched.
+    for(auto it=index->byKey.begin();it!=index->byKey.end();) {
+        if((it->first>>32)==1)it=index->byKey.erase(it);
+        else ++it;
+    }
+    current.projectiles.clear();
+}
+
 void Module::shoot(Simulation& sim,Actor& p) {
     auto& s=state(sim);
     uint32_t earliest=sim.tick()>config_.rewindTicks?sim.tick()-config_.rewindTicks:0;
