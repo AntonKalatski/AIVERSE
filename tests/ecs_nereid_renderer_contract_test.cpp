@@ -432,12 +432,49 @@ int main() {
     check(std::string(render::shaders::kLitFS).find(
           "thickness = v_wpos.y - opaquePos.y")!=std::string::npos &&
           std::string(render::shaders::kLitFS).find(
-          "u_params.w > 0.001 && u_trace2.w > 0.5")!=std::string::npos,
-          "GLSL depth-gated NEREID refraction missing");
+          "u_params.x < -0.5 && u_trace2.w > 0.5")!=std::string::npos,
+          "GLSL depth-gated NEREID optics missing");
     check(std::string(render::shaders::kLitMSL).find(
           "thickness = in.wpos.y - opaquePos.y")!=std::string::npos &&
           std::string(render::shaders::kLitMSL).find(
-          "u.params.w > 0.001 && f.trace2.w > 0.5")!=std::string::npos,
-          "Metal depth-gated NEREID refraction missing");
+          "u.params.x < -0.5 && f.trace2.w > 0.5")!=std::string::npos,
+          "Metal depth-gated NEREID optics missing");
+    // Stage 17 optics controls are opt-in and must invalidate cached visuals.
+    auto opticalStyle=style;
+    opticalStyle.absorption=0.24f;
+    opticalStyle.shoreFoamDepth=1.5f;
+    opticalStyle.depthTint=0.6f;
+    check(render::validNereidWaterStyle(opticalStyle),
+          "valid depth optical water material");
+    check(!render::sameNereidSurfaceKey(
+          render::makeNereidSurfaceKey(30,false,highOpts,style),
+          render::makeNereidSurfaceKey(30,false,highOpts,opticalStyle)),
+          "optical material change must invalidate cached drawing");
+    opticalStyle.absorption=5.f;
+    check(!render::validNereidWaterStyle(opticalStyle),
+          "optical absorption outside allowed range must fail");
+    const auto opticalManifest=world::parseNereidWaterManifest(Json::parse(R"({
+      "nereidWater":{"surfaces":[{"id":5,"shape":"box","surfaceY":8,
+        "bottomY":-3,"halfExtents":[5,6],
+        "style":{"absorption":0.3,"shoreFoamDepth":1.5,"depthTint":0.6}}]}
+    )"));
+    const auto& optical=opticalManifest.surfaces[0].style;
+    check(optical.absorption>0.29f && optical.absorption<0.31f &&
+          optical.shoreFoamDepth==1.5f && optical.depthTint>0.59f,
+          "optical configuration must parse in native scene manifest");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[{
+      "shape":"box","surfaceY":2,"bottomY":1,"halfExtents":[1,1],
+      "style":{"shoreFoamDepth":21}
+    }]}})"),"reject invalid depth foam width");
+    check(std::string(render::shaders::kLitFS).find(
+          "float transmission = exp(-thickness * u_color.r)")!=std::string::npos &&
+          std::string(render::shaders::kLitFS).find(
+          "shallow = clamp(1.0 - thickness / u_color.g")!=std::string::npos,
+          "GLSL Beer-Lambert approximation or shore foam missing");
+    check(std::string(render::shaders::kLitMSL).find(
+          "float transmission = exp(-thickness * u.color.r)")!=std::string::npos &&
+          std::string(render::shaders::kLitMSL).find(
+          "shallow = clamp(1.0 - thickness / u.color.g")!=std::string::npos,
+          "Metal Beer-Lambert approximation or shore foam missing");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
