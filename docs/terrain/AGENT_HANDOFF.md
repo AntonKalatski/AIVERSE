@@ -112,3 +112,51 @@ After EVERY stage, append:
 - Next precisely scoped tasks and acceptance criteria.
 
 Do not overwrite previous stages; keep history available to the next agent.
+
+## Stage 2a — Arbor tree skeleton, initial mesh and LOD (COMMITTED; TESTS NOT YET VERIFIED)
+
+Commit history (all on `feature/terraweave`):
+- `f773eca934ac677f841865326a6d08e850275985`: created
+  `engine/world/TerraWeaveArbor.h`, seeded local-space integer skeleton:
+  trunk, trunk-anchored branches, foliage clusters, Broadleaf/Conifer/Columnar
+  profiles, tree LOD High/Medium/Low/Impostor and stable instance-key overload.
+- `1112b747ba845492e40d80da16d368e907b5ed27`: added
+  `tests/terraweave_arbor_test.cpp` to test branch topology, LOD, seeded
+  variation, input validation and parallel purity.
+- `20843a5a2d800fdb44a8089599e046275db25ba7`: added CMake/CTest
+  `aiverse_terraweave_arbor_test` / `terraweave_arbor`.
+- `5c2951343ca819360b45f31f0953bdc165ed7519`: test include fix.
+- `dd0714b2e51306b87928032bff65dc792e8f3020`: added
+  `engine/world/TerraWeaveArborMesh.h` to build bark tube triangles and
+  crossed leaf alpha cards with normals, UVs and bark/leaf material IDs.
+- `98e481dab46ff05298bd913356b3d1b2a9948fc8`: added mesh bounds,
+  indices, material and finite vertex checks to Arbor tests.
+- `23a40a35899dc98ecb669081a6aa8a62bcb67753`: documented Arbor API
+  in `docs/terrain/TERRAWEAVE.md`.
+
+**Test status:** C++ tests are written, but neither local compilation nor CI
+success was observed at this stage. The PR is still Draft (#24).
+Run:
+```sh
+cmake -S . -B build/terraweave-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/terraweave-test --target aiverse_terraweave_test aiverse_terraweave_arbor_test -j
+ctest --test-dir build/terraweave-test --output-on-failure -R '^terraweave(_arbor)?$'
+```
+Record exact output here (including platform and failure lines); repair first.
+
+**Implemented:** reproducible tree structural data for native projects; basic
+CPU triangle/leaf-card mesh conversion; coarse geometry LOD and conservative
+impostor bounds.
+
+**NOT implemented:** actual tree assets in the editor, GPU uploads/draws,
+texture/material assignment, tangent computation, billboard atlas bake,
+forest/tree placement adapters, wind/deformation, collisions and physically
+correct growth. No C++ runtime scene currently renders the Arbor mesh.
+
+**Next agent:** verify both tests, then attach `buildArborMesh` to the
+existing `gfx::Device` upload path and model/material pipeline; avoid
+direct GL/Metal calls. Prefer integrating the existing `RtsTerrainRender`
+chunk renderer over creating a second independent renderer. Preserve
+legacy map checksums. Add forest LOD group batching and instance buffers,
+editor preview and a screenshot test. Update this handoff again after
+each phase.
