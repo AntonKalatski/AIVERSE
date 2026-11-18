@@ -233,6 +233,27 @@ inline const char* kComposite = R"(
         // Screen-space approximation: near-depth haze and environmental
         // scattering. No per-object depth/caustics are claimed here.
         float opticalDistance = min(underwater1.y + 5.0, 120.0);
+#ifdef PF_UNDERWATER_DEPTH
+        // Sample the completed scene depth. Unproject through four columns
+        // of inverse view-projection supplied by the renderer.
+        // Invalid sky depth falls back to the camera-depth approximation.
+        float rawDepth = PF_DEPTH_SAMPLE(TUV(s));
+        if (rawDepth < 0.9999 && rawDepth >= 0.0) {
+            float ndcZ = underwaterCamera.w > 0.5 ?
+                         rawDepth : rawDepth * 2.0 - 1.0;
+            vec4 clip = vec4(s * 2.0 - 1.0, ndcZ, 1.0);
+            vec4 worldPosition =
+                inverseViewProj0 * clip.x +
+                inverseViewProj1 * clip.y +
+                inverseViewProj2 * clip.z +
+                inverseViewProj3 * clip.w;
+            if (abs(worldPosition.w) > 0.00001) {
+                vec3 hitPosition = worldPosition.xyz / worldPosition.w;
+                opticalDistance = clamp(
+                    length(hitPosition - underwaterCamera.xyz), 0.0, 120.0);
+            }
+        }
+#endif
         float extinction = 1.0 - exp(-underwater1.x * opticalDistance);
         float scatterWeight = clamp(underwater1.w * underwater2.y *
                                     (0.2 + 0.8 * extinction),0.0,1.0);
