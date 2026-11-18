@@ -397,3 +397,13 @@ draw flags: `View::submitOne` for ModelDraw and
 read by the core View, and a missing animated character continues
 to fall back to the visible cube.
 
+For groups of independent world objects, the host now collects
+`view::MeshObject` records into `view::ScenePacketBatch` and
+submits them through `View::submitPackets`. The draw command
+sequence for loot, vehicles, projectiles and planted objects
+is unchanged. A deliberate batch boundary before the
+royale-zone wall preserves the previous wall/crate ordering.
+Only generic geometry enters View; game-specific rules stay
+in the FPS host. `ScenePacketBatch` does not replace
+Renderer3D's existing material/mesh batching logic.
+

@@ -630,7 +630,22 @@ struct App {
                 drawSceneMesh(transform,remote.team==actor.team?render::float4{0.1f,0.5f,0.9f,1}:render::float4{0.9f,0.2f,0.1f,1});
             }
         }
-        auto box=[&](Vec3 pos,render::float3 size,render::float4 color){drawSceneMesh(render::mat4::translate(visual(world::relativeTo(pos,origin,32)))*render::mat4::scale(size),color);};
+        // Generic ordered View packet stream: the host creates ordinary
+        // geometry draws without exposing gameplay meaning to the renderer.
+        ::aiverse::view::ScenePacketBatch worldPackets;
+        worldPackets.reserve(
+            client->snapshot().loot.size()+client->snapshot().vehicles.size()+
+            client->snapshot().projectiles.size()+
+            client->snapshot().royale.crates.size()+1);
+        auto box=[&](Vec3 pos,render::float3 size,render::float4 color){
+            ::aiverse::view::MeshObject item;
+            item.mesh=&cube;
+            item.world=render::mat4::translate(
+                visual(world::relativeTo(pos,origin,32)))*
+                render::mat4::scale(size);
+            item.color=color;
+            worldPackets.add(item);
+        };
         for(const auto& loot:client->snapshot().loot)box(loot.pos,{0.35f,0.35f,0.35f},{0.9f,0.75f,0.15f,1});
         for(const auto& v:client->snapshot().vehicles)if(v.health>0)box(v.pos,{2,1.4f,4},{0.2f,0.5f,0.25f,1});
         for(const auto& projectile:client->snapshot().projectiles){
@@ -638,8 +653,13 @@ struct App {
             else box(projectile.pos,{0.15f,0.15f,0.15f},projectile.kind?render::float4{0.2f,0.3f,0.15f,1}:render::float4{1,0.8f,0.2f,1});
         }
         if(client->snapshot().match.planted)box(client->snapshot().match.bombPos,{0.4f,0.3f,0.3f},{1,0.2f,0.1f,1});
+        genericSceneView.submitPackets(renderer,worldPackets);
+        worldPackets.clear();
+        // Preserve the original intermediate zone wall ordering. Its host
+        // primitive adapter can migrate later without moving this pass.
         fps::view::drawZoneWall(renderer,cube,client->snapshot().royale,actor.pos,origin,visual);
         for(const auto& c:client->snapshot().royale.crates)box(c,{1.2f,1.2f,1.2f},{0.95f,0.6f,0.1f,1});
+        genericSceneView.submitPackets(renderer,worldPackets);
         gfx::PassDesc pass;pass.clearColor[0]=0.2f;pass.clearColor[1]=0.28f;pass.clearColor[2]=0.36f;renderer.render(pass);
         ImGui::SetNextWindowPos({16,16});ImGui::SetNextWindowBgAlpha(0.65f);
         ImGui::Begin("##fps",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
