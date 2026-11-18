@@ -87,6 +87,23 @@ public:
         return true;
     }
 
+    // Optional integration point for a renderer/material system. The caller
+    // supplies its genre-independent feedback draw commands; this helper
+    // owns pass ordering, clear, viewport, end and asynchronous capture.
+    // Draw callback returns false if it cannot submit a compatible RGBA8
+    // opaque feedback pipeline. In that case end the pass without capturing
+    // incomplete visibility. Never call from inside another render pass.
+    template<class DrawFeedback>
+    bool renderAndCapture(DrawFeedback&& drawFeedback) {
+        if (!begin()) return false;
+        if (!std::forward<DrawFeedback>(drawFeedback)(*device_)) {
+            targets_.end();
+            error_ = "feedback draw callback refused or failed";
+            return false;
+        }
+        return endAndCapture();
+    }
+
     // End the current render pass, then stage a nonblocking texture readback.
     // Returns false if the backend doesn't implement async texture readback.
     // No immediate CPU pixels are returned here.
