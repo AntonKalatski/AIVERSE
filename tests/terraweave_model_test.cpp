@@ -78,12 +78,12 @@ int main() {
     assert(std::fabs(draws[0].world.at(2, 3) + 10.0f) < 0.0001f);
     assert(std::fabs(draws[0].world.at(0, 2) - 2.0f) < 0.0001f);
     assert(std::fabs(draws[1].world.at(0, 3) - 11.0f) < 0.0001f);
+    const auto stableId = draws[0].persistentId;
     draws.clear();
     forest.forEachDraw(forestBatches, origin, [&](const auto& draw) {
         draws.push_back(draw);
     });
-    assert(draws[0].persistentId == forestBatches[0].instances[0].key ||
-           draws[0].persistentId != 0); // stable hash, not the draw index
+    assert(draws[0].persistentId == stableId); // stable hash, not draw index
     assert(draws[0].model == shared);
 
     bool unknownRejected = false;
