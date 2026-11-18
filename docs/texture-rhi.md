@@ -299,7 +299,11 @@ UV visibility planner. A game passes normalized visible UV rectangles,
 logical virtual layer, desired mip and priority. It validates/clamps
 bounds, deduplicates overlapping regions, plans coarsest mip tiles
 first, optionally pins fallback pages, and limits the work using
-`maxRegions`, `maxCandidates` and `maxRequestsPerFrame`.
+`maxRegions`, `maxCandidates`, `maxExaminedPages` and `maxRequestsPerFrame`.
+The separate `maxExaminedPages` limit bounds CPU work including
+already-resident/coarsely-loaded tiles, whereas `maxCandidates`
+limits only tiles that still need uploading. This prevents a
+large resident coarse mip from starving missing high-detail tiles.
 
 `engine/gfx/VirtualTexturePrefetchAdapter.h` connects those plans
 to the disk-backed `VirtualTextureFileStreamer` without putting

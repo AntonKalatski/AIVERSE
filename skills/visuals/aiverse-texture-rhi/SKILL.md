@@ -152,6 +152,7 @@ prefetch.tilesY = atlas.tilesY;
 prefetch.mipLevels = atlas.mipLevels;
 prefetch.virtualLayers = atlas.virtualLayers;
 prefetch.maxCandidates = 1024;
+prefetch.maxExaminedPages = 4096; // includes already loaded/queued tile lookups
 prefetch.maxRequestsPerFrame = 16;
 if (planner.initialize(prefetch)) {
     gfx::VirtualTextureVisibleRegion visible;
