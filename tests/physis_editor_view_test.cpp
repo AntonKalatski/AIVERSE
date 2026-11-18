@@ -13,14 +13,14 @@ void testPaletteAndInvalid() {
     DiagnosticRaster raster;
     raster.width = 2;
     raster.height = 2;
-    raster.rawValues = {0, 1_fx.raw, 2_fx.raw, 3_fx.raw};
+    raster.rawValues = {0, Fixed::fromInt(1).raw, Fixed::fromInt(2).raw, Fixed::fromInt(3).raw};
     raster.valid = {1, 0, 1, 1};
     raster.minRaw = 0;
-    raster.maxRaw = 3_fx.raw;
+    raster.maxRaw = Fixed::fromInt(3).raw;
     CHECK(diagnosticColor(raster, 1) == empty);
     CHECK(diagnosticColor(raster, 50) == empty);
-    CHECK(debugColor(0) == DebugColor{27, 33, 103, 255});
-    CHECK(debugColor(65535) == DebugColor{228, 45, 63, 255});
+    CHECK((debugColor(0) == DebugColor{27, 33, 103, 255}));
+    CHECK((debugColor(65535) == DebugColor{228, 45, 63, 255}));
     CHECK(debugColor(0, DebugPalette::Monochrome).a == 255);
     CHECK(debugColor(65535, DebugPalette::Ocean).a == 255);
     CHECK(diagnosticNormalized(raster, 0) == 0);
