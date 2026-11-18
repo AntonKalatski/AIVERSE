@@ -2500,3 +2500,45 @@ actual macOS/GL/Vulkan rendering before production approval.
 tests; then document EXR/HDR public APIs and plan compressed EXR
 integration using a vetted decoder, plus texture readback and
 resident streaming. Each stage must get an append-only handoff.
+
+## Stage 7D — generation-safe mip residency planner (2026-11-18)
+
+**Code commit:** `3fba022b93aeec0e865f2941dbcb96cf41a3ed35`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**File:** new `engine/gfx/TextureMipResidency.h`.
+
+**Source implementation/API:** `gfx::TextureMipResidency` is a CPU-only
+presentational mip residency scheduler for `TextureDesc` resources.
+`initialize` validates the original descriptor and builds a 0/1/2
+absent/queued/resident state per mip and per layer/face (volume textures
+use one complete volume per mip). `claimNext` prioritizes coarsest
+mip and then layer order. `complete(TextureMipRequest,bool)`
+marks upload success or makes a failed slice retryable; `invalidate`
+clears residency. Requests contain a generation token so a delayed GPU
+completion from a destroyed/reinitialized resource cannot corrupt the
+replacement mip state. `completeMip`, `finestResidentMip`,
+`sampleable`, `fullyResident`, `pendingCount` and
+`residentSliceCount` provide explicit observability.
+`residentSampler` returns a validated `SamplerDesc` clamped to the
+contiguous coarsest-to-finest mip range, and returns false until all
+faces/layers of the coarsest level are loaded. Avoids sampling
+undefined uninitialized GPU levels. It does not own GPU textures;
+connect it to `TextureStreamQueue` results from Stage 7C.
+
+**Safety/limits:** Only CPU metadata; no virtual page tables or GPU
+feedback, no new RHI virtual methods, no independent I/O worker.
+The renderer must not bind a texture for sampling if `sampleable` is
+false. Stream queue and residency planner must be used from the
+render/device thread. Existing ECS, saves/network and model materials
+are unchanged.
+
+**Validation:** GitHub source commit and branch update succeeded.
+Native compiler/CTest/GPU tests **NOT RUN** because no repository
+checkout is available in this environment. GitHub Actions for earlier
+commits remained queued/cancelled; no green claim.
+
+**Next:** Add a mock CPU test covering array face-complete readiness,
+coarse-to-fine claim ordering, failures/retries, stale completion after
+reset, 3D volume grouping and exact LOD clamp. Then document native
+agent usage and optional integration with TextureStreamQueue's
+completion callback. Keep code and handoff as separate commits.
