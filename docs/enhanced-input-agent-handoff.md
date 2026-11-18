@@ -355,3 +355,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Validation:** workflow committed; GitHub Actions results not yet completed at writing. Watch the matrix for compiler warnings, link errors, test assertions and Windows filesystem backup behavior. The current feature remains a draft PR, pending green results.
 
 **Next agent:** inspect `Actions → Enhanced Input targeted checks` and fix failures; run full editor/client/FPS builds, engine regressions and manual input/hosted viewport smoke tests. Add Stage 26 with exact per-platform PASS/FAIL evidence before marking PR ready.
+
+## Stage 26 — deterministic binding conflicts and rebind policies (2026-11-18)
+
+**Core:** `lib::gameplay::enhanced::RebindPolicy` is `Allow` (backwards-compatible default), `Reject` (fail if another mapping in the same context already uses the target control), or `Swap` (exchange controls with exactly one conflicting mapping, preserving stable IDs; reject multi-way ambiguous collisions). `InputSystem::conflicts(activeOnly=true)` enumerates all same-control collisions in actual context dispatch precedence, identifies the two context/actions/mapping IDs, and flags when the earlier consumer shadows the later mapping. It ignores inactive contexts unless asked explicitly.
+
+**Tests added (not run):** `tests/libraries/enhanced_input_tests.cpp` exercises Reject/Swap/Allow, ID preservation and priority/shadowing report. Existing `rebind(context,id,control)` callers retain their previous Allow semantics.
+
+**Why:** two Actions sharing the same physical button is often intentional (e.g., tap vs hold or gameplay versus modal UI). Automatically deleting duplicates would silently corrupt authored input schemes. Agents should query `conflicts()` and offer users a choice, never mutate mappings without an explicit policy.
+
+**Files:** `EnhancedInput.h`, unit test, `docs/enhanced-input.md`, this handoff. **Validation:** postponed at user request; no compiler or runtime evidence yet. Next stage: expose conflict resolution in Input Actions editor/FPS Settings and document.
