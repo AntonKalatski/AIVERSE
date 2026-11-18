@@ -7,11 +7,13 @@
 #include "engine/render/TerraWeaveHorizonClip.h"
 #include "engine/render/Model.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <map>
 #include <tuple>
+#include <utility>
 #include <stdexcept>
 #include <string>
 #include <vector>
