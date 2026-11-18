@@ -2617,3 +2617,24 @@ format/readback tests on native targets. Continue remaining
 virtual-texture page cache/feedback, native async readback,
 BasisLZ/UASTC/OpenEXR integration and editor resource
 inspection as separate bounded stages with handoffs.
+
+## Stage 5O — synthetic OpenEXR CPU regression fixture and registration (2026-11-18)
+
+**Source commits:** `41e18941d46769b2b7c51a76284e3176a4871a37` (fixture plus CMake registration), `0aed9de646aecb0e627846031c6e99e518054869` (explicit offset-table fixture fix).
+**Branch:** `feature/texture-rhi-unification`; PR #21 remains Draft.
+**Files:** new `tests/render/exr_texture.cpp`; `CMakeLists.txt`.
+
+**Code:** Registered a standalone CPU-only `aiverse_exr_texture_test` / CTest `exr_texture`, constructed from synthetic EXR version-2 uncompressed scanlines, channels in non-RGB file order and mixed HALF/FLOAT samples. Includes two scanlines stored in reverse physical order, negative dataWindow origin, positive HDR values, negative floating HDR, default and explicit alpha, bad magic/version, compressed EXR refusal, truncated scanline, duplicate offset/physical row rejection. The test explicitly retains its generated offset table position, so reverse-ordered chunks cannot confuse test setup.
+
+**API/architecture:** Exercise existing `engine/render/ExrTexture.h::parseOpenExr`; no ECS/game state, rendering pipeline, format expansion or native project dependency changed. No GPU fixture in this stage. These are authored test *sources*; execution is separate.
+
+**Actual verification:** Source and fix commits written to GitHub. **CMake NOT RUN; C++ compilation NOT RUN; CTest NOT RUN; Metal/GL/Vulkan NOT RUN.** Do not treat the presence of a registered test as a successful test run.
+
+**Run later:**
+```sh
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_exr_texture_test
+ctest --test-dir build/texture-rhi -R '^exr_texture$' --output-on-failure
+```
+
+**Next stage:** Connect `TextureStreamQueue` and `TextureMipResidency` into a safe genre-agnostic native streaming facade; test callback mapping and stale-token rejection, then add backend readback and editor inspection. Continue append-only per-stage handoffs with exact commit IDs and accurate verification status.
