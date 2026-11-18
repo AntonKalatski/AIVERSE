@@ -2324,3 +2324,40 @@ Correct compiler/behavior failures. Then add streaming texture
 residency/LOD policy and a separate skill for native game agents;
 continue with GL MSAA/resolve and editor resource views in
 independent stage/handoff commits.
+
+## Stage 5K — portable Radiance RGBE HDR import to RGBA16F (2026-11-18)
+
+**Source commit:** `e2fb7b723ef6e214ff2709b16858e3c9a34f074f`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**New file:** `engine/render/HdrTexture.h`.
+
+**Source implementation:** Header-only native C++ Radiance RGBE
+loader and RHI upload utility. `parseRadianceHdr(std::string_view,
+RadianceImage&, std::string&)` reads the Radiance / RGBE header with
+`FORMAT=32-bit_rle_rgbe`, supports flat scanlines and modern
+per-channel RLE scanlines, and preserves +/- horizontal and vertical
+orientation into a canonical image with linear RGBA16F texels.
+`RadianceImage` contains width, height and packed IEEE-754
+binary16 RGBA texels; alpha is 1.0. File extent, scanline length,
+packet lengths and a 512 MiB output budget are checked before
+allocation. `uploadRadianceHdr(Device&, image, error)` calls
+`Device::createTexture` using `gfx::PixelFormat::RGBA16F`,
+checking format support; caller owns the returned TextureHandle.
+Color values above 1.0 remain linear HDR; no tone mapping is
+applied. This is presentation-only, and does not change ECS, saves
+or existing model-material paths.
+
+**Explicit gaps:** OpenEXR, legacy Radiance repeat-marker scanlines,
+arbitrary XY-major orientations, and applying exposure/gamma metadata
+are not supported. Do not claim complete HDR/EXR format coverage;
+this stage specifically imports Radiance RGBE. The import's RLE,
+rounding and GPU upload behavior still require verification.
+
+**Verification:** GitHub source commit created successfully.
+C++ build **NOT RUN**, CTest **NOT RUN**, GPU render **NOT RUN**,
+per user's request to finish feature source before testing.
+
+**Next:** Add source-level test fixture and convenience decode+upload
+function, fix any code-review findings, then introduce optional
+OpenEXR scanline parsing and resource streaming/readback phases with
+separate source/handoff commits.
