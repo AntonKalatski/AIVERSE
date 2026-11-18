@@ -245,6 +245,34 @@ User deferred testing; keep recorded status NOT RUN.
 A separate handoff commit is mandatory before the
 next implementation stage.
 
+**Stage 20 — named SpectraFX graph-v2 runtime instance scalar inputs
+(implemented in source, tests deferred):** `engine/fx/SpectraInstanceParameters.h`
+validates up to eight `instanceParameters` declarations with unique
+slots, finite defaults and bounds. `InstanceParameter` value nodes
+are runtime-only and lower into read-only CPU VM `param0..param7`
+instructions. `fx::ParticleSystem::playWithProgramParameters`
+(and `spectra::BatchWorld` counterpart) applies the full
+8-value array BEFORE prewarm and Spawn, without changing legacy
+`play`. Per-handle `setProgramParameter` can update new or
+already-live particles. `spectra::GraphRuntime` exposes raw and
+named per-source setters, and the existing `CueScheduler` carries
+optional masked values for event cues/attached sources.
+
+The SpectraFX editor right panel now supports named schema JSON,
+per-preview-instance sliders and `fx_graph_preview {instanceValues}`.
+Keep separate compile-time `parameters` and runtime
+`instanceParameters`; do not accidentally constant-fold the latter.
+Never put these parameters in authoritative gameplay ECS,
+silently switch a runtime VM graph to the limited GPU kernel,
+or claim GPU expression parity. The latest `main` was explicitly
+merged into `feature/universal-entity-inspector-fps` through
+two-parent merge commit `463f69f230f7d02cdaca4c824b014ff1221402c1`
+before these editor updates, preserving InputFlow and other
+concurrent work. User explicitly deferred tests; mark native
+compilation, CTest, real Metal and editor interactions as NOT RUN.
+Maintain the separate per-stage handoff in
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
