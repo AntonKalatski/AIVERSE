@@ -2254,3 +2254,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_diagnostics COMMAND aiverse_physis_diagnostics_test)
     set_tests_properties(physis_diagnostics PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 16: transient spatial broadphase, reference-parity and diagnostic sampling.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_spatial_index_test tests/physis_spatial_index_test.cpp)
+    target_link_libraries(aiverse_physis_spatial_index_test PRIVATE aiverse_engine)
+    add_test(NAME physis_spatial_index COMMAND aiverse_physis_spatial_index_test)
+    set_tests_properties(physis_spatial_index PROPERTIES LABELS "PHYSIS")
+endif()
