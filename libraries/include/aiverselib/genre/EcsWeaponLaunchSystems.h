@@ -52,6 +52,17 @@ inline bool validWeaponParameters(const WeaponParametersComponent& p) {
            p.directDamage>0 && p.directDamage<=1000000;
 }
 
+// Shared post-acceptance weapon accounting. Call only after the host has
+// validated its own firing rules (FPS hitscan/rewind, RTS target policy, etc.).
+// This pure policy has no genre dependency, RNG use or structural ECS writes.
+inline void commitAcceptedShot(int32_t& ammo,uint32_t& nextFireTick,
+                               uint32_t now,uint32_t interval,
+                               uint32_t* shots=nullptr) {
+    --ammo;
+    nextFireTick=now+interval;
+    if(shots)++*shots;
+}
+
 // A fire request is consumed exactly once. Successful shots are collected
 // in source Entity dense order, but no Entity is created while iterating the
 // weapon pool. Config is read-only; ammo and fire intent are writable.
@@ -90,8 +101,7 @@ inline void addWeaponLaunchSystem(Simulation& sim,std::string name) {
             cmd.flight.state.velocity=fxNormalize(intent->direction)*p->muzzleSpeed;
             cmd.damage.directDamage=p->directDamage;
             spawns->pending.push_back(std::move(cmd));
-            --state.ammo;
-            state.nextFireTick=now+p->fireInterval;
+            commitAcceptedShot(state.ammo,state.nextFireTick,now,p->fireInterval);
         }
     });
 }
