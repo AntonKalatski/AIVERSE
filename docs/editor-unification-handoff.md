@@ -1181,3 +1181,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `d1dbab0c76e66c134812614cac6a1c7790e756e0`.
 - New `skills/gameplay/aiverse-ecs-hitscan/SKILL.md` describes shared fixed-point target selection, rewind snapshots, deterministic tie-breaking, native weapon/occlusion adapters, and composition with ordered impact/damage. It explicitly warns that the public policy is not yet a separately registered `HitscanSystem` and that real FPS integration still owns vehicle, penetration, damage and net rollback.
 - Verification: GitHub documentation commit only; public library catalog target named in the skill is still pending registration.
+
+
+### 2026-11-18 — Cross-genre ordered-impact ECS queue regression fixture
+- **Code SHA:** `1f9d2c3235a960bd4203a3eb2007f13a6ab6b198`.
+- Added `tests/ecs_cross_genre_impact_queue_test.cpp`, independently hosted by `ShooterTag` and `StrategyTag`. It constructs actual ECS entity health/team values and an `OrderedImpactQueue`, queues two impacts, checks synchronous direct -> on-hit -> area query -> eligible splash -> next direct order, prevents friendly/primary duplicate splash, and verifies a third impact enqueued from the on-hit callback remains pending until the next system barrier. Compares snapshot restore checksums for deep and COW World.
+- **Verification:** GitHub file creation only. Test is not yet registered, C++ compilation/CTest/real FPS/RTS integration **not executed**. Need real native execution to establish these expected sequences.
+- **Next:** publish skill/catalog/CMake target, run standalone and CTest, then separately integrate only compatible legacy motion/impact stages preserving exact live same-tick effects.
