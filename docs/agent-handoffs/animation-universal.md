@@ -759,3 +759,42 @@ before calling this stage validated.
   diagnostics, then wire the host-owned scheduler into FPS.
   Commit the next code stage separately, followed by Stage 35 handoff.
 
+## Stage 35 — cost-aware dynamic work distribution and telemetry (2026-11-18)
+
+- **Branch:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Implementation SHA:** `ad80cbc7b76304f639e45814f48be16769f3b72e`;
+  deferred fixture correction `f24b51224b1bcd2f9eb86913496fedbf29aa85b3`.
+- **Files:** new `libraries/include/aiverselib/animation/AnimationWorkPolicy.h`,
+  updated `MotionWeaveScheduler.h` and `CMakeLists.txt`, new
+  `tests/animation/motionweave_cost.cpp`.
+- **Design:** `estimateAnimationWork(AnimationGraph&)` estimates workload
+  from node count/bones and operation kinds (IK/controller/motion
+  matching heavier than bind/clip). Optional presentation-only
+  `AnimationWorkHintComponent` supplies a bounded cost multiplier or
+  main-thread requirement. `partitionAnimationWork` creates contiguous
+  jobs with roughly equal estimated work, not merely equal entity
+  counts. The persistent pool's atomic task queue distributes jobs
+  dynamically to idle workers.
+- **API / telemetry:** `MotionWeaveScheduleOptions` now exposes
+  `minimumParallelActors`, `minimumParallelCost`,
+  `chunksPerWorker`, `minChunkActors`. `MotionWeaveScheduleStats`
+  extends counters with estimated work, dispatched entities, maximum
+  batch cost, and timings for parallel-safe and main-thread callback
+  phases. `MotionWeaveScheduler::setOptions` supports host tuning
+  between frames; original fields remain present.
+- **Compatibility:** no authoritative GameModule, ECS persistence,
+  save/network/renderer changes. Safe/unsafe entity classification
+  and callback barrier from Stage 34 are preserved.
+- **Tests:** new CTest `motionweave_cost_balancing` checks weighted
+  chunks, cost clamps, and explicit serial pinning. **NOT RUN**
+  by user decision; no green CI claimed.
+- **Limits:** heuristics estimate static costs rather than measured
+  per-node execution time. Thread execution order varies but per-entity
+  output remains isolated. Timings are for presentation diagnosis,
+  not deterministic gameplay logic. Not yet enabled in FPS.
+- **Next:** inspect `apps/fps/client.cpp`, `MotionWeave.h` and
+  `AnimationCrowdSystems.h`; attach a host-owned
+  `MotionWeaveScheduler` to FPS palette animation, preserve baked GPU
+  path for eligible crowds, and expose optional scheduler diagnostics.
+  Add code/tests, then a separate Stage 36 handoff before new work.
+
