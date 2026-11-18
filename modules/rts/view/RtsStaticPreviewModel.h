@@ -51,6 +51,23 @@ inline bool buildStaticPreviewPacket(const StaticPreviewModel& spec,
     return true;
 }
 
+// A flat-ground placement preview keeps the same resolved mesh/material
+// packet as a static portrait, but moves it onto the sampled surface and
+// applies the host-provided valid/invalid colour. Never flag ghosts static.
+inline bool buildStaticGhostPacket(const StaticPreviewModel& spec,
+                                   render::float3 position,float ground,
+                                   render::float4 ghostTint,
+                                   view::Object& packet) {
+    if(!buildStaticPreviewPacket(spec,0.f,packet))return false;
+    packet.draw.world=render::mat4::translate({
+        position.x,ground,position.z})*packet.draw.world;
+    packet.draw.tint=ghostTint;
+    packet.draw.flags=render::kDrawNoCastShadow;
+    packet.draw.flash=0.f;
+    packet.draw.dissolve=0.f;
+    return true;
+}
+
 inline void submitStaticPreview(render::Renderer3D& renderer,
                                 const view::Object& packet) {
     View::submitModel(renderer,packet.draw);
