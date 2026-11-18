@@ -1,6 +1,7 @@
 // GPU-free PRISMA render-graph contracts; run through ./run-tests.sh and CTest.
 #include "engine/render/PrismaRenderGraph.h"
 #include "engine/render/PrismaGraphDispatch.h"
+#include "engine/render/PrismaGraphResourcePool.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -208,12 +209,93 @@ void dispatchContract() {
     const auto invalid = dispatchPrismaGraph(graph, stale, bindings, run);
     check(!invalid.success && invalid.executedPasses == 0, "duplicate pass plan rejected");
 }
+
+void poolContract() {
+    PrismaRenderGraph graph;
+    auto scene = graph.addResource(resource("scene", true));
+    auto tmp = graph.addResource(resource("transient"));
+    auto history = resource("taa-history");
+    history.history = true;
+    auto temporal = graph.addResource(history);
+    auto screen = graph.addResource(resource("screen", true));
+    graph.addPass(pass("sample", {scene}, {tmp}));
+    graph.addPass(pass("history", {tmp}, {temporal}));
+    graph.addPass(pass("present", {temporal}, {screen}));
+    const auto plan = graph.compile();
+    check(plan.valid && plan.slots.size() == 2, "resource pool test graph compiled");
+    if (!plan.valid || plan.slots.size() != 2) return;
+
+    PrismaGraphResourcePool<int> pool;
+    int nextHandle = 100;
+    std::vector<int> released;
+    auto create = [&](PrismaGraphFormat, uint32_t, uint32_t) { return nextHandle++; };
+    auto release = [&](int h) { released.push_back(h); };
+    auto first = pool.prepare(graph, plan, create, release);
+    check(first.success && first.slots.size() == 2 && pool.entries().size() == 2,
+          "pool first allocation");
+    check(!first.historyValid[0] && !first.historyValid[1],
+          "history initially uninitialized");
+    pool.markHistoryWritten("taa-history");
+    auto second = pool.prepare(graph, plan, create, release);
+    check(second.success && second.slots == first.slots && nextHandle == 102,
+          "pool reuses compatible handles across frames");
+    check(second.historyValid[static_cast<size_t>(plan.resources[temporal].slot)],
+          "history marked valid after successful frame");
+    pool.invalidateHistory();
+    auto afterCut = pool.prepare(graph, plan, create, release);
+    check(afterCut.success &&
+          !afterCut.historyValid[static_cast<size_t>(plan.resources[temporal].slot)],
+          "camera cut invalidates history contents without reallocating");
+
+    PrismaRenderGraph resized;
+    auto newIn = resized.addResource(resource("scene", true, PrismaGraphFormat::RGBA16F, 128, 128));
+    auto newTmp = resized.addResource(resource("transient", false, PrismaGraphFormat::RGBA16F, 128, 128));
+    auto newHist = resource("taa-history", false, PrismaGraphFormat::RGBA16F, 128, 128);
+    newHist.history = true;
+    auto newHistory = resized.addResource(newHist);
+    auto newOut = resized.addResource(resource("screen", true, PrismaGraphFormat::RGBA8, 128, 128));
+    resized.addPass(pass("sample", {newIn}, {newTmp}));
+    resized.addPass(pass("history", {newTmp}, {newHistory}));
+    resized.addPass(pass("present", {newHistory}, {newOut}));
+    const auto resizedPlan = resized.compile();
+    auto resizedFrame = pool.prepare(resized, resizedPlan, create, release);
+    check(resizedFrame.success && nextHandle == 104, "resize allocates new slots");
+    check(!resizedFrame.historyValid[static_cast<size_t>(resizedPlan.resources[newHistory].slot)],
+          "resized history must not import old pixels");
+    pool.pruneUnused(release);
+    check(released.size() == 2 && pool.entries().size() == 2,
+          "pruning releases old-size resources only");
+
+    int allocCalls = 0;
+    PrismaRenderGraph failedGraph;
+    auto failedIn = failedGraph.addResource(resource("input", true, PrismaGraphFormat::RGBA8, 512, 512));
+    auto failedA = failedGraph.addResource(resource("temporary-a", false, PrismaGraphFormat::RGBA8, 512, 512));
+    auto failedB = failedGraph.addResource(resource("temporary-b", false, PrismaGraphFormat::RGBA8, 512, 512));
+    auto failedOut = failedGraph.addResource(resource("output", true, PrismaGraphFormat::RGBA8, 512, 512));
+    failedGraph.addPass(pass("a", {failedIn}, {failedA}));
+    failedGraph.addPass(pass("b", {failedA}, {failedB}));
+    failedGraph.addPass(pass("c", {failedB}, {failedOut}));
+    auto failPlan = failedGraph.compile();
+    const size_t existing = pool.entries().size();
+    const size_t priorReleased = released.size();
+    auto failure = pool.prepare(failedGraph, failPlan,
+        [&](PrismaGraphFormat, uint32_t, uint32_t) {
+            return ++allocCalls == 2 ? 0 : nextHandle++;
+        }, release);
+    check(!failure.success && pool.entries().size() == existing,
+          "allocation failure retains previous pool");
+    check(released.size() == priorReleased + 1,
+          "allocation failure releases partially allocated target");
+    pool.clear(release);
+    check(pool.entries().empty(), "pool clear releases owned resources");
+}
 }
 int main() {
     positive();
     hazards();
     resources();
     dispatchContract();
+    poolContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
