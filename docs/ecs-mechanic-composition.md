@@ -286,3 +286,38 @@ RTS/FPS mechanics comply.
 Until the cross-genre test and actual RTS/FPS refactors pass, claim only that
 **the architecture supports composition**, not that every existing mechanic
 has already been converted.
+
+
+## Projectile motion policies: kinematic vs physical (2026-11-18)
+
+Projectile behavior is a **capability choice**, never a genre switch. Many RTS
+weapons use abstract travel, delayed impact or deterministic target tracking
+without rigid-body simulation. FPS projectiles may need gravity, collision,
+bounce, penetration and continuous sweeps. An RTS artillery shell can also
+need physics, while an FPS hitscan weapon may not simulate a flying entity.
+
+- **KinematicProjectileSystem** (planned): consumes `ProjectileFlight` plus
+  a kinematic motion configuration, advances fixed-point trajectory/arrival
+  using deterministic tick time, and emits the same `ProjectileImpactEvent`.
+  Policies may choose straight interpolation, target tracking, timed arrival
+  or instant arrival. Explicitly specify what happens when the target dies or
+  moves; do not assume all RTS attacks are guaranteed hits.
+- **PhysicsProjectileSystem** (existing shared ballistic step is a starting
+  point, full rigid-body implementation not claimed): consumes physical
+  trajectory/collision configuration, queries the collision world, and emits
+  the same impact event. Swept collision, gravity and ricochet/penetration
+  remain separately configurable; do not assume the current ballistic helper
+  implements all of them.
+- **HitscanSystem** (planned distinct launch-resolution path): performs
+  immediate collision/raycast with optional lag compensation, and emits the
+  same impact/damage event without creating a moving projectile.
+- **Shared downstream pipeline:** impact identification, faction/armor rules,
+  damage, effects and despawn are independent of movement policy. Preserve
+  deterministic event ordering and per-tick snapshot/rollback for each.
+- **Composition:** select via components/weapon configuration, not `isRTS`
+  or `isFPS`. A single game can run all three policies, and a vehicle, RTS
+  turret or FPS rifle can choose any of them.
+- **Migration gate:** retain legacy FPS hitscan rewind and RTS targeting
+  behavior until parity tests verify equivalent hit timing, target death,
+  damage, saves and network replay. No new system is considered implemented
+  merely because it is described here.
