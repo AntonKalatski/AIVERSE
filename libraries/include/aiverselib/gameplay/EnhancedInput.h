@@ -371,9 +371,11 @@ public:
                 for (const auto& mapping : contexts_.at(name).mappings) {
                     if (!actions_.contains(mapping.action) ||
                         previewConsumed.contains(mapping.control)) continue;
-                    if (!levels) for (const auto& trigger : mapping.triggers)
-                        if (trigger.kind==TriggerKind::Chord ||
-                            trigger.kind==TriggerKind::NotChord) hasMappingChords=true;
+                    if (!levels) {
+                        for (const auto& trigger : mapping.triggers)
+                            if (trigger.kind==TriggerKind::Chord ||
+                                trigger.kind==TriggerKind::NotChord) hasMappingChords=true;
+                    }
                     // A gated consuming binding should only reserve its control
                     // when the prerequisite Action levels actually satisfy it.
                     if (levels && !chordSatisfied(mapping.triggers,*levels)) continue;
