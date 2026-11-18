@@ -6,6 +6,7 @@
 #include "../PhysisSceneOverlay.h"
 #include "../PhysisFieldEditor.h"
 #include "../PhysisLiveEdit.h"
+#include "../PhysisRemoteEdit.h"
 #include "engine/physis/PhysisDebugPalette.h"
 #include <algorithm>
 #include <cstdint>
@@ -66,6 +67,7 @@ public:
         // including edit mode where no running PHYSIS ECS World exists.
         drawPhysisFieldsPanel(ed);
         drawLiveEdit(ed);
+        drawRemoteEdit(ed);
 
         const aiverse::World* world = showDemo_ && demo_ ? demo_.get() : live;
         if (!world) {
@@ -226,6 +228,68 @@ public:
 private:
     // Live edits go through a GameModule-opted-in Simulation command, never
     // from the Scene overlay into the authoritative World directly.
+    void drawRemoteEdit(Editor& ed) {
+        ui::section(ICON_GLOBE,"PHYSIS · Remote Editing");
+        auto& remote=physis_remote::link();
+        if(!remote.attached()) {
+            ui::hint("Нет авторизованного соединения с сервером PHYSIS.");
+            ui::hint("Сетевой хост подключает канал после проверки доступа.");
+            return;
+        }
+        // PHYSIS has its own editor/admin protocol, not the usual
+        // player InputFrame channel. Poll only an attached trusted Conn.
+        remote.poll(net::nowMs());
+        const auto* client=remote.client();
+        if(!client)return;
+        const auto status=client->status();
+        const char* statusLabel="Ожидает";
+        using ClientStatus=physis::remote::ClientStatus;
+        switch(status) {
+            case ClientStatus::Idle: statusLabel="Готово";break;
+            case ClientStatus::Offline: statusLabel="Нет соединения";break;
+            case ClientStatus::AwaitingReceipt: statusLabel="Ждём ACK";break;
+            case ClientStatus::Queued: statusLabel="В очереди сервера";break;
+            case ClientStatus::Applied: statusLabel="Применено сервером";break;
+            case ClientStatus::Rejected: statusLabel="Отклонено";break;
+            case ClientStatus::Conflict: statusLabel="Конфликт ревизии";break;
+            case ClientStatus::Denied: statusLabel="Недостаточно прав";break;
+            case ClientStatus::Uncertain: statusLabel="Ответ не получен";break;
+        }
+        ImGui::Text("Соединение: %s",remote.connected()?"подключено":"отключено");
+        ImGui::Text("Статус: %s",statusLabel);
+        if(client->hasRemoteRevision())
+            ImGui::TextDisabled("Ревизия сервера: %llu",
+                static_cast<unsigned long long>(client->remoteRevision()));
+        else ImGui::TextDisabled("Ревизия сервера ещё не подтверждена.");
+        if(client->requestId())
+            ImGui::TextDisabled("ID запроса: %llu",
+                static_cast<unsigned long long>(client->requestId()));
+        if(!client->receipt().detail.empty())
+            ImGui::TextWrapped("%s",client->receipt().detail.c_str());
+        const auto msg=remote.message();
+        if(!msg.empty())
+            ImGui::TextUnformatted(msg.data(),msg.data()+msg.size());
+        ImGui::BeginDisabled(!remote.connected() || client->waiting());
+        if(ImGui::SmallButton("Запросить ревизию##physisRemote"))
+            remote.refreshRevision();
+        ImGui::EndDisabled();
+        const bool canApply=remote.connected() &&
+                            client->hasRemoteRevision() &&
+                            !client->waiting() &&
+                            status!=ClientStatus::Uncertain;
+        ImGui::BeginDisabled(!canApply);
+        if(ImGui::Button("Отправить поля на сервер##physisRemote")) {
+            std::string error;
+            (void)remote.submit(ed.doc().toJson(),&error);
+        }
+        ImGui::EndDisabled();
+        if(status==ClientStatus::Uncertain &&
+            ImGui::Button("Повторить с тем же ID##physisRemote"))
+            remote.retryOutstanding();
+        ui::hint("Queued не означает Applied. Повторы сохраняют ID и содержимое.");
+        ui::hint("PHYSIS не подключается к серверу без авторизованного хоста.");
+    }
+
     void drawLiveEdit(Editor& ed) {
         ui::section(ICON_PENCIL, "PHYSIS · Live Editing");
         auto* sim=ed.sim();
