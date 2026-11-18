@@ -158,13 +158,27 @@ void rendererCallbackLifecycle() {
             }) && calls==1 && !gpu.active && gpu.ended==1 &&
             !pass.pending() && !gpu.onReadback,
             "failed renderer callback ends pass without capturing partial IDs");
+    bool threw=false;
+    try {
+        pass.renderAndCapture([&](Device& device) -> bool {
+            require(&device==&gpu && gpu.active,
+                    "throwing renderer callback receives active pass");
+            ++calls;
+            throw std::runtime_error("synthetic feedback draw failure");
+        });
+    } catch (const std::runtime_error&) {
+        threw=true;
+    }
+    require(threw && !gpu.active && gpu.ended==2 &&
+            !pass.pending() && !gpu.onReadback,
+            "throwing renderer callback unwinds active pass without readback");
     require(pass.renderAndCapture([&](Device& device) {
                 require(&device==&gpu && gpu.active,
                         "successful callback runs inside feedback pass");
                 ++calls;
                 return true;
-            }) && calls==2 && !gpu.active && pass.pending() &&
-            gpu.ended==2 && bool(gpu.onReadback),
+            }) && calls==3 && !gpu.active && pass.pending() &&
+            gpu.ended==3 && bool(gpu.onReadback),
             "successful renderer callback ends and schedules async readback");
     TextureReadbackResult read;
     read.format=PixelFormat::RGBA8;
@@ -173,7 +187,7 @@ void rendererCallbackLifecycle() {
     for(int i=0;i<4;++i)read.pixels.push_back(uint8_t(id>>(8*i)));
     gpu.completeReadback(std::move(read));
     require(pass.readyToSubmit() && !pass.renderAndCapture(
-                [&](Device&) { ++calls;return true; }) && calls==2,
+                [&](Device&) { ++calls;return true; }) && calls==3,
             "unconsumed feedback cannot be overwritten by next draw");
     pass.shutdown();
     require(gpu.live.empty(),"renderer callback target released");
