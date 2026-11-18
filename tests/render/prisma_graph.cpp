@@ -1,5 +1,6 @@
 // GPU-free PRISMA render-graph contracts; run through ./run-tests.sh and CTest.
 #include "engine/render/PrismaRenderGraph.h"
+#include "engine/render/PrismaGraphDispatch.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -158,11 +159,61 @@ void resources() {
     check(independentlyOrdered.compile().order == std::vector<PrismaGraphId>({0,1,2}),
           "independent passes preserve registration order");
 }
+
+void dispatchContract() {
+    PrismaRenderGraph graph;
+    const auto in = graph.addResource(resource("scene", true));
+    const auto temp = graph.addResource(resource("intermediate"));
+    const auto out = graph.addResource(resource("screen", true));
+    // Register consumer first to ensure dispatcher uses sorted order.
+    graph.addPass(pass("present", {temp}, {out}));
+    graph.addPass(pass("process", {in}, {temp}));
+    const auto plan = graph.compile();
+    check(plan.valid && plan.slots.size() == 1, "dispatch graph compiled");
+    if (!plan.valid || plan.slots.size() != 1) return;
+    PrismaGraphBindings<int> bindings;
+    bindings.external = {11, 0, 33};
+    bindings.slots = {22};
+    std::vector<PrismaGraphId> sequence;
+    auto run = [&](const PrismaGraphPass&, PrismaGraphId id,
+                   const PrismaGraphDispatchView<int>& view) {
+        sequence.push_back(id);
+        check(view.resource(in) == 11 && view.resource(temp) == 22 &&
+              view.resource(out) == 33, "dispatch bindings resolve physical handles");
+        return true;
+    };
+    const auto success = dispatchPrismaGraph(graph, plan, bindings, run);
+    check(success.success && success.executedPasses == 2, "dispatch invokes both passes");
+    check(sequence == std::vector<PrismaGraphId>({1,0}), "dispatch follows topological order");
+
+    bindings.slots[0] = 0; sequence.clear();
+    const auto missing = dispatchPrismaGraph(graph, plan, bindings, run);
+    check(!missing.success && missing.executedPasses == 0 && sequence.empty(),
+          "unbound transient rejected before callbacks");
+    bindings.slots[0] = 22;
+    bindings.external[out] = 0;
+    const auto badOutput = dispatchPrismaGraph(graph, plan, bindings, run);
+    check(!badOutput.success && badOutput.executedPasses == 0 && sequence.empty(),
+          "unbound external output rejected before callbacks");
+    bindings.external[out] = 33;
+    auto stop = dispatchPrismaGraph(graph, plan, bindings,
+        [&](const PrismaGraphPass&, PrismaGraphId, const PrismaGraphDispatchView<int>&) {
+            return false;
+        });
+    check(!stop.success && stop.executedPasses == 0 &&
+          stop.error.find("process") != std::string::npos,
+          "callback aborts without invoking later passes");
+    auto stale = plan;
+    stale.order[1] = stale.order[0];
+    const auto invalid = dispatchPrismaGraph(graph, stale, bindings, run);
+    check(!invalid.success && invalid.executedPasses == 0, "duplicate pass plan rejected");
+}
 }
 int main() {
     positive();
     hazards();
     resources();
+    dispatchContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
