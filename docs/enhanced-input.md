@@ -29,6 +29,38 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## Chord dependencies and deterministic evaluation (Stage 47)
+
+`Chord("Aim")` and `NotChord("Aim")` are **level predicates** on an effective
+Action, not simple tests of whether the underlying key is physically down. On
+every presentation update, InputFlow takes a non-mutating control snapshot in
+Mapping Context priority order, applies mapping modifiers, then resolves Action
+modifiers, ValueType constraints and transitive chord dependencies. For example,
+if `Finisher` requires `Stance` and `Stance` requires `Shift`, holding the
+Stance control without Shift cannot activate Finisher, even if Finisher's control
+was pressed in the same frame. The evaluation does not depend on Action names
+or declaration order.
+
+**Cycles are invalid**, including loops involving `NotChord`. JSON v1 assets
+reject direct and transitive dependency cycles without modifying the loaded
+configuration; the native `InputFlow::defineAction` and
+`InputFlow::registerContext` APIs likewise reject a proposed cycle before
+changing the live Action/Context. Forward references to Actions are allowed
+during native definitions, and JSON validates them after reading the complete
+asset. Temporal trigger conditions (`Tap`, `Hold`, `Pressed`, etc.) still
+control phase/events; a held Action need not emit `Triggered` in the current
+frame to satisfy a chord's level predicate.
+
+The first snapshot uses consumption by active Mapping Contexts, so a key
+consumed by a higher-priority menu cannot act as a lower-priority gameplay
+chord. For deliberate sharing of a physical control across Actions, use
+`consume=false`. A remaining edge case is **priority consumption with
+conditionally gated mappings of the same control**: the snapshot reserves an
+actuated consuming control before recursively checking its gate. Avoid
+condition-dependent sharing of the same physical key across priorities until
+the preview/dispatch arbitration is unified. The Stage 47 tests are authored
+but compilation and runtime execution have **not** yet been confirmed.
+
 ## C++ basics
 
 \`\`\`cpp
