@@ -6,6 +6,7 @@
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"
+#include "engine/platform/EnhancedInputAdapter.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
 #include "engine/platform/ContentReader.h"
@@ -20,9 +21,9 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
-#include <set>
 
 using namespace aiverse;
+namespace ein = aiverse::lib::gameplay::enhanced;
 namespace {
 render::float3 visual(Vec3 v){return {float(v.x.toDouble()),float(v.y.toDouble()),float(v.z.toDouble())};}
 struct App {
@@ -37,9 +38,10 @@ struct App {
     render::GeometryScene staticGeometry;
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
     i18n::Localization lang;
-    std::set<platform::Key> keys;
+    ein::InputSystem actions;
+    platform::EnhancedInputAdapter inputAdapter{actions};
     fps::Input input;
-    bool fireHeld=false,fireQueued=false,aimHeld=false,prone=false;uint32_t buySelection=0;
+    bool fireHeld=false,fireQueued=false,jumpQueued=false,aimHeld=false,prone=false;uint32_t buySelection=0;
     audio::AudioEngine audio;double stepSound=0,viewTime=0;uint32_t lastReload=0;
     std::map<uint8_t,std::pair<uint32_t,uint32_t>> heardShots;
     uint32_t shownShots=0,shownHits=0,shownLife=0;
@@ -47,7 +49,66 @@ struct App {
     double accumulated=0;bool listen=false;
     fps::view::Look look;
     net::authority::Snapshot previousSnapshot,received;uint32_t lastSnapshotTick=0;double snapshotAge=0;
+
+    // Data-driven semantic mapping: games may replace this context with their own JSON assets.
+    // These defaults reproduce the reference FPS controls; the network command layout is unchanged.
+    void configureInput() {
+        using namespace ein;
+        using K=platform::Key;
+        auto key=[](K k){return Control{Device::Keyboard,int(k)};};
+        auto pad=[](platform::PadButton b){return Control{Device::GamepadButton,int(b)};};
+        auto axis=[](platform::PadAxis a){return Control{Device::GamepadAxis,int(a)};};
+        auto define=[&](const char* name,ValueType type=ValueType::Boolean) {
+            actions.defineAction({name,type});
+        };
+        define("Move",ValueType::Axis2D);
+        define("Look",ValueType::Axis2D);
+        define("LookStick",ValueType::Axis2D);
+        for(const char* name : {"Fire","Aim","Jump","Sprint","Crouch","Reload","Melee","Block",
+                                 "LockOn","Prone","ShowInventory","Frag","Smoke","Flash","Heal",
+                                 "Interact","Drop","Plant","Vault","Buy","Weapon1","Weapon2",
+                                 "Weapon3","Weapon4","Attach1","Attach2","Attach3"}) define(name);
+        MappingContext fpsContext{"FPS"};
+        fpsContext.bind("Move",key(K::W),{Modifier::swapXY()});
+        fpsContext.bind("Move",key(K::S),{Modifier::swapXY(),Modifier::negate()});
+        fpsContext.bind("Move",key(K::A),{Modifier::negate()});
+        fpsContext.bind("Move",key(K::D));
+        fpsContext.bind("Move",axis(platform::PadAxis::LX),{Modifier::deadZone(0.13f)});
+        fpsContext.bind("Move",axis(platform::PadAxis::LY),{Modifier::deadZone(0.13f),Modifier::swapXY(),Modifier::negate()});
+        fpsContext.bind("Look",{Device::MouseAxis,0});
+        fpsContext.bind("Look",{Device::MouseAxis,1},{Modifier::swapXY()});
+        fpsContext.bind("LookStick",axis(platform::PadAxis::RX),{Modifier::deadZone(0.13f)});
+        fpsContext.bind("LookStick",axis(platform::PadAxis::RY),{Modifier::deadZone(0.13f),Modifier::swapXY()});
+        fpsContext.bind("Fire",{Device::MouseButton,0});
+        fpsContext.bind("Fire",axis(platform::PadAxis::RT),{Modifier::deadZone(0.1f)});
+        fpsContext.bind("Aim",{Device::MouseButton,1});
+        fpsContext.bind("Aim",axis(platform::PadAxis::LT),{Modifier::deadZone(0.1f)});
+        fpsContext.bind("Jump",key(K::Space),{},{Trigger::pressed()});
+        fpsContext.bind("Jump",pad(platform::PadButton::A),{},{Trigger::pressed()});
+        fpsContext.bind("Sprint",key(K::LeftShift));
+        fpsContext.bind("Sprint",pad(platform::PadButton::LStick));
+        fpsContext.bind("Crouch",key(K::LeftCtrl));
+        fpsContext.bind("Crouch",pad(platform::PadButton::B));
+        fpsContext.bind("Reload",key(K::R));
+        fpsContext.bind("Reload",pad(platform::PadButton::X));
+        fpsContext.bind("Melee",key(K::Z));
+        fpsContext.bind("Block",key(K::LeftAlt));
+        fpsContext.bind("LockOn",key(K::T));
+        fpsContext.bind("ShowInventory",key(K::Tab));
+        const std::pair<const char*,K> oneShots[]={
+            {"Prone",K::V},{"Frag",K::G},{"Smoke",K::X},{"Flash",K::C},{"Heal",K::H},
+            {"Interact",K::E},{"Drop",K::Q},{"Plant",K::P},{"Vault",K::F},{"Buy",K::B},
+            {"Weapon1",K::Num1},{"Weapon2",K::Num2},{"Weapon3",K::Num3},{"Weapon4",K::Num4},
+            {"Attach1",K::F1},{"Attach2",K::F2},{"Attach3",K::F3}
+        };
+        for(const auto& [name,button]:oneShots)
+            fpsContext.bind(name,key(button),{},{Trigger::pressed()});
+        fpsContext.bind("Interact",pad(platform::PadButton::Y),{},{Trigger::pressed()});
+        actions.registerContext(std::move(fpsContext));
+        actions.activateContext("FPS",0);
+    }
     void init(gfx::Device& device) {
+        configureInput();
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
             auto reader=[&](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);};
@@ -68,36 +129,24 @@ struct App {
         if(platform::readContentFile(projectRoot+"/audio.json",bank)||platform::readContentFile("engine/assets/fps_audio.json",bank))if(!audio.loadBank(Json::parse(bank),[](const auto& file,auto& out){return platform::readContentFile(file,out);},&error))std::fprintf(stderr,"FPS audio: %s\n",error.c_str());
     }
     void event(const platform::Event& e) {
-        using E=platform::EventType;using K=platform::Key;
-        if(e.type==E::FocusLost){platform::setPointerLock(false);keys.clear();input.buttons=0;fireHeld=fireQueued=aimHeld=false;input.action=fps::Action::None;}
-        if(e.type==E::KeyDown) {
-            if(e.key==K::Escape){platform::setPointerLock(false);keys.clear();input.buttons=0;fireHeld=fireQueued=aimHeld=false;input.action=fps::Action::None;return;}
-            if(platform::pointerLocked()){
-                if(e.key>=K::Num1&&e.key<=K::Num4&&!e.repeat){buySelection=uint32_t(e.key)-uint32_t(K::Num1);input.buttons=(input.buttons&~uint32_t(fps::WeaponMask))|fps::selectWeapon(buySelection);}
-                if(!e.repeat){
-                    using A=fps::Action;
-                    if(e.key==K::G)input.action=A::Frag;
-                    if(e.key==K::X)input.action=A::Smoke;
-                    if(e.key==K::C)input.action=A::Flash;
-                    if(e.key==K::H)input.action=A::Heal;
-                    if(e.key==K::E)input.action=A::Interact;
-                    if(e.key==K::Q)input.action=A::Drop;
-                    if(e.key==K::P)input.action=A::Plant;
-                    if(e.key==K::F)input.action=A::Vault;
-                    if(e.key==K::B){input.action=A::Buy;input.argument=buySelection;input.buttons=(input.buttons&~uint32_t(fps::WeaponMask))|fps::selectWeapon(buySelection);}
-                    if(e.key>=K::F1&&e.key<=K::F3){input.action=A::Attach;input.argument=6+uint32_t(e.key)-uint32_t(K::F1);}
-                    if(e.key==K::V)prone=!prone;
-                }
-                keys.insert(e.key);if(e.key==K::Space&&!e.repeat)input.buttons|=fps::Jump;}
+        using E=platform::EventType; using K=platform::Key;
+        if(e.type==E::FocusLost){
+            platform::setPointerLock(false);inputAdapter.focusLost();
+            input.buttons=0;input.action=fps::Action::None;
+            fireHeld=fireQueued=jumpQueued=aimHeld=false;
+            return;
         }
-        if(e.type==E::KeyUp)keys.erase(e.key);
-        if(e.type==E::MouseDown&&e.button==0){if(!platform::pointerLocked())platform::setPointerLock(true);if(platform::pointerLocked()){fireHeld=true;fireQueued=true;}}
-        if(e.type==E::MouseUp&&e.button==0)fireHeld=false;
-        if(e.type==E::MouseDown&&e.button==1&&platform::pointerLocked())aimHeld=true;
-        if(e.type==E::MouseUp&&e.button==1)aimHeld=false;
-        if(e.type==E::MouseMove&&platform::pointerLocked()) {
-            look.motion(e.deltaX,e.deltaY,aimHeld?0.00015f:0.0004f);
+        if(e.type==E::KeyDown&&e.key==K::Escape){
+            platform::setPointerLock(false);inputAdapter.focusLost();
+            input.buttons=0;input.action=fps::Action::None;
+            fireHeld=fireQueued=jumpQueued=aimHeld=false;
+            return;
         }
+        if(e.type==E::MouseDown&&e.button==0&&!platform::pointerLocked())
+            platform::setPointerLock(true);
+        // Gameplay context is only fed while the viewport owns the pointer lock.
+        if(platform::pointerLocked()||e.type==E::KeyUp||e.type==E::MouseUp)
+            inputAdapter.onEvent(e);
     }
     void frame(gfx::Device& device,double dt) {
         const auto now=net::nowMs();
@@ -108,29 +157,76 @@ struct App {
         }
 #endif
         client->updateStreaming();client->poll(now);if(server)server->poll(now);
+        const bool playing=platform::pointerLocked();
+        if(playing){
+            inputAdapter.pollGamepads();
+            const auto events=actions.update(float(std::min(dt,0.25)));
+            for(const auto& e:events){
+                if(e.phase!=ein::Phase::Triggered)continue;
+                const auto& name=e.action;
+                if(name=="Jump")jumpQueued=true;
+                else if(name=="Fire")fireQueued=true;
+                else if(name=="Prone")prone=!prone;
+                else if(name=="Frag")input.action=fps::Action::Frag;
+                else if(name=="Smoke")input.action=fps::Action::Smoke;
+                else if(name=="Flash")input.action=fps::Action::Flash;
+                else if(name=="Heal")input.action=fps::Action::Heal;
+                else if(name=="Interact")input.action=fps::Action::Interact;
+                else if(name=="Drop")input.action=fps::Action::Drop;
+                else if(name=="Plant")input.action=fps::Action::Plant;
+                else if(name=="Vault")input.action=fps::Action::Vault;
+                else if(name=="Buy"){
+                    input.action=fps::Action::Buy;input.argument=buySelection;
+                    input.buttons=(input.buttons&~uint32_t(fps::WeaponMask))|fps::selectWeapon(buySelection);
+                }else if(name=="Weapon1"||name=="Weapon2"||name=="Weapon3"||name=="Weapon4"){
+                    buySelection=uint32_t(name.back()-'1');
+                    input.buttons=(input.buttons&~uint32_t(fps::WeaponMask))|fps::selectWeapon(buySelection);
+                }else if(name=="Attach1"||name=="Attach2"||name=="Attach3"){
+                    input.action=fps::Action::Attach;input.argument=6+uint32_t(name.back()-'1');
+                }
+            }
+            auto held=[&](const char* name){const auto* state=actions.state(name);return state&&state->active;};
+            fireHeld=held("Fire");aimHeld=held("Aim");
+            if(const auto* mouse=actions.state("Look");mouse&&mouse->active)
+                look.motion(mouse->value.x,mouse->value.y,aimHeld?0.00015f:0.0004f);
+            if(const auto* stick=actions.state("LookStick");stick&&stick->active){
+                const float pxPerSecond=1400.0f;
+                const float scaled=float(std::min(dt,0.25))*pxPerSecond;
+                look.motion(stick->value.x*scaled,stick->value.y*scaled,aimHeld?0.00015f:0.0004f);
+            }
+        }else{
+            inputAdapter.focusLost();
+            input.buttons=0;input.action=fps::Action::None;
+            fireHeld=fireQueued=jumpQueued=aimHeld=false;
+        }
+        auto held=[&](const char* name){const auto* state=actions.state(name);return state&&state->active;};
         accumulated+=std::min(dt,0.25);int budget=8;
-        while(accumulated>=1.0/config.tickRate&&budget--) {
-            using K=platform::Key;
-            input.forward=(keys.contains(K::W)?1000:0)-(keys.contains(K::S)?1000:0);
-            input.right=(keys.contains(K::D)?1000:0)-(keys.contains(K::A)?1000:0);
-            input.buttons&=uint32_t(fps::Jump|fps::WeaponMask);
+        while(accumulated>=1.0/config.tickRate&&budget--){
+            const auto* move=actions.state("Move");
+            input.forward=move?int32_t(std::clamp(move->value.y,-1.0f,1.0f)*1000):0;
+            input.right=move?int32_t(std::clamp(move->value.x,-1.0f,1.0f)*1000):0;
+            input.buttons&=uint32_t(fps::WeaponMask);
+            if(jumpQueued)input.buttons|=fps::Jump;
             if(aimHeld)input.buttons|=fps::Aim;
             if(prone)input.buttons|=fps::Prone;
             if(fireHeld||fireQueued)input.buttons|=fps::Fire;
-            if(keys.contains(K::LeftCtrl))input.buttons|=fps::Crouch;
-            if(keys.contains(K::LeftShift))input.buttons|=fps::Sprint;
-            if(keys.contains(K::R))input.buttons|=fps::Reload;
+            if(held("Crouch"))input.buttons|=fps::Crouch;
+            if(held("Sprint"))input.buttons|=fps::Sprint;
+            if(held("Reload"))input.buttons|=fps::Reload;
             if(config.melee.enabled){
-                if(keys.contains(K::Z))input.buttons|=fps::Melee;
-                if(keys.contains(K::LeftAlt))input.buttons|=fps::Block;
-                if(keys.contains(K::T))input.buttons|=fps::LockOn;
+                if(held("Melee"))input.buttons|=fps::Melee;
+                if(held("Block"))input.buttons|=fps::Block;
+                if(held("LockOn"))input.buttons|=fps::LockOn;
             }
             input.yaw=Fixed::fromRaw(int64_t(look.yaw*65536));input.pitch=Fixed::fromRaw(int64_t(look.pitch*65536));
-            if(client->submit(input)){fireQueued=false;input.action=fps::Action::None;input.buttons&=~uint32_t(fps::Jump|fps::WeaponMask);}
+            if(client->submit(input)){
+                fireQueued=jumpQueued=false;
+                input.action=fps::Action::None;
+                input.buttons&=~uint32_t(fps::Jump|fps::WeaponMask);
+            }
             if(server){server->poll(now);if(!server->step()){accumulated=0;break;}client->poll(now);}
             accumulated-=1.0/config.tickRate;
         }
-        if(!platform::pointerLocked()){keys.clear();input.buttons=0;fireHeld=fireQueued=aimHeld=false;input.action=fps::Action::None;}
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());gui.newFrame(dt);
         auto actor=client->predicted();viewTime+=dt;
         if(actor.reloadUntil&&!lastReload)audio.play("reload");
@@ -225,7 +321,7 @@ struct App {
             if(actor.health<=0)ImGui::TextUnformatted(lang.tr("fps.dead").c_str());
             if(actor.activeAction!=fps::Action::None){auto remaining=std::max(0,int(actor.actionUntil)-int(client->snapshot().tick));ImGui::TextUnformatted(lang.tr("fps.action",i18n::Args().num("seconds",(remaining+int(config.tickRate)-1)/int(config.tickRate))).c_str());}
             ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr("fps.systems.controls").c_str());ImGui::PopTextWrapPos();
-            if(keys.contains(platform::Key::Tab))for(auto item:actor.bag)ImGui::TextUnformatted(lang.tr("fps.item",i18n::Args().str("name",lang.tr("fps.item."+std::to_string(item.type))).num("count",item.count)).c_str());
+            if(held("ShowInventory"))for(auto item:actor.bag)ImGui::TextUnformatted(lang.tr("fps.item",i18n::Args().str("name",lang.tr("fps.item."+std::to_string(item.type))).num("count",item.count)).c_str());
             if(config.mode=="bomb")ImGui::TextUnformatted(lang.tr("fps.round",i18n::Args().num("round",client->snapshot().round).num("a",client->snapshot().match.scoreA).num("b",client->snapshot().match.scoreB).num("bomb",client->snapshot().match.planted?std::max(0,int(client->snapshot().match.bombExplodes)-int(client->snapshot().tick))/int(config.tickRate):0)).c_str());
         }
         ImGui::End();
