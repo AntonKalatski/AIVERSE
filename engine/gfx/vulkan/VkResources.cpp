@@ -393,6 +393,14 @@ void VulkanDevice::generateMips(VTexture& t, VkCommandBuffer cb) {   // level 0 
 }
 
 TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
+    if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
+        error_ = textureDescErrorString(e); return {};
+    }
+    if (d.dimension != TextureDimension::Texture2D || d.depth != 1 || d.arrayLayers != 1 ||
+        d.sampleCount != 1 || d.mipLevels > 1) {
+        error_ = "texture dimension, array, multisampling or explicit mips not yet supported by this backend";
+        return {};
+    }
     VTexture t;
     t.format = d.format;
     t.vkFormat = vkFormat(d.format);

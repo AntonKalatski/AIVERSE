@@ -36,6 +36,8 @@ template <class Tag> struct Handle {
 };
 using BufferHandle = Handle<struct BufferTag>;
 using TextureHandle = Handle<struct TextureTag>;
+using TextureViewHandle = Handle<struct TextureViewTag>;
+using SamplerHandle = Handle<struct SamplerTag>;
 using ShaderHandle = Handle<struct ShaderTag>;
 using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
@@ -49,6 +51,13 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          RGBA8_sRGB, // sampling decodes sRGB; render targets encode on write and blend in linear; alpha stays linear
                          RGBA16F }; // linear HDR radiance, 8 bytes/pixel; check supports()
 enum class Filter { Nearest, Linear };
+// Resource dimension is separate from the sampled view dimension. Array layers are physical
+// slices: Cube requires six, CubeArray requires a multiple of six.
+enum class TextureDimension : uint8_t { Texture1D, Texture2D, Texture3D, Texture2DArray, Cube, CubeArray };
+enum class SamplerAddressMode : uint8_t { ClampToEdge, Repeat, MirrorRepeat, ClampToBorder };
+enum class SamplerMipFilter : uint8_t { None, Nearest, Linear };
+enum class CompareFunction : uint8_t { Never, Less, LessEqual, Equal, Greater, GreaterEqual, NotEqual, Always };
+enum class TextureAspect : uint8_t { Color, Depth, Stencil };
 enum class VertexFormat { Float2, Float3, Float4, UByte4N, UByte4 }; // UByte4: integers 0..255 (GLSL float / MSL uchar4)
 enum class IndexType { None, UInt16, UInt32 };
 enum class Primitive { Triangles, Lines };
@@ -91,7 +100,100 @@ struct TextureDesc {
     const size_t* levelSize = nullptr;
     const char* label = nullptr;
     bool storage = false; // compute writable; requires supportsCompute()
+    // Extended descriptor contract. Defaults preserve all existing Texture2D callers.
+    // Backends MUST reject unsupported dimensions/features instead of silently making Texture2D.
+    TextureDimension dimension = TextureDimension::Texture2D;
+    int depth = 1;          // texel depth of Texture3D; 1 otherwise
+    int arrayLayers = 1;    // 2DArray slices, or faces (6 for Cube, 6*N for CubeArray)
+    int mipLevels = 0;      // 0 = legacy automatic policy; >0 = explicit allocation request
+    int sampleCount = 1;    // multisampled textures require renderTarget and no initial data
 };
+
+
+struct TextureViewDesc {
+    TextureDimension dimension = TextureDimension::Texture2D;
+    TextureAspect aspect = TextureAspect::Color;
+    int baseMipLevel = 0, mipLevelCount = 1;
+    int baseArrayLayer = 0, arrayLayerCount = 1; // cube views: multiples of six
+};
+
+struct SamplerDesc {
+    Filter minFilter = Filter::Linear, magFilter = Filter::Linear;
+    SamplerMipFilter mipFilter = SamplerMipFilter::Linear;
+    SamplerAddressMode addressU = SamplerAddressMode::ClampToEdge;
+    SamplerAddressMode addressV = SamplerAddressMode::ClampToEdge;
+    SamplerAddressMode addressW = SamplerAddressMode::ClampToEdge;
+    float minLod = 0.0f, maxLod = 1000.0f, lodBias = 0.0f, maxAnisotropy = 1.0f;
+    bool compare = false;
+    CompareFunction comparison = CompareFunction::LessEqual;
+};
+
+struct TextureUploadDesc {
+    int mipLevel = 0, arrayLayer = 0;
+    int x = 0, y = 0, z = 0;
+    int width = 0, height = 1, depth = 1;
+    int rowPitchBytes = 0, slicePitchBytes = 0;
+    const void* data = nullptr;
+};
+
+// CPU-only validation of dimension/layer/mip invariants. It does NOT imply GPU support.
+enum class TextureDescError : uint8_t {
+    None, InvalidExtent, InvalidLayers, InvalidMipCount, InvalidSampleCount,
+    InvalidDimension, InvalidUsage
+};
+constexpr int maxTextureMipLevels(int w, int h, int d) {
+    int n = 0;
+    for (int s = w > h ? (w > d ? w : d) : (h > d ? h : d); s > 0; s >>= 1) ++n;
+    return n;
+}
+constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
+    if (d.width < 1 || d.height < 1 || d.depth < 1)
+        return TextureDescError::InvalidExtent;
+    if (d.arrayLayers < 1) return TextureDescError::InvalidLayers;
+    switch (d.dimension) {
+    case TextureDimension::Texture1D:
+        if (d.height != 1 || d.depth != 1 || d.arrayLayers != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Texture2D:
+        if (d.depth != 1 || d.arrayLayers != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Texture3D:
+        if (d.arrayLayers != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Texture2DArray:
+        if (d.depth != 1) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::Cube:
+        if (d.width != d.height || d.depth != 1 || d.arrayLayers != 6) return TextureDescError::InvalidDimension;
+        break;
+    case TextureDimension::CubeArray:
+        if (d.width != d.height || d.depth != 1 || d.arrayLayers % 6 != 0) return TextureDescError::InvalidDimension;
+        break;
+    }
+    if (d.mipLevels < 0 || d.levelCount < 0 || d.mipLevels > maxTextureMipLevels(d.width, d.height, d.depth) ||
+        d.levelCount > maxTextureMipLevels(d.width, d.height, d.depth) ||
+        (d.mipLevels > 0 && d.levelCount > 0 && d.mipLevels != d.levelCount))
+        return TextureDescError::InvalidMipCount;
+    if (d.sampleCount < 1) return TextureDescError::InvalidSampleCount;
+    if (d.sampleCount > 1 && (d.dimension != TextureDimension::Texture2D ||
+        !d.renderTarget || d.data || d.mipmaps || d.mipLevels > 1 || d.levelCount > 0 || d.storage))
+        return TextureDescError::InvalidUsage;
+    if (d.compare && d.format != PixelFormat::Depth) return TextureDescError::InvalidUsage;
+    if (d.storage && d.format == PixelFormat::Depth) return TextureDescError::InvalidUsage;
+    return TextureDescError::None;
+}
+constexpr const char* textureDescErrorString(TextureDescError e) {
+    switch (e) {
+    case TextureDescError::None: return "valid";
+    case TextureDescError::InvalidExtent: return "texture extent must be positive";
+    case TextureDescError::InvalidLayers: return "texture arrayLayers must be positive";
+    case TextureDescError::InvalidMipCount: return "texture mip count is invalid";
+    case TextureDescError::InvalidSampleCount: return "texture sample count is invalid";
+    case TextureDescError::InvalidDimension: return "texture dimensions/layers do not match its dimension";
+    case TextureDescError::InvalidUsage: return "texture usage combinations are invalid";
+    }
+    return "invalid texture descriptor";
+}
 
 // Each backend picks the sources it understands. A shader may provide all of them.
 struct ShaderDesc {
@@ -166,6 +268,16 @@ public:
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
     virtual void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) = 0;
     virtual void destroyTexture(TextureHandle h) = 0;
+    // New resource APIs are opt-in. A backend returning an invalid view/sampler or false
+    // MUST NOT create a reduced 2D resource in its place.
+    virtual bool supportsTextureDimension(TextureDimension dim) const { return dim == TextureDimension::Texture2D; }
+    virtual bool supportsTextureViews() const { return false; }
+    virtual TextureViewHandle createTextureView(TextureHandle, const TextureViewDesc&) { return {}; }
+    virtual void destroyTextureView(TextureViewHandle) {}
+    virtual SamplerHandle createSampler(const SamplerDesc&) { return {}; }
+    virtual void destroySampler(SamplerHandle) {}
+    virtual bool updateTextureRegion(TextureHandle, const TextureUploadDesc&) { return false; }
+    virtual bool bindTextureView(int, TextureViewHandle, SamplerHandle = {}) { return false; }
     virtual ShaderHandle createShader(const ShaderDesc& d) = 0;   // returns invalid handle on failure (see lastError())
     // Start on the device thread, then poll on that same thread. Jobs must not outlive
     // the device. Dropping a job cancels publication; backend callbacks own their data.

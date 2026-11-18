@@ -163,6 +163,14 @@ public:
 
     // ---------- textures ----------
     TextureHandle createTexture(const TextureDesc& d) override {
+        if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
+            error_ = textureDescErrorString(e); return {};
+        }
+        if (d.dimension != TextureDimension::Texture2D || d.depth != 1 || d.arrayLayers != 1 ||
+            d.sampleCount != 1 || d.mipLevels > 1) {
+            error_ = "texture dimension, array, multisampling or explicit mips not yet supported by this backend";
+            return {};
+        }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
         GLTexture t; t.fmt = d.format; t.w = d.width; t.h = d.height;
         t.mips = d.mipmaps && d.format != PixelFormat::Depth && !d.renderTarget;

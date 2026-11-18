@@ -2106,3 +2106,10 @@ endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME rules_files COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/rules/test_rules.py)
 endif()
+
+# GPU-independent descriptor validation; a foundation for subsequent texture backends.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_texture_contract_test tests/render/texture_contract.cpp)
+    target_include_directories(aiverse_texture_contract_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME texture_contract COMMAND aiverse_texture_contract_test)
+endif()
