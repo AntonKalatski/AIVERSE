@@ -1299,3 +1299,101 @@ any failures before merging PR #23. Next: resolve real build/test findings,
 then profile CPU mesh staging and implement optional background preparation
 with bounded retained CPU memory. Depth/refraction shaders must be separately
 validated on GLSL and MSL and coordinated with Prisma (postprocess owner).
+
+## Stage 14 — opt-in asynchronous water CPU mesh preparation
+
+**Current branch** `feature/nereid-water-core` (NEREID PR #23 remains Draft).
+**Implementation commits:**
+- `fa24703d9d12a92833285bb6825b3cc31e339314` —
+  `engine/world/NereidWaterScene.h`: one in-flight background CPU
+  water mesh via `std::async`/future (native builds), immutable copied
+  body, optional geometry, style and options, nonblocking polling,
+  result keyed by water ID + revision + mesh key.
+- `20a2152f26f93e5719860f32e7c7dfe7a64aa391` —
+  `engine/world/NereidWaterManifest.h`: `asyncPrepare` (default false)
+  and `maxStagingBytes` (default 16 MiB, 1 KiB..64 MiB).
+- `fcadd5b5b2f9e338650f5057e60d9655effc9365` —
+  `engine/world/WorldScene.cpp`: opt-in manifest wiring.
+- `202942f010a9e6d00731fc025363725bb97f33f9` —
+  `engine/world/NereidWaterScene.h`: combined bounded retained CPU
+  prepared surface bytes + conservative in-flight reservation.
+- `51b135f2469960768cf91824d47e49bcf2fcee7d` —
+  `tests/ecs_nereid_renderer_contract_test.cpp`: authored config tests.
+
+### API, ownership and usage
+
+`NereidWaterScene::setAsyncPreparation(bool)` is OFF by default.
+When enabled on native platforms, at most **one** CPU preparation job
+can be in flight, regardless of surface count. A worker owns copies
+of every input and calls the existing pure CPU
+`NereidSurfaceResident::prepare`; no worker accesses `World`,
+`Simulation`, RHI, device or active mutable scene data.
+`update` polls the future without waiting; completed results
+are adopted only if their stable water ID + source revision + mesh
+key still match. Removed entities and obsolete water/LOD/ocean changes
+cannot publish stale GPU geometry. The actual buffer upload remains
+on the scene's device/update thread, subject to the Stage 13 exact
+VB+IB byte quota. `shutdown(device)` waits for any outstanding job
+and then releases all GPU resources.
+
+`setMaxWaterStagingBytes(1024..67108864)` limits the combined
+prepared CPU buffer payload (VB+IB), plus conservative reservation
+for the in-flight builder (based on maxVertices and an index topology
+upper bound). A too-small budget defers preparation rather than silently
+allocating an unbounded collection of CPU meshes. The existing
+`maxEstimatedUploadBytes` and `maxUploadsPerFrame` still separately
+limit GPU publication. The build performs CPU work asynchronously,
+not GPU upload or OpenGL/Metal command recording.
+
+New `NereidSceneStats` diagnostics:
+`asyncPreparing`, `asyncDiscarded` and `stagingReservedBytes`.
+Retained prepared surfaces may remain cached until a valid upload;
+GPU-owned surfaces are preserved until a completed replacement.
+On `__EMSCRIPTEN__`, default builds fall back to synchronous
+preparation without requiring pthread support.
+
+Example manifest:
+```json
+{
+  "nereidWater": {
+    "asyncPrepare": true,
+    "maxStagingBytes": 16777216,
+    "maxUploadsPerFrame": 2,
+    "maxEstimatedUploadBytes": 8388608,
+    "surfaces": []
+  }
+}
+```
+
+### Verification status, limits and next owner
+
+**Actually performed**: read `AsyncChunkStream.h/.cpp` and NEREID
+headers, reviewed existing scene lifecycle, wrote C++/JSON/tests via
+GitHub connector. **NOT RUN / UNVERIFIED**: C++ build,
+`./run-tests.sh`, CTest, thread sanitizer, mobile/Web, C++ runtime,
+Metal/OpenGL scenes, performance and memory measurements. No user
+hardware test reports are available in this stage.
+
+The existing `AsyncChunkStream` is a cell-keyed world-chunk streamer;
+NEREID currently uses a small dedicated one-worker future to avoid
+changing its chunk lifecycle or introducing Cell-key collisions for
+overlapping water bodies. The worker cannot cooperatively interrupt an
+in-progress triangulation; stale results are discarded on completion,
+not mid-calculation. Pending job futures can block at explicit
+`shutdown`; worker currently executes at most one job in the background.
+The staging cap is an upper bound for retained VB/IB arrays plus
+conservative queued reservation, **not** a process-wide heap limit
+or transient allocator watermark. Configure at least the expected
+max water mesh size. High-distance worlds still have float position
+precision issues; no new origin-rebasing or refraction was implemented
+in this stage. The async feature should remain opt-in until compiler
+and race checks pass.
+
+**Next agent**: run and fix the stage-14 fixture using the unified
+runner and audit future/std::async linkage on macOS, Linux, Windows and
+Emscripten. Add an actual non-GPU async lifecycle test that forces a
+stale job after changing a water ID/geometry/LOD and confirms it is
+discarded; test exception paths, launch/shutdown and budget exhaustion.
+Afterward implement origin-relative CPU mesh generation and explicit
+depth/refraction on Renderer3D with shader parity. Respect Prisma's
+postprocess ownership and do not alter legacy RTS waterNetwork.
