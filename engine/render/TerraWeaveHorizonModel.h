@@ -64,20 +64,13 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         for (uint32_t z=0;z<=n;++z) {
             for (uint32_t x=0;x<=n;++x) {
                 const auto& v=b.terrainVertices[size_t(z)*(n+1)+x];
-                const auto& left=b.terrainVertices[
-                    size_t(z)*(n+1)+(x?x-1:x)];
-                const auto& right=b.terrainVertices[
-                    size_t(z)*(n+1)+std::min(x+1,n)];
-                const auto& front=b.terrainVertices[
-                    size_t(z?z-1:z)*(n+1)+x];
-                const auto& back=b.terrainVertices[
-                    size_t(std::min(z+1,n))*(n+1)+x];
-                const float sx=float(left.heightCm-right.heightCm)/
-                    float(std::max<int64_t>(1,right.xCm-left.xCm));
-                const float sz=float(front.heightCm-back.heightCm)/
-                    float(std::max<int64_t>(1,back.zCm-front.zCm));
-                const auto normal=render::normalize(
-                    render::float3{sx,1.0f,sz});
+                // Normals are authored from the same globally anchored
+                // height stencil in every region, including outer borders.
+                // Never use a one-sided normal at the local patch boundary.
+                const auto normal=render::normalize(render::float3{
+                    float(v.slopeXPermille)*0.001f,1.0f,
+                    float(v.slopeZPermille)*0.001f
+                });
                 render::ModelVertex out;
                 out.pos={
                     float(v.xCm-b.originXcm)*0.01f,
@@ -111,11 +104,55 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
                     i+1,i+stride,i+stride+1
                 });
             }
+        // An optional lightweight ring extends the outer silhouette
+        // DOWNWARD without altering the true sampled top-edge heights.
+        // It hides sub-mesh cracks between a coarse far field and neighboring
+        // landscape while preserving deterministic world-position edges.
+        if(b.terrainSkirtDepthCm>0){
+            const uint32_t lowerFirst=
+                static_cast<uint32_t>(model->vertices.size());
+            const auto rimIndex=[n](uint32_t side,uint32_t i)->uint32_t{
+                switch(side){
+                    case 0:return i;                       // north, eastward
+                    case 1:return i*(n+1)+n;              // east, southward
+                    case 2:return n*(n+1)+(n-i);          // south, westward
+                    default:return (n-i)*(n+1);           // west, northward
+                }
+            };
+            const auto dimColor=[](uint32_t color)->uint32_t{
+                const uint32_t red=(color&255u)*3u/4u;
+                const uint32_t green=((color>>8)&255u)*3u/4u;
+                const uint32_t blue=((color>>16)&255u)*3u/4u;
+                return (color&0xff000000u)|(blue<<16)|(green<<8)|red;
+            };
+            for(uint32_t side=0;side<4;++side){
+                for(uint32_t i=0;i<=n;++i){
+                    auto bottom=model->vertices[start+rimIndex(side,i)];
+                    bottom.pos.y-=float(b.terrainSkirtDepthCm)*0.01f;
+                    bottom.nrm=render::normalize(
+                        render::float3{side==1?1.0f:side==3?-1.0f:0.0f,
+                                       0.25f,
+                                       side==2?1.0f:side==0?-1.0f:0.0f});
+                    bottom.color=dimColor(bottom.color);
+                    model->vertices.push_back(bottom);
+                }
+                for(uint32_t i=0;i<n;++i) {
+                    const uint32_t topA=start+rimIndex(side,i);
+                    const uint32_t topB=start+rimIndex(side,i+1);
+                    const uint32_t lowA=lowerFirst+side*(n+1)+i;
+                    const uint32_t lowB=lowA+1;
+                    model->indices.insert(model->indices.end(),{
+                        topA,topB,lowA,lowA,topB,lowB
+                    });
+                }
+            }
+        }
         if (model->indices.size()>begin) {
             render::Primitive primitive;
             primitive.material=0;
             primitive.firstVertex=start;
-            primitive.vertexCount=static_cast<uint32_t>(b.terrainVertices.size());
+            primitive.vertexCount=static_cast<uint32_t>(
+                model->vertices.size()-start);
             primitive.firstIndex=begin;
             primitive.indexCount=static_cast<uint32_t>(model->indices.size())-begin;
             mesh.primitives.push_back(primitive);
