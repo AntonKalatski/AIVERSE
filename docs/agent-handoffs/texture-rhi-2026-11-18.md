@@ -5029,3 +5029,26 @@ NOT RUN. Explicit PASS cannot be claimed.
 Next: add Vulkan compute tests with GLSL shader writing
 rgba8/rgba16f, readback exact pixel values and verify barriers.
 Review compile + device limits before releasing.
+
+## Stage 8F — optional external OpenEXR compressed HDR reader (2026-11-18)
+
+Code commit: d2a17d7ebb41e08250d9b5ac6eb46cd03629f1e5.
+New header: engine/render/ExrOpenExr.h.
+Adds parseOpenExrWithLibrary and loadOpenExrWithLibrary.
+With AIVERSE_TEXTURE_WITH_OPENEXR, uses real OpenEXR 3.x
+RgbaInputFile on an immutable bounded memory IStream.
+Reads original dataWindow and RGBA half pixels, supports
+ZIP/ZIPS/PIZ and other formats OpenEXR library handles,
+including first-level tiled sources where supported.
+Converts to existing RadianceImage linear RGBA16F and
+rejects invalid window sizes or nonfinite channel values.
+Without dependency macro uses existing narrow uncompressed
+parser, not a fake compressed decoder. No external codecs vendored.
+Known: this is currently header-only; NEXT stage must add
+optional OpenEXR 3 CMake dependency and a real compressed
+EXR regression fixture. Multipart/deep EXR remain unsupported.
+Compatibility: opt-in native reader; no renderer ABI or save
+format change. Verification: GitHub source commit only,
+native OpenEXR headers/compile/test NOT RUN.
+Next: wire CMake, add synthetic OpenEXR-generated ZIP/PIZ
+test, verify fixture and real OpenEXR native decoding.
