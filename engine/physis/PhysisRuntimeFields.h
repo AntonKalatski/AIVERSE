@@ -21,6 +21,13 @@ struct RuntimeFieldRegistry {
     std::vector<RuntimeFieldBinding> fields; // stable ID order
 };
 
+inline void io(Archive& archive, RuntimeFieldBinding& binding) {
+    archive(binding.id, binding.kind, binding.entity);
+}
+inline void io(Archive& archive, RuntimeFieldRegistry& registry) {
+    archive(registry.fields);
+}
+
 inline void validateRuntimeBindings(const World& world,
                                     const RuntimeFieldRegistry& registry) {
     for (std::size_t i = 0; i < registry.fields.size(); ++i) {
@@ -91,6 +98,20 @@ inline void reconcileRuntimeFields(World& world, RuntimeFieldRegistry& registry,
     // World move and registry swap are the publication barrier.
     world = std::move(staged);
     registry.fields.swap(next.fields);
+}
+
+// Opt-in rollback-owned registry: World snapshots now include authored bindings.
+// Caller must register RuntimeFieldRegistry with persistent ECS for file saves.
+inline void reconcileTrackedRuntimeFields(
+    World& world, const std::vector<AuthoredField>& desired) {
+    RuntimeFieldRegistry current;
+    if (const auto* existing = world.resourceConst<RuntimeFieldRegistry>())
+        current = *existing;
+    // Stage BOTH resource and component mutations in a separate World.
+    World staged(world);
+    reconcileRuntimeFields(staged, current, desired);
+    staged.setResource<RuntimeFieldRegistry>(std::move(current));
+    world = std::move(staged);
 }
 
 } // namespace aiverse::physis
