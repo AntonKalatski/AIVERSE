@@ -26,6 +26,8 @@ inline const std::vector<NodeInfo>& nodeCatalog() {
         {"SpriteOutput","Renderers",R"({"texture":"builtin:soft"})","texture|fps",false},
         {"MeshOutput","Renderers",R"({"meshes":["builtin:cube"]})","meshes",false},
         {"RibbonOutput","Renderers",R"({})","",false},
+        {"ParticleProgramModule","Simulation",
+          R"({"version":1,"spawn":[{"target":"attribute0","value":1}],"update":[{"target":"size","op":"multiply","value":{"op":"subtract","a":1,"b":{"var":"ageNormalized"}}}]})","",true},
         {"NoiseModule","Forces",R"({"strength":0.3,"frequency":1.5})","strength|frequency|scroll",true},
         {"ForceModule","Forces",R"({"x":0,"y":2,"z":0})","x|y|z",true},
         {"VelocityModule","Forces",R"({"x":0,"y":1,"z":0})","x|y|z",true},
