@@ -119,6 +119,8 @@ bool ComputeParticles::initGpu() {
                   nullptr,"SpectraFX GPU particle spawn queue");
     slots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
                   nullptr,"SpectraFX GPU spawn slots");
+    liveSlots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
+                      nullptr,"SpectraFX GPU live-slot gather map");
     vertices_=buffer(*device_,gfx::BufferType::Storage,
                      cap*4*sizeof(Vertex),nullptr,"SpectraFX GPU quad vertices");
 
@@ -169,7 +171,7 @@ bool ComputeParticles::initGpu() {
         pd.label="SpectraFX GPU additive";
         pipeline_=device_->createPipeline(pd);
     }
-    if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!vertices_.valid()||
+    if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||!vertices_.valid()||
        !indices_.valid()||!texture_.valid()||!vertexShader_.valid()||!pipeline_.valid()) {
         reason_="GPU resource/pipeline allocation failed: "+device_->lastError();
         return false;
@@ -179,7 +181,8 @@ bool ComputeParticles::initGpu() {
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     pendingStates_.reserve(cap);
     pendingSlots_.reserve(cap);
-    stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
+    aliveSlots_.reserve(cap);
+    stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+2*sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
                     +size_t(n*n*4);
     return true;
 }
@@ -191,19 +194,21 @@ void ComputeParticles::releaseGpu() {
         if(states_.valid())device_->destroyBuffer(states_);
         if(seeds_.valid())device_->destroyBuffer(seeds_);
         if(slots_.valid())device_->destroyBuffer(slots_);
+        if(liveSlots_.valid())device_->destroyBuffer(liveSlots_);
         if(vertices_.valid())device_->destroyBuffer(vertices_);
         if(indices_.valid())device_->destroyBuffer(indices_);
         if(texture_.valid())device_->destroyTexture(texture_);
     }
     pipeline_={};vertexShader_={};compute_={};states_={};seeds_={};slots_={};
-    vertices_={};indices_={};texture_={};
+    vertices_={};indices_={};texture_={};liveSlots_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
-    drawSlotPrefix_=0;
+    aliveSlots_.clear();
+    drawCount_=0;
 }
 void ComputeParticles::shutdown() {
     cpu_.shutdown();cpuEffect_=-1;releaseGpu();device_=nullptr;
     initialized_=false;viewReady_=false;verticesReady_=false;
-    drawSlotPrefix_=0;
+    drawCount_=0;
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
@@ -216,7 +221,7 @@ void ComputeParticles::clear() {
         reason_="SpectraFX GPU clear must run outside render/compute passes";
         return;
     }
-    pendingStates_.clear();pendingSlots_.clear();verticesReady_=false;
+    pendingStates_.clear();pendingSlots_.clear();aliveSlots_.clear();verticesReady_=false;
     const uint32_t cap=desc_.capacity;
     std::vector<ParticleState> empty(cap);
     for(auto& s:empty){s.positionAge={0,0,0,-1};s.velocityLife={0,0,0,1};}
@@ -225,7 +230,7 @@ void ComputeParticles::clear() {
     freeSlots_.clear();
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     stats_.alive=0;
-    drawSlotPrefix_=0;stats_.submittedSlots=0;
+    drawCount_=0;stats_.submittedSlots=0;
 }
 bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::float4 tint) {
     if(!initialized_||desc_.quality==fx::FxQuality::Off||!finite(position)||!finite(direction)||!finite(tint))return false;
