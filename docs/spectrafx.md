@@ -2,7 +2,7 @@
 
 **SpectraFX** is the official name of the universal, genre-independent visual-effects system in AIVERSE. Its design is inspired by the authoring and event-driven workflow of Unreal Niagara, but it is **not** a copy of Unreal code, asset formats, or editor. `aiverse::spectra` is the public C++ API namespace.
 
-> **Current scope (2026-11-18):** Graph v1 frontend, reusable CPU particle backend, graph-asset variants/hot reload and optional read-only ECS presentation adapter have been **committed**. A basic graph-v1 node-canvas editor and in-memory CPU preview are **committed but unverified**; GPU particle simulation, full Niagara dataflow and automatic RTS/FPS production integration are **not finished**. Tests were added but have **not yet been run** in the authoring environment. Refer to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` for exact SHA and verification status.
+> **Current scope (2026-11-18):** Graph v1 frontend, reusable CPU particle backend, graph-asset variants/hot reload and optional read-only ECS presentation adapter have been **committed**. A basic graph-v1 node-canvas editor and in-memory CPU preview are **committed but unverified**; a limited Metal GPU particle prototype is **committed but unverified**; full GPU/CPU integration, Niagara dataflow and automatic RTS/FPS production integration are **not finished**. Tests were added but have **not yet been run** in the authoring environment. Refer to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` for exact SHA and verification status.
 
 ## Architecture
 
@@ -240,11 +240,94 @@ commits and added tests do not prove a passing editor build.
 `tests/vfx_graph_compiler_test.cpp` contains schema/compile-contract
 checks on top of the preexisting SpectraFX CTest target.
 
+## Metal GPU particle prototype (stage 10 — source committed, unverified)
+
+A new **opt-in** `aiverse::spectra::ComputeParticles` class in
+`engine/fx/SpectraGpuParticles.{h,cpp}` executes a limited billboard
+particle subset on the **Metal RHI compute path**. It is not wired into
+existing RTS/FPS clients and does not replace the legacy
+`aiverse::fx::ParticleSystem`. This subset intentionally contains a
+single additive soft-textured emitter with configurable burst count,
+lifetime, initial speed, size, gravity, linear drag and alpha-over-life.
+Complex attributes, noise, trails, mesh particles, collision, GPU
+subemitters, Niagara dataflow and user-authored shader graphs remain
+on the existing CPU emitter backend until separately implemented.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::ComputeParticles particles;
+aiverse::spectra::ComputeEmitterDesc params;
+params.capacity = 1024;
+params.burst = 16;
+params.backend = aiverse::spectra::ComputePreference::Automatic;
+params.quality = aiverse::fx::FxQuality::High;
+
+// Initialization can occur outside a frame. Device may be nullptr for
+// pure CPU/headless tests; RequireGpu fails if compute is unavailable.
+if (!particles.init(device, params)) {
+    // inspect particles.reason()
+}
+
+// Presentation frame, AFTER Device::beginFrame, BEFORE scene render pass:
+particles.setView(camera, viewProjection, width, height);
+particles.burstAt({0,2,0}, {0,1,0}, {1,0.5f,0.1f,1});
+if (!particles.step(1.f/60)) {
+    // RHI timing/encoder order error; inspect particles.reason()
+}
+
+// During the scene's existing still-open depth-tested render pass:
+particles.draw();
+// After the render pass: Device::endPass, Device::endFrame.
+// Before destroying gfx::Device: particles.shutdown().
+```
+
+The headless pure policy `chooseComputeBackend(backend, supportsCompute,
+preference)` selects the GPU path only for Metal with compute support.
+`CpuOnly` forces CPU; `Automatic` and `PreferGpu` fall back on
+unsupported RHI or failed pipeline allocation; `RequireGpu` rejects
+unsupported devices rather than silently running on CPU. Low-quality
+GPU configurations intentionally choose CPU, respecting the existing
+particle quality behavior. RHI compute calls must run outside render
+passes and inside a GPU frame. The caller is responsible for a
+single presentation owner/device thread and cleanup before device
+destruction; this module contains no ECS gameplay or deterministic
+simulator state.
+
+**Metal implementation:** three compute passes per presentation frame
+(queue accepted births → integrate age/velocity/position → expand
+camera-facing quad vertices). GPU buffers are persistent:
+64 bytes/particle for states and seeds, a 4-byte slot index and
+40 bytes per billboard vertex. The compute shader writes a vertex
+buffer directly sampled by the regular RHI particle vertex shader;
+normal frames do **not** read the GPU positions back to CPU.
+One depth-tested additive draw renders the pool. The current
+prototype draws the entire capped slot index array (dead slots emit
+degenerate quads); this is not a compacted or GPU-indirect renderer.
+Maximum pool is 4096 slots, with a maximum of 64 spawned per call.
+
+**GLSL source** is supplied for future Vulkan compute, but Vulkan
+`gfx::Device::supportsCompute` is not implemented in the current RHI.
+GLES3/GL33/WebGL2 do not run the compute kernel, so the existing CPU
+particle renderer is used instead. Do not report those platforms as
+GPU-supported. The dedicated test
+`tests/vfx_gpu_backend_test.cpp` checks the selection policy, bounds,
+headless CPU-fallback emissions and lifetime; **this is not a Metal GPU
+integration test**. CI and native GPU validation are still required.
+
+**Known limitations:** no GPU compaction, no camera culling/LOD for
+per-particle draws, no GPU-particle soft intersection, no mesh/ribbon
+GPU rendering, no advanced emitter graphs, no cross-CPU/GPU effect
+scheduler, no automatic FPS/RTS runtime migration, and no GPU
+performance measurements. Runtime Metal shader compilation, GPU
+resource hazards, multi-frame correctness and framebuffer output
+remain **NOT VERIFIED**.
+
 ## Validation checklist
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
@@ -254,7 +337,7 @@ The current tests focus on graph compilation, asset caching/validation and read-
 ## Planned work
 
 1. Validate current graph CRUD and basic visual node canvas, then add typed module inspector, scalable graph execution, richer dataflow and editor usability features.
-2. A GPU particle backend for supported RHI devices (compute, spawn/update/compact, culling, sorting, ribbons, material data), with an explicit CPU fallback for GLES3/mobile/WebGL.
+2. Validate the Metal GPU compute/draw prototype on an actual device; implement GPU compaction, culling, sorting, richer renderers and graph execution with CPU fallback for GLES3/mobile/WebGL.
 3. Rich graph dataflow, event handlers, function modules, simulation stages, user parameters, renderer plugins, soft particles, depth collisions, advanced quality/scalability.
 4. Migration of existing RTS/FPS presentation adapters into a single SpectraFX path, native project sample games, performance and platform QA.
 
