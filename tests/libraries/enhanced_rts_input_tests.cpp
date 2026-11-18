@@ -36,7 +36,7 @@ int main() {
     route.onEvent(key(p::Key::H,false),true);
     CHECK(contains(route.onEvent(key(p::Key::Space),true),"FocusCamera"));
     route.onEvent(key(p::Key::Space,false),true);
-    CHECK(route.system().registeredContexts().size()==5);
+    CHECK(route.system().registeredContexts().size()==7);
     CHECK(!route.system().state("CameraPan")->active);
     route.onEvent(key(p::Key::Up),true);
     CHECK(route.system().state("CameraPan")->value.y==1.0f);
@@ -70,6 +70,20 @@ int main() {
     CHECK(route.system().isContextActive("RTS.TopDown"));
     route.setTopDownEnabled(false);
     CHECK(!route.system().isContextActive("RTS.TopDown"));
+    CHECK(!route.system().isContextActive("RTS.Planet"));
+    CHECK(!route.system().isContextActive("RTS.Possession"));
+    route.setPlanetEnabled(true);
+    CHECK(route.system().isContextActive("RTS.Planet"));
+    CHECK(contains(route.onEvent(key(p::Key::Tab),true),"PlanetNextBody"));
+    route.onEvent(key(p::Key::Tab,false),true);
+    route.setPlanetEnabled(false);
+    route.setPossessionEnabled(true);
+    CHECK(route.system().isContextActive("RTS.Possession"));
+    CHECK(route.onEvent(key(p::Key::W),true).empty() ||
+          route.system().state("PossessedMove")->active);
+    CHECK(route.system().state("PossessedMove")->value.y>0.0f);
+    route.onEvent(key(p::Key::W,false),true);
+    route.setPossessionEnabled(false);
     // An active UI/modal context must prevent keys from leaking into gameplay.
     CHECK(route.onEvent(key(p::Key::A),false).empty());
     CHECK(contains(route.onEvent(key(p::Key::A),true),"AttackMove"));
