@@ -143,10 +143,49 @@ uint64_t exercise(bool cow) {
             "dry fire generated an extra damage event");
     return dryChecksum;
 }
+// A second input inside the fire interval must not produce another shot.
+// Check both snapshot implementations and both independent host types.
+template<class Tag>
+uint64_t exerciseCooldown(bool cow) {
+    auto module=std::make_unique<Host<Tag>>();
+    auto* host=module.get();
+    Simulation sim(SimConfig{31,20,0,true},std::move(module));
+    sim.setup(Json::object(),Json::object());
+    if(cow)sim.world().enableCowSnapshots(true);
+    // Keep a second round available to distinguish cooldown from dry fire.
+    auto* weapon=sim.world().tryGet<lg::WeaponStateComponent>(host->gun);
+    require(weapon!=nullptr,"cooldown fixture missing weapon");
+    weapon->ammo=2;
+    sim.step();
+    SimSnapshot afterShot;
+    sim.saveState(afterShot);
+    auto fireAgain=[&]() {
+        auto* intent=sim.world().tryGet<lg::FireIntentComponent>(host->gun);
+        require(intent!=nullptr,"cooldown fixture missing intent");
+        intent->requested=true;
+        sim.step();
+        const auto* state=sim.world().tryGetConst<lg::WeaponStateComponent>(host->gun);
+        const auto* queue=sim.world().resourceConst<lg::ProjectileSpawnQueue>();
+        const auto* consumed=sim.world().tryGetConst<lg::FireIntentComponent>(host->gun);
+        require(state&&state->ammo==1,"cooldown consumed extra ammo");
+        require(queue&&queue->nextShotId==2&&queue->pending.empty(),
+                "cooldown allocated extra projectile");
+        require(consumed&&!consumed->requested,"cooldown did not consume input");
+        return sim.checksum();
+    };
+    const uint64_t expected=fireAgain();
+    sim.loadState(afterShot);
+    require(fireAgain()==expected,"cooldown snapshot replay mismatch");
+    return expected;
+}
 int main(){
     const uint64_t expected=exercise<ShooterTag>(false);
     require(exercise<ArtilleryTag>(false)==expected,"artillery/shooter mismatch");
     require(exercise<ShooterTag>(true)==expected,"shooter COW mismatch");
     require(exercise<ArtilleryTag>(true)==expected,"artillery COW mismatch");
+    const uint64_t cooldown=exerciseCooldown<ShooterTag>(false);
+    require(exerciseCooldown<ArtilleryTag>(false)==cooldown,"cooldown cross-host mismatch");
+    require(exerciseCooldown<ShooterTag>(true)==cooldown,"cooldown COW mismatch");
+    require(exerciseCooldown<ArtilleryTag>(true)==cooldown,"artillery cooldown COW mismatch");
     std::cout<<"PASS reusable ECS launch/spawn/ballistics/impact/damage across RTS and FPS style hosts\n";
 }
