@@ -109,6 +109,31 @@ add_library(aiverse_engine STATIC
     engine/sim/Replay.cpp
     engine/sim/ProjectileData.cpp)
 target_include_directories(aiverse_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# ECS 2.0 opt-in correctness suites imported from feature/ecs-architecture-benchmarks.
+# This does NOT enable production parallel scheduling or change default gameplay.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    enable_testing()
+    find_package(Threads REQUIRED)
+    foreach(test_name IN ITEMS
+            ecs_experiments_test
+            ecs_wave_executor_test
+            ecs_guarded_world_test
+            ecs_snapshot_delta_test
+            ecs_scene_hierarchy_test
+            ecs_scene_hierarchy_simulation_test
+            ecs_cow_snapshot_test
+            ecs_cow_exception_test
+            ecs_cow_parallel_test
+            ecs_guarded_parallel_test
+            ecs_guarded_failure_test
+            ecs_wave_replay_test
+            ecs_simulation_bridge_test)
+        add_executable(aiverse_${test_name} tests/${test_name}.cpp)
+        target_link_libraries(aiverse_${test_name} PRIVATE aiverse_engine Threads::Threads)
+        add_test(NAME ${test_name} COMMAND aiverse_${test_name})
+    endforeach()
+endif()
+
 option(AIVERSE_ENABLE_PHYSICS "Build optional Box3D physics module" OFF)
 if(AIVERSE_ENABLE_PHYSICS)
     add_subdirectory(engine/physics)
@@ -154,7 +179,31 @@ add_library(aiverse_game STATIC
     modules/rts/RtsAITerrain.cpp
     modules/rts/RtsAITactics.cpp)
 target_link_libraries(aiverse_game PUBLIC aiverse_engine)
+# Experimental RTS transform preprocessing remains OFF by default.
+option(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS
+    "Opt in to deterministic parallel RTS prevPos preprocessing" OFF)
+if(AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_game PRIVATE Threads::Threads)
+    target_compile_definitions(aiverse_game PRIVATE AIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=1)
+endif()
+
 add_subdirectory(libraries)
+# RTS projectile motion and impact use the public, genre-independent packages
+# rather than implementing their own physics or duplicating damage ordering.
+target_link_libraries(aiverse_game PRIVATE
+    AIVERSE::lib_ecs_kinematic_projectiles
+    AIVERSE::lib_ecs_ordered_impact)
+# Prove public shared mechanics can execute in unrelated native genre hosts.
+# The target uses AIVERSE::libraries, never aiverse_game or aiverse_fps.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_cross_genre_mechanics_test
+        tests/ecs_cross_genre_mechanics_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_mechanics_test PRIVATE
+        aiverse_engine AIVERSE::libraries)
+    add_test(NAME ecs_cross_genre_mechanics_test
+        COMMAND aiverse_ecs_cross_genre_mechanics_test)
+endif()
 include(modules/rts/native/Build.cmake)
 # agent-mech: mechanics of the top-100 strategy games plan (stances, transports, ...)
 file(GLOB AIVERSE_MECH_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/rts/RtsMech*.cpp)
@@ -260,6 +309,12 @@ add_library(aiverse_net STATIC
     third_party/monocypher/monocypher.c)
 set_source_files_properties(third_party/monocypher/monocypher.c PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w,-w>")
 target_link_libraries(aiverse_net PUBLIC aiverse_engine)
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_cow_rollback_session_test tests/ecs_cow_rollback_session_test.cpp)
+    target_link_libraries(aiverse_ecs_cow_rollback_session_test PRIVATE aiverse_net Threads::Threads)
+    add_test(NAME ecs_cow_rollback_session_test COMMAND aiverse_ecs_cow_rollback_session_test)
+endif()
+
 if(WIN32)
     target_link_libraries(aiverse_net PUBLIC ws2_32 bcrypt)
 elseif(EMSCRIPTEN)
@@ -377,6 +432,7 @@ add_library(aiverse_models STATIC
     engine/render/MeshBuilder.cpp
     engine/render/Model.cpp
     engine/render/ModelMerge.cpp   # static batching of parts that share a material
+    engine/render/GlobalGeometryPool.cpp
     engine/render/ModelGltf.cpp
     engine/render/ModelObj.cpp
     engine/render/Animation.cpp
@@ -427,6 +483,11 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_unity_anim_tests tests/unity_anim/controller.cpp)
     target_link_libraries(aiverse_unity_anim_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME unity_anim_controller COMMAND aiverse_unity_anim_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_batching_policy_tests tests/render/model_batching_policy.cpp)
+    target_link_libraries(aiverse_model_batching_policy_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME model_batching_policy COMMAND aiverse_model_batching_policy_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_tests tests/animation/graphs.cpp apps/editor/core/AnimationDocument.cpp)
@@ -978,6 +1039,23 @@ if(AIVERSE_BUILD_TESTS)
     endif()
     target_compile_definitions(aiverse_tests PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME aiverse_tests COMMAND aiverse_tests)
+    if(TARGET aiverse_editor_core)
+        add_executable(aiverse_editor_scene_adapter_tests tests/editor/scene_entity_adapter_tests.cpp)
+        target_link_libraries(aiverse_editor_scene_adapter_tests PRIVATE aiverse_editor_core)
+        add_test(NAME editor_scene_adapter COMMAND aiverse_editor_scene_adapter_tests)
+        add_executable(aiverse_editor_scene_picking_tests tests/editor/scene_picking_tests.cpp)
+        target_link_libraries(aiverse_editor_scene_picking_tests PRIVATE aiverse_editor_core)
+        add_test(NAME editor_scene_picking COMMAND aiverse_editor_scene_picking_tests)
+        add_executable(aiverse_editor_scene_gizmo_tests tests/editor/scene_gizmo_tests.cpp)
+        target_link_libraries(aiverse_editor_scene_gizmo_tests PRIVATE aiverse_editor_core)
+        add_test(NAME editor_scene_gizmo COMMAND aiverse_editor_scene_gizmo_tests)
+        add_executable(aiverse_editor_oriented_collider_tests tests/editor/scene_oriented_collider_tests.cpp)
+        target_link_libraries(aiverse_editor_oriented_collider_tests PRIVATE aiverse_editor_core)
+        add_test(NAME editor_oriented_collider COMMAND aiverse_editor_oriented_collider_tests)
+        add_executable(aiverse_editor_scene_rotation_tests tests/editor/scene_rotation_tests.cpp)
+        target_link_libraries(aiverse_editor_scene_rotation_tests PRIVATE aiverse_editor_core)
+        add_test(NAME editor_scene_rotation COMMAND aiverse_editor_scene_rotation_tests)
+    endif()
     add_executable(aiverse_build_tool_tests tests/editor/build_tool.cpp)
     target_include_directories(aiverse_build_tool_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME editor_build_tool COMMAND aiverse_build_tool_tests "${CMAKE_CURRENT_BINARY_DIR}/build-tool-fixture")
@@ -1468,6 +1546,102 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+# Real genre-adapter validation: both production GameModules, v9 disk states,
+# canonical command order, COW snapshots, replay and FPS ECS authority.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_real_genre_replay_test
+        tests/ecs_real_genre_replay_test.cpp)
+    target_link_libraries(aiverse_ecs_real_genre_replay_test PRIVATE
+        aiverse_game aiverse_fps)
+    target_compile_definitions(aiverse_ecs_real_genre_replay_test PRIVATE
+        AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME ecs_real_genre_replay_test COMMAND aiverse_ecs_real_genre_replay_test)
+endif()
+# Demonstrate that one ECS projectile/impact mechanic can serve unrelated
+# shooter and strategy hosts. Public libraries + shared collision only;
+# neither aiverse_game nor aiverse_fps is linked to the test.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_projectile_composition_test
+        tests/ecs_projectile_composition_test.cpp)
+    target_link_libraries(aiverse_ecs_projectile_composition_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_projectile_composition_test
+        COMMAND aiverse_ecs_projectile_composition_test)
+    add_executable(aiverse_ecs_cross_genre_projectile_test
+        tests/ecs_cross_genre_projectile_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_projectile_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_cross_genre_projectile_test
+        COMMAND aiverse_ecs_cross_genre_projectile_test)
+    add_executable(aiverse_ecs_cross_genre_weapon_pipeline_test
+        tests/ecs_cross_genre_weapon_pipeline_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_weapon_pipeline_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_cross_genre_weapon_pipeline_test
+        COMMAND aiverse_ecs_cross_genre_weapon_pipeline_test)
+    add_executable(aiverse_ecs_kinematic_projectile_test
+        tests/ecs_kinematic_projectile_test.cpp)
+    target_link_libraries(aiverse_ecs_kinematic_projectile_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_kinematic_projectile_test
+        COMMAND aiverse_ecs_kinematic_projectile_test)
+    add_executable(aiverse_ecs_cross_genre_impact_queue_test
+        tests/ecs_cross_genre_impact_queue_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_impact_queue_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_impact_queue)
+    add_test(NAME ecs_cross_genre_impact_queue_test
+        COMMAND aiverse_ecs_cross_genre_impact_queue_test)
+    add_executable(aiverse_ecs_integer_health_commit_test
+        tests/ecs_integer_health_commit_test.cpp)
+    target_link_libraries(aiverse_ecs_integer_health_commit_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_impact_damage)
+    add_test(NAME ecs_integer_health_commit_test
+        COMMAND aiverse_ecs_integer_health_commit_test)
+    add_executable(aiverse_ecs_hitscan_selection_test
+        tests/ecs_hitscan_selection_test.cpp)
+    target_link_libraries(aiverse_ecs_hitscan_selection_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_hitscan_selection_test
+        COMMAND aiverse_ecs_hitscan_selection_test)
+    add_executable(aiverse_ecs_hitscan_resolution_test
+        tests/ecs_hitscan_resolution_test.cpp)
+    target_link_libraries(aiverse_ecs_hitscan_resolution_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::libraries)
+    add_test(NAME ecs_hitscan_resolution_test
+        COMMAND aiverse_ecs_hitscan_resolution_test)
+    # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
+    add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
+    target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
+    target_compile_definitions(aiverse_ecs_native_rts_integration_test PRIVATE AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME ecs_native_rts_integration_test COMMAND aiverse_ecs_native_rts_integration_test)
+    add_executable(aiverse_ecs_native_persistence_test tests/ecs_native_persistence_test.cpp)
+    target_link_libraries(aiverse_ecs_native_persistence_test PRIVATE aiverse_engine)
+    add_test(NAME ecs_native_persistence_test COMMAND aiverse_ecs_native_persistence_test)
+    add_executable(aiverse_ecs_cross_genre_timed_mechanics_test
+        tests/ecs_cross_genre_timed_mechanics_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_timed_mechanics_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::lib_ecs_timed_mechanics)
+    add_test(NAME ecs_cross_genre_timed_mechanics_test
+        COMMAND aiverse_ecs_cross_genre_timed_mechanics_test)
+    add_executable(aiverse_ecs_cross_genre_locomotion_test
+        tests/ecs_cross_genre_locomotion_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_locomotion_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_locomotion)
+    add_test(NAME ecs_cross_genre_locomotion_test
+        COMMAND aiverse_ecs_cross_genre_locomotion_test)
+    add_executable(aiverse_ecs_cross_genre_inventory_test
+        tests/ecs_cross_genre_inventory_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_inventory_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_inventory)
+    add_test(NAME ecs_cross_genre_inventory_test
+        COMMAND aiverse_ecs_cross_genre_inventory_test)
+    add_executable(aiverse_ecs_fixed_regeneration_policy_test
+        tests/ecs_fixed_regeneration_policy_test.cpp)
+    target_link_libraries(aiverse_ecs_fixed_regeneration_policy_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_timed_mechanics)
+    add_test(NAME ecs_fixed_regeneration_policy_test
+        COMMAND aiverse_ecs_fixed_regeneration_policy_test)
+endif()
 add_subdirectory(modules/voxel)
 
 # Opt-in end-to-end reusable library host, excluded from normal builds.
@@ -1753,13 +1927,31 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP AND TARGET aiverse_modeling)
 endif()
 
 option(AIVERSE_BUILD_AUTOLOD "Build offline meshoptimizer LOD tools" OFF)
+option(AIVERSE_RUNTIME_AUTOLOD "Generate missing rigid-model LODs during upload preparation" ON)
+# meshoptimizer is a portable import-time dependency: not used during a render
+# frame. Share its exact implementation with the optional offline worker.
+if(AIVERSE_RUNTIME_AUTOLOD OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
+    if(NOT TARGET aiverse_meshoptimizer_lod)
+        add_library(aiverse_meshoptimizer_lod STATIC
+            third_party/meshoptimizer/src/allocator.cpp
+            third_party/meshoptimizer/src/indexgenerator.cpp
+            third_party/meshoptimizer/src/simplifier.cpp
+            third_party/meshoptimizer/src/vcacheoptimizer.cpp)
+        target_include_directories(aiverse_meshoptimizer_lod PUBLIC third_party/meshoptimizer/src)
+    endif()
+endif()
+if(AIVERSE_RUNTIME_AUTOLOD)
+    target_sources(aiverse_models PRIVATE engine/render/AutoLodRuntime.cpp)
+    target_link_libraries(aiverse_models PUBLIC aiverse_meshoptimizer_lod)
+    target_compile_definitions(aiverse_models PRIVATE AIVERSE_RUNTIME_AUTOLOD=1)
+    if(AIVERSE_BUILD_TESTS)
+        add_executable(aiverse_auto_lod_tests tests/render/auto_lod_runtime.cpp)
+        target_link_libraries(aiverse_auto_lod_tests PRIVATE aiverse_models aiverse_zstd_dec)
+        add_test(NAME auto_lod_runtime COMMAND aiverse_auto_lod_tests)
+    endif()
+endif()
+
 if(AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP)
-    add_library(aiverse_meshoptimizer_lod STATIC
-        third_party/meshoptimizer/src/allocator.cpp
-        third_party/meshoptimizer/src/indexgenerator.cpp
-        third_party/meshoptimizer/src/simplifier.cpp
-        third_party/meshoptimizer/src/vcacheoptimizer.cpp)
-    target_include_directories(aiverse_meshoptimizer_lod PUBLIC third_party/meshoptimizer/src)
     add_executable(aiverse_model_lod_transition_test tests/render/ModelLodTransition.cpp)
     target_include_directories(aiverse_model_lod_transition_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_options(aiverse_model_lod_transition_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)

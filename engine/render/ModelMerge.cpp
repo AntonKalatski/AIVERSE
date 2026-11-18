@@ -182,7 +182,22 @@ ModelMergeResult mergeStaticPrimitives(Model& m, const ModelMergeOptions& o) {
         for (const auto& p : mesh.primitives)
             if (!p.jointPalette.empty() || p.morphTargets > 0 || !p.variantMaterial.empty()) return skip("skinned, morphing or variant primitives");
     }
-    auto kept = [&](const Node& n) { return std::find(o.keepNodes.begin(), o.keepNodes.end(), n.name) != o.keepNodes.end(); };
+    // A protected node also protects its descendants. This is necessary for
+    // articulated/detachable pieces, editor gizmos and authored transform pivots.
+    std::vector<bool> protectedNodes(m.nodes.size(), false);
+    for (size_t n = 0; n < m.nodes.size(); ++n) {
+        int current = int(n);
+        for (size_t hops = 0; current >= 0 && size_t(current) < m.nodes.size() && hops < m.nodes.size(); ++hops) {
+            const Node& ancestor = m.nodes[size_t(current)];
+            if (ancestor.runtimeMutable ||
+                std::find(o.keepNodes.begin(), o.keepNodes.end(), ancestor.name) != o.keepNodes.end()) {
+                protectedNodes[n] = true;
+                break;
+            }
+            current = ancestor.parent;
+        }
+    }
+    auto kept = [&](size_t index) { return protectedNodes[index]; };
     auto mergeable = [&](const Primitive& p) {
         const auto& mt = m.materials.at(size_t(p.material));
         return mt.alpha != AlphaMode::Blend && !mt.transparent;   // blended parts keep their own depth sort
@@ -195,7 +210,7 @@ ModelMergeResult mergeStaticPrimitives(Model& m, const ModelMergeOptions& o) {
         const auto& mesh = m.meshes.at(size_t(node.mesh));
         r.primitivesBefore += mesh.primitives.size();
         for (size_t p = 0; p < mesh.primitives.size(); ++p) {
-            if (kept(node) || !mergeable(mesh.primitives[p])) continue;
+            if (kept(n) || !mergeable(mesh.primitives[p])) continue;
             groups[mesh.primitives[p].material].push_back({int(n), int(p)});
         }
     }
@@ -204,7 +219,7 @@ ModelMergeResult mergeStaticPrimitives(Model& m, const ModelMergeOptions& o) {
     for (size_t n = 0; n < m.nodes.size(); ++n) {
         const Node& node = m.nodes[n];
         if (node.mesh < 0) continue;
-        bool keep = kept(node);
+        bool keep = kept(n);
         for (const auto& p : m.meshes[size_t(node.mesh)].primitives) keep |= !mergeable(p);
         nodeKeepsMesh[n] = keep;
     }

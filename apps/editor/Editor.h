@@ -5,6 +5,7 @@
 //
 // The public part of Editor is the API windows use; keep it small and stable.
 #pragma once
+#include "SceneRenderable.h"
 #include <cmath>
 #include <deque>
 #include <memory>
@@ -45,6 +46,9 @@ struct Selection {
                 Live,       // an object of the world tree that is not a map entity being edited (ref): created by the game, or play mode
                 MapBlock,   // a block of the map document's extra JSON (key = path: "lights[2]", "gridFields")
                 Road,       // map road (index)
+                FpsObject,  // FPS document collider/spawn, stable source key in ref
+                FpsActor,   // FPS runtime actor ECS identity, slot index for editor UI
+                FpsRuntimeObject, // FPS projectile, loot or vehicle ECS entity; stable kind/id key in ref
                 Body } kind = None;   // planet map body (index)
     int index = -1;          // entity / player (0-based) / wave / trigger / road / body
     std::string key;         // area name, region letter, rule id, map block path
@@ -53,6 +57,9 @@ struct Selection {
 };
 
 enum class Tool { Select, Place, Terrain, Level, Height, Field, Region, Area, Start, Road, Erase, Count };
+// Universal Scene Transform interaction mode. Unsupported operations are
+// disabled per selected entity's real authoring schema.
+enum class TransformTool { Move, Rotate, Scale };
 
 // Offscreen 3D view shown inside a window with ImGui::Image.
 struct Viewport {
@@ -92,12 +99,19 @@ public:
     // ---------------- API for windows ----------------
     Workspace& ws() { return ws_; }
     MapDoc& doc() { return ws_.map; }
+    const MapDoc& doc() const { return ws_.map; }
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
     render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;                     // false: only the Game view is post-processed
     game::RtsView& view() { return view_; }
+    bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
+    // Pin a type that an editor panel or preview uses (also loads it lazily).
+    void retainEditorType(uint16_t type);
+    // Reclaim unreferenced type models after a grace period. Invoked by the
+    // editor every few seconds or from the Statistics panel.
+    void reclaimEditorAssets(bool force = false);
     std::shared_ptr<render::PaintLayers> paintLayers;
     std::shared_ptr<game::EntityFxStore> entityFx;   // view.entity_fx of the play-test view scripts
     game::ViewTargeting scriptTargeting;
@@ -110,6 +124,7 @@ public:
     // Selection: `selection` is the primary item (Inspector header, F focus); selectionSet holds every selected
     // item (multi-selection from the Hierarchy / Scene). Code that assigns `selection` directly gets a set of one.
     Selection selection;
+    TransformTool transformTool = TransformTool::Move;
     std::vector<Selection> selectionSet;
     void select(Selection s) { selection = std::move(s); selectionSet.clear(); if (selection.kind != Selection::None) selectionSet.push_back(selection); }
     int selectedEntity() const { return selection.kind == Selection::Entity ? selection.index : -1; }
@@ -182,7 +197,12 @@ public:
     Simulation* sim() { return sim_.get(); }
     game::RtsModule* simModule() { return sim_ ? dynamic_cast<game::RtsModule*>(&sim_->module()) : nullptr; }
     void startFpsPlay(bool listen=false, const std::string& address="");
-    void renderFpsScene(Viewport&,const render::RTSCamera&);
+    void enqueueFpsSceneGeometry(const render::RTSCamera&);
+    const Json& fpsRuntimeSnapshot(); // FPS World resource actors; cached by document/rules revision
+    int pickFpsSceneObject(const Viewport&, const render::RTSCamera&, float sx, float sy) const;
+    void selectFpsSceneSource(bool spawn, size_t sourceIndex);
+    bool isFpsSceneSourceSelected(bool spawn, size_t sourceIndex) const;
+    bool moveSelectedFpsSceneObject(float dx, float dy, float dz);
     void startPlay(int humanSlot = 0);
     void stopPlay();
     // Play as in the game client, inside the Game window (EditorClientPlay.cpp, ClientHost.h): the game's
@@ -266,7 +286,8 @@ public:
     EditorTheme& theme() { return theme_; }
 
     // statistics
-    struct FrameStats { float frameMs = 0, simMs = 0; uint32_t drawCalls = 0; };
+    // Last rendered viewport, same scope as drawCalls; triangle counts omit custom renderers.
+    struct FrameStats { float frameMs = 0, simMs = 0; uint32_t drawCalls = 0; uint64_t cameraTriangles = 0; };
     std::deque<FrameStats> frameHistory;
     EditorProfile prof;                                // world tree phase timings (AIVERSE_EDITOR_PROFILE=1 prints them)
     struct PlaySample { float t; std::vector<int> units, structures; std::vector<std::vector<float>> resources; };
@@ -312,8 +333,17 @@ private:
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
     render::Mesh fpsPreviewMesh_;
+    std::vector<SceneRenderable> fpsSceneObjects_;
+    Json fpsRuntimeCache_;
+    uint64_t fpsRuntimeRevision_ = UINT64_MAX;
+    int fpsRuntimeRulesRevision_ = -1; // same signed revision domain as rulesRevision_
+    std::string fpsRuntimeProjectDir_;
+
     render::PostFx postFx_;
     game::RtsView view_;
+    bool lazyEditorAssets_ = true;
+    std::vector<double> editorTypeLastUsed_;
+    double lastEditorTrim_ = 0.0;
     bool showPicker_ = false;
     bool resetLayout_ = false;
     bool layoutChecked_ = false;
@@ -330,6 +360,19 @@ private:
     double gridRebuildAt_ = 0;
     bool playTerrainBuilt_ = false;
     game::RtsScene scene_;
+    // Opt-in edit-scene snapshot: immutable document-derived objects only.
+    // Selection/hover and live world preview remain updated every frame.
+    struct EditSceneCacheEntry {
+        size_t documentIndex = 0;
+        game::SceneObject object;
+    };
+    mutable std::vector<EditSceneCacheEntry> editSceneCache_;
+    mutable uint64_t editSceneCacheMapRevision_ = ~0ull;
+    mutable uint64_t editSceneCacheRulesRevision_ = ~0ull;
+    mutable const void* editSceneCacheEntities_ = nullptr;
+    mutable size_t editSceneCacheEntityCount_ = 0;
+    mutable std::set<std::string> editSceneCacheHidden_;
+    mutable bool editSceneCacheValid_ = false;
     FieldPreview fieldPreview_;   // grid field initial values for the Scene view (FieldOps.h)
     double time_ = 0;
     bool quit_ = false;

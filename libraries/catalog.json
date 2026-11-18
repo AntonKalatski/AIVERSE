@@ -242,7 +242,7 @@
       "runtime": "none",
       "cmakeTarget": null
     },
-{
+    {
       "id": "input",
       "version": "0.2.0",
       "layer": "presentation",
@@ -2395,6 +2395,251 @@
       "linkDependencies": [],
       "packageDependencies": [
         "voxel-world"
+      ]
+    },
+    {
+      "id": "ecs-hitscan",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsHitscanSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-hitscan/SKILL.md",
+      "summary": "Shared deterministic hitscan candidate ray intersection with eligibility, immutable rewind poses and nearest-hit tie consistency for FPS, RTS and native games",
+      "notes": "Live FPS traceShot uses this policy over lag-compensated Actor snapshots. The policy chooses nearest candidate only; environment/vehicle obstruction and downstream damage remain host-specific. C++ native builds and replay parity remain unverified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_hitscan",
+      "dependencies": [
+        "tests/ecs_hitscan_selection_test.cpp",
+        "docs/ecs-mechanic-composition.md",
+        "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_world"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "ecs-hitscan-resolution",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md",
+      "summary": "Independent reusable ECS hitscan resolution system: one-shot intents, deterministic nearest-target callbacks, stable hit records and deferred hit application for native games",
+      "notes": "The real FPS traceShot still uses synchronous shared closest-target and ordered-impact policies; this newly schedulable stage is opt-in only until multi-hit same-tick damage and save/rollback parity have been proven. Does not simulate projectile physics.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_hitscan_resolution",
+      "dependencies": [
+        "tests/ecs_hitscan_resolution_test.cpp",
+        "docs/ecs-mechanic-composition.md",
+        "libraries/include/aiverselib/genre/EcsHitscanSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-hitscan"
+      ]
+    },
+    {
+      "id": "ecs-ordered-impact",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-ordered-impact/SKILL.md",
+      "summary": "Genre-independent ordered ECS projectile impact dispatch for direct damage, queued on-hit effects and splash candidates with injected faction, armor and damage policies",
+      "notes": "Live ordinary RTS weapon projectiles use this shared policy. It is a synchronous policy inside the existing RTS ECS tick, not a separate scheduled damage stage; FPS and RTS ability adapters remain pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_ordered_impact",
+      "dependencies": [
+        "tests/ecs_kinematic_projectile_test.cpp",
+        "docs/ecs-mechanic-composition.md",
+        "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "ecs-kinematic-projectiles",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-kinematic-projectiles/SKILL.md",
+      "summary": "Shared nonphysical ECS projectiles with deterministic fixed-tick endpoint arrival or moving-target pursuit; canonical arrival events and deferred despawn",
+      "notes": "Header-only motion without SpatialWorld or ballistics. Real RTS uses the common pursuit policy but still owns legacy damage/effect ordering. Full RTS migration and native build parity remain pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_kinematic_projectiles",
+      "dependencies": [
+        "docs/ecs-mechanic-composition.md",
+        "tests/ecs_kinematic_projectile_test.cpp",
+        "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "ecs-projectile-systems",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsProjectileSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md",
+      "summary": "Genre-independent ECS projectile motion/impact assembly: shared flight components, deterministic ballistic or injected guidance policy, read-only collision provider, ordered hit records and deferred despawn",
+      "notes": "Opt-in composable flight/impact stage only, NOT full FPS/RTS combat migration. Bind separate weapon launch, damage/status and presentation systems; no genre module dependencies. Run cross-genre CTest and native builds before production enablement.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_projectile_systems",
+      "dependencies": [
+        "docs/ecs-mechanic-composition.md",
+        "tests/ecs_projectile_composition_test.cpp",
+        "libraries/include/aiverselib/genre/Weapons.h",
+        "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_world"
+      ],
+      "packageDependencies": [
+        "weapon-policies"
+      ]
+    },
+    {
+      "id": "ecs-impact-damage",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsDamageSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-impact-damage/SKILL.md",
+      "summary": "Genre-independent ECS projectile-impact to damage resolution: health/damage components, collider-entity mapping, ordered damage queue, configurable damage policy and applied-event callback",
+      "notes": "Composable impact/damage stage. Shared with any shooter, artillery, vehicle or spell host. Does not automatically replace legacy FPS/RTS combat logic. Native C++/COW/rollback verification pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_impact_damage",
+      "dependencies": [
+        "docs/ecs-mechanic-composition.md",
+        "tests/ecs_cross_genre_projectile_test.cpp",
+        "libraries/include/aiverselib/genre/EcsProjectileSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-projectile-systems"
+      ]
+    },
+    {
+      "id": "ecs-weapon-launch",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-weapon-launch/SKILL.md",
+      "summary": "Universal ECS fire intent, weapon ammo/cooldown, deterministic deferred projectile creation, integrated with shared ballistic flight and impact/damage pipeline",
+      "notes": "Reusable weapon launch/shot composition for any genre or native host. Legacy FPS/RTS weapon systems still require parity-checked migration; does not claim complete replacement. Native/CI tests pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_weapon_launch",
+      "dependencies": [
+        "docs/ecs-mechanic-composition.md",
+        "tests/ecs_cross_genre_weapon_pipeline_test.cpp",
+        "libraries/include/aiverselib/genre/EcsDamageSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-impact-damage"
+      ]
+    },
+    {
+      "id": "ecs-timed-mechanics",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsTimedMechanics.h",
+      "skill": "skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md",
+      "summary": "Reusable ECS weapon reload/fire gating, hit-point and energy regeneration, and deterministic entity expiration systems for any genre.",
+      "notes": "Opt-in native mechanics. Reuses shared ECS weapon/health states, no FPS/RTS dependency. Built-in FPS/RTS authority integration, native CTest and serialization/network parity still pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_timed_mechanics",
+      "dependencies": [
+        "docs/ecs-all-features-migration-plan.md",
+        "tests/ecs_cross_genre_timed_mechanics_test.cpp",
+        "libraries/include/aiverselib/genre/FixedRegeneration.h",
+        "tests/ecs_fixed_regeneration_policy_test.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-weapon-launch"
+      ]
+    },
+    {
+      "id": "ecs-locomotion",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsLocomotionSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-locomotion/SKILL.md",
+      "summary": "Reusable ECS movement input/state/output components over the existing deterministic stepMotion character locomotion policy, with jump edges and rollback.",
+      "notes": "Independent movement policy only. Collision, position integration, advanced mode machine and FPS/RTS authority migration remain separate. Native compile/CTest not yet verified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_locomotion",
+      "dependencies": [
+        "docs/ecs-all-features-migration-plan.md",
+        "tests/ecs_cross_genre_locomotion_test.cpp",
+        "libraries/include/aiverselib/genre/Locomotion.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "character-locomotion"
+      ]
+    },
+    {
+      "id": "ecs-inventory",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsInventorySystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-inventory/SKILL.md",
+      "summary": "Genre-independent authoritative ECS inventory item add/remove/transfer transactions with deterministic request IDs, capacity/weight checks and ordered outcomes.",
+      "notes": "Uses existing gameplay Inventory policies. Permission/faction/distance checks belong to validated host Commands. Built-in FPS/RTS bag integration and native tests remain pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_inventory",
+      "dependencies": [
+        "docs/ecs-all-features-migration-plan.md",
+        "tests/ecs_cross_genre_inventory_test.cpp"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "inventory"
+      ]
+    },
+    {
+      "id": "ecs-impact-queue",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsImpactQueueSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-impact-queue/SKILL.md",
+      "summary": "Composable ECS ordered impact resolution stage with bounded rollback-owned request queue, stable sequence IDs and host-injected direct/on-hit/splash policies",
+      "notes": "Opt-in separately scheduled impact barrier. Callback-submitted requests execute on next invocation. Existing RTS immediate per-projectile damage and FPS hit paths must not be switched until real save/checksum/rollback parity is proven.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_impact_queue",
+      "dependencies": [
+        "tests/ecs_cross_genre_impact_queue_test.cpp",
+        "docs/ecs-all-features-migration-plan.md",
+        "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-ordered-impact"
       ]
     }
   ]

@@ -4,6 +4,368 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
+
+**Every completed stage MUST leave a durable handoff for the next agent, without exception.**
+This applies to code, tests, migrations, performance, editor fixes, documentation-only
+architecture stages and interrupted/failed attempts. The working branch for PR #7
+is `feature/universal-entity-inspector-fps`; do not create a parallel branch just
+to write the handoff.
+
+1. Before implementation, read the last applicable handoff, `AGENTS.md`, and
+   the current branch HEAD. Preserve all changes from other agents.
+2. Finish one bounded stage and commit its implementation. Do not start the next
+   stage until its handoff has been committed **to the same branch**.
+3. Append a dated entry to the active feature handoff. Include exact code commit
+   SHA(s), branch, affected paths, what changed and what did not, public API/save
+   format compatibility, test commands **actually executed** with outcomes,
+   CI URLs/status, known risks, blockers and the very next actionable step.
+   If tests could not be run, write **NOT RUN** and why. Never describe a
+   queued/cancelled workflow as passing.
+4. Commit the handoff entry separately. If multiple agents edit the same handoff,
+   reload the newest HEAD and append to the combined document; never overwrite
+   their entries. Do not force-push or silently resolve semantic conflicts.
+5. If an implementation fails or is partially complete, still append a
+   handoff describing the failed command/error and unfinished changes so that
+   the next agent does not repeat the investigation.
+6. For native ECS persistence also maintain
+   `docs/agent-handoffs/native-ecs-persistence.md`, plus a brief checkpoint in
+   `docs/editor-unification-handoff.md`.
+
+The handoff must make it possible for another agent to resume without
+re-reading the entire chat or trusting unverifiable status claims.
+
+**Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
+
+## Genre-independent ECS mechanics contract (2026-11-18)
+
+**Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`
+(baseline 120 catalog packages, RTS tick stage map, FPS authority backlog, migration
+waves and acceptance checks). Keep the inventory and handoff updated as packages
+are added. A generic public library is NOT equivalent to converting existing
+gameplay; track library publication and actual RTS/FPS adoption separately.
+
+New reusable opt-in ECS packages:
+- `AIVERSE::lib_ecs_timed_mechanics` — reload/fire gate, health/energy regen,
+  despawn by tick; `skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md`.
+- `AIVERSE::lib_ecs_locomotion` — component-based input/state/output around
+  existing shared fixed-point `stepMotion`; `skills/gameplay/aiverse-ecs-locomotion/SKILL.md`.
+- `AIVERSE::lib_ecs_inventory` — ordered, transactional inventory add/remove/
+  transfer using the shared inventory policies;
+  `skills/gameplay/aiverse-ecs-inventory/SKILL.md`.
+All have cross-genre CTest/standalone experiment runner entries but **native
+results remain unverified** until the suite executes. Keep the legacy FPS/RTS
+systems in place until explicit one-writer authority, save/network and replay
+parity tests pass. Continue annotating every code stage in
+`docs/editor-unification-handoff.md`.
+
+AIVERSE is **a composable game-mechanics engine**, not a collection of
+hard-coded RTS/FPS implementations. Every new gameplay feature, library or
+mechanic MUST follow the **Components + Systems** model:
+
+1. **ECS component contracts.** Define minimal, reusable data-only components
+   describing state, inputs, configuration and outputs. Place shared components
+   in engine/libraries rather than a genre module. Do not own authoritative
+   gameplay state in duplicated per-genre arrays or custom singleton worlds.
+   Components should have stable IDs and deterministic save/rollback semantics.
+2. **Independent systems.** Implement behavior as small, configurable systems
+   operating on declared ECS component read/write sets and resources, with
+   explicit update order, event/command outputs and structural barriers.
+   A mechanic can be enabled/disabled or composed with other mechanics by
+   registering systems/components; no genre-specific engine forks.
+3. **Reuse one shared mechanic across genres.** RTS bullet, FPS projectile,
+   missile, rocket, grenade and spell should use the **same** trajectory,
+   collision query, impact/penetration/splash, lifetime and damage primitives.
+   Genre adapters provide components, target selection, input and tuning, not
+   duplicate projectile solvers. Extend this rule to locomotion, vehicles,
+   health/damage, inventories, economy, navigation, physics and AI.
+4. **Configuration instead of inheritance by genre.** Prefer capability-based
+   feature flags, typed rules/assets and composition to `isFPS`/`isRTS`
+   branches. Different projects can combine any mechanics regardless of genre.
+5. **Native C++ and agent reuse.** Libraries must be callable from the native
+   game/project module via public headers, without modifying engine core.
+   Deliver corresponding AI skill documentation, stable interfaces and usage
+   examples; reference them here and in the relevant handoff to prevent agents
+   regenerating equivalent mechanics.
+6. **Determinism first.** Fixed-point sim math, stable iteration/command merge,
+   explicit RNG ownership, versioned persistence, per-tick replay/rollback
+   and multi-worker checksum tests. Keep presentation/float effects out of
+   authoritative systems. Confirm parity between old and new integrations
+   before removing a legacy path.
+7. **Migration without parallel source-of-truth copies.** Transitional adapters
+   may support old FPS/RTS saves/netcode but must state the owner of canonical
+   data, the barrier where mirrors are updated and when compatibility buffers
+   can be deleted. Move one system at a time; preserve gameplay ordering.
+8. **Required artifacts for every mechanic:** component schemas, system
+   implementation, registration/configuration sample (RTS+FPS or two distinct
+   host games), tests (including native linkage and save/rollback), matching
+   skill, and update to living handoff. Do not mark production-ready without
+   compiling and running applicable checks.
+
+**Required shared shooting package:** use
+`AIVERSE::lib_ecs_weapon_launch` (public
+`<aiverselib/genre/EcsWeaponLaunchSystems.h>`), composed with the existing
+`ecs-projectile-systems` and `ecs-impact-damage` packages, for new
+weapon/shot/impact gameplay. Do not implement separate projectile
+trajectory/collision/damage math in `modules/rts` and `modules/fps`.
+The native shooter/artillery cross-genre fixtures are
+`ecs_cross_genre_weapon_pipeline_test` and
+`ecs_cross_genre_projectile_test`. Existing RTS/FPS gameplay has NOT
+yet been fully redirected to this package: preserve legacy deterministic
+save/replay until actual parity tests pass.
+
+The ongoing universal FPS/RTS migration must gradually consume these generic
+mechanic libraries, not create new genre-specific gameplay engines.
+
+**Real integer damage migration checkpoint (2026-11-18):** `fps::Module::damage`
+and `addDamageResolutionSystem` both call
+`lib::genre::applyIntegerHitPointDamage` after host mitigation.
+The generic World `DamageQueue` exports v1
+`saveDamageQueue/loadDamageQueue/hashDamageQueue`, which native hosts must
+wire into their own GameModule byte save/checksum, not just COW snapshots.
+Use `ecs_integer_health_commit_test` plus actual FPS ECS ON/OFF,
+save v9 and rollback parity. This does **not** make `HitPointsComponent`
+canonical for live FPS: the canonical FPS owner remains `ActorRuntime`
+until a versioned migration. Do not create parallel mutable health copies.
+See `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md`.
+
+
+**Optional queued ECS impact barrier:** for games that deliberately separate
+motion from damage resolution, use `AIVERSE::lib_ecs_impact_queue`
+(`<aiverselib/genre/EcsImpactQueueSystems.h>`,
+`skills/gameplay/aiverse-ecs-impact-queue/SKILL.md`).
+`OrderedImpactQueue` and its monotonically increasing sequence are World
+resources that MUST be saved/hashed/rollbacked; callbacks retain independent
+armor/faction/shield rules, and queued impacts run in canonical submission
+order. The queue swaps pending requests at the barrier: callback-generated
+hits run on the next invocation. Existing RTS immediate projectile damage
+and same-tick shield/script side effects MUST NOT be moved into a single
+end-of-tick queue without a golden parity test. The native cross-genre
+fixture is `ecs_cross_genre_impact_queue_test`; compilation and real
+RTS/FPS integration remain pending.
+
+**Implemented hitscan capability split (2026-11-18):** Use
+`AIVERSE::lib_ecs_hitscan` (`EcsHitscanSystems.h`) to select the nearest
+valid fixed-point ray hit over current or rewound poses. For games that can
+stage hits after a source ECS traversal, compose
+`AIVERSE::lib_ecs_hitscan_resolution`
+(`EcsHitscanResolutionSystems.h`, `HitscanIntentComponent`,
+`addHitscanResolutionSystem`) with
+`AIVERSE::lib_ecs_impact_damage` and its `DamageQueue`/resolution barrier.
+Skills: `skills/gameplay/aiverse-ecs-hitscan/SKILL.md`,
+`skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md`.
+Test: `ecs_hitscan_resolution_test` exercises two independent GameModule hosts,
+invalid/blocked fire requests, stable multi-shooter order, full ECS health
+reduction and deep/COW snapshot replay. As of this entry native execution
+has **not** been verified.
+
+**Do not silently change live FPS timing:** `modules/fps/FpsSystems.cpp`
+still resolves authoritative hits synchronously within the legacy tick,
+including rewind, armor, head/limb multipliers and kill/loot hooks. It reuses
+shared hitscan and ordered-impact policies, but the independent hitscan
+resolution system stages hit events until after traversal. Switching the live
+FPS to it requires same-tick damage ordering golden tests and network/save
+checksum parity. The kinematic no-physics RTS path and physical-ballistic
+path remain independently composable; no `isFPS`/`isRTS` motion flag.
+
+**Actual shared projectile collision adoption (2026-11-18):** the live FPS
+`FpsProjectiles.cpp` programmed-projectile stage now calls
+`selectSweptProjectileContact` in
+`AIVERSE::lib_ecs_projectile_systems` (`EcsSweepQuerySystems.h`).
+Selects nearest dynamic target with fixed-point swept bounds, endpoint
+fraction=1 and stable semantic-ID ties. It keeps the older wall, penetration,
+damage and projectile-program side effects in the original order. Its
+existing `tests/fps/projectiles.inc::ecsProjectileProgramStageParity` tests
+legacy/ECS actor and projectile state plus save v9 and deep/COW snapshots;
+`ecs_projectile_composition_test` additionally covers swept contact
+selection in independent genre hosts. Neither has been executed in this
+workspace.
+
+`FpsSystems.cpp::traceShot` now synchronously calls the **same**
+`resolveHitscanIntent` pure policy as the standalone
+`addHitscanResolutionSystem`, and uses the generic ray selection policy for
+vehicles too. The live FPS damage still commits immediately and uses
+`applyIntegerHitPointDamage` after gear/armor and knockdown rules.
+For any future conversion to queued impacts or scheduled FPS fire, first run
+`tests/fps/tests.cpp::ecsSimultaneousHitscanRollbackParity` and network
+rollback/parity tests. The standalone resolution system uses deferred callback
+order and must not silently replace synchronous FPS multi-pellet execution.
+Select physical sweep, non-physical pursuit or instant hitscan per *weapon
+capability*, never per genre.
+
+**FPS projectile state migration, current branch:** in
+`fps.ecsAuthority=true`, `fps.compat.projectilePrograms` now runs
+`Module::stepProgrammedProjectile` directly against authoritative
+`ProjectileRuntime` components, sorting by recorded `order`/ID and applying
+immediate hits before actor updates. The default FPS mode calls that **same**
+solver from the legacy source vector. New branches/expiry are committed to
+the ECS World at a structural barrier and projected into
+`State::projectiles` for remaining legacy game mode/save/network readers.
+**Live accepted weapon shots, Frag/Smoke/Flash actions, and bomb-round reset
+now use direct `Module::spawnProjectile` / `clearProjectiles` ECS
+Entity creation/deletion when `ecsAuthority` is enabled.**
+The State array remains a compatibility workspace for other FPS systems;
+do not reintroduce legacy-only spawns or a second solver. See
+`tests/fps/projectile_spawn.inc` for deep/COW, v9 and reset parity.
+**Do not switch a second projectile solver or reintroduce a writable State
+source into this phase.** Mixed nonprogrammed objects, Entity-generation
+recycling, COW, v9 saves, rewind and synchronous damage order must retain
+parity; see `ecsProjectileProgramStageParity` and
+`ecsProjectileBranchAuthorityParity` in `tests/fps/projectiles.inc`.
+Native test execution is still pending.
+
+**Live FPS ordinary projectile ECS stage (2026-11-18):**
+When `fps.ecsAuthority=true`, both the programmed and ordinary
+projectile flight stages now advance **canonical ProjectileRuntime ECS
+components**. Ordering is `fps.ecsHydrate -> fps.compat.projectilePrograms
+-> fps.compat.ordinaryProjectiles -> fps -> fps.ecsMirror`.
+The ordinary-stage `stepOrdinaryProjectile` solver is reused by the
+legacy mode and ECS mode, preserves exact instantaneous hit/fuse/smoke
+order and uses shared `stepBouncingProjectile` from
+`AIVERSE::lib_ecs_projectile_systems` for physical grenade motion.
+RTS abstract missiles use separate kinematic motion without physics.
+
+Do not treat the compatibility `State::projectiles` array as canonical
+between ECS flight barriers. Other FPS round/actor systems can still
+write that array in the main tick; the mirror reconciles it until those
+systems migrate. Preserve FPS v9 save/net format and simultaneous-damage
+ordering. Run `ecsOrdinaryProjectileAuthorityParity` (real FPS bullets,
+grenades, timed smoke, ECS-only edits, deep/COW snapshots, cross-v9
+reload), `ecsProjectileProgramStageParity`, `ecs_projectile_composition_test`,
+`fps` and `fps_transport` before merging or enabling by default.
+All these native results are currently unverified.
+
+**Critical FPS projectile single-writer rule (2026-11-18):**
+When `fps.ecsAuthority=true`, the **entire live FPS projectile lifecycle**
+(accepted weapon and grenade spawn, programmed/ordinary flight, impacts,
+smoke expiry and bomb-round reset) now writes canonical
+`ProjectileRuntime` ECS components. `fps.ecsMirror` must use
+`syncDynamicEntities(sim,true)` to derive `State::projectiles` as a
+one-way legacy/save/network representation, **never** copying stale
+State values back onto Runtime. Preserve the original
+`syncDynamicEntities(Simulation&)` overload for legacy v9 load/setup,
+which is intentionally State→Runtime. New projectile features must
+write ECS components/commands, not the State vector. Native proof is
+still required; `tests/fps/projectile_spawn.inc` includes a
+Runtime=17 / stale-State=777 mirror regression plus deep/COW save and
+round-reset fixtures.
+
+## FPS ECS authority migration (PR #7, in progress)
+
+**Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
+has been merged as an ancestor into PR #7; do not restore outdated FPS
+`FpsModule.cpp` or Inspector sources from the standalone PR #8 branch.
+
+**Mandatory living handoff:** `docs/editor-unification-handoff.md`,
+latest FPS stages A–S. After EVERY implementation commit, append the exact
+SHA, changed files, behavior, verification status and next action to the
+handoff in a separate documentation commit before taking another action.
+
+`fps.ecsAuthority` is an experimental default-OFF storage migration gate.
+When ON, full `ActorRuntime`, `ProjectileRuntime`, `LootRuntime` and
+`VehicleRuntime` components are canonical between ticks and define
+checksum/save v9 entity payloads. `fps.ecsHydrate` creates the ordered
+legacy tick workspace; old algorithms not yet migrated still read/write it.
+`fps.ecsMirror` commits the tick results to ECS and refreshes read-only
+Editor projections. Commands, actor motor and centralized damage already
+have direct ECS code paths. **Do NOT call the migration complete.**
+
+Next migrate direct gameplay systems one by one, verify same-tick side-effect
+ordering and byte-identical checksums to the default mode, then remove the
+temporary State arrays once all uses are gone. Legacy save v9 and network
+format must remain compatible until an explicitly versioned migration.
+Run `aiverse_fps_tests`, `fps_transport`, checksum replay, sanitizer and
+universal Editor tests on the integrated branch before main merge.
+
+## Mandatory universal ECS mechanic contract (2026-11-18)
+
+**Games are compositions of components and systems, NOT fixed RTS/FPS feature silos.**
+This section supersedes older genre-specific implementation instructions elsewhere in
+this file or in skills. Every new or refactored gameplay mechanic MUST have:
+
+1. **ECS components** holding all mutable authoritative state: e.g. `ProjectileFlight`,
+   `DamagePayload`, `WeaponState`, `Inventory`, `VehicleMotion`, `Team`.
+   Use generation-safe Entity links, Fixed/integer values and explicit versioned
+   configuration. Do not hide gameplay state in global variables, module objects,
+   ephemeral mirrors or untracked vectors.
+2. **Reusable ECS systems** implementing one feature or stage, with explicit
+   `reads`, `writes`, resource/structural dependencies and a deterministic tick
+   stage. A system consumes the components it needs; no requirement that the
+   hosting game is RTS, FPS, racing, RPG or another predefined genre.
+3. **Pure/shared algorithms or policies** when possible, located in
+   `libraries/include/aiverselib/` (or shared `engine/` when engine-owned).
+   Genre-specific modules only map input/config/presentation and assemble
+   shared systems. Never duplicate the same core algorithm in RTS and FPS.
+4. **Composable execution**: systems opt in per project through data/config,
+   run with deterministic ordering and explicit barriers, and interoperate
+   through components, events and deferred command buffers. A single Entity
+   may use any combination of shooting, inventory, driving, crafting, AI,
+   abilities and other mechanics. Missing components mean a system skips
+   that Entity; no hard-coded genre switch or mutually exclusive feature list.
+5. **Gameplay determinism and rollback**: all state that affects outcome is
+   hashed/serialized/snapshotted, input is a validated Command, RNG is injected
+   from Simulation and consumed in canonical order, structural changes are
+   deferred, and cross-worker writes are protected. No presentation floats
+   in authoritative logic.
+6. **Native-project usability**: a standalone game's C++ source must be able
+   to include, configure and register the components and systems through public
+   AIVERSE targets, without editing the engine or depending on `RtsModule&`
+   / `fps::Module`. Optional adapters for legacy modules are allowed, but the
+   reusable mechanic itself must have no such dependency.
+7. **Cross-genre proof**: before calling a mechanic reusable, compile and
+   exercise it in at least TWO independent module hosts (e.g. shooter and
+   strategy), plus a combined-mechanics scenario. Validate checksum parity,
+   save/load, rollback, component lifecycle and permissions; add CTest/CI.
+   No green tests => mark unverified, do not claim production-ready.
+8. **Documentation on every feature change**: update the feature skill,
+   `docs/ecs-mechanic-composition.md`, the relevant API guide and the current
+   branch's agent handoff after EACH implementation commit. The handoff must
+   distinguish implemented code from native test results.
+
+**Projectile example:** RTS turret, FPS rifle, missile launcher and RPG spell
+must all use shared flight/trajectory/collision/impact policies driven by
+`ProjectileFlight` / `ProjectileState` / `Target` / `DamagePayload`
+components. Separate launch, motion/homing, collision, damage, effects and
+despawn systems; adapt genre-specific rules at the edges. Reuse existing
+`engine/sim/ProjectileData.h` and `aiverselib/genre/Weapons.h` as a base,
+not duplicate trajectory physics inside each genre module. Parameterize bullet,
+shell and rocket behavior rather than branching on the genre name.
+
+**Migration rule:** legacy `RtsModule` or `fps::Module` methods are not
+considered universal simply because both run on an ECS World. Extract common
+mechanic state + behavior into reusable ECS units, keep old public/save/network
+contracts through thin adapters until parity tests pass, then remove duplicated
+implementations. See `docs/ecs-mechanic-composition.md` and
+`skills/workflow/aiverse-new-mechanic/SKILL.md`.
+
+## ECS 2.0 experimental work (PR #8)
+
+**Parallel migration coordination (2026-11-18):** another agent is actively
+moving RTS and FPS to a universal ECS architecture. Do not concurrently
+rewrite RTS/FPS gameplay systems or change legacy world-space `Transform`
+semantics from the ECS architecture PR. Keep `Parent`, `LocalTransform`,
+`WorldTransform` and `SceneHierarchy` generic under `engine/sim`. Share
+the integration contract in `docs/ecs-agent-handoff.md`, and merge/cherry-pick
+only verified core changes into the genre migration. Both agents must avoid
+overlapping edits to `modules/rts` and `modules/fps`.
+
+For nested gameplay entities and native project object hierarchies, read
+`docs/ecs-scene-hierarchy.md` and use `Parent` / `LocalTransform` /
+`WorldTransform` with `SceneHierarchy`. Do not reinterpret RTS
+`Transform` as local space, or feed float presentation transforms into
+deterministic simulation. Keep hierarchy topology generation-safe; rebuild
+the derived graph on save/load and update only dirty branches.
+
+For any ECS storage, scheduler, rollback or parallelism change, **first read**
+`docs/ecs-agent-handoff.md`. This is the continuously updated handoff for
+`feature/ecs-architecture-benchmarks` and PR #8. It contains prior benchmark
+results, verified tests, exact commits, limitations and remaining work.
+Update it after **each** ECS development step, preserving a clear distinction
+between code pushed and tests actually run. Production ECS remains deterministic
+Sparse Set; new scheduler/guarded interfaces are opt-in experiments. Do not
+enable arbitrary existing RTS/FPS gameplay systems in parallel or merge PR #8
+without complete test and lockstep/replay validation.
+
 ## 1. What this is
 
 AIVERSE is a from-scratch C++20 game engine with RTS and FPS modules. The RTS module covers
@@ -777,3 +1139,45 @@ C API. Copy transient events before mutations, wake reactivated joints, and vali
 real contacts. Physics needs an explicit host and never feeds float state into RTS
 Fixed lockstep implicitly. Deterministic vehicle/interaction policies retain their
 own authority. A standalone test or a model animation is not an in-client integration.
+
+## Active editor-unification work (PR #7)
+
+Before modifying editor Scene, Inspector, Hierarchy, Transform, ECS component adapters or rendering for RTS/FPS, **read `docs/editor-unification-handoff.md`**. It contains the target architecture, implementation status, acceptance gates and known risks. **Update its progress log after every implementation or verification stage in the same PR**, with commits, actual test results (or NOT RUN), blockers and next steps. Do not merge PR #7 without the documented validation gates.
+
+## Native ECS state registration (2026-11-18)
+Native authoritative ECS components/resources MUST register during setup via `Simulation::registerPersistentComponent<T>` / `registerPersistentResource<T>` with stable namespaced ID and positive schema version, plus portable ADL `io(Archive&, T&)`. Save v10 is enabled only when needed; v9 projects remain unchanged. Version mismatches fail closed. See `docs/native-ecs-persistence.md` and `tests/ecs_native_persistence_test.cpp`. Verify native builds and rollback before production adoption.
+
+### Native schema upgrades and transactional load (2026-11-18)
+Register exact-version legacy component/resource readers only through `registerPersistentComponentMigration<T>` and `registerPersistentResourceMigration<T>`. Native ECS migration validates the ORIGINAL source field stream against the recorded checksum; never bypass checksums for an upgraded save. Do not hash registered ECS data twice in GameModule::hashState. Disk deserialize now restores Simulation-owned World/RNG/commands/players on invalid input; game-module private derived caches must use `addStateRestoredHook` and remain outside authoritative simulation state. See `docs/native-ecs-persistence.md` and `tests/ecs_native_persistence_test.cpp`. Native execution still requires CI proof.
+
+## Unified test runner — mandatory for all agents (2026-11-18)
+
+**One user-facing entry point:** `./run-tests.sh` at the repository root
+(`docs/testing.md` is the contract). It configures/builds all desktop test
+targets, runs every automatically discovered CTest, then all standalone suites
+registered in `tests/extra-test-suites.txt`. `--quick` omits the expensive
+standalone suites; `--filter` targets a CTest selection. Full reports go under
+`build/all-tests/test-reports/`.
+
+- Every **new test MUST be reached by `./run-tests.sh`**. Add an ordinary C++
+  or Python test through CMake `add_test(NAME ... COMMAND ...)`, with compiled
+  executable built by default CMake ALL targets. Never hard-code CTest test
+  names into the runner or use `EXCLUDE_FROM_ALL` for a registered test
+  without explicit prerequisite build wiring.
+- If the test uses a separate toolchain, sanitizer, backend, benchmark or
+  ON/OFF parity build, add one deterministic row to
+  `tests/extra-test-suites.txt` (`name|bash|relative/script.sh|--flag`
+  or `name|python3|relative/script.py|`). Do not use `eval` or pass
+  untrusted shell expressions in registry arguments.
+- Before claiming an implementation stage verified, run the appropriate
+  `./run-tests.sh` mode, retain its `summary.txt` and logs and record
+  actual PASS/FAIL/NOT RUN, exact tested Git SHA and test path in the
+  stage handoff. A broken CMake build means **tests not run**, not a passed
+  suite. No success claim from queued/cancelled CI workflows.
+- The user only needs `./run-tests.sh`; never ask them to maintain separate
+  command lists as agents add tests. Keep all tests self-contained inside
+  this repository; platform-specific device/SDK smoke checks stay in CI.
+- For runner-specific changes and failures, append
+  `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
+  addition to the active feature handoff and existing agent update rules.
+

@@ -1,7 +1,14 @@
 // Scene: the map in 3D with a free camera; select/drag objects and apply the current tool.
 //   RMB drag: look around, RMB + WASD/QE: fly, MMB drag: pan, wheel: zoom, F: focus selection.
+#include "../EditorEntityAdapter.h"
+#include "../EditorTransformGizmo.h"
+#include "../EditorSelectionAdapter.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
 #include "../Editor.h"
 #include "StudioContextMenus.h"
 #include "StudioLuaExtensions.h"
@@ -9,6 +16,10 @@
 #include "../core/PlanetOps.h"
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
+#include "engine/render/GlobalGeometryPool.h"
+#include "engine/render/GpuIcbPolicy.h"
+#include "modules/rts/view/RtsRoadView.h"
+#include <array>
 
 namespace aiverse::editor {
 
@@ -25,10 +36,9 @@ public:
     ImGuiWindowFlags flags() const override { return ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            ImGui::SameLine();ImGui::TextDisabled("%s",genreText(ed.ws(),"fps.editor.camera").c_str());
-        } else toolbar(ed);
+        const bool traceScene = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
+        const auto sceneStart = std::chrono::steady_clock::now();
+        toolbar(ed); // Same scene tools and selection controls in every genre.
         ImVec2 avail = ImGui::GetContentRegionAvail();
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
         vp_.ensure(ed.device(), int(avail.x * dpi), int(avail.y * dpi));
@@ -36,12 +46,154 @@ public:
         vp_.originX = p.x; vp_.originY = p.y; vp_.pointsW = avail.x; vp_.pointsH = avail.y;
         // image first (like the Game window): the screen overlays renderScene adds (bars, labels) stay on top of it
         vp_.image(ed.device(), avail.x, avail.y);
+        const auto afterViewport = std::chrono::steady_clock::now();
         // Diagnostic rendering is scoped to Scene, never leaked into the Game tab.
-        ed.renderer().setStudioDebugMode(studioDebugMode_);
-        ed.renderScene(vp_, ed.sceneCam, !ed.playing());
-        ed.renderer().setStudioDebugMode(0);
+        auto& renderer = ed.renderer();
+        // The map document assigns 0xED-prefixed IDs to authored entities.
+        // Trace only the selected one; avoid per-entity allocation in runtime.
+        uint64_t lodTarget = 0;
+        renderer.setLodDiagnosticsEnabled(lodPopupVisible_);
+        if (lodPopupVisible_ &&
+            ed.selection.kind == Selection::Entity && ed.selection.index >= 0 &&
+            size_t(ed.selection.index) < ed.doc().data.entities.size())
+            lodTarget = (uint64_t(0xED) << 56) | (uint64_t(ed.selection.index) + 1);
+        renderer.setLodDebugTarget(lodTarget);
+        renderer.setStudioDebugMode(studioDebugMode_);
+        renderer.setProfiling(sceneProfiling_);
+        const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
+        const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
+        renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
+        renderer.setModelMultiDrawEnabled(measuredMode ? activeMode != 0 : sceneIndirect_);
+        renderer.setGpuAuthoredDrawEnabled(measuredMode ? activeMode == 2 : true);
+        renderer.setModelCullingEnabled(sceneCulling_);
+        renderer.setModelLodEnabled(sceneLodEnabled_);
+        renderer.setModelLodFadeWidth(sceneLodFadeWidth_);
+        // Pipeline layouts depend on instance limit. Apply only when the user changes
+        // the control: resetting this after every Scene frame would recompile shaders.
+        if (sceneInstanceLimitDirty_) {
+            renderer.setInstanceLimit(uint32_t(sceneInstanceLimit_));
+            sceneInstanceLimitDirty_ = false;
+        }
+        const auto benchmarkStart = std::chrono::steady_clock::now();
+        if (measureBatchingNextFrame_ && !benchmarkActive_) {
+            measureBatchingNextFrame_ = false;
+            // Both passes use exactly the same scene camera and frame. A/B
+            // disables both per-primitive instancing and indirect submissions;
+            // geometry remains uploaded, so no asset reload is required.
+            renderer.setModelInstancingEnabled(false);
+            renderer.setModelMultiDrawEnabled(false);
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            baselineDraws_ = int64_t(renderer.drawCalls());
+            baselineModelDraws_ = int64_t(renderer.profile().draws[1]) +
+                                  int64_t(renderer.profile().draws[2]);
+            renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
+            renderer.setModelMultiDrawEnabled(measuredMode ? activeMode != 0 : sceneIndirect_);
+            renderer.setGpuAuthoredDrawEnabled(measuredMode ? activeMode == 2 : true);
+            // Present optimized scene as usual (not the comparison baseline).
+            ed.renderScene(vp_, ed.sceneCam, !ed.playing());
+            optimizedDraws_ = int64_t(renderer.drawCalls());
+            optimizedModelDraws_ = int64_t(renderer.profile().draws[1]) +
+                                   int64_t(renderer.profile().draws[2]);
+            comparisonValid_ = true;
+        } else {
+            ed.renderScene(vp_, benchmarkActive_ ? benchmarkCamera_ : ed.sceneCam, !ed.playing());
+        }
+        if (benchmarkActive_) {
+            const double cpuMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - benchmarkStart).count();
+            if (benchmarkWarmup_ > 0) --benchmarkWarmup_;
+            else {
+                // Tag this full Metal command buffer with the exact benchmark
+                // mode. Results arrive asynchronously and are matched by tag.
+                constexpr uint64_t kGpuTag = 0xA17E000000000000ull;
+                const uint64_t tag = kGpuTag |
+                    (uint64_t(benchmarkGeneration_) << 40) |
+                    (uint64_t(benchmarkMode_) << 38) |
+                    (++benchmarkGpuSequence_ & ((uint64_t(1) << 38) - 1));
+                ed.device().timeGpuFrame(tag);
+                benchmarkSamples_[benchmarkMode_].push_back(cpuMs);
+                benchmarkDrawSum_[benchmarkMode_] += renderer.drawCalls();
+                benchmarkIndirectSum_[benchmarkMode_] += renderer.modelStats().multiDrawSubmissions;
+                benchmarkCommandSum_[benchmarkMode_] += renderer.modelStats().indirectCommands;
+                const auto gpuDraw = renderer.gpuModelDrawStats();
+                benchmarkGpuAuthoredSum_[benchmarkMode_] += gpuDraw.submitted +
+                    gpuDraw.gpuEncodedCommands;
+                benchmarkGpuIcbSum_[benchmarkMode_] += gpuDraw.gpuEncodedSubmissions;
+                ++benchmarkPhaseSamples_;
+                if (benchmarkPhaseSamples_ == 300) {
+                    benchmarkPhaseSamples_ = 0;
+                    ++benchmarkPhase_;
+                    if (benchmarkPhase_ == benchmarkBlockCount_) {
+                        benchmarkActive_ = false;
+                        benchmarkDone_ = true;
+                        if (autoBatchEnabled_) {
+                            std::array<double, 3> averages{};
+                            for (int mode = 0; mode < 3; ++mode) {
+                                double sum = 0.0;
+                                for (double sample : benchmarkSamples_[mode]) sum += sample;
+                                averages[mode] = benchmarkSamples_[mode].empty() ?
+                                    1.0e30 : sum / double(benchmarkSamples_[mode].size());
+                            }
+                            autoBatchChoice_ = render::chooseSceneBatchMode(
+                                averages, benchmarkThreeModes_ ? 3 : 2);
+                        }
+                    } else {
+                        // Two modes: ABBAAB. Three modes: ABC CBA ABC.
+                        // All modes get 3 x 300 samples with per-block warmup.
+                        static constexpr int twoModes[] = {0, 1, 1, 0, 0, 1};
+                        static constexpr int threeModes[] = {0, 1, 2, 2, 1, 0, 0, 1, 2};
+                        benchmarkMode_ = benchmarkThreeModes_ ?
+                            threeModes[benchmarkPhase_] : twoModes[benchmarkPhase_];
+                        benchmarkWarmup_ = 60;
+                    }
+                }
+            }
+        }
+        if (benchmarkActive_ || benchmarkDone_) {
+            // Metal timings include the full editor MTLCommandBuffer, not just
+            // renderScene. Never label them as isolated Scene GPU durations.
+            for (const auto& timing : ed.device().takeGpuTimings()) {
+                if (!timing.valid || !std::isfinite(timing.milliseconds) ||
+                    timing.milliseconds <= 0.0 ||
+                    (timing.tag & 0xFFFF000000000000ull) != 0xA17E000000000000ull ||
+                    ((timing.tag >> 40) & 0xFFu) != benchmarkGeneration_)
+                    continue;
+                const uint32_t mode = uint32_t((timing.tag >> 38) & 0x3u);
+                if (mode < 3) benchmarkGpuSamples_[mode].push_back(timing.milliseconds);
+            }
+        }
+        // Take a stable copy before the Game window overwrites the shared
+        // Renderer3D counters later in the editor frame.
+        lastSceneLodStats_ = renderer.modelStats();
+        lastSelectedLod_ = renderer.lodDebugSample();
+        const auto afterRenderScene = std::chrono::steady_clock::now();
+        // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
+        renderer.setStudioDebugMode(0);
+        renderer.setProfiling(false);
+        renderer.setModelInstancingEnabled(true);
+        renderer.setModelMultiDrawEnabled(true);
+        renderer.setGpuAuthoredDrawEnabled(true);
+        renderer.setModelCullingEnabled(true);
+        renderer.setModelLodEnabled(true);
+        renderer.setModelLodFadeWidth(0.15f);
+        renderer.setLodDebugTarget(0);
+        renderer.setLodDiagnosticsEnabled(false);
         vp_.drawnFrame = ImGui::GetFrameCount();
         ed.sceneViewport = &vp_;
+        if (traceScene) {
+            static unsigned samples = 0;
+            static double totals[3] = {};
+            const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+            totals[0] += ms(sceneStart, afterViewport);
+            totals[1] += ms(afterViewport, afterRenderScene);
+            totals[2] += ms(sceneStart, std::chrono::steady_clock::now());
+            if (++samples == 120) {
+                std::fprintf(stderr, "[scene-frame] avg/120 viewport=%.3f ms renderScene=%.3f ms total-before-input=%.3f ms\n",
+                             totals[0] / samples, totals[1] / samples, totals[2] / samples);
+                samples = 0;
+                for (double& value : totals) value = 0.0;
+            }
+        }
         if(ed.ws().project.isFps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
@@ -70,7 +222,159 @@ public:
                 if (ImGui::IsKeyDown(ImGuiKey_E)) ed.sceneCam.target.y += speed;
                 if (ImGui::IsKeyPressed(ImGuiKey_F, false)) ed.fitScene();
             }
-        } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);hud(ed);}
+            // FPS previously rendered the shared selection HUD without ever
+            // updating the selection. Pick using the same scene model as RTS.
+            // During play the inspector stays read-only.
+            if (vp_.hovered && !io.WantTextInput && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+                const Selection hovered = ed.pickObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
+                ed.setHover(hovered);
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    // The same Selection now drives Scene, Hierarchy and Inspector.
+                    // Do not run a second genre-specific picker or overwrite a
+                    // cleared FPS selection with a stale RTS selection.
+                    fpsGizmoAxis_ = -1;
+                    if (ed.tool == Tool::Select && ed.selection.kind == Selection::FpsObject) {
+                        DocumentEntityRef selectedRef;
+                        DocumentTransform position;
+                        if (DocumentEntityRef::fromFpsKey(ed.selection.ref, selectedRef) &&
+                            readDocumentTransform(ed.doc(), selectedRef, position)) {
+                            const float3 pivot{float(position.x), float(position.y),
+                                               float(position.z)};
+                            const float extent = std::max(0.35f, ed.sceneCam.distance * 0.075f);
+                            const Json* source = fpsDocumentEntity(ed.doc().data.fps, selectedRef);
+                            const bool oriented = selectedRef.source ==
+                                DocumentEntityRef::Source::FpsCollider && source &&
+                                (*source)["yaw"].isNumber();
+                            if (ed.transformTool == TransformTool::Rotate && oriented) {
+                                fpsGizmoAxis_ = pickRotateYawGizmoRing(
+                                    ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                    vp_.originX, vp_.originY, io.MousePos.x,
+                                    io.MousePos.y, pivot, extent) ? 3 : -1;
+                            } else if (ed.transformTool == TransformTool::Scale && oriented) {
+                                fpsGizmoAxis_ = pickMoveGizmoAxis(
+                                    ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                    vp_.originX, vp_.originY, io.MousePos.x,
+                                    io.MousePos.y, pivot, extent);
+                            } else if (ed.transformTool == TransformTool::Move) {
+                                fpsGizmoAxis_ = pickMoveGizmoAxis(
+                                    ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                    vp_.originX, vp_.originY, io.MousePos.x,
+                                    io.MousePos.y, pivot, extent);
+                            }
+                        }
+                    }
+                    const bool alreadySelected =
+                        std::find(ed.selectionSet.begin(), ed.selectionSet.end(),
+                                  hovered) != ed.selectionSet.end();
+                    // Preserve a group when dragging an already-selected
+                    // member. A simple click without movement still selects
+                    // just that member on release, matching RTS behavior.
+                    fpsDragKeepSelection_ = fpsGizmoAxis_ < 0 &&
+                        alreadySelected && ed.selectionSet.size() > 1 &&
+                        !io.KeyCtrl && !io.KeySuper && ed.tool == Tool::Select;
+                    fpsDragClicked_ = hovered;
+                    if (fpsGizmoAxis_ < 0 && !fpsDragKeepSelection_)
+                        pickSelect(ed, hovered, io);
+                    fpsDragActive_ = ed.tool == Tool::Select &&
+                        !io.KeyCtrl && !io.KeySuper &&
+                        (fpsGizmoAxis_ >= 0 ||
+                         (hovered.kind == Selection::FpsObject &&
+                          (ed.selection == hovered || fpsDragKeepSelection_)));
+                    fpsDragEdited_ = false;
+                    fpsDragLastX_ = io.MousePos.x;
+                    fpsDragLastY_ = io.MousePos.y;
+                }
+            }
+            if (fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+                (io.MousePos.x != fpsDragLastX_ || io.MousePos.y != fpsDragLastY_)) {
+                if (ed.transformTool != TransformTool::Move && fpsGizmoAxis_ >= 0) {
+                    DocumentEntityRef ref;
+                    const bool validRef = documentEntityFromSelection(ed.selection, ref) &&
+                        ref.source == DocumentEntityRef::Source::FpsCollider;
+                    const Json* source = validRef
+                        ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+                    if (source && (*source)["yaw"].isNumber()) {
+                        Json transform;
+                        if (readDocumentComponent(ed.doc(), ref,
+                                DocumentComponentKind::Transform, transform)) {
+                            Json patch = Json::object();
+                            if (ed.transformTool == TransformTool::Rotate &&
+                                fpsGizmoAxis_ == 3) {
+                                const double previous = transform["rotationY"].toDouble();
+                                const double next = previous +
+                                    double(io.MousePos.x - fpsDragLastX_) * 0.5;
+                                patch.set("rotationY", Json::number(next, 3));
+                            } else if (ed.transformTool == TransformTool::Scale &&
+                                       fpsGizmoAxis_ >= 0 && fpsGizmoAxis_ < 3) {
+                                const Json& size = transform["scale"];
+                                if (size.isArray() && size.size() == 3) {
+                                    Json scale = Json::array();
+                                    const double amount =
+                                        double(fpsDragLastY_ - io.MousePos.y) *
+                                        std::max(0.005, double(ed.sceneCam.distance) * 0.001);
+                                    for (int i = 0; i < 3; ++i) {
+                                        const double dimension = size[size_t(i)].toDouble();
+                                        scale.push(Json::number(i == fpsGizmoAxis_
+                                            ? std::max(0.01, dimension + amount)
+                                            : dimension, 3));
+                                    }
+                                    patch.set("scale", scale);
+                                }
+                            }
+                            if (patch.size() > 0) {
+                                if (!fpsDragEdited_) ed.doc().beginEdit();
+                                fpsDragEdited_ = writeDocumentComponent(
+                                    ed.doc(), ref, DocumentComponentKind::Transform,
+                                    patch) || fpsDragEdited_;
+                            }
+                        }
+                    }
+                } else {
+                    float dx = 0.0f, dy = 0.0f, dz = 0.0f;
+                    bool valid = false;
+                    if (fpsGizmoAxis_ == 1 || (fpsGizmoAxis_ < 0 && io.KeyShift)) {
+                        dy = (fpsDragLastY_ - io.MousePos.y) *
+                             std::max(0.01f, ed.sceneCam.distance * 0.002f);
+                        valid = std::isfinite(dy);
+                    } else {
+                        float3 previous, current;
+                        valid = ed.sceneCam.screenToGround(fpsDragLastX_ - vp_.originX,
+                                                           fpsDragLastY_ - vp_.originY,
+                                                           vp_.pointsW, vp_.pointsH, previous) &&
+                                ed.sceneCam.screenToGround(io.MousePos.x - vp_.originX,
+                                                           io.MousePos.y - vp_.originY,
+                                                           vp_.pointsW, vp_.pointsH, current);
+                        if (valid) {
+                            dx = current.x - previous.x;
+                            dz = current.z - previous.z;
+                            if (fpsGizmoAxis_ == 0 || ImGui::IsKeyDown(ImGuiKey_X))
+                                dz = 0.0f;
+                            else if (fpsGizmoAxis_ == 2 || ImGui::IsKeyDown(ImGuiKey_Z))
+                                dx = 0.0f;
+                            valid = std::isfinite(dx) && std::isfinite(dz);
+                        }
+                    }
+                    if (valid && (std::abs(dx) > 1e-5f ||
+                                  std::abs(dy) > 1e-5f || std::abs(dz) > 1e-5f)) {
+                        if (!fpsDragEdited_) ed.doc().beginEdit();
+                        fpsDragEdited_ = ed.moveSelectedFpsSceneObject(dx, dy, dz) ||
+                                         fpsDragEdited_;
+                    }
+                }
+                fpsDragLastX_ = io.MousePos.x;
+                fpsDragLastY_ = io.MousePos.y;
+            }
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                if (fpsDragKeepSelection_ && !fpsDragEdited_ &&
+                    fpsDragClicked_.kind == Selection::FpsObject)
+                    ed.select(fpsDragClicked_);
+                fpsDragKeepSelection_ = false;
+                fpsDragActive_ = false;
+                fpsGizmoAxis_ = -1;
+            }
+        } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
+        // The selection overlay is genre-independent (including FPS).
+        hud(ed);
         StudioLuaExtensions::get().drawScene(ed, vp_);
         // Shift+RMB opens custom scene actions. Ordinary RMB still navigates.
         if (StudioContextMenus::get().available(ed) && vp_.hovered &&
@@ -83,6 +387,454 @@ public:
     }
 
 private:
+    bool fpsDragActive_ = false, fpsDragEdited_ = false;
+    bool fpsDragKeepSelection_ = false;
+    int fpsGizmoAxis_ = -1;
+    Selection fpsDragClicked_;
+    float fpsDragLastX_ = 0, fpsDragLastY_ = 0;
+
+    void lodControls(Editor& ed) {
+        if (ImGui::Button("LOD##scene")) ImGui::OpenPopup("##scene_lod");
+        if (!ImGui::BeginPopup("##scene_lod")) {
+            lodPopupVisible_ = false;
+            return;
+        }
+        lodPopupVisible_ = true;
+        ImGui::TextUnformatted("LOD текущей камеры (модели)");
+        ImGui::Separator();
+        ImGui::Checkbox("Включить Model LOD", &sceneLodEnabled_);
+        ImGui::SliderFloat("Переход LOD", &sceneLodFadeWidth_, 0.0f, 0.49f, "%.2f");
+        const auto& stats = lastSceneLodStats_;
+        ImGui::Text("В кадре: LOD0 %llu | LOD1 %llu | LOD2 %llu | LOD3+ %llu",
+                    (unsigned long long)stats.cameraLodNodes[0],
+                    (unsigned long long)stats.cameraLodNodes[1],
+                    (unsigned long long)stats.cameraLodNodes[2],
+                    (unsigned long long)stats.cameraLodNodes[3]);
+        ImGui::Text("С LOD-цепочкой: %llu | без неё: %llu",
+                    (unsigned long long)stats.cameraLodChains,
+                    (unsigned long long)stats.cameraNoLodChains);
+        ImGui::Text("Не подходит для выбора LOD: %llu | ограничено тенями: %llu",
+                    (unsigned long long)stats.cameraLodBlocked,
+                    (unsigned long long)stats.cameraShadowLimitedLod);
+        ImGui::TextDisabled("Счётчики узлов исходных моделей, только main camera.");
+        ImGui::TextDisabled("Уровень выбирается по размеру на экране и теневому охвату.");
+        ImGui::Separator();
+        int selectedType = -1;
+        if (ed.selection.kind == Selection::Entity &&
+            ed.selection.index >= 0 &&
+            size_t(ed.selection.index) < ed.doc().data.entities.size())
+            selectedType = ed.rules().findType(
+                ed.doc().data.entities[size_t(ed.selection.index)].type);
+        else if (ed.selection.kind == Selection::Type) {
+            for (size_t i = 0; i < ed.rules().types.size(); ++i)
+                if (ed.rules().types[i].id == ed.selection.key) {
+                    selectedType = int(i);
+                    break;
+                }
+        }
+        if (selectedType >= 0 && size_t(selectedType) < ed.rules().types.size()) {
+            ed.retainEditorType(uint16_t(selectedType));
+            ImGui::Text("Выбран: %s", ed.rules().types[size_t(selectedType)].id.c_str());
+            if (const auto* model = ed.view().modelOf(uint16_t(selectedType))) {
+                size_t chains = 0, levels = 0;
+                for (const auto& node : model->nodes) {
+                    if (node.mesh < 0 || size_t(node.mesh) >= model->meshes.size()) continue;
+                    const auto& mesh = model->meshes[size_t(node.mesh)];
+                    if (mesh.lods.empty()) continue;
+                    ++chains;
+                    levels += mesh.lods.size();
+                }
+                ImGui::Text("LOD-цепочек: %zu | доп. уровней: %zu", chains, levels);
+                if (model->autoLod.generatedLevels)
+                    ImGui::Text("Авто-LOD: %zu уровней для %zu мешей",
+                                model->autoLod.generatedLevels,
+                                model->autoLod.generatedMeshes);
+                else if (model->autoLod.attempted)
+                    ImGui::TextDisabled("Авто-LOD: %s", model->autoLod.reason.c_str());
+                if (!chains) ImGui::TextDisabled("В загруженной модели нет LOD.");
+                if (ed.selection.kind == Selection::Entity) {
+                    const auto& actual = lastSelectedLod_;
+                    if (actual.matched) {
+                        ImGui::Text("Выбранный объект: LOD0 %llu, LOD1 %llu, LOD2 %llu, LOD3+ %llu",
+                            (unsigned long long)actual.levels[0],
+                            (unsigned long long)actual.levels[1],
+                            (unsigned long long)actual.levels[2],
+                            (unsigned long long)actual.levels[3]);
+                        ImGui::Text("Видимые узлы: %llu, с цепочкой: %llu, ограничены тенями: %llu",
+                            (unsigned long long)actual.visibleNodes,
+                            (unsigned long long)actual.withChain,
+                            (unsigned long long)actual.shadowLimited);
+                    } else ImGui::TextDisabled("Выбранный объект не рисовался в текущей камере.");
+                }
+                ImGui::TextDisabled("Подробности: окно «Модели» → «LOD модели».");
+            }
+        } else ImGui::TextDisabled("Выбери автомобиль или здание, чтобы проверить их LOD.");
+        ImGui::TextDisabled("Недостающие LOD создаются при загрузке ассета, если модель поддерживается.");
+        ImGui::TextDisabled("Настройки влияют на общий Renderer3D (Scene / Game).");
+        ImGui::EndPopup();
+    }
+
+    void batchingControls(Editor& ed) {
+        if (ImGui::Button("Batching##scene")) ImGui::OpenPopup("##scene_batching");
+        if (ImGui::BeginPopup("##scene_batching")) {
+            ImGui::TextUnformatted("Scene model batching");
+            ImGui::Separator();
+            const bool mdiBackend = ed.renderer().modelMultiDrawSupported();
+            if (!mdiBackend) ImGui::BeginDisabled();
+            if (ImGui::Checkbox("Shared Geometry Pool", &sceneGeometryPool_)) {
+                render::setGlobalGeometryPoolingEnabled(sceneGeometryPool_);
+                ed.reloadRules(); // reupload original models; never toggle existing GPU buffers in place
+            }
+            if (!mdiBackend) {
+                ImGui::EndDisabled();
+                ImGui::TextDisabled("Geometry Pool inactive: Multi-Draw Indirect is unavailable on this backend.");
+                ImGui::TextDisabled("Metal ICB is disabled until the driver crash is resolved.");
+            }
+            if (ImGui::Checkbox("GPU Instancing", &sceneInstancing_))
+                autoBatchChoice_ = -1;
+            if (ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_))
+                autoBatchChoice_ = -1;
+            ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
+            ImGui::Checkbox("Model culling", &sceneCulling_);
+            ImGui::Checkbox("Auto-select fastest mode after benchmark", &autoBatchEnabled_);
+            if (!autoBatchEnabled_) autoBatchChoice_ = -1;
+            if (autoBatchChoice_ >= 0) {
+                const char* names[] = {"Instancing", "CPU MDI", "GPU-authored"};
+                ImGui::Text("Selected Scene render mode: %s (lowest measured CPU)",
+                            names[autoBatchChoice_]);
+                if (ImGui::Button("Restore manual batching"))
+                    autoBatchChoice_ = -1;
+            }
+            ImGui::Checkbox("Profile Scene renderer", &sceneProfiling_);
+            ImGui::SameLine(); ImGui::TextDisabled("CPU render stages");
+            ImGui::SetNextItemWidth(180.0f);
+            if (ImGui::SliderInt("Instances / call", &sceneInstanceLimit_, 0, 256,
+                sceneInstanceLimit_ == 0 ? "Auto" : "%d")) sceneInstanceLimitDirty_ = true;
+            ImGui::Separator();
+            const auto geometryPool = render::geometryPoolStats(ed.device());
+            ImGui::Text("Geometry: %zu pages / %zu models (%s)", geometryPool.pages, geometryPool.liveModels,
+                        !mdiBackend ? "unavailable" : (!sceneGeometryPool_ ? "disabled" : "enabled"));
+            ImGui::Text("GPU geometry: %.1f / %.1f MiB",
+                        double(geometryPool.occupiedBytes) / (1024.0 * 1024.0),
+                        double(geometryPool.allocatedBytes) / (1024.0 * 1024.0));
+            if (geometryPool.allocatedBytes) {
+                const double fill = 100.0 * double(geometryPool.occupiedBytes) / double(geometryPool.allocatedBytes);
+                const double slackMiB = double(geometryPool.allocatedBytes - geometryPool.occupiedBytes) / (1024.0 * 1024.0);
+                ImGui::Text("Pool utilization: %.1f%% (%.1f MiB slack)", fill, slackMiB);
+                ImGui::TextDisabled("Pool memory excludes textures and dedicated model buffers.");
+            }
+            const auto& profile = ed.renderer().profile();
+            const auto& modelStats = ed.renderer().modelStats();
+            const uint32_t totalSubmissions = ed.renderer().drawCalls();
+            const uint32_t modelSubmissions =
+                profile.draws[0] + profile.draws[1] + profile.draws[2] +
+                profile.draws[3] + profile.draws[4];
+            const uint32_t otherSubmissions = totalSubmissions >= modelSubmissions
+                ? totalSubmissions - modelSubmissions : 0;
+            ImGui::Text("GPU API submissions (tracked): %u", totalSubmissions);
+            const uint64_t cameraTriangles = profile.cameraModelTriangles +
+                profile.cameraMeshTriangles + profile.cameraOverlayTriangles;
+            ImGui::Text("Triangles in camera (tracked): %llu",
+                        (unsigned long long)cameraTriangles);
+            ImGui::TextDisabled("Models: %llu | Meshes: %llu | Overlays: %llu",
+                                (unsigned long long)profile.cameraModelTriangles,
+                                (unsigned long long)profile.cameraMeshTriangles,
+                                (unsigned long long)profile.cameraOverlayTriangles);
+            ImGui::TextDisabled("Current camera only; excludes shadow/reflection and repeated SSR pass.");
+            ImGui::TextDisabled("Counts submitted geometry incl. instances, not visible pixels.");
+            ImGui::TextDisabled("Terrain, sprites and custom renderers not included.");
+            const bool safeMode = [] {
+                const char* env = std::getenv("AIVERSE_RENDER_SAFE");
+                return env && std::strcmp(env, "1") == 0;
+            }();
+            const char* off = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+            const bool envOff = off && std::strcmp(off, "off") == 0;
+            const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
+            const bool mdiSelected = measuredMode
+                ? (benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_) != 0
+                : sceneIndirect_;
+            const bool mdiAllowed = mdiBackend && mdiSelected && !safeMode && !envOff;
+            const char* reason = !mdiBackend ? "Metal ICB unsupported/disabled"
+                : !mdiSelected ? "Scene mode disabled"
+                : safeMode ? "AIVERSE_RENDER_SAFE=1"
+                : envOff ? "AIVERSE_MULTI_DRAW_INDIRECT=off"
+                : "available";
+            ImGui::Text("CPU Multi-Draw: %s (%s)",
+                        mdiAllowed ? "AVAILABLE" : "DISABLED", reason);
+            ImGui::Text("Actual CPU MDI: %llu submissions / %llu commands",
+                        (unsigned long long)modelStats.multiDrawSubmissions,
+                        (unsigned long long)modelStats.indirectCommands);
+            if (mdiAllowed && modelStats.multiDrawSubmissions == 0)
+                ImGui::TextDisabled("No CPU MDI submissions this frame. Expand diagnostics below.");
+            if (ImGui::TreeNode("Why batches split (model passes)")) {
+                ImGui::Text("Candidate scans: %llu  Rejected submissions: %llu",
+                            (unsigned long long)modelStats.mdiScans,
+                            (unsigned long long)modelStats.mdiFailed);
+                ImGui::Text("Single/short runs: %llu  Below threshold: %llu",
+                            (unsigned long long)modelStats.mdiShort,
+                            (unsigned long long)modelStats.mdiBelowThreshold);
+                ImGui::Text("Ineligible candidate scans: %llu",
+                            (unsigned long long)modelStats.mdiIneligible);
+                ImGui::Text("  Geometry clusters: %llu | baked / GI: %llu",
+                            (unsigned long long)modelStats.mdiIneligibleGeometry,
+                            (unsigned long long)modelStats.mdiIneligibleLighting);
+                ImGui::Text("  Material batches: %llu | skin / morph: %llu | alpha / fade: %llu",
+                            (unsigned long long)modelStats.mdiIneligibleMaterial,
+                            (unsigned long long)modelStats.mdiIneligibleDeform,
+                            (unsigned long long)modelStats.mdiIneligibleAlpha);
+                ImGui::Text("Run split by geometry buffers: %llu",
+                            (unsigned long long)modelStats.mdiGeometryBreaks);
+                ImGui::Text("Run split by material state: %llu",
+                            (unsigned long long)modelStats.mdiMaterialBreaks);
+                ImGui::Text("Run split by flags / GI / pose: %llu",
+                            (unsigned long long)modelStats.mdiStateBreaks);
+                ImGui::TextDisabled("Counters cover the current scene model passes only.");
+                ImGui::TextDisabled("Different GLBs and their material slots may require separate draws.");
+                ImGui::TreePop();
+            }
+            if (!ed.ws().project.isFps() && ImGui::TreeNode("Road surfaces: materials / chunks")) {
+                const auto& road = ed.view().roads().batchStats();
+                ImGui::Text("Road source chunks: %zu -> %zu uploaded (merge group %d)",
+                            road.sourceChunks, road.uploadedChunks, road.mergeGroup);
+                ImGui::Text("Road surface primitives: %zu | triangles: %zu",
+                            road.primitives, road.triangles);
+                ImGui::TextDisabled("Same texture/material != same mesh or one draw.");
+                ImGui::TextDisabled("Intersections use kit asphalt; carriageways may use painted textures.");
+                ImGui::TextDisabled("Curb/sidewalk material and zebra/wet decal draws are separate.");
+                ImGui::TextDisabled("Counts below exclude reflection/shadow replays and custom decals.");
+                if (ImGui::BeginChild("##road_materials", ImVec2(0, 160), ImGuiChildFlags_Borders)) {
+                    for (size_t i = 0; i < road.materials.size(); ++i) {
+                        const auto& mat = road.materials[i];
+                        if (!mat.primitives) continue;
+                        ImGui::Text("%s [%zu]: %zu prim, %zu chunks, tex %u",
+                                    mat.name.empty() ? "material" : mat.name.c_str(), i,
+                                    mat.primitives, mat.chunks, mat.textureId);
+                    }
+                }
+                ImGui::EndChild();
+                ImGui::TreePop();
+            }
+            ImGui::Text("Models: %u | Other tracked: %u",
+                        modelSubmissions, otherSubmissions);
+            ImGui::TextDisabled("Includes repeated geometry in shadow, reflection and colour passes.");
+            if (ImGui::TreeNode("Model pass breakdown")) {
+                static constexpr const char* phaseNames[5] = {
+                    "Shadow", "Opaque (+ reflection)", "Blended",
+                    "Outline", "Transparent depth"
+                };
+                for (size_t phase = 0; phase < 5; ++phase) {
+                    ImGui::Text("%s: %u calls, %u instances, %u triangles",
+                        phaseNames[phase], profile.draws[phase],
+                        profile.instances[phase], profile.triangles[phase]);
+                }
+                ImGui::TextDisabled("These are renderer API counts, not unique scene objects.");
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Instancing and indirect details")) {
+                ImGui::Text("Instanced model calls: %llu",
+                    (unsigned long long)modelStats.instancedDraws);
+                ImGui::Text("Instances in instanced calls: %llu",
+                    (unsigned long long)modelStats.drawnInstances);
+                ImGui::Text("MDI submissions: %llu (%llu indexed commands)",
+                    (unsigned long long)modelStats.multiDrawSubmissions,
+                    (unsigned long long)modelStats.indirectCommands);
+                if (const char* pal = std::getenv("AIVERSE_MDI_INSTANCE_PALETTE");
+                    pal && std::strcmp(pal, "1") == 0) {
+                    ImGui::Text("Per-command PBR palette: %llu submissions / %llu commands",
+                                (unsigned long long)modelStats.mdiPaletteSubmissions,
+                                (unsigned long long)modelStats.mdiPaletteCommands);
+                    ImGui::TextDisabled("Opt-in: same shader and textures; per-command base/metal/roughness.");
+                }
+                ImGui::Text("Material grouping: %llu reused / %llu hashed",
+                    (unsigned long long)modelStats.materialGroupsReused,
+                    (unsigned long long)modelStats.materialGroupsResolved);
+                ImGui::TextDisabled("Across passes in this Scene frame; cache reset per beginScene.");
+                ImGui::TextDisabled("One instanced call may draw multiple identical meshes.");
+                ImGui::TextDisabled("Indirect command count is not the API submission count.");
+                ImGui::TreePop();
+            }
+            if (!mdiBackend)
+                ImGui::TextDisabled("Metal MDI/ICB unavailable: distinct meshes remain separate draws.");
+            if (const char* authored = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
+                authored && std::strcmp(authored, "1") == 0) {
+                const auto gpu = ed.renderer().gpuModelDrawStats();
+                ImGui::Text("GPU-authored opaque: %u eligible / %u single draws",
+                            gpu.eligible, gpu.submitted);
+                if (const char* rigid = std::getenv("AIVERSE_GPU_ICB_RIGID");
+                    rigid && std::strcmp(rigid, "1") == 0)
+                    ImGui::Text("GPU ICB rigid dynamic candidates: %u",
+                                gpu.dynamicRigidEligible);
+                if (const char* icb = std::getenv("AIVERSE_GPU_ENCODED_ICB");
+                    icb && std::strcmp(icb, "1") == 0) {
+                    ImGui::Text("GPU-encoded ICB: %u submissions / %u commands",
+                                gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
+                    ImGui::Text("GPU ICB batches: %u candidates, %u prepared, %u rejected, %u execute failed",
+                                gpu.gpuIcbCandidates, gpu.gpuIcbPrepared,
+                                gpu.gpuIcbRejected, gpu.gpuIcbExecuteFailed);
+                    ImGui::Text("GPU instance buffer: %.2f KiB copied this GPU frame",
+                                double(ed.device().gpuIcbInstanceUploadBytes()) / 1024.0);
+                    if (const char* lod = std::getenv("AIVERSE_GPU_ICB_LOD");
+                        lod && std::strcmp(lod, "1") == 0)
+                        ImGui::Text("GPU two-level LOD candidates: %u", gpu.gpuLodEligible);
+                    ImGui::Text("GPU ICB preflight: %u potential groups",
+                                gpu.preflightGroups);
+                    ImGui::Text("Persistent batch plan: %u hits / %u misses (this frame)",
+                                gpu.batchCacheHits, gpu.batchCacheMisses);
+                    if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+                        adaptive && std::strcmp(adaptive, "1") == 0) {
+                        if (gpu.adaptiveInstancing)
+                            ImGui::TextDisabled("Adaptive GPU ICB: direct instancing selected; GPU work skipped.");
+                        else
+                            ImGui::TextDisabled("Adaptive GPU ICB grouping enabled.");
+                    }
+                    if (gpu.gpuIcbRejected || gpu.gpuIcbExecuteFailed)
+                        ImGui::TextWrapped("Metal backend error: %s",
+                                           ed.device().lastError().c_str());
+                }
+                ImGui::Text("GPU indirect args: %s",
+                            gpu.prepared ? "compute generated" : "not ready / unsupported");
+                ImGui::Text("GPU draw record uploads: %u records / %u ranges (%.2f KiB)",
+                            gpu.uploadedRecords, gpu.uploadRanges,
+                            double(gpu.uploadBytes) / 1024.0);
+                if (const char* c = std::getenv("AIVERSE_GPU_COMPACT_DRAW_RECORDS");
+                    c && std::strcmp(c, "1") == 0)
+                    ImGui::Text("GPU visibility compaction: %s (not rendered yet)",
+                                gpu.compacted ? "generated" : "unavailable");
+                if (const char* adaptive = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
+                    adaptive && std::strcmp(adaptive, "1") == 0)
+                    ImGui::TextDisabled("Adaptive fallback: conventional instancing/CPU MDI.");
+                else
+                    ImGui::TextDisabled("Experimental GPU draws may be slower than instancing.");
+            }
+            if (const char* persistent = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
+                persistent && std::strcmp(persistent, "1") == 0) {
+                const auto stats = ed.renderer().persistentSceneStats();
+                ImGui::Text("Persistent GPU scene: %u objects", stats.live);
+                ImGui::Text("Scene upload: %u records / %u ranges (%.1f KiB)",
+                            stats.records, stats.ranges, double(stats.bytes) / 1024.0);
+                if (const char* cull = std::getenv("AIVERSE_GPU_SCENE_CULL");
+                    cull && std::strcmp(cull, "1") == 0)
+                    ImGui::Text("Metal GPU frustum: %s",
+                                stats.gpuFrustumDispatched ? "compute dispatched" : "unavailable");
+                ImGui::TextDisabled("Diagnostics only: visibility flags are not used for draws.");
+            }
+            if (ImGui::Button("Compare A/B same frame##scene_batch") && !benchmarkActive_)
+                measureBatchingNextFrame_ = true;
+            if (mdiBackend && !ed.playing()) {
+                if (!benchmarkActive_) {
+                    const bool threeModes = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS") &&
+                        std::strcmp(std::getenv("AIVERSE_GPU_AUTHORED_DRAWS"), "1") == 0;
+                    if (ImGui::Button(threeModes
+                        ? "Benchmark Instancing / CPU MDI / GPU-authored (3 x 300)"
+                        : "Benchmark MDI OFF / ON (3 x 300 frames each)")) {
+                        benchmarkActive_ = true;
+                        benchmarkDone_ = false;
+                        benchmarkThreeModes_ = threeModes;
+                        benchmarkBlockCount_ = threeModes ? 9 : 6;
+                        ++benchmarkGeneration_;
+                        benchmarkGpuSequence_ = 0;
+                        benchmarkPhase_ = 0;
+                        benchmarkMode_ = 0;
+                        benchmarkPhaseSamples_ = 0;
+                        benchmarkWarmup_ = 60;
+                        benchmarkCamera_ = ed.sceneCam;
+                        for (int mode = 0; mode < 3; ++mode) {
+                            benchmarkSamples_[mode].clear();
+                            benchmarkGpuSamples_[mode].clear();
+                            benchmarkDrawSum_[mode] = 0;
+                            benchmarkIndirectSum_[mode] = 0;
+                            benchmarkCommandSum_[mode] = 0;
+                            benchmarkGpuAuthoredSum_[mode] = 0;
+                            benchmarkGpuIcbSum_[mode] = 0;
+                        }
+                        measureBatchingNextFrame_ = false;
+                    }
+                } else {
+                    const char* modeName = benchmarkMode_ == 0 ? "Instancing" :
+                        benchmarkMode_ == 1 ? "CPU MDI" : "GPU-authored";
+                    ImGui::Text("Benchmark: block %d/%d, %s, warmup %d, samples %d / 300",
+                                benchmarkPhase_ + 1, benchmarkBlockCount_, modeName,
+                                benchmarkWarmup_, benchmarkPhaseSamples_);
+                    if (ImGui::Button("Cancel benchmark")) benchmarkActive_ = false;
+                }
+                if (benchmarkDone_) {
+                    auto stats = [](std::vector<double> v) {
+                        std::sort(v.begin(), v.end());
+                        double sum = 0.0;
+                        for (double n : v) sum += n;
+                        return std::pair<double,double>{sum / double(v.size()), v[(v.size() * 95 - 1) / 100]};
+                    };
+                    const auto off = stats(benchmarkSamples_[0]);
+                    const auto on = stats(benchmarkSamples_[1]);
+                    ImGui::Text("Scene CPU OFF: avg %.3f / P95 %.3f ms, draws %.0f",
+                                off.first, off.second, double(benchmarkDrawSum_[0]) / 900.0);
+                    ImGui::Text("Scene CPU ON:  avg %.3f / P95 %.3f ms, draws %.0f",
+                                on.first, on.second, double(benchmarkDrawSum_[1]) / 900.0);
+                    ImGui::Text("MDI CPU delta: %+.1f%%", (on.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
+                    ImGui::Text("MDI ON: %.1f indirect submissions, %.1f GPU commands / frame",
+                                double(benchmarkIndirectSum_[1]) / 900.0,
+                                double(benchmarkCommandSum_[1]) / 900.0);
+                    if (benchmarkThreeModes_) {
+                        const auto gpu = stats(benchmarkSamples_[2]);
+                        ImGui::Text("GPU-authored CPU: avg %.3f / P95 %.3f ms, draws %.0f",
+                                    gpu.first, gpu.second, double(benchmarkDrawSum_[2]) / 900.0);
+                        ImGui::Text("GPU vs CPU MDI: %+.1f%%; GPU vs Instancing: %+.1f%%",
+                                    (gpu.first / std::max(on.first, 0.0001) - 1.0) * 100.0,
+                                    (gpu.first / std::max(off.first, 0.0001) - 1.0) * 100.0);
+                        ImGui::Text("GPU-authored commands: %.1f/frame, GPU ICB submissions: %.1f/frame",
+                                    double(benchmarkGpuAuthoredSum_[2]) / 900.0,
+                                    double(benchmarkGpuIcbSum_[2]) / 900.0);
+                        ImGui::TextDisabled("3 x 300 per mode; order ABC CBA ABC; P95 pooled.");
+                    } else ImGui::TextDisabled("3 x 300 samples/mode, ABBAAB order; P95 pooled.");
+                    if (ed.device().info().backend == gfx::Backend::Metal) {
+                        const int modes = benchmarkThreeModes_ ? 3 : 2;
+                        const char* names[] = {"Instancing", "CPU MDI", "GPU-authored"};
+                        for (int mode = 0; mode < modes; ++mode) {
+                            if (benchmarkGpuSamples_[mode].empty()) continue;
+                            const auto timing = stats(benchmarkGpuSamples_[mode]);
+                            ImGui::Text("%s full GPU frame: avg %.3f / P95 %.3f ms (%zu samples)",
+                                        names[mode], timing.first, timing.second,
+                                        benchmarkGpuSamples_[mode].size());
+                        }
+                        ImGui::TextDisabled("GPU: tagged full editor command buffer, includes UI/other passes.");
+                    }
+                    ImGui::TextDisabled("Fixed camera; CPU is Scene render only. GPU results are asynchronous.");
+                    ImGui::TextDisabled("Same geometry pool in both modes; excludes asset upload.");
+                }
+            }
+            if (comparisonValid_) {
+                ImGui::Text("Total draws: baseline %lld -> batched %lld (%+lld)",
+                            (long long)baselineDraws_, (long long)optimizedDraws_,
+                            (long long)(optimizedDraws_ - baselineDraws_));
+                ImGui::Text("Model pass draws: %lld -> %lld (%+lld)",
+                            (long long)baselineModelDraws_, (long long)optimizedModelDraws_,
+                            (long long)(optimizedModelDraws_ - baselineModelDraws_));
+                ImGui::TextDisabled("Same camera/frame; excludes GPU timing and upload cost.");
+            }
+            const double gpuMs = ed.device().gpuFrameMs();
+            if (gpuMs > 0.0) ImGui::Text("GPU frame: %.3f ms (last completed)", gpuMs);
+            else ImGui::TextDisabled("GPU frame timing unavailable / not ready");
+            ImGui::Text("Main colour model calls (opaque + blended): %u",
+                        profile.draws[1] + profile.draws[2]);
+            if (profile.drawMs[1] > 0.0 || profile.drawMs[2] > 0.0)
+                ImGui::Text("CPU model draw phase: %.3f ms (profiling enabled)",
+                            profile.drawMs[1] + profile.drawMs[2]);
+            else ImGui::TextDisabled("CPU model draw timing requires renderer profiling.");
+            ImGui::TextDisabled("Draw Calls view: colour per main-view model submission.");
+            ImGui::TextDisabled("Shadows/reflections are not separately colour-coded.");
+            ImGui::TextDisabled("Terrain, decals and custom passes may use other draw paths.");
+            ImGui::TextDisabled("Road merge reduces chunks, not material primitive count.");
+            ImGui::TextDisabled("The debug view is not a total GPU draw-call heatmap.");
+            if (ImGui::Button("Show draw-call colours")) studioDebugMode_ = 1;
+            ImGui::Separator();
+            ImGui::TextDisabled("Instance limit applies to the shared renderer (Scene and Game).");
+            ImGui::TextDisabled("Static/model material merge is decided at upload.");
+            if (ImGui::Button("Reload models from asset policies")) ed.reloadRules();
+            ImGui::TextWrapped("Use per-asset batching policy before upload; changing an uploaded model requires reload.");
+            ImGui::EndPopup();
+        }
+    }
+
     void toolbar(Editor& ed) {
         static const char* names[] = {"Выбор", "Объекты", "Клетки", "Уровни", "Высота", "Поля", "Регионы", "Зоны", "Старты", "Дороги", "Ластик"};
         static const char* icons[] = {ICON_SELECT, ICON_OBJECTS, ICON_CELLS, ICON_LEVELS, ICON_HEIGHT, ICON_FIELDS, ICON_REGIONS, ICON_ZONES,
@@ -101,6 +853,34 @@ private:
             if (ui::toolButton(icons[i], tip, ed.tool == Tool(i))) { ed.tool = Tool(i); ed.roadStart = -1; }
         }
         ui::endSegment();
+        if (ed.tool == Tool::Select) {
+            ui::toolbarDivider();
+            DocumentEntityRef ref;
+            const bool hasDocRef = documentEntityFromSelection(ed.selection, ref);
+            const Json* fpsSource = hasDocRef && ref.source ==
+                DocumentEntityRef::Source::FpsCollider
+                ? fpsDocumentEntity(ed.doc().data.fps, ref) : nullptr;
+            const bool fpsOriented = fpsSource && (*fpsSource)["yaw"].isNumber();
+            const DocEntity* rtsSource = hasDocRef && ref.source ==
+                DocumentEntityRef::Source::MapEntity
+                ? documentMapEntity(ed.doc(), ref) : nullptr;
+            const bool rtsFacing = rtsSource &&
+                rtsSource->extra["facing"].isNumber();
+            if ((ed.transformTool == TransformTool::Rotate &&
+                 !fpsOriented && !rtsFacing) ||
+                (ed.transformTool == TransformTool::Scale && !fpsOriented))
+                ed.transformTool = TransformTool::Move;
+            for (const auto mode : {TransformTool::Move,
+                                    TransformTool::Rotate, TransformTool::Scale}) {
+                const char* title = mode == TransformTool::Move ? "Move" :
+                                    mode == TransformTool::Rotate ? "Rotate" : "Scale";
+                if (mode == TransformTool::Rotate && !fpsOriented && !rtsFacing)
+                    continue;
+                if (mode == TransformTool::Scale && !fpsOriented) continue;
+                ImGui::SameLine(0, 5);
+                if (ImGui::SmallButton(title)) ed.transformTool = mode;
+            }
+        }
         if (compact) {
             ImGui::SameLine(0, 5);
             if (ui::toolButton(ICON_MORE, "Другие инструменты")) ImGui::OpenPopup("##scene_more_tools");
@@ -117,11 +897,15 @@ private:
         if (ImGui::BeginCombo("##sceneVisualisation", studioModes[studioDebugMode_])) {
             for (int i = 0; i < 10; ++i) {
                 if (ImGui::Selectable(studioModes[i], studioDebugMode_ == i)) studioDebugMode_ = i;
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip(i == 1 ? "Каждый встроенный GPU draw batch — свой цвет (instancing сохраняется)" :
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip(i == 1 ? "Цвет на GPU submission основного прохода моделей. Дороги с разными материалами и custom/decal passes могут не объединяться; тени считаются отдельно." :
                                                          i >= 2 ? "Диагностика моделей; terrain и callback renderers могут оставаться без раскраски" : "Обычный материал и освещение");
             }
             ImGui::EndCombo();
         }
+        ImGui::SameLine();
+        batchingControls(ed);
+        ImGui::SameLine();
+        lodControls(ed);
         ImGui::SameLine();
         if (ui::toolButton(ICON_EYE, "Отладочные gizmo")) ImGui::OpenPopup("##studio_gizmos");
         if (ImGui::BeginPopup("##studio_gizmos")) {
@@ -340,6 +1124,30 @@ private:
         hoverX_ = mx; hoverY_ = my;
     }
 
+    // Hit-test the projected move handles, independently of entity mesh picking.
+    // Map documents currently expose X/Z positions; Y, rotation and scale are
+    // not writable through DocEntity and must not pretend to be interactive.
+    int moveHandle(Editor& ed, float sx, float sy) {
+        if (ed.playing() || ed.tool != Tool::Select || ed.planetMap()) return -1;
+        float wx, wz;
+        if (!ed.selectionPos(ed.selection, wx, wz)) return -1;
+        const float wy = ed.view().heightAt(ed.editGrid(), wx, wz) + 0.4f;
+        if (ed.transformTool == TransformTool::Rotate &&
+            ed.selection.kind == Selection::Entity &&
+            ed.selection.index >= 0 &&
+            size_t(ed.selection.index) < ed.doc().data.entities.size() &&
+            ed.doc().data.entities[size_t(ed.selection.index)]
+                .extra["facing"].isNumber()) {
+            return pickRotateYawGizmoRing(ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                vp_.originX, vp_.originY, sx, sy,
+                {wx, wy, wz}, 1.5f) ? 3 : -1;
+        }
+        if (ed.transformTool != TransformTool::Move) return -1;
+        return pickMoveGizmoAxis(ed.sceneCam, vp_.pointsW, vp_.pointsH,
+                                  vp_.originX, vp_.originY, sx, sy,
+                                  {wx, wy, wz}, 1.5f, 0x5);
+    }
+
     void down(Editor& ed, float sx, float sy, ImGuiIO& io) {
         int n = ed.pickEntity(vp_, ed.sceneCam, sx, sy);
         float x = 0, z = 0;
@@ -349,6 +1157,16 @@ private:
         const auto& rules = ed.rules();
         switch (ed.tool) {
         case Tool::Select: {
+            const int handle = moveHandle(ed, sx, sy);
+            if (handle >= 0 && ed.selectedEntity() >= 0 && ground) {
+                gizmoAxis_ = handle;
+                dragging_ = true;
+                dragMoved_ = false;
+                gizmoGroundX_ = x;
+                gizmoGroundZ_ = z;
+                gizmoLastScreenX_ = sx;
+                break;
+            }
             const Selection picked = ed.pickObject(vp_, ed.sceneCam, sx, sy);
             const bool keepSet = picked.kind == Selection::Entity && ed.isSelected(picked) && !io.KeyCtrl && !io.KeySuper && !io.KeyShift;
             if (!keepSet) pickSelect(ed, picked, io);   // a click on a selected object keeps the set: drag moves all of it
@@ -422,7 +1240,37 @@ private:
         auto& doc = ed.doc();
         auto& d = doc.data;
         int sel = ed.selectedEntity();
-        if (dragging_ && sel >= 0 && sel < int(d.entities.size())) {   // the primary follows the cursor, the rest of the set keeps its offsets
+        if (dragging_ && gizmoAxis_ >= 0 && sel >= 0 && sel < int(d.entities.size())) {
+            if (gizmoAxis_ == 3 && ed.transformTool == TransformTool::Rotate &&
+                d.entities[size_t(sel)].extra["facing"].isNumber()) {
+                const double delta = double(sx - gizmoLastScreenX_) * 0.5;
+                if (std::isfinite(delta) && std::abs(delta) > 1e-6) {
+                    if (!dragMoved_) doc.beginEdit();
+                    Json patch = Json::object();
+                    patch.set("rotationY", Json::number(
+                        d.entities[size_t(sel)].extra["facing"].toDouble() + delta, 3));
+                    dragMoved_ = writeDocumentComponent(
+                        doc, DocumentEntityRef::mapEntity(size_t(sel)),
+                        DocumentComponentKind::Transform, patch) || dragMoved_;
+                }
+                gizmoLastScreenX_ = sx;
+            } else {
+            const float dx = gizmoAxis_ == 0 ? x - gizmoGroundX_ : 0.0f;
+            const float dz = gizmoAxis_ == 2 ? z - gizmoGroundZ_ : 0.0f;
+            if (dx != 0.0f || dz != 0.0f) {
+                if (!dragMoved_) doc.beginEdit();
+                dragMoved_ = true;
+                std::vector<int> idx;
+                for (int i : ed.selectedEntities()) if (i >= 0 && size_t(i) < d.entities.size() && !ed.objectLocked(d.entities[size_t(i)].owner, d.entities[size_t(i)].type)) idx.push_back(i);
+                std::vector<DocumentEntityRef> refs;
+                refs.reserve(idx.size());
+                for (int index : idx) refs.push_back(DocumentEntityRef::mapEntity(size_t(index)));
+                translateDocumentEntities(doc, refs, {dx, 0.0, dz});
+                gizmoGroundX_ = x;
+                gizmoGroundZ_ = z;
+            }
+            }
+        } else if (dragging_ && sel >= 0 && sel < int(d.entities.size())) {   // the primary follows the cursor, the rest of the set keeps its offsets
             auto& e = d.entities[size_t(sel)];
             int t = ed.rules().findType(e.type);
             const float dx = ed.snapCoord(x + dragOffX_, t) - e.x, dz = ed.snapCoord(z + dragOffZ_, t) - e.z;
@@ -431,7 +1279,10 @@ private:
                 dragMoved_ = true;
                 std::vector<int> idx;
                 for (int i : ed.selectedEntities()) if (!ed.objectLocked(d.entities[size_t(i)].owner, d.entities[size_t(i)].type) || i == sel) idx.push_back(i);
-                worldedit::move(doc, idx, dx, dz);
+                std::vector<DocumentEntityRef> refs;
+                refs.reserve(idx.size());
+                for (int index : idx) refs.push_back(DocumentEntityRef::mapEntity(size_t(index)));
+                translateDocumentEntities(doc, refs, {dx, 0.0, dz});
             }
         }
         if (!painting_) return;
@@ -472,6 +1323,7 @@ private:
         if (dragging_ && keepSetClick_ && !dragMoved_) ed.select(clicked_);   // a plain click inside a multi-selection picks that one
         keepSetClick_ = false;
         dragging_ = painting_ = false;
+        gizmoAxis_ = -1;
     }
 
     // brush circle, placement ghost and help text over the viewport
@@ -489,8 +1341,60 @@ private:
                 float2 p;
                 if (!ed.sceneCam.worldToScreen({wx, wy, wz}, vp_.pointsW, vp_.pointsH, p)) continue;
                 const ImVec2 c(vp_.originX + p.x, vp_.originY + p.y);
-                dl->AddCircle(c, 12.0f, IM_COL32(88, 174, 255, 230), 32, 2.0f);
-                dl->AddCircleFilled(c, 2.5f, IM_COL32(170, 219, 255, 255));
+                // Screen-space selection pivot and projected XYZ transform axes.
+                // This is an editor overlay; a true occlusion-aware mesh silhouette
+                // requires a separate selection-mask pass in the scene renderer.
+                dl->AddCircle(c, 10.0f, IM_COL32(88, 174, 255, 225), 32, 1.8f);
+                dl->AddCircleFilled(c, 3.0f, IM_COL32(225, 238, 255, 255));
+                if (sel.kind == Selection::Entity && sel == ed.selection &&
+                    sel.index >= 0 &&
+                    size_t(sel.index) < ed.doc().data.entities.size()) {
+                    const auto& entity = ed.doc().data.entities[size_t(sel.index)];
+                    constexpr float extent = 1.5f;
+                    if (ed.transformTool == TransformTool::Rotate &&
+                        entity.extra["facing"].isNumber()) {
+                        constexpr int segments = 64;
+                        constexpr float tau = 6.283185307179586f;
+                        float2 previous{};
+                        for (int i = 0; i <= segments; ++i) {
+                            const float angle = tau * float(i) / float(segments);
+                            float2 projected;
+                            if (ed.sceneCam.worldToScreen(
+                                    {wx + std::cos(angle) * extent, wy,
+                                     wz + std::sin(angle) * extent},
+                                    vp_.pointsW, vp_.pointsH, projected)) {
+                                if (i > 0) dl->AddLine(
+                                    {vp_.originX + previous.x, vp_.originY + previous.y},
+                                    {vp_.originX + projected.x, vp_.originY + projected.y},
+                                    IM_COL32(255, 188, 80, 255), 2.5f);
+                                previous = projected;
+                            }
+                        }
+                    } else if (ed.transformTool == TransformTool::Move) {
+                        const float3 ends[2] = {
+                            {wx + extent, wy, wz}, {wx, wy, wz + extent}
+                        };
+                        const ImU32 colors[2] = {
+                            IM_COL32(245, 93, 91, 255),
+                            IM_COL32(91, 155, 250, 255)
+                        };
+                        const char* axisLabels[2] = {"X", "Z"};
+                        for (int axis = 0; axis < 2; ++axis) {
+                            float2 projected;
+                            if (!ed.sceneCam.worldToScreen(
+                                    ends[axis], vp_.pointsW, vp_.pointsH,
+                                    projected)) continue;
+                            const ImVec2 endpoint(vp_.originX + projected.x,
+                                                  vp_.originY + projected.y);
+                            dl->AddLine(c, endpoint,
+                                        IM_COL32(14, 20, 29, 215), 5.0f);
+                            dl->AddLine(c, endpoint, colors[axis], 2.5f);
+                            dl->AddCircleFilled(endpoint, 4.0f, colors[axis]);
+                            dl->AddText({endpoint.x + 6, endpoint.y - 7},
+                                        colors[axis], axisLabels[axis]);
+                        }
+                    }
+                }
             }
             dl->PopClipRect();
         }
@@ -605,6 +1509,37 @@ private:
     Viewport vp_;
     bool looking_ = false, panning_ = false, dragging_ = false, painting_ = false, areaDrag_ = false;
     int studioDebugMode_ = 0;
+    int gizmoAxis_ = -1;
+    float gizmoGroundX_ = 0.0f, gizmoGroundZ_ = 0.0f;
+    float gizmoLastScreenX_ = 0.0f;
+    bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
+    bool sceneLodEnabled_ = true;
+    bool lodPopupVisible_ = false;
+    float sceneLodFadeWidth_ = 0.15f;
+    ModelRenderStats lastSceneLodStats_{};
+    Renderer3D::LodDebugSample lastSelectedLod_{};
+    bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
+    int sceneInstanceLimit_ = 0;
+    bool sceneInstanceLimitDirty_ = true;
+    bool sceneProfiling_ = false;
+    bool benchmarkActive_ = false, benchmarkDone_ = false, benchmarkThreeModes_ = false;
+    bool autoBatchEnabled_ = true;
+    int autoBatchChoice_ = -1;
+    int benchmarkBlockCount_ = 6;
+    int benchmarkPhase_ = 0, benchmarkMode_ = 0, benchmarkPhaseSamples_ = 0, benchmarkWarmup_ = 0;
+    RTSCamera benchmarkCamera_{};
+    std::vector<double> benchmarkSamples_[3];
+    std::vector<double> benchmarkGpuSamples_[3];
+    uint8_t benchmarkGeneration_ = 0;
+    uint64_t benchmarkGpuSequence_ = 0;
+    uint64_t benchmarkDrawSum_[3] = {};
+    uint64_t benchmarkIndirectSum_[3] = {};
+    uint64_t benchmarkCommandSum_[3] = {};
+    uint64_t benchmarkGpuAuthoredSum_[3] = {};
+    uint64_t benchmarkGpuIcbSum_[3] = {};
+    bool measureBatchingNextFrame_ = false, comparisonValid_ = false;
+    int64_t baselineDraws_ = -1, optimizedDraws_ = -1;
+    int64_t baselineModelDraws_ = -1, optimizedModelDraws_ = -1;
     bool studioDrawBounds_ = false;
     bool studioDrawAxes_ = false;
     bool studioDrawSelection_ = true;

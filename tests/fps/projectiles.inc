@@ -34,3 +34,357 @@ void projectilePrograms() {
     net::authority::Snapshot decoded;CHECK(net::authority::decodeSnapshot(net::authority::encodeSnapshot(snapshot),decoded));
     bool rejected=false;try{auto bad=base;bad.member("fps").member("weapon").set("bulletSpeed",Json::number(int64_t(0)));fps::readConfig(bad);}catch(const std::exception&){rejected=true;}CHECK(rejected);
 }
+
+
+void ecsProjectileProgramStageParityCase(bool cow) {
+    // Production FPS programmed bullets are now a separate ordered
+    // Simulation stage. Prove ecsAuthority's canonical runtime pools and the
+    // default legacy State mode still have identical tick-visible effects.
+    const auto rules=Json::parse(R"({
+        "fps":{"tickRate":20,"mode":"deathmatch",
+               "weapon":{"damage":10,"intervalTicks":1000,
+                         "bulletSpeed":200,"bulletGravity":0,
+                         "flight":{"modifiers":[
+                             {"kind":"flyThrough","count":2,"falloff":0.5}
+                         ]}},
+               "motor":{"gravity":1}}
+    })");
+    const auto map=Json::parse(R"({
+        "players":[{"team":1},{"team":2},{"team":2},{"team":2}],
+        "spawns":[[0,0.01,0],[0,0.01,4],[0,0.01,8],[0,0.01,12]],
+        "colliders":[{"id":1,"min":[-100,-2,-100],
+                                 "max":[100,0,100]}]
+    })");
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    if(cow) {
+        legacy->world().enableCowSnapshots(true);
+        ecs->world().enableCowSnapshots(true);
+    }
+    auto input=fps::Input{};
+    input.buttons=fps::Fire;
+    input.sequence=1;
+    input.viewTick=0;
+    auto command=fps::command(1,input);
+    command.tick=0;
+    legacy->inject(command);
+    ecs->inject(command);
+    auto checkBoth=[&]() {
+        CHECK(legacy->checksum()==ecs->checksum());
+        const auto& a=state(*legacy);
+        const auto& b=state(*ecs);
+        CHECK(a.actors==b.actors);
+        CHECK(a.projectiles.size()==b.projectiles.size());
+        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+        CHECK(index!=nullptr);
+        size_t liveRuntimes=0;
+        ecs->world().eachExistingConst<fps::ProjectileRuntime>(
+            [&](Entity e,const fps::ProjectileRuntime&) {
+                if(ecs->world().alive(e))++liveRuntimes;
+            });
+        CHECK(liveRuntimes==b.projectiles.size());
+        for(size_t i=0;i<a.projectiles.size();++i) {
+            const uint64_t key=(uint64_t(1)<<32)|b.projectiles[i].id;
+            const auto entry=index->byKey.find(key);
+            CHECK(entry!=index->byKey.end());
+            CHECK(ecs->world().alive(entry->second));
+            const auto* runtime=ecs->world().tryGetConst<fps::ProjectileRuntime>(entry->second);
+            CHECK(runtime!=nullptr);
+            CHECK(runtime->order==i);
+            CHECK(runtime->value.id==b.projectiles[i].id);
+            CHECK(runtime->value.pos==b.projectiles[i].pos);
+            CHECK(runtime->value.damage==b.projectiles[i].damage);
+            CHECK(a.projectiles[i].id==b.projectiles[i].id);
+            CHECK(a.projectiles[i].pos==b.projectiles[i].pos);
+            CHECK(a.projectiles[i].remaining==b.projectiles[i].remaining);
+            CHECK(a.projectiles[i].program.age==b.projectiles[i].program.age);
+        }
+    };
+    legacy->step();ecs->step(); // shot created after projectile program phase
+    checkBoth();
+    CHECK(!state(*legacy).projectiles.empty());
+    SimSnapshot beforeProgramLegacy,beforeProgramEcs;
+    legacy->saveState(beforeProgramLegacy);
+    ecs->saveState(beforeProgramEcs);
+    for(int i=0;i<12;++i) {
+        legacy->step();ecs->step();
+        checkBoth();
+    }
+    CHECK(state(*legacy).projectiles.empty());
+    CHECK(state(*legacy).actors[1].health==90);
+    CHECK(state(*legacy).actors[2].health==95);
+    CHECK(state(*legacy).actors[3].health==98);
+    const uint64_t expected=legacy->checksum();
+    const auto legacySave=legacy->serialize();
+    const auto ecsSave=ecs->serialize();
+    auto fromLegacy=simulation(ecsRules,map);
+    auto fromEcs=simulation(rules,map);
+    CHECK(fromLegacy->deserialize(legacySave));
+    CHECK(fromEcs->deserialize(ecsSave));
+    CHECK(fromLegacy->checksum()==expected);
+    CHECK(fromEcs->checksum()==expected);
+    // SaveState must also rewind the pending projectile and repeat every hit.
+    legacy->loadState(beforeProgramLegacy);
+    ecs->loadState(beforeProgramEcs);
+    checkBoth();
+    for(int i=0;i<12;++i) {
+        legacy->step();ecs->step();
+        checkBoth();
+    }
+    CHECK(legacy->checksum()==expected);
+
+    // The ECS component is authoritative: an external native write must
+    // override a deliberately stale legacy projection before the next stage.
+    // Repeat in deep and COW modes to catch accidental workspace writes.
+    legacy->loadState(beforeProgramLegacy);
+    ecs->loadState(beforeProgramEcs);
+    const auto& pending=state(*ecs).projectiles;
+    CHECK(pending.size()==1);
+    const uint64_t key=(uint64_t(1)<<32)|pending.front().id;
+    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+    CHECK(index && index->byKey.contains(key));
+    auto* canonical=ecs->world().tryGet<fps::ProjectileRuntime>(index->byKey.at(key));
+    CHECK(canonical!=nullptr);
+    canonical->value.damage=12;
+    state(*legacy).projectiles.front().damage=12;
+    state(*ecs).projectiles.front().damage=777; // must not become canonical
+    for(int i=0;i<12;++i) {
+        legacy->step();ecs->step();
+        checkBoth();
+    }
+    CHECK(state(*legacy).actors[1].health==88);
+}
+
+void ecsProjectileProgramStageParity() {
+    ecsProjectileProgramStageParityCase(false); // deep snapshots
+    ecsProjectileProgramStageParityCase(true);  // COW snapshots
+}
+
+
+void ecsProjectileBranchAuthorityParityCase(bool cow) {
+    // Branching shots may retire a source and create multiple children in one
+    // tick. Verify ECS Entity recycling, stable projectile order and v9 saves.
+    auto rules=Json::parse(R"({
+        "fps":{"tickRate":20,"mode":"deathmatch",
+               "weapon":{"damage":10,"intervalTicks":1000,
+                         "bulletSpeed":200,"bulletGravity":0,
+                         "flight":{"modifiers":[
+                             {"kind":"split","count":2,"angle":0},
+                             {"kind":"damage","factor":0.5},
+                             {"kind":"flyThrough","count":1}
+                         ]}},
+               "motor":{"gravity":1}}
+    })");
+    auto map=Json::parse(R"({
+        "players":[{"team":1},{"team":2},{"team":2},{"team":2}],
+        "spawns":[[0,0.01,0],[0,0.01,4],[0,0.01,8],[0,0.01,12]],
+        "colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]
+    })");
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    if(cow) {
+        legacy->world().enableCowSnapshots(true);
+        ecs->world().enableCowSnapshots(true);
+    }
+    fps::Input input;input.buttons=fps::Fire;input.sequence=1;
+    // Insert a nonprogrammed cloud before the first shot. Only the
+    // authoritative ECS Runtime exists initially (no State vector edit),
+    // while the legacy baseline receives the equivalent source object.
+    // This checks mixed projectile ownership and ECS hydration/reindex.
+    fps::Projectile passive;
+    passive.id=9001;passive.owner=1;passive.kind=4;
+    passive.expires=1000;passive.pos={10_fx,5_fx,10_fx};
+    state(*legacy).projectiles.push_back(passive);
+    const Entity passiveEntity=ecs->world().create();
+    ecs->world().add<fps::ProjectileRuntime>(
+        passiveEntity,fps::ProjectileRuntime{passive,0});
+
+    const auto command=fps::command(1,input);
+    legacy->inject(command);
+    ecs->inject(command);
+    auto compare=[&]() {
+        CHECK(legacy->checksum()==ecs->checksum());
+        CHECK(state(*legacy).actors==state(*ecs).actors);
+        const auto& left=state(*legacy).projectiles;
+        const auto& right=state(*ecs).projectiles;
+        CHECK(left.size()==right.size());
+        CHECK(state(*legacy).nextObject==state(*ecs).nextObject);
+        size_t runtimeCount=0;
+        ecs->world().eachExistingConst<fps::ProjectileRuntime>(
+            [&](Entity entity,const fps::ProjectileRuntime& runtime) {
+                if(ecs->world().alive(entity)) {
+                    ++runtimeCount;
+                    CHECK(runtime.order<right.size());
+                    CHECK(runtime.value.id==right[runtime.order].id);
+                    CHECK(runtime.value.pos==right[runtime.order].pos);
+                }
+            });
+        CHECK(runtimeCount==right.size());
+        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+        CHECK(index!=nullptr);
+        for(size_t i=0;i<right.size();++i) {
+            CHECK(left[i].id==right[i].id);
+            CHECK(left[i].pos==right[i].pos);
+            CHECK(left[i].program.age==right[i].program.age);
+            const auto key=(uint64_t(1)<<32)|right[i].id;
+            CHECK(index->byKey.contains(key));
+            const auto entity=index->byKey.at(key);
+            CHECK(ecs->world().alive(entity));
+            const auto* value=ecs->world().tryGetConst<fps::ProjectileRuntime>(entity);
+            CHECK(value && value->order==i);
+        }
+    };
+    legacy->step();ecs->step();
+    compare();
+    SimSnapshot preLegacy,preEcs;
+    legacy->saveState(preLegacy);ecs->saveState(preEcs);
+    const uint32_t beforeBranchAllocation=state(*legacy).nextObject;
+    uint32_t maxAllocated=beforeBranchAllocation;
+    for(int tick=0;tick<8;++tick) {
+        legacy->step();ecs->step();compare();
+        maxAllocated=std::max(maxAllocated,state(*legacy).nextObject);
+    }
+    CHECK(maxAllocated>beforeBranchAllocation); // branch child IDs were allocated
+    CHECK(state(*legacy).projectiles.size()==1);
+    CHECK(state(*legacy).projectiles.front().id==passive.id);
+    CHECK(state(*ecs).projectiles.size()==1);
+    CHECK(state(*ecs).projectiles.front().id==passive.id);
+    for(size_t slot=1;slot<=3;++slot)
+        CHECK(state(*legacy).actors[slot].health==90);
+    const auto checksum=legacy->checksum();
+    const auto legacyBytes=legacy->serialize(),ecsBytes=ecs->serialize();
+    auto fromLegacy=simulation(ecsRules,map),fromEcs=simulation(rules,map);
+    CHECK(fromLegacy->deserialize(legacyBytes));
+    CHECK(fromEcs->deserialize(ecsBytes));
+    CHECK(fromLegacy->checksum()==checksum);
+    CHECK(fromEcs->checksum()==checksum);
+    // Replay branch allocation with identical ECS generations and order.
+    legacy->loadState(preLegacy);ecs->loadState(preEcs);
+    compare();
+    for(int tick=0;tick<8;++tick) {
+        legacy->step();ecs->step();compare();
+    }
+    CHECK(ecs->checksum()==checksum);
+}
+void ecsProjectileBranchAuthorityParity() {
+    ecsProjectileBranchAuthorityParityCase(false);
+    ecsProjectileBranchAuthorityParityCase(true);
+}
+
+
+void ecsOrdinaryProjectileAuthorityParityCase(bool cow) {
+    // Bullets, timed smoke and bouncing grenades are now processed in the
+    // separate ordinary-projectile stage. Mutate the live ECS payload only
+    // (not its stale State projection) and verify default/ECS tick parity.
+    const auto rules=Json::parse(R"({
+        "fps":{"tickRate":20,"mode":"deathmatch",
+               "weapon":{"damage":10,"intervalTicks":1000,
+                         "bulletSpeed":40,"bulletGravity":0},
+               "mechanics":{"enabled":true,"smokeTicks":10,
+                            "grenadeFuse":3},
+               "motor":{"gravity":1}}
+    })");
+    const auto map=Json::parse(R"({
+        "players":[{"team":1},{"team":2}],
+        "spawns":[[0,0.01,0],[0,0.01,4]],
+        "colliders":[{"id":1,"min":[-100,-2,-100],
+                                 "max":[100,0,100]}]
+    })");
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    if(cow) {
+        legacy->world().enableCowSnapshots(true);
+        ecs->world().enableCowSnapshots(true);
+    }
+    fps::Projectile bullet;
+    bullet.id=9001;bullet.owner=1;bullet.kind=0;bullet.weapon=0;
+    bullet.pos={0_fx,1_fx,0_fx};bullet.velocity={0_fx,0_fx,40_fx};
+    bullet.remaining=100_fx;bullet.expires=100;bullet.damage=10;
+    fps::Projectile smoke;
+    smoke.id=9002;smoke.owner=1;smoke.kind=4;
+    smoke.pos={20_fx,5_fx,20_fx};smoke.expires=5;
+    fps::Projectile grenade;
+    grenade.id=9003;grenade.owner=1;grenade.kind=2;
+    grenade.pos={30_fx,4_fx,30_fx};grenade.expires=2;
+    grenade.velocity={1_fx,2_fx,0_fx};
+    const fps::Projectile objects[]{bullet,smoke,grenade};
+    for(uint32_t i=0;i<3;++i) {
+        state(*legacy).projectiles.push_back(objects[i]);
+        const Entity e=ecs->world().create();
+        ecs->world().add<fps::ProjectileRuntime>(
+            e,fps::ProjectileRuntime{objects[i],i});
+    }
+    auto checkBoth=[&]() {
+        CHECK(legacy->checksum()==ecs->checksum());
+        const auto& a=state(*legacy);
+        const auto& b=state(*ecs);
+        CHECK(a.actors==b.actors);
+        CHECK(a.projectiles.size()==b.projectiles.size());
+        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+        CHECK(index);
+        for(size_t i=0;i<a.projectiles.size();++i) {
+            CHECK(a.projectiles[i].id==b.projectiles[i].id);
+            CHECK(a.projectiles[i].kind==b.projectiles[i].kind);
+            CHECK(a.projectiles[i].pos==b.projectiles[i].pos);
+            CHECK(a.projectiles[i].velocity==b.projectiles[i].velocity);
+            CHECK(a.projectiles[i].expires==b.projectiles[i].expires);
+            const uint64_t key=(uint64_t(1)<<32)|b.projectiles[i].id;
+            CHECK(index->byKey.contains(key));
+            const Entity e=index->byKey.at(key);
+            const auto* runtime=ecs->world().tryGetConst<fps::ProjectileRuntime>(e);
+            CHECK(runtime&&runtime->order==i);
+            CHECK(runtime->value.id==b.projectiles[i].id);
+            CHECK(runtime->value.pos==b.projectiles[i].pos);
+        }
+    };
+    for(int i=0;i<2;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+    CHECK(state(*legacy).actors[1].health==90); // direct bullet hit
+    CHECK(!state(*legacy).projectiles.empty());
+    SimSnapshot beforeLegacy,beforeEcs;
+    legacy->saveState(beforeLegacy);
+    ecs->saveState(beforeEcs);
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+    const auto expected=legacy->checksum();
+    const auto savedLegacy=legacy->serialize(),savedEcs=ecs->serialize();
+    auto fromLegacy=simulation(ecsRules,map),fromEcs=simulation(rules,map);
+    CHECK(fromLegacy->deserialize(savedLegacy));
+    CHECK(fromEcs->deserialize(savedEcs));
+    CHECK(fromLegacy->checksum()==expected);
+    CHECK(fromEcs->checksum()==expected);
+    // Test rollback of the real projectile stage, including component
+    // removal and deterministic smoke conversion/expiry.
+    legacy->loadState(beforeLegacy);
+    ecs->loadState(beforeEcs);
+    checkBoth();
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+    CHECK(ecs->checksum()==expected);
+    legacy->loadState(beforeLegacy);
+    ecs->loadState(beforeEcs);
+    // An ECS-only native write takes priority over the stale State vector.
+    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+    const uint64_t key=(uint64_t(1)<<32)|smoke.id;
+    CHECK(index&&index->byKey.contains(key));
+    auto* canonical=ecs->world().tryGet<fps::ProjectileRuntime>(
+        index->byKey.at(key));
+    CHECK(canonical&&canonical->value.kind==4);
+    canonical->value.expires+=3;
+    for(auto& p:state(*legacy).projectiles)
+        if(p.id==smoke.id)p.expires+=3;
+    CHECK(legacy->checksum()==ecs->checksum()); // canonical ECS before sync
+    for(int i=0;i<8;++i) {
+        legacy->step();ecs->step();checkBoth();
+    }
+}
+void ecsOrdinaryProjectileAuthorityParity() {
+    ecsOrdinaryProjectileAuthorityParityCase(false);
+    ecsOrdinaryProjectileAuthorityParityCase(true);
+}

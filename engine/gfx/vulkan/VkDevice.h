@@ -141,6 +141,9 @@ public:
     void setUniforms(int slot, const void* data, size_t size) override;
     void draw(uint32_t vertexCount, uint32_t firstVertex) override;
     void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t baseVertex, uint32_t instanceCount) override;
+    bool supportsMultiDrawIndirect() const override { return multiDrawIndirect_; }
+    bool drawIndexedIndirect(BufferHandle commands, size_t offset,
+                             uint32_t drawCount, uint32_t stride) override;
 
 private:
     // GfxVulkan.cpp
@@ -182,6 +185,7 @@ public:   // helpers shared by the translation units
 private:
     DeviceInfo info_;
     std::string error_;
+    bool multiDrawIndirect_ = false;
     bool healthy_ = true;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;

@@ -6,6 +6,10 @@
 //   Click selects (Ctrl / Cmd toggles, Shift range), a click on a group selects its objects, double click
 //   focuses the Scene; arrows, Delete, F, F2 (rename), Ctrl+D (duplicate); drag objects onto a player to
 //   change the owner; eye / lock per player, type and section; hover highlights the object in the Scene.
+#include "../EditorEntityAdapter.h"
+#include "../EditorSelectionAdapter.h"
+#include "../EditorSceneNodes.h"
+#include "../EditorRuntimeEntityProvider.h"
 #include <algorithm>
 #include <cstring>
 #include <functional>
@@ -53,15 +57,75 @@ public:
     const char* dockArea() const override { return "left"; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            if(ImGui::TreeNodeEx(genreText(ed.ws(),"fps.settings.geometry").c_str(),ImGuiTreeNodeFlags_DefaultOpen)) {
-                for(const auto& box:ed.doc().data.fps["colliders"].items()) {
-                    auto label=genreText(ed.ws(),"fps.settings.collider")+" #"+std::to_string(box.getInt("id"));
-                    if(ImGui::Selectable(label.c_str())) {
-                        ed.sceneCam.target={float((box["min"][0].toDouble()+box["max"][0].toDouble())/2),float(box["min"][1].toDouble()),float((box["min"][2].toDouble()+box["max"][2].toDouble())/2)};
-                        ed.sceneCam.distance=25;
+        if (ed.ws().project.isFps()) {
+            // The same authoring-node index is shared with Scene/Inspector.
+            // This lists document objects, never synthetic ECS components.
+            const auto nodes = enumerateDocumentSceneNodes(ed.doc(), true);
+            ImGui::TextDisabled(ICON_HIERARCHY "  SCENE");
+            ImGui::Spacing();
+            ui::searchField("##fpsSceneFilter", filter_,
+                            "Search scene entities, sources and actors");
+            ImGui::Separator();
+            auto selectNode = [&](const Selection& item) {
+                const ImGuiIO& io = ImGui::GetIO();
+                if (io.KeyCtrl || io.KeySuper) ed.selectToggle(item);
+                else if (io.KeyShift) ed.selectAdd(item);
+                else ed.select(item);
+            };
+            for (const char* group : {"Colliders", "Spawn Points"}) {
+                if (!ImGui::TreeNodeEx(group, ImGuiTreeNodeFlags_DefaultOpen))
+                    continue;
+                for (const auto& node : nodes) {
+                    if (node.group != group ||
+                        (!filter_.empty() &&
+                         !ui::contains(node.label, filter_) &&
+                         !ui::contains(group, filter_))) continue;
+                    ImGui::PushID(int(node.ref.index));
+                    const Selection candidate = selectionForDocumentEntity(node.ref);
+                    if (ImGui::Selectable(node.label.c_str(), ed.isSelected(candidate))) {
+                        selectNode(candidate);
+                        if (node.hasPosition && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                            ed.sceneCam.target = {float(node.position.x),
+                                                  float(node.position.y),
+                                                  float(node.position.z)};
                     }
+                    ImGui::PopID();
+                }
+                ImGui::TreePop();
+            }
+            const Json& runtime = ed.fpsRuntimeSnapshot();
+            if (runtime["error"].isString())
+                ImGui::TextWrapped("Runtime preview: %s",
+                                   runtime["error"].str().c_str());
+            const auto runtimeEntities = enumerateEditorRuntimeEntities(ed);
+            for (const char* group : {"Runtime Actors", "Projectiles",
+                                      "Loot", "Vehicles"}) {
+                if (!ImGui::TreeNodeEx(group, ImGuiTreeNodeFlags_DefaultOpen))
+                    continue;
+                for (const auto& entity : runtimeEntities) {
+                    const bool actor = entity.selection.kind == Selection::FpsActor;
+                    const uint8_t kind = entity.selection.kind ==
+                        Selection::FpsRuntimeObject
+                            ? uint8_t(entity.selection.ref >> 32) : 0;
+                    const bool inGroup = actor ? std::string(group) == "Runtime Actors"
+                        : kind == 1 ? std::string(group) == "Projectiles"
+                        : kind == 2 ? std::string(group) == "Loot"
+                        : kind == 3 ? std::string(group) == "Vehicles" : false;
+                    if (!inGroup || (!filter_.empty() &&
+                        !ui::contains(entity.title, filter_) &&
+                        !ui::contains(group, filter_))) continue;
+                    const std::string runtimeId = actor
+                        ? std::to_string(entity.selection.index)
+                        : std::to_string(entity.selection.ref);
+                    ImGui::PushID(runtimeId.c_str());
+                    if (ImGui::Selectable(entity.title.c_str(),
+                                          ed.isSelected(entity.selection))) {
+                        selectNode(entity.selection);
+                        if (entity.hasPosition &&
+                            ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                            ed.sceneCam.target = entity.position;
+                    }
+                    ImGui::PopID();
                 }
                 ImGui::TreePop();
             }

@@ -8,6 +8,8 @@
 #include <cmath>
 #include <filesystem>
 #include "Editor.h"
+#include "EditorSelectionAdapter.h"
+#include "EditorRuntimeEntityProvider.h"
 #include "core/SimTools.h"
 
 namespace fs = std::filesystem;
@@ -116,6 +118,25 @@ bool Editor::selectionPos(const Selection& s, float& x, float& z) const {
         if (s.index < 0 || s.index >= int(d.entities.size())) return false;
         x = d.entities[size_t(s.index)].x; z = d.entities[size_t(s.index)].z;
         return true;
+    case Selection::FpsObject: {
+        DocumentEntityRef ref;
+        DocumentTransform transform;
+        if (!documentEntityFromSelection(s, ref) ||
+            !readDocumentTransform(doc(), ref, transform)) return false;
+        x = float(transform.x); z = float(transform.z);
+        return true;
+    }
+    case Selection::FpsActor:
+    case Selection::FpsRuntimeObject: {
+        const auto runtime = enumerateEditorRuntimeEntities(
+            *const_cast<Editor*>(this));
+        for (const auto& item : runtime)
+            if (item.selection == s && item.hasPosition) {
+                x = item.position.x; z = item.position.z;
+                return true;
+            }
+        return false;
+    }
     case Selection::Live:
         if (worldLive_) {   // the running world itself: the rows may be old (or not read when nobody shows them)
             Simulation* sim = const_cast<Editor*>(this)->worldSim();
@@ -167,6 +188,29 @@ game::RtsModule* Editor::worldModule() {
 }
 
 Selection Editor::pickObject(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const {
+    // All Scene consumers (hover, click, Inspector, Hierarchy) use one
+    // selection API. FPS previews map their renderable ID back to the
+    // document source; the transient render-array index never escapes.
+    if (ws_.project.isFps()) {
+        const int index = pickFpsSceneObject(vp, cam, sx, sy);
+        if (index < 0 || index >= int(fpsSceneObjects_.size())) return {};
+        if (fpsSceneObjects_[size_t(index)].runtimeObject != 0) {
+            Selection object;
+            object.kind = Selection::FpsRuntimeObject;
+            object.ref = fpsSceneObjects_[size_t(index)].runtimeObject;
+            return object;
+        }
+        if (fpsSceneObjects_[size_t(index)].runtimeActor >= 0) {
+            Selection actor;
+            actor.kind = Selection::FpsActor;
+            actor.index = fpsSceneObjects_[size_t(index)].runtimeActor;
+            return actor;
+        }
+        DocumentEntityRef ref;
+        if (!DocumentEntityRef::fromFpsKey(
+                fpsSceneObjects_[size_t(index)].entity, ref)) return {};
+        return selectionForDocumentEntity(ref);
+    }
     if (!playing()) {
         const int n = pickEntity(vp, cam, sx, sy);
         if (n >= 0) return {Selection::Entity, n, {}};

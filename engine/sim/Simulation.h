@@ -20,6 +20,7 @@
 #include "../core/Random.h"
 #include "../data/Json.h"
 #include "Command.h"
+#include "PersistentEcs.h"
 
 namespace aiverse {
 
@@ -95,6 +96,21 @@ public:
     Simulation(SimConfig cfg, std::unique_ptr<GameModule> module);
 
     void setup(const Json& rules, const Json& map);
+    template<class T> void registerPersistentComponent(std::string id,uint32_t version=1) {
+        persistentEcs_.registerComponent<T>(world_,std::move(id),version);
+    }
+    template<class T> void registerPersistentResource(std::string id,uint32_t version=1) {
+        persistentEcs_.registerResource<T>(std::move(id),version);
+    }
+    template<class T,class Fn> void registerPersistentComponentMigration(
+            const std::string& id,uint32_t oldVersion,Fn&& reader) {
+        persistentEcs_.registerComponentMigration<T>(id,oldVersion,std::forward<Fn>(reader));
+    }
+    template<class T,class Fn> void registerPersistentResourceMigration(
+            const std::string& id,uint32_t oldVersion,Fn&& reader) {
+        persistentEcs_.registerResourceMigration<T>(id,oldVersion,std::forward<Fn>(reader));
+    }
+    const PersistentEcsRegistry& persistentEcs()const{return persistentEcs_;}
 
     // Queue a command. If cmd.tick == 0 it is scheduled for currentTick + inputDelay.
     // Returns the tick it was scheduled for.
@@ -120,6 +136,9 @@ public:
     // Rollback support. loadState() also drops executed commands recorded after the snapshot.
     void saveState(SimSnapshot& out);
     void loadState(const SimSnapshot& in);
+    // Optional cache rebuild hooks for non-authoritative derived data
+    // (e.g. parent hierarchy indices). Called after World restoration.
+    void addStateRestoredHook(SystemFn fn) {stateRestoredHooks_.push_back(std::move(fn));}
     // Save states in bytes: identical on every platform, versioned, checked by the state checksum on load.
     // Load into a simulation set up from the same rules + map (and seed); false (state untouched on a bad header,
     // possibly partial otherwise) with a reason in err.
@@ -145,6 +164,7 @@ public:
     void present(std::vector<SimEvent> events);
 
     World& world() { return world_; }
+    const World& world() const { return world_; }
     Random& rng() { return rng_; }
     GameModule& module() { return *module_; }
     uint32_t tick() const { return tick_; }
@@ -164,12 +184,14 @@ private:
     SimConfig cfg_;
     std::unique_ptr<GameModule> module_;
     World world_;
+    PersistentEcsRegistry persistentEcs_;
     Random rng_;
     uint32_t tick_ = 0;
     uint32_t tickRate_ = 20;
     Fixed dt_;
     double accumulator_ = 0.0; // real-time only, never affects the simulation
     std::vector<System> systems_;
+    std::vector<SystemFn> stateRestoredHooks_;
     int64_t (*profClock_)() = nullptr;
     std::vector<int64_t> profNs_;
     std::map<uint32_t, std::vector<Command>> pending_;

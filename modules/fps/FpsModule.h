@@ -1,7 +1,9 @@
 #pragma once
 #include "engine/sim/Simulation.h"
 #include "engine/world/SpatialWorld.h"
+#include <cstddef>
 #include <deque>
+#include <map>
 #include "FpsSystems.h"
 #include "engine/world/CollisionStream.h"
 #include "libraries/include/aiverselib/genre/Melee.h"
@@ -70,6 +72,7 @@ struct Config {
     // Opt-in `fps.bots` (bots-fps settings): map players with "bot": true use the library controller with
     // regional navmeshes, loot / heal / zone goals instead of the reference fallback bot.
     Json bots;
+    bool ecsAuthority=false; // opt-in: full actor state canonical in ECS, legacy vector is tick workspace
 };
 struct Actor {
     uint8_t slot=0,team=0;
@@ -118,6 +121,66 @@ struct VehicleRun {
     uint32_t vehicle=0;int64_t type=0;lib::genre::VehicleState controller;lib::genre::VehicleSeatState seats;
     std::vector<lib::genre::VehicleSeatRequest> requests;   // filled and consumed within one tick
 };
+// Full gameplay Actor payload. In fps.ecsAuthority mode this ECS component
+// is canonical between tick barriers, and State::actors is a temporary
+// compatibility workspace for older simulation algorithms/save v9.
+struct ActorRuntime { Actor value; };
+
+// Stable ECS identities for FPS actors. In default mode, State::actors
+// remains the gameplay authority and these are read-only ECS projections.
+// With fps.ecsAuthority=true, ActorRuntime holds canonical full actor payloads
+// between ticks; State::actors is a contiguous gameplay compatibility workspace.
+// Identity/Transform/Vitals remain lightweight editor projections.
+struct ActorEntityIdentity {
+    uint8_t slot = 0, team = 0;
+    uint32_t life = 0;
+};
+struct ActorEntityTransform {
+    Vec3 position{}, velocity{};
+    Fixed yaw{}, pitch{};
+};
+struct ActorEntityVitals {
+    int32_t health = 0, armor = 0, ammo = 0, reserve = 0;
+    bool downed = false, crouched = false, prone = false;
+};
+struct ActorEntityIndex {
+    std::vector<Entity> bySlot; // slot 1 -> index 0; stable across ticks
+};
+ 
+// Spawned FPS objects have ECS identities as well. IDs are stable source IDs
+// already present in the legacy save/net protocol. The ECS view is derived
+// until the authoritative simulation has migrated off State vectors.
+struct ProjectileEntity {
+    uint32_t id = 0;
+    uint8_t owner = 0, kind = 0;
+    Vec3 position{}, velocity{};
+    int32_t damage = 0;
+};
+struct LootEntity {
+    uint32_t id = 0;
+    Vec3 position{};
+    int32_t type = 0, count = 0;
+};
+struct VehicleEntity {
+    uint32_t id = 0;
+    Vec3 position{}, velocity{};
+    Fixed yaw{};
+    int32_t health = 0;
+    uint8_t driver = 0;
+};
+// Full authoritative dynamic object payloads. The order field preserves
+// legacy vector iteration order (important for deterministic hits/drops).
+// When ecsAuthority is enabled, State arrays are tick-local workspaces only.
+struct ProjectileRuntime { Projectile value; uint32_t order=0; };
+struct LootRuntime { Loot value; uint32_t order=0; };
+struct VehicleRuntime { Vehicle value; uint32_t order=0; };
+
+struct DynamicEntityIndex {
+    // Packed key: top 8 bits = kind, low 32 bits = existing object ID.
+    std::map<uint64_t, Entity> byKey;
+};
+
+
 struct HistoryFrame { uint32_t tick=0; std::vector<Actor> actors; };
 struct State {
     std::vector<Actor> actors;
@@ -149,19 +212,37 @@ public:
     bool serializeState(Simulation&,Archive&) override;
     int result(Simulation& sim) override { return state(sim).winner; }
     const Config& config() const { return config_; }
+    // Debug counters (do not affect deterministic game checksums).
+    uint64_t experimentalMotorBatches() const { return experimentalMotorBatches_; }
+    uint64_t experimentalMotorCommits() const { return experimentalMotorCommits_; }
+
     const world::SpatialWorld& collision() const { return collision_; }
     void setContentReader(world::AssetReader);
     bool readyToStep(Simulation&) override;
     const world::AsyncChunkStream::Status* streamingStatus()const{return streamedCollision_?&streamedCollision_->status():nullptr;}
     State& state(Simulation& sim) const { return *sim.world().resource<State>(); }
+    bool actorEcsAuthority() const { return config_.ecsAuthority; }
+    Entity actorEntity(Simulation& sim, uint8_t slot) const;
+    void syncActorEntities(Simulation& sim) const; // rebuild ECS actor state and inspector projections
+    void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
+    void syncDynamicEntities(Simulation& sim) const; // retain original native ABI for setup/v9 legacy restore
+    void syncDynamicEntities(Simulation& sim,bool projectProjectilesFromEcs) const; // ECS -> State projectile projection at mirror
+    void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
+    State authoritativeStateCopy(Simulation& sim) const; // v9 save/hash assembled from ECS payloads
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
 private:
     void tick(Simulation&);
+    void moveActorEcs(Simulation&,Actor&,const Input&); // direct ECS motor, legacy workspace updated for other systems
     void shoot(Simulation&,Actor&);
+    void spawnProjectile(Simulation&,Projectile); // native ECS authority on spawn; legacy State remains tick projection
+    void clearProjectiles(Simulation&); // synchronous round-reset ECS despawn barrier
     void equipInitial(Actor&) const;
     void setupSystems(Simulation&,const Json&,State&);
+    void tickOrdinaryProjectiles(Simulation&); // original same-tick impact stage
+    bool stepOrdinaryProjectile(Simulation&,Projectile&); // shared legacy/ECS solver
     void tickSystems(Simulation&);
     void tickProjectilePrograms(Simulation&);
+    bool stepProgrammedProjectile(Simulation&,Projectile&,std::vector<Projectile>&,std::size_t liveCount);
     void actorSystems(Simulation&,Actor&,Input&);
     bool traceShot(Simulation&,uint8_t,Vec3,Vec3,int32_t,const WeaponConfig&,const std::vector<Actor>&,Projectile* projectile=nullptr);
     void damage(Simulation&,uint8_t,Actor&,int32_t,bool head=false);
@@ -191,6 +272,7 @@ private:
     std::vector<Loot> initialLoot_;
     lib::genre::AttackSet meleeAttacks_;
 
+    uint64_t experimentalMotorBatches_=0, experimentalMotorCommits_=0;
     Config config_;
     world::SpatialWorld collision_;
     std::vector<Vec3> spawns_;

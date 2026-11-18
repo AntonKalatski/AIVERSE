@@ -137,3 +137,11 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 2. Add editor input settings (Input Actions / Mapping Contexts / modifier/trigger UI, capture key to rebind, priority and conflict warnings), using \`docs/editor-windows.md\` and ImGui/RmlUi event capture correctly.
 3. Integrate RTS \`apps/client\` and in-editor hosted game input with higher-priority UI/Modal/Viewport contexts, preserving text input/IME and the existing RTS Commands. Treat gameplay actions as client->Commands, not sim mutations.
 4. Test pad disconnect, held key during modal activation, duplicate explicit IDs, chord consumption precedence, same-frame tap, focus loss; update reference docs, tests, skill/catalog and this handoff after the next stage. Keep unrelated editor changes minimal.
+
+## Stage 5 — inspector FPS/ECS merge (2026-11-18)
+
+**Integrated parents:** Enhanced Input `247d9fb4344abf9b7988e367ce83f31a9afe6863` and `feature/universal-entity-inspector-fps` `26eb4d914fc65f336c9e843db198f2316f6f14a2`. Two-parent merge preserves both histories. Resolved tree is inspector HEAD plus Enhanced Input files, not a reset to `main`.
+
+**Conflict resolutions:** `AGENTS.md` retains inspector's ECS/renderer rules and adds input ownership and stage-by-stage handoff. `libraries/catalog.json` updates only `input` package 0.2.0 while retaining all inspector library entries. `tests/libraries/CMakeLists.txt` retains inspector test targets and appends three enhanced input test targets, dropping the redundant additional `endif() # voxel packages` from the input branch. FPS client kept from input branch; inspector did not modify that path after common base. Do not overwrite the merged inspector/editor or ECS sources with outdated main.
+
+**Validation:** source and tree comparison over GitHub connector; no native compile or CTest yet (build container cannot resolve GitHub DNS). Run CMake/CTest on the merged branch, audit the FPS client against current `modules/fps`, then add editor/RTS contexts and runtime binding settings. Update this handoff after each stage before proceeding.
