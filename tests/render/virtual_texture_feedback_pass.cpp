@@ -144,6 +144,41 @@ void creationAndCapture() {
             !pass.texture().valid() && !pass.ready(),
             "feedback attachment released at shutdown");
 }
+void rendererCallbackLifecycle() {
+    FakeDevice gpu;
+    VirtualTextureFeedbackPass pass;
+    require(pass.initialize(gpu,2,2,feedbackCfg(),prefetchCfg()),
+            "renderer callback pass initialized");
+    int calls=0;
+    require(!pass.renderAndCapture([&](Device& device) {
+                require(&device==&gpu && gpu.active,
+                        "renderer callback receives active target device");
+                ++calls;
+                return false;
+            }) && calls==1 && !gpu.active && gpu.ended==1 &&
+            !pass.pending() && !gpu.onReadback,
+            "failed renderer callback ends pass without capturing partial IDs");
+    require(pass.renderAndCapture([&](Device& device) {
+                require(&device==&gpu && gpu.active,
+                        "successful callback runs inside feedback pass");
+                ++calls;
+                return true;
+            }) && calls==2 && !gpu.active && pass.pending() &&
+            gpu.ended==2 && bool(gpu.onReadback),
+            "successful renderer callback ends and schedules async readback");
+    TextureReadbackResult read;
+    read.format=PixelFormat::RGBA8;
+    read.width=read.height=1;
+    const uint32_t id=encodeVirtualTextureFeedback({0,0,0,0});
+    for(int i=0;i<4;++i)read.pixels.push_back(uint8_t(id>>(8*i)));
+    gpu.completeReadback(std::move(read));
+    require(pass.readyToSubmit() && !pass.renderAndCapture(
+                [&](Device&) { ++calls;return true; }) && calls==2,
+            "unconsumed feedback cannot be overwritten by next draw");
+    pass.shutdown();
+    require(gpu.live.empty(),"renderer callback target released");
+}
+
 void rejectionAndWeakLifetime() {
     FakeDevice gpu;
     VirtualTextureFeedbackPass pass;
@@ -186,7 +221,7 @@ void rejectionAndWeakLifetime() {
 }
 }
 int main() {
-    try { creationAndCapture();rejectionAndWeakLifetime(); }
+    try { creationAndCapture();rendererCallbackLifecycle();rejectionAndWeakLifetime(); }
     catch(const std::exception& e) {
         std::fprintf(stderr,"Virtual feedback pass contract FAILED: %s\n",e.what());
         return 1;
