@@ -234,6 +234,7 @@ private:
     void shoot(Simulation&,Actor&);
     void equipInitial(Actor&) const;
     void setupSystems(Simulation&,const Json&,State&);
+    void tickOrdinaryProjectiles(Simulation&); // original same-tick impact stage
     void tickSystems(Simulation&);
     void tickProjectilePrograms(Simulation&);
     bool stepProgrammedProjectile(Simulation&,Projectile&,std::vector<Projectile>&,std::size_t liveCount);
