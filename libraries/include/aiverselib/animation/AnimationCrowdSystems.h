@@ -16,6 +16,7 @@ struct AnimationCrowdComponent {
     int playing=-2; // -2 means not initialized
     float speed=0.f,walkSpeed=1.2f,runSpeed=3.2f;
     float fade=.18f;
+    float initialNormalizedPhase=-1.f; // opt-in backend phase handoff
     bool dead=false;
 };
 struct AnimationCrowdSampleComponent {
@@ -45,6 +46,12 @@ inline void stepAnimationCrowd(World& world,float dt) {
             render::Animator::Play play;play.fade=std::clamp(c.fade,0.f,5.f);
             play.loop=!once;
             c.animator.play(0,target,play);
+            if(std::isfinite(c.initialNormalizedPhase) &&
+               c.initialNormalizedPhase>=0.f) {
+                c.animator.seek(0,std::clamp(c.initialNormalizedPhase,0.f,.999999f)*
+                    c.model->clips[size_t(target)].duration);
+                c.initialNormalizedPhase=-1.f;
+            }
             c.playing=target;
         }
         if(!once && c.walk>=0 && c.run>=0 && c.playing==c.walk) {

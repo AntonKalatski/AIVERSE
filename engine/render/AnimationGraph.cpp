@@ -270,6 +270,30 @@ const std::string& AnimationGraphInstance::state() const {
     static const std::string empty;
     return graph_?graph_->states()[size_t(state_)].id:empty;
 }
+std::optional<float> AnimationGraphInstance::clipTime(const std::string& node) const {
+    if(!graph_)return std::nullopt;
+    for(size_t i=0;i<graph_->nodes().size();++i)
+        if(graph_->nodes()[i].id==node &&
+           graph_->nodes()[i].kind==AnimationGraph::Kind::Clip)
+            return float(clocks_[i]);
+    return std::nullopt;
+}
+bool AnimationGraphInstance::seekClipNode(const std::string& node,float seconds) {
+    if(!graph_ || !std::isfinite(seconds) || seconds<0.f)return false;
+    for(size_t i=0;i<graph_->nodes().size();++i) {
+        const auto& n=graph_->nodes()[i];
+        if(n.id!=node || n.kind!=AnimationGraph::Kind::Clip)continue;
+        const float duration=graph_->model()->clips[size_t(n.clip)].duration;
+        if(duration<=0.f)return false;
+        const double time=n.loop?std::fmod(double(seconds),double(duration)):
+            std::min(double(seconds),double(duration));
+        unwrappedClocks_[i]=time;
+        clocks_[i]=time;
+        clipStarted_[i]=0; // never generate phantom time-zero notifies
+        return true;
+    }
+    return false;
+}
 void AnimationGraphInstance::update(float dt) {
     notifies_.clear();
     if(!graph_||!std::isfinite(dt)||dt<0) return;

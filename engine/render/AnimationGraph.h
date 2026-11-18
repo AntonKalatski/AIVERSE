@@ -6,6 +6,7 @@
 #include "../data/Json.h"
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <functional>
 
@@ -116,6 +117,10 @@ public:
     const std::string& state() const;
     const std::vector<AnimationGraphNotify>& notifies() const {return notifies_;}
     float stateTime() const { return time_; }
+    // Scoped, cosmetic-only clip clock seeding for CPU/GPU backend migration.
+    // Does not synthesize notifies; only valid clip nodes may be queried.
+    std::optional<float> clipTime(const std::string& node) const;
+    bool seekClipNode(const std::string& node,float seconds);
     AnimationGraphInstance* child(const std::string& node);
     const MotionPlayer* motion(const std::string& node) const;
     const AnimationControllerPlayer* controller(const std::string& node) const;

@@ -678,6 +678,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_motionweave_replication_cues_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
     add_test(NAME motionweave_replicated_cues COMMAND aiverse_motionweave_replication_cues_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_phase_tests tests/animation/motionweave_phase.cpp)
+    target_link_libraries(aiverse_motionweave_phase_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_phase_seed COMMAND aiverse_motionweave_phase_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp

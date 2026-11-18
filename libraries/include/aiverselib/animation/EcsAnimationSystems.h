@@ -54,6 +54,11 @@ struct AnimationRecoveryComponent {
     float duration=0.3f;
     bool requested=false;
 };
+// One-off normalized clip-phase seed after switching CPU/GPU backends.
+// Only applied on first GraphInstance initialization or an explicit request.
+struct AnimationPhaseSeedComponent {
+    float normalized=-1.f; // -1 means not requested
+};
 struct AnimationBudgetComponent {
     float interval = 0.f, elapsed = 0.f;
     bool visible = true;
@@ -75,6 +80,7 @@ struct AnimationPreparedPools {
     Pool<AnimationMontageSlotsComponent>* montages=nullptr;
     Pool<AnimationGraphNotifiesComponent>* graphNotifies=nullptr;
     Pool<AnimationRecoveryComponent>* recoveries=nullptr;
+    Pool<AnimationPhaseSeedComponent>* phaseSeeds=nullptr;
 };
 inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
     AnimationPreparedPools p;
@@ -85,6 +91,7 @@ inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
     p.montages=world.prepareExistingWrite<AnimationMontageSlotsComponent>();
     p.graphNotifies=world.prepareExistingWrite<AnimationGraphNotifiesComponent>();
     p.recoveries=world.prepareExistingWrite<AnimationRecoveryComponent>();
+    p.phaseSeeds=world.prepareExistingWrite<AnimationPhaseSeedComponent>();
     return p;
 }
 inline void evaluateAnimationPresentationRange(World& world,
@@ -98,6 +105,7 @@ inline void evaluateAnimationPresentationRange(World& world,
     auto* montages=p.montages;
     auto* graphNotifies=p.graphNotifies;
     auto* recoveries=p.recoveries;
+    auto* phaseSeeds=p.phaseSeeds;
     const World& read=world;
     const size_t available=selected?selected->size():players->size();
     for(size_t k=begin;k<std::min(end,available);++k) {
@@ -113,6 +121,7 @@ inline void evaluateAnimationPresentationRange(World& world,
         auto* slots=montages?montages->tryGet(e.index):nullptr;
         const auto* physical=read.tryGetConst<AnimationPhysicalPoseComponent>(e);
         auto* recovery=recoveries?recoveries->tryGet(e.index):nullptr;
+        auto* phaseSeed=phaseSeeds?phaseSeeds->tryGet(e.index):nullptr;
         const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
         if (!asset || !asset->model || !asset->graph ||
             asset->graph->model()!=asset->model) {
@@ -135,6 +144,16 @@ inline void evaluateAnimationPresentationRange(World& world,
             if (budget) budget->elapsed=0;
         }
         auto& inst=*player.instance;
+        if(phaseSeed && std::isfinite(phaseSeed->normalized) &&
+           phaseSeed->normalized>=0.f) {
+            const float phase=std::clamp(phaseSeed->normalized,0.f,.999999f);
+            for(const auto& node:asset->graph->nodes())
+                if(node.kind==render::AnimationGraph::Kind::Clip &&
+                   node.clip>=0 && size_t(node.clip)<asset->model->clips.size())
+                    inst.seekClipNode(node.id,
+                        phase*asset->model->clips[size_t(node.clip)].duration);
+            phaseSeed->normalized=-1.f;
+        }
         inst.parameters()=asset->graph->defaults();
         bool validInputs=true;
         if (const auto* input=read.tryGetConst<AnimationInputsComponent>(e)) {
