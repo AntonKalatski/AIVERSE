@@ -166,3 +166,7 @@ Game window forwards keyboard input only while focused. Switching from Game to I
 ## Two-finger gesture inputs
 
 The platform adapter also exposes gesture channels under `Device::Touch`, `deviceIndex: 0`: numeric `code: 3` is the change in distance between two fingers (pinch, logical pixels), `code: 4` is the horizontal change in their midpoint, and `code: 5` is the vertical change. They are relative deltas, accumulated per frame and cleared on `InputSystem::update(dt)`. No pulse is generated when contacts enter or leave the two-finger gesture. Bind these to semantic Actions such as `Zoom` and `CameraPan`, with project-specific scales; never process raw float controls inside ECS.
+
+### RTS camera Actions
+
+Default RTS mapping includes `RTS.Camera` context with `CameraPan` (arrow keys) and `IdleCameraPan` (WASD when there is no unit selection). Both actions are Axis2D and do not consume the underlying key, so other RTS hotkeys continue to work. Arrow and WASD input are combined with edge scrolling and legacy gamepad camera pan in the presentation layer, and never written directly to ECS. Old `RTS.Gameplay` mapping IDs remain stable.
