@@ -64,21 +64,21 @@ Test target: `ecs_nereid_buoyancy_test` (unverified).
 
 ## Stage 3 — polygon lakes and spline rivers (experimental)
 
-Use \`<aiverselib/water/NereidGeometry.h>\` or the
-\`NereidWaterSystems.h\` umbrella and register
-\`registerNereidGeometryPersistence(sim)\` when enabling shape overrides.
+Use `<aiverselib/water/NereidGeometry.h>` or the
+`NereidWaterSystems.h` umbrella and register
+`registerNereidGeometryPersistence(sim)` when enabling shape overrides.
 
-Add a \`WaterGeometryComponent\` to the same Entity as a
-\`WaterBodyComponent\`. Use \`WaterGeometryKind::Polygon\` for an X/Z
+Add a `WaterGeometryComponent` to the same Entity as a
+`WaterBodyComponent`. Use `WaterGeometryKind::Polygon` for an X/Z
 closed simple ring (no closing duplicate necessary) or
-\`WaterGeometryKind::RiverSpline\` for a centerline with a half-width
-per \`WaterGeometryPoint\`. Attach 3..256 polygon points or 2..256
+`WaterGeometryKind::RiverSpline` for a centerline with a half-width
+per `WaterGeometryPoint`. Attach 3..256 polygon points or 2..256
 spline points; all spline half-widths must be positive. Surface, bottom
 and flow are still defined by the regular water body. Only the footprint
-is overridden. \`sampleWater\` already reads it.
+is overridden. `sampleWater` already reads it.
 
 Never feed float renderer tessellation or shader waves back into gameplay.
-Do not re-encode legacy \`waterNetwork\` until migration tests prove
+Do not re-encode legacy `waterNetwork` until migration tests prove
 unchanged water baking and shoreline behavior. New test target
-\`ecs_nereid_geometry_test\` is authored but NOT RUN; also run previous
+`ecs_nereid_geometry_test` is authored but NOT RUN; also run previous
 NEREID tests before declaring this stage verified.

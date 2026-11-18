@@ -111,27 +111,27 @@ Register `registerNereidBuoyancyPersistence` in setup when enabled.
 
 ## Stage 3 — ECS geometry override (implemented, unverified)
 
-\`NereidGeometry.h\` defines \`WaterGeometryComponent\` as an optional
+`NereidGeometry.h` defines `WaterGeometryComponent` as an optional
 per-body footprint override: a closed simple polygon (lakes, pools), or
 a variable-half-width X/Z polyline (rivers, canals). Geometry has a
 maximum of 256 nodes for bounded ECS save and replay. Polygon banks and
 spline bank edges are included in queries. Self-intersecting polygons and
 holes are not a supported contract.
 
-The shared \`sampleWater\` queries the optional component on each water
+The shared `sampleWater` queries the optional component on each water
 body Entity. If the component is absent or disabled, original v1
 Infinite/Box/Disc footprints continue to work. An invalid enabled geometry
 covers nothing; it cannot silently expand to a larger fallback. Body height,
 flow, priorities and stable ID tie-breaks are unchanged. Geometry is
-independent from RTS/editor \`waterNetwork\`; no implicit migration.
+independent from RTS/editor `waterNetwork`; no implicit migration.
 
-To opt in: call \`registerNereidGeometryPersistence(sim)\` in native
-setup before the registry seals, and attach \`WaterGeometryComponent\`
-to \`WaterBodyComponent\` entities. This adds the separate
-\`nereid.geometry\` v1 schema, leaving the water-body v1 wire format alone.
-\`AIVERSE::lib_nereid_water\` is still the native link target.
+To opt in: call `registerNereidGeometryPersistence(sim)` in native
+setup before the registry seals, and attach `WaterGeometryComponent`
+to `WaterBodyComponent` entities. This adds the separate
+`nereid.geometry` v1 schema, leaving the water-body v1 wire format alone.
+`AIVERSE::lib_nereid_water` is still the native link target.
 
 This is a pure deterministic CPU footprint policy. It has no spatial index
 or geometry mesh generation, waves, shoreline features, VFX or editor
 adapter. Geometry component storage, snapshot and rollback are ECS owned.
-Test: \`ecs_nereid_geometry_test\` (authored but NOT RUN).
+Test: `ecs_nereid_geometry_test` (authored but NOT RUN).
