@@ -201,3 +201,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Verification:** GitHub connector source audit only. CI on last commit was queued at check time; compilation and CTest remain unverified. Do not mark these links compile-verified before CI/local build completes.
 
 **Next agent:** check CI logs, run `aiverse_enhanced_input_tests`, adapter/config/RTS tests plus `aiverse_editor`, `aiverse_client`, `aiverse_fps_client`; test interactive rebind and hosted GameWindow/Scene focus. Fix compiler/warning failures immediately, append another handoff stage.
+
+## Stage 12 — shared FPS/RTS presets and editor initialization (2026-11-18)
+
+**Change:** `engine/platform/EnhancedInputPresets.h` now provides `enhanced_presets::fpsReference()` and `rtsReference()` producing complete version-1 `enhanced_config::Asset` instances with explicit stable IDs. FPS client `configureInput()` installs the exact same FPS preset; RTS `ClientInputRouting` installs the shared RTS preset. Editor Input Actions window adds **Use FPS defaults** and **Use RTS defaults** buttons, allowing agents/users to create complete mapping assets without forgetting default actions. Buttons replace the in-memory editor buffer only; Save persists them. Previous hardcoded FPS/RTS schemes were removed from the clients, preserving their semantic actions and order.
+
+**Files:** `engine/platform/EnhancedInputPresets.h`, `apps/fps/client.cpp`, `apps/client/ClientInputRouting.h`, `apps/editor/windows/InputWindow.cpp`, `tests/libraries/enhanced_input_config_tests.cpp`, `libraries/catalog.json`, `docs/enhanced-input.md`, `skills/ui/aiverse-input/SKILL.md`, this handoff.
+
+**Tests:** Added preset JSON write/read/install roundtrips and stable mapping ID assertions (ID 1..N) to `enhanced_input_config_tests.cpp`. Validation is not yet backed by a compiler or successful CTest; GitHub CI was queued. Run tests before promoting PR #20 out of draft.
+
+**Next agent:** check CI errors, verify initialized FPS key controls parity and mouse look, verify project preset editing/saving plus runtime profiles and RTS UI focus, then run full cross-platform validation.
