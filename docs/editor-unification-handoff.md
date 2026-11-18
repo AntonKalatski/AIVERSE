@@ -2014,3 +2014,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — GameController and impact queue warning fixes; failed CTest names pending
 - **Code SHA:** `effcc8f65d2d30370f07c35ac53a077778d14264`, files `engine/platform/gamepad/GamepadApple.mm`, `tests/ecs_cross_genre_impact_queue_test.cpp`. Replaced GNU-only elided `?:` with explicit standard pointer fallback; removed unused lambda `[this]` test capture. Code-only source verification, native post-fix build/CTest **NOT RUN**.
 - User reports some tests failed during ongoing full suite, but no failing test log yet. Do **not** label full CTest green. Next agent needs `build/all-tests/test-reports/<latest>/ctest.log` or `build/all-tests/Testing/Temporary/LastTestsFailed.log`, then fix tests and record actual outcomes.
+
+### 2026-11-18 — Extra standalone suites read CRLF registry erroneously
+- **Code SHA:** `447bc13c999faea5d778adec61f3446816b58c51` shared PR #7; `run-tests.sh` now strips trailing CR from registry arguments. Added two CRLF smoke cases in `tests/test_unified_runner.py`.
+- The owner's completed full run had **99/106 CTest pass, 7 fail**, plus 5 failing extra suites. Extra failures were all due to a terminal CR passed as a test argument from a CRLF checkout, not proven library failures. Real CTest seven failures are separate and must be fixed on their own.
+- Local isolated Bash test of CRLF parsing **PASS**; post-change repo CI and Mac-native CTest **NOT RUN**. Detailed handoff: `docs/agent-handoffs/unified-test-runner.md`.
