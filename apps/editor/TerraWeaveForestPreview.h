@@ -80,10 +80,10 @@ public:
         const auto origin = terraweave_ops_detail::origin(recipe);
         // cameraXcm/Zcm are map-local render units (100 cm per cell).
         // A recipe may sample each authored corner at a different world spacing.
-        const int64_t globalCameraXcm = origin.worldOriginXcm +
-            cameraXcm * origin.cellSizeCm / 100;
-        const int64_t globalCameraZcm = origin.worldOriginZcm +
-            cameraZcm * origin.cellSizeCm / 100;
+        const int64_t globalCameraXcm = terraWeaveWorldFromEditorCm(
+            cameraXcm, origin.worldOriginXcm, origin.cellSizeCm);
+        const int64_t globalCameraZcm = terraWeaveWorldFromEditorCm(
+            cameraZcm, origin.worldOriginZcm, origin.cellSizeCm);
         if (globalCameraXcm < -terraweave::kWorldLimitCm ||
             globalCameraXcm > terraweave::kWorldLimitCm ||
             globalCameraZcm < -terraweave::kWorldLimitCm ||
@@ -134,10 +134,10 @@ public:
                     for (auto& item : items) {
                         // Authoritative/editor terrain may have been sculpted since
                         // the original seed. Sample the actual map for the overlay.
-                        const int64_t sourceXcm = item.xCm - origin.worldOriginXcm;
-                        const int64_t sourceZcm = item.zCm - origin.worldOriginZcm;
-                        const int64_t mapXcm = sourceXcm * 100 / origin.cellSizeCm;
-                        const int64_t mapZcm = sourceZcm * 100 / origin.cellSizeCm;
+                        const int64_t mapXcm = terraWeaveEditorFromWorldCm(
+                            item.xCm, origin.worldOriginXcm, origin.cellSizeCm);
+                        const int64_t mapZcm = terraWeaveEditorFromWorldCm(
+                            item.zCm, origin.worldOriginZcm, origin.cellSizeCm);
                         if (!terraWeavePreviewAllowsPlacement(doc.data, mapXcm,
                                                                mapZcm, 100))
                             continue;
