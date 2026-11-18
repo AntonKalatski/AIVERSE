@@ -260,6 +260,7 @@
         "engine/platform/EnhancedInputPresets.h",
         "engine/platform/EnhancedInputProfileIO.h",
         "engine/platform/EnhancedInputFileIO.h",
+        "engine/platform/EnhancedInputUsers.h",
         "engine/platform/EnhancedInputAdapter.h",
         "engine/platform/EnhancedInputConfig.h",
         "docs/enhanced-input.md"
