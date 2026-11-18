@@ -258,10 +258,10 @@ struct Bench {
             if(view.has("shadowMapSize")&&options.profile!="low"){const double size=view["shadowMapSize"].toDouble();
                 if(size!=2048&&size!=4096&&size!=8192)throw std::runtime_error("look shadowMapSize must be 2048, 4096 or 8192");
                 if(!renderer.setShadowMapSize(int(size)))throw std::runtime_error("shadow map allocation failed");}
-            PostFxSettings s;s.hdr=options.profile=="low"?HdrMode::Off:HdrMode::On;
-            if(options.profile=="hdr"||options.profile=="full")s=parsePostFx(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25},{"type":"fxaa"}]})"),Json());
-            if(options.profile=="full")s=parsePostFx(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25}]})"),Json());
-            if(options.profile!="low"&&config.has("postfx"))s=parsePostFx(config["postfx"],Json());
+            PrismaSettings s;s.hdr=options.profile=="low"?HdrMode::Off:HdrMode::On;
+            if(options.profile=="hdr"||options.profile=="full")s=parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25},{"type":"fxaa"}]})"),Json());
+            if(options.profile=="full")s=parsePrisma(Json::parse(R"({"hdr":"on","effects":[{"type":"bloom","threshold":1.5,"intensity":0.25}]})"),Json());
+            if(options.profile!="low"&&config.has("postfx"))s=parsePrisma(config["postfx"],Json());
             // Screen bounce adds near-field light from visible surfaces; probe GI scenes opt in via look.screenBounce.
             screen.setDiffuseBounceEnabled(config["look"].getBool("screenBounce",!(bakePointShadows&&(config.has("staticPointBounce")||config.has("probeGI")))));
             screen.setEnabled(options.profile=="full");
@@ -279,7 +279,7 @@ struct Bench {
                     throw std::runtime_error("volumetricLight: density 0..1, anisotropy -.95...95, maxDistance 0..1000, steps 4..32, tint >= 0");
                 screen.setVolumetricLight(light);
             }
-            post.setSettings(s);post.setQuality(options.profile=="low"?PostFxQuality::Low:PostFxQuality::High);
+            post.setSettings(s);post.setQuality(options.profile=="low"?PrismaQuality::Low:PrismaQuality::High);
             report.set("schema",Json::number(int64_t(1)));report.set("engine",Json::string("AIVERSE"));
 #if defined(__aarch64__) || defined(__arm64__)
             report.set("binaryArchitecture",Json::string("arm64"));
