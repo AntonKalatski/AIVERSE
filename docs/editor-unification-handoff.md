@@ -1372,3 +1372,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `01b97620a62f1e1106330a22e72bcb9c35a5160e`.
 - `CMakeLists.txt` now declares `aiverse_ecs_integer_health_commit_test` using public `AIVERSE::lib_ecs_impact_damage` and `aiverse_engine`, registered as CTest `ecs_integer_health_commit_test`. It does not link genre-specific RTS/FPS targets.
 - Verification: GitHub CMake source edit succeeded; **native configure/build/CTest execution not yet verified**. Next: standalone suite registration and link check.
+
+
+### 2026-11-18 — Standalone suite includes shared HP commit regression
+- Implementation SHA: `ce2ab7f5cd95784c0a5845308f1edb2e2b29362d`.
+- `tests/run_ecs_experiment_suite.sh` now compiles/runs `ecs_integer_health_commit_test.cpp` from the public library include with the engine Fixed implementation, independent of FPS/RTS modules.
+- Verification: connector file update only; **native `bash -n`, compilation and execution still not run**. A full native test matrix including `aiverse_fps_tests` remains mandatory.
