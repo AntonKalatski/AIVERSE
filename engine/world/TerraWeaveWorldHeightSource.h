@@ -63,6 +63,43 @@ public:
         return true;
     }
 
+    // Collect clipped, nonoverlapping rectangles of resident authored
+    // ground within a half-open world rectangle. Ownership is exact on X/Z,
+    // unlike coversRect(), which only answers whether ALL tiles are loaded.
+    // False means there were too many pieces; the caller must fall back to
+    // the conservative full-quad ownership path instead of an unbounded mesh.
+    bool coveredRectsIn(RectCm area,std::vector<RectCm>& out,
+                        size_t maxRects=1024) const {
+        out.clear();
+        if(area.minX>=area.maxX||area.minZ>=area.maxZ||
+           area.minX<-kWorldLimitCm||area.maxX>kWorldLimitCm||
+           area.minZ<-kWorldLimitCm||area.maxZ>kWorldLimitCm||
+           maxRects>4096)return false;
+        for(const auto& [cell,tile]:tiles_){
+            (void)tile;
+            const int64_t x0=int64_t(cell.x)*cellSizeCm_;
+            const int64_t z0=int64_t(cell.z)*cellSizeCm_;
+            const RectCm piece{
+                std::max(area.minX,x0),std::max(area.minZ,z0),
+                std::min(area.maxX,x0+cellSizeCm_),
+                std::min(area.maxZ,z0+cellSizeCm_)
+            };
+            if(piece.minX>=piece.maxX||piece.minZ>=piece.maxZ)continue;
+            if(out.size()>=maxRects){out.clear();return false;}
+            out.push_back(piece);
+        }
+        // The resident tile map orders world Cells, not always geometry
+        // rectangles. Stable geometric order is needed for deterministic
+        // clipping and cross-machine archive hashes.
+        std::sort(out.begin(),out.end(),[](const RectCm& a,const RectCm& b){
+            if(a.minZ!=b.minZ)return a.minZ<b.minZ;
+            if(a.minX!=b.minX)return a.minX<b.minX;
+            if(a.maxZ!=b.maxZ)return a.maxZ<b.maxZ;
+            return a.maxX<b.maxX;
+        });
+        return true;
+    }
+
     // A null result means that no loaded WorldScene heightfield covers this
     // point. Caller may fall back to deterministic procedural height.
     // The same two triangles as the terrain collider are interpolated in
