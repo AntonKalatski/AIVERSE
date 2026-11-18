@@ -6,7 +6,9 @@
 
 #include "VfxGraph.h"
 #include "SpectraGpuParticles.h"
+#include "SpectraBatchWorld.h"
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,17 @@ public:
                    const GraphRuntimeOptions& options = {});
     bool initEffect(gfx::Device* device, const fx::EffectDef& compiled,
                     const GraphRuntimeOptions& options = {});
+
+    // An opt-in shared CPU world. Each GraphRuntime owns only its handles;
+    // the host owns sharedWorld and calls sharedWorld.update()/draw() ONCE
+    // per frame for all graph instances. This overload never creates a
+    // separate ParticleSystem or an extra draw call. RequireGpu is rejected.
+    // The BatchWorld MUST outlive every connected GraphRuntime.
+    bool initEffect(BatchWorld& sharedWorld, const fx::EffectDef& compiled,
+                    const GraphRuntimeOptions& options = {});
+    bool initGraph(BatchWorld& sharedWorld, const Json& graph,
+                   const Json& overrides = Json::object(),
+                   const GraphRuntimeOptions& options = {});
     void shutdown();
 
     bool burstAt(fx::float3 worldPosition,
@@ -66,13 +79,19 @@ public:
     const std::string& reason() const { return reason_; }
     const std::vector<std::string>& errors() const { return errors_; }
     const fx::ParticleSystem& cpuFallback() const {
-        return useComputeWrapper_ ? gpu_.cpuFallback() : cpu_;
+        return sharedWorld_ ? sharedWorld_->particles()
+             : useComputeWrapper_ ? gpu_.cpuFallback() : cpu_;
     }
+    bool usesSharedBatchWorld() const { return sharedWorld_ != nullptr; }
     const ComputeStats& gpuStats() const { return gpu_.stats(); }
 private:
     bool initCpu(gfx::Device*, const fx::EffectDef&, fx::FxQuality);
     bool initialized_ = false;
     bool useComputeWrapper_ = false;
+    BatchWorld* sharedWorld_ = nullptr;
+    // Bounded history: on overflow an older handle is killed before reuse.
+    // Use one GraphRuntime per logical effect source, not per burst.
+    std::deque<fx::FxHandle> sharedHandles_;
     ComputeBackend backend_ = ComputeBackend::Cpu;
     fx::ParticleSystem cpu_;
     ComputeParticles gpu_;
