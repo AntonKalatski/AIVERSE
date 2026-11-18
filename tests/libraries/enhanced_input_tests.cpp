@@ -158,5 +158,27 @@ int main() {
     CHECK(registered && registered->mappings[0].id == 1 &&
           registered->mappings[1].id == 2);
 
+    // Action modifiers must gate lifecycle as well as the numeric value.
+    InputSystem deadzoneActions;
+    CHECK(deadzoneActions.defineAction({"Throttle",ValueType::Axis1D,{Modifier::deadZone(0.3f)}}));
+    CHECK(deadzoneActions.defineAction({"Disabled",ValueType::Axis1D,{Modifier::scale(0)}}));
+    MappingContext deadzoneContext{"Deadzone"};
+    deadzoneContext.bind("Throttle",{Device::GamepadAxis,2});
+    deadzoneContext.bind("Disabled",{Device::GamepadAxis,3});
+    CHECK(deadzoneActions.registerContext(deadzoneContext));
+    CHECK(deadzoneActions.activateContext("Deadzone"));
+    deadzoneActions.setControl({Device::GamepadAxis,2},0.1f);
+    deadzoneActions.setControl({Device::GamepadAxis,3},1.0f);
+    CHECK(!has(deadzoneActions.update(0.016f),"Throttle",Phase::Triggered));
+    CHECK(!deadzoneActions.state("Throttle")->active);
+    CHECK(!has(deadzoneActions.events(),"Disabled",Phase::Started));
+    CHECK(!deadzoneActions.state("Disabled")->active);
+    deadzoneActions.setControl({Device::GamepadAxis,2},0.6f);
+    CHECK(has(deadzoneActions.update(0.016f),"Throttle",Phase::Started));
+    CHECK(deadzoneActions.state("Throttle")->active);
+    deadzoneActions.setControl({Device::GamepadAxis,2},0.1f);
+    CHECK(has(deadzoneActions.update(0.016f),"Throttle",Phase::Completed));
+    CHECK(!deadzoneActions.state("Throttle")->active);
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
