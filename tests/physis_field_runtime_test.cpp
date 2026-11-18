@@ -190,6 +190,38 @@ void kindChangeAndSave() {
     one->step();restored->step();
     CHECK(one->checksum()==restored->checksum());
 }
+
+void submitViaSimulationCommandQueue() {
+    auto sim=make();
+    Json map=setupMap();
+    Json config=map["physis"];
+    Json winds=config["windZones"];
+    Json wind=winds[0];
+    wind.set("velocity",Json::parse("[31,0,0]"));
+    winds.at(0)=wind;
+    config.set("windZones",winds);
+    map.set("physis",config);
+    std::uint32_t scheduled=0;
+    std::string error;
+    CHECK(submitEditableFieldsFromMap(*sim,map,kFieldEditCmd,scheduled,&error));
+    CHECK(scheduled>=sim->tick());
+    const auto old=bound(*sim,"wind-a");
+    while(sim->tick()<=scheduled) sim->step();
+    CHECK(registry(*sim).revision==1);
+    CHECK(bound(*sim,"wind-a")==old);
+    CHECK(sim->world().get<WindZone>(old).velocity.x==Fixed::fromInt(31));
+    const auto revision=registry(*sim).revision;
+    Json bad=map;
+    config=bad["physis"];
+    winds=config["windZones"];
+    wind=winds[0];
+    wind.set("velocity",Json::parse("[301,0,0]"));
+    winds.at(0)=wind;
+    config.set("windZones",winds);
+    bad.set("physis",config);
+    CHECK(!submitEditableFieldsFromMap(*sim,bad,kFieldEditCmd,scheduled,&error));
+    CHECK(registry(*sim).revision==revision);
+}
 void authorityAndStale() {
     auto sim=make();
     Command cmd;
@@ -215,6 +247,7 @@ int main() {
     formatAndValidation();
     replayIdentityAndRollback();
     kindChangeAndSave();
+    submitViaSimulationCommandQueue();
     authorityAndStale();
     std::printf("PHYSIS field runtime: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;

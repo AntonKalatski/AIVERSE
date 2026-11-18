@@ -358,4 +358,37 @@ inline bool installEditableFromMap(Simulation& sim,const Json& map) {
     sim.world().setResource<FieldRuntimeState>(std::move(registry));
     return true;
 }
+
+// Host-only convenience: convert a fully authored map to the canonical
+// command payload and submit via Simulation's existing command/CommandSink.
+// This DOES NOT apply immediately, and it does not grant network authority.
+// The GameModule must dispatch the chosen command type from applyCommand.
+inline bool submitEditableFieldsFromMap(Simulation& sim,const Json& map,
+                                        std::uint16_t hostCommandType,
+                                        std::uint32_t& scheduledTick,
+                                        std::string* error=nullptr) {
+    const auto* registry=sim.world().resourceConst<FieldRuntimeState>();
+    if(!registry) {
+        if(error) *error="PHYSIS editable field registry not installed";
+        return false;
+    }
+    try {
+        const auto options=optionsFromMap(map);
+        if(!options) {
+            if(error) *error="PHYSIS map is disabled or absent";
+            return false;
+        }
+        const auto desired=parseFieldAssets(map["physis"],*options);
+        FieldEditBatch request{registry->revision,desired};
+        Command command;
+        if(!encodeFieldEditCommand(request,hostCommandType,command,error))
+            return false;
+        scheduledTick=sim.submit(std::move(command));
+        return true;
+    } catch(const std::exception& exception) {
+        if(error) *error=exception.what();
+        return false;
+    }
+}
+
 } // namespace aiverse::physis
