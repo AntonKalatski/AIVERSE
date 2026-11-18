@@ -48,5 +48,34 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
    do **not** imply the legacy RTS/FPS fire/damage stacks have been migrated.
    Document remaining adapters and native test status honestly.
 
+## Physical versus kinematic projectiles
+
+The public `EcsProjectileSystems.h` now also exports
+`<aiverselib/genre/EcsSweepQuerySystems.h>`. Use
+`selectSweptProjectileContact(candidates,origin,displacement,extent,bounds,preferTie)`
+for dynamic-target collision of a moving projectile, with expanded AABB and
+fixed-point nearest contact. A swept endpoint fraction of 1 is a valid hit;
+tie policy is explicit (for example, smallest semantic Entity ID). Reuse this
+primitive rather than reimplementing capsule/swept-box targeting in FPS,
+RTS artillery, ships or ability systems.
+
+The **real FPS programmed-projectile** update in
+`modules/fps/FpsProjectiles.cpp` now calls this shared sweep selector. It
+retains its existing terrain-wall blocking, penetration, on-hit effects and
+spawn sequencing. The programmed projectile's core trajectory and damage
+are still part of the compatibility code; do not claim full ownership
+migration until save/rollback parity tests prove it.
+
+For RTS shots that only need an abstract arrival or homing motion, use
+`AIVERSE::lib_ecs_kinematic_projectiles` and
+`EcsKinematicProjectileSystems.h` instead: no physical collision
+world is required. For instant FPS or RTS beam hits, use the independent
+`AIVERSE::lib_ecs_hitscan_resolution` system. All paths can share
+impact/damage policies; **do not choose by genre name**.
+
+The `ecs_projectile_composition_test` fixture now also exercises
+the shared sweep selector with tie-breaking, expanded extents,
+endpoint hits and no-hit cases. Actual native result remains unverified.
+
 When implementing another mechanic, repeat the same decomposition:
 **components + reusable systems + pure policies + thin project adapters**.
