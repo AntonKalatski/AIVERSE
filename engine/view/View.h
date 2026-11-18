@@ -125,6 +125,14 @@ public:
         return stats_;
     }
 
+    // Precomputed model packets need no animation evaluation or source
+    // registration. This is the canonical synchronous path for host-supplied
+    // poses, baked samples, stage/LOD models and attachments.
+    static void submitModel(render::Renderer3D& renderer,
+                            const render::ModelDraw& draw) {
+        if(draw.model)renderer.drawModel(draw);
+    }
+
     // Call only AFTER update(), before borrowed ModelDraw storage expires.
     // The renderer does not interpret source identity, movement or genre.
     // One draw packet from any host. This is the same renderer pipeline
@@ -144,7 +152,7 @@ public:
             }
         }
         if(!draw.persistentId)draw.persistentId=obj.id;
-        renderer.drawModel(draw);
+        submitModel(renderer,draw);
     }
     void submit(render::Renderer3D& renderer,
                 std::span<const Object> objects) const {

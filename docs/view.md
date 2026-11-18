@@ -179,3 +179,20 @@ game-view host now registers its separate path and
 shoreline presentation passes as outside providers while
 retaining their existing geometry algorithms and order.
 
+### Fully prepared draw packets
+
+Use `aiverse::View::submitModel(renderer, draw)` for a
+precomputed `render::ModelDraw`. Unlike `View::submitOne`,
+this does not read animation ECS or require a source ID.
+It forwards existing staged/LOD model variants, baked samples,
+per-node procedural poses, attachments, materials and flags
+through the same Renderer3D model pipeline.
+
+The old game-side draw implementation now forwards **all**
+base model and attachment ModelDraw submissions this way,
+not only the simple AnimationGraph subset. Complex authored
+animation still runs inside the legacy host adapter until
+its state is migrated; it is **not** recomputed by the View.
+Model and material memory is borrowed only for the synchronous
+submission.
+

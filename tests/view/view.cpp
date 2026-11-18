@@ -8,6 +8,9 @@ namespace aiverse::platform {
 bool readContentFile(const std::string&,std::string&){return false;}
 }
 int main() {
+    static_assert(std::is_same_v<
+        decltype(&View::submitModel),
+        void(*)(Renderer3D&,const ModelDraw&)>);
     static_assert(std::is_same_v<Camera3D,RTSCamera>,
                   "legacy camera alias must remain ABI-compatible");
     Model m;

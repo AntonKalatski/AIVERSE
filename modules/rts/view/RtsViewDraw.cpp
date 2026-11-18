@@ -226,7 +226,10 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         packet.graph=ch.graph;
         genericView_->submitOne(r,packet);
     } else {
-        r.drawModel(d);
+        // All other model classes (stages, LODs, baked skinning and
+        // procedurally posed objects) submit through the SAME generic
+        // View path, without running a second AnimationGraph.
+        ::aiverse::View::submitModel(r,d);
     }
 
     // ---- attachments on sockets (weapons, cargo, banners)
@@ -248,7 +251,7 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
             ad.nodeWorld = nullptr; ad.pose = nullptr; ad.baked = nullptr; ad.variant = -1; ad.nodeMaterial = nullptr;
             const mat4 socket = at.node >= 0 && size_t(at.node) < st.world.size() ? st.world[size_t(at.node)] : mat4{};
             ad.world = st.drawn * socket * at.local;
-            r.drawModel(ad);
+            ::aiverse::View::submitModel(r,ad);
         }
         // ---- effect anchors
         if (!tintOverride)
