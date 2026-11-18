@@ -1347,3 +1347,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Documentation SHA: `d2bcde0fc629394ca38c64e766c2a6dac688d1e2`.
 - Updated `AGENTS.md` with `AIVERSE::lib_ecs_hitscan_resolution` and `AIVERSE::lib_ecs_hitscan`, their public headers/skills, and the new cross-host `ecs_hitscan_resolution_test` combining fire intents with the actual shared `DamageQueue` and `DamageResolutionSystem`. Reinforces that FPS synchronous multi-hit/rewind/armor order cannot be changed without golden tests and network/checksum equivalence.
 - Verification: documentation commit, no native game or library test run. The user requested continued implementation; remaining primary gate is native compile and migration of real FPS execution without reordering damage.
+
+
+### 2026-11-18 — Shared integer health commit for ECS damage resolution
+- Implementation SHA: `e9990503283b3bfe8ead7994a387f15f8551007b`.
+- `libraries/include/aiverselib/genre/EcsDamageSystems.h` adds `applyIntegerHitPointDamage(int32_t&,int32_t)`, an immediate, allocation-free deterministic HP update after armor/faction/shield and other host policies are already applied. `addDamageResolutionSystem` now calls the same primitive. Handles nonpositive damage/current without mutation and large damage without signed subtraction overflow.
+- Verification: GitHub source edit only; **native compiler, CTest, real FPS/RTS parity NOT run**. Next: adopt same helper in live FPS `damage` after knockdown resolution with the old event ordering unchanged; add edge-case regression and run FPS save/rollback checks.
