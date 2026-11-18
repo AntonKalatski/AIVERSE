@@ -117,6 +117,43 @@ inline ecfg::Asset rtsReference() {
     id=1;
     for(auto& mapping:pointer.mappings) mapping.id=id++;
     result.contexts.push_back({std::move(pointer),0,true});
+
+    // Disabled in regular RTS. The client enables this context only for
+    // top-down possession, keeping every existing RTS mapping ID stable.
+    result.actions.push_back({"TopDownMove",ei::ValueType::Axis2D});
+    result.actions.push_back({"TopDownFire",ei::ValueType::Boolean});
+    result.actions.push_back({"TopDownAim",ei::ValueType::Boolean});
+    result.actions.push_back({"TopDownEnter",ei::ValueType::Boolean});
+    result.actions.push_back({"TopDownWeaponNext",ei::ValueType::Boolean});
+    result.actions.push_back({"TopDownWeaponPrev",ei::ValueType::Boolean});
+    for(int slot=1;slot<=9;++slot)
+        result.actions.push_back({"TopDownWeapon"+std::to_string(slot),ei::ValueType::Boolean});
+    ei::MappingContext topdown{"RTS.TopDown"};
+    const auto move=[&](Key key,std::vector<ei::Modifier> mods) {
+        topdown.bind("TopDownMove",{ei::Device::Keyboard,int(key)},std::move(mods),{},false);
+    };
+    for(const auto key:{Key::W,Key::Up})move(key,{ei::Modifier::swapXY()});
+    for(const auto key:{Key::S,Key::Down})move(key,{ei::Modifier::swapXY(),ei::Modifier::negate()});
+    for(const auto key:{Key::A,Key::Left})move(key,{ei::Modifier::negate()});
+    for(const auto key:{Key::D,Key::Right})move(key,{});
+    topdown.bind("TopDownFire",{ei::Device::Keyboard,int(Key::Space)},{},{},false);
+    topdown.bind("TopDownFire",{ei::Device::MouseButton,1},{},{},false);
+    topdown.bind("TopDownAim",{ei::Device::MouseButton,0},{},{},false);
+    for(const auto key:{Key::F,Key::Enter})
+        topdown.bind("TopDownEnter",{ei::Device::Keyboard,int(key)},{},
+                     {ei::Trigger::pressed()},false);
+    for(const auto key:{Key::X,Key::Tab})
+        topdown.bind("TopDownWeaponNext",{ei::Device::Keyboard,int(key)},{},
+                     {ei::Trigger::pressed()},false);
+    topdown.bind("TopDownWeaponPrev",{ei::Device::Keyboard,int(Key::Z)},{},
+                 {ei::Trigger::pressed()},false);
+    for(int slot=1;slot<=9;++slot)
+        topdown.bind("TopDownWeapon"+std::to_string(slot),
+                     {ei::Device::Keyboard,int(Key::Num1)+slot-1},{},
+                     {ei::Trigger::pressed()},false);
+    id=1;
+    for(auto& mapping:topdown.mappings) mapping.id=id++;
+    result.contexts.push_back({std::move(topdown),100,false});
     return result;
 }
 } // namespace aiverse::platform::enhanced_presets
