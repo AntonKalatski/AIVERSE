@@ -5,12 +5,14 @@
 #pragma once
 
 #include "engine/render/TerraWeaveModelAdapter.h"
+#include "engine/render/TerraWeaveArborBillboard.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
 #include <cmath>
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -22,6 +24,9 @@ namespace aiverse::terraweave {
 struct ForestRenderOriginCm {
     int64_t x = 0, y = 0, z = 0;
 };
+struct ForestCameraCm {
+    int64_t x = 0, z = 0;
+};
 
 class ArborForestAdapter {
 public:
@@ -32,8 +37,12 @@ public:
                       ArborMeshSettings mesh = {}) {
         if (profile.speciesId == 0 || models_.contains(profile.speciesId))
             throw std::invalid_argument("TerraWeave duplicate/zero forest species");
-        auto model = makeArborModel(profile, meshSeed, mesh);
+        BranchLodSettings settings;
+        settings.mesh = mesh;
+        auto model = makeArborBranchLodModel(profile, meshSeed, settings);
+        auto impostor = makeArborBillboardModel(profile, meshSeed);
         models_.emplace(profile.speciesId, std::move(model));
+        billboards_.emplace(profile.speciesId, std::move(impostor));
     }
 
     size_t prototypeCount() const { return models_.size(); }
@@ -42,16 +51,24 @@ public:
         return it == models_.end() ? nullptr : it->second.get();
     }
 
+    render::Model* billboardPrototype(uint32_t speciesId) const {
+        const auto it = billboards_.find(speciesId);
+        return it == billboards_.end() ? nullptr : it->second.get();
+    }
+
     // Prepare/upload once on the render thread. Keep the same adapter alive
     // for every scene frame and releaseModels before destroying the gfx device.
     bool uploadModels(gfx::Device& device) {
-        for (auto& [id, model] : models_) {
-            (void)id;
-            if (model->vb.valid() && model->ib.valid()) continue;
-            render::prepareModelUpload(*model);
-            if (!render::uploadModel(device, *model)) return false;
-        }
-        return true;
+        const auto upload = [&](auto& registry) {
+            for (auto& [id, model] : registry) {
+                (void)id;
+                if (model->vb.valid() && model->ib.valid()) continue;
+                render::prepareModelUpload(*model);
+                if (!render::uploadModel(device, *model)) return false;
+            }
+            return true;
+        };
+        return upload(models_) && upload(billboards_);
     }
 
     void releaseModels(gfx::Device& device) {
@@ -59,23 +76,29 @@ public:
             (void)id;
             render::releaseModel(device, *model);
         }
+        for (auto& [id, model] : billboards_) {
+            (void)id;
+            render::releaseModel(device, *model);
+        }
     }
 
     // Does not allocate a per-instance model or a second render pipeline.
     // Use buildFloraBatches(...) for stable filtering, thinning and ordering;
-    // Renderer3D then chooses the 3 geometric LODs by projected pixel size.
-    // An Impostor batch currently falls back to that model's lowest mesh,
-    // until an actual billboard texture/LOD is implemented.
+    // Renderer3D selects each branch's geometry LOD by its projected size.
+    // Far Impostor batches use one camera-facing alpha-masked full-tree quad.
     template<class Emit>
     void forEachDraw(const std::vector<FloraBatch>& batches,
-                     ForestRenderOriginCm origin, Emit&& emit) const {
+                     ForestRenderOriginCm origin, Emit&& emit,
+                     std::optional<ForestCameraCm> camera = std::nullopt) const {
         const auto inside = [](int64_t v) {
             return v >= -kWorldLimitCm && v <= kWorldLimitCm;
         };
         if (!inside(origin.x) || !inside(origin.y) || !inside(origin.z))
             throw std::out_of_range("TerraWeave forest render origin");
         for (const FloraBatch& batch : batches) {
-            const render::Model* model = prototype(batch.speciesId);
+            const render::Model* model = batch.lod == TreeLOD::Impostor
+                ? billboardPrototype(batch.speciesId)
+                : prototype(batch.speciesId);
             if (!model) throw std::invalid_argument("TerraWeave unregistered forest species");
             for (const FoliageInstance& instance : batch.instances) {
                 if (instance.speciesId != batch.speciesId ||
@@ -93,8 +116,10 @@ public:
                     float(int64_t(instance.heightCm) - origin.y) * 0.01f,
                     float(instance.zCm - origin.z) * 0.01f
                 };
-                const float yaw = float(instance.yawMilliDegrees) *
-                    0.000017453292519943295f;
+                const float yaw = batch.lod == TreeLOD::Impostor
+                    ? std::atan2(float((camera ? camera->x : origin.x) - instance.xCm),
+                                 float((camera ? camera->z : origin.z) - instance.zCm))
+                    : float(instance.yawMilliDegrees) * 0.000017453292519943295f;
                 const float scale = float(instance.scalePermille) * 0.001f;
                 render::ModelDraw draw;
                 draw.model = model;
@@ -117,13 +142,21 @@ public:
     // drawModel uses the engine's normal RHI, instancing, shadow and LOD paths.
     void submit(render::Renderer3D& renderer, const std::vector<FloraBatch>& batches,
                 ForestRenderOriginCm origin = {}) const {
+        const auto camera = renderer.cameraPos();
+        if (!std::isfinite(camera.x) || !std::isfinite(camera.z))
+            throw std::invalid_argument("TerraWeave invalid camera coordinates");
+        const ForestCameraCm cameraCm{
+            origin.x + static_cast<int64_t>(std::llround(double(camera.x) * 100.0)),
+            origin.z + static_cast<int64_t>(std::llround(double(camera.z) * 100.0))
+        };
         forEachDraw(batches, origin, [&](const render::ModelDraw& draw) {
             renderer.drawModel(draw);
-        });
+        }, cameraCm);
     }
 
 private:
     std::map<uint32_t, std::unique_ptr<render::Model>> models_;
+    std::map<uint32_t, std::unique_ptr<render::Model>> billboards_;
 };
 
 } // namespace aiverse::terraweave
