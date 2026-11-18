@@ -606,7 +606,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 dev.setUniforms(0, uniforms, bytes);
                 dev.setTexture(0, input0);
                 dev.setTexture(1, input1);
-                dev.setTexture(2, input2);
+                if (pipeline == pipes_[kMotionVectors])
+                    dev.setTexture(2, input2); // blur shader declares only 2 slots
                 dev.draw(3);
                 dev.endPass();
                 ++stats_.passes;
