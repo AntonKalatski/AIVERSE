@@ -982,3 +982,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `modules/rts/RtsEconomy.cpp`: within the real `sysEconomy` ECS `w.each<Unit,Owner>` loop, health regen and energy regen now call `lib::genre::stepFixedResourceRegeneration` instead of duplicating fixed-point arithmetic; `Unit.hp`/`Unit.energy` remain the sole authoritative ECS fields. Preserved original conditions, `Stat::MaxHp` cap, `Stat::EnergyRegen` modifier, multiplication order, stage timing and save/replay layout. No separate copy/mirror or genre-specific fork of the calculation.
 - Verification: source change committed. **Native build, RTS scenario checksums and lockstep/rollback comparisons not executed**; those remain required before declaring parity. This is real shared-policy adoption inside an existing RTS ECS system, **not full RTS mechanic extraction**.
 - Next: add focused pure regression test for rates, caps, positive/negative values, and continue migrating real combat/projectile paths after native validation.
+
+### 2026-11-18 — Kinematic CMake registration
+- Implementation SHA: `19e4cae29c8e6cb36aa5bfd847b163287c8af978`.
+- Changed `CMakeLists.txt`: registered `aiverse_ecs_kinematic_projectile_test` and CTest `ecs_kinematic_projectile_test`, linked to `aiverse_engine`, `aiverse_world` and `AIVERSE::libraries` without RTS/FPS gameplay modules.
+- Verification: source commit only; no CMake configure/build/CTest run.
+- Next: wire standalone runner and run native build; check compile errors and test behavior.
