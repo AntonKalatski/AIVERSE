@@ -262,6 +262,11 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                     int64_t x0,int64_t z0,int64_t x1,int64_t z1){
                 return heights->coversRect(x0,z0,x1,z1);
             };
+            surface->collectNearTerrainRects=[heights](
+                    terraweave::RectCm area,
+                    std::vector<terraweave::RectCm>& rectangles) {
+                return heights->coveredRectsIn(area,rectangles,1024);
+            };
             if(mask)surface->allowsCanopyAt=[mask](int64_t x,int64_t z){
                 return !mask->excludes(x,z);
             };
