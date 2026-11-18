@@ -1416,3 +1416,48 @@ before calling this stage validated.
   and keep legacy game adapters compatibility-only.
   Follow each code commit with Stage 52 handoff.
 
+## Stage 52 — universal mesh packets and enforced engine View genre boundary (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  PR #22 Draft, base `feature/universal-entity-inspector-fps`.
+- **Code SHA:** `0327624c8a56d013b5e1e82b8dd8e0a1aba71192`.
+- **Changed files:** `engine/view/View.h`, `tests/view/view.cpp`,
+  new `tools/view/check_view_dependencies.py`,
+  root `CMakeLists.txt`.
+- **Architecture/API:** `aiverse::view::MeshObject` is a
+  generic presentation packet for an arbitrary pre-uploaded
+  `render::Mesh`, affine matrix, color and flags. `View::submitMesh`
+  and `submitMeshes` forward these packets through the existing
+  Renderer3D primitive path, matching the generic model API.
+  A host may use the same View for non-skinned geometry and
+  animated entities without tying it to any genre.
+- **Scheduler:** default View construction now uses
+  `MotionWeaveWorkerPool::recommendedWorkers()` (on platforms
+  with supported threads). Workers remain lazily constructed
+  only when enough Graph objects exist, so ordinary static
+  scenes do not spawn threads.
+- **Architecture guard:** optional CTest `view_genre_boundary`
+  scans all `engine/view/*.h|*.cpp` sources and rejects direct
+  include paths or type references to FPS/RTS/game modules.
+  Host adapters may depend on the View, never reverse.
+- **Compatibility:** no removal of legacy `game::RtsView`,
+  no changes to gameplay/net/save schemas or existing render
+  shaders/renderer contracts. Static and generic mesh packets
+  borrow host-owned GPU buffers; ensure lifetime outlives draw.
+- **Tests:** updated deferred `view_genre_independent` fixture
+  to include mesh packet data; new guard registered when
+  Python3 interpreter is available. **NOT RUN** per user
+  instruction, including graphics/TSAN/CMake/CTest.
+- **Remaining work:** complex RTS terrain/fog/lighting and
+  scene rules still live in `modules/rts/view`; a complete
+  rename to generic View and retirement of compatibility
+  wrappers is **NOT** finished. The next stage should
+  extract engine-level camera/environment/layer data
+  and adapt one more existing host rendering path, without
+  defining any game-specific type inside `engine/view`.
+- **Next specific step:** inspect `RtsViewDraw.cpp` and
+  `apps/fps/client.cpp` for remaining immediate primitive
+  submission and convert reusable packets to `View::submitMesh`,
+  preserving batching, shadow and model staging. Append
+  Stage 53 separately after code implementation.
+
