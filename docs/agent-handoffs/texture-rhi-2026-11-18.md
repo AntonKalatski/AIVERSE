@@ -5289,3 +5289,18 @@ C++/libktx compile, CTest, HDR GPU output NOT RUN.
 Next: check exact libc/SDK ABI on Linux/macOS/Windows
 and add real UASTC_HDR texture fixture when a licensed
 sample becomes available.
+
+## Stage 8Q — UASTC_HDR agent guidance and limits (2026-11-18)
+
+Documentation commit: e984b1b60773fb17d3aeb05e808accd700515814.
+Files: docs/texture-rhi.md, skills/visuals/aiverse-texture-rhi/SKILL.md, AGENTS.md.
+Record uploadKtx2UastcHdrWithLibktx as optional system
+libktx KTX_TTF_RGBA_HALF path, with all mips, cube/array/
+volume slices represented by linear RGBA16F RHI resources.
+Warn that native BC6H/ASTC_HDR compressed targets remain
+unsupported and that production HDR fixtures/real GPU tests
+are not executed. Preserve default dependency-free import.
+No runtime/ECS/network changes. Source docs GitHub commit
+succeeded, native skill audit NOT RUN, GPU tests NOT RUN.
+Next: run CI/test on native SDKs and verify half-pixel fidelity
+and full mip topology. Keep PR #21 Draft until verified.
