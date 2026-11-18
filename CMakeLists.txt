@@ -2160,3 +2160,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME vfx_gpu_backend COMMAND aiverse_vfx_gpu_tests)
     set_tests_properties(vfx_gpu_backend PROPERTIES LABELS "SpectraFX")
 endif()
+
+# PHYSIS authoritative environment simulation is independent of all genre modules.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_core_test tests/physis_core_test.cpp)
+    target_link_libraries(aiverse_physis_core_test PRIVATE aiverse_engine)
+    add_test(NAME physis_core COMMAND aiverse_physis_core_test)
+    set_tests_properties(physis_core PROPERTIES LABELS "PHYSIS")
+endif()
