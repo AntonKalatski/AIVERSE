@@ -673,3 +673,49 @@ trees using standard renderer mechanisms after checking material
 semantics. Implement an opt-in runtime forest-scene host that owns
 persistent prototypes, bounded placement chunks and upload lifecycle.
 Capture screenshot/performance once the user requests tests.
+
+## Stage 3b — optional desktop editor integration regression target (COMMITTED; NOT RUN)
+
+**Branch:** `feature/terraweave` / PR #24 Draft.
+**Commits:**
+- `add07dc38341b2ef539bc61cec5b9e7d0ab79397`:
+  `skills/world/aiverse-terraweave/SKILL.md` documents safe
+  `terraweave_preview` / `terraweave_generate` agent workflow.
+- `7393938e914ee647bf2b57b9e9d9395ebffb8fe9`:
+  `tests/terraweave_editor_test.cpp` constructs the actual
+  `Workspace` registry and `MapDoc`, tests preview without state
+  mutation, generation, default refusal to overwrite, persistent
+  `map.extra.terraweave` metadata, Undo/Redo, and detail/splat
+  replacement with restoration.
+- `524a6b4da21eb9d774ba722d45ead7ced83226c6`:
+  `CMakeLists.txt` adds `aiverse_terraweave_editor_test` / CTest
+  `terraweave_editor` **only if `aiverse_editor_core` is built**.
+  Requires desktop `AIVERSE_BUILD_TOOLS=ON` or
+  `AIVERSE_BUILD_EDITOR=ON`; intentionally not included in isolated
+  six-test CPU-only workflow.
+- `a0691a2790bb2960234bdc55dc1979e383d2f3e4`:
+  updated the integration test to call with source `editor` to
+  avoid writing `logs/editor.log` during test execution.
+
+**Verification:** committed to GitHub. No local compilation or
+CTest/editor runtime was executed/observed, so status is UNVERIFIED.
+Check compilation before claiming integration works. Run:
+```sh
+cmake -S . -B build/terraweave-editor-test -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_TOOLS=ON -DAIVERSE_BUILD_EDITOR=OFF \
+  -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_SERVER=OFF \
+  -DAIVERSE_BUILD_HEADLESS=OFF
+cmake --build build/terraweave-editor-test --target \
+  aiverse_terraweave_editor_test --parallel 2
+ctest --test-dir build/terraweave-editor-test --output-on-failure \
+  -R '^terraweave_editor$'
+```
+
+**Next step:** run the tests on macOS/Clang (primary desktop) and
+Linux/GCC, fix any API or CMake linkage issues; verify a real editor
+can generate, Undo, save and reload with a scene screenshot.
+Then connect opt-in runtime forest preview using the already-present
+`ArborForestAdapter` and reuse `engine/world/AsyncChunkStream.h`
+rather than introducing a duplicate chunk job scheduler. For each
+later phase update this handoff including exact tests and commits.
