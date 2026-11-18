@@ -1771,3 +1771,64 @@ for authored modifications, avoiding full CPU atlas re-bake.
   rebuild only dirty atlas tiles and terrain vertices, then
   connect it to `HorizonScene::setSurfaceSources` and WorldScene
   changed tile bounds. Preserve prior GPU model until updated.
+
+
+## Stage 10d — partial Horizon CPU bake and authored tile invalidation (CODE COMMITTED; NOT TESTED)
+
+**Branch:** `feature/terraweave`, Draft PR #24.
+**Commits/files:**
+- `e287a8324d9c815a7ce8a88de819e6961103a203`:
+  `engine/world/TerraWeaveHorizon.h`, new optional
+  `bakeHorizon(..., source, previous, edited)` parameters.
+  Compatible old bakes reuse the RGBA atlas and unchanged
+  cluster records by stable `(x,z,tileSize)` identity,
+  clearing only edited atlas slots and rewriting affected
+  terrain vertices; if the old bake doesn't match the camera
+  region, do a full deterministic bake. Dirty bounds are
+  checked and nearby cluster samples are conservatively
+  considered affected.
+- `3b0d895b2d84e5ad9f925b4dadc6e23f48f76ee6`:
+  `engine/render/TerraWeaveHorizonScene.h` captures a
+  `shared_ptr<const HorizonBake>` baseline, region edits
+  and immutable source revisions; background jobs use
+  the partial CPU bake when eligible. Stale authored
+  static archives are bypassed during localized updates.
+  Current GPU model remains until the replacement uploads.
+  `maxCachedRegions=0` avoids retaining the prior CPU bake.
+  If a changed area is outside current horizon footprint,
+  the model stays resident rather than immediately rebaking.
+- `4ad8136bed69cf83013753747f5ec5e386ffa61b`:
+  `engine/world/WorldScene.cpp` records changed authored
+  heightfield/obstacle cells from worker publish/unload,
+  converts them into bounded world-centimetre half-open
+  rectangles and publishes those to Horizon alongside the
+  immutable authored landscape/mask snapshot.
+- Stage description and API contract added to
+  `docs/terrain/TERRAWEAVE.md`.
+
+**Changed behavior:** No per-tree ECS entities or new GPU
+renderer. Near forest still uses revision-safe resident
+chunks, while Horizon can now avoid full CPU canopy/height
+re-evaluation for small landscape edits. A full combined
+`render::Model`/texture upload is still required; no
+partial GPU update is claimed. TWH2 stable atlas slots are
+a prerequisite, so generator archive version was bumped in
+Stage 10c.
+
+**Testing:** NOT RUN by explicit user instruction.
+**Separate testing agent's acceptance:** complete Clang/GCC
+compiles, CTest and negative/positive region keys; compare
+full bake vs partial bake byte-for-byte for same source;
+verify edited road/water polygons, repeated dirty rectangles,
+terrain vertex boundary normals and no-change updates;
+teleport/cancel/resume jobs, archive source-hash invalidation,
+GPU rollover and FPS/RTS replay neutrality; retain actual
+logs/measurements/screenshots.
+
+**Next function implementation:** avoid re-uploading the
+entire atlas for small edits using existing RHI texture
+subregion API (if supported across Metal/GL/Vulkan), or
+introduce bounded tile paging with compatibility on
+WebGL/mobile; do NOT fork graphics backend. Another
+potential improvement is incremental tree rendering in
+the existing editor and static-world asset bake integration.
