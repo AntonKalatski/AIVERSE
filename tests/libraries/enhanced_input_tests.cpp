@@ -134,5 +134,28 @@ int main() {
     CHECK(near(analog.state("MouseX")->value.x,0.3f));
     CHECK(has(analog.update(0.016f),"MouseX",Phase::Completed));
 
+    // Raw C++ context registrations must reject bad actions/duplicate explicit IDs;
+    // auto IDs must not collide with authored IDs.
+    InputSystem registrations;
+    CHECK(registrations.defineAction({"Use",ValueType::Boolean}));
+    MappingContext repeated{"Repeated"};
+    repeated.bind("Use",{Device::Keyboard,90});
+    repeated.bind("Use",{Device::Keyboard,91});
+    repeated.mappings[0].id = 42;
+    repeated.mappings[1].id = 42;
+    CHECK(!registrations.registerContext(repeated));
+    CHECK(registrations.context("Repeated") == nullptr);
+    MappingContext badAction{"BadAction"};
+    badAction.bind("Missing",{Device::Keyboard,90});
+    CHECK(!registrations.registerContext(badAction));
+    MappingContext assigned{"Assigned"};
+    assigned.bind("Use",{Device::Keyboard,90});
+    assigned.bind("Use",{Device::Keyboard,91});
+    assigned.mappings[0].id = 1;
+    CHECK(registrations.registerContext(assigned));
+    const auto* registered = registrations.context("Assigned");
+    CHECK(registered && registered->mappings[0].id == 1 &&
+          registered->mappings[1].id == 2);
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
