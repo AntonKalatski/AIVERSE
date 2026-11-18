@@ -17,6 +17,7 @@ int main() {
     src.nodes[1].t={0,1,0};src.nodes[2].t={0,1,0};
     dst.nodes[1].t={0,2,0};dst.nodes[2].t={0,2,0};
     dst.nodes[1].r=quat::axisAngle({0,1,0},0.5f);
+    dst.nodes[2].r=quat::axisAngle({0,1,0},0.25f);
     auto sa=HumanoidAvatar::compile(src,{
         {HumanoidBone::Hips,"root/Hips"},
         {HumanoidBone::Head,"root/Hips/Head"}});
@@ -30,7 +31,7 @@ int main() {
     retarget.evaluate(in,out);
     assert(out.size()==3);
     assert(std::abs(out[1].t.x-0.3f)<.001f); // no foot rig: neutral scale 1
-    assert(std::abs(dot(out[2].r,in[2].r))<.999f); // bind axes differ
+    assert(std::abs(dot(out[2].r,qnormalize(dst.nodes[2].r*in[2].r)))>.999f); // preserves target bind orientation
     Pose bindDst;bindPose(dst,bindDst);
     bindPose(src,in);retarget.evaluate(in,out);
     assert(std::abs(dot(out[1].r,bindDst[1].r))>.999f);

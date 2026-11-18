@@ -2,6 +2,7 @@
 // Native C++ policy shared by RPG/FPS/RTS; no Unity muscle curves are assumed.
 #pragma once
 #include "GenericRetarget.h"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <map>
