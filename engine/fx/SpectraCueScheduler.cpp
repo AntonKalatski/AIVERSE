@@ -134,10 +134,10 @@ size_t CueScheduler::flush() {
         Queued item=std::move(queue_.front());
         queue_.pop_front();
         ++attempts;
-        const fx::FxHandle handle=world_.play(item.effectId,item.cue.position,
-            item.cue.direction,item.cue.scale,item.cue.tint);
+        const fx::FxHandle handle=world_.playWithProgramParameters(
+            item.effectId,item.cue.position,item.cue.direction,
+            item.cue.scale,item.cue.tint,item.cue.programParams);
         if(handle.valid()) {
-            writeParams(world_,handle,item.cue.programParams,item.cue.programParamMask,false);
             trackOneShot(handle);
             ++spawned;
             ++stats_.emittedCues;
@@ -213,13 +213,13 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
             ++stats_.droppedBudget;
             continue;
         }
-        fx::FxHandle handle=world_.play(effect->second.id,src.position,
-                                       src.direction,src.scale);
+        fx::FxHandle handle=world_.playWithProgramParameters(
+            effect->second.id,src.position,src.direction,src.scale,
+            {1,1,1,1},src.programParams);
         if(!handle.valid()) {
             ++stats_.failedSpawns;
             continue;
         }
-        writeParams(world_,handle,src.programParams,src.programParamMask,false);
         Active active{handle,effect->second.id,src.effect,
                       src.revision,src.scale,src.killOnDetach};
         active.programParams=src.programParams;
