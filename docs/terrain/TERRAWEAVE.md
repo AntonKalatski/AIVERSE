@@ -225,3 +225,44 @@ not to impose a practical memory-residency or render-distance budget.
 Do not remove these guards when introducing a streamed world. Large-world
 support additionally needs camera-relative rendering, origin rebasing and
 bounded chunk residency, which are not yet implemented.
+
+## Stage 2d: standard AIVERSE render::Model adapter
+
+`engine/render/TerraWeaveModelAdapter.h` is a thin render-only
+adapter into the pre-existing `render::Model` and its
+`prepareModelUpload` / `uploadModel(gfx::Device&, Model&)` path:
+
+```cpp
+#include "engine/render/TerraWeaveModelAdapter.h"
+auto tree = aiverse::terraweave::makeArborModel(profile, instance.key);
+// On the render-owning thread:
+aiverse::render::prepareModelUpload(*tree);
+aiverse::render::uploadModel(device, *tree);
+```
+
+The adapter builds explicit High/Medium/Low mesh variants in a single
+`render::Model`, with mesh-0 LOD switches at 128 and 32 projected pixels.
+It uses standard `render::ModelVertex`, `Primitive`, `Material`,
+`Node` and `Model::finalize()`; positions convert from integer cm to
+floating-point metres. Existing model renderer infrastructure owns the
+shaders, LOD fade, frustum culling, backend upload and instanced draws.
+
+The default bark and leaf materials have simple untextured PBR colours.
+Leaf cards are **opaque rectangles** until a caller binds a real
+alpha-cutout foliage texture and sets `AlphaMode::Mask`; do not
+misrepresent this as production-quality foliage. Billboard atlas
+generation, material/texture registry, wind deformation and actual
+scene draw submission remain unfinished.
+
+`tests/terraweave_model_test.cpp` checks three LOD meshes,
+range/index correctness, bounds, and stable topology. It links
+`aiverse_models`; the target `aiverse_terraweave_model_test` and
+CTest `terraweave_model` are registered in CMake.
+All four TerraWeave test targets explicitly undefine `NDEBUG`
+on GCC/Clang so their assertions execute in Release builds.
+
+Important: using `makeArborModel` per individual tree is not the
+final scalable forest strategy. Generate a bounded catalogue of
+species/variant prototypes and reuse meshes across instance transforms.
+`buildFloraBatches` already groups placement data; the next renderer
+adapter must submit these groups through existing model instancing.
