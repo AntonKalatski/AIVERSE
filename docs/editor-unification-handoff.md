@@ -1511,3 +1511,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `0ff656f20f961dc0d4cd1d76faa206fcc1a15de5`.
 - Extended existing `tests/ecs_projectile_composition_test.cpp` (registered for ShooterWeaponSource and StrategyTurretSource hosts) to call `exerciseSharedSweptContacts` before its flight/snapshot checks. The new exception-based assertions cover deterministic nearest hit with out-of-order target IDs, exact tie preference for smaller semantic ID, endpoint contact at fraction=1, expansion of target AABB by projectile radius/extent and a no-hit case. It uses the public collision selector exported from `EcsProjectileSystems.h`, with no reference to FPS or RTS gameplay module implementations.
 - Verification: GitHub source commit only. CTest/standalone suite execution not performed; expected 0.3, 1.0 and 0.2 fixed-point collision fractions must be confirmed against native `world::intersect` implementation. Next: update the public projectile AI skill and package manifest, check native builds and real FPS projectile-program parity.
+
+
+### 2026-11-18 — Physical projectile sweep reuse documented for agents
+- Implementation/documentation SHA: `ad99e919bcb367f50fbfd761abf7f82a9311c047`.
+- Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` to document `selectSweptProjectileContact` from public `EcsSweepQuerySystems.h`, exact endpoint/tie/extent requirements, real FPS programmed-projectile adoption, and separation from independent no-physics kinematic and instantaneous hitscan systems. Points agents to `ecs_projectile_composition_test` regression and reminds them not to claim native passes without execution.
+- No new gameplay code or wire format in this commit; test/build state unchanged.
