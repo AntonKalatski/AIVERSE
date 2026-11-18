@@ -459,6 +459,13 @@ void main() {
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
     vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V,
                              u_params.x < -1.5 ? 0.0 : u_params.y);   // planar reflection (water, High)
+    if (u_params.y >= 0.85 && (v_wpos.y >= 0.04 || u_params.x < -0.5) && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
+        vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
+        float hit;
+        vec3 rc = ssrWater(v_wpos, nn, V, hit);
+        float fres = (v_wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
+        outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
+    }
     // NEREID optics: sample the existing opaque colour/depth capture only.
     // u_color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     // Captured background depth must be below the water plane.
@@ -497,13 +504,6 @@ void main() {
                 }
             }
         }
-    }
-    if (u_params.y >= 0.85 && (v_wpos.y >= 0.04 || u_params.x < -0.5) && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
-        vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
-        float hit;
-        vec3 rc = ssrWater(v_wpos, nn, V, hit);
-        float fres = (v_wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
-        outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
     }
     o_color = vec4(outc, albedo.a);
 }
@@ -592,6 +592,13 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col),
                                in.wpos, n, V, u.params.x < -1.5 ? 0.0 : u.params.y);
+    if (u.params.y >= 0.85 && (in.wpos.y >= 0.04 || u.params.x < -0.5) && f.trace2.w > 0.5) {
+        float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
+        float hit;
+        float3 rc = ssrWater(f, tex4, s4, tex5, s5, in.wpos, nn, V, hit);
+        float fres = (in.wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
+        outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
+    }
     // NEREID optics: share captured opaque tex4/tex5 with SSR, no feedback.
     // u.color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
     if (u.params.x < -0.5 && f.trace2.w > 0.5 &&
@@ -627,13 +634,6 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                 }
             }
         }
-    }
-    if (u.params.y >= 0.85 && (in.wpos.y >= 0.04 || u.params.x < -0.5) && f.trace2.w > 0.5) {
-        float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
-        float hit;
-        float3 rc = ssrWater(f, tex4, s4, tex5, s5, in.wpos, nn, V, hit);
-        float fres = (in.wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
-        outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
     }
     return float4(outc, albedo.a);
 }
