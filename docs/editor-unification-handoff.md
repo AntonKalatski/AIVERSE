@@ -1100,3 +1100,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - This reduces duplicated impact ordering in live gameplay without introducing a second ECS state owner or delaying damage to another system barrier. It is a reusable ECS policy called from the existing RTS ECS tick, **not** yet a separately scheduled universal damage system. The generic `HitPointsComponent` uses integer HP and cannot naively replace RTS fixed-point/detailed `dealDamage`.
 - Verification: GitHub source commit only, **not built/tested**. Mandatory parity cases: moving targets, direct kills, splash team filters, onHit payload sequencing, shield and status hooks, save/checksum/replay, editor and network rollback.
 - Next: exercise this policy with independent host callback-order tests, publish reusable skill/catalog, run CI when available, and only then consider full separate commit system behind parity gate.
+
+
+### 2026-11-18 — Regression source for shared ordered ECS impact dispatch
+- Implementation SHA: `1cc7d9ba1fbe9de60b40ff8dd580fcc60e876958`.
+- Extended `tests/ecs_kinematic_projectile_test.cpp` (already registered in CTest and standalone ECS suite) to include `EcsOrderedImpactSystems.h` and exercise `resolveOrderedProjectileImpact`. Fixture constructs actual ECS Entity handles, records callback order `direct, onHit, spatialQuery, splashEnemyA, splashEnemyB`, skips the direct target in the splash query, filters allied candidates, checks direct damage happens before splash, and confirms zero-splash impacts never run the spatial query. Existing cross-host motion and rollback tests remain.
+- Verification: source committed in GitHub only. No native compiler / CTest run; assertions use `check` with exceptions so they are active in Release. The scenario covers **policy dispatch semantics**, not full RTS damage hook integration.
+- Next: publish this API in the native library catalog/AI skill, and obtain native build plus gameplay/rollback parity results.
