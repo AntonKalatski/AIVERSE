@@ -55,10 +55,21 @@ PrismaVolume one(const Json& j, const std::string& fallback, std::vector<std::st
         v.priority = static_cast<int>(n);
     }
     if (j.has("layerMask")) {
-        const auto n = j["layerMask"].integer(-1);
-        if (!j["layerMask"].isNumber() || n < 0 || uint64_t(n) > std::numeric_limits<uint32_t>::max())
+        // Json::integer() uses simulation Fixed and can overflow 0xffffffff.
+        // Read the authored integer literal instead; this is presentation-only data.
+        if (!j["layerMask"].isNumber())
             throw std::runtime_error("layerMask must be unsigned 32-bit integer");
-        v.layerMask = static_cast<uint32_t>(n);
+        const std::string literal = j["layerMask"].numberLiteral();
+        if (literal.empty()) throw std::runtime_error("layerMask must not be empty");
+        uint64_t mask = 0;
+        for (char digit : literal) {
+            if (digit < '0' || digit > '9')
+                throw std::runtime_error("layerMask must be unsigned 32-bit integer");
+            mask = mask * 10u + uint64_t(digit - '0');
+            if (mask > std::numeric_limits<uint32_t>::max())
+                throw std::runtime_error("layerMask exceeds 32 bits");
+        }
+        v.layerMask = static_cast<uint32_t>(mask);
     }
     if (v.shape == PrismaVolumeShape::Sphere) {
         v.center = vector3(j, "center");
