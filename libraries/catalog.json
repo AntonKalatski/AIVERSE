@@ -242,20 +242,24 @@
       "runtime": "none",
       "cmakeTarget": null
     },
-    {
+{
       "id": "input",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "layer": "presentation",
       "status": "cpp-subsystem",
       "source": "libraries/include/aiverselib/gameplay/Input.h",
       "skill": "skills/ui/aiverse-input/SKILL.md",
-      "summary": "Context and priority input routing, axis deadzones, selection, control groups and drag gestures",
-      "notes": "Use normalized platform input. Resolve UI/modal context before game context; send resulting gameplay actions as commands. Store selection/control groups in local presentation state.",
+      "summary": "Legacy context/selection helpers plus Enhanced Input Actions, typed axes, prioritized mapping contexts, modifiers, triggers and rebinding profiles",
+      "notes": "Presentation-side only; never write raw input into simulation. Use EnhancedInput.h with AIVERSE::lib_input; platform hosts may use EnhancedInputAdapter.h and EnhancedInputConfig.h. Profile values stay local and gameplay consumes validated Commands. See docs/enhanced-input.md and stage handoff.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_input",
       "dependencies": [
         "libraries/spec/gameplay.json",
-        "libraries/include/aiverselib/gameplay/Configuration.h"
+        "libraries/include/aiverselib/gameplay/Configuration.h",
+        "libraries/include/aiverselib/gameplay/EnhancedInput.h",
+        "engine/platform/EnhancedInputAdapter.h",
+        "engine/platform/EnhancedInputConfig.h",
+        "docs/enhanced-input.md"
       ],
       "runtime": "header",
       "linkDependencies": [],
