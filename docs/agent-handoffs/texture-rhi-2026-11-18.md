@@ -577,3 +577,46 @@ MRT requires pipeline format/layout-aware variants in
 Metal/Vulkan; MSAA/resolve requires sample-count and
 multisample resource allocation. Implement in separate
 code/handoff stages. Fix any native failures first.
+
+## Stage 4D — Vulkan explicit mip/layer color/depth passes (2026-11-18)
+
+**Code commit:** `bda67dfc5cd3b586aa03ed9590b3cd1458c0f7c6`.
+**Paths:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkResources.cpp`,
+`engine/gfx/vulkan/VkDraw.cpp`.
+
+**Implemented in source:** `beginRenderTargets` accepts one color
+attachment plus optional depth, or depth-only. It checks physical
+resource usage/format/subresource bounds, mip-sized color/depth extent
+parity and attachment type before creating a render pass.
+For `Texture2D`, `Texture2DArray`, `Cube`, or `CubeArray`,
+a 2D `VkImageView` selects the requested mip and layer/face,
+and a one-layer framebuffer is allocated and used for drawing.
+The new pass reuses existing Vulkan single-color renderpass/pipeline
+format compatibility and custom clear colors. Temporary framebuffer
+and image views are deferred for destruction after
+`vkCmdEndRenderPass` and GPU completion. Vulkan resource creation
+now permits 2D array/cube/cube-array color and depth render-target
+allocation. All legacy `beginPass` paths remain unchanged.
+
+**Explicit limitations:** maximum one color attachment; no MRT
+pipeline layout, MSAA or resolve yet. Vulkan does not support the new
+pass for `Texture3D` depth planes or `Texture1D`, since appropriate
+image-view compatibility flags are not yet configured. Storage images
+and high-level RenderTexture changes are pending.
+
+**Compatibility:** no changes to game assets, ECS authority,
+save/network data, or existing `PassDesc`. This is an opt-in
+offscreen API only.
+
+**Verification:** Source commit succeeded. Vulkan SDK compile,
+validation layers, lavapipe/GPU render pass tests **NOT RUN**;
+CI has not reported a confirmed pass. A real Vulkan test should
+render into array layer 1 / mip 1, then sample a dedicated view;
+also verify depth-only array and mismatched attachment sizes.
+
+**Next:** Add regression tests for new attachment pass and
+failure invariants; then implement MRT color-output pipeline
+format matching, MSAA/resolve and storage texture support in
+separate documented stages. Check existing single-color
+pipelines and frame transitions on Vulkan validation layers.
