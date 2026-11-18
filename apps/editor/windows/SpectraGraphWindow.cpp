@@ -10,6 +10,8 @@
 #include <string_view>
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
+#include <cstddef>
 #include <map>
 #include <string>
 #include <utility>
@@ -443,6 +445,153 @@ private:
         }
     }
 
+    // Simple typed editors for v2 data literals. Complex values and exposed
+    // functions remain in the advanced JSON field; never coerce a $node
+    // reference or sampled expression into an editor scalar.
+    void editValueNode() {
+        if(selected_<0 || size_t(selected_)>=doc_["nodes"].size())return;
+        const Json current=doc_["nodes"][size_t(selected_)];
+        const std::string type=current.getStr("type");
+        Json props=current["properties"];
+        if(!props.isObject())props=Json::object();
+        if(type=="Parameter") {
+            std::string key=props.getStr("name",current.getStr("name"));
+            if(ui::inputString("Параметр",key)) {
+                remember();props.set("name",Json::string(key));
+                doc_.find("nodes")->at(size_t(selected_)).set("properties",props);
+                propertyText_=props.dump(2);refreshDiagnostics();
+            }
+            return;
+        }
+        const Json value=props["value"];
+        if(value.isNull() || value.isObject())return; // preserves connections
+        Json changed;
+        bool update=false;
+        if((type=="Float"||type=="Integer") && value.isNumber()) {
+            if(type=="Float") {
+                float number=float(value.toDouble());
+                if(ImGui::DragFloat("Значение", &number,0.02f,-100000.f,100000.f)) {
+                    changed=Json::number(double(number),6);update=true;
+                }
+            } else {
+                int number=int(value.integer());
+                if(ImGui::DragInt("Значение", &number,1,-100000,100000)) {
+                    changed=Json::number(int64_t(number));update=true;
+                }
+            }
+        } else if(type=="Bool" && value.type()==Json::Type::Bool) {
+            bool yes=value.boolean();
+            if(ImGui::Checkbox("Значение",&yes)) {
+                changed=Json::fromBool(yes);update=true;
+            }
+        } else if((type=="Vec2"||type=="Vec3"||type=="Vec4") && value.isArray()) {
+            const int n=type=="Vec2"?2:type=="Vec3"?3:4;
+            if(value.size()==size_t(n)) {
+                float parts[4]={0,0,0,0};
+                for(int i=0;i<n;++i)parts[i]=float(value[size_t(i)].toDouble());
+                bool edited=n==2?ImGui::DragFloat2("Вектор",parts,0.01f):
+                    n==3?ImGui::DragFloat3("Вектор",parts,0.01f):
+                          ImGui::DragFloat4("Вектор",parts,0.01f);
+                if(edited) {
+                    changed=Json::array();
+                    for(int i=0;i<n;++i)changed.push(Json::number(double(parts[i]),6));
+                    update=true;
+                }
+            }
+        } else if(type=="Color" && value.isString()) {
+            fx::float4 col;
+            if(fx::parseColor(value,col)) {
+                float rgba[4]={col.x,col.y,col.z,col.w};
+                if(ImGui::ColorEdit4("Цвет",rgba)) {
+                    changed=Json::string(fx::colorToHex({rgba[0],rgba[1],rgba[2],rgba[3]}));
+                    update=true;
+                }
+            }
+        }
+        if(update) {
+            remember();props.set("value",changed);
+            doc_.find("nodes")->at(size_t(selected_)).set("properties",props);
+            propertyText_=props.dump(2);
+            refreshDiagnostics();
+        }
+    }
+
+    void editCurveNode() {
+        if(selected_<0 || size_t(selected_)>=doc_["nodes"].size())return;
+        const Json current=doc_["nodes"][size_t(selected_)];
+        const std::string type=current.getStr("type");
+        if(type!="Curve" && type!="Gradient")return;
+        const Json keys=current["properties"]["value"];
+        if(!keys.isArray() || keys.size()<2 || keys.size()>64)return;
+        ImGui::SeparatorText(type=="Curve"?"Кривая":"Градиент");
+        if(type=="Curve") {
+            std::vector<float> sampled;
+            sampled.reserve(keys.size());
+            for(const auto& key:keys.items()) {
+                if(!key.isArray()||key.size()!=2||!key[size_t(1)].isNumber())return;
+                sampled.push_back(float(key[size_t(1)].toDouble()));
+            }
+            ImGui::PlotLines("##spectra_curve_preview",sampled.data(),int(sampled.size()),
+                             0,nullptr,FLT_MAX,FLT_MAX,ImVec2(-1,85));
+        }
+        Json changed=keys;
+        bool edited=false;
+        size_t removeIndex=keys.size();
+        for(size_t i=0;i<keys.size();++i) {
+            const Json& key=keys[i];
+            if(!key.isArray()||key.size()!=2||!key[size_t(0)].isNumber())return;
+            ImGui::PushID(int(i));
+            float time=float(key[size_t(0)].toDouble());
+            float minTime=i==0?0.f:float(keys[i-1][size_t(0)].toDouble()+0.0001);
+            float maxTime=i+1==keys.size()?1.f:float(keys[i+1][size_t(0)].toDouble()-0.0001);
+            if(ImGui::SliderFloat("t",&time,minTime,maxTime,"%.3f")) {
+                changed.at(i).at(0)=Json::number(double(time),6);edited=true;
+            }
+            if(type=="Curve" && key[size_t(1)].isNumber()) {
+                float amount=float(key[size_t(1)].toDouble());
+                if(ImGui::DragFloat("v",&amount,0.02f,-100000.f,100000.f)) {
+                    changed.at(i).at(1)=Json::number(double(amount),6);edited=true;
+                }
+            } else if(type=="Gradient") {
+                fx::float4 color;
+                if(fx::parseColor(key[size_t(1)],color)) {
+                    float rgba[4]={color.x,color.y,color.z,color.w};
+                    if(ImGui::ColorEdit4("rgba",rgba)) {
+                        changed.at(i).at(1)=Json::string(
+                            fx::colorToHex({rgba[0],rgba[1],rgba[2],rgba[3]}));
+                        edited=true;
+                    }
+                }
+            }
+            ImGui::SameLine();
+            if(keys.size()>2 && ImGui::SmallButton("-"))removeIndex=i;
+            ImGui::PopID();
+        }
+        if(removeIndex<keys.size()) {
+            changed.eraseAt(removeIndex);
+            edited=true;
+        }
+        if(keys.size()<64 && ImGui::Button("+ Добавить точку")) {
+            const size_t i=keys.size()-2;
+            const double t=(keys[i][size_t(0)].toDouble()+
+                            keys[i+1][size_t(0)].toDouble())*0.5;
+            Json midpoint=Json::array();
+            midpoint.push(Json::number(t,6));
+            midpoint.push(keys[i][size_t(1)]);
+            changed.itemsMut().insert(changed.itemsMut().begin()+std::ptrdiff_t(i+1),
+                                      midpoint);
+            edited=true;
+        }
+        if(edited) {
+            remember();
+            Json p=current["properties"];
+            p.set("value",changed);
+            doc_.find("nodes")->at(size_t(selected_)).set("properties",std::move(p));
+            propertyText_=doc_["nodes"][size_t(selected_)]["properties"].dump(2);
+            refreshDiagnostics();
+        }
+    }
+
     void properties(Editor& ed) {
         ImGui::TextUnformatted("Узлы");
         if(ImGui::BeginCombo("Добавить узел","Каталог SpectraFX")) {
@@ -481,6 +630,10 @@ private:
         if(selected_>=0 && size_t(selected_)<doc_["nodes"].size()) {
             const Json& n=doc_["nodes"][size_t(selected_)];
             ImGui::Text("%s / %s",n.getStr("type").c_str(),n.getStr("id").c_str());
+            if(spectra::authoring::isData(n.getStr("type"))) {
+                editValueNode();
+                editCurveNode();
+            }
             if(ImGui::CollapsingHeader("Типизированные модули",ImGuiTreeNodeFlags_DefaultOpen))
                 typedFields();
             ImGui::Separator();
