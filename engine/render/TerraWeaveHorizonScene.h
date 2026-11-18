@@ -8,11 +8,18 @@
 #include "engine/world/AsyncChunkStream.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include <cstdint>
+#include <chrono>
 #include <limits>
 #include <memory>
 #include <stdexcept>
 
 namespace aiverse::terraweave {
+
+struct HorizonRuntimeStats {
+    size_t clusters=0, atlasBytes=0, vertices=0, triangles=0;
+    double cpuPrepareMs=0, gpuUploadMs=0;
+    size_t preparing=0, discarded=0; // stream status on owning thread
+};
 
 class TerraWeaveHorizonScene {
 public:
@@ -28,6 +35,7 @@ public:
             limits, 2*kRegionBudget, 1,
             [this](world::Cell cell)->world::AsyncChunkStream::Payload {
                 auto result=std::make_shared<Prepared>();
+                const auto start=std::chrono::steady_clock::now();
                 // Snap to the same stable middle-ring grid when preparing,
                 // preventing a full atlas re-bake at every camera movement.
                 const int64_t x=int64_t(cell.x)*settings_.middleTileCm+
@@ -37,6 +45,9 @@ public:
                 result->bake=bakeHorizon(terrain_,biomes_,settings_,x,z);
                 result->model=makeHorizonModel(result->bake);
                 if(result->model)render::prepareModelUpload(*result->model);
+                const auto end=std::chrono::steady_clock::now();
+                result->cpuPrepareMs=
+                    std::chrono::duration<double,std::milli>(end-start).count();
                 return result;
             });
     }
@@ -75,11 +86,17 @@ public:
                     model_.reset();
                     clusters_=0;
                     terrainQuads_=0;
+                    runtime_={};
+                    runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                     return true;
                 }
                 // CPU model is already prepared on worker. uploadModel only
                 // touches the renderer-owned Device on this update thread.
                 auto next=std::move(prepared->model);
+                const size_t nextAtlasBytes=prepared->bake.atlasRgba.size();
+                const size_t nextVertices=next->vertices.size();
+                const size_t nextTriangles=next->indices.size()/3;
+                const auto uploadStart=std::chrono::steady_clock::now();
                 if(!render::uploadModel(device,*next)){
                     render::releaseModel(device,*next);
                     return false;
@@ -91,6 +108,13 @@ public:
                 clusters_=prepared->bake.clusters.size();
                 terrainQuads_=prepared->bake.terrainResolution*
                               prepared->bake.terrainResolution;
+                runtime_.clusters=clusters_;
+                runtime_.atlasBytes=nextAtlasBytes;
+                runtime_.vertices=nextVertices;
+                runtime_.triangles=nextTriangles;
+                runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
+                runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-uploadStart).count();
                 return true;
             },[](world::Cell){});
     }
@@ -119,12 +143,26 @@ public:
     bool ready() const {return model_!=nullptr;}
     size_t clusterCount() const {return clusters_;}
     size_t approximateTerrainQuads() const {return terrainQuads_;}
-    const world::AsyncChunkStream::Status& status() const {return stream_->status();}
+    HorizonRuntimeStats runtimeStats() const {
+        auto out=runtime_;
+        if(stream_) {
+            const auto& s=stream_->status();
+            out.preparing=s.preparing;
+            out.discarded=s.discarded;
+        }
+        return out;
+    }
+    const world::AsyncChunkStream::Status& status() const {
+        if(stream_)return stream_->status();
+        static const world::AsyncChunkStream::Status empty;
+        return empty;
+    }
 
 private:
     struct Prepared final : world::AsyncChunkStream::Resource {
         HorizonBake bake;
         std::unique_ptr<render::Model> model;
+        double cpuPrepareMs=0;
     };
     static constexpr size_t kRegionBudget=24u*1024u*1024u;
     TerrainSettings terrain_;
@@ -136,6 +174,7 @@ private:
     bool cataloged_=false;
     int64_t originXcm_=0,originZcm_=0;
     size_t clusters_=0,terrainQuads_=0;
+    HorizonRuntimeStats runtime_{};
 };
 
 } // namespace aiverse::terraweave
