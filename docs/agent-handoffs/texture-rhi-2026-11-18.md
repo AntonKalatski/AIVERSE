@@ -5399,3 +5399,27 @@ CTest, backend shader compilation and GPU readback NOT RUN.
 Next: compile and run virtual_texture_feedback_pass and
 virtual_texture_file_streamer; add real material/shader feedback
 submission and per-backend GPU readback fidelity tests.
+
+
+## Stage 8V — exception-safe feedback pass callback (2026-11-18)
+
+Runtime source commit: c2e53674f9856576194f6fab1a13377c4ec53593.
+Test source commit: c9692e050ccf98bde275dac2a17c84b5edc879e7.
+Files: engine/gfx/VirtualTextureFeedbackPass.h and
+tests/render/virtual_texture_feedback_pass.cpp.
+renderAndCapture now wraps the caller-provided draw callback in
+try/catch(...), ends the active RenderTargetSet pass on exception,
+records a diagnostic and rethrows. This avoids leaving the Device
+inside a render pass if the callback throws; false return still ends
+without readback, successful return still schedules async capture.
+The mock-device regression fixture exercises false, throwing and
+successful callbacks in sequence, verifying end counts, no stale
+readback and safe recovery.
+
+Verification: GitHub commits succeeded. Native C++ compilation,
+CTest and GPU execution NOT RUN; no passing tests claimed.
+Compatibility: additive exception cleanup in the opt-in callback API;
+no ECS, genre, serialization or native backend modifications.
+Next: compile with the project's exception settings and run
+virtual_texture_feedback_pass; connect a concrete shader/material
+feedback draw and verify GPU pixel fidelity across Metal/GL/Vulkan.
