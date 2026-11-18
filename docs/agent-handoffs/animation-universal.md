@@ -149,3 +149,17 @@ before calling this stage validated.
   integrate first real FPS character model and character animation path.
   Future stages still needed for Humanoid retarget, motion warping,
   inertialization, physical animation, editor and performance.
+
+
+## Stage 5: standalone test-link parity — 2026-11-18
+
+- Implementation commit: `d1b88bed0e032a7dbc70d334f68347ad706ca3f6`.
+- Added the same `platform::readContentFile` host stub used by the
+  existing `aiverse_animation_tests` and `aiverse_unity_anim_tests`
+  to four new standalone animation tests; these do not link the
+  platform runtime. No production code changes.
+- Validation: NOT RUN. GitHub Actions workflow is queued as of this handoff;
+  a queued workflow is NOT a passing result.
+- Next: inspect CI, fix actual compilation and runtime failures before
+  claiming the new libraries are production-ready. Then integrate FPS
+  character models/animation and continue with outstanding features.
