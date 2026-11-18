@@ -81,6 +81,8 @@ horizonSceneFromManifest(
         j,"maxCachedGpuRegions",settings.maxCachedGpuRegions,0,3));
     settings.gpuCacheBudgetMiB=static_cast<uint32_t>(worldInteger(
         j,"gpuCacheBudgetMiB",settings.gpuCacheBudgetMiB,8,96));
+    settings.regionTransitionMs=static_cast<uint32_t>(worldInteger(
+        j,"regionTransitionMs",settings.regionTransitionMs,0,1000));
     settings.regionHysteresisCm=static_cast<int32_t>(worldInteger(
         j,"regionHysteresisCm",settings.regionHysteresisCm,0,100000));
     settings.nearBlendCm=static_cast<int32_t>(worldInteger(
