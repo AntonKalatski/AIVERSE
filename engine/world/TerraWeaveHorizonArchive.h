@@ -87,6 +87,7 @@ inline void validate(const HorizonBake& b) {
            c.tileSizeCm<=0||c.tileSizeCm>400000||
            c.bottomCm>=c.topCm||
            c.atlasSize==0||c.atlasSize>64||
+           c.atlasSize>b.atlasWidth ||
            c.atlasX>b.atlasWidth-c.atlasSize||
            c.atlasY>b.atlasHeight-c.atlasSize||
            c.atlasSideX>b.atlasWidth-c.atlasSize||
