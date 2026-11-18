@@ -968,3 +968,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `libraries/include/aiverselib/genre/EcsTimedMechanics.h` to call the shared pure `stepFixedResourceRegeneration` rather than maintaining independent Fixed arithmetic. Its existing zero floor, valid rate gate and maximum cap are unchanged, and authoritative EnergyRegenerationComponent continues to live in ECS.
 - Verification: static source reasoning/edit only; **not compiled/tested**. Existing `ecs_cross_genre_timed_mechanics_test` is the validation gate.
 - Next: port direct RTS Unit health/energy policy calls without moving their existing authoritative component storage.
+
+
+### 2026-11-18 — Kinematic projectile native cross-host regression source
+- Implementation SHA: `a5bca3ddeb191613bc2af7033362a05861caf213`.
+- Added `tests/ecs_kinematic_projectile_test.cpp`: unrelated strategy/shooter `GameModule` hosts install the same `addKinematicProjectileSystem`, spawn three fixed-endpoint projectiles with distinct durations, check stable arrival order, exact fixed-point destinations, deferred despawn, and snapshot replay checksum parity with both deep and COW snapshots. Assertions use throwing `check`, so Release/NDEBUG does not disable them.
+- Verification: GitHub commit only. Test **not compiled or executed**, not registered in CMake or standalone test runner yet. Do not claim RTS gameplay integration or native test success.
+- Next: wire test into CMake/standalone suite and library catalog, compile; then connect real RTS projectile adapters behind compatibility gate and preserve old target/death semantics.
