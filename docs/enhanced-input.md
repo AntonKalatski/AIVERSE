@@ -234,3 +234,7 @@ Top-down's game-specific button definitions in `game.json.topDown.buttons` are r
 ### Action updates and timers
 
 Game clients must call the input pipeline every presentation frame, even when no keyboard/mouse events arrive. RTS now combines immediate `onEvent(e)` evaluation with `advance(dt)` for Hold/Pulse and other timed triggers, routing both through the same validated gameplay Command handler. Top-down custom ability Actions also handle delayed triggers and release on context cancellation. Modal/text capture cancels held actions, while script-author-defined hotkeys still take precedence over generic RTS bindings.
+
+### Editor direct-play pointer bindings
+
+The editor Game window's direct RTS play-test now uses `RTS.Pointer` for mouse Select/Command, just like the standalone game client. This affects box selection, scripted map clicks and building placement while retaining editor viewport coordinates. Middle-mouse camera panning yields if that button is explicitly bound to Select or Command. Project bindings are reloaded before script-card hit testing.
