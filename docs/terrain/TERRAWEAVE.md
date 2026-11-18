@@ -1779,3 +1779,66 @@ stitching remain separate work. Tests, compilation,
 Metal/GL/Vulkan screenshots, archive roundtrips and
 performance runs have **NOT RUN** in this functional
 implementation stage; a different agent owns them.
+
+## Stage 19 — near/far terrain height-welded clip boundaries (TWH6)
+
+Following Stage 18's **exact 2D subtraction** of authored near-tile rectangles
+from distant Horizon triangles, the clipped perimeter can now be snapped
+to the *actual authored near-terrain height*, leaving the triangle interior
+on the existing far-ground surface. This removes a vertical boundary height
+gap when the source terrain is resident and the optional sampler is supplied.
+
+`HorizonSurfaceSources::nearGroundHeightAtCm(worldXcm,worldZcm)` returns
+`optional<int32_t>` (near height in signed centimetres); `WorldScene`
+connects it to the **same immutable resident**
+`AuthoredWorldHeightSnapshot` used for near coverage rectangles and
+terrain sampling. The CPU helper
+`populateHorizonNearSeamSamples(HorizonBake&,source)` finds clipped
+polygon vertices along near-tile boundaries, deduplicates them in
+world-centimetre Q16 space (fractional positions preserved) and samples
+at most **4096** unique near-ground heights. A half-open tile's high
+edge is sampled at most 1cm inside that already resident tile to avoid
+reading an unloaded neighbor. If a required point cannot be sampled,
+the entire seam-height table is withheld and the prior Stage 18 exact
+horizontal clipping remains available without half-welded geometry.
+
+`HorizonBake::nearSeamSamples` is an immutable, serialized list of
+`{xQ16cm,zQ16cm,nearHeightCm}`. During `makeHorizonModel`,
+only clipped-edge **position.y** is replaced with the matching
+authored near-surface height. Far-interior vertices stay on their
+coarse parent triangle. No new GPU vertex topology, material, draw
+call, graphics backend, gameplay ECS entity or collision modification
+is introduced by welding.
+
+Both the runtime CPU worker (`TerraWeaveHorizonScene`) and native
+`bakeHorizonBatch` offline API populate these samples **before**
+storing/serializing the immutable `HorizonBake`. Reading an archive
+or GPU model cache restores the same data without consulting the
+mutable current WorldScene from the renderer.
+
+New diagnostics:
+`HorizonModelBuildStats::weldedVertices/maxWeldHeightDeltaCm`,
+`HorizonRuntimeStats::weldedNearVertices/maxNearWeldDeltaCm`.
+They survive GPU-cache region restoration. The maximum delta measures
+the absolute Y correction applied to a clipped vertex in centimetres.
+No measured GPU timings or screenshot-quality guarantees are implied.
+
+### Archive version and limits
+
+**TWH6** is now the current `.twh` wire format and generator
+fingerprint. TWH6 includes a bounded count and Q16 X/Z + i32 near height
+per sample (20 bytes each; up to 4096 samples, ~80KiB before in-memory
+container overhead). Existing **TWH1–TWH5** files are incompatible and
+must be regenerated using `aiverse_horizon_bake` or the worker fallback.
+The earlier TWH1–TWH5 sections in this document are retained as
+historical implementation phases, not current format guidance.
+
+The height-aware weld reduces **vertical cracks**, not necessarily
+all visual artifacts: large height differences may produce a steep
+sloped polygon near the cut; near-terrain normals can differ from
+interpolated coarse normals, and neither fog nor temporal geomorphing
+is changed. The default forest atlas and GPU geometry limits remain
+unchanged. To verify perceptual quality, test the actual authored
+scene with steep terrain, negative coordinates, tile boundaries and
+GPU draw sorting. **Tests/build/GPU visual runs were not performed**
+by the functionality agent; another agent owns them.
