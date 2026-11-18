@@ -60,20 +60,37 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         if (b.terrainVertices.size()!=size_t(n+1)*(n+1))
             throw std::invalid_argument("TerraWeave Horizon terrain samples");
         const uint32_t start=static_cast<uint32_t>(model->vertices.size());
-        for (const auto& v:b.terrainVertices) {
-            render::ModelVertex out;
-            out.pos={
-                float(v.xCm-b.originXcm)*0.01f,
-                float(v.heightCm)*0.01f,
-                float(v.zCm-b.originZcm)*0.01f
-            };
-            out.nrm={0,1,0};
-            out.uv={
-                float(v.xCm-b.originXcm)*0.00002f,
-                float(v.zCm-b.originZcm)*0.00002f
-            };
-            out.color=v.colorRgba;
-            model->vertices.push_back(out);
+        for (uint32_t z=0;z<=n;++z) {
+            for (uint32_t x=0;x<=n;++x) {
+                const auto& v=b.terrainVertices[size_t(z)*(n+1)+x];
+                const auto& left=b.terrainVertices[
+                    size_t(z)*(n+1)+(x?x-1:x)];
+                const auto& right=b.terrainVertices[
+                    size_t(z)*(n+1)+std::min(x+1,n)];
+                const auto& front=b.terrainVertices[
+                    size_t(z?z-1:z)*(n+1)+x];
+                const auto& back=b.terrainVertices[
+                    size_t(std::min(z+1,n))*(n+1)+x];
+                const float sx=float(left.heightCm-right.heightCm)/
+                    float(std::max<int64_t>(1,right.xCm-left.xCm));
+                const float sz=float(front.heightCm-back.heightCm)/
+                    float(std::max<int64_t>(1,back.zCm-front.zCm));
+                const auto normal=render::normalize(
+                    render::float3{sx,1.0f,sz});
+                render::ModelVertex out;
+                out.pos={
+                    float(v.xCm-b.originXcm)*0.01f,
+                    float(v.heightCm)*0.01f,
+                    float(v.zCm-b.originZcm)*0.01f
+                };
+                out.nrm=normal;
+                out.uv={
+                    float(v.xCm-b.originXcm)*0.00002f,
+                    float(v.zCm-b.originZcm)*0.00002f
+                };
+                out.color=v.colorRgba;
+                model->vertices.push_back(out);
+            }
         }
         const uint32_t begin=static_cast<uint32_t>(model->indices.size());
         for (uint32_t z=0;z<n;++z)
