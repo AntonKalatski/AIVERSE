@@ -798,3 +798,52 @@ before calling this stage validated.
   path for eligible crowds, and expose optional scheduler diagnostics.
   Add code/tests, then a separate Stage 36 handoff before new work.
 
+## Stage 36 — FPS automatic MotionWeave CPU/GPU host integration (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Code commit:** `00c066b3630615c03a617aea1b94722106871148`.
+- **Changed paths:** `apps/fps/client.cpp`, new
+  `libraries/include/aiverselib/animation/AnimationBackendPolicy.h`,
+  `tests/animation/motionweave_backend.cpp`, root `CMakeLists.txt` and
+  `docs/fps.md`.
+- **Behavior/API:** native FPS palette Graph path now lazily creates
+  a host-owned `MotionWeaveScheduler` once there are at least 16 remote
+  presentation entities; new scheduler overload performs safe graph
+  updates on reusable background workers, expensive work-balanced
+  batches and Lua/native/contact work on main thread. The simple
+  GPU baked-instancing path is selected through new backend policy:
+  `fps.visual.animationMode` accepts `auto` (default), `cpu`, `gpu`.
+  The old `bakedCrowd:true` remains a GPU preference alias.
+  Auto promotes to GPU at `gpuEnterActors`=24 living remote actors and
+  returns to CPU at `gpuExitActors`=12; supported only for simple
+  clip-only models with an uploaded GPU bake and without a custom
+  AnimationGraph/graphFile.
+- **Lifecycle/performance:** switching mode clears and recreates
+  only presentation ECS entities, never authoritative simulation
+  actors; disappearing remote actor slots are now cleaned up from
+  the animation entity/life maps. Optional
+  `fps.visual.animationStats:true` shows CPU/GPU selection, worker
+  count, safe/callback partitions, estimated work/jobs and CPU time.
+- **Compatibility:** server-side movement, shooting, damage,
+  netcode, save/checksum and editor asset formats unchanged.
+  Complex animation with IK/Montage/graphFile defaults to the CPU
+  Graph path; GPU baked fallback and cubes remain for unavailable
+  assets. Earlier `bakedCrowd` opt-in remains recognized.
+- **Tests:** `motionweave_backend_selection` CTest fixture added for
+  auto hysteresis, explicit CPU/GPU and complex graph fallback.
+  **NOT RUN** (user requested to defer build/tests and QA). FPS
+  graphics/TSAN and performance benchmarks also NOT RUN.
+- **Risks:** CPU/GPU selection currently recreates visual players
+  on a backend change, so clip phase resets and a visual pop may
+  occur; long-term asset/pose sharing and phase migration need a
+  follow-up. The worker pool does not touch GPU rendering; baked
+  skinning runs through existing Renderer3D path and only CPU
+  animator clocks are processed. The FPS client's existing
+  audio callbacks must remain caller-thread-only.
+- **Exact next stage:** expand `docs/motionweave.md` and
+  `skills/gameplay/aiverse-motionweave/SKILL.md` with the worker
+  scheduler, backend-policy and FPS opt-in contracts, add better
+  scheduling diagnostics and multi-scene edge fixtures; then do a
+  static code audit (WITHOUT running deferred tests), amend code
+  in its own commit and follow with Stage 37 handoff.
+
