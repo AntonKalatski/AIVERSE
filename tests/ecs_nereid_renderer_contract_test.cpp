@@ -6,6 +6,8 @@
 #include "engine/world/NereidEcsPresentation.h"
 #include "engine/world/NereidUnderwaterView.h"
 #include "engine/render/Shaders.h"
+#include "engine/render/PostFx.h"
+#include "engine/render/PostFxShaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
 #include <iostream>
 #include <stdexcept>
@@ -528,5 +530,41 @@ int main() {
           metalShader.find("float foamWeight = shallow")>
           metalShader.find("float3 rc = ssrWater"),
           "depth optics must composite after SSR in both backends");
+    // Stage 18: Prisma's underwater shader is an opt-in composite variant.
+    check(std::string(render::postfx::kComposite).find(
+          "#ifdef PF_UNDERWATER")!=std::string::npos &&
+          std::string(render::postfx::kComposite).find(
+          "exp(-underwater1.x * opticalDistance)")!=std::string::npos,
+          "Prisma must have a common GLSL/MSL underwater composite body");
+    render::PostFxUnderwaterState fadeState{};
+    render::PostFxUnderwater fadeTarget{};
+    fadeTarget.submerged=true;
+    fadeTarget.tintR=0.1f;fadeTarget.tintG=0.3f;fadeTarget.tintB=0.45f;
+    fadeTarget.absorption=0.4f;
+    fadeTarget.depthMetres=3.f;
+    fadeState=render::advancePostFxUnderwater(fadeState,fadeTarget,0.1f);
+    check(fadeState.blend>0.f && fadeState.blend<1.f &&
+          fadeState.absorption>0 && fadeState.absorption<0.4f,
+          "underwater entrance must smoothly approach target state");
+    for(int i=0;i<20;++i)
+        fadeState=render::advancePostFxUnderwater(fadeState,fadeTarget,0.1f);
+    check(fadeState.blend>0.999f,
+          "camera underwater transition must settle");
+    fadeTarget.submerged=false;
+    float beforeExit=fadeState.blend;
+    fadeState=render::advancePostFxUnderwater(fadeState,fadeTarget,0.1f);
+    check(fadeState.blend<beforeExit && fadeState.blend>0.f,
+          "exit should fade instead of instantly popping");
+    for(int i=0;i<60;++i)
+        fadeState=render::advancePostFxUnderwater(fadeState,fadeTarget,0.1f);
+    check(fadeState.blend==0.f,
+          "underwater transition should fully clear after leaving");
+    render::PostFxUnderwater invalidUnderwater{};
+    invalidUnderwater.submerged=true;
+    invalidUnderwater.absorption=999.f;
+    invalidUnderwater.depthMetres=-100.f;
+    auto sanitized=render::advancePostFxUnderwater({},invalidUnderwater,0.1f);
+    check(sanitized.absorption<=4.f && sanitized.depthMetres==0.f,
+          "untrusted volume optics must be clamped before compositor");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
