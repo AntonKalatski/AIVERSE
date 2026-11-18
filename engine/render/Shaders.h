@@ -450,12 +450,37 @@ void main() {
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
-    col = mix(col, base, clamp(u_params.x, 0.0, 1.0)) + base * (u_params.w * (1.0 + nightGlow()));
+    col = mix(col, base, clamp(u_params.x, 0.0, 1.0)) + base * ((u_params.x < -0.5 ? 0.0 : u_params.w) * (1.0 + nightGlow()));
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
     vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V,
                              u_params.x < -1.5 ? 0.0 : u_params.y);   // planar reflection (water, High)
+    // NEREID refraction: opt-in, reuses the opaque SSR colour/depth capture.
+    // No feedback sampling of the target currently being rendered.
+    if (u_params.x < -0.5 && u_params.w > 0.001 && u_trace2.w > 0.5) {
+        vec4 projected = u_viewProj * vec4(v_wpos, 1.0);
+        if (projected.w > 0.0) {
+            vec2 screen = projected.xy / projected.w * 0.5 + 0.5;
+            vec2 distorted = screen + n.xz * (0.009 * u_params.w);
+            if (all(greaterThan(distorted, vec2(0.005))) &&
+                all(lessThan(distorted, vec2(0.995)))) {
+                vec2 sampleUV = u_shadow.x > 0.5 ?
+                    vec2(distorted.x, 1.0 - distorted.y) : distorted;
+                float sampledDepth = texture(tex5, sampleUV).r;
+                if (sampledDepth < 0.9999) {
+                    vec3 opaquePos = ssrUnproject(distorted, sampledDepth);
+                    float thickness = v_wpos.y - opaquePos.y;
+                    if (thickness > 0.02 && thickness < 1000.0) {
+                        vec3 background = texture(tex4, sampleUV).rgb;
+                        float transmission = exp(-thickness * 0.18);
+                        float blendAmount = u_params.w * (0.25 + 0.65 * transmission);
+                        outc = mix(outc, background, clamp(blendAmount, 0.0, 0.85));
+                    }
+                }
+            }
+        }
+    }
     if (u_params.y >= 0.85 && (v_wpos.y >= 0.04 || u_params.x < -0.5) && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
         vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
         float hit;
@@ -543,12 +568,37 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
-    col = mix(col, base, clamp(u.params.x, 0.0, 1.0)) + base * (u.params.w * (1.0 + l.info.w));
+    col = mix(col, base, clamp(u.params.x, 0.0, 1.0)) + base * ((u.params.x < -0.5 ? 0.0 : u.params.w) * (1.0 + l.info.w));
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col),
                                in.wpos, n, V, u.params.x < -1.5 ? 0.0 : u.params.y);
+    // Same NEREID depth-gated refraction as GLSL; only the captured opaque
+    // colour/depth targets are sampled, never the active water target.
+    if (u.params.x < -0.5 && u.params.w > 0.001 && f.trace2.w > 0.5) {
+        float4 projected = f.viewProj * float4(in.wpos, 1.0);
+        if (projected.w > 0.0) {
+            float2 screen = projected.xy / projected.w * 0.5 + 0.5;
+            float2 distorted = screen + n.xz * (0.009 * u.params.w);
+            if (all(distorted > float2(0.005)) &&
+                all(distorted < float2(0.995))) {
+                float2 sampleUV = f.shadow.x > 0.5 ?
+                    float2(distorted.x, 1.0 - distorted.y) : distorted;
+                float sampledDepth = tex5.sample(s5, sampleUV);
+                if (sampledDepth < 0.9999) {
+                    float3 opaquePos = ssrUnproject(f, distorted, sampledDepth);
+                    float thickness = in.wpos.y - opaquePos.y;
+                    if (thickness > 0.02 && thickness < 1000.0) {
+                        float3 background = tex4.sample(s4, sampleUV).rgb;
+                        float transmission = exp(-thickness * 0.18);
+                        float blendAmount = u.params.w * (0.25 + 0.65 * transmission);
+                        outc = mix(outc, background, clamp(blendAmount, 0.0, 0.85));
+                    }
+                }
+            }
+        }
+    }
     if (u.params.y >= 0.85 && (in.wpos.y >= 0.04 || u.params.x < -0.5) && f.trace2.w > 0.5) {
         float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
         float hit;
