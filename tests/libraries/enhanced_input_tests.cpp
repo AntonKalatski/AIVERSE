@@ -26,6 +26,7 @@ int main() {
     gameplay.bind("Fire",{Device::MouseButton,0},{},{Trigger::pressed()});
     CHECK(inputs.registerContext(gameplay));
     CHECK(inputs.activateContext("Gameplay",0));
+    CHECK(inputs.registeredContexts()==std::vector<std::string>({"Gameplay"}));
     inputs.setControl(w,1);
     CHECK(has(inputs.update(0.016f),"Move",Phase::Started));
     CHECK(near(inputs.state("Move")->value.y,1));
