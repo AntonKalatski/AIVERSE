@@ -1144,7 +1144,9 @@ own authority. A standalone test or a model animation is not an in-client integr
 
 Before modifying editor Scene, Inspector, Hierarchy, Transform, ECS component adapters or rendering for RTS/FPS, **read `docs/editor-unification-handoff.md`**. It contains the target architecture, implementation status, acceptance gates and known risks. **Update its progress log after every implementation or verification stage in the same PR**, with commits, actual test results (or NOT RUN), blockers and next steps. Do not merge PR #7 without the documented validation gates.
 
-## Enhanced Input — mandatory stage-by-stage agent handoff
+## AIVerse InputFlow (formerly Enhanced Input) — mandatory stage-by-stage agent handoff
+
+**Canonical name and native API:** AIVerse InputFlow / `<aiverselib/gameplay/InputFlow.h>` / `aiverse::lib::gameplay::inputflow::InputFlow`. Retain compatibility with `enhanced::InputSystem`, old project JSON and `AIVERSE::lib_input`.
 
 For changes in `feature/aiv990_enhanced_input` / PR #20 (and any future
 continuation of that subsystem), read
