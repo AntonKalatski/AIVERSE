@@ -152,7 +152,22 @@ bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_
         victim=actorHit.pose->slot;
         pose=actorHit.pose;
     }
-    uint32_t vehicleId=0;for(const auto& v:s.vehicles)if(v.health>0&&v.driver!=source){Fixed fraction;Vec3 normal;if(world::intersect(eye,delta,{v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}},fraction,normal)&&fraction<best){best=fraction;victim=0;vehicleId=v.id;}}
+    // Vehicles use the same deterministic ray-candidate policy as Actors.
+    // Check them after actors so an exact equal-distance hit retains the
+    // original actor winner; nearer vehicles still occlude a character.
+    uint32_t vehicleId=0;
+    const auto vehicleHit=lib::genre::selectClosestHitscanCandidate(
+        s.vehicles,eye,delta,best,
+        [&](const Vehicle& v) {return v.health>0 && v.driver!=source;},
+        [&](const Vehicle& v) {
+            return world::Bounds{
+                v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}};
+        });
+    if(vehicleHit) {
+        best=vehicleHit.fraction;
+        victim=0;
+        vehicleId=vehicleHit.target->id;
+    }
     auto penetration=projectile?projectile->penetration:weapon.penetration;bool blocked=false;
     Vec3 end=eye+delta*best;
     world::Bounds bounds{{fxMin(eye.x,end.x),fxMin(eye.y,end.y),fxMin(eye.z,end.z)},{fxMax(eye.x,end.x),fxMax(eye.y,end.y),fxMax(eye.z,end.z)}};
