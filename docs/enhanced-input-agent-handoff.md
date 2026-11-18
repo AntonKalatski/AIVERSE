@@ -155,3 +155,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Verification:** source-level assertions reviewed; merged CI was queued when checked. No compiler or CTest run yet. Continue checking GitHub Actions or run the isolated `aiverse_enhanced_input_tests` on a machine with the checkout.
 
 **Next agent:** finish the editor Input Actions/Contexts UI and integrate safe project asset editing, then migrate RTS/hosted game UI arbitration and verify. Add a document section after each stage.
+
+## Stage 7 — editor authoring window (2026-11-18)
+
+**Code:** Added `apps/editor/windows/InputWindow.cpp` registered as window ID `input` in the existing Logic group. Opens the project's optional `input/actions.json`; supports Actions and typed values, context enable/priority, mappings, key capture, modifiers/triggers, and warnings for duplicate controls. Saves only schema-valid full assets via `enhanced_config::writeAsset/readAsset`; temporary write and backup file protect existing JSON. Existing per-user override profiles remain separate. `EditorWindow::captureGlobalShortcuts` and `Editor::handleShortcuts` suppress F5/undo while key capture is armed; `update` cancels capture when dock tab loses front position. `CMakeLists.txt` links `aiverse_editor` directly to `AIVERSE::lib_input`; the existing editor window GLOB picks up the new source.
+
+**Files:** `apps/editor/windows/InputWindow.cpp`, `apps/editor/EditorWindow.h`, `apps/editor/Editor.cpp`, root `CMakeLists.txt`, `docs/enhanced-input.md`, this handoff.
+
+**Validation:** GitHub source updates only; no compiler/CTest results. Verify ImGui named key enum range and project asset backup/rename path with Clang/macOS, GCC/Linux and MSVC/Windows. Ensure Input Actions window works with FPS and RTS; remapping F5 must not begin Play. The editor does not generate complete FPS defaults automatically, so users must build the full scheme when creating an asset.
+
+**Next agent:** migrate the common RTS client hotkeys to semantic actions, preserve `scriptCommandKey`/control groups/hosted view UI handling, add focused tests and run full CTest/CI before marking complete. Update this handoff after Stage 8.
