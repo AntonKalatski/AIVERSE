@@ -98,3 +98,8 @@ instead of duplicating its tessellation loop. The host
 owns all vertex heights/materials, normal mapping, any
 LOD skirts and optional winding flip.
 
+When orienting triangular surfaces relative to a host
+normal, reuse `engine/view/TriangleFacing.h` and
+`view::orientTriangleTo` instead of duplicating
+degenerate checks, winding reversal and normalization.
+

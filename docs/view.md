@@ -361,3 +361,18 @@ index arithmetic for large yet valid 32-bit grids.
 These are static performance/correctness changes; all
 benchmarks, CTest and graphics validation remain **NOT RUN**.
 
+## Shared oriented triangle normal / winding
+
+`engine/view/TriangleFacing.h` provides
+`view::orientTriangleTo(a,b,c,outwardHint)`, returning
+a normalized face normal, flip-winding flag and degenerate
+triangle status. Road meshes use it to orient local
+triangle vertices and UVs; spherical face meshes use
+the same test before correcting the patch's triangle
+indices. The host retains its material policy, UV
+mapping, face basis and any geometry topology.
+
+It has no genre, game geometry schema, simulation,
+AI or physics dependencies. Deferred CTest:
+`view_triangle_facing` (**NOT RUN**).
+

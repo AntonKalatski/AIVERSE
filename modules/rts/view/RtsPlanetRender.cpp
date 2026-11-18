@@ -3,6 +3,7 @@
 #include "engine/view/Frustum.h"
 #include "engine/view/Horizon.h"
 #include "engine/view/GridGeometry.h"
+#include "engine/view/TriangleFacing.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -259,7 +260,9 @@ void PlanetRenderer::buildChunk(gfx::Device& dev, const PlanetBody& pb, Body& b,
     // fix winding once from the first triangle against the outward direction
     if (idx.size() >= 3) {
         const float3 p0 = v[idx[0]].pos, p1 = v[idx[1]].pos, p2 = v[idx[2]].pos;
-        if (dot(cross(p1 - p0, p2 - p0), c.dir) < 0) for (size_t k = 0; k + 2 < idx.size(); k += 3) std::swap(idx[k + 1], idx[k + 2]);
+        if (::aiverse::view::orientTriangleTo(p0,p1,p2,c.dir).flip)
+            for(size_t k=0;k+2<idx.size();k+=3)
+                std::swap(idx[k+1],idx[k+2]);
     }
     // skirts: every chunk edge drops a strip towards the centre (cracks between LODs and across seams)
     const float depth = 0.4f + 0.35f * float(step) / float(K);   // step in cells
