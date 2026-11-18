@@ -5345,3 +5345,25 @@ Next: run the focused native test and then test replacement visibility
 with a new camera region and distinct missing page keys; integrate
 the feedback pass into an actual renderer only after validating its
 render-thread and frame-order lifecycle.
+
+
+## Stage 8T — camera visibility replacement regression (2026-11-18)
+
+Test source commit: 1ce98a3823c28768a634294321a9d6691bb0565.
+File: tests/render/virtual_texture_file_streamer.cpp.
+Added cameraFeedbackReplacesDeferredVisibility with two distinct
+one-pixel RGBA8 page IDs, emitted through MockGpu async completion.
+The first camera view uses the two-request frame budget on coarse and
+middle pages, leaving its fine page deferred. A second camera view is
+captured and decoded before another submit; its dispatch must request
+new visibility work without queuing the stale first camera's fine page.
+The fixture also verifies owner shutdown releases GPU resources.
+This tests the existing replacement behavior rather than adding
+automatic camera capture or an engine render-pass hook.
+
+Verification: GitHub commit succeeded; C++ compile, CTest and native
+GPU integration NOT RUN. No visual or performance claim.
+Next: execute focused native tests, add real renderer feedback draw
+integration (opt-in, no genre dependencies), verify Metal/GL/Vulkan
+render-to-readback byte fidelity and page-table updates, then assess
+remaining backend capability and HDR import gaps.
