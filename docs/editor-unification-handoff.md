@@ -1667,6 +1667,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Native result **unverified**; next implementation commit replaces only the real FPS ordinary grenade bounce branch with this shared policy, keeping effects/fuses and nonphysical RTS projectiles independent.
 
 ### 2026-11-18 — Native ECS migration integrity and failed-load rollback
+- **Implementation SHA:** `acba58bf9f3c4d7cea69c039540f203aa99abbc3`.
 - Extended `PersistentEcsRegistry` with optional explicit exact-version old-value readers for both custom components and resources; versioned chunks are validated and staged before commit.
 - Original save checksum is verified from original schema IDs/versions and field bytes even after an upgrade, rather than silently skipping integrity verification on migration. This requires modules not to hash registered native fields independently.
 - `Simulation::deserialize` now backs up Simulation-owned World/tick/RNG/players/commands/events and restores them on invalid payload/checksum or exception; GameModule private caches still require restore hooks.
@@ -1695,3 +1696,12 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Public AI projectile skill documents direct ECS ordinary FPS and physical bounce
 - Documentation SHA: `6ec99f2955fb5a728cd37bf06b2ddf97001ffc85`.
 - `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` now teaches reuse of `BounceMotionConfig` and `stepBouncingProjectile`, independent physical vs RTS nonphysical kinematic policies, and the new real `fps.compat.ordinaryProjectiles` stage with direct `ProjectileRuntime` authority when `fps.ecsAuthority` is ON. Explicitly lists its FPS deep/COW/v9 and cross-genre formula-equivalence test gates, with native results not yet established.
+
+### 2026-11-18 — Mandatory per-stage handoff checkpoint and native ECS ownership
+- **Branch:** `feature/universal-entity-inspector-fps` (PR #7), sharing the working tree with other agents. This is a docs/process stage; prior code commits are `b416dd4c4ab9a72d43d7d9d805c44e49c4161d62` and `acba58bf9f3c4d7cea69c039540f203aa99abbc3`.
+- **Files:** `AGENTS.md`, `docs/agent-handoffs/native-ecs-persistence.md`, `docs/native-ecs-persistence.md`, `docs/editor-unification-handoff.md`.
+- **Change:** handoff requirement now applies after **every** stage, not just selected ECS implementation commits. The handoff must explicitly capture code SHA, paths, compatibility, actually executed tests, blocking failures, and next agent action; preserve concurrent entries and commit docs before next stage.
+- **Native ECS source of truth:** `engine/sim/PersistentEcs.h`; public registration `engine/sim/Simulation.h`; save/hash/rollback `engine/sim/Simulation.cpp`; RTS fixed-pool boundary `modules/rts/RtsSave.cpp`; tests `tests/ecs_native_persistence_test.cpp`.
+- **Verification:** repository source and workflow metadata inspected using GitHub connector. Container `git ls-remote` failed with `Could not resolve host: github.com`. **Native compile/CTest/macOS runtime and real network playback: NOT RUN.** Latest examined GitHub Actions for PR #7 were queued, not passing.
+- **Unfinished:** real compiled/native RTT validation; check serializer migration of legacy modules, malformed payloads, exact checksum semantics, and full transaction boundary. Preserve old v9 format for projects without registered native ECS components.
+- **Next action:** run `ctest --test-dir <build> -R ecs_native_persistence_test --output-on-failure` and `bash tests/run_ecs_experiment_suite.sh` on a full checkout; fix real diagnostics before switching production gameplay. Add exact result and commit to both handoff locations.

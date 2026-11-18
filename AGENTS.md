@@ -4,6 +4,37 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
+
+**Every completed stage MUST leave a durable handoff for the next agent, without exception.**
+This applies to code, tests, migrations, performance, editor fixes, documentation-only
+architecture stages and interrupted/failed attempts. The working branch for PR #7
+is `feature/universal-entity-inspector-fps`; do not create a parallel branch just
+to write the handoff.
+
+1. Before implementation, read the last applicable handoff, `AGENTS.md`, and
+   the current branch HEAD. Preserve all changes from other agents.
+2. Finish one bounded stage and commit its implementation. Do not start the next
+   stage until its handoff has been committed **to the same branch**.
+3. Append a dated entry to the active feature handoff. Include exact code commit
+   SHA(s), branch, affected paths, what changed and what did not, public API/save
+   format compatibility, test commands **actually executed** with outcomes,
+   CI URLs/status, known risks, blockers and the very next actionable step.
+   If tests could not be run, write **NOT RUN** and why. Never describe a
+   queued/cancelled workflow as passing.
+4. Commit the handoff entry separately. If multiple agents edit the same handoff,
+   reload the newest HEAD and append to the combined document; never overwrite
+   their entries. Do not force-push or silently resolve semantic conflicts.
+5. If an implementation fails or is partially complete, still append a
+   handoff describing the failed command/error and unfinished changes so that
+   the next agent does not repeat the investigation.
+6. For native ECS persistence also maintain
+   `docs/agent-handoffs/native-ecs-persistence.md`, plus a brief checkpoint in
+   `docs/editor-unification-handoff.md`.
+
+The handoff must make it possible for another agent to resume without
+re-reading the entire chat or trusting unverifiable status claims.
+
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
 ## Genre-independent ECS mechanics contract (2026-11-18)

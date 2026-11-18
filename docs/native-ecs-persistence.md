@@ -31,8 +31,8 @@ not yet transactional.
 
 No native types registered: disk format and checksums stay **v9**, unchanged.
 Any registered type: version **v10**. Loading v9 into a build requiring native
-registered types is rejected rather than discarding data. Versions are strict:
-migration callbacks for changed native schemas remain future work. Old RTS
+registered types is rejected rather than discarding data. Versions are strict by default: changed native schemas require explicit
+old-version readers, described in the migration section below. Old RTS
 fixed pool checking still refuses **unregistered** extra pools.
 
 Validation: `tests/ecs_native_persistence_test.cpp` (CTest
