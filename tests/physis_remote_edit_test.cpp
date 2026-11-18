@@ -147,6 +147,41 @@ void duplicatedPayloadConflict() {
     }
     CHECK(last==Result::Rejected);
 }
+
+void concurrentAdmissions() {
+    auto sim=make();
+    ServerGateway gateway;
+    auto [client,server]=net::makeLoopbackPair();
+    Packet one,two;
+    one.kind=Message::Submit;
+    one.clientInstance=9191;
+    one.requestId=1;
+    CHECK(encodeFieldEditCommand(edit(Fixed::fromInt(39)),kEdit,one.command));
+    one.command.player=4;
+    two=one;
+    two.requestId=2; // different request for same expected revision
+    net::Bytes a,b;
+    CHECK(encode(one,a));
+    CHECK(encode(two,b));
+    client->send(a);
+    client->send(b);
+    gateway.poll(*sim,*server,"trusted-editor",readAcl,writeAcl,50);
+    client->update(50);
+    net::Bytes response;
+    bool queued=false,conflict=false;
+    while(client->recv(response)) {
+        Packet ack;
+        if(!decode(response,ack))continue;
+        if(ack.requestId==1 && ack.receipt.result==Result::Queued)queued=true;
+        if(ack.requestId==2 && ack.receipt.result==Result::Conflict)conflict=true;
+    }
+    CHECK(queued && conflict);
+    CHECK(gateway.entries().size()==1);
+    for(int i=0;i<4;++i)sim->step();
+    gateway.observe(*sim);
+    CHECK(registry(*sim).revision==1);
+}
+
 void reconnectAndRestore() {
     auto sim=make();
     ServerGateway gateway;
@@ -299,6 +334,7 @@ void conflictAfterServerRestart() {
 int main() {
     codec();
     duplicatedPayloadConflict();
+    concurrentAdmissions();
     reconnectAndRestore();
     editorBridge();
     initialRevisionProbe();
