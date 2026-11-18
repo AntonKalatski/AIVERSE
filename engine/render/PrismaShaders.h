@@ -174,6 +174,65 @@ inline const char* kExposureAdapt = R"(
     RETURN(vec4(result,0.0,0.0,1.0));
 )";
 
+
+// Camera velocity in normalized screen UV per frame. The inverse current
+// viewProjection transforms hardware depth back to world; previous VP then
+// projects it to the previous screen. The B channel of the optional TEX2
+// object-velocity texture is its presence mask; RG contains current-minus-
+// previous screen UV displacement. This lets independent renderers supply
+// true object motion without changing deterministic gameplay ECS.
+// Matrix uniforms are column-major mat4 columns as 8 vec4 fields.
+// px.xy = 1/viewport; px.z = renderTargetFlipY
+// p0.x = hardware clipDepthZeroToOne, p0.y = object buffer enabled.
+inline const char* kMotionVectors = R"(
+    vec2 uv = TUV(s);
+    float depth = TEX1(uv).r;
+    vec2 velocity = vec2(0.0);
+    if (depth < 0.999999) {
+        vec4 clip = vec4(s * 2.0 - vec2(1.0), 
+                         p0.x > 0.5 ? depth : depth * 2.0 - 1.0, 1.0);
+        vec4 world = inv0 * clip.x + inv1 * clip.y +
+                     inv2 * clip.z + inv3 * clip.w;
+        world /= max(abs(world.w),0.000001) * (world.w < 0.0 ? -1.0 : 1.0);
+        vec4 previous = prev0 * world.x + prev1 * world.y +
+                        prev2 * world.z + prev3 * world.w;
+        if (previous.w > 0.00001) {
+            vec2 prevUv = previous.xy / previous.w * 0.5 + 0.5;
+            velocity = clamp(s - prevUv,vec2(-1.0),vec2(1.0));
+        }
+    }
+    if (p0.y > 0.5) {
+        vec4 objectMotion = TEX2(uv);
+        if (objectMotion.b > 0.5) velocity = objectMotion.rg;
+    }
+    RETURN(vec4(velocity, 0.0, 1.0));
+)";
+
+// Full-resolution temporal shutter blur; velocity is from the corresponding
+// previous frame and is expressed as current-minus-previous normalized UV.
+// Uses current frame samples only (not temporal color accumulation), so no
+// ghost-producing history reads and no persistent color state.
+inline const char* kMotionBlur = R"(
+    vec2 uv = TUV(s);
+    vec2 velocity = TEX1(uv).rg * p0.x;
+    vec2 pixels = velocity / max(px.xy,vec2(0.000001));
+    float distancePx = length(pixels);
+    float scale = min(1.0, p0.y / max(distancePx,0.0001));
+    velocity *= scale;
+    int n = int(clamp(floor(p0.z + 0.5),2.0,16.0));
+    vec3 accum = vec3(0.0);
+    float weight = 0.0;
+    for (int i = 0; i < 16; ++i) {
+        if (i >= n) break;
+        float t = float(i) / float(n-1) - 0.5;
+        vec2 q = clamp(s + velocity * t,vec2(0.0),vec2(1.0));
+        accum += TEX0(TUV(q)).rgb;
+        weight += 1.0;
+    }
+    vec3 sharp = TEX0(uv).rgb;
+    RETURN(vec4(mix(sharp,accum/max(weight,1.0),p0.w),1.0));
+)";
+
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
 inline const char* kFxaaHelpers = R"(
 PF_FN float pfLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
