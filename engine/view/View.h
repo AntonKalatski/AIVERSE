@@ -6,6 +6,7 @@
 #include <aiverselib/animation/AnimationBudgetPolicy.h>
 #include <aiverselib/motionweave/MotionWeave.h>
 #include "engine/render/Renderer3D.h"
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -53,10 +54,18 @@ struct CircleXZObject {
     int segments=40;
     float y=0.03f;
 };
+// Ground-aligned ribbon between two scene-space points. Used by paths,
+// guides and markers in any project, without any simulation semantics.
+struct QuadXZObject {
+    render::float3 start{},end{};
+    float width=1.f;
+    uint32_t rgba=0xffffffffu;
+    float y=0.02f;
+};
 // A draw-command stream can interleave skinned models, ordinary meshes
 // and debug primitives without changing the host's original draw order.
 // All ModelDraw pointers are borrowed until a synchronous submit returns.
-using ScenePacket=std::variant<Object,MeshObject,LineObject,TriangleObject,CircleXZObject>;
+using ScenePacket=std::variant<Object,MeshObject,LineObject,TriangleObject,CircleXZObject,QuadXZObject>;
 class ScenePacketBatch final {
 public:
     void reserve(size_t n){packets_.reserve(n);}
@@ -211,6 +220,12 @@ public:
             renderer.circleXZ(circle.center,circle.radius,circle.rgba,
                               circle.segments,circle.y);
     }
+    static void submitQuadXZ(render::Renderer3D& renderer,
+                             const QuadXZObject& quad) {
+        if(quad.width>0.f && std::isfinite(quad.width) &&
+           std::isfinite(quad.y))
+            renderer.quadXZ(quad.start,quad.end,quad.width,quad.rgba,quad.y);
+    }
     // Synchronous ordered dispatch for arbitrary mixed scene packets.
     // The renderer retains its own internal batching and pass order.
     void submitPacket(render::Renderer3D& renderer,
@@ -227,6 +242,8 @@ public:
                 submitTriangle(renderer,item);
             else if constexpr(std::is_same_v<Item,CircleXZObject>)
                 submitCircle(renderer,item);
+            else if constexpr(std::is_same_v<Item,QuadXZObject>)
+                submitQuadXZ(renderer,item);
         },packet);
     }
     void submitPackets(render::Renderer3D& renderer,
