@@ -104,6 +104,19 @@ Json graphEvaluation(const Json& graph, const Json& overrides, fx::EffectDef* co
         response.set("metalGpuReason", strGraph(eligibility.eligible
             ? "Metal compute subset compatible; device/runtime still unverified"
             : eligibility.reason));
+        // Separate opt-in GPU VM capability. This is a pure schema check;
+        // no Metal shader is executed or verified by the editor operation.
+        spectra::GraphRuntimeOptions vmOptions;
+        vmOptions.gpuProgram=true;
+        const auto vm=spectra::inspectGraphGpuEligibility(def,vmOptions);
+        const bool authoredVm=def.emitters.size()==1 &&
+                             !def.emitters[0].particleProgram.isNull();
+        response.set("metalVmEligible",Json::fromBool(authoredVm && vm.eligible));
+        response.set("metalVmReason",strGraph(!authoredVm
+            ? "effect has no per-particle VM program"
+            : vm.eligible
+                ? "experimental bounded Metal VM eligible; device execution not verified"
+                : vm.reason));
         if (compiled) *compiled = std::move(def);
     }
     return response;
