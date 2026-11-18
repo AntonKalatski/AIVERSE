@@ -1461,3 +1461,41 @@ before calling this stage validated.
   preserving batching, shadow and model staging. Append
   Stage 53 separately after code implementation.
 
+## Stage 53 — FPS box fallback and static scene meshes use core View (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22,
+  base `feature/universal-entity-inspector-fps`.
+- **Implementation commit SHA:** `1d6cc06ad455ee4f733fbbcdc23b52406e0bc67f`.
+- **Changed paths:** `apps/fps/client.cpp`, `docs/fps.md`.
+- **API/algorithm:** the FPS host implements a tiny
+  `drawSceneMesh(mat4,rgba,flags)` adapter that prepares a generic
+  `aiverse::view::MeshObject` packet and forwards to
+  `aiverse::View::submitMesh`. Four former direct
+  `Renderer3D::drawMesh(cube,...)` call sites for scene colliders,
+  world boxes and unanimated actor cubes now use that shared
+  engine View path. Animation character models already go through
+  `View::submitOne` since Stage 51.
+- **Architecture:** the game-specific host still decides WHAT
+  a collider, team actor or world box means. The reusable View
+  receives only a GPU Mesh, transform, color and render flags.
+  No FPS/RTS include added to `engine/view`.
+- **Compatibility:** unchanged transform/color flags, server
+  authority, simulation ECS, networking, saves, model asset
+  formats and original cube fallback. This only routes existing
+  draw packets through the universal View interface.
+- **Tests:** GitHub source only; **NOT RUN** (user requested to
+  defer builds/CTest/graphics comparisons/TSAN). Later ensure
+  FPS cube draw calls, renderer submission stats, shadow depth
+  and before/after screenshots agree.
+- **Risks:** the GPU Mesh is host-owned and must remain live
+  until `submitMesh` returns. Generic View does not automatically
+  batch unlike renderer's existing internal batching. Other
+  FPS UI and world rendering remain their own adapters.
+- **Next action:** add an agents-facing `aiverse-view` skill,
+  document strict `engine/view` ownership in `AGENTS.md`,
+  and explicitly mark legacy `game::RtsView` as a
+  temporary specialized adapter. Keep migrating graphics
+  and view features without pulling genre-specific code
+  into the generic View. Commit documentation architecture
+  stage then separate Stage 54 handoff.
+
