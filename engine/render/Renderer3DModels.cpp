@@ -396,14 +396,14 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
     recordPersistentModel(d);
-    if (capture_ && (d.flags & kDrawStatic)) {   // light baker: the static scene, every node in world space
+    if (capture_ && (d.flags & kDrawStatic) && d.primitiveMaterialFilter < 0) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
         for (size_t i = 0; i < pose.size(); ++i) nodeWorld[i] = d.world * pose[i];
         capture_(d, nodeWorld);
     }
     const auto* cache=d.staticCache;
-    if(cache&&(cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
+    if(cache&&(d.primitiveMaterialFilter>=0||cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
     if(cache)++profile_.cachedModels;
     // whole-model culling with the bind-pose bounds (padded: animation moves limbs outside them)
     float3 c = (m->boundsMin + m->boundsMax) * 0.5f, e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
@@ -510,13 +510,15 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
         meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
-        const bool shadowBatch = !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
+        const bool shadowBatch = d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (!m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+        if (d.primitiveMaterialFilter<0 && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
-            if (p.indexCount == 0) return;
+            if (p.indexCount == 0 ||
+                (d.primitiveMaterialFilter >= 0 &&
+                 p.material != d.primitiveMaterialFilter)) return;
             int mi = p.material;
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
