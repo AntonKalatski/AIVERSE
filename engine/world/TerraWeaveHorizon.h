@@ -152,6 +152,46 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         throw std::invalid_argument("TerraWeave Horizon rings do not cover ranges");
 }
 
+// Opt-in quality presets retain the same two-primitive render path,
+// shared canopy atlas and genre-independent generator. Callers may override
+// individual settings after selecting a preset.
+enum class HorizonQualityPreset : uint8_t {
+    Minimal, Mobile, Balanced, High
+};
+
+inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
+    HorizonSettings settings;
+    switch (preset) {
+        case HorizonQualityPreset::Minimal:
+            settings.atlasTilePixels=16;
+            settings.terrainResolution=16;
+            settings.crownDetail=1;
+            settings.maxCachedRegions=0;
+            settings.regionHysteresisCm=4800;
+            break;
+        case HorizonQualityPreset::Mobile:
+            settings.atlasTilePixels=24;
+            settings.terrainResolution=24;
+            settings.crownDetail=1;
+            settings.maxCachedRegions=0;
+            settings.regionHysteresisCm=4000;
+            break;
+        case HorizonQualityPreset::Balanced:
+            break;
+        case HorizonQualityPreset::High:
+            settings.atlasTilePixels=48;
+            settings.terrainResolution=64;
+            settings.crownDetail=3;
+            settings.orientationViews=2;
+            settings.maxCachedRegions=2;
+            break;
+        default:
+            throw std::invalid_argument("TerraWeave Horizon quality preset");
+    }
+    validateHorizonSettings(settings);
+    return settings;
+}
+
 // Worst-case resident atlas/mesh budget, independent of sampled biome and
 // without claiming any particular GPU driver's measured draw-call count.
 struct HorizonBudget {
