@@ -345,7 +345,9 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         st.graph.update(dt);
         if (updatePose || st.pose.empty()) st.graph.evaluate(st.pose);
         if(control){control->state=st.graph.state();control->contacts=st.graph.contactReport();control->locomotion=st.graph.locomotionReport();if(!st.graph.healthy())control->error=st.graph.error();}
-    } else if (!m.clips.empty()) {
+    } else if (!st.genericViewPose && !m.clips.empty()) {
+        // MotionWeave already advanced this frame and supplied local/world
+        // poses. Never tick the legacy Animator for the same source.
         auto pick = [&](int kind) { const auto& v = ch.clips[kind].clips; return v[size_t(mix64(uint64_t(st.distance * 7) + uint64_t(kind)) % v.size())]; };
         auto play = [&](int kind, bool restart) {
             const ClipSpec& cs = ch.clips[kind];
@@ -429,7 +431,7 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         A.update(dt);
         emitClipEvents(st, ch, o);
         if (ch.needsPose && updatePose) A.evaluate(st.pose);
-    } else if (ch.needsPose && (updatePose || st.pose.empty())) {
+    } else if (!st.genericViewPose && ch.needsPose && (updatePose || st.pose.empty())) {
         bindPose(m, st.pose);
     }
 
