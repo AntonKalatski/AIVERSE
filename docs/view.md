@@ -448,3 +448,24 @@ advance, View-source removal, legacy clock reinitialization and a new
 View player after re-entry. This checks the reusable animation contract;
 **it does not directly invoke `RtsView::animate`**, so RTS in-game parity
 and rendering still need native/visual integration validation.
+
+## Generic transformed bounds for mesh presentation
+
+`engine/view/GeometryBounds.h` exposes
+`view::transformAabb(localMin,localMax,worldMatrix)` and a
+`view::WorldBounds { min, max, valid }` return value. It transforms
+all eight corners, handles rotation, non-uniform/negative scale and
+translations, and returns an invalid result for reversed/non-finite
+bounds or non-finite output coordinates. Only renderer float math is
+involved. Gameplay collision/physics, authoritative ECS and network
+serialization do not depend on this presentation helper.
+
+The RTS adapter now consumes this helper when preparing bounds for
+animation environment contact meshes, replacing a local eight-corner
+AABB loop. Source-specific node/primitive IDs and contact decisions
+remain in the game adapter; this shared geometry operation belongs
+to View and can be reused by any genre or editor.
+
+Deferred test: `view_geometry_bounds` in
+`tests/view/geometry_bounds.cpp`. Native build and execution are
+**NOT RUN** for this integration step.
