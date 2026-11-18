@@ -5327,3 +5327,21 @@ ctest -R virtual_texture_file_streamer on a native checkout; fix
 any compiler or assertion failures. Then add replacement-camera
 visibility fixture and integrate GPU feedback capture into a real
 renderer pass, validating Metal/GL/Vulkan separately.
+
+
+## Stage 8S — retry fixture readback ownership correction (2026-11-18)
+
+Test fix commit: 7f34beec5d9a05470eea1c6fa79ed5e6d6e9484b.
+File: tests/render/virtual_texture_file_streamer.cpp.
+The Stage 8R fixture reused a TextureReadbackResult after its pixel
+vector had been moved into the stale-callback test. Replaced that reuse
+with a newly initialized RGBA8 two-pixel feedback result encoding the
+same fine-page ID, so the one-frame retry scenario is meaningful and
+independent of moved-from vector state.
+
+Verification: GitHub source commit succeeded. Native C++ compile,
+CTest and GPU execution NOT RUN. This is not a passing-test claim.
+Next: run the focused native test and then test replacement visibility
+with a new camera region and distinct missing page keys; integrate
+the feedback pass into an actual renderer only after validating its
+render-thread and frame-order lifecycle.
