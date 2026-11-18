@@ -1862,3 +1862,44 @@ subregion upload or page-oriented HLOD resource model after
 backend API parity review. A separate **test agent** must compile
 and execute the full Stage 10 matrix listed above and record
 actual failures/results without silently marking NOT RUN as PASS.
+
+## Stage 11a — merge main into feature/terraweave before further work (COMPLETE)
+
+**User request:** First bring latest `main` into the active feature branch,
+without merging unfinished TerraWeave into `main`. Do not spend this
+feature stage running tests (dedicated test agent owns validation).
+
+- Branch before merge: `feature/terraweave` at
+  `00cda4672a3310c8dd289cf52438f4a92bbcf52f`.
+- Main at merge: `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`.
+  The branches were diverged, with 325 main-only and 258
+  feature-only commits in the GitHub compare view.
+- Integration PR **#30** (head `main`, base
+  `feature/terraweave`) was merged using GitHub's merge method.
+  Resulting merge commit:
+  **`7f1cedde055a58e0b12a224a6e2f9b1dfd89b8d0`**.
+- Independent verification from GitHub compare:
+  `base=main`, `head=feature/terraweave` returned
+  **status=ahead, behind_by=0**, merge base exactly
+  `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`.
+  PR #24 remains Draft and continues to target
+  `feature/universal-entity-inspector-fps`. Branch
+  `main` is unchanged by this integration.
+- Following the merge, inspected `tools/horizon/main.cpp`,
+  `TerraWeaveHorizonBatch.h`, and preceding handoff. A
+  parallel agent already implemented batch offline archive
+  baking, TWH2 stable slots, and CPU partial region invalidation.
+  **Do NOT duplicate those modules.** Next functionality is
+  partial GPU resource update/paging where existing generic RHI
+  supports it, or another independent high-value feature.
+
+**Actually tested:** GitHub merge and ancestry compare only.
+**CMake/CTest, app execution, GPU tests and performance not run**
+(per explicit separate testing-agent ownership). No success
+claim is justified. Do not change unrelated main features.
+
+**Next agent:** fetch current HEAD before source writes because
+other agents commit concurrently; preserve `TWH2` archive
+semantics, keep `Horizon` renderer through standard
+`gfx::Device`, update this handoff after the next functional
+implementation stage.
