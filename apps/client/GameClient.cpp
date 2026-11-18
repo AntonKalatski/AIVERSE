@@ -32,6 +32,7 @@
 #include "StartPlayers.h"
 #include "modules/rts/view/EncounterDecals.h"   // boss encounters: ground marks
 #include "engine/platform/ContentReader.h"
+#include "engine/platform/EnhancedInputConfig.h"
 #include "RegionSettings.h"
 #include "modules/rts/RtsLocalize.h"
 #include "modules/rts/RtsTiles.h"
@@ -76,6 +77,19 @@ void GameClient::initStep(gfx::Device& dev, int step) {
                                                    : i18n::chooseLanguage(langs_, i18n::readSavedLanguage(platform::userDataDir())), false);
         } catch (const std::exception& e) {
             error_ = e.what();
+        }
+        // Project-owned Enhanced Input asset is optional. Bad data retains the legacy default shortcut map.
+        std::string actionAsset;
+        if (platform::readContentFile("input/actions.json", actionAsset)) {
+            try {
+                platform::enhanced_config::Asset authored;
+                std::string inputError;
+                if (!platform::enhanced_config::readAsset(Json::parse(actionAsset), authored, &inputError) ||
+                    !platform::enhanced_config::installAsset(inputShortcuts_.system(), authored, &inputError))
+                    std::fprintf(stderr, "RTS Input Actions: %s\n", inputError.c_str());
+            } catch (const std::exception& ex) {
+                std::fprintf(stderr, "RTS Input Actions: %s\n", ex.what());
+            }
         }
         if (!platform::hostedView()) platform::setTitle(gameName_);   // hosted: the editor keeps its title
         loadNetSettings();
@@ -495,6 +509,7 @@ void GameClient::event(const Event& e) {
     if (!padInjecting_ && (e.type == EventType::MouseMove || e.type == EventType::MouseDown || e.type == EventType::TouchBegin))
         gamepad_.mouseUsed(e.x, e.y);   // a real pointer hides the pad cursor (ClientGamepad.cpp)
     bool uiWants = ui_.handleEvent(e);
+    const auto inputActions = inputShortcuts_.onEvent(e, screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
     if(screen_!=Screen::Playing || e.type==EventType::FocusLost){entityActions_.cancel();entityPointer_=false;mapTapPending_=false;}
     if (e.type == EventType::KeyDown && e.key == Key::F8 && !e.repeat) ui_.toggleDebugger();
     // a press that started on the UI keeps the pointer until release (dragging out of a panel
@@ -777,14 +792,22 @@ void GameClient::event(const Event& e) {
             else if (!groups_[size_t(gi)].empty()) selection_ = groups_[size_t(gi)];
         }
         if (!ctrl && scriptCommandKey(e.key)) break;   // rules "commands" hotkeys first
+        // Input Actions are evaluated after RmlUi/Modal capture and script-command overrides.
+        // The gameplay Actions remain presentation-side; only issue() creates sim Commands.
+        const auto triggered = [&](const char* name) {
+            return std::find(inputActions.begin(), inputActions.end(), name) != inputActions.end();
+        };
         if (!ctrl && !selection_.empty()) {
-            if (e.key == Key::A) mode_ = Mode::AttackMove;
-            if (e.key == Key::P) mode_ = Mode::Patrol;
-            if (mod().fieldOps() && (e.key == Key::R || e.key == Key::E) && selectionBuilds()) mode_ = e.key == Key::R ? Mode::Repair : Mode::Reclaim;   // field operations
-            if (e.key == Key::S) { Command c; c.type = kCmdStop; c.units = selection_; issue(c); }
-            if (e.key == Key::H) { Command c; c.type = kCmdHold; c.units = selection_; issue(c); }
+            if (triggered("AttackMove")) mode_ = Mode::AttackMove;
+            if (triggered("Patrol")) mode_ = Mode::Patrol;
+            if (mod().fieldOps() && selectionBuilds()) {
+                if (triggered("Repair")) mode_ = Mode::Repair;
+                if (triggered("Reclaim")) mode_ = Mode::Reclaim;
+            }
+            if (triggered("Stop")) { Command c; c.type = kCmdStop; c.units = selection_; issue(c); }
+            if (triggered("Hold")) { Command c; c.type = kCmdHold; c.units = selection_; issue(c); }
         }
-        if (e.key == Key::Space) fitCamera();
+        if (triggered("FocusCamera")) fitCamera();
         break;
     }
     default: break;
