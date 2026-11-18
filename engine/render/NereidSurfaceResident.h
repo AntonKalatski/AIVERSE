@@ -113,8 +113,8 @@ public:
         return NereidSurfaceUpdate::Uploaded;
     }
 
-    void draw(Renderer3D& renderer) const {
-        if(resident_)drawNereidWaterSurface(renderer,mesh_,key_.style);
+    void draw(Renderer3D& renderer,const mat4& transform=mat4::identity()) const {
+        if(resident_)drawNereidWaterSurface(renderer,mesh_,key_.style,transform);
     }
     void release(gfx::Device& device) {
         releaseNereidWaterSurface(device,mesh_);
