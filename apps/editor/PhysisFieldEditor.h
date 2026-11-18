@@ -179,163 +179,208 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
 
 // Return true only for mouse interactions owned by an opted-in PHYSIS marker.
 // This keeps the legacy FPS and RTS selection/drag behavior intact otherwise.
-inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
-                                     const render::RTSCamera& camera) {
-    auto& state = physisFieldEditorState();
-    const ImGuiIO& io = ImGui::GetIO();
+// Optional Scene interaction. Ctrl/Shift-click toggles PHYSIS membership;
+// an unmodified click on a selected group member moves the entire group.
+inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
+                                    const render::RTSCamera& camera) {
+    auto& state=physisFieldEditorState();
+    const ImGuiIO& io=ImGui::GetIO();
     if (!state.editMode || !state.showMarkers || ed.playing()) {
-        state.dragging = false;
-        state.draggingRadius = false;
+        state.dragging=false;
+        state.draggingRadius=false;
+        state.dragOriginal.clear();
         return false;
     }
     if (state.dragging) {
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) ||
             !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            state.dragging = false;
-            state.draggingRadius = false;
-            state.dragEdited = false;
+            state.dragging=false;
+            state.draggingRadius=false;
+            state.dragEdited=false;
+            state.dragOriginal.clear();
             return true;
         }
-        const auto& config = physis_authoring::read(ed.doc());
         std::string collection;
         std::size_t index=0;
         Json field;
-        if (!physis_authoring::findField(config,state.selectedId,collection,index,&field)) {
-            state.dragging = false;
+        if (!physis_authoring::findField(physis_authoring::read(ed.doc()),
+                    state.selectedId,collection,index,&field)) {
+            state.dragging=false;
+            state.dragOriginal.clear();
             return true;
         }
-        render::float3 current;
+        render::float3 current{};
         if (!physisFieldPosition(field,current)) {
-            state.dragging = false;
+            state.dragging=false;
+            state.dragOriginal.clear();
             return true;
         }
         render::float3 hit{};
         if (state.draggingRadius) {
+            // Radius handle affects the active field only, not the whole group.
             if (camera.screenToGround(io.MousePos.x-vp.originX,
                     io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,hit,current.y)) {
-                const double rawRadius = std::hypot(double(hit.x)-double(current.x),
-                                                     double(hit.z)-double(current.z));
-                double radius = state.snapEnabled ?
-                    physis_authoring::snapMeters(rawRadius, double(state.snapStepMeters)) :
+                const double rawRadius=std::hypot(double(hit.x)-double(current.x),
+                                                   double(hit.z)-double(current.z));
+                double radius=state.snapEnabled ?
+                    physis_authoring::snapMeters(rawRadius,double(state.snapStepMeters)) :
                     rawRadius;
-                // Reject a storm radius equal to or below its eye radius.
-                const double minRadius = collection == "storms" ?
-                    field["eyeRadiusMeters"].toDouble() + 0.001 : 1.0;
-                radius = std::clamp(radius, minRadius, 100000.0);
-                double previous = 0;
-                if (physisFieldRadius(field, previous) &&
-                    std::abs(radius-previous) >= 0.0005 &&
-                    physis_authoring::resizeField(ed.doc(),state.selectedId,
-                                         radius,!state.dragEdited,&state.error)) {
-                    state.dragEdited = true;
+                const double minimum=collection=="storms" ?
+                    field["eyeRadiusMeters"].toDouble()+0.001 : 1.0;
+                radius=std::clamp(radius,minimum,100000.0);
+                double previous=0;
+                if (physisFieldRadius(field,previous) &&
+                    std::abs(radius-previous)>=0.0005) {
+                    const auto revision=ed.doc().revision;
+                    if (physis_authoring::resizeField(ed.doc(),state.selectedId,
+                                  radius,!state.dragEdited,&state.error)) {
+                        if (ed.doc().revision!=revision) state.dragEdited=true;
+                        state.draftId.clear();
+                        state.error.clear();
+                    }
+                }
+            }
+        } else if (!state.dragOriginal.empty()) {
+            // Targets derive from the initial drag snapshot, never from
+            // previously rounded values; relative offsets remain invariant.
+            double x=state.dragAnchorX;
+            double y=state.dragAnchorY;
+            double z=state.dragAnchorZ;
+            if (io.KeyShift) {
+                state.dragRawY += double(state.lastMouseY-io.MousePos.y) *
+                                  std::max(0.01,double(camera.distance)*0.002);
+                y=state.dragRawY;
+                if (state.snapEnabled)
+                    y=physis_authoring::snapMeters(y,double(state.snapStepMeters));
+            } else if (camera.screenToGround(io.MousePos.x-vp.originX,
+                       io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
+                       hit,float(state.dragAnchorY))) {
+                x=double(hit.x)+state.grabOffsetX;
+                z=double(hit.z)+state.grabOffsetZ;
+                if (state.snapEnabled) {
+                    x=physis_authoring::snapMeters(x,double(state.snapStepMeters));
+                    z=physis_authoring::snapMeters(z,double(state.snapStepMeters));
+                }
+            }
+            const double dx=x-state.dragAnchorX;
+            const double dy=y-state.dragAnchorY;
+            const double dz=z-state.dragAnchorZ;
+            if (std::abs(dx)>0.0005 || std::abs(dy)>0.0005 ||
+                std::abs(dz)>0.0005 || state.dragEdited) {
+                std::vector<physis_authoring::FieldPosition> targets;
+                targets.reserve(state.dragOriginal.size());
+                for (const auto& p:state.dragOriginal)
+                    targets.push_back({p.id,p.x+dx,p.y+dy,p.z+dz});
+                const auto revision=ed.doc().revision;
+                if (physis_authoring::moveFields(ed.doc(),targets,
+                          !state.dragEdited,&state.error)) {
+                    if (ed.doc().revision!=revision) state.dragEdited=true;
                     state.draftId.clear();
                     state.error.clear();
                 }
             }
-        } else {
-            double x = current.x, y = current.y, z = current.z;
-            if (io.KeyShift) {
-                state.dragRawY += double(state.lastMouseY - io.MousePos.y) *
-                                  std::max(0.01,double(camera.distance)*0.002);
-                y = state.dragRawY;
-            } else if (camera.screenToGround(io.MousePos.x-vp.originX,
-                           io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
-                           hit,current.y)) {
-                x = double(hit.x)+state.grabOffsetX;
-                z = double(hit.z)+state.grabOffsetZ;
-            }
-            if (state.snapEnabled) {
-                // An X/Z translation must never silently snap the unedited Y.
-                if (io.KeyShift)
-                    y = physis_authoring::snapMeters(y, double(state.snapStepMeters));
-                else {
-                    x = physis_authoring::snapMeters(x, double(state.snapStepMeters));
-                    z = physis_authoring::snapMeters(z, double(state.snapStepMeters));
-                }
-            }
-            if ((std::abs(x-current.x)>0.001 || std::abs(y-current.y)>0.001 ||
-                 std::abs(z-current.z)>0.001) &&
-                physis_authoring::moveField(ed.doc(),state.selectedId,x,y,z,
-                                             !state.dragEdited,&state.error)) {
-                state.dragEdited = true;
-                state.draftId.clear();
-                state.error.clear();
-            }
         }
-        state.lastMouseY = io.MousePos.y;
+        state.lastMouseY=io.MousePos.y;
         return true;
     }
     if (!vp.hovered || !ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
-        io.KeyCtrl || io.KeySuper || io.KeyAlt || ImGui::IsMouseDown(ImGuiMouseButton_Right))
+        io.KeySuper || io.KeyAlt || io.WantTextInput ||
+        ImGui::IsMouseDown(ImGuiMouseButton_Right))
         return false;
+    const bool additive=io.KeyCtrl || io.KeyShift;
+    const Json config=physis_authoring::read(ed.doc());
 
-    const Json config = physis_authoring::read(ed.doc());
-    // Radius handle has priority over centre markers when the resize tool is active.
-    if (state.gizmoMode == 1 && !state.selectedId.empty()) {
+    // Resize handle has priority, except when toggling selection.
+    if (!additive && state.gizmoMode==1 && !state.selectedId.empty()) {
         std::string collection;
-        std::size_t index = 0;
+        std::size_t index=0;
         Json selected;
         render::float3 center{};
-        double radius = 0;
+        double radius=0;
         render::float2 screen{};
         if (physis_authoring::findField(config,state.selectedId,collection,index,&selected) &&
             physisFieldPosition(selected,center) && physisFieldRadius(selected,radius) &&
             physisRadiusHandleScreen(camera,vp,center,radius,screen)) {
-            const double dx = double(screen.x+vp.originX-io.MousePos.x);
-            const double dy = double(screen.y+vp.originY-io.MousePos.y);
-            if (dx*dx + dy*dy < 14.0*14.0) {
+            const double dx=double(screen.x+vp.originX-io.MousePos.x);
+            const double dy=double(screen.y+vp.originY-io.MousePos.y);
+            if (dx*dx+dy*dy<14.0*14.0) {
                 ed.select({Selection::MapProps,-1,{}});
-                state.dragging = true;
-                state.draggingRadius = true;
-                state.dragEdited = false;
+                state.dragging=true;
+                state.draggingRadius=true;
+                state.dragEdited=false;
+                state.dragOriginal.clear();
                 state.error.clear();
                 return true;
             }
         }
     }
+
     std::string picked;
-    float bestDistanceSq = 15.f*15.f;
-    render::float3 chosenPosition{};
-    for (const char* key : {"windZones","storms","gravityFields"}) {
-        const auto& fields = config[key];
+    float nearest=15.f*15.f;
+    render::float3 chosen{};
+    for (const char* key:{"windZones","storms","gravityFields"}) {
+        const auto& fields=config[key];
         if (!fields.isArray()) continue;
-        for (const auto& entry : fields.items()) {
-            render::float3 position;
-            render::float2 screen;
+        for (const auto& entry:fields.items()) {
+            render::float3 position{};
+            render::float2 screen{};
             if (!physisFieldPosition(entry,position) ||
                 !camera.worldToScreen(position,vp.pointsW,vp.pointsH,screen))
                 continue;
-            const float dx = screen.x+vp.originX-io.MousePos.x;
-            const float dy = screen.y+vp.originY-io.MousePos.y;
-            const float distanceSq = dx*dx+dy*dy;
-            if (distanceSq < bestDistanceSq) {
-                bestDistanceSq=distanceSq;
-                chosenPosition=position;
-                picked=entry.getStr("id");
-            }
+            const float dx=screen.x+vp.originX-io.MousePos.x;
+            const float dy=screen.y+vp.originY-io.MousePos.y;
+            const float d=dx*dx+dy*dy;
+            if (d<nearest) {nearest=d;chosen=position;picked=entry.getStr("id");}
         }
     }
     if (picked.empty()) return false;
-    selectPhysisField(picked);
-    // Open the common Inspector's MapProps panel for the selected PHYSIS field.
-    // The PHYSIS field is authored JSON, not a fake runtime ECS Selection.
-    ed.select({Selection::MapProps,-1,{}});
-    // Resize mode only begins a drag at the selected outer-radius handle.
-    if (state.gizmoMode == 1) return true;
-    render::float3 ground;
-    if (camera.screenToGround(io.MousePos.x-vp.originX,
-        io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,ground,
-        chosenPosition.y)) {
-        state.grabOffsetX = double(chosenPosition.x-ground.x);
-        state.grabOffsetZ = double(chosenPosition.z-ground.z);
-    } else {
-        state.grabOffsetX = state.grabOffsetZ = 0;
+    if (additive) {
+        selectPhysisField(picked,true);
+        ed.select({Selection::MapProps,-1,{}});
+        return true;
     }
-    state.dragging = true;
-    state.draggingRadius = false;
-    state.dragEdited = false;
-    state.dragRawY = chosenPosition.y;
-    state.lastMouseY = io.MousePos.y;
+    if (!physisFieldSelected(picked))
+        selectPhysisField(picked);
+    else if (state.selectedId!=picked) {
+        // Make this member the pivot without clearing other selected fields.
+        state.selectedId=picked;
+        state.draftId.clear();
+        state.error.clear();
+    }
+    ed.select({Selection::MapProps,-1,{}});
+    if (state.gizmoMode==1) return true;
+
+    render::float3 ground{};
+    if (camera.screenToGround(io.MousePos.x-vp.originX,
+                io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
+                ground,chosen.y)) {
+        state.grabOffsetX=double(chosen.x-ground.x);
+        state.grabOffsetZ=double(chosen.z-ground.z);
+    } else state.grabOffsetX=state.grabOffsetZ=0;
+
+    state.dragOriginal.clear();
+    for (const auto& id:state.selectedIds) {
+        std::string collection;
+        std::size_t index=0;
+        Json entry;
+        if (!physis_authoring::findField(config,id,collection,index,&entry) ||
+            !entry["center"].isArray() || entry["center"].size()!=3) {
+            state.dragOriginal.clear();
+            state.error="PHYSIS group contains missing field";
+            return true;
+        }
+        const auto& p=entry["center"];
+        state.dragOriginal.push_back({id,p[0].toDouble(),
+                                        p[1].toDouble(),p[2].toDouble()});
+    }
+    state.dragAnchorX=chosen.x;
+    state.dragAnchorY=chosen.y;
+    state.dragAnchorZ=chosen.z;
+    state.dragRawY=chosen.y;
+    state.dragging=true;
+    state.draggingRadius=false;
+    state.dragEdited=false;
+    state.lastMouseY=io.MousePos.y;
     return true;
 }
 
