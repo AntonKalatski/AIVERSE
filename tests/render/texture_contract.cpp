@@ -50,6 +50,37 @@ int main() {
     check(validateTextureDesc(d) == TextureDescError::None, "depth comparison");
     d.storage = true;
     check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "depth storage rejected");
+    // View subresources must remain in the parent's mip/layer bounds.
+    d = size2D(64,64); d.mipLevels = 7;
+    TextureViewDesc v; v.baseMipLevel = 1; v.mipLevelCount = 4;
+    check(validateTextureViewDesc(d,v), "valid 2D mip range");
+    v.mipLevelCount = 7;
+    check(!validateTextureViewDesc(d,v), "invalid 2D mip range");
+    d = size2D(64,64); d.dimension = TextureDimension::Texture2DArray; d.arrayLayers = 8;
+    v = TextureViewDesc{}; v.dimension = TextureDimension::Texture2DArray;
+    v.baseArrayLayer = 6; v.arrayLayerCount = 2;
+    check(validateTextureViewDesc(d,v), "array view near end");
+    v.arrayLayerCount = 3;
+    check(!validateTextureViewDesc(d,v), "array view past end");
+    v.dimension = TextureDimension::Texture2D; v.arrayLayerCount = 1;
+    check(validateTextureViewDesc(d,v), "single array slice as 2D");
+    d = size2D(64,64); d.dimension = TextureDimension::CubeArray; d.arrayLayers = 12;
+    v = TextureViewDesc{}; v.dimension = TextureDimension::Cube;
+    v.baseArrayLayer = 6; v.arrayLayerCount = 6;
+    check(validateTextureViewDesc(d,v), "cube view from cube array");
+    v.baseArrayLayer = 5;
+    check(!validateTextureViewDesc(d,v), "cube view must align to six faces");
+    d = size2D(); d.format = PixelFormat::Depth;
+    v = TextureViewDesc{}; v.aspect = TextureAspect::Depth;
+    check(validateTextureViewDesc(d,v), "depth aspect");
+    v.aspect = TextureAspect::Color;
+    check(!validateTextureViewDesc(d,v), "reject color view of depth");
+    SamplerDesc sampler;
+    check(validateSamplerDesc(sampler), "default sampler");
+    sampler.maxLod = -1.0f;
+    check(!validateSamplerDesc(sampler), "invalid sampler LOD");
+    sampler.maxLod = 8.0f; sampler.maxAnisotropy = 0.0f;
+    check(!validateSamplerDesc(sampler), "invalid anisotropy");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }

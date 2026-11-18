@@ -22,6 +22,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <functional>
 #include <string>
@@ -193,6 +194,56 @@ constexpr const char* textureDescErrorString(TextureDescError e) {
     case TextureDescError::InvalidUsage: return "texture usage combinations are invalid";
     }
     return "invalid texture descriptor";
+}
+
+
+inline int textureEffectiveMipLevels(const TextureDesc& d) {
+    if (d.levelCount > 0) return d.levelCount;
+    if (d.mipLevels > 0) return d.mipLevels;
+    return d.mipmaps ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
+}
+
+// Validate a view against the *requested* parent descriptor. Backends must also validate
+// the actual GPU allocation (which can have fewer mips if generation is unsupported).
+inline bool validateTextureViewDesc(const TextureDesc& image, const TextureViewDesc& view) {
+    if (validateTextureDesc(image) != TextureDescError::None ||
+        view.baseMipLevel < 0 || view.mipLevelCount <= 0 ||
+        view.baseArrayLayer < 0 || view.arrayLayerCount <= 0)
+        return false;
+    const int mips = textureEffectiveMipLevels(image);
+    if (view.baseMipLevel >= mips || view.mipLevelCount > mips - view.baseMipLevel ||
+        view.baseArrayLayer >= image.arrayLayers ||
+        view.arrayLayerCount > image.arrayLayers - view.baseArrayLayer)
+        return false;
+    if (image.format == PixelFormat::Depth) {
+        if (view.aspect != TextureAspect::Depth) return false;
+    } else if (view.aspect != TextureAspect::Color) return false;
+    switch (image.dimension) {
+    case TextureDimension::Texture1D:
+    case TextureDimension::Texture2D:
+    case TextureDimension::Texture3D:
+    case TextureDimension::Cube:
+        return view.dimension == image.dimension &&
+               view.baseArrayLayer == 0 &&
+               view.arrayLayerCount == image.arrayLayers;
+    case TextureDimension::Texture2DArray:
+        return (view.dimension == TextureDimension::Texture2DArray) ||
+               (view.dimension == TextureDimension::Texture2D &&
+                view.arrayLayerCount == 1);
+    case TextureDimension::CubeArray:
+        return (view.dimension == TextureDimension::CubeArray &&
+                view.baseArrayLayer % 6 == 0 && view.arrayLayerCount % 6 == 0) ||
+               (view.dimension == TextureDimension::Cube &&
+                view.baseArrayLayer % 6 == 0 && view.arrayLayerCount == 6);
+    }
+    return false;
+}
+
+inline bool validateSamplerDesc(const SamplerDesc& s) {
+    return std::isfinite(s.minLod) && std::isfinite(s.maxLod) &&
+           std::isfinite(s.lodBias) && std::isfinite(s.maxAnisotropy) &&
+           s.minLod >= 0.0f && s.maxLod >= s.minLod &&
+           s.maxAnisotropy >= 1.0f;
 }
 
 // Each backend picks the sources it understands. A shader may provide all of them.
