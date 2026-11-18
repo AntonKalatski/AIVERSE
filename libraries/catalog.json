@@ -2394,6 +2394,28 @@
       ]
     },
     {
+      "id": "ecs-hitscan-resolution",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md",
+      "summary": "Independent reusable ECS hitscan resolution system: one-shot intents, deterministic nearest-target callbacks, stable hit records and deferred hit application for native games",
+      "notes": "The real FPS traceShot still uses synchronous shared closest-target and ordered-impact policies; this newly schedulable stage is opt-in only until multi-hit same-tick damage and save/rollback parity have been proven. Does not simulate projectile physics.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_hitscan_resolution",
+      "dependencies": [
+        "tests/ecs_hitscan_resolution_test.cpp",
+        "docs/ecs-mechanic-composition.md",
+        "libraries/include/aiverselib/genre/EcsHitscanSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [],
+      "packageDependencies": [
+        "ecs-hitscan"
+      ]
+    },
+    {
       "id": "ecs-hitscan",
       "version": "0.1.0",
       "layer": "simulation",
