@@ -26,6 +26,7 @@ struct ArborMesh {
 struct ArborMeshSettings {
     uint32_t radialSegments = 6; // 3..16
     bool doubleSidedLeaves = true;
+    uint32_t leafPlanes = 2; // 1: one card, 2: crossed cards
 };
 
 namespace arbor_detail {
@@ -72,7 +73,8 @@ inline void addLeafQuad(ArborMesh& mesh, V3 center, V3 side, float radius,
 
 inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
                                ArborMeshSettings settings = {}) {
-    if (settings.radialSegments < 3 || settings.radialSegments > 16)
+    if (settings.radialSegments < 3 || settings.radialSegments > 16 ||
+        settings.leafPlanes < 1 || settings.leafPlanes > 2)
         throw std::invalid_argument("TerraWeave Arbor radial segments");
     ArborMesh out;
     constexpr float kTau = 6.2831853071795864769f;
@@ -117,7 +119,8 @@ inline ArborMesh buildArborMesh(const TreeSkeleton& tree,
         // Two crossed alpha-cutout cards per cluster. A later GPU material
         // controls alpha mask, wind and LOD blend; no textures are baked here.
         addLeafQuad(out, at, {1, 0, 0}, r, settings.doubleSidedLeaves);
-        addLeafQuad(out, at, {0, 0, 1}, r, settings.doubleSidedLeaves);
+        if (settings.leafPlanes == 2)
+            addLeafQuad(out, at, {0, 0, 1}, r, settings.doubleSidedLeaves);
     }
     return out;
 }
