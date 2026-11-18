@@ -2,6 +2,7 @@
 #include "engine/render/NereidWaterRenderer.h"
 #include "engine/render/NereidSurfaceResident.h"
 #include "engine/world/NereidWaterScene.h"
+#include "engine/world/NereidWaterManifest.h"
 #include "engine/render/Shaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
 #include <iostream>
@@ -86,5 +87,54 @@ int main() {
     check(rejected,"water scene must reject unbounded surface lists");
     check(sceneWater.visibleSurfaceCount()==0,
           "rejected configuration must leave scene state unchanged");
+    // WorldScene manifest is opt-in; legacy manifests instantiate no water.
+    const auto emptyManifest=world::parseNereidWaterManifest(Json::parse("{}"));
+    check(emptyManifest.surfaces.empty() && emptyManifest.maxUploadsPerFrame==2,
+          "legacy world manifest should not opt in to NEREID");
+    const auto authored=world::parseNereidWaterManifest(Json::parse(R"json(
+    {"nereidWater":{"maxUploadsPerFrame":3,"surfaces":[
+      {"kind":"ocean","shape":"infinite","surfaceY":2,"bottomY":-100,
+       "oceanPatchRadius":300,"lod":"far"},
+      {"kind":"lake","shape":"polygon","surfaceY":4,"bottomY":-5,
+       "points":[[0,0],[40,0],[40,40],[0,40]],"style":{"opacity":0.7}},
+      {"kind":"river","shape":"river","surfaceY":3,"bottomY":0,
+       "points":[[0,0,4],[100,0,8]],"lod":"medium"}
+    ]}})json"));
+    check(authored.maxUploadsPerFrame==3 && authored.surfaces.size()==3,
+          "manifest must parse water bodies and upload quota");
+    check(authored.surfaces[0].body.footprint==lib::nereid::WaterFootprint::Infinite &&
+          authored.surfaces[0].mesh.oceanPatchRadius==300.f,
+          "manifest ocean patch configuration missing");
+    check(authored.surfaces[1].useGeometry &&
+          authored.surfaces[1].geometry.points.size()==4,
+          "manifest polygon points missing");
+    check(authored.surfaces[2].geometry.kind==lib::nereid::WaterGeometryKind::RiverSpline &&
+          authored.surfaces[2].geometry.points[1].halfWidth==8_fx,
+          "manifest river node widths missing");
+    auto rejectedManifest=[](const char* json){
+        try {
+            world::parseNereidWaterManifest(Json::parse(json));
+        }catch(const JsonError&){return true;}
+        return false;
+    };
+    check(rejectedManifest(R"({"nereidWater":{"maxUploadsPerFrame":0,"surfaces":[]}})"),
+          "manifest must reject zero per-frame GPU budget");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[
+      {"shape":"river","surfaceY":2,"bottomY":1,"points":[[0,0,-1],[2,3,1]]}
+    ]}})"),"manifest must reject negative river width");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[
+      {"shape":"box","surfaceY":2,"bottomY":1,"halfExtents":[1,-3]}
+    ]}})"),"manifest must reject negative box footprint");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[
+      {"shape":"disc","surfaceY":2,"bottomY":1,"radius":0}
+    ]}})"),"manifest must reject empty circle");
+    sceneWater.setMaxUploadsPerFrame(1);
+    check(sceneWater.maxUploadsPerFrame()==1,
+          "scene water scheduler must expose configured budget");
+    bool rejectedQuota=false;
+    try {sceneWater.setMaxUploadsPerFrame(17);}
+    catch(const std::invalid_argument&){rejectedQuota=true;}
+    check(rejectedQuota && sceneWater.maxUploadsPerFrame()==1,
+          "out-of-range upload budget must preserve last valid value");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
