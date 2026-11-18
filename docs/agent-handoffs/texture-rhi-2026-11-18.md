@@ -1232,3 +1232,28 @@ Standalone header/native target compilation and tests
 **Next:** Run the parser and upload CPU tests and
 cross-platform GPU tests, then continue DDS 3D/array
 support and remaining format/back-end completeness.
+
+## Stage 6E — document layered KTX2 import and native upload API (2026-11-18)
+
+**Documentation commit:** `6c4e1de4e032aa247af1766bb0dd38552a0c9967`.
+**Path:** `docs/texture-rhi.md`.
+
+**Updated architecture:** Replaced obsolete "KTX2 drops array
+layers and cube faces" description with actual parser and
+generic GPU uploader source status, including authored mip
+preservation, first-slice legacy material compatibility,
+`decodeBlocksSlice`, compressed sRGB caveats and a native
+usage example. DDS still drops layers/faces; BasisLZ/UASTC
+transcoding, HDR/EXR and full color-management remain
+pending. Distinguishes source implementation from
+platform-tested support.
+
+**Validation:** Documentation commit completed;
+native builds, CTest, GPU validation **NOT RUN**.
+No CI pass asserted.
+
+**Next:** Verify the new `ktx2_layers` and
+`texture_asset` tests on a native clone, debug any
+C++ compiler issues and test actual GPU sampling.
+Then migrate DDS with multi-face/array metadata and
+complete the missing render-target and format features.
