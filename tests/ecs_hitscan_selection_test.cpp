@@ -1,6 +1,7 @@
 // Shared hitscan candidate policy: deterministic tie, eligibility, occlusion
 // fraction and immutable rewind-pose behavior for any gameplay host.
 #include <aiverselib/genre/EcsHitscanSystems.h>
+#include <aiverselib/genre/EcsOrderedImpactSystems.h>
 #include <cstdint>
 #include <iostream>
 #include <stdexcept>
@@ -43,6 +44,28 @@ static void exercise() {
     check(first && first.target==&snapshots[0] &&
           first.fraction==Fixed::fromRatio(3,10),
           "equal-distance hitscan tie must retain first snapshot target");
+    // Simulate the real FPS adapter after a successful nearest-actor ray
+    // query: the generic ordered policy dispatches one immediate direct hit
+    // with no on-hit/splash stages, independently of the host's genre.
+    World world;
+    const Entity shooter=world.create();
+    const Entity actor=world.create();
+    int32_t applied=0;
+    const auto dispatch=[&](bool accepted) {
+        if(!accepted)return;
+        lg::resolveOrderedProjectileImpact(
+            {kNullEntity,shooter,actor,eye+delta*first.fraction,25_fx,Fixed{}},
+            [&](Entity target) {
+                check(target==actor,"wrong ECS target for hitscan");
+                applied+=25;
+            },
+            [](Entity) {throw std::runtime_error("unexpected on-hit effect");},
+            [](Vec3,Fixed,auto&&) {throw std::runtime_error("unexpected hitscan splash");},
+            [](Entity) {return false;},
+            [](Entity) {throw std::runtime_error("unexpected splash damage");});
+    };
+    dispatch(bool(first));
+    check(applied==25,"accepted hitscan did not commit exactly one hit");
     // Live world has a different generation: the candidate snapshot remains
     // authoritative and the injected eligibility predicate decides validity.
     snapshots[0].life=2;
@@ -57,6 +80,9 @@ static void exercise() {
     const auto blocked=select(Fixed::fromRatio(1,5));
     check(!blocked && blocked.fraction==Fixed::fromRatio(1,5),
           "occlusion cutoff failed to reject targets behind the obstacle");
+    applied=0;
+    dispatch(bool(blocked));
+    check(applied==0,"obstructed hitscan committed damage");
     snapshots[2].health=0;
     check(!select(1_fx),"empty eligible set produced a false hit");
 }
