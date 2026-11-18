@@ -124,13 +124,16 @@ bool GraphRuntime::initGraph(gfx::Device* dev,const Json& graph,
         reason_="SpectraFX graph compilation failed";
         return false;
     }
-    if(!schema.empty() && !options.gpuProgram &&
+    const bool canServeNamedOnGpu=options.gpuProgram &&
+        compiled.emitters.size()==1 &&
+        !compiled.emitters[0].particleProgram.isNull();
+    if(!schema.empty() && !canServeNamedOnGpu &&
        options.preference==ComputePreference::RequireGpu) {
-        reason_="runtime instance parameters need opt-in GPU VM; RequireGpu rejected";
+        reason_="runtime instance parameters need an enabled GPU VM program; RequireGpu rejected";
         return false;
     }
     GraphRuntimeOptions actual=options;
-    if(!schema.empty() && !options.gpuProgram)
+    if(!schema.empty() && !canServeNamedOnGpu)
         actual.preference=ComputePreference::CpuOnly;
     if(!initEffect(dev,compiled,actual))return false;
     namedParams_=std::move(schema);
