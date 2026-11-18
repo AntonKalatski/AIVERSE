@@ -67,9 +67,13 @@ public:
             [](Simulation& current,const lg::HitscanResolvedEvent& hit) {
                 auto* log=current.world().resource<HitLog>();
                 require(log!=nullptr,"missing hit log");
-                require(hit.fraction==Fixed::fromRatio(3,10),
+                // Slab collision uses truncated Fixed division; the
+                // resulting contact position inherits that same fraction.
+                const Fixed expectedFraction=3_fx/10_fx;
+                require(hit.fraction==expectedFraction,
                         "wrong closest hit fraction");
-                require(hit.point.z==3_fx,"wrong instant impact position");
+                require(hit.point.z==10_fx*expectedFraction,
+                        "wrong instant impact position");
                 log->shots.push_back(hit.shotId);
                 log->sources.push_back(hit.shooter.packed());
                 log->targets.push_back(hit.target.packed());
