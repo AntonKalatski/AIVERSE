@@ -69,6 +69,9 @@ void WorldScene::setNereidSurfaces(std::vector<NereidSceneSurface> surfaces) {
 size_t WorldScene::nereidVisibleSurfaceCount()const {
     return nereidWater_.visibleSurfaceCount();
 }
+NereidUnderwaterView WorldScene::nereidUnderwaterAt(Vec3 camera)const {
+    return sampleNereidUnderwater(nereidWater_,camera);
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
