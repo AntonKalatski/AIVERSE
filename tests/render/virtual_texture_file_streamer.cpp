@@ -1,10 +1,12 @@
 #include "engine/gfx/VirtualTextureFileStreamer.h"
 #include "engine/gfx/VirtualTexturePrefetchAdapter.h"
+#include "engine/gfx/VirtualTextureFeedbackRuntime.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <map>
 #include <stdexcept>
@@ -48,6 +50,20 @@ public:
     bool failNextAtlas = false;
     int atlasUpdates = 0, tableUpdates = 0, destroyed = 0;
     std::vector<uint8_t> atlasValues;
+    bool rejectFeedback = false;
+    TextureReadFn feedbackCompletion;
+    bool readTextureAsync(TextureHandle handle, TextureReadbackDesc,
+                          TextureReadFn done) override {
+        if (rejectFeedback || !handle.valid() || !done || feedbackCompletion)
+            return false;
+        feedbackCompletion=std::move(done);
+        return true;
+    }
+    void finishFeedback(TextureReadbackResult result) {
+        auto callback=std::move(feedbackCompletion);
+        require(bool(callback),"synthetic pending feedback callback exists");
+        callback(std::move(result));
+    }
 
     const DeviceInfo& info() const override { return deviceInfo; }
     const std::string& lastError() const override { return error_; }
@@ -338,6 +354,87 @@ void automaticPrefetchAndPinPromotion() {
     second.shutdown();
 }
 
+
+void asynchronousGpuFeedbackRuntime() {
+    TestFiles files;
+    const VirtualPageKey coarse{2,0,0,0}, middle{1,1,1,0}, fine{0,3,3,0};
+    files.page(coarse,13);
+    files.page(middle,37);
+    files.page(fine,91);
+    MockGpu gpu;
+    VirtualTextureFileStreamer stream(gpu,gpuLimits());
+    auto atlas=gpuConfig();
+    atlas.physicalPages=3;
+    require(stream.initialize(atlas,diskConfig(files),3),
+            "feedback atlas and disk queue initialize");
+    VirtualTextureFeedbackConfig feedback;
+    feedback.tilesX=feedback.tilesY=4;
+    feedback.mipLevels=3; feedback.virtualLayers=1;
+    feedback.maxReadbackPixels=16;
+    feedback.maxUniquePages=4;feedback.maxVisibleRegions=4;
+    VirtualTexturePrefetchConfig prefetch;
+    prefetch.tilesX=prefetch.tilesY=4;
+    prefetch.mipLevels=3;prefetch.virtualLayers=1;
+    prefetch.maxCandidates=16;prefetch.maxRequestsPerFrame=2;
+    VirtualTextureFeedbackRuntime runtime;
+    require(runtime.initialize(gpu,feedback,prefetch),
+            "matching feedback and prefetch geometry initialized");
+    const auto target=stream.pageTableTexture(); // mock accepts any live handle
+    require(runtime.capture(target) && runtime.pending() &&
+            !runtime.capture(target),
+            "feedback capture accepted once until next-frame completion");
+    TextureReadbackResult readback;
+    readback.format=PixelFormat::RGBA8;
+    readback.width=2;readback.height=1;
+    readback.pixels.resize(8);
+    const uint32_t id=encodeVirtualTextureFeedback(fine);
+    for(size_t pixel=0;pixel<2;++pixel)
+        for(int channel=0;channel<4;++channel)
+            readback.pixels[pixel*4+size_t(channel)]=
+                uint8_t((id>>(channel*8))&255u);
+    gpu.finishFeedback(readback); // simulates owner-thread beginFrame delivery
+    require(!runtime.pending() && runtime.readyToSubmit() &&
+            runtime.lastFeedbackStats().uniquePages==1,
+            "deferred feedback decoded exactly once");
+    const auto submitted=runtime.submit(stream);
+    require(submitted.submittedNewRequests==2 &&
+            stream.pendingPage(coarse) && stream.pendingPage(middle) &&
+            !stream.pendingPage(fine),
+            "feedback drives only budgeted coarse and middle disk requests");
+    require(!runtime.readyToSubmit() &&
+            runtime.submit(stream).submittedNewRequests==0,
+            "feedback output cannot be submitted a second time");
+    require(runtime.capture(target),"capture next frame after consuming result");
+    const auto pending=std::move(gpu.feedbackCompletion);
+    require(bool(pending),"second GPU callback remains in flight");
+    runtime.shutdown(); // user closes the preview/streamer before completion
+    pending(std::move(readback)); // weak state must not publish/use a dangling this
+    require(!runtime.pending() && !runtime.readyToSubmit(),
+            "stale GPU callback after owner destruction is harmless");
+
+    require(runtime.initialize(gpu,feedback,prefetch),"recreate runtime");
+    gpu.rejectFeedback=true;
+    require(!runtime.capture(target) && !runtime.pending() &&
+            !runtime.lastError().empty(),
+            "unsupported device readback refuses capture without inflight state");
+    gpu.rejectFeedback=false;
+    require(runtime.capture(target),"GPU feedback ready after earlier refusal");
+    TextureReadbackResult invalid;
+    invalid.format=PixelFormat::RGBA8_sRGB;
+    invalid.width=invalid.height=1;
+    invalid.pixels.assign(4,0);
+    gpu.finishFeedback(std::move(invalid));
+    require(!runtime.pending() && !runtime.readyToSubmit() &&
+            !runtime.lastError().empty(),
+            "sRGB feedback would corrupt integer IDs and is rejected");
+    runtime.shutdown();
+    prefetch.virtualLayers=2;
+    require(!runtime.initialize(gpu,feedback,prefetch) &&
+            !runtime.readyToSubmit(),"mismatched geometry fails closed");
+    stream.shutdown();
+    require(gpu.live.empty(),"feedback test releases owned GPU objects");
+}
+
 void rejectMismatchedConfig() {
     TestFiles files;
     MockGpu gpu;
@@ -354,6 +451,7 @@ int main() {
         fileGpuPublishAndEviction();
         cancellationMissingAndGpuFailure();
         automaticPrefetchAndPinPromotion();
+        asynchronousGpuFeedbackRuntime();
         rejectMismatchedConfig();
     } catch (const std::exception& e) {
         std::fprintf(stderr,"VirtualTextureFileStreamer test FAILED: %s\n",e.what());
