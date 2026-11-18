@@ -1219,3 +1219,23 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   `docs/terrain/AGENT_HANDOFF.md`** with exact commits, API/files, tests
   actually run, limitations and the next step. No tests may be marked passing
   without recorded execution.
+
+
+### TerraWeave agent ownership for current implementation phases (2026-11-18)
+
+- **Feature/architecture agent** owns TerraWeave runtime functions, native
+  APIs, opt-in WorldScene/editor integrations, and a handoff document after
+  EVERY implementation stage. Do not make the engine depend on FPS or RTS.
+- **Separate validation agent** owns build/CTest, the unified test runner,
+  Metal/GL/Vulkan screenshot checks, race/sanitizer checks, FPS/RTS
+  regressions and performance benchmarks for this feature. The feature
+  agent should NOT duplicate that test work while the user requests
+  functions first. This task split never permits claims that unexecuted
+  tests passed. Record all tests as NOT RUN until the testing agent
+  provides actual build/report evidence.
+- New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
+  Horizon quality presets and `TWH1` prebaked atlas archive interfaces
+  are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
+  versions/fingerprints consistent whenever the bake format changes.
+  Don't introduce file-system writes or game-authority mutations
+  into rendering/presentation code.
