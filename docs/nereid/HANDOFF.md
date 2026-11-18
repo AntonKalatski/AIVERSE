@@ -1397,3 +1397,75 @@ discarded; test exception paths, launch/shutdown and budget exhaustion.
 Afterward implement origin-relative CPU mesh generation and explicit
 depth/refraction on Renderer3D with shader parity. Respect Prisma's
 postprocess ownership and do not alter legacy RTS waterNetwork.
+
+## Stage 15A — precise local-origin water geometry for large worlds
+
+**Branch**: `feature/nereid-water-core`, PR #23 (Draft).
+**Stage baseline**: Stage 14 handoff `06e5c763e379a942418ed2d8d231069681767dcd`.
+**Implementation commits:**
+- `69e7ad014fa03ce0ddf132640afe64658464a376`:
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h` now
+  supports double `WaterSurfaceMeshOptions::originX/originZ`; subtracts
+  the origin BEFORE float conversion for all box/disc/polygon/river/ocean
+  vertex positions, UV and shoreline foam calculations. Default zero
+  preserves existing standalone geometry use.
+- `2170dcc8dcba3cc9fb2b7f8d628ef73bae18e133`:
+  `engine/render/NereidSurfaceResident.h` includes double-precision
+  origin in GPU residency and prepared-mesh keys, so a change of basis
+  always invalidates a cached mesh correctly.
+- `db392e15083701e56e9456036b495aeb41ae6623`:
+  `engine/world/NereidWaterScene.h` selects a stable body-local basis
+  (box/disc center; first polygon/river point; camera ocean patch)
+  and transforms each resident mesh using
+  `float(meshOriginDouble - renderOriginDouble)` in `draw`.
+  `WorldScene` continues to pass its existing render-origin cell and
+  size; no second renderer or ECS authority was introduced.
+- `f6258fca84b4054b1648b00a680e4b061c35e737`:
+  `tests/ecs_nereid_renderer_contract_test.cpp` adds authored
+  100,000,000-metre coordinate cases for local box/polygon vertices,
+  origin-key invalidation and double-difference render origin.
+
+### Native contract and units
+
+The public `buildWaterSurfaceMesh(...,options)` accepts
+`options.originX`/`originZ` as **world metres represented in double**.
+Its resulting mesh positions X/Z are now relative to that basis, and
+the renderer must place them at that world origin. With the default
+0/0 options the old API still produces world coordinates. Stage 13
+CPU/GPU cache keys and Stage 14 async generation preserve the origin
+across preparation/publication. For the scene-level adapter, this is
+automatic per water body; the per-surface render transform uses the
+current `WorldScene::draw(renderer,renderOrigin,originCellSize)` values.
+Changing render origin without changing the body does **not** require a
+GPU mesh rebuild.
+
+Shoreline foam tests compare all vertex X/Z against the shore edges in
+the same local coordinate space. Resulting UV coordinates are local to
+the mesh origin; this keeps their fractional detail but may change
+the visual phase of water textures compared with world-space tiling.
+Shaders should handle optional global phase separately if seamless
+cross-body UVs become a requirement.
+
+### Verification, limitations, next task
+
+**Actual verification**: source reviewed and code/tests written to
+GitHub through the connector. **NOT RUN / UNVERIFIED**: AIVERSE native
+C++ compilation, CTest, full runner, GLSL/Metal rendering, framebuffer
+screenshots, actual large-world precision on GPU, performance profiling.
+No PASS has been claimed. Testing agent should run:
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+The 3D geometry still uses float Y; Y world origin rebasing is not yet
+supported. Infinite ocean patch selection still derives from float
+camera X/Z; on sufficiently large coordinates, it may jump in coarse
+steps and cannot preserve sub-float camera motion. This stage is **not**
+a full camera-relative RHI implementation for the entire world.
+Further stages should address precise double ocean anchors and high-Y
+origin/mesh transforms. Multi-plane refraction and underwater view
+are not implemented; coordinate with Prisma for shared post effects,
+while NEREID owns water geometry and material bindings. Retain
+legacy RTS water and PHYSIS/Terra ownership boundaries.
