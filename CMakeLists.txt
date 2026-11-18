@@ -734,6 +734,13 @@ if(AIVERSE_BUILD_TESTS)
     endif()
 endif()
 
+# View pass queue is independent of game modules and the graphics device.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_layer_tests tests/view/layers.cpp)
+    target_link_libraries(aiverse_view_layer_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_layer_order COMMAND aiverse_view_layer_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
