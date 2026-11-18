@@ -132,6 +132,37 @@ The `vfx_shared_batch_world` regression source exists, but no
 confirmed CTest result was available when authored. See
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
 
+**Stage 15 — SpectraFX shared CPU cue scheduler and read-only ECS
+adapter (source committed; tests NOT VERIFIED):**
+`engine/fx/SpectraCueScheduler.{h,cpp}` adds the bounded
+`spectra::CueScheduler` over the **existing**
+`spectra::BatchWorld`, not another ParticleSystem. Native ECS
+projects use `libraries/include/aiverselib/genre/SpectraCueEcsAdapter.h`
+through `<aiverselib/genre/SpectraFX.h>`; it reads the
+**existing** `SpectraSourceComponent`, resolves positions from
+a caller-provided genre-agnostic callback and converts committed
+`SimEvent` values to presentation cues. The scheduler never
+mutates ECS/gameplay state or reads GPU resource handles into it.
+Effects are registered by complete definition/graph, and module
+event types are caller-defined, not hardcoded to FPS/RTS.
+
+`acceptTick` de-duplicates committed tick IDs, `flush` is
+bounded per frame, `syncAttachments` uses generation-safe
+`Entity::packed()` keys, and `resetForRollback` kills only
+this scheduler's handles plus pending cues. Source detaches are
+released **before** admitting new attached sources against the
+budget; tracked one-shot ring overflow explicitly kills oldest
+particle handles to prevent rollback leaks. The host still
+calls `BatchWorld::update/draw` ONCE per presentation frame.
+The BatchWorld MUST outlive the scheduler. This is a shared
+**CPU** simulation/RHI batching path: opt-in experimental Metal
+`gpuIndirect` stays separate and unsupported multi-emitter GPU
+graphs are NOT automatically enabled. Run `vfx_cue_scheduler`,
+`vfx_shared_batch_world`, the full `ctest -L SpectraFX` suite,
+editor and Apple Metal smoke before claiming production readiness.
+Continue `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with a separate handoff commit for every code stage.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
