@@ -424,3 +424,29 @@ explicit mip and separate sampler bindings, then build/execute
 destruction invalidation and sampler destruction during a frame.
 After that, validate Metal and GL native tests, then tackle layered
 render targets/MSAA and format/importer stages.
+
+## Stage 3E — Vulkan explicit view/sampler integration regression test (2026-11-18)
+
+**Code commit:** `867e4cf999521a1ff3bca683c616b210d9c8790c`.
+**Path:** `tests/render/vulkan_tests.cpp`.
+
+**Added:** Real GPU Vulkan fixture creates a three-layer
+`Texture2DArray`, then views two different array layers as
+`Texture2D`, binds the selected views with a separately created
+nearest sampler to one GLSL `sampler2D` slot and asserts blue/green
+screen output. Explicitly tests that a destroyed sampler cannot be
+rebound and destroying the parent invalidates its child view handles.
+
+**Validation:** New test code committed but **NOT RUN**: this
+execution environment cannot clone GitHub, and the native Vulkan
+compiler/driver are unavailable here. Existing GitHub CI workflows
+were still queued on the branch at last check; no passing result is
+claimed. Real colour results depend on driver execution.
+
+**Next:** Run `aiverse_vulkan_tests` on a GPU/Lavapipe machine
+with validation layers and fix any shader/compiler/descriptor
+validation errors. Build `aiverse_texture_contract_test`;
+compile all major client/editor targets with Metal and GLES3 to
+check cross-platform RHI changes, then proceed to layered
+RenderTexture/MRT/MSAA implementation in independently documented
+stages.
