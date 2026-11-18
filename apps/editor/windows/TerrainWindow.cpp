@@ -36,6 +36,40 @@ public:
         }
         if (ed.planetMap()) ui::callout(ui::Tone::Accent, "Карта с планетами: кисти работают на теле под курсором в «Сцене» (переходят через рёбра граней).");
 
+        // TerraWeave is opt-in and uses the same Workspace operation as MCP.
+        // It never rewrites an existing authored heightfield without consent.
+        if (!ed.planetMap() && !ws.project.isFps()) {
+            ui::section(ICON_TERRAIN, "TerraWeave · процедурный мир");
+            ui::hint("Предпросмотр показывает диапазон высот (9×9 точек). Генерация меняет карту и доступна для отмены.");
+            if (ui::beginProps("##terraweave")) {
+                ui::prop("Seed");
+                ImGui::InputInt("##twseed", &twSeed_);
+                ui::prop("Средняя высота (м)");
+                ImGui::InputInt("##twbase", &twBaseM_);
+                ui::prop("Перепад высот (м)");
+                ImGui::InputInt("##twrelief", &twReliefM_);
+                ui::prop("Масштаб шума (м)");
+                ImGui::InputInt("##twperiod", &twPeriodM_);
+                ui::prop("Октавы");
+                ImGui::SliderInt("##twoctaves", &twOctaves_, 1, 12);
+                ui::endProps();
+            }
+            twSeed_ = std::max(0, twSeed_);
+            twBaseM_ = std::clamp(twBaseM_, -2000, 2000);
+            twReliefM_ = std::clamp(twReliefM_, 0, 2000);
+            twPeriodM_ = std::clamp(twPeriodM_, 1, 10000);
+            ui::checkbox("Разрешить замену существующего рельефа", &twOverwrite_);
+            if (ui::wideButton(ICON_IMAGE, "Предпросмотр", 0, 2)) {
+                Json result = ws.call("terraweave_preview", terraweaveParams());
+                report(ed, result);
+            }
+            if (ui::wideButton(ICON_BRUSH, "Сгенерировать", 1, 2)) {
+                Json result = ws.call("terraweave_generate", terraweaveParams());
+                report(ed, result);
+            }
+            ui::help("Параметры поколения сохраняются в карте только после генерации. При явной замене удаляется старый детальный слой; Undo восстанавливает его.");
+        }
+
         bool active = ed.tool == Tool::Count && owner_;
         ImGui::PushStyleColor(ImGuiCol_Text, active ? ui::toneColor(ui::Tone::Accent) : ImGui::GetStyle().Colors[ImGuiCol_Text]);
         if (ui::checkbox(ICON_BRUSH "  Кисть рельефа в «Сцене»", &active)) setActive(ed, active);
@@ -183,6 +217,16 @@ private:
         planetSculpt(ed.doc(), id, op, dir, radius_, st, seed_);
     }
 
+    Json terraweaveParams() const {
+        Json p = Json::object();
+        p.set("seed", Json::number(int64_t(twSeed_)));
+        p.set("baseHeightCm", Json::number(int64_t(twBaseM_) * 100));
+        p.set("reliefCm", Json::number(int64_t(twReliefM_) * 100));
+        p.set("basePeriodCm", Json::number(int64_t(twPeriodM_) * 100));
+        p.set("octaves", Json::number(int64_t(twOctaves_)));
+        p.set("overwrite", Json::fromBool(twOverwrite_));
+        return p;
+    }
     void setActive(Editor& ed, bool on) {
         owner_ = on;
         ed.tool = on ? Tool::Count : Tool::Select;
@@ -190,6 +234,8 @@ private:
     }
     void report(Editor& ed, const Json& r) { message_ = r.has("error") ? "Ошибка: " + r.getStr("error") : r.getStr("summary"); ed.status = message_; }
 
+    int twSeed_ = 1, twBaseM_ = 0, twReliefM_ = 60, twPeriodM_ = 64, twOctaves_ = 5;
+    bool twOverwrite_ = false;
     int mode_ = 0, layer_ = 0, stamp_ = 0;
     float radius_ = 4, strength_ = 0.5f, blend_ = 0.5f, target_ = 0, scale_ = 8, offset_ = 0, hardness_ = 0.2f, angle_ = 0;
     bool detail_ = true, pngDetail_ = false, stamped_ = false;
