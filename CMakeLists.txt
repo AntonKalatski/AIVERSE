@@ -506,6 +506,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_ecs_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_ecs_presentation COMMAND aiverse_animation_ecs_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_playback_tests tests/animation/notifies_root_motion.cpp)
+    target_link_libraries(aiverse_animation_playback_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_playback COMMAND aiverse_animation_playback_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
