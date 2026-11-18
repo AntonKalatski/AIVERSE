@@ -4625,3 +4625,38 @@ in the native texture skill and canonical docs. On a native
 checkout compile and execute the prefetch/feedback/file-streamer
 tests, then validate the GLSL/MSL encoding in a real graphics
 feedback pass and compare exact readback IDs.
+
+## Stage 7AE — native feedback shader/readback usage and agent routing (2026-11-18)
+
+Docs/skill commit: 052f5171aa5429c6acbaf9b6d1d64abebab767a6.
+Branch: feature/texture-rhi-unification; Draft PR #21.
+Paths: skills/visuals/aiverse-texture-rhi/SKILL.md,
+docs/texture-rhi.md and AGENTS.md.
+
+Documentation now points all native game agents to
+VirtualTextureFeedbackRuntime and VirtualTextureFeedbackDecoder
+for opt-in visibility feedback. The skill explains the 32-bit
+page encoding, non-sRGB RGBA8 feedback target requirements,
+the required unblended/untone-mapped shader pass,
+Device::readTextureAsync then later submit(fileStreamer)
+and normal fileStreamer.pump() on the owner thread.
+Runtime shutdown uses weak callbacks and does not block the
+GPU; no explicit camera/render pass/material-shader integration
+is claimed. AGENTS.md keeps this presentation-only and
+genre independent. Both docs and skill include
+aiverse_virtual_texture_feedback_test and CTest
+virtual_texture_feedback in focused native verification.
+
+Compatibility: Documentation and agent guidance only.
+No runtime C++, ECS, save/network, shader-graph or disk format
+changed at this documentation stage.
+
+Actual verification: GitHub doc commit succeeded.
+Native compiler NOT RUN, CTest NOT RUN, shader compilation
+and GPU readback tests NOT RUN. PR #21 remains Draft.
+
+Next: Source-review and compile the newly introduced prefetch
+and feedback CPU fixture targets on a complete native checkout,
+fix errors, then validate an actual RGBA8 feedback pass on
+Metal/GL33/GLES3/Vulkan and confirm integer-ID fidelity.
+WebGL2 still needs a separate portable path.
