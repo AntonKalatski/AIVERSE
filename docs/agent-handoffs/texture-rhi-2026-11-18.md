@@ -2542,3 +2542,40 @@ coarse-to-fine claim ordering, failures/retries, stale completion after
 reset, 3D volume grouping and exact LOD clamp. Then document native
 agent usage and optional integration with TextureStreamQueue's
 completion callback. Keep code and handoff as separate commits.
+
+## Stage 7E — mip residency and sampler LOD contract tests (2026-11-18)
+
+**Code commit:** `e531f0bb38e2a4d61ea6398d018bb18d4d02aee2`.
+**Branch:** `feature/texture-rhi-unification` (PR #21 Draft).
+**Paths:** `tests/render/texture_mip_residency.cpp`, `CMakeLists.txt`.
+
+**Test source:** New GPU-independent `texture_mip_residency` CTest target.
+The fixture tests a six-face cubemap with four mips: claiming all
+coarsest faces first, refusing sampling while one face is still
+pending, clamping a sampler to the sole completely resident mip,
+expanding sampler range only when all faces of the next mip complete,
+making failed uploads retryable, refusing duplicate GPU completion,
+and invalidating a coarse face to disable sampling again. Also
+tests 3D volume grouping as one request per complete mip,
+generation-safe rejection of late completion after reset,
+invalid texture extents, single-mip fully-resident behavior
+and sampler descriptor validation.
+
+**Public API change:** None beyond the CPU-only
+`TextureMipResidency` from Stage 7D. No ECS/save/network/render-path
+changes. The test does not imply virtual texture GPU pages or
+asynchronous device readback are implemented.
+
+**Actual verification:** GitHub source/tree/commit/ref update
+succeeded. Native C++ compilation and CTest **NOT RUN** due to
+unavailable full checkout in this execution environment;
+no Vulkan/Metal/GL GPU tests run and CI not confirmed green.
+
+**Next:** Build `aiverse_texture_mip_residency_test` and run
+`ctest --test-dir build/texture-rhi --output-on-failure
+-R '^(texture_streaming|texture_mip_residency)$'`.
+Then wire a native sample using `TextureStreamQueue.drain(callback)`
+to `TextureMipResidency.complete` and update an independent
+sampler only after complete mip/face residency. Test real GPU
+LOD bounds, including stale resource destruction and reset.
+Continue source/handoff commits separately.
