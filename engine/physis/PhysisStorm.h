@@ -2,6 +2,7 @@
 // Simplified authored vortex/cyclone model; not a mesoscale CFD weather solver.
 #pragma once
 #include "PhysisGravity.h"
+#include "PhysisDisasters.h"
 #include <cstdint>
 
 namespace aiverse::physis {
@@ -126,7 +127,8 @@ inline Forcing stormForcingAt(const World& world,
     const auto mx = std::int64_t(cell.x) * side + side / 2;
     const auto mz = std::int64_t(cell.z) * side + side / 2;
     // Fixed::fromInt converts to raw; prevent signed overflow on invalid maps.
-    constexpr std::int64_t kMaxMetres = (INT64_MAX / Fixed::kOne) / 2;
+    constexpr std::int64_t kMaxMetres =
+        (std::numeric_limits<std::int64_t>::max() / Fixed::kOne) / 2;
     if (mx < -kMaxMetres || mx > kMaxMetres ||
         mz < -kMaxMetres || mz > kMaxMetres) return result;
     const Vec3 position{Fixed::fromInt(mx), cell.elevation, Fixed::fromInt(mz)};
