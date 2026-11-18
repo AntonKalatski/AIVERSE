@@ -273,6 +273,30 @@ compilation, CTest, real Metal and editor interactions as NOT RUN.
 Maintain the separate per-stage handoff in
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
 
+**Stage 21 — shader graph inputs sourced from CPU particle VM
+(source committed, tests postponed):** `FxEffect::EmitterDef::graphInputs`
+is an optional strict four-string array selecting `age`, `lifetime`,
+`random`, `zero`, `attribute0..7`, or `param0..7`.
+`FxEffect.cpp` validates and serializes this mapping. The
+CPU emitter runtime precompiles each source to a byte selector
+and fills the **existing 40-byte vertex** `graphData` lanes
+without altering render-state batching or shader code.
+The shader material compiler exposes the four lanes as
+`sg_particle`. No new node language, shader JIT,
+renderer handle in ECS, or duplicate FPS/RTS engine exists.
+No authored `graphInputs` retains exactly the preexisting
+age/lifetime/random/zero values; full unsupported
+particleProgram and material graph effects must remain
+CPU with strict Metal eligibility fallback.
+
+User deferred tests until functional completion. Mark
+CMake/CTest, GPU shader compilation, editor input
+and visual output as **NOT RUN**. Continue the required
+stage handoff in
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with a separate commit and keep native C++ usage
+compatible across genres.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
