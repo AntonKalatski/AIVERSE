@@ -147,6 +147,18 @@ void WorldScene::releaseChunk(gfx::Device& device,Prepared& chunk) {
 }
 void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int radius) {
     bool landscapeChanged=false;
+    std::vector<terraweave::RectCm> editedLandscape;
+    const auto markLandscapeCell=[&](Cell cell) {
+        const int64_t span=int64_t(assets_.cellSize)*100;
+        const int64_t minX=int64_t(cell.x)*span;
+        const int64_t minZ=int64_t(cell.z)*span;
+        const int64_t maxX=minX+span,maxZ=minZ+span;
+        const int64_t limit=terraweave::kWorldLimitCm;
+        if(maxX<=-limit||maxZ<=-limit||minX>=limit||minZ>=limit)return;
+        editedLandscape.push_back({
+            std::max(minX,-limit),std::max(minZ,-limit),
+            std::min(maxX,limit),std::min(maxZ,limit)});
+    };
     std::vector<StreamObserver> interests;for(auto p:observers)interests.push_back({assets_.cell(p),radius});
     stream_->update(interests,{},4,2,[&](Cell cell,const AsyncChunkStream::Payload& payload){
         auto prepared=std::static_pointer_cast<Prepared>(payload);
@@ -158,16 +170,20 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             }
             resident_[cell]=prepared;
             if((terraForest_ || terraHorizon_) &&
-               (prepared->terrainResolution || !prepared->placementBoxes.empty()))
+               (prepared->terrainResolution || !prepared->placementBoxes.empty())) {
                 landscapeChanged=true;
+                markLandscapeCell(cell);
+            }
             return true;
         }catch(...){releaseChunk(device,*prepared);throw;}
     },[&](Cell cell){
         auto it=resident_.find(cell);
         if(it==resident_.end())return;
         if((terraForest_ || terraHorizon_) &&
-           (it->second->terrainResolution || !it->second->placementBoxes.empty()))
+           (it->second->terrainResolution || !it->second->placementBoxes.empty())) {
             landscapeChanged=true;
+            markLandscapeCell(cell);
+        }
         releaseChunk(device,*it->second);
         resident_.erase(it);
     },uploadBytes_);
@@ -242,7 +258,10 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             if(mask)surface->allowsCanopyAt=[mask](int64_t x,int64_t z){
                 return !mask->excludes(x,z);
             };
-            terraHorizon_->setSurfaceSources(std::move(surface));
+            terraHorizon_->setSurfaceSources(
+                std::move(surface),
+                std::span<const terraweave::RectCm>(
+                    editedLandscape.data(),editedLandscape.size()));
         }
     }
     if(terraForest_){
