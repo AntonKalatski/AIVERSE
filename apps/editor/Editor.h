@@ -103,7 +103,7 @@ public:
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
-    render::Prisma& prisma() { return postFx_; } // canonical PRISMA editor API
+    render::Prisma& prisma() { return prisma_; } // canonical PRISMA editor API
     render::Prisma& postFx() { return prisma(); } // legacy alias; existing tools depend on it
     bool postFxInScene = true;                     // false: only the Game view is post-processed
     game::RtsView& view() { return view_; }
@@ -340,7 +340,7 @@ private:
     int fpsRuntimeRulesRevision_ = -1; // same signed revision domain as rulesRevision_
     std::string fpsRuntimeProjectDir_;
 
-    render::Prisma postFx_;
+    render::Prisma prisma_;
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
     std::vector<double> editorTypeLastUsed_;
