@@ -154,7 +154,13 @@ void Portrait::render(RtsView& view, uint16_t type, uint8_t owner, double time, 
     cam.yaw = 0.5f;
     cam.fovY = 0.6f;
     sceneView_.beginScene(r3d_,cam, size_, size_);
-    view.drawPreview(r3d_, type, owner, time, yaw < 0 ? float(time) * 0.6f : yaw);
+    const float previewYaw=yaw<0 ? float(time)*.6f : yaw;
+    // The portrait owns its View renderer and consumes host-supplied
+    // model resources directly. Animated/complex assets still use the
+    // compatibility renderer, without duplicating animation evaluation.
+    if(!view_adapter::submitResolvedPreview(
+           view,r3d_,type,owner,previewYaw))
+        view.drawPreview(r3d_,type,owner,time,previewYaw);
     gfx::PassDesc pass;
     pass.colorTarget = color_;
     pass.depthTarget = depth_;
