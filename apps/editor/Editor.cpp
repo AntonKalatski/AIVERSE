@@ -1106,7 +1106,14 @@ void Editor::samplePlayStats() {
 
 void Editor::event(const platform::Event& e) {
     ui_.handleEvent(e);
-    clientHost_.event(e);   // the hosted game client: pointer inside its screen, keys while the Game window has focus
+    if(clientHost_.active()){
+        // The selected dock tab may change without GameWindow::drawClient running.
+        // Never forward events into a hidden hosted game (especially text/rebind keys).
+        EditorWindow* game=window("game");
+        const bool eligible=game && game->open && isWindowInFront(game);
+        if(!eligible)clientHost_.suspendInput();
+        if(eligible || e.type==platform::EventType::FocusLost)clientHost_.event(e);
+    }
     if (e.type == platform::EventType::QuitRequested) quit_ = true;
     if (e.type == platform::EventType::OpenFile) requestOpenProject(e.path);   // double-clicked .aiverse (macOS)
 }
