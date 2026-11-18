@@ -104,8 +104,11 @@ public:
             if (handle.valid()) {
                 // Keep recent one-shot handles so rollback can remove their
                 // remaining live particles, even after emission has ended.
-                if (oneShots_.size() >= kMaxTrackedCues) oneShots_.erase(oneShots_.begin());
-                oneShots_.push_back(handle);
+                if (oneShots_.size() < kMaxTrackedCues) oneShots_.push_back(handle);
+                else {
+                    oneShots_[oneShotCursor_] = handle;  // bounded O(1) ring
+                    oneShotCursor_ = (oneShotCursor_ + 1) % kMaxTrackedCues;
+                }
             }
         }
     }
@@ -120,6 +123,7 @@ public:
         attached_.clear();
         for (const auto handle : oneShots_) ps_.kill(handle);
         oneShots_.clear();
+        oneShotCursor_ = 0;
         haveTick_ = false;
         lastTick_ = 0;
     }
@@ -142,6 +146,7 @@ private:
     fx::ParticleSystem& ps_;
     std::unordered_map<uint64_t, Attached> attached_;
     std::vector<fx::FxHandle> oneShots_;
+    size_t oneShotCursor_ = 0;
     uint32_t lastTick_ = 0;
     bool haveTick_ = false;
 };
