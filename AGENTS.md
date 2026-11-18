@@ -1219,7 +1219,7 @@ with `<aiverselib/water/NereidWaterSystems.h>`. It samples Fixed-point
 water-body volumes for native shooter/strategy/vehicle/other hosts; it must not
 be reimplemented in FPS or RTS. Existing editor `waterNetwork`, baked tiles,
 shore geometry and RTS water paths are still authoritative for legacy games.
-**Implemented opt-in stages: (1) static body sampling, (2) shared buoyancy/flow drag force output. Neither is a renderer or a physics integrator. Native tests remain UNVERIFIED.**
+**NEREID stages 1–12 are opt-in:** ECS water sampling, polygon/river geometry, buoyancy force output, query index, legacy raster import, surface mesh, Renderer3D flag and reflection fallback, GPU residency, WorldScene manifest, per-body identity and read-only ECS presentation snapshots. GPU effects are presentation-only; no hydraulic solver or native FPS/RTS migration. **Native C++ builds, CTest, GL/Metal and runtime tests remain UNVERIFIED.**
 Read `docs/nereid/ARCHITECTURE.md`, mandatory living
 `docs/nereid/HANDOFF.md`, and
 `skills/gameplay/aiverse-nereid-water/SKILL.md`.
