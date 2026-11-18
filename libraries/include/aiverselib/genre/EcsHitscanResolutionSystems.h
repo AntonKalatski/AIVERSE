@@ -25,6 +25,38 @@ struct HitscanResolvedEvent {
     Fixed fraction{};
 };
 
+// A direct, synchronous policy shared by the ECS system below and genre
+// adapters that must resolve a shot *inside* their existing gameplay tick.
+// Unlike the scheduled system it preserves the selected immutable pose,
+// which FPS uses for historical head/limb hit-zone calculation.
+template<class Candidate>
+struct HitscanResolvedCandidate {
+    const Candidate* pose=nullptr;
+    HitscanResolvedEvent event{};
+    explicit operator bool()const {return pose!=nullptr;}
+};
+
+template<class CandidateRange,class Eligible,class Bounds,class TargetEntity>
+auto resolveHitscanIntent(const HitscanIntentComponent& intent,Entity shooter,
+                          const CandidateRange& targets,Eligible&& eligible,
+                          Bounds&& bounds,TargetEntity&& entityOf) {
+    using Candidate=std::remove_cv_t<std::remove_reference_t<
+        decltype(*std::begin(targets))>>;
+    HitscanResolvedCandidate<Candidate> result;
+    if(!intent.requested || intent.maximumFraction<=Fixed{} ||
+       intent.maximumFraction>1_fx ||
+       intent.delta.lengthSq()<=Fixed{})return result;
+    const auto selected=selectClosestHitscanCandidate(
+        targets,intent.origin,intent.delta,intent.maximumFraction,
+        std::forward<Eligible>(eligible),std::forward<Bounds>(bounds));
+    if(!selected)return result;
+    result.pose=selected.target;
+    result.event={shooter,entityOf(*selected.target),intent.shotId,
+                  intent.origin+intent.delta*selected.fraction,
+                  selected.fraction};
+    return result;
+}
+
 // Candidates: const range&(Simulation&,Entity,const HitscanIntentComponent&)
 // Eligible: bool(Simulation&,Entity,const Candidate&)
 // Bounds: world::Bounds(Simulation&,const Candidate&)
@@ -56,23 +88,23 @@ void addHitscanResolutionSystem(Simulation& sim,std::string name,
                 if(!world.alive(shooter))continue;
                 auto& request=requests->dataAt(i);
                 if(!request.requested)continue;
+                // Capture the accepted request before clearing the one-shot
+                // flag; the pure policy can also run synchronously in FPS.
+                const HitscanIntentComponent shot=request;
                 request.requested=false;
-                if(request.maximumFraction<=Fixed{} ||
-                   request.maximumFraction>1_fx ||
-                   request.delta.lengthSq()<=Fixed{})continue;
-                const auto& targets=candidates(current,shooter,request);
-                const auto selection=selectClosestHitscanCandidate(
-                    targets,request.origin,request.delta,request.maximumFraction,
+                if(shot.maximumFraction<=Fixed{} ||
+                   shot.maximumFraction>1_fx ||
+                   shot.delta.lengthSq()<=Fixed{})continue;
+                const auto& targets=candidates(current,shooter,shot);
+                const auto resolved=resolveHitscanIntent(
+                    shot,shooter,targets,
                     [&](const auto& candidate) {
                         return eligible(current,shooter,candidate);
                     },
-                    [&](const auto& candidate) {return bounds(current,candidate);});
-                if(!selection)continue;
-                const Entity victim=entityOf(current,*selection.target);
-                if(!world.alive(victim))continue;
-                events.push_back({shooter,victim,request.shotId,
-                    request.origin+request.delta*selection.fraction,
-                    selection.fraction});
+                    [&](const auto& candidate) {return bounds(current,candidate);},
+                    [&](const auto& candidate) {return entityOf(current,candidate);});
+                if(!resolved || !world.alive(resolved.event.target))continue;
+                events.push_back(resolved.event);
             }
             for(const auto& hit:events)onHit(current,hit);
         });
