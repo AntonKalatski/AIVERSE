@@ -1034,3 +1034,38 @@ before calling this stage validated.
   entity worlds; preserve the above cosmetic event history. Commit
   code and then Stage 43 handoff.
 
+## Stage 43 — CPU Graph/Baked Crowd normalized phase transfer primitives (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22.
+- **Implementation SHA:** `168666b1372c0e47c1d491875d4a3372c1eee358`.
+- **Files:** `engine/render/Animation.h`, `Animation.cpp`,
+  `AnimationGraph.h`, `AnimationGraph.cpp`,
+  `libraries/include/aiverselib/animation/EcsAnimationSystems.h`,
+  `AnimationCrowdSystems.h`, root `CMakeLists.txt`, new
+  `tests/animation/motionweave_phase.cpp`.
+- **API:** `render::Animator::seek(layer,seconds)` and
+  `render::AnimationGraphInstance::clipTime(nodeName)` /
+  `seekClipNode(nodeName,seconds)` allow cosmetic clock observation
+  and setting without firing animation notifies. The presentation
+  `AnimationPhaseSeedComponent::normalized` (0..1, -1 unused)
+  seeds all Clip nodes only once on their first Graph update. Optional
+  `AnimationCrowdComponent::initialNormalizedPhase` seeds baked
+  Animator on its first matching clip. All clocks handle duration
+  clamping/looping.
+- **Compatibility:** old Animator and Graph methods and serialized
+  clips remain compatible; no modification to authoritative gameplay,
+  networking, save/checksum or hit validation.
+- **Tests:** `motionweave_phase_seed` added for clip seek, no phantom
+  notifies, baked Animator seek and ECS one-shot normalized seeding;
+  **NOT RUN** due to user-requested deferred validation.
+- **Limits:** clock seeding does not preserve blend controller and
+  motion-matching internal state; only equivalent simple authored
+  idle/move clips can be transferred. FPS still must be wired to
+  capture old normalized phase before resetting its presentation
+  World on backend swap.
+- **Next step:** in `apps/fps/client.cpp`, capture normalized active
+  clip phase per slot before CPU/GPU backend changes, seed new
+  presentation actor components via these APIs and keep
+  `ReplicatedAnimationActions` deduplication state. Add a backend
+  handoff fixture, commit code then Stage 44 handoff.
+
