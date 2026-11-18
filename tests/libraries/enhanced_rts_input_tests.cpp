@@ -21,6 +21,7 @@ static p::Event key(p::Key keyCode,bool down=true) {
 int main() {
     ClientInputRouting route;
     CHECK(contains(route.onEvent(key(p::Key::A),true),"AttackMove"));
+    CHECK(route.system().state("IdleCameraPan")->value.x==-1.0f);
     CHECK(!contains(route.onEvent(key(p::Key::A),true),"AttackMove")); // key repeat
     CHECK(!contains(route.onEvent(key(p::Key::A,false),true),"AttackMove"));
     CHECK(contains(route.onEvent(key(p::Key::P),true),"Patrol"));
@@ -35,6 +36,14 @@ int main() {
     route.onEvent(key(p::Key::H,false),true);
     CHECK(contains(route.onEvent(key(p::Key::Space),true),"FocusCamera"));
     route.onEvent(key(p::Key::Space,false),true);
+    CHECK(route.system().registeredContexts().size()==2);
+    CHECK(!route.system().state("CameraPan")->active);
+    route.onEvent(key(p::Key::Up),true);
+    CHECK(route.system().state("CameraPan")->value.y==1.0f);
+    route.onEvent(key(p::Key::Right),true);
+    CHECK(route.system().state("CameraPan")->value.x==1.0f);
+    route.onEvent(key(p::Key::Up,false),true);
+    route.onEvent(key(p::Key::Right,false),true);
 
     // An active UI/modal context must prevent keys from leaking into gameplay.
     CHECK(route.onEvent(key(p::Key::A),false).empty());
