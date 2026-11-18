@@ -2277,3 +2277,14 @@ No compiler, CTest, native execution or GPU checks have run.
 The test agent should add direct lattice-coordinate tests for
 48/64/47 resolutions, negative and adjacent region keys, and
 TWH3 round-trip seam parity. Keep PR Draft.
+
+### Stage 16 API-compatibility follow-up (COMMITTED, TESTS NOT RUN)
+- `2d400e164d378b9231f8d3f548a7c36ee332b677`:
+  moved `terrainSkirtDepthCm` to the end of both
+  `HorizonSettings` and `HorizonBake`, preserving
+  positional aggregate initializers in native C++ projects.
+  This changes no stored TWH3 layout, archive fingerprint,
+  default depth, generator output or renderer behavior.
+- Actual verification is still **source-only**. Dedicated
+  testing agent should add native aggregate-initializer
+  source compatibility checks and compile/regression tests.
