@@ -9,12 +9,14 @@ Read \`docs/enhanced-input.md\` and \`docs/enhanced-input-agent-handoff.md\` **b
 
 ## Canonical InputFlow API
 
+For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
+
 For new C++ games include `<aiverselib/gameplay/InputFlow.h>` and use `aiverse::lib::gameplay::inputflow::InputFlow` with `InputAction`, `InputContext`, `InputValue` and the other re-exported types. For platform hosts include `engine/platform/InputFlow.h`, using `platform::InputFlowAdapter`, `platform::InputFlowUsers`, `platform::InputFlowUserProfiles`, `platform::inputflow_config` and `platform::inputflow_presets`. Keep `EnhancedInput.h`, `enhanced::InputSystem`, `AIVERSE::lib_input`, `input/actions.json` and existing user profiles working for older games. Do not rename an authored asset or a serialized gameplay command to achieve branding.
 
 ## Pick the existing mechanism first
 
 - Legacy \`libraries/include/aiverselib/gameplay/Input.h\`: single-context \`resolveInput\`, integer \`deadzone\`, \`ControlGroups\`, \`updateSelection\`, \`DragGesture\`. Never remove or silently break it.
-- New \`libraries/include/aiverselib/gameplay/EnhancedInput.h\`: \`aiverse::lib::gameplay::enhanced::InputSystem\`, typed Input Actions and 3D values, runtime Mapping Context activation/priorities, mapping/action Modifiers and Triggers, lifecycle events, key rebinding. Header-only C++20, **no platform backend**.
+- Canonical `libraries/include/aiverselib/gameplay/InputFlow.h`: `aiverse::lib::gameplay::inputflow::InputFlow`, typed Actions and Values, Mapping Contexts, Modifiers, Triggers, lifecycle events and rebind policies. `EnhancedInput.h` and `enhanced::InputSystem` are compatibility aliases.
 - \`engine/platform/EnhancedInputAdapter.h\`: bridge from \`platform::Event\` and \`GamepadState\` into generic Controls. Focus loss cancels pressed state. Host must not poll gamepads twice per frame.
 - \`engine/platform/EnhancedInputConfig.h\`: validated \`Json\` project mapping asset \`readAsset/installAsset/writeAsset\` and per-user \`readProfile/applyProfile/writeProfile\`. Includes engine \`Json\` (not standalone lib-only code).
 - FPS reference: \`apps/fps/client.cpp\` maps Action state/events to existing \`fps::Input\` network commands, without changing authoritative protocol.
