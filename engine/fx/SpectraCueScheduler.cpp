@@ -28,12 +28,11 @@ bool validParams(const std::array<float,8>& params,uint8_t mask) {
            (!valid(params[i]) || std::abs(params[i])>1.0e7f))return false;
     return true;
 }
-void writeParams(BatchWorld& world,fx::FxHandle handle,
-                 const std::array<float,8>& params,uint8_t mask,
-                 bool affectExisting) {
+std::array<float,8> maskedParams(const std::array<float,8>& params,uint8_t mask) {
+    std::array<float,8> out{};
     for(uint32_t i=0;i<8;++i)
-        if(mask&(1u<<i))
-            (void)world.setProgramParameter(handle,i,params[i],affectExisting);
+        if(mask&(1u<<i))out[i]=params[i];
+    return out;
 }
 bool changedParams(const std::array<float,8>& a,uint8_t am,
                    const std::array<float,8>& b,uint8_t bm) {
@@ -136,7 +135,8 @@ size_t CueScheduler::flush() {
         ++attempts;
         const fx::FxHandle handle=world_.playWithProgramParameters(
             item.effectId,item.cue.position,item.cue.direction,
-            item.cue.scale,item.cue.tint,item.cue.programParams);
+            item.cue.scale,item.cue.tint,
+            maskedParams(item.cue.programParams,item.cue.programParamMask));
         if(handle.valid()) {
             trackOneShot(handle);
             ++spawned;
@@ -215,7 +215,7 @@ void CueScheduler::syncAttachments(std::span<const AttachedCue> sources) {
         }
         fx::FxHandle handle=world_.playWithProgramParameters(
             effect->second.id,src.position,src.direction,src.scale,
-            {1,1,1,1},src.programParams);
+            {1,1,1,1},maskedParams(src.programParams,src.programParamMask));
         if(!handle.valid()) {
             ++stats_.failedSpawns;
             continue;
