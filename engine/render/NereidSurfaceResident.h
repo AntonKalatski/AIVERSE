@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <cstddef>
 
 namespace aiverse::render {
 
@@ -68,6 +70,21 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
 
 enum class NereidSurfaceUpdate { Unchanged, Uploaded, Failed };
 
+struct NereidPreparedSurface {
+    lib::nereid::WaterSurfaceMesh cpu;
+    NereidSurfaceKey key{};
+    // Exact bytes of the vertex/index arrays uploaded by MeshBuilder.
+    // Driver allocation/stride overhead and temporary staging are excluded.
+    size_t bufferBytes=0;
+};
+inline size_t nereidMeshBufferBytes(const lib::nereid::WaterSurfaceMesh& mesh) {
+    if(mesh.vertices.size()>SIZE_MAX/sizeof(MeshVertex) ||
+       mesh.indices.size()>SIZE_MAX/sizeof(uint32_t))return SIZE_MAX;
+    const size_t vb=mesh.vertices.size()*sizeof(MeshVertex);
+    const size_t ib=mesh.indices.size()*sizeof(uint32_t);
+    return vb>SIZE_MAX-ib?SIZE_MAX:vb+ib;
+}
+
 class NereidSurfaceResident final {
 public:
     NereidSurfaceResident()=default;
@@ -87,6 +104,50 @@ public:
         const auto key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
         return !resident_ || !sameNereidSurfaceKey(key,key_);
     }
+    // Pure CPU work, safe outside the render/device update phase as long as
+    // the copied body/geometry input remains immutable during preparation.
+    static std::optional<NereidPreparedSurface> prepare(
+            const lib::nereid::WaterBodyComponent& body,
+            const lib::nereid::WaterGeometryComponent* geometry,
+            uint64_t sourceRevision,
+            lib::nereid::WaterSurfaceMeshOptions opts={},
+            lib::nereid::WaterSurfaceStyle style={}) {
+        if(!body.enabled || !validNereidWaterStyle(style))return std::nullopt;
+        const bool infinite=(!geometry || !geometry->enabled) &&
+            body.footprint==lib::nereid::WaterFootprint::Infinite;
+        NereidPreparedSurface out;
+        out.key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
+        if(infinite) {
+            opts.cameraX=out.key.patchX;
+            opts.cameraZ=out.key.patchZ;
+        }
+        out.cpu=lib::nereid::buildWaterSurfaceMesh(body,geometry,opts);
+        if(out.cpu.empty())return std::nullopt;
+        out.bufferBytes=nereidMeshBufferBytes(out.cpu);
+        if(out.bufferBytes==SIZE_MAX)return std::nullopt;
+        return out;
+    }
+
+    NereidSurfaceUpdate uploadPrepared(gfx::Device& device,
+                                      const NereidPreparedSurface& prepared) {
+        if(prepared.cpu.empty() || !validNereidWaterStyle(prepared.key.style))
+            return NereidSurfaceUpdate::Failed;
+        if(resident_ && sameNereidSurfaceKey(prepared.key,key_))
+            return NereidSurfaceUpdate::Unchanged;
+        Mesh replacement=uploadNereidWaterSurface(device,prepared.cpu,
+                                                   prepared.key.style);
+        if(!replacement.vb.valid() || !replacement.ib.valid() ||
+           replacement.indexCount==0) {
+            releaseNereidWaterSurface(device,replacement);
+            return NereidSurfaceUpdate::Failed;
+        }
+        releaseNereidWaterSurface(device,mesh_);
+        mesh_=replacement;
+        key_=prepared.key;
+        resident_=true;
+        return NereidSurfaceUpdate::Uploaded;
+    }
+
     // The device must remain valid until release(). Same device required for
     // successive updates; call release(oldDevice) before device recreation.
     NereidSurfaceUpdate update(gfx::Device& device,
@@ -95,33 +156,8 @@ public:
             uint64_t sourceRevision,
             lib::nereid::WaterSurfaceMeshOptions opts={},
             lib::nereid::WaterSurfaceStyle style={}) {
-        if(!body.enabled || !validNereidWaterStyle(style))
-            return NereidSurfaceUpdate::Failed;
-        // Enabled custom geometry replaces the footprint; infinite means
-        // the canonical body footprint with no enabled custom geometry.
-        const bool infinite=(!geometry || !geometry->enabled) &&
-            body.footprint==lib::nereid::WaterFootprint::Infinite;
-        const auto key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
-        if(resident_ && sameNereidSurfaceKey(key,key_))
-            return NereidSurfaceUpdate::Unchanged;
-        if(infinite) {
-            opts.cameraX=key.patchX;
-            opts.cameraZ=key.patchZ;
-        }
-        const auto cpu=lib::nereid::buildWaterSurfaceMesh(body,geometry,opts);
-        if(cpu.empty())return NereidSurfaceUpdate::Failed;
-        Mesh replacement=uploadNereidWaterSurface(device,cpu,style);
-        if(!replacement.vb.valid() || !replacement.ib.valid() ||
-           replacement.indexCount==0) {
-            releaseNereidWaterSurface(device,replacement);
-            return NereidSurfaceUpdate::Failed;
-        }
-        // Only discard the previous surface AFTER a complete upload.
-        releaseNereidWaterSurface(device,mesh_);
-        mesh_=replacement;
-        key_=key;
-        resident_=true;
-        return NereidSurfaceUpdate::Uploaded;
+        auto prepared=prepare(body,geometry,sourceRevision,opts,style);
+        return prepared?uploadPrepared(device,*prepared):NereidSurfaceUpdate::Failed;
     }
 
     void draw(Renderer3D& renderer,const mat4& transform=mat4::identity()) const {
