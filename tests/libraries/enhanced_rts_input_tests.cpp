@@ -84,6 +84,15 @@ int main() {
     CHECK(route.system().state("PossessedMove")->value.y>0.0f);
     route.onEvent(key(p::Key::W,false),true);
     route.setPossessionEnabled(false);
+    // Stage 52: a pointer event captured by a HUD panel must not cancel a
+    // still-held keyboard camera Action. Captured keyboard events cancel keys.
+    route.onEvent(key(p::Key::W),true);
+    CHECK(route.system().state("IdleCameraPan")->active);
+    p::Event hudMove; hudMove.type=p::EventType::MouseMove; hudMove.deltaX=4.0f;
+    CHECK(route.onEvent(hudMove,false).empty());
+    CHECK(route.system().state("IdleCameraPan")->active);
+    route.onEvent(key(p::Key::W,false),true);
+    CHECK(!route.system().state("IdleCameraPan")->active);
     // An active UI/modal context must prevent keys from leaking into gameplay.
     CHECK(route.onEvent(key(p::Key::A),false).empty());
     CHECK(contains(route.onEvent(key(p::Key::A),true),"AttackMove"));
