@@ -28,7 +28,7 @@ constexpr size_t kMaximumPooledModelSize = 16 * 1024 * 1024;
 bool canPool(const Model& m) {
     // Keep skin/morph/LOD/cluster paths on dedicated buffers because those
     // paths can reference original GPU vertex IDs or expanded index ranges.
-    if (m.geometry || !m.skins.empty() || !m.clips.empty() ||
+    if (!m.batching.allowGeometryPool || m.geometry || !m.skins.empty() || !m.clips.empty() ||
         !m.variants.empty() || m.morphTex.valid()) return false;
     for (const auto& mesh : m.meshes) {
         if (mesh.deformable || !mesh.lods.empty()) return false;
