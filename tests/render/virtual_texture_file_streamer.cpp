@@ -422,7 +422,18 @@ void asynchronousGpuFeedbackRuntime() {
     require(runtime.initialize(gpu,feedback,prefetch,1),
             "single-frame deferred budget accepted");
     require(runtime.capture(target),"capture with single-frame budget");
-    gpu.finishFeedback(readback);
+    // The earlier shutdown fixture moved its payload into the stale callback;
+    // create a fresh readback rather than reusing a moved-from pixel vector.
+    TextureReadbackResult boundedReadback;
+    boundedReadback.format=PixelFormat::RGBA8;
+    boundedReadback.width=2;
+    boundedReadback.height=1;
+    boundedReadback.pixels.resize(8);
+    for (size_t pixel=0;pixel<2;++pixel)
+        for (int channel=0;channel<4;++channel)
+            boundedReadback.pixels[pixel*4+size_t(channel)]=
+                uint8_t((id>>(channel*8))&255u);
+    gpu.finishFeedback(std::move(boundedReadback));
     const auto bounded=runtime.submit(stream);
     require(bounded.submittedNewRequests==0,
             "existing pending pages remain deduplicated");
