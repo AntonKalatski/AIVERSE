@@ -492,6 +492,10 @@ private:
     // trace tier
     bool traceWanted_ = true;
     bool ssrThisFrame_ = false;
+    // NEREID: only the selected water plane can sample this frame's planar RTT.
+    // Reset every beginScene; secondary elevations use SSR/environment only.
+    bool reflectionPlaneValid_ = false;
+    float reflectionPlaneY_ = 0.f;
     bool modelReflections_ = false; // opt-in opaque PBR SSR; High trace + HDR only
     bool hdrFrame_ = false;
     HeightField heightField_;

@@ -36,6 +36,8 @@ void Renderer3D::renderReflection() {
 
     const float3 sky = (lighting.fogColor + lighting.skyColor) * 0.5f;
     if (lights.beginReflection(w, h, sky)) {
+        reflectionPlaneY_ = planeY;
+        reflectionPlaneValid_ = true;
         dev_->setPipeline(litPipe_);
         uploadFrameUniforms(false);
         dev_->setTexture(0, shadowMap_);
