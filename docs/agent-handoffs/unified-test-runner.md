@@ -97,3 +97,9 @@ HEAD and append; do not force-push or replace their entries.
 - **Verification:** source reviewed/committed through GitHub connector. Real native `bash -n`, Python smoke fixture, CMake/CTest, full macOS runtime **NOT RUN** by this agent; no checkout available locally and CI not confirmed green. The user's uploaded logs establish only the original RelWithDebInfo build behavior and earlier Model.cpp error.
 - **Next:** `git pull --ff-only`, `bash -n run-tests.sh`, `python3 tests/test_unified_runner.py`, `./run-tests.sh --quick`. If that builds and CTest passes, execute full `./run-tests.sh` and record results. Do not claim full suite passed until observed.
 
+
+## Stage 5 — 93% editor const access compile failure, fixed (2026-11-18)
+- **Source commit:** `508ee4dd346b8f7ff1e256db320b5733b328fe74`, changed `apps/editor/Editor.h`.
+- **Uploaded build log facts:** Debug unified runner `configure` PASS, `build` FAIL at 93%; first compiler error `EditorWorld.cpp:125`, no `const Editor::doc()`. Both native ECS persistence and RTS integration test binaries **built** within the same log; however CTest/extras **NOT RUN**.
+- **Fix:** const overload `const MapDoc& doc() const` enables a document read from `selectionPos const` without cast or mutation. Legacy editor APIs and game state unchanged.
+- **Validation actually executed:** source review and GitHub commit only, not native recompile; owner must run `./run-tests.sh --quick` again after pull and provide CTest results. No green CI asserted. This also supplements the global editor handoff.
