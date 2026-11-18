@@ -328,6 +328,40 @@ rollback without altering unrelated effects in a shared renderer.
 **Not yet verified executed** in this connector-only session. Check
 CI logs and run real macOS Metal smoke separately before production use.
 
+## Graph v2: typed dataflow and module stages (Stage 16)
+
+Use `"version":2` in SpectraFX graph assets when you need
+math/data port nodes and reusable module stages; `version:1`
+remains supported. Public `spectra::compileGraph`,
+`fx::compileSpectraGraph`, `GraphAssets`, `BatchWorld`
+and `GraphRuntime` use the same automatic version dispatch.
+
+The stage chain still uses execution links Spawn → Initialize →
+module stages → Sprite/Mesh/Ribbon Output. Use `NoiseModule`,
+`CollisionModule`, `TrailModule`, `LightModule`,
+`ForceModule`, `VelocityModule`, `SubEmitterModule`,
+`TriggerModule`, and the other typed modules. Their properties
+are lowered to the existing strict FxEffect schema; unsupported
+properties are not silently discarded.
+
+Value edges use `{"from":"speed_math","to":"init","toPort":"speed"}`
+rather than execution links. `{"$node":"math"}` and
+`{"$param":"exposed"}` may appear within JSON properties.
+`{"$curve":"age_math","samples":33}` samples the finite scalar
+expression at normalized ages into an existing CPU lifetime curve.
+Data expression nodes include scalar/vector literals, arithmetic,
+clamp/lerp, trig, vector dot/cross/normalize, comparisons and Select.
+Input overrides are strictly type-checked; cycles, invalid type
+combinations and excessive expression depth are compilation errors.
+
+Sample: `examples/spectrafx/typed_noise_trail_v2.vfx.json`.
+Compile it through `fx_graph_validate` or native
+`spectra::compileGraph`; render via existing CPU fallback.
+Do not mistake V2 static/type-checked authoring for arbitrary
+runtime Niagara GPU-per-particle graph execution.
+The Stage-16 code is committed but testing is intentionally
+deferred per user instruction. Record actual tests later.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
