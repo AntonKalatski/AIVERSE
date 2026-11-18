@@ -333,6 +333,52 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
 }
 
 void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const MapGrid& grid, double time) {
+    // Flat-ground, rigid ghost with a single resolved model: the host
+    // supplies model assets and placement height, while View owns model
+    // submission. Complex animation/planet/attachments retain legacy.
+    if(!planets_.active() && type<looks_.size()) {
+        loadType(type);
+        const auto& look=looks_[type];
+        if(look.models.size()==1 && look.stages.empty() &&
+           look.lods.empty()) {
+            const auto& choice=look.models.front();
+            if(choice.model && choice.model->clips.empty() &&
+               !choice.graph && !choice.needsPose && !choice.baked &&
+               choice.procs.empty() && choice.legs.empty() &&
+               choice.attach.empty() && choice.fx.empty() &&
+               choice.additive.empty() && choice.weaponPoses.empty()) {
+                const auto& kind=rules_->types[type];
+                const auto player=playerColor(1);
+                view_adapter::StaticPreviewModel spec;
+                spec.model=choice.model;
+                spec.geometry=choice.geometry;
+                spec.materials=&choice.materials;
+                spec.nodeMaterial=choice.nodeMaterial.empty()
+                    ?nullptr:&choice.nodeMaterial;
+                spec.fix=choice.fix;
+                spec.variant=choice.variant;
+                spec.team={player.x*player.x,player.y*player.y,
+                           player.z*player.z};
+                spec.structure=kind.structure;
+                spec.shape=look.shape;
+                spec.air=look.air;
+                spec.transparent=look.transparent;
+                spec.scale=look.scale;
+                spec.sx=look.sx;spec.sz=look.sz;
+                spec.flyHeight=look.flyHeight;
+                const auto description=
+                    view_adapter::makeGhostPresentation(type,pos,ok,time);
+                ::aiverse::view::Object packet;
+                if(view_adapter::buildStaticGhostPacket(
+                       spec,description.position,
+                       heightAt(grid,pos.x,pos.z),
+                       description.tint,packet)) {
+                    view_adapter::submitStaticPreview(r,packet);
+                    return;
+                }
+            }
+        }
+    }
     view_adapter::RtsPreviewRenderProvider::submitGhost(type,pos,ok,time,
         [&](uint16_t requested) {
             if(requested>=looks_.size())return false;
