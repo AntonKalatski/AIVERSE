@@ -1201,3 +1201,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `skills/gameplay/aiverse-ecs-impact-queue/SKILL.md` describing public queue setup and registration, five policy callback stages, bounded event/sequence resource, deterministic processing and explicit legacy RTS immediate-side-effect warning. Cross-genre test and native linkage requirements are documented.
 - **Verification:** document committed, not compiled. Catalog target in skill is not yet available until a following catalog update.
 - **Next:** publish the catalog package, register CTest and standalone runner and verify native results.
+
+
+### 2026-11-18 — Live FPS target explicitly links public hitscan package
+- Implementation SHA: `4a8c483c049827e5044758b49cd0ad0f1ed95ca9`.
+- `modules/fps/CMakeLists.txt` links `aiverse_fps` to catalog-generated `AIVERSE::lib_ecs_hitscan`, retaining `aiverse_world` and `aiverse_engine`. Root `CMakeLists.txt` loads `libraries` before `modules/fps`, so the CMake target is registered before use.
+- Real FPS `traceShot` already uses shared deterministic target-selection API (`bbd22a2`). This declares its dependency explicitly; no gameplay state is added.
+- Verification: source inspection and GitHub commit only; no native CMake configure/compile executed. Another agent is concurrently editing the handoff, so preserve all intervening entries before updating.
