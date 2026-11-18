@@ -100,6 +100,7 @@ public:
         if (ImGui::SliderInt("Размер окна (ячейки)", &viewSize_, 8, 64)) dirty_ = true;
         if (ImGui::InputInt("Центр X", &centerX_)) dirty_ = true;
         if (ImGui::InputInt("Центр Z", &centerZ_)) dirty_ = true;
+        ImGui::Checkbox("Контуры ветра, штормов и гравитации", &showVolumes_);
         if (ImGui::Button("Обновить данные")) dirty_ = true;
 
         // Refresh only when input, World identity or committed tick changed.
@@ -143,7 +144,7 @@ public:
                             raster_.sampleCount, raster_.valid.size(),
                             Fixed::fromRaw(raster_.minRaw).toDouble(),
                             Fixed::fromRaw(raster_.maxRaw).toDouble());
-        drawMap();
+        drawMap(*world);
         if (raster_.sampleCount == 0)
             ui::hint("В выбранной области нет ячеек PHYSIS.");
         if (selected_ >= 0 && std::size_t(selected_) < raster_.valid.size() &&
@@ -239,7 +240,7 @@ private:
         dirty_ = true;
     }
 
-    void drawMap() {
+    void drawMap(const aiverse::World& world) {
         const float available = ImGui::GetContentRegionAvail().x;
         if (available < 32 || raster_.width <= 0 || raster_.height <= 0) return;
         const float w = available;
@@ -262,6 +263,49 @@ private:
                                     ImVec2(origin.x + (x + 1) * cw, origin.y + (y + 1) * ch),
                                     colorToImU32(c));
             }
+        // Optional zone outlines use read-only ECS components. The overlay is
+        // drawn exclusively in this panel (not in the Scene/Inspector pipeline).
+        if (showVolumes_) {
+            const auto* state = world.resourceConst<State>();
+            if (state) {
+                const double metresPerPixelCell = double(state->settings.cellSizeMeters) *
+                                                  double(raster_.stride);
+                const auto showCircle = [&](Vec3 center, Fixed radius, ImU32 color,
+                                            const char* mark) {
+                    if (radius <= Fixed{} || metresPerPixelCell <= 0) return;
+                    const double cx = (center.x.toDouble() /
+                                       double(state->settings.cellSizeMeters) -
+                                       double(raster_.originX)) / double(raster_.stride);
+                    const double cy = (center.z.toDouble() /
+                                       double(state->settings.cellSizeMeters) -
+                                       double(raster_.originZ)) / double(raster_.stride);
+                    const float px = origin.x + float(cx) * cw;
+                    const float py = origin.y + float(cy) * ch;
+                    const float sx = float(radius.toDouble() / metresPerPixelCell) * cw;
+                    const float sy = float(radius.toDouble() / metresPerPixelCell) * ch;
+                    if (sx <= 0 || sy <= 0 || sx > 200000 || sy > 200000) return;
+                    // Only circular outlines with isotropic scales are drawn;
+                    // the map cells are rendered with a proportional aspect ratio.
+                    draw->AddCircle(ImVec2(px, py), sx, color, 48, 1.6f);
+                    draw->AddText(ImVec2(px + 3, py + 3), color, mark);
+                };
+                draw->PushClipRect(origin, ImVec2(origin.x + w, origin.y + h), true);
+                world.eachExistingConst<WindZone>([&](Entity, const WindZone& zone) {
+                    showCircle(zone.center, zone.radiusMeters, IM_COL32(95, 210, 230, 240), "W");
+                });
+                world.eachExistingConst<StormEvent>([&](Entity, const StormEvent& storm) {
+                    if (!stormActive(storm, state->tick)) return;
+                    showCircle(storm.center, storm.outerRadiusMeters,
+                               IM_COL32(250, 185, 72, 240),
+                               storm.kind == StormKind::Tornado ? "T" : "H");
+                });
+                world.eachExistingConst<GravityField>([&](Entity, const GravityField& field) {
+                    if (field.enabled) showCircle(field.center, field.radiusMeters,
+                                                  IM_COL32(183, 133, 249, 240), "G");
+                });
+                draw->PopClipRect();
+            }
+        }
         if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             const ImVec2 mouse = ImGui::GetIO().MousePos;
             const int x = std::clamp(int((mouse.x - origin.x) / cw), 0, raster_.width - 1);
@@ -284,7 +328,7 @@ private:
     DiagnosticLayer layer_ = DiagnosticLayer::TemperatureCelsius;
     const aiverse::World* cachedSource_ = nullptr;
     std::uint64_t cachedTick_ = ~std::uint64_t(0);
-    bool showDemo_ = false, dirty_ = true, valid_ = false;
+    bool showDemo_ = false, dirty_ = true, valid_ = false, showVolumes_ = true;
     int viewSize_ = 32, stride_ = 1, centerX_ = 0, centerZ_ = 0;
     int palette_ = 0, selected_ = -1;
 };
