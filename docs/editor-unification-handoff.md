@@ -1319,3 +1319,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `22771304cc47862299f56c281bbd173c1986c33f`.
 - New `skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md` documents the component intent and five custom callback adapters for `addHitscanResolutionSystem`, choice of physics/kinematic/hitscan policies, independent snapshot tests, and the critical difference from live FPS synchronous same-tick damage ordering.
 - Verification: skill file committed on the working branch. The described catalog target must still be published; no native compile/run.
+
+
+### 2026-11-18 — ECS impact queue integration static audit (13/13)
+- Inspected the working branch after package registration. **13 of 13 static wiring checks passed:** catalog IDs unique; `ecs-impact-queue` source/skill/target/dependency match; CMake CTest and standalone ECS runner reference the test; AGENTS and full migration plan reference package; the header exposes full versioned save/load/hash and bounded queue; the test exercises two unrelated hosts with COW and malformed-input cases.
+- Catalog count at audit: 127 (other agents may add packages later; re-read before relying on this figure). Latest branch CI, Studio, ECS experiments and GPU batching workflow statuses were **queued**, not green.
+- **Verification limitation:** static/source checks only; no successful native C++ compile, sanitizer, network rollback or gameplay parity evidence. **Do not enable as default in FPS/RTS or delete immediate-hit paths.**
+- Next for a native-capable agent: `python3 tools/libraries/catalog.py check`, configure CMake, build `aiverse_ecs_cross_genre_impact_queue_test`, `ctest --output-on-failure -R ecs_cross_genre_impact_queue_test`, `bash tests/run_ecs_experiment_suite.sh`, then existing FPS/RTS regression and editor suite. Only adopt the queue in a live genre with proof of same-tick event-order parity.
