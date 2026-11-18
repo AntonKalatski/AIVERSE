@@ -5,6 +5,8 @@
 #include "../EditorUtil.h"
 #include "../core/FxOps.h"
 #include "engine/fx/SpectraFX.h"
+#include "engine/fx/SpectraModuleSchema.h"
+#include <string_view>
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -310,6 +312,129 @@ private:
         if(!ImGui::IsMouseDown(ImGuiMouseButton_Left))dragging_=false;
         if(ImGui::IsKeyPressed(ImGuiKey_Escape))pendingFrom_.clear();
     }
+    // Shared typed schema, independent of Editor/MCP. Complex curves and
+    // unlisted emitter modules are deliberately preserved in the raw JSON.
+    void typedFields() {
+        if(selected_<0 || size_t(selected_)>=doc_["nodes"].size()) return;
+        const std::string type=doc_["nodes"][size_t(selected_)].getStr("type");
+        for(const auto& field:spectra::fieldsForNode(type)) {
+            ImGui::PushID(field.key);
+            const Json current=doc_["nodes"][size_t(selected_)]["properties"][field.key];
+            if(current.isNull()) {
+                ImGui::TextDisabled("%s",field.label);
+                ImGui::SameLine();
+                if(ImGui::SmallButton("+")) {
+                    const Json initial=Json::parse(field.initial);
+                    std::string error;
+                    Json probe=doc_["nodes"][size_t(selected_)];
+                    if(spectra::applyTypedField(probe,field.key,initial,error)) {
+                        remember();
+                        doc_.find("nodes")->at(size_t(selected_))=std::move(probe);
+                        propertyText_=doc_["nodes"][size_t(selected_)]["properties"].dump(2);
+                        refreshDiagnostics();
+                    } else message_=error;
+                }
+                ImGui::PopID();
+                continue;
+            }
+            // A range may be a curve/two values; a colour may be a gradient.
+            // Do NOT silently replace either with a scalar widget value.
+            std::string error;
+            if(!spectra::validateTypedField(field,current,error)) {
+                ImGui::TextWrapped("%s: complex value (edit JSON)",field.label);
+                if(ImGui::IsItemHovered())ImGui::SetTooltip("%s",error.c_str());
+                ImGui::PopID();
+                continue;
+            }
+
+            Json updated;
+            bool changed=false;
+            bool started=false;
+            switch(field.kind) {
+            case spectra::FieldKind::Number: {
+                float value=float(current.toDouble());
+                changed=ImGui::DragFloat(field.label,&value,0.025f,
+                    float(field.minimum),float(field.maximum),"%.3f",ImGuiSliderFlags_AlwaysClamp);
+                started=ImGui::IsItemActivated();
+                if(changed)updated=Json::number(double(value),4);
+                break;
+            }
+            case spectra::FieldKind::Integer: {
+                int value=int(current.integer());
+                changed=ImGui::DragInt(field.label,&value,1,
+                    int(field.minimum),int(field.maximum),"%d",ImGuiSliderFlags_AlwaysClamp);
+                started=ImGui::IsItemActivated();
+                if(changed)updated=Json::number(int64_t(value));
+                break;
+            }
+            case spectra::FieldKind::Boolean: {
+                bool value=current.boolean();
+                changed=ImGui::Checkbox(field.label,&value);
+                started=ImGui::IsItemActivated();
+                if(changed)updated=Json::fromBool(value);
+                break;
+            }
+            case spectra::FieldKind::String: {
+                std::string value=current.str();
+                changed=ui::inputString(field.label,value);
+                started=ImGui::IsItemActivated();
+                if(changed)updated=Json::string(std::move(value));
+                break;
+            }
+            case spectra::FieldKind::Choice: {
+                if(ImGui::BeginCombo(field.label,current.str().c_str())) {
+                    const std::string_view choices(field.choices);
+                    for(size_t from=0;from<choices.size();) {
+                        const size_t to=choices.find('|',from);
+                        const std::string option(choices.substr(from,to==std::string_view::npos?to:to-from));
+                        if(ImGui::Selectable(option.c_str(),current.str()==option)) {
+                            updated=Json::string(option);changed=true;
+                        }
+                        if(to==std::string_view::npos)break;
+                        from=to+1;
+                    }
+                    ImGui::EndCombo();
+                }
+                break;
+            }
+            case spectra::FieldKind::Vector3: {
+                float value[3]={float(current[size_t(0)].toDouble()),
+                                float(current[size_t(1)].toDouble()),
+                                float(current[size_t(2)].toDouble())};
+                changed=ImGui::DragFloat3(field.label,value,0.04f);
+                started=ImGui::IsItemActivated();
+                if(changed) {
+                    updated=Json::array();
+                    for(float v:value) updated.push(Json::number(double(v),4));
+                }
+                break;
+            }
+            }
+            // One undo checkpoint per active drag/text edit, not one per frame.
+            if(started) remember();
+            if(changed) {
+                Json probe=doc_["nodes"][size_t(selected_)];
+                if(spectra::applyTypedField(probe,field.key,updated,error)) {
+                    if(!started && !ImGui::IsItemActive())remember();
+                    doc_.find("nodes")->at(size_t(selected_))=std::move(probe);
+                    propertyText_=doc_["nodes"][size_t(selected_)]["properties"].dump(2);
+                    refreshDiagnostics();
+                } else message_=error;
+            }
+            ImGui::SameLine();
+            if(ImGui::SmallButton("x")) {
+                Json probe=doc_["nodes"][size_t(selected_)];
+                if(spectra::removeTypedField(probe,field.key,error)) {
+                    remember();
+                    doc_.find("nodes")->at(size_t(selected_))=std::move(probe);
+                    propertyText_=doc_["nodes"][size_t(selected_)]["properties"].dump(2);
+                    refreshDiagnostics();
+                } else message_=error;
+            }
+            ImGui::PopID();
+        }
+    }
+
     void properties(Editor& ed) {
         ImGui::TextUnformatted("Узлы");
         if(ImGui::BeginCombo("Добавить узел","Выберите тип")) {
@@ -322,7 +447,10 @@ private:
         if(selected_>=0 && size_t(selected_)<doc_["nodes"].size()) {
             const Json& n=doc_["nodes"][size_t(selected_)];
             ImGui::Text("%s / %s",n.getStr("type").c_str(),n.getStr("id").c_str());
-            ImGui::TextUnformatted("Свойства узла (JSON)");
+            if(ImGui::CollapsingHeader("Типизированные модули",ImGuiTreeNodeFlags_DefaultOpen))
+                typedFields();
+            ImGui::Separator();
+            ImGui::TextUnformatted("Расширенные свойства (JSON)");
             ui::inputMultiline("##spectra_props",propertyText_,ImVec2(-1,160));
             if(ImGui::Button("Применить свойства")) {
                 try{
