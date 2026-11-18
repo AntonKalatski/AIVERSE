@@ -42,7 +42,7 @@ bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullpt
 struct ComputeStats {
     uint32_t alive = 0, dropped = 0;
     uint32_t gpuDispatches = 0, drawCalls = 0;
-    uint32_t submittedSlots = 0; // non-compacted active prefix, including holes
+    uint32_t submittedSlots = 0; // dense GPU quads published from live-slot map
     uint32_t gpuFallbacks = 0, lostOnFallback = 0;
     size_t gpuBytes = 0, uploadedBytes = 0;
 };
@@ -106,11 +106,11 @@ private:
     gfx::ComputeHandle compute_;
     gfx::ShaderHandle vertexShader_;
     gfx::PipelineHandle pipeline_;
-    gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_;
+    gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
     gfx::TextureHandle texture_;
     std::vector<float> ages_;
-    uint32_t drawSlotPrefix_ = 0; // first unallocated tail; holes remain degenerate
-    std::vector<uint32_t> freeSlots_, pendingSlots_;
+    uint32_t drawCount_ = 0; // dense vertices emitted this frame (<= alive)
+    std::vector<uint32_t> freeSlots_, pendingSlots_, aliveSlots_;
     std::vector<ParticleState> pendingStates_;
     render::mat4 viewProj_;
     fx::float3 eye_{}, right_{1,0,0}, up_{0,1,0};
