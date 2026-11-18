@@ -3,6 +3,7 @@
 // and CPU runtime. It never interprets arbitrary code or mutates ECS state.
 #pragma once
 #include "SpectraValueGraph.h"
+#include "SpectraRuntimeCodegen.h"
 #include "VfxGraph.h"
 #include <cmath>
 #include <functional>
@@ -252,8 +253,16 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
         const std::string id=original.getStr("id"),type=types.at(id);
         if(vfx2::valueNodeType(type))continue;
         Json properties=Json::object();
-        if(copied.at(id).has("properties") &&
-           !values.resolve(copied.at(id)["properties"],properties))return false;
+        if(copied.at(id).has("properties")) {
+            Json sourceProps=copied.at(id)["properties"];
+            if(type=="ParticleProgramModule") {
+                Json runtimeProps;
+                if(!vfx2::lowerRuntimeProgram(sourceProps,copied,runtimeProps,errors))
+                    return false;
+                sourceProps=std::move(runtimeProps);
+            }
+            if(!values.resolve(sourceProps,properties))return false;
+        }
         Json stage=Json::object();
         stage.set("id",Json::string(id));
         if(type=="Spawn"||type=="Initialize"||type=="Update"||vfx2::isOutput(type))
