@@ -98,6 +98,8 @@ struct VPipeline {
         VkPipeline pipeline;
         int colorCount = 1;
         std::array<VkFormat, kMaxRenderTargetColors> formats{};
+        int samples = 1;
+        uint32_t resolveMask = 0;
     };
     std::vector<Variant> variants;               // per render pass format (and HDR shader)
 };
@@ -199,11 +201,13 @@ private:
     VkRenderPass renderPassFor(VkFormat color, VkFormat depth, bool clearColor, bool clearDepth);
     VkRenderPass renderPassForMrt(
         const std::array<VkFormat, kMaxRenderTargetColors>& formats,
-        VkFormat depth, int colors, uint32_t clearMask, bool clearDepth);
+        VkFormat depth, int colors, uint32_t clearMask, bool clearDepth,
+        int samples = 1, uint32_t resolveMask = 0);
     VkFramebuffer framebufferFor(VkImageView color, VkImageView depth, VkRenderPass rp, int w, int h, uint32_t colorId, uint32_t depthId);
     VkPipeline pipelineFor(VPipeline& p,
                            const std::array<VkFormat, kMaxRenderTargetColors>& formats,
-                           VkFormat depth, bool hdr, int colorCount = 1);
+                           VkFormat depth, bool hdr, int colorCount = 1,
+                           int samples = 1, uint32_t resolveMask = 0);
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
 
@@ -279,6 +283,8 @@ private:
         int colorCount = 0;
         uint32_t clearMask = 0;
         bool clearDepth = false;
+        int samples = 1;
+        uint32_t resolveMask = 0;
         VkRenderPass pass = VK_NULL_HANDLE;
     };
     std::vector<MrtRenderPass> mrtRenderPasses_;
@@ -293,8 +299,10 @@ private:
     // Deferred destruction happens only after vkCmdEndRenderPass and GPU completion.
     VkFramebuffer scopedPassFb_ = VK_NULL_HANDLE;
     std::array<VkImageView, kMaxRenderTargetColors> scopedPassColors_{};
+    std::array<VkImageView, kMaxRenderTargetColors> scopedPassResolves_{};
     VkImageView scopedPassDepth_ = VK_NULL_HANDLE;
-    int passColors_ = 1;
+    int passColors_ = 1, passSamples_ = 1;
+    uint32_t passResolveMask_ = 0;
     bool explicitMrtPass_ = false;
     int passW_ = 0, passH_ = 0;
     VkFormat passColor_ = VK_FORMAT_UNDEFINED, passDepth_ = VK_FORMAT_UNDEFINED;
