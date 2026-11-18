@@ -64,11 +64,14 @@ public:
     bool gpuActive() const { return initialized_ && backend_ == ComputeBackend::Metal; }
     const std::string& reason() const { return reason_; }
     const std::vector<std::string>& errors() const { return errors_; }
-    const fx::ParticleSystem& cpuFallback() const { return cpu_; }
+    const fx::ParticleSystem& cpuFallback() const {
+        return useComputeWrapper_ ? gpu_.cpuFallback() : cpu_;
+    }
     const ComputeStats& gpuStats() const { return gpu_.stats(); }
 private:
     bool initCpu(gfx::Device*, const fx::EffectDef&, fx::FxQuality);
     bool initialized_ = false;
+    bool useComputeWrapper_ = false;
     ComputeBackend backend_ = ComputeBackend::Cpu;
     fx::ParticleSystem cpu_;
     ComputeParticles gpu_;
