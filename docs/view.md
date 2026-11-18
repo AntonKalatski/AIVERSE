@@ -485,3 +485,29 @@ colour and lift through View, with the same immediate overlay layer and
 draw order. This is an incremental extraction, **not** retirement of
 `game::RtsView`. The mixed packet regression test checks the new
 variant and parameter ordering but has **NOT RUN** as of this stage.
+
+## Universal View owns the synchronous layer submission barrier (Stage 82)
+
+The canonical `aiverse::View` now exposes two static submission APIs:
+
+```cpp
+View::submitLayers(layerQueue);
+View::submitLayers(hostProviders, {seconds, deltaTime, frameRevision});
+```
+
+Both consume their work synchronously and preserve the original callback
+insertion order, disabled-layer policy, exception semantics and borrowed
+captures. A provider-based call collects into a local queue and flushes
+before returning. These functions don't schedule work on animation threads
+and don't move any gameplay authority into the renderer. Host-specific
+terrain, roads, visibility decisions and effects remain owned by their
+adapters.
+
+The legacy RTS host delegates both normal and planet-scene layer
+submission to `aiverse::View`. The old `RtsView` still constructs
+some passes and handles gameplay-derived authoring; it cannot yet be
+removed. A deferred `tests/view/view.cpp` regression covers disabled
+layers, ordering, single submission and provider collection.
+
+**NOT RUN**: CMake/CTest, native compilation and GPU parity checks
+have not been performed on this stage.
