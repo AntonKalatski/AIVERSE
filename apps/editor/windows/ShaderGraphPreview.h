@@ -64,7 +64,7 @@ public:
 private:
     bool init(gfx::Device& dev) {
         dev_=&dev;textures_.init(dev);if(!portrait_.init(dev)||!post_.init(dev)||!particles_.init(&dev)) {error=dev.lastError();shutdown();return false;}
-        post_.setQuality(render::PostFxQuality::High);
+        post_.setQuality(render::PrismaQuality::High);
         gfx::TextureDesc td;td.width=td.height=256;td.renderTarget=true;color_=dev.createTexture(td);td.format=gfx::PixelFormat::Depth;depth_=dev.createTexture(td);
         const float vertices[]={-1,-1,3,-1,-1,3};gfx::BufferDesc bd;bd.data=vertices;bd.size=sizeof vertices;vb_=dev.createBuffer(bd);
         gfx::ShaderDesc sd;sd.textureSlots=1;
