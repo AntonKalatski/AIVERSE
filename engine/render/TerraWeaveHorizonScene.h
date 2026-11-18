@@ -6,6 +6,7 @@
 #include "engine/render/TerraWeaveHorizonModel.h"
 #include "engine/render/TerraWeaveHorizonGpuPatch.h"
 #include "engine/render/TerraWeaveHorizonVertexPatch.h"
+#include "engine/render/TerraWeaveHorizonGpuCache.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -15,6 +16,7 @@
 #include <chrono>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <functional>
 #include <vector>
 #include <map>
@@ -46,6 +48,7 @@ struct HorizonRuntimeStats {
     size_t atlasPatchRegions=0, fullUploadCount=0; // last patch region count, full model uploads
     size_t vertexPatchCount=0, vertexPatchBytes=0; // successful partial VB commits
     size_t vertexPatchRanges=0; // last successful vertex update run count
+    size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
 };
 
 class TerraWeaveHorizonScene {
@@ -73,6 +76,7 @@ public:
                 // An old generation is never served from the current cache.
                 const auto generation=sources_.load(std::memory_order_acquire);
                 const uint64_t revision=generation?generation->revision:0;
+                result->sourceRevision=revision; // reject obsolete prepared jobs
                 std::shared_ptr<const HorizonBake> baked;
                 if(settings_.maxCachedRegions){
                     std::lock_guard lock(cacheMutex_);
@@ -403,6 +407,9 @@ public:
         }
         out.cacheHits=cacheHits_.load(std::memory_order_relaxed);
         out.archiveHits=archiveHits_.load(std::memory_order_relaxed);
+        out.gpuCachedRegions=gpuCache_.size();
+        out.gpuCachedBytes=gpuCache_.bytes();
+        out.gpuCacheHits=gpuCacheHits_;
         return out;
     }
     const world::AsyncChunkStream::Status& status() const {
@@ -412,6 +419,71 @@ public:
     }
 
 private:
+    // Snapshot an already-uploaded GPU model before replacing the active
+    // region. Retain only if its source revision is still current; otherwise
+    // release using the same RHI Device that originally uploaded it.
+    void retireActive(gfx::Device& device,world::Cell incoming) {
+        if(!model_){
+            activeBake_.reset();
+            activeVertices_.clear();
+            activeIndices_.clear();
+            return;
+        }
+        HorizonGpuRegion previous;
+        previous.model=std::move(model_);
+        previous.bake=std::move(activeBake_);
+        previous.vertices=std::move(activeVertices_);
+        previous.indices=std::move(activeIndices_);
+        previous.originXcm=originXcm_;
+        previous.originZcm=originZcm_;
+        previous.clusters=clusters_;
+        previous.terrainQuads=terrainQuads_;
+        previous.atlasBytes=runtime_.atlasBytes;
+        previous.vertexCount=runtime_.vertices;
+        previous.triangleCount=runtime_.triangles;
+        previous.estimatedGpuBytes=estimateHorizonGpuResidencyBytes(
+            previous.atlasBytes,previous.vertexCount,previous.triangleCount);
+        if(activeCell_ && !(*activeCell_==incoming) &&
+           activeRevision_==sourceRevision_ &&
+           settings_.maxCachedGpuRegions)
+            gpuCache_.retain(device,*activeCell_,activeRevision_,
+                std::move(previous),settings_.maxCachedGpuRegions,
+                size_t(settings_.gpuCacheBudgetMiB)*1024u*1024u);
+        else if(previous.model)
+            render::releaseModel(device,*previous.model);
+    }
+
+    void adoptCached(world::Cell cell,HorizonGpuRegion region) {
+        model_=std::move(region.model);
+        activeBake_=std::move(region.bake);
+        activeVertices_=std::move(region.vertices);
+        activeIndices_=std::move(region.indices);
+        originXcm_=region.originXcm;
+        originZcm_=region.originZcm;
+        clusters_=region.clusters;
+        terrainQuads_=region.terrainQuads;
+        activeCell_=cell;
+        activeRevision_=sourceRevision_;
+        runtime_.clusters=region.clusters;
+        runtime_.atlasBytes=region.atlasBytes;
+        runtime_.vertices=region.vertexCount;
+        runtime_.triangles=region.triangleCount;
+        runtime_.gpuUploadMs=0;
+        runtime_.atlasPatchRegions=0;
+        runtime_.vertexPatchRanges=0;
+        ++gpuCacheHits_;
+    }
+
+    // Canceled jobs still hold staging reservations until update() drains
+    // completion. Do not starve the worker after an instant GPU cache hit.
+    void drainCanceledJobs() {
+        stream_->update({},std::span<const world::Cell>{},0,0,
+            [](world::Cell,const world::AsyncChunkStream::Payload&) {
+                return false;
+            },
+            [](world::Cell){});
+    }
+
     struct SourceGeneration {
         uint64_t revision=0;
         std::shared_ptr<const HorizonSurfaceSources> surface;
@@ -426,6 +498,7 @@ private:
         std::shared_ptr<const HorizonBake> bake;
         std::unique_ptr<render::Model> model;
         double cpuPrepareMs=0;
+        uint64_t sourceRevision=0;
     };
     static constexpr size_t kRegionBudget=24u*1024u*1024u;
     TerrainSettings terrain_;
@@ -440,6 +513,10 @@ private:
     std::vector<uint32_t> activeIndices_;
     world::Cell cell_{};
     bool cataloged_=false;
+    std::optional<world::Cell> activeCell_;
+    uint64_t activeRevision_=0; // authored source revision of GPU-resident region
+    HorizonGpuRegionCache gpuCache_;
+    size_t gpuCacheHits_=0;
     int64_t originXcm_=0,originZcm_=0;
     size_t clusters_=0,terrainQuads_=0;
     HorizonRuntimeStats runtime_{};
