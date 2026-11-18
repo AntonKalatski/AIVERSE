@@ -928,3 +928,69 @@ run `terraweave_model`/`terraweave_flora` and true runtime
 WorldScene capture, validate memory/draw count under the bounds.
 Implement asynchronous streaming with bounded pending job queue and
 stale revision tokens before marketing this as non-blocking.
+
+## Stage 4b — placement masks, smoke test, GPU cleanup (COMMITTED; UNVERIFIED)
+
+**Branch**: `feature/terraweave`, draft PR #24; another agent
+may be working on this branch concurrently. Always refetch HEAD.
+
+**Commits/files:**
+- `e3abd75038d0217c67dcd4502ee98dfc7fba6c0f`:
+  `apps/editor/TerraWeavePlacementMask.h` — editor-only placement
+  filter for non-ground map cells, `DocEntity` exclusions and
+  `MapData::roads` line-clearance.
+- `fc704fc2559b276abba6ea50850d11aa86d57677`:
+  explicit include of `engine/world/TerraWeave.h`.
+- `5266194bb10185855b0fc9a968b9b2fe9b7d0ce6`:
+  `apps/editor/TerraWeaveForestPreview.h` invokes the mask before
+  queuing tree instances.
+- `c74a673db757d2a80ed987e55590b1b769ca0f15`:
+  `tests/terraweave_preview_test.cpp` checks preview opt-in state,
+  cell mask, entity clearance, road segments, outside-map values
+  and invalid settings.
+- `ba92d702ffe3d420e17fef24b5ff3fc637a75a52`:
+  registers `aiverse_terraweave_preview_test` in CMake.
+- `bf2a64e2835830bd41dd82aaffa02f8e218f2dd0`:
+  adds preview target + changed editor paths to isolated
+  `.github/workflows/terraweave.yml`.
+- `22e29e98be046208ce375db85af68e119bdfdae8`:
+  `apps/editor/Editor.h` releases GPU forest models when user
+  unchecks preview.
+- `878282e69641d274a41cd500ceddda5c49fae3d2`:
+  architecture/limits added to `docs/terrain/TERRAWEAVE.md`.
+
+**Implemented API**: `terraWeavePreviewAllowsPlacement(const MapData&,
+localXcm, localZcm, cellSizeCm, entityClearanceCm, roadClearanceCm)`.
+Pure editor presentation policy, not authoritative ECS or collision.
+Uses squared distance to legacy roads and filters cells/objects.
+No new GPU shaders/pipelines or gameplay mechanics.
+
+**Actual verification**: Source commits succeeded. A diagnostic
+`git ls-remote https://github.com/chromealex/AIVERSE.git` from the
+authoring container failed with
+`Could not resolve host: github.com`; therefore no full repo checkout
+and no local CMake build, CTest, editor launch or screenshots were run.
+GitHub workflow results have not been independently observed passing.
+**All tests remain unverified.** Do not claim otherwise.
+
+**Known limitations**: This is a small synchronous editor overlay,
+not streaming runtime foliage. 5×5 tile placement is regenerated on
+camera tile/map revision; CPU stalls are possible on dense or large
+scenes. It doesn't yet parse `roadNetwork` and `waterNetwork`
+splines, footprint data or physics/AI collision. Preview foliage is
+not saved as authored trees and does not become ECS entities.
+
+**Next agent exactly**:
+1. Configure/build `aiverse_editor` and run isolated CTests for
+   `terraweave_preview` + other TerraWeave targets. Fix errors and
+   record actual commands/output.
+2. In a real editor project, use `Рельеф → TerraWeave` to generate,
+   enable forest overlay, orbit/zoom; capture close/medium/far
+   screenshots with Metal and GL/Vulkan and measure draw/triangles.
+3. Implement non-blocking `AsyncChunkStream` integration with bounded
+   jobs and stale revision discard. Ensure all GPU submissions remain
+   on rendering thread. Use authored road/water splines as exclusion
+   providers and correct building footprint mask.
+4. Add species/biome authoring and persistent interactive tree ECS
+   integration as separate opt-in packages, not per-grass entities.
+5. Append another handoff after every stage with tested outcomes.
