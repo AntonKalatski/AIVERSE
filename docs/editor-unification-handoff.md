@@ -1131,3 +1131,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Extended `tests/ecs_kinematic_projectile_test.cpp` with `exerciseProgrammedImpactOrder`, using real ECS Entity handles to verify synchronous direct damage, *immediate* on-hit callback, and program-specific splash visiting eligible targets in Entity index order even when the mock spatial query returns them in reverse order. The primary target and out-of-range candidate are filtered, and callback order is asserted using exception-based checks. Both ordinary impact and kinematic/COW tests remain in the same CTest target.
 - This is a policy-level fixture modelling the adapter's filtering/sorting, not a full in-game `RtsProjectilePrograms` simulation. Run native build and existing RTS projectile-program tests before accepting compatibility.
 - Verification: GitHub source commit only; C++ compilation and execution not performed.
+
+
+### 2026-11-18 — RTS target links public ECS kinematics and impact packages
+- Implementation SHA: `81eae27a9594ab1d292b4affabe04a524478deb2`.
+- `CMakeLists.txt` now explicitly links `aiverse_game` PRIVATE to catalog-generated `AIVERSE::lib_ecs_kinematic_projectiles` and `AIVERSE::lib_ecs_ordered_impact` after `add_subdirectory(libraries)`. This declares the runtime's native dependencies rather than relying only on the header paths inside the RTS source.
+- The underlying libraries remain header-only, with no physics world requirement for the kinematic path and no new runtime state or persistence layout. External native projects can use the same public packages via the catalog.
+- Verification: source commit only. Catalog syntax was validated when its packages were added; **CMake configure, native RTS compilation, linker and gameplay tests have not run**. A build is needed to confirm catalog-generated targets and ABI in the active toolchain.
