@@ -354,5 +354,32 @@ int main() {
     const double renderOriginX=99999744.0;
     const float relativeX=float(hugeOpts.originX-renderOriginX);
     check(relativeX==256.f,"render-origin translation must remain precise");
+    // Precise patch cell selection cannot first round camera X/Z to float.
+    lib::nereid::WaterSurfaceMeshOptions seaOptions;
+    seaOptions.preciseCamera=true;
+    seaOptions.cameraX64=100000000.25;
+    seaOptions.cameraZ64=-100000000.25;
+    seaOptions.oceanPatchRadius=1.f;
+    seaOptions.originX=100000000.0;
+    seaOptions.originZ=-100000001.0;
+    const auto preciseKey=render::makeNereidSurfaceKey(55,true,seaOptions);
+    check(preciseKey.patchX==100000000.0 &&
+          preciseKey.patchZ==-100000001.0,
+          "ocean patch snapping must use double-precision camera coordinates");
+    // Infinite footprint is required to exercise ocean-specific preparation.
+    auto infiniteBody=hugeBody;
+    infiniteBody.footprint=lib::nereid::WaterFootprint::Infinite;
+    const auto oceanPrepared=render::NereidSurfaceResident::prepare(
+        infiniteBody,nullptr,55,seaOptions);
+    check(oceanPrepared && oceanPrepared->key.patchZ==-100000001.0 &&
+          oceanPrepared->cpu.vertices.size()==4 &&
+          oceanPrepared->cpu.vertices[0].x==-1.f &&
+          oceanPrepared->cpu.vertices[0].z==-1.f,
+          "large-world ocean patch vertices must be local and stable");
+    seaOptions.cameraX64=100000001.25;
+    const auto nextPatch=render::makeNereidSurfaceKey(55,true,seaOptions);
+    check(nextPatch.patchX==100000001.0 &&
+          !render::sameNereidSurfaceKey(preciseKey,nextPatch),
+          "crossing a one-metre distant-ocean cell must invalidate its GPU key");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
