@@ -1640,3 +1640,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `b93cda9c81569d4d48f9147c178bf2b132b27f72`.
 - Added `ecsOrdinaryProjectileAuthorityParityCase(cow)` to `tests/fps/projectiles.inc`: real FPS bullet, persistent smoke and smoke-conversion grenade run in parallel legacy and canonical `ProjectileRuntime` modes. Tick-by-tick checksum and ECS projection/order/kind/position/velocity/expiry, body hit, deep/COW saveState rollback, v9 cross-mode save reload, direct native write to ECS smoke expiry against stale State projection.
 - Still needs `ecsOrdinaryProjectileAuthorityParity()` invocation in `tests/fps/tests.cpp`; assertions and native C++ compilation NOT executed.
+
+
+### 2026-11-18 — Projectile ECS skill documents live direct FPS runtime update
+- **Implementation SHA:** `b401f7274d609538fc8b0f32eb26d4bcd93fde74`.
+- Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` with the FPS `ProjectileRuntime` source-of-truth path, one physical solver shared with legacy mode, World Entity ordering/recycling, synchronous impact timing, transient State compatibility projection, and tests for COW/deep rollback, child branching and v9 cross-save.
+- **Verification:** docs-only commit, native builds and gameplay tests pending. Next: track partial cutover in Epic #19, perform static audit and inspect CI.
