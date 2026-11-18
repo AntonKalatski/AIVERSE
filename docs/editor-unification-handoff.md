@@ -1222,3 +1222,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `aiverse_ecs_cross_genre_impact_queue_test` CMake executable and CTest case, linking only the generic engine and public `AIVERSE::lib_ecs_impact_queue` target. Built-in RTS/FPS modules are deliberately absent from this test's link dependencies.
 - **Verification:** GitHub CMake edit committed, **native configure/compile/CTest not executed**. CI and static checks are separate gates.
 - **Next:** register standalone experiment-runner command, then inspect native workflow output.
+
+
+### 2026-11-18 — Live FPS hitscan direct actor damage uses shared ordered impact
+- Implementation SHA: `7fd266c2aa6b66554d2239fa912a8fc5037f1213`.
+- Changed `modules/fps/FpsSystems.cpp::traceShot` to call `lib::genre::resolveOrderedProjectileImpact` for an accepted direct Actor hit, after nearest historical target selection, vehicle occlusion, static-world/material penetration, hit event emission and FPS-specific head/limb multiplier. The direct callback still calls `Module::damage` exactly once with the original slot, head flag and amount; FPS armor/gear, knockdown, loot, kills, hit counters, projectile replay and opt-in `ActorRuntime` updates remain in the existing implementation. Instant hitscan has no splash or after-direct callbacks, so the generic policy only dispatches the direct callback; vehicles retain their existing separate branch.
+- Both live RTS weapon projectiles and live FPS hitscan now use the same ordered impact policy, with different *game-specific* damage policies and trajectory/selection logic. This is **not** yet a standalone scheduled generic `DamageSystem` or complete FPS ECS-authoritative migration. No extra ECS component pools, state serialization or network messages introduced.
+- Verification: GitHub source commit only; native compile, CTest and replay/network parity not performed. Critical scenarios: FPS shot with no source, same-team suppression, headshots and armor, multi-pellet, rewind pose, penetration and vehicle driver damage.
