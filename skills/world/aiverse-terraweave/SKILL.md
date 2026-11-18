@@ -82,3 +82,24 @@ Existing maps must remain unchanged when TerraWeave is disabled.
   Do not assert CI passed before inspecting logs; use
   `docs/terrain/AGENT_HANDOFF.md` for the exact current verification state.
   The adapter is not yet connected to any editor/game WorldScene automatically.
+
+## Editor and MCP operations (Stage 3a)
+
+When the game uses a **flat RTS grid map**, open the editor's
+`Рельеф → TerraWeave` section or use the shared Workspace/MCP tools:
+
+1. `terraweave_preview` with `{"seed":42,"reliefCm":5000,"basePeriodCm":6400,"octaves":5}`.
+   It samples 9x9 heights; map contents/revision remain unchanged.
+2. `terraweave_generate` with the same arguments to bake the current
+   heightfield using existing `MapDoc::corners` and create an Undo step.
+   By default refuses to replace authored corners or detail surfaces.
+   Set `"overwrite":true` **only** when replacement is explicitly intended.
+3. Generator metadata is stored under map `terraweave` with
+   `version:1`, but is not automatically re-evaluated on map load.
+
+Do not invoke flat MapDoc operations for FPS or planet maps. The
+generic C++ generation API works across genres but those formats
+need separate scene adapters. Preview is currently numeric, not
+a GPU screenshot. Before reporting success, verify the map can undo,
+redo, save, reload, and display updated terrain; log all actual test
+results in `docs/terrain/AGENT_HANDOFF.md`.
