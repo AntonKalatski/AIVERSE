@@ -56,14 +56,20 @@ public:
     void update(Editor& ed,double) override {
         const std::string project=ed.ws().project.dir;
         if(project!=project_) {
-            if(dirty_ && !project_.empty())drafts_[project_]={name_,doc_};
+            if(dirty_ && !project_.empty()) {
+                drafts_[project_]={name_,doc_};
+                draftModes_[project_]=editingDraft_;
+            }
             project_=project;revision_=-1;names_.clear();undo_.clear();redo_.clear();
             if(auto it=drafts_.find(project);it!=drafts_.end()) {
                 name_=it->second.first;doc_=it->second.second;dirty_=true;
+                editingDraft_=draftModes_[project];
             } else {
                 name_="new_spectra";doc_=defaultGraph();dirty_=false;
+                editingDraft_=false;
             }
-            selected_=-1;pendingFrom_.clear();refreshDiagnostics();refreshNames(ed);
+            selected_=-1;pendingFrom_.clear();pendingDataFrom_.clear();
+            refreshDiagnostics();refreshNames(ed);
         } else if(!dirty_ && revision_!=ed.fxRevision)refreshNames(ed);
     }
 
@@ -80,11 +86,19 @@ public:
         const float listWidth=165.f;
         const float detailsWidth=310.f;
         ImGui::BeginChild("##spectra_assets",ImVec2(listWidth,0),ImGuiChildFlags_Borders);
-        ImGui::TextUnformatted("Графы проекта");
+        ImGui::TextUnformatted("Опубликованные");
         for(const std::string& name:names_) {
-            if(ImGui::Selectable(name.c_str(),name==name_)) {
+            if(ImGui::Selectable(name.c_str(),name==name_ && !editingDraft_)) {
                 if(dirty_) message_="Сначала сохраните или отмените изменения.";
                 else load(ed,name);
+            }
+        }
+        ImGui::SeparatorText("Черновики");
+        for(const std::string& name:draftNames_) {
+            const std::string label="✎ "+name;
+            if(ImGui::Selectable(label.c_str(),name==name_ && editingDraft_)) {
+                if(dirty_) message_="Сначала сохраните или отмените изменения.";
+                else loadDraft(ed,name);
             }
         }
         ImGui::EndChild(); ImGui::SameLine();
@@ -130,6 +144,10 @@ private:
         if(!checkResult(r))return;
         names_.clear();
         for(const auto& n:r["graphs"].items())names_.push_back(n.getStr("name"));
+        const Json drafts=ed.ws().call("fx_graph_draft_list",Json::object());
+        draftNames_.clear();
+        for(const auto& n:drafts["drafts"].items())
+            if(n.isString())draftNames_.push_back(n.str());
         revision_=ed.fxRevision;
     }
     void load(Editor& ed,const std::string& name) {
@@ -137,10 +155,57 @@ private:
         const auto result=ed.ws().call("fx_graph_get",p);
         if(!checkResult(result))return;
         if(!result["graph"].isObject()) {message_="Граф не распознан.";return;}
-        name_=name;doc_=result["graph"];dirty_=false;undo_.clear();redo_.clear();
-        selected_=-1;pendingFrom_.clear();propertyText_.clear();refreshDiagnostics();
+        name_=name;doc_=result["graph"];dirty_=false;editingDraft_=false;
+        undo_.clear();redo_.clear();
+        selected_=-1;pendingFrom_.clear();pendingDataFrom_.clear();
+        propertyText_.clear();refreshDiagnostics();
+    }
+    void loadDraft(Editor& ed,const std::string& name) {
+        Json p=Json::object();
+        p.set("name",Json::string(name));
+        const Json result=ed.ws().call("fx_graph_draft_get",p);
+        if(!checkResult(result)||!result["graph"].isObject())return;
+        doc_=result["graph"];name_=name;editingDraft_=true;dirty_=false;
+        selected_=-1;pendingFrom_.clear();pendingDataFrom_.clear();
+        undo_.clear();redo_.clear();propertyText_.clear();refreshDiagnostics();
+        message_="Открыт черновик (не используется в игре до публикации).";
+    }
+    void saveDraft(Editor& ed) {
+        if(name_.size()>48||!validFxName(name_)||name_=="fx") {
+            message_="Недопустимое имя черновика";return;
+        }
+        Json p=Json::object();
+        p.set("name",Json::string(name_));
+        p.set("graph",doc_);
+        const Json result=ed.ws().call("fx_graph_draft_set",p);
+        if(!checkResult(result))return;
+        editingDraft_=true;dirty_=false;drafts_.erase(project_);
+        refreshNames(ed);
+        message_="Черновик сохранён отдельно. Ошибки компиляции не мешают редактированию.";
+    }
+    void publishDraft(Editor& ed) {
+        if(name_.size()>48||!validFxName(name_)||name_=="fx") {
+            message_="Недопустимое имя черновика";return;
+        }
+        refreshDiagnostics();
+        if(!valid_){message_="Исправьте ошибки графа перед публикацией.";return;}
+        if(editingDraft_) {
+            // Persist the current editor state first, then publish the exact
+            // same asset atomically through the strict compiler gate.
+            Json p=Json::object();
+            p.set("name",Json::string(name_));
+            p.set("graph",doc_);
+            if(!checkResult(ed.ws().call("fx_graph_draft_set",p)))return;
+            Json target=Json::object();
+            target.set("name",Json::string(name_));
+            if(!checkResult(ed.ws().call("fx_graph_draft_publish",target)))return;
+            editingDraft_=false;dirty_=false;drafts_.erase(project_);
+            refreshNames(ed);
+            message_="Граф опубликован: fx/graphs/"+name_+".vfx.json";
+        } else save(ed);
     }
     void save(Editor& ed) {
+        if(editingDraft_) {saveDraft(ed);return;}
         if(name_.size()>48||!validFxName(name_)||name_=="fx") {
             message_="Имя: только a-z, 0-9, _ (1..48).";return;
         }
@@ -159,6 +224,7 @@ private:
         if(ImGui::Button("Новый")) {
             if(dirty_) {message_="Сохраните текущие изменения перед созданием нового графа.";return;}
             doc_=defaultGraph();name_="new_spectra";selected_=-1;pendingFrom_.clear();
+            pendingDataFrom_.clear();editingDraft_=false;
             undo_.clear();redo_.clear();dirty_=true;message_.clear();refreshDiagnostics();
         }
         if(doc_.getInt("version")==1) {
@@ -175,6 +241,10 @@ private:
         }
         ImGui::SameLine();
         if(ImGui::Button("Сохранить"))save(ed);
+        ImGui::SameLine();
+        if(ImGui::Button("Черновик"))saveDraft(ed);
+        ImGui::SameLine();
+        if(ImGui::Button("Опубликовать"))publishDraft(ed);
         ImGui::SameLine();
         if(ImGui::Button("Проверить")) {refreshDiagnostics();message_=valid_?"Компиляция CPU: OK":"Ошибки компиляции";}
         ImGui::SameLine();
@@ -703,13 +773,14 @@ private:
     }
 
     std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,pendingFrom_,pendingDataFrom_,linkPort_;
-    std::vector<std::string> names_,errors_;
+    std::vector<std::string> names_,draftNames_,errors_;
     Json doc_=defaultGraph();
     std::vector<Json> undo_,redo_;
     std::map<std::string,std::pair<std::string,Json>> drafts_;
+    std::map<std::string,bool> draftModes_;
     ImVec2 pan_{10,10};
     int selected_=-1,revision_=-1,emitters_=0;
-    bool dirty_=false,valid_=false,dragging_=false,gpuEligible_=false;
+    bool dirty_=false,valid_=false,dragging_=false,gpuEligible_=false,editingDraft_=false;
     std::string gpuReason_;
 };
 
