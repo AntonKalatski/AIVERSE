@@ -49,9 +49,10 @@ inline Mesh uploadNereidWaterSurface(gfx::Device& device,
     return builder.upload(device);
 }
 inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
-        lib::nereid::WaterSurfaceStyle style={}) {
+        lib::nereid::WaterSurfaceStyle style={},
+        const mat4& transform=mat4::identity()) {
     if(mesh.indexCount==0 || !validNereidWaterStyle(style))return;
-    renderer.drawMesh(mesh,mat4::identity(),
+    renderer.drawMesh(mesh,transform,
                       {1.f,1.f,1.f,style.opacity},
                       kDrawNoCastShadow|kDrawWaterSurface,
                       style.specular);
