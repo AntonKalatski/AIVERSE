@@ -324,3 +324,42 @@ implementation stage, stating `NOT RUN` explicitly.
   Metal/GL/Vulkan and FPS/RTS tests for the **testing agent**.
   The feature agent must not claim measured FPS or validation
   without those results.
+
+## Horizon offline bulk bake and selective updates (Stage 10)
+
+When a static game needs many Horizon regions, **do not write a new
+baker** for each project. Use the host-only
+`aiverse_horizon_bake` CMake tool or the reusable
+`engine/world/TerraWeaveHorizonBatch.h` API:
+
+```sh
+aiverse_horizon_bake --manifest content/world.json \
+  --out content/world/horizon-cache --cells -4 -4 4 4
+```
+
+The runtime will look up `<x>_<z>.twh` using its opt-in
+`terraweaveHorizon.archivePrefix`. For custom authored worlds
+call `bakeHorizonBatch` with your immutable terrain/mask
+`HorizonSurfaceSources`, build-system writer callback, and
+a stable nonzero `authoredContentHash` bound to terrain/road/water
+content; the generic CLI is for procedural worlds only.
+Archive format is now **TWH2**, not TWH1, because fixed atlas
+slots were introduced. Always invalidate and regenerate old files
+when the baker format or generator fingerprint changes.
+
+For edit-time terrain modification, call
+`TerraWeaveHorizonScene::setSurfaceSources(snapshot, editedRects)`
+with world-centimetre half-open rectangles; this allows selective
+CPU atlas/terrain sample regeneration when an eligible previous
+bake matches. `WorldScene` already passes loaded/unloaded
+authored collision/obstacle tile bounds to the Horizon adapter.
+Maintain a previous immutable CPU bake only for configured
+`maxCachedRegions>0`, keep GPU model until publish, and let
+the existing `AsyncChunkStream` own cancel/staging/thread
+lifecycle. No new ECS entities or dedicated rendering backend.
+
+**Testing is assigned to another agent** by the user.
+The function-implementation agent updates
+`docs/terrain/AGENT_HANDOFF.md` after each stage and records
+`NOT RUN`; do not add/invoke tests or state a pass without
+external executed logs.
