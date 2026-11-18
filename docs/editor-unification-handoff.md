@@ -1711,3 +1711,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Documentation SHA: `45ab2d8ab1deb3b115e66e027354c7142057e5bf`.
 - Updated `AGENTS.md` with exact new stage order, both programmed and ordinary projectile direct `ProjectileRuntime` ownership under ECS Authority, temporary State projection/mirror limits, reuse of the physical `stepBouncingProjectile` and separate RTS kinematics. Requires new real-FPS direct-ECS ordinary projectile tests, existing programmed deep/COW tests, cross-genre physics parity, native FPS and transport tests before production.
 - Docs-only; no native compiler or runtime result.
+
+
+### 2026-11-18 — FPS direct ECS projectile spawn adapter declaration
+- **Implementation SHA:** `a2ff11554b972e1dcf44d9c7dcc2225eccd4ab0a`.
+- Added private `Module::spawnProjectile(Simulation&,Projectile)` declaration in `modules/fps/FpsModule.h`. The next implementation step will connect *actual built-in FPS weapon and grenade spawns* to this common adapter; with `fps.ecsAuthority` enabled it will create a canonical `ProjectileRuntime` immediately and keep legacy `State::projectiles` as a same-tick compatibility view.
+- **Verification:** header source commit only; declaration intentionally requires follow-up definition before native build. No CMake/CTest execution yet. Preserve source ID generation, 256-capacity rules, legacy event order and v9 save format.
