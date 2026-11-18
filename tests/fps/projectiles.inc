@@ -76,7 +76,25 @@ void ecsProjectileProgramStageParityCase(bool cow) {
         const auto& b=state(*ecs);
         CHECK(a.actors==b.actors);
         CHECK(a.projectiles.size()==b.projectiles.size());
+        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+        CHECK(index!=nullptr);
+        size_t liveRuntimes=0;
+        ecs->world().eachExistingConst<fps::ProjectileRuntime>(
+            [&](Entity e,const fps::ProjectileRuntime&) {
+                if(ecs->world().alive(e))++liveRuntimes;
+            });
+        CHECK(liveRuntimes==b.projectiles.size());
         for(size_t i=0;i<a.projectiles.size();++i) {
+            const uint64_t key=(uint64_t(1)<<32)|b.projectiles[i].id;
+            const auto entry=index->byKey.find(key);
+            CHECK(entry!=index->byKey.end());
+            CHECK(ecs->world().alive(entry->second));
+            const auto* runtime=ecs->world().tryGetConst<fps::ProjectileRuntime>(entry->second);
+            CHECK(runtime!=nullptr);
+            CHECK(runtime->order==i);
+            CHECK(runtime->value.id==b.projectiles[i].id);
+            CHECK(runtime->value.pos==b.projectiles[i].pos);
+            CHECK(runtime->value.damage==b.projectiles[i].damage);
             CHECK(a.projectiles[i].id==b.projectiles[i].id);
             CHECK(a.projectiles[i].pos==b.projectiles[i].pos);
             CHECK(a.projectiles[i].remaining==b.projectiles[i].remaining);
@@ -115,6 +133,27 @@ void ecsProjectileProgramStageParityCase(bool cow) {
         checkBoth();
     }
     CHECK(legacy->checksum()==expected);
+
+    // The ECS component is authoritative: an external native write must
+    // override a deliberately stale legacy projection before the next stage.
+    // Repeat in deep and COW modes to catch accidental workspace writes.
+    legacy->loadState(beforeProgramLegacy);
+    ecs->loadState(beforeProgramEcs);
+    const auto& pending=state(*ecs).projectiles;
+    CHECK(pending.size()==1);
+    const uint64_t key=(uint64_t(1)<<32)|pending.front().id;
+    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+    CHECK(index && index->byKey.contains(key));
+    auto* canonical=ecs->world().tryGet<fps::ProjectileRuntime>(index->byKey.at(key));
+    CHECK(canonical!=nullptr);
+    canonical->value.damage=12;
+    state(*legacy).projectiles.front().damage=12;
+    state(*ecs).projectiles.front().damage=777; // must not become canonical
+    for(int i=0;i<12;++i) {
+        legacy->step();ecs->step();
+        checkBoth();
+    }
+    CHECK(state(*legacy).actors[1].health==88);
 }
 
 void ecsProjectileProgramStageParity() {
