@@ -213,6 +213,9 @@ inline void advanceDisasters(World& world,
 // climate step and one disaster step; native projects may keep either separate.
 inline void advanceEnvironmentWithDisasters(
     World& world, FloodMode floodMode = FloodMode::LocalShallow) {
+    // Reject invalid host configuration before advancing authoritative climate.
+    if (floodMode != FloodMode::LocalShallow && floodMode != FloodMode::ExternalAuthority)
+        throw std::invalid_argument("invalid PHYSIS flood authority");
     advanceEnvironment(world);
     advanceDisasters(world, floodMode);
 }
