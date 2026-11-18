@@ -292,6 +292,13 @@ bool ComputeParticles::step(float dt) {
     uint32_t updatePrefix=0;
     for(uint32_t i=0;i<uint32_t(ages_.size());++i)
         if(ages_[i]>0.f)updatePrefix=i+1;
+    if(updatePrefix==0 && count==0) {
+        drawSlotPrefix_=0;
+        stats_.submittedSlots=stats_.alive=0;
+        verticesReady_=true;
+        reason_.clear();
+        return true; // no live GPU particles, no compute work or draw
+    }
     if(count>0) {
         device_->updateBuffer(seeds_,pendingStates_.data(),size_t(count)*sizeof(ParticleState));
         device_->updateBuffer(slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t));
