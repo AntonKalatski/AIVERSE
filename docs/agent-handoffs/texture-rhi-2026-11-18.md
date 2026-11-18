@@ -4507,3 +4507,41 @@ Next: Add CPU codec roundtrip, malformed readback, multi-layer
 and frequency priority regression tests; register in CMake and
 focused verifier, then add usage instructions to the agent skill.
 Run native GPU feedback render/readback before release.
+
+## Stage 7AB — virtual texture feedback CPU regression test and verifier (2026-11-18)
+
+Source commits: cd96dede3aa5cac94d9743dfdb07fcecbd3951af
+(fixture, CMake registration, focused test verifier),
+5861334b1f6c0a08b4bbef9582dfb45fddf1b5a9
+(invalid sentinel assertion uses VirtualPageKey.mip rather
+than nonexistent VirtualPageKey::valid()).
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Files: tests/render/virtual_texture_feedback.cpp,
+CMakeLists.txt and tools/verify-texture-rhi.sh.
+
+New GPU-independent CTest aiverse_virtual_texture_feedback_test /
+virtual_texture_feedback covers packed 32-bit feedback ID
+roundtrips, invalid zero sentinel and out-of-range IDs,
+frequency-based deduplication, bounded RGBA8 framebuffer
+readback decoding, output UV rectangle priority and mip/layer
+preservation, parent-mip-first integration with the generic
+VirtualTexturePrefetchPlanner, refusal of sRGB or truncated
+readback results, finite unique-page and pixel count limits,
+and rejecting unsupported virtual-layer metadata.
+Verification tool adds this target and filter in both
+ordinary and optional Vulkan runs.
+
+Compatibility: test registration and fixture only; runtime
+codec remains Stage 7AA. No ECS, save/network or backend API
+changes in this stage.
+
+Actual verification: GitHub code+fix commit succeeded.
+CMake configure NOT RUN, C++ compile NOT RUN, CTest NOT RUN,
+real feedback shader GPU render/readback NOT RUN.
+No claims of passing native tests.
+
+Next: Document render-to-linear-RGBA8 feedback usage in
+the native texture agent skill, and connect the decoder to
+the regular device readTextureAsync call in an opt-in
+owner-thread helper with safe callback ownership. Do not
+merge without actual Metal/GL/Vulkan shader and CTest checks.
