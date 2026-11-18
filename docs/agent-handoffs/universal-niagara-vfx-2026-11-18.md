@@ -679,3 +679,92 @@ Then perform real Apple Silicon validation: use a Metal `gfx::Device` to compile
 3. The single Metal soft additive sprite emitter remains restricted; no GPU ribbons/meshes, depth collisions, sorting/alpha blending, multi-material/render-queue batching, sub-emitter events, scalable pooled effects or generic Niagara dataflow. Vulkan/GL/GLES/WebGL remain CPU fallback.
 4. **Next stage (Stage 14):** first obtain real Linux/macOS CI and Mac Metal render/test logs. If green, design an opt-in **GPU-authored alive counter + indirect indexed draw** behind an explicit RHI capability gate and preserve the CPU list path as fallback; then build a genre-neutral multi-emitter presentation scheduler with correct rollback reset, budgeting and visual parity. Do not silently alter existing clients.
 5. After every next code stage, append a separately committed handoff to **this same file** with exact SHA, tests actually executed and next work. Concurrent agents continue working in this branch; use blob-SHA-safe updates.
+
+## Stage 14 — experimental Metal GPU atomic compaction and indirect draw (COMMITTED, NOT VERIFIED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** add an **opt-in, capability-gated** GPU-resident *vertex compact + indirect draw count* path to the already genre-neutral SpectraFX Metal subset without changing existing RTS/FPS clients, authoritative gameplay ECS, save/rollback state or the default CPU/host-gather rendering path.
+
+### CI state investigated before implementation
+
+Prior Stage-13 commit `cff73a55bca0e4b5d8ba62f5a5745fea441e972e` had five GitHub Actions runs (`CI`, `SpectraFX validation`, `AIVERSE Studio validation`, `ECS 2.0 experimental checks`, `GPU batching focused regression`). The Stage-13 SpectraFX run `44309690377` returned all three jobs `queued`, including macOS and Linux headless builds and Linux editor. No actionable completed compiler/test logs were available. Existing Metal RHI `drawIndexedGpuIndirect` supports a `BufferType::Storage` containing the 20-byte `DrawIndexedIndirectCommand`, independent of experimental ICB. Real Metal results **still not obtained**. Do not interpret a queued CI workflow as passing.
+
+### Source, test and documentation commits
+
+| Exact SHA | Files | What changed |
+|---|---|---|
+| `4c0313e595f8b04246106f0f97346dd2286081b0` | `engine/gfx/Gfx.h` | Default-false `supportsGpuAuthoredIndirectDraw()` RHI query |
+| `a8404df859ce986d77920b50949f39a274a72851` | `engine/gfx/metal/GfxMetal.mm` | Metal advertises plain GPU-authored indirect indexed draw without enabling experimental GPU/CPU ICB |
+| `f12f4a1e7e72ab163c37d9331938a8b62e4e5f7f` | `engine/fx/SpectraGpuShaders.h` | MSL/GLSL parity: atomic counter reset (mode 3), GPU physical-slot compact to dense vertices (mode 4), indirect args emission (mode 5), plus legacy modes 0/1/2 |
+| `3c85f8729e3a88f618266014acf3e7572f5a09de` | `engine/fx/SpectraGpuParticles.h` | `ComputeEmitterDesc::gpuIndirect` opt-in, query `gpuIndirectActive()`, stats + counter/args storage |
+| `e473153bd9be257fcf54a9b135cbd4224e241d99` | `engine/fx/SpectraGpuParticles.cpp` | Allocate and own persistent 4-byte atomic counter + 20-byte draw args buffers, account for memory |
+| `ff800ab3d6e22945d82b43022599e38a106919db` | `engine/fx/SpectraGpuParticles.cpp` | GPU reset/spawn/integrate/compact/args dispatches, GPU-authored draw, strict failure handling, fallback to host-indexed GPU gather |
+| `beb1a77aefa5415ae02b83c1d8eb5b9408f78e21` | `engine/fx/SpectraGraphRuntime.h` | `GraphRuntimeOptions::gpuIndirect` opt-in |
+| `dc7241d77b70e84136c409788b729954b112b5da` | `engine/fx/SpectraGraphRuntime.cpp` | Forward indirect config into strict GPU eligibility/runtime |
+| `d8a9424cb89f95ed633587c77a99fd9148d23b13` | `tests/vfx_gpu_backend_test.cpp` | RHI recording test verifies pass order/capability fallback, no live map upload, indirect submission failure without stale direct draw |
+| `e2c5635790adc74211e694a909e066f0bedea304` | `tests/vfx_metal_compaction_smoke.mm` | Real Metal MSL compile + command dispatch + GPU counter/indirect args/vertex readback smoke source |
+| `5fea0019f62600e7364f8e0b8435a43123a8872e` | `CMakeLists.txt` | Add macOS-only `aiverse_vfx_metal_smoke` and CTest `vfx_metal_compaction_smoke`, SKIP_RETURN_CODE 77 |
+| `08c863583bd339bd5b9ce6bab06020dc7d6c80dd` | `.github/workflows/spectrafx-validation.yml` | Compile/attempt the real Metal compute smoke on macOS, classify no-GPU result as SKIP |
+| `52312f92d2863c40acd2fe16c33afc884713e5a3` | `tests/vfx_graph_runtime_test.cpp` | Ensure option forwards through graph eligibility |
+| `7af850a5762a63d353b3eec1f8624cfc20952679` | `engine/fx/SpectraGpuShaders.h` | Explicit field-by-field MSL indirect args write (safer than aggregate assignment) |
+| `db09c565aac353032c7c7c0785c969f11b6b7db9` | `docs/spectrafx.md` | Public API, passes, CPU ownership and exact validation limits |
+| `565032dcb67d751ab664721bd4d0b7b0ee87dd00` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent-facing GPU indirect opt-in and no-false-positive testing rules |
+| `a64083b6432598d77f0fe7b537f7c6a427eaace0` | `AGENTS.md` | Mandatory compatibility and stage-14 handoff protocol |
+
+### Native API / RHI / graphics contract
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+// GraphRuntime only opts into the eligible simple additive soft-sprite case.
+aiverse::spectra::GraphRuntimeOptions options;
+options.preference = aiverse::spectra::ComputePreference::Automatic;
+options.gpuIndirect = true; // EXPERIMENTAL: false by default
+
+// Standalone equivalent:
+// aiverse::spectra::ComputeEmitterDesc desc;
+// desc.gpuIndirect = true;
+```
+
+The RHI's `supportsGpuAuthoredIndirectDraw()` defaults to false; Metal exposes support through its existing plain indirect command (not ICB), while Vulkan/GL/GLES/WebGL remain CPU/host-gather fallback. `gpuIndirect=true` is a request, not proof of selection. Use `ComputeParticles::gpuIndirectActive()` and `reason()` to inspect result. The strict `GraphRuntime::inspectGraphGpuEligibility` remains unchanged: one additive `builtin:soft` point emitter with no unsupported modules. Existing genre client render paths remain unchanged.
+
+New GPU storage slots: **5** = `atomic_uint aliveCounter` (4 bytes), **6** = a 20-byte GPU-writable `DrawIndexedIndirectCommand`; slot 4 remains the Stage-13 CPU survivor-index map in fallback. All storage buffers and the shader pipeline are allocated at init and destroyed by shutdown. The shader keeps `ParticleState` at 64 bytes and per-quad `Vertex` at 40 bytes; the 4096-slot, 16-bit index cap remains.
+
+GPU mode dispatch ordering within one Metal command encoder:
+1. `mode 3` resets atomic alive count.
+2. `mode 0` writes queued births into GPU-resident physical slots.
+3. `mode 1` integrates live physical positions/age/velocity for one frame.
+4. `mode 4` checks GPU age validity and uses `atomic_fetch_add` to allocate a contiguous vertex ordinal for each survivor; no live-index list is uploaded.
+5. `mode 5` writes an indirect indexed draw command with `indexCount = min(gpuAlive, capacity) * 6`, one instance and base index/vertex 0. Metal RHI inserts a buffer barrier after each dispatch.
+6. Draw within the existing render pass through `gfx::Device::drawIndexedGpuIndirect(gpuDrawArgs, 0)`. The 20-byte arguments are **GPU-authored, not read back** in normal rendering.
+
+The resulting compacted particle order is nondeterministic because of atomics, acceptable only for the current additive blending subset. CPU **still owns** birth/expiry/free-slot bookkeeping and computes the highest physical slot index to integrate; there is no fully GPU-resident free-list allocator or fully GPU-driven particle lifecycle. `ComputeStats::gpuCompactDispatches` and `gpuIndirectDraws` track submitted commands. In indirect mode `stats().alive` and `stats().submittedSlots` are **CPU lifespan estimates**, not GPU counter readbacks. The actual number of drawn indices comes from GPU args.
+
+If indirect support is absent, the previous GPU compute + CPU-provided live-slot gather remains active (no default performance regression from enabling GPU indirect globally). If an indirect draw request fails **at render time**, SpectraFX reports an error and skips the draw rather than using potentially stale or uninitialized vertices for a direct draw. CPU fallback for unsupported graph modules remains unchanged and lossless.
+
+### Verification actually performed
+
+**SOURCE/GITHUB CHECKS ONLY; NO CMAKE BUILD, CTEST OR REAL METAL EXECUTION.** The GitHub connector wrote the source commits and returned valid SHAs. The local container still did not have an AIVERSE checkout. The latest queried Stage-14 AGENTS commit `a64083b6432598d77f0fe7b537f7c6a427eaace0` showed SpectraFX validation **pending**, with general CI/Studio/ECS/GPU batching workflows queued; no successful statuses.
+
+The new mock test is **written but not run**. The real Metal smoke is also **written but not run**: on a macOS host it attempts `MTLCreateSystemDefaultDevice()`, compiles `shaders::kMetal`, runs modes 3→0→1→4→5, inspects GPU alive counter/indirect args and visible compacted vertex bytes, checks full expiry and physical-slot reuse. A runner without a Metal device returns code **77** and CTest marks it **SKIPPED**. That is not a positive test. A successful compute smoke still does **not** verify final rendered pixels, visual parity, batching, GPU frame times or multi-frame resource hazards.
+
+To verify on a real macOS Apple Silicon checkout:
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/spectrafx-ci -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/spectrafx-ci --target aiverse_vfx_metal_smoke aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_editor -j4
+ctest --test-dir build/spectrafx-ci --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+Specifically inspect actual MSL compilation of `atomic_fetch_add_explicit` and the `DrawArgs` storage layout, Metal `memoryBarrierWithScope` behavior, `drawIndexedGpuIndirect` reading a storage buffer written in the same frame, frame count/visual fade, GPU memory reuse under 3 frames in flight, empty-pool/no-draw and `clear()` behavior, `RequireGpu` device-loss handling, and RHI fallback. Collect real frame captures and compare against the original CPU ParticleSystem before enabling any default graph routing.
+
+### Risks and exact next stage
+
+1. The Metal runtime shader/counter/indirect path is **experimental and NOT VALIDATED**. The focused CI run was queued/pending when queried. Fetch completed CI logs and fix **actual** compile/test errors first; do not claim success until executed.
+2. CPU remains the physical-slot allocator and expiry source. A fully GPU-owned particle pool would require a GPU freelist / alive scan and GPU event/birth scheduling; current Stage 14 moves **vertex compaction and draw args** onto the GPU, not all lifecycle responsibilities.
+3. No alpha sorting/depth-collision/ribbons/mesh/renderer plugins, multi-material GPU batching, GPU graph function stages, system-wide presentation scheduling or cross-genre production client migration. Preserve all CPU fallbacks and old ECS components.
+4. **Next bounded Stage 15:** run CI and Apple Metal smoke; fix shader/platform issues with separately committed test evidence. Then create a genre-neutral presentation-side scheduler for multiple `GraphRuntime` instances, budgets, typed gameplay event binding and rollback reset, with an optional, capability-gated indirect GPU mode. Only after actual visual/perf parity consider a GPU-resident free-list allocator.
+5. As required by `AGENTS.md`, append a **separate handoff commit** to this same file at the end of every implementation stage with exact SHAs, actual test outcomes, remaining risks and concrete next work.
