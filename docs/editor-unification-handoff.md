@@ -1291,3 +1291,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `tests/ecs_hitscan_resolution_test.cpp`: two unrelated ShooterStyle/StrategyStyle `GameModule` hosts install the real `addHitscanResolutionSystem` and create five ECS fire-intent entities. Two rays hit a fixed target in source ECS dense order (shot IDs 1 and 4), one is stopped by an occlusion fraction, one has invalid zero delta, and one is unrequested. Test asserts fixed-point intersection and hit event position, exactly-once intent consumption, no firing on the next tick, and deep/COW saveState/loadState replay checksums across both host styles.
 - Verification: GitHub source commit only, no native compilation or CTest execution. No FPS production path switched to the new event-staging system; it changes same-tick damage ordering if used without a parity gate.
 - Next: register the new test in CMake and the standalone ECS runner; publish a native package+AI skill; run compiler and replay tests.
+
+
+### 2026-11-18 — ECS impact queue format/load/hash regression expansion
+- **Implementation SHA:** `0349c8b7017c7ac4e5bbedd05cd3c6059f19792c`.
+- `tests/ecs_cross_genre_impact_queue_test.cpp` now hashes every authoritative queue field using `hashOrderedImpactQueue` instead of a partial manual subset, and checks an in-flight pending queue's binary save/read exact round-trip, truncated input and invalid format rejection without replacing an already-good destination.
+- **Verification:** GitHub edit committed, **actual native CTest and binary-format tests not executed**. Both unrelated host fixtures and COW snapshot assertions remain in this test.
+- **Next:** update agent skill/schema documentation, then audit catalog/CTest/script registration and obtain native CI results.
