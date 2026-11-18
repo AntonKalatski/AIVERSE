@@ -2147,6 +2147,7 @@ endif()
 # It is deliberately independent of RTS/FPS and reuses the CPU EffectDef compiler.
 if(TARGET aiverse_editor_core)
     target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraGraphOps.cpp)
+    target_sources(aiverse_editor_core PRIVATE apps/editor/core/SpectraFunctionOps.cpp)
 endif()
 if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
     add_executable(aiverse_vfx_ops_tests tests/vfx_graph_ops_test.cpp)
