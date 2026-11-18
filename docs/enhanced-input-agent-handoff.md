@@ -183,3 +183,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Verification:** GitHub API changed-path comparison; zero overlapping paths, no local CMake/CTest result; CI remained queued during source review. This merges only the known 8 new upstream commits; repeat comparison before PR finalization if the inspector branch moves again.
 
 **Next agent:** compile editor/FPS/RTS input targets, run all library input tests and inspect CI. Continue parity work for camera/pointer/gamepad actions only after capturing results in this handoff.
+
+## Stage 10 — in-game FPS rebinding/settings (2026-11-18)
+
+**Implementation:** The standalone FPS reference client now forwards platform events to its existing ImGui layer and provides an `Input Settings` panel toggled with F10. Opening releases pointer lock and cancels held gameplay input. The panel enumerates all registered Mapping Contexts (including inactive), shows semantic Action-to-Control bindings, collision notices and live key/mouse/gamepad capture. Rebindings call the existing `App::rebindInput`, persisting only user profile overrides; authored `input/actions.json` stays unchanged. Escape cancels capture/ closes settings, F10 toggles, clicking the viewport reacquires pointer lock. Added the read-only `InputSystem::registeredContexts()` enumeration API and a core test assertion.
+
+**Files:** `apps/fps/client.cpp`, `libraries/include/aiverselib/gameplay/EnhancedInput.h`, `tests/libraries/enhanced_input_tests.cpp`, `docs/enhanced-input.md`, this handoff.
+
+**Validation:** code/asset API inspected; FPS visual/interactive behavior and compilation have **not** been verified. Check F10 pointer lock, keyboard+mouse capture, pad buttons and axes, profile reload, duplicate mapping conflicts, and focus loss on macOS and web. The UI intentionally does not modify project assets.
+
+**Next agent:** review CI failures and run CMake/CTest, complete any remaining RTS camera/selection mappings and hosted-game input focus gating. Decide whether mobile touch gesture profiles need dedicated schema in a separate feature. Do not mark this PR ready without green CI.
