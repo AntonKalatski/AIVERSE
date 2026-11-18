@@ -306,9 +306,10 @@ public:
             const bool release = !aggregate.active && runtime.wasDown;
             bool triggered = aggregate.triggered;
             if (!action.triggers.empty()) {
-                triggered = triggered && chordSatisfied(action.triggers, rawLevels) &&
-                    evaluateTriggers(action.triggers, runtime, aggregate.active, press, release,
-                                     press && release, dt, rawLevels);
+                const bool chordOK = chordSatisfied(action.triggers, rawLevels);
+                const bool actionGate = evaluateTriggers(action.triggers, runtime, aggregate.active,
+                                                         press, release, press && release, dt, rawLevels);
+                triggered = triggered && chordOK && actionGate;
             } else {
                 // Keep action lifetime tracking even without explicit action triggers.
                 runtime.wasDown = aggregate.active;
