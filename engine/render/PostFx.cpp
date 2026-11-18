@@ -127,6 +127,7 @@ void PostFx::shutdown() {
     if (triangle_.valid()) dev_->destroyBuffer(triangle_);
     release(black_);
     triangle_ = {};
+    underwater_ = {}; // never keep previous world's camera volume on reuse
     dev_ = nullptr;
 }
 
