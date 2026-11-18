@@ -50,6 +50,13 @@ public:
     void setViewId(uint64_t id) { viewId_ = id; }
     uint64_t viewId() const { return viewId_; }
     void resetAutoExposure(uint64_t id);
+    // Camera cut/teleport: stop motion blur on the next rendered frame.
+    void resetMotionHistory(uint64_t id);
+    void resetMotionHistory();
+    // Optional per-frame object velocity: RG = current-minus-previous screen UV,
+    // B > 0.5 = valid object pixel. Must match this view's render dimensions.
+    // The external texture is borrowed and cleared after each resolve.
+    void setObjectMotionVectors(uint64_t view, gfx::TextureHandle velocity);
 
     void setQuality(PrismaQuality q) {
         if (quality_ != q) { quality_ = q; resetAutoExposure(); }
@@ -91,8 +98,14 @@ private:
         bool valid = false;
         double time = 0;
     };
+    struct MotionView {
+        mat4 previousViewProj;
+        bool valid = false;
+        int width = 0, height = 0;
+        gfx::TextureHandle objectVelocity; // borrowed for this frame only
+    };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
-    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kProgCount };
+    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kMotionVectors, kMotionBlur, kProgCount };
 
     Target& target(Sized& s, int role, int w, int h);
     gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
@@ -121,6 +134,7 @@ private:
     std::vector<Sized> sizes_;
     // Temporal state is keyed by view identity, NOT by render target size.
     std::map<uint64_t, ExposureView> exposureViews_;
+    std::map<uint64_t, MotionView> motionViews_;
     uint64_t viewId_ = 0;
     std::map<std::string, Lut> luts_;
     ImageLoader loader_;
