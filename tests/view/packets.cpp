@@ -32,5 +32,18 @@ int main() {
     assert(std::get<TriangleObject>(packets[3]).c.y==1.f);
     assert(std::holds_alternative<CircleXZObject>(packets[4]));
     assert(std::get<CircleXZObject>(packets[4]).segments==24);
+    // Updating the same mixed stream must count only Object packets;
+    // empty/model-less objects must not allocate animation sources.
+    View scene(0);
+    const auto first=scene.update(batch,1.f/60.f);
+    assert(first.visible==1);
+    assert(first.drawable==0);
+    assert(first.animated==0);
+    assert(scene.presentationEntity(42)==kNullEntity);
+    const auto second=scene.update(batch,1.f/60.f);
+    assert(second.visible==first.visible);
+    assert(second.animated==first.animated);
     batch.clear();assert(batch.size()==0);
+    const auto empty=scene.update(batch,1.f/60.f);
+    assert(empty.visible==0 && empty.animated==0);
 }
