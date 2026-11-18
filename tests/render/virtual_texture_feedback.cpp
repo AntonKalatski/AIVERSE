@@ -1,5 +1,6 @@
 #include "engine/gfx/VirtualTextureFeedback.h"
 #include <cstdint>
+#include <initializer_list>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -24,7 +25,7 @@ void roundtrip() {
             encodeVirtualTextureFeedback({0,2048,0,0})==0 &&
             encodeVirtualTextureFeedback({31,0,0,0})==0 &&
             encodeVirtualTextureFeedback({0,0,0,16})==0 &&
-            !decodeVirtualTextureFeedbackId(0).valid(),
+            decodeVirtualTextureFeedbackId(0).mip < 0,
             "invalid page key or clear value cannot encode as a valid page");
 }
 void frequencyAndPlanner() {
