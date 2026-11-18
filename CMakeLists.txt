@@ -1548,6 +1548,13 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+
+# Host-only offline TerraWeave atlas baker: not linked into any game module.
+# Uses the same optional WorldScene Horizon manifest and pure C++20 bake API.
+if(AIVERSE_BUILD_TOOLS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_horizon_bake tools/horizon/main.cpp)
+    target_link_libraries(aiverse_horizon_bake PRIVATE aiverse_world aiverse_models aiverse_zstd_dec)
+endif()
 # Real genre-adapter validation: both production GameModules, v9 disk states,
 # canonical command order, COW snapshots, replay and FPS ECS authority.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
