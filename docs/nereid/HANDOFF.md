@@ -137,3 +137,75 @@ issues. Then create separate spline/polygon geometry adapter and renderer
 stages. Do not move RTS waterNetwork ownership without existing
 `water_*` bake parity and non-regression tests. After each code stage commit,
 append another status section to this handoff in a documentation commit.
+
+
+## Stage 3 — optional polygon and river-spline geometry
+
+**Implementation commit**: \`e00eb62c92ae1bdb5f932cf1d60f7fa4ce0a5e9c\` on \`feature/nereid-water-core\`.
+
+Files added: \`libraries/include/aiverselib/water/NereidGeometry.h\`,
+\`tests/ecs_nereid_geometry_test.cpp\`.
+Files changed: \`libraries/include/aiverselib/water/NereidWaterSystems.h\`,
+\`CMakeLists.txt\`. Documentation update follows as a separate commit.
+
+### API / architecture
+
+- \`WaterGeometryComponent\` is an **optional ECS component on the same Entity**
+  as \`WaterBodyComponent\`. It has \`kind\`, \`points\`, \`enabled\`.
+- \`WaterGeometryKind::Polygon\` is a simple closed X/Z ring (implicit closing
+  edge, boundary inclusive, no holes). Each \`WaterGeometryPoint\` stores
+  \`x\`, \`z\`, \`halfWidth\`; polygon ignores \`halfWidth\`.
+- \`WaterGeometryKind::RiverSpline\` represents a centerline polyline. Each
+  endpoint's \`halfWidth\` is interpolated along segments; river width is
+  tested against the nearest point on each segment.
+- \`coversWaterBody(body,optionalGeometry,point)\` is a pure deterministic
+  Fixed-point footprint policy; geometry overrides Box/Disc/Infinite when
+  enabled. Disabled/missing geometry uses v1 footprint. Enabled invalid
+  geometry yields no coverage (no accidental infinite fallback).
+- \`sampleWater(world,point)\` automatically consults optional geometry and
+  **retains** existing priority, surface, depth, body ID and flow selection.
+- \`registerNereidGeometryPersistence(sim)\` registers
+  \`nereid.geometry\` v1 separately from existing \`nereid.water_body\` v1,
+  so older data schemas and callers stay unchanged.
+- Bounded archive IO rejects more than 256 geometry nodes before allocation.
+  The interface remains \`AIVERSE::lib_nereid_water\`; no FPS/RTS dependency.
+
+Native usage:
+\`\`\`cpp
+nw::registerNereidWaterPersistence(sim);
+nw::registerNereidGeometryPersistence(sim); // opt-in for polygon/spline
+// Attach WaterBodyComponent and WaterGeometryComponent to water entity.
+// Existing addWaterSamplingSystem() reads both automatically.
+\`\`\`
+
+### Verification and limitations
+
+**Native C++ build, CTest, platform runtime: NOT RUN / UNVERIFIED.**
+The current execution environment cannot resolve github.com for cloning.
+The GitHub connector wrote the implementation but cannot compile C++.
+The new test is **authored, not executed**. Its intended cases: polygon
+interior/edge/exterior, width-varying spline, overlapping priority,
+multiple independent native hosts, native save/load, COW and rollback.
+
+\`\`\`sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target \
+  aiverse_ecs_nereid_water_test \
+  aiverse_ecs_nereid_buoyancy_test \
+  aiverse_ecs_nereid_geometry_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure \
+  -R '^ecs_nereid_(water|buoyancy|geometry)_test$'
+\`\`\`
+
+**Limits:** simple polygons only (no holes/self-intersections), one
+variable-width centerline per geometry component, up to 256 nodes. All
+query math is deterministic Fixed, not fluid rendering or GPU waves.
+Overlap remains O(water bodies × probes × geometry segments). This is a
+gameplay footprint and cannot reconstruct auto-shores or editor bake.
+Existing \`waterNetwork\` must not be replaced without parity tests.
+
+**Next agent**: run the three NEREID tests and repair compile/runtime errors
+before adding further production integration. Then design a cached,
+rollback-safe spatial query accelerator and a read-only adapter from legacy
+\`waterNetwork\`; keep the legacy source and bake unchanged. Update docs
+after every implementation commit with actual test output, limits and SHA.
