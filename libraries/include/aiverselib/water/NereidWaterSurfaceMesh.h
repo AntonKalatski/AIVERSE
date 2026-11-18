@@ -21,6 +21,7 @@ struct WaterSurfaceMeshOptions {
     float cameraX=0, cameraZ=0;
     // Optional double-precision world anchor; output positions are relative.
     double originX=0, originZ=0;
+    double originY=0; // subtract before converting water height to float
     // Opt-in precise camera for far-world ocean patch generation.
     bool preciseCamera=false;
     double cameraX64=0, cameraZ64=0;
@@ -212,11 +213,12 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
        !std::isfinite(options.oceanPatchRadius) ||
        !std::isfinite(options.originX) ||
        !std::isfinite(options.originZ) ||
+       !std::isfinite(options.originY) ||
        (options.preciseCamera && (!std::isfinite(options.cameraX64) ||
                                   !std::isfinite(options.cameraZ64))) ||
        options.oceanPatchRadius<=0 || options.maxVertices<4 ||
        options.foamWidth<0)return mesh;
-    const float y=float(body.surfaceY.toDouble());
+    const float y=float(body.surfaceY.toDouble()-options.originY);
     std::vector<std::pair<P,P>> boundary;
     auto addQuad=[&](P a,P b,P c,P d) {
         const auto ia=vertex(mesh,a,y,options.uvScale,options.originX,options.originZ);
