@@ -1603,3 +1603,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `5cc5039a3102ca3037b9321e969df4be13798e23`.
 - Included `<cstddef>` explicitly in `modules/fps/FpsModule.h` for the new private `stepProgrammedProjectile(...,std::size_t)` declaration. Avoids relying on transitive C++ header contents.
 - **Verification:** source commit only, native build/CTest not run.
+
+
+### 2026-11-18 — Ordinary FPS projectiles now advance directly in ECS authority components
+- Implementation SHA: `8e54368f80cf14319968f0e806521297e9fa388a`.
+- `modules/fps/FpsSystems.cpp` extracts the existing bullet/grenade/smoke/flash impact behavior into shared `Module::stepOrdinaryProjectile(Simulation&,Projectile&)` (same logic, original immediate events and damage order). Default `fps.ecsAuthority=OFF` calls this policy over the original State vector and erases expired objects in place. With authority ON, `tickOrdinaryProjectiles` enumerates `ProjectileRuntime` ECS components sorted by stable `order,id`, mutates each real ECS payload directly, skips programmed projectiles (handled by the preceding system), stages expired entities, destroys/erases their dynamic keys only after iteration, and rebuilds State::projectiles as the ordered compatibility projection.
+- This is the next **actual live FPS ECS ownership transfer**: both programmed and non-programmed shot flight systems now read/write ECS `ProjectileRuntime` with authority ON. The following `fps` tick still runs legacy round and actor subsystems that may modify State vectors; the `fps.ecsMirror` barrier reconciles them. Save v9 and command/network payloads unchanged.
+- **Intermediate compilation gate:** add declaration `stepOrdinaryProjectile` to FpsModule.h in the next implementation commit. Native C++ compile, CTest, real v9 deep/COW and UDP/WebSocket rollback still unverified. Check grenade bounce, target death, smoke expiration and Source ID ordering.
