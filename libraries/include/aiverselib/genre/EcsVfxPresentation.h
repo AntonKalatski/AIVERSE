@@ -1,4 +1,4 @@
-// Universal ECS-to-VFX presentation bridge: no FPS/RTS dependency.
+// AIVERSE SpectraFX: universal ECS-to-VFX presentation bridge, genre-neutral.
 // ECS owns data-only effect declarations; renderer owns FxHandles.
 // Never write renderer state into World or affect gameplay checksums.
 #pragma once
@@ -18,7 +18,7 @@ namespace aiverse::lib::genre {
 
 // Opt-in per-Entity visual effect. Only continuous/looped assets should be
 // attached here. One-shots belong to event bindings instead.
-struct VfxSourceComponent {
+struct SpectraSourceComponent {
     std::string effect;           // fx/<effect>.json, or graph compiled with ParticleSystem::define()
     Fixed scale = 1_fx;           // deterministic data, converted to float only by the presentation layer
     uint32_t revision = 0;       // increment to restart the emitter after authoring/property changes
@@ -28,26 +28,26 @@ struct VfxSourceComponent {
 
 // Presentation-only mapping: game-specific render pose policy is supplied by
 // the native host. Does NOT assume actors, RTS models, FPS cameras or physics.
-struct VfxEventBinding {
+struct SpectraEventBinding {
     std::string effect;
     Fixed scale = 1_fx;
 };
 
-class VfxPresentationSystem {
+class SpectraPresentationSystem {
 public:
     using ResolvePose = std::function<bool(const World&, Entity, fx::float3& position,
                                             fx::float3& direction)>;
 
-    explicit VfxPresentationSystem(fx::ParticleSystem& particles) : ps_(particles) {}
-    VfxPresentationSystem(const VfxPresentationSystem&) = delete;
-    VfxPresentationSystem& operator=(const VfxPresentationSystem&) = delete;
+    explicit SpectraPresentationSystem(fx::ParticleSystem& particles) : ps_(particles) {}
+    SpectraPresentationSystem(const SpectraPresentationSystem&) = delete;
+    SpectraPresentationSystem& operator=(const SpectraPresentationSystem&) = delete;
 
     // Called each presentation frame. Does not advance particles or mutate ECS.
     // Call ParticleSystem::setView/update/render from the host's normal view loop.
     void sync(const World& world, const ResolvePose& resolve) {
         std::unordered_set<uint64_t> present;
-        world.eachExistingConst<VfxSourceComponent>(
-            [&](Entity entity, const VfxSourceComponent& source) {
+        world.eachExistingConst<SpectraSourceComponent>(
+            [&](Entity entity, const SpectraSourceComponent& source) {
                 if (!world.alive(entity) || !source.enabled || source.effect.empty())
                     return;
                 const uint64_t key = entity.packed();
@@ -90,7 +90,7 @@ public:
     // Repeated ticks are ignored, preventing duplicate events during multiple
     // render frames per tick. Rollback/replay requires reset() before replay.
     void consumeTickEvents(uint32_t tick, const std::vector<SimEvent>& events,
-                           const std::map<uint16_t, VfxEventBinding>& bindings) {
+                           const std::map<uint16_t, SpectraEventBinding>& bindings) {
         if (haveTick_ && tick <= lastTick_) return;
         haveTick_ = true;
         lastTick_ = tick;
@@ -150,5 +150,12 @@ private:
     uint32_t lastTick_ = 0;
     bool haveTick_ = false;
 };
+
+
+// Early API aliases deliberately refer to the SAME component types, so the
+// ECS component type ID and presentation World queries remain identical.
+using VfxSourceComponent = SpectraSourceComponent;
+using VfxEventBinding = SpectraEventBinding;
+using VfxPresentationSystem = SpectraPresentationSystem;
 
 } // namespace aiverse::lib::genre
