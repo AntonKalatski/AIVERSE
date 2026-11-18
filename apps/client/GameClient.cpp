@@ -1,4 +1,5 @@
 #include "engine/platform/WindowSettings.h"
+#include "engine/render/PrismaVolumeData.h"
 #include "modules/rts/RtsInitialVars.h"
 #include "engine/data/JsonCompose.h"
 // Generic RTS game client. Everything game-specific comes from the project's data (game.json,
@@ -246,6 +247,10 @@ void GameClient::shutdown() {
 
 void GameClient::configurePrisma(const Json& map) {
     prisma_.configure(manifest_["postfx"], map["postfx"]);
+    std::vector<std::string> prismaWarnings;
+    prismaVolumes_ = render::parsePrismaVolumes(manifest_["prismaVolumes"], map["prismaVolumes"], &prismaWarnings);
+    for (const auto& issue : prismaWarnings)
+        std::fprintf(stderr, "[prisma] %s\n", issue.c_str());
     prisma_.setQuality(prismaBase_);
 }
 
@@ -1056,10 +1061,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
+        prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD
+        prisma_.clearCameraVolumes();
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
         topDownDraw();
