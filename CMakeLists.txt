@@ -2298,6 +2298,11 @@ if(AIVERSE_BUILD_TESTS)
     # Stage 23: native field registry and tick-boundary command reconciliation.
     # Stage 24: editor command gateway and authenticated server ingress.
     # Stage 25: remote edit protocol over existing reliable net::Conn.
+    # Stage 26: native loopback admin endpoint and durable journal checks.
+    add_executable(aiverse_physis_admin_journal_test tests/physis_admin_journal_test.cpp)
+    target_link_libraries(aiverse_physis_admin_journal_test PRIVATE aiverse_net)
+    add_test(NAME physis_admin_journal COMMAND aiverse_physis_admin_journal_test)
+    set_tests_properties(physis_admin_journal PROPERTIES LABELS "PHYSIS;NETWORK;PERSISTENCE")
     add_executable(aiverse_physis_remote_edit_test tests/physis_remote_edit_test.cpp)
     target_link_libraries(aiverse_physis_remote_edit_test PRIVATE aiverse_net)
     add_test(NAME physis_remote_edit COMMAND aiverse_physis_remote_edit_test)
