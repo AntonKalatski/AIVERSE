@@ -99,7 +99,7 @@ int main() {
     CHECK(contexts.activateContext("Menu",100));
     CHECK(has(contexts.update(0.016f),"MenuAccept",Phase::Triggered));
     CHECK(!contexts.state("GameplayFire")->active);
-    CHECK(has(contexts.events(),"GameplayFire",Phase::Completed));
+    CHECK(has(contexts.events(),"GameplayFire",Phase::Canceled)); // consumed by modal
     contexts.deactivateContext("Menu");
     CHECK(has(contexts.update(0.016f),"GameplayFire",Phase::Started));
 
