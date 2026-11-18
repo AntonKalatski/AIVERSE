@@ -572,3 +572,29 @@ resource providers and wire the editor/client to those providers
 and the canonical View. The dedicated `view_rts_preview_presentation`
 test covers adapter data without constructing RtsView. Native
 compile/CTest/visual comparison are **NOT RUN** at this stage.
+
+## RTS preview rendering provider boundary (Stage 85)
+
+The new `modules/rts/view/RtsPreviewRenderProvider.h` is a standalone,
+renderer-agnostic host adapter. `RtsPreviewRenderProvider::submitGhost`
+requests resource availability, constructs the already-defined
+`GhostPresentation` and submits it via the host-supplied drawing callback.
+`submitModelPreview` similarly resolves the per-owner preview description,
+queries the host-owned animation clock once, clamps the delta and calls the
+host's renderer callback. If a type is unavailable, no render or clock
+callbacks execute. The provider knows nothing about `RtsView`,
+`MapGrid`, `Rules`, ECS or GPU resources.
+
+`game::RtsView::drawGhost` and `drawPreview` now delegate their
+orchestration to this provider, supplying their existing model loader,
+planet/terrain placement, instance-owned ghost state, animation and
+`drawObject` implementation as callbacks. This is the **first renderer
+provider seam**, not a completed migration of model rendering: the
+specialized legacy renderer still chooses materials, geometry, LODs,
+skin poses, attachments and actual GPU submission. The direct editor,
+client and portrait call sites still invoke the compatibility methods.
+
+The existing `view_rts_preview_presentation` CTest source now tests
+provider callback order, unavailable type short-circuiting and preview
+clock forwarding, with no `RtsView` linkage. **NOT RUN**: source and
+CMake setup have not been compiled or executed on this stage.
