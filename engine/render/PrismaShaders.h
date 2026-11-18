@@ -110,6 +110,47 @@ inline const char* kDepthOfField = R"(
     RETURN(vec4(sum * 0.1, 1.0));
 )";
 
+
+// Stage 23: HDR log-luminance pyramid. All pyramid targets use RGBA16F.
+// Values are log2(luma) stored in R (signed HDR float, never RGBA8).
+inline const char* kExposureLog = R"(
+    vec2 uv = TUV(s);
+    vec2 t = px.xy * 0.5;
+    vec3 a = TEX0(clamp(uv + vec2(-t.x,-t.y), vec2(0.0), vec2(1.0))).rgb;
+    vec3 b = TEX0(clamp(uv + vec2( t.x,-t.y), vec2(0.0), vec2(1.0))).rgb;
+    vec3 c = TEX0(clamp(uv + vec2(-t.x, t.y), vec2(0.0), vec2(1.0))).rgb;
+    vec3 d = TEX0(clamp(uv + vec2( t.x, t.y), vec2(0.0), vec2(1.0))).rgb;
+    float la = log2(max(dot(max(a, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
+    float lb = log2(max(dot(max(b, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
+    float lc = log2(max(dot(max(c, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
+    float ld = log2(max(dot(max(d, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
+    RETURN(vec4((la+lb+lc+ld)*0.25,0.0,0.0,1.0));
+)";
+
+inline const char* kExposureReduce = R"(
+    vec2 uv = TUV(s);
+    vec2 t = px.xy * 0.5;
+    float a = TEX0(clamp(uv + vec2(-t.x,-t.y),vec2(0.0),vec2(1.0))).r;
+    float b = TEX0(clamp(uv + vec2( t.x,-t.y),vec2(0.0),vec2(1.0))).r;
+    float c = TEX0(clamp(uv + vec2(-t.x, t.y),vec2(0.0),vec2(1.0))).r;
+    float d = TEX0(clamp(uv + vec2( t.x, t.y),vec2(0.0),vec2(1.0))).r;
+    RETURN(vec4((a+b+c+d)*0.25,0.0,0.0,1.0));
+)";
+
+// TEX0: 1x1 mean log2(luminance); TEX1: previous 1x1 exposure factor.
+// p0=(deltaSeconds, speedUp, speedDown, historyValid).
+// sun=(keyValue, minEV, maxEV, compensationEV).
+inline const char* kExposureAdapt = R"(
+    float logL = TEX0(vec2(0.5)).r;
+    float ev = clamp(log2(max(sun.x,0.0001))-logL+sun.w,sun.y,sun.z);
+    float target = exp2(ev);
+    float previous = max(TEX1(vec2(0.5)).r,0.0001);
+    float rate = target > previous ? p0.y : p0.z;
+    float alpha = 1.0 - exp(-max(p0.x,0.0)*max(rate,0.0));
+    float result = p0.w > 0.5 ? mix(previous,target,alpha) : target;
+    RETURN(vec4(result,0.0,0.0,1.0));
+)";
+
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
 inline const char* kFxaaHelpers = R"(
 PF_FN float pfLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
