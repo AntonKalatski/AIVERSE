@@ -836,3 +836,21 @@ ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_
 ```
 
 **Next agent:** collect the user's full new compiler/CTest output and exact HEAD, fix the next concrete failure while preserving API/serialization. Record actual PASS/FAIL. Keep PR #20 Draft pending full platform and editor/FPS/RTS checks.
+
+
+### Stage 57 — local macOS verification reported by user (2026-11-18)
+
+**Actual user-provided evidence:** After the Clang range-for correction, the user pasted the result of `ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_(input|rts_input)'` from `/Users/aleksandrfeer/Projects/AIVERSE/build/enhanced-input`:
+
+| Test | Result | Duration |
+| --- | --- | --- |
+| `library_enhanced_input` (#27) | **Passed** | 0.04 sec |
+| `library_enhanced_input_adapter` (#28) | **Passed** | 0.04 sec |
+| `library_enhanced_input_config` (#29) | **Passed** | 0.60 sec |
+| `library_enhanced_rts_input` (#30) | **Passed** | 0.47 sec |
+
+**Observed outcome: 4/4 focused CTest suites passed on the user's local macOS machine.** Successful execution means the four test binaries existed and ran, but the user's snippet did not include the precise `git rev-parse HEAD`, compiler version, build log or full test-suite output; do not attribute an exact tested SHA or claim full native-editor/FPS/RTS certification. The fix commit in the branch is `5ae42b96526b637d86cf1029451d3a9f553003dd`; handoff before this record was `e60f7b56af735a31eb2230545e9c9ff1e9b95997`.
+
+**Latest CI status at inspection:** GitHub Actions on `e60f7b56af735a31eb2230545e9c9ff1e9b95997` had workflow `44312460446` (InputFlow targeted), `44312460447` (Studio), and `44312460421` (full CI) **queued**, not PASS. The input branch is still divergent from `feature/universal-entity-inspector-fps` (ahead 309, behind 136 at inspection). Do not merge without resolving current upstream changes and compiling/testing the integration.
+
+**Next validation step:** On the user's macOS checkout run `./run-tests.sh --jobs 4 --ctest-jobs 4` (Debug, editor + comprehensive test build), and record `git rev-parse --short HEAD`, the latest `build/all-tests/test-reports/*/summary.txt`, and compiler/CTest errors if any. If this passes, run the separate native FPS + RTS client builds and GUI/play-device smoke; then inspect current multi-platform CI. PR #20 remains Draft until those additional checks are green.
