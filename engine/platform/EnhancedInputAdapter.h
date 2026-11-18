@@ -1,7 +1,7 @@
 // Translates AIVERSE platform events/gamepad polls to the presentation-side Enhanced Input core.
 // A hosted view may feed its own forwarded Event stream. Do not feed both host and guest events.
 #pragma once
-#include <aiverselib/gameplay/EnhancedInput.h>
+#include <aiverselib/gameplay/InputFlow.h>
 #include "Platform.h"
 #include "Gamepad.h"
 #include <cmath>
@@ -13,10 +13,10 @@ namespace aiverse::platform {
 
 class EnhancedInputAdapter {
 public:
-    explicit EnhancedInputAdapter(lib::gameplay::enhanced::InputSystem& input) : input_(input) {}
+    explicit EnhancedInputAdapter(lib::gameplay::inputflow::InputFlow& input) : input_(input) {}
 
     void onEvent(const Event& event) {
-        using namespace lib::gameplay::enhanced;
+        using namespace lib::gameplay::inputflow;
         switch (event.type) {
         case EventType::KeyDown:
             if (event.key != Key::Unknown)
@@ -87,7 +87,7 @@ public:
     // Call once per presentation frame. Dead gamepads send zero levels to release held actions.
     // Do not poll a gamepad backend twice in a single frame when another host owns polling.
     void pollGamepads() {
-        using namespace lib::gameplay::enhanced;
+        using namespace lib::gameplay::inputflow;
         ::aiverse::platform::pollGamepads();
         for (int pad = 0; pad < kMaxGamepads; ++pad) {
             const auto& state = ::aiverse::platform::gamepad(pad);
@@ -110,7 +110,7 @@ public:
 private:
     struct TouchEntry { int slot=0; float x=0,y=0; };
     void touchMotion(TouchEntry& touch,const Event& event) {
-        using namespace lib::gameplay::enhanced;
+        using namespace lib::gameplay::inputflow;
         // Touch code 0 is finger-down; code 1/2 are per-frame relative motion.
         // Coalesced TouchMove events accumulate until InputSystem::update().
         const float dx=event.x-touch.x, dy=event.y-touch.y;
@@ -121,7 +121,7 @@ private:
     // Codes 3,4,5 on touch deviceIndex 0: pinch distance delta, two-finger
     // centroid X/Y delta. No jump when the second finger joins or leaves.
     void updateGesture(bool reset) {
-        using namespace lib::gameplay::enhanced;
+        using namespace lib::gameplay::inputflow;
         if(touches_.size()!=2) { gestureActive_=false; return; }
         const auto& a=touches_.begin()->second;
         const auto& b=std::next(touches_.begin())->second;
@@ -146,7 +146,7 @@ private:
         gestureAngle_=angle;
         gestureActive_=true;
     }
-    lib::gameplay::enhanced::InputSystem& input_;
+    lib::gameplay::inputflow::InputFlow& input_;
     std::map<std::int64_t, TouchEntry> touches_;
     bool gestureActive_=false;
     float gestureDistance_=0,gestureCenterX_=0,gestureCenterY_=0,gestureAngle_=0;
