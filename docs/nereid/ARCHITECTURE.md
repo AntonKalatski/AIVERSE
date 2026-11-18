@@ -85,3 +85,25 @@ native and existing FPS/RTS adoption, platform performance/CI.
 
 Do not claim stage 3/4 features exist because corresponding `WaterKind`
 values are present in the enum.
+
+## Stage 2 — cross-genre buoyancy output
+
+`<aiverselib/water/NereidBuoyancySystems.h>` exposes the optional
+`AIVERSE::lib_nereid_buoyancy` package. It runs only when Entities have
+WaterBuoyancyComponent, WaterVelocityInputComponent, WaterContactComponent
+and WaterForceComponent.
+
+`computeWaterForces` uses fixed-point immersion fraction =
+clamp(contact.depth / immersionHeight, 0, 1). Output water acceleration =
+up * buoyancyAcceleration * fraction -
+(velocity - waterFlow) * linearDrag * fraction.
+This excludes ordinary gravity and does not integrate movement or
+alter contacts. A host's canonical physics owns all velocity and spatial
+updates. Stage order must sample water BEFORE buoyancy and integrate AFTER.
+Missing component or sample from another tick => zero output.
+
+WaterVelocityInput is a per-tick view of host canonical physics state; if the
+host retains velocity in an existing ECS component, copy it once immediately
+before buoyancy rather than inventing a persistent second velocity owner.
+Register `registerNereidBuoyancyPersistence` in setup when enabled.
+`ecs_nereid_buoyancy_test` is authored and not yet run.

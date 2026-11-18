@@ -335,3 +335,12 @@ Existing `waterNetwork` / RTS baked map tiles remain unchanged. Only stage 1
 fixed-point volume sampling has been implemented; rendering, polygon/spline
 shape, waves and physics are future tasks. Read `docs/nereid/HANDOFF.md` and
 `skills/gameplay/aiverse-nereid-water/SKILL.md`. Native test is unverified.
+
+### NEREID stage 2: composable water forces (experimental)
+
+`AIVERSE::lib_nereid_buoyancy` adds ECS buoyancy parameters, per-tick
+velocity input and acceleration output. Deterministic
+`computeWaterForces` calculates buoyancy and flow-relative drag from
+NEREID's sampled contact. Integrate output through the host's canonical
+physical velocity (do not create a new physics owner in NEREID).
+`ecs_nereid_buoyancy_test` is authored but native execution is pending.

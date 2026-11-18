@@ -44,3 +44,19 @@ the system is **experimental/unverified**.
 After each implementation commit, update `docs/nereid/HANDOFF.md` with exact
 SHA, changes, verification status, unfinished work and next action. Also
 update this skill and `docs/nereid/ARCHITECTURE.md` when API changes.
+
+## Stage 2 — buoyancy and drag
+
+For buoyant objects also link `AIVERSE::lib_nereid_buoyancy`, include
+`<aiverselib/water/NereidBuoyancySystems.h>`, and register
+`registerNereidBuoyancyPersistence(sim)` at setup.
+
+Attach WaterBuoyancyComponent, WaterVelocityInputComponent and
+WaterForceComponent to the querying Entity. Host physics supplies the
+per-tick velocity. Run `addWaterBuoyancySystem` after the water sample
+and before host integration, then consume WaterForceComponent.acceleration
+with the host's *existing* gravity/collision solver. Never duplicate the
+velocity owner or integrate gravity twice. Missing/stale contact returns
+zero, and outputs are deterministic Fixed values.
+
+Test target: `ecs_nereid_buoyancy_test` (unverified).

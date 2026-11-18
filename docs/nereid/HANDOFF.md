@@ -4,8 +4,8 @@
 **NEREID branch**: `feature/nereid-water-core`
 **Created from**: `feature/universal-entity-inspector-fps` (working project
 branch, may advance concurrently).
-**Last implementation commit**: `8099a88430e3da3809ac4206db42a62b39ddffd4`
-**Native build/CTest status**: NOT RUN / UNVERIFIED.
+**Last implementation commit**: `5dc63de21772da931c68bed02954866de186d754`
+**Native build/CTest status**: NOT RUN / UNVERIFIED for stages 1 and 2.
 
 ## Stage 1 — deterministic water queries (implementation commit 8099a884)
 
@@ -78,3 +78,62 @@ game module with `AIVERSE::lib_nereid_water`.
    files, API, test logs/result, limitations, next action.
 5. Keep the implementation and documentation in separate commits, document
    the implementation immediately before proceeding to the next stage.
+
+## Stage 2 — composable buoyancy and flow drag (implementation commit `5dc63de21772da931c68bed02954866de186d754`)
+
+Files changed: `libraries/include/aiverselib/water/NereidBuoyancySystems.h`,
+`tests/ecs_nereid_buoyancy_test.cpp`, `CMakeLists.txt`,
+`libraries/catalog.json`.
+
+Public package `AIVERSE::lib_nereid_buoyancy` depends on
+`AIVERSE::lib_nereid_water`. Public API in `aiverse::lib::nereid`:
+- `WaterBuoyancyComponent`: acceleration, linear drag and immersion height
+  (data-only, fixed-point).
+- `WaterVelocityInputComponent`: per-tick canonical-motion velocity input;
+  not a second source of truth for the host's physical velocity.
+- `WaterForceComponent`: computed acceleration, immersed fraction, sampledTick.
+- `computeWaterForces(sample,params,velocity)`: pure shared CPU policy.
+- `addWaterBuoyancySystem(sim,name)`: read same-tick sampled contact and
+  velocity, publish force; zeroes invalid or stale input.
+- `registerNereidBuoyancyPersistence(sim)`: native ECS schema v1
+  (`nereid.buoyancy`, `nereid.velocity_input`, `nereid.force`).
+
+Force result includes upward water acceleration and drag relative to the
+water's flow; **gravity, collisions and velocity integration remain with the
+host physics/motion owner**. This avoids a second mutable velocity or
+genre-specific swim implementation. Use only one solver.
+
+Suggested sequence in a host:
+```cpp
+nw::registerNereidWaterPersistence(sim);
+nw::registerNereidBuoyancyPersistence(sim);
+// After movement and host per-tick input:
+nw::addWaterProbeFromTransformSystem(sim, "water.probe"); // optional
+nw::addWaterSamplingSystem(sim, "water.sample");
+nw::addWaterBuoyancySystem(sim, "water.buoyancy");
+// Then host physics integrates WaterForceComponent::acceleration.
+```
+
+**Verification:** NOT RUN / UNVERIFIED. Git access from the available
+terminal returned `Could not resolve host: github.com`; connected GitHub
+writes were successful, but do not imply a C++ build. New test
+`ecs_nereid_buoyancy_test` checks drag relative to river/ocean flow,
+submersion, dry reset, two unrelated native hosts, v1 save/load, COW/replay.
+Compile it on a checkout:
+```sh
+cmake --build build/ecs-test --target aiverse_ecs_nereid_buoyancy_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_(water|buoyancy)_test$'
+```
+
+**Limits**: this is a contact/force-output *policy*, not a dynamic fluid solver,
+mesh, boat hull evaluator, wave field, ocean FFT, physics engine or gameplay
+swimming controller. Host is responsible for keeping WaterVelocityInput
+current from its canonical motion state each tick. Validate platform compile,
+native physics coupling, save/rollback and existing RTS/FPS parity before
+shipping.
+
+**Next agent action**: First configure/build both NEREID tests and fix any
+issues. Then create separate spline/polygon geometry adapter and renderer
+stages. Do not move RTS waterNetwork ownership without existing
+`water_*` bake parity and non-regression tests. After each code stage commit,
+append another status section to this handoff in a documentation commit.
