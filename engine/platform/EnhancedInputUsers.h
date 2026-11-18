@@ -16,7 +16,7 @@ namespace aiverse::platform {
 class EnhancedInputUsers {
 public:
     using UserId = std::uint32_t;
-    using Core = lib::gameplay::enhanced::InputSystem;
+    using Core = lib::gameplay::inputflow::InputFlow;
 
     bool addUser(UserId id, Core scheme = {}) {
         if(users_.contains(id))return false;
@@ -104,7 +104,7 @@ public:
     // Poll the physical backend ONCE per frame; unlike one adapter per user,
     // this cannot accidentally broadcast every controller to every player.
     void pollGamepads() {
-        using namespace lib::gameplay::enhanced;
+        using namespace lib::gameplay::inputflow;
         ::aiverse::platform::pollGamepads();
         for(const auto& [pad,owner]:gamepadOwner_) {
             auto user=users_.find(owner);
@@ -122,9 +122,9 @@ public:
 
     // Returned events are owned by each user's InputSystem until that user
     // receives another update/cancel. Call after onEvent/pollGamepads.
-    std::span<const lib::gameplay::enhanced::ActionEvent> update(UserId id,float dt) {
+    std::span<const lib::gameplay::inputflow::ActionEvent> update(UserId id,float dt) {
         auto* system=input(id);
-        return system?system->update(dt):std::span<const lib::gameplay::enhanced::ActionEvent>{};
+        return system?system->update(dt):std::span<const lib::gameplay::inputflow::ActionEvent>{};
     }
     void cancelAll() {
         for(auto& [id,user]:users_){(void)id;user->adapter.focusLost();}
