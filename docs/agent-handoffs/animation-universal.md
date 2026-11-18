@@ -179,3 +179,14 @@ before calling this stage validated.
   run `ctest --test-dir build/ecs-test -R animation_motion_warp --output-on-failure`.
 - Remaining: motor integration/reconciliation, humanoid retargeting, full
   inertialization, physical animation, editor workflow and scalability.
+
+
+## Stage 7: handoff/skill Markdown normalization — 2026-11-18
+
+- Implementation commit: `b5c4df44bf084a24ab2d253956096c6a222bba92`.
+- Fixed escaped inline code tokens in the animation handoff and skill.
+- Fixed literal newline escape sequences in the AGENTS.md animation note.
+- No C++ API/build behavior changed.
+- Verification: inspected affected Markdown source, no build/test run.
+- Next: CI CMake/build failures and real FPS visual integration. Do not
+  call the PR complete while any animation CTest or CI job is pending.
