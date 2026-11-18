@@ -1606,3 +1606,92 @@ grid step. The Horizon CPU baker calls that same API.
 It avoids reimplementing camera-local rounding in other
 engine/world modules. All API and rendering tests are
 delegated to the separate test agent.
+
+## Stage 17 — near-ground ownership, inner seam and stable outer skyline
+
+`HorizonSurfaceSources` exposes an optional
+`ownsNearTerrainRect(minXcm,minZcm,maxXcm,maxZcm)`
+callback. It must return `true` **only when a full
+half-open coarse world rectangle is covered by live
+near-terrain geometry**. `WorldScene` supplies it from
+`AuthoredWorldHeightSnapshot::coversRect`, which
+checks all resident near ground tiles and returns
+false if any are absent. The generator stores a
+`HorizonBake::nearOwnedQuads` byte map
+(`terrainResolution × terrainResolution`).
+
+During `makeHorizonModel`, far-ground quads
+are omitted where the near mesh owns the
+**whole** coarse cell. With a callback present,
+this replaces the old uniform radial cutout,
+so a missing/unloaded near tile is filled by
+far Horizon ground instead of exposing sky.
+Without any callback, existing procedural
+Horizon settings continue to use the legacy
+radial `terrainBeginCm` cutout.
+
+The optional `innerTerrainLipCm` (default **40cm**,
+valid 0–200cm) makes a tiny downward seam
+along near-owned/far-owned quad boundaries.
+At most **512 segments** are generated. Each
+segment adds 2 bottom vertices and 2 triangles,
+using existing material 0; above that cap the
+inner lip is omitted without losing the near
+ownership mask. This is not exact polygon
+clipping: far quads overlapping only part of
+an authored near tile remain rendered and may
+still exhibit coplanar depth overlaps.
+
+`terrainGridSnapSteps` (1..16; default **4**)
+stabilizes mountain silhouettes. Terrain
+sample positions snap to the **nearest**
+coarse global lattice anchor. Forest atlases
+can still stream on their 128m keys without
+moving the distant terrain grid every time.
+Minimal preset uses 1, Mobile 2 and
+Balanced/High 4. When distant terrain is on,
+the outer forest radius is conservatively
+limited to the region still guaranteed to
+have distant ground at any allowed snap
+offset, typically **5+ kilometres**; without
+distant ground, forest keeps its original
+far radius.
+
+New analytic **default worst-case** with outer
+skirt and maximum optional inner seam:
+**10,277 vertices / 9,344 triangles** across
+terrain and up to 832 cluster cards. This
+includes the conservative 512-segment inner
+seam cap. A procedural scene with no near
+ownership needs fewer vertices and has no
+inner seam. One shared forest atlas and
+at most two material primitives remain.
+
+### TWH4 archive migration
+
+Current `TerraWeaveHorizonArchive.h` is
+**TWH4, version/magic 4**. Its wire payload
+adds `innerTerrainLipCm` and the optional
+byte-per-cell near-ground ownership map;
+its fingerprint includes
+`terrainGridSnapSteps` and inner lip depth.
+Old TWH1, TWH2 and TWH3 files are **not**
+compatible; rebuild with `aiverse_horizon_bake`
+or allow the existing runtime worker fallback.
+Older sections of this document describing
+TWH1–TWH3 reflect past implementation phases.
+
+For full migration in a native project
+with authored terrain, bake assets with
+the same `ownsNearTerrainRect`, height
+snapshot and stable authored-content hash
+used at runtime. The generic batch CLI
+still supports procedural-only content
+and cannot invent independently authored
+near-terrain masks.
+
+**Not verified:** zero Z-fighting, truly
+seamless mountain skyline, TWH4 decode
+or GPU performance. Real builds/CTest
+and captures are assigned to the separate
+test agent. See Stage 17 of the handoff.
