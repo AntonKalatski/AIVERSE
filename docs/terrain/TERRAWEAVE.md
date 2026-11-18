@@ -1695,3 +1695,87 @@ seamless mountain skyline, TWH4 decode
 or GPU performance. Real builds/CTest
 and captures are assigned to the separate
 test agent. See Stage 17 of the handoff.
+
+## Stage 18 — precise partial near-ground tile clipping (TWH5)
+
+Stage 17 omitted a far-ground **whole coarse quad** only when
+every portion was owned by resident authored near terrain.
+The gap-free fallback avoided missing geometry but a *partially*
+covered 256m cell could still render an overlapping distant triangle.
+
+The new optional `HorizonSurfaceSources::collectNearTerrainRects`
+returns at most 1024 immutable, world-centimetre, half-open
+resident near-ground rectangles for the currently prepared Horizon
+footprint. `AuthoredWorldHeightSnapshot::coveredRectsIn`
+exposes this directly to `WorldScene`, using deterministic
+geometric ordering. The CPU `HorizonBake` stores these
+rectangles in `nearClipRects` alongside the existing full-quad
+`nearOwnedQuads` mask.
+
+`engine/render/TerraWeaveHorizonClip.h` implements
+`planHorizonNearGroundClipping(bake)`:
+- Each affected coarse far-ground cell is split into the
+  same two original triangles.
+- Subtract overlapping near-tile rectangles using convex
+  half-plane polygons; retain only regions not owned by
+  near terrain. Convert them back into bounded triangles
+  with their original winding and source-triangle plane.
+- Reconstruct clipped vertex positions, normals, UVs
+  and RGBA8 colors through barycentric interpolation of
+  the original far-terrain triangle, so the new mesh does
+  not invent a second, divergent far-ground surface.
+- Keep all terrain triangles in the **same material 0
+  primitive** and existing shared GPU model. No new
+  shader, per-tile draw calls, FPS/RTS module or parallel
+  renderer is introduced.
+- Enforce a global per-region cap; on excessive geometric
+  fragmentation, the planner returns no plan, and the
+  entire bake falls back to conservative Stage 17
+  full-quad ownership. Invalid or unbounded near input
+  never produces an unbounded GPU mesh.
+
+`HorizonSettings::maxNearClipTriangles` controls the maximum
+new clipped triangles (0=disabled, 0–8192 accepted).
+Default presets are:
+
+| Preset | Near clipped triangles |
+| --- | ---: |
+| Minimal | 0 |
+| Mobile | 512 |
+| Balanced | 2048 |
+| High | 4096 |
+
+With default Balanced, the worst-case analytic bound
+becomes **16,421 vertices and 11,392 triangles**, including
+the prior outer skirt, inner 512-segment lip cap and
+the extra 2,048 clipped triangles. Actual forests typically
+use substantially fewer. The shared atlas budget,
+additional GPU cache limits and usual RHI path do not
+change.
+
+Diagnostic fields `HorizonRuntimeStats::nearClipQuads`,
+`nearClipTriangles` and `nearClipFallback` identify
+how many coarse cells were partially clipped, resulting
+triangles, and whether the safe budget fallback was
+triggered. Values persist through GPU-region caching.
+
+**Archive migration:** `TerraWeaveHorizonArchive.h` is
+now **TWH5**, not TWH4. The wire format stores bounded
+`nearClipRects` and `maxNearClipTriangles`; the
+generator fingerprint includes clip triangle budget
+and archive version. Existing TWH1–TWH4 assets must be
+regenerated with the offline `aiverse_horizon_bake`
+or the existing asynchronous runtime fallback.
+
+**Limits:** This is precise **horizontal X/Z coverage**
+against axis-aligned near terrain tile rectangles, NOT
+vertical geomorphing. If the authored near terrain lies
+higher/lower than its coarse distant representation,
+the clipped boundary may still have a vertical crack.
+The previously existing 40cm inner lip covers only
+whole coarse ownership boundaries, not every new partial
+cut edge. Real GPU visual acceptance and any height-aware
+stitching remain separate work. Tests, compilation,
+Metal/GL/Vulkan screenshots, archive roundtrips and
+performance runs have **NOT RUN** in this functional
+implementation stage; a different agent owns them.
