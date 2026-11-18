@@ -1074,3 +1074,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `6f1f007f96cb9c4326e7d37c86e1de401fb9c62a`.
 - New `skills/gameplay/aiverse-ecs-kinematic-projectiles/SKILL.md` documents TimedEndpoint and Pursuit modes, public native API, impact/damage composition, moving/dead target behavior, and RTS compatibility boundaries. It explicitly distinguishes shared movement policy reuse in live RTS from a full `addKinematicProjectileSystem` RTS integration.
 - **Verification:** documentation commit only; skill not auto-registered through library catalog until follow-up commit. The skill's CMake package name is the planned catalog target, which must be registered next.
+
+
+### 2026-11-18 — Published separate native ECS kinematic package
+- Implementation SHA: `0fe1b61d7f2e85112e86e278eb20dac02c469a56`.
+- Updated `libraries/catalog.json` with `ecs-kinematic-projectiles` at `AIVERSE::lib_ecs_kinematic_projectiles`; because the project creates per-skill INTERFACE targets from this catalog in `libraries/CMakeLists.txt`, no manual target edits are needed. Declared `aiverse_engine` dependency and zero physics-world dependencies. Associated AI skill SHA `6f1f007` and tests `ecs_kinematic_projectile_test`.
+- Validated that the modified catalog is syntactically valid JSON and has unique package IDs in the connector update script. **No native CMake configure/build or test execution** has been performed; package registration in a real CMake run must still be confirmed.
