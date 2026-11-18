@@ -825,27 +825,36 @@ void GameClient::event(const Event& incoming) {
             else if (selectionHasGarrison() && gi <= 4) sendPercent_ = gi * 25; // garrison games: 1-4 = 25..100%
             else if (!groups_[size_t(gi)].empty()) selection_ = groups_[size_t(gi)];
         }
-        if (!ctrl && scriptCommandKey(e.key)) break;   // rules "commands" hotkeys first
-        // Input Actions are evaluated after RmlUi/Modal capture and script-command overrides.
-        // The gameplay Actions remain presentation-side; only issue() creates sim Commands.
-        const auto triggered = [&](const char* name) {
-            return std::find(inputActions.begin(), inputActions.end(), name) != inputActions.end();
-        };
-        if (!ctrl && !selection_.empty()) {
-            if (triggered("AttackMove")) mode_ = Mode::AttackMove;
-            if (triggered("Patrol")) mode_ = Mode::Patrol;
-            if (mod().fieldOps() && selectionBuilds()) {
-                if (triggered("Repair")) mode_ = Mode::Repair;
-                if (triggered("Reclaim")) mode_ = Mode::Reclaim;
-            }
-            if (triggered("Stop")) { Command c; c.type = kCmdStop; c.units = selection_; issue(c); }
-            if (triggered("Hold")) { Command c; c.type = kCmdHold; c.units = selection_; issue(c); }
+        if(!ctrl && scriptCommandKey(e.key)) {
+            inputShortcuts_.suppressKey(e.key);
+            break; // authored script hotkeys still take precedence
         }
-        if (triggered("FocusCamera")) fitCamera();
+        applyRtsActions(inputActions,!ctrl);
         break;
     }
     default: break;
     }
+}
+
+// Semantic RTS Actions can fire on a physical event OR after a timed
+// Hold/Pulse interval. Both paths must send the same validated Commands.
+void GameClient::applyRtsActions(const std::vector<std::string>& actions,bool allowOrders) {
+    if(actions.empty() || !sim_ || screen_!=Screen::Playing ||
+       topDownActive() || possessedUnit().valid())return;
+    const auto fired=[&](const char* name){
+        return std::find(actions.begin(),actions.end(),name)!=actions.end();
+    };
+    if(allowOrders && !selection_.empty()) {
+        if(fired("AttackMove"))mode_=Mode::AttackMove;
+        if(fired("Patrol"))mode_=Mode::Patrol;
+        if(mod().fieldOps() && selectionBuilds()) {
+            if(fired("Repair"))mode_=Mode::Repair;
+            if(fired("Reclaim"))mode_=Mode::Reclaim;
+        }
+        if(fired("Stop")){Command c;c.type=kCmdStop;c.units=selection_;issue(c);}
+        if(fired("Hold")){Command c;c.type=kCmdHold;c.units=selection_;issue(c);}
+    }
+    if(fired("FocusCamera"))fitCamera();
 }
 
 void GameClient::processEvents() {
@@ -948,6 +957,14 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     double worldMs = 0;
     time_ += dt;
     updateGamepad(float(dt));   // pad input as mouse / key events + camera pan (ClientGamepad.cpp)
+    const bool keyboardAllowed=sim_ && screen_==Screen::Playing &&
+                                !howtoOpen_ && !ui_.textInputFocused();
+    if(!keyboardAllowed)inputShortcuts_.reset();
+    else {
+        const auto timed=inputShortcuts_.advance(float(dt));
+        if(topDownActive())topDownTimedActions(timed);
+        else if(!regionSwipe_.enabled && !planet())applyRtsActions(timed);
+    }
     float alpha = 0;
     bool netAdvanced = false;
     updateNet(dt, netAdvanced);   // online: the network session drives the sim, even behind the pause menu
