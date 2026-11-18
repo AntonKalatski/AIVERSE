@@ -452,3 +452,26 @@ before calling this stage validated.
   This is an authoring UI, not a runtime MontageGraph node/Unreal editor clone.
 - Next: multithreaded presentation evaluation with thread-safe split stages,
   graph hot reload, and performance/golden screenshots.
+
+
+## Stage 21 — optional parallel evaluation for presentation ECS (2026-11-18)
+
+- Implementation: `dbd7990bf2ee2d84444299ef89f071bb362fb69e`,
+  parity fixture correction `121793207b659c041628dab40701fd7003dbbcd6`.
+- Refactored `EcsAnimationSystems.h` into `prepareAnimationPresentation()`
+  on one thread and `evaluateAnimationPresentationRange()` on stable
+  disjoint player pool ranges; serial wrapper remains public and default.
+- New `AnimationJobScheduler.h`: graph safety scan disallows custom
+  native/Lua callbacks, contact rigs and environment callbacks on worker
+  lanes. `dispatchAnimationPresentation` accepts a host-owned blocking
+  job dispatcher, `stepAnimationPresentationParallel` provides a
+  `std::jthread` fallback. Small sets and unsafe graphs run serially.
+- CMake target `AIVERSE::animation_ecs` now links Threads when available.
+  Added `tests/animation/jobs.cpp` / CTest `animation_jobs`
+  comparing 96 per-entity results with the serial path.
+- **NOT RUN** by user instruction. Check COW pool uniquification,
+  data races/TSAN, callback safety, nested graph motion matching, and
+  actual frame times before enabling this path by default. Existing
+  FPS/RTS use the previous serial integration.
+- Next: reusable hot-reload asset registry, graph notify support, GPU
+  crowd/pose-sharing profiling and full editor/run-time validation.
