@@ -1,5 +1,5 @@
 // Same VFX presenter consumes data-only ECS components in unrelated game styles.
-#include <aiverselib/genre/EcsVfxPresentation.h>
+#include <aiverselib/genre/SpectraFX.h>
 #include <iostream>
 #include <map>
 #include <stdexcept>
@@ -42,11 +42,11 @@ static void scenario() {
     World world;
     Entity source=world.create();
     world.add<Kind>(source);
-    lg::VfxSourceComponent fxSource;
+    spectra::SourceComponent fxSource;
     fxSource.effect="engine_fire";
     fxSource.killOnDetach=true;
-    world.add<lg::VfxSourceComponent>(source,fxSource);
-    lg::VfxPresentationSystem presenter(ps);
+    world.add<spectra::SourceComponent>(source,fxSource);
+    spectra::PresentationSystem presenter(ps);
     auto pose=[](const World& w,Entity e,fx::float3& pos,fx::float3& dir) {
         if (const Kind* kind=w.tryGetConst<Kind>(e)) {
             pos=kind->pos;
@@ -65,7 +65,7 @@ static void scenario() {
     SimEvent hit;
     hit.type=72;
     hit.pos={1_fx,2_fx,3_fx};
-    const std::map<uint16_t,lg::VfxEventBinding> bindings{{72,{"impact_flash",1_fx}}};
+    const std::map<uint16_t,spectra::EventBinding> bindings{{72,{"impact_flash",1_fx}}};
     const size_t before=ps.stats().particles;
     presenter.consumeTickEvents(40,{hit},bindings);
     ps.update(0.1f);
@@ -79,7 +79,7 @@ static void scenario() {
     Entity recycled=world.create();
     check(recycled.index==source.index && recycled.gen!=source.gen,"generation reuse fixture");
     world.add<Kind>(recycled);
-    world.add<lg::VfxSourceComponent>(recycled,fxSource);
+    world.add<spectra::SourceComponent>(recycled,fxSource);
     presenter.sync(world,pose);
     check(presenter.activeAttachments()==1,"recycled entity attached twice");
     presenter.reset();
