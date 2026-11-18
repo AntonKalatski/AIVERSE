@@ -3168,3 +3168,37 @@ device or Lavapipe.
 for the new RHI readback contract. Integrate editor texture
 preview/diagnostics and optional virtual texturing page cache
 only after native compile and format validation.
+
+## Stage 8A — GPU texture inspection contract and logical footprint estimates (2026-11-18)
+
+**Code commit:** `065678454bd968c7e8a54043122bc36bc0f5c39c`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Paths:** `engine/gfx/Gfx.h`, `tests/render/texture_contract.cpp`.
+
+**API/source implementation:** New `TextureResourceInfo` describes a live
+user-created texture handle, dimension, pixel format, extent, array layers,
+mip levels, sample count, render-target/storage usage, and approximate size
+in bytes. `estimateTextureFootprint(TextureDesc)` estimates GPU resource
+footprint from logical block sizes, mip extents, layers/volume slices and
+samples, with arithmetic overflow checks; it is NOT a driver memory query.
+The optional `Device::textureResources() const` API safely returns an
+empty list until a backend overrides it. A CPU-only `texture_contract`
+fixture checks RGBA8 arrays with mips, compressed BC7 cube, multisample
+depth, typed half-float and a huge overflow request.
+
+**Compatibility:** All existing Device implementations compile in principle
+because inspection is optional with a default virtual implementation; no
+change to existing shader, frame, ECS, save/network or on-disk data. Backend
+enumeration and the actual editor widget are NOT implemented in this stage.
+
+**Actual verification:** GitHub source/tree/commit/ref update succeeded.
+C++ compilation, CTest, editor and GPU execution: **NOT RUN** (this
+execution environment has no native checked-out repository).
+GitHub Actions completion not confirmed. The size figures are estimates,
+not measured allocations or driver-reported memory.
+
+**Next:** Implement actual Metal/GL/Vulkan `textureResources()`
+over their live texture pools without exposing swapchain/dummy internal
+images. Include correctly scaled 3D mip depth, cube-array faces and MSAA
+samples, and record the code commit followed by a separate handoff. Then
+add an ImGui texture-resource view in the editor and native regression tests.
