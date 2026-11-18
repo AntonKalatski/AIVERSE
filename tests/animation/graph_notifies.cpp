@@ -15,11 +15,12 @@ int main(){
         "output":"run"})"));
     AnimationGraphInstance a;a.reset(graph);
     a.update(.5f);
-    assert(a.notifies().size()==4);
+    assert(a.notifies().size()==5);
     assert(a.notifies()[0].name=="step");
     assert(a.notifies()[1].name=="lift");
     assert(a.notifies()[2].name=="step");
     assert(a.notifies()[3].name=="lift");
+    assert(a.notifies()[4].name=="step");
     a.update(.125f);
     assert(a.notifies().size()==1 && a.notifies()[0].name=="lift");
     return 0;
