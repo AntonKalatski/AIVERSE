@@ -411,3 +411,44 @@ before calling this stage validated.
 - No RtsView change or gameplay protocol/save format change.
 - Next: clip/retarget/ragdoll authoring UI, asset pipeline and
   independent animation evaluation scheduling.
+
+
+## Stage 18 — Humanoid Profile authoring data (2026-11-18)
+
+- Commit `f3a4d3838c8a185ba7ad2ad2224bbf71f76aebec`.
+- `HumanoidProfile.h` names semantic roles, conservatively suggests
+  full bone paths from source node names, and reads/writes
+  `aiverse-humanoid-v1` JSON profiles. Ambiguous/unmatched roles
+  remain editable rather than inventing skeleton correspondences.
+- Added `tests/animation/humanoid_profile.cpp` / CTest
+  `animation_humanoid_profile`. NOT RUN by user request.
+
+## Stage 19 — Workspace/MCP advanced animation asset operations (2026-11-18)
+
+- Commit `5ef0bda9166f06dbf39da1eb2d3a9f8848a64029`.
+- Extended `apps/editor/core/AnimationOps.cpp` with
+  `animation_avatar_suggest`, `animation_avatar_validate`,
+  `animation_ragdoll_generate`, `animation_root_motion_generate`,
+  `animation_montage_validate`, `animation_asset_get` and
+  `animation_asset_save`. Native projects and agents share authoring.
+- Assets stored under `animations/{avatar,ragdoll,root_motion,montage}/`,
+  validation before writes, bounded size, project root confinement,
+  optimistic concurrency `expected` on updates.
+- NOT RUN. Editor and MCP integration builds remain to be checked.
+
+## Stage 20 — visual asset authoring window (2026-11-18)
+
+- Commits `672475876f35e348aa043e571621117f6a86349a`,
+  string-input correction `ab5517cf5b40b439709157b527efe8c20510df6c`.
+- New dockable `apps/editor/windows/AnimationAssetsWindow.cpp`
+  registers `animation_assets_open`. Editor tabs:
+  Humanoid Avatar bone-role assignment; procedural ragdoll generation
+  with dimensions/density/joint-angle controls; root-motion fixed
+  clip baker; montage sections/notifies/transition editing. Save/load
+  invokes the same Workspace operations as MCP agents. JSON preview
+  and concurrency tracking included.
+- NOT RUN. TODO: build editor, exercise UI interactions and constraints,
+  verify the Avatar/Ragdoll/Root/Montage project assets end to end.
+  This is an authoring UI, not a runtime MontageGraph node/Unreal editor clone.
+- Next: multithreaded presentation evaluation with thread-safe split stages,
+  graph hot reload, and performance/golden screenshots.
