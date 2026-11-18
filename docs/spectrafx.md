@@ -797,6 +797,82 @@ without affecting an unrelated BatchWorld effect, and graph
 registration diagnostics. **Tests are source-committed but not
 confirmed executed** until native CI results are available.
 
+## Typed dataflow graph v2 (Stage 16)
+
+SpectraFX now accepts `"version":2` graph assets through the same
+`fx::compileSpectraGraph` / `spectra::compileGraph` API used by
+the editor, MCP, `GraphAssets`, `GraphRuntime` and shared `BatchWorld`.
+All existing `"version":1` assets retain their original compilation
+path; the public `spectra::kGraphVersion` now reports the newest
+authoring version (2), with `kLegacyGraphVersion=1`.
+
+V2 adds two distinct types of connections: **execution links**
+`{"from":"spawn","to":"init"}` order Spawn→Initialize→Update
+modules→Output; **typed value-port links**
+`{"from":"math","to":"init","toPort":"speed"}` bind the
+value of a data node into one property (dotted property paths are
+supported, e.g. `noise.frequency`). Equivalent inline references
+are `{"$node":"math"}` and `{"$param":"wind"}`.
+Data links can connect math nodes to other math nodes, with cycle
+validation even for disconnected data branches.
+
+The new `engine/fx/SpectraValueGraph.h` implements a bounded
+constant-expression DAG of literal values, typed exposed parameters,
+scalar/vector math, comparisons and `Select` operations.
+Representative nodes: `Float`, `Integer`, `Bool`,
+`Vec2/Vec3/Vec4`, `Color`, `String`, `Curve`, `Gradient`,
+`Parameter`, `Add`, `Subtract`, `Multiply`, `Divide`,
+`Min/Max`, `Clamp`, `Lerp`, `Sin/Cos`, `Pow/Sqrt`,
+`Floor/Ceil`, `Normalize/Length`, `Dot/Cross`,
+`ComposeVec2/3/4`, `Select`, `Greater/Less/Equal`.
+Invalid types, nonfinite results, division by zero, excessive graph
+depth, duplicate node IDs and cyclic references are rejected.
+Parameter overrides must match their declared JSON type.
+
+`AgeNormalized` is meaningful only inside an explicitly
+sampled `{"$curve":"expression_id","samples":33}`
+reference. It compiles a scalar expression over normalized age to
+2–64 keys understood by the existing CPU FxRange/curve system.
+It is **not** a per-particle script or general programmable GPU
+kernel. Math expressions without an age dependency are resolved
+at graph compile time; sampled curves are evaluated during
+the already-existing particle lifetime LUT update.
+
+The new `engine/fx/SpectraGraphV2.h` compiler lowers module-stage
+nodes to existing strict `Update` module properties:
+`NoiseModule`, `CollisionModule`, `TrailModule`,
+`LightModule`, `ForceModule`, `VelocityModule`,
+`SubEmitterModule`, `TriggerModule`,
+`InheritVelocityModule`, `SpeedLimitModule`,
+`ColorBySpeedModule`, `SizeBySpeedModule`,
+`SpinBySpeedModule`, `LifeBySpeedModule`. Flat
+`ShapeModule`, `FlipbookModule`, `MaterialModule`,
+`SortModule`, `CustomModule` reuse the complete existing
+`FxEffect` grammar; unsupported emitter keys are still rejected
+by `fx::parseEffect`. `SubEmitterModule.properties.items`
+contains the sub-emitter array. Existing sprite/mesh/ribbon
+outputs remain available.
+
+The output is an ordinary `fx::EffectDef` compiled by the
+**same authoritative v1 parser**, preserving native C++/genre
+compatibility and the mature CPU render path. Any effect with
+modules outside the limited Metal subset continues to use
+the full CPU fallback. There is no graph-specific dependency
+on FPS, RTS or other gameplay modules.
+
+**Example asset:** `examples/spectrafx/typed_noise_trail_v2.vfx.json`.
+It combines exposed parameters, multiply nodes, explicit value
+connections, an age-dependent fade sampled into keys, and noise
+and trail modules.
+
+**Explicit limits:** V2 is a typed authoring/dataflow *frontend*
+for existing CPU effect modules, not arbitrary runtime per-particle
+bytecode or GPU kernel compilation. Full user-defined functions,
+variable-length particle attribute buffers and per-particle
+event graph execution remain separate implementation steps.
+The code is committed, but no CMake build, test run, screenshot
+or Metal validation has yet been executed in this stage.
+
 ## Validation checklist
 
 ```bash
