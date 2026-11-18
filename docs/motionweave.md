@@ -136,3 +136,35 @@ The benchmark intentionally is **not registered in CTest** because timings
 are machine-dependent. It must be run together with ThreadSanitizer,
 real-model Metal screenshots and a representative RTS/FPS frame trace
 before changing production worker thresholds. **NOT RUN**.
+
+## Strict genre-independent contract
+
+MotionWeave must NEVER depend on or inspect FPS/RTS/RPG modules.
+Dependency direction is one-way:
+
+```text
+Any game module / game simulation / editor
+      ↓ generic animation model and named parameters
+MotionWeave reusable presentation ECS
+      ↓ generic Pose / Notifies / Root delta
+Host rendering, audio/VFX and host-owned gameplay motor
+```
+
+The core doesn't know what "fire", "attack", "move", "cast",
+"reload" or another action means. Authors select parameter/event
+names in their own graphs; clients project their state into the
+same reusable API.
+
+Generic `<aiverselib/animation/MotionWeaveSourceBridge.h>` exposes
+`AnimationSourceFrame {sourceId,generation,model,graph,inputs}` and
+`MotionWeaveSourceBridge::sync(presentationWorld, sources)`.
+A bridge maintains visual ECS entity identity, resets visual players
+on source replacement, copies graph-defined scalar/vector parameters
+and removes missing sources. It neither evaluates animation nor
+commits gameplay state. Call the normal MotionWeave scheduler
+after all input projection and optional view budget configuration.
+
+The pre-existing FPS event edge adapter will be moved out of the
+animation library. No new core API may hard-code network fields,
+weapon counters, genre actions, or game-specific statuses.
+

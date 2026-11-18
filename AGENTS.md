@@ -37,6 +37,20 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+**MANDATORY: MotionWeave never depends on game genres or modules.**
+The core animation subsystem is NOT allowed to include, depend on or
+interpret FPS, RTS, RPG, networking, AI, weapon, economy or game-action
+types. Generic sources supply immutable model/graph, stable IDs with
+generations, named float/vector parameters and optional animation events.
+Any genre host transforms its own state OUTSIDE the animation library.
+Core provides reusable ECS components, graph sampling, montage,
+retargeting, IK, root-motion policy, scheduling, pose/skin output.
+Never fork an algorithm per genre or put genre-specific events in
+`engine/render`, `libraries/include/aiverselib/animation` or
+`libraries/include/aiverselib/motionweave`. Use
+`<aiverselib/animation/MotionWeaveSourceBridge.h>`.
+Document each implementation stage in a separate handoff commit.
+
 **AIVERSE MotionWeave — canonical modular animation system.**
 For new projects use `<aiverselib/motionweave/MotionWeave.h>`,
 `aiverse::motionweave`, `motionweave::MotionWeave::update` and

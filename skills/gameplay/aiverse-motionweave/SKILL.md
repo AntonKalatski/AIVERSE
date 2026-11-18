@@ -52,3 +52,19 @@ non-authoritative debugging overlay. The independent CTest targets are
 `motionweave_workers`, `motionweave_hybrid`,
 `motionweave_cost_balancing`, `motionweave_backend_selection`, and
 `motionweave_graph_cost_cache`: **NOT RUN** pending user's test stage.
+
+## Non-negotiable genre-independent architecture
+
+NEVER introduce genre/app includes into `engine/render`,
+`libraries/include/aiverselib/animation` or
+`libraries/include/aiverselib/motionweave`.
+A generic source frame carries stable source ID, generation,
+model, graph and named animation parameter values; the source adapter
+`MotionWeaveSourceBridge` projects those into a presentation ECS World.
+
+The game module owns translation of its movement/combat/worker/build
+or any other state into graph parameters and cosmetic event requests.
+The engine core provides no named gameplay actions and does not
+contain conditional FPS/RTS paths. Reuse one animation system,
+one set of components and one set of algorithms for every genre.
+

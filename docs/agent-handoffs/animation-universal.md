@@ -1104,3 +1104,41 @@ before calling this stage validated.
   graph state unless per-entity feature parity is established;
   write code commit and Stage 45 handoff.
 
+## Stage 45 — generic source bridge and strict genre-free core (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22, targeting `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `068ff38a0df5edfb0a4256de1dfc35d0c669a4d1`.
+- **Changed code:** new
+  `libraries/include/aiverselib/animation/MotionWeaveSourceBridge.h`,
+  new `tests/animation/motionweave_source_bridge.cpp`,
+  root `CMakeLists.txt` and generic comment in
+  `libraries/include/aiverselib/animation/EcsAnimationSystems.h`.
+- **Architecture/API:** the animation engine consumes ONLY source IDs,
+  generations, model/compiled graph and graph-authored
+  AnimationParameters (not game genre, controls, AI, combat or
+  network state). `MotionWeaveSourceBridge::sync(World&,span,removeAbsent)`
+  manages presentation ECS creation/update/restart/removal, returning
+  `AnimationBridgeStats`. `find(sourceId)`, `size()` and `clear(World&)`
+  allow host integration. Duplicate or invalid source entries are
+  rejected before changing World. No runtime graph update is performed
+  by this bridge; the caller executes normal MotionWeave systems.
+- **Compatibility:** no change to authoritative gameplay, save/checksum,
+  networking, existing graph JSON and original public animation APIs.
+- **Deferred tests:** CTest `motionweave_source_bridge` added with
+  create/update/generation/reset/duplicate/remove scenarios;
+  **NOT RUN** per user instruction (no CI pass claimed).
+- **Separate documentation changes:** `AGENTS.md`,
+  `docs/motionweave.md`, `skills/gameplay/aiverse-motionweave/SKILL.md`
+  plus this Stage 45 entry formally ban genre dependencies in core.
+- **Known remaining architectural violation:** legacy
+  `libraries/include/aiverselib/animation/ReplicatedAnimationActions.h`
+  currently interprets FPS-specific shot/reload/death counters.
+  A following stage MUST relocate FPS-specific semantics to the FPS
+  host and retain only generic named action/counter mechanics in core.
+- **Next actionable task:** add a generic action-edge API under
+  `libraries/include/aiverselib/animation` and a host adapter under
+  `modules/fps/view`. Update `apps/fps/client.cpp` and
+  `tests/animation/replicated_cues.cpp` accordingly. After committing
+  that change, append Stage 46 in a separate handoff commit.
+
