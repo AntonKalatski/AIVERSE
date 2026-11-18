@@ -14,6 +14,11 @@ struct HazardCell {
     Fixed quake{};                  // instantaneous normalized ground-shaking intensity
 };
 
+// Select exactly one water authority per world. When NEREID (or any external
+// water service) is authoritative, PHYSIS retains fire/quake but does not
+// advance its standalone shallow-water approximation.
+enum class FloodMode : std::uint8_t { LocalShallow = 0, ExternalAuthority = 1 };
+
 struct DisasterConfig {
     Fixed fireSpreadRate = Fixed::fromRatio(1, 16);
     Fixed fireGrowthRate = Fixed::fromRatio(1, 64);
@@ -77,7 +82,10 @@ inline bool hazardAt(const World& world, std::int32_t x, std::int32_t z,
     return true;
 }
 
-inline void advanceDisasters(World& world) {
+inline void advanceDisasters(World& world,
+                             FloodMode floodMode = FloodMode::LocalShallow) {
+    if (floodMode != FloodMode::LocalShallow && floodMode != FloodMode::ExternalAuthority)
+        throw std::invalid_argument("invalid PHYSIS flood authority");
     const auto* climate = world.resourceConst<State>();
     auto* disaster = world.resource<DisasterState>();
     if (!climate || !disaster) throw std::logic_error("PHYSIS disasters not initialized");
@@ -127,13 +135,15 @@ inline void advanceDisasters(World& world) {
                 const auto downwind = (direction % 2 == 0) ? wind : -wind;
                 const auto windGain = fxClamp(downwind / 20, Fixed{}, Fixed::fromInt(1));
                 neighborFire += old[j].fire * (Fixed::fromInt(1) + windGain);
-                const auto neighborHead = positions[j].elevation + old[j].waterDepth;
-                const auto gradient = (head - neighborHead).raw;
-                if (gradient > 0) {
-                    drains[drainCount] = j;
-                    gradients[drainCount] = gradient;
-                    totalGradient += gradient;
-                    ++drainCount;
+                if (floodMode == FloodMode::LocalShallow) {
+                    const auto neighborHead = positions[j].elevation + old[j].waterDepth;
+                    const auto gradient = (head - neighborHead).raw;
+                    if (gradient > 0) {
+                        drains[drainCount] = j;
+                        gradients[drainCount] = gradient;
+                        totalGradient += gradient;
+                        ++drainCount;
+                    }
                 }
             }
             const auto rainSuppression = air[i].rain * config.rainSuppressionRate;
@@ -153,7 +163,8 @@ inline void advanceDisasters(World& world) {
             // Each source has a bounded per-tick outflow. Apply opposite signed
             // integer-raw deltas to source and destination for exact conservation
             // in the absence of rain, evaporation and depth clamping.
-            if (drainCount > 0 && prior.waterDepth > Fixed{} && totalGradient > 0) {
+            if (floodMode == FloodMode::LocalShallow &&
+                drainCount > 0 && prior.waterDepth > Fixed{} && totalGradient > 0) {
                 std::int64_t outgoing = (prior.waterDepth *
                     config.waterFlowFraction).raw;
                 outgoing = std::min(outgoing, prior.waterDepth.raw);
@@ -187,10 +198,12 @@ inline void advanceDisasters(World& world) {
     for (std::size_t i = 0; i < count; ++i) {
         auto* hazard = world.tryGet<HazardCell>(climate->cells[i]);
         if (!hazard) continue;
-        next[i].waterDepth = fxClamp(
+        // ExternalAuthority explicitly clears the legacy local flood cache.
+        // NEREID owns water level/depth via its own ECS; never mirror it here.
+        next[i].waterDepth = floodMode == FloodMode::LocalShallow ? fxClamp(
             old[i].waterDepth + Fixed::fromRaw(waterDeltas[i]) +
             air[i].rain * config.rainInflowRate - config.evaporationRate,
-            Fixed{}, Fixed::fromInt(100));
+            Fixed{}, Fixed::fromInt(100)) : Fixed{};
         *hazard = next[i];
     }
     disaster->lastProcessedTick = climate->tick;
@@ -198,9 +211,10 @@ inline void advanceDisasters(World& world) {
 
 // Canonical opt-in scheduler for environments with disasters. Exactly one
 // climate step and one disaster step; native projects may keep either separate.
-inline void advanceEnvironmentWithDisasters(World& world) {
+inline void advanceEnvironmentWithDisasters(
+    World& world, FloodMode floodMode = FloodMode::LocalShallow) {
     advanceEnvironment(world);
-    advanceDisasters(world);
+    advanceDisasters(world, floodMode);
 }
 
 } // namespace aiverse::physis
