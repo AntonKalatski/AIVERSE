@@ -1275,3 +1275,59 @@ before calling this stage validated.
   static/simple Graph scene integration. Commit code then separate
   Stage 49 handoff. Do not add RTS includes to engine/view.
 
+## Stage 49 — legacy RTS presentation delegates simple Graph poses to engine View (2026-11-18)
+
+- **Branch / PR:** `feature/universal-ecs-animation-pipeline`, Draft PR #22,
+  base `feature/universal-entity-inspector-fps`.
+- **Code commit SHA:** `76af8b0bc6ae9f4e85401e0af01fc5e47e196933`.
+- **Changed files:** `modules/rts/view/RtsView.h`,
+  `modules/rts/view/RtsView.cpp`,
+  `modules/rts/view/RtsAnimate.cpp` and root `CMakeLists.txt`.
+- **Architecture:** the older `game::RtsView` is now a **host adapter**
+  which may delegate a narrow, safe subset of pure pose-graph entities
+  to the *same* engine-level `aiverse::View` used by any genre.
+  It projects only generic `aiverse::view::Object` identity, model,
+  immutable Graph and named scalar values. The engine has zero
+  reverse dependency on RTS. The default generic path is enabled,
+  but a project may opt out through
+  `RtsView::setGenericViewEnabled(false)`.
+- **Eligibility:** only visible, ordinary 3D scene models with
+  stable variant, a compiled single-state Bind/Clip/Blend/Additive
+  Graph, known speed/moving/dead scalar parameters, no transitions,
+  traits, runtime per-entity animation overrides, contact rigs,
+  authored procedural effects, attachments, stage/LOD replacements,
+  foot IK, baked skinning or parenting are migrated now. All other
+  content retains the existing specialized RtsView animation path.
+- **Runtime handoff:** at the start of the view frame the host
+  gathers eligible generic objects, then `View::update` evaluates
+  them through the shared MotionWeave ECS, while the existing
+  `RtsViewDraw` continues applying terrain placement, look,
+  materials, outlines, shadows and effects. `RtsView::animate`
+  consumes the shared pose/matrix result without advancing its
+  legacy GraphInstance again. Returning to unsupported legacy
+  content resets the old Graph player to prevent stale clocks.
+  The host clears all generic animation presentation entities
+  during init/shutdown before releasing models.
+- **Compatibility:** all RTS simulation, save/network/checksum,
+  terrain/fog, scene serialization and existing RtsView API remain
+  functional. No genre-specific code added to engine View or
+  MotionWeave. Crucially, `RtsView` still exists as a compatibility
+  wrapper; it is **NOT yet merely a type alias to a finished
+  universal View**.
+- **Tests / actual commands:** GitHub source commits only.
+  **NOT RUN**: CMake, CTest, TSAN, editor and real game rendering.
+  The stage requires later targeted comparison of a simple RTS
+  Graph unit against legacy clip timing, offscreen LOD and shadow
+  correctness. Do not claim these pass.
+- **Known risks:** simple Graph projection uses the most recently
+  smoothed speed, not yet full legacy input parity; only the strict
+  eligibility subset is delegated. Stage/corpse/planet rendering
+  and event-heavy scene objects still use the old path. One
+  previous graph's timing may reset when switching adapters.
+- **Next exact stage:** extract a reusable scene-object **draw packet
+  builder** from `RtsViewDraw.cpp` so the game adapter emits generic
+  `View::Object` without duplicating renderer layout. Move additional
+  generic props (model instance, transforms, LOD, materials, light/
+  shadows) to engine View, then gradually retire genre-specific
+  RtsView. Implement separately and append Stage 50 handoff.
+
