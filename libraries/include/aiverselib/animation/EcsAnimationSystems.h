@@ -30,6 +30,10 @@ struct AnimationPoseComponent {
     bool valid = false;
 };
 // Optional overlay montage slots, shared across native FPS/RTS/RPG views.
+// Per-frame notifies from AnimationGraph Clip nodes; cosmetic only.
+struct AnimationGraphNotifiesComponent {
+    std::vector<render::AnimationGraphNotify> events;
+};
 struct AnimationMontageSlotsComponent {
     std::vector<MontagePlayer> players;
     std::vector<AnimationNotifyEvent> events; // last frame, for audio/VFX only
@@ -68,6 +72,7 @@ struct AnimationPreparedPools {
     Pool<AnimationBudgetComponent>* budgets=nullptr;
     Pool<AnimationDiagnosticsComponent>* statuses=nullptr;
     Pool<AnimationMontageSlotsComponent>* montages=nullptr;
+    Pool<AnimationGraphNotifiesComponent>* graphNotifies=nullptr;
     Pool<AnimationRecoveryComponent>* recoveries=nullptr;
 };
 inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
@@ -77,6 +82,7 @@ inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
     p.budgets=world.prepareExistingWrite<AnimationBudgetComponent>();
     p.statuses=world.prepareExistingWrite<AnimationDiagnosticsComponent>();
     p.montages=world.prepareExistingWrite<AnimationMontageSlotsComponent>();
+    p.graphNotifies=world.prepareExistingWrite<AnimationGraphNotifiesComponent>();
     p.recoveries=world.prepareExistingWrite<AnimationRecoveryComponent>();
     return p;
 }
@@ -88,6 +94,7 @@ inline void evaluateAnimationPresentationRange(World& world,
     auto* budgets=p.budgets;
     auto* statuses=p.statuses;
     auto* montages=p.montages;
+    auto* graphNotifies=p.graphNotifies;
     auto* recoveries=p.recoveries;
     const World& read=world;
     for(size_t i=begin;i<std::min(end,players->size());++i) {
@@ -133,6 +140,8 @@ inline void evaluateAnimationPresentationRange(World& world,
             inst.parameters().environment=input->overrides.environment;
         }
         inst.update(dt);
+        if(auto* events=graphNotifies?graphNotifies->tryGet(e.index):nullptr)
+            events->events=inst.notifies();
         if (slots) {
             slots->events.clear();
             for (auto& montage:slots->players) {
