@@ -4,12 +4,14 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
-## Universal Niagara-style VFX (cross-genre, in progress)
+## AIVERSE SpectraFX (universal VFX, in progress)
 
 **Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).  
-**AI skill:** [skills/visuals/aiverse-niagara-vfx/SKILL.md](skills/visuals/aiverse-niagara-vfx/SKILL.md).
+**Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).  
+**System documentation:** [docs/spectrafx.md](docs/spectrafx.md).  
+The previous `aiverse-niagara-vfx` skill is a legacy discovery alias.
 
-New cross-genre opt-in VFX layers are `engine/fx/VfxGraph.h` (graph -> existing CPU effect compiler),
+The public SpectraFX headers are `engine/fx/SpectraFX.h` and `libraries/include/aiverselib/genre/SpectraFX.h`; native targets link `AIVERSE::spectrafx`. New cross-genre opt-in VFX layers are `engine/fx/VfxGraph.h` (graph -> existing CPU effect compiler),
 `engine/fx/VfxGraphAssets.h` (versioned assets, parameter variants and hot reload) and
 `libraries/include/aiverselib/genre/EcsVfxPresentation.h` (read-only ECS renderer bridge,
 tick-event bindings). Never put renderer handles, float particles or graphics timing into
