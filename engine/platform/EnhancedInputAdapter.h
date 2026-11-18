@@ -1,4 +1,4 @@
-// Translates AIVERSE platform events/gamepad polls to the presentation-side Enhanced Input core.
+// Translates AIVERSE platform events/gamepad polls to the presentation-side AIVerse InputFlow core.
 // A hosted view may feed its own forwarded Event stream. Do not feed both host and guest events.
 #pragma once
 #include <aiverselib/gameplay/InputFlow.h>
@@ -11,9 +11,9 @@
 
 namespace aiverse::platform {
 
-class EnhancedInputAdapter {
+class InputFlowAdapter {
 public:
-    explicit EnhancedInputAdapter(lib::gameplay::inputflow::InputFlow& input) : input_(input) {}
+    explicit InputFlowAdapter(lib::gameplay::inputflow::InputFlow& input) : input_(input) {}
 
     void onEvent(const Event& event) {
         using namespace lib::gameplay::inputflow;
@@ -112,7 +112,7 @@ private:
     void touchMotion(TouchEntry& touch,const Event& event) {
         using namespace lib::gameplay::inputflow;
         // Touch code 0 is finger-down; code 1/2 are per-frame relative motion.
-        // Coalesced TouchMove events accumulate until InputSystem::update().
+        // Coalesced TouchMove events accumulate until InputFlow::update().
         const float dx=event.x-touch.x, dy=event.y-touch.y;
         if(dx!=0) input_.addDelta({Device::Touch,1,touch.slot},dx);
         if(dy!=0) input_.addDelta({Device::Touch,2,touch.slot},dy);
@@ -151,4 +151,7 @@ private:
     bool gestureActive_=false;
     float gestureDistance_=0,gestureCenterX_=0,gestureCenterY_=0,gestureAngle_=0;
 };
+
+// Source compatibility for code including the historical EnhancedInputAdapter.h.
+using EnhancedInputAdapter = InputFlowAdapter;
 } // namespace aiverse::platform
