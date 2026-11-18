@@ -23,8 +23,14 @@ struct Uniforms {
     float4 gravityDt;       // x gravity Y; y dt; z drag
     float4 rightSize;       // xyz camera right
     float4 up;
-    uint4 meta;             // x mode: 0 spawn, 1 advance, 2 dense expand
-                            // y pool capacity, z spawn count, w alive count
+    uint4 meta;             // x: 0 spawn, 1 integrate, 2 host gather, 3 reset
+                            // 4 atomic compact, 5 GPU-authored indirect args
+                            // y: capacity; z: births; w: host survivor count
+};
+struct DrawArgs {
+    uint indexCount, instanceCount, firstIndex;
+    int baseVertex;
+    uint firstInstance;
 };
 uint packColor(float4 c) {
     uint4 bytes=uint4(clamp(c,0.0f,1.0f)*255.0f+0.5f);
@@ -36,12 +42,25 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      device const uint* slots [[buffer(2)]],
                      device Vertex* vertices [[buffer(3)]],
                      device const uint* liveSlots [[buffer(4)]],
+                     device atomic_uint* aliveCounter [[buffer(5)]],
+                     device DrawArgs* gpuDrawArgs [[buffer(6)]],
                      constant Uniforms& u [[buffer(8)]]) {
     uint id=gid.x;
     if(u.meta.x==0u) {
         if(id>=u.meta.z)return;
         uint slot=slots[id];
         if(slot<u.meta.y) particles[slot]=spawns[id];
+        return;
+    }
+    if(u.meta.x==3u) {
+        if(id==0u) atomic_store_explicit(&aliveCounter[0],0u,memory_order_relaxed);
+        return;
+    }
+    if(u.meta.x==5u) {
+        if(id==0u) {
+            uint alive=min(atomic_load_explicit(&aliveCounter[0],memory_order_relaxed),u.meta.y);
+            gpuDrawArgs[0]={alive*6u,1u,0u,0,0u};
+        }
         return;
     }
     if(u.meta.x==1u) {
@@ -57,13 +76,20 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         particles[id]=p;
         return;
     }
-    if(u.meta.x!=2u||id>=u.meta.w)return;
-    // CPU publishes only the live slot IDs. GPU gathers arbitrary physical
-    // particle slots into dense vertex quads, without GPU->CPU readback.
-    uint slot=liveSlots[id];
+    if(u.meta.x!=2u && u.meta.x!=4u)return;
+    if(u.meta.x==2u && id>=u.meta.w)return;
+    if(id>=u.meta.y)return;
+    // Mode 2 uses the CPU's live map; mode 4 compacts entirely on GPU.
+    uint slot=u.meta.x==2u ? liveSlots[id] : id;
     if(slot>=u.meta.y)return;
     Particle p=particles[slot];
-    uint base=id*4u;
+    uint ordinal=id;
+    if(u.meta.x==4u) {
+        if(p.positionAge.w<0.0f||p.velocityLife.w<=0.0f)return;
+        ordinal=atomic_fetch_add_explicit(&aliveCounter[0],1u,memory_order_relaxed);
+        if(ordinal>=u.meta.y)return;
+    }
+    uint base=ordinal*4u;
     float3 centre=p.positionAge.xyz;
     bool active=p.positionAge.w>=0.0f && p.velocityLife.w>0.0f;
     float halfSize=active?max(0.0f,p.size.x)*0.5f:0.0f;
@@ -102,6 +128,12 @@ layout(std430,binding=1) readonly buffer Seeds { Particle spawns[]; };
 layout(std430,binding=2) readonly buffer Slots { uint slots[]; };
 layout(std430,binding=3) buffer Vertices { Vertex vertices[]; };
 layout(std430,binding=4) readonly buffer LiveSlots { uint liveSlots[]; };
+layout(std430,binding=5) buffer AliveCounter { uint aliveCounter; };
+layout(std430,binding=6) buffer IndirectArgs {
+    uint indexCount, instanceCount, firstIndex;
+    int baseVertex;
+    uint firstInstance;
+};
 layout(std140,binding=8) uniform Inputs {
     vec4 gravityDt,rightSize,up;
     uvec4 meta;
@@ -114,6 +146,14 @@ void main() {
     uint id=gl_GlobalInvocationID.x;
     if(u.meta.x==0u) {
         if(id<u.meta.z && slots[id]<u.meta.y) particles[slots[id]]=spawns[id];
+        return;
+    }
+    if(u.meta.x==3u) {if(id==0u)aliveCounter=0u;return;}
+    if(u.meta.x==5u) {
+        if(id==0u) {
+            indexCount=min(aliveCounter,u.meta.y)*6u;
+            instanceCount=1u;firstIndex=0u;baseVertex=0;firstInstance=0u;
+        }
         return;
     }
     if(u.meta.x==1u) {
@@ -129,11 +169,19 @@ void main() {
         particles[id]=p;
         return;
     }
-    if(u.meta.x!=2u||id>=u.meta.w)return;
-    uint slot=liveSlots[id];
+    if(u.meta.x!=2u && u.meta.x!=4u)return;
+    if(u.meta.x==2u && id>=u.meta.w)return;
+    if(id>=u.meta.y)return;
+    uint slot=u.meta.x==2u?liveSlots[id]:id;
     if(slot>=u.meta.y)return;
     Particle p=particles[slot];
-    uint base=id*4u;
+    uint ordinal=id;
+    if(u.meta.x==4u) {
+        if(p.positionAge.w<0.0||p.velocityLife.w<=0.0)return;
+        ordinal=atomicAdd(aliveCounter,1u);
+        if(ordinal>=u.meta.y)return;
+    }
+    uint base=ordinal*4u;
     bool active=p.positionAge.w>=0.0 && p.velocityLife.w>0.0;
     vec3 centre=p.positionAge.xyz;
     float halfSize=active?max(0.0,p.size.x)*0.5:0.0;
