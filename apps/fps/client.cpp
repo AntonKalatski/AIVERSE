@@ -44,6 +44,9 @@ struct App {
     ein::InputSystem actions;
     platform::EnhancedInputAdapter inputAdapter{actions};
     platform::enhanced_config::Profile inputProfile;
+    bool settingsOpen=false;
+    std::string rebindContext, settingsError;
+    std::uint64_t rebindMapping=0;
     fps::Input input;
     bool fireHeld=false,fireQueued=false,jumpQueued=false,aimHeld=false,prone=false;uint32_t buySelection=0;
     audio::AudioEngine audio;double stepSound=0,viewTime=0;uint32_t lastReload=0;
@@ -176,6 +179,59 @@ struct App {
         else inputProfile.rebindings.push_back({context,id,control});
         return saveInputProfile();
     }
+
+    // Presentation-only in-game rebinding. Authored actions.json is never changed by players.
+    void drawInputSettings() {
+        if(!settingsOpen)return;
+        ImGui::SetNextWindowSize({600,570},ImGuiCond_FirstUseEver);
+        if(!ImGui::Begin("Input Settings (F10)",&settingsOpen)){
+            ImGui::End();return;
+        }
+        ImGui::TextWrapped("Click Rebind, then press a keyboard key or mouse/gamepad button. "
+                           "Overrides are saved per player and project; Escape cancels capture.");
+        if(ImGui::Button("Resume (click viewport to capture mouse)")){
+            settingsOpen=false;rebindMapping=0;
+        }
+        if(!settingsError.empty())ImGui::TextWrapped("Input: %s",settingsError.c_str());
+        ImGui::Separator();
+        if(ImGui::BeginChild("##bindings")) {
+            for(const auto& name:actions.registeredContexts()) {
+                const auto* context=actions.context(name);
+                if(!context)continue;
+                const std::string header=name+(actions.isContextActive(name)?" (active)":" (inactive)");
+                if(!ImGui::CollapsingHeader(header.c_str(),ImGuiTreeNodeFlags_DefaultOpen))continue;
+                for(const auto& mapping:context->mappings) {
+                    ImGui::PushID(name.c_str());
+                    ImGui::PushID(int(mapping.id)); // stable mapping id for runtime profile
+                    const auto binding=platform::enhanced_config::detail::writeControl(mapping.control).dump(0);
+                    ImGui::Text("%s  %s",mapping.action.c_str(),binding.c_str());
+                    ImGui::SameLine();
+                    if(ImGui::SmallButton("Rebind")){
+                        rebindContext=name;rebindMapping=mapping.id;settingsError.clear();
+                    }
+                    if(rebindMapping==mapping.id&&rebindContext==name) {
+                        ImGui::TextDisabled("Waiting for key / mouse / gamepad...");
+                    }
+                    for(const auto& sibling:context->mappings)
+                        if(sibling.id!=mapping.id&&sibling.control==mapping.control)
+                            ImGui::TextDisabled("Conflict: another action uses this control.");
+                    ImGui::PopID();
+                    ImGui::PopID();
+                }
+            }
+        }
+        ImGui::EndChild();
+        ImGui::End();
+        if(!settingsOpen)rebindMapping=0;
+    }
+    bool finishRebind(ein::Control control){
+        if(!rebindMapping)return false;
+        const bool ok=rebindInput(rebindContext,rebindMapping,control);
+        if(!ok)settingsError="Failed to persist this binding.";
+        else settingsError.clear();
+        rebindMapping=0;rebindContext.clear();
+        return ok;
+    }
     void init(gfx::Device& device) {
         configureInput();
         loadInputConfig();
@@ -200,6 +256,27 @@ struct App {
     }
     void event(const platform::Event& e) {
         using E=platform::EventType; using K=platform::Key;
+        gui.handleEvent(e);
+        if(e.type==E::KeyDown&&e.key==K::F10&&!e.repeat){
+            settingsOpen=!settingsOpen;
+            rebindMapping=0;
+            platform::setPointerLock(false);
+            inputAdapter.focusLost();
+            fireHeld=fireQueued=jumpQueued=aimHeld=false;input.buttons=0;
+            return;
+        }
+        if(settingsOpen) {
+            if(rebindMapping && e.type==E::KeyDown && !e.repeat) {
+                if(e.key==K::Escape){rebindMapping=0;rebindContext.clear();}
+                else if(e.key!=K::Unknown)
+                    finishRebind({ein::Device::Keyboard,int(e.key)});
+            }else if(rebindMapping && e.type==E::MouseDown && e.button>=0 && e.button<=4){
+                finishRebind({ein::Device::MouseButton,e.button});
+            }else if(e.type==E::KeyDown && e.key==K::Escape) {
+                settingsOpen=false;rebindMapping=0;rebindContext.clear();
+            }
+            if(e.type!=E::FocusLost)return;
+        }
         if(e.type==E::FocusLost){
             platform::setPointerLock(false);inputAdapter.focusLost();
             input.buttons=0;input.action=fps::Action::None;
@@ -227,7 +304,24 @@ struct App {
         }
 #endif
         client->updateStreaming();client->poll(now);if(server)server->poll(now);
-        const bool playing=platform::pointerLocked();
+        const bool playing=platform::pointerLocked() && !settingsOpen;
+        if(settingsOpen) {
+            platform::pollGamepads();
+            if(rebindMapping){
+                for(int pad=0;pad<platform::kMaxGamepads && rebindMapping;++pad){
+                    const auto& state=platform::gamepad(pad);
+                    if(!state.connected)continue;
+                    for(int button=0;button<int(platform::PadButton::Count);++button){
+                        if(state.pressed(platform::PadButton(button))){
+                            finishRebind({ein::Device::GamepadButton,button,pad});break;
+                        }
+                    }
+                    for(int axis=0;axis<int(platform::PadAxis::Count)&&rebindMapping;++axis)
+                        if(std::abs(state.axis(platform::PadAxis(axis)))>0.8f)
+                            finishRebind({ein::Device::GamepadAxis,axis,pad});
+                }
+            }
+        }
         if(playing){
             inputAdapter.pollGamepads();
             const auto events=actions.update(float(std::min(dt,0.25)));
@@ -395,6 +489,7 @@ struct App {
             if(config.mode=="bomb")ImGui::TextUnformatted(lang.tr("fps.round",i18n::Args().num("round",client->snapshot().round).num("a",client->snapshot().match.scoreA).num("b",client->snapshot().match.scoreB).num("bomb",client->snapshot().match.planted?std::max(0,int(client->snapshot().match.bombExplodes)-int(client->snapshot().tick))/int(config.tickRate):0)).c_str());
         }
         ImGui::End();
+        drawInputSettings();
         auto* draw=ImGui::GetForegroundDrawList();float x=platform::windowWidth()/2,y=platform::windowHeight()/2;
         draw->AddLine({x-5,y},{x+5,y},IM_COL32_WHITE,1.5f);draw->AddLine({x,y-5},{x,y+5},IM_COL32_WHITE,1.5f);
         if(hitFlash>0) {
