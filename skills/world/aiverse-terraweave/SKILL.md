@@ -554,3 +554,10 @@ when the two bakes sample the same immutable
 authored terrain snapshot. No CMake/CTest/GPU
 results are claimed in this stage; the dedicated
 testing agent owns regression and visual checks.
+
+For standalone native terrain/HLOD producers, call
+`makeHorizonTerrainLattice(settings,cameraXcm,cameraZcm)`
+and `worldX(i)/worldZ(i)` (including ghost indices)
+instead of duplicating grid arithmetic. The same helper
+is used internally by `bakeHorizon` and protects against
+invalid zero-resolution division.
