@@ -274,5 +274,29 @@ int main() {
       "autoLod":true,"mediumDistance":30,"farDistance":40,
       "lodHysteresis":20
     }]}})"),"hysteresis larger than transition band must fail");
+    // Stage 14: worker configuration and staging memory validation.
+    const auto asyncCfg=world::parseNereidWaterManifest(Json::parse(R"({
+        "nereidWater":{"asyncPrepare":true,"maxStagingBytes":4194304,
+                       "surfaces":[]}
+    })"));
+    check(asyncCfg.asyncPrepare && asyncCfg.maxStagingBytes==4194304,
+          "async water preparation manifest must parse");
+    check(rejectedManifest(R"({"nereidWater":{"asyncPrepare":5,"surfaces":[]}})"),
+          "async water preparation must be a boolean");
+    check(rejectedManifest(R"({"nereidWater":{"maxStagingBytes":1,"surfaces":[]}})"),
+          "too-small staging memory budget must be rejected");
+    world::NereidWaterScene asyncWater;
+    check(!asyncWater.asyncPreparation(),
+          "worker mode must be opt-in for old scenes");
+    asyncWater.setAsyncPreparation(true);
+    asyncWater.setMaxWaterStagingBytes(1024*1024);
+    check(asyncWater.asyncPreparation() &&
+          asyncWater.maxWaterStagingBytes()==1024*1024,
+          "async scene controls must retain explicit configuration");
+    bool rejectedStaging=false;
+    try{asyncWater.setMaxWaterStagingBytes(512);}
+    catch(const std::invalid_argument&){rejectedStaging=true;}
+    check(rejectedStaging && asyncWater.maxWaterStagingBytes()==1024*1024,
+          "staging budget failure must preserve previous value");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
