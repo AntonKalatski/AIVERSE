@@ -47,7 +47,7 @@ public:
 
     void update(Editor& ed, double) override {
         if (!registered_) { registerOps(ed); registered_ = true; }
-        PostFx& pf = ed.postFx();
+        Prisma& pf = ed.postFx();
         if (ed.ws().project.dir != projectDir_) {
             projectDir_ = ed.ws().project.dir;
             const std::string dir = projectDir_;
@@ -71,7 +71,7 @@ public:
     }
 
     void draw(Editor& ed) override {
-        PostFx& pf = ed.postFx();
+        Prisma& pf = ed.postFx();
         if (!ImGui::IsAnyItemActive() && dirty_) save(ed);
         ui::section(nullptr, "Предпросмотр");
         int t = int(tier_);
