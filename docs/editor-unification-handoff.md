@@ -1948,3 +1948,21 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Next: build `aiverse_ecs_real_genre_replay_test` on Mac Studio,
   run `ctest -R ecs_real_genre_replay_test`, fix any real save/replay
   regressions in this branch, record exact results in next handoff.
+
+### 2026-11-18 — Single-command AIVERSE test runner
+
+- **Code SHA:** `a2d9a428c5c01e177473962eb534ab654bc75a64` in `feature/universal-entity-inspector-fps` PR #7.
+- **Files:** `run-tests.sh`, `tests/extra-test-suites.txt`,
+  `docs/testing.md`. `./run-tests.sh` is now the user-facing entry
+  point for the entire locally available desktop CTest suite plus ECS
+  standalone/sanitizer/parity and other registered extras.
+- **Registration contract:** normal tests use CMake `add_test` and get picked
+  up automatically; standalone scripts go in the manifest, not root-script
+  hard-coded commands. See `docs/agent-handoffs/unified-test-runner.md`.
+- **Verification:** source/manifest structural checks only; the container
+  could not resolve raw.githubusercontent.com for Bash syntax/native execution.
+  **Full test execution NOT RUN**. The previous native ECS compile failure
+  must still be independently re-tested after pulling new commits.
+- **Next:** user runs `./run-tests.sh --quick` then `./run-tests.sh`
+  on the Mac Studio, provides the first error from the timestamped report;
+  fix and append handoff for each stage.

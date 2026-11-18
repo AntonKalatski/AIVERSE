@@ -1146,3 +1146,35 @@ Native authoritative ECS components/resources MUST register during setup via `Si
 
 ### Native schema upgrades and transactional load (2026-11-18)
 Register exact-version legacy component/resource readers only through `registerPersistentComponentMigration<T>` and `registerPersistentResourceMigration<T>`. Native ECS migration validates the ORIGINAL source field stream against the recorded checksum; never bypass checksums for an upgraded save. Do not hash registered ECS data twice in GameModule::hashState. Disk deserialize now restores Simulation-owned World/RNG/commands/players on invalid input; game-module private derived caches must use `addStateRestoredHook` and remain outside authoritative simulation state. See `docs/native-ecs-persistence.md` and `tests/ecs_native_persistence_test.cpp`. Native execution still requires CI proof.
+
+## Unified test runner — mandatory for all agents (2026-11-18)
+
+**One user-facing entry point:** `./run-tests.sh` at the repository root
+(`docs/testing.md` is the contract). It configures/builds all desktop test
+targets, runs every automatically discovered CTest, then all standalone suites
+registered in `tests/extra-test-suites.txt`. `--quick` omits the expensive
+standalone suites; `--filter` targets a CTest selection. Full reports go under
+`build/all-tests/test-reports/`.
+
+- Every **new test MUST be reached by `./run-tests.sh`**. Add an ordinary C++
+  or Python test through CMake `add_test(NAME ... COMMAND ...)`, with compiled
+  executable built by default CMake ALL targets. Never hard-code CTest test
+  names into the runner or use `EXCLUDE_FROM_ALL` for a registered test
+  without explicit prerequisite build wiring.
+- If the test uses a separate toolchain, sanitizer, backend, benchmark or
+  ON/OFF parity build, add one deterministic row to
+  `tests/extra-test-suites.txt` (`name|bash|relative/script.sh|--flag`
+  or `name|python3|relative/script.py|`). Do not use `eval` or pass
+  untrusted shell expressions in registry arguments.
+- Before claiming an implementation stage verified, run the appropriate
+  `./run-tests.sh` mode, retain its `summary.txt` and logs and record
+  actual PASS/FAIL/NOT RUN, exact tested Git SHA and test path in the
+  stage handoff. A broken CMake build means **tests not run**, not a passed
+  suite. No success claim from queued/cancelled CI workflows.
+- The user only needs `./run-tests.sh`; never ask them to maintain separate
+  command lists as agents add tests. Keep all tests self-contained inside
+  this repository; platform-specific device/SDK smoke checks stay in CI.
+- For runner-specific changes and failures, append
+  `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
+  addition to the active feature handoff and existing agent update rules.
+
