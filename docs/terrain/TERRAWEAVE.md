@@ -1111,3 +1111,78 @@ The two-view high preset increases the texture budget to about
 14.77 MiB **before mipmaps**, requiring real-device profiling
 before being a recommended default. These are intended presets,
 not measured FPS or validated platform quality settings.
+
+### Prebaked Horizon archive assets (stage 9e)
+
+Static worlds may avoid the expensive canopy rasterization across game
+restarts by preparing a region offline and shipping a `.twh`
+asset. `engine/world/TerraWeaveHorizonArchive.h` provides pure
+portable C++20 APIs (no filesystem, OS or rendering dependencies):
+
+```cpp
+const uint64_t fingerprint =
+    terraweave::horizonArchiveFingerprint(terrain, biomes, settings);
+auto bake = terraweave::bakeHorizon(terrain, biomes, settings,
+                                    regionCenterXcm, regionCenterZcm);
+std::vector<uint8_t> bytes =
+    terraweave::encodeHorizonArchive(bake, fingerprint);
+// The game/editor build tool writes bytes into its own asset pack.
+
+// At runtime, given the *same* settings and matching world content:
+terraweave::HorizonBake decoded =
+    terraweave::decodeHorizonArchive(bytes, fingerprint);
+```
+
+Archive wire format is versioned `TWH1`, explicit little-endian
+integer fields, packed RGBA atlas, terrain vertices and cluster
+metadata, with a 64-bit FNV payload checksum and 20 MiB maximum
+serialized size. It is intended for *trusted application assets*;
+the checksum is **not cryptographic authentication**. Decoder
+checks version, fingerprint, sizes, atlas frame bounds, payload
+integrity and trailing bytes before returning any bake.
+
+`TerraWeaveHorizonScene::setArchiveStore(...)` accepts an optional
+shared `HorizonArchiveStore` with `read` and/or `write`
+callbacks and an optional stable `authoredContentHash`. Configure
+it **before the first update()**, because callbacks are then
+invoked by the bounded worker. The worker checks the in-memory
+LRU first, then a prebaked archive, then falls back to a fresh
+procedural bake. Failed/corrupt/stale archive reads and
+write failures are best-effort cache misses, **not fatal**.
+The runtime keeps only one uploaded Horizon GPU model, regardless
+of how many CPU archives are available. `runtimeStats().archiveHits`
+counts successful archive restores.
+
+For `WorldScene` game manifests, optionally add:
+
+```json
+{
+  "terraweaveHorizon": {
+    "quality": "balanced",
+    "archivePrefix": "world/horizon-cache"
+  }
+}
+```
+
+It looks for `world/horizon-cache/<cellX>_<cellZ>.twh`, where
+X/Z are signed **middle-Horizon camera-grid keys**, through
+the normal game `AssetReader`. No configured prefix means no
+asset lookups. The WorldScene adapter is **read-only**; the build
+pipeline is responsible for producing and packing the blobs.
+
+Important for authored terrain/roads: if the async Horizon has an
+external `HorizonSurfaceSources` snapshot, disk archive reuse is
+disabled unless the caller provides a nonzero **stable content
+fingerprint** via `HorizonArchiveStore::authoredContentHash`
+(or manifest `archiveContentHash`). That value must change
+whenever surface heights, biome paints, road/water/structure masks
+or other region-affecting authored data change. This avoids
+silently loading a stale canopy/terrain snapshot. Without an
+external authored source, a zero hash denotes a purely
+procedural world and archive lookup remains available.
+
+**Verification explicitly delegated:** portability
+(AppleClang/Clang/GCC/MSVC), archive round-trip, corrupt/truncated
+bytes, stale fingerprints, missing pack asset fallback, alpha
+atlas GPU upload and races with source invalidation. The authoring
+agent has NOT built or run tests for this code.
