@@ -186,7 +186,7 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
     Json augmented=Json::array();
     for(const Json& n:nodes.items())augmented.push(copied.at(n.getStr("id")));
     vfx2::ValueGraph values(augmented,graph["parameters"],overrides,errors);
-    if(!values.initialize())return false;
+    if(!values.initialize() || !values.validateAll())return false;
 
     // Stage nodes keep their original authored IDs and positions but become
     // existing v1 pipeline nodes. Property expressions resolve before overlay.
@@ -205,7 +205,14 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
             stage.set("type",Json::string("Update"));
             if(const char* key=vfx2::moduleKey(type)) {
                 Json module=Json::object();
-                module.set(key,std::move(properties));
+                if(type=="SubEmitterModule") {
+                    // Existing CPU schema expects an array of event handlers.
+                    // Keep properties an object for editable node pins while
+                    // lowering its items array to subEmitters at compilation.
+                    if(!properties.has("items") || !properties["items"].isArray())
+                        return fail("SubEmitterModule needs properties.items array");
+                    module.set(key,properties["items"]);
+                } else module.set(key,std::move(properties));
                 properties=std::move(module);
             } // Shape/Flipbook/Material/Sort/Custom carry flat emitter fields.
         }
