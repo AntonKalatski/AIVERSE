@@ -853,3 +853,95 @@ Then integrate the resident into an opt-in native WorldScene or renderer
 adapter with bounded per-frame rebuild scheduling and optional culling,
 without changing RTS `waterNetwork` or its baked map. Add a new handoff
 section after the implementation and record actual verification status.
+
+## Stage 10 — main-only merge and opt-in WorldScene water presentation
+
+**Merge main into NEREID branch:** `04860b76cdf3bd26d0e45dcfc71cbb7d02159c78`.
+Merge parents: NEREID `9f88f47503911af881fd6249726c8055e224d591`,
+main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`.
+Only `main` was merged. Four overlapping files were reconciled:
+`AGENTS.md`, `CMakeLists.txt`, `libraries/catalog.json`,
+`skills/catalog.json`. Current main input/rules changes and existing
+NEREID and SpectraFX registrations were preserved; no feature branch
+was individually merged. Branch `feature/nereid-water-core` remains
+the target; `main` was not changed.
+
+**Feature commits:**
+- `2aaa113cba6518977e9abe8f8ebf36c67fc93de5`: new
+  `engine/world/NereidWaterScene.h`.
+- `f3eacaaa443e36970d0556fc14a389414ca15aa3`:
+  `engine/render/NereidWaterRenderer.h` supports a model matrix.
+- `31700c2bb172f302461ddfde67ef9eb5a7b8b542`:
+  `engine/render/NereidSurfaceResident.h` forwards optional draw transform.
+- `1b879701af189441eeb2501c4e66021ac319794a`:
+  `engine/world/WorldScene.h` public opt-in interface.
+- `9ca4ce487de043b7535ab35dbf46826579039aa9`:
+  `engine/world/WorldScene.cpp` update/draw/shutdown integration.
+- `9fd68b786910d46c47552a60df340fb9cc1a6f08`:
+  `tests/ecs_nereid_renderer_contract_test.cpp` bounds and snapshot
+  contract assertions.
+
+### API and lifecycle
+
+A native project can create a read-only water snapshot and opt in:
+```cpp
+#include "engine/world/WorldScene.h"
+std::vector<aiverse::world::NereidSceneSurface> snapshot;
+aiverse::world::NereidSceneSurface water;
+water.body = authoritativeBody;  // copy from current ECS read phase
+water.useGeometry = false;       // set true + copy .geometry if needed
+snapshot.push_back(water);
+scene.setNereidSurfaces(std::move(snapshot));
+// WorldScene::update(device,observers) uploads/refreshes optional water.
+// WorldScene::draw(renderer,renderOrigin,cellSize) draws it relative to origin.
+// WorldScene::shutdown(device) releases its GPU buffers.
+```
+
+`NereidSceneSurface` is a **copied** body/optional geometry and renderer
+style/options, not an ECS entity pointer. A new snapshot increases
+scene revision and invalidates cached GPU geometry; avoid calling the
+setter each frame with an unchanged snapshot. Maximum 64 surfaces.
+When the observer is present, camera-relative infinite ocean patches
+use its canonical world-space X/Z. Finite water ignores camera movement.
+Draw uses the `renderOrigin` and `cellSize` coordinates already passed
+to `WorldScene::draw`, so water surface input points must be **global
+world coordinates in metres** (not local chunk coordinates).
+
+Calling `setNereidSurfaces` is a scene-host decision; there is no
+automatic genre-specific runtime migration, ECS mutation or legacy
+`waterNetwork` consumption. Call `WorldScene::update` following a
+setter call to publish/release resources before rendering. Clearing
+the snapshot retires current GPU handles on the next update. The
+old rendered surface remains on upload failure until explicitly
+retired, following Stage 9's transactional resource policy.
+Water surfaces share the standard RHI and Renderer3D, no new backend.
+
+### Verification, limits, next stage
+
+**Actually performed:** GitHub connector tree merge, code and test
+commits, source contract review. **Native C++ compilation, CTest,
+actual OpenGL/Metal scenes, FPS/RTS and old water non-regression:
+NOT RUN / UNVERIFIED** (no local AIVERSE checkout; GitHub DNS unavailable
+to shell). Authored contract checks are not evidence of passing tests.
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+# Also execute full ./run-tests.sh and visual tests on GL + Metal.
+```
+
+**Known limitations:** default config does not automatically import
+water from chunk manifests, only explicit host snapshots. 64 body
+objects upload synchronously; no water frustum culling or async mesh
+generation. Global absolute water positions converted to float before
+subtraction of render origin may lose precision at very large worlds;
+use relative geometry rebaking/patch-based local origins for planetary
+coordinates. No GPU device-loss auto recovery: call shutdown before
+replacing Device. `WorldScene` destructor cannot release buffers
+without a live Device; callers must invoke shutdown.
+
+**Next agent:** FIRST run and fix the merged CMake/CTest suites,
+including shader contract and GL/MSL builds, and ensure merge catalogs
+and root `AGENTS.md` are consistent. Then add a manifest/asset adapter
+or immutable ECS presentation bridge with bounded upload budgets and
+camera-relative geometry for large worlds. Preserve the universal ECS
+water owner and leave older RTS water tile bakes unchanged.
