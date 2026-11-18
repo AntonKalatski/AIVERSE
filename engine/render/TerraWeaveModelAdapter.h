@@ -3,8 +3,11 @@
 // the owning render thread. Uses existing model LOD/instancing/RHI pipeline.
 #pragma once
 #include "engine/world/TerraWeaveArborMesh.h"
+#include "engine/world/TerraWeaveBranchLod.h"
 #include "engine/render/Model.h"
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -98,6 +101,120 @@ inline std::unique_ptr<render::Model> makeArborModel(
     node.name = "TerraWeave Arbor";
     node.mesh = 0;
     model->nodes.push_back(std::move(node));
+    model->finalize();
+    return model;
+}
+
+
+struct BranchLodSettings {
+    ArborMeshSettings mesh{8, true};
+    float reducedPixels = 96.0f; // per-branch projected screen diameter
+    float minimalPixels = 30.0f; // lower threshold => simplest branch
+};
+
+// A model with one *render node per branch*, not one LOD chain for the
+// entire tree. The renderer performs frustum culling and screen-space LOD
+// selection for each node separately, including children of the same tree.
+// Every leaf cluster belongs to exactly one parent branch. Trunk remains
+// independently visible at all detail tiers (tree billboard uses a different
+// single-quad model).
+inline std::unique_ptr<render::Model> makeArborBranchLodModel(
+        const TreeProfile& profile, uint64_t seed,
+        BranchLodSettings settings = {}) {
+    if (!std::isfinite(settings.reducedPixels) ||
+        !std::isfinite(settings.minimalPixels) ||
+        settings.reducedPixels <= settings.minimalPixels ||
+        settings.minimalPixels <= 0 ||
+        settings.mesh.radialSegments < 3 || settings.mesh.radialSegments > 16 ||
+        settings.mesh.leafPlanes < 1 || settings.mesh.leafPlanes > 2)
+        throw std::invalid_argument("TerraWeave BranchLOD settings");
+    const TreeSkeleton tree = generateTree(profile, seed, TreeLOD::High);
+    auto model = std::make_unique<render::Model>();
+    model->path = "terraweave/arbor-branches/" + std::to_string(profile.speciesId) +
+                  "/" + std::to_string(seed);
+    model->batching.autoLod = false; // explicit per-branch LOD meshes
+    render::Material bark;
+    bark.name = "TerraWeave Branch Bark";
+    bark.baseColor = {0.31f, 0.18f, 0.11f, 1.0f};
+    bark.roughness = 0.9f;
+    render::Material foliage;
+    foliage.name = "TerraWeave Branch Foliage";
+    foliage.baseColor = {0.21f, 0.43f, 0.16f, 1.0f};
+    foliage.roughness = 0.85f;
+    foliage.doubleSided = true;
+    foliage.alpha = render::AlphaMode::Opaque; // project can supply cutout texture
+    model->materials = {bark, foliage};
+
+    for (size_t branch = 0; branch < tree.branches.size(); ++branch) {
+        const uint32_t primary = static_cast<uint32_t>(model->meshes.size());
+        for (const BranchDetail detail : {BranchDetail::Full,
+                                          BranchDetail::Reduced,
+                                          BranchDetail::Minimal}) {
+            const ArborMesh geometry = buildArborBranchMesh(
+                tree, branch, detail, settings.mesh);
+            const uint32_t baseVertex = static_cast<uint32_t>(model->vertices.size());
+            const uint32_t baseIndex = static_cast<uint32_t>(model->indices.size());
+            uint32_t barkVertices = 0;
+            bool foliageStarted = false;
+            for (const ArborVertex& v : geometry.vertices) {
+                if (v.material > 1 || (foliageStarted && v.material == 0))
+                    throw std::logic_error("TerraWeave branch material order");
+                if (v.material == 0) ++barkVertices;
+                else foliageStarted = true;
+                render::ModelVertex vertex;
+                vertex.pos = {v.x * 0.01f, v.y * 0.01f, v.z * 0.01f};
+                vertex.nrm = {v.nx, v.ny, v.nz};
+                vertex.uv = {v.u, v.v};
+                model->vertices.push_back(vertex);
+            }
+            uint32_t barkIndices = 0;
+            bool leafIndicesStarted = false;
+            for (const uint32_t index : geometry.indices) {
+                if (index >= geometry.vertices.size())
+                    throw std::logic_error("TerraWeave branch invalid mesh index");
+                const uint8_t mat = geometry.vertices[index].material;
+                if (mat == 1) leafIndicesStarted = true;
+                else if (leafIndicesStarted)
+                    throw std::logic_error("TerraWeave branch mixed index materials");
+                if (!leafIndicesStarted) ++barkIndices;
+                model->indices.push_back(baseVertex + index);
+            }
+            render::MeshDef mesh;
+            mesh.name = "Arbor branch " + std::to_string(branch) + " LOD" +
+                        std::to_string(static_cast<int>(detail));
+            if (barkIndices) {
+                render::Primitive p;
+                p.material = 0;
+                p.firstVertex = baseVertex;
+                p.vertexCount = barkVertices;
+                p.firstIndex = baseIndex;
+                p.indexCount = barkIndices;
+                mesh.primitives.push_back(p);
+            }
+            if (const uint32_t leaves = static_cast<uint32_t>(geometry.indices.size()) -
+                                        barkIndices) {
+                render::Primitive p;
+                p.material = 1;
+                p.firstVertex = baseVertex + barkVertices;
+                p.vertexCount = static_cast<uint32_t>(geometry.vertices.size()) -
+                                barkVertices;
+                p.firstIndex = baseIndex + barkIndices;
+                p.indexCount = leaves;
+                mesh.primitives.push_back(p);
+            }
+            model->meshes.push_back(std::move(mesh));
+        }
+        model->meshes[primary].lods = {
+            {static_cast<int>(primary + 1), settings.reducedPixels},
+            {static_cast<int>(primary + 2), settings.minimalPixels}
+        };
+        render::Node node;
+        node.name = branch == 0 ? "Arbor trunk" :
+                    "Arbor branch " + std::to_string(branch);
+        node.mesh = static_cast<int>(primary);
+        node.parent = tree.branches[branch].parent;
+        model->nodes.push_back(std::move(node));
+    }
     model->finalize();
     return model;
 }
