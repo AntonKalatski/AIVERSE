@@ -1342,3 +1342,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `9794f5583d014a933a683d5a29387514af711927`.
 - Reordered catalog entries so `ecs-hitscan` is declared immediately before dependent `ecs-hitscan-resolution`. The per-package CMake INTERFACE target generation now encounters `AIVERSE::lib_ecs_hitscan` before `AIVERSE::lib_ecs_hitscan_resolution` links to it; this avoids any reliance on deferred namespaced target resolution. JSON parsed after the reorder and adjacent package ordering was validated.
 - Verification: GitHub commit only; no CMake configure or actual native build.
+
+### 2026-11-18 — Agent contract records schedulable hitscan and same-tick parity guard
+- Documentation SHA: `d2bcde0fc629394ca38c64e766c2a6dac688d1e2`.
+- Updated `AGENTS.md` with `AIVERSE::lib_ecs_hitscan_resolution` and `AIVERSE::lib_ecs_hitscan`, their public headers/skills, and the new cross-host `ecs_hitscan_resolution_test` combining fire intents with the actual shared `DamageQueue` and `DamageResolutionSystem`. Reinforces that FPS synchronous multi-hit/rewind/armor order cannot be changed without golden tests and network/checksum equivalence.
+- Verification: documentation commit, no native game or library test run. The user requested continued implementation; remaining primary gate is native compile and migration of real FPS execution without reordering damage.
