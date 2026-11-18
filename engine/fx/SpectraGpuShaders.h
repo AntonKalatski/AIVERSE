@@ -32,6 +32,118 @@ struct DrawArgs {
     int baseVertex;
     uint firstInstance;
 };
+// GPU VM ABI mirrors SpectraGpuProgram.h. Slot/field/op numbers are fixed
+// and checked by prepareForMetal before a payload is bound.
+struct VmParams { float4 p0; float4 p1; };
+struct VmInstruction { uint opcode; uint field; float scalar; uint reserved; };
+struct VmStatement { uint stage; uint action; uint target; uint firstInstruction;
+                     uint instructionCount; uint reserved[3]; };
+struct VmPayload {
+    uint abiVersion, statementCount, instructionCount, parameterMask;
+    VmStatement statements[64];
+    VmInstruction instructions[512];
+};
+float vmRead(uint field,Particle p,VmParams params,float dt) {
+    switch(field) {
+    case 0u:return p.positionAge.w; // age
+    case 1u:return clamp(p.positionAge.w/max(p.velocityLife.w,0.01f),0.0f,1.0f);
+    case 2u:return dt;
+    case 4u:return p.positionAge.x;
+    case 5u:return p.positionAge.y;
+    case 6u:return p.positionAge.z;
+    case 7u:return p.velocityLife.x;
+    case 8u:return p.velocityLife.y;
+    case 9u:return p.velocityLife.z;
+    case 10u:return p.size.x;
+    case 12u:return p.tint.x;
+    case 13u:return p.tint.y;
+    case 14u:return p.tint.z;
+    case 15u:return p.tint.w;
+    default:
+        if(field>=24u && field<28u)return params.p0[field-24u];
+        if(field>=28u && field<32u)return params.p1[field-28u];
+        return 0.0f; // must be rejected by the C++ ABI validator
+    }
+}
+void vmWrite(uint field,thread Particle& p,float value) {
+    switch(field) {
+    case 4u:p.positionAge.x=value;break;
+    case 5u:p.positionAge.y=value;break;
+    case 6u:p.positionAge.z=value;break;
+    case 7u:p.velocityLife.x=value;break;
+    case 8u:p.velocityLife.y=value;break;
+    case 9u:p.velocityLife.z=value;break;
+    case 10u:p.size.x=max(0.0f,value);break;
+    case 12u:p.tint.x=clamp(value,0.0f,1.0f);break;
+    case 13u:p.tint.y=clamp(value,0.0f,1.0f);break;
+    case 14u:p.tint.z=clamp(value,0.0f,1.0f);break;
+    case 15u:p.tint.w=clamp(value,0.0f,1.0f);break;
+    default:break;
+    }
+}
+// Returns false for malformed/unsafe expressions; an individual failed
+// statement is skipped like the CPU VM rather than poisoning GPU state.
+bool vmEvaluate(device const VmPayload& vm,VmStatement s,Particle p,
+                VmParams params,float dt,thread float& result) {
+    float stack[48];
+    uint top=0u;
+    if(s.instructionCount==0u || s.instructionCount>48u ||
+       s.firstInstruction+s.instructionCount>vm.instructionCount)return false;
+    for(uint i=0u;i<s.instructionCount;++i) {
+        VmInstruction ins=vm.instructions[s.firstInstruction+i];
+        if(ins.opcode<=1u) {
+            if(top>=48u)return false;
+            float v=ins.opcode==0u?ins.scalar:vmRead(ins.field,p,params,dt);
+            if(!isfinite(v)||fabs(v)>1.0e7f)return false;
+            stack[top++]=v;
+            continue;
+        }
+        bool unary=ins.opcode==11u||ins.opcode==12u||ins.opcode==16u;
+        bool ternary=ins.opcode==17u||ins.opcode==18u;
+        uint required=unary?1u:ternary?3u:2u;
+        if(top<required)return false;
+        float t=ternary?stack[--top]:0.0f;
+        float b=unary?0.0f:stack[--top];
+        float a=stack[--top];
+        float v=0.0f;
+        switch(ins.opcode) {
+        case 2u:v=a+b;break;
+        case 3u:v=a-b;break;
+        case 4u:v=a*b;break;
+        case 6u:v=min(a,b);break;
+        case 7u:v=max(a,b);break;
+        case 11u:v=fabs(a);break;
+        case 12u:v=-a;break;
+        case 16u:v=clamp(a,0.0f,1.0f);break;
+        case 17u:if(b>t)return false;v=clamp(a,b,t);break;
+        case 18u:v=a+(b-a)*clamp(t,0.0f,1.0f);break;
+        default:return false;
+        }
+        if(!isfinite(v)||fabs(v)>1.0e7f)return false;
+        stack[top++]=v;
+    }
+    if(top!=1u)return false;
+    result=stack[0];
+    return true;
+}
+void vmRun(device const VmPayload& vm,uint stage,thread Particle& p,
+           VmParams params,float dt) {
+    if(vm.abiVersion!=1u || vm.statementCount>64u ||
+       vm.instructionCount>512u)return;
+    for(uint i=0u;i<vm.statementCount;++i) {
+        const VmStatement s=vm.statements[i];
+        if(s.stage!=stage)continue;
+        float value=0.0f;
+        if(!vmEvaluate(vm,s,p,params,dt,value))continue;
+        const float before=vmRead(s.target,p,params,dt);
+        float next=value;
+        if(s.action==1u)next=before+value;
+        else if(s.action==2u)next=before+value*dt;
+        else if(s.action==3u)next=before*value;
+        else if(s.action!=0u)continue;
+        if(isfinite(next) && fabs(next)<=1.0e7f)vmWrite(s.target,p,next);
+    }
+}
 uint packColor(float4 c) {
     uint4 bytes=uint4(clamp(c,0.0f,1.0f)*255.0f+0.5f);
     return bytes.x | (bytes.y<<8) | (bytes.z<<16) | (bytes.w<<24);
@@ -44,12 +156,21 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      device const uint* liveSlots [[buffer(4)]],
                      device atomic_uint* aliveCounter [[buffer(5)]],
                      device DrawArgs* gpuDrawArgs [[buffer(6)]],
-                     constant Uniforms& u [[buffer(8)]]) {
+                     device const VmParams* seedParams [[buffer(7)]],
+                     constant Uniforms& u [[buffer(8)]],
+                     device VmParams* stateParams [[buffer(9)]],
+                     device const VmPayload* vmProgram [[buffer(10)]]) {
     uint id=gid.x;
     if(u.meta.x==0u) {
         if(id>=u.meta.z)return;
         uint slot=slots[id];
-        if(slot<u.meta.y) particles[slot]=spawns[id];
+        if(slot<u.meta.y) {
+            Particle p=spawns[id];
+            VmParams params=seedParams[id];
+            vmRun(vmProgram[0],0u,p,params,0.0f);
+            particles[slot]=p;
+            stateParams[slot]=params;
+        }
         return;
     }
     if(u.meta.x==3u) {
@@ -77,6 +198,10 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         p.positionAge.xyz+=p.velocityLife.xyz*dt;
         p.positionAge.w+=dt;
         if(p.positionAge.w>=p.velocityLife.w)p.positionAge.w=-1.0f;
+        else {
+            VmParams params=stateParams[id];
+            vmRun(vmProgram[0],1u,p,params,dt);
+        }
         particles[id]=p;
         return;
     }
