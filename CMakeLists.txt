@@ -1647,6 +1647,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine AIVERSE::lib_nereid_buoyancy)
     add_test(NAME ecs_nereid_native_pipeline_test
         COMMAND aiverse_ecs_nereid_native_pipeline_test)
+    # Diagnostic only: performance timings must not be a CI correctness gate.
+    add_executable(aiverse_ecs_nereid_sampling_bench
+        tests/ecs_nereid_sampling_bench.cpp)
+    target_link_libraries(aiverse_ecs_nereid_sampling_bench PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
