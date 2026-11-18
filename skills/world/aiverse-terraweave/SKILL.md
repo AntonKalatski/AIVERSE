@@ -458,3 +458,35 @@ back-and-forth camera movement indicate an overly small
 budget or frequent authored-source invalidations; adjust
 `maxCachedGpuRegions`/`gpuCacheBudgetMiB` only after
 the test agent collects real FPS and memory evidence.
+
+## Horizon region crossfade (Stage 14)
+
+The same `TerraWeaveHorizonScene` can use
+`regionTransitionMs=0..1000` to interpolate
+between two *already GPU-uploaded* Horizon
+regions using standard `Renderer3D` model
+tint alpha and its existing transparent pass.
+Neighbor transitions are 240ms by default
+in Balanced/High and OFF by default in
+Minimal/Mobile. The old model must consume
+an inactive GPU residency slot and fit
+`gpuCacheBudgetMiB`; do not add an
+unbounded transition buffer.
+
+Call `finishTransition(device)` on the
+owner RHI thread, keep authored-source
+revision checks, and release the outgoing
+model or return it to the GPU LRU when
+the fade finishes. Fast teleports and
+terrain revisions intentionally skip
+blending. `WorldScene::shutdown(device)`
+must also release any pending outgoing
+model.
+
+`HorizonRuntimeStats` tracks
+`transitionStarts`, `transitioning`,
+and `transitionProgressPermille`.
+Tests and GPU screenshots remain the
+separate testing agent's responsibility;
+the feature agent must label results
+NOT RUN until actual evidence exists.
