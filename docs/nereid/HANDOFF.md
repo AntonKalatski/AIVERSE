@@ -497,3 +497,41 @@ usage and old `water_*` baking parity; only then consider connecting
 existing game examples or water presentation. After the next code stage
 append exact commit/branch, files, tests actually run, limitations and
 the following action to this document.
+
+## Stage 7A — sampler performance diagnostic (authored, not executed)
+
+**Implementation SHA:** `a8520bdcaefd0e54cf6f418b2c50b44c578c02db`, branch
+`feature/nereid-water-core`, base `feature/universal-entity-inspector-fps`.
+
+Files: added `tests/ecs_nereid_sampling_bench.cpp`, updated
+`CMakeLists.txt`, `tests/run_ecs_experiment_suite.sh`.
+
+Standalone diagnostic target:
+```sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target aiverse_ecs_nereid_sampling_bench -j 4
+./build/ecs-test/aiverse_ecs_nereid_sampling_bench
+# Or existing ECS tools + this benchmark:
+bash tests/run_ecs_experiment_suite.sh --bench
+```
+
+This benchmark compares `sampleWater` (linear scan) against rebuilding
+`WaterQueryIndex` once **per tick** and sampling the same input points.
+Workload matrix: 16/64/256 bodies × 8/128/1024 probes, 12 repetitions;
+reports average microseconds per tick, relative speedup and sample digest.
+It warms and validates the selected body/depth/signatures before comparing.
+No assertion on speedup (hardware, build flags and runner loads vary);
+wrong gameplay parity causes a failure. It does not mutate simulation
+state and wall-clock timing is **never** part of gameplay decisions.
+
+**Actual verification:** code committed by GitHub connector; C++ bench
+not built/run in this environment, so **no timing numbers are known**.
+The latest GitHub workflow was queued when inspected, not verified.
+
+**Limitations:** geometry in this fixture uses discs; profile polygon/spline
+stress separately if adopting index by default. The measured ratio
+includes build-per-tick cost, but not the contact-pool write and source
+transform stages. Do not change adaptive defaults until real results
+show a defensible break-even. Next: implement a universal presentation
+mesh adapter; then obtain actual CI and benchmark output. Update this
+handoff immediately after that stage with SHA/files/tests/limits.

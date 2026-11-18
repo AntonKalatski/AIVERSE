@@ -227,3 +227,15 @@ forced linear/indexed equivalent results, native save/load and COW
 rollback. The ECS experimental shell runner now also compiles and
 executes all six NEREID tests, including the legacy raster bridge.
 **All results remain unverified until CI actually runs.**
+
+## Stage 7A — performance characterization
+
+`tests/ecs_nereid_sampling_bench.cpp` is an optional measurement
+program (not a correctness-gated CTest). It uses `steady_clock` only in
+the diagnostic process, never within simulation. It times a 3x3 matrix
+of body and probe counts, including the **per-tick rebuild** of the
+transient stage-4 AABB tree, and compares the resulting deterministic
+sample signatures with the linear reference. Invoke CMake target
+`aiverse_ecs_nereid_sampling_bench` or
+`tests/run_ecs_experiment_suite.sh --bench`. Results are NOT YET
+available; default adaptive thresholds remain heuristics.

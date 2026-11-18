@@ -152,3 +152,14 @@ alongside other NEREID sampling systems. No extra persistence schema.
 New test: `ecs_nereid_native_pipeline_test`. All six NEREID
 fixtures are also included in `tests/run_ecs_experiment_suite.sh`,
 which CI runs. Do not claim green until GitHub Actions completes.
+
+## Stage 7A — sampling performance benchmark
+
+Profile the water broadphase before tuning
+`AdaptiveWaterSamplingConfig` thresholds. Build/run
+`aiverse_ecs_nereid_sampling_bench` or use
+`bash tests/run_ecs_experiment_suite.sh --bench`.
+The test reports microseconds per tick for 16/64/256 bodies with
+8/128/1024 probes, explicitly including index rebuild time.
+It is a benchmark with gameplay parity checks, not a CI timing gate.
+No measurements were run during stage 7A.
