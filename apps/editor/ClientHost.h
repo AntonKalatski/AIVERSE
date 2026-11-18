@@ -34,6 +34,7 @@ public:
     // takes; focused: the Game window has keyboard focus.
     void place(float x, float y, float k, bool focused);  // emits synthetic hosted focus edges
     void event(const platform::Event& e);
+    void suspendInput(); // Game tab hidden: cancel held keys/touches even without a GameWindow draw
     bool quitRequested() const { return view_.quitRequested; }
     bool capturing() const { return captured_; }
     Simulation* simulation();
