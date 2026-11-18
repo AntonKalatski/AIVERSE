@@ -1,5 +1,8 @@
 #include "engine/platform/EnhancedInputConfig.h"
 #include "engine/platform/EnhancedInputPresets.h"
+#include "engine/platform/EnhancedInputProfileIO.h"
+#include <chrono>
+#include <filesystem>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -105,5 +108,22 @@ int main() {
         CHECK(conf::installAsset(runtime,decoded,&err));
         CHECK(runtime.registeredContexts().size()==1);
     }
+    // Host profile persistence: disk roundtrip, invalid writes do not replace prior state.
+    const auto unique=std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto file=std::filesystem::temp_directory_path()/
+        ("aiverse-input-profile-"+std::to_string(unique)+".json");
+    conf::Profile profileOnDisk;
+    CHECK(conf::saveProfileFile(file,conf::Profile{{{"Gameplay",3,{ei::Device::Keyboard,int(p::Key::Up)}}}},&err));
+    CHECK(conf::loadProfileFile(file,profileOnDisk,&err));
+    CHECK(profileOnDisk.rebindings.size()==1);
+    CHECK(profileOnDisk.rebindings[0].control.code==int(p::Key::Up));
+    conf::Profile invalidProfile=profileOnDisk;
+    invalidProfile.rebindings[0].control.code=999999; // unknown keyboard
+    CHECK(!conf::saveProfileFile(file,invalidProfile,&err));
+    conf::Profile afterFailure;
+    CHECK(conf::loadProfileFile(file,afterFailure,&err));
+    CHECK(afterFailure.rebindings[0].control.code==int(p::Key::Up));
+    std::error_code cleanup;
+    std::filesystem::remove(file,cleanup);
     std::cout<<"Enhanced Input config/schema/profile roundtrip passed\n";
 }
