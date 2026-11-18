@@ -1261,6 +1261,100 @@ functional work. Stage 21 comprises committed C++ source only:
 no CMake/CTest, editor screenshot, cross-backend shader compilation,
 GPU timing or material output comparison was actually run.
 
+## Experimental Metal scalar particle VM execution (Stage 22 — source committed, unverified)
+
+`engine/fx/SpectraGpuProgram.h` provides a fixed binary payload for a
+strict CPU particle-program subset. The Stage-22 Metal compute kernel now
+**interprets** that validated payload directly during particle Spawn and
+Update. This is not dynamic MSL shader generation; the shader compiles
+once, while the payload is an ordinary persistent RHI storage buffer.
+The older compiler/ABI preparation existed before the GPU execution
+implementation; actual compute execution and parameter buffers were
+added in Stage 22.
+
+**Opt-in is mandatory and false by default:**
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::GraphRuntimeOptions options;
+options.preference=aiverse::spectra::ComputePreference::Automatic;
+options.gpuProgram=true;  // EXPERIMENTAL; defaults to false
+options.gpuIndirect=false; // independent option from Stage 14
+
+aiverse::spectra::GraphRuntime emitter;
+if(!emitter.initGraph(device,graphJson,aiverse::Json::object(),options)) {
+    // emitter.reason(), emitter.errors()
+}
+emitter.setNamedProgramParameter("lift",3.5f);
+emitter.burstAt({0,1,0}); // parameters snapshotted before Spawn
+// Per-frame device sequence: beginFrame -> emitter.step -> beginPass ->
+// emitter.draw -> endPass -> endFrame.
+emitter.setNamedProgramParameter("lift",5.0f,true);
+// affectExisting = true queues a GPU parameter-buffer upload for next step.
+```
+
+The opt-in GPU eligibility gate first compares **every** compiled
+emitter field against the single additive `builtin:soft` point-burst
+contract; it only permits a `particleProgram` when its entire program
+passes `gpu_program::prepareForMetal`. Any other module, arbitrary
+material `shaderGraph`, `graphInputs`, events, collision, trails,
+multiple emitters, mesh particles, forced fields, sorting, random
+ranges or graph stages outside the supported subset still use the
+**exact original full CPU effect**. `RequireGpu` fails instead of
+silently dropping behavior.
+
+Supported VM stages: **Spawn** and **Update**. Readable scalar fields:
+`age`, `ageNormalized`, `dt`, `position.x/y/z`,
+`velocity.x/y/z`, `size`, `tint.r/g/b/a`, and
+read-only per-instance `param0..param7`.
+Writable fields: position/velocity components, size and tint.
+Actions: `set`, `add`, `addRate`, `multiply`.
+Supported expression ops: finite constants and field reads,
+add/subtract/multiply, min/max, abs/negate/saturate, clamp and
+lerp. Numeric results are finite/bounded; size clamps at zero,
+tint channels at [0,1]. The kernel rejects malformed instructions
+and skips failed statements rather than modifying particle state.
+
+Unsupported: user `attribute0..7` registers, `uid`, rotation,
+division/pow/trig/sqrt/floor/ceil, comparisons, conditional Select,
+collision/trigger/death programs, loops/recursion, runtime user
+scripts and all non-Metal compute backends. The GPU interpreter
+is bounded at **24 total statements**, **192 instructions** and
+**48 instructions per statement**. ABI/opcode/field numbers
+are compile-time asserted against the CPU VM enums; these checks
+still require an actual native build to confirm.
+
+The original 64-byte GPU particle state and 40-byte billboard vertex
+are unchanged. The Metal compute pipeline additionally binds:
+- slot **7**: seed-time parameter snapshots (32 bytes per queued birth);
+- slot **9**: persistent parameter snapshots (32 bytes per physical slot);
+- slot **10**: validated GPU VM payload (10,256 bytes, ABI version 1);
+- slot **8** remains the existing `Uniforms` constant buffer.
+
+Both old host-gather and opt-in indirect modes call the same
+Spawn/Update kernel and use GPU-resident particle state. Runtime
+parameter changes without `affectExisting` apply only to later
+births; enabling it updates already tracked particles through the
+host's bounded CPU slot map and schedules one 32-byte-per-slot
+buffer refresh outside the render pass. **GPU particle positions
+are never read back to the CPU.** GPU device-loss behavior
+continues to report non-seamless CPU fallback.
+
+Use `examples/spectrafx/gpu_vm_lift_v2.vfx.json` for an authored
+single-burst, age-dependent lift/fade example whose named `lift`
+value is passed to the VM. The editor and `fx_graph_validate/get/list`
+report `metalVmEligible` and `metalVmReason` separately from the
+original billboard-only GPU verdict. These are **source capability
+diagnostics only**; editor previews continue to use the mature CPU
+runtime.
+
+**Verification:** tests were postponed by the user. This GPU VM
+and its shaders have **NOT** been compiled/run on Apple Silicon,
+Linux, or other platforms in this stage. No Metal image output,
+CPU/GPU numeric parity or performance evidence is available.
+Do not enable `gpuProgram` by default before real-device tests.
+
 ## Validation checklist
 
 ```bash
