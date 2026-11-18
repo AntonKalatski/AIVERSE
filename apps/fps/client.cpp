@@ -11,6 +11,8 @@
 #include "engine/platform/ContentReader.h"
 #include "engine/render/Renderer3D.h"
 #include "libraries/include/aiverselib/animation/EcsAnimationSystems.h"
+#include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
+#include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
@@ -47,6 +49,7 @@ struct App {
     std::map<uint8_t,Entity> characterEntities;
     std::map<uint8_t,uint32_t> characterLives;
     float characterScale=1.f,characterHeightOffset=0.f;
+    bool characterBakedCrowd=false;
     i18n::Localization lang;
     std::set<platform::Key> keys;
     fps::Input input;
@@ -134,6 +137,12 @@ struct App {
                 def.set("parameters",Json::parse(R"({"moving":0,"speed":0})"));
             }
             const auto compiled=render::AnimationGraph::compile(*model,def);
+            // Complex imported controllers always use palette/graph evaluation.
+            // Simple clip crowds can use the existing instanced GPU baked skinning.
+            const bool wantsBaked=view.getBool("bakedCrowd",false) &&
+                !view["animationGraph"].isObject();
+            characterBakedCrowd=wantsBaked && model->skinned() &&
+                render::bakeAnimations(device,*model);
             const double scale=view["scale"].toDouble(1.0);
             if (std::isfinite(scale) && scale>0.001 && scale<100)
                 characterScale=float(scale);
@@ -160,34 +169,64 @@ struct App {
             if (found==characterEntities.end()) {
                 e=characterPresentation.create();
                 characterEntities.emplace(remote.slot,e);
-                auto& asset=characterPresentation.add<lib::animation::AnimationAssetComponent>(e);
-                asset.model=characterModel.get();
-                asset.graph=characterGraph;
-                characterPresentation.add<lib::animation::AnimationPlayerComponent>(e);
-                characterPresentation.add<lib::animation::AnimationPoseComponent>(e);
-                characterPresentation.add<lib::animation::AnimationInputsComponent>(e);
-                characterPresentation.add<lib::animation::AnimationBudgetComponent>(e);
+                if(characterBakedCrowd) {
+                    auto& crowd=characterPresentation.add<lib::animation::AnimationCrowdComponent>(e);
+                    crowd.model=characterModel.get();
+                    crowd.idle=characterModel->findClip("Idle");
+                    if(crowd.idle<0)crowd.idle=characterModel->findClip("Stand");
+                    crowd.walk=characterModel->findClip("Walk");
+                    crowd.run=characterModel->findClip("Run");
+                    if(crowd.walk<0)crowd.walk=crowd.run;
+                    crowd.death=characterModel->findClip("Death");
+                    characterPresentation.add<lib::animation::AnimationCrowdSampleComponent>(e);
+                } else {
+                    auto& asset=characterPresentation.add<lib::animation::AnimationAssetComponent>(e);
+                    asset.model=characterModel.get();
+                    asset.graph=characterGraph;
+                    characterPresentation.add<lib::animation::AnimationPlayerComponent>(e);
+                    characterPresentation.add<lib::animation::AnimationPoseComponent>(e);
+                    characterPresentation.add<lib::animation::AnimationInputsComponent>(e);
+                    characterPresentation.add<lib::animation::AnimationBudgetComponent>(e);
+                    characterPresentation.add<lib::animation::AnimationSignificanceComponent>(e);
+                }
             } else e=found->second;
-            auto& player=characterPresentation.get<lib::animation::AnimationPlayerComponent>(e);
             const auto knownLife=characterLives.find(remote.slot);
-            if (knownLife==characterLives.end() || knownLife->second!=remote.life)
-                player.restart=true;
+            const bool respawn=knownLife==characterLives.end() ||
+                knownLife->second!=remote.life;
             characterLives[remote.slot]=remote.life;
-            auto& inputs=characterPresentation.get<lib::animation::AnimationInputsComponent>(e).overrides;
-            inputs.values.clear();
             const auto speed=render::length(visual(remote.velocity));
-            inputs.set("speed",speed);
-            inputs.set("moving",speed>.1f?1.f:0.f);
-            inputs.set("dead",remote.health<=0?1.f:0.f);
-            inputs.set("grounded",remote.grounded?1.f:0.f);
-            inputs.set("reloading",remote.reloadUntil?1.f:0.f);
-            auto& lod=characterPresentation.get<lib::animation::AnimationBudgetComponent>(e);
-            const float range=render::length(visual(remote.pos-local.pos));
-            lod.interval=range>80.f?.1f:range>25.f?1.f/30.f:0.f;
-            lod.visible=remote.health>0;
+            if(characterBakedCrowd) {
+                auto& crowd=characterPresentation.get<lib::animation::AnimationCrowdComponent>(e);
+                if(respawn){crowd.animator.setModel(nullptr);crowd.playing=-2;}
+                crowd.speed=speed;
+                crowd.dead=remote.health<=0;
+            } else {
+                auto& player=characterPresentation.get<lib::animation::AnimationPlayerComponent>(e);
+                if(respawn)player.restart=true;
+                auto& inputs=characterPresentation.get<lib::animation::AnimationInputsComponent>(e).overrides;
+                inputs.values.clear();
+                inputs.set("speed",speed);
+                inputs.set("moving",speed>.1f?1.f:0.f);
+                inputs.set("dead",remote.health<=0?1.f:0.f);
+                inputs.set("grounded",remote.grounded?1.f:0.f);
+                inputs.set("reloading",remote.reloadUntil?1.f:0.f);
+                auto& significance=characterPresentation.get<lib::animation::AnimationSignificanceComponent>(e);
+                const float distance=render::length(visual(remote.pos-local.pos));
+                significance.pixels=720.f*1.8f/std::max(1.f,distance);
+                significance.importance=remote.team==local.team?1.25f:1.f;
+                significance.visible=remote.health>0;
+            }
         }
-        lib::animation::stepAnimationPresentation(characterPresentation,
-            float(std::clamp(dt,0.,.25)));
+        if(characterBakedCrowd)
+            lib::animation::stepAnimationCrowd(characterPresentation,
+                float(std::clamp(dt,0.,.25)));
+        else {
+            lib::animation::AnimationBudgetPolicy budget;
+            budget.fullRateSlots=32;budget.mediumRateSlots=96;
+            lib::animation::assignAnimationBudgets(characterPresentation,budget);
+            lib::animation::stepAnimationPresentation(characterPresentation,
+                float(std::clamp(dt,0.,.25)));
+        }
     }
     void event(const platform::Event& e) {
         using E=platform::EventType;using K=platform::Key;
@@ -317,20 +356,31 @@ struct App {
             if(characterModel) {
                 const auto found=characterEntities.find(remote.slot);
                 if(found!=characterEntities.end()) {
-                    const auto* posed=characterPresentation.tryGetConst<lib::animation::AnimationPoseComponent>(found->second);
-                    if(posed && posed->valid) {
-                        render::ModelDraw draw;
-                        draw.model=characterModel.get();
-                        draw.persistentId=uint64_t(remote.slot);
-                        const float yaw=float(remote.yaw.toDouble()*6.283185307179586);
-                        draw.world=render::mat4::translate(position+render::float3{0,characterHeightOffset,0})
-                            *render::mat4::rotateY(yaw)
-                            *render::mat4::scale({characterScale,characterScale,characterScale});
-                        draw.nodeWorld=&posed->matrices;
-                        draw.pose=&posed->local;
-                        draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
-                        renderer.drawModel(draw);
-                        animated=true;
+                    render::ModelDraw draw;
+                    draw.model=characterModel.get();
+                    draw.persistentId=uint64_t(remote.slot);
+                    const float yaw=float(remote.yaw.toDouble()*6.283185307179586);
+                    draw.world=render::mat4::translate(position+render::float3{0,characterHeightOffset,0})
+                        *render::mat4::rotateY(yaw)
+                        *render::mat4::scale({characterScale,characterScale,characterScale});
+                    draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
+                    if(characterBakedCrowd) {
+                        const auto* sample=characterPresentation.tryGetConst<
+                            lib::animation::AnimationCrowdSampleComponent>(found->second);
+                        if(sample && sample->valid) {
+                            draw.baked=&sample->sample;
+                            renderer.drawModel(draw);
+                            animated=true;
+                        }
+                    } else {
+                        const auto* posed=characterPresentation.tryGetConst<
+                            lib::animation::AnimationPoseComponent>(found->second);
+                        if(posed && posed->valid) {
+                            draw.nodeWorld=&posed->matrices;
+                            draw.pose=&posed->local;
+                            renderer.drawModel(draw);
+                            animated=true;
+                        }
                     }
                 }
             }

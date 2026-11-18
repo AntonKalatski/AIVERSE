@@ -291,3 +291,18 @@ The reference client runs a separate presentation ECS World, not a gameplay
 world, and computes remote actor poses per render frame. Invalid model/graph
 assets retain the previous box rendering fallback. The procedural first-person
 weapon remains unchanged. This path requires a real model and visual testing.
+
+
+### Optional instanced GPU crowd skinning
+
+Set `fps.visual.bakedCrowd: true` with a skinned
+`fps.visual.model` and **no custom `fps.visual.animationGraph`**.
+The FPS client then bakes the model's clips into a joint-matrix texture,
+drives per-entity Idle/Walk/Run/Death through the shared
+`AnimationCrowdComponent`, and submits
+`Renderer3D::ModelDraw::baked` for GPU instancing. If a bake is
+unavailable, it uses the existing palette graph or box fallback.
+Complex avatars with IK, upper-body layers, and imported controllers
+stay in palette mode. The palette path now uses the shared
+`AnimationSignificanceComponent` / `assignAnimationBudgets`
+rather than hard-coded per-distance pose sampling.
