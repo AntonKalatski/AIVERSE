@@ -988,3 +988,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `CMakeLists.txt`: registered `aiverse_ecs_kinematic_projectile_test` and CTest `ecs_kinematic_projectile_test`, linked to `aiverse_engine`, `aiverse_world` and `AIVERSE::libraries` without RTS/FPS gameplay modules.
 - Verification: source commit only; no CMake configure/build/CTest run.
 - Next: wire standalone runner and run native build; check compile errors and test behavior.
+
+### 2026-11-18 — Kinematic standalone runner registration
+- Implementation SHA: `61f784a00b36eb8673704d2cda06d30e34e70062`.
+- Changed `tests/run_ecs_experiment_suite.sh`: added `ecs-kinematic-projectile` compile/run entry with public headers and the existing simulation, fixed-point, JSON and collision sources. Matches the standalone cross-genre projectile link pattern.
+- Verification: source commit only; shell syntax, compiler, executable and CTest **not run**.
+- Next: validate both runners, register the package/skill and migrate the real RTS adapter after behavioral parity analysis.
