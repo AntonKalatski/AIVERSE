@@ -2046,3 +2046,42 @@ Use explicit MRT fragment output locations 0..N-1 and
 Continue recording architecture/API/files/actual tests and next work
 after each bounded step. Next: Vulkan MSAA/resolve; streaming/upload
 lifecycle and import format coverage are still unfinished.
+
+## Stage 4V — Vulkan multisample image allocation and capability gates (2026-11-18)
+
+**Code commit:** `d8a539959793e59d45bddcb2a9ab1a5da3e97395`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkResources.cpp`.
+
+**Source implementation:** `VTexture::samples` stores the physical
+sample count; `createImage` uses that count in
+`VkImageCreateInfo::samples`. `createTexture` can now allocate
+render-only multisampled Texture2D color (RGBA8/RGBA8_sRGB/RGBA16F)
+and depth attachments, checking both physical-device framebuffer
+sample masks and `vkGetPhysicalDeviceImageFormatProperties`.
+Multisample images use attachment-only VkImageUsage rather than the
+usual sampled/upload path, and skip sampler creation, initial staging,
+and shader-read layout initialization. They are intended to be cleared
+and resolved through a later Vulkan render-pass stage, not bound
+directly as sampled textures. Pixel updates and texture views reject
+multisampled parents. `destroyTexture` continues to retire images
+and memory using the existing deferred GPU-safe release mechanism.
+
+**Critical integration gap:** This is an allocation stage ONLY.
+`VkDraw.cpp` still rejects explicit MSAA resolves and does not yet
+build sample-count-compatible renderpasses or pipelines. The new
+resource is not usable as a complete render target until Stage 4W.
+Do not claim MSAA Vulkan is ready, even for a single attachment.
+
+**Verification:** Source commit to GitHub succeeded. C++ compile
+**NOT RUN**, CTest **NOT RUN**, Vulkan device/validation **NOT RUN**.
+Native verification must check imageProps queries, allocation failure,
+memory release and compatibility with RenderTargetSet on Vulkan.
+
+**Next:** Build Vulkan `VkSubpassDescription::pResolveAttachments`
+with an explicit per-slot resolve mask, sample-matched color/depth
+attachments, pipeline multisample state and cache keys; all scoped
+resolve image views/framebuffers must be deferred until GPU completion.
+Then real validation layers and sampling tests. Record next code SHA
+and real verification status in a new append-only handoff entry.
