@@ -1318,3 +1318,23 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   about the active selected marker. It scales radii/storm extents but NOT
   wind velocity or force strengths. No new runtime authority or schema.
   See the Stage 21 handoff; GUI/CTest verification still pending.
+
+
+### PHYSIS Stage 22 — advanced Scene field gizmos
+
+- PHYSIS mouse controls in apps/editor/PhysisFieldEditor.h now include
+  optional box selection, 5 pivot choices, world-axis X/Y/Z handles,
+  Yaw-Y and Uniform Scale rings, and prior radius editor. Pure
+  apps/editor/PhysisGizmoGeometry.h is ImGui/genre independent.
+- Pivots are transient editor state. Group movement snaps the pivot and
+  preserves relative offsets; ring drag calculates from original JSON
+  via transformFields with baseline/firstEdit and a single Undo.
+  Every result gets full native parser validation before MapDoc write.
+- Never edit live ECS/Box3D/NEREID/TerraWeave state from scene authoring.
+  Yaw changes field positions, not orientation or wind velocity. The
+  current field types do not support unconstrained 3D quaternion rotation.
+- Independent engine/physis/PhysisFieldChangePlan.h may exist from
+  another agent; this is a planning helper only, not ECS hot reload.
+- Stage handoff docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
+  C++ fixtures authored but native compile/CTest/macOS visual QA NOT RUN;
+  keep PHYSIS PR #25 in draft.

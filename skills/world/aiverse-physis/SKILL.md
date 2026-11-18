@@ -223,3 +223,24 @@ rotates positions in X/Z and uniformly scales group spacing and spatial
 radii/heights; never treat it as orientation of the vector wind/force
 field itself. Native validation rejects the whole group if any radius,
 height or location is invalid. C++ and Scene UI tests NOT RUN.
+
+
+### Stage 22 — advanced PHYSIS Scene authoring
+
+Enable mouse marker editing for W/S/G field assets and optionally enable
+rectangle selection starting from empty Scene space. Ctrl/Shift adds
+projected centre markers. Pivot modes: Active, Average, Bounds Centre,
+World Origin or Custom XYZ. The world X/Y/Z handles are projected for
+hit testing but position changes use RTSCamera::screenRay and exact
+closestRayAxisParameter. Degenerate rays must not move fields.
+
+Rotate Y and Uniform Scale each have a horizontal projected ring.
+Use frozen JSON baseline and firstEdit/touched flags on transformFields
+so one mouse drag is one MapDoc Undo and every frame is computed from the
+same source, not accumulated. Yaw rotates positions only; scale changes
+spatial volumes and positions, not the force/velocity vectors. The
+authored FieldAssets ECS types have no quaternion orientation. No live ECS
+writeback or water/terrain/Box3D authority change.
+
+All C++ fixtures added are source-only, NOT RUN. Stage 22 handoff:
+docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.

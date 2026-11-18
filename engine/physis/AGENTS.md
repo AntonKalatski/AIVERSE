@@ -87,3 +87,25 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   Validate all outputs against canonical parser BEFORE writing MapDoc.
 - C++ fixture testGroupRotationAndScale has been authored but NOT RUN.
   No physics/runtime edit, new ECS component or save schema was introduced.
+
+
+## Stage 22 — PHYSIS editor ownership and gizmo safeguards
+
+- Pure scene math: apps/editor/PhysisGizmoGeometry.h. Mouse and ImGui:
+  apps/editor/PhysisFieldEditor.h. Do not include either in engine/physis.
+- Five pivot modes use physis_authoring::computeFieldPivot with selected
+  authored IDs. Pivots and selection are session-only, never ECS schemas.
+- World-axis X/Y/Z translation relies on RTSCamera::screenRay and exact
+  ray-axis closest point; skip near-parallel rays. Marquee captures only
+  opt-in empty-scene drag, not normal scene selection by default.
+- Rotation ring Y changes field centre POSITIONS, not wind/gravity force
+  vectors. Uniform scale adjusts source radii and storm heights as well as
+  spacing, NOT intensities. Do not claim full 3D quaternion orientation.
+- Dragging rotation/scale must pass initial JSON baseline to transformFields
+  with firstEdit=false after the initial edit, preserving one MapDoc Undo.
+  Validate the entire new authored config before writing; cancel on outside
+  doc revision changes. Never write live PHYSIS World from Scene.
+- A separate agent added pure PhysisFieldChangePlan.h. It is NOT an
+  authoritative ECS hot-reload implementation; keep concerns separate.
+- Stage handoff: docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
+  Source tests authored, native C++/CTest/macOS GUI NOT RUN.

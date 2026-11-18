@@ -500,3 +500,38 @@ scaling, volumetric 3D rotation gizmos and live ECS writeback are not
 implemented. Rotation uses editor double math and writes 3-decimal metre
 coordinates; authoritative runtime still reads quantized Fixed map inputs.
 New rotation/scale/Undo fixtures are authored but native CTest is NOT RUN.
+
+
+## Stage 22 — Scene marquee, pivot and 3D manipulation
+
+In Мир → PHYSIS · Природа opt into mouse editing and, separately, rectangle
+selection on empty Scene space. The rectangle selects projected W/S/G
+centres (including reverse drags), not whole source volumes. Ctrl/Shift
+adds to selection. Other Scene picking remains active when the tools are
+off.
+
+Pivot modes: Active, Average, Bounds Center, World Origin, Custom XYZ.
+These choices are session-only; no authored ECS/map schema changes.
+Move mode projects X/Y/Z axes and uses RTSCamera::screenRay plus the
+ray/axis closest point (not a screen delta) to move a group in world metres.
+Parallel/behind-eye solutions are rejected. Pivot-only snap preserves
+the internal arrangement of selected sources.
+
+Rotate Y provides a horizontal gold ring for turning selected source
+POSITIONS around the pivot. Uniform Scale provides a cyan ring and scales
+group spacing plus field radii/storm heights, not wind velocity, storm
+strength, gravity acceleration or orientation. The source components
+do not carry full 3D orientation; X/Z quaternion rotation is not implied.
+Radius still edits only the active field.
+
+Interactive yaw/scale uses transformFields with optional original baseline
+JSON and firstEdit. Every mouse update derives from the same initial map,
+and first effective change begins a single MapDoc Undo; subsequent updates
+use touched. A foreign MapDoc revision cancels such a drag. All candidates
+are checked by the canonical native parser before writing; no live World,
+NEREID, TerraWeave, Box3D, FPS or RTS mutation occurs.
+
+Source fixtures cover pivot rules, reverse rectangle, ray/axis degeneracy
+and frozen-baseline Undo. Native CTest/editor QA NOT RUN; GitHub Actions
+jobs observed queued only. See the Stage 22 handoff under
+docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
