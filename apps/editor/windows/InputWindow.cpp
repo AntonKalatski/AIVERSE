@@ -2,6 +2,7 @@
 // Do not apply these presentation mappings to the deterministic simulation.
 #include "../Editor.h"
 #include "engine/platform/EnhancedInputConfig.h"
+#include "engine/platform/EnhancedInputPresets.h"
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -143,6 +144,14 @@ public:
         if(ed.ws().project.isFps())
             ImGui::TextWrapped("FPS: this asset REPLACES ALL built-in actions, not just edited keys. "
                                "Save only a complete FPS action scheme.");
+        if(ImGui::Button("Use FPS defaults")) {
+            asset_=platform::enhanced_presets::fpsReference();dirty_=true;error_.clear();capture_.reset();
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Use RTS defaults")) {
+            asset_=platform::enhanced_presets::rtsReference();dirty_=true;error_.clear();capture_.reset();
+        }
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Replaces the mappings in this editor buffer; Save to persist.");
         if(ImGui::Button("Reload"))load(dir);
         ImGui::SameLine();
         if(ImGui::Button(dirty_?"Save changes *":"Save changes"))save(dir);
