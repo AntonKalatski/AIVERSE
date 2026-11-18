@@ -1652,3 +1652,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `5463a02005aef0873776980d9c8476bf2635ee3c`.
 - The main `tests/fps/tests.cpp` suite now invokes `ecsOrdinaryProjectileAuthorityParity()` immediately after programmed projectile stage parity. The function is implemented in `tests/fps/projectiles.inc` and covers both deep and COW snapshots and cross-mode v9 save replay. Existing CMake target `aiverse_fps_tests` and CTest `fps` already compile the include through tests.cpp, so no new target is needed.
 - **Verification:** code committed, not compiled or run. Native CTest `fps` must pass before releasing ECS-authoritative ordinary projectiles.
+
+
+### 2026-11-18 — Direct FPS ProjectileRuntime integration source audit (20/20)
+- Re-fetched the current branch's `FpsModule.h`, `FpsProjectiles.cpp`, `FpsModule.cpp`, FPS projectile and runner fixtures, AGENTS, public ECS projectile skill, whole-engine migration plan and this handoff (9 source/docs files).
+- **20/20 static invariants matched source:** shared helper declaration and single collision/modifier implementation; default and ECS routes call the same physical solver; ECS updates the `ProjectileRuntime` in place; deterministic `order` sorting; expiration after traversal; stable child runtime spawn and retirement of old DynamicEntityIndex keys; projection only after the ECS stage; correct hydrate/stage ordering; registered tests for deep/COW, authoritative direct mutation, ECS-only nonprogrammed insertion and v9 branch replay; agent skill/plan/handoff references are present.
+- **Verification scope strictly static:** these are source checks, **NOT** evidence of compilability or runtime parity. CMake, FPS tests, network transport, save round trip and Editor regressions remain unexecuted in this environment. Do not switch default ECS authority or delete compatibility writers.
+- Next: run native `aiverse_fps_tests`, `fps_transport`, `ctest -R 'fps|ecs_'` and Editor regression on a checkout with full game assets. Triage any C++ build/runtime failures before migrating remaining grenade/spawn/round gameplay.
