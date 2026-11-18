@@ -24,7 +24,7 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
                           "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX"};
 
 // Target roles inside one Sized set.
-enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41 };
+enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
@@ -206,8 +206,9 @@ Prisma::Target& Prisma::target(Sized& s, int role, int w, int h) {
     return t;
 }
 
-gfx::TextureHandle Prisma::depthFor(Sized& s, int w, int h) {
-    const uint64_t key = (uint64_t(uint32_t(w)) << 32) | uint32_t(h);
+gfx::TextureHandle Prisma::depthFor(Sized& s, int w, int h, bool scratch) {
+    const uint64_t key = (uint64_t(uint32_t(w)) << 32) | uint32_t(h) |
+                         (scratch ? (uint64_t(1) << 63) : 0);
     auto it = s.depths.find(key);
     if (it != s.depths.end()) return it->second;
     gfx::TextureDesc td;
@@ -230,6 +231,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kShaftsPre, nullptr, 1, "postfx shafts mask"},
         {prisma::kShafts, nullptr, 1, "postfx shafts"},
         {prisma::kFxaa, prisma::kFxaaHelpers, 1, "postfx fxaa"},
+        {prisma::kDepthOfField, nullptr, 3, "prisma depth of field"},
     };
     const Def& d = defs[p];
     Built b = buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body);
@@ -407,12 +409,51 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     };
     const float seed = float(frame_ % 61) * 0.173f;
 
-    // ---- FXAA: the composite reads the anti-aliased image instead of the scene
+    // ---- experimental depth of field: device-depth driven defocus
+    // The scene depth texture must NEVER be attached for depth writes while
+    // sampled, so a separate scratch depth attachment is used for this pass.
     Target src = scene;
+    if (const PrismaEffect* dof = find(PrismaType::DepthOfField)) {
+        const char* flag = std::getenv("AIVERSE_PRISMA_DOF");
+        if (flag && std::strcmp(flag, "1") == 0 &&
+            dof->get("intensity") > 0.0f && dof->get("maxBlur") > 0.0f &&
+            program(kDepthOfField).valid()) {
+            const Target destination = target(set, kDof, w, h);
+            const auto sceneDepth = depthFor(set, w, h);
+            const auto scratchDepth = depthFor(set, w, h, true);
+            if (sceneDepth.valid() && scratchDepth.valid() &&
+                destination.tex.valid() && scene.tex.valid()) {
+                SimpleU dofU{};
+                put(dofU.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
+                put(dofU.p0, dof->get("focusDepth"),
+                    dof->get("focusRange"), dof->get("maxBlur"),
+                    dof->get("intensity"));
+                gfx::PassDesc pass;
+                pass.colorTarget = destination.tex;
+                pass.depthTarget = scratchDepth;
+                pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0;
+                pass.clearColor[3] = 1;
+                dev.beginPass(pass);
+                dev.setViewport({0, 0, w, h});
+                dev.setPipeline(pipes_[kDepthOfField]);
+                dev.setVertexBuffer(triangle_);
+                dev.setUniforms(0, &dofU, sizeof dofU);
+                dev.setTexture(0, scene.tex);
+                dev.setTexture(1, sceneDepth);
+                dev.draw(3);
+                dev.endPass();
+                ++stats_.passes;
+                src = destination;
+            }
+        }
+    }
+
+    // ---- FXAA: the composite reads the anti-aliased image instead of the scene
     if (const PrismaEffect* e = find(PrismaType::Fxaa); !hdrFrame_ && e && program(kFxaa).valid()) {
         SimpleU u{};
         put(u.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
         put(u.p0, e->get("subpixel"), 0, 0, 0);
+        const Target fxaaInput = src;
         src = target(set, kAa, w, h);
         // Experimental Stage 14: only the SDR FXAA prepass uses the compiled
         // RenderGraph, with the same pipeline/uniforms/inputs as the fixed path.
@@ -439,7 +480,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 // already exist in the same per-view Sized allocator.
                 if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
                     auto& executor = *set.graphExecutor;
-                std::vector<gfx::TextureHandle> external{scene.tex, src.tex};
+                std::vector<gfx::TextureHandle> external{fxaaInput.tex, src.tex};
                 const auto run = executor.execute(
                     graph, plan, external,
                     [&](gfx::Device& gpu, PrismaGraphId,
@@ -463,7 +504,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             }
         }
         if (!graphDrawn)
-            draw(set, src, pipes_[kFxaa], &u, sizeof u, {{0, scene.tex}});
+            draw(set, src, pipes_[kFxaa], &u, sizeof u, {{0, fxaaInput.tex}});
     }
 
     // ---- bloom: prefilter -> dual-filter down chain -> up chain
