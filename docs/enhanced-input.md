@@ -178,3 +178,7 @@ In the editor's direct RTS play-test, the Game window uses the same semantic `Ca
 ### Project asset file safety
 
 `enhanced_config::loadAssetFile` / `saveAssetFile` in `engine/platform/EnhancedInputFileIO.h` validate the entire version-1 action/context schema before committing project-authored `input/actions.json`. Project files and per-user profiles now share the same temporary-file and backup/restore writer. The editor no longer deletes its existing project asset before an unverified rename. Invalid actions and controls leave existing project data unchanged.
+
+### RTS pointer Actions and camera zoom
+
+Default `RTS.Pointer` context provides `Select` (left click), `Command` (right click) and `CameraZoom` (mouse wheel Y). The generic RTS client now evaluates these through the normalized input adapter after RmlUi pointer ownership has been decided; its zoom uses the semantic Axis1D value. Drag selection, smart orders, touch ownership, garrison gestures and authored scripts remain their existing high-level handlers. The pointer context has non-consuming bindings so shared RTS mechanics can coexist with the new Actions.
