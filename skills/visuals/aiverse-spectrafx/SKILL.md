@@ -209,6 +209,77 @@ Validation includes the recording RHI regression and
 is a CTest **SKIP**, not PASS. Real Metal rendering and
 performance are not verified. See the Stage-14 handoff.
 
+## Cross-instance texture/material batching (Stage 14B)
+
+Use **one shared** `aiverse::spectra::BatchWorld` for independent
+native graph-effect instances that should be drawn together. Do not
+create a separate `ParticleSystem` or standalone
+`GraphRuntime::initEffect(gfx::Device*,...)` per effect source if
+cross-source draw batching is required.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::BatchWorld shared;
+shared.init(device, aiverse::fx::FxQuality::High);
+aiverse::spectra::GraphRuntime sourceA, sourceB;
+sourceA.initGraph(shared, graphA); // shared CPU sprite renderer
+sourceB.initGraph(shared, graphB);
+sourceA.burstAt({0,1,0}); sourceB.burstAt({1,1,0});
+
+// Exactly once per frame, outside gameplay ECS:
+shared.setView(camera, viewProj, width, height);
+shared.update(dt);
+// Inside the scene render pass:
+shared.draw(fog);  // one draw per compatible material run, not per instance
+sourceA.clear();   // kills only sourceA's handles
+sourceA.shutdown();
+sourceB.shutdown();
+shared.shutdown(); // shared BatchWorld must outlive all sources
+```
+
+`ParticleSystem` already globally batches *within one system* by
+actual RHI texture/atlas handle, blend mode and shader graph; quads
+and meshes are not merged into one primitive draw. Different UV
+rectangles in the same atlas can batch, even across different effect
+assets/instances. **Same texture with different blend or shader
+pipeline cannot safely batch**. Large runs split after 16,384 quads
+because of 16-bit indices. Keep existing renderer alpha-layer
+ordering semantics; do not collapse incompatible material states.
+
+The shared world's `defineEffect` deduplicates equivalent effect
+definitions, not visually different effect settings. Each
+`GraphRuntime` retains and kills only its own handles (bounded
+65,536 handle history). Shared-source `step()`, `setView()` and
+`draw()` are no-ops: the **host must call the BatchWorld's frame
+methods once**. This optional shared path intentionally forces CPU
+simulation and existing RHI renderer; `RequireGpu` fails rather than
+silently losing GPU expectations. Independent Metal GPU
+`ComputeParticles` objects do not yet coalesce across instances.
+
+Regression: `aiverse_vfx_shared_batch_tests` /
+`ctest -R '^vfx_shared_batch_world
+
+VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
+
+Use CMake target `AIVERSE::spectrafx` in a native project. Validate with:
+
+```bash
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+**Verification status:** these tests are committed, not proven passing. Never mark them successful based on source presence.
+
+**Handoff requirement:** every bounded implementation stage must end with a separate dated append to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` in the SAME branch, including implementation/test commit SHA, exact tests executed and their outputs, API/format changes, risks and the next step.
+` uses a recording RHI Device
+to assert exactly one draw across two effects using the same atlas,
+two draws for incompatible blend states, and source-scoped cleanup.
+This is a source test until actual CI confirms a pass. See the
+Stage 14B handoff before extending GPU pooling.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
