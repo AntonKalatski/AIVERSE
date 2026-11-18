@@ -71,6 +71,14 @@ bool BatchWorld::setProgramParameter(fx::FxHandle h,uint32_t slot,float value,
                                      bool affectExisting) {
     return initialized_ && particles_.setProgramParameter(h,slot,value,affectExisting);
 }
+fx::FxHandle BatchWorld::playWithProgramParameters(
+    int effect,fx::float3 position,fx::float3 direction,float scale,
+    fx::float4 tint,const std::array<float,8>& params) {
+    return initialized_
+        ? particles_.playWithProgramParameters(effect,position,direction,
+                                                scale,tint,params)
+        : fx::FxHandle{};
+}
 void BatchWorld::move(fx::FxHandle h, fx::float3 pos) {
     if (initialized_) particles_.move(h, pos);
 }
