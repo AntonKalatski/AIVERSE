@@ -245,6 +245,7 @@ void appliedReceiptAfterRollback() {
     CHECK(client.status()==ClientStatus::Applied);
     CHECK(registry(*sim).revision==1);
     c1->close();s1->close();
+    client.disconnected();
     sim->loadState(original);
     CHECK(registry(*sim).revision==0);
     gateway.observe(*sim);

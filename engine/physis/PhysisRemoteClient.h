@@ -35,16 +35,18 @@ public:
     // contains its authoritative CURRENT revision. This is discovery, not
     // a command, and requires the authenticated host's read permission.
     bool requestRevision() {
-        if(!instance_ || !nextId_ || probeId_ || waiting())return false;
+        if(!instance_ || !nextId_ || probeId_ || unresolved())return false;
         probeId_=nextId_++;
         probeAttempts_=0;
         probeNextMs_=0;
         knownRemoteRevision_=false;
         return true;
     }
+    bool unresolved() const {
+        return active_.has_value() && !terminal(receipt_.result);
+    }
     bool waiting() const {
-        return active_.has_value() && !terminal(receipt_.result) &&
-               status_!=ClientStatus::Uncertain;
+        return unresolved() && status_!=ClientStatus::Uncertain;
     }
 
     bool begin(const FieldEditBatch& edit,std::uint16_t hostCommandType,

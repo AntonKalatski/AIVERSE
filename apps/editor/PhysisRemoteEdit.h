@@ -33,7 +33,7 @@ public:
             if(error)*error="PHYSIS remote route needs authenticated connection and IDs";
             return false;
         }
-        if(client_ && client_->waiting() &&
+        if(client_ && client_->unresolved() &&
            (client_->instance()!=clientInstance ||
             editorPlayerSlot_!=editorPlayerSlot ||
             commandType_!=reservedCommandType)) {
@@ -96,7 +96,7 @@ public:
         }
     }
     void refreshRevision() {
-        if(client_ && !client_->waiting())(void)client_->requestRevision();
+        if(client_ && !client_->unresolved())(void)client_->requestRevision();
     }
     void retryOutstanding() {
         if(client_)client_->retry();
