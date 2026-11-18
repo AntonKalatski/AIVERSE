@@ -1000,3 +1000,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `f67c3ebe5e2177bfef772b45135c167bb4d0f7c2`.
 - Added `tests/ecs_fixed_regeneration_policy_test.cpp`: compares the new generic policy to the exact original RTS Fixed expression across positive/negative rates, varying caps and fractional values; additionally checks saturation and negative energy regeneration behavior.
 - Verification: GitHub commit succeeded; **no native compilation or test execution**. Next: register in CMake, standalone ECS runner, catalog test dependency, then check actual RTS scenario checksums.
+
+
+### 2026-11-18 — Regen policy CTest registration
+- Implementation SHA: `4612b8509791f535fd1e5b7d1caae15b243ef64d`.
+- Registered `aiverse_ecs_fixed_regeneration_policy_test` under CMake CTest using public `AIVERSE::lib_ecs_timed_mechanics` and engine headers; independent of RTS/FPS module linkage.
+- Verification: CMake text committed; **configure/compile/CTest not run**. Next: include fixture in standalone ECS suite, update catalog/skill, check native results.
