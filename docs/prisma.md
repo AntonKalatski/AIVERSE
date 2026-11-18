@@ -519,6 +519,57 @@ This is an opt-in source implementation with **NO native/GPU tests run**,
 per the user's features-first request. Do not enable it globally until
 verified. Handoff: `docs/handoffs/prisma-stage-23.md`.
 
+
+## Stage 24 — independent camera history and weighted GPU metering
+
+The presentation-only API `Prisma::setViewId(uint64_t id)` selects a
+**stable** camera/view identifier before rendering. `viewId() const`
+returns it. A view's two 1x1 RGBA16F exposure-history render targets,
+adaptation timestamp, valid bit and ping-pong index now live in
+`Prisma::exposureViews_`, keyed by that ID **instead of render dimensions**.
+`resetAutoExposure(id)` invalidates one view; the no-argument overload
+invalidates every view. The older target caches remain keyed by size
+for sharing ordinary temporary textures; exposure *history* no longer
+cross-contaminates identically sized Scene and Game cameras.
+
+The editor sets view IDs `1` for Scene and `2` for Game before
+`applyCameraVolumes`; `GameClient` uses ID `3` within its
+own PRISMA instance. A native project that renders multiple cameras
+must assign distinct IDs itself. The default ID remains `0` for
+legacy native projects. Exposure histories are retained until
+`Prisma::shutdown` (no automatic per-camera removal/fence retirement
+yet). IDs must be stable, not increment every frame.
+
+`autoExposure` has four additional configurable parameters:
+- `centerWeight` (default 0, range 0..1): 0 = uniform metering,
+  1 = strongly center-weighted.
+- `centerRadius` (default 0.35, range 0.05..1):
+  normalized radius for Gaussian center weighting.
+- `minMeterLogL` (default -10, range -16..0) and
+  `maxMeterLogL` (default 10, range 0..16):
+  clamp individual pixel log2 luminance in the initial HDR
+  metering pass, reducing extreme brightness influence.
+  This is not percentile-based histogram clipping.
+
+The first pyramid pass now outputs two channels: weighted sum of
+log2 luminance (R) and sum of weights (G); each later 2x2 pass reduces
+both components identically. The 1x1 adaptation shader divides R/G
+before computing target EV. No CPU readback, additional fullscreen
+texture or extra raster pass is required compared with Stage 23.
+The format stays RGBA16F throughout.
+
+Example `postfx.effects` entry:
+```json
+{"type":"autoExposure","keyValue":0.18,
+ "centerWeight":0.75,"centerRadius":0.35,
+ "minMeterLogL":-8,"maxMeterLogL":6}
+```
+
+All rendering remains opt-in via `AIVERSE_PRISMA_AUTO_EXPOSURE=1`,
+High-tier HDR only. Existing `postfx` schema is extended, not migrated.
+CMake, CTest and real Metal/GL validation are **NOT RUN** as requested.
+See `docs/handoffs/prisma-stage-24.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
