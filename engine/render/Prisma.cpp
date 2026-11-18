@@ -19,12 +19,13 @@ enum : uint32_t {
     kPfPixelate = 1u << 0, kPfCa = 1u << 1, kPfSharpen = 1u << 2, kPfTilt = 1u << 3, kPfBloom = 1u << 4,
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
+    kPfAutoExposure = 1u << 13,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE"};
 
 // Target roles inside one Sized set.
-enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50 };
+enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
@@ -156,6 +157,10 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
+void Prisma::resetAutoExposure() {
+    for (auto& s : sizes_) { s.exposureValid = false; s.exposureTime = 0; }
+}
+
 bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PrismaQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
     HdrMode mode = settings_.hdr;
@@ -232,6 +237,9 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kShafts, nullptr, 1, "postfx shafts"},
         {prisma::kFxaa, prisma::kFxaaHelpers, 1, "postfx fxaa"},
         {prisma::kDepthOfField, nullptr, 3, "prisma depth of field"},
+        {prisma::kExposureLog, nullptr, 1, "prisma exposure luminance"},
+        {prisma::kExposureReduce, nullptr, 1, "prisma exposure reduce"},
+        {prisma::kExposureAdapt, nullptr, 3, "prisma exposure adapt"},
     };
     const Def& d = defs[p];
     Built b = buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body);
@@ -264,12 +272,13 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
-    for (int i = 0; i < 13; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
+    for (int i = 0; i < 14; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
     if (mask & kPfBloom) tex |= 2;
     if (mask & kPfTilt) tex |= 4;
     if (mask & kPfShafts) tex |= 8;
     if (mask & kPfLut) tex |= 16;
+    if (mask & kPfAutoExposure) tex |= (1u << 8);
     std::string body = prisma::kComposite;
     graph::Program graphProgram;
     if (graphData) {
@@ -292,7 +301,8 @@ gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     }
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = 5+int(graphProgram.textures.size()); sd.uniformSlots = 1; sd.label = "postfx composite";
+    sd.textureSlots = (mask & kPfAutoExposure) ? 9 : 5+int(graphProgram.textures.size());
+    sd.uniformSlots = 1; sd.label = "postfx composite";
     gfx::ShaderHandle sh = dev_->createShader(sd);
     if (!sh.valid()) {
         compositeFailed_[key] = true;
@@ -408,6 +418,78 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         return nullptr;
     };
     const float seed = float(frame_ % 61) * 0.173f;
+
+    // ---- Stage 23: GPU-only HDR eye adaptation (linear scene -> log luminance
+    // pyramid -> 1x1 exposure ping-pong). The 1x1 multiplier is applied in
+    // composite BEFORE tone mapping; never post-process UI/HUD.
+    gfx::TextureHandle automaticExposure;
+    const PrismaEffect* autoEffect = find(PrismaType::AutoExposure);
+    const char* autoFlag = std::getenv("AIVERSE_PRISMA_AUTO_EXPOSURE");
+    const bool autoRequested = hdrFrame_ && autoEffect && autoFlag &&
+        std::strcmp(autoFlag, "1") == 0;
+    if (autoRequested && program(kExposureLog).valid() &&
+        program(kExposureReduce).valid() && program(kExposureAdapt).valid()) {
+        gfx::TextureHandle source = scene.tex;
+        int pw = w, ph = h;
+        bool valid = source.valid();
+        for (int level = 0; valid && (pw > 1 || ph > 1) && level < 15; ++level) {
+            const int nextW = std::max(1, (pw + 1) / 2);
+            const int nextH = std::max(1, (ph + 1) / 2);
+            const Target mip = target(set, kExposureMip + level, nextW, nextH);
+            if (!mip.tex.valid() || !depthFor(set, nextW, nextH).valid()) {
+                valid = false;
+                break;
+            }
+            SimpleU measure{};
+            put(measure.px, 1.0f / float(pw), 1.0f / float(ph), flip, 0);
+            draw(set, mip, pipes_[level == 0 ? kExposureLog : kExposureReduce],
+                 &measure, sizeof measure, {{0, source}});
+            source = mip.tex;
+            pw = nextW; ph = nextH;
+        }
+        // A 1x1 scene input still needs logarithmic luminance encoding.
+        if (valid && pw == w && ph == h) {
+            const Target mip = target(set, kExposureMip, 1, 1);
+            if (mip.tex.valid() && depthFor(set, 1, 1).valid()) {
+                SimpleU measure{};
+                put(measure.px, 1, 1, flip, 0);
+                draw(set, mip, pipes_[kExposureLog], &measure, sizeof measure,
+                     {{0, scene.tex}});
+                source = mip.tex;
+            } else valid = false;
+        }
+        // Avoid running the history filter with a partially reduced image.
+        valid = valid && pw == 1 && ph == 1;
+        const int nextIndex = 1 - set.exposureCurrent;
+        const Target nextExposure = target(set, kExposureHistory + nextIndex, 1, 1);
+        const Target prevExposure = target(set, kExposureHistory + set.exposureCurrent, 1, 1);
+        if (valid && nextExposure.tex.valid() && prevExposure.tex.valid() &&
+            depthFor(set, 1, 1).valid()) {
+            const double timeNow =
+                std::chrono::duration<double>(std::chrono::steady_clock::now()
+                    .time_since_epoch()).count();
+            const float dt = set.exposureValid && set.exposureTime > 0
+                ? std::clamp(float(timeNow - set.exposureTime), 0.0f, 0.1f)
+                : 0.0f;
+            SimpleU adapt{};
+            put(adapt.px, 1, 1, flip, 0);
+            put(adapt.p0, dt, autoEffect->get("speedUp"),
+                autoEffect->get("speedDown"), set.exposureValid ? 1.0f : 0.0f);
+            put(adapt.sun, autoEffect->get("keyValue"),
+                autoEffect->get("minEV"), autoEffect->get("maxEV"),
+                autoEffect->get("compensation"));
+            draw(set, nextExposure, pipes_[kExposureAdapt], &adapt, sizeof adapt,
+                 {{0, source}, {1, set.exposureValid ? prevExposure.tex : black_}});
+            set.exposureCurrent = nextIndex;
+            set.exposureValid = true;
+            set.exposureTime = timeNow;
+            automaticExposure = nextExposure.tex;
+        } else {
+            set.exposureValid = false;
+        }
+    } else {
+        set.exposureValid = false;
+    }
 
     // ---- experimental depth of field: device-depth driven defocus
     // The scene depth texture must NEVER be attached for depth writes while
