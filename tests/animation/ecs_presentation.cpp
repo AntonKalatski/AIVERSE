@@ -2,6 +2,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+
+// Host tests do not link the platform runtime, matching animation_graphs.
+namespace aiverse::platform { bool readContentFile(const std::string&,std::string&){return false;} }
 using namespace aiverse;
 using namespace aiverse::render;
 using namespace aiverse::lib::animation;
