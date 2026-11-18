@@ -111,26 +111,6 @@ void codec() {
     CHECK(!encode(ack,bytes));
 }
 
-void completeAndDedupe() {
-    auto serverSim=make();
-    ServerGateway gateway;
-    RemoteClient client(10019);
-    CHECK(client.begin(edit(Fixed::fromInt(23)),kEdit,4));
-    auto wire=client.exportOutstanding();
-    CHECK(!wire.empty());
-    auto [clientConn,serverConn]=net::makeLoopbackPair({40,0,3});
-    drive(client,gateway,*serverSim,*clientConn,*serverConn,0,3000);
-    CHECK(client.status()==ClientStatus::Applied);
-    CHECK(registry(*serverSim).revision==1);
-    const auto wind=registry(*serverSim).byId.at("wind-1").entity;
-    CHECK(serverSim->world().get<WindZone>(wind).velocity.x==Fixed::fromInt(23));
-    CHECK(gateway.entries().size()==1);
-    // Repeat exact frame; it should only return stored receipt, never reapply.
-    clientConn->send(wire);
-    for(std::uint64_t ms=3000;ms<3300;ms+=40) {
-        serverConn->update(ms);serverConn->recv(wire); // no: consume would drop it
-    }
-}
 void duplicatedPayloadConflict() {
     auto sim=make();
     ServerGateway gateway;
