@@ -854,3 +854,14 @@ ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_
 **Latest CI status at inspection:** GitHub Actions on `e60f7b56af735a31eb2230545e9c9ff1e9b95997` had workflow `44312460446` (InputFlow targeted), `44312460447` (Studio), and `44312460421` (full CI) **queued**, not PASS. The input branch is still divergent from `feature/universal-entity-inspector-fps` (ahead 309, behind 136 at inspection). Do not merge without resolving current upstream changes and compiling/testing the integration.
 
 **Next validation step:** On the user's macOS checkout run `./run-tests.sh --jobs 4 --ctest-jobs 4` (Debug, editor + comprehensive test build), and record `git rev-parse --short HEAD`, the latest `build/all-tests/test-reports/*/summary.txt`, and compiler/CTest errors if any. If this passes, run the separate native FPS + RTS client builds and GUI/play-device smoke; then inspect current multi-platform CI. PR #20 remains Draft until those additional checks are green.
+
+
+## Stage 58 — editor InputFlow window access modifier compile fix (2026-11-18)
+
+**User-reported macOS compiler evidence:** The full `./run-tests.sh` Debug editor build reached approximately 95%, then Clang failed to compile `apps/editor/windows/InputWindow.cpp:139`: `'isWindowInFront' is a private member of 'aiverse::editor::Editor'`. `apps/editor/Editor.h:299` declared the method private. `InputWindow::update(Editor&,double)` uses it to cancel pending keyboard rebinding capture when the docked InputFlow window loses its front tab. The full test runner reported `FAIL build (exit 2)` and stopped before CTest.
+
+**Fix:** Expose the existing `bool Editor::isWindowInFront(EditorWindow* w) const` declaration in the public windows API in `apps/editor/Editor.h`; remove only the duplicate private declaration. Preserve `Editor.cpp` implementation, `InputWindow` logic, editor keyboard capture semantics, input mappings and ECS Commands. The editor already called this helper internally for hosted-client focus routing, so its semantics are unchanged. Code commit: `570f6ae627c8023b39a39190030c66f458f58af2`.
+
+**Validation:** change committed, **macOS rebuild NOT YET RUN** after fix. Previous four dedicated InputFlow CTest suites passed on user's macOS; the full editor build had not passed at the reported SHA. No CI/GUI PASS is claimed for this fix.
+
+**Next local step:** after `git pull --ff-only origin feature/aiv990_enhanced_input`, run `./run-tests.sh --jobs 4 --ctest-jobs 4`; because the test runner configures and builds, this will recompile the changed editor header and run CTest only if compilation succeeds. If it still fails, record first compiler error plus latest `build/all-tests/test-reports/*/build.log`. After all tests pass, validate direct editor InputFlow Actions capture and hosted-client focus. Keep PR #20 Draft until full verification.
