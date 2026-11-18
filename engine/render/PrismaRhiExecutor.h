@@ -28,6 +28,9 @@ inline bool prismaRhiFormat(PrismaGraphFormat in, gfx::PixelFormat& out) {
 struct PrismaRhiExecution {
     bool success = false;
     size_t passes = 0;
+    // Logical resource handles for this execution; internal handles remain
+    // owned by the persistent executor, not by the caller.
+    std::vector<gfx::TextureHandle> resources;
     std::string error;
 };
 
@@ -167,6 +170,16 @@ public:
         PrismaGraphBindings<gfx::TextureHandle> bindings;
         bindings.external = external;
         bindings.slots = std::move(prepared.slots);
+        result.resources.resize(graph.resources().size());
+        for (size_t i = 0; i < graph.resources().size(); ++i) {
+            if (graph.resources()[i].external) {
+                result.resources[i] = external[i];
+            } else {
+                const int slot = plan.resources[i].slot;
+                if (slot >= 0 && static_cast<size_t>(slot) < bindings.slots.size())
+                    result.resources[i] = bindings.slots[static_cast<size_t>(slot)];
+            }
+        }
         auto dispatched = dispatchPrismaGraph(graph, plan, bindings,
             [&](const PrismaGraphPass& pass, PrismaGraphId id,
                 const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
