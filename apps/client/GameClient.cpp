@@ -720,7 +720,7 @@ void GameClient::event(const Event& incoming) {
         }
         panning_ = false;
         break;
-    case EventType::MouseWheel:
+    case EventType::MouseWheel: {
         if (uiWants) return;
         // Mouse wheel drives semantic CameraZoom (potentially rebound/scaled per project).
         const auto* zoom=inputShortcuts_.system().state("CameraZoom");
@@ -728,6 +728,7 @@ void GameClient::event(const Event& incoming) {
             cam_.distance=std::clamp(cam_.distance*std::pow(0.88f,zoom->value.x),
                                      cam_.minDistance,cam_.maxDistance);
         break;
+    }
     case EventType::TouchBegin:
         if (uiWants && touches_.empty()) return;
         touches_[e.touchId] = {e.x, e.y};
