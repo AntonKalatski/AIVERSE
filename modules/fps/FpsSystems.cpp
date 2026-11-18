@@ -2,6 +2,7 @@
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
 #include "libraries/include/aiverselib/genre/EcsHitscanSystems.h"
 #include "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+#include "libraries/include/aiverselib/genre/EcsDamageSystems.h"
 #include <algorithm>
 #include <optional>
 namespace aiverse::fps {
@@ -103,7 +104,10 @@ void Module::damage(Simulation& sim,uint8_t source,Actor& targetView,int32_t amo
             bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;
             if(teammate){for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
         }
-        target.health=std::max(0,target.health-amount);
+        // Use the identical immediate integer HP commit as the generic ECS
+        // DamageResolutionSystem. Armor/gear, knockdown, kill credit, loot
+        // and events remain in their original same-tick order.
+        lib::genre::applyIntegerHitPointDamage(target.health,amount);
         if(target.health)return;
         target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
         if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
