@@ -99,6 +99,7 @@ public:
     // ---------------- API for windows ----------------
     Workspace& ws() { return ws_; }
     MapDoc& doc() { return ws_.map; }
+    const MapDoc& doc() const { return ws_.map; }
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
