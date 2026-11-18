@@ -56,6 +56,7 @@ jobs:
             aiverse_physis_storm_test \
             aiverse_physis_forces_test \
             aiverse_physis_presentation_test \
+            aiverse_physis_diagnostics_test \
             aiverse_physis_box3d_test
       - name: CTest PHYSIS (includes real Box3D Scene)
         shell: bash
