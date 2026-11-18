@@ -1961,3 +1961,18 @@ fallback on changed terrain vertex/topology.
 terrain height/colour changes, only if generic Model/GPU buffer
 semantics allow safe use without introducing a new renderer.
 This is NOT implemented; do not claim it is.
+
+## Stage 12a — dedicated geometry ownership for mutable Horizon (COMMITTED; NOT TESTED)
+
+**Branch:** `feature/terraweave`; PR #24 Draft. Latest main had previously been merged as `7f1cedde055a58e0b12a224a6e2f9b1dfd89b8d0`; refetch before any next edit because multiple agents work on this repository.
+
+**Commits / source:**
+- `a332bd8e7da8d4a4646236fdcbf1144be9f0c3c4` — `engine/render/Model.h`: adds `Model::batching.allowGeometryPool` (default `true`) as a generic native-model opt-out.
+- `7baba8a08efa39455fe32b70e4369e8ae8d98f33` — `engine/render/GlobalGeometryPool.cpp`: `canPool` honors the opt-out before sharing a GPU arena page.
+- `017b4652a8c6055a838a5762f4cac893bd29771c` — `engine/render/TerraWeaveHorizonModel.h`: sets `allowGeometryPool=false` on Horizon models that may need partial VB writes.
+
+**Reason:** `uploadModel` may otherwise place any rigid, static Horizon vertex/index arrays in `GlobalGeometryPool` and set `gpuBaseVertex`/`gpuFirstIndex`, meaning a naive model-local `gfx::Device::updateBuffer` could overwrite OTHER models' geometry. Explicit opt-out retains existing per-model dedicated GPU VB/IB through the standard RHI. All non-Horizon models keep the default pooling policy; no graphics API or genre-specific engine core added.
+
+**Actual verification:** GitHub commit/write success and static source inspection ONLY. User explicitly assigned all CMake, CTest, CI, sanitizer and GPU testing to another agent. No test results inferred.
+
+**Next action:** implement a pure CPU vertex-patch planner which validates identical index topology, retained bounds, unchanged crossed-card vertices and a small modified terrain vertex fraction. Integrate a render-thread RHI `updateBuffer` path with a guaranteed full-upload fallback and document it as a distinct handoff stage.
