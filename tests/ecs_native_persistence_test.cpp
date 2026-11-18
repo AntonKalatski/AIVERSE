@@ -50,7 +50,8 @@ int main(){
     auto s=make(),reverse=make(true,true);
     check(s->serialize()==reverse->serialize(),"registration order changed bytes");
     check(s->checksum()==reverse->checksum(),"registration order changed hash");
-    auto legacy=make(false),legacyBytes=legacy->serialize();
+    auto legacy=make(false);
+    const std::string legacyBytes=legacy->serialize();
     check(uint8_t(legacyBytes[4])==9,"legacy format changed");
     check(uint8_t(s->serialize()[4])==10,"native save not version 10");
     Entity e=static_cast<Host&>(s->module()).entity;
@@ -100,7 +101,8 @@ int main(){
 
     // Failed loads must not mutate Simulation-managed state.
     auto victim=make();
-    auto before=victim->serialize(),originalHash=victim->checksum();
+    const std::string before=victim->serialize();
+    const uint64_t originalHash=victim->checksum();
     auto broken=save.substr(0,save.size()-5);
     check(!victim->deserialize(broken,&error),"accepted truncated state");
     check(victim->checksum()==originalHash && victim->serialize()==before,
