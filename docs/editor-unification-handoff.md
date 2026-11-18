@@ -1112,3 +1112,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Code/documentation SHA: `26a829866a87ca90e2815df7b94115b8f7c8cba9`.
 - Added `skills/gameplay/aiverse-ecs-ordered-impact/SKILL.md`: tells project agents to use reusable ECS impact ordering independently of projectile motion mode, preserve per-projectile direct/on-hit/splash sequencing, and inject project-specific armor, faction, Lua/status policies. Documents real RTS integration scope and pending FPS/ability adapters.
 - Verification: skill file committed, not executed; catalog package target named by the skill must be registered in the next change.
+
+### 2026-11-18 — Public native package registration for ordered ECS impact
+- Implementation SHA: `3bf1227543d3f5758fca69a8a8423cb50a295dde`.
+- Updated `libraries/catalog.json` to publish `ecs-ordered-impact` at `AIVERSE::lib_ecs_ordered_impact` with the public policy header and AI skill. The CMake catalog-driven INTERFACE target mechanism provides the root/include directories and `aiverse_engine` dependency without a collision-world library. The modified catalog was parsed with JSON.parse and duplicate IDs were rejected before commit.
+- Native CMake configure, C++ build and test execution remain **not performed**. Use the existing `ecs_kinematic_projectile_test` registered target to exercise the ordered resolver.
