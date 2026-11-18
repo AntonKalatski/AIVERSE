@@ -73,7 +73,15 @@ public:
             return {};
         }
         const auto existing = active_.find(key);
-        if (existing != active_.end()) return {existing->second};
+        if (existing != active_.end()) {
+            // Multiple viewers may want the same page. A later pinned
+            // fallback request upgrades the existing pending upload.
+            if (pin) {
+                const auto request = requests_.find(existing->second);
+                if (request != requests_.end()) request->second.pin = true;
+            }
+            return {existing->second};
+        }
         if (atlas_.resolveExact(key).valid()) {
             if (pin) atlas_.pin(key,true);
             error_ = "virtual page is already resident";
@@ -200,6 +208,26 @@ public:
     }
 
     bool ready() const { return initialized_ && atlas_.ready(); }
+    // Read-only exact residency / in-flight status for prefetch planning.
+    // Parent fallback from resolve() is NOT sufficient: detail mip
+    // requests must still reach the streaming worker.
+    bool exactResidentPage(VirtualPageKey key) const {
+        return ready() && atlas_.resolveExact(key).valid();
+    }
+    bool pendingPage(VirtualPageKey key) const {
+        return initialized_ && active_.find(key) != active_.end();
+    }
+    bool pinPage(VirtualPageKey key, bool pinned = true) {
+        if (!ready()) return false;
+        const auto pending = active_.find(key);
+        if (pending != active_.end()) {
+            const auto req = requests_.find(pending->second);
+            if (req == requests_.end()) return false;
+            req->second.pin = pinned;
+            return true;
+        }
+        return atlas_.pin(key,pinned);
+    }
     TextureHandle physicalAtlas() const { return ready()?atlas_.physicalAtlas():TextureHandle{}; }
     TextureHandle pageTableTexture() const { return ready()?atlas_.pageTableTexture():TextureHandle{}; }
     VirtualPageAllocation resolve(VirtualPageKey key) const {
