@@ -53,6 +53,21 @@ int main() {
     ps.snapshot(particles);
     check(!particles.empty(), "compiled effect should emit particles");
 
+    // Editor visual node coordinates must survive serialization but not alter compilation.
+    Json placed=base;
+    placed.find("nodes")->at(0).set("position",Json::parse("[125.5,-72]"));
+    check(spectra::compileGraph(placed,effect,errors),"valid visual node coordinates rejected");
+    check(effect.emitters.size()==2 && effect.emitters[0].burst==6,
+          "node layout metadata changed compiled effect");
+    Json wrongPosition=placed;
+    wrongPosition.find("nodes")->at(0).set("position",Json::parse("[1]"));
+    check(!spectra::compileGraph(wrongPosition,effect,errors),
+          "invalid node layout metadata accepted");
+    wrongPosition=placed;
+    wrongPosition.find("nodes")->at(0).set("position",Json::parse("[1000001,0]"));
+    check(!spectra::compileGraph(wrongPosition,effect,errors),
+          "unbounded canvas coordinates accepted");
+
     const Json override = Json::parse(R"JSON({"size":2})JSON");
     check(spectra::compileGraph(base,override,effect,errors), "override compile");
     check(effect.emitters[0].size.min==2.0f, "parameter override lost");
