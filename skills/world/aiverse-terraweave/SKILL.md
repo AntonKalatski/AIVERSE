@@ -490,3 +490,32 @@ Tests and GPU screenshots remain the
 separate testing agent's responsibility;
 the feature agent must label results
 NOT RUN until actual evidence exists.
+
+## Filtered far-ground / canopy transition (Stage 15)
+
+When modifying Horizon transitions, never blend two
+full combined distant terrain meshes. Use the engine
+generic `ModelDraw::primitiveMaterialFilter`:
+
+- `-1` is the normal entire model (steady-state);
+  default native project behavior remains unchanged.
+- Source material `0` is one **opaque incoming**
+  far-ground layer during crossfade; draw it only once.
+- Source material `1` is the forest cluster canopy:
+  fade outgoing/incoming models using existing
+  `Renderer3D` transparent tint alpha. Partial draws
+  bypass aggregate shadow/material batches and
+  static cache; don't add a GPU model copy or
+  separate GL/Metal/Vulkan implementation.
+- Transient material-filtered draws use no persistent
+  scene identity or static light-bake capture. The
+  steady state returns to full unfiltered static draw.
+- A→B→A while fading should reclaim the old GPU
+  model directly from transition ownership; don't
+  force it through a one-slot LRU that could evict it.
+  Teleports outside the old far-footprint skip
+  stale proxy submission until a new one arrives.
+- The existing GPU cache/revision/budget checks and
+  render-thread release remain mandatory.
+  Document alpha/skyline limitations and leave
+  CMake/CTest/device validation to the testing agent.
