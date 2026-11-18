@@ -87,6 +87,7 @@ public:
             if(!seen.emplace(incoming[i].id,i).second)
                 throw std::invalid_argument("nereid.scene: duplicate water id");
         }
+        retired_.reserve(retired_.size()+slots_.size());
         // Preallocate before moving GPU owners: invalid input never touches
         // the current snapshot, and slots keep identity across reorder.
         std::vector<Slot> next;next.reserve(incoming.size());
