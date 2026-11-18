@@ -17,7 +17,7 @@ namespace aiverse::render {
 enum class PrismaGraphFormat : uint8_t { RGBA8, RGBA16F, RG16F, R32F, Depth32F };
 enum class PrismaGraphPassKind : uint8_t { Raster, Compute, Copy };
 using PrismaGraphId = uint32_t;
-inline constexpr PrismaGraphId kInvalidPrismaGraphId = UINT32_MAX;
+inline constexpr PrismaGraphId kInvalidPrismaGraphId = std::numeric_limits<PrismaGraphId>::max();
 
 struct PrismaGraphResource {
     std::string name;
