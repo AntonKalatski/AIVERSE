@@ -5,11 +5,14 @@
 #pragma once
 
 #include "engine/render/TerraWeaveForestAdapter.h"
+#include "engine/world/AsyncChunkStream.h"
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -24,6 +27,10 @@ struct ForestSceneSettings {
     int32_t chunkSizeCm = 6400;       // signed world-space lattice tiles
     uint32_t radiusChunks = 4;        // residency extent around observer
     uint32_t maxResidentChunks = 64;  // hard CPU cache bound
+    bool asynchronous = false;        // opt in; synchronous native API remains source compatible
+    uint32_t maxPendingJobs = 3;      // 1..8; bounded queue and reserved bytes
+    uint32_t requestsPerUpdate = 2;  // 1..8
+    uint32_t publicationsPerUpdate = 2; // 1..8
     FloraView view{0, 0, 3000, 9000, 12000, 24000, 650, 3000};
 };
 
@@ -32,6 +39,7 @@ struct ForestSceneStats {
     size_t instances = 0;
     size_t species = 0;
     uint64_t revision = 0;
+    size_t preparing = 0, discarded = 0; // asynchronous streaming diagnostics
 };
 
 // Header-only native-project API. Call addSpecies before streamAt/uploadModels.
@@ -51,7 +59,11 @@ public:
             settings_.maxResidentChunks == 0 ||
             settings_.maxResidentChunks > 289 ||
             settings_.scatter.spacingCm <= 0 ||
-            settings_.scatter.densityPermille > 1000)
+            settings_.scatter.densityPermille > 1000 ||
+            settings_.maxPendingJobs == 0 || settings_.maxPendingJobs > 8 ||
+            settings_.requestsPerUpdate == 0 || settings_.requestsPerUpdate > 8 ||
+            settings_.publicationsPerUpdate == 0 ||
+            settings_.publicationsPerUpdate > 8)
             throw std::invalid_argument("TerraWeave forest scene settings");
         // Bound scatter candidate work across the WHOLE cache, not merely
         // each chunk. Tiny spacing and a large radius must not allocate
@@ -63,6 +75,7 @@ public:
         if (perChunk > 65536 ||
             perChunk * settings_.maxResidentChunks > 1000000)
             throw std::invalid_argument("TerraWeave forest scatter candidate budget");
+        asyncReservation_ = 4096 + static_cast<size_t>(perChunk) * sizeof(FoliageInstance);
         // Validate LOD/far transition settings before first draw.
         (void)buildFloraBatches({}, settings_.view);
     }
@@ -113,6 +126,15 @@ public:
         patches_.clear();
         ++revision_;
         if (revision_ == 0) revision_ = 1;
+        // Live async jobs capture immutable configuration snapshots. Removing
+        // a catalog key cancels its publication while its staging reservation
+        // stays held until the worker completes and update() drains it.
+        if (async_) {
+            for (const world::Cell& cell : asyncCatalog_)
+                async_->remove(cell, [](world::Cell) {});
+            asyncCatalog_.clear();
+            asyncSnapshot_.store(captureSnapshot(), std::memory_order_release);
+        }
     }
 
     // Prepare visible world chunks using globally keyed scatter.
@@ -122,6 +144,10 @@ public:
         if (camera.x < -kWorldLimitCm || camera.x > kWorldLimitCm ||
             camera.z < -kWorldLimitCm || camera.z > kWorldLimitCm)
             throw std::out_of_range("TerraWeave forest observer extent");
+        if (settings_.asynchronous) {
+            streamAsyncAt(camera);
+            return;
+        }
         residentStarted_ = true;
         observer_ = camera;
         const int64_t side = settings_.chunkSizeCm;
@@ -236,10 +262,25 @@ public:
             (void)key;
             n += patch.size();
         }
-        return {patches_.size(), n, species_.size(), revision_};
+        const auto state = async_ ? async_->status() : world::AsyncChunkStream::Status{};
+        return {patches_.size(), n, species_.size(), revision_,
+                state.preparing, state.discarded};
     }
 
     const ForestSceneSettings& settings() const { return settings_; }
+    // Must be called on the owning update thread, before destroying captured
+    // terrain snapshots or callback contexts. Also called by the destructor.
+    void shutdownAsync() {
+        if (async_) {
+            async_->shutdown([this](world::Cell cell) {
+                patches_.erase({cell.x, cell.z});
+            });
+            async_.reset();
+            asyncCatalog_.clear();
+        }
+        asyncSnapshot_.store({}, std::memory_order_release);
+    }
+    ~TerraWeaveForestScene() { shutdownAsync(); }
     const ArborForestAdapter& adapter() const { return adapter_; }
 
 private:
