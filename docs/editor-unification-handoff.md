@@ -1809,3 +1809,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `dfef673bf2384927a5c2e046d57fe077a9b164d3`.
 - User's `ecs_projectile_composition_test` aborted with "shared projectile sweep lost nearest-hit tie semantics". `world::intersect` derives the fractional hit distance using `Fixed::operator/`, which **truncates** the 16-bit fractional quotient, while the test expected `Fixed::fromRatio(3,10)`, which **rounds**. At z=3 with displacement z=10 the raw outputs are 19660 versus 19661. Updated sweep fraction comparisons to `3_fx/10_fx` and `2_fx/10_fx` so they match the actual engine calculation; left tie-break and endpoint assertions strict.
 - No production collision math or gameplay mechanics changed. Native CTest rerun **pending**; this change is not a proven fix until user runs it.
+
+
+### 2026-11-18 — Agents contract updated for direct ECS weapon/grenade projectile producers
+- **Implementation SHA:** `7d741c1407822cf49b84a84639f4042fe7cce963`.
+- Updated `AGENTS.md` to reflect that weapon projectiles, throwable action projectiles and bomb-round cleanup are no longer legacy-only producers under `fps.ecsAuthority`. They now call a single `spawnProjectile` / `clearProjectiles` adapter to create/destroy canonical `ProjectileRuntime` ECS entities at their actual gameplay stage. The State vector remains for other legacy readers/writers until the complete migration, with exact game source ID, save v9, COW, network and event ordering gates.
+- **Verification:** documentation committed, native build and FPS test execution not performed.
