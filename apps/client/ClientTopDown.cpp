@@ -152,8 +152,31 @@ bool GameClient::topDownEvent(const Event& e, bool uiWants,
     }
 }
 
+// Time-triggered ability mappings use exactly the same module button state as
+// a physical keyboard press, without needing synthetic OS events.
+void GameClient::topDownTimedActions(const std::vector<std::string>& actions) {
+    if(!topDownActive() || ui_.textInputFocused())return;
+    for(std::size_t i=0;i<tdAbilityKeysHeld_.size();++i) {
+        const auto name="TopDownAbility"+std::to_string(i);
+        if(std::find(actions.begin(),actions.end(),name)!=actions.end() &&
+           !tdAbilityKeysHeld_[i]) {
+            topDown_.buttonDown(int(i));
+            tdAbilityKeysHeld_[i]=true;
+        }
+    }
+}
+
 void GameClient::topDownFrame(double dt) {
     if (!topDownActive()) return;
+    for(std::size_t i=0;i<tdAbilityKeysHeld_.size();++i) {
+        if(!tdAbilityKeysHeld_[i])continue;
+        const auto* state=inputShortcuts_.system().state(
+            "TopDownAbility"+std::to_string(i));
+        if(!state || !state->active) {
+            topDown_.buttonUp(int(i));
+            tdAbilityKeysHeld_[i]=false;
+        }
+    }
     TopDown* td = mod().topDown();
     World& w = sim_->world();
     const Entity hero = td->heroOf(*sim_, human_);
