@@ -6,6 +6,7 @@
 #include "Gamepad.h"
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <map>
 
 namespace aiverse::platform {
