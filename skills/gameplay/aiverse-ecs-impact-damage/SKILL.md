@@ -31,7 +31,12 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
    `int32_t(Simulation&, const DamageRequest&, const HitPointsComponent&)`.
    Do not duplicate projectile flight or impact ordering.
 5. **Save/rollback.** All mutable health, projectile and damage queue state
-   lives in ECS components/resources. Serialize any custom policies' persistent
+   lives in ECS components/resources. The public `saveDamageQueue`,
+   `loadDamageQueue`, and `hashDamageQueue` helpers provide an explicit
+   bounded, versioned (v1) queue byte format, transactional loading and
+   generation-safe checksum. A GameModule still must include this resource
+   in its own serialize/hash hooks: World COW snapshots alone are not
+   equivalent to serialized save-state support. Serialize custom policy
    state as components; avoid mutable policy capture or wall-clock timing.
    Use `sim.rng()` in a canonical ordered stage for random outcomes.
 6. **Native access.** Link `AIVERSE::lib_ecs_impact_damage` in a native
