@@ -34,6 +34,8 @@ int main() {
     n::WaterSurfaceMeshOptions opts;opts.lod=n::WaterSurfaceLod::Far;
     const auto box=n::buildWaterSurfaceMesh(b,nullptr,opts);
     checkMesh(box,"box mesh missing");
+    for(const auto& vertex:box.vertices)
+        check(vertex.shore==0,"far LOD should not tint whole water white");
     check(box.triangleCount()==2 && std::abs(signedUpArea(box)-140.0)<1e-4,
           "box area/winding");
     for(const auto& vertex:box.vertices)check(vertex.y==12,"surface elevation lost");

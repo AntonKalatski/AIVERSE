@@ -303,7 +303,11 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
     const int levels=options.lod==WaterSurfaceLod::Near?2:
                      options.lod==WaterSurfaceLod::Medium?1:0;
     splitMesh(mesh,levels,options.maxVertices);
-    foam(mesh,boundary,options.foamWidth);
+    // Far LOD has perimeter-only vertices for boxes/polygons/rivers.
+    // No interior gradients exist there: suppress vertex foam rather than
+    // tinting an entire far-away water surface white.
+    if(options.lod!=WaterSurfaceLod::Far)
+        foam(mesh,boundary,options.foamWidth);
     return mesh;
 }
 
