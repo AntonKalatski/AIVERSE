@@ -28,7 +28,11 @@ for mode in off on; do
   [[ "$mode" == on ]] && flag=ON
   cmake -S . -B "$build" "${COMMON[@]}" "-DAIVERSE_ECS_EXPERIMENTAL_RTS_TRANSFORM_JOBS=$flag" "-DAIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR=$flag"
   targets=(aiverse_headless aiverse_fps_tests)
-  if [[ "$FULL" == 1 ]]; then targets+=(aiverse_tests aiverse_net_tests); fi
+  if [[ "$FULL" == 1 ]]; then
+    targets+=(aiverse_tests aiverse_net_tests
+              aiverse_ecs_native_persistence_test
+              aiverse_ecs_native_rts_integration_test)
+  fi
   cmake --build "$build" --parallel "${AIVERSE_ECS_BUILD_JOBS:-4}" --target "${targets[@]}"
   echo "=== RTS headless: $mode ==="
   "$build/aiverse_headless" --project templates/skirmish --seed 3 --max-seconds 10 \
@@ -85,7 +89,9 @@ for mode in off on; do
   echo "FPS motor $mode: batches=$motor_batches commits=$motor_commits 120-tick-ms=$fps_motor_ms"
   if [[ "$FULL" == 1 ]]; then
     echo "=== RTS and network tests: $mode ==="
-    ctest --test-dir "$build" --no-tests=error -R "^aiverse_(tests|net_tests)$" --output-on-failure
+    ctest --test-dir "$build" --no-tests=error \
+      -R "^(aiverse_(tests|net_tests)|ecs_native_(persistence|rts_integration)_test)$" \
+      --output-on-failure
   fi
 done
 if ! grep -Eq "^[0-9]+ [0-9a-fA-F]{16}$" "$ROOT/rtssim-off.checksums"; then
