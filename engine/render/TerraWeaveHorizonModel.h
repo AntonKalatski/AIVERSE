@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,6 +21,8 @@ struct HorizonModelBuildStats {
     size_t clippedQuads=0;
     size_t clippedTriangles=0;
     bool clipBudgetFallback=false;
+    size_t weldedVertices=0;
+    int32_t maxWeldHeightDeltaCm=0;
 };
 
 inline std::unique_ptr<render::Model> makeHorizonModel(
@@ -138,6 +141,14 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                 });
             }
         if(fineClipping){
+            // Lookup baked, versioned near-boundary heights without querying
+            // live WorldScene or physics in model build/render stages.
+            using SeamKey=std::pair<int64_t,int64_t>;
+            std::map<SeamKey,int32_t> nearEdgeHeights;
+            for(const auto& entry:b.nearSeamSamples)
+                nearEdgeHeights.emplace(
+                    SeamKey{entry.xQ16cm,entry.zQ16cm},
+                    entry.nearHeightCm);
             // Only polygons clipped from the two ORIGINAL source triangles
             // are emitted. Barycentric interpolation stays on each triangle's
             // surface plane, so clipping does not invent a new height seam.
@@ -209,6 +220,26 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                         color|=rounded<<shift;
                     }
                     v.color=color;
+                    const SeamKey key{
+                        static_cast<int64_t>(std::llround(point.x*65536.0)),
+                        static_cast<int64_t>(std::llround(point.z*65536.0))};
+                    if(const auto hit=nearEdgeHeights.find(key);
+                       hit!=nearEdgeHeights.end()) {
+                        // The source far-triangle plane remains unchanged
+                        // away from its clipped near edge. Only exact edge
+                        // vertices are welded to resident authored height.
+                        const int32_t farCm=static_cast<int32_t>(
+                            std::llround(double(v.pos.y)*100.0));
+                        const int64_t delta=int64_t(hit->second)-farCm;
+                        v.pos.y=float(hit->second)*0.01f;
+                        if(stats){
+                            ++stats->weldedVertices;
+                            stats->maxWeldHeightDeltaCm=
+                                static_cast<int32_t>(std::max<int64_t>(
+                                    stats->maxWeldHeightDeltaCm,
+                                    std::abs(delta)));
+                        }
+                    }
                     model->vertices.push_back(v);
                 }
                 model->indices.insert(model->indices.end(),{
