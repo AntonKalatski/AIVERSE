@@ -9,6 +9,7 @@
 #include "engine/platform/EnhancedInputAdapter.h"
 #include "engine/platform/EnhancedInputConfig.h"
 #include "engine/platform/EnhancedInputProfileIO.h"
+#include "engine/platform/EnhancedInputUserProfiles.h"
 #include "engine/platform/EnhancedInputPresets.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
@@ -45,7 +46,8 @@ struct App {
     i18n::Localization lang;
     ein::InputSystem actions;
     platform::EnhancedInputAdapter inputAdapter{actions};
-    platform::enhanced_config::Profile inputProfile;
+    platform::enhanced_config::UserProfiles userProfiles;
+    ein::InputSystem projectActions;
     bool settingsOpen=false;
     std::string rebindContext, settingsError;
     std::uint64_t rebindMapping=0;
@@ -68,17 +70,11 @@ struct App {
             throw std::runtime_error("FPS Enhanced Input preset: "+error);
     }
 
-    std::string inputProfilePath() const {
-        // Stable local FNV-1a ID: do not use std::hash (implementation-dependent).
-        std::uint64_t hash=14695981039346656037ULL;
-        for(unsigned char c:projectRoot){hash^=c;hash*=1099511628211ULL;}
-        return platform::userDataDir()+"/enhanced-input-"+std::to_string(hash)+".json";
-    }
     void loadInputConfig() {
         namespace cfg=platform::enhanced_config;
         std::string text,error;
-        // Full project mapping asset replaces built-in FPS defaults when present/valid.
-        // Project-specific actions stay in the project, never inside engine libraries.
+        // A project asset is a complete mapping scheme. Never store authored
+        // keys inside the OS user profile.
         if(platform::readContentFile(projectRoot+"/input/actions.json",text)){
             try{
                 cfg::Asset asset;
@@ -89,59 +85,16 @@ struct App {
                 std::fprintf(stderr,"Enhanced Input asset ignored: %s\n",ex.what());
             }
         }
-        if(std::filesystem::exists(inputProfilePath())){
-            cfg::Profile profile;
-            ein::InputSystem staged=actions;
-            if(cfg::loadProfileFile(inputProfilePath(),profile,&error) &&
-               cfg::applyProfile(staged,profile,&error)) {
-                actions=std::move(staged);
-                inputProfile=std::move(profile);
-            } else std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",error.c_str());
-        }
+        projectActions=actions; // reloading player settings must preserve project defaults
+        userProfiles.setScope(platform::userDataDir(),projectRoot);
+        if(!userProfiles.load(0,actions,&error))
+            std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",error.c_str());
     }
-    // Rebinding is transactional: both the persisted profile and active mappings
-    // change together, or neither changes (including when disk/permissions fail).
+    // One transactional path for both single-player FPS and future couch co-op.
     bool rebindInput(const std::string& context,std::uint64_t id,ein::Control control,
                      ein::RebindPolicy policy) {
-        namespace cfg=platform::enhanced_config;
-        const auto* original=actions.context(context);
-        if(!original){settingsError="Unknown mapping context";return false;}
-        ein::InputSystem staged=actions;
-        if(!staged.rebind(context,id,control,policy)){
-            settingsError=policy==ein::RebindPolicy::Reject
-                ? "Key is already bound in this context."
-                : "Cannot swap an ambiguous or unknown binding.";
-            return false;
-        }
-        cfg::Profile next=inputProfile;
-        // A Swap changes two mappings. Persist both IDs, otherwise the next
-        // launch would restore only half the exchange.
-        const auto* updated=staged.context(context);
-        for(const auto& mapping:updated->mappings) {
-            const auto before=std::find_if(original->mappings.begin(),original->mappings.end(),
-                [&](const auto& previous){return previous.id==mapping.id;});
-            if(before==original->mappings.end() || before->control==mapping.control)continue;
-            auto entry=std::find_if(next.rebindings.begin(),next.rebindings.end(),
-                [&](const auto& previous){return previous.context==context&&previous.mappingId==mapping.id;});
-            if(entry!=next.rebindings.end())entry->control=mapping.control;
-            else next.rebindings.push_back({context,mapping.id,mapping.control});
-        }
-        std::string error;
-        cfg::Profile checked;
-        ein::InputSystem verified=actions;
-        if(!cfg::readProfile(cfg::writeProfile(next),checked,&error) ||
-           !cfg::applyProfile(verified,checked,&error) ||
-           !cfg::saveProfileFile(inputProfilePath(),checked,&error)){
-            settingsError=error.empty()?"Could not save input profile":error;
-            return false;
-        }
-        actions=std::move(verified);
-        inputProfile=std::move(checked);
-        platform::syncUserData();
-        settingsError.clear();
-        return true;
+        return userProfiles.rebind(0,actions,context,id,control,policy,&settingsError);
     }
-
     // Presentation-only in-game rebinding. Authored actions.json is never changed by players.
     void drawInputSettings() {
         if(!settingsOpen)return;
@@ -153,6 +106,14 @@ struct App {
                            "Overrides are saved per player and project; Escape cancels capture.");
         if(ImGui::Button("Resume (click viewport to capture mouse)")){
             settingsOpen=false;rebindMapping=0;
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Restore project defaults")){
+            if(userProfiles.reset(0,actions,projectActions,&settingsError)){
+                settingsError.clear();
+                rebindMapping=0;
+                platform::syncUserData();
+            }
         }
         int policy=int(rebindPolicy);
         if(ImGui::Combo("Binding conflicts",&policy,
