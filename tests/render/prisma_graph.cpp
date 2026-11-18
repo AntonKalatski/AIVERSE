@@ -292,13 +292,13 @@ void poolContract() {
 }
 
 void rhiFormatContract() {
-    gfx::PixelFormat fmt = gfx::PixelFormat::RGBA8;
+    aiverse::gfx::PixelFormat fmt = aiverse::gfx::PixelFormat::RGBA8;
     check(prismaRhiFormat(PrismaGraphFormat::RGBA8, fmt) &&
-          fmt == gfx::PixelFormat::RGBA8, "RHI RGBA8 format mapped");
+          fmt == aiverse::gfx::PixelFormat::RGBA8, "RHI RGBA8 format mapped");
     check(prismaRhiFormat(PrismaGraphFormat::RGBA16F, fmt) &&
-          fmt == gfx::PixelFormat::RGBA16F, "RHI HDR format mapped");
+          fmt == aiverse::gfx::PixelFormat::RGBA16F, "RHI HDR format mapped");
     check(prismaRhiFormat(PrismaGraphFormat::Depth32F, fmt) &&
-          fmt == gfx::PixelFormat::Depth, "RHI depth format mapped");
+          fmt == aiverse::gfx::PixelFormat::Depth, "RHI depth format mapped");
     check(!prismaRhiFormat(PrismaGraphFormat::RG16F, fmt) &&
           !prismaRhiFormat(PrismaGraphFormat::R32F, fmt),
           "unavailable RHI formats rejected instead of emulated");
