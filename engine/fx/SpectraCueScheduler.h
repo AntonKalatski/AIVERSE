@@ -5,6 +5,7 @@
 #pragma once
 
 #include "SpectraBatchWorld.h"
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -29,6 +30,9 @@ struct CueEvent {
     fx::float3 direction{0,1,0};
     float scale = 1.0f;
     fx::float4 tint{1,1,1,1};
+    // Optional per-cue VM scalar uniforms param0..param7 (bit i set).
+    std::array<float,8> programParams{};
+    uint8_t programParamMask=0;
 };
 
 struct AttachedCue {
@@ -39,6 +43,9 @@ struct AttachedCue {
     float scale = 1.0f;
     uint32_t revision = 0;           // content/pose policy change restarts emitter
     bool killOnDetach = false;       // false = stop emission, let particles fade
+    // Presentation-only overrides; changing these does not restart emitter.
+    std::array<float,8> programParams{};
+    uint8_t programParamMask=0;
 };
 
 struct CueSchedulerStats {
@@ -105,6 +112,8 @@ private:
         uint32_t revision = 0;
         float scale = 1.0f;
         bool killOnDetach = false;
+        std::array<float,8> programParams{};
+        uint8_t programParamMask=0;
     };
     struct Queued {
         int effectId = -1;
