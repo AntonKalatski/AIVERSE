@@ -58,10 +58,10 @@ int main() {
     CHECK(route.logicalMouseButton(0)==0);
     CHECK(route.logicalMouseButton(1)==1);
     CHECK(route.logicalMouseButton(2)==2);
-    CHECK(route.system().rebind("RTS.Pointer",1,{in::Device::MouseButton,3}));
+    CHECK(route.system().rebind("RTS.Pointer",1,{ei::Device::MouseButton,3}));
     CHECK(route.logicalMouseButton(0)==-1);
     CHECK(route.logicalMouseButton(3)==0);
-    CHECK(route.system().rebind("RTS.Pointer",1,{in::Device::MouseButton,0}));
+    CHECK(route.system().rebind("RTS.Pointer",1,{ei::Device::MouseButton,0}));
     // Default top-down/gesture contexts are genre-neutral and do not
     // accidentally enable hero combat while playing ordinary RTS.
     CHECK(!route.system().isContextActive("RTS.TopDown"));
