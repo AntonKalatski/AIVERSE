@@ -631,6 +631,12 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_api COMMAND aiverse_motionweave_api_tests)
 endif()
 
+# MotionWeave persistent host workers (no worker startup in simulation).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_worker_tests tests/animation/motionweave_workers.cpp)
+    target_link_libraries(aiverse_motionweave_worker_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_workers COMMAND aiverse_motionweave_worker_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
