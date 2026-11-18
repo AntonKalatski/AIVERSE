@@ -719,3 +719,29 @@ Then connect opt-in runtime forest preview using the already-present
 `ArborForestAdapter` and reuse `engine/world/AsyncChunkStream.h`
 rather than introducing a duplicate chunk job scheduler. For each
 later phase update this handoff including exact tests and commits.
+
+
+## Stage 3c — stable forest-wide transition band (COMMITTED; TESTS DEFERRED)
+
+- `50bc00298e0ad5d9c27dd895b016919513c70810`:
+  `engine/world/TerraWeaveFlora.h` adds
+  `FloraView::impostorBlendWidthCm`, a deterministic per-tree choice of
+  low geometry vs far impostor threshold. Default remains 0.
+- `455d319bc5d6265b8a1e4837e5a0e024bc6f7e94`:
+  `tests/terraweave_flora_test.cpp` records deferred checks for
+  output stability across shuffled input, transition endpoints and
+  invalid ranges.
+- Updated documentation in `docs/terrain/TERRAWEAVE.md`.
+
+**API:** All distances in integer centimetres. A per-tree stable
+hash combines persistent key and species; band midpoint is
+`lowRangeCm`. No new gameplay state, frame history or GPU resources.
+A 0-width band preserves prior exact behavior. Population stagger is
+not an individual tree crossfade.
+
+**Actual tests:** GitHub writes/source review only; no compiler/CTest,
+live render, screenshot or GPU benchmark run, by explicit user request.
+
+**Next agent:** implement opt-in chunked forest host and eventually
+transition crossfade/dither in the shader if visually necessary. Never
+claim per-tree fade or flicker-free camera orbit without GPU verification.
