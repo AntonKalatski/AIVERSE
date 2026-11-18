@@ -3412,3 +3412,45 @@ GL33, Metal and Vulkan. Add readback-based slice/face preview
 for arrays and depth only if the backend supports the required
 TextureReadbackDesc, and never block the render thread.
 Continue code and handoff commits separately.
+
+## Stage 8B — virtual pages/readback agent recipes and correct CTest command (2026-11-18)
+
+**Documentation/skill commits:** `4eec698d1dfb1c26132714f0fa4a6143d7a41919`
+(AI texture skill, including a corrected CMake multi-target command),
+`8e24b098b8da377b722f83efed58c05f5efe0eb6` (canonical
+`docs/texture-rhi.md` source-status and CTest matrix), and
+`21ec39c179e468c5e9726655310cc5fc1586df87`
+(`AGENTS.md` routing to `gfx::VirtualTextureStreamer` and
+`Device::readTextureAsync`).
+**Branch:** `feature/texture-rhi-unification` (PR #21 Draft).
+**Files:** `skills/visuals/aiverse-texture-rhi/SKILL.md`,
+`docs/texture-rhi.md`, `AGENTS.md`.
+
+**Changes:** Native games and other agents are directed to reuse
+the fixed-capacity physical virtual-texture atlas, page-table and
+LRU coordinator, and the separate GPU readback contract rather
+than generating per-genre texture APIs. Documents explain
+driver/backend support, failed-resource quarantine, page table
+publication ordering, color formats and limitations (no
+hardware sparse textures, GPU feedback, full EXR/Basis transcoding,
+or threaded disk workers). Added `virtual_texture_streamer`,
+`virtual_texture_pages`, `virtual_texture_page_table`
+and the previously added EXR/HDR/streaming fixture targets to
+the CMake/CTest instructions. Fixed a broken line continuation
+in the prior texture skill test command.
+
+**Compatibility:** Documentation only; no production C++
+source, ABI, ECS, saves or network code changed in this
+documentation stage. C++ source stages 7H–7M remain unverified.
+
+**Verification:** Documentation files updated in GitHub.
+**CMake build NOT RUN, CTest NOT RUN, GPU tests NOT RUN,
+skill-catalog audit NOT RUN, full run-tests.sh NOT RUN.**
+Do not claim any passing checks or merge PR #21.
+
+**Next:** Finish the editor texture resource inspector presentation,
+OpenEXR/BasisU production transcoding policy, shader storage
+image support and mobile/web compatibility. After the user-requested
+implementation pass, run `./run-tests.sh --quick`, then full
+`./run-tests.sh` and real Metal/GL/Vulkan GPU captures; fix failures
+and record exact tested HEAD and outcomes.
