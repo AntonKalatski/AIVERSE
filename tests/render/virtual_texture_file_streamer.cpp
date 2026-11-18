@@ -418,6 +418,25 @@ void asynchronousGpuFeedbackRuntime() {
     require(!runtime.pending() && !runtime.readyToSubmit(),
             "stale GPU callback after owner destruction is harmless");
 
+    // A one-frame retry budget must never dispatch detail pages in later frames.
+    require(runtime.initialize(gpu,feedback,prefetch,1),
+            "single-frame deferred budget accepted");
+    require(runtime.capture(target),"capture with single-frame budget");
+    gpu.finishFeedback(readback);
+    const auto bounded=runtime.submit(stream);
+    require(bounded.submittedNewRequests==0,
+            "existing pending pages remain deduplicated");
+    const auto expired=runtime.submit(stream);
+    require(expired.submittedNewRequests==0,
+            "expired visibility does not submit additional pages");
+    runtime.shutdown();
+    require(!runtime.initialize(gpu,feedback,prefetch,0) &&
+            !runtime.lastError().empty(),
+            "zero deferred-frame budget rejected");
+    require(!runtime.initialize(gpu,feedback,prefetch,1025) &&
+            !runtime.lastError().empty(),
+            "unbounded deferred-frame budget rejected");
+
     require(runtime.initialize(gpu,feedback,prefetch),"recreate runtime");
     gpu.rejectFeedback=true;
     require(!runtime.capture(target) && !runtime.pending() &&
