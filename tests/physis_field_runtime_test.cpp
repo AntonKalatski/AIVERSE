@@ -245,6 +245,16 @@ void submitViaSimulationCommandQueue() {
     bad.set("physis",config);
     CHECK(!submitEditableFieldsFromMap(*sim,bad,kFieldEditCmd,scheduled,&error));
     CHECK(registry(*sim).revision==revision);
+    // Field edits are intentionally scoped: climate/grid rebuilds need a
+    // separate authoritative migration and must not partially hot-reload.
+    bad=setupMap();
+    config=bad["physis"];
+    Json grid=config["grid"];
+    grid.set("seed",Json::number(int64_t(10)));
+    config.set("grid",grid);
+    bad.set("physis",config);
+    CHECK(!submitEditableFieldsFromMap(*sim,bad,kFieldEditCmd,scheduled,&error));
+    CHECK(registry(*sim).revision==revision);
 }
 void authorityAndStale() {
     auto sim=make();

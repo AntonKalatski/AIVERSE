@@ -285,6 +285,17 @@ inline bool reconcileFieldEdit(Simulation& sim,const FieldEditBatch& request,
         after.push_back({asset.id,asset.kind,authoredFingerprint(asset)});
     const auto plan=planFieldChanges(std::move(before),std::move(after));
 
+    // An identical full-state command still consumes its expected revision,
+    // preventing a second stale command with the same revision from applying,
+    // but should not deep-copy all climate cells merely to advance it.
+    if(plan.empty()) {
+        auto* registry=sim.world().resource<FieldRuntimeState>();
+        if (!registry || registry->revision!=request.expectedRevision)
+            return fail("PHYSIS runtime revision changed");
+        ++registry->revision;
+        return true;
+    }
+
     World staged=committed;
     FieldRuntimeState registry=*current;
     for(const auto& change:plan) {
@@ -379,6 +390,21 @@ inline bool submitEditableFieldsFromMap(Simulation& sim,const Json& map,
         const auto options=optionsFromMap(map);
         if(!options) {
             if(error) *error="PHYSIS map is disabled or absent";
+            return false;
+        }
+        const auto* state=sim.world().resourceConst<State>();
+        if(!state) {
+            if(error) *error="PHYSIS simulation climate state missing";
+            return false;
+        }
+        const auto& old=state->settings;
+        const auto& next=options->climate;
+        if(old.originX!=next.originX || old.originZ!=next.originZ ||
+           old.width!=next.width || old.height!=next.height ||
+           old.cellSizeMeters!=next.cellSizeMeters || old.seed!=next.seed ||
+           old.baseTemperature!=next.baseTemperature ||
+           old.baseHumidity!=next.baseHumidity) {
+            if(error) *error="PHYSIS field-only edit cannot replace climate/grid settings";
             return false;
         }
         const auto desired=parseFieldAssets(map["physis"],*options);
