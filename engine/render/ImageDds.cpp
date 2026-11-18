@@ -345,10 +345,12 @@ bool parseDdsTexture(const std::string& bytes, CompressedImage& out, std::string
     out.format = kind == Kind::BC1 ? BlockFormat::BC1 :
                  kind == Kind::BC3 ? BlockFormat::BC3 :
                  kind == Kind::BC4 ? BlockFormat::BC4 :
+                 kind == Kind::BC5 ? BlockFormat::BC5 :
                  kind == Kind::BC7 ? BlockFormat::BC7 : BlockFormat::None;
     out.vkFormat = kind == Kind::BC1 ? (alphaBC1 ? (srgb ? 134u : 133u) : (srgb ? 132u : 131u)) :
                    kind == Kind::BC3 ? (srgb ? 138u : 137u) :
                    kind == Kind::BC4 ? 139u :
+                   kind == Kind::BC5 ? 141u :
                    kind == Kind::BC7 ? (srgb ? 146u : 145u) :
                    srgb ? 43u : 37u;
     out.width = int(width);

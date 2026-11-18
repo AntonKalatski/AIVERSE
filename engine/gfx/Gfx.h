@@ -51,7 +51,8 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          ETC2_RGB8, ETC2_RGBA8, BC1, BC3, BC7, ASTC_4x4, ASTC_6x6,   // block-compressed: upload levels, check supports()   // Depth: 24/32-bit depth render target; RGBA32F: data textures
                                                         // (bone matrices, morph deltas), nearest only, read with texelFetch / read()
                          RGBA8_sRGB, // sampling decodes sRGB; render targets encode on write and blend in linear; alpha stays linear
-                         RGBA16F }; // linear HDR radiance, 8 bytes/pixel; check supports()
+                         RGBA16F, // linear HDR radiance, 8 bytes/pixel; check supports()
+                         BC4, BC5, EAC_R11 }; // one/two-channel compressed data maps; check supports()
 enum class Filter { Nearest, Linear };
 // Resource dimension is separate from the sampled view dimension. Array layers are physical
 // slices: Cube requires six, CubeArray requires a multiple of six.
@@ -182,7 +183,9 @@ constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
     const bool blockCompressed = d.format == PixelFormat::ETC2_RGB8 ||
         d.format == PixelFormat::ETC2_RGBA8 || d.format == PixelFormat::BC1 ||
         d.format == PixelFormat::BC3 || d.format == PixelFormat::BC7 ||
-        d.format == PixelFormat::ASTC_4x4 || d.format == PixelFormat::ASTC_6x6;
+        d.format == PixelFormat::ASTC_4x4 || d.format == PixelFormat::ASTC_6x6 ||
+        d.format == PixelFormat::BC4 || d.format == PixelFormat::BC5 ||
+        d.format == PixelFormat::EAC_R11;
     if (d.sampleCount > 1 && (d.dimension != TextureDimension::Texture2D ||
         !d.renderTarget || d.data || d.mipmaps || d.mipLevels > 1 ||
         d.levelCount > 0 || d.storage || d.compare || blockCompressed))

@@ -40,12 +40,16 @@ constexpr GLenum kGL_MIRRORED_REPEAT = 0x8370;
 // compressed formats (may be missing from older headers)
 constexpr GLenum kGL_ETC2_RGB8 = 0x9274, kGL_ETC2_RGBA8 = 0x9278, kGL_DXT1_RGBA = 0x83F1, kGL_DXT5 = 0x83F3,
                  kGL_BPTC_UNORM = 0x8E8C, kGL_ASTC_4x4 = 0x93B0, kGL_ASTC_6x6 = 0x93B4;
+constexpr GLenum kGL_BC4_RGTC1 = 0x8DBB, kGL_BC5_RGTC2 = 0x8DBD, kGL_EAC_R11 = 0x9270;
 GLenum compressedEnum(PixelFormat f) {
     switch (f) {
         case PixelFormat::ETC2_RGB8: return kGL_ETC2_RGB8;
         case PixelFormat::ETC2_RGBA8: return kGL_ETC2_RGBA8;
         case PixelFormat::BC1: return kGL_DXT1_RGBA;
         case PixelFormat::BC3: return kGL_DXT5;
+        case PixelFormat::BC4: return kGL_BC4_RGTC1;
+        case PixelFormat::BC5: return kGL_BC5_RGTC2;
+        case PixelFormat::EAC_R11: return kGL_EAC_R11;
         case PixelFormat::BC7: return kGL_BPTC_UNORM;
         case PixelFormat::ASTC_4x4: return kGL_ASTC_4x4;
         case PixelFormat::ASTC_6x6: return kGL_ASTC_6x6;
@@ -123,6 +127,7 @@ public:
 #endif
         s3tc_ = has("texture_compression_s3tc") || has("compressed_texture_s3tc");
         bptc_ = has("texture_compression_bptc");
+        rgtc_ = flavor == Backend::GL33 || has("texture_compression_rgtc");
         if (ext.empty() && flavor == Backend::GL33) s3tc_ = true; // core profiles hide the list; every desktop GPU has DXT
         astc_ = has("texture_compression_astc");
         hdr_ = flavor == Backend::GL33 || has("EXT_color_buffer_float") || has("EXT_color_buffer_half_float");
@@ -144,8 +149,10 @@ public:
     bool supportsTextureViews() const override { return false; }
     bool supports(PixelFormat f) const override {
         switch (f) {
-            case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8: return etc2_;
+            case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
+            case PixelFormat::EAC_R11: return etc2_;
             case PixelFormat::BC1: case PixelFormat::BC3: return s3tc_;
+            case PixelFormat::BC4: case PixelFormat::BC5: return rgtc_;
             case PixelFormat::BC7: return bptc_;
             case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6: return astc_;
             case PixelFormat::RGBA16F: return hdr_;
@@ -1110,7 +1117,7 @@ private:
     GLuint slotUbos_[kMaxUniformSlots] = {};
 #endif
     size_t uboAlign_ = 256, uboOffset_ = 0;
-    bool etc2_ = false, s3tc_ = false, bptc_ = false, astc_ = false;
+    bool etc2_ = false, s3tc_ = false, bptc_ = false, astc_ = false, rgtc_ = false;
     bool anisotropy_ = false;
     float maxAnisotropy_ = 1.0f;
     bool srgbWrite_ = false;   // GL33: GL_FRAMEBUFFER_SRGB enabled for the current pass

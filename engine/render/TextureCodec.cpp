@@ -1,6 +1,7 @@
 #include "TextureCodec.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "../../third_party/zstd/zstd.h"
@@ -308,6 +309,7 @@ bool mapVkFormat(uint32_t vk, BlockFormat& f, bool& srgb) {
     case 137: f = BlockFormat::BC3; return true;
     case 138: f = BlockFormat::BC3; srgb = true; return true;
     case 139: f = BlockFormat::BC4; return true;
+    case 141: f = BlockFormat::BC5; return true;
     case 145: f = BlockFormat::BC7; return true;
     case 146: f = BlockFormat::BC7; srgb = true; return true;
     case 147: f = BlockFormat::ETC2_RGB8; return true;
@@ -328,7 +330,8 @@ bool mapVkFormat(uint32_t vk, BlockFormat& f, bool& srgb) {
 int blockBytes(BlockFormat f) {
     switch (f) {
     case BlockFormat::ETC2_RGB8: case BlockFormat::EAC_R11: case BlockFormat::BC1: case BlockFormat::BC4: return 8;
-    case BlockFormat::ETC2_RGBA8: case BlockFormat::BC3: case BlockFormat::BC7: case BlockFormat::ASTC_4x4: case BlockFormat::ASTC_6x6: return 16;
+    case BlockFormat::ETC2_RGBA8: case BlockFormat::BC3: case BlockFormat::BC5:
+    case BlockFormat::BC7: case BlockFormat::ASTC_4x4: case BlockFormat::ASTC_6x6: return 16;
     case BlockFormat::None: break;
     }
     return 4;
@@ -347,6 +350,7 @@ const char* blockFormatName(BlockFormat f) {
     case BlockFormat::BC1: return "BC1";
     case BlockFormat::BC3: return "BC3";
     case BlockFormat::BC4: return "BC4";
+    case BlockFormat::BC5: return "BC5";
     case BlockFormat::BC7: return "BC7";
     case BlockFormat::ASTC_4x4: return "ASTC_4x4";
     case BlockFormat::ASTC_6x6: return "ASTC_6x6";
@@ -472,6 +476,20 @@ bool decodeBlock(BlockFormat f, const uint8_t* block, uint8_t out[64]) {
         decodeBc4(block, out, 0);
         for (int i = 0; i < 16; ++i) { out[i * 4 + 1] = 0; out[i * 4 + 2] = 0; out[i * 4 + 3] = 255; }
         return true;
+    case BlockFormat::BC5: {
+        // Two RGTC channels are a tangent-space XY normal map. Preserve
+        // the legacy DDS CPU behavior by reconstructing positive Z.
+        decodeBc4(block, out, 0);
+        decodeBc4(block + 8, out, 1);
+        for (int i = 0; i < 16; ++i) {
+            const float x = float(out[i * 4]) / 127.5f - 1.0f;
+            const float y = float(out[i * 4 + 1]) / 127.5f - 1.0f;
+            const float z = std::sqrt(std::max(0.0f, 1.0f - x * x - y * y));
+            out[i * 4 + 2] = uint8_t(std::lround((z + 1.0f) * 127.5f));
+            out[i * 4 + 3] = 255;
+        }
+        return true;
+    }
     case BlockFormat::BC7: decodeBc7(block, out); return true;
     case BlockFormat::ASTC_4x4: case BlockFormat::ASTC_6x6: case BlockFormat::None: break;
     }

@@ -14,6 +14,7 @@ namespace aiverse::render {
 struct TextureUploadOptions {
     bool trustShaderSrgbDecode = false; // compressed sRGB UNORM formats need shader decode
     bool forceCpuDecode = false;        // for debugging and GPU compression fallback
+    bool shaderReconstructsBc5NormalZ = false; // opt-in; BC5 native sampling returns RG only
 };
 
 // TextureHandle is owned by the caller. Returns invalid and sets error on
@@ -64,18 +65,22 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
         if (in.vkFormat != 131 && in.vkFormat != 132) compressed = gfx::PixelFormat::BC1;
         break;
     case BlockFormat::BC3: compressed = gfx::PixelFormat::BC3; break;
+    case BlockFormat::BC4: compressed = gfx::PixelFormat::BC4; break;
+    case BlockFormat::BC5: compressed = gfx::PixelFormat::BC5; break;
+    case BlockFormat::EAC_R11: compressed = gfx::PixelFormat::EAC_R11; break;
     case BlockFormat::BC7: compressed = gfx::PixelFormat::BC7; break;
     case BlockFormat::ETC2_RGB8: compressed = gfx::PixelFormat::ETC2_RGB8; break;
     case BlockFormat::ETC2_RGBA8: compressed = gfx::PixelFormat::ETC2_RGBA8; break;
     case BlockFormat::ASTC_4x4: compressed = gfx::PixelFormat::ASTC_4x4; break;
     case BlockFormat::ASTC_6x6: compressed = gfx::PixelFormat::ASTC_6x6; break;
-    case BlockFormat::BC4: case BlockFormat::EAC_R11: case BlockFormat::None:
-        break; // decoded fallback until RHI gains native formats
+    case BlockFormat::None:
+        break; // rgba8 raw payload
     }
     const bool native = !opt.forceCpuDecode &&
         compressed != gfx::PixelFormat::RGBA8 &&
         (in.depth == 1 && !in.oneDimensional) &&
         (!in.srgb || opt.trustShaderSrgbDecode) &&
+        (in.format != BlockFormat::BC5 || opt.shaderReconstructsBc5NormalZ) &&
         dev.supports(compressed);
 
     if (native) {

@@ -377,10 +377,12 @@ gfx::PixelFormat gpuFormat(const CompressedImage& c) {
         case BlockFormat::ETC2_RGBA8: return gfx::PixelFormat::ETC2_RGBA8;
         case BlockFormat::BC1: return c.vkFormat == 131 || c.vkFormat == 132 ? gfx::PixelFormat::RGBA8 : gfx::PixelFormat::BC1;
         case BlockFormat::BC3: return gfx::PixelFormat::BC3;
+        case BlockFormat::BC4: return gfx::PixelFormat::BC4;
+        case BlockFormat::EAC_R11: return gfx::PixelFormat::EAC_R11;
         case BlockFormat::BC7: return gfx::PixelFormat::BC7;
         case BlockFormat::ASTC_4x4: return gfx::PixelFormat::ASTC_4x4;
         case BlockFormat::ASTC_6x6: return gfx::PixelFormat::ASTC_6x6;
-        default: return gfx::PixelFormat::RGBA8; // EAC R11 / BC4 / RGBA8: the decoded copy
+        default: return gfx::PixelFormat::RGBA8; // BC5 requires shader normal-Z reconstruction
     }
 }
 
