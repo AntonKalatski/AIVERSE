@@ -60,17 +60,37 @@ struct AnimationDiagnosticsComponent {
 };
 // Use once per presentation frame after reading the latest gameplay snapshot.
 // Graph state updates every frame; pose work may be throttled independently.
-inline void stepAnimationPresentation(World& world,float dt) {
-    if (!std::isfinite(dt) || dt < 0.f) return;
-    auto* players=world.prepareExistingWrite<AnimationPlayerComponent>();
-    auto* poses=world.prepareExistingWrite<AnimationPoseComponent>();
-    auto* budgets=world.prepareExistingWrite<AnimationBudgetComponent>();
-    auto* statuses=world.prepareExistingWrite<AnimationDiagnosticsComponent>();
-    auto* montages=world.prepareExistingWrite<AnimationMontageSlotsComponent>();
-    auto* recoveries=world.prepareExistingWrite<AnimationRecoveryComponent>();
-    if (!players || !poses) return;
+// All writer pools are detached/uniquified BEFORE dispatching any worker.
+// No component insertion/removal or World snapshotting until the join barrier.
+struct AnimationPreparedPools {
+    Pool<AnimationPlayerComponent>* players=nullptr;
+    Pool<AnimationPoseComponent>* poses=nullptr;
+    Pool<AnimationBudgetComponent>* budgets=nullptr;
+    Pool<AnimationDiagnosticsComponent>* statuses=nullptr;
+    Pool<AnimationMontageSlotsComponent>* montages=nullptr;
+    Pool<AnimationRecoveryComponent>* recoveries=nullptr;
+};
+inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
+    AnimationPreparedPools p;
+    p.players=world.prepareExistingWrite<AnimationPlayerComponent>();
+    p.poses=world.prepareExistingWrite<AnimationPoseComponent>();
+    p.budgets=world.prepareExistingWrite<AnimationBudgetComponent>();
+    p.statuses=world.prepareExistingWrite<AnimationDiagnosticsComponent>();
+    p.montages=world.prepareExistingWrite<AnimationMontageSlotsComponent>();
+    p.recoveries=world.prepareExistingWrite<AnimationRecoveryComponent>();
+    return p;
+}
+inline void evaluateAnimationPresentationRange(World& world,
+        const AnimationPreparedPools& p,float dt,size_t begin,size_t end) {
+    if(!p.players || !p.poses || !std::isfinite(dt) || dt<0.f)return;
+    auto* players=p.players;
+    auto* poses=p.poses;
+    auto* budgets=p.budgets;
+    auto* statuses=p.statuses;
+    auto* montages=p.montages;
+    auto* recoveries=p.recoveries;
     const World& read=world;
-    for (size_t i=0;i<players->size();++i) {
+    for(size_t i=begin;i<std::min(end,players->size());++i) {
         const Entity e=players->entityAt(i);
         if (!world.alive(e)) continue;
         auto* pose=poses->tryGet(e.index);
@@ -177,5 +197,11 @@ inline void stepAnimationPresentation(World& world,float dt) {
             status->state=inst.state();
         }
     }
+}
+inline void stepAnimationPresentation(World& world,float dt) {
+    if(!std::isfinite(dt) || dt<0.f)return;
+    auto prepared=prepareAnimationPresentation(world);
+    evaluateAnimationPresentationRange(world,prepared,dt,0,
+        prepared.players?prepared.players->size():0);
 }
 } // namespace aiverse::lib::animation
