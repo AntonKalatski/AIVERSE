@@ -2025,3 +2025,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Addresses `release_tools`, `skill_catalog`, `skill_audit` from the owner's CTest 99/106 report. **Post-fix runtime tests NOT RUN**; local full checkout unavailable. See `docs/agent-handoffs/unified-test-runner.md`.
 - **Next:** run `ctest --test-dir build/all-tests -R '^(release_tools|skill_catalog|skill_audit)$' --output-on-failure` and continue remaining ECS failures.
 
+
+### 2026-11-18 — ECS failure fixes after full 99/106 CTest run
+- **Code SHA:** `8a936fa116c1b3c984b4ada3fba6197ba1ea3562` on PR #7. Four remaining ECS/inspector regressions addressed: cycle rebuild now canonicalizes parent links by Entity index; generic kinematic projectile arrival callbacks stable-sort by Entity index; locomotion test uses Fixed-quantized dt rather than ideal floating fractions; inspector full-suite test accounts for 3 opt-in hierarchy pools excluded from legacy RTS v9.
+- **No new save/network schema or ECS authority changes.** Changes committed but **post-fix tests NOT RUN**. Pre-fix Mac Studio CTest was 99/106 PASS and 7 FAIL; release/skills and CRLF extras fixes are in earlier commits.
+- **Next:** run targeted CTest `ecs_scene_hierarchy_test|ecs_kinematic_projectile_test|ecs_cross_genre_locomotion_test`, then `aiverse_tests` and full `./run-tests.sh`. See `docs/agent-handoffs/unified-test-runner.md`.
