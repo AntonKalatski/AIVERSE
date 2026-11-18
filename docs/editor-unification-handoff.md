@@ -1163,3 +1163,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `738ae12e49820e9a059d84f71aa2cd1e394557c9`.
 - `CMakeLists.txt` registers `aiverse_ecs_hitscan_selection_test` and `ecs_hitscan_selection_test`, linking `aiverse_engine`, `aiverse_world` and `AIVERSE::libraries` without FPS or RTS gameplay modules. This exercises the shared public policy in unrelated host fixtures.
 - Verification: GitHub source commit only; native CMake configure/compile/CTest not run.
+
+### 2026-11-18 — Standalone hitscan selection build target
+- Implementation SHA: `d2907c04f157f98bba70c4ee251cfe4f245da673`.
+- `tests/run_ecs_experiment_suite.sh` now invokes `compile_run ecs-hitscan-selection` with public include path and the same Fixed/SpatialWorld source dependencies as other standalone projectile tests. No dependency on `modules/fps` or `modules/rts`.
+- Verification: source commit only; shell script not executed in native repo.
