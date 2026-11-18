@@ -54,6 +54,14 @@ Hold/Tap/DoubleTap/etc. instead of unconditionally using raw
 `ImGui::IsMouseClicked`. Do not sample twice in hosted ClientHost mode.
 ImGui/native smoke NOT RUN.
 
+**Stage 54 conditional priority:** both Mapping- and Action-level
+Chord/NotChord gates affect whether a high-priority mapping consumes its
+physical key. A disabled high Action must allow a lower context to use the
+key. Dependency refinement is bounded by the number of Actions (cap 512),
+with deterministic conservative fallback for contradictory feedback.
+Cycles are rejected in native/JSON authoring; direct Action graph chains
+may exceed eight levels. Tests AUTHORED, NOT RUN.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
