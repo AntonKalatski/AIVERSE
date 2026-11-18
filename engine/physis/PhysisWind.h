@@ -50,11 +50,13 @@ inline Fixed signedGust(std::uint64_t key) {
 }
 
 // Optional additional velocity from zones/gusts, without PHYSIS climate base.
-inline Vec3 localWindAt(const World& world, Vec3 position, std::uint64_t tick) {
+template<class ZoneVisitor>
+inline Vec3 localWindAtWith(const World& world, Vec3 position,
+                            std::uint64_t tick, ZoneVisitor&& visitZones) {
     Vec3 velocity{};
     const auto* state = world.resourceConst<State>();
     const auto seed = state ? state->settings.seed : std::uint64_t(1);
-    world.eachExistingConst<WindZone>([&](Entity, const WindZone& zone) {
+    visitZones([&](Entity, const WindZone& zone) {
         if (!windActive(tick, zone.startTick, zone.durationTicks) ||
             zone.radiusMeters <= Fixed{}) return;
         const Fixed weight = radialWeight(position - zone.center, zone.radiusMeters);
@@ -80,17 +82,25 @@ inline Vec3 localWindAt(const World& world, Vec3 position, std::uint64_t tick) {
     return velocity;
 }
 
+inline Vec3 localWindAt(const World& world, Vec3 position, std::uint64_t tick) {
+    return localWindAtWith(world, position, tick, [&](auto&& callback) {
+        world.eachExistingConst<WindZone>(callback);
+    });
+}
+
 // Canonical read-only wind field consumed by physics, foliage, particles,
 // ballistics and camera/audio adapters. No consumer modifies ECS weather.
-inline Vec3 windAt(const World& world, Vec3 position) {
+template<class ZoneVisitor, class ShelterVisitor>
+inline Vec3 windAtWith(const World& world, Vec3 position,
+                       ZoneVisitor&& visitZones, ShelterVisitor&& visitShelters) {
     const auto* state = world.resourceConst<State>();
     if (!state) return Vec3{};
     Vec3 velocity{};
     const Entity cell = cellAtPosition(world, position);
     if (const auto* atmosphere = world.tryGetConst<Atmosphere>(cell))
         velocity = {atmosphere->wind.x, Fixed{}, atmosphere->wind.y};
-    velocity = velocity + localWindAt(world, position, state->tick);
-    world.eachExistingConst<WindShelter>([&](Entity, const WindShelter& shelter) {
+    velocity = velocity + localWindAtWith(world, position, state->tick, visitZones);
+    visitShelters([&](Entity, const WindShelter& shelter) {
         if (shelter.radiusMeters <= Fixed{}) return;
         const Fixed factor = radialWeight(position - shelter.center,
                                           shelter.radiusMeters);
@@ -103,6 +113,12 @@ inline Vec3 windAt(const World& world, Vec3 position) {
     velocity.y = fxClamp(velocity.y, -cap, cap);
     velocity.z = fxClamp(velocity.z, -cap, cap);
     return velocity;
+}
+
+inline Vec3 windAt(const World& world, Vec3 position) {
+    return windAtWith(world, position,
+        [&](auto&& callback) { world.eachExistingConst<WindZone>(callback); },
+        [&](auto&& callback) { world.eachExistingConst<WindShelter>(callback); });
 }
 
 } // namespace aiverse::physis
