@@ -2423,3 +2423,40 @@ ctest --test-dir build/texture-rhi --output-on-failure -R '^hdr_texture$'
 project-native APIs; keep unsupported EXR compression explicit.
 Work on background streaming and portable readback as separate
 source stages with handoff after each.
+
+## Stage 7C — post-drain streaming completion notifications (2026-11-18)
+
+**Code commit:** `a84382bbae16b89cd8f5c99afb3c59f09b092be3`.
+**Branch:** `feature/texture-rhi-unification`, draft PR #21.
+**Files:** `engine/gfx/TextureStreaming.h`,
+`tests/render/texture_streaming.cpp`.
+
+**Implementation/API:** `gfx::TextureStreamQueue::drain` accepts an optional
+`CompletionFn` receiving `(TextureUploadTicket,TextureStreamId,bool success)`
+for each GPU update attempted in that frame. Results are accumulated during
+the bounded FIFO transfer loop and callbacks are called **after** all queue
+iteration is finished. This avoids iterator invalidation and supports safe
+resource destruction or scheduling new uploads from completion callbacks.
+Callbacks execute on the GPU device/render thread, not asynchronously or
+on background workers. Existing no-arg `drain()` callers are source
+compatible. Cancelled jobs do not produce a GPU completion callback;
+`cancel` and `destroy` remain explicit.
+
+**Tests added:** Mock-device streaming fixture now validates two successful
+per-ticket completions in submission order, matching stable logical
+resource IDs, and a failed GPU submission callback observing its resource
+quarantined before notification.
+
+**Compatibility:** Header-only optional API; no new backend virtuals, ECS,
+save/network or on-disk formats. The GPU ownership and byte budgets from
+stages 7A–7B remain unchanged.
+
+**Verification:** GitHub code/tree/branch update confirmed. Native C++
+build, CTest, graphics device validation: **NOT RUN**. Latest GitHub
+Actions results have been queued, not confirmed passing. This is an
+unverified source change, not a production-ready streaming system.
+
+**Next:** Implement a CPU-only per-mip/per-array-layer residency planner
+that requests complete coarse-to-fine mips and maps completion success
+to safe sampler LOD clamps. Add deterministic tests, then connect it to
+streaming queues. Run the actual native tests and GPU sampling.
