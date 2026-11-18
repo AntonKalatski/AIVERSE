@@ -1765,3 +1765,105 @@ detection to Prisma. Review underwater camera transitions, crossing
 surface from both sides, foam near steep banks, shallow/high-opacity
 blending, quality presets, and GL/Metal parity. Update this handoff
 immediately after each implementation stage.
+
+## Stage 18 — Prisma-owned underwater fullscreen composite (opt-in)
+
+**Branch:** `feature/nereid-water-core` (PR #23, Draft).
+**Starting head:** `9c9bdefe961b08b8844edb0da147bc8fc726a582`.
+**No main/other feature branches merged in this stage.**
+
+**Implementation commits:**
+- `d6db9a29fd1d9487a0a6fbf1cec07163fbbf53c2` —
+  `engine/render/PostFx.h`: data-only `PostFxUnderwater` and
+  `PostFxUnderwaterState`, opt-in `PostFx::setUnderwater`.
+- `cfd98effebf5de26597eb2546ff56c4fd0b9ecea` —
+  `engine/render/PostFx.cpp`: `PF_UNDERWATER` composite bit,
+  two extra packed vec4 uniform fields, per-frame material handling,
+  no new fullscreen texture attachments or standalone GPU pass.
+- `7dcf318894d19b456b7b14675b255d9e6b1de350` —
+  `engine/render/PostFxShaders.h`: one common GLSL/MSL shader body
+  for underwater screen tint, Beer–Lambert-style absorption and
+  near-surface exposure decrease.
+- `5a1cc2b2a9fc9d0be0f2fe69ff96d500043ca9eb` —
+  `engine/world/NereidPrismaBridge.h`: explicit one-call adapter
+  from WorldScene underwater camera optical snapshot to PostFx.
+- `81c7837755a5b87c8690af3c7aed6c58295f4381` —
+  `engine/render/PostFx.h`: GPU-free
+  `advancePostFxUnderwater(state,target,deltaSeconds)`.
+- `bede0492ee7f3e085c18808d8a7eb873a43b5b73` —
+  `engine/render/PostFx.cpp`: runtime reuses pure fade policy.
+- `f5569fcb7b49def83d9ed4e75d605696bea78805` —
+  `tests/ecs_nereid_renderer_contract_test.cpp`: shader feature
+  source contract, entrance/exit smoothing, invalid input clamping.
+- `adce6b3704ec3c7447fa887a650ec2be2d9938d5` —
+  `engine/render/PostFx.cpp`: no retained underwater effect after
+  PostFx shutdown/device teardown.
+
+### Runtime ownership and usage
+
+The NEREID ECS/world surface definition remains authoritative.
+`WorldScene::nereidUnderwaterAt(cameraWorld)` supplies a copied,
+read-only camera snapshot (Stage 17); Prisma/PostFx owns only its
+**visual state and fullscreen composite**.
+
+```cpp
+#include "engine/world/NereidPrismaBridge.h"
+// Once per rendered frame BEFORE renderer.render(pass, &prisma):
+aiverse::world::updateNereidPrismaUnderwater(
+    worldScene, prisma, cameraWorldPosition, frameDeltaSeconds);
+renderer.render(pass, &prisma);
+// Render other scene overlays, then renderer.resolvePostFx() per existing host.
+```
+
+This call must run each frame, including when the camera exits the
+water (the target then becomes inactive, and the current visual
+strength fades to zero). The transition is time-based,
+`alpha=1-exp(-6*clamp(dt,0,0.25))`. Any project with no underwater
+input retains PostFx's original behavior; shader variants are not
+selected unless the underwater state is active. Existing editor/client
+PostFx effects and quality settings remain separate, and disabled
+PostFx/quality Off disables underwater as expected.
+
+Composite parameters: `underwater0={deepR,deepG,deepB,blend}`,
+`underwater1={absorption,depthMetres,0,0}`; two additional vec4
+fields on existing U0, no extra texture binding. A common shader
+body compiled through the existing `PostFx::composite` builder
+calculates `1-exp(-absorption*opticalDistance)`, fades toward water
+tint and gently reduces light with depth. It is a **screen-wide
+approximation**, not depth-per-pixel volumetric absorption, caustics,
+physical scattering, distortion, or true view-ray intersection.
+The current `PostFxStats::effects` counter includes the active
+underwater composite feature. PostFx shutdown resets the visual state.
+
+The opt-in bridge is header-only; it does not register a new ECS
+component or depend on a specific FPS/RTS game. No automatic host
+integration has been added: native projects must explicitly call the
+bridge and render using the existing PostFx hook. This avoids the
+NEREID WorldScene acquiring and mutating a Prisma owner.
+
+### Verification and handoff
+
+**Actual work:** inspected the PostFx composite pipeline and shared
+GLSL/MSL shader generator through connected GitHub, wrote C++/shader
+source, bridge, and unit-test source. Checked the matching C++
+`CompositeU` vec4 fields and generator field list by source inspection.
+
+**NOT RUN / UNVERIFIED:** complete C++ build, CTest,
+`./run-tests.sh`, GLSL and MSL shader compilers, OpenGL/Metal
+framebuffer captures, true camera transition appearance, mobile
+performance, FPS/RTS regression. Source assertions and connector
+commits do not imply passing native tests. Keep PR #23 Draft.
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+**Next agent:** compile and fix C++/MSL/GLSL errors, then test entering,
+leaving and switching overlapping water volumes, HDR vs SDR,
+FXAA/bloom/grade/fade order, inactive PostFx and render-target resize.
+Do not merge until graphics and gameplay regressions are verified.
+After baseline validation, consider smooth surface-crossing ripple,
+per-pixel view depth integration and configurable mobile quality
+profiles using the Prisma-owned composite path, not a new
+full-screen water renderer.
