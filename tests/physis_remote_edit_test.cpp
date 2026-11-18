@@ -1,5 +1,6 @@
 #include "engine/physis/PhysisRemoteClient.h"
 #include "engine/physis/PhysisRemoteServer.h"
+#include "apps/editor/PhysisRemoteEdit.h"
 #include "engine/net/Conn.h"
 #include <algorithm>
 #include <cstdio>
@@ -183,6 +184,54 @@ void denied() {
     CHECK(client.status()==ClientStatus::Denied);
     CHECK(registry(*sim).revision==0);
 }
+
+void editorBridge() {
+    using aiverse::editor::physis_remote::EditorLink;
+    auto sim=make();
+    ServerGateway server;
+    EditorLink link;
+    CHECK(!link.attached());
+    CHECK(!link.submit(map()));
+    auto [clientConn,serverConn]=net::makeLoopbackPair();
+    std::string error;
+    CHECK(link.attachAuthenticated(std::move(clientConn),91372,4,kEdit,&error));
+    // First query a fresh unknown request ID: server tells us its
+    // authoritative current revision without applying any changes.
+    for(std::uint64_t ms=0;ms<600;ms+=40) {
+        link.poll(ms);
+        server.poll(*sim,*serverConn,"trusted-editor",readAcl,writeAcl,ms);
+        link.poll(ms+1);
+    }
+    CHECK(link.client()!=nullptr);
+    CHECK(link.client()->hasRemoteRevision());
+    CHECK(link.client()->remoteRevision()==0);
+    Json modified=map();
+    Json config=modified["physis"];
+    Json winds=config["windZones"];
+    Json wind=winds[0];
+    wind.set("velocity",Json::parse("[24,0,0]"));
+    winds.at(0)=wind;
+    config.set("windZones",winds);
+    modified.set("physis",config);
+    CHECK(link.submit(modified,&error));
+    CHECK(!link.saveOutstanding().empty());
+    for(std::uint64_t ms=600;ms<2200;ms+=40) {
+        link.poll(ms);
+        server.poll(*sim,*serverConn,"trusted-editor",readAcl,writeAcl,ms);
+        sim->step();
+        server.observe(*sim);
+        link.poll(ms+1);
+    }
+    CHECK(link.client()->status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    CHECK(link.client()->remoteRevision()==1);
+    CHECK(link.saveOutstanding().empty());
+    const auto id=registry(*sim).byId.at("wind-1").entity;
+    CHECK(sim->world().get<WindZone>(id).velocity.x==Fixed::fromInt(24));
+    link.disconnect();
+    CHECK(!link.connected());
+}
+
 void conflictAfterServerRestart() {
     auto sim=make();
     ServerGateway gateway;
@@ -211,6 +260,7 @@ int main() {
     codec();
     duplicatedPayloadConflict();
     reconnectAndRestore();
+    editorBridge();
     denied();
     conflictAfterServerRestart();
     std::printf("PHYSIS remote edit: %s\n",fails?"FAIL":"PASS");
