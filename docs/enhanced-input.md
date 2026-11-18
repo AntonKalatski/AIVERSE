@@ -154,3 +154,7 @@ The shared engine header `engine/platform/EnhancedInputPresets.h` provides `enha
 ## Mobile touch controls
 
 `EnhancedInputAdapter` supports up to 32 simultaneously tracked touches, each with a stable/recycled `deviceIndex` (0..31). For `Device::Touch`, numeric control code `0` is finger pressed (Boolean level); `1` is relative horizontal motion in logical points, `2` is relative vertical motion. The motion channels accumulate between events and clear after `InputSystem::update(dt)`, just like mouse deltas. Add `Modifier::scale` or `normalize` as appropriate for your touch gesture. Repeated TouchBegin and excess fingers are ignored. TouchEnd/TouchCancel release finger-down; FocusLost cancels all active touches. This is a low-level gesture foundation; pinch, two-finger swipes and gesture recognizers are not yet exposed as named high-level actions.
+
+## Editor-hosted Game focus
+
+Game window forwards keyboard input only while focused. Switching from Game to Inspector, Input Actions or another tab forwards synthetic `FocusLost` to the hosted client and cancels Enhanced Input and legacy RTS held keys/pointer capture. Returning to Game forwards `FocusGained`; the embedded client still preserves HostedView and ImGui context isolation.
