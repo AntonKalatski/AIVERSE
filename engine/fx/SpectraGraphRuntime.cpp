@@ -29,6 +29,15 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     if(e.texture!="builtin:soft"||e.blend!=fx::FxBlend::Additive||
        e.align!=fx::FxAlign::Camera||e.shape!=fx::FxShape::Point)
         return reject("GPU v1 supports only additive soft camera-facing point sprites");
+    if(!e.shaderGraph.isNull() || e.hidden || e.noise.enabled() ||
+       e.collision.enabled || e.trail.enabled || e.light.enabled ||
+       e.trigger.enabled || !e.subEmitters.empty() || e.force.enabled ||
+       e.velocityOverLife.enabled || e.inheritVelocity.enabled ||
+       !e.meshes.empty() || !e.sprites.empty())
+        return reject("GPU v1 cannot execute custom shaders, modules, trails or sub-effects");
+    if(!e.life.curveMin.empty() || !e.speed.curveMin.empty() ||
+       !e.size.curveMin.empty() || !e.drag.curveMin.empty())
+        return reject("GPU v1 cannot execute MinMaxCurve variants");
     if(e.spread!=0.0f)
         return reject("GPU v1 has no spread/random direction");
     if(e.gravity.x!=0.0f||e.gravity.z!=0.0f)
