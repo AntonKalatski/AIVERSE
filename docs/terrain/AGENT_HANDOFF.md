@@ -1997,3 +1997,16 @@ This is NOT implemented; do not claim it is.
 **Tester agent exact next checks:** compile on GCC/Clang/AppleClang; verify `Model::Batching.allowGeometryPool` does not change existing model API/serialized data; validate dedicated Horizon VB/IB allocations even with global geometry pool on; test same-layout new height/normal/colour, atlas-only, combined atlas+terrain, changed triangle topology, changed cluster bounds, disabled CPU cache and negative coordinates; instrument GL/Metal/Vulkan `Device::updateBuffer` to verify size, offsets and frame synchronization. Record real results in this file. Check no renderer-cache or culling regressions when updating a static Model in place.
 
 **Next functional work (not implemented):** efficient persistent atlas/mask paging across multiple regions and/or optional GPU-resident HLOD page cache, if justified by observed upload cost. Avoid unbounded GPU memory. Keep build/test responsibility with separate agent.
+
+### Stage 12b follow-up — forest-only Horizon compatibility (COMMITTED; NOT TESTED)
+- `3913e0cd31440fd3ca3261bc9c9e23cdd7dbc8f4`:
+  `engine/render/TerraWeaveHorizonVertexPatch.h`: removed the
+  premature rejection of a Horizon bake with **zero** far-terrain
+  vertices. An opt-in `distantTerrain=false` scene must still be
+  able to use the existing atlas-only GPU patch fast path; the
+  planner now validates its unchanged crossed-card vertices and
+  returns an empty terrain-vertex patch plan rather than forcing
+  a needless full model upload.
+- **Actual verification:** code commit and static review only.
+  Separate testing agent must cover atlas-only scenes, mixed
+  terrain/atlas patch, and no-change frames. No tests performed.
