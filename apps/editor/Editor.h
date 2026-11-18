@@ -6,6 +6,7 @@
 // The public part of Editor is the API windows use; keep it small and stable.
 #pragma once
 #include "SceneRenderable.h"
+#include <array>
 #include <cmath>
 #include <deque>
 #include <memory>
@@ -406,7 +407,8 @@ private:
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
     double fxTime_ = -1;
     struct FxPreview { std::string name; fx::float3 pos{}; float scale = 1; fx::float4 tint{1, 1, 1, 1}; bool loop = false; fx::FxHandle h; double next = 0;
-                       bool moving = false; float moveT = 0; };   // moving: circles 2 m around pos (trails, perMeter)
+                       bool moving = false; float moveT = 0;
+                       std::array<float,8> programParams{}; }; // preserved across preview loop restarts   // moving: circles 2 m around pos (trails, perMeter)
     FxPreview fxPreview_;                      // fx_preview: the effect an agent is looking at
     bool fxFrozen_ = false;                    // fx_preview {freeze}: particles hold still for screenshots
     std::unique_ptr<Simulation> sim_;
