@@ -40,9 +40,9 @@ static void exercise() {
         return lg::selectClosestHitscanCandidate(
             snapshots,eye,delta,cutoff,eligible,bounds);
     };
-    const auto first=select(1_fx);
+    // The spatial slab solver uses Fixed division (truncate), not fromRatio\n    // (round-to-nearest), for the first contact fraction.\n    const auto first=select(1_fx);
     check(first && first.target==&snapshots[0] &&
-          first.fraction==Fixed::fromRatio(3,10),
+          first.fraction==3_fx/10_fx,
           "equal-distance hitscan tie must retain first snapshot target");
     // Simulate the real FPS adapter after a successful nearest-actor ray
     // query: the generic ordered policy dispatches one immediate direct hit
