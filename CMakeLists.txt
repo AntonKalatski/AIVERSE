@@ -762,6 +762,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_layer_providers COMMAND aiverse_view_provider_tests)
 endif()
 
+# Compile-time generic/legacy visibility type parity.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_visibility_alias_tests tests/view/visibility_alias.cpp)
+    target_link_libraries(aiverse_view_visibility_alias_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_visibility_alias COMMAND aiverse_view_visibility_alias_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
@@ -874,12 +881,18 @@ else()
     target_link_libraries(aiverse_runtime PUBLIC X11 EGL GLESv2)
 endif()
 
+# Shared presentation visibility field; independent of game genre.
+add_library(aiverse_view_visibility STATIC engine/view/VisibilityField.cpp)
+add_library(AIVERSE::view_visibility ALIAS aiverse_view_visibility)
+target_include_directories(aiverse_view_visibility PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(aiverse_view_visibility PUBLIC aiverse_models)
+
 add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/view/RtsTerrain.cpp
     modules/rts/view/RtsRoadView.cpp modules/rts/view/RtsRoadKit.cpp modules/rts/view/RtsShoreView.cpp
     modules/rts/view/RtsShapes.cpp modules/rts/view/RtsLook.cpp modules/rts/view/RtsAnimate.cpp
     modules/rts/view/RtsViewDraw.cpp modules/rts/view/RtsPortrait.cpp
     modules/rts/view/RtsLights.cpp modules/rts/view/RtsLightsData.cpp modules/rts/view/RtsGroundFx.cpp modules/rts/view/RtsTerrainRender.cpp modules/rts/view/RtsTerrainDetailMesh.cpp
-    modules/rts/view/RtsFog.cpp modules/rts/view/RtsFieldView.cpp
+    modules/rts/view/RtsFieldView.cpp
     modules/rts/view/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
     modules/rts/view/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
     modules/rts/view/RtsPlanetRender.cpp modules/rts/view/RtsPlanetView.cpp modules/rts/view/RtsPlanetGroundFx.cpp)
@@ -889,6 +902,7 @@ add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp 
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
+target_link_libraries(aiverse_game_view PUBLIC aiverse_view_visibility)
 # Transitional host adapter consumes the engine View. The dependency points
 # from the game module into the engine, never back into an RTS implementation.
 target_link_libraries(aiverse_game_view PUBLIC AIVERSE::view)

@@ -196,3 +196,25 @@ its state is migrated; it is **not** recomputed by the View.
 Model and material memory is borrowed only for the synchronous
 submission.
 
+## Reusable visibility field
+
+The previously game-local visual fog implementation has moved to
+`engine/view/VisibilityField.h/.cpp` under
+`aiverse::view::VisibilityField` and
+`aiverse::view::VisibilityLook`. It accepts only a host-provided
+0/1/2 byte visibility mask, visual settings, elapsed presentation
+time and a height sampler for the GPU sheet. Grid blur/fade,
+visibility texture upload and draw are reusable in strategy,
+stealth, exploration, spectator views and editors alike.
+
+`modules/rts/view/RtsFog.h` remains a compatibility-only
+header: `game::FogOfWar` and `game::FogLook` are aliases to the
+engine types and `game::parseFogLook` forwards to
+`view::parseVisibilityLook`. Existing RTS project settings and
+editor behavior can retain their original names.
+
+Link the optional compiled presentation effect target
+`AIVERSE::view_visibility` when using the standalone
+visibility system. This is a render effect, not the
+authoritative visibility or enemy-detection algorithm.
+
