@@ -29,6 +29,17 @@ void testGravity() {
     world.get<GravityField>(lunar).enabled=false;
     CHECK(gravityAt(world, origin).y == Fixed::fromRatio(-881,100));
 }
+void testLargePlanetField() {
+    World world;
+    GravitySettings settings; settings.baseline = {};
+    world.setResource<GravitySettings>(settings);
+    GravityField planet;
+    planet.mode = GravityMode::Attract;
+    planet.radiusMeters = Fixed::fromInt(20000000);
+    planet.radialMagnitude = Fixed::fromInt(9);
+    world.add<GravityField>(world.create(), planet);
+    CHECK(gravityAt(world, {10000000_fx, 0_fx, 0_fx}).x < Fixed{});
+}
 void testRadialAndWorldCopy() {
     World world;
     GravitySettings settings;
@@ -55,7 +66,7 @@ void testRadialAndWorldCopy() {
 }
 }
 int main() {
-    testGravity();testRadialAndWorldCopy();
+    testGravity();testRadialAndWorldCopy();testLargePlanetField();
     std::printf("PHYSIS Gravity: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
