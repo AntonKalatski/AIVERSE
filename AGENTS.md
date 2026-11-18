@@ -37,7 +37,23 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
-**Animation feature continuation:** read `docs/agent-handoffs/animation-universal.md` before editing `engine/render/Animation*`, adding animation ECS components or connecting FPS/RTS animation; use separate presentation World to preserve simulation checksum.
+**Active animation PR #22 (`feature/universal-ecs-animation-pipeline`):**
+read `docs/agent-handoffs/animation-universal.md` (the latest numbered stage and all
+earlier constraints) before editing `engine/render/Animation*`, reusable animation
+libraries, editor authoring, or FPS/RTS integration. Keep float-backed animation
+in a separate presentation World; never contaminate simulation checksums.
+
+**Required animation handoff for EVERY stage, including partial/failing work:**
+commit implementation first, then append a *separate* chronological stage entry to
+`docs/agent-handoffs/animation-universal.md` and commit that handoff **before
+starting the next stage**. Record (1) branch and exact implementation commit SHA;
+(2) changed paths and architecture/algorithm; (3) public C++/ECS/JSON API and
+compatibility; (4) commands actually run with results, or **NOT RUN** and reason;
+(5) risks, known bugs and work still missing; (6) explicit next file/function/task
+with enough detail for another agent to continue independently. Do not replace or
+rewrite prior stage entries, and read the latest head before appending. The user
+has explicitly deferred animation tests, so preserve test sources and mark runs
+**NOT RUN**, never green or passed, until they are actually executed.
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
