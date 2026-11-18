@@ -876,3 +876,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Verification: GitHub commit succeeded. C++ compilation and test execution not performed; expected outcome is an assertion, not an observed pass.
 - CI status observed for previous handoff SHA `4de1319dfad9589975ed885fdd7565ba1e8d2bf1`: CI #1178 was **cancelled**, while Studio #845, GPU batching #449 and ECS experimental #328 were queued. Cancelled is not a pass.
 - Next: run the new fixture in native CTest, inspect Actions outcomes, then wire real FPS/RTS launch and projectile paths to shared systems behind opt-in gates with byte-compatible saves and rollback. Keep Editor regression testing on the acceptance checklist.
+
+
+### 2026-11-18 — Shared ECS weapon cooldown expiry and replay
+- Implementation SHA: `fbda37412977436a639c26230c1661f16478a008`.
+- Changed: `tests/ecs_cross_genre_weapon_pipeline_test.cpp`, `exerciseCooldown<Tag>(cow)`. Following rejected early fire and snapshot replay, advances to tick 6 (six-tick fire interval), snapshots, requests the next shot, and checks the final ammo is consumed, nextShotId advances to 3, spawn queue is drained, and fire intent is consumed. Restores the ready snapshot, repeats the shot and compares checksum. All existing ShooterTag/ArtilleryTag and deep/COW variants exercise this path.
+- Verification: GitHub source commit succeeded. **No native compilation or execution yet**; tick boundary semantics and test success must be confirmed by the native runner. This is a shared library test extension, not proof of actual FPS/RTS combat migration.
+- Next: run `aiverse_ecs_cross_genre_weapon_pipeline_test`, inspect failures, then integrate real genre adapters with save v9, transport rollback and Editor regression gates. Preserve existing deterministic gameplay until parity proven.
