@@ -1,4 +1,4 @@
-// PHYSIS Stage 20 — editor-owned field markers, move/resize gizmos and snapping.
+// PHYSIS Stage 21 — multi-selection, grouped transforms and duplication gizmos.
 // Authoring writes ONLY through MapDoc Undo/Redo, never live Simulation World.
 // No genre-specific identity or Box3D interaction; existing Scene selection
 // stays authoritative unless an explicitly enabled PHYSIS marker was clicked.
@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace aiverse::editor {
 
@@ -23,6 +24,9 @@ struct PhysisFieldEditorState {
     int gizmoMode = 0; // 0: translate, 1: radius
     double dragRawY = 0;
     std::string selectedId;
+    std::vector<std::string> selectedIds; // sorted authored IDs
+    std::vector<physis_authoring::FieldPosition> dragOriginal;
+    double dragAnchorX = 0, dragAnchorY = 0, dragAnchorZ = 0;
     std::string draftId;
     std::string error;
     std::string rawDraft;
@@ -48,15 +52,40 @@ inline bool physisFieldPosition(const Json& field, render::float3& position) {
     return true;
 }
 
-inline void selectPhysisField(const std::string& id) {
+inline void setPhysisFieldSelection(std::vector<std::string> ids) {
     auto& state = physisFieldEditorState();
-    if (state.selectedId == id) return;
-    state.selectedId = id;
+    std::sort(ids.begin(),ids.end());
+    ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
+    state.selectedIds = std::move(ids);
+    state.selectedId = state.selectedIds.empty() ? std::string() : state.selectedIds.back();
     state.draftId.clear();
     state.error.clear();
     state.dragging = false;
     state.draggingRadius = false;
     state.dragEdited = false;
+    state.dragOriginal.clear();
+}
+
+// Ctrl/Shift toggles membership; a plain selection replaces it.
+inline void selectPhysisField(const std::string& id, bool toggle = false) {
+    auto& state = physisFieldEditorState();
+    if (!toggle) {
+        if (state.selectedIds.size() == 1 && state.selectedId == id) return;
+        setPhysisFieldSelection(id.empty() ? std::vector<std::string>{} :
+                                             std::vector<std::string>{id});
+        return;
+    }
+    if (id.empty()) return;
+    auto next = state.selectedIds;
+    const auto it = std::find(next.begin(),next.end(),id);
+    if (it == next.end()) next.push_back(id);
+    else next.erase(it);
+    setPhysisFieldSelection(std::move(next));
+}
+
+inline bool physisFieldSelected(const std::string& id) {
+    const auto& ids = physisFieldEditorState().selectedIds;
+    return std::binary_search(ids.begin(),ids.end(),id);
 }
 
 inline bool physisFieldRadius(const Json& field, double& radius) {
@@ -96,7 +125,8 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
             const ImVec2 p(vp.originX+projected.x,vp.originY+projected.y);
             if (p.x < vp.originX || p.x > vp.originX+vp.pointsW ||
                 p.y < vp.originY || p.y > vp.originY+vp.pointsH) continue;
-            const bool selected = entry.getStr("id")==state.selectedId;
+            const bool selected = physisFieldSelected(entry.getStr("id"));
+            const bool active = entry.getStr("id")==state.selectedId;
             const bool wind = std::string(key)=="windZones";
             const bool storm = std::string(key)=="storms";
             const ImU32 color = wind ? IM_COL32(90,219,243,245) :
@@ -109,7 +139,9 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
                 draw->AddLine({p.x-14,p.y},{p.x+14,p.y},color,1);
                 draw->AddLine({p.x,p.y-14},{p.x,p.y+14},color,1);
                 double radius = 0;
-                if (physisFieldRadius(entry, radius)) {
+                // Limit ring geometry when many fields are selected.
+                if ((state.selectedIds.size() <= 16 || active) &&
+                    physisFieldRadius(entry, radius)) {
                     // World-space X/Z circle: unlike a screen-space ellipse, this
                     // projects correctly through the existing Scene camera.
                     ImVec2 previous{};
@@ -129,7 +161,7 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
                         previousValid = valid;
                     }
                     render::float2 handle{};
-                    if (state.gizmoMode == 1 &&
+                    if (active && state.gizmoMode == 1 &&
                         physisRadiusHandleScreen(camera, vp, position, radius, handle)) {
                         const ImVec2 hp{vp.originX+handle.x, vp.originY+handle.y};
                         draw->AddLine(p, hp, color, 1.2f);
