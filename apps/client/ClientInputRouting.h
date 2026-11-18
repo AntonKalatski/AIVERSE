@@ -67,6 +67,9 @@ public:
                 input_.deactivateContext(context);
         }
     }
+    void setPlanetEnabled(bool enabled) { setOptionalContext("RTS.Planet",enabled,80); }
+    void setPossessionEnabled(bool enabled) { setOptionalContext("RTS.Possession",enabled,100); }
+
     // The world may still need pointer coordinates/drag sequences, but the
     // initiating physical mouse button must respect project-owned Select and
     // Command Action mappings. Return -1 when an unassigned button is pressed.
@@ -87,6 +90,13 @@ public:
     }
     void reset() {adapter_.focusLost();}
 private:
+    void setOptionalContext(const char* name,bool enabled,int priority) {
+        if(!input_.context(name))return;
+        if(enabled && !input_.isContextActive(name))
+            input_.activateContext(name,priority);
+        else if(!enabled && input_.isContextActive(name))
+            input_.deactivateContext(name);
+    }
     ei::InputSystem input_;
     platform::EnhancedInputAdapter adapter_{input_};
 };
