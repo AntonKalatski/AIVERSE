@@ -130,3 +130,11 @@ python3 tests/libraries/native_consumer.py
 Plus FPS build and sample matches on all supported platforms, plus engine full tests per \`AGENTS.md\`. Do not mark any platform verified without a successful build and tests.
 
 Known remaining items: editor mapping UI and live rebind capture, RTS/default client context migration, hosted viewport event arbitration, a mobile touch gesture mapper, multiple local players, advanced chord/conflict semantics, configuration package generator validation and final cross-platform CI. These should be tracked in \`docs/enhanced-input-agent-handoff.md\` after each stage.
+
+## Authoring mappings in AIVERSE Editor
+
+Open **Logic → Input Actions** (window ID `input`) for any native project. The dockable editor window reads and writes `<project>/input/actions.json`. It shows editable Actions (Bool/Axis1D/2D/3D, Action modifiers and triggers), Mapping Contexts (enabled/priority), and their bindings (Action, device, code, device index, consume, mapping modifiers/triggers). Keyboard bindings support click-to-capture; Escape cancels without modifying the binding. A conflict warning appears for duplicate physical controls within a context. The window is registered automatically through `AIVERSE_EDITOR_WINDOW`.
+
+**Save** validates the entire asset using the strict `readAsset` parser before writing. It writes a temporary JSON file and creates `.bak` before replacing an existing asset; a failed validation leaves the original untouched. The FPS sample regards this as an entire mapping override — creating an incomplete FPS asset can disable unmapped actions. Use **Reload** to abandon unsaved edits. Project-owned mappings and per-user rebinding profiles are intentionally separate. The current window edits authored project assets, **not** a running player's saved profile.
+
+Capture temporarily suppresses global editor shortcuts (e.g. F5) and cancels when the window is no longer the selected dock tab. The editor's own viewport/tool shortcuts and the hosted game's legacy input routing are not yet fully converted; do not claim complete input capture arbitration until the RTS/hosted client stage is validated.
