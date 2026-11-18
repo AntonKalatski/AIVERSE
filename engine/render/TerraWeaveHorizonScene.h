@@ -264,8 +264,27 @@ public:
         finishTransition(device);
         // A recently departed region may still be in the short-lived
         // transition slot instead of the normal GPU LRU.
-        if(transitionCell_ && *transitionCell_==desired)
-            finishTransition(device,true);
+        if(transition_.model && transitionCell_ &&
+           *transitionCell_==desired &&
+           transitionRevision_==sourceRevision_) {
+            // Camera reversal during the fade: the departing GPU model
+            // already exists in the transition slot. Re-adopt it directly
+            // instead of first placing it into the LRU (which might evict
+            // this desired region when the cache has only one slot).
+            if(cataloged_) {
+                stream_->remove(cell_,[](world::Cell){});
+                cataloged_=false;
+            }
+            HorizonGpuRegion returning=std::move(transition_);
+            transition_={};
+            transitionCell_.reset();
+            transitionRevision_=0;
+            retireActive(device,desired,false);
+            adoptCached(desired,std::move(returning));
+            cell_=desired;
+            drainCanceledJobs();
+            return;
+        }
 
         // Fast return for the already visible region, including a teleport
         // back from an in-flight request to the previous camera region.
@@ -427,11 +446,18 @@ public:
         // the worker prepares the next region. Keep small relocations visible
         // because the same 12km proxy still safely covers that observer.
         const auto proxyCoversCamera=[&]() {
-            if(!activeBake_)return true;
-            const int64_t half=int64_t(activeBake_->sideCm)/2;
+            const int64_t side=activeBake_ ? activeBake_->sideCm :
+                int64_t(settings_.distantTileCm)*settings_.distantTilesPerSide;
+            const int64_t centerX=activeBake_ ? activeBake_->cameraXcm :
+                (activeCell_ ? int64_t(activeCell_->x)*settings_.middleTileCm +
+                    settings_.middleTileCm/2 : lastObserver_.x);
+            const int64_t centerZ=activeBake_ ? activeBake_->cameraZcm :
+                (activeCell_ ? int64_t(activeCell_->z)*settings_.middleTileCm +
+                    settings_.middleTileCm/2 : lastObserver_.z);
+            const int64_t half=side/2;
             const int64_t safety=settings_.distantTileCm;
-            const int64_t dx=lastObserver_.x-activeBake_->cameraXcm;
-            const int64_t dz=lastObserver_.z-activeBake_->cameraZcm;
+            const int64_t dx=lastObserver_.x-centerX;
+            const int64_t dz=lastObserver_.z-centerZ;
             return half>safety &&
                 dx>=-(half-safety) && dx<half-safety &&
                 dz>=-(half-safety) && dz<half-safety;
