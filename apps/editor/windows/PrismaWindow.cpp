@@ -296,6 +296,10 @@ private:
         for (int i = 0; i < 3; ++i) a.push(Json::number(double(p[i]), 3));
         return a;
     }
+    static Json vec3Json(float3 p) {
+        const float xyz[3]={p.x,p.y,p.z};
+        return vec3Json(xyz);
+    }
     static void readVec3(const Json& obj, const char* key, float* p, float defaultValue) {
         for (int i = 0; i < 3; ++i)
             p[i] = obj[key].isArray() && obj[key].size() == 3 ?
@@ -305,7 +309,7 @@ private:
         Json v = Json::object();
         v.set("id", Json::string(id));
         v.set("shape", Json::string(shape == 0 ? "global" : shape == 1 ? "sphere" : "box"));
-        if (shape != 0) v.set("center", vec3Json(&center.x));
+        if (shape != 0) v.set("center", vec3Json(center));
         if (shape == 1) v.set("radius", Json::number(8.0));
         if (shape == 2) {
             const float e[3] = {8.f,8.f,8.f};
@@ -364,7 +368,9 @@ private:
                         ++at;
                     } else if (p.kind == PrismaParamKind::Color) {
                         float rgb[3]={value.values[at],value.values[at+1],value.values[at+2]};
-                        if (ImGui::ColorEdit3(p.label,rgb))
+                        if ((p.lo < 0.f || p.hi > 1.f) ?
+                            ImGui::DragFloat3(p.label,rgb,.01f,p.lo,p.hi) :
+                            ImGui::ColorEdit3(p.label,rgb))
                             editVolumeEffect(ed,scope,vi,ei,[&](Json& item) {
                                 item.set(p.name,vec3Json(rgb));
                             });
@@ -454,7 +460,7 @@ private:
                         Json& item=b.member("volumes").at(i);
                         item.set("shape",Json::string(shapeIndex==0?"global":shapeIndex==1?"sphere":"box"));
                         if (shapeIndex!=0 && !item["center"].isArray()) {
-                            auto p=ed.sceneCam.eye(); item.set("center",vec3Json(&p.x));
+                            auto p=ed.sceneCam.eye(); item.set("center",vec3Json(p));
                         }
                         if(shapeIndex==1 && !item.has("radius"))
                             item.set("radius",Json::number(8.0));
@@ -471,7 +477,7 @@ private:
                     if(ImGui::SmallButton("В центр камеры Scene")) {
                         const auto p=ed.sceneCam.eye();
                         editVolumes(ed,scope,[&](Json& b){
-                            b.member("volumes").at(i).set("center",vec3Json(&p.x));
+                            b.member("volumes").at(i).set("center",vec3Json(p));
                         });
                     }
                     if(shapeIndex==1) {
@@ -532,7 +538,7 @@ private:
                 int next=1;
                 std::string id;
                 do {
-                    id="volume_"+std::to_string(next++);
+                    id=(scope=="map"?"map_volume_":"game_volume_")+std::to_string(next++);
                     bool found=false;
                     for(const auto& item:arr.items())
                         if(item.getStr("id")==id){found=true;break;}
