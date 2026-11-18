@@ -868,3 +868,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Created persistent work tracker: https://github.com/chromealex/AIVERSE/issues/19 (epic with phased checklists, canonical authority gates and links to audit/AGENTS/this handoff).
 - The epic marks reusable ECS packages as **implemented but unverified and not yet adopted by built-in RTS/FPS**. Do not close it merely because catalog entries exist.
 - Next: obtain native build/CI evidence, then migrate actual FPS/RTS systems one behavior at a time, update the linked issue checklist and this handoff separately.
+
+
+### 2026-11-18 — Shared ECS weapon cooldown snapshot regression
+- Implementation SHA: `b703c3937a7397a1fe71987b29e7e90a5bf5e602`.
+- Changed: `tests/ecs_cross_genre_weapon_pipeline_test.cpp`. New `exerciseCooldown<Tag>(cow)` fixture initializes two rounds, fires once, snapshots, requests another shot one tick later (inside the six-tick fire interval), and checks ammo remains 1, nextShotId remains 2, no pending spawn and fire intent is consumed. Restores the snapshot and compares deterministic checksum after replay. Compares ShooterTag/ArtilleryTag and deep/COW snapshot modes.
+- Verification: GitHub commit succeeded. C++ compilation and test execution not performed; expected outcome is an assertion, not an observed pass.
+- CI status observed for previous handoff SHA `4de1319dfad9589975ed885fdd7565ba1e8d2bf1`: CI #1178 was **cancelled**, while Studio #845, GPU batching #449 and ECS experimental #328 were queued. Cancelled is not a pass.
+- Next: run the new fixture in native CTest, inspect Actions outcomes, then wire real FPS/RTS launch and projectile paths to shared systems behind opt-in gates with byte-compatible saves and rollback. Keep Editor regression testing on the acceptance checklist.
