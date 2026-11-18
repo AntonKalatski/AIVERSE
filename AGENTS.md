@@ -183,6 +183,23 @@ Continue adding features with bounded implementation stages and
 a **separate handoff commit after each stage**; record tests as
 NOT RUN until actually executed.
 
+**Stage 17 — SpectraFX graph-v2 editor and safe drafts
+(source committed; tests deferred):**
+`engine/fx/SpectraAuthoring.h` is the pure common node catalog
+and model for execution/data links; `apps/editor/windows/SpectraGraphWindow.cpp`
+now creates v2 graphs, supports the grouped node catalog,
+math/data wires, field/curve/gradient editors, legacy v1 upgrades
+and separate incomplete drafts. `apps/editor/core/SpectraGraphOps.cpp`
+exposes `fx_graph_node_catalog`, `fx_graph_edit` (memory-only),
+and `fx_graph_draft_set/get/list/publish`. Drafts reside under
+`fx/graphs/_drafts` and MUST NOT be consumed by production
+GraphAssets; published assets still compile through the strict
+`fx::parseEffect` path. Never silently publish invalid graphs,
+destroy working assets while editing, or duplicate a genre-specific
+VFX editor. No CMake/CTest/ImGui runtime verification was executed
+because user prioritizes closing functionality first.
+Follow the separate per-stage handoff protocol.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
