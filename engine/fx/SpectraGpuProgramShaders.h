@@ -25,6 +25,10 @@ struct VMParticle {
     float4 size;
 };
 struct VMParams { float values[8]; };
+struct VMParticleParams {
+    float values[8];
+    uint sourceSlot, generation, active, reserved;
+};
 struct VMDispatch {
     uint particleCount;
     uint stage; // 0 Spawn or 1 Update
@@ -32,7 +36,7 @@ struct VMDispatch {
     uint reserved;
 };
 bool vmFinite(float v) { return isfinite(v) && abs(v) <= 10000000.0f; }
-float vmRead(uint field, VMParticle p, constant VMParams& params,
+float vmRead(uint field, VMParticle p, VMParams params,
              float dt) {
     switch(field) {
         case 0: return p.positionAge.w;
@@ -70,7 +74,7 @@ void vmWrite(uint field, float v, thread VMParticle& p) {
     }
 }
 bool vmEvaluate(const device VMPayload& code, VMStatement st,
-                VMParticle p, constant VMParams& params,
+                VMParticle p, VMParams params,
                 float dt, thread float& result) {
     float stack[128];
     uint used=0u;
@@ -122,6 +126,7 @@ kernel void cs_main(uint tid [[thread_position_in_grid]],
                     const device VMPayload& code [[buffer(1)]],
                     constant VMParams& params [[buffer(2)]],
                     device atomic_uint* errorCount [[buffer(3)]],
+                    device const VMParticleParams* snapshots [[buffer(4)]],
                     constant VMDispatch& dispatch [[buffer(8)]]) {
     if(tid>=dispatch.particleCount)return;
     if(code.abiVersion!=1u || code.statementCount>64u ||
@@ -132,6 +137,15 @@ kernel void cs_main(uint tid [[thread_position_in_grid]],
     }
     VMParticle p=particles[tid];
     if(p.positionAge.w<0.0f)return;
+    VMParams effective=params;
+    if(dispatch.reserved==1u) {
+        VMParticleParams snapshot=snapshots[tid];
+        if(snapshot.active==0u || snapshot.generation==0u)return;
+        for(uint k=0u;k<8u;++k)effective.values[k]=snapshot.values[k];
+    } else if(dispatch.reserved!=0u) {
+        atomic_fetch_add_explicit(errorCount,1u,memory_order_relaxed);
+        return;
+    }
     // Transactional per-particle semantics: commit only after every statement
     // has evaluated; malformed payloads never expose partial state updates.
     for(uint i=0u;i<code.statementCount;++i) {
@@ -140,11 +154,11 @@ kernel void cs_main(uint tid [[thread_position_in_grid]],
         float value=0.0f;
         if(st.target<4u || st.target==11u || st.target>15u ||
            st.action>3u ||
-           !vmEvaluate(code,st,p,params,dispatch.dt,value)) {
+           !vmEvaluate(code,st,p,effective,dispatch.dt,value)) {
             atomic_fetch_add_explicit(errorCount,1u,memory_order_relaxed);
             return;
         }
-        float prior=vmRead(st.target,p,params,dispatch.dt);
+        float prior=vmRead(st.target,p,effective,dispatch.dt);
         if(st.action==1u)value=prior+value;
         else if(st.action==2u)value=prior+value*dispatch.dt;
         else if(st.action==3u)value=prior*value;
