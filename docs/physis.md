@@ -247,3 +247,25 @@ simulation, and not a world streaming/job scheduler. The index holds a
 copy-on-write World snapshot; keeping many historical indexes resident may
 retain COW pages and increase memory. No native benchmark or compiler success
 has been observed yet; tests are source-only until CTest runs.
+
+
+## Spatial broadphase total-memory budget (Stage 17)
+
+`FieldIndexSettings::maxTotalBucketReferences` (default 65,536, validated
+1..1,048,576) is a **per field type** cap in addition to
+`maxTilesPerVolume`. It prevents worlds containing many individually small
+volumes from allocating unbounded bucket references. Once a type exhausts its
+total budget, later fields go to the existing stable global fallback list
+rather than being dropped, so all reference wind, gravity and storm values
+remain represented. `FieldIndexStats::bucketReferences` is now O(1) to read
+per type.
+
+For the default settings, the four field categories together can have up to
+4 × 65,536 bucket references, plus their ECS/snapshot entries and maps.
+`maxTotalBucketReferences` does **not** bound total PHYSIS world memory,
+the number of authored ECS fields, or the size of the global fallback; a
+globally crowded world may still require a large O(field count) query.
+The new `physis_spatial_index` fixture compares 800 varied fields under
+a tiny budget against the original reference samplers. The fixture is
+**authored but not yet executed**. See
+[`Stage 17 handoff`](agent-handoffs/physis-spatial-budget-2026-11-18.md).
