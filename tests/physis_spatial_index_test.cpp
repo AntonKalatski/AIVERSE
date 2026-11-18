@@ -116,6 +116,34 @@ void testMixedGlobalAndLocal() {
     index.wind.visit({0_fx, 0_fx, 0_fx}, [&](Entity, const WindZone&) { ++visited; });
     CHECK(visited < index.wind.volumeCount());
 
+    // Index-backed diagnostic raster is identical to the reference for all
+    // scalar channels; expensive 3D fields use the bounded candidate visits.
+    const DiagnosticLayer layers[] = {
+        DiagnosticLayer::TemperatureCelsius, DiagnosticLayer::RelativeHumidity,
+        DiagnosticLayer::PressureHpa, DiagnosticLayer::Rain, DiagnosticLayer::Snow,
+        DiagnosticLayer::SurfaceWetness, DiagnosticLayer::SnowpackMeters,
+        DiagnosticLayer::SurfaceIce, DiagnosticLayer::WindSpeedMetersPerSecond,
+        DiagnosticLayer::VerticalWindMetersPerSecond,
+        DiagnosticLayer::GravityMagnitude, DiagnosticLayer::Fire,
+        DiagnosticLayer::Quake, DiagnosticLayer::LocalFloodMeters
+    };
+    for (const auto layer : layers) {
+        DiagnosticRequest req;
+        req.originX = -3; req.originZ = -3;
+        req.width = 6; req.height = 6;
+        req.stride = 2;
+        req.layer = layer;
+        DiagnosticRaster reference, indexedRaster;
+        CHECK(sampleDiagnosticRaster(world, req, reference));
+        CHECK(sampleDiagnosticRasterIndexed(world, index, req, indexedRaster));
+        CHECK(reference.rawValues == indexedRaster.rawValues);
+        CHECK(reference.valid == indexedRaster.valid);
+        CHECK(reference.minRaw == indexedRaster.minRaw);
+        CHECK(reference.maxRaw == indexedRaster.maxRaw);
+        CHECK(reference.sampleCount == indexedRaster.sampleCount);
+        CHECK(reference.tick == indexedRaster.tick);
+    }
+
     const World checkpoint = world;
     advanceEnvironmentWithStormsAndDisasters(world, FloodMode::ExternalAuthority);
     CHECK(!index.sameTick(world));
