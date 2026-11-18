@@ -82,7 +82,10 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         x.deepR==y.deepR && x.deepG==y.deepG && x.deepB==y.deepB &&
         x.foamR==y.foamR && x.foamG==y.foamG && x.foamB==y.foamB &&
         x.foamStrength==y.foamStrength &&
-        x.refractionStrength==y.refractionStrength && x.opacity==y.opacity &&
+        x.refractionStrength==y.refractionStrength &&
+        x.absorption==y.absorption &&
+        x.shoreFoamDepth==y.shoreFoamDepth &&
+        x.depthTint==y.depthTint && x.opacity==y.opacity &&
         x.specular==y.specular;
 }
 
