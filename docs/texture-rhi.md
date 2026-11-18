@@ -5,8 +5,8 @@ Implementation branch: `feature/texture-rhi-unification`.
 
 ## Status — staged source implementation (not GPU-validated)
 
-The append-only stage log covers substantial source work through 7G
-(including stages 4R–4W, 5I–5O, and 7A–7G). Stage numbers track feature
+The append-only stage log covers substantial source work through 7M
+(including stages 4R–4W, 5I–5O, 7A–7M and 8A). Stage numbers track feature
 areas rather than chronological order. **No native C++ build,
 GPU validation or CTest result has been confirmed passing for these changes.**
 Do not call the entire texture stack production-ready merely because a C++ method exists.
@@ -102,6 +102,23 @@ SHA, unverified platforms and the next exact task.
   Compressed/tiled/deep/multipart EXR is deliberately rejected.
 - `BC6H_UFloat` and `BC6H_SFloat` preserve signed/unsigned HDR block
   payloads for DDS/KTX2 and map them to capable Metal/GL/Vulkan hardware.
+
+**GPU readback:** `Device::readTextureAsync` is an opt-in mip/face
+readback API. Metal uses shared-buffer blit, GL33/GLES3 use PBO+
+nonblocking fence polling, and Vulkan uses host-coherent staging
+with completed frame serials. All accepted callbacks run on the
+device owner thread in later frames. WebGL2 explicitly refuses
+native async readback. No actual GPU backend readback tests have
+completed yet.
+
+**Virtual textures:** `gfx::VirtualTextureStreamer` composes the
+`VirtualTexturePageCache`, `VirtualTexturePageTable` and GPU staging
+queue. It allocates a fixed-size Texture2DArray physical atlas and
+RGBA8 page table, invalidates old mappings before LRU reuse, and
+publishes uploaded pages only after successful transfer. The
+`VirtualTextureSampling.h` GLSL/MSL helpers expect pre-guttered
+physical pages. This is not a sparse image API, feedback pass or
+background disk worker; these remain separate work.
 
 **VRAM caveat:** Ordinary streaming allocates the full texture mip chain
 up front; it budgets and defers *uploads* rather than physically releasing
@@ -260,9 +277,11 @@ cmake --build build/texture-rhi --target \
   aiverse_ktx2_layers_test aiverse_dds_layers_test \
   aiverse_texture_asset_test aiverse_texture_streaming_test \
   aiverse_texture_mip_residency_test aiverse_texture_resident_streamer_test \
-  aiverse_hdr_texture_test aiverse_exr_texture_test
+  aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test \
+  aiverse_virtual_texture_streamer_test aiverse_hdr_texture_test \
+  aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|hdr_texture|exr_texture)
+  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|hdr_texture|exr_texture)
 ```
 
 On Vulkan-enabled Linux/Windows hosts, also build
