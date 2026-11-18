@@ -2696,3 +2696,46 @@ coarse-to-fine sampler clamp, failed producer retry, cancellation,
 stale resource destruction, GPU upload failure, and exact per-frame
 byte limits. Register it in CMake and append a new handoff with
 actual test status. Later integrate native texture inspection/editor.
+
+## Stage 7G — virtual texture CPU page cache with LRU and parent fallback (2026-11-18)
+
+**Code commit:** `2d570cc233578fef48a9a3391b83826a657ba717`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**File:** new `engine/gfx/VirtualTexturePages.h`.
+
+**Implementation:** Source-only, genre-neutral `gfx::VirtualTexturePageCache`
+maintains a bounded number of physical page slots (for a caller-owned
+`Texture2DArray` atlas), maps virtual `{mip,x,y,layer}` keys onto
+generational physical slice assignments, prioritizes unused/free slots
+and deterministically evicts least-recently-used **resident/unpinned**
+pages. Pending uploads are never evicted until explicitly canceled by
+the caller; stale GPU completions are rejected by global slot generation
+tokens even after cache clear/reinit. Optional pinned fallback pages,
+`touch`, `pin`, `evict`, `complete`, `abandon` and
+`resolveWithCoarseFallback` allow the renderer to choose an available
+parent page in the SAME virtual layer; absent parents return invalid
+and require an explicit fallback material. `atlasDescriptor` creates
+a `Texture2DArray` descriptor with one physical slice per page; actual
+GPU allocation, upload, page-table shader and VT feedback are the
+host project's responsibility.
+
+**Known edge to fix immediately:** Calling `reserve` again for an
+already-pending key currently reports `needsUpload=true`; the next
+source stage must make it false for duplicate in-flight requests to
+avoid redundant writes to the same physical slot.
+
+**Limits:** CPU mapping/index only, no GPU virtual texture feedback,
+no shader indirection/page-table upload and no demand paging from disk.
+It is a reusable *foundation*, not complete sparse virtual texturing.
+The caller must cancel a pending `TextureStreamQueue` ticket before
+`abandon` allows reuse of its physical slice. Rendered page textures
+and physical atlas storage remain non-authoritative presentation data.
+
+**Verification:** GitHub source commit successful; C++ compiler,
+CTest, real GL/Metal/Vulkan GPU validation **NOT RUN** (full repo
+checkout unavailable in this session). No passing CI asserted.
+
+**Next:** Fix duplicate pending `needsUpload` semantics, then add
+CPU tests for eviction, pinned roots, generation rejection, pending
+upload non-eviction, correct coarser same-layer lookup and page
+allocation bounds; each stage requires its own code/handoff commits.
