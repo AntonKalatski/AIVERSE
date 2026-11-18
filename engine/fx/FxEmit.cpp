@@ -255,6 +255,7 @@ bool ParticleSystem::Impl::emit(Instance& in, uint32_t owner, int effect, int em
         p.flags |= 16;
     }
     p.uid = ++nextUid == 0 ? ++nextUid : nextUid;
+    p.programParams = in.programParams; // snapshot after instance validation
     p.depth = in.depth;
     // Spawn expression bytecode may initialize custom particle attributes,
     // tint, size and velocity before trails/sub-events observe the particle.
