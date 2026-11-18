@@ -4,6 +4,7 @@
 // stays displayed until a new region has been successfully uploaded.
 #pragma once
 #include "engine/render/TerraWeaveHorizonModel.h"
+#include "engine/render/TerraWeaveHorizonGpuPatch.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -40,6 +41,8 @@ struct HorizonRuntimeStats {
     size_t preparing=0, discarded=0; // stream status on owning thread
     size_t cachedRegions=0, cacheHits=0; // bounded CPU bake reuse
     size_t archiveHits=0; // full re-use across game launches, when configured
+    size_t atlasPatchCount=0, atlasPatchBytes=0; // successful incremental RHI uploads
+    size_t atlasPatchRegions=0, fullUploadCount=0; // last patch region count, full model uploads
 };
 
 class TerraWeaveHorizonScene {
@@ -258,6 +261,39 @@ public:
                     runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                     return true;
                 }
+                // Fast path: if the region and all terrain/forest geometry
+                // are unchanged, patch only changed atlas pixels. Never
+                // update the mesh in place on structure/height changes.
+                // The RHI performs mip regeneration for partial updates.
+                if(model_&&activeBake_&&model_->images.size()==1){
+                    const auto patch=planHorizonAtlasUpload(
+                        *activeBake_,*prepared->bake,settings_.atlasTilePixels);
+                    if(patch){
+                        const auto patchStart=std::chrono::steady_clock::now();
+                        if(applyHorizonAtlasUpload(device,*model_,
+                                                   *prepared->bake,*patch)){
+                            activeBake_=prepared->bake;
+                            originXcm_=prepared->bake->originXcm;
+                            originZcm_=prepared->bake->originZcm;
+                            clusters_=prepared->bake->clusters.size();
+                            terrainQuads_=prepared->bake->terrainResolution*
+                                          prepared->bake->terrainResolution;
+                            runtime_.clusters=clusters_;
+                            runtime_.atlasBytes=prepared->bake->atlasRgba.size();
+                            runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
+                            runtime_.gpuUploadMs=std::chrono::duration<
+                                double,std::milli>(
+                                    std::chrono::steady_clock::now()-patchStart
+                                ).count();
+                            if(!patch->regions.empty()){
+                                ++runtime_.atlasPatchCount;
+                                runtime_.atlasPatchBytes+=patch->updatedBytes;
+                            }
+                            runtime_.atlasPatchRegions=patch->regions.size();
+                            return true;
+                        }
+                    }
+                }
                 // CPU model is already prepared on worker. uploadModel only
                 // touches the renderer-owned Device on this update thread.
                 auto next=std::move(prepared->model);
@@ -285,6 +321,8 @@ public:
                 runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                 runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
                     std::chrono::steady_clock::now()-uploadStart).count();
+                runtime_.atlasPatchRegions=0;
+                ++runtime_.fullUploadCount;
                 return true;
             },[](world::Cell){});
     }
