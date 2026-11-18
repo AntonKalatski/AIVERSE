@@ -207,6 +207,13 @@ void ComputeParticles::shutdown() {
 void ComputeParticles::clear() {
     if(!initialized_)return;
     if(backend_==ComputeBackend::Cpu){cpu_.clear();stats_.alive=0;return;}
+    // Storage updates are encoded as blits. Issuing one inside an active
+    // render/compute encoder is silently rejected by the Metal RHI, so never
+    // reset CPU slot bookkeeping unless the GPU buffer can actually be reset.
+    if(!device_->canUpdateSharedBuffers()) {
+        reason_="SpectraFX GPU clear must run outside render/compute passes";
+        return;
+    }
     pendingStates_.clear();pendingSlots_.clear();verticesReady_=false;
     const uint32_t cap=desc_.capacity;
     std::vector<ParticleState> empty(cap);
