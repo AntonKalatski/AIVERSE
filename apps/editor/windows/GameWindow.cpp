@@ -439,7 +439,6 @@ private:
             if (ed.groundAt(vp_, cam, io.MousePos.x - io.MouseDelta.x, io.MousePos.y - io.MouseDelta.y, x0, z0) && ed.groundAt(vp_, cam, io.MousePos.x, io.MousePos.y, x1, z1))
                 cam.target += float3{x0 - x1, 0, z0 - z1};
         }
-        refreshCameraActions(ed);
         const bool cameraFocused=ImGui::IsWindowFocused() && !io.WantTextInput;
         updateCameraActions(cameraFocused,io.DeltaTime);
         if(cameraFocused) {
