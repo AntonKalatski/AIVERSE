@@ -27,6 +27,7 @@ struct HorizonSettings {
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
     uint32_t crownDetail = 2;         // 1..3 CPU-only crown silhouette quality
     uint32_t orientationViews = 1;    // 1 cheap shared, 2 orthogonal canopy projections
+    uint32_t maxCachedRegions = 2;    // 0=disable, 1..4 recent CPU atlases; no extra GPU models
     int32_t nearBlendCm = 6000;       // masked silhouette fade-in before near trees end
     int32_t tierBlendCm = 16000;      // stochastic mid-to-far overlap around 1 km
     bool distantTerrain = true;       // opt-in manifest, disabled unless requested
@@ -129,6 +130,7 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.terrainResolution>96 || s.canopyHeightCm<100 ||
         s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3 ||
         (s.orientationViews!=1 && s.orientationViews!=2) ||
+        s.maxCachedRegions>4 ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
         int64_t(s.nearBlendCm)>s.middleForestEndCm-s.closeForestEndCm ||
         s.tierBlendCm<0 ||
