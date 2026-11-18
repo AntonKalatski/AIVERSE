@@ -1,4 +1,5 @@
 #include "WorldScene.h"
+#include "TerraWeaveForestManifest.h"
 #include "engine/render/ModelTextureCache.h"
 #include <algorithm>
 #include <cmath>
@@ -48,6 +49,9 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     shareModels_=manifest.getBool("shareModels");
     overhang_=float(worldInteger(manifest,"meshOverhang",0,0,4096));
     uploadBytes_=size_t(worldInteger(manifest,"maxUploadBytes",16*1024*1024,1024,1024*1024*1024));
+    // Opt-in only. The existing WorldScene codepath is identical when the
+    // manifest has no terraweaveForest block.
+    terraForest_=forestSceneFromManifest(manifest);
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
@@ -136,13 +140,43 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             resident_[cell]=prepared;return true;
         }catch(...){releaseChunk(device,*prepared);throw;}
     },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
+    if(terraForest_){
+        if(!observers.empty()) {
+            const Vec3 observer=observers.front();
+            const double xCm=observer.x.toDouble()*100.0;
+            const double zCm=observer.z.toDouble()*100.0;
+            if(!std::isfinite(xCm)||!std::isfinite(zCm)||
+               std::fabs(xCm)>double(terraweave::kWorldLimitCm)||
+               std::fabs(zCm)>double(terraweave::kWorldLimitCm))
+                throw JsonError("world.terraweaveForest: observer outside supported extent");
+            terraForest_->streamAt({
+                static_cast<int64_t>(std::llround(xCm)),
+                static_cast<int64_t>(std::llround(zCm))
+            });
+        }
+        if(!terraForestReady_) {
+            if(!terraForest_->uploadModels(device))
+                throw JsonError("world.terraweaveForest: model GPU upload failed");
+            terraForestReady_=true;
+        }
+    }
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
+    if(terraForest_&&terraForestReady_) {
+        const int64_t factor=int64_t(size)*100;
+        terraForest_->submit(renderer,{
+            int64_t(origin.x)*factor, 0, int64_t(origin.z)*factor
+        });
+    }
 }
 void WorldScene::shutdown(gfx::Device& device) {
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
+    if(terraForest_&&terraForestReady_){
+        terraForest_->releaseModels(device);
+        terraForestReady_=false;
+    }
 }
 }
