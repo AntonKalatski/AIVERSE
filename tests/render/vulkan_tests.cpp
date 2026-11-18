@@ -251,6 +251,100 @@ int main() {
         if (layeredColor.valid()) d.destroyTexture(layeredColor);
         if (layeredDepth.valid()) d.destroyTexture(layeredDepth);
     }
+    {   // Two-target MRT: independent per-attachment clear values and fragment outputs.
+        TextureDesc cd; cd.width = W; cd.height = H; cd.renderTarget = true;
+        const TextureHandle target0 = d.createTexture(cd);
+        const TextureHandle target1 = d.createTexture(cd);
+        CHECK(target0.valid() && target1.valid());
+        ShaderDesc shaderDesc;
+        shaderDesc.glslVertex = kVs;
+        shaderDesc.glslFragment = R"(
+in vec2 v_uv;
+layout(location=0) out vec4 color0;
+layout(location=1) out vec4 color1;
+void main() {
+    color0 = vec4(0.0, 0.0, 1.0, 1.0);
+    color1 = vec4(1.0, 1.0, 0.0, 1.0);
+}
+)";
+        shaderDesc.uniformSlots = 1;
+        const ShaderHandle mrtShader = d.createShader(shaderDesc);
+        CHECK(mrtShader.valid());
+        PipelineDesc mrtPipe;
+        mrtPipe.shader = mrtShader;
+        mrtPipe.attrs[0] = {0, VertexFormat::Float3, 0};
+        mrtPipe.attrs[1] = {1, VertexFormat::Float2, 12};
+        mrtPipe.attrCount = 2;
+        mrtPipe.stride = sizeof(Vtx);
+        mrtPipe.indexType = IndexType::None;
+        mrtPipe.depthTest = mrtPipe.depthWrite = false;
+        mrtPipe.colorAttachmentCount = 2;
+        mrtPipe.additionalColorFormats[0] = PixelFormat::RGBA8;
+        const PipelineHandle mrt = mrtShader.valid() ? d.createPipeline(mrtPipe) : PipelineHandle{};
+        CHECK(mrt.valid());
+        if (target0.valid() && target1.valid() && mrt.valid()) {
+            RenderTargetPassDesc pass;
+            pass.colorCount = 2;
+            pass.colors[0].texture = target0;
+            pass.colors[1].texture = target1;
+            pass.colors[0].clearColor[0] = 1.0f;
+            pass.colors[0].clearColor[3] = 1.0f;
+            pass.colors[1].clearColor[1] = 1.0f;
+            pass.colors[1].clearColor[3] = 1.0f;
+            Image clears = frame(d, [&] {
+                CHECK(d.supportsRenderTargetPasses());
+                const bool started = d.beginRenderTargets(pass);
+                CHECK(started);
+                if (started) d.endPass();
+                d.beginPass(screen);
+                d.setPipeline(pTex);
+                d.setVertexBuffer(vbFull);
+                d.setTexture(0, target0);
+                d.setViewport({0, 0, W/2, H});
+                d.draw(6);
+                d.setTexture(0, target1);
+                d.setViewport({W/2, 0, W/2, H});
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(clears.w == W && clears.h == H);
+            if (clears.w == W && clears.h == H) {
+                CHECK(near(clears.at(4, H/2), 255, 0, 0));
+                CHECK(near(clears.at(W-4, H/2), 0, 255, 0));
+            }
+            pass.colors[0].clear = pass.colors[1].clear = false;
+            Image outputs = frame(d, [&] {
+                const bool started = d.beginRenderTargets(pass);
+                CHECK(started);
+                if (started) {
+                    d.setPipeline(mrt);
+                    d.setVertexBuffer(vbFull);
+                    uniforms(1,1,1,1);
+                    d.draw(6);
+                    d.endPass();
+                }
+                d.beginPass(screen);
+                d.setPipeline(pTex);
+                d.setVertexBuffer(vbFull);
+                d.setTexture(0, target0);
+                d.setViewport({0, 0, W/2, H});
+                d.draw(6);
+                d.setTexture(0, target1);
+                d.setViewport({W/2, 0, W/2, H});
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(outputs.w == W && outputs.h == H);
+            if (outputs.w == W && outputs.h == H) {
+                CHECK(near(outputs.at(4, H/2), 0, 0, 255));
+                CHECK(near(outputs.at(W-4, H/2), 255, 255, 0));
+            }
+        }
+        if (mrt.valid()) d.destroyPipeline(mrt);
+        if (mrtShader.valid()) d.destroyShader(mrtShader);
+        if (target0.valid()) d.destroyTexture(target0);
+        if (target1.valid()) d.destroyTexture(target1);
+    }
     {   // a dynamic buffer rewritten between draws of one frame: each draw keeps its data
         const BufferHandle dyn = d.createBuffer(bufferDesc(Usage::Dynamic, top.size() * sizeof(Vtx), nullptr));
         const auto bottom = quad(-1, -1, 1, 0, 0);
