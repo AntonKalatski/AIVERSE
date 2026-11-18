@@ -14,21 +14,25 @@ int main() {
         "nodes":[{"id":"c","kind":"clip","clip":"Move"}],"output":"c"})"));
     World a,b;
     auto populate=[&](World& w){
+        std::vector<Entity> entities;entities.reserve(96);
         for(int i=0;i<96;++i) {
-            auto e=w.create();
+            auto e=w.create();entities.push_back(e);
             auto& asset=w.add<AnimationAssetComponent>(e);
             asset.model=&m;asset.graph=graph;
             w.add<AnimationPlayerComponent>(e);
             w.add<AnimationPoseComponent>(e);
         }
+        return entities;
     };
-    populate(a);populate(b);
+    auto aa=populate(a),bb=populate(b);
     stepAnimationPresentation(a,.25f);
     const bool used=stepAnimationPresentationParallel(b,.25f,4);
     assert(used);
-    for(int i=0;i<96;++i) {
-        auto e=Entity{uint32_t(i+1),1}; // optional tests should use generated ids
-        (void)e;
+    for(size_t i=0;i<aa.size();++i) {
+        const auto& x=a.get<AnimationPoseComponent>(aa[i]);
+        const auto& y=b.get<AnimationPoseComponent>(bb[i]);
+        assert(x.valid && y.valid);
+        assert(std::abs(x.local[0].t.x-y.local[0].t.x)<1.e-5f);
     }
     assert(canEvaluateAnimationParallel(b));
     return 0;
