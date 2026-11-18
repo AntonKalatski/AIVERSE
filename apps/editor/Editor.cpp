@@ -5,6 +5,7 @@
 #include "core/SimTools.h"
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
+#include "engine/render/PrismaVolumeData.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
 
@@ -41,6 +42,17 @@ FileReader projectReader(const std::string& dir) {
     };
 }
 } // namespace
+
+void Editor::refreshPrismaVolumes() {
+    const Json& game = ws_.project.manifest["prismaVolumes"];
+    const Json& map = doc().data.extra["prismaVolumes"];
+    const std::string signature = game.dump(-1) + "|" + map.dump(-1);
+    if (signature == prismaVolumesSignature_) return;
+    prismaVolumesSignature_ = signature;
+    std::vector<std::string> issues;
+    prismaVolumes_ = render::parsePrismaVolumes(game, map, &issues);
+    for (const auto& issue : issues) ws_.log("prisma", issue, true);
+}
 
 // ============================ viewport ============================
 
@@ -868,11 +880,14 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
+    refreshPrismaVolumes();
+    prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
     r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &prisma_ : nullptr));
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePrisma();
+    prisma_.clearCameraVolumes();
     dev_->endPass();
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
     if (traceSceneStages) {
@@ -932,9 +947,12 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
+    refreshPrismaVolumes();
+    prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
     r3d_.render(pass, &prisma_);
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePrisma();
+    prisma_.clearCameraVolumes();
     dev_->endPass();
     view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
