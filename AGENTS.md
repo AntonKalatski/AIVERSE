@@ -297,6 +297,41 @@ stage handoff in
 with a separate commit and keep native C++ usage
 compatible across genres.
 
+**Stage 22 — SpectraFX Metal bounded scalar GPU VM (source committed,
+tests NOT RUN):** `engine/fx/SpectraGpuProgram.h` already
+defined a fixed ABI payload; Stage 22 adds strict executable
+budget/ABI checks and an **actual MSL interpreter** during GPU
+particle Spawn/Update in `SpectraGpuShaders.h`. No recompilation
+of user text into MSL is performed. `ComputeEmitterDesc::gpuProgram`
+and `GraphRuntimeOptions::gpuProgram` default to false and
+require explicit opt-in, one simple additive soft-sprite emitter,
+a validated subset of 24 statements / 192 scalar VM ops, and
+Metal compute support. Unsupported effects preserve the entire
+CPU particle-program definition; `RequireGpu` refuses fallback.
+
+Metal storage binding slots 7/9/10 hold 32-byte spawn parameter
+snapshots, 32-byte persistent per-particle values, and the
+10,256-byte validated GPU VM payload (ABI version 1).
+Slot 8 remains the standard GPU frame uniforms. Fields/opcode
+numbers are static-asserted against the CPU VM types. No
+GPU custom attributes, arbitrary shader graphs, ribbons,
+collisions, user-script execution or non-Metal GPU VM is
+implemented. Gameplay ECS remains authoritative and unaffected.
+Named v2 `instanceParameters` can be set before Spawn or
+updated for existing GPU particles without reading positions
+back. Existing/simple effects remain on their original backend
+unless explicitly configured.
+
+Native editor and MCP now distinguish ordinary billboard GPU
+compatibility from `metalVmEligible`/`metalVmReason`.
+These are **schema checks**, not GPU availability or success.
+The user explicitly deferred CMake/CTest/Metal/device tests.
+Mark all Stage-22 test outcomes **NOT RUN**, and append a
+separate mandatory handoff commit to
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+before starting another feature stage. Preserve multi-agent
+branches and do not merge into `main` without user request.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
