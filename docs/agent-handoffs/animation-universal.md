@@ -715,3 +715,47 @@ before calling this stage validated.
   safe independent tasks. Commit the implementation first, then Stage 34
   handoff in a separate commit.
 
+## Stage 34 — hybrid safe/callback animation scheduler (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22.
+- **Implementation SHA:** `3ee29809508bf04225318ba787578b114a7f95a3`.
+- **Files:** `EcsAnimationSystems.h` now supports evaluating selected
+  dense ECS player indices after write-pool detachment;
+  new `libraries/include/aiverselib/animation/MotionWeaveScheduler.h`
+  classifies each entity by its compiled graph/parameters; updated
+  `libraries/include/aiverselib/motionweave/MotionWeave.h` adds a host-owned
+  scheduler overload; new `tests/animation/motionweave_hybrid.cpp` and
+  CMake test registration.
+- **API:** `MotionWeaveScheduler::update(World&,float)` returns
+  `MotionWeaveScheduleStats`, with an optional worker count / scheduler
+  options in constructor. New
+  `MotionWeave::update(World&,float,MotionWeaveScheduler&)` calls that
+  scheduler. Existing two-argument `MotionWeave::update` keeps exactly
+  its old sequential behavior.
+- **Threading contract:** all writable ECS pools are prepared on the
+  submitting thread BEFORE dispatch. Each job owns disjoint player
+  indices, can compute independent clips, controller blends, IK and
+  motion matching; a persistent `MotionWeaveWorkerPool` runs chunks
+  via an atomic work index. Graphs with native functions, Rig/Stack
+  traits, custom environment or contacts take the **caller-thread
+  serial lane**, and are evaluated only AFTER the worker barrier.
+  An unsafe entity does not force the entire World to be sequential.
+  Per-entity event outputs remain accessible after the barrier.
+- **Compatibility:** simulation World, fixed gameplay, save/network
+  schema, editors and existing RTS/FPS code unchanged. Scheduler is
+  opt-in until a host explicitly passes it.
+- **Tests:** deferred fixture `motionweave_hybrid` compares 100 entities,
+  with six native-callback graphs, across serial and hybrid frames
+  and verifies that native callback executes on the caller. **NOT RUN**
+  by user request; no CI result claimed.
+- **Limitations:** per-graph safety classification is deliberately
+  conservative; do not run Lua/native callbacks on worker threads.
+  Fixed-sized chunks have no cost-weighted balancing yet; persistent
+  workers are instantiated when scheduler is constructed. Workers
+  must not receive concurrent mutations/snapshot activity from host.
+  Rendering and GPU uploads still occur on main thread.
+- **Next:** add an adaptive cost model and variable-sized chunks
+  based on graph complexity/pose budget, expose useful per-frame
+  diagnostics, then wire the host-owned scheduler into FPS.
+  Commit the next code stage separately, followed by Stage 35 handoff.
+
