@@ -1821,3 +1821,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `9e5263a6e8b028c85c731e3da80c8033ab2d248f`.
 - User's `ecs_hitscan_resolution_test` aborted with "wrong closest hit fraction". `world::intersect` reports z=3 / dz=10 via truncating `Fixed::operator/`; the test expected nearest-rounded `Fixed::fromRatio(3,10)`. Also the emitted hit coordinate uses `origin + delta * fraction`, which is **not exactly** `3_fx` after quantization. The regression now checks `hit.fraction == 3_fx/10_fx` and `hit.point.z == 10_fx*(3_fx/10_fx)`, i.e. the actual deterministic engine arithmetic.
 - No production hitscan, damage ordering, or transport format changed. Native test rerun remains **pending**.
+
+
+### 2026-11-18 — Native ECS projectile skill updated for FPS creation/reset cutover
+- **Implementation SHA:** `44feafc3837c00abc84b8008c1b68e08abb5c3a1`.
+- Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` with real FPS `Module::spawnProjectile`/`clearProjectiles` adoption, direct `ProjectileRuntime` Entity/ID/order ownership and original same-tick location, unchanged default mode, bomb reset allocator ordering precautions, and new `ecsProjectileSpawnAuthorityParity` and `ecsProjectileRoundResetParity` deep/COW/v9 test gates.
+- **Verification:** docs committed; no observed native compiler/test pass.
