@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/sim/Simulation.h"
 #include "engine/world/SpatialWorld.h"
+#include <cstddef>
 #include <deque>
 #include <map>
 #include "FpsSystems.h"
