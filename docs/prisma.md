@@ -454,6 +454,71 @@ true world-distance autofocus via camera projection data, followed
 by multi-resolution CoC separation and physically-inspired bokeh.
 See `docs/handoffs/prisma-stage-22.md`.
 
+
+## Stage 23 — HDR Auto Exposure (GPU log luminance + eye adaptation)
+
+`postfx.effects` can now contain `{"type":"autoExposure"}`. The optional
+feature remains disabled in rendering unless
+`AIVERSE_PRISMA_AUTO_EXPOSURE=1` is set **and** the current scene is
+using linear HDR RGBA16F. On SDR/RGBA8, the effect has no GPU action,
+because clipped highlights cannot be recovered by metering.
+
+The GPU pipeline in `Prisma::resolve()` is:
+1. Read scene-linear RGB and store log2 luminance in a half-resolution
+   RGBA16F target (four color taps with Rec.709 luminance coefficients).
+2. Repeatedly average log luminance through a 2x2 pyramid to 1x1. This
+   estimates geometric mean brightness, not a full per-bin histogram.
+3. Determine target exposure `2^(clamp(log2(keyValue)-meanLogL+
+   compensation, minEV, maxEV))`. In a dedicated RGBA16F 1x1
+   ping-pong pass, blend from previous exposure using
+   `1-exp(-speed*deltaSeconds)`. `speedUp` controls increasing
+   exposure (dark->bright output); `speedDown` decreasing exposure.
+   The time delta is clamped at 0.1s to avoid large jumps after stalls.
+4. Sample the resulting exposure multiplier as `TEX8` in the final
+   composite **before** HDR tonemapping and sRGB conversion. UI remains
+   unprocessed. ColorGrade's manual exposure/compensation still multiplies
+   the automatic result.
+
+Parameters (regular `PrismaData` catalog and editor/MCP discovery):
+
+| parameter | default | range | meaning |
+|---|---:|---:|---|
+| `keyValue` | 0.18 | 0.01–1 | target scene middle grey |
+| `minEV` | -6 | -12–0 | lower automatic EV limit |
+| `maxEV` | 6 | 0–12 | upper automatic EV limit |
+| `speedUp` | 3 | 0.01–20 | brighten response rate, 1/s |
+| `speedDown` | 1 | 0.01–20 | darken response rate, 1/s |
+| `compensation` | 0 | -5–5 | EV bias |
+
+Example:
+```json
+{"type":"autoExposure","keyValue":0.18,"minEV":-4,
+ "maxEV":4,"speedUp":2.5,"speedDown":1.0,"compensation":0.0}
+```
+
+Per-`Prisma::Sized` temporal history uses two 1x1 HDR textures and
+a previous timestamp. Explicit native `Prisma::resetAutoExposure()`
+invalidates history for camera cuts. Project reconfiguration,
+postprocess toggle and quality changes reset it; a disabled HDR/auto
+mode also clears valid history. The first enabled frame snaps to the
+current measured exposure, avoiding reading an uninitialized history
+texture. No CPU brightness readback is used.
+
+**Limitations:** the algorithm computes mean *log* luminance, **not**
+a percentile histogram; bright outliers may still influence adaptation,
+and the measurement is not a physically calibrated light meter. The
+existing `Sized` cache is keyed by dimensions rather than stable camera
+identity, so two viewport cameras of identical size can share their
+temporal history. A follow-up should add explicit stable view IDs.
+The fixed exposure sampler uses slot 8, which is also available for
+the fourth custom ShaderGraph texture (slots 5..8); automatic exposure
+is skipped for those graphs rather than clobbering user textures. HDR
+support and blending of 1x1 RGBA16F must be verified on real Metal/GL.
+
+This is an opt-in source implementation with **NO native/GPU tests run**,
+per the user's features-first request. Do not enable it globally until
+verified. Handoff: `docs/handoffs/prisma-stage-23.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
