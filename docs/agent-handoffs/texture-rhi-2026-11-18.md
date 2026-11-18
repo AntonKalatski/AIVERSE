@@ -5153,3 +5153,21 @@ submit() consumes all visibility in a single call. The next
 stage MUST update that fixture to expect second-frame fine
 mip submission and third-frame no-op, and consider retry cap.
 Do not claim passing tests at this intermediate HEAD.
+
+## Stage 8K — deferred feedback multi-frame native fixture correction (2026-11-18)
+
+Code/test commit: b30eff59566988ba4596c401e8979b1e204ac980.
+File: tests/render/virtual_texture_file_streamer.cpp.
+Adjust the mock GPU/disk end-to-end fixture for Stage 8J.
+First runtime.submit still queues coarse and middle mip
+within maxRequestsPerFrame=2. Second submit on next frame
+now queues exactly one fine mip without another GPU readback.
+A third call must not issue duplicate requests. This tests
+the intended retained bounded visibility and distinguishes
+consuming the feedback result from completing the page work.
+Compatibility: test-only; production source Stage 8J unchanged.
+Verification: GitHub test commit succeeded, native compile
+NOT RUN, CTest NOT RUN, real GPU feedback NOT RUN.
+Next: test maxDeferredFrames edge and freshness of a replaced
+view, then document the retry semantics. Native CI and GPU
+tests remain mandatory before release.
