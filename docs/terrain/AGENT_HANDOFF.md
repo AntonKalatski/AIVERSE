@@ -2534,3 +2534,16 @@ mesh requires a genuinely wider near-to-far transition zone
 and explicit triangle-memory budgets. Do not fix a slope
 constraint by simply clamping the exact near-edge Y (which
 would silently reintroduce cracks).
+
+### Stage 20b portability follow-up (COMMITTED; TESTS NOT RUN)
+
+- `88e9865abddf56b4e15a32f82baaf01740bcb1da`:
+  `engine/render/TerraWeaveHorizonModel.h` explicitly
+  includes `<array>` and `<utility>` for the C++20
+  clipped-triangle normal-group implementation instead
+  of depending on transitive includes. No logic, budget,
+  RHI backend or TWH7 payload format changed.
+
+**Actual validation:** GitHub commit success only.
+No CMake/build/CTest/GPU execution; the dedicated
+testing agent retains ownership.
