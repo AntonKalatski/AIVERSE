@@ -459,3 +459,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Validation deferred:** tests and gameplay smoke pass after implementation phase, per user. Verify script override, UI text capture, 0-dt event press, frame hold trigger, topdown button release and FPS parity later.
 
 **Next:** close outstanding low-level editor input and cross-file audit; avoid treating per-event Action update as a substitute for per-frame updates.
+
+## Stage 36 — editor direct GameWindow pointer binding parity (2026-11-18)
+
+**Fix:** `apps/editor/windows/GameWindow.cpp` direct RTS play-test now resolves physical mouse buttons via the same authored `RTS.Pointer` context as the native RTS client, with shared semantics `Select` and `Command`. A focused helper `boundButton(action,legacyFallback)` finds the configured mouse button (or returns ImGuiMouseButton_COUNT when explicitly unbound); `actionMouseClicked/Down/Released` are used by selection boxes, building placement/cancel, script-card picking, region operations, and mouse-owned entity/action gestures. `refreshCameraActions(ed)` now runs **before** script-card click processing each frame so live project edits apply immediately to all world pointer paths. Camera middle-drag does not steal input if Select or Command has been explicitly rebound to middle.
+
+**Compatibility:** pointers still go through ImGui/HUD capture and spatial picking in the editor; this is a presentation-layer mapping only, never deterministic ECS state. If a project's older full input asset has no `RTS.Pointer`, legacy left/right buttons remain the fallback. Custom bindings to non-mouse devices are not synthesized into fake editor mouse clicks; those need a project-defined UI interaction rather than reinterpreting cursor coordinates.
+
+**Validation deferred:** source committed. During manual validation, test selected Game dock, script cards and viewport, rebind Select to button 3, drag boxes, Command to button 4, and middle-button camera pan collision. Recheck editor GameWindow input in hosted-client mode (separate event forwarding).
+
+**Next:** release-stage static source audit, docs status, CI later; do not mark PR green without build evidence.
