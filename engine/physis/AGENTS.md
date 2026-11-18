@@ -32,3 +32,16 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 - Do not change fixed-point math, Earth/Box3D gravity authority, and wind/storm candidate order in the unindexed reference. Existing `windAt`, `gravityAt`, `stormsAt`, and `sampleNatureField` remain supported. The indexed API invokes their **shared policy** through ordered visitors to make parity testable.
 - The index is a derived read-only **snapshot**, not a mutable ECS mirror; rebuild for a new authoritative tick or after edits/rollback/load. It does not accelerate WeatherFront/Quake simulation, terrain/water, or external physics. Avoid retained historical snapshots.
 - Handoff Stage 15: `docs/agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md`; Stage 16: `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`. All tests added, native compile/CTest/CI **NOT RUN** in connector environment.
+
+
+## Stage 17 — bounded index total references
+
+- Preserve `FieldSpatialIndex` and reference `windAt`/`gravityAt`/`stormsAt`
+  behavior. `FieldBuckets<T>` now enforces per-type total bucket-ref budget
+  (`FieldIndexSettings::maxTotalBucketReferences`, default 65,536).
+- Once the budget is exhausted, all remaining volumes stay in globally
+  queried ordered fallback. No omission or reordered Fixed accumulation.
+  Stats are fast reads; no new ECS persistent data.
+- Test CTest `physis_spatial_index` with constrained total budget and
+  default settings; full suite unverified. Stage handoff:
+  `docs/agent-handoffs/physis-spatial-budget-2026-11-18.md`.
