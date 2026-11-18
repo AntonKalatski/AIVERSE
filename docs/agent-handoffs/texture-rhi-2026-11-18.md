@@ -5249,3 +5249,21 @@ RGBA16F Vulkan/Metal/GL GPU reads NOT RUN.
 Next: dedicated HDR fixture with real UASTC_HDR encoded data
 and GPU mock tests for mips, topology and unsupported codec;
 update docs/AI skills for HDR API, and run libktx CI.
+
+## Stage 8O — Vulkan compute async callback fixture lifetime fix (2026-11-18)
+
+Test source commit: 27dada2769b9480377e431217b89c7e9b9604d14.
+File: tests/render/vulkan_tests.cpp.
+Earlier Stage 8L GPU readback test captured on-stack bool
+and texture pixels by reference inside an asynchronous RHI
+callback. When a GPU callback failed to arrive within the
+bounded frame loop, test locals could leave scope before
+the backend eventually delivered the callback (dangling
+references, potential use-after-scope). Fixed by capturing
+a shared_ptr<ReadbackState> by value; result remains owned
+until the backend consumes or releases the callback.
+No changes to GPU source or expected pixel assertions.
+Verification: GitHub test commit succeeded; C++ compile
+NOT RUN; Vulkan CTest/readback NOT RUN; no PASS claims.
+Next: run Vulkan backend test with SDK and compute-capable
+driver, inspect precise texture bytes and fix any failures.
