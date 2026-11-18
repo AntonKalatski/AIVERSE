@@ -1,4 +1,5 @@
 #include "Prisma.h"
+#include "PrismaVolumes.h"
 #include <chrono>
 #include "graph/ShaderGraph.h"
 #include <algorithm>
@@ -141,7 +142,17 @@ void Prisma::configure(const Json& game, const Json& map, std::vector<std::strin
     if (!issues) for (auto& m : local) std::fprintf(stderr, "[postfx] %s\n", m.c_str());
 }
 
-void Prisma::setSettings(PostFxSettings s) { settings_ = std::move(s); error_.clear(); }
+void Prisma::setSettings(PostFxSettings s) {
+    baseSettings_ = s;
+    settings_ = std::move(s);
+    error_.clear();
+}
+
+void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint32_t cameraMask) {
+    settings_ = stack.resolve(baseSettings_, eye, cameraMask);
+}
+
+void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
 bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PostFxQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
