@@ -42,6 +42,7 @@ struct HorizonSettings {
     int32_t terrainSkirtDepthCm = 1200; // 0=off, lower outer edge by 12m
     uint32_t terrainGridSnapSteps = 4; // 1..16 grid steps; stabilize distant mountain silhouettes
     int32_t innerTerrainLipCm = 40; // 0..200cm, modest seam lip around owned near-ground quads
+    uint32_t maxNearClipTriangles = 2048; // 0=off, bounded extra triangles for partial near overlap
 };
 
 struct HorizonCluster {
@@ -74,6 +75,10 @@ struct HorizonSurfaceSources {
     // by already resident authored near-terrain geometry. If unset, the
     // backwards-compatible radial cutout is used instead.
     std::function<bool(int64_t, int64_t, int64_t, int64_t)> ownsNearTerrainRect;
+    // Optional complete list of non-overlapping near-ground rectangles
+    // intersecting the requested distant terrain footprint. Return false
+    // for overflow to disable fine clipping for this bake safely.
+    std::function<bool(RectCm,std::vector<RectCm>&)> collectNearTerrainRects;
 };
 
 struct HorizonBake {
@@ -93,6 +98,10 @@ struct HorizonBake {
     // Empty = legacy radial cutout mode, for procedural worlds.
     std::vector<uint8_t> nearOwnedQuads;
     int32_t innerTerrainLipCm = 0;
+    // World-centimetre half-open near-ground rectangles; a shared immutable
+    // snapshot of the exact resident tiles used by this bake (at most 1024).
+    std::vector<RectCm> nearClipRects;
+    uint32_t maxNearClipTriangles = 0; // 0=coarse legacy; cap on additional partial triangles
 };
 
 namespace horizon_detail {
@@ -161,6 +170,7 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.regionTransitionMs>1000 ||
         s.terrainGridSnapSteps==0 || s.terrainGridSnapSteps>16 ||
         s.innerTerrainLipCm<0 || s.innerTerrainLipCm>200 ||
+        s.maxNearClipTriangles>8192 ||
         s.regionHysteresisCm<0 ||
         s.regionHysteresisCm>=s.middleTileCm/2 ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
@@ -196,6 +206,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
             settings.atlasTilePixels=16;
             settings.terrainResolution=16;
             settings.terrainGridSnapSteps=1;
+            settings.maxNearClipTriangles=0;
             settings.terrainSkirtDepthCm=0; // mobile-minimum eliminates outer skirt geometry
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
@@ -207,6 +218,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
             settings.atlasTilePixels=24;
             settings.terrainResolution=24;
             settings.terrainGridSnapSteps=2;
+            settings.maxNearClipTriangles=512;
             settings.terrainSkirtDepthCm=600;
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
@@ -251,14 +263,15 @@ inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
     // Up to 512 near ownership seam segments, two new bottom vertices
     // and two triangles each. This is a conservative upper bound.
     const size_t innerEdges=s.innerTerrainLipCm>0 ? 512u:0u;
+    const size_t clipTriangles=s.maxNearClipTriangles;
     const size_t terrainVertices=s.distantTerrain ?
         size_t(s.terrainResolution+1)*(s.terrainResolution+1) +
         (s.terrainSkirtDepthCm>0 ? size_t(4)*(s.terrainResolution+1):0) +
-        innerEdges*2 : 0;
+        innerEdges*2+clipTriangles*3 : 0;
     const size_t terrainTriangles=s.distantTerrain ?
         size_t(s.terrainResolution)*s.terrainResolution*2 +
         (s.terrainSkirtDepthCm>0 ? size_t(8)*s.terrainResolution:0) +
-        innerEdges*2 : 0;
+        innerEdges*2+clipTriangles : 0;
     // Two crossed cards per cluster, each with 4 vertices and 2 triangles.
     return {atlasSide*atlasSide*4,terrainVertices+clusters*8,
             terrainTriangles+clusters*4,clusters};
@@ -353,11 +366,41 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.sideCm=static_cast<int32_t>(regionSide);
     out.terrainSkirtDepthCm=s.terrainSkirtDepthCm;
     out.innerTerrainLipCm=s.innerTerrainLipCm;
+    out.maxNearClipTriangles=s.maxNearClipTriangles;
     if (out.originXcm < -kWorldLimitCm+100 ||
         out.originZcm < -kWorldLimitCm+100 ||
         out.originXcm+out.sideCm>kWorldLimitCm-100 ||
         out.originZcm+out.sideCm>kWorldLimitCm-100)
         throw std::out_of_range("TerraWeave Horizon region extent");
+    // One bounded query per CPU region. Exact authored coverage is kept
+    // independently from the coarse full-quad mask, so partial resident
+    // WorldScene tiles can clip rather than overlapping a full far quad.
+    if(s.distantTerrain && s.maxNearClipTriangles && source &&
+       source->ownsNearTerrainRect && source->collectNearTerrainRects) {
+        const RectCm footprint{
+            lattice.worldX(0),lattice.worldZ(0),
+            lattice.worldX(s.terrainResolution),
+            lattice.worldZ(s.terrainResolution)
+        };
+        std::vector<RectCm> rectangles;
+        if(source->collectNearTerrainRects(footprint,rectangles) &&
+           rectangles.size()<=1024) {
+            bool valid=true;
+            for(const RectCm& r:rectangles)
+                if(r.minX>=r.maxX||r.minZ>=r.maxZ||
+                   r.minX<footprint.minX||r.maxX>footprint.maxX||
+                   r.minZ<footprint.minZ||r.maxZ>footprint.maxZ)
+                    valid=false;
+            if(!valid)throw std::invalid_argument(
+                "TerraWeave Horizon near clip rectangle source");
+            std::sort(rectangles.begin(),rectangles.end(),
+                [](const RectCm& a,const RectCm& b) {
+                    return std::tie(a.minZ,a.minX,a.maxZ,a.maxX) <
+                           std::tie(b.minZ,b.minX,b.maxZ,b.maxX);
+                });
+            out.nearClipRects=std::move(rectangles);
+        }
+    }
 
     const uint32_t possible=s.middleTilesPerSide*s.middleTilesPerSide+
                             s.distantTilesPerSide*s.distantTilesPerSide;
@@ -376,6 +419,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         previous->terrainBeginCm==s.terrainBeginCm &&
         previous->terrainSkirtDepthCm==s.terrainSkirtDepthCm &&
         previous->innerTerrainLipCm==s.innerTerrainLipCm &&
+        previous->maxNearClipTriangles==s.maxNearClipTriangles &&
         (source && source->ownsNearTerrainRect
             ? previous->nearOwnedQuads.size()==size_t(s.terrainResolution)*
                                               s.terrainResolution
