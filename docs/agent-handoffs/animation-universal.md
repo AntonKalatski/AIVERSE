@@ -588,3 +588,19 @@ before calling this stage validated.
 - **NOT RUN** by user instruction; test compilation/visual reload later.
 - Next: complete remaining host/asset links, review code statically and
   keep this PR Draft until proper build/CTest/GPU validation.
+
+
+## Stage 30 — shared runtime Montage asset loader (2026-11-18)
+
+- Code commit `09ea93e785c195195039944d675feccdcfbb9214`.
+- New public `AnimationAssetLoader.h` implements
+  `compileMontageAsset(const Model&, const Json&)` against the same
+  `sections/slot/blendIn/blendOut/maskRoot/notifies` JSON authored by the
+  editor and Workspace/MCP, with strict finite numeric and bone/clip
+  validation, and one immutable compiled Montage shared by all instances.
+- Added deferred test `tests/animation/asset_loader.cpp` CTest
+  `animation_montage_asset_loader` (NOT RUN).
+- No authoritative game state or existing save/protocol modification.
+- Next: connect these project assets to optional FPS visual actions
+  (shot/reload/death) using confirmed replicated actor state, still cosmetic;
+  preserve existing fallback and handle actor lifecycle cleanup.
