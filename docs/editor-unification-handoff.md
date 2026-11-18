@@ -947,3 +947,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `docs/ecs-mechanic-composition.md`: documented two distinct projectile-motion ECS systems, `KinematicProjectileSystem` (abstract deterministic motion, common RTS usage) and `PhysicsProjectileSystem` (physical trajectory/collision, common FPS usage), plus a separate instant `HitscanSystem` for ray/rewind weapons. Shared launch, impact and damage systems remain independent. Policy selection is per Entity/weapon configuration, **not** by RTS/FPS genre.
 - Verification: documentation-only commit; no implementation, C++ build or tests for these proposed systems yet. Existing ballistic flight is only a starting point for physical mode.
 - Next: implement kinematic motion as an independent shared ECS system with deterministic target loss and rollback tests, then adapt RTS; preserve existing FPS hitscan and implement physics/hitscan adapters only with parity proof.
+
+
+### 2026-11-18 — Genre-independent fixed-point regen policy foundation
+- Implementation SHA: `d6ae0b68fe23762b567735c8a613a91d58693d3e`.
+- Added `libraries/include/aiverselib/genre/FixedRegeneration.h`: pure `stepFixedResourceRegeneration(current,maximum,rate,dt)`; exact fixed-point operation order matches existing RTS `Unit` regen. No ECS or genre-module dependency, so multiple ECS systems can reuse it without duplicating math.
+- Verification: GitHub source commit only, **no native compiler or runtime executed**.
+- Next: wire `addEnergyRegenerationSystem` and real RTS `sysEconomy` into the same policy while keeping `Unit` canonical; then add a focused cross-host policy smoke regression.
