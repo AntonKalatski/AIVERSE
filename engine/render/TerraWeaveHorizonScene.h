@@ -53,6 +53,8 @@ struct HorizonRuntimeStats {
     size_t transitionStarts=0;
     size_t nearClipQuads=0, nearClipTriangles=0;
     bool nearClipFallback=false;
+    size_t weldedNearVertices=0;
+    int32_t maxNearWeldDeltaCm=0;
     bool transitioning=false;
     uint32_t transitionProgressPermille=1000;
 };
@@ -350,6 +352,8 @@ public:
                     runtime_.nearClipQuads=prepared->clipStats.clippedQuads;
                     runtime_.nearClipTriangles=prepared->clipStats.clippedTriangles;
                     runtime_.nearClipFallback=prepared->clipStats.clipBudgetFallback;
+                    runtime_.weldedNearVertices=prepared->clipStats.weldedVertices;
+                    runtime_.maxNearWeldDeltaCm=prepared->clipStats.maxWeldHeightDeltaCm;
                     return true;
                 }
                 // Fast path: patch both forest atlas and terrain vertices
@@ -391,6 +395,8 @@ public:
                             runtime_.nearClipQuads=prepared->clipStats.clippedQuads;
                             runtime_.nearClipTriangles=prepared->clipStats.clippedTriangles;
                             runtime_.nearClipFallback=prepared->clipStats.clipBudgetFallback;
+                            runtime_.weldedNearVertices=prepared->clipStats.weldedVertices;
+                            runtime_.maxNearWeldDeltaCm=prepared->clipStats.maxWeldHeightDeltaCm;
                             runtime_.gpuUploadMs=std::chrono::duration<
                                 double,std::milli>(
                                     std::chrono::steady_clock::now()-patchStart
@@ -448,6 +454,8 @@ public:
                 runtime_.nearClipQuads=prepared->clipStats.clippedQuads;
                 runtime_.nearClipTriangles=prepared->clipStats.clippedTriangles;
                 runtime_.nearClipFallback=prepared->clipStats.clipBudgetFallback;
+                runtime_.weldedNearVertices=prepared->clipStats.weldedVertices;
+                runtime_.maxNearWeldDeltaCm=prepared->clipStats.maxWeldHeightDeltaCm;
                 runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                 runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
                     std::chrono::steady_clock::now()-uploadStart).count();
@@ -638,6 +646,8 @@ private:
         previous.nearClipQuads=runtime_.nearClipQuads;
         previous.nearClipTriangles=runtime_.nearClipTriangles;
         previous.nearClipFallback=runtime_.nearClipFallback;
+        previous.weldedNearVertices=runtime_.weldedNearVertices;
+        previous.maxNearWeldDeltaCm=runtime_.maxNearWeldDeltaCm;
         previous.estimatedGpuBytes=estimateHorizonGpuResidencyBytes(
             previous.atlasBytes,previous.vertexCount,previous.triangleCount);
         if(activeCell_ && !(*activeCell_==incoming) &&
@@ -682,6 +692,8 @@ private:
         runtime_.nearClipQuads=region.nearClipQuads;
         runtime_.nearClipTriangles=region.nearClipTriangles;
         runtime_.nearClipFallback=region.nearClipFallback;
+        runtime_.weldedNearVertices=region.weldedNearVertices;
+        runtime_.maxNearWeldDeltaCm=region.maxNearWeldDeltaCm;
         runtime_.gpuUploadMs=0;
         runtime_.atlasPatchRegions=0;
         runtime_.vertexPatchRanges=0;
