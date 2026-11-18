@@ -577,6 +577,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_recovery_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_recovery COMMAND aiverse_animation_recovery_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_profile_tests tests/animation/humanoid_profile.cpp)
+    target_link_libraries(aiverse_animation_profile_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_humanoid_profile COMMAND aiverse_animation_profile_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
