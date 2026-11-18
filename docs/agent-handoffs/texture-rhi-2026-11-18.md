@@ -1020,3 +1020,55 @@ The fixture does not constitute a pass until it runs on a GPU.
 Investigate shader output mapping, pipeline renderpass variant
 cache and attachment load/store synchronization. Add matching
 Metal/GL MRT fixtures; then continue MSAA/resolve.
+
+## Stage 4P — native offscreen RenderTargetSet owner and CPU tests (2026-11-18)
+
+**Implementation commit:** `83d96d5b93e95cb6deab9fd4eab6769b2c3b2116`.
+**Paths:** `engine/gfx/RenderTargetSet.h`,
+`tests/render/render_target_set.cpp`, `CMakeLists.txt`.
+
+**Source implementation:** New header-only, genre-agnostic
+`gfx::RenderTargetSet` wraps creation/ownership of up to four
+same-format color `TextureHandle` objects plus an optional
+depth attachment. Configurable 2D/2DArray/Cube/CubeArray,
+mips, layers, formats and sample count. It owns an extra
+single-sample resolve target per color when MSAA is requested.
+`begin(mip,layer,...)` populates `RenderTargetPassDesc` and
+only becomes active if `Device::beginRenderTargets` succeeds.
+`end` closes the encoder; `shutdown` releases every GPU
+resource, including cleanup after a partially created set.
+`sampledColor(i)` returns the resolve target for MSAA or
+the original texture for 1x. This utility does not replace
+the existing `render::RenderTexture` paint canvas.
+
+**Tests in source:** `aiverse_render_target_set_test`
+is a GPU-independent mock Device CTest target verifying
+multi-color/depth allocation, selected mip/layer submission,
+nested-begin rejection, invalid index rejection, MSAA
+resolve ownership, active pass shutdown and transactional
+rollback on failed allocation. Tests consume only public
+`gfx::Device` headers and the new utility header; no
+renderer/gameplay dependencies.
+
+**Compatibility:** Independent optional wrapper; no changes to
+old `RenderTexture`, `PassDesc`, save files or ECS.
+Native projects may include `engine/gfx/RenderTargetSet.h`.
+The caller must destroy the set before the gfx::Device
+lifetime ends; object destruction invokes `shutdown`.
+
+**Unimplemented:** GL/Vulkan MSAA resource/resolve support;
+mixed-color-format MRT; async readback, texture streaming.
+Device GPU support is always queried via actual allocation
+and beginRenderTargets status; no silent downgrade.
+
+**Verification:** GitHub source commit succeeded.
+Local compiler/CTest, native GPU tests, CI green outcome:
+**NOT RUN** (container cannot resolve github.com for a clone).
+Do not describe mock test as passed until actually executed.
+
+**Next:** Build and run `aiverse_render_target_set_test` on
+an actual clone, check native C++20 syntax and existing
+editor/client consumers, then add metal/GL/Vulkan MRT
+render/resolve device tests. After that continue GL/Vulkan
+MSAA and the texture format/importer waves in separate
+code and handoff commits.
