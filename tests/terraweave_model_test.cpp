@@ -106,7 +106,11 @@ int main() {
     assert(billboard->indices.size() == 6 && billboard->vertices.size() == 4);
     assert(billboard->materials[0].alpha == aiverse::render::AlphaMode::Mask);
     assert(!billboard->materials[0].castShadow);
-    assert(billboard->images.size() == 1 && billboard->images[0].rgba.size() == 128u * 256u * 4u);
+    assert(billboard->images.size() == 1);
+    assert(forest.billboardAzimuthCount(oak.speciesId) == 8);
+    assert(billboard->images[0].width == 128 * 8);
+    assert(billboard->images[0].height == 256);
+    assert(billboard->images[0].rgba.size() == 128u * 8u * 256u * 4u);
     bool duplicateRejected = false;
     try { forest.addPrototype(oak, 18); }
     catch (const std::invalid_argument&) { duplicateRejected = true; }
@@ -156,9 +160,18 @@ int main() {
     }
     assert(transparent > 0 && opaque > 0 && green > 0 && brown > 0);
     assert(image[3] == 0);
-    const auto billboardRepeat = makeArborBillboardModel(oak, 17);
-    assert(billboardRepeat->images[0].rgba == billboard->images[0].rgba);
-    assert(billboardRepeat->indices == billboard->indices);
+    const auto billboardRepeat = makeArborImpostorAtlas(oak, 17);
+    assert(billboardRepeat.model->images[0].rgba == billboard->images[0].rgba);
+    assert(billboardRepeat.model->indices == billboard->indices);
+    assert(billboardRepeat.viewMaterials.size() == 8);
+    assert(billboardRepeat.viewMaterials[0][0].baseTex == 0);
+    assert(billboardRepeat.viewMaterials[0][0].uvScale.x < 0.125f);
+    for (size_t i = 1; i < billboardRepeat.viewMaterials.size(); ++i)
+        assert(billboardRepeat.viewMaterials[i][0].uvOffset.x >
+               billboardRepeat.viewMaterials[i - 1][0].uvOffset.x);
+    assert(selectArborImpostorAzimuth(0, 0, 0, 0, 1000, 8) == 0);
+    assert(selectArborImpostorAzimuth(0, 0, 0, 1000, 0, 8) == 2);
+    assert(selectArborImpostorAzimuth(90000, 0, 0, 1000, 0, 8) == 0);
     bool badBillboardSettings = false;
     try { (void)makeArborBillboardModel(oak, 17, {16, 256, 2}); }
     catch (const std::invalid_argument&) { badBillboardSettings = true; }
@@ -175,6 +188,10 @@ int main() {
     assert(eastFacing.front().model == billboard);
     assert(std::fabs(eastFacing.front().world.at(0, 2) - 2.0f) < 0.0001f);
     assert(eastFacing.front().persistentId == stableId);
+    assert(eastFacing.front().materials != nullptr);
+    const auto frame2 = makeArborImpostorAtlas(oak, 17).viewMaterials[2][0];
+    assert(std::fabs(eastFacing.front().materials->at(0).uvOffset.x -
+                     frame2.uvOffset.x) < 0.0001f);
     bool unknownRejected = false;
     try {
         forest.forEachDraw(
