@@ -3072,3 +3072,50 @@ signal/failure cleanup and no callback on rejected input.
 frame-fence ownership, then add portable GPU fixtures and editor
 image preview/readback plumbing. Continue source commit +
 append-only handoff on every bounded stage.
+
+## Stage 7K — reusable GLSL and Metal virtual texture lookup shader helpers (2026-11-18)
+
+**Code commit:** `1f65dee131573feebdd4f6569676a9ce47f06510`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**New file:** `engine/gfx/VirtualTextureSampling.h`.
+
+**Implementation:** Native C++ header provides GLSL ES3/GL330 and
+Metal Shading Language source snippets via `kVirtualTextureGLSL`
+and `kVirtualTextureMSL`. Both decode the same RGBA8 page-table
+ABI produced by Stage 7I: R/G little-endian 16-bit physical atlas
+slice, B coarse fallback mip and A valid flag. Functions look up
+the nearest sampled virtual mip-zero tile in a Texture2DArray
+page table, resolve the physical Texture2DArray slice, compute
+the local UV within an ancestor page and clamp to texel centers
+with caller-supplied gutter/border pixels. Missing or out-of-range
+entries return a caller-controlled fallback color rather than
+sampling an undefined GPU slice. The snippets contain no shader
+version directive so the engine backend can prepend its own.
+
+**Capabilities/limits:** These are **shader source snippets only**,
+not new graphics pipeline builders or validated shaders.
+The game/material compiler must concatenate/bind the snippets
+and bind an RGBA8 nearest page table plus physical array atlas,
+each on suitable texture slots. The physical atlas requires
+appropriately padded gutters to prevent edge seams. CPU
+`VirtualTexturePageTable::flush` must complete before sampling
+updated table rows. GPU feedback, readback, actual page fault I/O,
+hardware sparse residency and VT mip-tail handling are still
+outstanding.
+
+**Compatibility:** New optional source header; no existing shader
+materials or render passes changed. Does not affect native ECS,
+saves/network or project asset schemas.
+
+**Verification:** A first GitHub multi-call tree/commit attempt failed
+with a transient GraphQL API error and left no verified source file.
+Recovered by checking the branch and successfully creating the new
+file with GitHub's single-file contents API. Final code commit above
+is verified. GLSL/MSL compilation and real GPU capture: **NOT RUN**.
+No passing CI result claimed.
+
+**Next:** Build a native Vulkan/GL and Metal sampling test that
+constructs a physical 2DArray atlas, uploads a CPU page-table
+entry, runs the shader helper and checks fallback/mapped pixel
+colors. Compile C++ CPU tests and record actual outcomes.
+Continue stages for GPU feedback/readback and budgeted page uploads.
