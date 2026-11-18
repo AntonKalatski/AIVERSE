@@ -635,3 +635,47 @@ before calling this stage validated.
   preserve cube/palette/baked fallbacks and remote-actor lifecycle cleanup.
   Add a focused test fixture, do not claim test success before execution,
   commit code first and append a Stage 32 handoff in a separate commit.
+
+## Stage 32 — MotionWeave C++/CMake/editor naming (2026-11-18)
+
+- **Branch:** `feature/universal-ecs-animation-pipeline`, PR #22 (Draft)
+  targeting `feature/universal-entity-inspector-fps`.
+- **Code implementation commit:** `b4b55bd3b38bd9110c072f9456b4300cdbe46872`.
+- **Code paths:** `CMakeLists.txt`, `modules/fps/CMakeLists.txt`,
+  `apps/fps/client.cpp`, `apps/editor/core/AnimationOps.cpp`,
+  `apps/editor/windows/AnimationAssetsWindow.cpp`,
+  `apps/editor/windows/AnimationGraphWindow.cpp`,
+  `apps/editor/windows/AnimationRigWindow.cpp`, new
+  `libraries/include/aiverselib/motionweave/MotionWeave.h`,
+  `tests/animation/motionweave_api.cpp`.
+- **Architecture / behavior:** system branding is **AIVERSE MotionWeave**.
+  Canonical public CMake target `AIVERSE::MotionWeave` (also
+  `AIVERSE::motionweave`); C++ alias `aiverse::motionweave`, facade
+  `MotionWeave::update(World&,float)`. The FPS presentation client and
+  Workspace/Editor source use the new branded namespace. Animation
+  graph/rig/assets tab titles now show MotionWeave.
+- **Backwards compatibility:** the new aliases call the **same**
+  `aiverse::lib::animation` implementation and `AIVERSE::animation_ecs`
+  target. Legacy C++ types, files, graph JSON, save/network format,
+  existing component IDs, and editor dock window IDs were NOT renamed.
+- **Documentation changed in this separate handoff commit:**
+  `AGENTS.md`, `docs/fps.md`, `docs/animation-graphs.md`,
+  new `docs/motionweave.md`, new
+  `skills/gameplay/aiverse-motionweave/SKILL.md`, and compatibility notice
+  in `skills/gameplay/aiverse-animation-ecs/SKILL.md`.
+- **Validation:** **NOT RUN**, per user request to defer build/tests.
+  New native API fixture `aiverse_motionweave_api_tests` /
+  CTest `motionweave_api` checks branded API and alias compatibility,
+  but no passing result is claimed. CI status was not verified.
+- **Risks / known limitations:** entire animation feature PR still
+  requires compiler checks, editor/FPS graphics preview, CTest/TSAN,
+  fixed-point motor parity, and GPU crowd profiling. This step changes
+  names/API access only, not unimplemented gameplay functionality.
+- **Next agent's concrete task:** read current head and Stage 30
+  Montage asset compiler (`AnimationAssetLoader.h`) plus
+  `apps/fps/client.cpp`; connect authored shot/reload/death Montage
+  cosmetics to confirmed FPS replicated state without changing
+  authoritative damage/reload, with actor lifecycle cleanup and
+  fallback behavior. Commit code first, then **Stage 33** handoff
+  separately; mark tests NOT RUN until executed.
+

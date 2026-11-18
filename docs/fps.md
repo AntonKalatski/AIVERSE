@@ -1,5 +1,10 @@
 # FPS: reference runtime and examples
 
+Optional FPS skeletal animations are powered by **AIVERSE MotionWeave**.
+New native modules link `AIVERSE::MotionWeave` and include
+`<aiverselib/motionweave/MotionWeave.h>`.
+See [MotionWeave](motionweave.md). The old animation ECS target remains valid.
+
 FPS projects use `game.json` with `module: "fps"` and `genre: "fps"`. Choose FPS in
 New Project: `fps_training` (stationary targets), `fps_arena` (5 vs 5 bots), or
 `fps_survival` (100 slots, sparse large world, battle royale with air insertion and a phased zone). The editor launches a separate FPS client.

@@ -1,4 +1,10 @@
-# Программируемые анимации AIVERSE
+# AIVERSE MotionWeave — программируемые анимации
+
+**MotionWeave** — новое общее имя модульной системы анимации.
+Старые классы `AnimationGraph` и `Animator`, JSON-форматы и namespace
+`aiverse::lib::animation` остаются без изменений для совместимости.
+Публичная точка входа: `<aiverselib/motionweave/MotionWeave.h>`,
+`AIVERSE::MotionWeave`. [Архитектура](motionweave.md).
 
 `engine/render/AnimationGraph.h` предоставляет граф поз и машину состояний поверх
 существующих glTF/FBX/процедурных моделей, семплера клипов и двухкостного IK.

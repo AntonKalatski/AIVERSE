@@ -2,7 +2,12 @@
 name: aiverse-animation-ecs
 description: Shared C++ presentation ECS animation components and graph player usable by any game genre.
 ---
-# Animation ECS
+# MotionWeave — ECS Animation (legacy skill path)
+
+Subsystem name: **AIVERSE MotionWeave**. New agents should prefer
+`skills/gameplay/aiverse-motionweave/SKILL.md`, public header
+`<aiverselib/motionweave/MotionWeave.h>` and
+`AIVERSE::MotionWeave`. The old API, skill and target remain usable.
 
 CMake target `AIVERSE::animation_ecs`; public header
 `<aiverselib/animation/EcsAnimationSystems.h>`.
