@@ -32,6 +32,35 @@ float3 vector3(const Json& src, const char* key) {
     }
     return {v[0],v[1],v[2]};
 }
+std::vector<PrismaVolumeEffectMask> authoredEffects(const Json& profile) {
+    std::vector<PrismaVolumeEffectMask> out;
+    const Json& effects = profile["effects"];
+    if (!effects.isArray()) return out;
+    for (const Json& effect : effects.items()) {
+        if (!effect.isObject()) continue;
+        const auto* desc = prismaType(effect.getStr("type"));
+        if (!desc) continue; // parsePrisma reports or throws for unknown IDs
+        PrismaVolumeEffectMask mask;
+        mask.type = desc->type;
+        mask.enabled = effect.has("enabled");
+        mask.minQuality = effect.has("minQuality");
+        mask.graph = effect.has("graph");
+        for (const auto& param : desc->params) {
+            if (param.kind == PrismaParamKind::Text) {
+                mask.text |= effect.has(param.name);
+                continue;
+            }
+            const size_t count = param.kind == PrismaParamKind::Color ? 3u : 1u;
+            for (size_t i = 0; i < count; ++i)
+                mask.numeric.push_back(effect.has(param.name) ? uint8_t(1) : uint8_t(0));
+        }
+        auto previous = std::find_if(out.begin(), out.end(),
+            [&](const PrismaVolumeEffectMask& item){ return item.type == mask.type; });
+        if (previous == out.end()) out.push_back(std::move(mask));
+        else *previous = std::move(mask); // last effect of a type wins, like PrismaData
+    }
+    return out;
+}
 PrismaVolume one(const Json& j, const std::string& fallback, std::vector<std::string>* issues) {
     if (!j.isObject()) throw std::runtime_error("volume entry must be an object");
     PrismaVolume v;
@@ -86,6 +115,7 @@ PrismaVolume one(const Json& j, const std::string& fallback, std::vector<std::st
     v.overrideEnabled = profile.has("enabled");
     v.overrideHdr = profile.has("hdr");
     v.profile = parsePrisma(profile, Json(), issues);
+    v.effectMasks = authoredEffects(profile);
     return v;
 }
 } // namespace
