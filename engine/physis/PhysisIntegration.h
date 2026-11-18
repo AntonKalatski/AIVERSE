@@ -2,6 +2,7 @@
 // No dependency on any genre module or rendering backend.
 #pragma once
 #include "PhysisDisasters.h"
+#include "PhysisWind.h"
 #include "../sim/Simulation.h"
 
 namespace aiverse::physis {
@@ -34,6 +35,13 @@ inline void io(Archive& a, SurfaceParameters& v) {
 inline void io(Archive& a, SurfaceMaterial& v) {
     a(v.simulation, v.permeability, v.tractionDry);
 }
+inline void io(Archive& a, WindZone& v) {
+    a(v.center, v.radiusMeters, v.velocity, v.gustAmplitude, v.seed,
+      v.startTick, v.durationTicks, v.gustPeriodTicks);
+}
+inline void io(Archive& a, WindShelter& v) {
+    a(v.center, v.radiusMeters, v.attenuation);
+}
 inline void io(Archive& a, HazardCell& v) {
     a(v.fuel, v.fire, v.waterDepth, v.quake);
 }
@@ -58,6 +66,8 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false) 
     simulation.registerPersistentComponent<ClimateZone>("physis.climate_zone", 1);
     simulation.registerPersistentComponent<WeatherFront>("physis.weather_front", 1);
     simulation.registerPersistentComponent<SurfaceMaterial>("physis.material", 1);
+    simulation.registerPersistentComponent<WindZone>("physis.wind_zone", 1);
+    simulation.registerPersistentComponent<WindShelter>("physis.wind_shelter", 1);
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
