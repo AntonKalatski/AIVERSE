@@ -511,6 +511,33 @@ compute backend; advanced graph effects must retain CPU fallback
 and `RequireGpu` must reject loss of behavior. Every code stage
 requires a separate handoff commit.
 
+## Author shader graph inputs from particle VM (Stage 21)
+
+A CPU emitter may include a strict 4-lane
+`graphInputs` array alongside `shaderGraph`, for example
+`["attribute0","attribute1","param0","age"]`.
+Source choices: age/lifetime/random/zero,
+attribute0..7 and param0..7. The renderer already
+exposes these four float lanes as `sg_particle` to the
+existing shader graph. The VM writes custom attributes
+via Spawn/Update event statements; per-instance parameter
+setters from Stage 20 supply param0..7.
+
+The graph/compiler validates and serializes `graphInputs`
+and the CPU renderer compiles selector indices once.
+Legacy effects without `graphInputs` preserve the
+`[age,lifetime,random,0]` shader graph input semantics.
+The 40-byte vertex format, atlas/batch material key
+and low-tier CPU renderer stay unchanged.
+
+Do not silently route particle VM or custom shader graph
+materials to the experimental simple-billboard Metal backend.
+Unsupported full effects must use CPU fallback, and
+`RequireGpu` must reject unsupported behavior. No GPU
+expression compiler or shader material feature parity
+has been implemented. Tests are deferred by user request,
+so real material output and platform builds remain NOT RUN.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
