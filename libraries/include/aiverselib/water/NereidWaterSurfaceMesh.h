@@ -21,6 +21,9 @@ struct WaterSurfaceMeshOptions {
     float cameraX=0, cameraZ=0;
     // Optional double-precision world anchor; output positions are relative.
     double originX=0, originZ=0;
+    // Opt-in precise camera for far-world ocean patch generation.
+    bool preciseCamera=false;
+    double cameraX64=0, cameraZ64=0;
     float oceanPatchRadius=256;
     float uvScale=0.05f;
     float foamWidth=3.0f;
@@ -209,6 +212,8 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
        !std::isfinite(options.oceanPatchRadius) ||
        !std::isfinite(options.originX) ||
        !std::isfinite(options.originZ) ||
+       (options.preciseCamera && (!std::isfinite(options.cameraX64) ||
+                                  !std::isfinite(options.cameraZ64))) ||
        options.oceanPatchRadius<=0 || options.maxVertices<4 ||
        options.foamWidth<0)return mesh;
     const float y=float(body.surfaceY.toDouble());
@@ -277,8 +282,9 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
     }else{
         if(!validWaterBody(body))return {};
         if(body.footprint==WaterFootprint::Infinite) {
-            const double r=options.oceanPatchRadius,x=options.cameraX,
-                         z=options.cameraZ;
+            const double r=options.oceanPatchRadius;
+            const double x=options.preciseCamera?options.cameraX64:double(options.cameraX);
+            const double z=options.preciseCamera?options.cameraZ64:double(options.cameraZ);
             addQuad({x-r,z-r},{x-r,z+r},{x+r,z+r},{x+r,z-r});
             boundary.clear();mesh.infinite=true;
         }else if(body.footprint==WaterFootprint::Box) {
