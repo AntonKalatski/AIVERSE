@@ -20,6 +20,10 @@ public:
 
     const DeviceInfo& info() const override { return deviceInfo; }
     const std::string& lastError() const override { return error; }
+    bool supports(PixelFormat f) const override {
+        return f == PixelFormat::RGBA8 || f == PixelFormat::RGBA8_sRGB ||
+               f == PixelFormat::RGBA16F || f == PixelFormat::Depth;
+    }
     BufferHandle createBuffer(const BufferDesc&) override { return {}; }
     void updateBuffer(BufferHandle,const void*,size_t,size_t) override {}
     void destroyBuffer(BufferHandle) override {}
@@ -102,6 +106,43 @@ void msaa() {
     targets.shutdown();
     check(gpu.ended == 1 && gpu.destroyed == 5, "active shutdown ends pass and releases all");
 }
+void mixedFormats() {
+    FakeDevice gpu;
+    RenderTargetSet targets;
+    RenderTargetSet::Config cfg;
+    cfg.width = cfg.height = 96;
+    cfg.colorCount = 3;
+    cfg.depth = true;
+    cfg.perAttachmentFormats = true;
+    cfg.colorFormats = {PixelFormat::RGBA8, PixelFormat::RGBA16F,
+                        PixelFormat::RGBA8_sRGB, PixelFormat::RGBA8};
+    check(targets.init(gpu,cfg), "heterogeneous render targets allocate");
+    check(gpu.images.at(targets.color(0).id).format == PixelFormat::RGBA8 &&
+          gpu.images.at(targets.color(1).id).format == PixelFormat::RGBA16F &&
+          gpu.images.at(targets.color(2).id).format == PixelFormat::RGBA8_sRGB,
+          "each MRT texture uses its requested pixel format");
+    check(targets.colorFormat(0) == PixelFormat::RGBA8 &&
+          targets.colorFormat(1) == PixelFormat::RGBA16F &&
+          targets.colorFormat(2) == PixelFormat::RGBA8_sRGB,
+          "caller sees the pipeline color format for each slot");
+    check(targets.begin() && gpu.lastPass.colorCount == 3,
+          "three mixed color targets can begin a pass");
+    targets.shutdown();
+    check(gpu.images.empty() && gpu.destroyed == 4,
+          "mixed format targets and depth clean up completely");
+    cfg.colorFormats[1] = PixelFormat::BC7;
+    const int previousCreates = gpu.created;
+    check(!targets.init(gpu,cfg) && gpu.created == previousCreates,
+          "compressed MRT rejected before allocating anything");
+    cfg = {};
+    cfg.width = cfg.height = 16;
+    cfg.colorCount = 0;
+    cfg.depth = true;
+    check(targets.init(gpu,cfg) && targets.begin() &&
+          gpu.lastPass.colorCount == 0,
+          "depth-only RenderTargetSet stays supported");
+    targets.shutdown();
+}
 void rollback() {
     FakeDevice gpu;
     gpu.rejectAfter = 1;
@@ -120,6 +161,7 @@ int main() {
     try {
         normal();
         msaa();
+        mixedFormats();
         rollback();
     } catch (const std::exception& e) {
         std::fprintf(stderr, "RenderTargetSet contract FAILED: %s\n", e.what());
