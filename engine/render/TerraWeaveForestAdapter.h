@@ -6,7 +6,7 @@
 #pragma once
 
 #include "engine/render/TerraWeaveModelAdapter.h"
-#include "engine/render/TerraWeaveArborBillboard.h"
+#include "engine/render/TerraWeaveImpostorAtlas.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
 #include <cmath>
@@ -41,9 +41,10 @@ public:
         BranchLodSettings settings;
         settings.mesh = mesh;
         auto model = makeArborBranchLodModel(profile, meshSeed, settings);
-        auto impostor = makeArborBillboardModel(profile, meshSeed);
+        auto impostor = makeArborImpostorAtlas(profile, meshSeed);
         models_.emplace(profile.speciesId, std::move(model));
-        billboards_.emplace(profile.speciesId, std::move(impostor));
+        billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
+        billboards_.emplace(profile.speciesId, std::move(impostor.model));
     }
 
     size_t prototypeCount() const { return models_.size(); }
@@ -55,6 +56,12 @@ public:
     render::Model* billboardPrototype(uint32_t speciesId) const {
         const auto it = billboards_.find(speciesId);
         return it == billboards_.end() ? nullptr : it->second.get();
+    }
+
+    uint32_t billboardAzimuthCount(uint32_t speciesId) const {
+        const auto it = billboardMaterials_.find(speciesId);
+        return it == billboardMaterials_.end() ? 0u :
+               static_cast<uint32_t>(it->second.size());
     }
 
     // Prepare/upload once on the render thread. Keep the same adapter alive
@@ -86,7 +93,8 @@ public:
     // Does not allocate a per-instance model or a second render pipeline.
     // Use buildFloraBatches(...) for stable filtering, thinning and ordering;
     // Renderer3D selects each branch's geometry LOD by its projected size.
-    // Far Impostor batches use one camera-facing alpha-masked full-tree quad.
+    // Far Impostor batches use one camera-facing alpha-masked full-tree quad
+    // with the nearest 4/8/16-view silhouette atlas slice as material override.
     template<class Emit>
     void forEachDraw(const std::vector<FloraBatch>& batches,
                      ForestRenderOriginCm origin, Emit&& emit,
@@ -126,6 +134,16 @@ public:
                 const float scale = float(instance.scalePermille) * 0.001f;
                 render::ModelDraw draw;
                 draw.model = model;
+                if (batch.lod == TreeLOD::Impostor) {
+                    const auto& variants = billboardMaterials_.at(batch.speciesId);
+                    const uint32_t azimuth = camera
+                        ? selectArborImpostorAzimuth(
+                            instance.yawMilliDegrees, instance.xCm, instance.zCm,
+                            camera->x, camera->z,
+                            static_cast<uint32_t>(variants.size()))
+                        : 0u;
+                    draw.materials = &variants[azimuth]; // stable per-species override
+                }
                 draw.world = render::mat4::translate(relative) *
                              render::mat4::rotateY(yaw) *
                              render::mat4::scale({scale, scale, scale});
@@ -164,6 +182,9 @@ public:
 private:
     std::map<uint32_t, std::unique_ptr<render::Model>> models_;
     std::map<uint32_t, std::unique_ptr<render::Model>> billboards_;
+    // Lifetime of these vectors covers all queued ModelDraws until render().
+    // Distinct views have distinct UV transforms; GPU texture stays shared.
+    std::map<uint32_t, std::vector<std::vector<render::Material>>> billboardMaterials_;
 };
 
 } // namespace aiverse::terraweave
