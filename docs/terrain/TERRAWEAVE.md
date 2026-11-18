@@ -1007,3 +1007,27 @@ Tradeoffs / unverified:
   and the atlas memory cap is an analytic bound. Neither GPU
   timings nor frame stability nor image quality has been
   verified on Metal, Vulkan or GLES in this stage.
+
+## Stage 9a — authored landscape inputs for Horizon
+
+`bakeHorizon(..., const HorizonSurfaceSources* source = nullptr)`
+now accepts optional **immutable** host-provided functions:
+`heightAtCm(x,z)`, `biomeAt(x,z)` and `allowsCanopyAt(x,z)`.
+The old overload remains source-compatible and uses procedural
+TerraWeave noise whenever a callback is absent.
+
+This resolves the previous pure-noise-only limitation at the *CPU
+bake* boundary: independently authored worlds can supply their
+heightfield tiles, biome masks and road/shore/structure clearings.
+A disallowed canopy sample is skipped before rasterization; it
+does not require another draw call or an individual-tree entity.
+Both forest/terrain vertex colours and their heights sample the
+same source snapshot, so distant ground can be made consistent
+with nearby collision/terrain.
+
+The input pointer is **borrowed during a single bake**; asynchronous
+hosts must hold a `shared_ptr<const HorizonSurfaceSources>`
+or equivalent immutable snapshot while worker jobs are running.
+Do not capture mutable ECS world objects in worker callbacks.
+Callback source values and GPU visual agreement have **not**
+been verified by tests or screenshots in this stage.
