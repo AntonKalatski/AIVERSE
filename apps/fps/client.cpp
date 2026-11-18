@@ -8,6 +8,7 @@
 #include "engine/platform/Platform.h"
 #include "engine/platform/EnhancedInputAdapter.h"
 #include "engine/platform/EnhancedInputConfig.h"
+#include "engine/platform/EnhancedInputProfileIO.h"
 #include "engine/platform/EnhancedInputPresets.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
@@ -72,25 +73,6 @@ struct App {
         for(unsigned char c:projectRoot){hash^=c;hash*=1099511628211ULL;}
         return platform::userDataDir()+"/enhanced-input-"+std::to_string(hash)+".json";
     }
-    bool saveInputProfile() const {
-        const std::string file=inputProfilePath(), temp=file+".tmp";
-        {
-            std::ofstream out(temp,std::ios::binary|std::ios::trunc);
-            if(!out)return false;
-            out<<platform::enhanced_config::writeProfile(inputProfile).dump(2);
-            if(!out)return false;
-        }
-        std::error_code error;
-        std::filesystem::rename(temp,file,error);
-        if(error){
-            std::error_code ignored;
-            std::filesystem::remove(file,ignored);
-            error.clear();std::filesystem::rename(temp,file,error);
-        }
-        if(error)return false;
-        platform::syncUserData();
-        return true;
-    }
     void loadInputConfig() {
         namespace cfg=platform::enhanced_config;
         std::string text,error;
@@ -106,29 +88,38 @@ struct App {
                 std::fprintf(stderr,"Enhanced Input asset ignored: %s\n",ex.what());
             }
         }
-        std::ifstream file(inputProfilePath(),std::ios::binary);
-        if(file){
-            try{
-                const std::string source((std::istreambuf_iterator<char>(file)),
-                                         std::istreambuf_iterator<char>());
-                cfg::Profile profile;
-                if(cfg::readProfile(Json::parse(source),profile,&error) &&
-                   cfg::applyProfile(actions,profile,&error))
-                    inputProfile=std::move(profile);
-                else std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",error.c_str());
-            }catch(const std::exception& ex){
-                std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",ex.what());
-            }
+        if(std::filesystem::exists(inputProfilePath())){
+            cfg::Profile profile;
+            ein::InputSystem staged=actions;
+            if(cfg::loadProfileFile(inputProfilePath(),profile,&error) &&
+               cfg::applyProfile(staged,profile,&error)) {
+                actions=std::move(staged);
+                inputProfile=std::move(profile);
+            } else std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",error.c_str());
         }
     }
-    // Host/UI entry point for reassignment; persists a validated context-local mapping id.
+    // Rebinding is transactional: both the persisted profile and active mappings
+    // change together, or neither changes (including when disk/permissions fail).
     bool rebindInput(const std::string& context,std::uint64_t id,ein::Control control) {
-        if(!actions.rebind(context,id,control))return false;
-        auto it=std::find_if(inputProfile.rebindings.begin(),inputProfile.rebindings.end(),
-           [&](const auto& entry){return entry.context==context&&entry.mappingId==id;});
-        if(it!=inputProfile.rebindings.end())it->control=control;
-        else inputProfile.rebindings.push_back({context,id,control});
-        return saveInputProfile();
+        namespace cfg=platform::enhanced_config;
+        cfg::Profile stagedProfile=inputProfile;
+        auto it=std::find_if(stagedProfile.rebindings.begin(),stagedProfile.rebindings.end(),
+            [&](const auto& entry){return entry.context==context&&entry.mappingId==id;});
+        if(it!=stagedProfile.rebindings.end())it->control=control;
+        else stagedProfile.rebindings.push_back({context,id,control});
+        ein::InputSystem stagedActions=actions;
+        std::string error;
+        cfg::Profile validated;
+        if(!cfg::readProfile(cfg::writeProfile(stagedProfile),validated,&error) ||
+           !cfg::applyProfile(stagedActions,validated,&error) ||
+           !cfg::saveProfileFile(inputProfilePath(),validated,&error)) {
+            std::fprintf(stderr,"Enhanced Input rebind rejected: %s\n",error.c_str());
+            return false;
+        }
+        inputProfile=std::move(validated);
+        actions=std::move(stagedActions);
+        platform::syncUserData();
+        return true;
     }
 
     // Presentation-only in-game rebinding. Authored actions.json is never changed by players.
