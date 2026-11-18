@@ -3742,3 +3742,44 @@ local compile where possible and the full native test later.
 Then add an integration helper that pumps disk results into
 `VirtualTextureStreamer::stage` on the render thread.
 Separate source and handoff commits per stage.
+
+## Stage 7O — real disk-page I/O / cancellation / backpressure CPU fixture (2026-11-18)
+
+**Code commit:** `90c654c626d5887f3ebfec1a1c790c8827af975f`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Paths:** new `tests/render/virtual_texture_disk_queue.cpp`,
+`CMakeLists.txt`.
+
+**Test source:** Registered `aiverse_virtual_texture_disk_queue_test`
+and CTest `virtual_texture_disk_queue`, linked with
+`Threads::Threads`. Unlike the GPU mock fixtures, this test uses
+real temporary filesystem folders and packed `.rgba` page files
+with known byte values. It covers two-page FIFO I/O, deduplicated
+page request IDs, invalid mip/tile/layer rejection, 64-byte
+result-memory backpressure and render-thread polling, rejection
+of poll budgets smaller than one page, missing/truncated file
+failures without partial pixels, max-outstanding requests,
+queued/inflight cancellation, restart of the disk worker with
+monotonic ticket IDs, stale ticket rejection and invalid config
+refusal. All page paths are created using the exact public
+`relativePath` ABI, not manually guessed strings.
+
+**Compatibility:** Test/CMake stage only. No change to GPU
+Device, editor, gameplay/ECS state, save/network or file format.
+It covers the `VirtualTextureDiskQueue` added in Stage 7N.
+
+**Actual verification:** GitHub source/tree/commit/ref update
+succeeded. Native C++ compilation and execution of this CTest:
+**NOT RUN** (local container cannot resolve github.com for clone).
+It is not a passing test merely because registered in CMake.
+
+**Next:** Compile and execute
+`cmake --build build/texture-rhi --target aiverse_virtual_texture_disk_queue_test`
+and `ctest --test-dir build/texture-rhi --output-on-failure
+-R '^virtual_texture_disk_queue$'` on a native repo checkout.
+Add a GPU-thread integration adapter that moves ready pages into
+`VirtualTextureStreamer::stage`, handles retry/backpressure,
+and discards results for destroyed virtual atlases. Write a
+separate code+handoff commit, then update the verification script,
+native skill and architecture docs. No background GPU work should
+be claimed without real driver validation.
