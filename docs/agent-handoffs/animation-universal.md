@@ -1691,3 +1691,51 @@ before calling this stage validated.
   conditional behavior/order. Code commit then Stage 59
   handoff before advancing.
 
+## Stage 59 — legacy scene geometry/terrain/roads via generic ordered passes (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  draft PR #22 targeting `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `247b3028fd65601ec31119fbc345be4f4dcf8cfa`.
+- **Code files:** `modules/rts/view/RtsView.cpp`.
+- **Architecture/behavior:** the historic game-side
+  `RtsView::draw` now composes its geometry, 2D begin,
+  terrain/water, ground effects, road networks,
+  shorelines, paint layers and surface links through
+  a frame-local `aiverse::view::ViewLayerQueue` from
+  Stage 58. The host alone owns terrain, roads, fog
+  vision and gameplay-specific scene selection.
+  The generic layer queue sees only opaque labels,
+  phase metadata and borrowed callbacks, with no
+  genre-dependent branching in engine code.
+- **Frame semantics:** the eight callbacks execute in
+  the SAME source order as before. Conditions that
+  depend on preceding pass state (roads active,
+  `groundFx_.drawsLinks()` etc.) remain inside
+  the respective callback and are evaluated at
+  execution time. Queue flush completes synchronously
+  before frame animation/object submission. There
+  are no worker-thread renderer calls and no duplicate
+  geometry submission.
+- **API/compatibility:** no game or network state schema,
+  save/checksum, renderer pipeline, model or animation
+  graph changes. The legacy class remains a
+  compatibility host while generic composition
+  belongs to engine View. Caller-owned terrain
+  references remain valid through immediate flush.
+- **Validation:** CMake, CTest, TSAN and screenshot
+  comparison **NOT RUN** because user requested
+  tests only after implementation. Deferred CTest
+  `view_layer_order` exercises generic queue behavior,
+  but host-specific draw parity is unverified.
+- **Risks:** this is an ordering/extraction seam,
+  not yet extraction of actual geometry builders or
+  GPU batching algorithms. Renderer/terrain code
+  remains in the game-side sources; no complete
+  retirement of `game::RtsView` is claimed.
+- **Next:** add a generic draw-packet builder/collection
+  that supports ordered model, mesh, line, triangle
+  and host callback submissions. Use it in the
+  existing View and a selected host path while
+  preserving exact ordering and pointer lifetimes.
+  Commit code, then Stage 60 separately.
+
