@@ -146,6 +146,8 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
             }
         if(fineClipping){
             const size_t firstClippedVertex=model->vertices.size();
+            std::vector<std::array<HorizonClipPoint,3>> emittedCoords;
+            emittedCoords.reserve(clipped->triangles.size());
             // Lookup baked, versioned near-boundary heights without querying
             // live WorldScene or physics in model build/render stages.
             using SeamKey=std::pair<int64_t,int64_t>;
@@ -250,6 +252,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                 model->indices.insert(model->indices.end(),{
                     first,first+1,first+2
                 });
+                emittedCoords.push_back(triangle.corners);
             }
             if(!nearEdgeHeights.empty() &&
                b.nearSeamNormalBlendPercent>0 &&
@@ -264,7 +267,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                 };
                 std::map<Key,NormalAccum> accumulated;
                 const auto keyFor=[&](size_t t,size_t j){
-                    const auto& point=clipped->triangles[t].corners[j];
+                    const auto& point=emittedCoords[t][j];
                     const auto& v=model->vertices[
                         firstClippedVertex+t*3+j];
                     return Key{
@@ -274,7 +277,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                             std::llround(double(v.pos.y)*1000.0))
                     };
                 };
-                for(size_t t=0;t<clipped->triangles.size();++t){
+                for(size_t t=0;t<emittedCoords.size();++t){
                     const size_t i=firstClippedVertex+t*3;
                     const auto& a=model->vertices[i].pos;
                     const auto& b=model->vertices[i+1].pos;
@@ -295,7 +298,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                 }
                 const float strength=
                     float(b.nearSeamNormalBlendPercent)*0.01f;
-                for(size_t t=0;t<clipped->triangles.size();++t)
+                for(size_t t=0;t<emittedCoords.size();++t)
                     for(size_t j=0;j<3;++j){
                         const auto key=keyFor(t,j);
                         const auto it=accumulated.find(key);
