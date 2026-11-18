@@ -220,6 +220,22 @@ void ParticleSystem::Impl::build(EffectRT& e, std::vector<std::string>& errors) 
         EmitterRT r;
         if(!d.particleProgram.isNull())
             spectra::program::compile(d.particleProgram,r.particleProgram,errors);
+        if(d.graphInputs.isArray()) {
+            for(size_t lane=0;lane<4;++lane) {
+                const std::string& name=d.graphInputs[lane].str();
+                uint8_t source=3; // zero
+                if(name=="age")source=0;
+                else if(name=="lifetime")source=1;
+                else if(name=="random")source=2;
+                else {
+                    for(uint8_t slot=0;slot<8;++slot) {
+                        if(name=="attribute"+std::to_string(slot))source=uint8_t(4+slot);
+                        else if(name=="param"+std::to_string(slot))source=uint8_t(12+slot);
+                    }
+                }
+                r.graphInputSources[lane]=source;
+            }
+        }
         r.tex = texture(d.texture, errors, where);
         r.batch = batchFor(r.tex, d.blend, d.shaderGraph);
         if(!batches[r.batch].error.empty()) errors.push_back(where + ": " + batches[r.batch].error);
