@@ -81,6 +81,15 @@ void formatAndValidation() {
     CHECK(decodeFieldEditCommand(cmd,decoded,&error));
     CHECK(decoded.desired.size()==req.desired.size());
     CHECK(decoded.expectedRevision==0);
+    // Validate the ACTUAL Simulation network/replay wire format (4096-word cap).
+    ByteWriter writer;
+    writeCommand(writer,cmd);
+    ByteReader reader(writer.buf.data(),writer.buf.size());
+    const Command fromWire=readCommand(reader);
+    CHECK(reader.ok() && reader.atEnd());
+    FieldEditBatch afterWire;
+    CHECK(decodeFieldEditCommand(fromWire,afterWire,&error));
+    CHECK(afterWire.desired.size()==req.desired.size());
     if(decoded.desired.size()==req.desired.size())
         for(size_t i=0;i<req.desired.size();++i)
             CHECK(authoredFingerprint(decoded.desired[i])==
@@ -101,6 +110,21 @@ void formatAndValidation() {
     invalid=req;
     invalid.desired.front().kind=AuthoredFieldKind::Storm;
     CHECK(!encodeFieldEditCommand(invalid,kFieldEditCmd,cmd,&error));
+    // A valid but oversized field map must be rejected rather than encoded
+    // beyond the Command.args cap and then silently truncated by readCommand.
+    FieldEditBatch huge;
+    for(int i=0;i<1024;++i) {
+        AuthoredField f;
+        f.id="large-"+std::to_string(i);
+        f.kind=AuthoredFieldKind::Wind;
+        WindZone value;
+        value.velocity={Fixed::fromInt(3),Fixed{},Fixed{}};
+        f.data=value;
+        huge.desired.push_back(std::move(f));
+    }
+    std::sort(huge.desired.begin(),huge.desired.end(),
+        [](const AuthoredField& a,const AuthoredField& b){return a.id<b.id;});
+    CHECK(!encodeFieldEditCommand(huge,kFieldEditCmd,cmd,&error));
 }
 void replayIdentityAndRollback() {
     auto a=make(), b=make();

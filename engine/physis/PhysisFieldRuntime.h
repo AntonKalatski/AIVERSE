@@ -156,7 +156,10 @@ struct FieldEditBatch {
     std::vector<AuthoredField> desired;
 };
 inline constexpr std::uint32_t kFieldEditProtocol = 1;
-inline constexpr std::size_t kFieldEditMaxBytes = 1024u*1024u;
+// Simulation::readCommand accepts at most 4096 int64 args. One word is
+// reserved for payload byte length. Never emit an unroundtrippable command.
+inline constexpr std::size_t kFieldEditMaxWords = 4096;
+inline constexpr std::size_t kFieldEditMaxBytes = (kFieldEditMaxWords-1)*8;
 
 inline bool encodeFieldEditCommand(const FieldEditBatch& request,
                                    std::uint16_t hostCommandType,
