@@ -1,20 +1,19 @@
-// Shared, presentation-side semantic RTS shortcuts. Input rules are independent of ECS and Commands.
+// AIVerse InputFlow: shared, presentation-side semantic RTS shortcuts. Input rules are independent of ECS and Commands.
 // The UI owns text/modal capture; no raw key state may enter the deterministic simulation.
 #pragma once
-#include <aiverselib/gameplay/EnhancedInput.h>
+#include <aiverselib/gameplay/InputFlow.h>
 #include "engine/platform/Platform.h"
-#include "engine/platform/EnhancedInputAdapter.h"
-#include "engine/platform/EnhancedInputPresets.h"
+#include "engine/platform/InputFlow.h"
 #include <string>
 #include <vector>
 
 namespace aiverse::client {
-namespace ei = aiverse::lib::gameplay::enhanced;
+namespace ei = aiverse::lib::gameplay::inputflow;
 
 class ClientInputRouting {
 public:
     ClientInputRouting() {
-        const auto preset=platform::enhanced_presets::rtsReference();
+        const auto preset=platform::inputflow_presets::rtsReference();
         for(const auto& action:preset.actions) input_.defineAction(action);
         for(const auto& item:preset.contexts){
             input_.registerContext(item.context);
@@ -22,8 +21,8 @@ public:
         }
     }
 
-    ei::InputSystem& system() { return input_; }
-    const ei::InputSystem& system() const { return input_; }
+    ei::InputFlow& system() { return input_; }
+    const ei::InputFlow& system() const { return input_; }
 
     // Call for every platform Event *after* UI capture is resolved; pass false for menus,
     // modal UI and text fields. A captured key is never left held when the UI takes focus.
@@ -97,7 +96,7 @@ private:
         else if(!enabled && input_.isContextActive(name))
             input_.deactivateContext(name);
     }
-    ei::InputSystem input_;
-    platform::EnhancedInputAdapter adapter_{input_};
+    ei::InputFlow input_;
+    platform::InputFlowAdapter adapter_{input_};
 };
 } // namespace aiverse::client
