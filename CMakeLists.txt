@@ -698,6 +698,17 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_action_edges COMMAND aiverse_motionweave_action_edges_tests)
 endif()
 
+# Enforce that MotionWeave core cannot import FPS/RTS/other game genres.
+if(AIVERSE_BUILD_TESTS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME motionweave_genre_boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/animation/check_motionweave_dependencies.py
+                ${PROJECT_SOURCE_DIR})
+    endif()
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
