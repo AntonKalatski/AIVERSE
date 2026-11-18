@@ -66,6 +66,7 @@ public:
                 log->x.push_back(event.position.x.raw);
             },
             [](Simulation& current,const lg::KinematicProjectileComponent& shot) {
+                if(!shot.target.valid())return shot.destination;
                 const auto* target=current.world().tryGetConst<MovingTarget>(shot.target);
                 return target ? target->position : shot.destination;
             });
