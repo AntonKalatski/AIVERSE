@@ -198,10 +198,12 @@ void ComputeParticles::releaseGpu() {
     pipeline_={};vertexShader_={};compute_={};states_={};seeds_={};slots_={};
     vertices_={};indices_={};texture_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
+    drawSlotPrefix_=0;
 }
 void ComputeParticles::shutdown() {
     cpu_.shutdown();cpuEffect_=-1;releaseGpu();device_=nullptr;
     initialized_=false;viewReady_=false;verticesReady_=false;
+    drawSlotPrefix_=0;
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
@@ -223,6 +225,7 @@ void ComputeParticles::clear() {
     freeSlots_.clear();
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     stats_.alive=0;
+    drawSlotPrefix_=0;stats_.submittedSlots=0;
 }
 bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::float4 tint) {
     if(!initialized_||desc_.quality==fx::FxQuality::Off||!finite(position)||!finite(direction)||!finite(tint))return false;
@@ -269,14 +272,26 @@ bool ComputeParticles::step(float dt) {
         return true;
     }
     if(!device_->gpuHealthy()) {
+        if(desc_.backend==ComputePreference::RequireGpu) {
+            // Never claim a CPU backend when the caller explicitly required GPU.
+            initialized_=false;verticesReady_=false;
+            reason_="Metal GPU unhealthy; RequireGpu forbids CPU fallback";
+            return false;
+        }
         switchToCpu("Metal GPU reported unhealthy");
-        return backend_==ComputeBackend::Cpu;
+        // Any GPU-resident particles were lost: never report a seamless step.
+        return false;
     }
     if(!device_->canUpdateSharedBuffers()) {
         reason_="SpectraFX GPU step must be before the render pass";
         return false;
     }
     const uint32_t count=uint32_t(pendingStates_.size());
+    // Keep compute bounded to the occupied prefix rather than always
+    // dispatching every slot. This is NOT compaction: holes are still present.
+    uint32_t updatePrefix=0;
+    for(uint32_t i=0;i<uint32_t(ages_.size());++i)
+        if(ages_[i]>0.f)updatePrefix=i+1;
     if(count>0) {
         device_->updateBuffer(seeds_,pendingStates_.data(),size_t(count)*sizeof(ParticleState));
         device_->updateBuffer(slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t));
@@ -296,12 +311,14 @@ bool ComputeParticles::step(float dt) {
     u.up={up_.x,up_.y,up_.z,0};
     u.meta={0,desc_.capacity,count,0};
     if(count){device_->setComputeUniforms(&u,sizeof(u));device_->dispatch(count);++stats_.gpuDispatches;}
-    u.meta[0]=1;
-    device_->setComputeUniforms(&u,sizeof(u));
-    device_->dispatch(desc_.capacity);++stats_.gpuDispatches;
-    u.meta[0]=2;
-    device_->setComputeUniforms(&u,sizeof(u));
-    device_->dispatch(desc_.capacity);++stats_.gpuDispatches;
+    if(updatePrefix>0) {
+        u.meta[0]=1;
+        device_->setComputeUniforms(&u,sizeof(u));
+        device_->dispatch(updatePrefix);++stats_.gpuDispatches;
+        u.meta[0]=2;
+        device_->setComputeUniforms(&u,sizeof(u));
+        device_->dispatch(updatePrefix);++stats_.gpuDispatches;
+    }
     device_->endCompute();
     pendingStates_.clear();pendingSlots_.clear();
     for(uint32_t i=0;i<desc_.capacity;++i) {
@@ -310,6 +327,10 @@ bool ComputeParticles::step(float dt) {
         if(ages_[i]<=0.f){ages_[i]=-1.f;freeSlots_.push_back(i);}
     }
     stats_.alive=desc_.capacity-uint32_t(freeSlots_.size());
+    drawSlotPrefix_=0;
+    for(uint32_t i=0;i<uint32_t(ages_.size());++i)
+        if(ages_[i]>0.f)drawSlotPrefix_=i+1;
+    stats_.submittedSlots=drawSlotPrefix_;
     verticesReady_=true;reason_.clear();
     return true;
 }
@@ -319,7 +340,7 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     if(backend_==ComputeBackend::Cpu) {
         cpu_.render(fog);stats_.drawCalls=uint32_t(cpu_.stats().drawCalls);return;
     }
-    if(!verticesReady_||!pipeline_.valid())return;
+    if(!verticesReady_||!pipeline_.valid()||drawSlotPrefix_==0)return;
     DrawUniforms u{};
     std::memcpy(u.viewProj,viewProj_.m,sizeof(u.viewProj));
     u.fog[0]=fog.color.x;u.fog[1]=fog.color.y;u.fog[2]=fog.color.z;u.fog[3]=fog.density;
@@ -330,14 +351,18 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     device_->setIndexBuffer(indices_);
     device_->setUniforms(0,&u,sizeof(u));
     device_->setTexture(0,texture_);
-    device_->drawIndexed(desc_.capacity*6);
+    device_->drawIndexed(drawSlotPrefix_*6);
     stats_.drawCalls=1;
 }
 void ComputeParticles::switchToCpu(const std::string& why) {
+    ++stats_.gpuFallbacks;
+    stats_.lostOnFallback+=stats_.alive;
     releaseGpu();backend_=ComputeBackend::Cpu;
     const bool ok=initCpu();
-    reason_=why+(ok?"; CPU fallback active":"; CPU fallback init failed");
+    reason_=why+(ok?"; CPU fallback active; GPU-resident particles were discarded"
+                   :"; CPU fallback init failed");
     initialized_=ok;stats_.alive=0;stats_.gpuBytes=0;
+    stats_.submittedSlots=0;
 }
 
 } // namespace aiverse::spectra
