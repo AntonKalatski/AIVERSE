@@ -62,6 +62,12 @@ int main() {
         check(img.depth == 3 && levelImageCount(img,0) == 3 &&
               img.levels[0].size() == 48, "volume payload");
         check(decodeBlocksSlice(img,0,2,rgba) && rgba[0] == 2, "3D z slice");
+        std::string singleSliceVolume = fixture(2,2,1,0,1,1);
+        check(parseKtx2(singleSliceVolume,img,err) &&
+              img.threeDimensional && img.depth == 1 && img.faces == 1,
+              "KTX2 one-slice volume retains explicit Texture3D topology");
+        check(!parseKtx2(fixture(2,2,1,0,6,6),img,err),
+              "KTX2 one-slice 3D cube combination rejected");
         std::string bc5 = fixture(4,4,0,1,1,1);
         bc5.resize(104 + 16);
         write32(bc5, 12, 141); // VK_FORMAT_BC5_UNORM_BLOCK

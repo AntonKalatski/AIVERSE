@@ -104,13 +104,24 @@ int main() {
               "3D upload");
         dev.destroyTexture(h);
         image = {};
+        image.width = image.height = 2;
+        image.depth = 1;
+        image.threeDimensional = true;
+        image.levels.resize(1);
+        image.levels[0].assign(16, 99);
+        h = render::uploadKtx2Image(dev, image, {}, err);
+        check(h.valid() && dev.lastDesc.dimension == gfx::TextureDimension::Texture3D &&
+              dev.lastDesc.depth == 1,
+              "explicit one-slice volume must not become Texture2D");
+        dev.destroyTexture(h);
+        image = {};
         image.width=2;image.height=2;image.arrayLayers=2;
         image.levels.resize(2);
         image.levels[0].resize(32);
         image.levels[1].resize(8);
         dev.failUpload=1;
         h=render::uploadKtx2Image(dev,image,{},err);
-        check(!h.valid() && dev.destroyed==3, "failed mip upload destroys texture");
+        check(!h.valid() && dev.destroyed==4, "failed mip upload destroys texture");
 
         image = {};
         check(!render::uploadKtx2Image(dev,image,{},err).valid() && !err.empty(),

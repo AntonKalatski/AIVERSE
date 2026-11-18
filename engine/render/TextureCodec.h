@@ -25,6 +25,7 @@ struct CompressedImage {
     int arrayLayers = 1;                // KTX2 array elements, excluding faces
     int faces = 1;                      // 1 or 6 (cube/cube-array)
     bool oneDimensional = false;        // KTX2 height=0, represented as 1
+    bool threeDimensional = false;      // source declared a volume, even if depth=1
     bool srgb = false;                  // colour data is sRGB-encoded (use the *_SRGB GPU format)
     uint32_t vkFormat = 0;              // original VkFormat from the KTX2 header
     // Every mip retains all array layers, faces and volume slices in file

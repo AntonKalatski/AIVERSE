@@ -83,6 +83,11 @@ void volume() {
           "volume second z slice");
     check(decodeBlocksSlice(img,1,0,rgba) && rgba[0]==33,
           "volume mip one");
+    std::string single = makeDx10(28,2,2,1,1,1,false,4);
+    single.append(16,char(77));
+    check(parseDdsTexture(single,img,error) &&
+          img.threeDimensional && img.depth == 1 && img.arrayLayers == 1,
+          "DX10 one-slice volume remains a declared 3D texture");
 }
 void bc5() {
     std::string s = makeDx10(83, 4, 4, 0, 1, 1, false, 3);

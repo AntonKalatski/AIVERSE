@@ -30,6 +30,8 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
         in.levels.empty() || in.levels.size() > 31 ||
         (in.faces == 6 && (in.width != in.height || in.depth != 1)) ||
         (in.depth > 1 && (in.faces != 1 || in.arrayLayers != 1)) ||
+        (in.threeDimensional && (in.oneDimensional || in.faces != 1 ||
+                                 in.arrayLayers != 1)) ||
         // Multiplication below is in signed int: validate it before use.
         in.arrayLayers > std::numeric_limits<int>::max() / in.faces ||
         // A manually constructed malformed 1D resource must not turn into 3D.
@@ -45,7 +47,8 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
     td.arrayLayers = in.arrayLayers * in.faces;
     td.mipLevels = int(in.levels.size());
     td.filter = gfx::Filter::Linear;
-    td.dimension = in.depth > 1 ? gfx::TextureDimension::Texture3D :
+    td.dimension = (in.threeDimensional || in.depth > 1) ?
+                   gfx::TextureDimension::Texture3D :
                    in.oneDimensional ? gfx::TextureDimension::Texture1D :
                    in.faces == 6 ? (in.arrayLayers == 1 ? gfx::TextureDimension::Cube :
                                                           gfx::TextureDimension::CubeArray) :
@@ -84,7 +87,7 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
     }
     const bool native = !opt.forceCpuDecode &&
         compressed != gfx::PixelFormat::RGBA8 &&
-        (in.depth == 1 && !in.oneDimensional) &&
+        (in.depth == 1 && !in.oneDimensional && !in.threeDimensional) &&
         (!in.srgb || opt.trustShaderSrgbDecode) &&
         (in.format != BlockFormat::BC5 || opt.shaderReconstructsBc5NormalZ) &&
         dev.supports(compressed);

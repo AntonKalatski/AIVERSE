@@ -401,6 +401,7 @@ bool parseKtx2(const std::string& bytes, CompressedImage& out, std::string& err)
         return false;
     }
     const bool oneD = sourceH == 0;
+    const bool volume = sourceZ != 0; // depth=1 is still a 3D image in KTX2
     const uint32_t h = std::max(1u, sourceH);
     const uint32_t depth = std::max(1u, sourceZ);
     const uint32_t layers = std::max(1u, sourceLayers);
@@ -409,8 +410,8 @@ bool parseKtx2(const std::string& bytes, CompressedImage& out, std::string& err)
         err = "KTX2: invalid dimensions, faceCount or layerCount";
         return false;
     }
-    if ((oneD && (sourceZ > 1 || faces != 1 || sourceLayers > 1)) ||
-        (depth > 1 && (faces != 1 || sourceLayers > 1)) ||
+    if ((oneD && (volume || faces != 1 || sourceLayers > 1)) ||
+        (volume && (faces != 1 || sourceLayers > 1)) ||
         (faces == 6 && (w != h || oneD))) {
         err = "KTX2: unsupported dimensional combination";
         return false;
@@ -429,7 +430,8 @@ bool parseKtx2(const std::string& bytes, CompressedImage& out, std::string& err)
     }
     out.format = fmt; out.srgb = srgb; out.vkFormat = vk;
     out.width = int(w); out.height = int(h); out.depth = int(depth);
-    out.arrayLayers = int(layers); out.faces = int(faces); out.oneDimensional = oneD;
+    out.arrayLayers = int(layers); out.faces = int(faces);
+    out.oneDimensional = oneD; out.threeDimensional = volume;
     out.levels.resize(mipCount);
     constexpr uint64_t kMaximumLevelBytes = 512ull * 1024ull * 1024ull;
     for (uint32_t level = 0; level < mipCount; ++level) {

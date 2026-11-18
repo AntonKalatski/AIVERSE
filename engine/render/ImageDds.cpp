@@ -359,6 +359,7 @@ bool parseDdsTexture(const std::string& bytes, CompressedImage& out, std::string
     out.arrayLayers = int(arrayCount);
     out.faces = isCube ? 6 : 1;
     out.oneDimensional = oneD;
+    out.threeDimensional = volume;
     out.srgb = srgb;
     out.levels.resize(mipCount);
 
