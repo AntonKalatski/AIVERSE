@@ -252,3 +252,30 @@ limits, CPU generation or renderer integration.
 Known limits: crossed silhouette cards approximate the forest but are
 not baked photorealistic multiview normal/depth impostors; alpha
 overdraw, atlas uploads and visible transitions are not literally free.
+
+## Horizon LOD/canopy quality (Stage 8)
+
+`terraweaveHorizon` accepts `crownDetail` (1–3),
+`orientationViews` (1–2), `nearBlendCm` (default 6000)
+and `tierBlendCm` (default 16000). Default 1-view
+is the inexpensive fallback for mobile; 2 views bake
+separate 90-degree silhouettes into one ~14.77 MiB
+RGBA atlas before mipmaps and keep the same number of
+cards/triangles. The one-view atlas remains ~7.39 MiB.
+Never allocate per-tree cluster draw calls for this mode.
+
+The HLOD transition is stable **spatial atlas pixel dithering**,
+not true continuous camera-time alpha fade. If both
+`terraweaveForest` and `terraweaveHorizon` are
+enabled, the close distance defaults to the existing
+ForestScene's `view.cullRangeCm` rather than a
+mismatched constant.
+
+Use `TerraWeaveHorizonScene::runtimeStats()` to
+inspect the actual running region's CPU prepare/upload
+time, atlas bytes, vertex/triangle counts and pending
+job state. These numbers become meaningful only
+after execution on a real GPU and do not substitute
+for frame-capture screenshots or render-pass statistics.
+See Stage 8 of `docs/terrain/AGENT_HANDOFF.md`
+for exact unverified checks and next tasks.
