@@ -2145,3 +2145,93 @@ device shutdown halfway through; road/terrain source
 revision while fading (old proxy must not render again);
 vary frame pacing; validate resource counts/opacity on
 Metal/Vulkan/GL and mobile default.
+
+## Stage 15 — split Horizon terrain depth from forest-only crossfade (CODE COMMITTED; TESTS DEFERRED)
+
+**Branch:** `feature/terraweave`; Draft PR #24. Follow current branch HEAD: other agents may edit adjacent modules. The user explicitly assigned build/CTest, GPU captures and performance testing to a different agent.
+
+**Source changes (2026-11-18):**
+- `af57039985d61ca27c355c96c5fecfe7d69a0c76`:
+  `engine/render/Renderer3D.h` adds generic
+  `ModelDraw::primitiveMaterialFilter` (`-1` means
+  all source model primitives, non-negative value filters by
+  original `Primitive::material` index).
+- `84cf3bb8495e801869e5f3b1aea0656187a69fe8`:
+  `engine/render/Renderer3DModels.cpp` honors the filter
+  before preparing each `ModelItem`. Only filtered draw
+  calls bypass existing aggregated shadow batches/material
+  batches and the static cache; **unfiltered drawModel**
+  continues through all pre-existing optimization paths.
+  Filtered draws are not passed to whole-model light-bake
+  capture as if all their mesh primitives had rendered.
+- `a005ac31bc3eaad2c260c5c548e293e4b1068fef`:
+  `engine/render/TerraWeaveHorizonScene.h`: the crossfade
+  draws **incoming terrain material slot 0 exactly once,
+  opaque**, while only source material slot 1 (forest cluster
+  crossed cards) is alpha-blended from outgoing to incoming
+  GPU model. The two models still share their own already
+  uploaded GPU vertex/index/atlas resources (no copies or
+  new shaders). Split transient draws use `persistentId=0`;
+  the normal full single-opaque draw continues to use its
+  stable scene ID.
+- `775761b22564bc1663f6d857fe6512488e623393`:
+  `HorizonScene` directly restores the old transition-slot
+  GPU model on **A→B→A while the fade is ongoing**, before
+  LRU insertion could evict it at `maxCachedGpuRegions=1`.
+  Large-teleport stale-proxy visibility is bounded by the
+  far-region footprint even when CPU bake caching is off.
+  Pending worker requests are still cancelled/drained and
+  RHI ownership remains single.
+- `9cb2c048fe0a295cb5f0a0e18d1d342eb5348ea0`:
+  `Renderer3D.h` moves the new material filter to the
+  END of `ModelDraw`, so existing positional aggregate
+  initializers in native projects don't have their field
+  positions shifted.
+
+**Presentation contract:** while blending the model,
+`drawRegion(incoming, alpha=1, materialFilter=0)` is
+opaque and depth-writing, then the departing/arriving
+`materialFilter=1` canopy portions fade in the standard
+transparent pass. This removes the previous **two overlapping
+semi-transparent distant terrain grids** and significantly
+reduces Z-fighting risk. In the normal steady state,
+`materialFilter=-1` keeps one standard combined model call.
+The source-material-index filter is a general Renderer3D
+feature, NOT a TerraWeave-specific renderer fork.
+
+**Limitations:** the incoming far-terrain ring replaces the
+old terrain ring immediately; changing terrain outer
+silhouettes may still show a sudden edge and require real
+geomorph/skirt handling in the future. The two canopy
+alpha-blended layers can still exhibit sorting/overdraw
+artifacts and are not order-independent. A teleport outside
+the old region's safe footprint now suppresses stale
+Horizon submission until a new region is available; this
+may produce a brief horizon gap by design rather than a
+completely wrong outdated skyline. Normal opaque
+`Renderer3D`/shadow and native game draw paths should not
+change when `primitiveMaterialFilter=-1`.
+
+**Actual verification:** GitHub source reads and successful
+commits only. **NOT RUN**: CMake, CTest, CI workflow,
+shader, GPU screenshots, platform performance, runtime
+regressions. Separate testing agent must validate all of
+these before PR #24 is made ready for review.
+
+**Test-agent acceptance:** check single visible terrain
+material during transition, alpha-mask forest-only
+coverage and draw sorting at several camera angles;
+non-Horizon material filtering (including variants,
+shadow/material batch bypass, unfiltered MDI and static
+light capture), native positional `ModelDraw` initializers,
+A→B→A while fade is active, several-km teleport while a
+worker is outstanding, cache-disabled Mobile/Minimal,
+texture/vertex range patches after fade, LRU accounting,
+WorldScene shutdown and GPU resource lifetime. Compare
+Metal/GL/Vulkan footage and frametime/draw counts.
+
+**Next implementation-only stage:** improve the far-terrain
+outer-edge behavior via a skirt/terrain LOD region boundary
+policy or use screen-space temporal forest coverage if real
+visual testing proves existing transparent depth sorting
+insufficient. Do not duplicate the generic renderer.
