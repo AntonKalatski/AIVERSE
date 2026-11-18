@@ -28,9 +28,11 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
     return std::isfinite(s.deepR)&&std::isfinite(s.deepG)&&std::isfinite(s.deepB)&&
            std::isfinite(s.foamR)&&std::isfinite(s.foamG)&&std::isfinite(s.foamB)&&
            std::isfinite(s.foamStrength)&&std::isfinite(s.opacity)&&
-           std::isfinite(s.specular)&&s.opacity>0 && s.opacity<0.99f &&
+           std::isfinite(s.specular)&&std::isfinite(s.refractionStrength)&&
+           s.opacity>0 && s.opacity<0.99f &&
            s.specular>=0.85f && s.specular<=1.f &&
-           s.foamStrength>=0 && s.foamStrength<=1;
+           s.foamStrength>=0 && s.foamStrength<=1 &&
+           s.refractionStrength>=0 && s.refractionStrength<=1;
 }
 
 // Upload at content/render setup, not every simulation tick.
@@ -55,7 +57,7 @@ inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
     renderer.drawMesh(mesh,transform,
                       {1.f,1.f,1.f,style.opacity},
                       kDrawNoCastShadow|kDrawWaterSurface,
-                      style.specular);
+                      style.specular,style.refractionStrength);
 }
 inline void releaseNereidWaterSurface(gfx::Device& device,Mesh& mesh) {
     if(mesh.vb.valid())device.destroyBuffer(mesh.vb);
