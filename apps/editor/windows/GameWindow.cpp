@@ -118,7 +118,9 @@ public:
         if (int ability = gameHud_.takePointAbility(); ability >= 0) {
             scriptPointAbility_ = ability; scriptDragStart_ = ImGui::GetIO().MousePos; region_.cancel();
         }
-        refreshCameraActions(ed); // project bindings must be active before scripts handle clicks
+        refreshCameraActions(ed); // bindings before scripts and direct world clicks
+        updateCameraActions(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                            !ImGui::GetIO().WantTextInput,ImGui::GetIO().DeltaTime);
         const bool cardClick = scriptCard(ed, sx + sw, sy + sh);
         if (!cardClick) input(ed);
         if (boxing_) dl->AddRect(boxA_, ImGui::GetIO().MousePos, IM_COL32(120, 255, 120, 220));
@@ -224,9 +226,40 @@ private:
                 return ImGuiMouseButton(mapping.control.code);
         return ImGuiMouseButton_COUNT; // an intentionally unbound mouse action
     }
+    bool actionMouseTriggered(std::string_view action) const {
+        for(const auto& event:cameraActions_.events())
+            if(event.action==action &&
+               event.phase==lib::gameplay::inputflow::Phase::Triggered)return true;
+        return false;
+    }
+    bool actionRequiresTrigger(std::string_view action) const {
+        using K=lib::gameplay::inputflow::TriggerKind;
+        const auto eventTrigger=[](const auto& triggers) {
+            return std::any_of(triggers.begin(),triggers.end(),[](const auto& trigger) {
+                return trigger.kind!=K::Down && trigger.kind!=K::Chord &&
+                       trigger.kind!=K::NotChord;
+            });
+        };
+        if(const auto* definition=cameraActions_.actionDefinition(std::string(action)))
+            if(eventTrigger(definition->triggers))return true;
+        if(const auto* context=cameraActions_.context("RTS.Pointer"))
+            for(const auto& mapping:context->mappings)
+                if(mapping.action==action && mapping.control.device==InputDevice::MouseButton &&
+                   eventTrigger(mapping.triggers))return true;
+        return false;
+    }
     bool actionMouseClicked(std::string_view action,ImGuiMouseButton fallback) const {
         const auto bound=boundButton(action,fallback);
-        return bound!=ImGuiMouseButton_COUNT && ImGui::IsMouseClicked(bound);
+        if(bound==ImGuiMouseButton_COUNT)return false;
+        if(!cameraActions_.context("RTS.Pointer") ||
+           !cameraActions_.isContextActive("RTS.Pointer"))
+            return ImGui::IsMouseClicked(bound); // legacy project fallback
+        const auto* state=cameraActions_.state(std::string(action));
+        if(!state)return false;
+        // Pressed/Tap/Hold/DoubleTap/Pulse act on semantic Triggered rather
+        // than the raw physical mouse edge; Down-level actions click once.
+        if(actionRequiresTrigger(action))return actionMouseTriggered(action);
+        return ImGui::IsMouseClicked(bound) && state->active;
     }
     bool actionMouseReleased(std::string_view action,ImGuiMouseButton fallback) const {
         const auto bound=boundButton(action,fallback);
@@ -234,22 +267,50 @@ private:
     }
     bool actionMouseDown(std::string_view action,ImGuiMouseButton fallback) const {
         const auto bound=boundButton(action,fallback);
-        return bound!=ImGuiMouseButton_COUNT && ImGui::IsMouseDown(bound);
+        if(bound==ImGuiMouseButton_COUNT || !ImGui::IsMouseDown(bound))return false;
+        if(!cameraActions_.context("RTS.Pointer") ||
+           !cameraActions_.isContextActive("RTS.Pointer"))return true;
+        const auto* state=cameraActions_.state(std::string(action));
+        return state && state->active;
+    }
+    float cameraWheel() const {
+        if(!cameraActions_.context("RTS.Pointer") ||
+           !cameraActions_.isContextActive("RTS.Pointer"))
+            return ImGui::GetIO().MouseWheel;
+        const auto* zoom=cameraActions_.state("CameraZoom");
+        return zoom?zoom->value.x:0.0f;
     }
 
     void updateCameraActions(bool focused,float dt) {
         if(!focused){cameraActions_.cancelAll();return;}
-        // Only keyboard controls referenced by active contexts are sampled.
-        // Changes from the project's Input Actions window take effect on file reload.
+        // Sample the same physical device controls through the InputFlow
+        // Mapping Contexts before script cards and world tools consume them.
+        std::set<lib::gameplay::inputflow::Control> sampled;
+        const auto& io=ImGui::GetIO();
         for(const auto& name:cameraActions_.activeContexts()) {
             const auto* context=cameraActions_.context(name);
             if(!context)continue;
             for(const auto& mapping:context->mappings) {
-                if(mapping.control.device!=InputDevice::Keyboard)continue;
-                if(mapping.control.code<=0 || mapping.control.code>=int(platform::Key::Count))continue;
-                const auto key=inputKey(platform::Key(mapping.control.code));
-                cameraActions_.setControl(mapping.control,
-                    key!=ImGuiKey_None && ImGui::IsKeyDown(key)?1.0f:0.0f);
+                if(!sampled.insert(mapping.control).second)continue;
+                const auto device=mapping.control.device;
+                const int code=mapping.control.code;
+                if(mapping.control.deviceIndex!=0)continue;
+                if(device==InputDevice::Keyboard) {
+                    if(code<=0 || code>=int(platform::Key::Count))continue;
+                    const auto key=inputKey(platform::Key(code));
+                    cameraActions_.setControl(mapping.control,
+                        key!=ImGuiKey_None && ImGui::IsKeyDown(key)?1.0f:0.0f);
+                } else if(device==InputDevice::MouseButton) {
+                    if(code>=0 && code<int(ImGuiMouseButton_COUNT))
+                        cameraActions_.setControl(mapping.control,
+                            ImGui::IsMouseDown(ImGuiMouseButton(code))?1.0f:0.0f);
+                } else if(vp_.hovered && device==InputDevice::MouseWheel) {
+                    if(code==0 && io.MouseWheelH!=0)cameraActions_.addDelta(mapping.control,io.MouseWheelH);
+                    if(code==1 && io.MouseWheel!=0)cameraActions_.addDelta(mapping.control,io.MouseWheel);
+                } else if(vp_.hovered && device==InputDevice::MouseAxis) {
+                    if(code==0 && io.MouseDelta.x!=0)cameraActions_.addDelta(mapping.control,io.MouseDelta.x);
+                    if(code==1 && io.MouseDelta.y!=0)cameraActions_.addDelta(mapping.control,io.MouseDelta.y);
+                }
             }
         }
         cameraActions_.update(dt);
@@ -430,7 +491,8 @@ private:
         if (gameHud_.blocked()) { boxing_ = false; return; }
         ImGuiIO& io = ImGui::GetIO();
         RTSCamera& cam = ed.gameCam;
-        if (vp_.hovered && io.MouseWheel != 0) cam.distance = std::clamp(cam.distance * std::pow(0.88f, io.MouseWheel), cam.minDistance, cam.maxDistance);
+        const float wheel=cameraWheel();
+        if (vp_.hovered && wheel != 0) cam.distance = std::clamp(cam.distance * std::pow(0.88f, wheel), cam.minDistance, cam.maxDistance);
         if (vp_.hovered &&
             boundButton("Select",ImGuiMouseButton_Left)!=ImGuiMouseButton_Middle &&
             boundButton("Command",ImGuiMouseButton_Right)!=ImGuiMouseButton_Middle &&
@@ -440,7 +502,6 @@ private:
                 cam.target += float3{x0 - x1, 0, z0 - z1};
         }
         const bool cameraFocused=ImGui::IsWindowFocused() && !io.WantTextInput;
-        updateCameraActions(cameraFocused,io.DeltaTime);
         if(cameraFocused) {
             const auto* arrow=cameraActions_.state("CameraPan");
             const auto* idle=cameraActions_.state("IdleCameraPan");
@@ -548,7 +609,7 @@ private:
             if(!actionMouseDown("Command",ImGuiMouseButton_Right)&&!ImGui::IsMouseDown(ImGuiMouseButton_Middle))regionPanning_=false;
         }
         bool buttons=gameHud_.blocked();
-        if(vp_.hovered&&!buttons&&io.MouseWheel!=0){auto before=point();cam.distance=std::clamp(cam.distance*std::exp(-.14f*io.MouseWheel),cam.minDistance,cam.maxDistance);auto after=point();if(before.x>=0&&after.x>=0)cam.target+=before-after;}
+        if(const float wheel=cameraWheel();vp_.hovered&&!buttons&&wheel!=0){auto before=point();cam.distance=std::clamp(cam.distance*std::exp(-.14f*wheel),cam.minDistance,cam.maxDistance);auto after=point();if(before.x>=0&&after.x>=0)cam.target+=before-after;}
         const bool targetWorld=!gameHud_.pointerOverUi()&&!ed.playPaused&&io.MousePos.x>=vp_.originX&&io.MousePos.y>=vp_.originY&&io.MousePos.x<vp_.originX+vp_.pointsW&&io.MousePos.y<vp_.originY+vp_.pointsH&&ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
         if(entityPointer_ && (ed.playPaused || !ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || ImGui::IsKeyPressed(ImGuiKey_Escape) || actionMouseClicked("Command",ImGuiMouseButton_Right))){entityActions_.cancel();entityPointer_=false;buttons=true;}
         if(entityPointer_){
