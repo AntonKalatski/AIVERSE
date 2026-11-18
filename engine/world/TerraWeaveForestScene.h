@@ -47,6 +47,18 @@ public:
             settings_.scatter.spacingCm <= 0 ||
             settings_.scatter.densityPermille > 1000)
             throw std::invalid_argument("TerraWeave forest scene settings");
+        // Bound scatter candidate work across the WHOLE cache, not merely
+        // each chunk. Tiny spacing and a large radius must not allocate
+        // hundreds of millions of instances before budget checks.
+        const int64_t cellsPerAxis =
+            (int64_t(settings_.chunkSizeCm) + settings_.scatter.spacingCm - 1) /
+            settings_.scatter.spacingCm + 2;
+        const int64_t perChunk = cellsPerAxis * cellsPerAxis;
+        if (perChunk > 65536 ||
+            perChunk * settings_.maxResidentChunks > 1000000)
+            throw std::invalid_argument("TerraWeave forest scatter candidate budget");
+        // Validate LOD/far transition settings before first draw.
+        (void)buildFloraBatches({}, settings_.view);
     }
 
     void addSpecies(const TreeProfile& profile,
@@ -160,7 +172,13 @@ public:
 
     // Call on GPU-owning render thread AFTER all species are registered.
     bool uploadModels(gfx::Device& device) {
-        if (!adapter_.uploadModels(device)) return false;
+        if (!adapter_.uploadModels(device)) {
+            // Upload can fail midway through prototype iteration; free
+            // successfully uploaded buffers/textures before retry or abort.
+            adapter_.releaseModels(device);
+            gpuUploaded_ = false;
+            return false;
+        }
         gpuUploaded_ = true;
         return true;
     }
