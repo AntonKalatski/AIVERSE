@@ -16,8 +16,8 @@ PHYSIS is the **genre-independent** nature simulation for AIVERSE. Weather, loca
 | `engine/physis/PhysisForces.h` | Quadratic wind drag, force receiver/output ECS and pure force sampling |
 | `engine/physis/PhysisPresentation.h` | Unified read-only `NatureFieldSample` for native Terrain/FX/Physics hosts |
 | `engine/physics/PhysisBox3D.h` | **Optional Box3D** physics::Scene adapter; does not modify PHYSIS core |
-| `engine/physis/PhysisPresentation.h` | Read-only 3D `sampleNatureField` snapshot with weather/wind/gravity/hazards |
 | `engine/physis/PhysisDiagnostics.h` | Read-only bounded debug raster, scalar layers and 16-bit normalization |
+| `engine/physis/PhysisSpatialIndex.h` | Transient COW snapshot, 2D bins, ordered candidate selection for wind/gravity/storm fields |
 | `engine/physis/PhysisIntegration.h` | Generic Simulation::addSystem, persistent ECS schemas, read-only presentation feed |
 
 ## Quick integration for any C++ native game
@@ -79,11 +79,13 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Stage 10: [Hurricane and tornado events](agent-handoffs/physis-storm-2026-11-18.md)
 - Stage 11: [Forces and Box3D adapter](agent-handoffs/physis-forces-box3d-2026-11-18.md)
 - Stage 12: [Numerical bounds and native CI](agent-handoffs/physis-numerical-ci-2026-11-18.md)
+- Stage 13: [Unified environment sampling and save compatibility](agent-handoffs/physis-sampling-persistence-2026-11-18.md)
 - Stage 14: [Read-only diagnostic rasters](agent-handoffs/physis-diagnostics-2026-11-18.md)
-- Stage 12: [Numeric safety and CI](agent-handoffs/physis-numerical-ci-2026-11-18.md)
 - Stage 13: [Unified nature field sampling and save-schema compatibility](agent-handoffs/physis-sampling-persistence-2026-11-18.md)
 
-Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+
+- Stage 15: [Fast diagnostic ECS reads](agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md)
+- Stage 16: [Snapshot-backed spatial index](agent-handoffs/physis-spatial-index-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
 
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 
@@ -204,3 +206,44 @@ standalone shallow flooding is displayed by `LocalFloodMeters` (NEREID remains
 canonical water authority). A future editor adapter may upload/use the returned
 raster as a heatmap, with no PHYSIS dependency on the renderer. Tests are
 authored but not yet confirmed by native CTest/CI.
+
+## Indexed reads for large diagnostic or editor sampling sessions
+
+The default `windAt`, `gravityAt`, `stormsAt`, `sampleNatureField`,
+and `sampleDiagnosticRaster` remain available and do not require an index.
+For repeated queries against **one committed ECS snapshot**, use the opt-in
+spatial accelerator:
+
+```cpp
+#include "engine/physis/PhysisSpatialIndex.h"
+#include "engine/physis/PhysisDiagnostics.h"
+aiverse::physis::FieldSpatialIndex index(sim.world(),
+    {.tileSizeMeters = 256, .maxTilesPerVolume = 1024});
+
+// Stable values pinned to the index's original COW world snapshot:
+aiverse::physis::NatureFieldSample nature;
+if (index.sample(queryPosition, nature)) {
+    const auto wind = nature.windVelocity;
+    const auto gravity = nature.gravityAcceleration;
+}
+
+// Optional accelerated debug raster for vector field layers:
+aiverse::physis::DiagnosticRequest request;
+request.layer = aiverse::physis::DiagnosticLayer::WindSpeedMetersPerSecond;
+aiverse::physis::DiagnosticRaster image;
+aiverse::physis::sampleDiagnosticRasterIndexed(index, request, image);
+```
+
+The transient index groups bounded wind zones, shelters, gravity fields and
+storm volumes into **X/Z world-metre tiles**; final 3D range/timing checks
+remain in the canonical PHYSIS policy. Global gravity and very large volumes
+use a bounded fallback list; candidate traversal preserves ECS insertion/pool
+order for Fixed-point accumulation and gravity-priority tie-breaks.
+
+Build once after an authoritative committed tick, use for many queries and
+**rebuild after an ECS change, rollback or climate/storm movement**. It is
+not persistent state, not a spatial index for climate WeatherFront/QuakeEvent
+simulation, and not a world streaming/job scheduler. The index holds a
+copy-on-write World snapshot; keeping many historical indexes resident may
+retain COW pages and increase memory. No native benchmark or compiler success
+has been observed yet; tests are source-only until CTest runs.
