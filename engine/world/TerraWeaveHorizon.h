@@ -233,6 +233,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
             settings.terrainResolution=64;
             settings.crownDetail=3;
             settings.orientationViews=2;
+            settings.maxNearClipTriangles=4096;
             settings.maxCachedRegions=2;
             settings.maxCachedGpuRegions=2;
             break;
