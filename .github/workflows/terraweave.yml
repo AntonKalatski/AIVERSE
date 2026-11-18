@@ -59,9 +59,10 @@ jobs:
             aiverse_terraweave_heightmap_test \
             aiverse_terraweave_ops_test \
             aiverse_terraweave_preview_test \
-            aiverse_terraweave_forest_scene_test
+            aiverse_terraweave_forest_scene_test \
+            aiverse_terraweave_horizon_test
       - name: Run TerraWeave CTest suite
         run: |
           ctest --test-dir build/terraweave-ci \
             --output-on-failure \
-            -R '^terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene)?$'
+            -R '^terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene|_horizon)?$'
