@@ -252,6 +252,13 @@ void Module::hydrateActorsFromEcs(Simulation& sim) const {
     }
 }
 
+// Preserve the old public native symbol for import from legacy v9 saves and
+// native tooling. The end-of-tick ECS mirror explicitly chooses the separate
+// canonical ProjectileRuntime -> State projection overload.
+void Module::syncDynamicEntities(Simulation& sim) const {
+    syncDynamicEntities(sim,false);
+}
+
 void Module::syncDynamicEntities(Simulation& sim,bool projectProjectilesFromEcs) const {
     World& world = sim.world();
     State* current = world.resource<State>();
