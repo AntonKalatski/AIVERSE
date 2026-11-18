@@ -297,3 +297,15 @@ A `ViewLayerQueue` must be **flushed synchronously**
 before returning from the frame scope; callbacks frequently
 borrow textures, camera matrices and terrain references.
 
+## Shared camera-side frustum (flat terrain and planets)
+
+The header-only `engine/view/Frustum.h` provides
+`view::SideFrustum::fromViewProjection(vp,normalized)`,
+`visibleAABB(min,max)` and `visibleSphere(center,radius)`.
+It extracts only four camera side planes, avoiding near/far
+clip-convention differences. Flat terrain chunk culling uses
+raw planes and AABB positive vertices; planet body and
+chunk culling uses normalized planes and sphere radius.
+The host alone owns quadtree LOD, horizon occlusion and
+rendering policy. All CTest validation remains **NOT RUN**.
+

@@ -79,3 +79,9 @@ execute GPU passes on the MotionWeave worker pool.
 LineObject, TriangleObject and CircleXZObject, with no
 gameplay action, order, weapon, network or genre values.
 
+For camera culling reuse `engine/view/Frustum.h` and
+`view::SideFrustum`, supporting generic AABB and sphere
+bounds. Do not copy the same frustum algorithm into
+terrain, planet or game-specific renderers. This is
+presentation culling, NEVER authoritative collision.
+
