@@ -2085,3 +2085,58 @@ attachments, pipeline multisample state and cache keys; all scoped
 resolve image views/framebuffers must be deferred until GPU completion.
 Then real validation layers and sampling tests. Record next code SHA
 and real verification status in a new append-only handoff entry.
+
+## Stage 4W — Vulkan MSAA renderpasses, resolves and pipeline matching (2026-11-18)
+
+**Code commit:** `fdf75870cbdfb43d50ede67cacbcad1a4bbcdd99`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkDraw.cpp`.
+
+**Source implementation:** Complete the Stage 4V allocation half at
+render-pass level. Vulkan `renderPassForMrt` now takes the physical
+sample count and a per-color resolve mask, included in its cache
+key. The renderpass declares N multisample color attachments, then
+one `VK_SAMPLE_COUNT_1_BIT` attachment for every requested resolve
+slot, then optional same-sample depth. Subpass
+`pResolveAttachments` maps color outputs to their correct resolve
+slot, with `VK_ATTACHMENT_UNUSED` where no resolve exists.
+The framebuffer builds the matching temporary 2D image views in
+physical attachment order; all color, resolve and depth views
+are deferred until after GPU execution completes.
+
+`beginRenderTargets` checks sample counts across color/depth,
+the resolved image's format, extent, mip, dimensionality, and
+single-sample usage, rejects aliasing resolve destinations, and
+requires clear=true for MSAA render attachments while there is no
+persistent multisample layout tracker. A depth-only MSAA pass is
+supported with a color count of zero. Native renderpasses select
+attachment layouts and renderpass dependencies; the resolved
+single-sample images return to SHADER_READ_ONLY_OPTIMAL.
+
+`PipelineDesc.sampleCount` may now request supported
+1/2/4/8/16x counts. Pipeline cache and `VkPipelineMultisampleStateCreateInfo`
+track actual sample count and resolve topology. `setPipeline`
+rejects mismatched sample counts. Legacy beginPass deliberately
+skips multisampled resources with an error; callers use
+beginRenderTargets. Direct sampling of an MSAA-only texture binds
+a dummy and reports an error; sample the resolve destination.
+
+**Restrictions:** Source-level only; Vulkan GPU tests/validation
+not yet run. There is no depth resolve, no layered multisampling,
+no non-cleared persistent multisample pass load, and no storage
+image support in this stage. Mixed-format color MRT remains
+supported as in Stage 4T. All existing Texture2D 1x pass paths
+and native ECS game code remain unchanged in intended behavior.
+
+**Actual verification:** GitHub code/tree/commit/ref update
+**SUCCEEDED**; C++ native build **NOT RUN**; CTest **NOT RUN**;
+Vulkan validation-layer GPU test **NOT RUN**. Do not merge Draft PR
+on the basis of this source-only change.
+
+**Next:** Add Vulkan device fixture with 2x/4x two-color clear,
+two independent resolves, depth attachment, mixed HDR/UNORM and
+shader sampling of resolved images. Run compiler + validation layers
+and fix any errors. Then complete remaining import formats, async
+readback/streaming and native editor inspection in separate stages,
+each followed by its own handoff.
