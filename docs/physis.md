@@ -713,3 +713,87 @@ CTest physis_remote_edit added to PHYSIS and Studio CI, including
 actual net::Conn loopback, reconnect, ACL, duplicate, jitter and
 rollback source tests. NATIVE BUILD AND TESTS NOT RUN. Handoff:
 docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.
+
+
+## Stage 26 — durable admin journal and authenticated loopback endpoint
+
+PHYSIS remote editing now includes a file-backed write-ahead receipt journal
+and an opt-in, native loopback-only admin WebSocket listener. The existing
+FieldRuntimeState / installEditableFromMap / GameModule::applyCommand /
+applyFieldEditCommand remains the canonical editor authority. The separate
+RuntimeFieldRegistry / FieldCommandHost path introduced concurrently by
+other agents is NOT connected to this editor and must not be enabled at the
+same time.
+
+New generic engine files:
+- engine/physis/PhysisRemoteJournal.h: FileJournal stores a bounded
+  checksummed snapshot of the server's request/receipt cache in an
+  operator-owned private directory. Entries include trusted principal,
+  client instance and request ID, exact original edit bytes, typed authored
+  fingerprints, expected revision, scheduled tick and status.
+  It uses unpredictable exclusive temporary file creation, write flush/
+  fsync, atomic rename/replacement and POSIX directory sync. A bad
+  checksum or missing permission rejects startup rather than silently
+  dropping history. Only ONE server process may own a journal path.
+- engine/physis/PhysisAdminAuth.h: versioned admin challenge/proof handshake
+  using a new random nonce and keyed BLAKE2b. The shared secret is not
+  sent. Principal string is tied to proof, checked against a host-supplied
+  key lookup, followed by server ACL and reserved PHYSIS command type.
+  Client-supplied player=0 / instance tokens never grant rights.
+- engine/physis/PhysisAdminEndpoint.h: LoopbackAdminEndpoint owns a
+  real net::WsListener listening at 127.0.0.1 ONLY, and admits
+  authenticated connections to the Stage 25 ServerGateway. It requires
+  a nonzero host-reserved PHYSIS command ID, ACL callbacks and a private
+  journal file. LoopbackAdminConnector can authenticate a native editor
+  connecting over local ws://127.0.0.1. The PHYSIS window uses its
+  EditorLink bridge to poll this connection and show pending/status.
+- apps/editor/PhysisRemoteEdit.h: EditorLink::connectLocalAdmin accepts
+  host-supplied principal, secret from secure storage, nonzero
+  instance ID, assigned slot and command type. It does not auto-generate
+  secrets, open anonymous network connections or grant admin rights.
+
+Example native setup:
+    aiverse::physis::remote::admin::LoopbackAdminEndpoint endpoint(
+        privateJournalFile);
+    endpoint.open(localPort, reservedFieldCommandType,
+                  serverKeyLookup, canRead, canWrite, &error);
+    // Restore matching Simulation checkpoint BEFORE opening endpoint.
+    // In host event loop:
+    endpoint.poll(sim, monotonicMs);
+    sim.step();
+    endpoint.afterTick(sim);
+
+Credential lookup, key rotation and ACL are host-owned. The admin port is
+never allowed to bind publicly from this API. IMPORTANT: the current native
+AIVERSE WebSocket client supports ws:// but NOT wss://; this handshake
+alone is not transport encryption. For off-machine admin access, use an
+already encrypted authenticated tunnel to local loopback or implement
+real native TLS/WSS. Never expose plain remote ws:// and call it secure.
+
+Crash recovery:
+1. Persist the original edit *intent* BEFORE scheduling the Simulation
+   command. A failed journal write prevents any new admission.
+2. Persist Queued and later Applied/Rejected/Conflict receipts.
+   Restored Unknown intents may be reconciled against saved ECS
+   revision+fingerprints; same original packet can be re-admitted only
+   after ACL and revision checks. Duplicated packet IDs cannot apply twice.
+3. On restart, restore the matching Simulation World/checkpoint and
+   pending command state first, then attach the file journal, and only
+   then accept authenticated admin connections.
+4. The journal and the Simulation checkpoint are two separate stores,
+   not a single atomic DB transaction. A power failure between writing
+   them can leave an ambiguous outcome. Receipt recovery must report
+   Unknown/Conflict rather than inventing Applied. This is more robust
+   than Stage 25's volatile-only receipt cache, but it is not a blanket
+   guarantee of crash-atomic exactly-once acknowledgment.
+
+No changes to default PHYSIS save manifest or NEREID Water,
+TerraWeave terrain/foliage, Box3D rigid-body dynamics and FPS/RTS input
+authorities. This is opt-in infrastructure for authenticated native hosts.
+
+A new physis_admin_journal CTest target and PHYSIS/Studio CI registration
+contain source fixtures for journal corruption and restart recovery,
+write failure, challenge/response rejection and real local WebSocket
+handshake plus ECS update. **No native compilation, CTest PASS, TLS
+integration or macOS GUI test has been performed.** Handoff:
+docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.

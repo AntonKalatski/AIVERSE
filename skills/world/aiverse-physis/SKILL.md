@@ -327,3 +327,40 @@ with editable FieldRuntimeState until reconciled.
 
 Tests physis_remote_edit authored and CI registered but NOT RUN.
 Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.
+
+
+### Stage 26 — PHYSIS durable admin sessions
+
+Use the canonical FieldRuntimeState/EditableFromMap runtime path.
+For a trusted local admin server, create
+physis::remote::admin::LoopbackAdminEndpoint(privateJournalFile)
+and call open(port, reservedPhysisCommandType, keyLookup, readAcl,
+writeAcl, error), then poll(authoritativeSimulation, nowMs) and
+afterTick(authoritativeSimulation) each committed tick.
+Restore World/checkpoint BEFORE FileJournal attachment and open
+the listener only when checksummed journal loading succeeds.
+The operator must exclusively own the journal path.
+
+For native editor, the trusted host may call
+editor::physis_remote::link().connectLocalAdmin(
+    "ws://127.0.0.1:port", principal, keyFromOSSecretStore,
+    cryptographicallyRandomClientInstance, assignedPlayerSlot,
+    reservedPhysisCommandType). The editor UI polls handshake
+completion and existing RemoteClient receipt ACK/NACK. Secrets are
+never sent; fresh nonce + keyed BLAKE2b validates the principal.
+Native AIVERSE currently does not implement WSS, so this endpoint
+is loopback only. Off-machine use needs encrypted transport/tunnel.
+
+FileJournal preserves exact original request and authenticated
+principal, expected revision, desired field fingerprints, scheduled
+tick and status. It persists intent before enqueue, and fails
+closed on write/corruption. After server restart recheck persisted
+World; unknown outcomes must remain Unknown/Conflict rather than
+being reported as definitely Applied. The separate World save +
+journal is not a crash-atomic transaction. Do not claim exactly-once
+receipt under power loss without a joint checkpoint.
+Do not mix other agent's TrackedFromMap/FieldCommandHost with
+canonical editable runtime. Keep NEREID, TerraWeave, Box3D separate.
+
+Tests physis_admin_journal authored and CI registered but NOT RUN.
+Handoff docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.

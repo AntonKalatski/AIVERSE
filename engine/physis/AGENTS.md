@@ -195,3 +195,36 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - No changes to NEREID water, TerraWeave, Box3D or default PHYSIS
   save schema. CTest physis_remote_edit authored but NOT RUN.
   Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.
+
+
+## Stage 26 — durable receipts and admin-only network authority
+
+- Prefer canonical installEditableFromMap/FieldRuntimeState and
+  applyFieldEditCommand for the editor and remote admin pipeline.
+  The parallel RuntimeFieldRegistry / FieldCommandHost from other
+  agents is a different opt-in authority. Never install both.
+- Stage 26 adds PhysisRemoteJournal.h. The host MUST reload a matching
+  Simulation checkpoint BEFORE FileJournal::attach, and attach the
+  journal BEFORE any privileged connection can submit requests.
+  Journal save errors FAIL CLOSED before admission; unknown original
+  intents are persisted prior to enqueue. Never silently ignore a
+  corrupted journal or overwrite it from another process.
+- LoopbackAdminEndpoint (PhysisAdminEndpoint.h) binds strictly to
+  loopback WsListener, requires a nonzero reserved PHYSIS command
+  type, and authenticates a session via keyed BLAKE2b proof with
+  fresh OS entropy. Server key lookup and ACL are host-owned.
+  Never use Command.player, request ID, session token or user-provided
+  roles to authorize. Do not alter regular player InputFrame.
+- Native WebSocket currently lacks WSS/TLS. Do NOT expose ordinary
+  ws:// admin service on a public interface. External administration
+  requires a separate encrypted tunnel or actual native TLS.
+- ServerGateway persists exact ID/bytes, typed fingerprints, Queued/
+  Applied/NACK status and re-checks ECS after restart/rollback. The
+  separate file journal and Simulation save are NOT an atomic
+  transaction; Unknown/Conflict on ambiguous crash recovery is
+  intentional. No crash-durable exactly-once promise until a shared
+  checkpoint/journal transaction exists.
+- Stage 26 test source and CTest physis_admin_journal are registered
+  in CMake and PHYSIS/Studio workflows, but C++ compilation/CTest,
+  real GUI/network/TLS QA are NOT RUN. Handoff:
+  docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.

@@ -1414,3 +1414,33 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
 - CTest physis_remote_edit and PHYSIS/Studio workflow targets
   added but native compile/CTest/real security QA NOT RUN.
   Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.
+
+
+### PHYSIS Stage 26 — journal recovery and privileged local endpoint
+
+- Canonical PHYSIS editor/runtime authority is Stage 23/24
+  FieldRuntimeState + installEditableFromMap + GameModule::applyCommand
+  dispatching applyFieldEditCommand. Do NOT install the parallel
+  RuntimeFieldRegistry/FieldCommandHost simultaneously.
+- engine/physis/PhysisRemoteJournal.h stores the admin request/receipt
+  cache as bounded checksummed write-ahead snapshots. Persist INTENT
+  before command enqueue and status after tick, fail closed if disk
+  writes fail. On startup restore Simulation checkpoint first,
+  validate/load journal second, open privileged listener third.
+- engine/physis/PhysisAdminAuth.h provides challenge/proof with keyed
+  BLAKE2b and secure OS random. PhysisAdminEndpoint.h binds a
+  WsListener to loopback only, requires game-owned reserved command
+  type, authenticated principal and ACL. Never trust client IDs
+  or player=0 as an authority credential.
+- Native net::connectWebSocket does not support WSS/TLS. External
+  admin requires a real encrypted tunnel/transport, never public
+  plaintext ws://. No automatic privileged listener is added to
+  FPS/RTS modules or ordinary net match input.
+- Sidecar file journal + separate World checkpoint is NOT one
+  crash-atomic transaction; Unknown/Conflict after ambiguous
+  restart is a correct result, not a false Applied. Further
+  atomic checkpoint work required before exactly-once guarantees.
+- Test target physis_admin_journal registered and fixture written;
+  native build/CTest/macOS editor/actual remote TLS and security QA
+  NOT RUN. Stage handoff
+  docs/agent-handoffs/physis-admin-durable-journal-2026-11-19.md.
