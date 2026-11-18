@@ -3,7 +3,7 @@
 // projectiles leaving muzzles; building ghosts and previews for portraits / editor.
 #include "RtsView.h"
 #include "RtsPreviewRenderProvider.h"
-#include "RtsStaticPreviewModel.h"
+#include "RtsPreviewResourceProvider.h"
 #include "engine/view/View.h"
 
 #include <algorithm>
@@ -339,43 +339,18 @@ void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const
     if(!planets_.active() && type<looks_.size()) {
         loadType(type);
         const auto& look=looks_[type];
-        if(look.models.size()==1 && look.stages.empty() &&
-           look.lods.empty()) {
-            const auto& choice=look.models.front();
-            if(choice.model && choice.model->clips.empty() &&
-               !choice.graph && !choice.needsPose && !choice.baked &&
-               choice.procs.empty() && choice.legs.empty() &&
-               choice.attach.empty() && choice.fx.empty() &&
-               choice.additive.empty() && choice.weaponPoses.empty()) {
-                const auto& kind=rules_->types[type];
-                const auto player=playerColor(1);
-                view_adapter::StaticPreviewModel spec;
-                spec.model=choice.model;
-                spec.geometry=choice.geometry;
-                spec.materials=&choice.materials;
-                spec.nodeMaterial=choice.nodeMaterial.empty()
-                    ?nullptr:&choice.nodeMaterial;
-                spec.fix=choice.fix;
-                spec.variant=choice.variant;
-                spec.team={player.x*player.x,player.y*player.y,
-                           player.z*player.z};
-                spec.structure=kind.structure;
-                spec.shape=look.shape;
-                spec.air=look.air;
-                spec.transparent=look.transparent;
-                spec.scale=look.scale;
-                spec.sx=look.sx;spec.sz=look.sz;
-                spec.flyHeight=look.flyHeight;
-                const auto description=
-                    view_adapter::makeGhostPresentation(type,pos,ok,time);
-                ::aiverse::view::Object packet;
-                if(view_adapter::buildStaticGhostPacket(
-                       spec,description.position,
-                       heightAt(grid,pos.x,pos.z),
-                       description.tint,packet)) {
-                    view_adapter::submitStaticPreview(r,packet);
-                    return;
-                }
+        view_adapter::StaticPreviewModel spec;
+        if(view_adapter::resolveStaticPreviewModel(
+               look,rules_->types[type],playerColor(1),spec)) {
+            const auto description=
+                view_adapter::makeGhostPresentation(type,pos,ok,time);
+            ::aiverse::view::Object packet;
+            if(view_adapter::buildStaticGhostPacket(
+                   spec,description.position,
+                   heightAt(grid,pos.x,pos.z),
+                   description.tint,packet)) {
+                view_adapter::submitStaticPreview(r,packet);
+                return;
             }
         }
     }
@@ -416,39 +391,13 @@ void RtsView::drawPreview(Renderer3D& r, uint16_t type, uint8_t owner, double ti
     if(type<looks_.size()) {
         loadType(type);
         const auto& look=looks_[type];
-        if(look.models.size()==1 && look.stages.empty() && look.lods.empty()) {
-            const auto& choice=look.models.front();
-            if(choice.model && choice.model->clips.empty() &&
-               !choice.graph && !choice.needsPose && !choice.baked &&
-               choice.procs.empty() && choice.legs.empty() &&
-               choice.attach.empty() && choice.fx.empty() &&
-               choice.additive.empty() && choice.weaponPoses.empty()) {
-                const auto& kind=rules_->types[type];
-                const auto player=playerColor(owner);
-                view_adapter::StaticPreviewModel spec;
-                spec.model=choice.model;
-                spec.geometry=choice.geometry;
-                spec.materials=&choice.materials;
-                spec.nodeMaterial=choice.nodeMaterial.empty()
-                    ?nullptr:&choice.nodeMaterial;
-                spec.fix=choice.fix;
-                spec.variant=choice.variant;
-                spec.tint=look.tint;
-                spec.team={player.x*player.x,player.y*player.y,
-                           player.z*player.z};
-                spec.structure=kind.structure;
-                spec.shape=look.shape;
-                spec.air=look.air;
-                spec.transparent=look.transparent;
-                spec.staticObject=kind.structure || kind.speed<=Fixed{};
-                spec.scale=look.scale;
-                spec.sx=look.sx;spec.sz=look.sz;
-                spec.flyHeight=look.flyHeight;
-                ::aiverse::view::Object packet;
-                if(view_adapter::buildStaticPreviewPacket(spec,yaw,packet)) {
-                    view_adapter::submitStaticPreview(r,packet);
-                    return;
-                }
+        view_adapter::StaticPreviewModel spec;
+        if(view_adapter::resolveStaticPreviewModel(
+               look,rules_->types[type],playerColor(owner),spec)) {
+            ::aiverse::view::Object packet;
+            if(view_adapter::buildStaticPreviewPacket(spec,yaw,packet)) {
+                view_adapter::submitStaticPreview(r,packet);
+                return;
             }
         }
     }
