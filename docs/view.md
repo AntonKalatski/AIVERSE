@@ -633,3 +633,25 @@ resource/terrain providers still need migration.
 Per the user's implementation-first instruction, **NO TESTS RUN**
 on this stage. Compile, native visual parity and platform validation
 remain pending.
+
+## Flat-ground ghost ModelDraw migration (Stage 87)
+
+`view_adapter::buildStaticGhostPacket(spec, position, ground, tint, packet)`
+extends the static preview packet path to placement ghosts. It reuses
+the borrowed model/material/geometry and transform description, translates
+the preview to the sampled flat-ground height, applies the valid/invalid
+pulsating ghost tint, disables shadow casting and does not classify ghost
+models as immutable/light-baked static scenery.
+
+`RtsView::drawGhost` now submits eligible flat-ground rigid objects
+directly via `aiverse::View::submitModel`. Its eligibility deliberately
+requires one model choice without stage/LOD overrides, imported clips,
+AnimationGraph, pose/baked skinning, procedural animation/IK,
+attachments, weapon poses, additive overlays or effects. Planetary
+placement, complex rendering and noneligible models still use the
+existing compatibility draw path, which continues to own their model
+lifecycle and special model placement.
+
+This is not the deletion of legacy `RtsView`; its API and host
+callers remain intact. **NOT RUN:** tests, compilation and visual
+parity checks were intentionally deferred by the user.
