@@ -1,5 +1,6 @@
 #include "engine/platform/EnhancedInputAdapter.h"
 #include "engine/platform/EnhancedInputUsers.h"
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <span>
@@ -30,6 +31,7 @@ int main() {
     actions.defineAction({"PadJump",in::ValueType::Boolean});
     actions.defineAction({"Touch",in::ValueType::Boolean});
     actions.defineAction({"SwipeX",in::ValueType::Axis1D});
+    actions.defineAction({"Twist",in::ValueType::Axis1D});
     actions.defineAction({"Pinch",in::ValueType::Axis1D});
     actions.defineAction({"TwoFingerPanX",in::ValueType::Axis1D});
     in::MappingContext controls{"Test"};
@@ -41,6 +43,7 @@ int main() {
     controls.bind("PadJump",{in::Device::GamepadButton,int(p::PadButton::A)});
     controls.bind("Touch",{in::Device::Touch,0});
     controls.bind("SwipeX",{in::Device::Touch,1});
+    controls.bind("Twist",{in::Device::Touch,6});
     controls.bind("Pinch",{in::Device::Touch,3});
     controls.bind("TwoFingerPanX",{in::Device::Touch,4});
     CHECK(actions.registerContext(controls));
@@ -86,7 +89,12 @@ int main() {
     CHECK(actions.state("Pinch")->value.x==5);
     CHECK(actions.state("TwoFingerPanX")->value.x==-2.5f);
     CHECK(has(actions.update(0.016f),"Pinch",in::Phase::Completed));
-    e.type=p::EventType::TouchEnd;adapter.onEvent(e);
+    // Two-finger rotation uses a shortest-arc angle delta in radians.
+    e.type=p::EventType::TouchMove;e.touchId=101;e.x=10;e.y=10;
+    adapter.onEvent(e);
+    CHECK(has(actions.update(0.016f),"Twist",in::Phase::Triggered));
+    CHECK(std::abs(actions.state("Twist")->value.x)>0.4f);
+    e.type=p::EventType::TouchEnd;e.touchId=100;adapter.onEvent(e);
     e={};e.type=p::EventType::TouchBegin;e.touchId=102;e.x=20;adapter.onEvent(e);
     CHECK(!has(actions.update(0.016f),"Pinch",in::Phase::Triggered));
     e.type=p::EventType::FocusLost;adapter.onEvent(e);
