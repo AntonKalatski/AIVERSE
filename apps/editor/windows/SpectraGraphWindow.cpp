@@ -1,11 +1,12 @@
-// AIVERSE SpectraFX v1 node canvas. GUI-only authoring: never owns gameplay state.
-// The graph-v1 compiler remains authoritative for validation and CPU effects.
+// AIVERSE SpectraFX v1/v2 visual graph canvas. Presentation-only authoring.
+// V2 typed expressions compile through the canonical strict FxEffect backend.
 // Native/editor MCP operations remain in apps/editor/core/SpectraGraphOps.cpp.
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "../core/FxOps.h"
 #include "engine/fx/SpectraFX.h"
 #include "engine/fx/SpectraModuleSchema.h"
+#include "engine/fx/SpectraAuthoring.h"
 #include <string_view>
 #include <algorithm>
 #include <cmath>
@@ -16,19 +17,7 @@
 
 namespace aiverse::editor {
 namespace {
-Json defaultGraph() {
-    return Json::parse(R"JSON({
-      "version":1,
-      "parameters":{},
-      "nodes":[
-        {"id":"spawn","type":"Spawn","properties":{"burst":16},"position":[20,110]},
-        {"id":"initialize","type":"Initialize","properties":{"life":1,"speed":1,"size":0.4},"position":[255,110]},
-        {"id":"output","type":"SpriteOutput","properties":{"texture":"builtin:soft"},"position":[490,110]}
-      ],
-      "links":[{"from":"spawn","to":"initialize"},{"from":"initialize","to":"output"}],
-      "outputs":["output"]
-    })JSON");
-}
+Json defaultGraph() { return spectra::authoring::newGraphV2(); }
 Json pairJson(ImVec2 pos) {
     Json a=Json::array();
     a.push(Json::number(double(std::clamp(pos.x,-100000.f,100000.f)),2));
@@ -192,7 +181,8 @@ private:
             if(checkResult(r)){message_="Предпросмотр в окне Сцена.";ed.focusWindow("scene");}
         }
         ImGui::EndDisabled();
-        ImGui::SameLine();ImGui::TextDisabled("%s  (%d)",dirty_?"*":"",emitters_);
+        ImGui::SameLine();ImGui::TextDisabled("%s  v%lld (%d)",
+            dirty_?"*":"",static_cast<long long>(doc_.getInt("version")),emitters_);
     }
     void selectNode(int i) {
         if(i<0||size_t(i)>=doc_["nodes"].size()) {
@@ -203,19 +193,14 @@ private:
         propertyText_=(n["properties"].isObject()?n["properties"]:Json::object()).dump(2);
     }
     void addNode(const char* type) {
-        if(doc_["nodes"].size()>=256)return;
-        std::string nid;int serial=1;
-        do{nid="node"+std::to_string(serial++);}while(existsNode(doc_,nid));
-        Json n=Json::object();n.set("id",Json::string(nid));n.set("type",Json::string(type));
-        Json p=Json::object();
-        if(std::string(type)=="Spawn")p=Json::parse(R"({"burst":12})");
-        if(std::string(type)=="Initialize")p=Json::parse(R"({"life":1,"size":0.4,"speed":1})");
-        if(std::string(type)=="SpriteOutput")p=Json::parse(R"({"texture":"builtin:soft"})");
-        if(std::string(type)=="MeshOutput")p=Json::parse(R"({"meshes":["builtin:cube"]})");
-        n.set("properties",p);n.set("position",pairJson({50.f+float(doc_["nodes"].size())*30.f,200.f}));
-        remember();doc_.find("nodes")->push(n);
-        if(isOutput(type))doc_.find("outputs")->push(Json::string(nid));
-        selectNode(int(doc_["nodes"].size())-1);refreshDiagnostics();
+        Json candidate=doc_;
+        std::string id,error;
+        if(!spectra::authoring::addNode(candidate,type,id,error)) {
+            message_=error;return;
+        }
+        remember();doc_=std::move(candidate);
+        selectNode(int(doc_["nodes"].size())-1);
+        refreshDiagnostics();
     }
     void deleteNode() {
         if(selected_<0)return;
@@ -231,29 +216,36 @@ private:
         doc_.set("outputs",outputs);
         pendingFrom_.clear();selectNode(-1);refreshDiagnostics();
     }
-    bool wouldCycle(const std::string& from,const std::string& to) const {
-        std::string cursor=from;
-        for(size_t i=0;i<=doc_["nodes"].size();++i) {
-            if(cursor==to)return true;
-            std::string parent;
-            for(const auto& link:doc_["links"].items())
-                if(link.getStr("to")==cursor){parent=link.getStr("from");break;}
-            if(parent.empty())return false;
-            cursor=parent;
+    void connectData(const std::string& from,const std::string& to,
+                     const std::string& port) {
+        Json candidate=doc_;
+        std::string error;
+        if(!spectra::authoring::connectData(candidate,from,to,port,error)) {
+            message_=error;return;
         }
-        return true;
+        remember();doc_=std::move(candidate);
+        pendingDataFrom_.clear();
+        message_="Подключён параметр "+port;
+        refreshDiagnostics();
     }
     void link(const std::string& from,const std::string& to) {
-        if(!existsNode(doc_,from)||!existsNode(doc_,to)||from==to||
-           isOutput(nodeType(doc_,from))||nodeType(doc_,to)=="Spawn"||wouldCycle(from,to)) {
-            message_="Неверная связь (тип узла или цикл).";return;
+        if(spectra::authoring::isData(nodeType(doc_,from)) &&
+           doc_.getInt("version")==2) {
+            pendingDataFrom_=from;
+            for(size_t i=0;i<doc_["nodes"].size();++i)
+                if(doc_["nodes"][i].getStr("id")==to) {selectNode(int(i));break;}
+            const auto fields=spectra::authoring::inputPorts(nodeType(doc_,to));
+            linkPort_=fields.empty()?"":fields.front();
+            message_="Выберите входное поле для связи данных.";
+            return;
         }
-        remember();
-        Json links=Json::array();
-        for(const auto& item:doc_["links"].items())
-            if(item.getStr("to")!=to)links.push(item);
-        Json entry=Json::object();entry.set("from",Json::string(from));entry.set("to",Json::string(to));
-        links.push(entry);doc_.set("links",links);refreshDiagnostics();
+        Json candidate=doc_;
+        std::string error;
+        if(!spectra::authoring::connectExec(candidate,from,to,error)) {
+            message_=error;return;
+        }
+        remember();doc_=std::move(candidate);
+        refreshDiagnostics();
     }
     void canvas() {
         const ImVec2 origin=ImGui::GetCursorScreenPos();
@@ -283,8 +275,15 @@ private:
             if(a<0||b<0)continue;
             ImVec2 p=nodePos(doc_["nodes"][size_t(a)],size_t(a));
             ImVec2 q=nodePos(doc_["nodes"][size_t(b)],size_t(b));
-            p.x+=175;p.y+=24;q.y+=24;
-            dl->AddBezierCubic(p,{p.x+70,p.y},{q.x-70,q.y},q,ImGui::GetColorU32(ImGuiCol_PlotLines),2.f);
+            const bool dataLink=e.has("toPort");
+            p.x+=175;p.y+=24;q.y+=dataLink?52:24;
+            const ImU32 color=ImGui::GetColorU32(
+                dataLink?ImGuiCol_PlotHistogram:ImGuiCol_PlotLines);
+            dl->AddBezierCubic(p,{p.x+70,p.y},{q.x-70,q.y},q,color,2.f);
+            if(dataLink) {
+                const std::string name=e.getStr("toPort");
+                dl->AddText({q.x+4,q.y-7},color,name.c_str());
+            }
         }
         std::string requestedTo;
         for(size_t i=0;i<doc_["nodes"].size();++i) {
@@ -446,12 +445,38 @@ private:
 
     void properties(Editor& ed) {
         ImGui::TextUnformatted("Узлы");
-        if(ImGui::BeginCombo("Добавить узел","Выберите тип")) {
-            for(const char* type:{"Spawn","Initialize","Update","SpriteOutput","MeshOutput","RibbonOutput"})
-                if(ImGui::Selectable(type))addNode(type);
+        if(ImGui::BeginCombo("Добавить узел","Каталог SpectraFX")) {
+            std::string group;
+            for(const auto& info:spectra::authoring::nodeCatalog()) {
+                if(info.v2Only && doc_.getInt("version")!=2)continue;
+                if(group!=info.group) {
+                    group=info.group;
+                    ImGui::SeparatorText(info.group);
+                }
+                if(ImGui::Selectable(info.type))addNode(info.type);
+            }
             ImGui::EndCombo();
         }
         if(!pendingFrom_.empty())ImGui::TextWrapped("Соединение: %s -> выберите вход",pendingFrom_.c_str());
+        if(!pendingDataFrom_.empty() && selected_>=0 &&
+           size_t(selected_)<doc_["nodes"].size()) {
+            const std::string target=doc_["nodes"][size_t(selected_)].getStr("id");
+            ImGui::SeparatorText("Связь данных");
+            ImGui::TextWrapped("Выход %s → %s",pendingDataFrom_.c_str(),target.c_str());
+            for(const auto& port:spectra::authoring::inputPorts(
+                    doc_["nodes"][size_t(selected_)].getStr("type"))) {
+                ImGui::PushID(port.c_str());
+                if(ImGui::SmallButton(port.c_str()))linkPort_=port;
+                ImGui::SameLine();
+                ImGui::PopID();
+            }
+            ui::inputString("Вход/путь##spectra_port",linkPort_);
+            if(ImGui::Button("Связать данные") && !linkPort_.empty())
+                connectData(pendingDataFrom_,target,linkPort_);
+            ImGui::SameLine();
+            if(ImGui::SmallButton("Отмена##spectra_data_link"))
+                pendingDataFrom_.clear();
+        }
         ImGui::Separator();
         if(selected_>=0 && size_t(selected_)<doc_["nodes"].size()) {
             const Json& n=doc_["nodes"][size_t(selected_)];
@@ -501,7 +526,7 @@ private:
                            "GPU compute и математические dataflow узлы пока не поддерживаются.");
     }
 
-    std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,pendingFrom_;
+    std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,pendingFrom_,pendingDataFrom_,linkPort_;
     std::vector<std::string> names_,errors_;
     Json doc_=defaultGraph();
     std::vector<Json> undo_,redo_;
