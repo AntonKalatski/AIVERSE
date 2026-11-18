@@ -248,3 +248,41 @@ native GPU. Fix compiler errors or colour mismatches as needed and
 record the actual results in the next handoff. Verify array-layer
 readback/update separately. Then continue stage 3 texture views
 and independent samplers.
+
+## Stage 3A — CPU view/sampler contract validation (2026-11-18)
+
+**Code commit:** `bee8464f0bbffefde854ff2b13fdb60df4ddf74b`.
+**Paths:** `engine/gfx/Gfx.h`, `tests/render/texture_contract.cpp`.
+
+**Implemented in source:** `textureEffectiveMipLevels(TextureDesc)`,
+`validateTextureViewDesc(TextureDesc, TextureViewDesc)` and
+`validateSamplerDesc(SamplerDesc)`. Bounds checks include valid mip
+and array-layer intervals, image aspect (color vs depth), 2D array
+single-slice 2D views, and cube-aligned CubeArray subset views.
+Sampler limits reject nonfinite LOD/bias/anisotropy, negative minLod,
+maxLod below minLod, or anisotropy below 1. Added positive/negative
+cases to CPU-only `texture_contract` CTest.
+
+**Compatibility:** Existing public API signatures and 2D defaults
+preserved. Only new helpers and tests added; no backend behavior changes
+and no game save/network/ECS changes. `TextureViewDesc` still has
+mipLevelCount=1 by default: callers requesting all mips must set it.
+
+**What is NOT implemented:** Native `TextureViewHandle`/
+`SamplerHandle` objects or binding; the validators are not a GPU
+capability claim. Metal, GL/GLES and Vulkan still return unsupported
+defaults for view/sampler resource calls.
+
+**Verification:** GitHub source commit succeeded; all four GitHub
+workflow runs on prior commit `1640d5...` were **queued**, not
+passed at read time. Local compiler/CTest/GPU execution: **NOT RUN**
+because the working runtime cannot resolve `github.com` to clone
+the full repository. Do not report these tests as passing.
+
+**Next stage:** Implement independent texture views and sampler
+objects in one backend at a time, beginning with Metal. Validate
+requested view dimensions against *actual* mip/layer counts in
+addition to CPU descriptor helpers. Destroy dependent views safely
+when parent texture dies and explicitly invalidate stale handles.
+Add native tests, verify no regressions in legacy setTexture path.
+Commit each backend stage and a separate handoff.
