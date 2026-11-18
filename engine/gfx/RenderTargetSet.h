@@ -26,6 +26,13 @@ public:
         int sampleCount = 1;  // when >1 each color gets a single-sample resolve
         int colorCount = 1;   // 0..4; 0 requires depth=true
         PixelFormat colorFormat = PixelFormat::RGBA8;
+        // When enabled, each output has its own explicitly selected format;
+        // otherwise colorFormat applies to every output (legacy behavior).
+        bool perAttachmentFormats = false;
+        std::array<PixelFormat, kMaxRenderTargetColors> colorFormats{
+            PixelFormat::RGBA8, PixelFormat::RGBA8,
+            PixelFormat::RGBA8, PixelFormat::RGBA8
+        };
         bool depth = false;
     };
 
@@ -61,16 +68,34 @@ public:
         td.mipLevels = config.mipLevels;
         td.renderTarget = true;
         td.sampleCount = config.sampleCount;
-        td.format = config.colorFormat;
+        td.format = config.perAttachmentFormats ?
+                    config.colorFormats[0] : config.colorFormat;
         if (config.sampleCount > 1 && (config.dimension != TextureDimension::Texture2D ||
                                        config.mipLevels != 1)) {
             error_ = "multisampled render-target sets are currently 2D with one mip";
             return false;
         }
-        if (validateTextureDesc(td) != TextureDescError::None ||
-            (config.depth && config.colorFormat == PixelFormat::Depth)) {
-            error_ = "invalid color texture descriptor";
-            return false;
+        // Validate every requested color slot up front, before any GPU
+        // allocations. Reject unsupported compressed/typed color formats
+        // rather than accidentally allocating them as RGBA8.
+        for (int i = 0; i < config.colorCount; ++i) {
+            td.format = config.perAttachmentFormats ?
+                        config.colorFormats[size_t(i)] : config.colorFormat;
+            if ((td.format != PixelFormat::RGBA8 &&
+                 td.format != PixelFormat::RGBA8_sRGB &&
+                 td.format != PixelFormat::RGBA16F) ||
+                validateTextureDesc(td) != TextureDescError::None ||
+                !device.supports(td.format)) {
+                error_ = "unsupported render-target color format or descriptor";
+                return false;
+            }
+        }
+        if (config.colorCount == 0) {
+            td.format = PixelFormat::Depth;
+            if (validateTextureDesc(td) != TextureDescError::None) {
+                error_ = "invalid depth-only render target descriptor";
+                return false;
+            }
         }
 
         std::vector<TextureHandle> color;
@@ -82,6 +107,8 @@ public:
             if (depth.valid()) device.destroyTexture(depth);
         };
         for (int i = 0; i < config.colorCount; ++i) {
+            td.format = config.perAttachmentFormats ?
+                        config.colorFormats[size_t(i)] : config.colorFormat;
             TextureHandle handle = device.createTexture(td);
             if (!handle.valid()) {
                 error_ = device.lastError();
@@ -183,6 +210,11 @@ public:
         return resolves_.empty() ? colors_[size_t(index)] : resolves_[size_t(index)];
     }
     TextureHandle depth() const { return depth_; }
+    PixelFormat colorFormat(int index) const {
+        if (index < 0 || index >= config_.colorCount) return PixelFormat::Depth;
+        return config_.perAttachmentFormats ?
+               config_.colorFormats[size_t(index)] : config_.colorFormat;
+    }
     const Config& config() const { return config_; }
     const std::string& lastError() const { return error_; }
     bool active() const { return active_; }
