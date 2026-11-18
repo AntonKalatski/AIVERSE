@@ -1912,3 +1912,51 @@ before calling this stage validated.
   generation into neutral engine algorithms and keep
   old `game::RtsView` as a thin compatibility adapter.
 
+## Stage 64 — planets, visibility, fields and lighting as View providers (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22 targeting `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `c345e33aef2b3d3b056cfa5d9703e22e2031483e`.
+- **Affected file:** `modules/rts/view/RtsView.cpp`.
+- **Architecture:** the legacy game adapter now registers the
+  planet-world pass, field visuals, visibility/fog surface,
+  scene illumination and world indicators with generic
+  `ViewLayerProviders`. It collects callbacks into
+  `ViewLayerQueue` and flushes them synchronously.
+  The engine layer sees only labels, phase metadata
+  and host callbacks; no game type, map rule or
+  genre-specific code enters `engine/view`.
+- **Behavior:** planet special-case retains its early
+  return and runs the same `drawPlanets` on the render
+  thread through a queued pass. For ordinary scenes,
+  field updates and drawing precede fog updates,
+  which precede lighting and world indicators,
+  exactly as before. Fog shader-vs-sheet decisions,
+  road/terrain surface queries, rules and authority
+  remain entirely in the host implementation.
+- **API/compatibility:** no renderer shader change,
+  no new GPU pass or double scene submission,
+  and no saved-game/network/physics changes.
+  `game::RtsView` is still supported as a compatibility
+  host of specialized providers, NOT yet replaced by
+  a class alias to `aiverse::View`.
+- **Tests:** code committed through GitHub connector.
+  CMake/CTest/TSAN/GPU visual comparison and editor
+  smoke tests **NOT RUN** per user instruction.
+  Deferred `view_layer_providers` only covers generic
+  callback order, not real planet/fog parity.
+- **Risks:** host providers currently use borrowed
+  captures for the duration of one frame. Lifetime
+  is correct only because `flush` occurs before
+  returning from the draw scope. The old adapter
+  still contains terrain/planet/fog generation
+  logic and has numerous game-side callers.
+- **Next action:** inspect `engine/view/View.h`,
+  the generic `ScenePacketBatch` and
+  `modules/rts/view/RtsView.cpp` for opportunities
+  to migrate larger sets of map-independent objects
+  without losing batching, LOD or visibility semantics.
+  Continue minimizing the compatibility adapter,
+  add deferred regression fixtures and commit Stage 65
+  handoff separately. Do not run tests until authorized.
+
