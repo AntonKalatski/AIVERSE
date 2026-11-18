@@ -1,0 +1,58 @@
+name: TerraWeave isolated checks
+
+on:
+  push:
+    branches:
+      - feature/terraweave
+    paths:
+      - 'engine/world/TerraWeave*.h'
+      - 'engine/render/TerraWeave*.h'
+      - 'tests/terraweave*.cpp'
+      - 'docs/terrain/**'
+      - 'skills/world/aiverse-terraweave/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/terraweave.yml'
+  pull_request:
+    paths:
+      - 'engine/world/TerraWeave*.h'
+      - 'engine/render/TerraWeave*.h'
+      - 'tests/terraweave*.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/terraweave.yml'
+  workflow_dispatch:
+
+jobs:
+  terraweave:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    runs-on: ubuntu-latest
+    env:
+      CC: ${{ matrix.compiler == 'clang' && 'clang' || 'gcc' }}
+      CXX: ${{ matrix.compiler == 'clang' && 'clang++' || 'g++' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure isolated TerraWeave targets
+        run: |
+          cmake -S . -B build/terraweave-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAIVERSE_BUILD_TESTS=ON \
+            -DAIVERSE_BUILD_EDITOR=OFF \
+            -DAIVERSE_BUILD_CLIENT=OFF \
+            -DAIVERSE_BUILD_SERVER=OFF \
+            -DAIVERSE_BUILD_HEADLESS=OFF \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_FBX=OFF
+      - name: Build TerraWeave tests
+        run: |
+          cmake --build build/terraweave-ci --parallel 2 --target \
+            aiverse_terraweave_test \
+            aiverse_terraweave_arbor_test \
+            aiverse_terraweave_flora_test \
+            aiverse_terraweave_model_test
+      - name: Run TerraWeave CTest suite
+        run: |
+          ctest --test-dir build/terraweave-ci \
+            --output-on-failure \
+            -R '^terraweave(_arbor|_flora|_model)?$'
