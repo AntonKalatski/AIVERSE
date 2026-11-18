@@ -250,7 +250,7 @@
       "source": "libraries/include/aiverselib/gameplay/InputFlow.h",
       "skill": "skills/ui/aiverse-input/SKILL.md",
       "summary": "AIVerse InputFlow: typed Input Actions, mapping contexts, modifiers, triggers, local multiplayer, user profiles and legacy Input.h compatibility",
-      "notes": "AIVerse InputFlow canonical API: aiverselib/gameplay/InputFlow.h, aiverse::lib::gameplay::inputflow::InputFlow; platform facade engine/platform/InputFlow.h. Keep EnhancedInput.h and enhanced::InputSystem as compatibility aliases. AIVERSE::lib_input remains stable. Presentation-only: gameplay consumes validated Commands. See docs/enhanced-input.md and the agent handoff.",
+      "notes": "AIVerse InputFlow canonical API: aiverselib/gameplay/InputFlow.h, aiverse::lib::gameplay::inputflow::InputFlow; platform facade engine/platform/InputFlow.h. Keep EnhancedInput.h and enhanced::InputSystem as compatibility aliases. Use AIVERSE::InputFlow (or AIVERSE::lib_inputflow); legacy AIVERSE::lib_input remains stable. Presentation-only: gameplay consumes validated Commands. See docs/enhanced-input.md and the agent handoff.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_input",
       "dependencies": [
