@@ -54,7 +54,7 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     // Opt-in only. The existing WorldScene codepath is identical when the
     // manifest has no terraweaveForest block.
     terraForest_=forestSceneFromManifest(manifest);
-    terraHorizon_=horizonSceneFromManifest(manifest,terraForest_.get());
+    terraHorizon_=horizonSceneFromManifest(manifest,terraForest_.get(),reader);
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
