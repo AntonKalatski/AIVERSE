@@ -230,6 +230,7 @@ public:
 
     void update(gfx::Device& device,ForestCameraCm observer) {
         streamStarted_=true;
+        lastObserver_=observer;
         if(observer.x<-kWorldLimitCm||observer.x>kWorldLimitCm||
            observer.z<-kWorldLimitCm||observer.z>kWorldLimitCm)
             throw std::out_of_range("TerraWeave Horizon camera extent");
@@ -422,12 +423,29 @@ public:
 
     void submit(render::Renderer3D& renderer,ForestRenderOriginCm origin = {}) const {
         if(!model_)return;
-        // The existing Renderer3D tint-alpha + transparent draw flags
-        // provide a bounded two-model crossfade. No new shader/backend,
-        // per-tree billboard or ECS data is created for the transition.
+        // Prevent a stale proxy drawing after a long camera teleport while
+        // the worker prepares the next region. Keep small relocations visible
+        // because the same 12km proxy still safely covers that observer.
+        const auto proxyCoversCamera=[&]() {
+            if(!activeBake_)return true;
+            const int64_t half=int64_t(activeBake_->sideCm)/2;
+            const int64_t safety=settings_.distantTileCm;
+            const int64_t dx=lastObserver_.x-activeBake_->cameraXcm;
+            const int64_t dz=lastObserver_.z-activeBake_->cameraZcm;
+            return half>safety &&
+                dx>=-(half-safety) && dx<half-safety &&
+                dz>=-(half-safety) && dz<half-safety;
+        };
+        if(!proxyCoversCamera())return;
+
+        // During a neighboring region transition, the incoming far-terrain
+        // depth surface is drawn exactly once OPAQUE, and ONLY the forest
+        // cluster primitives of each region participate in tint-alpha fade.
+        // Both primitives share the same GPU vertex/index/atlas buffers;
+        // ModelDraw::primitiveMaterialFilter avoids any duplicate geometry.
         const auto drawRegion=[&](const render::Model* model,
                                   int64_t xCm,int64_t zCm,
-                                  float alpha,bool blending) {
+                                  float alpha,bool blending,int materialFilter) {
             if(!model || alpha<=0.0f)return;
             render::ModelDraw draw;
             draw.model=model;
@@ -437,26 +455,35 @@ public:
                 float(zCm-origin.z)*0.01f
             });
             draw.tint={1.0f,1.0f,1.0f,alpha};
+            draw.primitiveMaterialFilter=materialFilter;
             draw.flags=blending ?
                 (render::kDrawTransparent | render::kDrawNoCastShadow |
                  render::kDrawNoReceiveShadow) :
-                render::kDrawStatic;
-            draw.persistentId=detail::hash2(xCm,zCm,
-                0x5445525241484c4fULL)|1u;
+                (materialFilter<0 ? render::kDrawStatic :
+                    (render::kDrawNoCastShadow|render::kDrawNoReceiveShadow));
+            // Split draws are ephemeral: do not register an incomplete
+            // partial Model into the persistent scene/lightbake capture.
+            if(materialFilter<0)
+                draw.persistentId=detail::hash2(xCm,zCm,
+                    0x5445525241484c4fULL)|1u;
             renderer.drawModel(draw);
         };
         if(transition_.model && transitionRevision_==sourceRevision_ &&
            settings_.regionTransitionMs && activeCell_) {
             const float t=transitionFraction();
             if(t<1.0f) {
+                // Source material slot 0 is distant terrain, slot 1 forest.
+                // A single opaque terrain draw writes correct scene depth;
+                // neither outgoing nor incoming terrain uses transparency.
+                drawRegion(model_.get(),originXcm_,originZcm_,1.0f,false,0);
                 drawRegion(transition_.model.get(),
                     transition_.originXcm,transition_.originZcm,
-                    1.0f-t,true);
-                drawRegion(model_.get(),originXcm_,originZcm_,t,true);
+                    1.0f-t,true,1);
+                drawRegion(model_.get(),originXcm_,originZcm_,t,true,1);
                 return;
             }
         }
-        drawRegion(model_.get(),originXcm_,originZcm_,1.0f,false);
+        drawRegion(model_.get(),originXcm_,originZcm_,1.0f,false,-1);
     }
     void shutdown(gfx::Device& device) {
         if(stream_){
@@ -660,6 +687,7 @@ private:
     uint64_t transitionRevision_=0;
     Clock::time_point transitionStart_{};
     size_t transitionStarts_=0;
+    ForestCameraCm lastObserver_{}; // owner-thread presentation only
     int64_t originXcm_=0,originZcm_=0;
     size_t clusters_=0,terrainQuads_=0;
     HorizonRuntimeStats runtime_{};
