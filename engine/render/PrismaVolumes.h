@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,9 @@ enum class PrismaVolumeShape { Global, Sphere, Box };
 // ECS/native projects may store these values in their own components.
 // No genre-specific entity, actor or camera class is required.
 struct PrismaVolume {
+    std::string id;            // optional stable name for map overrides
+    bool overrideEnabled = false; // partial profiles must not reset camera HDR/enable
+    bool overrideHdr = false;
     PrismaVolumeShape shape = PrismaVolumeShape::Global;
     float3 center{};
     float3 halfExtents{1, 1, 1};   // axis-aligned local extent for Box
@@ -77,7 +81,10 @@ public:
             if (t <= 0) continue;
             // HDR, chain enabled, LUT paths, graphs and boolean settings are discrete:
             // choose the incoming value at the halfway point.
-            if (t >= .5f) { out.enabled = v->profile.enabled; out.hdr = v->profile.hdr; }
+            if (t >= .5f) {
+                if (v->overrideEnabled) out.enabled = v->profile.enabled;
+                if (v->overrideHdr) out.hdr = v->profile.hdr;
+            }
             for (const PrismaEffect& incoming : v->profile.effects) {
                 auto it = std::find_if(out.effects.begin(), out.effects.end(),
                                        [&](const PrismaEffect& e){ return e.type == incoming.type; });
@@ -88,14 +95,21 @@ public:
                 if (it == out.effects.end()) {
                     // Newly introduced effects that expose a strength can fade in from zero.
                     // Other effects require a discrete activation; see docs/prisma.md.
-                    bool supportsFade = false;
+                    bool supportsFade = incoming.type == PrismaType::ColorGrade ||
+                                        incoming.type == PrismaType::TiltShift;
                     for (const auto& def : prismaType(incoming.type).params)
-                        supportsFade |= !std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount");
-                    if (!supportsFade && t < .5f) continue; // binary activation, no strength param
+                        supportsFade |= !std::strcmp(def.name, "intensity") ||
+                                        !std::strcmp(def.name, "amount");
+                    if (!supportsFade) {
+                        // No neutral blend parameter: a discrete effect is either active or absent.
+                        if (t >= .5f) out.effects.push_back(incoming);
+                        continue;
+                    }
                     PrismaEffect neutral = defaultPrismaEffect(incoming.type);
                     size_t at = 0;
                     for (const auto& def : prismaType(incoming.type).params) {
-                        if ((!std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount")) &&
+                        if ((!std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount") ||
+                             (incoming.type == PrismaType::TiltShift && !std::strcmp(def.name, "blur"))) &&
                             at < neutral.values.size()) neutral.values[at] = 0;
                         at += def.kind == PrismaParamKind::Color ? 3u : def.kind == PrismaParamKind::Text ? 0u : 1u;
                     }
