@@ -163,3 +163,19 @@ before calling this stage validated.
 - Next: inspect CI, fix actual compilation and runtime failures before
   claiming the new libraries are production-ready. Then integrate FPS
   character models/animation and continue with outstanding features.
+
+
+## Stage 6: extract-only Motion Warping — 2026-11-18
+
+- Code commit `b02d2915e33c24df942f33acce971a84272d2189`.
+- Public header `libraries/include/aiverselib/animation/AnimationMotionWarp.h`.
+- `warpedRootAt` and `warpedRootDelta` calculate smooth corrections of
+  root translation/rotation toward an explicit target in model-local space,
+  bounded by a normalized warp window. Only non-looping clips are accepted.
+- No authoritative transform changes, collision checks or network prediction.
+- Test `tests/animation/motion_warp.cpp` / CTest `animation_motion_warp`
+  checks position, yaw target, window, delta and invalid arguments.
+- Validation: NOT RUN. Build target `aiverse_animation_warp_tests` and
+  run `ctest --test-dir build/ecs-test -R animation_motion_warp --output-on-failure`.
+- Remaining: motor integration/reconciliation, humanoid retargeting, full
+  inertialization, physical animation, editor workflow and scalability.
