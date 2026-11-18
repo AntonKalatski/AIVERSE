@@ -1960,3 +1960,13 @@ before calling this stage validated.
   add deferred regression fixtures and commit Stage 65
   handoff separately. Do not run tests until authorized.
 
+## Stage 65 — all game model/attachment submissions use genre-neutral View (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22 targeting `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `4ea00237423c2fe4633c95c5a5bb5e81f4c3d230`.
+- **Changed paths:** `engine/view/View.h`, `modules/rts/view/RtsViewDraw.cpp`, `tests/view/view.cpp`, `docs/view.md`.
+- **Architecture/API:** new `aiverse::View::submitModel(Renderer3D&,const render::ModelDraw&)` accepts any already-authored model packet and calls the existing renderer with no ECS or genre logic. `View::submitOne` now reuses `submitModel` after optional generic pose lookup. The legacy game's *all* non-generic model submissions (including variant/stage/LOD, baked GPU, procedural poses) and socket attachments now route through `View::submitModel`, while eligible graph actors continue through `submitOne`. No second animation evaluation, no duplicate model draws, and no changes to renderer internal batching.
+- **Compatibility:** game `RtsView` still owns legacy authored procedural and map decisions. Source IDs, assets, saved games, simulation World, netcode, hit/physics authority and shader/RHI behavior unchanged. `submitModel` borrows ModelDraw model/material/pose pointers for synchronous submission.
+- **Tests:** added compile-time signature fixture to `tests/view/view.cpp`; **NOT RUN** per user instruction, including CMake, CTest, graphics screenshots, TSAN, GPU batching measurements. CI status NOT verified.
+- **Risks:** static source review only, no compilation. Some game-side direct `drawMesh` for projectiles and preview/portrait paths remain; the legacy compatibility wrapper is NOT fully removed and still contains fog, terrain, planet and game-specific rendering. There is not yet a complete mapping of all host systems to generic scene passes.
+- **Exact next agent action:** inspect `modules/rts/view/RtsPortrait.cpp`, `RtsPlanetView.cpp` and generic `engine/view/View.h`. Migrate portrait/preview and projectile-model submissions to the same `aiverse::View` entry points, retaining off-screen framebuffer pass behavior, pose/baked GPU sample and graphics resource lifetimes; commit implementation, then append **Stage 66** handoff in a separate commit. Do not run tests yet.
