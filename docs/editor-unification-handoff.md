@@ -1465,3 +1465,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `1c6324e1728b358ecc31d04974f912ce84aeb03f`.
 - Updated `AGENTS.md` to require common `applyIntegerHitPointDamage` after mitigation, versioned World `DamageQueue` persistence from GameModule, FPS ECS authority ON/OFF and save v9 parity, and prohibition against introducing an independent writable FPS `HitPointsComponent` while `ActorRuntime` remains canonical.
 - Verification: docs-only edit. Next: native CMake/CTest and real FPS/RTS integration tests before any default cutover.
+
+
+### 2026-11-18 — Whole-engine migration plan updated for real FPS projectile-stage extraction
+- **Documentation SHA:** `c90338a46e977babd4f0063a83ade01e2b8be888`.
+- Updated `docs/ecs-all-features-migration-plan.md` to record actual FPS stage execution order (`ecsHydrate -> fps.compat.projectilePrograms -> fps -> ecsMirror`), where legacy tick-workspace state remains, the precise scope of the existing deep/COW v9 parity fixture and the remaining ownership cutover from State arrays to shared ECS projectile components.
+- **Verification:** documentation commit only. Native tests and FPS/RTS network/save parity remain outstanding.
+- **Next:** after CI and FPS fixture pass, move the programmed projectile solver toward direct ECS-owned execution without losing immediate hit effects; do not enable new queued damage barrier until side-effect parity.
