@@ -178,3 +178,32 @@ Zero/invalid polygons return empty. GPU material hookup is a separate
 renderer stage; never present this as completed refractive water.
 
 Test `ecs_nereid_surface_mesh_test` is authored but UNVERIFIED.
+
+## Stage 7C — draw water surfaces with existing renderer
+
+With a presentation-owned `gfx::Device` and
+`render::Renderer3D`, include
+`engine/render/NereidWaterRenderer.h`:
+
+```cpp
+auto cpu=nw::buildWaterSurfaceMesh(body,geometry,meshOptions);
+auto gpu=aiverse::render::uploadNereidWaterSurface(device,cpu,style);
+// Every scene frame, after Renderer3D::beginScene and before render:
+aiverse::render::drawNereidWaterSurface(renderer,gpu,style);
+// During scene shutdown or before replacing the uploaded mesh:
+aiverse::render::releaseNereidWaterSurface(device,gpu);
+```
+
+`kDrawWaterSurface` is the opt-in water shader flag; at any
+world Y it enables the existing open-water normal-wave shading
+and the renderer's existing reflection quality tier. No
+separate NEREID shader copies are necessary. A single planar
+reflection plane is currently shared across the scene; SSR only
+works in trace-enabled quality modes. This is not yet an
+automatic RTS/FPS integration or realistic refraction/underwater
+system.
+
+Run `ecs_nereid_surface_mesh_test` and
+`ecs_nereid_renderer_contract_test`, then actual GL/Metal
+rendering, before marking this verified. Maintain GPU handle
+lifetime and avoid changing ECS from renderer code.

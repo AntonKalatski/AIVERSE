@@ -257,3 +257,31 @@ This is a read-only **presentation projection** of authoritative
 networked or read back into sim. Existing RTS/editor water surfaces,
 shader effects, baked cells and shoreline models remain untouched.
 New test `ecs_nereid_surface_mesh_test` was authored but NOT RUN.
+
+## Stage 7C — renderer opt-in bridge and material identity
+
+`engine/render/NereidWaterRenderer.h` is a small adapter from the
+stage-7B pure `WaterSurfaceMesh` to the existing RHI-independent
+`Renderer3D::MeshBuilder` and scene queue. It uploads vertices
+with fixed upward normals and per-vertex foam/deep tint, draws a
+translucent highly specular surface, and provides a matching
+`releaseNereidWaterSurface` GPU lifetime helper. Nothing auto-
+instantiates or caches an ECS water entity: scene/game owns upload
+and draw. Geometry/LOD needs explicit rebuild when it changes.
+
+The new `Renderer3D::kDrawWaterSurface` flag (256) is encoded in
+existing draw U0 params.x as a **negative sentinel**. GLSL/MSL
+lit shaders recognize it to run the *existing* animated open-water
+normal shader at any water surface elevation, plus SSR where
+trace-tier inputs exist, without misclassifying unrelated shiny
+meshes. Mixing with the unlit channel clamps the sentinel to
+0..1; old lit/unlit/debug modes remain unchanged when unflagged.
+No extra GPU uniform block, texture slot or genre-specific
+renderer is introduced.
+
+**Known GPU limitation:** the existing planar reflection renderer
+selects a single water plane per pass. Multiple simultaneous
+NEREID surface levels need a future multi-plane solution or
+selective SSR/environment fallback. No actual hardware rendering,
+shader cross-compilation or C++ tests have yet been executed in
+this stage.

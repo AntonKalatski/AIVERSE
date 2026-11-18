@@ -606,3 +606,81 @@ check, and explicitly included `<cstddef>` and `<iterator>`.
 This was found by source review, **not by an executed C++ test**.
 The authored concave/reversed polygon fixture must still be compiled
 and run. All other stage-7B verification limitations remain.
+
+## Stage 7C — real Renderer3D upload/draw bridge + explicit water shader flag
+
+**Implementation commit:** `b96be812ee14cbb139ff09beae13e0fbc58a2bdb`
+on `feature/nereid-water-core`. **Documentation commit:** this update.
+
+Changed/added:
+- New `engine/render/NereidWaterRenderer.h`.
+- New `tests/ecs_nereid_renderer_contract_test.cpp`.
+- Modified `engine/render/Renderer3D.h`, `Renderer3D.cpp`, `Shaders.h`.
+- Registered CTest target in `CMakeLists.txt` and CI shell runner in
+  `tests/run_ecs_experiment_suite.sh`.
+
+### API, architecture and ownership
+
+`render::uploadNereidWaterSurface(device,cpuMesh,style)` uploads
+`WaterSurfaceMesh` from stage 7B into the *existing*
+`Renderer3D::MeshBuilder` static VB/IB structure. It composes
+per-vertex deep water tint with `WaterSurfaceVertex.shore` foam
+in a normal vertex color; it does **not** invent a second RHI.
+
+`render::drawNereidWaterSurface(renderer,mesh,style)` queues the
+existing `Renderer3D::drawMesh` with alpha < 0.99, glossy specular,
+`kDrawNoCastShadow`, and **new `kDrawWaterSurface=256` flag**.
+`render::releaseNereidWaterSurface(device,mesh)` destroys both GPU
+buffers and zeros the handle. **Caller owns** lifetime, static caching,
+draw order, camera-relative infinite-patch refresh and device-loss
+rebuild. No renderer automatically discovers NEREID ECS entities.
+
+Renderer3D stores the opt-in flag via per-draw `u.params.x=-1`
+while preserving `0` for lit and `1` for unlit. GLSL and Metal
+now opt in to existing six-wave normal animation at *any* water
+elevation when the flag is set. The unlit mix clamps this sentinel
+before shading, so old lit/unlit/debug draw modes are preserved.
+Trace-tier SSR can be applied to marked water even when Y is not near
+zero. Pre-existing height-based terrain water behavior is unchanged.
+No new textures or uniform block/layout/bindings are required.
+
+`render::nereidWaterVertexColor` and
+`render::validNereidWaterStyle` are pure CPU helpers; the latter
+requires a translucent alpha and specular value 0.85–1.0 so the
+existing reflection/render path recognizes water.
+
+### Verification status and limitations
+
+**Native C++ build, GLSL compile, Metal compile, real GPU screenshots,
+and CTest are NOT RUN / UNVERIFIED**. New CPU contract test
+`ecs_nereid_renderer_contract_test` checks foam vertex tint,
+material validation, flag allocation and GLSL/MSL source sentinels.
+This does NOT prove shader compilation or any GPU result. It is
+also included in the ECS experiment shell runner. Check latest
+GitHub Actions and fix failures before merging.
+
+```sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target   aiverse_ecs_nereid_surface_mesh_test   aiverse_ecs_nereid_renderer_contract_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure   -R '^ecs_nereid_(surface_mesh|renderer_contract)_test$'
+# Also compile/launch the actual graphics editor/client on GL and Metal.
+```
+
+**Important limits:** the renderer bridge is opt-in, so FPS/RTS scenes
+have not been migrated. Planar reflections are a single render
+pass/plane chosen by existing `Renderer3DReflect.cpp`; multiple
+water bodies at different Y levels are not yet reflected correctly.
+SSR is available only when the existing trace tier has valid color
+and depth inputs, and there are still no refractive depth lookups,
+underwater/post effects, water collision waves or hydraulic solve.
+The bridge tints foam by vertices (not per-pixel shoreline distance).
+Explicit draw flag changes global lit shaders, so check regressions
+on *both* GLSL and MSL before production.
+
+**Next agent:** First obtain actual build/test results for all NEREID
+targets (old and new) and old RTS water tests. Then validate the
+renderer on actual GL and Metal, especially surface Y != 0 and
+multi-plane reflection fallback. Add depth/refraction, per-pixel foam
+or underwater view as another isolated renderer stage with a new
+handoff after every implementation commit. Keep deterministic water
+CPU authoritative and all GPU effects presentation-only.
