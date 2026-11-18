@@ -478,6 +478,14 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         if(state(s).winner)return;
         tickProjectilePrograms(s);
     });
+    // Ordinary bullets, grenade fuses, bounce and smoke remain synchronous
+    // with the original tick, but are now a separate composable stage before
+    // round/royale and player systems. Both projectile stages preserve the
+    // previous per-tick ordering and damage callback barriers.
+    sim.addSystem("fps.compat.ordinaryProjectiles",[this](Simulation& s) {
+        if(state(s).winner || !config_.systems.enabled)return;
+        tickOrdinaryProjectiles(s);
+    });
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
     sim.addSystem("fps.ecsMirror",[this](Simulation& s){
         syncActorEntities(s);
