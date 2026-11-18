@@ -71,3 +71,5 @@ For local multiplayer use `engine/platform/EnhancedInputUsers.h` (`EnhancedInput
 
 
 For per-player rebinding use `engine/platform/EnhancedInputUserProfiles.h` (`enhanced_config::UserProfiles`). It supports per-project/per-local-user load/rebind/reset and preserves the original player-zero profile path. Do not write ad hoc profile files or persist only one side of a Swap. Restore project defaults by saving an empty profile and replacing the user's runtime mapping with the unchanged project scheme.
+
+**Canonical class names in implementation:** `inputflow::InputFlow`, `platform::InputFlowAdapter` and `platform::InputFlowUsers`. The historical `enhanced::InputSystem`, `platform::EnhancedInputAdapter` and `platform::EnhancedInputUsers` remain aliases only. Use the new names in generated code; keep legacy source-compatible names available for existing projects.
