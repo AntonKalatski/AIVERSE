@@ -9,6 +9,8 @@
 // (PostFxQuality, PostFxData plans). RGBA16F on capable High-tier devices, RGBA8 fallback; no compute.
 #pragma once
 #include <functional>
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
@@ -32,6 +34,27 @@ struct PostFxUnderwaterState {
     float tintR=0, tintG=0, tintB=0;
     float absorption=0, depthMetres=0;
 };
+
+// Pure presentation transition policy, testable without a GPU device.
+inline PostFxUnderwaterState advancePostFxUnderwater(
+        PostFxUnderwaterState state,PostFxUnderwater target,float seconds) {
+    const float dt=std::isfinite(seconds)?std::clamp(seconds,0.f,0.25f):0.f;
+    const float alpha=1.f-std::exp(-dt*6.f);
+    auto smooth=[alpha](float& v,float goal){v+=alpha*(goal-v);};
+    auto finite=[](float v,float lo,float hi) {
+        return std::isfinite(v)?std::clamp(v,lo,hi):lo;
+    };
+    smooth(state.blend,target.submerged?1.f:0.f);
+    if(target.submerged) {
+        smooth(state.tintR,finite(target.tintR,0.f,1.f));
+        smooth(state.tintG,finite(target.tintG,0.f,1.f));
+        smooth(state.tintB,finite(target.tintB,0.f,1.f));
+        smooth(state.absorption,finite(target.absorption,0.f,4.f));
+        smooth(state.depthMetres,finite(target.depthMetres,0.f,10000.f));
+    }
+    if(state.blend<0.0001f && !target.submerged)state={};
+    return state;
+}
 
 class PostFx : public PostProcess {
 public:
