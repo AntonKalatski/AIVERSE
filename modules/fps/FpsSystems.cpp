@@ -1,6 +1,6 @@
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
-#include "libraries/include/aiverselib/genre/EcsHitscanSystems.h"
+#include "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h"
 #include "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
 #include "libraries/include/aiverselib/genre/EcsDamageSystems.h"
 #include <algorithm>
@@ -131,17 +131,26 @@ bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_
     // Rewind pose selection still comes from the original tick history.
     // Share only the deterministic nearest-hit policy; keep vehicle and
     // world occlusion queries below in their exact legacy order.
-    const auto actorHit=lib::genre::selectClosestHitscanCandidate(
-        targets,eye,delta,best,
+    // The shared synchronous ECS intent policy is also used by the
+    // independently schedulable HitscanResolutionSystem. Resolve inline
+    // here to retain the old per-shooter damage/event order and FPS rewind.
+    lib::genre::HitscanIntentComponent shotIntent;
+    shotIntent.origin=eye;
+    shotIntent.delta=delta;
+    shotIntent.maximumFraction=best;
+    shotIntent.requested=true;
+    const auto actorHit=lib::genre::resolveHitscanIntent(
+        shotIntent,actorEntity(sim,source),targets,
         [&](const Actor& target) {
             return target.slot!=source && target.health>0 &&
                 target.life==s.actors[target.slot-1].life;
         },
-        [&](const Actor& target) {return actorBounds(target,config_.motor);});
+        [&](const Actor& target) {return actorBounds(target,config_.motor);},
+        [&](const Actor& target) {return actorEntity(sim,target.slot);});
     if(actorHit) {
-        best=actorHit.fraction;
-        victim=actorHit.target->slot;
-        pose=actorHit.target;
+        best=actorHit.event.fraction;
+        victim=actorHit.pose->slot;
+        pose=actorHit.pose;
     }
     uint32_t vehicleId=0;for(const auto& v:s.vehicles)if(v.health>0&&v.driver!=source){Fixed fraction;Vec3 normal;if(world::intersect(eye,delta,{v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}},fraction,normal)&&fraction<best){best=fraction;victim=0;vehicleId=v.id;}}
     auto penetration=projectile?projectile->penetration:weapon.penetration;bool blocked=false;
