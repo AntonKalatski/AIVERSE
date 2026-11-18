@@ -48,6 +48,13 @@ public:
     View(const View&)=delete;
     View& operator=(const View&)=delete;
 
+    // Canonical genre-independent camera entry. Renderer3D keeps ownership
+    // of the frame and the RHI, View forwards a camera with no game rules.
+    void beginScene(render::Renderer3D& renderer,
+                    const render::Camera3D& camera,int fbWidth,int fbHeight) const {
+        renderer.beginScene(camera,fbWidth,fbHeight);
+    }
+
     // Frame staging is a separate phase: material/geometry and GPU calls
     // never overlap worker animation updates. Hosts may use the same
     // generic scene for characters, buildings, props and cinematics.

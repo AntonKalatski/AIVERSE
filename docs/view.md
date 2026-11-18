@@ -90,3 +90,17 @@ real execution before production is claimed ready.
 
 Every stage must update `AGENTS.md` and append a separate committed
 entry in `docs/agent-handoffs/animation-universal.md`.
+
+## Camera API migration
+
+The engine renderer's target/orbit camera is now named
+`aiverse::render::Camera3D`. `render::RTSCamera` remains an
+exact `using` alias for source compatibility: no duplicate data,
+no copy/conversion and no change to the existing camera math.
+
+`View::beginScene(renderer,camera,width,height)` is a
+genre-independent entry point to Renderer3D's existing
+beginScene pipeline, so a client/editor no longer needs to
+refer to an RTS-named camera type. The render backend, viewport,
+shadows and original camera parameters are unchanged.
+

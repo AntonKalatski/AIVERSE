@@ -1,12 +1,15 @@
 #include "engine/view/View.h"
 #include <cassert>
 #include <cmath>
+#include <type_traits>
 using namespace aiverse;
 using namespace aiverse::render;
 namespace aiverse::platform {
 bool readContentFile(const std::string&,std::string&){return false;}
 }
 int main() {
+    static_assert(std::is_same_v<Camera3D,RTSCamera>,
+                  "legacy camera alias must remain ABI-compatible");
     Model m;
     m.nodes.resize(1);m.order={0};m.nodes[0].name="root";
     auto graph=AnimationGraph::compile(m,Json::parse(R"({
