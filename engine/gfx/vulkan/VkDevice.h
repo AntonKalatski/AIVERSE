@@ -24,6 +24,10 @@ public:
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; items_[id - 1] = T{}; free_.push_back(id - 1); } }
     template <class F> void each(F&& f) { for (size_t i = 0; i < items_.size(); ++i) if (alive_[i]) f(items_[i]); }
+    template <class F> void eachWithId(F&& f) {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) f(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -75,6 +79,9 @@ struct VTexture {
     bool depth = false, renderTarget = false, generateMips = false, compressed = false;
 };
 
+struct VTextureView { VkImageView native = VK_NULL_HANDLE; uint32_t parentId = 0; };
+struct VSampler { VkSampler native = VK_NULL_HANDLE; };
+
 struct VShader {
     std::string vs, fs;                          // GLSL bodies (HDR variant compiled from them)
     VkShaderModule vert = VK_NULL_HANDLE, frag = VK_NULL_HANDLE;
@@ -113,6 +120,7 @@ public:
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
+    bool supportsTextureViews() const override { return true; }
     bool supportsTextureDimension(TextureDimension d) const override {
         return d != TextureDimension::CubeArray || cubeArray_;
     }
@@ -124,6 +132,11 @@ public:
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
     bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override;
     void destroyTexture(TextureHandle h) override;
+    TextureViewHandle createTextureView(TextureHandle texture, const TextureViewDesc& desc) override;
+    void destroyTextureView(TextureViewHandle h) override;
+    SamplerHandle createSampler(const SamplerDesc& desc) override;
+    void destroySampler(SamplerHandle h) override;
+    bool bindTextureView(int slot, TextureViewHandle view, SamplerHandle sampler = {}) override;
     ShaderHandle createShader(const ShaderDesc& d) override;
     void destroyShader(ShaderHandle h) override;
     PipelineHandle createPipeline(const PipelineDesc& d) override;
@@ -193,6 +206,7 @@ private:
     std::string error_;
     bool multiDrawIndirect_ = false;
     bool cubeArray_ = false;
+    bool samplerAnisotropy_ = false;
     bool healthy_ = true;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;
@@ -236,6 +250,8 @@ private:
     // resources
     Pool<VBuffer> buffers_;
     Pool<VTexture> textures_;
+    Pool<VTextureView> views_;
+    Pool<VSampler> customSamplers_;
     Pool<VShader> shaders_;
     Pool<VPipeline> pipelines_;
     VTexture dummy_;          // bound to unset texture slots
@@ -258,6 +274,8 @@ private:
     uint32_t vbId_ = 0, ibId_ = 0;
     size_t vbOffset_ = 0, ibOffset_ = 0;
     std::array<uint32_t, kMaxTextureSlots> textures_bound_{};
+    std::array<uint32_t, kMaxTextureSlots> views_bound_{};
+    std::array<uint32_t, kMaxTextureSlots> samplers_bound_{};
     std::array<uint32_t, kUniformSlots> uniformOffsets_{};
     bool descriptorsDirty_ = true;
     VkDescriptorSet currentSet_ = VK_NULL_HANDLE;

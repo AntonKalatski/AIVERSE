@@ -348,7 +348,25 @@ void VulkanDevice::setIndexBuffer(BufferHandle b, size_t offset) { ibId_ = b.id;
 
 void VulkanDevice::setTexture(int slot, TextureHandle t) {
     if (slot < 0 || slot >= textureSlots_) return;
-    if (textures_bound_[size_t(slot)] != t.id) { textures_bound_[size_t(slot)] = t.id; descriptorsDirty_ = true; }
+    const size_t i = size_t(slot);
+    if (textures_bound_[i] != t.id || views_bound_[i] || samplers_bound_[i]) {
+        textures_bound_[i] = t.id;
+        views_bound_[i] = 0;
+        samplers_bound_[i] = 0;
+        descriptorsDirty_ = true;
+    }
+}
+bool VulkanDevice::bindTextureView(int slot, TextureViewHandle view, SamplerHandle sampler) {
+    if (slot < 0 || slot >= textureSlots_) return false;
+    const VTextureView* v = views_.get(view.id);
+    if (!v || !textures_.get(v->parentId)) return false;
+    if (sampler.valid() && !customSamplers_.get(sampler.id)) return false;
+    const size_t i = size_t(slot);
+    textures_bound_[i] = v->parentId;
+    views_bound_[i] = view.id;
+    samplers_bound_[i] = sampler.id;
+    descriptorsDirty_ = true;
+    return true;
 }
 
 void VulkanDevice::setUniforms(int slot, const void* data, size_t size) {
@@ -406,7 +424,11 @@ bool VulkanDevice::prepareDraw() {
         for (int i = 0; i < textureSlots_; ++i) {
             const VTexture* t = textures_.get(textures_bound_[size_t(i)]);
             const VTexture& use = t ? *t : (shadow >> i) & 1u ? dummyDepth_ : dummy_;
-            imgs[i] = {use.sampler, use.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            const VTextureView* view = views_.get(views_bound_[size_t(i)]);
+            const VSampler* sampler = customSamplers_.get(samplers_bound_[size_t(i)]);
+            imgs[i] = {sampler ? sampler->native : use.sampler,
+                       view ? view->native : use.view,
+                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         }
         w[0].sType = w[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         w[0].dstSet = w[1].dstSet = currentSet_;

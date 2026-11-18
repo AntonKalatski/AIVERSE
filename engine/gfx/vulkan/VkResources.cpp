@@ -569,11 +569,139 @@ bool VulkanDevice::updateTextureRegion(TextureHandle handle, const TextureUpload
     return true;
 }
 
+
+namespace {
+VkImageViewType viewType(TextureDimension d) {
+    switch (d) {
+    case TextureDimension::Texture1D: return VK_IMAGE_VIEW_TYPE_1D;
+    case TextureDimension::Texture2D: return VK_IMAGE_VIEW_TYPE_2D;
+    case TextureDimension::Texture3D: return VK_IMAGE_VIEW_TYPE_3D;
+    case TextureDimension::Texture2DArray: return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    case TextureDimension::Cube: return VK_IMAGE_VIEW_TYPE_CUBE;
+    case TextureDimension::CubeArray: return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    }
+    return VK_IMAGE_VIEW_TYPE_2D;
+}
+VkSamplerAddressMode vkAddress(SamplerAddressMode m) {
+    switch (m) {
+    case SamplerAddressMode::Repeat: return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    case SamplerAddressMode::MirrorRepeat: return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+    case SamplerAddressMode::ClampToBorder: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    case SamplerAddressMode::ClampToEdge: return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    }
+    return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+}
+VkCompareOp vkCompare(CompareFunction f) {
+    switch (f) {
+    case CompareFunction::Never: return VK_COMPARE_OP_NEVER;
+    case CompareFunction::Less: return VK_COMPARE_OP_LESS;
+    case CompareFunction::LessEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
+    case CompareFunction::Equal: return VK_COMPARE_OP_EQUAL;
+    case CompareFunction::Greater: return VK_COMPARE_OP_GREATER;
+    case CompareFunction::GreaterEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+    case CompareFunction::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
+    case CompareFunction::Always: return VK_COMPARE_OP_ALWAYS;
+    }
+    return VK_COMPARE_OP_LESS_OR_EQUAL;
+}
+} // namespace
+
+TextureViewHandle VulkanDevice::createTextureView(TextureHandle handle, const TextureViewDesc& v) {
+    VTexture* t = textures_.get(handle.id);
+    if (!t) { error_ = "Vulkan texture view: invalid parent"; return {}; }
+    TextureDesc parent;
+    parent.width = t->width; parent.height = t->height; parent.depth = t->volumeDepth;
+    parent.arrayLayers = t->layers; parent.dimension = t->dimension;
+    parent.format = t->format; parent.mipLevels = t->levels;
+    if (!validateTextureViewDesc(parent, v)) {
+        error_ = "Vulkan texture view: invalid mip, layer, aspect or dimension"; return {};
+    }
+    VkImageViewCreateInfo ci = vkStruct<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+    ci.image = t->image;
+    ci.viewType = viewType(v.dimension);
+    ci.format = t->vkFormat;
+    ci.subresourceRange.aspectMask = t->depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+    ci.subresourceRange.baseMipLevel = uint32_t(v.baseMipLevel);
+    ci.subresourceRange.levelCount = uint32_t(v.mipLevelCount);
+    ci.subresourceRange.baseArrayLayer = uint32_t(v.baseArrayLayer);
+    ci.subresourceRange.layerCount = uint32_t(v.arrayLayerCount);
+    if (t->format == PixelFormat::R8) {
+        ci.components = {VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_ZERO,
+                         VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE};
+    }
+    if (t->format == PixelFormat::ETC2_RGB8 || t->format == PixelFormat::BC1)
+        ci.components.a = VK_COMPONENT_SWIZZLE_ONE;
+    VkImageView native = VK_NULL_HANDLE;
+    if (vkCreateImageView(device_, &ci, nullptr, &native) != VK_SUCCESS) {
+        error_ = "Vulkan: vkCreateImageView for subresource failed"; return {};
+    }
+    return {views_.add({native, handle.id})};
+}
+
+void VulkanDevice::destroyTextureView(TextureViewHandle handle) {
+    VTextureView* v = views_.get(handle.id);
+    if (!v) return;
+    const VkImageView native = v->native;
+    for (auto& b : views_bound_)
+        if (b == handle.id) b = 0;
+    views_.remove(handle.id);
+    descriptorsDirty_ = true;
+    deferDestroy([this, native] { vkDestroyImageView(device_, native, nullptr); });
+}
+
+SamplerHandle VulkanDevice::createSampler(const SamplerDesc& d) {
+    if (!validateSamplerDesc(d) ||
+        (d.maxAnisotropy > 1.0f && !samplerAnisotropy_) ||
+        std::abs(d.lodBias) > gpuProps_.limits.maxSamplerLodBias) {
+        error_ = "Vulkan sampler: unsupported LOD bias or anisotropy"; return {};
+    }
+    VkSamplerCreateInfo ci = vkStruct<VkSamplerCreateInfo>(VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
+    ci.minFilter = d.minFilter == Filter::Linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    ci.magFilter = d.magFilter == Filter::Linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+    ci.mipmapMode = d.mipFilter == SamplerMipFilter::Linear ?
+                    VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    ci.addressModeU = vkAddress(d.addressU);
+    ci.addressModeV = vkAddress(d.addressV);
+    ci.addressModeW = vkAddress(d.addressW);
+    ci.mipLodBias = d.lodBias;
+    ci.anisotropyEnable = d.maxAnisotropy > 1.0f ? VK_TRUE : VK_FALSE;
+    ci.maxAnisotropy = std::max(1.0f, std::min(d.maxAnisotropy, gpuProps_.limits.maxSamplerAnisotropy));
+    ci.compareEnable = d.compare ? VK_TRUE : VK_FALSE;
+    ci.compareOp = vkCompare(d.comparison);
+    ci.minLod = d.minLod;
+    ci.maxLod = d.mipFilter == SamplerMipFilter::None ? 0.0f : d.maxLod;
+    ci.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    VkSampler native = VK_NULL_HANDLE;
+    if (vkCreateSampler(device_, &ci, nullptr, &native) != VK_SUCCESS) {
+        error_ = "Vulkan sampler: allocation failed"; return {};
+    }
+    return {customSamplers_.add({native})};
+}
+
+void VulkanDevice::destroySampler(SamplerHandle handle) {
+    VSampler* s = customSamplers_.get(handle.id);
+    if (!s) return;
+    const VkSampler native = s->native;
+    for (auto& b : samplers_bound_) if (b == handle.id) b = 0;
+    customSamplers_.remove(handle.id);
+    descriptorsDirty_ = true;
+    deferDestroy([this, native] { vkDestroySampler(device_, native, nullptr); });
+}
+
 void VulkanDevice::destroyTexture(TextureHandle h) {
     VTexture* t = textures_.get(h.id);
     if (!t) return;
     VTexture old = *t;
-    deferDestroy([this, old]() mutable { vkDestroyImageView(device_, old.view, nullptr); vkDestroyImage(device_, old.image, nullptr); memory_.release(old.alloc); });
+    std::vector<uint32_t> children;
+    views_.eachWithId([&](uint32_t id, VTextureView& v) {
+        if (v.parentId == h.id) children.push_back(id);
+    });
+    for (uint32_t id : children) destroyTextureView({id});
+    deferDestroy([this, old]() mutable {
+        vkDestroyImageView(device_, old.view, nullptr);
+        vkDestroyImage(device_, old.image, nullptr);
+        memory_.release(old.alloc);
+    });
     for (size_t i = 0; i < framebuffers_.size();) {
         if (framebuffers_[i].color == h.id || framebuffers_[i].depth == h.id) {
             VkFramebuffer fb = framebuffers_[i].fb;

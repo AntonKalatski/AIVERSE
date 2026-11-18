@@ -134,6 +134,8 @@ bool VulkanDevice::pickDevice(std::string& error) {
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
     enable.imageCubeArray = have.imageCubeArray;
     cubeArray_ = have.imageCubeArray;
+    enable.samplerAnisotropy = have.samplerAnisotropy;
+    samplerAnisotropy_ = have.samplerAnisotropy;
     const float priority = 1.0f;
     auto qi = vkStruct<VkDeviceQueueCreateInfo>(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO);
     qi.queueFamilyIndex = queueFamily_;
@@ -277,11 +279,18 @@ void VulkanDevice::destroyDeviceObjects() {
     collectGarbage();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
+    // Views must be destroyed before the parent VkImage, after device idle.
+    views_.each([&](VTextureView& v) {
+        if (v.native) vkDestroyImageView(device_, v.native, nullptr);
+    });
     textures_.each(killTex);
     killTex(dummy_); killTex(dummyDepth_); killTex(back_); killTex(backDepth_);
     shaders_.each([&](VShader& s) { for (VkShaderModule m : {s.vert, s.frag, s.hdrVert, s.hdrFrag}) if (m) vkDestroyShaderModule(device_, m, nullptr); });
     pipelines_.each([&](VPipeline& p) { for (auto& v : p.variants) vkDestroyPipeline(device_, v.pipeline, nullptr); });
     for (auto& s : samplers_) vkDestroySampler(device_, s.sampler, nullptr);
+    customSamplers_.each([&](VSampler& s) {
+        if (s.native) vkDestroySampler(device_, s.native, nullptr);
+    });
     for (auto& f : framebuffers_) vkDestroyFramebuffer(device_, f.fb, nullptr);
     for (auto& r : renderPasses_) vkDestroyRenderPass(device_, r.pass, nullptr);
     for (auto& c : staging_) { vkDestroyBuffer(device_, c.buffer, nullptr); memory_.release(c.alloc); }
