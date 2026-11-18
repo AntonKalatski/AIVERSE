@@ -223,6 +223,10 @@ inline const char* kComposite = R"(
 #ifdef PF_SHAFTS
     col += TEX3(uv).rgb * shafts.rgb;
 #endif
+#ifdef PF_AUTO_EXPOSURE
+    // HDR-only 1x1 GPU-adapted exposure: sample before ACES/sRGB conversion.
+    col *= clamp(TEX8(vec2(0.5)).r, 0.00024414, 4096.0);
+#endif
     if (filt.x > 0.5) {
         col = max(col * filt.z, vec3(0.0));
         if (filt.y > 0.5) col = (col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14);
