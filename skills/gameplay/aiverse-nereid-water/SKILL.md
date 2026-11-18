@@ -82,3 +82,22 @@ Do not re-encode legacy `waterNetwork` until migration tests prove
 unchanged water baking and shoreline behavior. New test target
 `ecs_nereid_geometry_test` is authored but NOT RUN; also run previous
 NEREID tests before declaring this stage verified.
+
+
+## Stage 4 — optional indexed water sampler
+
+Include `<aiverselib/water/NereidQueryIndex.h>`. For large water-body
+counts, replace `addWaterSamplingSystem` with
+`addIndexedWaterSamplingSystem(sim,"water.sample")`. **Do not register
+both.** It generates an in-tick temporary AABB index, scans infinite oceans
+separately and uses the same deterministic selection and contact schema.
+
+`WaterQueryIndex(world).sample(position)` is suitable for read-only
+batch queries only: constructing the index holds a reference to the World.
+Never retain it across World mutations, reloaded saves or rollback.
+Always rebuild when source bodies or spline geometry have changed.
+For few bodies and probes, the linear sampler may be cheaper.
+
+Stage 4 authored test: `ecs_nereid_query_index_test`, not yet executed.
+Run all four `ecs_nereid_.*_test` cases plus existing RTS water tests,
+and record actual build/CTest results in `docs/nereid/HANDOFF.md`.

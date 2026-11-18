@@ -135,3 +135,27 @@ This is a pure deterministic CPU footprint policy. It has no spatial index
 or geometry mesh generation, waves, shoreline features, VFX or editor
 adapter. Geometry component storage, snapshot and rollback are ECS owned.
 Test: `ecs_nereid_geometry_test` (authored but NOT RUN).
+
+
+## Stage 4 — transient water spatial broadphase (authored, not built)
+
+`NereidQueryIndex.h` provides an optional acceleration adapter. It builds
+a deterministic AABB hierarchy from `WaterBodyComponent` and optional
+`WaterGeometryComponent` data and samples it with the **same**
+`considerWaterCandidate` selection as the reference `sampleWater`.
+Finite Box/Disc/Polygon/RiverSpline volumes are indexed by conservative
+horizontal bounds. Infinite oceans stay outside the tree. Both check
+`coversWaterBody` before yielding a sampled contact. Bodies with invalid
+enabled geometry are excluded rather than falling back to box/ocean.
+
+Register **either** `addIndexedWaterSamplingSystem` **or**
+`addWaterSamplingSystem`; both consume a probe and overwrite
+`WaterContactComponent` with the same tick. The index is constructed on
+each simulation tick and discarded before the tick ends. It stores a
+reference to the World and must not be reused after World writes,
+structural changes, restoring a snapshot or loading a native save.
+Nothing about the indexed data itself is authoritative or persistent.
+
+No changes to NEREID persistence schemas, renderer, RTS/editor waterNetwork
+or existing save streams. Two-host indexed/reference parity test:
+`ecs_nereid_query_index_test` (author-written, NOT RUN yet).

@@ -209,3 +209,86 @@ before adding further production integration. Then design a cached,
 rollback-safe spatial query accelerator and a read-only adapter from legacy
 `waterNetwork`; keep the legacy source and bake unchanged. Update docs
 after every implementation commit with actual test output, limits and SHA.
+
+
+## Stage 4 — transient ECS water-query broadphase
+
+**Implementation commit:** `9451e4a7ed682d3d9cecb87d205cc2a7865d617a`
+on `feature/nereid-water-core`.
+
+**Files added:** `libraries/include/aiverselib/water/NereidQueryIndex.h`,
+`tests/ecs_nereid_query_index_test.cpp`.
+**Files modified:** `libraries/include/aiverselib/water/NereidWaterSystems.h`,
+`CMakeLists.txt`.
+
+### Architecture / API
+
+- `WaterQueryIndex(const World&)` creates a **transient read-phase**
+  balanced AABB tree for finite enabled water bodies (Box/Disc, polygon,
+  variable-width river spline); infinite oceans are kept in a separate list.
+- `WaterQueryIndex::sample(Vec3)` uses conservative X/Z AABB checks followed
+  by the unchanged exact Fixed-point `coversWaterBody` policy.
+- `considerWaterCandidate` is now shared by both the old reference
+  `sampleWater(world,point)` and indexed sampler; selection remains
+  **priority > surface > generation-safe Entity ID**.
+- `addIndexedWaterSamplingSystem(sim,name)` is an optional **replacement**
+  for `addWaterSamplingSystem`. Register only one of the two.
+  Both write the same `WaterContactComponent` and tick stamp.
+- The index is **rebuilt every sampling tick** from ECS authoritative bodies.
+  No index state is persisted in save/network/rollback. Do not retain a
+  `WaterQueryIndex` after structural edits, geometry/position changes,
+  `World` replacement or rollback; its bounds become stale.
+- No new ECS schemas or catalog packages are required; link
+  `AIVERSE::lib_nereid_water` and include
+  `<aiverselib/water/NereidQueryIndex.h>`.
+
+Native usage:
+```cpp
+nw::registerNereidWaterPersistence(sim);
+nw::registerNereidGeometryPersistence(sim); // when geometry components exist
+nw::addWaterProbeFromTransformSystem(sim,"water.probe");
+nw::addIndexedWaterSamplingSystem(sim,"water.sample"); // NOT both samplers
+```
+
+This is a performance policy option for multiple water bodies/probes:
+index construction is currently O(B log² B) due to repeated
+median partitions (not amortized across ticks); query is typically
+O(log B + nearby bodies), but worst-case O(B) with overlapping bodies.
+It has not been benchmarked: **no performance gain is claimed yet**.
+
+### Verification
+
+**Code authored and pushed via GitHub connector. Native build/CTest NOT
+RUN.** Previous CI runs were queued or cancelled due to newer pushes, and
+no completed passing NEREID run was available while implementing stage 4.
+Do not interpret an authored test as passing.
+
+```sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target \
+  aiverse_ecs_nereid_water_test aiverse_ecs_nereid_buoyancy_test \
+  aiverse_ecs_nereid_geometry_test aiverse_ecs_nereid_query_index_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_.*_test$'
+```
+
+The authored `ecs_nereid_query_index_test` exercises ~1,800 probe
+positions per host against reference sampling, mixed oceans/discs/splines/
+polygons, priority tie policies, invalid geometry, two unrelated native
+hosts, native save/load, COW rollback and next-tick index rebuild after
+water geometry changes. This test has **not run**.
+
+### Limits / next action
+
+- Spatial bounds are conservative; the canonical exact per-body geometry
+  test still decides water contact. The index captures `World` by
+  reference; it is valid only within its construction read phase.
+- Geometry polygon holes/self-crossings remain unsupported; no change to
+  RTS `waterNetwork`, tile baking, editor or water shaders.
+- For very few bodies and probes, rebuilding per tick may be slower than
+  unindexed scans; decide empirically after profiling.
+- **Next agent:** compile all four NEREID tests, fix failures, then profile
+  at small and large body/probe counts and add optional opt-in threshold.
+  After that, implement read-only legacy spline geometry import with
+  parity tests before any native/editor migration. Maintain a handoff
+  section after every implementation commit with exact SHA, files, test
+  commands/results, current limitations and next task.
