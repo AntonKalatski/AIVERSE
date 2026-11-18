@@ -1267,7 +1267,7 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   tests passed. Record all tests as NOT RUN until the testing agent
   provides actual build/report evidence.
 - New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
-  Horizon quality presets and `TWH5` prebaked atlas archive interfaces
+  Horizon quality presets and `TWH6` prebaked atlas archive interfaces
   are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
   versions/fingerprints consistent whenever the bake format changes.
   Don't introduce file-system writes or game-authority mutations
@@ -1336,3 +1336,23 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   Testing is owned by a separate agent; do not
   claim compilation, screenshots or passing CTest
   without that agent's logs.
+
+### TerraWeave Horizon TWH6 near-surface seam data (Stage 19)
+
+- Current archive is **TWH6**; old TWH1–TWH5 blobs are historical
+  and must be regenerated. The version/fingerprint changes when the
+  baked seam sample layout changes.
+- Authored-world near/far stitching must capture near-terrain heights
+  from the **same immutable snapshot** as resident rectangle coverage.
+  Run `populateHorizonNearSeamSamples` after `bakeHorizon`
+  in both CPU worker and offline batch, BEFORE archiving/caching.
+- Seam sampling uses signed world-centimetre coordinates with
+  Q16 precision, no more than 4096 unique points, and an
+  all-or-none fallback when required heights are missing.
+  The source `nearGroundHeightAtCm` returns nullopt when
+  near terrain is not resident. The graphics/RHI layer must
+  not query live ECS/collision heights during submission.
+- `makeHorizonModel` welds the boundary vertex Y into the
+  existing material-0 triangles without adding a new model
+  or draw call. Real GPU seam quality is still unverified;
+  the separate testing agent owns CMake/CTest/driver captures.
