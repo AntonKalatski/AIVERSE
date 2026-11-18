@@ -511,7 +511,7 @@ set(AIVERSE_RUNTIME_SRC
     engine/render/Renderer3DTrace.cpp
     engine/render/ImGuiLayer.cpp)
 # PRISMA post-processing: runtime / independent GPU-free policy and catalog
-list(APPEND AIVERSE_RUNTIME_SRC engine/render/Prisma.cpp engine/render/ScreenLighting.cpp)
+list(APPEND AIVERSE_RUNTIME_SRC engine/render/Prisma.cpp engine/render/PrismaScreenLighting.cpp)
 # baked lighting on the GPU (agent-lightbake): lightmaps / probes in the model shaders
 list(APPEND AIVERSE_RUNTIME_SRC engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)
 add_library(aiverse_shader_graph STATIC engine/render/graph/ShaderGraph.cpp)
