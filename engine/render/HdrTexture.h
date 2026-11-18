@@ -33,7 +33,9 @@ inline uint16_t toHalf(float value) {
     if (exponent < -13) {
         // Binary16 subnormal: units of 2^-24; ties rounded to nearest.
         const long rounded = std::lround(std::ldexp(double(value), 24));
-        return uint16_t(std::clamp(rounded, 0L, 1023L));
+        // 1024 is the lowest normal half (0x0400), not a subnormal
+        // overflow. Clamping it to 1023 introduces a discontinuity.
+        return uint16_t(std::clamp(rounded, 0L, 1024L));
     }
     int halfExponent = exponent + 14;
     long fraction = std::lround((double(mantissa) * 2.0 - 1.0) * 1024.0);
@@ -196,6 +198,17 @@ inline gfx::TextureHandle uploadRadianceHdr(gfx::Device& device,
         if (error.empty()) error = "HDR: RGBA16F GPU allocation failed";
     }
     return texture;
+}
+
+// Convenience path for user-provided .hdr bytes. Decode only once, then
+// upload; the decoded CPU scratch is released on return. Neither stage
+// submits asynchronous GPU jobs or retains a dangling source pointer.
+inline gfx::TextureHandle loadRadianceHdr(gfx::Device& device,
+                                          std::string_view encoded,
+                                          std::string& error) {
+    RadianceImage source;
+    if (!parseRadianceHdr(encoded, source, error)) return {};
+    return uploadRadianceHdr(device, source, error);
 }
 
 } // namespace aiverse::render
