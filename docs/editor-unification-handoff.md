@@ -1628,3 +1628,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `docs/ecs-all-features-migration-plan.md` with the new source-of-truth cutover: programmed flight now executes directly in the `ProjectileRuntime` ECS pool under `ecsAuthority`, preserving ordered ECS identities, split child creation and immediate impact; default legacy mode uses the same solver. Clearly marks remaining `State::projectiles` compatibility projection/writeback for grenades, round logic, spawn code, and v9 save/network.
 - **Verification:** documentation commit only; native build and actual FPS gameplay/rollback tests unverified.
 - **Next:** update AGENTS and projectile skill for the new ownership rule; update Epic, then inspect test harness/static code and CI.
+
+
+### 2026-11-18 — Agent contract for direct ECS programmed-projectile authority
+- **Code/docs SHA:** `0819547185c1f4fb4ed042237c480b03d83a98fa`.
+- Updated `AGENTS.md` to require the real `fps.compat.projectilePrograms` stage to treat `ProjectileRuntime` as the authoritative owner in ECS mode, use the same `stepProgrammedProjectile` solver as legacy mode, preserve source `order` and immediate effects, and keep `State::projectiles` writable only for other yet-unmigrated FPS stages. Cites new deep/COW mixed projectile and v9 test fixtures.
+- **Verification:** docs-only commit; native C++ compilation still unverified.
