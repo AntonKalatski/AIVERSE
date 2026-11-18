@@ -238,3 +238,7 @@ Game clients must call the input pipeline every presentation frame, even when no
 ### Editor direct-play pointer bindings
 
 The editor Game window's direct RTS play-test now uses `RTS.Pointer` for mouse Select/Command, just like the standalone game client. This affects box selection, scripted map clicks and building placement while retaining editor viewport coordinates. Middle-mouse camera panning yields if that button is explicitly bound to Select or Command. Project bindings are reloaded before script-card hit testing.
+
+### Two-finger twist
+
+Touch gesture control code 6 (deviceIndex 0) is a signed relative rotation in radians, wrapped to ±π and reset on finger-count changes or focus loss. The default RTS input scheme maps it to `CameraTwist` Axis1D, allowing per-project sensitivity modifiers for planetary/camera rotation. It complements codes 3/4/5 for pinch/centroid pan and stays separate from world-space camera math.
