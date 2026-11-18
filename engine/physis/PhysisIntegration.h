@@ -76,6 +76,10 @@ struct InstallOptions {
 };
 
 inline void install(Simulation& simulation, const InstallOptions& options = {}) {
+    // Invalid policy must not partially initialize persistent ECS state.
+    if (options.floodMode != FloodMode::LocalShallow &&
+        options.floodMode != FloodMode::ExternalAuthority)
+        throw std::invalid_argument("invalid PHYSIS flood authority");
     // Universal one-line native project integration. Never call in render code.
     // Install during GameModule::setup; SimSnapshot and file saves use the same
     // authoritative World. The host controls the order of systems it registers.
