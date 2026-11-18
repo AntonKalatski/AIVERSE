@@ -44,7 +44,10 @@ void GameClient::topDownConfigure() {
     // Otherwise synthesize Actions from game.json's game-specific ability
     // keys. Abilities still belong to the top-down module, not input core.
     auto& inputSystem=inputShortcuts_.system();
-    if(!inputSystem.context("RTS.TopDownAbilities")){
+    // Regenerate engine-created bindings every time the hero/map is
+    // configured; a previous level may have a different set of abilities.
+    // Authored contexts are never overwritten by this runtime synthesis.
+    if(tdAutoAbilityContext_ || !inputSystem.context("RTS.TopDownAbilities")){
         namespace ei=lib::gameplay::enhanced;
         ei::MappingContext abilityBindings{"RTS.TopDownAbilities"};
         for(std::size_t i=0;i<topDown_.config().buttons.size();++i) {
@@ -57,7 +60,8 @@ void GameClient::topDownConfigure() {
         }
         std::uint64_t next=1;
         for(auto& mapping:abilityBindings.mappings)mapping.id=next++;
-        inputSystem.registerContext(std::move(abilityBindings));
+        if(inputSystem.registerContext(std::move(abilityBindings)))
+            tdAutoAbilityContext_=true;
     }
     tdAbilityKeysHeld_.assign(topDown_.config().buttons.size(),false);
     if (!topDownActive()) return;
