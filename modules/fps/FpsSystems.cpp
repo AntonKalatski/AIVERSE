@@ -1,6 +1,7 @@
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
 #include "libraries/include/aiverselib/genre/EcsHitscanSystems.h"
+#include "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
 #include <algorithm>
 #include <optional>
 namespace aiverse::fps {
@@ -157,7 +158,20 @@ bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_
     if(!victim)return blocked;
     bool head=false;
     if(config_.systems.enabled&&pose){auto height=stanceHeight(*pose,config_.motor);auto relative=point.y-pose->pos.y;head=relative>height*Fixed::fromRatio(4,5);if(head)amount=int32_t((Fixed::fromInt(amount)*weapon.headMultiplier).floorInt());else if(relative<height*Fixed::fromRatio(2,5))amount=int32_t((Fixed::fromInt(amount)*weapon.limbMultiplier).floorInt());}
-    damage(sim,source,s.actors[victim-1],amount,head);return true;
+    // Both RTS and FPS dispatch accepted direct hits through the same
+    // ordered ECS impact policy. FPS remains responsible for all head/limb
+    // modifiers, armor, knockdown, kill and replay side effects in damage().
+    // An instantaneous ray has no splash candidates or deferred on-hit stage.
+    const Entity victimEntity=actorEntity(sim,victim);
+    lib::genre::resolveOrderedProjectileImpact(
+        {kNullEntity,actorEntity(sim,source),victimEntity,point,
+         Fixed::fromInt(amount),Fixed{}},
+        [&](Entity) { damage(sim,source,s.actors[victim-1],amount,head); },
+        [](Entity) {},
+        [](Vec3,Fixed,auto&&) {},
+        [](Entity) {return false;},
+        [](Entity) {});
+    return true;
 }
 void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
     auto& s=state(sim);const auto& c=config_.systems;auto now=sim.tick();
