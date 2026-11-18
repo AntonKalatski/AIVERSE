@@ -954,3 +954,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `libraries/include/aiverselib/genre/FixedRegeneration.h`: pure `stepFixedResourceRegeneration(current,maximum,rate,dt)`; exact fixed-point operation order matches existing RTS `Unit` regen. No ECS or genre-module dependency, so multiple ECS systems can reuse it without duplicating math.
 - Verification: GitHub source commit only, **no native compiler or runtime executed**.
 - Next: wire `addEnergyRegenerationSystem` and real RTS `sysEconomy` into the same policy while keeping `Unit` canonical; then add a focused cross-host policy smoke regression.
+
+
+### 2026-11-18 — First kinematic projectile ECS system implementation
+- Implementation SHA: `55a9ecc5c074b75e63907cd41db7cfb0af1d138d`.
+- Added `libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h`: `KinematicProjectileComponent` (origin/current/destination, owner/target, shotId, elapsed/duration, alive), pure `stepKinematicProjectile` fixed-point endpoint interpolation per simulation tick, `KinematicArrivalEvent`, and `addKinematicProjectileSystem`. The system iterates the ECS pool in dense order, stages arrival events, emits them after iteration, and defers destruction. No collision world, physics forces or RNG. Target tracking is **not** implemented: the endpoint is fixed at launch, and the arrival sink must resolve stale/dead targets.
+- Verification: GitHub source commit only, no native compilation or CTest. Not registered as a standalone library package or connected to RTS yet. Physics and hitscan systems remain separate existing/planned paths.
+- Next: add independent host tests for travel duration, event ordering, expiry and snapshot rollback; register public package/skill and CMake; connect real RTS adapter behind parity gate.
