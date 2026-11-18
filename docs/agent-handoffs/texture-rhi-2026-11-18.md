@@ -5367,3 +5367,35 @@ Next: execute focused native tests, add real renderer feedback draw
 integration (opt-in, no genre dependencies), verify Metal/GL/Vulkan
 render-to-readback byte fidelity and page-table updates, then assess
 remaining backend capability and HDR import gaps.
+
+
+## Stage 8U — opt-in feedback renderer callback integration (2026-11-18)
+
+Source commit: 5dd9b58bf46ab249ea8a70f25f283b24d223d3a6.
+Test commit: 2fdbdcb0989f52d690fad1456f8c1f9e9e9a63cc.
+Files: engine/gfx/VirtualTextureFeedbackPass.h,
+tests/render/virtual_texture_feedback_pass.cpp.
+Added template renderAndCapture(DrawFeedback&&) to the existing
+VirtualTextureFeedbackPass. The callback receives Device& inside
+the bounded, cleared linear RGBA8 render target. On callback false,
+the pass is ended without scheduling partial readback; on success,
+endAndCapture submits asynchronous readback. Existing pending and
+unconsumed feedback guards remain in effect. The mock-device fixture
+tests callback order, success, false return, no partial capture and
+rejection while prior visibility is awaiting consumption.
+
+Usage: pass.renderAndCapture([&](gfx::Device& device) -> bool {
+    // Bind a single-output RGBA8 opaque feedback pipeline and draw
+    // packed page IDs from the active material/terrain visibility.
+    return true; // only when all feedback draws were submitted
+});
+Later, call pass.submitVisiblePages(streamer) and streamer.pump().
+No automatic camera/material/Terra integration is claimed.
+Callback must not throw; the existing Device and pass contracts are
+render-thread only. No ECS or genre-specific dependency introduced.
+
+Verification: GitHub source/test commits succeeded. Native C++ build,
+CTest, backend shader compilation and GPU readback NOT RUN.
+Next: compile and run virtual_texture_feedback_pass and
+virtual_texture_file_streamer; add real material/shader feedback
+submission and per-backend GPU readback fidelity tests.
