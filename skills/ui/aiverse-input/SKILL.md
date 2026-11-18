@@ -61,3 +61,6 @@ For FPS/client integration also build \`aiverse_fps_client\`, run sample tests a
 
 
 In addition to the commands above, verify the workflow `.github/workflows/enhanced-input.yml` (Linux/macOS/Windows). Its green status is necessary but not sufficient: editor/FPS/client full builds and a manual hosted-focus/rebinding smoke test are mandatory before merging.
+
+
+For local multiplayer use `engine/platform/EnhancedInputUsers.h` (`EnhancedInputUsers`) rather than independently calling `EnhancedInputAdapter::pollGamepads()` for each local user. Assign physical devices to unique user IDs, use gamepad deviceIndex 0 inside each user's scheme and call `pollGamepads` once per frame. Route Action outputs to each player's existing validated Commands, never raw controls into simulation.
