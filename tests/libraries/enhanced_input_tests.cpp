@@ -346,5 +346,70 @@ int main() {
     CHECK(cyclic.context("Cycle")==nullptr);
     CHECK(cyclic.registeredContexts().empty());
 
+    // Stage 49: chord interruption pauses the effective action and resets
+    // Hold accumulation even when the physical button never went up.
+    InputFlow gatedTimers;
+    CHECK(gatedTimers.defineAction({"Modifier",ValueType::Boolean}));
+    CHECK(gatedTimers.defineAction({"Charge",ValueType::Boolean}));
+    MappingContext chargeCtx{"Charging"};
+    chargeCtx.bind("Modifier",{Device::Keyboard,140});
+    chargeCtx.bind("Charge",{Device::Keyboard,141},{},
+                   {Trigger::hold(0.2f),Trigger::chord("Modifier")});
+    CHECK(gatedTimers.registerContext(chargeCtx));
+    CHECK(gatedTimers.activateContext("Charging"));
+    gatedTimers.setControl({Device::Keyboard,141},1);
+    CHECK(!has(gatedTimers.update(0.15f),"Charge",Phase::Triggered));
+    CHECK(!gatedTimers.state("Charge")->active);
+    gatedTimers.setControl({Device::Keyboard,140},1);
+    CHECK(!has(gatedTimers.update(0.1f),"Charge",Phase::Triggered));
+    CHECK(has(gatedTimers.update(0.11f),"Charge",Phase::Triggered));
+    gatedTimers.setControl({Device::Keyboard,140},0);
+    CHECK(has(gatedTimers.update(0.1f),"Charge",Phase::Canceled));
+    CHECK(!gatedTimers.state("Charge")->active);
+    gatedTimers.setControl({Device::Keyboard,140},1);
+    CHECK(!has(gatedTimers.update(0.1f),"Charge",Phase::Triggered));
+    CHECK(has(gatedTimers.update(0.11f),"Charge",Phase::Triggered));
+    CHECK(!has(gatedTimers.update(0.2f),"Charge",Phase::Triggered));
+
+    // An Action-level chord must govern its ACTIVE state and cancel promptly
+    // if its provider disappears, independently of the mapping's raw value.
+    InputFlow actionGates;
+    CHECK(actionGates.defineAction({"Modifier",ValueType::Boolean}));
+    CHECK(actionGates.defineAction({"Combo",ValueType::Boolean,{},
+                                    {Trigger::chord("Modifier")}}));
+    MappingContext actionCtx{"ActionGates"};
+    actionCtx.bind("Modifier",{Device::Keyboard,142});
+    actionCtx.bind("Combo",{Device::Keyboard,143});
+    CHECK(actionGates.registerContext(actionCtx));
+    CHECK(actionGates.activateContext("ActionGates"));
+    actionGates.setControl({Device::Keyboard,143},1);
+    actionGates.update(0.016f);
+    CHECK(!actionGates.state("Combo")->active);
+    actionGates.setControl({Device::Keyboard,142},1);
+    CHECK(has(actionGates.update(0.016f),"Combo",Phase::Started));
+    CHECK(actionGates.state("Combo")->active);
+    actionGates.setControl({Device::Keyboard,142},0);
+    CHECK(has(actionGates.update(0.016f),"Combo",Phase::Canceled));
+    CHECK(!actionGates.state("Combo")->active);
+
+    // Re-activating a previously disabled context while a key remains held
+    // must not synthesize a new Pressed edge.
+    InputFlow restored;
+    CHECK(restored.defineAction({"Use",ValueType::Boolean}));
+    MappingContext restoreCtx{"Restore"};
+    restoreCtx.bind("Use",{Device::Keyboard,144},{},{Trigger::pressed()});
+    CHECK(restored.registerContext(restoreCtx));
+    CHECK(restored.activateContext("Restore"));
+    restored.setControl({Device::Keyboard,144},1);
+    CHECK(has(restored.update(0.016f),"Use",Phase::Triggered));
+    restored.deactivateContext("Restore");
+    restored.update(0.016f);
+    CHECK(restored.activateContext("Restore"));
+    CHECK(!has(restored.update(0.016f),"Use",Phase::Triggered));
+    restored.setControl({Device::Keyboard,144},0);
+    restored.update(0.016f);
+    restored.setControl({Device::Keyboard,144},1);
+    CHECK(has(restored.update(0.016f),"Use",Phase::Triggered));
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
