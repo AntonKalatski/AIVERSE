@@ -1169,3 +1169,49 @@ create actual texture array/cube/3D resources using the full
 retained payload. Keep model-material sampler2D compatibility
 separate. Validate import on all actual backends before
 describing it as production support.
+
+## Stage 6C — dimension-aware KTX2 GPU resource uploader (2026-11-18)
+
+**Code commit:** `a300050dfb4eab58ce3d8c384e909f42154b7b29`.
+**Paths:** `engine/render/TextureAsset.h`,
+`tests/render/texture_asset.cpp`, `CMakeLists.txt`.
+
+**Source implementation:** Header-only `uploadKtx2Image`
+maps the extended CPU `CompressedImage` metadata to real RHI
+`TextureDimension` values (1D/2D/3D/2DArray/Cube/CubeArray),
+including all array layers/faces/volume slices. For supported
+block-compressed images it hands the entire authored mip chain
+to `gfx::Device::createTexture`. Unsupported BC4/EAC_R11/
+BC1_RGB and other formats fall back through
+`decodeBlocksSlice` to RGBA8 (or RGBA8_sRGB), allocate
+the image and upload all nonzero authored mip slices with
+`updateTextureRegion`. A failure destroys the partially
+created texture and provides a readable error. Native
+compressed sRGB sampling needs an explicit opt-in acknowledging
+that the caller's shader performs sRGB decoding; by default
+the loader chooses a CPU RGBA8_sRGB fallback where possible.
+ASTC has no CPU decoder, so native ASTC support is required.
+Caller retains ownership of the returned `TextureHandle`.
+
+**Compatibility:** Existing model sampler2D materials still
+use the old first-slice upload path. The new function is
+opt-in and does not change assets, saves, ECS or legacy
+material shader assumptions.
+
+**Tests:** New CPU mock-device CTest `texture_asset`
+checks CubeArray dimension/layer count, uploading twelve
+separate mip-1 faces, 3D allocation, failed mip upload
+cleanup, invalid input rejection. This test is registered
+under `AIVERSE_BUILD_TESTS` alongside `ktx2_layers`.
+
+**Validation:** Source commit successful. Actual C++ build,
+unit test execution and GPU validation: **NOT RUN**.
+Static review notes `TextureAsset.h` should explicitly
+include `<algorithm>` for `std::copy`; next stage
+should add this before compilation. No CI pass claimed.
+
+**Next:** Fix missing standalone header include; build
+`aiverse_texture_asset_test`/`aiverse_ktx2_layers_test`,
+and run Vulkan/Metal/GL native sampling of cube and array
+assets. Add DDS multi-face import parity, BasisU transcode
+and compressed sRGB variants in separate documented stages.
