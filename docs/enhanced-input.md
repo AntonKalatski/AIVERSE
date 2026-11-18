@@ -198,3 +198,7 @@ Action-level modifiers run before the final action value determines lifecycle. F
 ## Conflict-aware rebinding
 
 `InputSystem::rebind(context,id,control,policy)` accepts `RebindPolicy::Allow` (default), `Reject` (same-context duplicate forbidden) and `Swap` (exchange with exactly one colliding mapping). Existing mapping IDs stay stable. `InputSystem::conflicts(activeOnly=true)` returns ordered conflicts describing the shadowed Action when the earlier mapping consumes the key; duplicate controls may still be intentional (e.g., different triggers and modal contexts).
+
+### Advanced triggers
+
+`DoubleTap(window)` triggers on a second press within the allowed period after release. `HoldAndRelease(seconds)` fires after holding long enough and then releasing. `Pulse(interval)` repeats periodically while held. `NotChord(action)` blocks its mapping while that named action is actuated. JSON trigger names: `doubleTap`, `holdAndRelease`, `pulse`, `notChord`; the corresponding editor trigger fields are editable. These are all presentation events; projects convert them to existing deterministic Commands.
