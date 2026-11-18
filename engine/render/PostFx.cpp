@@ -1,4 +1,4 @@
-#include "PostFx.h"
+#include "Prisma.h"
 #include <chrono>
 #include "graph/ShaderGraph.h"
 #include <algorithm>
@@ -76,7 +76,7 @@ void put(float* d, float a, float b, float c, float e) { d[0] = a; d[1] = b; d[2
 
 } // namespace
 
-PostFxQuality PostFx::defaultQualityFor(const gfx::Device& dev, bool mobile) {
+PostFxQuality Prisma::defaultQualityFor(const gfx::Device& dev, bool mobile) {
     if (const char* q = std::getenv("AIVERSE_POSTFX")) {   // testing override: off|low|medium|high
         PostFxQuality r;
         if (parsePostFxQuality(q, r)) return r;
@@ -91,7 +91,7 @@ PostFxQuality PostFx::defaultQualityFor(const gfx::Device& dev, bool mobile) {
     return PostFxQuality::High;
 }
 
-bool PostFx::init(gfx::Device& dev) {
+bool Prisma::init(gfx::Device& dev) {
     dev_ = &dev;
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
@@ -102,9 +102,9 @@ bool PostFx::init(gfx::Device& dev) {
     return triangle_.valid();
 }
 
-void PostFx::release(gfx::TextureHandle& t) { if (t.valid() && dev_) dev_->destroyTexture(t); t = {}; }
+void Prisma::release(gfx::TextureHandle& t) { if (t.valid() && dev_) dev_->destroyTexture(t); t = {}; }
 
-void PostFx::shutdown() {
+void Prisma::shutdown() {
     if (!dev_) return;
     for (auto& s : sizes_) {
         for (auto& [r, t] : s.targets) release(t.tex);
@@ -129,21 +129,21 @@ void PostFx::shutdown() {
     dev_ = nullptr;
 }
 
-void PostFx::setImageLoader(ImageLoader fn) {
+void Prisma::setImageLoader(ImageLoader fn) {
     for(auto& [path,l]:luts_)release(l.tex);
     for(auto& [path,t]:graphTextures_)release(t);
     luts_.clear();graphTextures_.clear();loader_=std::move(fn);
 }
 
-void PostFx::configure(const Json& game, const Json& map, std::vector<std::string>* issues) {
+void Prisma::configure(const Json& game, const Json& map, std::vector<std::string>* issues) {
     std::vector<std::string> local;
     setSettings(parsePostFx(game, map, issues ? issues : &local));
     if (!issues) for (auto& m : local) std::fprintf(stderr, "[postfx] %s\n", m.c_str());
 }
 
-void PostFx::setSettings(PostFxSettings s) { settings_ = std::move(s); error_.clear(); }
+void Prisma::setSettings(PostFxSettings s) { settings_ = std::move(s); error_.clear(); }
 
-bool PostFx::hdrRequested() const {
+bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PostFxQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
     HdrMode mode = settings_.hdr;
     if (const char* e = std::getenv("AIVERSE_HDR")) {
@@ -155,11 +155,11 @@ bool PostFx::hdrRequested() const {
     return hdrAtQuality(mode, quality_, dev_->supports(gfx::PixelFormat::RGBA16F));
 }
 
-bool PostFx::active() const {
+bool Prisma::active() const {
     return dev_ && triangle_.valid() && enabled_ && (hdrRequested() || settings_.anyActive(quality_));
 }
 
-PostFx::Sized& PostFx::sized(int w, int h) {
+Prisma::Sized& Prisma::sized(int w, int h) {
     ++frame_;
     for (auto& s : sizes_) if (s.w == w && s.h == h) { s.lastUse = frame_; return s; }
     if (sizes_.size() >= 3) {   // drop the least recently used set (window resized, view closed)
@@ -175,7 +175,7 @@ PostFx::Sized& PostFx::sized(int w, int h) {
     return s;
 }
 
-PostFx::Target& PostFx::target(Sized& s, int role, int w, int h) {
+Prisma::Target& Prisma::target(Sized& s, int role, int w, int h) {
     w = std::max(w, 1); h = std::max(h, 1);
     Target& t = s.targets[role];
     const auto format = hdrFrame_ ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA8;
@@ -192,7 +192,7 @@ PostFx::Target& PostFx::target(Sized& s, int role, int w, int h) {
     return t;
 }
 
-gfx::TextureHandle PostFx::depthFor(Sized& s, int w, int h) {
+gfx::TextureHandle Prisma::depthFor(Sized& s, int w, int h) {
     const uint64_t key = (uint64_t(uint32_t(w)) << 32) | uint32_t(h);
     auto it = s.depths.find(key);
     if (it != s.depths.end()) return it->second;
@@ -205,7 +205,7 @@ gfx::TextureHandle PostFx::depthFor(Sized& s, int w, int h) {
     return s.depths[key] = dev_->createTexture(td);
 }
 
-gfx::PipelineHandle PostFx::program(Prog p) {
+gfx::PipelineHandle Prisma::program(Prog p) {
     if (pipes_[p].valid() || failed_[p]) return pipes_[p];
     struct Def { const char* body; const char* helpers; uint32_t tex; const char* label; };
     static const Def defs[kProgCount] = {
@@ -243,7 +243,7 @@ gfx::PipelineHandle PostFx::program(Prog p) {
     return pipes_[p];
 }
 
-gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
+gfx::PipelineHandle Prisma::composite(uint32_t mask, const Json* graphData) {
     const std::string key = std::to_string(mask) + (graphData ? graphData->dump(-1) : "");
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
@@ -299,7 +299,7 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
     return p;
 }
 
-const PostFx::Lut* PostFx::lut(const std::string& path) {
+const Prisma::Lut* Prisma::lut(const std::string& path) {
     auto it = luts_.find(path);
     if (it != luts_.end()) return it->second.failed ? nullptr : &it->second;
     Lut& l = luts_[path];
@@ -325,7 +325,7 @@ const PostFx::Lut* PostFx::lut(const std::string& path) {
     return &l;
 }
 
-gfx::TextureHandle PostFx::graphTexture(const std::string& path) {
+gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
     auto it=graphTextures_.find(path);if(it!=graphTextures_.end()){if(it->second.valid())return it->second;error_="shader graph: cannot load texture '"+path+"'";return black_;}
     int w=0,h=0;std::vector<uint8_t> bytes;
     if(!loader_ || !loader_(path,w,h,bytes) || w<=0 || h<=0 || bytes.size()<size_t(w)*size_t(h)*4) {
@@ -337,7 +337,7 @@ gfx::TextureHandle PostFx::graphTexture(const std::string& path) {
     graphTextures_[path]=texture;return texture;
 }
 
-gfx::PassDesc PostFx::scenePass(const gfx::PassDesc& out, int w, int h) {
+gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
     hdrFrame_ = hdrRequested();
     Sized& s = sized(w, h);
     gfx::PassDesc p = out;
@@ -359,7 +359,7 @@ gfx::PassDesc PostFx::scenePass(const gfx::PassDesc& out, int w, int h) {
     return p;
 }
 
-void PostFx::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const void* u, size_t size,
+void Prisma::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const void* u, size_t size,
                   std::initializer_list<std::pair<int, gfx::TextureHandle>> tex) {
     if (!dst.tex.valid() || !pipe.valid()) return; // never redirect a failed effect to the screen
     gfx::PassDesc p;
@@ -377,7 +377,7 @@ void PostFx::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
     ++stats_.passes;
 }
 
-void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& f) {
+void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& f) {
     stats_ = {};
     if (!sceneReady_) { auto p = out; p.clearColorEnabled = p.clearDepthEnabled = false; dev.beginPass(p); return; }
     const int w = std::max(f.width, 1), h = std::max(f.height, 1);
