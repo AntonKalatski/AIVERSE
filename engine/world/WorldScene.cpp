@@ -174,6 +174,7 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
 }
 void WorldScene::shutdown(gfx::Device& device) {
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
+    if(terraForest_)terraForest_->shutdownAsync(); // join workers before releasing captured resources
     if(terraForest_&&terraForestReady_){
         terraForest_->releaseModels(device);
         terraForestReady_=false;
