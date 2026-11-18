@@ -3,7 +3,7 @@
 #pragma once
 #include "Platform.h"
 #include "Gamepad.h"
-#include <aiverselib/gameplay/EnhancedInput.h>
+#include <aiverselib/gameplay/InputFlow.h>
 #include "engine/data/Json.h"
 #include <algorithm>
 #include <array>
@@ -19,7 +19,7 @@
 #include <vector>
 
 namespace aiverse::platform::enhanced_config {
-namespace ei = aiverse::lib::gameplay::enhanced;
+namespace ei = aiverse::lib::gameplay::inputflow;
 
 struct ContextConfig {
     ei::MappingContext context;
@@ -418,9 +418,9 @@ inline bool readAsset(const Json& json,Asset& out,std::string* error=nullptr) {
     out=std::move(result);
     return true;
 }
-inline bool installAsset(ei::InputSystem& input,const Asset& asset,std::string* error=nullptr) {
+inline bool installAsset(ei::InputFlow& input,const Asset& asset,std::string* error=nullptr) {
     // Construct off to the side: invalid assets must not destroy the caller's current mapping.
-    ei::InputSystem replacement;
+    ei::InputFlow replacement;
     for(const auto& action:asset.actions)
         if(!replacement.defineAction(action))return detail::fail(error,"input","invalid action name");
     for(const auto& c:asset.contexts)
@@ -501,7 +501,7 @@ inline Json writeProfile(const Profile& profile) {
     root.set("rebindings",std::move(list));
     return root;
 }
-inline bool applyProfile(ei::InputSystem& input,const Profile& profile,std::string* error=nullptr) {
+inline bool applyProfile(ei::InputFlow& input,const Profile& profile,std::string* error=nullptr) {
     // Validate every override before mutation. Unknown IDs are reported, never partially applied.
     for(const auto& override:profile.rebindings) {
         const auto* context=input.context(override.context);
