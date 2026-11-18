@@ -269,6 +269,34 @@ void testPivotAndGizmoGeometry() {
     CHECK(physis_gizmo::segmentDistanceSq(5,20,0,0,10,0)>300);
 }
 
+
+void testTransformFromFrozenBaseline() {
+    MapDoc doc; doc.reset(8,8);
+    std::string error;
+    CHECK(apply(doc,defaultConfig(),&error));
+    std::string wind,storm;
+    CHECK(addField(doc,physis::AuthoredFieldKind::Wind,0,0,0,wind,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Storm,10,0,0,storm,&error));
+    const Json original=read(doc);
+    const auto rev=doc.revision;
+    CHECK(transformFields(doc,{wind,storm},0,0,0,45,1.0,&error,&original,true));
+    CHECK(doc.revision>rev);
+    CHECK(transformFields(doc,{wind,storm},0,0,0,90,2.0,&error,&original,false));
+    std::string collection;std::size_t index=0;Json field;
+    CHECK(findField(read(doc),storm,collection,index,&field));
+    CHECK(field["center"][0].fx()==Fixed{});
+    CHECK(field["center"][2].fx()==Fixed::fromInt(20));
+    CHECK(field["outerRadiusMeters"].fx()==Fixed::fromInt(400));
+    doc.undo();
+    CHECK(read(doc)==original); // complete multi-frame drag: one undo
+    doc.redo();
+    CHECK(findField(read(doc),storm,collection,index,&field));
+    CHECK(field["outerRadiusMeters"].fx()==Fixed::fromInt(400));
+    const auto lastRevision=doc.revision;
+    CHECK(!transformFields(doc,{wind,storm},0,0,0,0,0.0001,&error,&original,true));
+    CHECK(doc.revision==lastRevision);
+}
+
 void testFpsAndDuplicateIds() {
     MapDoc fps;
     std::string error;
@@ -303,5 +331,5 @@ void testFpsAndDuplicateIds() {
     CHECK(fps.revision==revision);
 }
 }
-int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testGroupRotationAndScale();testPivotAndGizmoGeometry();testFpsAndDuplicateIds();
+int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testGroupRotationAndScale();testPivotAndGizmoGeometry();testTransformFromFrozenBaseline();testFpsAndDuplicateIds();
 std::printf("PHYSIS Field Authoring: %s\n",failures?"FAIL":"PASS");return failures?1:0;}

@@ -515,7 +515,9 @@ inline bool removeFields(MapDoc& doc, const std::vector<std::string>& ids,
 inline bool transformFields(MapDoc& doc, const std::vector<std::string>& ids,
                             double pivotX, double pivotY, double pivotZ,
                             double yawDegrees, double uniformScale,
-                            std::string* error = nullptr) {
+                            std::string* error = nullptr,
+                            const Json* baseline = nullptr,
+                            bool firstEdit = true) {
     const auto fail = [&](const char* why) {
         if (error) *error = why;
         return false;
@@ -529,7 +531,7 @@ inline bool transformFields(MapDoc& doc, const std::vector<std::string>& ids,
     const std::set<std::string> selected(ids.begin(),ids.end());
     if (selected.size()!=ids.size())
         return fail("PHYSIS duplicate group selection ID");
-    Json config = read(doc);
+    Json config = baseline ? *baseline : read(doc);
     if (!validate(config,error)) return false;
     const double radians = yawDegrees * 3.14159265358979323846 / 180.0;
     const double cosine = std::cos(radians);
@@ -581,7 +583,15 @@ inline bool transformFields(MapDoc& doc, const std::vector<std::string>& ids,
     }
     if (found!=selected.size())
         return fail("PHYSIS group transform contains unknown field ID");
-    return apply(doc,config,error);
+    if (!validate(config,error)) return false;
+    if (config == read(doc)) return true;
+    if (!doc.data.fps.isNull() && !doc.data.fps.isObject())
+        return fail("PHYSIS FPS document is not an object");
+    if (firstEdit) doc.beginEdit();
+    else doc.touched();
+    Json& container=doc.data.fps.isNull() ? doc.data.extra:doc.data.fps;
+    container.set("physis",std::move(config));
+    return true;
 }
 
 
