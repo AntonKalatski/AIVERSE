@@ -478,7 +478,10 @@ public:
         }
         t.mips = generate && levels > 1;
         MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
-        const bool linear = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F;
+        const bool float32Data = d.format == PixelFormat::RGBA32F ||
+                                  d.format == PixelFormat::R32F ||
+                                  d.format == PixelFormat::RG32F;
+        const bool linear = d.filter == Filter::Linear && !float32Data;
         sd.minFilter = sd.magFilter = linear ? MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
         if (levels > 1) sd.mipFilter = linear ? MTLSamplerMipFilterLinear : MTLSamplerMipFilterNearest;
         sd.sAddressMode = sd.tAddressMode = sd.rAddressMode =

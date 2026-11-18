@@ -177,6 +177,16 @@ int main() {
     check(uncompressedTexturePixelBytes(PixelFormat::BC5) == 0 &&
           uncompressedTexturePixelBytes(PixelFormat::Depth) == 0,
           "compressed/depth formats do not have CPU color stride");
+    TextureDesc typed;
+    typed.width = typed.height = 8;
+    typed.format = PixelFormat::RG16F;
+    typed.mipmaps = true;
+    check(validateTextureDesc(typed) == TextureDescError::InvalidUsage,
+          "typed data textures reject unverified automatic mip generation");
+    typed.mipmaps = false;
+    typed.mipLevels = 4;
+    check(validateTextureDesc(typed) == TextureDescError::None,
+          "typed data textures allow explicitly allocated mip chain");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }

@@ -228,6 +228,10 @@ constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
         return TextureDescError::InvalidUsage;
     if (d.compare && d.format != PixelFormat::Depth) return TextureDescError::InvalidUsage;
     if (d.storage && d.format == PixelFormat::Depth) return TextureDescError::InvalidUsage;
+    // Until each backend has a validated float/RG mip generator, use explicit
+    // mipLevels + updateTextureRegion. Do not silently allocate one mip.
+    if (isExtendedDataTextureFormat(d.format) && d.mipmaps)
+        return TextureDescError::InvalidUsage;
     if (blockCompressed) {
         // A block-compressed GPU image requires a complete mip chain of
         // levelData/levelSize entries; random data and render/storage targets
