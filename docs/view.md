@@ -511,3 +511,37 @@ layers, ordering, single submission and provider collection.
 
 **NOT RUN**: CMake/CTest, native compilation and GPU parity checks
 have not been performed on this stage.
+
+## Decoupling editor selection from legacy RtsView (Stage 83)
+
+The native/editor RTS host now uses
+`modules/rts/view/RtsSelectionPresentation.h` for visual picking
+radii. This is **RTS-specific authoring**, not a generic engine
+algorithm: `view_adapter::selectionRadius(const UnitType&)` takes
+authored footprint/radius and implements the existing building
+footprint and unit radius policy; the overload taking
+`const Rules&` validates the type index.
+
+`apps/editor/Editor.cpp::pickEntity` no longer needs a mutable
+`RtsView` to calculate picking bounds (four former
+`const_cast<RtsView&>` calls removed). The existing
+`RtsView::selectionRadius` remains as a compatibility forwarder,
+not an independent source of logic. This contributes to retirement
+of the legacy renderer without leaking `Rules` or `UnitType`
+into `engine/view`.
+
+The larger remaining coupling is explicit:
+`apps/client/GameClient.h` still owns a `game::RtsView`;
+`apps/client/GameClient.cpp` still calls `draw`, `drawGhost`,
+`drawOverlays` and planetary conversion helpers;
+`apps/editor/Editor.h` still owns and exposes `RtsView`;
+`apps/editor/Editor.cpp` still calls drawing/overlay/preview APIs
+and `heightAt`; third-party/specialized game adapters may also use
+the legacy view. Full class deletion requires an independent host
+scene/presentation adapter plus render, asset and terrain providers,
+not simply renaming the old class.
+
+A dedicated `view_rts_selection_presentation` fixture checks unit
+and building radii, both Rules lookup overloads and invalid indices.
+**NOT RUN** — compiler/CTest and native RTS/editor parity remain
+to be executed.
