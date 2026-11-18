@@ -303,6 +303,31 @@ void rhiFormatContract() {
           !prismaRhiFormat(PrismaGraphFormat::R32F, fmt),
           "unavailable RHI formats rejected instead of emulated");
 }
+
+void fxaaGraphContract() {
+    // Same two external RGBA8 targets as the Stage 14 runtime integration.
+    PrismaRenderGraph g;
+    auto src = g.addResource(resource("scene-fxaa", true, PrismaGraphFormat::RGBA8, 1920, 1080));
+    auto dst = g.addResource(resource("fxaa-output", true, PrismaGraphFormat::RGBA8, 1920, 1080));
+    auto p = pass("fxaa", {src}, {dst});
+    g.addPass(p);
+    const auto plan = g.compile();
+    check(plan.valid && plan.slots.empty() && plan.order == std::vector<PrismaGraphId>({0}),
+          "FXAA graph uses no extra pooled textures");
+    if (!plan.valid) return;
+    PrismaGraphBindings<int> bindings;
+    bindings.external = {17, 19};
+    int draws = 0;
+    const auto result = dispatchPrismaGraph(g, plan, bindings,
+        [&](const PrismaGraphPass& pass, PrismaGraphId,
+            const PrismaGraphDispatchView<int>& view) {
+            ++draws;
+            return pass.kind == PrismaGraphPassKind::Raster &&
+                   view.resource(src) == 17 && view.resource(dst) == 19;
+        });
+    check(result.success && result.executedPasses == 1 && draws == 1,
+          "FXAA graph resolves scene/output handles and dispatches once");
+}
 }
 int main() {
     positive();
@@ -311,6 +336,7 @@ int main() {
     dispatchContract();
     poolContract();
     rhiFormatContract();
+    fxaaGraphContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
