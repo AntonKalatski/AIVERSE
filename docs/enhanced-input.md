@@ -2,7 +2,7 @@
 
 **AIVerse InputFlow** (short: **InputFlow**) is AIVERSE's genre-independent, action-based **presentation input** system. It uses a device → mapping context → action → trigger pipeline, inspired by Unreal Engine's Enhanced Input without copying its C++ API or binary asset format.
 
-The canonical native C++ header is `#include <aiverselib/gameplay/InputFlow.h>`. Use `aiverse::lib::gameplay::inputflow::InputFlow` to create the runtime and `inputflow::InputAction`, `inputflow::InputContext` and `inputflow::InputValue` to describe input. The old `<aiverselib/gameplay/EnhancedInput.h>` and `aiverse::lib::gameplay::enhanced::InputSystem` remain source-compatible aliases. Existing `input/actions.json` paths, profile file names, command layouts and CMake target `AIVERSE::lib_input` remain unchanged.
+The canonical native C++ header is `#include <aiverselib/gameplay/InputFlow.h>`. Use `aiverse::lib::gameplay::inputflow::InputFlow` to create the runtime and `inputflow::InputAction`, `inputflow::InputContext` and `inputflow::InputValue` to describe input. The old `<aiverselib/gameplay/EnhancedInput.h>` and `aiverse::lib::gameplay::enhanced::InputSystem` remain source-compatible aliases. Existing `input/actions.json` paths, profile file names and command layouts remain unchanged. New native consumers should link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`); `AIVERSE::lib_input` is preserved as an alias to the same header-only library.
 
 ## Runtime pipeline
 
