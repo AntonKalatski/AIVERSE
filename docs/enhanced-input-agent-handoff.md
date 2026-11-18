@@ -469,3 +469,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Validation deferred:** source committed. During manual validation, test selected Game dock, script cards and viewport, rebind Select to button 3, drag boxes, Command to button 4, and middle-button camera pan collision. Recheck editor GameWindow input in hosted-client mode (separate event forwarding).
 
 **Next:** release-stage static source audit, docs status, CI later; do not mark PR green without build evidence.
+
+## Stage 37 — normalized two-finger twist input (2026-11-18)
+
+**Adapter:** `EnhancedInputAdapter::updateGesture` now publishes `Device::Touch`, code 6, deviceIndex 0 for the shortest-arc two-finger rotation delta in radians (signed, wrapped to -π..π). It uses the same gesture activation/re-baseline guard as pinch/pan, so adding/removing a finger does not jump orientation. Camera consumers must integrate it per frame; the platform remains presentation-only.
+
+**Preset:** `RTS.Gestures` adds `CameraTwist` Axis1D bound to Touch code 6, non-consuming. Existing codes 0..5 and mapping IDs are unchanged; only a new mapping is appended, so prior per-user override IDs remain stable.
+
+**Test authored (deferred):** adapter test checks a deliberate rotated two-finger segment produces nonzero twist and does not lose pinch handling. No execution as requested.
+
+**Next:** use normalized `CameraTwist` with planet orbit camera, and wire planet/possession movement to semantic Actions. Keep scripting and world projection genre-specific.
