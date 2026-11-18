@@ -326,7 +326,22 @@ void ParticleSystem::render(const FxFog& fog) {
             vcount[ri] = 4;
             continue;
         }
-        graphData={p.age,1.0f/p.invLife,prand(p.uid,71),0};
+        // The shader graph sees four packed float lanes. For legacy effects
+        // these remain age/lifetime/stable random/zero byte-for-byte.
+        // Opt-in graphInputs can instead forward custom VM attributes and
+        // snapshot instance parameters with no added vertex stride/batches.
+        const auto graphLane=[&](uint8_t code)->float {
+            if(code==0)return p.age;
+            if(code==1)return 1.0f/p.invLife;
+            if(code==2)return prand(p.uid,71);
+            if(code>=4&&code<12)return p.customAttributes[size_t(code-4)];
+            if(code>=12&&code<20)return p.programParams[size_t(code-12)];
+            return 0.f;
+        };
+        graphData={
+            graphLane(er.graphInputSources[0]),graphLane(er.graphInputSources[1]),
+            graphLane(er.graphInputSources[2]),graphLane(er.graphInputSources[3])
+        };
         float4 colf = I.colorNow(p);
         if (!d.colorBySpeed.empty()) colf = mul(colf, speedLut(er.colorSpeed, d.colorSpeed, render::length(p.vtot) / p.scale));
         const Frame fr = frameOf(p, d, er, t);
