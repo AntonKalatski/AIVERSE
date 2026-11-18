@@ -17,6 +17,8 @@ PHYSIS is the **genre-independent** nature simulation for AIVERSE. Weather, loca
 | `engine/physis/PhysisPresentation.h` | Unified read-only `NatureFieldSample` for native Terrain/FX/Physics hosts |
 | `engine/physics/PhysisBox3D.h` | **Optional Box3D** physics::Scene adapter; does not modify PHYSIS core |
 | `engine/physis/PhysisDiagnostics.h` | Read-only bounded debug raster, scalar layers and 16-bit normalization |
+| `engine/physis/PhysisDebugPalette.h` | Renderer-independent CPU diagnostic colours and invalid-cell masking |
+| `apps/editor/windows/PhysisWindow.cpp` | Optional dockable editor heatmap with separate demo World and read-only live ECS source |
 | `engine/physis/PhysisSpatialIndex.h` | Transient COW snapshot, 2D bins, ordered candidate selection for wind/gravity/storm fields |
 | `engine/physis/PhysisIntegration.h` | Generic Simulation::addSystem, persistent ECS schemas, read-only presentation feed |
 
@@ -85,7 +87,8 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 
 
 - Stage 15: [Fast diagnostic ECS reads](agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md)
-- Stage 16: [Snapshot-backed spatial index](agent-handoffs/physis-spatial-index-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+- Stage 16: [Snapshot-backed spatial index](agent-handoffs/physis-spatial-index-2026-11-18.md)
+- Stage 17: [PHYSIS editor debug view](agent-handoffs/physis-editor-debug-view-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
 
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 
@@ -247,3 +250,39 @@ simulation, and not a world streaming/job scheduler. The index holds a
 copy-on-write World snapshot; keeping many historical indexes resident may
 retain COW pages and increase memory. No native benchmark or compiler success
 has been observed yet; tests are source-only until CTest runs.
+
+## Stage 17 — PHYSIS editor debug window
+
+The editor now discovers `apps/editor/windows/PhysisWindow.cpp` automatically
+through its existing `AIVERSE_EDITOR_WINDOW` registry and CMake glob.
+Open **Мир → PHYSIS · Природа**. The panel is **closed by default**.
+
+- When the active `Editor::sim()` has PHYSIS initialized, it displays a
+  read-only raster of live PHYSIS ECS climate, surface, wind, gravity, fire,
+  earthquake or standalone local flood state. The panel **does not call
+  `Simulation::step` on the game's World**, does not edit game.json, map
+  documents or Box3D, and does not inject genre-specific scene entities.
+- When the current game does not initialize PHYSIS, the user can explicitly
+  create a separate **PHYSIS demo World** in the panel, with wind, a tornado,
+  local gravity, a climate gradient and a fire. Demo step controls advance
+  only that independent World; they do not mutate the current project.
+- Layers, palette, sample stride, window size (8..64 PHYSIS cells) and X/Z
+  centre can be adjusted. Clicking a cell displays the fixed-point value,
+  climate cell coordinates, 3D wind and gravity. The panel outlines
+  active wind zones (W), storm radii (T/H) and gravity volumes (G).
+- Scalar weather/hazard layers read ECS directly; wind/gravity layers use
+  the transient `FieldSpatialIndex`. Refresh occurs on source change,
+  new tick or explicit **Обновить данные**. Edits/rollback that retain the
+  exact tick require manual refresh until the editor gains revision tokens.
+
+`PhysisDebugPalette.h` exposes `DebugColor`, `DebugPalette`,
+`debugGradient` and `diagnosticColor` for native CPU tools. This is
+presentation-only; colour values are never fed back into simulation.
+
+**Not yet implemented:** world-space overlay projected into the Scene camera,
+a live PHYSIS agent Inspector for editing component data, general project
+`game.json` PHYSIS auto-install, GPU textures and particle/VFX integration.
+The window is an actual editor GUI implementation, but **native editor
+compilation, UI screenshot and manual clicking have NOT been verified**.
+Use `./run-tests.sh --filter '^physis_'` and build/test the editor on macOS
+before claiming it works end-to-end.
