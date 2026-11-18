@@ -31,12 +31,14 @@ public:
     // Returns false on invalid layout; a previously cached valid layout is
     // preserved if rebuilding fails. The source can be scene or an FXAA target.
     bool configure(uint32_t sourceWidth, uint32_t sourceHeight,
-                   PrismaGraphFormat format, const std::vector<PrismaBloomMip>& mips) {
+                   PrismaGraphFormat format, const std::vector<PrismaBloomMip>& mips,
+                   bool graphOwnedTargets = false) {
         if (sourceWidth == 0 || sourceHeight == 0 || mips.empty()) return false;
         for (const auto& mip : mips)
             if (!mip.width || !mip.height) return false;
         if (valid_ && sourceWidth_ == sourceWidth &&
-            sourceHeight_ == sourceHeight && format_ == format && mips_ == mips)
+            sourceHeight_ == sourceHeight && format_ == format && mips_ == mips &&
+            graphOwnedTargets_ == graphOwnedTargets)
             return true;
 
         PrismaRenderGraph next;
@@ -48,7 +50,7 @@ public:
         for (size_t i = 0; i < mips.size(); ++i)
             down.push_back(next.addResource({
                 "bloom-down-" + std::to_string(i), format,
-                mips[i].width, mips[i].height, true}));
+                mips[i].width, mips[i].height, !graphOwnedTargets}));
         // Append ascending mip indices so external binding ID calculation is
         // straightforward. Execution order is still the descending up chain.
         for (size_t i = 0; i + 1 < mips.size(); ++i)
@@ -96,6 +98,7 @@ public:
         sourceWidth_ = sourceWidth;
         sourceHeight_ = sourceHeight;
         format_ = format;
+        graphOwnedTargets_ = graphOwnedTargets;
         mips_ = mips;
         valid_ = true;
         ++rebuilds_;
@@ -104,6 +107,7 @@ public:
 
     bool valid() const { return valid_; }
     uint64_t rebuilds() const { return rebuilds_; }
+    bool graphOwnedTargets() const { return graphOwnedTargets_; }
     const PrismaRenderGraph& graph() const { return graph_; }
     const PrismaGraphPlan& plan() const { return plan_; }
     const std::vector<PrismaBloomPassBinding>& operations() const { return operations_; }
@@ -136,6 +140,7 @@ private:
     uint32_t sourceWidth_ = 0, sourceHeight_ = 0;
     uint64_t rebuilds_ = 0;
     bool valid_ = false;
+    bool graphOwnedTargets_ = false;
 };
 
 } // namespace aiverse::render
