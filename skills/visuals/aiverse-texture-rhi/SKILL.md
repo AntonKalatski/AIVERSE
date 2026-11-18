@@ -31,6 +31,7 @@ never equate source presence with a passing GPU test.**
 | Disk-backed virtual atlas | `gfx::VirtualTextureFileStreamer` | Explicit page requests, render-thread pump and GPU page-table publication |
 | Bounded UV visibility prefetch | `gfx::VirtualTexturePrefetchPlanner`, `prefetchVisibleVirtualPages` | Clips and deduplicates visible UV rectangles; requests coarse mips first |
 | Optional GPU page feedback | `gfx::VirtualTextureFeedbackRuntime`, `VirtualTextureFeedbackDecoder` | Async linear RGBA8 readback decoded into bounded visible UV regions |
+| Owned GPU feedback render target | `gfx::VirtualTextureFeedbackPass` | RGBA8 offscreen pass + async capture; app supplies opaque feedback shader |
 | GPU subresource readback | `Device::readTextureAsync` | Metal/Vulkan/GL33/GLES3 source; unsupported on WebGL2 |
 | Live texture inventory | `Device::textureResources()` | Optional live GPU resource snapshot; byte size is estimated |
 
@@ -175,6 +176,44 @@ on streaming-queue backpressure. It does NOT implement hardware
 GPU feedback, sparse images, occlusion queries or camera projection;
 the game owns UV visibility and desired mip determination.
 
+### Owned offscreen page-ID feedback pass
+
+`engine/gfx/VirtualTextureFeedbackPass.h` owns the generic
+`RenderTargetSet` and the existing async feedback runtime.
+It avoids creating a special FPS/RTS/Terra render-target manager.
+
+```cpp
+gfx::VirtualTextureFeedbackPass feedbackPass;
+gfx::VirtualTextureFeedbackConfig fb;
+gfx::VirtualTexturePrefetchConfig pf;
+fb.tilesX = pf.tilesX = atlas.tilesX;
+fb.tilesY = pf.tilesY = atlas.tilesY;
+fb.mipLevels = pf.mipLevels = atlas.mipLevels;
+fb.virtualLayers = pf.virtualLayers = atlas.virtualLayers;
+if (feedbackPass.initialize(device, 256, 256, fb, pf)) {
+    // Inside the game's graphics frame, outside other passes:
+    if (feedbackPass.begin()) {
+        // Bind an Opaque, single-attachment RGBA8 pipeline and draw
+        // visible virtual-texture surfaces to the page-ID target.
+        // GLSL/MSL helpers: engine/gfx/VirtualTextureFeedback.h
+        feedbackPass.endAndCapture();
+    }
+    // On a later graphics frame, after beginFrame callback dispatch:
+    auto dispatched = feedbackPass.submitVisiblePages(streaming);
+    streaming.pump(8);
+    feedbackPass.shutdown(); // before graphics Device teardown
+}
+```
+
+The helper allocates one *linear RGBA8 UNORM*, single-sample
+Texture2D, clears all bytes to zero, sets viewport and scissor,
+and refuses another capture while the prior GPU readback is
+pending or awaiting submission. It never creates a shader,
+draws a camera, inserts a render graph pass or configures an
+ECS entity. Keep blending, sRGB conversion, MSAA, dithering
+and postprocessing disabled in the feedback shader/pipeline.
+Failures in readback are reported; WebGL2 remains unsupported.
+
 ### Optional feedback-buffer-driven page requests
 
 `engine/gfx/VirtualTextureFeedback.h` defines the exact RGBA8 page ID
@@ -264,11 +303,12 @@ cmake --build build/texture-rhi --target \
   aiverse_virtual_texture_page_table_test aiverse_virtual_texture_streamer_test \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
   aiverse_virtual_texture_prefetch_test aiverse_virtual_texture_feedback_test \
+  aiverse_virtual_texture_feedback_pass_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test \
   aiverse_ktx2_layers_test aiverse_ktx2_transcode_test \
   aiverse_dds_layers_test aiverse_texture_asset_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|hdr_texture|exr_texture|ktx2_layers|ktx2_transcode|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|virtual_texture_feedback_pass|hdr_texture|exr_texture|ktx2_layers|ktx2_transcode|dds_layers|texture_asset)$'
 ```
 
 Build the editor and native client to catch API/layout regressions.

@@ -321,6 +321,28 @@ Coverage is source-level only: native C++/CTest/GPU validation remains
 outstanding. The `virtual_texture_prefetch` CTest and the existing
 `virtual_texture_file_streamer` CTest contain authored cases.
 
+## Owned feedback render target
+
+`engine/gfx/VirtualTextureFeedbackPass.h` is an opt-in,
+genre-independent owner of the feedback color target and
+the Stage 7AC async readback runtime. It builds one
+Texture2D RGBA8 UNORM offscreen render target through
+`RenderTargetSet`, no depth, no sRGB, no MSAA, one mip.
+`begin()` clears to zero and configures the pass viewport;
+the game binds its opaque one-color-output feedback shader
+and draws the visible UV surfaces; `endAndCapture()` ends
+the pass before requesting nonblocking readback. On a later
+frame `submitVisiblePages(fileStreamer)` submits missing
+pages through the generic UV prefetch and disk worker queue.
+Call `fileStreamer.pump()` separately for GPU uploads.
+
+This helper does not own a camera, geometry, render graph,
+shader compilation or game ECS state. It must be destroyed
+before `gfx::Device`; late callbacks are ignored using weak
+state. The corresponding GPU-independent mock CTest is
+`virtual_texture_feedback_pass`. It has NOT been executed
+against native SDK builds or GPU drivers.
+
 ## Optional GPU feedback → prefetch source pipeline
 
 `engine/gfx/VirtualTextureFeedback.h` adds a bounded 32-bit tile
@@ -418,9 +440,10 @@ cmake --build build/texture-rhi --target \
   aiverse_virtual_texture_streamer_test \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
   aiverse_virtual_texture_prefetch_test aiverse_virtual_texture_feedback_test \
+  aiverse_virtual_texture_feedback_pass_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|hdr_texture|exr_texture)$'
+  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|virtual_texture_feedback_pass|hdr_texture|exr_texture)$'
 ```
 
 Build `aiverse_editor` and a native client to detect editor/renderer
@@ -442,6 +465,7 @@ need separate native builds and visual/readback validation.
 - `engine/gfx/VirtualTexturePrefetchAdapter.h` — disk-page request integration
 - `engine/gfx/VirtualTextureFeedback.h` — bounded RGBA8 page feedback codec
 - `engine/gfx/VirtualTextureFeedbackRuntime.h` — optional async readback-to-prefetch coordinator
+- `engine/gfx/VirtualTextureFeedbackPass.h` — owned RGBA8 offscreen feedback pass
 - `engine/gfx/VirtualTextureSampling.h` — GLSL/MSL virtual page lookup
 - `engine/render/TextureAsset.h` — DDS/KTX2 GPU uploads
 - `apps/editor/windows/TextureResourcesWindow.cpp` — live GPU inspector

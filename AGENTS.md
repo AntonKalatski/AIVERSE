@@ -47,6 +47,7 @@ offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
 `gfx::TextureMipResidency`, `gfx::TextureResidentStreamer`,
 `gfx::VirtualTextureStreamer`, `gfx::VirtualTexturePrefetchPlanner`,
 `gfx::prefetchVisibleVirtualPages`, `gfx::VirtualTextureFeedbackRuntime`,
+`gfx::VirtualTextureFeedbackPass`,
 `Device::readTextureAsync`,
 `render::loadRadianceHdr`, `render::loadOpenExr`, `render::parseKtx2`,
 `render::parseDdsTexture` and `render::uploadContainerTexture`.
