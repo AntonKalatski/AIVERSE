@@ -1523,3 +1523,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `aa3df049728df724f25f8c83f0698d2bdc31833b`.
 - Updated `modules/fps/CMakeLists.txt` to explicitly link `AIVERSE::lib_ecs_projectile_systems` alongside `AIVERSE::lib_ecs_hitscan` and `AIVERSE::lib_ecs_ordered_impact`. This package exports the shared `EcsSweepQuerySystems.h` used by actual `FpsProjectiles.cpp`. Physical collision/ballistic dependency is now explicit and independent of the no-physics RTS kinematic package.
 - Verification: GitHub source commit only; native CMake configure, C++ compile and CTest still not run. No save/network or per-tick gameplay code changes in the CMake commit.
+
+
+### 2026-11-18 — Agent contract records real FPS shared hitscan and physical sweep migration
+- Implementation/docs SHA: `62eb55759951fb9d20980c1122c48616bfa3dcf4`.
+- Updated `AGENTS.md`: for new gameplay and agents, live FPS `FpsProjectiles.cpp` uses shared swept collision (`EcsSweepQuerySystems.h`) from physical ECS projectile package with endpoint/tie invariants; live FPS `traceShot` uses shared `resolveHitscanIntent` (same as separately schedulable ECS resolver) and generic vehicle ray selection but retains synchronous damage. Explicitly references existing v9/deep-COW programmed projectile tests and new two-shooter FPS rewind/save/rollback parity fixture; requires actual native execution before default-on or queued-impact changes. Motion policy is per weapon, never RTS/FPS.
+- This is documentation-only; no compiled tests or gameplay runtime changed in this commit.
