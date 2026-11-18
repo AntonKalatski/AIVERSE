@@ -2646,7 +2646,7 @@
       "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
       "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
       "summary": "NEREID deterministic fixed-point ECS water volume sampling across game genres",
-      "notes": "Stages 1-5: fixed-point bodies and probes, polygon/spline footprints, transient indexed sampling, and optional raster import from legacy water cells. Legacy RTS/editor remains authoritative; no water rendering or actual runtime adoption. Native tests unverified.",
+      "notes": "Stages 1-6: fixed-point bodies/probes, polygon/spline footprints, indexed/adaptive sampling, optional native setup and read-only legacy raster import. Legacy RTS/editor remains authoritative; no production runtime or water rendering adoption. Native tests unverified.",
       "verifiedPlatforms": [],
       "cmakeTarget": "AIVERSE::lib_nereid_water",
       "runtime": "header",
