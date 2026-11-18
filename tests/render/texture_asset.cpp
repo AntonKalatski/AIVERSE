@@ -16,6 +16,8 @@ public:
     gfx::TextureDesc lastDesc;
     std::vector<uint8_t> firstPixels;
     int created=0, destroyed=0, mipUploads=0, failUpload=0;
+    bool failNativeCompressed = false;
+    int nativeAttempts = 0;
     const gfx::DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
     bool supports(gfx::PixelFormat f) const override {
@@ -27,6 +29,13 @@ public:
     void destroyBuffer(gfx::BufferHandle) override {}
     gfx::TextureHandle createTexture(const gfx::TextureDesc& d) override {
         if (gfx::validateTextureDesc(d) != gfx::TextureDescError::None) return {};
+        if (gfx::isCompressedTextureFormat(d.format)) {
+            ++nativeAttempts;
+            if (failNativeCompressed) {
+                error_ = "mock device rejected compressed allocation";
+                return {};
+            }
+        }
         lastDesc = d;
         firstPixels.clear();
         if (d.data && d.format == gfx::PixelFormat::RGBA8 &&
@@ -130,6 +139,35 @@ int main() {
               dev.lastDesc.levelCount == 1,
               "BC5 native RGTC2 requires shader opt-in");
         dev.destroyTexture(h);
+
+        // A backend can report a compressed format yet reject this allocation.
+        // The RGBA fallback must NOT forward stale compressed levelData/size,
+        // and it must allocate the authored mip chain for explicit uploads.
+        image = {};
+        image.width = image.height = 4;
+        image.format = render::BlockFormat::BC5;
+        image.vkFormat = 141;
+        image.levels.resize(2);
+        image.levels[0].assign(16, 0);
+        image.levels[1].assign(16, 0);
+        render::TextureUploadOptions rejectedNativeOptions;
+        rejectedNativeOptions.shaderReconstructsBc5NormalZ = true;
+        dev.failNativeCompressed = true;
+        const int nativeAttemptsBefore = dev.nativeAttempts;
+        const int mipUploadsBefore = dev.mipUploads;
+        h = render::uploadContainerTexture(dev, image, rejectedNativeOptions, err);
+        check(h.valid() && err.empty(), "failed native compressed allocation falls back to RGBA8");
+        check(dev.nativeAttempts == nativeAttemptsBefore + 1,
+              "native compressed allocation was attempted");
+        check(dev.lastDesc.format == gfx::PixelFormat::RGBA8 &&
+              dev.lastDesc.mipLevels == 2 && dev.lastDesc.levelCount == 0 &&
+              dev.lastDesc.levelData == nullptr && dev.lastDesc.levelSize == nullptr,
+              "CPU fallback resets compressed payload and preserves authored mips");
+        check(dev.firstPixels.size() == 4u*4u*4u &&
+              dev.mipUploads == mipUploadsBefore + 1,
+              "CPU fallback initializes base level and uploads authored next mip");
+        dev.destroyTexture(h);
+        dev.failNativeCompressed = false;
 
         // DDS DX10 2D array is stored surface-major, with the complete mip
         // chain of layer zero before layer one. The container reader must

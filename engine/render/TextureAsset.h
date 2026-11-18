@@ -125,7 +125,16 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
                       output.begin() + std::ptrdiff_t(stride * size_t(slice)));
         }
     }
+    // The native attempt may have filled the same descriptor with compressed
+    // levelData and levelCount. Clear that upload contract before creating the
+    // uncompressed fallback: Vulkan accepts explicit levelData for *any*
+    // format and would otherwise interpret BC bytes as RGBA pixels. Metal and
+    // GL would also lose the authored mip allocation when mipLevels stayed 0.
     td.format = in.srgb ? gfx::PixelFormat::RGBA8_sRGB : gfx::PixelFormat::RGBA8;
+    td.levelCount = 0;
+    td.levelData = nullptr;
+    td.levelSize = nullptr;
+    td.mipLevels = int(in.levels.size());
     td.data = decoded[0].data();
     gfx::TextureHandle tex = dev.createTexture(td);
     if (!tex.valid()) {
