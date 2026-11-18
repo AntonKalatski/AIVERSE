@@ -25,6 +25,8 @@ public:
     void enqueue(FieldCommand command) {
         if (command.sequence <= lastEnqueuedSequence_ && hasEnqueued_)
             throw std::invalid_argument("PHYSIS command sequence must increase");
+        if (!pending_.empty() && command.tick < pending_.back().tick)
+            throw std::invalid_argument("PHYSIS command tick order must not decrease");
         if (hasApplied_ && (command.tick < lastAppliedTick_ ||
             (command.tick == lastAppliedTick_ &&
              command.sequence <= lastAppliedSequence_)))
