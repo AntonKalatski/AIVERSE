@@ -107,6 +107,16 @@ inline ecfg::Asset rtsReference() {
     id=1;
     for(auto& mapping:camera.mappings)mapping.id=id++;
     result.contexts.push_back({std::move(camera),0,true});
+    result.actions.push_back({"Select",ei::ValueType::Boolean});
+    result.actions.push_back({"Command",ei::ValueType::Boolean});
+    result.actions.push_back({"CameraZoom",ei::ValueType::Axis1D});
+    ei::MappingContext pointer{"RTS.Pointer"};
+    pointer.bind("Select",{ei::Device::MouseButton,0},{},{ei::Trigger::pressed()},false);
+    pointer.bind("Command",{ei::Device::MouseButton,1},{},{ei::Trigger::pressed()},false);
+    pointer.bind("CameraZoom",{ei::Device::MouseWheel,1},{},{},false);
+    id=1;
+    for(auto& mapping:pointer.mappings) mapping.id=id++;
+    result.contexts.push_back({std::move(pointer),0,true});
     return result;
 }
 } // namespace aiverse::platform::enhanced_presets
