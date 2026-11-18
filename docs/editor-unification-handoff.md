@@ -1803,3 +1803,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Documentation SHA:** `dd726cdd2cfb5d78aefc27da348202733b59c1e4`.
 - Added explicit source-of-truth tracking to `docs/ecs-all-features-migration-plan.md` for live FPS weapon shots, Frag/Smoke/Flash actions and bomb-round projectile reset using direct ECS runtime entities at their original stage. Defines remaining transitional State projection writers, World Entity ID/allocator ordering gates, native test fixtures and v9/network acceptance requirements. Keeps legacy mode and default-OFF `fps.ecsAuthority`.
 - **Verification:** documentation commit only; no native compilation/CTest.
+
+
+### 2026-11-18 — Fix actual macOS sweep regression expectation
+- Implementation SHA: `dfef673bf2384927a5c2e046d57fe077a9b164d3`.
+- User's `ecs_projectile_composition_test` aborted with "shared projectile sweep lost nearest-hit tie semantics". `world::intersect` derives the fractional hit distance using `Fixed::operator/`, which **truncates** the 16-bit fractional quotient, while the test expected `Fixed::fromRatio(3,10)`, which **rounds**. At z=3 with displacement z=10 the raw outputs are 19660 versus 19661. Updated sweep fraction comparisons to `3_fx/10_fx` and `2_fx/10_fx` so they match the actual engine calculation; left tie-break and endpoint assertions strict.
+- No production collision math or gameplay mechanics changed. Native CTest rerun **pending**; this change is not a proven fix until user runs it.
