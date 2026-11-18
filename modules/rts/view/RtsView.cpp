@@ -1,5 +1,6 @@
 #include "RtsView.h"
 #include "engine/view/View.h"
+#include "engine/view/SceneLayers.h"
 #include "RtsRoadView.h"
 #include "RtsShoreView.h"
 #include "../../../engine/data/JsonCompose.h"
@@ -281,21 +282,52 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         }
     }
     const auto afterSetup = std::chrono::steady_clock::now();
-    geometryScene_.draw(r);
+    // Legacy game-specific inputs are translated to engine-owned generic
+    // presentation passes. Every callback executes immediately in its
+    // original order on the frame thread; View owns no Rules/Map/Fog types.
+    ::aiverse::view::ViewLayerQueue layers;
+    using LayerPhase=::aiverse::view::LayerPhase;
+    layers.append("scene geometry",LayerPhase::Geometry,[&] {
+        geometryScene_.draw(r);
+    });
     const bool tiles = twoD_ && twoD_->hasTiles();
-    if (twoD_) twoD_->beginFrame(r.camera(), time, r, &grid, rules_ ? float(rules_->levelHeight.toDouble()) : 1.5f);
+    layers.append("2D scene begin",LayerPhase::Background,[&] {
+        if(twoD_)twoD_->beginFrame(r.camera(),time,r,&grid,
+            rules_?float(rules_->levelHeight.toDouble()):1.5f);
+    });
     bars_.assign(s.objects.size(), {});
-    if (hasTerrain_ && !tiles) terrain_.draw(r, grid, vision, groundFx_.drawsDig());
-    if (hasTerrain_ && tiles) terrain_.drawWater(r);
-    if (!tiles) groundFx_.draw(r, s, time, vision, grid, *this);
-    // A deleted road network must flush the old surface too, otherwise
-    // groundAt() and stationary placement caches can retain stale road heights.
-    if (roads_->active() || roads_->needsRebuild())
-        roads_->draw(r, [this, &grid](float x, float z) { return heightAt(grid, x, z); });
-    if (shores_->active()) shores_->draw(r, [this, &grid](float x, float z) { return heightAt(grid, x, z); }, terrain_.look().waterOffset, grid.w, grid.h);
-    paintLayers_.draw(r, *dev_, s.paintLayers, grid, *this, vision, time, s.viewer);
-    if (tiles || !groundFx_.drawsLinks())
-        for (auto& [a, b] : s.roads) r.quadXZ(a, b, 0.5f, rgba(196, 164, 112, 235), 0.04f);
+    layers.append("surface",LayerPhase::Geometry,[&] {
+        if(hasTerrain_ && !tiles)
+            terrain_.draw(r,grid,vision,groundFx_.drawsDig());
+        if(hasTerrain_ && tiles)terrain_.drawWater(r);
+    });
+    layers.append("surface effects",LayerPhase::Effects,[&] {
+        if(!tiles)groundFx_.draw(r,s,time,vision,grid,*this);
+    });
+    layers.append("paths",LayerPhase::Geometry,[&] {
+        // Rebuilding a deleted network must also flush stale ground heights.
+        if(roads_->active() || roads_->needsRebuild())
+            roads_->draw(r,[this,&grid](float x,float z) {
+                return heightAt(grid,x,z);
+            });
+    });
+    layers.append("shorelines",LayerPhase::Geometry,[&] {
+        if(shores_->active())
+            shores_->draw(r,[this,&grid](float x,float z) {
+                return heightAt(grid,x,z);
+            },terrain_.look().waterOffset,grid.w,grid.h);
+    });
+    layers.append("surface paint",LayerPhase::Effects,[&] {
+        paintLayers_.draw(r,*dev_,s.paintLayers,grid,*this,vision,time,s.viewer);
+    });
+    layers.append("surface links",LayerPhase::Overlay,[&] {
+        if(tiles || !groundFx_.drawsLinks())
+            for(const auto& [a,b]:s.roads)
+                r.quadXZ(a,b,.5f,rgba(196,164,112,235),.04f);
+    });
+    // Synchronous flush is the GPU pass boundary: callback captures cannot
+    // escape this RtsView::draw frame; there is no parallel render submission.
+    layers.flush();
 
     const auto afterGround = std::chrono::steady_clock::now();
     const float dt = lastTime_ < 0 ? 0.0f : float(std::clamp(time - lastTime_, 0.0, 0.1));
