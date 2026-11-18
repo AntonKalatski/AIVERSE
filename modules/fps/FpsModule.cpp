@@ -525,7 +525,25 @@ void Module::shoot(Simulation& sim,Actor& p) {
     for(auto it=s.history.rbegin();it!=s.history.rend();++it)if(it->tick<=requested){targets=&it->actors;break;}
     auto eye=p.pos+Vec3{{},stanceHeight(p,config_.motor)-Fixed::fromRatio(1,10),{}};
     const auto& weapon=config_.weapons[p.weaponIndex];
-    --p.ammo;++p.shots;p.nextFire=sim.tick()+weapon.interval;
+    if(config_.ecsAuthority) {
+        // Fire accounting is committed to canonical ECS first. The legacy
+        // Actor is only a compatibility workspace for hitscan/rewind and
+        // existing save v9/network presentation until those stages migrate.
+        const Entity shooter=actorEntity(sim,p.slot);
+        auto* runtime=sim.world().tryGet<ActorRuntime>(shooter);
+        if(!runtime)throw std::logic_error("FPS ECS shooter missing during fire");
+        runtime->value.ammo=p.ammo;
+        runtime->value.shots=p.shots;
+        runtime->value.nextFire=p.nextFire;
+        --runtime->value.ammo;
+        ++runtime->value.shots;
+        runtime->value.nextFire=sim.tick()+weapon.interval;
+        p.ammo=runtime->value.ammo;
+        p.shots=runtime->value.shots;
+        p.nextFire=runtime->value.nextFire;
+    } else {
+        --p.ammo;++p.shots;p.nextFire=sim.tick()+weapon.interval;
+    }
     for(uint32_t pellet=0;pellet<weapon.pellets;++pellet) {
         auto yaw=p.yaw,pitch=p.pitch;
         if(config_.systems.enabled) {
