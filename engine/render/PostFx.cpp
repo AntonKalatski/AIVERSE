@@ -379,7 +379,9 @@ void PostFx::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
     if (!dst.tex.valid() || !pipe.valid()) return; // never redirect a failed effect to the screen
     gfx::PassDesc p;
     p.colorTarget = dst.tex;
-    p.depthTarget = depthFor(s, dst.w, dst.h);
+    // Effect/intermediate passes may clear their depth attachment.
+    // Never reuse the opaque scene depth that PF_UNDERWATER_DEPTH samples.
+    p.depthTarget = depthFor(s, dst.w, dst.h, 2);
     p.clearColor[0] = p.clearColor[1] = p.clearColor[2] = 0; p.clearColor[3] = 1;
     dev_->beginPass(p);
     dev_->setViewport({0, 0, dst.w, dst.h});
