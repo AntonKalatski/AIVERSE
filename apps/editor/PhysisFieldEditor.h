@@ -28,6 +28,9 @@ struct PhysisFieldEditorState {
     int gizmoMode = 0; // 0: translate, 1: radius
     int pivotMode = 0;
     float customPivot[3] = {};
+    bool show3DAxes = true;
+    int dragAxis = -1;
+    double dragAxisStart = 0.0;
     bool boxSelectEnabled = false;
     bool boxSelecting = false;
     bool boxAdditive = false;
@@ -75,6 +78,7 @@ inline void setPhysisFieldSelection(std::vector<std::string> ids) {
     state.draggingRadius = false;
     state.dragEdited = false;
     state.dragOriginal.clear();
+    state.dragAxis=-1;
 }
 
 // Ctrl/Shift toggles membership; a plain selection replaces it.
@@ -131,6 +135,47 @@ inline std::vector<physis_gizmo::ScreenMarker> physisVisibleMarkers(
     }
     return output;
 }
+
+inline float physisHandleLength(const render::RTSCamera& camera) {
+    return std::clamp(camera.distance*0.28f,2.0f,160.0f);
+}
+inline bool physisAxisScreen(const render::RTSCamera& camera,const Viewport& vp,
+                             render::float3 pivot,int axis,ImVec2& a,ImVec2& b) {
+    const auto direction=physis_gizmo::worldAxis(axis);
+    const float length=physisHandleLength(camera);
+    render::float2 from{},to{};
+    if (!camera.worldToScreen(pivot,vp.pointsW,vp.pointsH,from) ||
+        !camera.worldToScreen({pivot.x+direction.x*length,
+                               pivot.y+direction.y*length,
+                               pivot.z+direction.z*length},
+                              vp.pointsW,vp.pointsH,to) ||
+        !std::isfinite(from.x)||!std::isfinite(from.y)||
+        !std::isfinite(to.x)||!std::isfinite(to.y))
+        return false;
+    a={vp.originX+from.x,vp.originY+from.y};
+    b={vp.originX+to.x,vp.originY+to.y};
+    return true;
+}
+inline bool physisCaptureGroupOrigins(Editor& ed) {
+    auto& st=physisFieldEditorState();
+    st.dragOriginal.clear();
+    const Json config=physis_authoring::read(ed.doc());
+    for (const auto& id:st.selectedIds) {
+        std::string collection;
+        std::size_t index=0;
+        Json entry;
+        if (!physis_authoring::findField(config,id,collection,index,&entry) ||
+            !entry["center"].isArray() || entry["center"].size()!=3) {
+            st.dragOriginal.clear();
+            st.error="PHYSIS field in the selection is missing";
+            return false;
+        }
+        const Json& v=entry["center"];
+        st.dragOriginal.push_back({id,v[0].toDouble(),v[1].toDouble(),v[2].toDouble()});
+    }
+    return !st.dragOriginal.empty();
+}
+
 inline bool physisFieldRadius(const Json& field, double& radius) {
     const Json& value = field["outerRadiusMeters"].isNull() ?
                         field["radiusMeters"] : field["outerRadiusMeters"];
@@ -217,6 +262,24 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
             draw->AddText({p.x+10,p.y-8},color,symbol);
         }
     }
+    if (state.show3DAxes && state.editMode && state.gizmoMode==0 &&
+        !state.selectedIds.empty()) {
+        physis_authoring::FieldPivot p{};
+        if (physisCurrentPivot(ed,p)) {
+            const render::float3 pivot=physisPivot3(p);
+            const ImU32 colors[]={IM_COL32(248,93,100,245),
+                                  IM_COL32(90,220,115,245),
+                                  IM_COL32(96,149,249,245)};
+            for (int axis=0;axis<3;++axis) {
+                ImVec2 a{},b{};
+                if (!physisAxisScreen(camera,vp,pivot,axis,a,b)) continue;
+                draw->AddLine(a,b,colors[axis],3.0f);
+                draw->AddCircleFilled(b,5.f,colors[axis],12);
+                draw->AddText({b.x+7.f,b.y-7.f},colors[axis],
+                              axis==0?"X":axis==1?"Y":"Z");
+            }
+        }
+    }
     if (state.boxSelecting) {
         const ImVec2 a{std::clamp(state.boxStart.x,vp.originX,vp.originX+vp.pointsW),
                        std::clamp(state.boxStart.y,vp.originY,vp.originY+vp.pointsH)};
@@ -239,6 +302,7 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
     if (!state.editMode || !state.showMarkers || ed.playing()) {
         state.dragging=false;
         state.draggingRadius=false;
+        state.dragAxis=-1;
         state.boxSelecting=false;
         state.dragOriginal.clear();
         return false;
@@ -269,6 +333,7 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
             state.dragging=false;
             state.draggingRadius=false;
             state.dragEdited=false;
+            state.dragAxis=-1;
             state.dragOriginal.clear();
             return true;
         }
@@ -320,7 +385,28 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
             double x=state.dragAppliedX;
             double y=state.dragAppliedY;
             double z=state.dragAppliedZ;
-            if (io.KeyShift) {
+            if (state.dragAxis>=0) {
+                render::float3 origin{},direction{};
+                double parameter=0;
+                const render::float3 pivot{float(state.dragAnchorX),
+                                            float(state.dragAnchorY),
+                                            float(state.dragAnchorZ)};
+                if (camera.screenRay(io.MousePos.x-vp.originX,
+                                     io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
+                                     origin,direction) &&
+                    physis_gizmo::closestRayAxisParameter(origin,direction,pivot,
+                                                         state.dragAxis,parameter)) {
+                    const double delta=parameter-state.dragAxisStart;
+                    const double start=state.dragAxis==0 ? state.dragAnchorX :
+                        state.dragAxis==1 ? state.dragAnchorY:state.dragAnchorZ;
+                    const double value=state.snapEnabled ?
+                        physis_authoring::snapMeters(start+delta,double(state.snapStepMeters)) :
+                        start+delta;
+                    if (state.dragAxis==0) x=value;
+                    else if (state.dragAxis==1) y=value;
+                    else z=value;
+                }
+            } else if (io.KeyShift) {
                 state.dragRawY += double(state.lastMouseY-io.MousePos.y) *
                                   std::max(0.01,double(camera.distance)*0.002);
                 y=state.dragRawY;
@@ -368,6 +454,47 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
         return false;
     const bool additive=io.KeyCtrl || io.KeyShift;
     const Json config=physis_authoring::read(ed.doc());
+
+    if (!additive && state.show3DAxes && state.gizmoMode==0 &&
+        !state.selectedIds.empty()) {
+        physis_authoring::FieldPivot p{};
+        if (physisCurrentPivot(ed,p)) {
+            int bestAxis=-1;
+            double nearest=9.0*9.0;
+            const render::float3 at=physisPivot3(p);
+            for (int axis=0;axis<3;++axis) {
+                ImVec2 a{},b{};
+                if (!physisAxisScreen(camera,vp,at,axis,a,b)) continue;
+                const double x=a.x+(b.x-a.x)*0.22;
+                const double y=a.y+(b.y-a.y)*0.22;
+                const double ds=physis_gizmo::segmentDistanceSq(
+                    io.MousePos.x,io.MousePos.y,x,y,b.x,b.y);
+                if (ds<nearest) {nearest=ds;bestAxis=axis;}
+            }
+            if (bestAxis>=0) {
+                render::float3 origin{},direction{};
+                double parameter=0;
+                if (camera.screenRay(io.MousePos.x-vp.originX,
+                                     io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
+                                     origin,direction) &&
+                    physis_gizmo::closestRayAxisParameter(origin,direction,at,
+                                                          bestAxis,parameter) &&
+                    physisCaptureGroupOrigins(ed)) {
+                    ed.select({Selection::MapProps,-1,{}});
+                    state.dragging=true;
+                    state.draggingRadius=false;
+                    state.dragAxis=bestAxis;
+                    state.dragAxisStart=parameter;
+                    state.dragEdited=false;
+                    state.dragAnchorX=p.x;state.dragAnchorY=p.y;state.dragAnchorZ=p.z;
+                    state.dragAppliedX=p.x;state.dragAppliedY=p.y;state.dragAppliedZ=p.z;
+                    state.dragRawY=p.y;
+                    state.lastMouseY=io.MousePos.y;
+                    return true;
+                }
+            }
+        }
+    }
 
     // Resize handle has priority, except when toggling selection.
     if (!additive && state.gizmoMode==1 && !state.selectedId.empty()) {
@@ -445,21 +572,8 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
         state.grabOffsetZ=double(chosen.z-ground.z);
     } else state.grabOffsetX=state.grabOffsetZ=0;
 
-    state.dragOriginal.clear();
-    for (const auto& id:state.selectedIds) {
-        std::string collection;
-        std::size_t index=0;
-        Json entry;
-        if (!physis_authoring::findField(config,id,collection,index,&entry) ||
-            !entry["center"].isArray() || entry["center"].size()!=3) {
-            state.dragOriginal.clear();
-            state.error="PHYSIS group contains missing field";
-            return true;
-        }
-        const auto& p=entry["center"];
-        state.dragOriginal.push_back({id,p[0].toDouble(),
-                                        p[1].toDouble(),p[2].toDouble()});
-    }
+    if (!physisCaptureGroupOrigins(ed)) return true;
+    state.dragAxis=-1;
     state.dragAnchorX=chosen.x;
     state.dragAnchorY=chosen.y;
     state.dragAnchorZ=chosen.z;
@@ -588,6 +702,7 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
     ImGui::Checkbox("Редактировать маркеры мышью", &state.editMode);
     if (state.editMode) {
         ImGui::Checkbox("Выделение рамкой##physis", &state.boxSelectEnabled);
+        ImGui::Checkbox("Оси X/Y/Z##physis", &state.show3DAxes);
         ImGui::TextDisabled("Рамка с пустого места; Shift/Ctrl добавляет.");
         ImGui::Combo("Gizmo##physis", &state.gizmoMode,
                      "Перемещение\0Радиус\0");
