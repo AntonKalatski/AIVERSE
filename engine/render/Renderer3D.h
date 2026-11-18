@@ -106,7 +106,7 @@ struct NodePose;
 class BakedLighting;   // baked lightmaps + light probes of a map (BakedLighting.h, agent-lightbake)
 enum class BakedQuality { Off, Low, High };
 
-// Post-processing hook (engine/render/PostFx.h implements it). With an active hook, render() draws
+// Post-processing hook (engine/render/Prisma.h; PostFx.h is legacy-compatible). With an active hook, render() draws
 // the scene into the hook's offscreen target instead of `screenPass`; resolvePostFx() then runs the
 // effect chain into `screenPass` and leaves that pass open (UI and overlays drawn after it are not
 // post-processed). Without a hook, or with no active effect, nothing changes and it costs nothing.
