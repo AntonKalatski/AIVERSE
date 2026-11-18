@@ -236,5 +236,45 @@ int main() {
     advanced.setControl({Device::Keyboard,64},1);
     CHECK(has(advanced.update(0.01f),"Guard",Phase::Triggered));
 
+    // A chord may only be satisfied by an actually reachable Action. An
+    // input consumed by a higher-priority UI context cannot serve as Aim.
+    InputSystem layered;
+    CHECK(layered.defineAction({"Aim",ValueType::Boolean}));
+    CHECK(layered.defineAction({"AltFire",ValueType::Boolean}));
+    CHECK(layered.defineAction({"MenuAccept",ValueType::Boolean}));
+    MappingContext lower{"LowerGame"},higher{"HigherMenu"};
+    lower.bind("Aim",{Device::Keyboard,83});
+    lower.bind("AltFire",{Device::Keyboard,84},{},
+               {Trigger::pressed(),Trigger::chord("Aim")});
+    higher.bind("MenuAccept",{Device::Keyboard,83});
+    CHECK(layered.registerContext(lower));
+    CHECK(layered.registerContext(higher));
+    CHECK(layered.activateContext("LowerGame",0));
+    CHECK(layered.activateContext("HigherMenu",100));
+    layered.setControl({Device::Keyboard,83},1);
+    layered.setControl({Device::Keyboard,84},1);
+    CHECK(!has(layered.update(0.016f),"AltFire",Phase::Triggered));
+    CHECK(!layered.state("Aim")->active);
+
+    // Chord providers also respect modifiers applied to the final Action.
+    InputSystem gated;
+    CHECK(gated.defineAction({"Aim",ValueType::Axis1D,
+                              {Modifier::deadZone(0.5f)}}));
+    CHECK(gated.defineAction({"AltFire",ValueType::Boolean}));
+    MappingContext gates{"Gates"};
+    gates.bind("Aim",{Device::GamepadAxis,0});
+    gates.bind("AltFire",{Device::Keyboard,84},{},
+               {Trigger::pressed(),Trigger::chord("Aim")});
+    CHECK(gated.registerContext(gates));
+    CHECK(gated.activateContext("Gates"));
+    gated.setControl({Device::GamepadAxis,0},0.2f);
+    gated.setControl({Device::Keyboard,84},1);
+    CHECK(!has(gated.update(0.016f),"AltFire",Phase::Triggered));
+    gated.setControl({Device::Keyboard,84},0);
+    gated.update(0.016f);
+    gated.setControl({Device::GamepadAxis,0},0.8f);
+    gated.setControl({Device::Keyboard,84},1);
+    CHECK(has(gated.update(0.016f),"AltFire",Phase::Triggered));
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }

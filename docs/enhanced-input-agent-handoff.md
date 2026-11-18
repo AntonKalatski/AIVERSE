@@ -531,3 +531,17 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Known risks:** composite trigger edge cases and time advancement still warrant deeper audit. A separate thread is pushing commits to `feature/universal-entity-inspector-fps`; compare and merge upstream before final PR review.
 
 **Next agent task:** inspect `EnhancedInput.h::update/evaluateTriggers` for trigger lifetime correctness, especially same-frame press/release, DoubleTap and gated chords. Update regression cases, then append Stage 42 before advancing. Do not claim compilation success or merge PR #20 yet.
+
+## Stage 42 — context-priority and modifier-aware chord preview (2026-11-18)
+
+**Goal/status:** IMPLEMENTED source correction. Build/tests deliberately **NOT RUN** (user asked to finish implementation before testing).
+
+**Defect:** `InputSystem::update` previously built same-frame `rawLevels` for Chord/NotChord from *all* physically actuated controls without checking active-context consumption, action-level modifiers or ValueType constraints. This could incorrectly fire `AltFire` on a gameplay Aim button already consumed by a higher-priority Menu context, or on Aim suppressed by an Action DeadZone.
+
+**Change / API:** `libraries/include/aiverselib/gameplay/EnhancedInput.h` now previews candidate action values in normal priority/name/registration order, honors consuming mappings, applies mapping and action modifiers and the target ValueType, and only then produces the chord-presence map. The preview is a read-only level calculation: it does not touch runtime timers/phases or emit actions. Public API and stored JSON schema are unchanged.
+
+**Tests authored, not executed:** `tests/libraries/enhanced_input_tests.cpp` now asserts that a Menu context consuming Aim prevents a same-frame gameplay chord, and that Aim below an Action-level DeadZone threshold doesn't activate AltFire while Aim above the threshold does. Run `library_enhanced_input` during the later validation pass.
+
+**Known limitation:** the preview establishes *physical/action-value presence*, not a full recursively evaluated trigger dependency graph. Chained Chord/NotChord gates and cycles still require an explicit resolution policy; do not describe this as recursive Unreal dependency parity.
+
+**Next agent task:** inspect `EnhancedInput.h::chordSatisfied/evaluateTriggers`, `EnhancedInputConfig.h::checkChords`, and `tests/libraries/enhanced_input_tests.cpp`. Define deterministic handling of cyclic and chained chord dependencies without evaluation-order ambiguity, update API/config/editor docs and tests, and write Stage 43 before proceeding. Keep legacy `Input.h` and simulation Commands unchanged.

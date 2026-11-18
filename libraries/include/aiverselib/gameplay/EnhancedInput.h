@@ -314,16 +314,29 @@ public:
             return a.first < b.first;
         });
 
-        // Pass 1: raw action levels allow same-frame simultaneous chords (no one-frame lag).
-        std::map<std::string,bool> rawLevels;
+        // Pass 1: chord levels are sampled in context dispatch order.
+        // A consuming high-priority mapping must prevent a lower context from
+        // satisfying a chord. Compare the final action-modified value, not the
+        // raw physical control (e.g. an action-level DeadZone may remove it).
+        // This preview intentionally doesn't advance trigger timers or phases.
+        std::map<std::string,Value> previewValues;
+        std::set<Control> previewConsumed;
         for (const auto& [name,priority] : ordered) {
             (void)priority;
             for (const auto& mapping : contexts_.at(name).mappings) {
-                if (!actions_.contains(mapping.action)) continue;
+                if (!actions_.contains(mapping.action) ||
+                    previewConsumed.contains(mapping.control)) continue;
                 const float raw = sample(mapping.control).value;
-                const Value v = applyModifiers({raw,0,0}, mapping.modifiers);
-                if (v.actuated()) rawLevels[mapping.action] = true;
+                const Value v = applyModifiers({raw,0,0},mapping.modifiers);
+                if (!v.actuated()) continue;
+                previewValues[mapping.action] += v;
+                if (mapping.consume) previewConsumed.insert(mapping.control);
             }
+        }
+        std::map<std::string,bool> rawLevels;
+        for (const auto& [name, action] : actions_) {
+            const Value value = constrain(applyModifiers(previewValues[name],action.modifiers),action.type);
+            if (value.actuated()) rawLevels[name] = true;
         }
 
         std::map<Control,bool> consumed;

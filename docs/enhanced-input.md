@@ -250,3 +250,7 @@ The default RTS preset now includes two additional optional contexts: `RTS.Plane
 ### Chord condition evaluation
 
 `Chord` and `NotChord` constraints are evaluated inside the same iteration over the mapping's trigger list. This preserves combined positive/inverted chord semantics and fixes a C++ variable-scope error found during the implementation audit. Automated compilation has not yet been run.
+
+### Chord priority and deadzones
+
+Chord/NotChord presence checks use a preview of active mapping values in normal context-priority order. A control consumed by an earlier active context cannot also act as a lower-priority chord modifier; mapping/Action modifiers and typed dimensions are applied before determining whether the referenced Action is actuated. This preview does not independently evaluate recursive chained trigger dependencies.
