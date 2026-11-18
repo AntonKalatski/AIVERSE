@@ -27,10 +27,10 @@ enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kT
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -277,7 +277,7 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
             body.replace(body.find(marker),marker.size(),macros+"vec2 sg_uv=s,sg_screen=s;vec4 sg_input=vec4(col,1.0);float sg_time=graphFrame.x;\n// SG_CODE\nRETURN("+graphProgram.outputs.at("color")+");\n");
         }catch(const std::exception& ex){error_=ex.what();compositeFailed_[key]=true;return {};}
     }
-    Built b=buildProgram(kCompositeFields,17,tex,defines,postfx::kCompositeHelpers,body.c_str());
+    Built b=buildProgram(kCompositeFields,18,tex,defines,postfx::kCompositeHelpers,body.c_str());
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
         at=b.msl.find("// SG_CODE");b.msl.replace(at,10,graphProgram.msl);
@@ -587,11 +587,14 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         mask|=kPfUnderwater;
         put(u.underwater0,underwater_.tintR,underwater_.tintG,
             underwater_.tintB,underwater_.blend);
+        const auto budget=postFxUnderwaterBudget(quality_);
         put(u.underwater1,underwater_.absorption,
-            underwater_.depthMetres,underwater_.distortion,
-            underwater_.scattering);
-        u.underwater0[3]=underwater_.blend;
-        u.graphFrame[1]=underwater_.crossing;
+            underwater_.depthMetres,
+            underwater_.distortion*budget.distortion,
+            underwater_.scattering*budget.scattering);
+        put(u.underwater2,budget.crossing,budget.scattering,
+            float(budget.samples),0.f);
+        u.graphFrame[1]=underwater_.crossing*budget.crossing;
         ++stats_.effects;
     }
     const auto* graphEffect = find(PostFxType::ShaderGraph);
