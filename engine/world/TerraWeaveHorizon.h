@@ -249,15 +249,22 @@ struct HorizonTerrainLattice {
     int64_t sideCm=0;
     int64_t startIndexX=0, startIndexZ=0;
     uint32_t resolution=0;
+    void validate() const {
+        if(sideCm<=0 || resolution==0 || resolution>96)
+            throw std::invalid_argument("TerraWeave Horizon terrain lattice");
+    }
     int64_t worldX(int64_t vertexIndex) const {
+        validate();
         return detail::floorDiv(
             (startIndexX+vertexIndex)*sideCm,int64_t(resolution));
     }
     int64_t worldZ(int64_t vertexIndex) const {
+        validate();
         return detail::floorDiv(
             (startIndexZ+vertexIndex)*sideCm,int64_t(resolution));
     }
     int64_t nominalStepCm() const {
+        validate();
         return detail::floorDiv(sideCm,int64_t(resolution));
     }
 };
