@@ -703,14 +703,81 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const Target a = target(set, kTilt0, w / plan.div, h / plan.div), b = target(set, kTilt1, w / plan.div, h / plan.div);
         SimpleU u{};
         put(u.px, float(plan.div) * 0.5f / float(w), float(plan.div) * 0.5f / float(h), flip, 0);
-        draw(set, a, pipes_[kDown], &u, sizeof u, {{0, src.tex}});
+        const SimpleU downU = u;
         const float spread = (0.5f + 2.0f * tilt->get("blur")) * (plan.div == 2 ? 2.0f : 1.0f);   // same radius on screen
         put(u.px, 1.0f / float(a.w), 1.0f / float(a.h), flip, 0);
         put(u.p0, spread, 0, 0, 0);
-        draw(set, b, pipes_[kBlur], &u, sizeof u, {{0, a.tex}});
+        const SimpleU horizontalU = u;
         put(u.p0, 0, spread, 0, 0);
-        draw(set, a, pipes_[kBlur], &u, sizeof u, {{0, b.tex}});
-        tiltTex = a.tex;
+        const SimpleU verticalU = u;
+
+        bool graphHandled = false;
+        const char* graphFlag = std::getenv("AIVERSE_PRISMA_GRAPH_TILT_SHIFT");
+        if (graphFlag && std::strcmp(graphFlag, "1") == 0 &&
+            src.tex.valid() && a.tex.valid() && b.tex.valid()) {
+            const auto depth = depthFor(set, a.w, a.h);
+            if (depth.valid()) {
+                const auto format = hdrFrame_ ? PrismaGraphFormat::RGBA16F :
+                                                PrismaGraphFormat::RGBA8;
+                PrismaRenderGraph graph;
+                const auto source = graph.addResource({
+                    "tilt-source", format, static_cast<uint32_t>(src.w),
+                    static_cast<uint32_t>(src.h), true});
+                const auto down = graph.addResource({
+                    "tilt-down", format, static_cast<uint32_t>(a.w),
+                    static_cast<uint32_t>(a.h), true});
+                const auto horizontal = graph.addResource({
+                    "tilt-horizontal", format, static_cast<uint32_t>(b.w),
+                    static_cast<uint32_t>(b.h), true});
+                const auto output = graph.addResource({
+                    "tilt-output", format, static_cast<uint32_t>(a.w),
+                    static_cast<uint32_t>(a.h), true});
+                auto pass = [&](const char* name, PrismaGraphId input,
+                                PrismaGraphId dest) {
+                    PrismaGraphPass p; p.name = name;
+                    p.reads = {input}; p.writes = {dest};
+                    graph.addPass(std::move(p));
+                };
+                pass("tilt-downsample", source, down);
+                pass("tilt-blur-horizontal", down, horizontal);
+                pass("tilt-blur-vertical", horizontal, output);
+                // The two logical versions of A alias the same existing
+                // physical target, but their lifetimes never overlap.
+                const std::vector<gfx::TextureHandle> handles{
+                    src.tex, a.tex, b.tex, a.tex};
+                if (!set.graphExecutor)
+                    set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
+                const auto result = set.graphExecutor->execute(
+                    graph, graph.compile(), handles,
+                    [&](gfx::Device& gpu, PrismaGraphId id,
+                        const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
+                        const SimpleU& params = id == 0 ? downU :
+                            (id == 1 ? horizontalU : verticalU);
+                        gpu.setViewport({0, 0, a.w, a.h});
+                        gpu.setPipeline(id == 0 ? pipes_[kDown] : pipes_[kBlur]);
+                        gpu.setVertexBuffer(triangle_);
+                        gpu.setUniforms(0, &params, sizeof params);
+                        gpu.setTexture(0, view.resource(id == 0 ? source :
+                            (id == 1 ? down : horizontal)));
+                        gpu.draw(3);
+                        return true;
+                    },
+                    [](gfx::Device&, PrismaGraphId,
+                       const PrismaGraphDispatchView<gfx::TextureHandle>&) {
+                        return false;
+                    }, depth);
+                graphHandled = result.success || result.passes > 0;
+                stats_.passes += static_cast<int>(result.passes);
+                if (!result.success && error_.empty()) error_ = result.error;
+                if (result.success) tiltTex = a.tex;
+            }
+        }
+        if (!graphHandled) {
+            draw(set, a, pipes_[kDown], &downU, sizeof downU, {{0, src.tex}});
+            draw(set, b, pipes_[kBlur], &horizontalU, sizeof horizontalU, {{0, a.tex}});
+            draw(set, a, pipes_[kBlur], &verticalU, sizeof verticalU, {{0, b.tex}});
+            tiltTex = a.tex;
+        }
     }
 
     // ---- sun shafts: from the sun on screen, or (top-down RTS cameras rarely see the sun) from a point
