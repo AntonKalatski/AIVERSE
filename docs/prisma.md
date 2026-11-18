@@ -83,6 +83,34 @@ SpectraFX владеет **мировыми визуальными эффект�
 
 **Ограничения:** нет gizmo-контуров объёма в viewport и нет редактора Shader Graph payload внутри volume — для него остаётся отдельный Shader Graph Editor. UI использует существующий ImGui и editor layout. Ни компиляция, ни GUI smoke/undo parity, ни GPU screenshots на этом этапе не проверены; агент должен подтвердить их нативно перед объединением. Старое ID панели `postfx` и MCP-команды `postfx_*` сохранены.
 
+
+## Stage 11 — GPU-free typed RenderGraph dispatch
+
+`engine/render/PrismaGraphDispatch.h` adds a header-only, genre-independent
+`dispatchPrismaGraph<Handle>(graph, plan, bindings, callback)` contract.
+`PrismaGraphBindings<Handle>` contains one entry per graph resource for
+external handles and one entry per compiled transient slot for physical
+allocations. `PrismaGraphDispatchView::resource(id)` resolves a logical
+resource through the compiled aliasing plan; the host supplies the typed
+RHI handles, command encoders and texture transitions.
+
+Validation completes **before any callback**: invalid plans, mismatched
+binding counts, unbound handles, duplicate pass IDs and invalid resource
+references are rejected without partially drawing a frame. The callback
+runs in deterministic topological order, and returning false aborts subsequent
+passes with an error and exact number of completed passes.
+
+This is **not an RHI executor** and does not allocate GPU textures, create
+encoder barriers, perform render passes or bind PRISMA's current fixed chain.
+An external integration must first create and retain physical slots, manage
+external/history resource lifetimes, provide synchronization and connect the
+existing `Prisma::resolve` calls. Keep the legacy renderer enabled by default
+until native Metal/GL validation and image parity tests pass.
+
+Tests are appended to `tests/render/prisma_graph.cpp` / CTest `prisma_graph`.
+Native build, CTest and GPU tests have **NOT RUN** in the GitHub-only agent
+environment; see `docs/handoffs/prisma-stage-11.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
