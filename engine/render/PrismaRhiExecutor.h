@@ -3,6 +3,7 @@
 // This is NOT a replacement for Prisma::resolve() and never runs implicitly.
 // Device APIs are called on the owning graphics thread only.
 #include "PrismaGraphResourcePool.h"
+#include "PrismaGpuRetirement.h"
 #include "../gfx/Gfx.h"
 #include <cstdint>
 #include <functional>
@@ -39,7 +40,31 @@ public:
     // Host must call reset() after the GPU has finished referencing pooled targets.
     // For a camera cut, call invalidateHistory() before the next frame instead.
     void invalidateHistory() { pool_.invalidateHistory(); }
-    void reset() { pool_.clear([this](gfx::TextureHandle h) { device_.destroyTexture(h); }); }
+    // Legacy immediate release: only at a confirmed GPU-idle safe point.
+    void reset() { resetAfterGpuIdle(); }
+    void resetAfterGpuIdle() {
+        pool_.clear([this](gfx::TextureHandle h) { device_.destroyTexture(h); });
+        retired_.drainAfterGpuIdle(
+            [this](gfx::TextureHandle h) { device_.destroyTexture(h); });
+    }
+    // Transfer unused targets to deferred retirement. submittedFence must
+    // reference the last GPU submission that may use these targets.
+    void retireUnused(uint64_t submittedFence) {
+        pool_.retireUnused([this, submittedFence](gfx::TextureHandle h) {
+            retired_.retire(h, submittedFence);
+        });
+    }
+    void retireAll(uint64_t submittedFence) {
+        pool_.retireAll([this, submittedFence](gfx::TextureHandle h) {
+            retired_.retire(h, submittedFence);
+        });
+    }
+    // Must be a genuinely GPU-completed fence token, NOT frameSerial().
+    size_t collectCompleted(uint64_t completedFence) {
+        return retired_.collect(completedFence,
+            [this](gfx::TextureHandle h) { device_.destroyTexture(h); });
+    }
+    size_t retiredCount() const { return retired_.pendingCount(); }
     const PrismaGraphResourcePool<gfx::TextureHandle>& pool() const { return pool_; }
 
     // External resource handles must be indexed by graph resource ID.
@@ -179,6 +204,7 @@ public:
 private:
     gfx::Device& device_;
     PrismaGraphResourcePool<gfx::TextureHandle> pool_;
+    PrismaGpuRetirementQueue<gfx::TextureHandle> retired_;
 };
 
 } // namespace aiverse::render
