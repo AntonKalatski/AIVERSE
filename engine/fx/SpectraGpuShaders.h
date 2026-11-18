@@ -23,8 +23,8 @@ struct Uniforms {
     float4 gravityDt;       // x gravity Y; y dt; z drag
     float4 rightSize;       // xyz camera right
     float4 up;
-    uint4 meta;             // x mode: 0 spawn, 1 advance, 2 expand
-                            // y live capacity, z new spawn count
+    uint4 meta;             // x mode: 0 spawn, 1 advance, 2 dense expand
+                            // y pool capacity, z spawn count, w alive count
 };
 uint packColor(float4 c) {
     uint4 bytes=uint4(clamp(c,0.0f,1.0f)*255.0f+0.5f);
@@ -35,6 +35,7 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      device const Particle* spawns [[buffer(1)]],
                      device const uint* slots [[buffer(2)]],
                      device Vertex* vertices [[buffer(3)]],
+                     device const uint* liveSlots [[buffer(4)]],
                      constant Uniforms& u [[buffer(8)]]) {
     uint id=gid.x;
     if(u.meta.x==0u) {
@@ -43,9 +44,9 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         if(slot<u.meta.y) particles[slot]=spawns[id];
         return;
     }
-    if(id>=u.meta.y)return;
-    Particle p=particles[id];
     if(u.meta.x==1u) {
+        if(id>=u.meta.y)return;
+        Particle p=particles[id];
         if(p.positionAge.w<0.0f)return;
         float dt=u.gravityDt.y;
         p.velocityLife.y+=u.gravityDt.x*dt;
@@ -56,8 +57,12 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         particles[id]=p;
         return;
     }
-    if(u.meta.x!=2u)return;
-
+    if(u.meta.x!=2u||id>=u.meta.w)return;
+    // CPU publishes only the live slot IDs. GPU gathers arbitrary physical
+    // particle slots into dense vertex quads, without GPU->CPU readback.
+    uint slot=liveSlots[id];
+    if(slot>=u.meta.y)return;
+    Particle p=particles[slot];
     uint base=id*4u;
     float3 centre=p.positionAge.xyz;
     bool active=p.positionAge.w>=0.0f && p.velocityLife.w>0.0f;
@@ -96,6 +101,7 @@ layout(std430,binding=0) buffer States { Particle particles[]; };
 layout(std430,binding=1) readonly buffer Seeds { Particle spawns[]; };
 layout(std430,binding=2) readonly buffer Slots { uint slots[]; };
 layout(std430,binding=3) buffer Vertices { Vertex vertices[]; };
+layout(std430,binding=4) readonly buffer LiveSlots { uint liveSlots[]; };
 layout(std140,binding=8) uniform Inputs {
     vec4 gravityDt,rightSize,up;
     uvec4 meta;
@@ -110,9 +116,9 @@ void main() {
         if(id<u.meta.z && slots[id]<u.meta.y) particles[slots[id]]=spawns[id];
         return;
     }
-    if(id>=u.meta.y)return;
-    Particle p=particles[id];
     if(u.meta.x==1u) {
+        if(id>=u.meta.y)return;
+        Particle p=particles[id];
         if(p.positionAge.w<0.0)return;
         float dt=u.gravityDt.y;
         p.velocityLife.y+=u.gravityDt.x*dt;
@@ -123,7 +129,10 @@ void main() {
         particles[id]=p;
         return;
     }
-    if(u.meta.x!=2u)return;
+    if(u.meta.x!=2u||id>=u.meta.w)return;
+    uint slot=liveSlots[id];
+    if(slot>=u.meta.y)return;
+    Particle p=particles[slot];
     uint base=id*4u;
     bool active=p.positionAge.w>=0.0 && p.velocityLife.w>0.0;
     vec3 centre=p.positionAge.xyz;
