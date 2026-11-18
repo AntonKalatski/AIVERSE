@@ -681,3 +681,31 @@ and client/editor/portrait call sites are not yet retired.
 
 **NOT RUN**: native compiler, CMake/CTest, CI, graphics parity and
 sanitizer checks remain deferred.
+
+## External preview model-resource ownership (Stage 89)
+
+`modules/rts/view/RtsModelResourceProvider.h` introduces a host-facing
+`view_adapter::ModelResourceProvider` contract and the
+`submitResolvedPreview(resources,renderer,type,owner,yaw)` helper.
+The provider resolves model residency and appearance into the existing
+borrowed `StaticPreviewModel`; the helper produces one generic
+`view::Object` and submits it through `aiverse::View` without an
+animation update. It returns false for unsupported assets, allowing
+the consumer to invoke its existing animated/complex fallback.
+
+The legacy `RtsView` implements this resource contract temporarily.
+It still owns models, GPU resources and per-type appearance data, but
+`Portrait::render` now consumes the contract directly and submits
+eligible static models using its own View-backed renderer instead of
+calling `RtsView::drawPreview`. Animated portraits, LOD, contact IK,
+attachments and specialized effects still call the old method.
+`RtsView::drawPreview` uses the same resolver to avoid duplication.
+
+This is **resource access separation**, not independent upload/cache
+ownership and not the deletion of `RtsView`. Model and material
+pointers are borrowed only until synchronous submission ends.
+Any future independent editor or project model provider can implement
+this interface without inheriting from `RtsView`.
+
+**NOT RUN**: user deferred native compilation, CTest, rendering
+parity and CI until feature work is complete.
