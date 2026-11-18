@@ -53,6 +53,15 @@ int main() {
     p::Event click;click.type=p::EventType::MouseDown;click.button=0;
     CHECK(contains(route.onEvent(click,true),"Select"));
     click.type=p::EventType::MouseUp;route.onEvent(click,true);
+    // World pointer gestures remain generic, but their initiating buttons
+    // respect authored Input Actions instead of the hardcoded LMB/RMB roles.
+    CHECK(route.logicalMouseButton(0)==0);
+    CHECK(route.logicalMouseButton(1)==1);
+    CHECK(route.logicalMouseButton(2)==2);
+    CHECK(route.system().rebind("RTS.Pointer",1,{in::Device::MouseButton,3}));
+    CHECK(route.logicalMouseButton(0)==-1);
+    CHECK(route.logicalMouseButton(3)==0);
+    CHECK(route.system().rebind("RTS.Pointer",1,{in::Device::MouseButton,0}));
     // Default top-down/gesture contexts are genre-neutral and do not
     // accidentally enable hero combat while playing ordinary RTS.
     CHECK(!route.system().isContextActive("RTS.TopDown"));
