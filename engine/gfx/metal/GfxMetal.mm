@@ -335,6 +335,92 @@ public:
     }
     struct BufferRead {std::vector<uint8_t> bytes;BufferReadFn callback;std::atomic<bool> ready{false};};
     std::vector<std::shared_ptr<BufferRead>> bufferReads_;
+    struct TextureRead {
+        TextureReadbackResult result;
+        TextureReadFn callback;
+        std::atomic<bool> ready{false};
+    };
+    std::vector<std::shared_ptr<TextureRead>> textureReads_;
+    bool readTextureAsync(TextureHandle h, TextureReadbackDesc request,
+                          TextureReadFn callback) override {
+        MTTexture* t = textures_.get(h.id);
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !callback ||
+            !t || !t->tex || t->tex.sampleCount != 1 ||
+            request.mipLevel < 0 ||
+            request.mipLevel >= int(t->tex.mipmapLevelCount) ||
+            request.arrayLayer < 0 || textureReads_.size() >= 32)
+            return false;
+        const bool cube = t->dimension == TextureDimension::Cube ||
+                          t->dimension == TextureDimension::CubeArray;
+        const int layers = cube ? int(t->tex.arrayLength)*6 :
+                           t->dimension == TextureDimension::Texture2DArray ?
+                           int(t->tex.arrayLength) : 1;
+        if ((t->dimension != TextureDimension::Texture2D &&
+             t->dimension != TextureDimension::Texture2DArray && !cube) ||
+            request.arrayLayer >= layers) return false;
+        const MTLPixelFormat pixelFormat = t->tex.pixelFormat;
+        const bool isBGRA = pixelFormat == MTLPixelFormatBGRA8Unorm ||
+                            pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
+        const bool isRGBA = pixelFormat == MTLPixelFormatRGBA8Unorm ||
+                            pixelFormat == MTLPixelFormatRGBA8Unorm_sRGB;
+        const bool isHalf = pixelFormat == MTLPixelFormatRGBA16Float;
+        if ((!isBGRA && !isRGBA && !isHalf) ||
+            (isHalf ? t->fmt != PixelFormat::RGBA16F :
+             t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB))
+            return false;
+        const size_t width = size_t(std::max<NSUInteger>(1,
+                              t->tex.width >> request.mipLevel));
+        const size_t height = size_t(std::max<NSUInteger>(1,
+                               t->tex.height >> request.mipLevel));
+        const size_t bpp = isHalf ? 8u : 4u;
+        // Align bytesPerRow for the Metal texture-to-buffer blit.
+        if (width > SIZE_MAX / bpp) return false;
+        const size_t packedRow = width*bpp;
+        if (packedRow > SIZE_MAX-255u) return false;
+        const size_t gpuRow = ((packedRow+255u)/256u)*256u;
+        if (height == 0 || gpuRow > (size_t(256)<<20)/height)
+            return false;
+        const size_t gpuBytes = gpuRow*height;
+        id<MTLBuffer> target = [device_ newBufferWithLength:gpuBytes
+                                                options:MTLResourceStorageModeShared];
+        if (!target) { error_ = "Metal: texture readback staging buffer allocation failed"; return false; }
+        id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
+        if (!blit) { error_ = "Metal: cannot begin texture readback blit"; return false; }
+        [blit copyFromTexture:t->tex sourceSlice:NSUInteger(request.arrayLayer)
+                    sourceLevel:NSUInteger(request.mipLevel)
+                   sourceOrigin:MTLOriginMake(0,0,0)
+                     sourceSize:MTLSizeMake(width,height,1)
+                       toBuffer:target destinationOffset:0
+         destinationBytesPerRow:gpuRow destinationBytesPerImage:gpuBytes];
+        [blit endEncoding];
+        auto read = std::make_shared<TextureRead>();
+        read->callback = std::move(callback);
+        read->result.format = t->fmt;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status == MTLCommandBufferStatusCompleted) {
+                read->result.width = int(width);
+                read->result.height = int(height);
+                read->result.pixels.resize(packedRow*height);
+                const uint8_t* src = static_cast<const uint8_t*>(target.contents);
+                uint8_t* dst = read->result.pixels.data();
+                for (size_t y=0;y<height;++y) {
+                    const uint8_t* input = src + y*gpuRow;
+                    uint8_t* output = dst + y*packedRow;
+                    if (isBGRA) {
+                        for (size_t x=0;x<width;++x) {
+                            output[x*4+0]=input[x*4+2];
+                            output[x*4+1]=input[x*4+1];
+                            output[x*4+2]=input[x*4+0];
+                            output[x*4+3]=input[x*4+3];
+                        }
+                    } else std::memcpy(output,input,packedRow);
+                }
+            }
+            read->ready.store(true,std::memory_order_release);
+        }];
+        textureReads_.push_back(std::move(read));
+        return true;
+    }
     bool readBufferAsync(BufferHandle h,size_t size,BufferReadFn callback) override {
         auto* b=buffers_.get(h.id);
         if(!cmd_||enc_||compute_||!b||!size||size>b->size||size>65536||!callback||bufferReads_.size()>=32)return false;
@@ -355,6 +441,17 @@ public:
             if((*it)->ready.load(std::memory_order_acquire)){ready.push_back(*it);it=bufferReads_.erase(it);}else ++it;
         }
         for(auto& read:ready)read->callback(std::move(read->bytes));
+    }
+    void deliverTextureReads() {
+        // Never invoke app callbacks on the asynchronous Metal driver thread.
+        std::vector<std::shared_ptr<TextureRead>> ready;
+        for (auto it=textureReads_.begin();it!=textureReads_.end();) {
+            if ((*it)->ready.load(std::memory_order_acquire)) {
+                ready.push_back(*it);
+                it=textureReads_.erase(it);
+            } else ++it;
+        }
+        for (auto& read:ready) read->callback(std::move(read->result));
     }
     bool gpuHealthy() const override { return gpuHealthy_->load(); }
     double gpuFrameMs() const override { return gpuMs_->load(); }
@@ -1025,6 +1122,7 @@ public:
         fbW_ = w; fbH_ = h;
         dispatch_semaphore_wait(frameSemaphore_, DISPATCH_TIME_FOREVER);
         deliverBufferReads();
+        deliverTextureReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
         // The semaphore guarantees this slot is no longer in flight.
