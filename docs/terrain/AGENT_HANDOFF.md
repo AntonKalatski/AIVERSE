@@ -2446,3 +2446,91 @@ rather than silently presenting the geometry as exact.
 **Architecture:** clipping, slope checks and normal adjustment are performed during the existing CPU model build; render backend, ECS authority, collision height and near-ground renderer are not touched. No additional mesh topology, material or atlas is introduced. The source archive/settings/manifest/runtime stats still need the Stage 20b wiring before this feature is fully configured in games.
 
 **Actually tested:** GitHub source reads + successful file commits only. **NOT RUN**: CMake, CTest, geometry fixtures, Clang/MSVC, Metal/Vulkan/GL images, profile. Dedicated tester must explicitly check steep wedge policy, normal continuity, negative world coordinates, null near samples and triangulation degeneracy. Do not mark PR ready.
+
+## Stage 20b — TWH7 slope/normal configuration, runtime diagnostics (SOURCE COMMITTED, TESTS NOT RUN)
+
+**Continuation of Stage 20a, current branch** `feature/terraweave`, PR #24 Draft.
+The *separate* testing agent owns all Clang/GCC/MSVC builds, CTest,
+native editor/game execution, GPU screenshots and benchmarks.
+
+**Commits and files:**
+- `2e7983c4d0dac7aa456194c47674eec23b8adada`:
+  `engine/world/TerraWeaveHorizonArchive.h` upgrades to **TWH7**
+  (magic/version 7). Serializes bounded
+  `maxNearWeldSlopePermille` (0=guard off; <=8000),
+  `nearSeamNormalBlendPercent` (0..100), and the boolean
+  `nearWeldSlopeFallback` alongside the previous TWH6
+  near sample table. Fingerprint includes BOTH settings;
+  incompatible TWH1–TWH6 archives are rejected and must be
+  rebaked with the existing offline CLI or runtime fallback.
+  Archive validation explicitly forbids fallback=true with
+  a nonempty seam-height sample table.
+- `e21673073f330e7f0d1be67971b7a8e9e37273ad`:
+  `engine/world/TerraWeaveHorizonManifest.h` accepts optional
+  JSON settings `maxNearWeldSlopePermille=0..8000` (default 2500)
+  and `nearSeamNormalBlendPercent=0..100` (default 65).
+- `4dea9ff9e5b31d716f95e3bf537028a578f1bc4a`:
+  `engine/render/TerraWeaveHorizonGpuCache.h` keeps
+  `smoothedNearNormals` and `nearWeldSlopeFallback` per
+  GPU-resident region, so revisiting a region does not
+  misreport its presentation policy.
+- `d658d402e992a4cecc31ab3777feb6f5499acadd`:
+  `engine/render/TerraWeaveHorizonScene.h` publishes both
+  fields through `HorizonRuntimeStats` for CPU-worker
+  preparations, full GPU uploads, incremental patch
+  publications, empty-model handling and GPU cache restores.
+
+**Semantics:** The triangle geometry gradient preflight is
+all-or-none per Horizon region. The *chosen* slope threshold
+guards against **newly introduced** excessive face gradients
+caused by snapping near-edge Y while retaining unchanged
+far vertices. Preexisting naturally steep terrain is not
+flattened. If a Y weld would violate the limit, only the
+optional height-weld sample table is removed and
+`nearWeldSlopeFallback=true`; Stage 18's exact horizontal
+X/Z clipping remains. This may leave a visible vertical
+height difference; the model does **not** pretend it is
+simultaneously perfectly welded and strictly slope bounded.
+The normal pass uses area-weighted geometric face normals
+grouped by shared world XYZ and conservatively blends them
+into far-normal attributes, especially at near seam edges.
+Its output is vertex shading only; the near collision mesh
+is unchanged.
+
+**Important limitations:** A steep, natural near-terrain
+slope cannot be made flatter without adding horizontal
+transition distance or modifying the authoritative near
+heightfield, neither of which is part of this no-extra-GPU-
+geometry stage. The `2500` permille default is a safety
+threshold, not a guarantee that the entire world terrain
+has <=2500 permille grade. Conventional alpha canopy
+transition remains unchanged. Very small/fractional
+clipped polygons may trip the guard: test actual authored
+WorldScene tiles before deciding to adjust limits.
+
+**Verification actually performed:** GitHub source commits
+and static source review only. **NO build, CTest, GPU run,
+visual screenshot, benchmark, cross-compiler archive fixture
+or measured slope regression**. Keep PR Draft.
+
+**Tester acceptance:** synthesize large/small positive and
+negative terrain wedges; verify at least one unsafe weld
+sets fallback with empty near sample table and X/Z clip still
+active; source naturally steep terrain should not be
+flattened; compare shared near-seam normal values on
+adjacent clipped faces, negative world coordinates, degenerate
+clipped polygons and 0%/65%/100% normal blend; confirm
+zero added indices/tris/materials and correct RHI update
+fallback when normalized vertices differ; verify
+TWH7 serialize/deserialize policy and TWH6 rejection;
+observe cached GPU region stats, and inspect grazing-angle
+lighting/canyon screenshots on GL/Metal/Vulkan. Record
+ACTUAL test logs and details in this handoff.
+
+**Next implementation-only stage:** a constrained, optional
+multi-quad transition band may be considered if the testing
+agent finds visible gaps on slope-guard fallback. Such a
+mesh requires a genuinely wider near-to-far transition zone
+and explicit triangle-memory budgets. Do not fix a slope
+constraint by simply clamping the exact near-edge Y (which
+would silently reintroduce cracks).
