@@ -66,6 +66,16 @@ struct FieldEditSession {
     std::map<std::string, std::pair<physis::AuthoredFieldKind,std::string>> desired;
     std::string message;
 
+    bool matchesDesired(const physis::FieldRuntimeState& runtime) const {
+        if(runtime.byId.size()!=desired.size()) return false;
+        for(const auto& [id, planned]:desired) {
+            const auto it=runtime.byId.find(id);
+            if(it==runtime.byId.end() || it->second.kind!=planned.first ||
+               it->second.fingerprint!=planned.second) return false;
+        }
+        return true;
+    }
+
     void observe(const Simulation* sim) {
         if(!sim || (source && source!=sim)) {
             source=sim;
@@ -80,9 +90,10 @@ struct FieldEditSession {
         if(status==EditStatus::Applied) {
             const auto* runtime=sim->world().resourceConst<physis::FieldRuntimeState>();
             if(!runtime || sim->tick()<submittedTick ||
-               runtime->revision<=expectedRevision) {
+               runtime->revision<=expectedRevision ||
+               !matchesDesired(*runtime)) {
                 status=EditStatus::Conflict;
-                message="PHYSIS состояние откатилось после предыдущего применения.";
+                message="PHYSIS применённые поля изменились или были откатаны.";
                 return;
             }
         }
@@ -111,17 +122,8 @@ struct FieldEditSession {
         if(runtime->revision>expectedRevision) {
             // A monotonic revision by itself does NOT prove that OUR command
             // succeeded: another editor command may have won the same revision.
-            bool equal=runtime->revision==expectedRevision+1 &&
-                       runtime->byId.size()==desired.size();
-            if(equal) for(const auto& [id, planned]:desired) {
-                const auto it=runtime->byId.find(id);
-                if(it==runtime->byId.end() ||
-                   it->second.kind!=planned.first ||
-                   it->second.fingerprint!=planned.second) {
-                    equal=false;
-                    break;
-                }
-            }
+            const bool equal=runtime->revision==expectedRevision+1 &&
+                             matchesDesired(*runtime);
             status=equal?EditStatus::Applied:EditStatus::Conflict;
             message=equal ?
                 "Ревизия и содержимое полей совпали с отправленным запросом." :

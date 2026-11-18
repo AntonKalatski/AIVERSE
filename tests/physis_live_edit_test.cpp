@@ -86,6 +86,15 @@ void statusAndRollback() {
     CHECK(state.status==EditStatus::Applied);
     CHECK(sim->world().get<WindZone>(windEntity).velocity.x==Fixed::fromInt(22));
     CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);
+    // A subsequent trusted edit must not leave stale Applied status.
+    FieldEditBatch later{1,parseFieldAssets(mapWithWind(41)["physis"],
+        *optionsFromMap(initialMap()))};
+    Command overwritten;
+    CHECK(encodeFieldEditCommand(later,kEdit,overwritten));
+    overwritten.tick=sim->tick();
+    CHECK(applyFieldEditCommand(*sim,overwritten,kEdit));
+    state.observe(sim.get());
+    CHECK(state.status==EditStatus::Conflict);
     sim->loadState(original);
     state.observe(sim.get());
     CHECK(state.status==EditStatus::Conflict); // applied edit was rolled back
