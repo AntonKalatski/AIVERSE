@@ -343,3 +343,21 @@ algorithm only receives column/row counts and a vector of
 indices, with no game-map, physics, height or render rule.
 Deferred CTest: `view_grid_geometry` (**NOT RUN**).
 
+### Per-frame geometry visibility caching
+
+`SideFrustum::fromViewProjection` now caches all four
+plane-normal lengths at camera setup. Sphere culling
+uses those cached values instead of computing four
+square roots for **every** planet/body/chunk.
+`SphericalHorizon::fromLocalCamera(cameraLocal,occluderRadius)`
+similarly caches eye direction and horizon base angle
+**once per spherical body**; `hidden(capDir,cosCap,maxRadius)`
+tests many chunks with no redundant camera-length
+calculation. The original single-call horizon function
+remains as a compatibility helper.
+
+The quad-grid tessellator uses widened 64-bit intermediate
+index arithmetic for large yet valid 32-bit grids.
+These are static performance/correctness changes; all
+benchmarks, CTest and graphics validation remain **NOT RUN**.
+

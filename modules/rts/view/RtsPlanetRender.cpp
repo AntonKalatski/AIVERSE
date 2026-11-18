@@ -661,8 +661,9 @@ void PlanetRenderer::draw(Renderer3D& r, const PlanetViewFrame& fr, double secon
         bodyDraws->push_back({int(bi), C, pb.radius + pb.seaLevel, b.fog});
         // eye in body-local coordinates (rotation of the frame)
         const float3 eyeL = fr.dirToWorld(eye - C);
-        const float eyeR = length(eyeL);
         const float occR = pb.radius + std::min(b.surf->minHeight(), 0.0f) - 1.0f;
+        const auto horizon=::aiverse::view::SphericalHorizon::fromLocalCamera(
+            eyeL,occR);
         // CDLOD selection: leaf range lodRange, doubling per level
         std::vector<std::pair<int, int>> stack;   // chunk, parent-drawn flag
         for (int f = 0; f < 6; ++f) stack.push_back({f, 0});
@@ -672,8 +673,7 @@ void PlanetRenderer::draw(Renderer3D& r, const PlanetViewFrame& fr, double secon
             Chunk& c = b.chunks[size_t(ci)];
             // Generic View geometry bounds now own spherical horizon math;
             // the planet module still owns its own local frame and LOD tree.
-            if(::aiverse::view::sphericalCapHiddenByHorizon(
-                eyeL,occR,c.dir,c.cosAngle,c.maxR)) {
+            if(horizon.hidden(c.dir,c.cosAngle,c.maxR)) {
                 ++stats_.culledHorizon;continue;
             }
             const float3 cv = C + rot.transformDir(c.center);

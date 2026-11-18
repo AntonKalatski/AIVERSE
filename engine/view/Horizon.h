@@ -1,31 +1,46 @@
-// AIVERSE View: spherical horizon occlusion for any curved visual world.
-// The calling host owns its own geometry, camera transform and LOD policy.
-// Presentation-only: do not use in authoritative physics or hit testing.
+// Reusable curved-surface horizon occlusion in View presentation.
+// One immutable horizon plan per camera/body; many cheap chunk queries.
 #pragma once
 #include "engine/render/Math3D.h"
 #include <algorithm>
 #include <cmath>
-
 namespace aiverse::view {
-// Camera is in the spherical body's local frame; cap direction and cosine
-// bound the angular footprint of a surface chunk. maxSurfaceRadius bounds
-// the furthest surface point in the cap, not its rendered sprite radius.
-// Returns true only when the whole cap is below the occluder's horizon.
+struct SphericalHorizon {
+    render::float3 eyeDirection{};
+    float occluderRadius=0.f, baseAngle=0.f;
+    bool active=false;
+
+    static SphericalHorizon fromLocalCamera(render::float3 cameraLocal,
+                                            float radius) {
+        SphericalHorizon result;
+        const float eyeRadius=render::length(cameraLocal);
+        if(!(eyeRadius>radius) || !(radius>0.f))
+            return result; // camera inside the sphere: conservatively visible
+        result.eyeDirection=cameraLocal*(1.f/eyeRadius);
+        result.occluderRadius=radius;
+        result.baseAngle=std::acos(radius/eyeRadius);
+        result.active=true;
+        return result;
+    }
+    bool hidden(render::float3 capDirection,float cosCapHalfAngle,
+                float maxSurfaceRadius) const {
+        if(!active)return false;
+        const float eyeAngle=std::acos(std::clamp(
+            render::dot(eyeDirection,capDirection),-1.f,1.f));
+        const float capAngle=std::acos(
+            std::clamp(cosCapHalfAngle,-1.f,1.f));
+        const float horizonAngle=baseAngle+std::acos(
+            std::clamp(occluderRadius/
+                std::max(maxSurfaceRadius,occluderRadius),-1.f,1.f));
+        return eyeAngle-capAngle>horizonAngle;
+    }
+};
+// Convenience overload for one-off spherical caps.
 inline bool sphericalCapHiddenByHorizon(
         render::float3 cameraLocal,float occluderRadius,
         render::float3 capDirection,float cosCapHalfAngle,
         float maxSurfaceRadius) {
-    const float eyeRadius=render::length(cameraLocal);
-    if(!(eyeRadius>occluderRadius) || !(occluderRadius>0.f))
-        return false; // inside sphere (or invalid geometry): no false cull
-    const render::float3 eyeDir=cameraLocal*(1.f/eyeRadius);
-    const float eyeAngle=std::acos(std::clamp(
-        render::dot(eyeDir,capDirection),-1.f,1.f));
-    const float capAngle=std::acos(std::clamp(cosCapHalfAngle,-1.f,1.f));
-    const float horizonAngle=
-        std::acos(occluderRadius/eyeRadius)+
-        std::acos(std::clamp(occluderRadius/
-            std::max(maxSurfaceRadius,occluderRadius),-1.f,1.f));
-    return eyeAngle-capAngle>horizonAngle;
+    return SphericalHorizon::fromLocalCamera(cameraLocal,occluderRadius)
+        .hidden(capDirection,cosCapHalfAngle,maxSurfaceRadius);
 }
 } // namespace aiverse::view
