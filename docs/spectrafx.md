@@ -2,7 +2,7 @@
 
 **SpectraFX** is the official name of the universal, genre-independent visual-effects system in AIVERSE. Its design is inspired by the authoring and event-driven workflow of Unreal Niagara, but it is **not** a copy of Unreal code, asset formats, or editor. `aiverse::spectra` is the public C++ API namespace.
 
-> **Current scope (2026-11-18):** Graph v1 frontend, reusable CPU particle backend, graph-asset variants/hot reload and optional read-only ECS presentation adapter have been **committed**. A node-canvas editor, GPU particle simulation and automatic RTS/FPS production integration are **not finished**. Tests were added but have **not yet been run** in the authoring environment. Refer to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` for exact SHA and verification status.
+> **Current scope (2026-11-18):** Graph v1 frontend, reusable CPU particle backend, graph-asset variants/hot reload and optional read-only ECS presentation adapter have been **committed**. A basic graph-v1 node-canvas editor and in-memory CPU preview are **committed but unverified**; GPU particle simulation, full Niagara dataflow and automatic RTS/FPS production integration are **not finished**. Tests were added but have **not yet been run** in the authoring environment. Refer to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` for exact SHA and verification status.
 
 ## Architecture
 
@@ -26,7 +26,7 @@ Gameplay ECS (authoritative, deterministic)
                                        │
                          renderer + quality tiers
 
-Future opt-in path: GPU simulation/backend + visual node editor
+Future opt-in path: GPU simulation/backend + advanced Niagara dataflow nodes
 ```
 
 **No genre-dependent FX engines.** An RTS turret, FPS gun, spaceship engine or racing car all use the same source component and event presenter. The host game supplies only the pose resolver and maps its event IDs to effect assets. Graphics state and particle handles never enter deterministic gameplay state/checksums.
@@ -154,6 +154,44 @@ canvas in the editor; that is the next authoring stage. The old
 The new `vfx_graph_ops` test requires `aiverse_editor_core` to be built;
 the test is committed but was **NOT RUN** in the connector-only environment.
 
+## Visual SpectraFX graph editor (stage 8)
+
+The standard AIVERSE Editor has an optional **SpectraFX** window in the
+**Графика / Look** group, defined in
+`apps/editor/windows/SpectraGraphWindow.cpp`. Its source is automatically
+included by the editor's `apps/editor/windows/*.cpp` CMake GLOB.
+
+- Open/create `fx/graphs/<name>.vfx.json` directly from the project.
+- Add nodes of types `Spawn`, `Initialize`, `Update`,
+  `SpriteOutput`, `MeshOutput`, `RibbonOutput`; drag nodes and pan
+  the canvas with the middle mouse button.
+- Click the source node's output pin, then the target's input pin to link;
+  an input may have one incoming edge. Cycles and invalid endpoint types
+  are blocked; unfinished graphs show compiler errors until connected.
+- Select a node to edit its `properties` JSON. Edit exposed
+  `parameters` as a JSON object; undo and redo graph edits.
+- Save through `fx_graph_set`; compile diagnostics come from the exact
+  `spectra::compileGraph` implementation used at runtime.
+- **Предпросмотр** calls the new GUI-only `fx_graph_preview` command,
+  which compiles `graph` in memory, defines an ephemeral effect on
+  `Editor::gameFx_`, and plays it in Scene/Game. No temp FX files are written;
+  screenshots still work via `view_screenshot`.
+
+Graph nodes may optionally include authoring metadata
+`"position":[x,y]` (two finite bounded numeric coordinates), validated
+by the v1 compiler but ignored during CPU effect construction. Existing
+graph assets without coordinates remain valid; the editor places them in
+a default left-to-right layout. This metadata does not enter gameplay ECS
+state or shader runtime resources.
+
+This is **only a basic v1 editor**, not full Niagara parity: there is no
+arbitrary typed dataflow, function graph, GPU compute execution, depth
+collision, linked graph preview in shipped clients or complete UE-style
+module UI. Source-level smoke coverage was added to
+`tests/vfx_graph_compiler_test.cpp` for node layout metadata; GUI launch,
+drag/link interactions and GPU screenshots are **NOT RUN** in the
+connector-backed development environment. Manual QA is required.
+
 ## Validation checklist
 
 ```bash
@@ -167,7 +205,7 @@ The current tests focus on graph compilation, asset caching/validation and read-
 
 ## Planned work
 
-1. Graph asset CRUD via the existing editor/MCP workspace, graph preview, visual node canvas and exposed-parameter inspector.
+1. Validate current graph CRUD and basic visual node canvas, then add typed module inspector, scalable graph execution, richer dataflow and editor usability features.
 2. A GPU particle backend for supported RHI devices (compute, spawn/update/compact, culling, sorting, ribbons, material data), with an explicit CPU fallback for GLES3/mobile/WebGL.
 3. Rich graph dataflow, event handlers, function modules, simulation stages, user parameters, renderer plugins, soft particles, depth collisions, advanced quality/scalability.
 4. Migration of existing RTS/FPS presentation adapters into a single SpectraFX path, native project sample games, performance and platform QA.
