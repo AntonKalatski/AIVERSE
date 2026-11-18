@@ -332,6 +332,15 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
     }
 }
 
+bool RtsView::resolveStatic(uint16_t type,uint8_t owner,
+                            view_adapter::StaticPreviewModel& output) {
+    if(!rules_ || type>=looks_.size() || type>=rules_->types.size())
+        return false;
+    loadType(type);
+    return view_adapter::resolveStaticPreviewModel(
+        looks_[type],rules_->types[type],playerColor(owner),output);
+}
+
 void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const MapGrid& grid, double time) {
     // Flat-ground, rigid ghost with a single resolved model: the host
     // supplies model assets and placement height, while View owns model
@@ -388,19 +397,8 @@ void RtsView::drawPreview(Renderer3D& r, uint16_t type, uint8_t owner, double ti
     // Truly static single-variant previews can render through View without
     // allocating EntityAnim, a GraphInstance or advancing the old Animator.
     // All specialized resources and animations retain the legacy fallback.
-    if(type<looks_.size()) {
-        loadType(type);
-        const auto& look=looks_[type];
-        view_adapter::StaticPreviewModel spec;
-        if(view_adapter::resolveStaticPreviewModel(
-               look,rules_->types[type],playerColor(owner),spec)) {
-            ::aiverse::view::Object packet;
-            if(view_adapter::buildStaticPreviewPacket(spec,yaw,packet)) {
-                view_adapter::submitStaticPreview(r,packet);
-                return;
-            }
-        }
-    }
+    if(view_adapter::submitResolvedPreview(*this,r,type,owner,yaw))
+        return;
     EntityAnim* current=nullptr;
     SceneObject object;
     view_adapter::RtsPreviewRenderProvider::submitModelPreview(
