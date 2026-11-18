@@ -293,6 +293,7 @@ void VulkanDevice::destroyDeviceObjects() {
     });
     for (auto& f : framebuffers_) vkDestroyFramebuffer(device_, f.fb, nullptr);
     for (auto& r : renderPasses_) vkDestroyRenderPass(device_, r.pass, nullptr);
+    for (auto& r : mrtRenderPasses_) vkDestroyRenderPass(device_, r.pass, nullptr);
     for (auto& c : staging_) { vkDestroyBuffer(device_, c.buffer, nullptr); memory_.release(c.alloc); }
     for (auto& s : slots_) {
         for (auto p : s.descriptorPools) vkDestroyDescriptorPool(device_, p, nullptr);

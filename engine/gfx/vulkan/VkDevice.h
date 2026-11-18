@@ -92,7 +92,7 @@ struct VShader {
 
 struct VPipeline {
     PipelineDesc desc;
-    struct Variant { uint64_t key; VkPipeline pipeline; };
+    struct Variant { uint64_t key; VkPipeline pipeline; int colorCount = 1; };
     std::vector<Variant> variants;               // per render pass format (and HDR shader)
 };
 
@@ -191,8 +191,11 @@ private:
     void initImageLayout(VTexture& t, VkCommandBuffer cb, bool clear);
     // VkDraw.cpp
     VkRenderPass renderPassFor(VkFormat color, VkFormat depth, bool clearColor, bool clearDepth);
+    VkRenderPass renderPassForMrt(VkFormat color, VkFormat depth, int colors,
+                                 uint32_t clearMask, bool clearDepth);
     VkFramebuffer framebufferFor(VkImageView color, VkImageView depth, VkRenderPass rp, int w, int h, uint32_t colorId, uint32_t depthId);
-    VkPipeline pipelineFor(VPipeline& p, VkFormat color, VkFormat depth, bool hdr);
+    VkPipeline pipelineFor(VPipeline& p, VkFormat color, VkFormat depth, bool hdr,
+                           int colorCount = 1);
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
 
@@ -262,6 +265,14 @@ private:
     std::vector<SamplerKey> samplers_;
     struct RenderPassKey { uint64_t key; VkRenderPass pass; };
     std::vector<RenderPassKey> renderPasses_;
+    struct MrtRenderPass {
+        VkFormat color = VK_FORMAT_UNDEFINED, depth = VK_FORMAT_UNDEFINED;
+        int colorCount = 0;
+        uint32_t clearMask = 0;
+        bool clearDepth = false;
+        VkRenderPass pass = VK_NULL_HANDLE;
+    };
+    std::vector<MrtRenderPass> mrtRenderPasses_;
     struct FramebufferKey { uint32_t color, depth; VkRenderPass pass; int w, h; VkFramebuffer fb; };
     std::vector<FramebufferKey> framebuffers_;
     struct StagingChunk { VkBuffer buffer = VK_NULL_HANDLE; Allocation alloc; size_t size = 0, used = 0; uint64_t serial = 0; };
@@ -272,8 +283,9 @@ private:
     // Explicit mip/layer passes allocate temporary 2D views + framebuffer.
     // Deferred destruction happens only after vkCmdEndRenderPass and GPU completion.
     VkFramebuffer scopedPassFb_ = VK_NULL_HANDLE;
-    VkImageView scopedPassColor_ = VK_NULL_HANDLE;
+    std::array<VkImageView, kMaxRenderTargetColors> scopedPassColors_{};
     VkImageView scopedPassDepth_ = VK_NULL_HANDLE;
+    int passColors_ = 1;
     int passW_ = 0, passH_ = 0;
     VkFormat passColor_ = VK_FORMAT_UNDEFINED, passDepth_ = VK_FORMAT_UNDEFINED;
     uint32_t pipelineId_ = 0;

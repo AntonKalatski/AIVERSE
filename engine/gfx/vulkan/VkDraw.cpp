@@ -43,6 +43,11 @@ void VulkanDevice::destroyShader(ShaderHandle h) {
 }
 
 PipelineHandle VulkanDevice::createPipeline(const PipelineDesc& d) {
+    if (d.colorAttachmentCount < 1 ||
+        d.colorAttachmentCount > kMaxRenderTargetColors) {
+        error_ = "Vulkan: color output count must be 1..4";
+        return {};
+    }
     if (d.sampleCount != 1) {
         error_ = "Vulkan: multisample pipeline variants are not implemented";
         return {};
@@ -118,6 +123,73 @@ VkRenderPass VulkanDevice::renderPassFor(VkFormat color, VkFormat depth, bool cl
     return rp;
 }
 
+VkRenderPass VulkanDevice::renderPassForMrt(VkFormat color, VkFormat depth,
+                                            int colors, uint32_t clearMask, bool clearDepth) {
+    if (colors < 2 || colors > kMaxRenderTargetColors || color == VK_FORMAT_UNDEFINED)
+        return VK_NULL_HANDLE;
+    for (const auto& rp : mrtRenderPasses_)
+        if (rp.color == color && rp.depth == depth &&
+            rp.colorCount == colors && rp.clearMask == clearMask &&
+            rp.clearDepth == clearDepth)
+            return rp.pass;
+
+    VkAttachmentDescription attachments[kMaxRenderTargetColors + 1]{};
+    VkAttachmentReference colorRefs[kMaxRenderTargetColors]{};
+    VkAttachmentReference depthRef{uint32_t(colors), VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    for (int i = 0; i < colors; ++i) {
+        auto& a = attachments[i];
+        a.format = color;
+        a.samples = VK_SAMPLE_COUNT_1_BIT;
+        a.loadOp = (clearMask & (1u << i)) ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        a.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        a.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        a.initialLayout = a.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        colorRefs[i] = {uint32_t(i), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    }
+    int count = colors;
+    if (depth != VK_FORMAT_UNDEFINED) {
+        auto& a = attachments[count++];
+        a.format = depth;
+        a.samples = VK_SAMPLE_COUNT_1_BIT;
+        a.loadOp = clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        a.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        a.stencilLoadOp = clearDepth ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+        a.initialLayout = a.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+    VkSubpassDescription sub{};
+    sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    sub.colorAttachmentCount = uint32_t(colors);
+    sub.pColorAttachments = colorRefs;
+    if (depth != VK_FORMAT_UNDEFINED) sub.pDepthStencilAttachment = &depthRef;
+    VkSubpassDependency deps[2]{};
+    for (int i = 0; i < 2; ++i) {
+        deps[i].srcSubpass = i == 0 ? VK_SUBPASS_EXTERNAL : 0;
+        deps[i].dstSubpass = i == 0 ? 0 : VK_SUBPASS_EXTERNAL;
+        deps[i].srcStageMask = i == 0 ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT :
+                                        VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT;
+        deps[i].dstStageMask = i == 0 ? VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT :
+                                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        deps[i].srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+        deps[i].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    }
+    auto ci = vkStruct<VkRenderPassCreateInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO);
+    ci.attachmentCount = uint32_t(count);
+    ci.pAttachments = attachments;
+    ci.subpassCount = 1;
+    ci.pSubpasses = &sub;
+    ci.dependencyCount = 2;
+    ci.pDependencies = deps;
+    VkRenderPass result = VK_NULL_HANDLE;
+    if (vkCreateRenderPass(device_, &ci, nullptr, &result) != VK_SUCCESS) {
+        error_ = "Vulkan: vkCreateRenderPass MRT failed";
+        return VK_NULL_HANDLE;
+    }
+    mrtRenderPasses_.push_back({color, depth, colors, clearMask, clearDepth, result});
+    return result;
+}
+
 VkFramebuffer VulkanDevice::framebufferFor(VkImageView color, VkImageView depth, VkRenderPass rp, int w, int h, uint32_t colorId, uint32_t depthId) {
     for (const auto& f : framebuffers_)
         if (f.color == colorId && f.depth == depthId && f.pass == rp && f.w == w && f.h == h) return f.fb;
@@ -152,6 +224,7 @@ void VulkanDevice::beginPass(const PassDesc& d) {
         colorId = 0xFFFFFFF0u; depthId = 0xFFFFFFF1u;
     }
     passSkipped_ = !color && !depth;
+    passColors_ = color ? 1 : 0;
     inPass_ = true;
     pipelineId_ = 0;
     boundPipeline_ = VK_NULL_HANDLE;
@@ -185,14 +258,15 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
         error_ = "Vulkan: invalid or nested render-target pass";
         return false;
     }
-    if (desc.colorCount > 1 ||
-        (desc.colorCount == 1 && desc.colors[0].resolveTexture.valid())) {
-        error_ = "Vulkan: MRT and explicit MSAA resolves are not yet supported";
-        return false;
-    }
+    // MSAA resolve is a separate stage; never drop a requested resolve.
+    for (int i = 0; i < desc.colorCount; ++i)
+        if (desc.colors[size_t(i)].resolveTexture.valid()) {
+            error_ = "Vulkan: MSAA resolve unavailable for explicit MRT";
+            return false;
+        }
     auto check = [&](const RenderTargetAttachment& a, bool wantDepth, int& w, int& h) {
         const VTexture* t = textures_.get(a.texture.id);
-        if (!t || !t->image || !t->renderTarget && !t->depth ||
+        if (!t || !t->image || (!t->renderTarget && !t->depth) ||
             a.mipLevel < 0 || a.arrayLayer < 0 ||
             a.mipLevel >= t->levels || a.arrayLayer >= t->layers ||
             t->depth != wantDepth ||
@@ -205,94 +279,121 @@ bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
         h = std::max(1, t->height >> a.mipLevel);
         return true;
     };
-    VTexture* color = nullptr;
+    VTexture* colors[kMaxRenderTargetColors]{};
     VTexture* depth = nullptr;
-    int w = 0, h = 0;
-    if (desc.colorCount == 1) {
-        if (!check(desc.colors[0], false, w, h)) {
-            error_ = "Vulkan: invalid color mip/layer or renderable format"; return false;
+    int width = 0, height = 0;
+    VkFormat sharedColor = VK_FORMAT_UNDEFINED;
+    PixelFormat sharedFormat = PixelFormat::RGBA8;
+    uint32_t clearMask = 0;
+    for (int i = 0; i < desc.colorCount; ++i) {
+        const auto& a = desc.colors[size_t(i)];
+        int w = 0, h = 0;
+        if (!check(a, false, w, h) ||
+            (width && (width != w || height != h))) {
+            error_ = "Vulkan: MRT color attachment mip/extent/format invalid";
+            return false;
         }
-        color = textures_.get(desc.colors[0].texture.id);
+        VTexture* c = textures_.get(a.texture.id);
+        if (i && c->vkFormat != sharedColor) {
+            error_ = "Vulkan: mixed color formats require a specialized MRT pipeline";
+            return false;
+        }
+        colors[i] = c;
+        width = w; height = h;
+        sharedColor = c->vkFormat;
+        sharedFormat = c->format;
+        if (a.clear) clearMask |= 1u << i;
     }
     if (desc.depth.texture.valid()) {
-        int dw = 0, dh = 0;
-        if (!check(desc.depth, true, dw, dh) || (w && (w != dw || h != dh))) {
-            error_ = "Vulkan: invalid depth mip/layer or extent mismatch"; return false;
+        int w = 0, h = 0;
+        if (!check(desc.depth, true, w, h) ||
+            (width && (width != w || height != h))) {
+            error_ = "Vulkan: MRT depth attachment mismatch";
+            return false;
         }
-        if (!w) { w = dw; h = dh; }
+        if (!width) { width = w; height = h; }
         depth = textures_.get(desc.depth.texture.id);
     }
-    if (w < 1 || h < 1) return false;
-    VkImageView views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    auto makeView = [&](const VTexture* t, const RenderTargetAttachment& a, VkImageView& out) {
+    if (width < 1 || height < 1) return false;
+    VkImageView imageViews[kMaxRenderTargetColors + 1]{};
+    auto makeView = [&](const VTexture* t, const RenderTargetAttachment& a,
+                        VkImageView& out) {
         if (!t) return true;
         auto ci = vkStruct<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
         ci.image = t->image;
         ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
         ci.format = t->vkFormat;
-        ci.subresourceRange = {t->depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
-                               uint32_t(a.mipLevel), 1, uint32_t(a.arrayLayer), 1};
+        ci.subresourceRange = {
+            VkImageAspectFlags(t->depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT),
+            uint32_t(a.mipLevel), 1, uint32_t(a.arrayLayer), 1};
         return vkCreateImageView(device_, &ci, nullptr, &out) == VK_SUCCESS;
     };
-    if (!makeView(color, desc.colors[0], views[0]) ||
-        !makeView(depth, desc.depth, views[1])) {
-        if (views[0]) vkDestroyImageView(device_, views[0], nullptr);
-        if (views[1]) vkDestroyImageView(device_, views[1], nullptr);
-        error_ = "Vulkan: attachment image view creation failed"; return false;
+    auto cleanupViews = [&] {
+        for (auto& imageView : imageViews)
+            if (imageView) vkDestroyImageView(device_, imageView, nullptr);
+    };
+    for (int i = 0; i < desc.colorCount; ++i)
+        if (!makeView(colors[i], desc.colors[size_t(i)], imageViews[i])) {
+            cleanupViews();
+            error_ = "Vulkan: MRT color image view creation failed";
+            return false;
+        }
+    const int depthSlot = desc.colorCount;
+    if (depth && !makeView(depth, desc.depth, imageViews[depthSlot])) {
+        cleanupViews();
+        error_ = "Vulkan: MRT depth image view creation failed";
+        return false;
     }
-    const VkFormat cf = color ? color->vkFormat : VK_FORMAT_UNDEFINED;
+
     const VkFormat df = depth ? depth->vkFormat : VK_FORMAT_UNDEFINED;
-    const bool clearColor = color && desc.colors[0].clear;
     const bool clearDepth = depth && desc.depth.clear;
-    const VkRenderPass rp = renderPassFor(cf, df, clearColor, clearDepth);
-    if (!rp) {
-        if (views[0]) vkDestroyImageView(device_, views[0], nullptr);
-        if (views[1]) vkDestroyImageView(device_, views[1], nullptr);
-        error_ = "Vulkan: render pass creation failed"; return false;
-    }
-    VkImageView attachments[2]{};
-    uint32_t attachmentCount = 0;
-    if (views[0]) attachments[attachmentCount++] = views[0];
-    if (views[1]) attachments[attachmentCount++] = views[1];
+    const VkRenderPass rp = desc.colorCount > 1 ?
+        renderPassForMrt(sharedColor, df, desc.colorCount, clearMask, clearDepth) :
+        renderPassFor(sharedColor, df, (clearMask & 1u) != 0, clearDepth);
+    if (!rp) { cleanupViews(); return false; }
     auto fi = vkStruct<VkFramebufferCreateInfo>(VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO);
     fi.renderPass = rp;
-    fi.attachmentCount = attachmentCount;
-    fi.pAttachments = attachments;
-    fi.width = uint32_t(w); fi.height = uint32_t(h); fi.layers = 1;
+    fi.attachmentCount = uint32_t(desc.colorCount + (depth ? 1 : 0));
+    fi.pAttachments = imageViews;
+    fi.width = uint32_t(width);
+    fi.height = uint32_t(height);
+    fi.layers = 1;
     VkFramebuffer fb = VK_NULL_HANDLE;
     if (vkCreateFramebuffer(device_, &fi, nullptr, &fb) != VK_SUCCESS) {
-        if (views[0]) vkDestroyImageView(device_, views[0], nullptr);
-        if (views[1]) vkDestroyImageView(device_, views[1], nullptr);
-        error_ = "Vulkan: attachment framebuffer incomplete"; return false;
+        cleanupViews();
+        error_ = "Vulkan: MRT framebuffer creation failed";
+        return false;
     }
-    VkClearValue values[2]{};
-    uint32_t clears = 0;
-    if (color) {
-        for (int i = 0; i < 4; ++i)
-            values[clears].color.float32[i] = desc.colors[0].clearColor[i];
-        ++clears;
-    }
-    if (depth) { values[clears].depthStencil = {desc.clearDepth, 0}; ++clears; }
-    auto begin = vkStruct<VkRenderPassBeginInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
-    begin.renderPass = rp;
-    begin.framebuffer = fb;
-    begin.renderArea = {{0, 0}, {uint32_t(w), uint32_t(h)}};
-    begin.clearValueCount = clears;
-    begin.pClearValues = values;
-    VkCommandBuffer cb = slots_[size_t(slot_)].main;
-    vkCmdBeginRenderPass(cb, &begin, VK_SUBPASS_CONTENTS_INLINE);
+    VkClearValue values[kMaxRenderTargetColors + 1]{};
+    for (int i = 0; i < desc.colorCount; ++i)
+        for (int channel = 0; channel < 4; ++channel)
+            values[i].color.float32[channel] = desc.colors[size_t(i)].clearColor[channel];
+    if (depth) values[depthSlot].depthStencil = {desc.clearDepth, 0};
+
+    auto start = vkStruct<VkRenderPassBeginInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
+    start.renderPass = rp;
+    start.framebuffer = fb;
+    start.renderArea = {{0,0}, {uint32_t(width), uint32_t(height)}};
+    start.clearValueCount = fi.attachmentCount;
+    start.pClearValues = values;
+    vkCmdBeginRenderPass(slots_[size_t(slot_)].main, &start, VK_SUBPASS_CONTENTS_INLINE);
     scopedPassFb_ = fb;
-    scopedPassColor_ = views[0];
-    scopedPassDepth_ = views[1];
+    scopedPassColors_.fill(VK_NULL_HANDLE);
+    for (int i = 0; i < desc.colorCount; ++i)
+        scopedPassColors_[size_t(i)] = imageViews[i];
+    scopedPassDepth_ = depth ? imageViews[depthSlot] : VK_NULL_HANDLE;
+    passColors_ = desc.colorCount;
     inPass_ = true;
     passSkipped_ = false;
     pipelineId_ = 0;
     boundPipeline_ = VK_NULL_HANDLE;
     descriptorsDirty_ = true;
-    passW_ = w; passH_ = h;
-    passColor_ = cf; passDepth_ = df;
-    hdrPass_ = color && color->format == PixelFormat::RGBA16F;
-    setViewport({0, 0, w, h});
+    passW_ = width;
+    passH_ = height;
+    passColor_ = sharedColor;
+    passDepth_ = df;
+    hdrPass_ = desc.colorCount > 0 && sharedFormat == PixelFormat::RGBA16F;
+    setViewport({0,0,width,height});
     setScissor({});
     return true;
 }
@@ -304,18 +405,22 @@ void VulkanDevice::endPass() {
         // A framebuffer must outlive command execution; destroy its views
         // only after destroying the framebuffer, on frame completion.
         const VkFramebuffer fb = scopedPassFb_;
-        const VkImageView color = scopedPassColor_, depth = scopedPassDepth_;
-        deferDestroy([this, fb, color, depth] {
+        const auto colorViews = scopedPassColors_;
+        const VkImageView depthView = scopedPassDepth_;
+        deferDestroy([this, fb, colorViews, depthView] {
             vkDestroyFramebuffer(device_, fb, nullptr);
-            if (color) vkDestroyImageView(device_, color, nullptr);
-            if (depth) vkDestroyImageView(device_, depth, nullptr);
+            for (VkImageView view : colorViews)
+                if (view) vkDestroyImageView(device_, view, nullptr);
+            if (depthView) vkDestroyImageView(device_, depthView, nullptr);
         });
         scopedPassFb_ = VK_NULL_HANDLE;
-        scopedPassColor_ = scopedPassDepth_ = VK_NULL_HANDLE;
+        scopedPassColors_.fill(VK_NULL_HANDLE);
+        scopedPassDepth_ = VK_NULL_HANDLE;
     }
     inPass_ = false;
     passSkipped_ = false;
     hdrPass_ = false;
+    passColors_ = 1;
     pipelineId_ = 0;
     boundPipeline_ = VK_NULL_HANDLE;
 }
@@ -379,9 +484,12 @@ void blendState(BlendMode m, VkPipelineColorBlendAttachmentState& a) {
 }
 } // namespace
 
-VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat depth, bool hdr) {
-    const uint64_t key = uint64_t(uint32_t(color)) | (uint64_t(uint32_t(depth) & 0x3FFFFFFFu) << 32) | (uint64_t(hdr) << 62);
-    for (const auto& v : p.variants) if (v.key == key) return v.pipeline;
+VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat depth,
+                                     bool hdr, int colorCount) {
+    const uint64_t key = uint64_t(uint32_t(color)) |
+        (uint64_t(uint32_t(depth) & 0x3FFFFFFFu) << 32) | (uint64_t(hdr) << 62);
+    for (const auto& v : p.variants)
+        if (v.key == key && v.colorCount == colorCount) return v.pipeline;
     const PipelineDesc& d = p.desc;
     VShader* s = shaders_.get(d.shader.id);
     if (!s) return VK_NULL_HANDLE;
@@ -429,12 +537,16 @@ VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat dept
     ds.depthTestEnable = d.depthTest && depth != VK_FORMAT_UNDEFINED;
     ds.depthWriteEnable = d.depthWrite && depth != VK_FORMAT_UNDEFINED;
     ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-    VkPipelineColorBlendAttachmentState ba{};
-    blendState(d.blend, ba);
-    ba.colorWriteMask = d.colorWrite ? VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT : 0;
+    VkPipelineColorBlendAttachmentState ba[kMaxRenderTargetColors]{};
+    for (int i = 0; i < colorCount; ++i) {
+        blendState(d.blend, ba[i]);
+        ba[i].colorWriteMask = d.colorWrite ?
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT : 0;
+    }
     auto cbs = vkStruct<VkPipelineColorBlendStateCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO);
-    cbs.attachmentCount = color != VK_FORMAT_UNDEFINED ? 1 : 0;
-    cbs.pAttachments = &ba;
+    cbs.attachmentCount = uint32_t(colorCount);
+    cbs.pAttachments = ba;
     const VkDynamicState dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
     auto dy = vkStruct<VkPipelineDynamicStateCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO);
     dy.dynamicStateCount = 2;
@@ -451,14 +563,16 @@ VkPipeline VulkanDevice::pipelineFor(VPipeline& p, VkFormat color, VkFormat dept
     ci.pColorBlendState = &cbs;
     ci.pDynamicState = &dy;
     ci.layout = pipelineLayout_;
-    ci.renderPass = renderPassFor(color, depth, true, true);   // any compatible pass
+    ci.renderPass = colorCount > 1 ?
+        renderPassForMrt(color, depth, colorCount, (1u << colorCount) - 1u, true) :
+        renderPassFor(color, depth, true, true);   // any compatible load-op variant
     VkPipeline pipe = VK_NULL_HANDLE;
     if (vkCreateGraphicsPipelines(device_, pipelineCache_, 1, &ci, nullptr, &pipe) != VK_SUCCESS) {
         error_ = "vkCreateGraphicsPipelines failed";
         std::fprintf(stderr, "[gfx] Vulkan pipeline %s failed\n", d.label ? d.label : "");
         pipe = VK_NULL_HANDLE;
     }
-    p.variants.push_back({key, pipe});
+    p.variants.push_back({key, pipe, colorCount});
     return pipe;
 }
 
@@ -468,8 +582,26 @@ void VulkanDevice::setPipeline(PipelineHandle h) {
     pipelineId_ = 0;
     boundPipeline_ = VK_NULL_HANDLE;
     if (!p) return;
-    const bool hdr = hdrPass_ && !p->desc.depthOnly && p->desc.colorFormat != PixelFormat::RGBA16F;
-    VkPipeline vp = pipelineFor(*p, passColor_, passDepth_, hdr);
+    const int expectedColors = p->desc.depthOnly ? 0 : p->desc.colorAttachmentCount;
+    if (expectedColors != passColors_ || expectedColors < 0 ||
+        expectedColors > kMaxRenderTargetColors) {
+        error_ = "Vulkan: pipeline color output count differs from MRT pass";
+        return;
+    }
+    const bool hdr = hdrPass_ && !p->desc.depthOnly &&
+                     p->desc.colorFormat != PixelFormat::RGBA16F;
+    if (expectedColors > 0 && !hdr && vkFormat(p->desc.colorFormat) != passColor_) {
+        error_ = "Vulkan: pipeline color format differs from MRT pass";
+        return;
+    }
+    for (int i = 1; i < expectedColors; ++i) {
+        const PixelFormat fmt = p->desc.additionalColorFormats[i - 1];
+        if (!hdr && vkFormat(fmt) != passColor_) {
+            error_ = "Vulkan: additional pipeline format differs from MRT pass";
+            return;
+        }
+    }
+    VkPipeline vp = pipelineFor(*p, passColor_, passDepth_, hdr, expectedColors);
     if (!vp) return;
     pipelineId_ = h.id;
     boundPipeline_ = vp;
