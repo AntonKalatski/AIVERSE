@@ -163,6 +163,11 @@ public:
     }
     uint32_t maxUploadsPerFrame()const{return maxUploadsPerFrame_;}
     size_t surfaceCount()const{return slots_.size();}
+    // Read-only presentation visitor; callers must not retain references
+    // beyond the next setSurfaces transaction.
+    template<class Fn> void forEachSource(Fn&& fn)const {
+        for(const auto& slot:slots_)fn(slot.source);
+    }
     uint64_t surfaceRevision(uint64_t id)const {
         for(const auto& slot:slots_)if(slot.source.id==id)return slot.revision;
         return 0;
