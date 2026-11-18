@@ -32,9 +32,9 @@ static void exerciseSharedSweptContacts() {
         {4,{{-1_fx,0_fx,3_fx},{1_fx,2_fx,4_fx}}},
         {12,{{-1_fx,0_fx,5_fx},{1_fx,2_fx,6_fx}}}
     };
-    const auto nearest=query(tied,noExtent);
+    // SpatialWorld::intersect computes (lo-start)/delta using Fixed::operator/\n    // (truncate), not Fixed::fromRatio (round-to-nearest).\n    const auto nearest=query(tied,noExtent);
     checkSweep(nearest && nearest.target->id==4 &&
-               nearest.fraction==Fixed::fromRatio(3,10),
+               nearest.fraction==3_fx/10_fx,
                "shared projectile sweep lost nearest-hit tie semantics");
     const std::vector<Candidate> endpoint{
         {18,{{-1_fx,0_fx,10_fx},{1_fx,2_fx,11_fx}}}
@@ -45,7 +45,7 @@ static void exerciseSharedSweptContacts() {
                "projectile endpoint contact must be accepted");
     const auto expanded=query(tied,{Fixed{},Fixed{},1_fx});
     checkSweep(expanded && expanded.target->id==4 &&
-               expanded.fraction==Fixed::fromRatio(2,10),
+               expanded.fraction==2_fx/10_fx,
                "swept radius did not expand the target hitbox");
     const std::vector<Candidate> missed{
         {21,{{3_fx,0_fx,3_fx},{5_fx,2_fx,4_fx}}}
