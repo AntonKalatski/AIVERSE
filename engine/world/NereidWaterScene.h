@@ -27,6 +27,7 @@ struct NereidSceneSurface {
     // Optional camera-distance LOD; fixed thresholds are presentation-only.
     bool autoLod=false;
     float mediumDistance=120.f, farDistance=400.f;
+    float lodHysteresis=12.f;
 };
 
 // Strictly presentation-only equality; no hashing of padding or ECS mutation.
@@ -48,6 +49,7 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        m.maxVertices!=n.maxVertices ||
        a.autoLod!=b.autoLod ||
        a.mediumDistance!=b.mediumDistance || a.farDistance!=b.farDistance ||
+       a.lodHysteresis!=b.lodHysteresis ||
        u.deepR!=v.deepR || u.deepG!=v.deepG || u.deepB!=v.deepB ||
        u.foamR!=v.foamR || u.foamG!=v.foamG || u.foamB!=v.foamB ||
        u.foamStrength!=v.foamStrength || u.opacity!=v.opacity ||
@@ -80,6 +82,7 @@ class NereidWaterScene final {
             std::make_unique<render::NereidSurfaceResident>();
         bool visible=true;
         std::optional<render::NereidPreparedSurface> prepared;
+        std::optional<lib::nereid::WaterSurfaceLod> selectedLod;
     };
 public:
     static constexpr size_t kMaxSurfaces=64;
@@ -110,9 +113,11 @@ public:
                 slot.revision=old.revision;
                 slot.visible=old.visible;
                 slot.prepared=std::move(old.prepared);
+                slot.selectedLod=old.selectedLod;
                 if(!sameNereidSceneSurface(source,old.source)) {
                     ++slot.revision;
                     slot.prepared.reset();
+                    slot.selectedLod.reset();
                 }
             }else slot.revision=++nextRevision_;
             slot.source=std::move(source);
@@ -188,7 +193,8 @@ public:
         return dx*dx+dz*dz<=double(distance)*double(distance);
     }
     static lib::nereid::WaterSurfaceLod selectedLod(
-            const NereidSceneSurface& s,const Vec3* observer) {
+            const NereidSceneSurface& s,const Vec3* observer,
+            std::optional<lib::nereid::WaterSurfaceLod> previous=std::nullopt) {
         using L=lib::nereid::WaterSurfaceLod;
         if(!s.autoLod || !observer)return s.mesh.lod;
         if(!s.useGeometry && s.body.footprint==lib::nereid::WaterFootprint::Infinite)
@@ -215,8 +221,27 @@ public:
         const double dx=cx-observer->x.toDouble();
         const double dz=cz-observer->z.toDouble();
         const double sq=dx*dx+dz*dz;
-        if(sq>double(s.farDistance)*s.farDistance)return L::Far;
-        if(sq>double(s.mediumDistance)*s.mediumDistance)return L::Medium;
+        // Schmitt trigger around each boundary avoids uploads while the
+        // camera jitters within a narrow range. From Far, require crossing
+        // the lower threshold; from Near, require crossing the upper one.
+        const double h=s.lodHysteresis;
+        const double mid=double(s.mediumDistance),far=double(s.farDistance);
+        const double d=std::sqrt(sq);
+        if(previous==L::Near) {
+            if(d<=mid+h)return L::Near;
+            return d>far+h?L::Far:L::Medium;
+        }
+        if(previous==L::Far) {
+            if(d>=far-h)return L::Far;
+            return d<mid-h?L::Near:L::Medium;
+        }
+        if(previous==L::Medium) {
+            if(d<mid-h)return L::Near;
+            if(d>far+h)return L::Far;
+            return L::Medium;
+        }
+        if(d>far)return L::Far;
+        if(d>mid)return L::Medium;
         return L::Near;
     }
     void update(gfx::Device& device,const Vec3* observer=nullptr) {
@@ -238,7 +263,8 @@ public:
             auto& slot=slots_[i];
             if(!slot.visible)continue;
             auto opts=slot.source.mesh;
-            opts.lod=selectedLod(slot.source,observer);
+            opts.lod=selectedLod(slot.source,observer,slot.selectedLod);
+            slot.selectedLod=opts.lod;
             if(observer) {
                 opts.cameraX=float(observer->x.toDouble());
                 opts.cameraZ=float(observer->z.toDouble());
