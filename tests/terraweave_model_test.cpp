@@ -45,6 +45,53 @@ int main() {
     assert(model->vertices.size() == again->vertices.size());
     assert(model->indices == again->indices);
 
+    // Hierarchical BranchLOD: each structural branch has an independent
+    // 3-mesh chain, with its original parent and all local leaf clusters.
+    TreeProfile hierarchical = oak;
+    hierarchical.primaryBranches = 17;
+    const auto skeleton = generateTree(hierarchical, 0x987654321ULL, TreeLOD::High);
+    const auto branchModel = makeArborBranchLodModel(hierarchical, 0x987654321ULL);
+    assert(branchModel && branchModel->nodes.size() == skeleton.branches.size());
+    assert(branchModel->meshes.size() == skeleton.branches.size() * 3);
+    assert(!branchModel->batching.autoLod);
+    for (size_t i = 0; i < skeleton.branches.size(); ++i) {
+        const auto& node = branchModel->nodes[i];
+        assert(node.mesh == static_cast<int>(i * 3));
+        assert(node.parent == skeleton.branches[i].parent);
+        const auto& highBranch = branchModel->meshes[i * 3];
+        const auto& midBranch = branchModel->meshes[i * 3 + 1];
+        const auto& lowBranch = branchModel->meshes[i * 3 + 2];
+        assert(highBranch.lods.size() == 2);
+        assert(highBranch.lods[0].mesh == static_cast<int>(i * 3 + 1));
+        assert(highBranch.lods[1].mesh == static_cast<int>(i * 3 + 2));
+        const auto indicesFor = [](const aiverse::render::MeshDef& mesh) {
+            uint32_t result = 0;
+            for (const auto& prim : mesh.primitives) result += prim.indexCount;
+            return result;
+        };
+        assert(indicesFor(highBranch) > indicesFor(midBranch));
+        assert(indicesFor(midBranch) > indicesFor(lowBranch));
+        for (const auto& tier : {highBranch, midBranch, lowBranch}) {
+            for (const auto& prim : tier.primitives) {
+                assert(prim.firstIndex + prim.indexCount <= branchModel->indices.size());
+                assert(prim.firstVertex + prim.vertexCount <= branchModel->vertices.size());
+            }
+        }
+    }
+    for (const auto& leaf : skeleton.leaves) {
+        assert(leaf.parentBranch > 0);
+        assert(static_cast<size_t>(leaf.parentBranch) < skeleton.branches.size());
+    }
+    const auto branchRepeat = makeArborBranchLodModel(hierarchical, 0x987654321ULL);
+    assert(branchRepeat->indices == branchModel->indices);
+    assert(branchRepeat->vertices.size() == branchModel->vertices.size());
+    BranchLodSettings invalidBranch;
+    invalidBranch.minimalPixels = invalidBranch.reducedPixels;
+    bool invalidBranchRejected = false;
+    try { (void)makeArborBranchLodModel(oak, 17, invalidBranch); }
+    catch (const std::invalid_argument&) { invalidBranchRejected = true; }
+    assert(invalidBranchRejected);
+
     // Stage 2f: shared prototype, CPU draw submission, stable identity and
     // origin-relative centimetre -> metre transforms. No GPU is required.
     ArborForestAdapter forest;
