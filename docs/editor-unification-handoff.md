@@ -1517,3 +1517,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation/documentation SHA: `ad99e919bcb367f50fbfd761abf7f82a9311c047`.
 - Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` to document `selectSweptProjectileContact` from public `EcsSweepQuerySystems.h`, exact endpoint/tie/extent requirements, real FPS programmed-projectile adoption, and separation from independent no-physics kinematic and instantaneous hitscan systems. Points agents to `ecs_projectile_composition_test` regression and reminds them not to claim native passes without execution.
 - No new gameplay code or wire format in this commit; test/build state unchanged.
+
+
+### 2026-11-18 — FPS links physical ECS projectile package alongside hitscan/impact
+- Implementation SHA: `aa3df049728df724f25f8c83f0698d2bdc31833b`.
+- Updated `modules/fps/CMakeLists.txt` to explicitly link `AIVERSE::lib_ecs_projectile_systems` alongside `AIVERSE::lib_ecs_hitscan` and `AIVERSE::lib_ecs_ordered_impact`. This package exports the shared `EcsSweepQuerySystems.h` used by actual `FpsProjectiles.cpp`. Physical collision/ballistic dependency is now explicit and independent of the no-physics RTS kinematic package.
+- Verification: GitHub source commit only; native CMake configure, C++ compile and CTest still not run. No save/network or per-tick gameplay code changes in the CMake commit.
