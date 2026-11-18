@@ -898,3 +898,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - This is **partial direct ECS mutation**, not adoption of the shared `EcsWeaponLaunchSystems` yet. The same-tick legacy workspace still carries the rest of combat, and `fps.ecsMirror` commits the full actor at the end. Do not describe this as universal RTS/FPS shooting.
 - Verification: GitHub source commit only; no C++ compilation, replay checksum, FPS transport, save v9 or Editor test executed. Pay particular attention to same-tick reload and weapon switch ordering.
 - Next: extract common weapon state/launch logic with real ECS systems and adapt FPS hitscan/rewind without changing behavior; add parity tests and integrate RTS. Run native build before production use.
+
+
+### 2026-11-18 — FPS dynamic authority regression compile blocker fixed
+- Implementation SHA: `cf9acb846fe018eb90198b0452bb1da48d9c6e0e`.
+- Changed: `tests/fps/tests.cpp`. Moved accidental `if(i==0)` block (which referenced undefined `i`, `world`, `projectile`, `loot`, `vehicle`, `p`, `l`, `v`) out of `ecsActorAuthorityParity` and into the correct `ecsDynamicAuthorityParity` fixture, after its first synchronized tick. Added map `contains` checks before `at` lookups to report missing indexes as fixture assertions instead of uncaught out_of_range.
+- Verification: static inspection of current branch + exact anchored GitHub edit; **native compile, CTest, sanitizer and gameplay parity still unverified**. Git clone from this execution environment failed DNS resolution. GitHub Actions check was previously queued/cancelled, not a pass.
+- Next action: compile `aiverse_fps_tests` on native macOS/Linux; validate existing ECS actor/dynamic authority fixtures; inspect any additional malformed merged test blocks before replacing real gameplay authority.
