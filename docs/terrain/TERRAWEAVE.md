@@ -540,3 +540,111 @@ dithering, not a true per-object temporal or alpha crossfade**.
 No additional draw calls or extra transparent meshes are required.
 `tests/terraweave_flora_test.cpp` has deferred assertions; test
 execution is intentionally postponed.
+
+
+## Stage 3d — opt-in streaming forest host and WorldScene manifest
+
+`engine/world/TerraWeaveForestScene.h` introduces the reusable,
+genre-independent native C++ `TerraWeaveForestScene` and
+`ForestSceneSettings`. The scene owns:
+- per-species shared near BranchLOD and far impostor atlas prototypes
+  through `ArborForestAdapter`;
+- integer-centimetre, globally keyed foliage placements and stable IDs;
+- an explicitly bounded `maxResidentChunks` patch cache;
+- `streamAt(ForestCameraCm)`: generate nearest resident chunks and
+  release patches outside the current budget/radius;
+- `setExclusions(vector<RectCm>)`: regenerate for road/building/clearing
+  rectangles, with cache revision invalidation;
+- `visibleBatches()`: per-view Flora LOD/culling, including staggered
+  impostor transition; `uploadModels(gfx::Device&)`,
+  `submit(Renderer3D&, ForestRenderOriginCm)` and
+  `releaseModels(gfx::Device&)` for the existing RHI lifecycle;
+- `stats()`: number of resident chunks, placements, prototypes and
+  generation revision (not actual GPU draw counters).
+
+Native projects can instantiate it independently of an RTS/FPS
+module. `addSpecies(TreeProfile, FoliageSpecies, prototypeSeed)`
+must be called **before** streaming/upload. `streamAt` is currently
+synchronous CPU generation, bounded by the cache limits and current
+scatter settings. Do not invoke it concurrently with `submit`,
+`setExclusions` or `releaseModels`. Worker-stage streaming,
+cancellation and generation revision commit validation are future work.
+
+`engine/world/TerraWeaveForestManifest.h` implements an optional
+JSON adapter, `world::forestSceneFromManifest`, and
+`WorldScene` owns/updates/submits/shuts down the forest **only when**
+`terraweaveForest` exists at manifest root. No existing
+`WorldScene` manifest without this key is changed. The opt-in host
+uses the **first** observer from `WorldScene::update`; it does not
+currently union multiple observer budgets.
+
+Example root manifest fragment (all coordinates in cm inside the
+`terraweaveForest` object; existing world mesh/camera coordinates
+outside this block still use WorldScene's normal metre units):
+
+```json
+{
+  "terraweaveForest": {
+    "terrainSeed": 42,
+    "biomeSeed": 143,
+    "scatterSeed": 55,
+    "baseHeightCm": 0,
+    "reliefCm": 6000,
+    "basePeriodCm": 6400,
+    "octaves": 5,
+    "spacingCm": 450,
+    "densityPermille": 650,
+    "chunkSizeCm": 6400,
+    "radiusChunks": 4,
+    "maxResidentChunks": 64,
+    "highRangeCm": 3000,
+    "mediumRangeCm": 9000,
+    "lowRangeCm": 12000,
+    "cullRangeCm": 24000,
+    "impostorBlendWidthCm": 3000,
+    "species": [
+      {
+        "id": 1,
+        "shape": "broadleaf",
+        "minHeightCm": 900,
+        "maxHeightCm": 1400,
+        "branches": 24,
+        "weight": 4,
+        "prototypeSeed": 1001
+      },
+      {
+        "id": 2,
+        "shape": "conifer",
+        "minHeightCm": 1100,
+        "maxHeightCm": 2100,
+        "branches": 32,
+        "weight": 2,
+        "prototypeSeed": 2002
+      }
+    ],
+    "exclusions": [[0, 0, 1200, 1500]]
+  }
+}
+```
+
+The fragment is added to an otherwise valid existing
+`WorldScene` root manifest with `async`, `assets`, and
+`chunks` populated according to `docs/large-worlds.md`.
+No new world format is implied for legacy RTS `MapDoc` maps;
+their editor generator is in `TerraWeaveOps.h` and separate.
+The forest here is **render-only**: it does not create authoritative
+colliders, navmesh obstacles, harvested resource entities or changed
+RTS/FPS simulation checksums. Terrain heights derive from the
+TerraWeave procedural seed; until a heightmap provider adapter is
+implemented, they may not match an independently authored terrain
+surface. `WorldScene` releases the forest's models through its
+existing `shutdown(device)` path. GPU upload is on the same update
+thread as the other world-model uploads.
+
+**Status:** code committed but no local compiler, CTest, real
+`WorldScene` launch or GPU screenshot executed, in accordance with
+the request to defer tests. Do not treat this as a production-ready
+asynchronous forest streaming subsystem. Future work: worker jobs
+with revision checks, explicit camera/observer streaming priorities,
+sampled-world-terrain alignment, collision/navmesh, editor scene
+preview and GPU resource/performance validation.
