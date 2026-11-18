@@ -1207,3 +1207,41 @@ Check prewarm timing, future vs existing particle updates, two different source 
 2. General renderer custom particle attributes/shaderGraph bindings and material-node graphs are not yet present; connect VM outputs to compatible renderer data and add authorable attributes without duplicate genre systems.
 3. The native ECS presenter and editor graph tools still require complete production client wiring/feature polish and actual visual parity. The source is not a complete, verified Unreal Niagara replacement.
 4. **Next functional Stage 21:** implement GPU-compatible VM subset/parameter buffers with strict capability diagnostics and CPU fallback for unsupported expression programs, then renderer custom attributes and material graph bindings. Continue maintaining the handoff after each stage. The user expressly postpones tests until feature completion; record NOT RUN.
+
+## Stage 21 — custom VM attribute to shader graph channel bindings (CODE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`, after verified two-parent merge of `main` commit `463f69f230f7d02cdaca4c824b014ff1221402c1`.  
+**Goal:** make computed per-particle `attribute0..7` and per-instance `param0..7` values available to the existing particle shader material graphs, without increasing the vertex payload, creating separate genre renderers or claiming a complete GPU VM.
+
+### Exact commits and files
+
+| Commit | Path | Implemented |
+|---|---|---|
+| `ce358823c2cd00943f377d536f9bf5ad143d3a26` | `engine/fx/FxEffect.h` | Optional per-emitter `Json graphInputs` metadata |
+| `acbf70ab19a73a3ef33ce1f8085f38672f4f2a34` | `engine/fx/FxEffect.cpp` | Strict parse and serialization of four shader-graph input names |
+| `eb5debf6238a6e8709bb62a0a391d3d91708f759` | `engine/fx/FxInternal.h` | Cached `EmitterRT::graphInputSources` integer selectors, default `[0,1,2,3]` |
+| `792b638bdae492fca338195b38cd81afa2545b0f` | `engine/fx/ParticleSystem.cpp` | Resolve four input names to numeric source codes ONCE while building the emitter |
+| `30a8bc445b28f436b9ba39b6d24f7211cd332a75` | `engine/fx/FxRender.cpp` | Populate existing per-vertex `graphData` float4 from the selected VM / instance values |
+| `a0d14421270339af58cbe01b2880e6ee29bfab8d` | `docs/spectrafx.md` | Public authoring, legacy defaults, material and CPU/GPU contracts |
+| `2b13923319734f6dbd164c2c1185ef2b3f73e244` | `skills/visuals/aiverse-spectrafx/SKILL.md` | AI agent feature instructions, example inputs and safety |
+| `a4e23970ce7c2df957d8eebb0fcf44750d64bcb4` | `AGENTS.md` | Engine-wide Stage 21 ownership and tests-deferred discipline |
+
+### Data format, behavior and compatibility
+
+`FxEffect::EmitterDef::graphInputs` is an optional fixed-width list of **exactly 4 strings** naming `age`, `lifetime`, `random`, `zero`, `attribute0..attribute7`, or `param0..param7`. `parseEffect` validates type/count/allowed names; `effectToJson` serializes the mapping without dropping authoring data. Values may be supplied through compiled v2 nodes such as `MaterialModule` or ordinary legacy `fx/<effect>.json`.
+
+The CPU particle renderer previously populated the existing 40-byte `Vertex::graphData` with `[age,1/invLife,stableRandom(uid),0]`. The Stage-21 runtime caches each chosen source as a numeric code in `EmitterRT` and populates the existing four vertex channels without changing GPU vertex layout, texture atlas, material-key draw batching, shader pipeline descriptors, or renderer state. Existing shaderGraph material programs already receive this `float4` as `sg_particle`. Authors can write a bounded CPU `particleProgram` changing `attribute0..7` at Spawn/Update/Collision/Trigger/Death, or use Stage-20 named instance parameter values, and route selected values into the material graph.
+
+**Default compatibility:** If `graphInputs` is absent, `EmitterRT` uses source codes `[0,1,2,3]` exactly matching the legacy vertex values. No changes are needed to existing content. The exposed `graphInputs` field is part of canonical effect serialization and source identity. Effects with nondefault input bindings remain on full CPU (strict `GraphRuntime` GPU eligibility uses whole-effect serialization) and are not silently simplified for Metal. No GPU code generation, custom shader JIT, new buffers, or game-specific ECS code is introduced.
+
+### Actual verification
+
+**NOT RUN (user explicitly deferred testing):** No CMake, compiler/clang, CTest, Metal GPU shader run, editor GUI interaction or screenshot comparison was executed for Stage 21. The GitHub connector confirmed source commit writes but that is **not** build/test success. Before production check exact shader `sg_particle` semantics, source-lane validation/roundtrip, instance defaults/updates affecting material per particle, native API integration, same-texture batching across different per-vertex mappings, and legacy visual parity.
+
+### Known limitations and next FUNCTIONAL step
+
+1. Custom 4-lane `graphInputs` forwards CPU VM outputs into existing shaderGraph. It is **not** an arbitrary material attribute stream beyond four floats. A shader graph wants more than four values must use additional designed vertex attributes or textures with explicit RHI/quality budgeting.
+2. The limited Metal simple-billboard GPU path still does not execute the per-particle expression VM. It must continue to reject GPU-ineligible advanced graph effects, preserving full CPU behavior.
+3. Full cross-platform GPU expression bytecode/kernel lowering and per-instance GPU parameter streams are unfinished. Any new GPU VM must have strict compile-time capability validation and a safe CPU fallback, and must not introduce genre dependencies or renderer state in authoritative ECS.
+4. **Next bounded functional Stage 22:** implement an optional GPU-compatible expression subset for the Metal backend (read-only param inputs, finite arithmetic, supported spawn/update scalar targets) with conservative rejection for unsupported stages/nodes; avoid enabling by default. Continue native editor, runtime settings, material integration and final feature parity before running the user-deferred test suite.
+5. Every new implementation stage must append a **separate handoff commit** to this living file, preserving other concurrent agents' entries and including exact SHA and what was/not actually tested.
