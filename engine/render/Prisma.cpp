@@ -109,6 +109,7 @@ void Prisma::release(gfx::TextureHandle& t) { if (t.valid() && dev_) dev_->destr
 void Prisma::shutdown() {
     if (!dev_) return;
     for (auto& s : sizes_) {
+        if (s.graphExecutor) s.graphExecutor->resetAfterGpuIdle();
         for (auto& [r, t] : s.targets) release(t.tex);
         for (auto& [k, d] : s.depths) release(d);
     }
@@ -176,6 +177,7 @@ Prisma::Sized& Prisma::sized(int w, int h) {
     for (auto& s : sizes_) if (s.w == w && s.h == h) { s.lastUse = frame_; return s; }
     if (sizes_.size() >= 3) {   // drop the least recently used set (window resized, view closed)
         auto it = std::min_element(sizes_.begin(), sizes_.end(), [](const Sized& a, const Sized& b) { return a.lastUse < b.lastUse; });
+        if (it->graphExecutor) it->graphExecutor->resetAfterGpuIdle();
         for (auto& [r, t] : it->targets) release(t.tex);
         for (auto& [k, d] : it->depths) release(d);
         sizes_.erase(it);
@@ -435,7 +437,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 const auto plan = graph.compile();
                 // No graph-managed targets for this first pass: both handles
                 // already exist in the same per-view Sized allocator.
-                PrismaRhiExecutor executor(dev);
+                if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
+                    auto& executor = *set.graphExecutor;
                 std::vector<gfx::TextureHandle> external{scene.tex, src.tex};
                 const auto run = executor.execute(
                     graph, plan, external,
@@ -550,7 +553,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 }
                 for (auto hnd : handles) ready = ready && hnd.valid();
                 if (ready) {
-                    PrismaRhiExecutor executor(dev);
+                    if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
+                    auto& executor = *set.graphExecutor;
                     const auto run = executor.execute(
                         cache.graph(), graphPlan, handles,
                         [&](gfx::Device& gpu, PrismaGraphId id,
@@ -618,7 +622,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     prefilter.writes = {output};
                     graph.addPass(std::move(prefilter));
                     const auto graphPlan = graph.compile();
-                    PrismaRhiExecutor executor(dev);
+                    if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
+                    auto& executor = *set.graphExecutor;
                     const std::vector<gfx::TextureHandle> external{
                         src.tex, down[0].tex};
                     const auto result = executor.execute(
