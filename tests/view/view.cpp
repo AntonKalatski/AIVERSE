@@ -143,6 +143,37 @@ int main() {
     assert(resumedPlayer && resumedPlayer->instance);
     assert(std::abs(resumedPlayer->instance->stateTime()-.1f)<.0001f);
 
+    // Scene compositor is now invoked through canonical View rather
+    // than the historical RtsView host. Keep submitted order and exactly
+    // one execution of each layer, with disabled layers never invoked.
+    view::ViewLayerQueue layers;
+    std::vector<int> drawOrder;
+    layers.append("terrain",view::LayerPhase::Geometry,
+                  [&]{drawOrder.push_back(1);});
+    layers.append("disabled",view::LayerPhase::Effects,
+                  [&]{drawOrder.push_back(-1);},false);
+    layers.append("overlay",view::LayerPhase::Overlay,
+                  [&]{drawOrder.push_back(2);});
+    const auto queued=View::submitLayers(layers);
+    assert(queued.scheduled==3 && queued.executed==2 && queued.disabled==1);
+    assert((drawOrder==std::vector<int>{1,2}));
+    assert(layers.empty());
+    assert(View::submitLayers(layers).scheduled==0);
+
+    view::ViewLayerProviders providers;
+    providers.add("surface",[&](auto& q,const auto& frame) {
+        assert(frame.revision==42);
+        q.append("path",view::LayerPhase::Geometry,
+                 [&]{drawOrder.push_back(3);});
+    });
+    providers.add("hidden",[&](auto& q,const auto&) {
+        q.append("never",view::LayerPhase::Overlay,
+                 [&]{drawOrder.push_back(-1);});
+    },false);
+    const auto provided=View::submitLayers(providers,{1.0,.016f,42});
+    assert(provided.scheduled==1 && provided.executed==1);
+    assert((drawOrder==std::vector<int>{1,2,3}));
+
     view.clear();
     assert(view.presentation().countExisting<lib::animation::AnimationPlayerComponent>()==0);
 }
