@@ -11,6 +11,34 @@
 
 namespace aiverse::editor {
 
+// Authoring space is always 100 cm per map cell. The procedural source may
+// use a different sample spacing, so explicit unit conversion is mandatory.
+inline int64_t terraWeaveWorldFromEditorCm(
+        int64_t mapCm, int64_t worldOriginCm, int32_t generatorCellCm) {
+    if (generatorCellCm <= 0 ||
+        worldOriginCm < -terraweave::kWorldLimitCm ||
+        worldOriginCm > terraweave::kWorldLimitCm ||
+        mapCm < -terraweave::kWorldLimitCm ||
+        mapCm > terraweave::kWorldLimitCm)
+        throw std::out_of_range("TerraWeave editor/world coordinates");
+    const int64_t worldCm = worldOriginCm + mapCm * generatorCellCm / 100;
+    if (worldCm < -terraweave::kWorldLimitCm ||
+        worldCm > terraweave::kWorldLimitCm)
+        throw std::out_of_range("TerraWeave editor/world extent");
+    return worldCm;
+}
+
+inline int64_t terraWeaveEditorFromWorldCm(
+        int64_t worldCm, int64_t worldOriginCm, int32_t generatorCellCm) {
+    if (generatorCellCm <= 0 ||
+        worldCm < -terraweave::kWorldLimitCm ||
+        worldCm > terraweave::kWorldLimitCm ||
+        worldOriginCm < -terraweave::kWorldLimitCm ||
+        worldOriginCm > terraweave::kWorldLimitCm)
+        throw std::out_of_range("TerraWeave world/editor coordinates");
+    return (worldCm - worldOriginCm) * 100 / generatorCellCm;
+}
+
 // Converts a sample in map-local centimetres into an allowed placement.
 // Excludes water/roads/blocked cells, map entities and legacy road segments.
 // RoadNetwork splines require a separate path-aware exclusion adapter.
