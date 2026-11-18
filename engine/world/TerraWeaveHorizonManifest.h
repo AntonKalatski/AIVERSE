@@ -73,6 +73,10 @@ horizonSceneFromManifest(
         j,"innerTerrainLipCm",settings.innerTerrainLipCm,0,200));
     settings.maxNearClipTriangles=static_cast<uint32_t>(worldInteger(
         j,"maxNearClipTriangles",settings.maxNearClipTriangles,0,8192));
+    settings.maxNearWeldSlopePermille=static_cast<uint32_t>(worldInteger(
+        j,"maxNearWeldSlopePermille",settings.maxNearWeldSlopePermille,0,8000));
+    settings.nearSeamNormalBlendPercent=static_cast<uint32_t>(worldInteger(
+        j,"nearSeamNormalBlendPercent",settings.nearSeamNormalBlendPercent,0,100));
     settings.terrainResolution=static_cast<uint32_t>(worldInteger(
         j,"terrainResolution",settings.terrainResolution,8,96));
     settings.atlasTilePixels=static_cast<uint32_t>(worldInteger(
