@@ -3,8 +3,10 @@
 // rollback / load / committed ticks. Index owns COPIES of the sampled volumes.
 // No Box3D, TerraWeave, NEREID, genres, render backend or wall-clock dependencies.
 #pragma once
-#include "PhysisPresentation.h"
+#include "PhysisDiagnostics.h"
 #include <algorithm>
+#include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -228,6 +230,18 @@ inline bool sampleNatureFieldIndexed(const World& world,
     }
     output = result;
     return true;
+}
+
+// For repeated diagnostic heatmaps use one transient index snapshot per
+// committed tick. Scalar weather/hazard layers still take the direct ECS path.
+inline bool sampleDiagnosticRasterIndexed(const World& world,
+                                           const SpatialFieldIndex& index,
+                                           const DiagnosticRequest& request,
+                                           DiagnosticRaster& output) {
+    return sampleDiagnosticRasterWith(world, request, output,
+        [&](const World& source, Vec3 point, NatureFieldSample& sample) {
+            return sampleNatureFieldIndexed(source, index, point, sample);
+        });
 }
 
 } // namespace aiverse::physis
