@@ -378,6 +378,21 @@ verification before being enabled by default.
 Implementation-only stage: testing intentionally postponed at user
 request. See `docs/handoffs/prisma-stage-19.md`.
 
+## Stage 20 — Tilt Shift graph opt-in
+
+`AIVERSE_PRISMA_GRAPH_TILT_SHIFT=1` routes the existing three-pass
+Tilt Shift (downsample, horizontal Gaussian blur, vertical Gaussian blur)
+through `PrismaRhiExecutor`. Four logical SSA resources describe the
+source, first A target, B target and final A target. The two versions of
+A are deliberately mapped to the same existing physical texture: they
+are never simultaneously needed, and the intermediate B is separate.
+Per-pass uniforms and original pipelines are preserved. The default
+path remains the legacy three draws. Missing resources or failures before
+GPU submission fall back to it; partially dispatched passes are not replayed.
+This stage does not yet migrate physical Tilt targets to the graph-owned pool,
+nor does it activate Tilt Shift by default. Native/GPU tests deliberately
+NOT RUN per user request. Handoff: `docs/handoffs/prisma-stage-20.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
