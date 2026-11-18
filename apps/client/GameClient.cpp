@@ -735,20 +735,37 @@ void GameClient::event(const Event& e) {
                 if (t.valid() && w.has<Garrison>(t) && w.get<Owner>(t).player == human_ &&
                     std::find(selection_.begin(), selection_.end(), t) == selection_.end()) selection_.push_back(t);
             } else if (touchMoved_) {
-                float3 a, b;
-                if (groundAt(downX_, downY_, a) && groundAt(e.x, e.y, b)) cam_.target += a - b;
-                downX_ = e.x; downY_ = e.y;
+                float3 a,b;
+                const auto* drag=inputShortcuts_.system().state("CameraTouchDrag");
+                // Use normalized semantic gesture deltas, with legacy fallback
+                // for projects that define their own complete input asset.
+                const float dx=drag?drag->value.x:e.x-downX_;
+                const float dy=drag?drag->value.y:e.y-downY_;
+                if(groundAt(e.x-dx,e.y-dy,a)&&groundAt(e.x,e.y,b))
+                    cam_.target+=a-b;
+                downX_=e.x;downY_=e.y;
             }
         } else if (touches_.size() == 2) {
             auto it = touches_.begin(); auto a = it->second; auto b = (++it)->second;
-            float d = std::hypot(a.first - b.first, a.second - b.second);
-            if (pinchDist_ > 1 && d > 1) cam_.distance = std::clamp(cam_.distance * pinchDist_ / d, cam_.minDistance, cam_.maxDistance);
-            pinchDist_ = d;
-            float cx = (a.first + b.first) * 0.5f, cy = (a.second + b.second) * 0.5f;
-            float3 p0, p1;
-            if (groundAt(downX_, downY_, p0) && groundAt(cx, cy, p1)) cam_.target += p0 - p1;
-            downX_ = cx; downY_ = cy;
-            touchMoved_ = true;
+            const float rawDistance=std::hypot(a.first-b.first,a.second-b.second);
+            const auto* pinch=inputShortcuts_.system().state("CameraPinch");
+            const float appliedDelta=pinch?pinch->value.x:rawDistance-pinchDist_;
+            // Keep the previous reference distance, not the authored scaling,
+            // so CameraPinch modifiers can tune sensitivity without jumps.
+            if(pinchDist_>1 && rawDistance>1)
+                cam_.distance=std::clamp(cam_.distance*pinchDist_/
+                        std::max(1.0f,pinchDist_+appliedDelta),
+                        cam_.minDistance,cam_.maxDistance);
+            pinchDist_=rawDistance;
+            const float cx=(a.first+b.first)*0.5f,cy=(a.second+b.second)*0.5f;
+            const auto* pan=inputShortcuts_.system().state("CameraTouchPan");
+            const float px=pan?pan->value.x:cx-downX_;
+            const float py=pan?pan->value.y:cy-downY_;
+            float3 p0,p1;
+            if(groundAt(cx-px,cy-py,p0)&&groundAt(cx,cy,p1))
+                cam_.target+=p0-p1;
+            downX_=cx;downY_=cy;
+            touchMoved_=true;
         }
         break;
     }
