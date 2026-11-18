@@ -1,7 +1,8 @@
 // SpectraFX — AIVERSE's genre-independent visual effects system.
 // Public entry for graph compilation, asset variants and CPU effect rendering.
 // This is the supported public name; prior Vfx* symbols are compatibility APIs.
-// GPU simulation and a visual node editor are separate workstreams.
+// A basic v1 node canvas exists in the AIVERSE Editor; full graph dataflow and
+// GPU simulation remain separate workstreams.
 #pragma once
 #include "VfxGraphAssets.h"
 
