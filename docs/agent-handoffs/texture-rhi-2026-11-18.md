@@ -2862,3 +2862,38 @@ resident streaming/inspection with the editor. After the
 code commit, append a separate handoff with exact executed
 verification status. Do not merge PR #21 while native build
 and platform GPU tests are unverified.
+
+## Stage 7H — explicit async texture readback RHI contract (2026-11-18)
+
+**Code commit:** `5dc72d0b4288e0081454b3ff87543b2335115f6e`.
+**Branch/PR:** `feature/texture-rhi-unification`, PR #21 Draft.
+**File:** `engine/gfx/Gfx.h`.
+
+**API:** New `TextureReadbackDesc { mipLevel, arrayLayer }`,
+`TextureReadbackResult { width, height, PixelFormat format,
+std::vector<uint8_t> pixels, success() }`, and optional
+`Device::readTextureAsync(TextureHandle, TextureReadbackDesc,
+TextureReadFn)`. The base implementation refuses unsupported
+operation (`false`), rather than silently taking a screenshot or
+modifying the request. Accepted requests must deliver tightly
+packed top-left rows of the *actual* texture format at a later
+`beginFrame` on the owner thread; GPU driver/completion threads
+must never invoke user callbacks. A failed queued operation
+returns an empty failure result. Staging lifetime is independent
+from subsequent destruction of the parent texture.
+
+**Compatibility:** Existing RHI implementers keep their old
+behavior through the new default virtual method; no
+existing texture upload/scene/ECS behavior is modified. This stage
+only adds the public contract; it does **not** implement readback
+on Metal, Vulkan, GL33 or GLES3.
+
+**Actual verification:** GitHub commit completed. C++ compilation
+**NOT RUN**, CTest **NOT RUN**, native GPU **NOT RUN**.
+No green CI status claimed.
+
+**Next step:** Implement Metal blit-to-shared-buffer readback for
+RGBA8/RGBA16F (including BGRA render-target swizzle), with
+callback dispatch at later `beginFrame`; then implement a
+GL/GLES3 and Vulkan backend where portable. Add lifecycle
+and invalid-subresource tests in distinct code/handoff stages.
