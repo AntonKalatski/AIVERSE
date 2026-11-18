@@ -39,6 +39,19 @@ public:
     void observe(const Simulation& sim) {
         const auto* state=sim.world().resourceConst<FieldRuntimeState>();
         for(auto& [key,entry]:entries_) {
+            // Previously applied receipts are historical, but a rollback
+            // can invalidate that history. Recheck at reconnect/poll time.
+            if(entry.receipt.result==Result::Applied) {
+                if(!state || state->revision<=entry.expectedRevision ||
+                   sim.tick()<entry.observedTick ||
+                   (state->revision==entry.expectedRevision+1 &&
+                    !matches(*state,entry.desired))) {
+                    entry.receipt.result=Result::Conflict;
+                    entry.receipt.revision=state?state->revision:0;
+                    entry.receipt.detail="PHYSIS applied edit invalidated by rollback";
+                }
+                continue;
+            }
             if(entry.receipt.result!=Result::Queued) continue;
             if(!state) {
                 entry.receipt.result=Result::Rejected;

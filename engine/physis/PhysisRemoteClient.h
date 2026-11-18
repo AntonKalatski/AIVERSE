@@ -138,6 +138,9 @@ public:
             probeAttempts_=0;
             probeNextMs_=0;
             query_=sent_; // on reconnect first ask what happened
+            // Also re-query a previously applied edit after reconnect:
+            // server rollback may have invalidated the earlier receipt.
+            refreshApplied_ = active_ && receipt_.result==Result::Applied;
         }
         net::Bytes wire;
         int maxReceive=64;
@@ -155,7 +158,14 @@ public:
                 continue;
             }
             if(!active_ || message.requestId!=active_->requestId)continue;
+            const bool wasVerifying=refreshApplied_;
+            refreshApplied_=false;
             receipt_=message.receipt;
+            if(wasVerifying && receipt_.result==Result::Unknown) {
+                status_=ClientStatus::Uncertain;
+                receipt_.detail="PHYSIS previous ACK missing on server; reconcile manually";
+                continue; // don't replay an already acknowledged edit
+            }
             if(receipt_.result==Result::Queued) {
                 status_=ClientStatus::Queued;
                 query_=true;
@@ -190,7 +200,7 @@ public:
             probeNextMs_=nowMs+std::min<std::uint64_t>(
                 200u*probeAttempts_,2000u);
         }
-        if(!active_ || terminal(receipt_.result) ||
+        if(!active_ || (terminal(receipt_.result) && !refreshApplied_) ||
            status_==ClientStatus::Uncertain || nowMs<nextSendMs_)
             return;
         if(attempts_>=12) {
@@ -198,7 +208,7 @@ public:
             return;
         }
         Packet outgoing;
-        if(query_) {
+        if(query_ || refreshApplied_) {
             outgoing.kind=Message::Query;
             outgoing.clientInstance=instance_;
             outgoing.requestId=active_->requestId;
@@ -228,7 +238,7 @@ private:
     std::optional<Packet> active_;
     Receipt receipt_{};
     ClientStatus status_=ClientStatus::Idle;
-    bool connected_=false,sent_=false,query_=false;
+    bool connected_=false,sent_=false,query_=false,refreshApplied_=false;
     unsigned attempts_=0;
     std::uint64_t nextSendMs_=0;
 };
