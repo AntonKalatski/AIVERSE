@@ -536,6 +536,37 @@ void Module::applyCommand(Simulation& sim,const Command& c) {
     if(config_.ecsAuthority)
         s.actors[c.player-1]=p; // maintain existing external view until the tick
 }
+// Canonical spawn entry for weapons, throwable actions and other native FPS
+// producers. The ECS runtime owns the new projectile at creation time when
+// ecsAuthority is enabled; the old vector is retained only as a same-tick
+// compatibility view until all other projectile consumers have migrated.
+void Module::spawnProjectile(Simulation& sim,Projectile projectile) {
+    State& s=state(sim);
+    if(s.projectiles.size()>=256)
+        throw std::logic_error("FPS projectile limit exceeded at spawn");
+    if(!config_.ecsAuthority) {
+        s.projectiles.push_back(std::move(projectile));
+        return;
+    }
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index || projectile.id==0)
+        throw std::logic_error("FPS ECS projectile spawn missing index/id");
+    const uint64_t key=(uint64_t(1)<<32)|projectile.id;
+    const auto existing=index->byKey.find(key);
+    if(existing!=index->byKey.end() && world.alive(existing->second))
+        throw std::logic_error("FPS ECS duplicate projectile source ID on spawn");
+    const Entity entity=world.create();
+    world.add<ProjectileRuntime>(
+        entity,ProjectileRuntime{projectile,uint32_t(s.projectiles.size())});
+    index->byKey[key]=entity;
+    world.add<ProjectileEntity>(entity,ProjectileEntity{
+        projectile.id,projectile.owner,projectile.kind,
+        projectile.pos,projectile.velocity,projectile.damage
+    });
+    s.projectiles.push_back(std::move(projectile));
+}
+
 void Module::shoot(Simulation& sim,Actor& p) {
     auto& s=state(sim);
     uint32_t earliest=sim.tick()>config_.rewindTicks?sim.tick()-config_.rewindTicks:0;
@@ -583,7 +614,7 @@ void Module::shoot(Simulation& sim,Actor& p) {
                     shot.program.distanceLeft=fxMin(shot.program.distanceLeft,weapon.range);
                     shot.velocity=shot.program.direction*shot.programSpeed+Vec3{{},shot.program.verticalSpeed,{}};
                 }
-                s.projectiles.push_back(std::move(shot));
+                spawnProjectile(sim,std::move(shot));
             }
         }else traceShot(sim,p.slot,eye,direction(yaw,pitch)*weapon.range,weapon.damage,weapon,*targets);
     }
