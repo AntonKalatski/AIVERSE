@@ -340,6 +340,57 @@ inline bool validateSamplerDesc(const SamplerDesc& s) {
            s.maxAnisotropy >= 1.0f;
 }
 
+
+struct TextureResourceInfo {
+    TextureHandle handle;
+    TextureDimension dimension = TextureDimension::Texture2D;
+    PixelFormat format = PixelFormat::RGBA8;
+    int width = 0, height = 0, depth = 1;
+    int arrayLayers = 1, mipLevels = 1, sampleCount = 1;
+    bool renderTarget = false, storage = false;
+    size_t estimatedBytes = 0; // format-based estimate, not a driver memory query
+};
+
+// Conservative GPU storage estimate for editor inspection and budget planning.
+// Assumes tightly packed logical storage; real drivers may pad allocations.
+inline size_t estimateTextureFootprint(const TextureDesc& d) {
+    if (d.width < 1 || d.height < 1 || d.depth < 1 ||
+        d.arrayLayers < 1 || d.sampleCount < 1) return 0;
+    const int mips = textureEffectiveMipLevels(d);
+    if (mips < 1 || mips > maxTextureMipLevels(d.width,d.height,d.depth) ||
+        (d.sampleCount > 1 && mips != 1)) return 0;
+    const bool compressed = isCompressedTextureFormat(d.format);
+    const size_t bpp = compressed ?
+        size_t(compressedTextureBlockBytes(d.format)) :
+        size_t(d.format == PixelFormat::Depth ? 4 :
+               uncompressedTexturePixelBytes(d.format));
+    const size_t block = compressed ?
+        size_t(compressedTextureBlockSize(d.format)) : 1;
+    if (!bpp || !block) return 0;
+    size_t total = 0;
+    for (int mip = 0; mip < mips; ++mip) {
+        const size_t w = size_t(std::max(1,d.width >> mip));
+        const size_t h = size_t(std::max(1,d.height >> mip));
+        const size_t z = d.dimension == TextureDimension::Texture3D ?
+                         size_t(std::max(1,d.depth >> mip)) : 1;
+        const size_t factors[4] = {
+            (w + block - 1) / block, (h + block - 1) / block,
+            z, size_t(d.arrayLayers)
+        };
+        size_t bytes = bpp;
+        for (size_t factor : factors) {
+            if (bytes > std::numeric_limits<size_t>::max() / factor) return 0;
+            bytes *= factor;
+        }
+        if (bytes > std::numeric_limits<size_t>::max() /
+                         size_t(d.sampleCount)) return 0;
+        bytes *= size_t(d.sampleCount);
+        if (total > std::numeric_limits<size_t>::max() - bytes) return 0;
+        total += bytes;
+    }
+    return total;
+}
+
 // Each backend picks the sources it understands. A shader may provide all of them.
 struct ShaderDesc {
     const char* glslVertex = nullptr;   // GLSL ES 3.00 body WITHOUT #version line (added by backend)
@@ -509,6 +560,10 @@ public:
     virtual const std::string& lastError() const = 0;
     // Formats the GPU samples natively (block-compressed ones vary by GPU and API).
     virtual bool supports(PixelFormat f) const { return f == PixelFormat::RGBA8 || f == PixelFormat::R8 || f == PixelFormat::Depth || f == PixelFormat::RGBA32F; }
+    // Optional inspection snapshot for the editor. Enumerates user-created
+    // live TextureHandles only (not swapchain internals); estimate is not a
+    // driver allocation query. Query on the graphics device owner thread.
+    virtual std::vector<TextureResourceInfo> textureResources() const { return {}; }
     // Copies the colour of a render target (invalid = the screen as drawn so far this frame) into `to`: an RGBA8
     // render target of the same size. Only between passes. False when the backend can't (the screen is not
     // readable: see setScreenReadable, sizes differ); the caller then takes another path.

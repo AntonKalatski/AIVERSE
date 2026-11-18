@@ -1,4 +1,5 @@
 #include "engine/gfx/Gfx.h"
+#include <limits>
 #include <cstdio>
 
 using namespace aiverse::gfx;
@@ -187,6 +188,38 @@ int main() {
     typed.mipLevels = 4;
     check(validateTextureDesc(typed) == TextureDescError::None,
           "typed data textures allow explicitly allocated mip chain");
+    TextureDesc footprint;
+    footprint.width = footprint.height = 4;
+    footprint.dimension = TextureDimension::Texture2DArray;
+    footprint.arrayLayers = 2;
+    footprint.mipLevels = 3;
+    check(estimateTextureFootprint(footprint) == 168,
+          "RGBA8 two-layer mip-chain allocation estimate");
+    footprint.dimension = TextureDimension::Cube;
+    footprint.arrayLayers = 6;
+    footprint.format = PixelFormat::BC7;
+    footprint.mipLevels = 2;
+    check(estimateTextureFootprint(footprint) == 192,
+          "BC7 six-face compressed cube estimate");
+    footprint = {};
+    footprint.width = footprint.height = 2;
+    footprint.format = PixelFormat::Depth;
+    footprint.renderTarget = true;
+    footprint.sampleCount = 4;
+    check(estimateTextureFootprint(footprint) == 64,
+          "four-sample depth renderbuffer estimate");
+    footprint = {};
+    footprint.width = footprint.height = 4;
+    footprint.format = PixelFormat::RG16F;
+    check(estimateTextureFootprint(footprint) == 64,
+          "typed two-channel half-float estimate");
+    footprint = {};
+    footprint.width = footprint.height = std::numeric_limits<int>::max();
+    footprint.arrayLayers = std::numeric_limits<int>::max();
+    footprint.dimension = TextureDimension::Texture2DArray;
+    footprint.sampleCount = 16;
+    check(estimateTextureFootprint(footprint) == 0,
+          "overflow-safe allocation estimate");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }
