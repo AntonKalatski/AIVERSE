@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace aiverse::render {
@@ -40,7 +41,8 @@ public:
         if (!v.enabled || !(v.layerMask & cameraMask) ||
             !std::isfinite(v.weight) || v.weight <= 0 ||
             !std::isfinite(v.blendDistance) || !std::isfinite(v.radius) ||
-            !std::isfinite(camera.x) || !std::isfinite(camera.y) || !std::isfinite(camera.z))
+            !std::isfinite(camera.x) || !std::isfinite(camera.y) || !std::isfinite(camera.z) ||
+            !std::isfinite(v.center.x) || !std::isfinite(v.center.y) || !std::isfinite(v.center.z))
             return 0;
         const float weight = std::clamp(v.weight, 0.f, 1.f);
         if (v.shape == PrismaVolumeShape::Global) return weight;
@@ -86,7 +88,10 @@ public:
                 if (it == out.effects.end()) {
                     // Newly introduced effects that expose a strength can fade in from zero.
                     // Other effects require a discrete activation; see docs/prisma.md.
-                    if (incoming.type == PostFxType::ShaderGraph && t < .5f) continue;
+                    bool supportsFade = false;
+                    for (const auto& def : postFxType(incoming.type).params)
+                        supportsFade |= !std::strcmp(def.name, "intensity") || !std::strcmp(def.name, "amount");
+                    if (!supportsFade && t < .5f) continue; // binary activation, no strength param
                     PostFxEffect neutral = defaultPostFxEffect(incoming.type);
                     size_t at = 0;
                     for (const auto& def : postFxType(incoming.type).params) {
