@@ -1049,3 +1049,123 @@ correct any failures, including CMake/catalog merge conflicts. Then add
 per-body stable revision identities, bounded upload **byte** budget and
 camera visibility selection; provide immutable ECS snapshot importer.
 After each stage commit/update this handoff with actual results.
+
+## Stage 12 — stable ECS identity, bounded water rendering, CPU culling
+
+**Branch:** `feature/nereid-water-core`, draft PR #23; based on the
+already merged `main` at merge commit
+`04860b76cdf3bd26d0e45dcfc71cbb7d02159c78`.
+No other feature branch was merged during this stage.
+
+**Implementation commits (GitHub connector):**
+- `2062c58567d779748756e0e3d16f99320157de79`:
+  `engine/world/NereidWaterScene.h`, stable-ID GPU owner reuse, per-body
+  revision change detection, distance culling, estimated byte admission.
+- `cb24028f079cf601af6145bf11e3d41105c80955`:
+  new `engine/world/NereidEcsPresentation.h`, read-only immutable ECS
+  snapshot bridge.
+- `e54afd5ba3758ae7317095eb4fe32f0a8058e260`:
+  `engine/world/NereidWaterManifest.h`, explicit surface IDs,
+  configurable distance and upload work budgets.
+- `71d10f44d3595d1a9fb9b3f242a2c5c36f1c758f`:
+  `engine/world/WorldScene.cpp`, apply new manifest settings.
+- `8f60712e0b06113803800e95c5e43d382161f11c`:
+  `NereidWaterScene.h`, disabled custom geometry/infinite ocean
+  visibility and introspection fixes.
+- `ce56f6cf51f44a10c44d3de52ed4f09574aef78c`:
+  `tests/ecs_nereid_renderer_contract_test.cpp`, source-level
+  contract tests (not executed).
+
+### Architecture and native API
+
+`NereidSceneSurface::id` is the stable GPU residency key.
+Explicit nonzero IDs survive changes in ordering. Zero is the
+legacy index-assigned fallback and **is not stable under reorder**.
+`sameNereidSceneSurface` compares gameplay-snapshot data, geometry
+and visual style field-by-field, ignoring camera coordinates. Calling
+`setSurfaces` with unchanged content preserves its GPU revision.
+Only a changed water body increments its individual revision.
+Removed surfaces are queued for release by the next device-thread
+`update` or `shutdown`; never destroy GPU resources in ECS/read phase.
+
+`snapshotNereidEcsWater(const World&,NereidEcsPresentationOptions)`
+reads all live `WaterBodyComponent` and optional
+`WaterGeometryComponent`, copies data, assigns packed Entity+1 IDs
+(which encode generation and avoid the zero sentinel), sorts by ID,
+and returns at most 64 presentation surfaces. It does not add,
+modify or remove any ECS component; simulation/rollback still own
+authoritative bodies. Snapshot publication must happen at a
+host-controlled read barrier after structural ECS changes:
+```cpp
+#include "engine/world/NereidEcsPresentation.h"
+auto waterSnapshot=aiverse::world::snapshotNereidEcsWater(sim.world());
+scene.setNereidSurfaces(std::move(waterSnapshot));
+// scene.update(device,observers) on the device thread;
+// scene.draw(renderer,origin,cellSize); scene.shutdown(device).
+```
+
+New `NereidWaterScene` controls:
+- `setMaxUploadsPerFrame(1..16)`, default 2: attempts per frame.
+- `setMaxEstimatedUploadBytes(1024..64MiB)`, default 8MiB:
+  conservative CPU mesh budget estimate `maxVertices*(sizeof(MeshVertex)+
+  6*sizeof(uint32_t))` for scheduling; **NOT** a measured GPU transfer
+  byte cap. One oversized first request is admitted for progress.
+- `setVisibilityRange(0..1000000)`, default 0 (off): conservative
+  X/Z distance-to-bounds culling for finite water. Infinite oceans
+  always qualify. This is **not frustum or occlusion culling**.
+- `stats()`: `visible/resident/pending/uploadsAttempted/
+  estimatedBytesAdmitted`; `surfaceRevision(id)` diagnostic API.
+
+Manifest settings:
+```json
+{
+  "nereidWater": {
+    "maxUploadsPerFrame": 2,
+    "maxEstimatedUploadBytes": 8388608,
+    "visibilityRange": 500,
+    "surfaces": [
+      {"id": 17, "kind": "lake", "shape": "box",
+       "surfaceY": 3, "bottomY": -5,
+       "center": [0,0,0], "halfExtents": [40,30]}
+    ]
+  }
+}
+```
+IDs are positive integers up to 2,147,483,647 in JSON; explicit duplicate
+IDs cause an error. JSON with no `nereidWater` block keeps legacy behavior.
+Host-provided snapshots replace manifest snapshots; do not wire both
+at once. The GPU layer remains independent of RTS/FPS, waterNetwork,
+PHYSIS, TerraWeave, Box3D, VFX and Prisma.
+
+### Verification / known limitations / next step
+
+**Actually done:** source inspected and connected GitHub commits written;
+basic consistency/revision/budget/geometry/ECS copy tests authored.
+**NOT RUN / UNVERIFIED:** C++ compilation, CTest, GL/Metal shaders and GPU,
+native WorldScene runtime, FPS/RTS and water bake regression, upload
+measurement and large-world precision. Do not treat test source as PASS.
+No local checkout was available to execute the unified runner.
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+**Limitations:** 64 body cap; renderer does not automatically query the
+live ECS, it consumes explicitly submitted snapshots. Estimated bytes
+are a scheduler heuristic and uploads are still synchronous, not a true
+byte/time quota. Repeated failed surfaces can retry each frame.
+No camera frustum/HiZ occlusion, LRU eviction, deep-water refraction,
+underwater volume, per-pixel foam, terrain bank blending, device-loss
+automatic recovery or large-world relative-vertex rebake yet.
+The ECS bridge assumes packed Entity IDs are unique for currently
+alive entities and will reject overflow/snapshot population >64.
+Source revision comparison is presentation-only, not an authoritative
+network/rollback checksum.
+
+**Next agent:** compile the added test and confirm that the default
+`World` test fixture and renderer constructors compile. Fix any native
+issues before shipping. Then implement true prepared CPU mesh upload
+admission (exact buffer byte size), visibility-aware far-water LOD
+and large-world origin rebasing, followed by GLSL/MSL scene screenshots
+at multiple Y heights. Preserve a separate per-stage handoff.
