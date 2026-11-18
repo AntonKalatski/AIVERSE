@@ -14,6 +14,8 @@ struct NereidManifest {
     uint32_t maxUploadsPerFrame=2;
     size_t maxEstimatedUploadBytes=8u*1024u*1024u;
     float visibilityRange=0;
+    bool asyncPrepare=false;
+    size_t maxStagingBytes=16u*1024u*1024u;
 };
 
 namespace nereid_manifest_detail {
@@ -145,6 +147,12 @@ inline NereidManifest parseNereidWaterManifest(const Json& root) {
     const auto& config=root["nereidWater"];
     if(!config.isObject())throw JsonError("nereidWater: expected object");
     out.maxUploadsPerFrame=uint32_t(worldInteger(config,"maxUploadsPerFrame",2,1,16));
+    if(config.has("asyncPrepare") &&
+       config["asyncPrepare"].type()!=Json::Type::Bool)
+        throw JsonError("nereidWater.asyncPrepare: expected boolean");
+    out.asyncPrepare=config.getBool("asyncPrepare",false);
+    out.maxStagingBytes=size_t(worldInteger(config,"maxStagingBytes",
+        16*1024*1024,1024,64*1024*1024));
     out.maxEstimatedUploadBytes=size_t(worldInteger(config,"maxEstimatedUploadBytes",8*1024*1024,1024,64*1024*1024));
     if(config.has("visibilityRange"))out.visibilityRange=nereid_manifest_detail::scalar(config["visibilityRange"],"visibilityRange",0.f,1000000.f);
     const auto& surfaces=config["surfaces"];
