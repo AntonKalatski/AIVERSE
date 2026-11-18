@@ -2,6 +2,7 @@
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/NereidWaterScene.h"
+#include "engine/world/NereidUnderwaterView.h"
 
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
@@ -15,6 +16,7 @@ public:
     // Opt-in presentation-only water; call before update. Never mutates ECS.
     void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
     size_t nereidVisibleSurfaceCount()const;
+    NereidUnderwaterView nereidUnderwaterAt(Vec3 camera)const;
     const AsyncChunkStream::Status& status()const{return stream_->status();}
 private:
     struct Instance { size_t model=0;render::mat4 transform; };
