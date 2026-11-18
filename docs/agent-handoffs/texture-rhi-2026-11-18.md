@@ -5539,3 +5539,24 @@ Next: run ctest -N -R virtual_texture_feedback_msl and the
 test itself on a macOS Metal SDK; fix any compiler diagnostics.
 Then add a real Metal/GL/Vulkan offscreen feedback render fixture
 and compare readback bytes with CPU encodeVirtualTextureFeedback.
+
+
+## Stage 9B — focused verifier includes optional shader compilation (2026-11-19)
+
+Source commit: e0dc6cdc978ff91044f96cdcfa84509b1199968f.
+Changed file: tools/verify-texture-rhi.sh.
+Expanded focused CTest regex to include
+virtual_texture_feedback_shaders and virtual_texture_feedback_msl,
+including the --vulkan path. The verification script records
+registered shader tests with ctest -N and explicitly reports
+glslangValidator/xcrun toolchain availability in summary.txt.
+Absence of optional compiler is reported as NOT VERIFIED,
+not misrepresented as a shader PASS. Existing native build and
+CTest gates remain unchanged.
+
+Verification: GitHub commit succeeded. Bash execution, CMake
+configuration, CTest and GPU validation NOT RUN in this environment.
+Next: execute bash tools/verify-texture-rhi.sh --editor on macOS
+with Xcode Metal tools, and on Linux with glslangValidator;
+inspect verify-logs/summary.txt and ctest.log. Fix actual
+shader compiler errors before enabling renderer integration.
