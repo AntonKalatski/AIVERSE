@@ -206,3 +206,7 @@ Action-level modifiers run before the final action value determines lifecycle. F
 ## Multiple local players
 
 `engine/platform/EnhancedInputUsers.h` exposes `platform::EnhancedInputUsers`, a per-local-user ownership router. Register one `InputSystem` per user with `addUser(id,scheme)`; assign keyboard, pointer, touch independently or a physical pad with `assignGamepad(pad,id)`. Forward the captured platform event through `onEvent(e, gameplayAllowed)`, call `pollGamepads()` **once** per frame, then `update(id,dt)` for each player. Each user's gamepad mappings use logical index 0 regardless of the physical pad. Reassigning devices or losing focus cancels held Actions, so controls do not leak between split-screen players. The router is an opt-in library for multi-player native projects and does not change existing single-user projects.
+
+## Top-down shared Action scheme
+
+RTS sample includes an optional `RTS.TopDown` mapping context (disabled for ordinary RTS) with `TopDownMove` Axis2D, `TopDownFire`, `TopDownAim`, `TopDownEnter`, `TopDownWeaponNext`, `TopDownWeaponPrev`, `TopDownWeapon1` through `TopDownWeapon9`. The client activates it only while controlling a top-down hero. Movement/fire/aim and weapon/enter Actions are evaluated through Enhanced Input, with old key fallback when a custom project schema intentionally omits the TopDown context. Configured game-specific ability buttons and HUD touch sticks remain the specialized `TopDownControls` layer.
