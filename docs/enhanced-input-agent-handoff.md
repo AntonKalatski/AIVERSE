@@ -591,3 +591,22 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Verification:** GitHub accepted changes. No compiler run and no passing CI/CTest result is claimed. Test phase should verify API aliases on GCC, Clang and MSVC, then validate editor, client and gamepad lifecycle behavior.
 
 **Next agent:** Check the actual HEAD commit before making changes, read this handoff and root `AGENTS.md`; continue feature work using canonical InputFlow names. Once the user authorizes tests, build the four existing Enhanced Input targets and use the unified `./run-tests.sh` runner, record exact test SHA, errors and corrections as Stage 46 before marking PR #20 ready.
+
+## Stage 46 — canonical InputFlow CMake target in engine and tests (2026-11-18)
+
+**Status:** IMPLEMENTED. Compile/CTest/macOS GUI/cross-platform checks **NOT RUN**; the user requested all implementation first, testing afterward.
+
+**Goal:** Finish the code-level naming migration to **AIVerse InputFlow**. Stages 43–45 previously introduced the canonical public headers `libraries/include/aiverselib/gameplay/InputFlow.h` and `engine/platform/InputFlow.h`, renamed the concrete types to `InputFlow`, `InputFlowAdapter`, `InputFlowUsers`, and migrated FPS/RTS/editor implementation references while retaining old headers and type aliases.
+
+**Changes in this stage:**
+- `libraries/CMakeLists.txt`: `add_library(AIVERSE::InputFlow ALIAS aiverse_lib_input)` and `add_library(AIVERSE::lib_inputflow ALIAS aiverse_lib_input)`. Both use the **same** generated C++20 header-only package as `AIVERSE::lib_input`; there is no duplicate input runtime.
+- Root `CMakeLists.txt`: game client, mobile/web client and editor link `AIVERSE::InputFlow` instead of the legacy library name.
+- `tests/libraries/CMakeLists.txt`: existing input core, adapter and RTS regression executables link `AIVERSE::InputFlow`, keeping their stable target/test names.
+- `libraries/catalog.json`, `skills/ui/aiverse-input/SKILL.md` and `docs/enhanced-input.md`: document canonical link names and old name compatibility.
+- This stage is recorded in `docs/enhanced-input-agent-handoff.md`.
+
+**API/compatibility:** New native code: `#include <aiverselib/gameplay/InputFlow.h>`, `aiverse::lib::gameplay::inputflow::InputFlow`, `platform::InputFlowAdapter`, CMake `AIVERSE::InputFlow`. Older `EnhancedInput.h`, `enhanced::InputSystem`, `AIVERSE::lib_input`, JSON `input/actions.json`, saved profiles and serialized gameplay Commands remain supported. The old EnhancedInput file names are retained as include compatibility shims.
+
+**Verification:** GitHub accepted the commits; no passing compilation or runtime test has been observed. This CMake alias must be exercised in the later verification pass. The current PR remains a Draft.
+
+**Next-agent task:** Read the latest `AGENTS.md` and this handoff; inspect `libraries/CMakeLists.txt` alias ordering, `CMakeLists.txt` input consumers and `skills/ui/aiverse-input/SKILL.md` for the current code API. Preserve the alias target and the old API. When the user authorizes testing, run the four existing input tests via `./run-tests.sh`, build FPS, RTS and editor targets, then record exact Git SHA, commands and PASS/FAIL in a new Stage 47 before changing PR readiness.
