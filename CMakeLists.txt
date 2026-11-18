@@ -1587,6 +1587,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine AIVERSE::lib_ecs_inventory)
     add_test(NAME ecs_cross_genre_inventory_test
         COMMAND aiverse_ecs_cross_genre_inventory_test)
+    add_executable(aiverse_ecs_fixed_regeneration_policy_test
+        tests/ecs_fixed_regeneration_policy_test.cpp)
+    target_link_libraries(aiverse_ecs_fixed_regeneration_policy_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_timed_mechanics)
+    add_test(NAME ecs_fixed_regeneration_policy_test
+        COMMAND aiverse_ecs_fixed_regeneration_policy_test)
 endif()
 add_subdirectory(modules/voxel)
 
