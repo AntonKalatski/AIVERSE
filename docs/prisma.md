@@ -75,6 +75,14 @@ SpectraFX владеет **мировыми визуальными эффект�
 
 `PrismaVolumeEffectMask` в `PrismaVolumes.h` и `PrismaVolumeData.cpp::authoredEffects` сопоставляют каждому эффекту bitmask явно указанных параметров из JSON, включая компоненты цвета, flags `enabled/minQuality` и текстовый путь LUT. Когда volume задаёт только `colorGrade.exposure`, исходные `colorGrade.saturation`, `contrast`, lift/gamma/gain и minQuality **не перезаписываются**. При отсутствии базового эффекта добавляется нейтральный профиль с плавным входом для ColorGrade/Bloom/эффектов с `intensity` или `amount`; для дискретных эффектов — порог 0.5. Для прямого native C++ создания volume без `effectMasks` сохранено старое full-profile поведение. Тесты `prisma_volume` расширены на сохранение несвязанных параметров, но нативный запуск ещё требуется.
 
+## Stage 10 — визуальное редактирование Camera Volumes
+
+Панель `PRISMA — Постобработка` (`apps/editor/windows/PrismaWindow.cpp`) теперь содержит секцию **PRISMA Volumes** в текущем scope: вся игра (`game.json`) или открытая карта. Она умеет создавать глобальный/сферический/box volume; центрировать объём на камеру Scene, редактировать `id`, enabled, размеры, приоритет, `weight`, `blendDistance`, `layerMask` и вложенные эффекты. Для каждого параметра эффекта рядом есть переключатель **наследовать/переопределить**: снятие override удаляет соответствующий ключ JSON, а не записывает дефолт. Это соответствует `PrismaVolumeEffectMask` и предотвращает сброс глобального контраста/насыщенности.
+
+Авторинг использует общий GPU-free `makePrismaVolumeJson(id, shape, center)` из `PrismaVolumeData.h` — тот же формат, что runtime-парсер и CPU-тест `prisma_volume`. Изменения карты идут через `MapDoc::beginEdit/touched` (undo), изменения игры через сохранение manifest, как в уже существующих PostFX-слайдерах. Scene-камера показывает количество применимых эффектов/объёмов и предупреждения парсера.
+
+**Ограничения:** нет gizmo-контуров объёма в viewport и нет редактора Shader Graph payload внутри volume — для него остаётся отдельный Shader Graph Editor. UI использует существующий ImGui и editor layout. Ни компиляция, ни GUI smoke/undo parity, ни GPU screenshots на этом этапе не проверены; агент должен подтвердить их нативно перед объединением. Старое ID панели `postfx` и MCP-команды `postfx_*` сохранены.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
