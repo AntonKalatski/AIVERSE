@@ -189,9 +189,9 @@ int main() {
     assert(std::fabs(eastFacing.front().world.at(0, 2) - 2.0f) < 0.0001f);
     assert(eastFacing.front().persistentId == stableId);
     assert(eastFacing.front().materials != nullptr);
-    const auto frame2 = makeArborImpostorAtlas(oak, 17).viewMaterials[2][0];
+    const auto frame0 = makeArborImpostorAtlas(oak, 17).viewMaterials[0][0];
     assert(std::fabs(eastFacing.front().materials->at(0).uvOffset.x -
-                     frame2.uvOffset.x) < 0.0001f);
+                     frame0.uvOffset.x) < 0.0001f);
     bool unknownRejected = false;
     try {
         forest.forEachDraw(
