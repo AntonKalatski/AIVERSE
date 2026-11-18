@@ -5496,3 +5496,22 @@ Next: run this verifier with glslangValidator and correct shader
 syntax/precision issues; integrate with CMake/CTest on an environment
 with a compiler; compile MSL on macOS and compare rendered feedback
 RGBA8 bytes to the CPU page-ID encoder on real devices.
+
+
+## Stage 8Z — conditional GLSL shader CTest registration (2026-11-19)
+
+Build source commit: 1b44a6976e39889f1cf973c10bd97f1f97b6609e.
+Changed file: CMakeLists.txt.
+Within the existing texture test block, CMake now detects
+Python3 Interpreter and glslangValidator and registers
+virtual_texture_feedback_shaders only when both exist.
+The test invokes the embedded-source GLSL 330/GLES 300 verifier
+introduced in Stage 8Y. This avoids breaking toolchains without
+glslangValidator, but missing registration is NOT a PASS:
+CI must install the compiler and assert the test actually runs.
+
+Verification: GitHub source commit succeeded. CMake configure,
+CTest, GLSL compilation and GPU execution NOT RUN.
+Next: run cmake configure with glslangValidator installed, check
+ctest -N -R virtual_texture_feedback_shaders includes exactly
+one test, execute it, then compile MSL with xcrun metal on macOS.
