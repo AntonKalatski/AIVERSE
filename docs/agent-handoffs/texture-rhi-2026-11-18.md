@@ -173,3 +173,51 @@ GPU tests in the GL context test runner. Implement Vulkan image types,
 array layer barriers, sampled image views and full subresource staging
 next; do **not** copy only `createImage` without checking all upload,
 clear, mip generation and render pass transitions.
+
+## Stage 2C — Vulkan sampled dimensions, layers and barriers (2026-11-18)
+
+**Code commits:** `ddb536106ffd941f80c797dad3d231d0c07e21f2`,
+`daa721ef0ce9ebb0aa16ed1c1a34c05711295aca`.
+**Paths:** `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkResources.cpp`, `engine/gfx/vulkan/VkDraw.cpp`,
+`engine/gfx/vulkan/GfxVulkan.cpp`.
+
+**Implemented in source:** `VTexture` tracks dimension, 3D depth and image
+array layers. Vulkan image/image-view creation uses matching
+`VK_IMAGE_TYPE_1D/2D/3D` and `VK_IMAGE_VIEW_TYPE_1D/2D/3D/2D_ARRAY/CUBE/CUBE_ARRAY`.
+Cube-compatible create flags and six-face layer counts are applied.
+Memory transitions and clear operations now cover the whole array layer range;
+mip blits handle all layers and volume depth. Staging uploads can specify
+`z/depth/baseArrayLayer/layerCount`, including full compressed array/cube
+mip data and uncompressed 3D data. `updateTextureRegion` accepts
+uncompressed volume/slice/mip writes, repacking strided inputs as needed.
+Regular texture binding works through the default dimension-aware image view.
+`imageCubeArray` is enabled only if available and
+`supportsTextureDimension(CubeArray)` reflects that feature.
+
+**Compatibility:** Legacy 2D Vulkan image creation and descriptor binding
+retain the same default types/shape and existing `setTexture` path.
+`copyColor` now explicitly rejects non-2D images rather than issuing
+an invalid 2D blit. Non-2D depth targets, layered render attachments,
+MSAA, storage image writes and explicit `TextureView`/`SamplerHandle`
+are NOT implemented. RHI source changes do not affect native ECS or saves.
+
+**Risks:** Vulkan's staging allocator reports failure via an existing
+void-return `uploadImage` helper; texture-creation callers do not yet
+propagate staging allocation failure as an invalid texture handle.
+The new layout transition and mip blit paths must be run through Vulkan
+validation layers (including partial mip/slice updates and cube-array views).
+Compressed 1D and 3D are explicitly rejected; malformed/truncated
+mip-level payloads now fail before GPU allocation. Device feature support,
+compressed format capabilities and out-of-memory paths need GPU tests.
+
+**Validation:** Source/GitHub commits succeeded. Native Vulkan compilation,
+CTests, Lavapipe and validation layers: **NOT RUN**. No passing CI is
+asserted. The current code is not production-certified until these gates pass.
+
+**Next actionable step:** Build `aiverse_gfx_vulkan` and
+`aiverse_vulkan_tests`, add automated real-GPU/lavapipe sampling tests
+for 1D/2DArray/3D/Cube/CubeArray including upload and mip sampling.
+Then validate GL/Metal on supported devices and fix failures.
+Only afterwards advance to Stage 3 (views/independent samplers).
+Use a **new code commit and separate handoff commit** for each substage.
