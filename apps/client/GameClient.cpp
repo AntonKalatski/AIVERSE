@@ -509,6 +509,8 @@ void GameClient::event(const Event& e) {
     if (!padInjecting_ && (e.type == EventType::MouseMove || e.type == EventType::MouseDown || e.type == EventType::TouchBegin))
         gamepad_.mouseUsed(e.x, e.y);   // a real pointer hides the pad cursor (ClientGamepad.cpp)
     bool uiWants = ui_.handleEvent(e);
+    if (e.type == EventType::FocusLost)
+        std::fill_n(keys_,int(platform::Key::Count),false);
     const auto inputActions = inputShortcuts_.onEvent(e, screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
     if(screen_!=Screen::Playing || e.type==EventType::FocusLost){entityActions_.cancel();entityPointer_=false;mapTapPending_=false;}
     if (e.type == EventType::KeyDown && e.key == Key::F8 && !e.repeat) ui_.toggleDebugger();
