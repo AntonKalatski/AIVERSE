@@ -2106,3 +2106,11 @@ endif()
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME rules_files COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/rules/test_rules.py)
 endif()
+
+# Genre-neutral Niagara-style graph compiler: headless CPU fallback contract.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_graph_tests tests/vfx_graph_compiler_test.cpp)
+    target_include_directories(aiverse_vfx_graph_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_vfx_graph_tests PRIVATE aiverse_fx)
+    add_test(NAME vfx_graph_compiler COMMAND aiverse_vfx_graph_tests)
+endif()
