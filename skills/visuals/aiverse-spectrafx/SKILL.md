@@ -399,6 +399,43 @@ The user explicitly deferred tests. This Stage-17 work is
 source-committed, not compiler/GUI validated. See the handoff
 for exact SHAs and the next functional stage.
 
+## Reusable graph-v2 functions and asset libraries (Stage 18)
+
+V2 graphs may contain a root `functions` object. Each
+function declares typed default `parameters`, a pure
+value-node `nodes` array, `output` node ID and optional
+`returns` = number/bool/string/vec2/vec3/vec4.
+A `FunctionCall` data node uses
+`properties:{"function":"name","arguments":{"x":...}}`.
+Inputs accept ordinary literals, `$param` and `$node`
+references; a function called under an age-sampling
+`$curve` shares the current normalized-age context.
+
+Functions are pure and bounded (32 definitions, 64
+nodes each, nesting depth 8). They cannot execute
+gameplay code or depend on FPS/RTS-specific APIs.
+Unresolved calls, type mismatches and recursive functions
+reject compilation rather than silently substituting
+constant values.
+
+Reusability across graphs is explicit, not hidden IO:
+`fx_function_list/get/set` work on
+`fx/functions/*.vfxfn.json`; `fx_function_import` merges
+a validated library into an in-memory graph, and
+`fx_function_export` writes embedded function
+definitions to a shared asset. Then publish with strict
+`fx_graph_set` or use the safe draft flow.
+Native projects can reuse `spectra::FunctionLibraryAssets`,
+`spectra::validateFunctionLibrary`, and
+`spectra::mergeFunctionLibrary`.
+Examples: `examples/spectrafx/common_math.vfxfn.json`,
+`examples/spectrafx/function_calls_v2.vfx.json`.
+
+Editor: FunctionCall node catalog, selector for defined
+functions, root function JSON editor and library
+import/export actions. User deferred tests; do not
+claim these code changes compile/run until validated.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
