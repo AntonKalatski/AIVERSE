@@ -20,10 +20,10 @@ struct ForestSceneSettings {
     TerrainSettings terrain;
     BiomeSettings biomes;
     ScatterSettings scatter;
-    int32_t chunkSizeCm = 3200;       // signed world-space lattice tiles
-    uint32_t radiusChunks = 3;        // residency extent around observer
+    int32_t chunkSizeCm = 6400;       // signed world-space lattice tiles
+    uint32_t radiusChunks = 4;        // residency extent around observer
     uint32_t maxResidentChunks = 64;  // hard CPU cache bound
-    FloraView view;
+    FloraView view{0, 0, 3000, 9000, 12000, 24000, 650, 3000};
 };
 
 struct ForestSceneStats {
