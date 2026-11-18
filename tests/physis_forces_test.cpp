@@ -60,6 +60,18 @@ void testSystemOnlyPublishes() {
     advanceForces(world);
     CHECK(!world.get<ForceOutput>(e).valid);
 }
+void testHighVelocityBounds() {
+    World world;
+    initialize(world);
+    ForceReceiver body;
+    body.velocity = {100000000_fx, -100000000_fx, 100000000_fx};
+    body.massKg = 100_fx;
+    const auto sample = evaluateForces(world, body);
+    const Fixed cap = Fixed::fromInt(10000000);
+    CHECK(fxAbs(sample.totalForce.x) <= cap);
+    CHECK(fxAbs(sample.totalForce.y) <= cap);
+    CHECK(fxAbs(sample.totalForce.z) <= cap);
+}
 void testTornadoForceUpdraft() {
     World world;
     Settings settings;settings.width=2;settings.height=2;
@@ -83,5 +95,5 @@ void testTornadoForceUpdraft() {
     CHECK(result.aerodynamicForce.y>Fixed{});
 }
 }
-int main(){testWindAndGravity();testSystemOnlyPublishes();testTornadoForceUpdraft();
+int main(){testWindAndGravity();testSystemOnlyPublishes();testTornadoForceUpdraft();testHighVelocityBounds();
 std::printf("PHYSIS Forces: %s\n",failures?"FAIL":"PASS");return failures?1:0;}
