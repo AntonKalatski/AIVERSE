@@ -298,5 +298,61 @@ int main() {
     catch(const std::invalid_argument&){rejectedStaging=true;}
     check(rejectedStaging && asyncWater.maxWaterStagingBytes()==1024*1024,
           "staging budget failure must preserve previous value");
+    // Stage 15: no float rounding of huge absolute XY coordinates before
+    // converting each water vertex to its near-body local basis.
+    lib::nereid::WaterBodyComponent hugeBody;
+    hugeBody.footprint=lib::nereid::WaterFootprint::Box;
+    hugeBody.center.x=Fixed::fromInt(100000000);
+    hugeBody.center.z=Fixed::fromInt(-100000000);
+    hugeBody.halfExtents={2_fx,1_fx};
+    hugeBody.surfaceY=5_fx;
+    hugeBody.bottomY=0_fx;
+    lib::nereid::WaterSurfaceMeshOptions hugeOpts;
+    hugeOpts.originX=hugeBody.center.x.toDouble();
+    hugeOpts.originZ=hugeBody.center.z.toDouble();
+    hugeOpts.lod=lib::nereid::WaterSurfaceLod::Far;
+    auto local=lib::nereid::buildWaterSurfaceMesh(hugeBody,nullptr,hugeOpts);
+    check(local.vertices.size()==4 &&
+          local.vertices[0].x==-2.f &&
+          local.vertices[0].z==-1.f &&
+          local.vertices[2].x==2.f &&
+          local.vertices[2].z==1.f,
+          "large-world box vertices must remain precise in local coordinates");
+    const auto localPrepared=render::NereidSurfaceResident::prepare(
+        hugeBody,nullptr,101,hugeOpts);
+    check(localPrepared && localPrepared->key.originX==hugeOpts.originX &&
+          localPrepared->key.originZ==hugeOpts.originZ,
+          "prepared GPU resource must retain exact mesh coordinate basis");
+    auto changedBasis=hugeOpts;
+    changedBasis.originX+=256.0;
+    check(!render::sameNereidSurfaceKey(
+        render::makeNereidSurfaceKey(101,false,hugeOpts),
+        render::makeNereidSurfaceKey(101,false,changedBasis)),
+        "changing local basis must invalidate prior GPU mesh");
+    world::NereidSceneSurface hugeSurface;
+    hugeSurface.body=hugeBody;
+    world::NereidWaterScene::applyWaterMeshBasis(hugeOpts,hugeSurface);
+    check(hugeOpts.originX==100000000.0 && hugeOpts.originZ==-100000000.0,
+          "scene must anchor finite water at its precise fixed-point center");
+    lib::nereid::WaterGeometryComponent geoLarge;
+    geoLarge.kind=lib::nereid::WaterGeometryKind::Polygon;
+    geoLarge.points={
+        {Fixed::fromInt(100000000),Fixed::fromInt(-100000000),{}},
+        {Fixed::fromInt(100000004),Fixed::fromInt(-100000000),{}},
+        {Fixed::fromInt(100000004),Fixed::fromInt(-99999996),{}},
+        {Fixed::fromInt(100000000),Fixed::fromInt(-99999996),{}}};
+    hugeSurface.useGeometry=true;
+    hugeSurface.geometry=geoLarge;
+    world::NereidWaterScene::applyWaterMeshBasis(hugeOpts,hugeSurface);
+    const auto polygonLocal=lib::nereid::buildWaterSurfaceMesh(
+        hugeBody,&geoLarge,hugeOpts);
+    check(!polygonLocal.empty() && polygonLocal.vertices[0].x==0.f &&
+          polygonLocal.vertices[0].z==0.f &&
+          polygonLocal.vertices[2].x==4.f,
+          "large-world polygon must retain four-metre vertex separation");
+    // Render-origin rebasing subtracts in double precision before float.
+    const double renderOriginX=99999744.0;
+    const float relativeX=float(hugeOpts.originX-renderOriginX);
+    check(relativeX==256.f,"render-origin translation must remain precise");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
