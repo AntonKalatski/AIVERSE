@@ -471,6 +471,56 @@ void asynchronousGpuFeedbackRuntime() {
     require(gpu.live.empty(),"feedback test releases owned GPU objects");
 }
 
+void cameraFeedbackReplacesDeferredVisibility() {
+    TestFiles files;
+    const VirtualPageKey oldFine{0,3,3,0}, newFine{0,0,0,0};
+    MockGpu gpu;
+    VirtualTextureFileStreamer stream(gpu,gpuLimits());
+    auto atlas=gpuConfig();
+    atlas.physicalPages=3;
+    require(stream.initialize(atlas,diskConfig(files),3),
+            "camera replacement atlas initialized");
+    VirtualTextureFeedbackConfig feedback;
+    feedback.tilesX=feedback.tilesY=4;
+    feedback.mipLevels=3;
+    feedback.maxReadbackPixels=16;
+    feedback.maxUniquePages=4;
+    feedback.maxVisibleRegions=4;
+    VirtualTexturePrefetchConfig prefetch;
+    prefetch.tilesX=prefetch.tilesY=4;
+    prefetch.mipLevels=3;
+    prefetch.maxCandidates=16;
+    prefetch.maxRequestsPerFrame=2;
+    VirtualTextureFeedbackRuntime runtime;
+    require(runtime.initialize(gpu,feedback,prefetch),
+            "camera replacement runtime initialized");
+    auto emit=[&](VirtualPageKey page) {
+        TextureReadbackResult image;
+        image.format=PixelFormat::RGBA8;
+        image.width=image.height=1;
+        const uint32_t id=encodeVirtualTextureFeedback(page);
+        image.pixels.resize(4);
+        for(int i=0;i<4;++i)
+            image.pixels[size_t(i)]=uint8_t((id>>(i*8))&255u);
+        require(runtime.capture(stream.pageTableTexture()),
+                "camera feedback capture accepted");
+        gpu.finishFeedback(std::move(image));
+        require(runtime.readyToSubmit(),"camera feedback decoded");
+    };
+    emit(oldFine);
+    const auto first=runtime.submit(stream);
+    require(first.submittedNewRequests==2 && !stream.pendingPage(oldFine),
+            "old view leaves fine detail deferred");
+    emit(newFine);
+    const auto replacement=runtime.submit(stream);
+    require(replacement.submittedNewRequests>=1 &&
+            !stream.pendingPage(oldFine),
+            "new camera visibility replaces deferred old fine detail");
+    runtime.shutdown();
+    stream.shutdown();
+    require(gpu.live.empty(),"camera replacement releases GPU resources");
+}
+
 void rejectMismatchedConfig() {
     TestFiles files;
     MockGpu gpu;
@@ -488,6 +538,7 @@ int main() {
         cancellationMissingAndGpuFailure();
         automaticPrefetchAndPinPromotion();
         asynchronousGpuFeedbackRuntime();
+        cameraFeedbackReplacesDeferredVisibility();
         rejectMismatchedConfig();
     } catch (const std::exception& e) {
         std::fprintf(stderr,"VirtualTextureFileStreamer test FAILED: %s\n",e.what());
