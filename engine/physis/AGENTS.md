@@ -141,3 +141,28 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - CTest physis_field_runtime is authored and registered, but native
   compile/CTest/editor integration/network service QA NOT RUN.
   Handoff docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
+
+
+## Stage 24 — authority and confirmation guardrails
+
+- Stage 24 adds the non-ImGui apps/editor/PhysisLiveEdit.h local route and
+  apps/editor/windows/PhysisWindow.cpp UI. A GameModule must opt into the
+  FieldEditHost interface, explicitly allow trusted LOCAL editing, use
+  installEditableFromMap and dispatch its own command type at the tick.
+- Queued is only submission. Read World FieldRuntimeState revision and
+  authored fingerprints to verify Applied; report conflicts, missing
+  handler, rollback and superseded state instead of inventing ACKs.
+- A network CommandSink makes the local editor route unavailable.
+  For remote use, an authenticated server must call
+  physis::admitAuthorizedFieldEdit with a trusted connection principal
+  and its own ACL callback. The helper rejects untrusted player=0,
+  validates revision and reencodes a new system command for submission.
+  Never trust packet player or a client-provided permission boolean.
+- No public admin transport, remote ACK, default genre integration,
+  live climate migration, water/Terra/Box3D edit rights or new default
+  ECS save schemas were added. A dedicated server endpoint must be
+  integrated by a native project before claiming remote live editing.
+- CTest physis_live_edit has source fixtures and CI registration,
+  but real native compile, CTest, macOS GUI and remote network QA
+  have NOT RUN. Stage handoff:
+  docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.

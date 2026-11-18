@@ -619,3 +619,48 @@ revision conflict, invalid network payloads, oversized command rejection
 and Simulation::submit tick scheduling. These tests were authored but have
 NOT been compiled or run. See the separate Stage 23 handoff under
 docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
+
+
+## Stage 24 — editor live requests, verification and authenticated server admission
+
+The PHYSIS window now contains a Live Editing panel. Its Apply-to-running-
+simulation button is opt-in and works only for a LOCAL Simulation with a
+FieldRuntimeState resource, no CommandSink, and a GameModule that explicitly
+implements aiverse::editor::physis_live::FieldEditHost. Neither opening a
+PHYSIS map nor the independent debug World grants authority. The ordinary
+RTS/FPS hosts are NOT automatically opted in.
+
+The project's host exposes a unique nonzero command type, explicitly allows
+local editor edits, calls installEditableFromMap from setup and dispatches
+applyFieldEditCommand from GameModule::applyCommand. The editor prepares
+the complete typed source set from MapDoc::toJson and submits it through
+Simulation::submit. It NEVER directly changes live World.
+
+The panel reports: Unavailable, Idle, Queued, Applied, Conflict or Rejected.
+Queued is NOT Applied. Applied requires the expected ECS registry revision
+and matching stable authored fingerprints; the status is invalidated when
+another edit supersedes the values or a rollback restores earlier state.
+A dropped handler or conflicting revision is reported, not hidden.
+
+For REMOTE servers, physis::admitAuthorizedFieldEdit is a generic server-
+only admission hook. A server transport supplies a principal derived from
+its authenticated connection and an ACL callback, validates the untrusted
+request and re-encodes a new player-0 system Command through Simulation::
+submit. A client-supplied player field or role is never authentication.
+The existing AIVERSE battle server relay enforces its own input slot
+whitelist. It is NOT automatically connected to PHYSIS admin commands.
+
+A real project must add its authenticated editor/admin transport, proper
+server dispatch and independent remote ACK/NACK protocol. Networked
+Simulation with CommandSink is deliberately disabled in the local panel
+instead of injecting player-0 commands through ordinary client input.
+No cross-machine editor-server service has been shipped by this stage.
+
+Files: apps/editor/PhysisLiveEdit.h (no ImGui; capability + status),
+apps/editor/windows/PhysisWindow.cpp (panel),
+engine/physis/PhysisFieldRuntime.h (trusted admission policy), and
+engine/sim/Simulation.h (const module accessor).
+No new default PHYSIS schemas or water/terrain/Box3D/genre dependencies.
+CTest physis_live_edit was authored and registered in CMake/PHYSIS/Studio
+workflows; native compilation and tests have NOT RUN. See
+docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.

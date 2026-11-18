@@ -273,3 +273,27 @@ there is no automatic editor registration, server ACL, GUI edit ACK or
 live climate-grid/flood-policy migration in Stage 23.
 See docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
 CTest added but NOT RUN.
+
+
+### Stage 24 — PHYSIS editor runtime gateway
+
+The trusted local project GameModule may implement
+aiverse::editor::physis_live::FieldEditHost, return its own unique
+fieldEditCommandType, explicitly allowLocalFieldEdits, install using
+installEditableFromMap, then dispatch applyFieldEditCommand in
+GameModule::applyCommand.
+
+PHYSIS editor Live Editing is disabled when no opt-in host is available,
+no FieldRuntimeState exists, or a network CommandSink is attached. The
+editor queues validated MapDoc field updates, then observes the ECS
+revision AND complete typed fingerprints for Applied. Treat Queued
+as unresolved; never claim server ACK without a real remote receipt.
+
+For authenticated server admission, use physis::admitAuthorizedFieldEdit
+with a principal obtained from the authenticated CONNECTION plus the
+server ACL. It rejects forged player=0 requests and constructs its own
+trusted system command. No automatic remote editor transport has been
+added. Do not write ECS directly from ImGui, duplicate NEREID or
+TerraWeave, or bypass the genre-independent World/Command contract.
+Tests authored but NOT RUN. Handoff:
+docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.

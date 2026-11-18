@@ -1363,3 +1363,26 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   PASS and actual network/editor integration have not been verified.
 - Stage handoff: docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
   Keep PR #25 as DRAFT until genuine native validation.
+
+
+### PHYSIS Stage 24 — opt-in editor submission and network authority
+
+- apps/editor/PhysisLiveEdit.h holds the generic local capability and
+  status tracker, apps/editor/windows/PhysisWindow.cpp the UI.
+  GameModule must opt in, select its own command type and authorize
+  LOCAL editor mutations explicitly. No PHYSIS World writes from Scene.
+- Queued is not Applied. Read runtime revision plus authored field
+  fingerprints, invalidate on superseding changes/rollback and visibly
+  reject stale revisions or missing dispatch.
+- engine/physis/PhysisFieldRuntime.h exposes server-side
+  admitAuthorizedFieldEdit with a principal generated from the
+  authenticated connection and a host ACL callback. Never promote
+  untrusted player=0 commands into authority. Existing player input
+  relay is not a PHYSIS admin endpoint.
+- Network CommandSink stays unavailable for local editor submit; a
+  remote host needs its own privileged transport, routing and ACK/NACK.
+  No automatic FPS/RTS integration, climate/water/physics hot edits or
+  default persistence schema changes.
+- New physis_live_edit CTest + CI entries are authored but native
+  compile/CTest/macOS UI/real network runs NOT VERIFIED.
+  Handoff docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.
