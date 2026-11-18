@@ -16,6 +16,7 @@
 #include "../core/PlanetOps.h"
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
+#include "../PhysisSceneOverlay.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/GpuIcbPolicy.h"
 #include "modules/rts/view/RtsRoadView.h"
@@ -373,6 +374,9 @@ public:
                 fpsGizmoAxis_ = -1;
             }
         } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
+        // Optional PHYSIS diagnostics project into the actual camera using
+        // read-only ECS data. The shared selection HUD remains above the overlay.
+        drawPhysisSceneOverlay(ed, vp_, ed.sceneCam);
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
         StudioLuaExtensions::get().drawScene(ed, vp_);
