@@ -2200,3 +2200,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_integration COMMAND aiverse_physis_integration_test)
     set_tests_properties(physis_integration PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 8: deterministic spatial wind and seeded gust volumes.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_wind_test tests/physis_wind_test.cpp)
+    target_link_libraries(aiverse_physis_wind_test PRIVATE aiverse_engine)
+    add_test(NAME physis_wind COMMAND aiverse_physis_wind_test)
+    set_tests_properties(physis_wind PROPERTIES LABELS "PHYSIS")
+endif()
