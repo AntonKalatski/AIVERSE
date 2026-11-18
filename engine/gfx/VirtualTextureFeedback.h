@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <string>
@@ -164,9 +165,56 @@ private:
     VirtualTextureFeedbackStats stats_;
 };
 
+// Match the shader page selection for material/terrain feedback. UVs are
+// normalized, with the upper edge clamped to the last valid page. Reject
+// invalid topology/coordinates rather than aliasing a different page.
+inline VirtualPageKey virtualTextureFeedbackPageAtUV(
+    double u, double v, int mip, int layer, int tilesX, int tilesY) {
+    if (!std::isfinite(u) || !std::isfinite(v) ||
+        u < 0.0 || u > 1.0 || v < 0.0 || v > 1.0 ||
+        mip < 0 || mip >= 31 || layer < 0 || layer >= 16 ||
+        tilesX < 1 || tilesX > 2048 || tilesY < 1 || tilesY > 2048)
+        return {};
+    const int scale=1 << mip;
+    const int nx=(tilesX+scale-1)/scale;
+    const int ny=(tilesY+scale-1)/scale;
+    return {mip,std::min(int(u*nx),nx-1),std::min(int(v*ny),ny-1),layer};
+}
+
 // Fragment helper functions: the caller must write the returned encoded
 // RGBA bytes to a *linear RGBA8 UNORM* render target at location 0. An
 // invalid pixel is vec4(0), not a decodable page. No blending/tone mapping.
+// Append to a material feedback fragment shader along with the encoder.
+// Explicit mip is supplied by the renderer/material LOD policy.
+inline constexpr const char* kVirtualTextureFeedbackMaterialGLSL = R"VTF(
+vec4 aiverseMaterialFeedback(vec2 uv, int mip, int layer, ivec2 baseTiles) {
+    if (any(lessThan(uv,vec2(0.0))) ||
+        any(greaterThan(uv,vec2(1.0))) ||
+        any(lessThanEqual(baseTiles,ivec2(0))) ||
+        any(greaterThan(baseTiles,ivec2(2048))) ||
+        mip<0 || mip>=31 || layer<0 || layer>=16)
+        return vec4(0.0);
+    int scale=1 << mip;
+    ivec2 counts=(baseTiles+ivec2(scale-1))/scale;
+    ivec2 tile=min(ivec2(floor(uv*vec2(counts))),counts-ivec2(1));
+    return aiverseEncodeFeedback(ivec4(tile,mip,layer));
+}
+)VTF";
+
+inline constexpr const char* kVirtualTextureFeedbackMaterialMSL = R"VTF(
+inline float4 aiverse_material_feedback(float2 uv, int mip, int layer,
+                                        int2 baseTiles) {
+    if (any(uv<float2(0.0)) || any(uv>float2(1.0)) ||
+        any(baseTiles<=int2(0)) || any(baseTiles>int2(2048)) ||
+        mip<0 || mip>=31 || layer<0 || layer>=16)
+        return float4(0.0);
+    int scale=1 << mip;
+    int2 counts=(baseTiles+int2(scale-1))/scale;
+    int2 tile=min(int2(floor(uv*float2(counts))),counts-int2(1));
+    return aiverse_encode_feedback(int4(tile,mip,layer));
+}
+)VTF";
+
 inline constexpr const char* kVirtualTextureFeedbackGLSL = R"VTF(
 vec4 aiverseEncodeFeedback(ivec4 page) {
     // page = (x,y,mip,virtualLayer); negatives mean invalid.
