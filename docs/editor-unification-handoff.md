@@ -1646,3 +1646,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `b401f7274d609538fc8b0f32eb26d4bcd93fde74`.
 - Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` with the FPS `ProjectileRuntime` source-of-truth path, one physical solver shared with legacy mode, World Entity ordering/recycling, synchronous impact timing, transient State compatibility projection, and tests for COW/deep rollback, child branching and v9 cross-save.
 - **Verification:** docs-only commit, native builds and gameplay tests pending. Next: track partial cutover in Epic #19, perform static audit and inspect CI.
+
+
+### 2026-11-18 — FPS ordinary direct-ECS projectile parity test registered
+- Implementation SHA: `5463a02005aef0873776980d9c8476bf2635ee3c`.
+- The main `tests/fps/tests.cpp` suite now invokes `ecsOrdinaryProjectileAuthorityParity()` immediately after programmed projectile stage parity. The function is implemented in `tests/fps/projectiles.inc` and covers both deep and COW snapshots and cross-mode v9 save replay. Existing CMake target `aiverse_fps_tests` and CTest `fps` already compile the include through tests.cpp, so no new target is needed.
+- **Verification:** code committed, not compiled or run. Native CTest `fps` must pass before releasing ECS-authoritative ordinary projectiles.
