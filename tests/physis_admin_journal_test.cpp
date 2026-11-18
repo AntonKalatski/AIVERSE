@@ -242,7 +242,7 @@ void realLoopbackWebSocket() {
     auto sim=make();
     LoopbackAdminEndpoint service(dir/"journal");
     std::string error;
-    CHECK(service.open(0,
+    CHECK(service.open(0,kEdit,
         [](const std::string& name)->std::optional<net::Key>{
             return name=="admin"?std::optional<net::Key>(key()):std::nullopt;
         },reader,writer,&error));

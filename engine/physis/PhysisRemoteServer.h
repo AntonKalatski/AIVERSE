@@ -35,6 +35,9 @@ public:
     };
 
     const std::map<Key,Entry>& entries() const { return entries_; }
+    // Enforce the game-specific PHYSIS command ID in privileged endpoints.
+    // Legacy direct gateways still rely on explicit host canWrite ACL.
+    void setReservedCommandType(std::uint16_t type) {reservedCommandType_=type;}
 
     // The host can install a durable journal writer BEFORE opening its admin
     // endpoint. Every new submission is journaled as intent BEFORE enqueue;
@@ -194,7 +197,9 @@ public:
                             reply.receipt.revision=state->revision;
                     }
                 } else if(existing!=entries_.end()) {
-                    if(!canWrite(authenticatedPrincipal,request.command))
+                    if((reservedCommandType_ &&
+                         request.command.type!=reservedCommandType_) ||
+                       !canWrite(authenticatedPrincipal,request.command))
                         answer(Result::Denied,"PHYSIS editor permission revoked");
                     else if(existing->second.originalFrame!=wire)
                         answer(Result::Rejected,"PHYSIS reused request ID with different payload");
@@ -225,6 +230,9 @@ public:
                             }
                         }
                     }
+                } else if(reservedCommandType_ &&
+                          request.command.type!=reservedCommandType_) {
+                    answer(Result::Denied,"PHYSIS command type is not reserved for field editing");
                 } else if(!canWrite(authenticatedPrincipal,request.command)) {
                     answer(Result::Denied,"PHYSIS server editor ACL denied");
                 } else if(hasPendingEdit()) {
@@ -342,6 +350,7 @@ private:
     std::map<Key,Entry> entries_;
     JournalWriter journalWriter_;
     bool journalHealthy_=true;
+    std::uint16_t reservedCommandType_=0;
 };
 
 } // namespace aiverse::physis::remote

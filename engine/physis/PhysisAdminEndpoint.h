@@ -27,13 +27,15 @@ public:
         :journal_(std::move(journal)){}
     // Load the journal BEFORE binding the listener; corrupted history
     // must disable admission rather than silently forgetting request IDs.
-    bool open(std::uint16_t port,KeyLookup keys,ReadAcl read,WriteAcl write,
+    bool open(std::uint16_t port,std::uint16_t reservedFieldCommandType,
+              KeyLookup keys,ReadAcl read,WriteAcl write,
               std::string* error=nullptr) {
-        if(!keys || !read || !write) {
+        if(!reservedFieldCommandType || !keys || !read || !write) {
             if(error)*error="PHYSIS admin requires credential lookup and ACL";
             return false;
         }
         if(!journal_.attach(gateway_,error))return false;
+        gateway_.setReservedCommandType(reservedFieldCommandType);
         if(!listener_.open(port,true)) {
             if(error)*error="PHYSIS loopback admin WebSocket listener failed";
             return false;
