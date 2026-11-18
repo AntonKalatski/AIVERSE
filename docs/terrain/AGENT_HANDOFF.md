@@ -1674,3 +1674,29 @@ bake command/pack integration and optional per-region patch
 invalidations instead of invalidating a whole 12km atlas when
 only one authored terrain tile changes. Preserve
 genre independence and the per-stage handoff rule.
+
+## Stage 10a — bounded offline Horizon batch API (COMMITTED; NOT TESTED)
+
+- Commit `67c569b2fe9bda594c10e01df5853e60e924d81a` adds
+  `engine/world/TerraWeaveHorizonBatch.h` (C++20 header-only,
+  no RHI/genre/filesystem dependency).
+- `HorizonBatchBounds` selects half-open signed Horizon camera-grid
+  region keys (exactly the keys used by runtime `HorizonScene`).
+  `bakeHorizonBatch` iterates deterministically z-major then x-major,
+  limits work to `maxRegions` (default 4096), refuses external authored
+  snapshots without a nonzero stable authored content fingerprint,
+  skips matching valid `TWH1` archives through optional read callback,
+  regenerates stale/corrupt archives, forwards bytes through a required
+  asset-writer callback, supports cooperative cancellation and reports
+  visited/generated/skipped count and output bytes. It does not create
+  directories or write files from engine code; native build tools own that.
+- Region centre uses key*middleTileCm + middleTileCm/2 to match
+  `TerraWeaveHorizonScene` and `<cellX>_<cellZ>.twh` filenames.
+- **Verification:** source committed via GitHub; build, CTest,
+  runtime archive regeneration and filesystem operation NOT RUN, per
+  user's explicit functions-first/testing-by-other-agent split.
+- **Next functional step:** expose the batch API via a host-only CLI
+  `aiverse_horizon_bake` using the same manifest parser, without
+  changing gameplay, and register it as an opt-in build tool. Add
+  docs for exact invocation. A separate test agent validates
+  region-key edge cases, stale hashes, partial outputs and cancellation.
