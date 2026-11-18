@@ -114,6 +114,7 @@ WORKFLOWS=[
  ('aiverse-capability-audit','Feasibility and gap estimates from the genre status file, catalogs and module docs, not from memory','docs/genre-implementation.json'),
  ('aiverse-terrain','Terrain levels, heightfield, sub-cell detail, materials and heightmaps through MCP','docs/terrain.md'),
  ('aiverse-water','Spline straits, rivers and open sea with shore types, bridges and the water window','docs/water.md'),
+ ('aiverse-physis','Genre-neutral nature, climate, wind, gravity, storms, ECS and Box3D adapter with editor diagnostics','docs/physis.md'),
  ('aiverse-city-blocks','City block paving, curb elevations, planting beds and street furniture','skills/world/aiverse-city-blocks/SKILL.md'),
  ('aiverse-city-planner','Procedural city maps with the city / metropolis generator preset','docs/city-planner.md'),
  ('aiverse-city-economy','City-game commerce, careers and the top-down hero arsenal','docs/commerce.md'),
