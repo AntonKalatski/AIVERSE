@@ -189,3 +189,73 @@ Files: `skills/visuals/aiverse-niagara-vfx/SKILL.md` (new), `AGENTS.md`, `tools/
 - **TESTS NOT RUN.** The updated source and test were committed, not compiled or executed. Run `ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs_presentation|graph_assets)$'` after building targets.
 - **Risk:** Very old one-shot effects whose handles have been overwritten by the bounded ring cannot be killed by a presenter-only reset. Their natural expiration is expected for normal short-lived effects. A production full-world reset can instead clear all particles, if the host owns the entire particle world.
 - **Next:** integrate graph assets into the editor and MCP, then implement an actual graph canvas and GPU backend; user-facing Niagara parity is NOT delivered by these foundational stages.
+
+## Stage 6 — official product identity: AIVERSE SpectraFX (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**User request:** invent a distinctive VFX-system name, actually use it in the engine's code and leave a durable handoff. **Decision: AIVERSE SpectraFX** (public namespace `aiverse::spectra`; skill `aiverse-spectrafx`). Unreal Niagara remains an inspiration/reference, **not** the product name.
+
+### Commits and files (in implementation order)
+
+| Commit | File | Change |
+|---|---|---|
+| `b2e684492661b14d79efba33276659d10a4a5d67` | `engine/fx/VfxGraph.h` | Real `compileSpectraGraph` functions, compatibility `compileVfxGraph` wrappers |
+| `6c1d503dcbd23359b04703f280c47e0f7d7aaf5e` | `engine/fx/VfxGraphAssets.h` | Canonical `SpectraGraphAssets`/`SpectraGraphLoadResult` with old `Vfx*` type aliases |
+| `0ee7a5a2dad956e38b63d67d94cfc2a7f043f427` | `libraries/include/aiverselib/genre/EcsVfxPresentation.h` | Canonical `SpectraSourceComponent`, `SpectraEventBinding`, `SpectraPresentationSystem`; aliases preserve component identity |
+| `92eb8d3375b8963d6a7696e31d8c72810028796d` | `engine/fx/SpectraFX.h` | Public `aiverse::spectra::{Runtime,Effect,Handle,Quality,GraphAssets,GraphLoadResult,compileGraph,kName}` |
+| `7cfca2c6e3a7f430a86f6bb20a6037a7459ed119` | `libraries/include/aiverselib/genre/SpectraFX.h` | Native-project `aiverse::spectra::{SourceComponent,EventBinding,PresentationSystem}` |
+| `78e57322ab1e668bc585e3ef31c9ac64911a81e0` | `tests/vfx_graph_compiler_test.cpp` | Uses branded public `spectra::compileGraph` |
+| `b88671bdd26c7170839b162e00e96186ac92f148` | `tests/vfx_graph_assets_test.cpp` | Uses `spectra::Runtime`/`spectra::GraphAssets` |
+| `7e2e47c277978d8f50beca1775f8b9b8251c4d67` | `tests/vfx_ecs_presentation_test.cpp` | Exercises `spectra::SourceComponent`/`PresentationSystem` |
+| `e3b4d7e0e6b78f05f2f51016b24981d1d1c17294` | `CMakeLists.txt` | Adds `AIVERSE::spectrafx` alias for `aiverse_fx` and labels regression tests `SpectraFX` |
+| `770fa8ec42dc4a9669f16e8d2d88eafb31215444` | `docs/spectrafx.md` | Official architecture/API/graph schema, integration and roadmap |
+| `44918a3d9de7321645a67808c7db7a2ece938dec` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Canonical AI skill |
+| `a3b3b590a659527338382a76675307cc37483a73` | `skills/visuals/aiverse-niagara-vfx/SKILL.md` | Legacy skill redirects to official branding |
+| `1cab6922a806d305fbe88e9a5fafe7dcb7490fb9` | `tools/skills/catalog.py` | Adds official `aiverse-spectrafx` workflow/search and keeps Niagara alias |
+| `bb734cb476f1732751fb6a1003082c5720e93700` | `skills/catalog.json` | New canonical skill entry + legacy entry updated |
+| `a327028b6e9350601b25951836995fc3b394ff45` | `docs/particles.md` | Explains SpectraFX overlay on existing CPU effects, incomplete future work |
+| `6f19737e427ee6281fe482b5d00139144d398d53` | `AGENTS.md` | Official name, headers, CMake target, skill, handoff contract |
+
+### New canonical native API
+
+```cpp
+#include <aiverselib/genre/SpectraFX.h>
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::Runtime particles;
+aiverse::spectra::GraphAssets graphAssets(particles, readContent);
+auto compiled = graphAssets.load("rocket_exhaust");
+if (compiled.effect >= 0)
+    particles.play(compiled.effect, {0, 1, 0});
+
+aiverse::spectra::SourceComponent component;
+component.effect = compiled.runtimeName;
+world.add<aiverse::spectra::SourceComponent>(entity, component);
+
+aiverse::spectra::PresentationSystem presenter(particles);
+// presenter.sync(world, nativePoseResolver);
+// presenter.consumeTickEvents(tick, sim.events(), gameEventBindings);
+```
+
+Native CMake: `target_link_libraries(my_native_target PRIVATE AIVERSE::spectrafx)` (include dirs already follow the existing aiverse_fx target; `libraries/include` must also be in the native project's include paths for the `aiverselib/genre` header).
+
+**Migration/compatibility:** no change to legacy `fx/<name>.json`, `fx/fx.json`, old effect runtime IDs, serialized simulation state or `RtsFx`; no duplicate renderer. Old names `compileVfxGraph`, `VfxGraphAssets`, `VfxSourceComponent`, `VfxPresentationSystem`, `VfxEventBinding` are source-level aliases/wrappers. Because the ECS component type aliases resolve to the exact same types, existing ECS type IDs are preserved (do not replace aliases with wrappers or derived types). Graph asset path stays `fx/graphs/*.vfx.json` for compatibility.
+
+### Test record — NOT RUN
+
+No local checkout/build/CTest runner was available while making the connector-backed edits, so compilation, `ctest`, skill catalog check and visual QA have **NOT** been executed; do not claim success. Next agent must run:
+
+```bash
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+### Known limitations and exact next task
+
+1. Confirm that the new renamed C++ types and aliases compile/link, that all three tests pass, and that generated `skills/catalog.json` equals the catalog generator's output. Fix immediately if not; report actual outputs.
+2. Hook `SpectraFX` graph asset CRUD, preview and runtime loading into `apps/editor/core/FxOps.*` / `Workspace` / the existing Effects window and MCP registration, without breaking legacy effect operations; then create a visual graph editor.
+3. Add GPU compute particle backend with explicit RHI capability checks and CPU fallback; never call existing graph v1 a full Niagara dataflow/GPU implementation.
+4. Validate genre-neutral actual host usage for FPS and RTS (not only header-level fixtures), entity attachment, effect IDs, rollback and visuals, then migration/parity.
+5. Continue appending handoff entries **in this same file**, separately committed after each implementation stage; preserve all other agents' changes to this active branch.
