@@ -517,3 +517,57 @@ before calling this stage validated.
   running clients. Model lifetime must outlive the registry/player.
 - Next: GPU crowd/pose-sharing opt-in and integrate camera budget policy
   in FPS client; full test/build/visual validation later.
+
+
+## Stage 24 — GPU baked crowd ECS policy (2026-11-18)
+
+- Commit `352d3ab01ee7d741debc46e42078ee604636bcb6`.
+- Added `AnimationCrowdSystems.h`: per-entity `Animator` clip clocks,
+  Idle/Walk/Run/Death selection, synchronized Walk/Run blend, GPU
+  `BakedSample` output; intentionally avoids CPU pose/palette evaluation.
+- Uses existing `bakeAnimations()` and `Renderer3D::drawModel` instancing.
+  No new GPU shader/compute backend claimed. CTest
+  `animation_crowd_policy` added (NOT RUN).
+
+## Stage 25 — FPS instanced crowd and significance integration (2026-11-18)
+
+- Commit `3b452909ae88077cdf5869a166aaa0837b1545af`.
+- `apps/fps/client.cpp` opts into baked crowd mode using
+  `fps.visual.bakedCrowd=true` for simple imported clips only. Complex
+  `animationGraph` remains palette. If GPU baked preparation fails,
+  fallback to the existing graph/box path.
+- Palette path uses shared `assignAnimationBudgets` with camera
+  projected-size significance rather than separate hard-coded distance LOD.
+- `docs/fps.md` now explains both variants.
+- NOT RUN, FPS GPU/metal screenshot and group draw-call benchmarking needed.
+
+## Stage 26 — unified cosmetic animation cue collection (2026-11-18)
+
+- Commit `bc32c4452debf34b5c54a49554701d6fe5a6cc9c`.
+- Public `AnimationEventDispatch.h` combines the per-frame Graph Clip
+  notifies and Montage events into a stable bounded cue collection;
+  supports a host callback sink, no gameplay writes.
+- Added `tests/animation/cues.cpp` / CTest `animation_cues`.
+  NOT RUN.
+
+## Stage 27 — FPS positional footstep events (2026-11-18)
+
+- Commit `cf3a0ae77f2552c4ae052efe16bf167be3fded2d`.
+- FPS palette clients now attach `AnimationGraphNotifiesComponent`
+  and route authored `step`/`footstep`/`land` cosmetic notifies
+  to positional step audio for remote actors. Gunfire, damage and
+  reload remain governed by authoritative server counters.
+- NOT RUN, inspect replay/audio and event double-delivery visually.
+
+## Stage 28 — ragdoll self-collision filtering (2026-11-18)
+
+- Commit `fe8017c2ec435ba7d11fa487f2d9810018230b15`.
+- `physics::World` JSON bodies accept validated `collisionGroup`;
+  `RagdollBuildOptions::collisionGroup=-1` emits a negative Box3D
+  collision group for all generated parts. Project code must give
+  **different negative group IDs to different characters in the same
+  physics World**. This prevents self-collision without disabling
+  contact with the environment and other ragdolls.
+- NOT RUN (physics disabled in typical builds).
+- Next: explicit host integration parity, tests/CI, Editor build,
+  real imported avatar and FPS CPU/GPU screenshots.
