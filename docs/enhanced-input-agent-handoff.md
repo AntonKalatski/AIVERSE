@@ -307,3 +307,11 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Source/test status:** GitHub source committed; CMake/CTest and macOS/Windows GUI verification remain pending. Need check user asset read-only errors and project-switch/reload behavior on actual OS. Both file APIs are presentation-only; no sim/ECS format changed.
 
 **Next agent:** inspect CI and build; debug errors; run UI focus/rebind/camera functional test and full AGENTS.md validation before making PR ready.
+
+## Stage 21 — RTS semantic pointer controls / wheel zoom (2026-11-18)
+
+**Implementation:** `enhanced_presets::rtsReference()` adds `RTS.Pointer` Mapping Context with `Select`, `Command` Boolean press Actions and `CameraZoom` Axis1D on mouse wheel Y, all non-consuming and assigned stable mapping IDs 1..3. `ClientInputRouting` owns `platform::EnhancedInputAdapter` and forwards keyboard/pointer/touch events through the shared runtime **after UI pointer ownership is resolved**. Its `reset` handles Touch/held input through the adapter. `GameClient::event` now derives ordinary camera wheel zoom from semantic `CameraZoom` value instead of raw `e.wheelY`. Pointer selection/drag/garrison/tap semantics still execute their existing high-level logic, but projects and agents can bind to `Select`/`Command` Actions without duplicating low-level device conversion. RTS native command format unchanged.
+
+**Tests:** `enhanced_rts_input_tests.cpp` verifies CameraZoom wheel value and UI blocking plus Select click; registered context count now 3. Real editor/gamepad/multitouch behavioral validation still pending.
+
+**Next agent:** assess code/CI diagnostics, compile and test the complete suite, and document any remaining native/Windows/Web issues. Do not replace RTS selection algorithms with simple button clicks: selection is a distinct high-level mechanic and stays presentation-side.
