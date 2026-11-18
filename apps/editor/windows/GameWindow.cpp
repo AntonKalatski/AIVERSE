@@ -16,6 +16,7 @@
 #include "engine/i18n/Localization.h"
 #include "engine/platform/InputFlow.h"
 #include <filesystem>
+#include <set>
 #include <string_view>
 #include "modules/rts/RtsScript.h"
 
