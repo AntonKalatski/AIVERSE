@@ -204,5 +204,55 @@ int main() {
           ecsSnapshot[0].useGeometry &&
           ecsSnapshot[0].geometry.points.size()==3,
           "ECS snapshot must copy water and geometry with stable entity ID");
+    // Stage 13: prepared CPU geometry has an exact RHI payload byte count.
+    lib::nereid::WaterSurfaceMeshOptions preparedOpts;
+    preparedOpts.lod=lib::nereid::WaterSurfaceLod::Far;
+    const auto prepared=render::NereidSurfaceResident::prepare(
+        lakeA.body,nullptr,123,preparedOpts);
+    check(prepared.has_value(),"valid box must prepare its CPU surface");
+    check(prepared->bufferBytes==
+          prepared->cpu.vertices.size()*sizeof(render::MeshVertex)+
+          prepared->cpu.indices.size()*sizeof(uint32_t),
+          "prepared water upload budget must equal actual VB/IB payload");
+    check(prepared->bufferBytes==render::nereidMeshBufferBytes(prepared->cpu),
+          "exact byte accounting must match standalone policy");
+    auto invalidStyle=style;invalidStyle.opacity=1.f;
+    check(!render::NereidSurfaceResident::prepare(
+        lakeA.body,nullptr,123,preparedOpts,invalidStyle).has_value(),
+        "invalid water material must not stage GPU geometry");
+    // Automatic LOD has no effect unless explicitly enabled.
+    world::NereidSceneSurface lodSurface=lakeA;
+    lodSurface.mesh.lod=lib::nereid::WaterSurfaceLod::Medium;
+    lodSurface.autoLod=true;
+    lodSurface.mediumDistance=30.f;
+    lodSurface.farDistance=100.f;
+    Vec3 nearCam{8_fx,0_fx,0_fx},midCam{60_fx,0_fx,0_fx},
+         farCam{400_fx,0_fx,0_fx};
+    check(world::NereidWaterScene::selectedLod(lodSurface,&nearCam)==
+          lib::nereid::WaterSurfaceLod::Near,
+          "near water should select near LOD");
+    check(world::NereidWaterScene::selectedLod(lodSurface,&midCam)==
+          lib::nereid::WaterSurfaceLod::Medium,
+          "mid-distance water should select medium LOD");
+    check(world::NereidWaterScene::selectedLod(lodSurface,&farCam)==
+          lib::nereid::WaterSurfaceLod::Far,
+          "far-distance water should select far LOD");
+    lodSurface.autoLod=false;
+    check(world::NereidWaterScene::selectedLod(lodSurface,&farCam)==
+          lib::nereid::WaterSurfaceLod::Medium,
+          "manual water LOD must remain unchanged");
+    const auto lodConfig=world::parseNereidWaterManifest(Json::parse(R"({
+      "nereidWater":{"surfaces":[{"id":22,"shape":"box",
+        "surfaceY":2,"bottomY":-2,"halfExtents":[8,8],
+        "autoLod":true,"mediumDistance":80,"farDistance":200}]}
+    )"));
+    check(lodConfig.surfaces.size()==1 && lodConfig.surfaces[0].autoLod &&
+          lodConfig.surfaces[0].mediumDistance==80.f &&
+          lodConfig.surfaces[0].farDistance==200.f,
+          "JSON camera LOD thresholds must deserialize");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[{
+      "surfaceY":2,"bottomY":1,"shape":"box","halfExtents":[1,1],
+      "autoLod":true,"mediumDistance":500,"farDistance":100
+    }]}})"),"reversed LOD thresholds must be rejected");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
