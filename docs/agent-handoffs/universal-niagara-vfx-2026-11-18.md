@@ -1133,3 +1133,77 @@ No local compiler or CMake/CTest execution, Metal GPU runtime test, editor launc
 2. Program expressions are supplied as declarative JSON. The v2 visual node editor can create `ParticleProgramModule` and edit its JSON, but compiling arbitrary V2 **data node DAG** automatically into this bytecode has not yet been integrated. Do not confuse static `{"$node"}` evaluator with runtime VM inputs.
 3. Runtime results affect position/velocity/tint/size/rotation, but separate arbitrary vector attributes and renderer shaderGraph binding of custom attributes are not yet implemented. Existing editor preview remains CPU.
 4. **Next bounded Stage 20:** add V2 data graph-to-runtime program codegen / authoring APIs and per-effect/per-instance parameter overrides without re-creating shaders. Then extend GPU compute handling of compatible program operations behind opt-in backend checking, and integrate with material attributes/renderer. Keep a separate handoff after each stage, exact SHAs and tests-deferred record.
+
+## Stage 20 — named runtime instance parameters after merging main (SOURCE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** continue **functional** SpectraFX development, honoring the user's explicit instruction to **merge current `main` into the working feature branch first** and defer tests until functions are implemented. Implement genuine per-instance scalar inputs for particle VM programs and graph-v2 named parameter declarations, not a new FPS/RTS renderer.
+
+### Merge of main (performed BEFORE editor changes)
+
+- Current `main` was `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` and the feature head `b070d99cd1a19e0d26ca419e13caef2c9ea9178a` at merge preparation. They had diverged (main 325 commits ahead of feature, feature 255 commits ahead of main), so fast-forward was impossible.
+- GitHub PR **#33** was opened from `main` to `feature/universal-entity-inspector-fps`. GitHub reported initial conflicts. All 45 changed files from `main` were incorporated using the actual main blob SHAs into a feature-base tree. Three overlapping files were three-way merged: `AGENTS.md` (three independent InputFlow additions), `CMakeLists.txt` (three InputFlow link updates), `skills/catalog.json` (InputFlow summary/source updates). SpectraFX content was preserved.
+- A real Git **two-parent merge commit** `463f69f230f7d02cdaca4c824b014ff1221402c1` was created with feature and main as both parents and pushed by optimistic ref update (**no force**). GitHub compare `main...feature/universal-entity-inspector-fps` afterwards returned **behind 0 / ahead 256**, confirming that all main commits are now ancestors of the feature head. GitHub reported PR #33 **closed, merged**. No build, CI or CTest result was produced by this merge.
+- All subsequent Stage-20 commits below were applied **on the merged branch**, not `main`. Continue doing so and preserve other agents' work with fresh blob SHA reads.
+
+### Code commits — exact SHAs
+
+| SHA | File(s) | Implemented change |
+|---|---|---|
+| `2b92d8bc0ab93e85b393dc53a41e853858b25e73` | `engine/fx/SpectraParticleProgram.h` | Read-only VM fields `param0..param7` and optional 8-float instance data in Context; writable fields remain unchanged |
+| `dadca56e3d37388d6477908a5aa26ac9e8be0fb7` | `engine/fx/FxInternal.h` | VM scalar array per Instance and per spawned Particle, linked to read-only execution context |
+| `cb3d6ebad3590b6fffcec25b41fc82442f2d2dd5` | `engine/fx/FxEmit.cpp` | Copy instance inputs to new particles prior to Spawn VM code |
+| `4e19ed2b73877115d0d113130616422ccb0826f1` | `engine/fx/ParticleSystem.h` | `setProgramParameter(handle,slot,value,affectExisting)` public API |
+| `b1f4a1db6ab1be29f6c21740cbfb7c523f7159ab`, `2960c3a8ca0b7dfede9444776ab81bc02e233b35` | `engine/fx/ParticleSystem.cpp` | Update specific instances and optionally surviving live particles, even when a one-shot's instance stopped emitting |
+| `255c1abc75983dcf748eed8d48db919248be38dc`, `1173bd01faf0a5f7f1ed02970baebe47c699b5c0` | `engine/fx/SpectraBatchWorld.{h,cpp}` | Forward per-handle parameter changes to the shared CPU particle renderer |
+| `d85a3ace7afc99915d858330fd1ead291264a1c3`, `dbeb8d7e17086748ad2c20dacaf601f119077067` | `engine/fx/SpectraGraphRuntime.{h,cpp}` | Per-source scalar state; changes affect future births or already-owned live particles, with handle isolation |
+| `4f3714b9bb88e45f3b4b9d5c3cbc3a59f09fcac4`, `f1903c0458624541470ccc8798c6d245196bb82e` | `engine/fx/SpectraCueScheduler.{h,cpp}` | Optional per-cue and attached-source 8-float parameter arrays and masks; live source parameter updates do not trigger emitter restart |
+| `b070d99cd1a19e0d26ca419e13caef2c9ea9178a` | `engine/fx/SpectraCueScheduler.cpp` | Apply only masked slots and default unbound slots to zero |
+| `3ea55b70c366e113fd2d9c371b56ca46944a32ff`, `6f637e9bd6a7e8eec42ca58de858ab22732e7a72` | `examples/spectrafx/per_instance_parameters_v2.vfx.json` | Complete sample using dynamic `lift` and normalized age in a ParticleProgramModule |
+| `c6147cf554cd5928eb8c8c983c43ff973823c992` | `engine/fx/SpectraInstanceParameters.h` | Declarative named parameter table, unique numbered slots 0..7, initial/min/max finite validation |
+| `94fa61e3f283f679c72776005055fa8d9b1db6c6` | `engine/fx/SpectraGraphV2.h` | Allow and validate `instanceParameters` root; normalize `InstanceParameter` typed nodes into numbered runtime slots |
+| `3ab2d9ab808d0ea0739a650d2d91239e3ed1d348` | `engine/fx/SpectraValueGraph.h` | Distinguish runtime-only `InstanceParameter` from compile-time value graph literals |
+| `0e03e7565ac0796b158b354b7b1fef8ec97f3557` | `engine/fx/SpectraRuntimeCodegen.h` | Lower dynamic named value nodes to read-only scalar VM `param0..param7` fields |
+| `7dccddd81d75326760343b77a23fde6569b52d96` | `engine/fx/SpectraAuthoring.h` | Visual node catalog now contains `InstanceParameter` |
+| `75d6683e4132a8308b84260daf748695077febdc`, `a418ac447ab649cecc2095d2284322c3ecb45880` | `engine/fx/SpectraGraphRuntime.{h,cpp}` | Strict `setNamedProgramParameter(name,value,affectExisting)` API and default named parameters, CPU fallback and RequireGpu rejection |
+| `adf4bf06d8a80bf8214f07506eea8d2226ec57ee`, `c96d888a6d46a8d01cd4c855b138e60087e3b8ab` | `engine/fx/ParticleSystem.{h,cpp}` | `playWithProgramParameters` initializes all eight floats BEFORE prewarm/spawn; old `play()` ABI delegates using zero defaults |
+| `341a271f55a007be0b9a2385d607ee216e7cc064`, `9a1392c33478fdbb574f62095aba8cd4362957a6` | `engine/fx/SpectraBatchWorld.{h,cpp}` | Same prewarm-safe shared-play API |
+| `04b89c8115e6666132a0b9c587c9c46b3726a446` | `engine/fx/SpectraGraphRuntime.cpp` | Use atomic prewarm-safe playback for standalone/shared instances |
+| `34c0079eb25d66a461644676fd1138e8c2150e0d`, `b070d99cd1a19e0d26ca419e13caef2c9ea9178a` | `engine/fx/SpectraCueScheduler.cpp` | Cue/attached source playback with parameter values known at spawn, respecting masks |
+| `f1955363903f018b2858c5596238f7d2e2fcaa19` | `apps/editor/Editor.h` | Preserve 8-float preview instance inputs through loop restarts |
+| `cc49dfbdc9fc03df518e9943637ccfa7548065ea` | `apps/editor/EditorFxOps.cpp` | `fx_graph_preview {graph,instanceValues?}` validates named overrides and spawns prewarm-safe CPU preview |
+| `0ea76f6f372ecbc5a770760e56f058ecfa41379b` | `apps/editor/windows/SpectraGraphWindow.cpp` | Version-2 right-panel schema editor, valid named slider controls and preview overrides |
+| `bacb4b360c830c0dd26ad704c8afc4d2951d2d33` | `docs/spectrafx.md` | Native API, graph schema, editor preview, CPU/GPU boundaries and deferred checks |
+| `6016f05c6a7f849b32ecc02ed89eb763e8bd1537` | `skills/visuals/aiverse-spectrafx/SKILL.md` | AI agent instructions and usage examples |
+| `64b94418009f5544b952159090c25076dce83d92` | `AGENTS.md` | Per-stage responsibilities, `main` merge record, no-false-validation claims |
+
+### Runtime semantics and limits
+
+- Graph v2 root `instanceParameters` maps up to 8 names to `{"slot": 0..7, "default": number, "min": number, "max": number}`. Names are constrained to safe alphanumeric/underscore length <= 64; slots must be unique; all values finite and bounded; default must lie inside range. These values are **separate** from compile-time graph `parameters`.
+- `InstanceParameter` typed value node refers to the named schema and is lowered into read-only VM field `param0..param7` inside `ParticleProgramModule`. V2 compiler must never constant-fold it. The fixed-budget CPU VM reads the value from each particle's snapshot of the source's parameter array. No custom execution source, Lua, I/O, gameplay ECS or renderer shader handles are added.
+- Each `ParticleSystem::Instance` holds eight floats. They are copied into each new particle at spawn, so a source's parameter changes affect **future** births by default; `setProgramParameter(..., affectExisting=true)` additionally updates all live particles matching the source's generation-safe FxHandle, even after the emitting instance has finished. `playWithProgramParameters` sets the array at allocation and before any `prewarm` or `Spawn` program, solving prewarmed-parameter timing.
+- `spectra::BatchWorld` and `GraphRuntime` propagate this API for shared/standalone CPU sources. `GraphRuntime::initGraph` applies declared named defaults, and `setNamedProgramParameter` validates the name and range. Graphs with named instance inputs are forced to full CPU; `RequireGpu` refuses to omit VM behavior. Legacy graph v1 and `play` API remain supported.
+- `CueScheduler` accepts optional masked per-cue/per-attached-source values. Continuous source parameter edits do not restart their emitters. All values are presentation-only and never enter deterministic ECS checksums or saves.
+- The graph editor can edit named schema metadata and per-preview-instance scalar values, and `fx_graph_preview` accepts `instanceValues` without writing fx assets. Looped preview retains the same numeric inputs on subsequent spawns.
+
+### Verification
+
+**NOT RUN BY USER INSTRUCTION:** No CMake, clang, CTest, editor GUI automation, macOS Metal rendering, CI success or visual/performance verification was performed for Stage 20. GitHub API returned commit SHAs for successful writes and a merged pull request. This is source-level functionality only; do not call the VFX feature production-ready.
+
+When the user later requests tests:
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_editor aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_cue_scheduler_tests aiverse_vfx_shared_batch_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+Check prewarm timing, future vs existing particle updates, two different source values from same definition, schema range/type rejection, editing and loop preview, mask removal, rollback and CPU/GPU fallback decisions. Only after CPU parity investigate opt-in GPU VM codegen and Metal device smoke.
+
+### Remaining FUNCTIONAL work / next bounded stage
+
+1. A fully general GPU implementation of the CPU expression VM (including custom scalar attributes, per-instance buffers and all stage hooks) is still missing; the Metal subset remains conservative. Unsupported effects **must not** lose semantics on GPU.
+2. General renderer custom particle attributes/shaderGraph bindings and material-node graphs are not yet present; connect VM outputs to compatible renderer data and add authorable attributes without duplicate genre systems.
+3. The native ECS presenter and editor graph tools still require complete production client wiring/feature polish and actual visual parity. The source is not a complete, verified Unreal Niagara replacement.
+4. **Next functional Stage 21:** implement GPU-compatible VM subset/parameter buffers with strict capability diagnostics and CPU fallback for unsupported expression programs, then renderer custom attributes and material graph bindings. Continue maintaining the handoff after each stage. The user expressly postpones tests until feature completion; record NOT RUN.
