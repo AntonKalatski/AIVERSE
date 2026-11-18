@@ -2246,3 +2246,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_presentation COMMAND aiverse_physis_presentation_test)
     set_tests_properties(physis_presentation PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 14: genre-neutral read-only diagnostics for editor/host overlays.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_diagnostics_test tests/physis_diagnostics_test.cpp)
+    target_link_libraries(aiverse_physis_diagnostics_test PRIVATE aiverse_engine)
+    add_test(NAME physis_diagnostics COMMAND aiverse_physis_diagnostics_test)
+    set_tests_properties(physis_diagnostics PROPERTIES LABELS "PHYSIS")
+endif()
