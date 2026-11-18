@@ -96,3 +96,27 @@ before calling this stage validated.
 - **Next:** validate both tests; wire generic playback/parameters into an FPS
   presentation adapter without disturbing current RTS behavior. Build
   separate montage and retarget stages with explicit tests and handoffs.
+
+
+## Stage 3: compatible-rig skeleton retarget — 2026-11-18
+
+- Code commit: `4e6bd2944547e99401ffef01fc481b81ac165078`.
+- New public algorithm: `libraries/include/aiverselib/animation/GenericRetarget.h`
+  with `GenericRetargetMap::compile()` and `apply()`.
+- Full ancestry paths are matched by default; caller may alias renamed bones.
+  Output pose is initialized to destination bind pose, then mapped local
+  translation/rotation deltas are transferred. Bone-length translation
+  scaling is optional. Scale/morph copying is opt-in.
+- Standalone regression test: `tests/animation/generic_retarget.cpp` /
+  CTest `animation_generic_retarget`: aliases, bind rotation, relative
+  translation, unmapped bones, invalid input and optional channels.
+- Compatibility: no Model layout or serialized animation format changed.
+  Works only on compatible local-space transform rigs. Does NOT implement
+  Unity Humanoid muscles, retarget IK, humanoid poses, twist distribution
+  or root-motion authority. Avoid claiming full humanoid retarget support.
+- Validation: NOT RUN. Command:
+  `cmake --build build/ecs-test --target aiverse_generic_retarget_tests`
+  and `ctest --test-dir build/ecs-test -R animation_generic_retarget --output-on-failure`.
+- Next: implement a reusable montage/slot overlay driven by clip sections;
+  then run all animation tests and add FPS visual integration with real
+  optional models. Continue separate handoffs for every stage.
