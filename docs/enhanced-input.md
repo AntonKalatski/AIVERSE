@@ -242,3 +242,7 @@ The editor Game window's direct RTS play-test now uses `RTS.Pointer` for mouse S
 ### Two-finger twist
 
 Touch gesture control code 6 (deviceIndex 0) is a signed relative rotation in radians, wrapped to ±π and reset on finger-count changes or focus loss. The default RTS input scheme maps it to `CameraTwist` Axis1D, allowing per-project sensitivity modifiers for planetary/camera rotation. It complements codes 3/4/5 for pinch/centroid pan and stays separate from world-space camera math.
+
+## Planet and possessed-unit Actions
+
+The default RTS preset now includes two additional optional contexts: `RTS.Planet` with `PlanetRotate`, `PlanetPitch`, `PlanetNextBody`, and `RTS.Possession` with `PossessedMove`, `PossessedFire`, `PossessedWalk`. The engine activates each only in its corresponding client mode. Planet view uses common camera pan/zoom/touch gesture Actions—including pinch, two-finger pan and twist—while keeping orbital projection/planet selection client-owned. Possession uses an Axis2D camera-relative direction and mouse-held fire/walk Actions, still issuing the original deterministic simulation Commands. Old custom full input assets lacking these actions retain their original control fallbacks.
