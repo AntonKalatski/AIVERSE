@@ -72,6 +72,23 @@ int main() {
     const auto bad=aiverse::Json::parse(R"({"version":2,"actions":[],"contexts":[]})");
     CHECK(!conf::readAsset(bad,duplicate,&err));
     CHECK(!err.empty());
+    // Full assets may use forward references, but a transitive chord / inverted
+    // chord loop is invalid. On failure the output Asset must stay unchanged.
+    const auto beforeCycle=conf::writeAsset(duplicate).dump();
+    const auto cyclicAsset=aiverse::Json::parse(R"JSON({
+       "version":1,
+       "actions":[
+          {"name":"A","type":"bool","triggers":[{"type":"chord","action":"B"}]},
+          {"name":"B","type":"bool","triggers":[{"type":"notChord","action":"A"}]}
+       ],
+       "contexts":[{"name":"Cycle","priority":0,"active":true,"mappings":[
+          {"id":1,"action":"A","control":{"device":"keyboard","code":"A"}},
+          {"id":2,"action":"B","control":{"device":"keyboard","code":"B"}}
+       ]}]
+    })JSON");
+    CHECK(!conf::readAsset(cyclicAsset,duplicate,&err));
+    CHECK(err.find("cyclic")!=std::string::npos);
+    CHECK(conf::writeAsset(duplicate).dump()==beforeCycle);
     const auto dupBindings=aiverse::Json::parse(R"JSON({
         "version":1,"rebindings":[
           {"context":"Gameplay","id":1,"control":{"device":"keyboard","code":"A"}},
