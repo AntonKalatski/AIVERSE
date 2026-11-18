@@ -181,7 +181,14 @@ public:
         const gfx::TextureResourceInfo* chosen = nullptr;
         for (const auto& item : resources)
             if (item.handle.id == selectedId_) { chosen = &item; break; }
-        if (!chosen) selectedId_ = 0;
+        if (!chosen && selectedId_) {
+            selectedId_ = 0;
+            ++preview_->revision; // invalidate a pending callback for a destroyed texture
+            preview_->resourceId = 0;
+            preview_->pending = false;
+            preview_->cells.clear();
+            preview_->status.clear();
+        }
         if (chosen) {
             ImGui::Separator();
             ImGui::Text("Selected #%u", selectedId_);
@@ -211,7 +218,28 @@ public:
             if (chosen->arrayLayers > 1)
                 ImGui::SliderInt("Read face / layer", &readLayer_, 0, chosen->arrayLayers-1);
             else readLayer_ = 0;
-            if (ImGui::Button("Read GPU mip / face")) {
+            // The backend stages the entire selected subresource even though
+            // the preview keeps only a 32x32 diagnostic representation.
+            // Enforce a strict memory cap before issuing native PBO/blit/copy.
+            const size_t mipWidth = size_t(std::max(1,chosen->width >> readMip_));
+            const size_t mipHeight = size_t(std::max(1,chosen->height >> readMip_));
+            const size_t bytesPerPixel =
+                chosen->format == gfx::PixelFormat::RGBA16F ? 8u : 4u;
+            constexpr size_t kMaxPreviewReadbackBytes = size_t(16) << 20;
+            const bool previewSupported = chosen->sampleCount == 1 &&
+                (chosen->dimension == gfx::TextureDimension::Texture2D ||
+                 chosen->dimension == gfx::TextureDimension::Texture2DArray ||
+                 chosen->dimension == gfx::TextureDimension::Cube ||
+                 chosen->dimension == gfx::TextureDimension::CubeArray) &&
+                (chosen->format == gfx::PixelFormat::RGBA8 ||
+                 chosen->format == gfx::PixelFormat::RGBA8_sRGB ||
+                 chosen->format == gfx::PixelFormat::RGBA16F) &&
+                mipWidth <= kMaxPreviewReadbackBytes / bytesPerPixel /
+                            mipHeight;
+            if (!previewSupported)
+                ImGui::TextDisabled("Readback unsupported or exceeds the 16 MiB preview budget.");
+            if (!preview_->pending && previewSupported &&
+                ImGui::Button("Read GPU mip / face")) {
                 auto state = preview_;
                 const uint64_t revision = ++state->revision;
                 state->resourceId = selectedId_;
@@ -294,8 +322,17 @@ public:
                 ImGui::TableSetColumnIndex(0);
                 char handleLabel[32]{};
                 std::snprintf(handleLabel, sizeof handleLabel, "%u", info.handle.id);
-                if (ImGui::Selectable(handleLabel, selectedId_ == info.handle.id))
+                if (ImGui::Selectable(handleLabel, selectedId_ == info.handle.id) &&
+                    selectedId_ != info.handle.id) {
                     selectedId_ = info.handle.id;
+                    readMip_ = 0;
+                    readLayer_ = 0;
+                    ++preview_->revision;
+                    preview_->resourceId = selectedId_;
+                    preview_->pending = false;
+                    preview_->cells.clear();
+                    preview_->status.clear();
+                }
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextUnformatted(textureDimensionName(info.dimension));
                 ImGui::TableSetColumnIndex(2);
