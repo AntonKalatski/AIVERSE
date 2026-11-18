@@ -1420,3 +1420,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `tests/fps/tests.cpp` to execute `ecsProjectileProgramStageParity()` directly after existing `projectilePrograms()` during `aiverse_fps_tests`. This ensures the live `fps.compat.projectilePrograms` stage is covered against both ECS authority and legacy storage in normal native FPS test runs.
 - **Verification:** source edit committed, **C++ compilation, actual FPS suite, COW/sanitizer and network tests unverified**. Tests may identify ordering or save parity differences that must be resolved before production status.
 - **Next:** inspect CI, verify latest branch source, and run `ctest --output-on-failure -R 'fps|ecs_'` plus transport/Editor gates on a native checkout.
+
+
+### 2026-11-18 — Real FPS rewind hitscan consumes the shared ECS intent query
+- Implementation SHA: `00f2f94da747517aa13e063a1d39d3e027551df0`.
+- Updated `modules/fps/FpsSystems.cpp::traceShot` to construct an ephemeral `lib::genre::HitscanIntentComponent` (origin/delta/current maximum fraction, requested) and synchronously call the same `lib::genre::resolveHitscanIntent` policy used by the registered ECS `addHitscanResolutionSystem`. The selected historical `Actor` pose pointer is retained for FPS head/limb detection; its semantic victim slot and fraction are used unchanged. The target-to-Entity callback uses existing `actorEntity` (generation-safe identity), with no new pool or persistent field.
+- Preserves FPS source/target exclusion, dead targets and life validation, source-order tie behavior, vehicle and world occlusion, penetration, per-pellet RNG and immediate `damage`/kill/loot/event ordering in the current tick. This is a **real shared algorithm in the live FPS path**, but does **not** yet move the live FPS fire-intent state into a canonical ECS pool or make its damage asynchronous.
+- Verification: Github source commit only; no native C++ build, gameplay checksum or rollback test pass claimed. Next: add a paired legacy-vs-ECS multi-shooter/fatal-damage fixture, and check v9 save parity with actual native runner.
