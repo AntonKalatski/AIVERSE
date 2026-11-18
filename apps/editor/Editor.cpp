@@ -100,8 +100,8 @@ void Editor::init(gfx::Device& dev) {
     io.IniFilename = iniPath.c_str();
     resetLayout_ = !fs::exists(iniPath, fec);
     r3d_.init(dev);
-    postFx_.init(dev);
-    postFx_.setQuality(render::Prisma::defaultQualityFor(dev, false));
+    prisma_.init(dev);
+    prisma_.setQuality(render::Prisma::defaultQualityFor(dev, false));
     r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, false));
     r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, false));
     for (auto& f : WindowRegistry::factories()) {
@@ -168,7 +168,7 @@ void Editor::shutdown() {
     windows_.clear(); // windows release their viewports in their destructors via update()? keep simple: textures die with the device
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
-    postFx_.shutdown();
+    prisma_.shutdown();
     if(fpsPreviewMesh_.vb.valid())dev_->destroyBuffer(fpsPreviewMesh_.vb);
     if(fpsPreviewMesh_.ib.valid())dev_->destroyBuffer(fpsPreviewMesh_.ib);
     r3d_.shutdown();
@@ -868,7 +868,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
-    r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &postFx_ : nullptr));
+    r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &prisma_ : nullptr));
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
@@ -932,7 +932,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
-    r3d_.render(pass, &postFx_);
+    r3d_.render(pass, &prisma_);
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     r3d_.resolvePrisma();
     dev_->endPass();
