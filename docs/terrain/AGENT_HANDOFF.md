@@ -1441,3 +1441,31 @@ limitations prevented authoring-container checkout.
    landscape renderer covers the horizon.
 6. After each actual work phase, append new
    commits/tests/limits to this handoff.
+
+## Stage 9a — authored Horizon terrain/biome/forest masks (CODE COMMITTED, TESTS DEFERRED)
+
+**Commit:** `a96408462d8e9e753ff114e1499ecbb32c16f1ef`.
+**Branch:** `feature/terraweave` / PR #24, draft.
+**Changed source:** `engine/world/TerraWeaveHorizon.h`.
+
+**Public API:** `HorizonSurfaceSources` provides optional immutable
+`heightAtCm`, `biomeAt`, and `allowsCanopyAt` callbacks to
+`bakeHorizon(..., const HorizonSurfaceSources* = nullptr)`.
+Pre-existing procedural sampling is the fallback for absent
+callbacks. Crown samples are masked before atlas rasterization.
+No shader/renderer/backend code changed; old callers still compile
+conceptually without changing source.
+
+**Actually performed:** GitHub source inspection and successful
+file update. **No build, CTest, GPU screenshot or performance
+measurement performed**, per user instruction: another agent owns
+testing. DO NOT claim this feature passed.
+
+**Next scoped code task:** expose a shared snapshot setter on
+`TerraWeaveHorizonScene`, invalidate only its currently pending
+region, and connect it to resident authored-world height/masks in
+`WorldScene`, without racing the existing worker or touching ECS.
+Follow with stable region caching and transition ownership.
+**Tester handoff:** add coverage for supplied sample callbacks,
+water/road suppression, same terrain snapshot in near/far paths,
+GPU atlas preview and mobile fallback.
