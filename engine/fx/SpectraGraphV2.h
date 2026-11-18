@@ -5,6 +5,7 @@
 #include "SpectraValueGraph.h"
 #include "VfxGraph.h"
 #include <cmath>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -107,16 +108,71 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
         (void)unused;
         if(key!="version" && key!="parameters" && key!="nodes" &&
            key!="links" && key!="outputs" && key!="forceFields" &&
-           key!="metadata" && key!="description")
+           key!="metadata" && key!="description" && key!="functions")
             return fail("unknown root key '"+key+"'");
     }
     const Json& nodes=graph["nodes"],&links=graph["links"],&outputs=graph["outputs"];
+    const Json& functions=graph["functions"];
     if(!nodes.isArray()||nodes.size()==0||nodes.size()>256)
         return fail("nodes must have 1..256 entries");
     if(!links.isArray()||links.size()>512)
         return fail("links must be an array with at most 512 entries");
     if(!outputs.isArray()||outputs.size()==0||outputs.size()>16)
         return fail("outputs must have 1..16 entries");
+
+    // Function bodies are PURE value graphs. Reject unknown functions and
+    // recursion even if not yet referenced by an output in this asset.
+    if(!functions.isNull()) {
+        if(!functions.isObject() || functions.size()>32)
+            return fail("functions must be a map of at most 32 definitions");
+        std::map<std::string,std::vector<std::string>> calls;
+        for(const auto& [name,fn]:functions.members()) {
+            if(name.empty() || name.size()>64 || !fn.isObject() ||
+               !fn["parameters"].isObject() || !fn["nodes"].isArray() ||
+               fn["nodes"].size()==0 || fn["nodes"].size()>64 ||
+               !fn["output"].isString())
+                return fail("function '"+name+"' has invalid parameters/nodes/output");
+            if(fn.has("returns")) {
+                const std::string value=fn.getStr("returns");
+                if(value!="number"&&value!="bool"&&value!="string"&&
+                   value!="vec2"&&value!="vec3"&&value!="vec4")
+                    return fail("function '"+name+"' has unsupported return type");
+            }
+            for(const Json& node:fn["nodes"].items()) {
+                if(!vfx2::valueNodeType(node.getStr("type")))
+                    return fail("function '"+name+"' contains non-value stage");
+                if(node.getStr("type")=="FunctionCall") {
+                    const Json& props=node["properties"];
+                    calls[name].push_back(props.getStr("function",
+                                                     node.getStr("function")));
+                }
+            }
+            vfx2::ValueGraph valueNodes(fn["nodes"],fn["parameters"],
+                                       Json::object(),errors,&functions);
+            if(!valueNodes.initialize() || !valueNodes.validateAll())
+                return false;
+            if(!valueNodes.hasNode(fn.getStr("output")) ||
+               !valueNodes.isValue(fn.getStr("output")))
+                return fail("function '"+name+"' output must name a data node");
+        }
+        std::set<std::string> completed,active;
+        std::function<bool(const std::string&)> visit=[&](const std::string& name) {
+            if(completed.count(name))return true;
+            if(!functions.has(name))
+                return fail("unknown referenced function '"+name+"'");
+            if(!active.insert(name).second)
+                return fail("recursive function dependency '"+name+"'");
+            if(active.size()>8)return fail("function call depth exceeds 8");
+            for(const auto& to:calls[name])if(!visit(to))return false;
+            active.erase(name);
+            completed.insert(name);
+            return true;
+        };
+        for(const auto& [name,fn]:functions.members()) {
+            (void)fn;
+            if(!visit(name))return false;
+        }
+    }
 
     std::map<std::string,Json> copied;
     std::map<std::string,std::string> types;
@@ -185,7 +241,7 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
     // math nodes would resolve against stale original properties.
     Json augmented=Json::array();
     for(const Json& n:nodes.items())augmented.push(copied.at(n.getStr("id")));
-    vfx2::ValueGraph values(augmented,graph["parameters"],overrides,errors);
+    vfx2::ValueGraph values(augmented,graph["parameters"],overrides,errors,&functions);
     if(!values.initialize() || !values.validateAll())return false;
 
     // Stage nodes keep their original authored IDs and positions but become
