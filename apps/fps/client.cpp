@@ -8,6 +8,7 @@
 #include "engine/platform/Platform.h"
 #include "engine/platform/EnhancedInputAdapter.h"
 #include "engine/platform/EnhancedInputConfig.h"
+#include "engine/platform/EnhancedInputPresets.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
 #include "engine/platform/ContentReader.h"
@@ -60,59 +61,9 @@ struct App {
     // Data-driven semantic mapping: games may replace this context with their own JSON assets.
     // These defaults reproduce the reference FPS controls; the network command layout is unchanged.
     void configureInput() {
-        using namespace ein;
-        using K=platform::Key;
-        auto key=[](K k){return Control{Device::Keyboard,int(k)};};
-        auto pad=[](platform::PadButton b){return Control{Device::GamepadButton,int(b)};};
-        auto axis=[](platform::PadAxis a){return Control{Device::GamepadAxis,int(a)};};
-        auto define=[&](const char* name,ValueType type=ValueType::Boolean) {
-            actions.defineAction({name,type});
-        };
-        define("Move",ValueType::Axis2D);
-        define("Look",ValueType::Axis2D);
-        define("LookStick",ValueType::Axis2D);
-        for(const char* name : {"Fire","Aim","Jump","Sprint","Crouch","Reload","Melee","Block",
-                                 "LockOn","Prone","ShowInventory","Frag","Smoke","Flash","Heal",
-                                 "Interact","Drop","Plant","Vault","Buy","Weapon1","Weapon2",
-                                 "Weapon3","Weapon4","Attach1","Attach2","Attach3"}) define(name);
-        MappingContext fpsContext{"FPS"};
-        fpsContext.bind("Move",key(K::W),{Modifier::swapXY()});
-        fpsContext.bind("Move",key(K::S),{Modifier::swapXY(),Modifier::negate()});
-        fpsContext.bind("Move",key(K::A),{Modifier::negate()});
-        fpsContext.bind("Move",key(K::D));
-        fpsContext.bind("Move",axis(platform::PadAxis::LX),{Modifier::deadZone(0.13f)});
-        fpsContext.bind("Move",axis(platform::PadAxis::LY),{Modifier::deadZone(0.13f),Modifier::swapXY(),Modifier::negate()});
-        fpsContext.bind("Look",{Device::MouseAxis,0});
-        fpsContext.bind("Look",{Device::MouseAxis,1},{Modifier::swapXY()});
-        fpsContext.bind("LookStick",axis(platform::PadAxis::RX),{Modifier::deadZone(0.13f)});
-        fpsContext.bind("LookStick",axis(platform::PadAxis::RY),{Modifier::deadZone(0.13f),Modifier::swapXY()});
-        fpsContext.bind("Fire",{Device::MouseButton,0});
-        fpsContext.bind("Fire",axis(platform::PadAxis::RT),{Modifier::deadZone(0.1f)});
-        fpsContext.bind("Aim",{Device::MouseButton,1});
-        fpsContext.bind("Aim",axis(platform::PadAxis::LT),{Modifier::deadZone(0.1f)});
-        fpsContext.bind("Jump",key(K::Space),{},{Trigger::pressed()});
-        fpsContext.bind("Jump",pad(platform::PadButton::A),{},{Trigger::pressed()});
-        fpsContext.bind("Sprint",key(K::LeftShift));
-        fpsContext.bind("Sprint",pad(platform::PadButton::LStick));
-        fpsContext.bind("Crouch",key(K::LeftCtrl));
-        fpsContext.bind("Crouch",pad(platform::PadButton::B));
-        fpsContext.bind("Reload",key(K::R));
-        fpsContext.bind("Reload",pad(platform::PadButton::X));
-        fpsContext.bind("Melee",key(K::Z));
-        fpsContext.bind("Block",key(K::LeftAlt));
-        fpsContext.bind("LockOn",key(K::T));
-        fpsContext.bind("ShowInventory",key(K::Tab));
-        const std::pair<const char*,K> oneShots[]={
-            {"Prone",K::V},{"Frag",K::G},{"Smoke",K::X},{"Flash",K::C},{"Heal",K::H},
-            {"Interact",K::E},{"Drop",K::Q},{"Plant",K::P},{"Vault",K::F},{"Buy",K::B},
-            {"Weapon1",K::Num1},{"Weapon2",K::Num2},{"Weapon3",K::Num3},{"Weapon4",K::Num4},
-            {"Attach1",K::F1},{"Attach2",K::F2},{"Attach3",K::F3}
-        };
-        for(const auto& [name,button]:oneShots)
-            fpsContext.bind(name,key(button),{},{Trigger::pressed()});
-        fpsContext.bind("Interact",pad(platform::PadButton::Y),{},{Trigger::pressed()});
-        actions.registerContext(std::move(fpsContext));
-        actions.activateContext("FPS",0);
+        std::string error;
+        if(!platform::enhanced_config::installAsset(actions,platform::enhanced_presets::fpsReference(),&error))
+            throw std::runtime_error("FPS Enhanced Input preset: "+error);
     }
 
     std::string inputProfilePath() const {
