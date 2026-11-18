@@ -14,8 +14,8 @@
 namespace aiverse::terraweave {
 namespace horizon_archive_detail {
 
-inline constexpr uint32_t kMagic=0x34485754u; // "TWH4" in little endian
-inline constexpr uint32_t kVersion=4;
+inline constexpr uint32_t kMagic=0x35485754u; // "TWH5" in little endian
+inline constexpr uint32_t kVersion=5;
 inline constexpr size_t kHeaderBytes=24; // magic,version,fingerprint,checksum
 inline constexpr size_t kMaxBytes=20u*1024u*1024u;
 
@@ -68,6 +68,14 @@ inline void validate(const HorizonBake& b) {
        b.terrainBeginCm<0||b.terrainBeginCm>kWorldLimitCm||
        b.terrainSkirtDepthCm<0||b.terrainSkirtDepthCm>5000||
        b.innerTerrainLipCm<0||b.innerTerrainLipCm>200 ||
+       b.maxNearClipTriangles>8192 ||
+       b.nearClipRects.size()>1024 ||
+       std::any_of(b.nearClipRects.begin(),b.nearClipRects.end(),
+           [](const RectCm& r) {
+               return r.minX>=r.maxX||r.minZ>=r.maxZ||
+                   r.minX<-kWorldLimitCm||r.maxX>kWorldLimitCm||
+                   r.minZ<-kWorldLimitCm||r.maxZ>kWorldLimitCm;
+           }) ||
        (!b.nearOwnedQuads.empty() &&
         (b.terrainResolution==0 ||
          b.nearOwnedQuads.size()!=size_t(b.terrainResolution)*
@@ -137,6 +145,7 @@ inline uint64_t horizonArchiveFingerprint(
     add(static_cast<uint32_t>(settings.terrainSkirtDepthCm));
     add(settings.terrainGridSnapSteps);
     add(static_cast<uint32_t>(settings.innerTerrainLipCm));
+    add(settings.maxNearClipTriangles);
     add(settings.terrainResolution);
     add(settings.atlasTilePixels);
     add(static_cast<uint32_t>(settings.canopyHeightCm));
@@ -158,7 +167,8 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     std::vector<uint8_t> out;
     out.reserve(kHeaderBytes+bake.atlasRgba.size()+
                 bake.clusters.size()*60+bake.terrainVertices.size()*32+
-                bake.nearOwnedQuads.size()+116);
+                bake.nearOwnedQuads.size()+
+                bake.nearClipRects.size()*32+124);
     put32(out,kMagic);
     put32(out,kVersion);
     put64(out,fingerprint);
@@ -168,11 +178,13 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     putI32(out,bake.terrainBeginCm);
     putI32(out,bake.terrainSkirtDepthCm);
     putI32(out,bake.innerTerrainLipCm);
+    put32(out,bake.maxNearClipTriangles);
     putI64(out,bake.cameraXcm);putI64(out,bake.cameraZcm);
     put32(out,bake.atlasWidth);put32(out,bake.atlasHeight);
     put32(out,static_cast<uint32_t>(bake.terrainVertices.size()));
     put32(out,static_cast<uint32_t>(bake.clusters.size()));
     put32(out,static_cast<uint32_t>(bake.nearOwnedQuads.size()));
+    put32(out,static_cast<uint32_t>(bake.nearClipRects.size()));
     out.insert(out.end(),bake.atlasRgba.begin(),bake.atlasRgba.end());
     for(const auto& v:bake.terrainVertices) {
         putI64(out,v.xCm);putI64(out,v.zCm);
@@ -189,6 +201,10 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     }
     out.insert(out.end(),bake.nearOwnedQuads.begin(),
                bake.nearOwnedQuads.end());
+    for(const RectCm& r:bake.nearClipRects) {
+        putI64(out,r.minX);putI64(out,r.minZ);
+        putI64(out,r.maxX);putI64(out,r.maxZ);
+    }
     if(out.size()>kMaxBytes)
         throw std::invalid_argument("TerraWeave Horizon archive exceeds budget");
     const uint64_t hash=checksum(
@@ -216,13 +232,16 @@ inline HorizonBake decodeHorizonArchive(
     b.terrainBeginCm=getI32(bytes,at);
     b.terrainSkirtDepthCm=getI32(bytes,at);
     b.innerTerrainLipCm=getI32(bytes,at);
+    b.maxNearClipTriangles=get32(bytes,at);
     b.cameraXcm=getI64(bytes,at);b.cameraZcm=getI64(bytes,at);
     b.atlasWidth=get32(bytes,at);b.atlasHeight=get32(bytes,at);
     const uint32_t terrainCount=get32(bytes,at);
     const uint32_t clusterCount=get32(bytes,at);
     const uint32_t nearQuadCount=get32(bytes,at);
+    const uint32_t nearRectCount=get32(bytes,at);
     if(!b.atlasWidth||b.atlasWidth!=b.atlasHeight||
        b.atlasWidth>2048||terrainCount>10000||clusterCount>2048 ||
+       nearRectCount>1024 ||
        (nearQuadCount!=0 &&
         nearQuadCount!=size_t(b.terrainResolution)*b.terrainResolution))
         throw std::invalid_argument("TerraWeave Horizon archive declared sizes");
@@ -267,6 +286,15 @@ inline HorizonBake decodeHorizonArchive(
                             bytes.begin()+static_cast<std::ptrdiff_t>(
                                 at+nearQuadCount));
     at+=nearQuadCount;
+    if(nearRectCount>(bytes.size()-at)/32)
+        throw std::invalid_argument("TerraWeave Horizon near clip rects truncated");
+    b.nearClipRects.reserve(nearRectCount);
+    for(uint32_t i=0;i<nearRectCount;++i){
+        RectCm r;
+        r.minX=getI64(bytes,at);r.minZ=getI64(bytes,at);
+        r.maxX=getI64(bytes,at);r.maxZ=getI64(bytes,at);
+        b.nearClipRects.push_back(r);
+    }
     if(at!=bytes.size())
         throw std::invalid_argument("TerraWeave Horizon archive trailing bytes");
     validate(b);
