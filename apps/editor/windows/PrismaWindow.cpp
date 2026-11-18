@@ -67,7 +67,7 @@ public:
             lastKey_ = key;
         }
         pf.setQuality(tier_);
-        ed.prismaInScene = inScene_;
+        ed.postFxInScene = inScene_;
     }
 
     void draw(Editor& ed) override {
