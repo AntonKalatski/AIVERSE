@@ -20,7 +20,7 @@ enum : uint32_t {
     kPfUnderwater = 1u << 13, kPfUnderwaterDepth = 1u << 14,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_UNDERWATER"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH"};
 
 // Target roles inside one Sized set.
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41 };
@@ -57,7 +57,8 @@ Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMas
         const std::string n = std::to_string(t);
         gTex += "uniform sampler2D tex" + n + ";\n";
         gMacros += "#define TEX" + n + "(p) texture(tex" + n + ", p)\n";
-        mArgs += ", texture2d<float> tex" + n + " [[texture(" + n + ")]], sampler tex" + n + "_s [[sampler(" + n + ")]]";
+        const bool depthSample=(t==5 && defines.find("PF_UNDERWATER_DEPTH")!=std::string::npos);
+        mArgs += std::string(", ") + (depthSample ? "depth2d<float>" : "texture2d<float>") + " tex" + n + " [[texture(" + n + ")]], sampler tex" + n + "_s [[sampler(" + n + ")]]";
         mMacros += "#define TEX" + n + "(p) tex" + n + ".sample(tex" + n + "_s, p)\n";
     }
     b.fs = defines + block + gTex + "in vec2 v_screen;\nout vec4 o_color;\n" + common + gMacros +
@@ -256,7 +257,7 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
-    for (int i = 0; i < 14; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
+    for (int i = 0; i < 15; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
     if (mask & kPfUnderwaterDepth) tex |= 1u << 5;
     if (mask & kPfBloom) tex |= 2;
@@ -600,6 +601,24 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         ++stats_.effects;
     }
     const auto* graphEffect = find(PostFxType::ShaderGraph);
+    // Depth sampling is enabled only after the scene pass has ended.
+    // ShaderGraph owns tex5+, so avoid conflicting with its inputs.
+    const auto depthTex=depthFor(set,w,h);
+    const bool depthSafe=(mask & kPfUnderwater) &&
+        quality_>=PostFxQuality::Medium && !graphEffect &&
+        depthTex.valid() && depthTex.id != out.depthTarget.id &&
+        dev.info().clipDepthZeroToOne == dev.info().clipDepthZeroToOne;
+    if(depthSafe) {
+        mask |= kPfUnderwaterDepth;
+        const auto inv=f.viewProj.inverse();
+        for(int n=0;n<4;++n) {
+            float* dst=n==0?u.inverseViewProj0:n==1?u.inverseViewProj1:
+                       n==2?u.inverseViewProj2:u.inverseViewProj3;
+            for(int j=0;j<4;++j)dst[j]=inv.m[n*4+j];
+        }
+        put(u.underwaterCamera,f.cameraPos.x,f.cameraPos.y,
+            f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
+    }
     gfx::PipelineHandle pipe = composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
     if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
     std::vector<gfx::TextureHandle> graphImages;
@@ -630,6 +649,7 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const Lut* l = (mask & kPfLut) ? lut(find(PostFxType::Lut)->text) : nullptr;
         dev.setTexture(4, l ? l->tex : black_);
         for(size_t i=0;i<graphImages.size();++i)dev.setTexture(int(i)+5,graphImages[i]);
+        if(mask & kPfUnderwaterDepth)dev.setTexture(5,depthTex);
         dev.draw(3);
     }
     ++stats_.passes;
