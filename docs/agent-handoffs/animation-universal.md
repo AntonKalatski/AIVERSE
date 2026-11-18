@@ -497,3 +497,23 @@ before calling this stage validated.
   state-machine notifies and audio routing still require integration.
   Notifies never directly authorize hits/damage/reload commits.
 - Next: asset registry hot-reload & performance and integration.
+
+
+## Stage 23 — transactional AnimationGraph hot reload (2026-11-18)
+
+- Implementation commit: `d4342938e03ec411dbed3f107c57423a74426d00`.
+- New `AnimationHotReload.h`: host-owned
+  `AnimationHotReloadRegistry` with in-memory `compile(key,model,doc,revision)`,
+  optional `pollFile()` timestamp loader, last-known-good graph fallback,
+  error field, and `apply(presentationWorld)` rebinding matching
+  `AnimationGraphKeyComponent` entities to new immutable graphs.
+- No runtime swapping on the simulation thread. Existing per-entity
+  graph player resets when its asset pointer changes, per established
+  presentation ECS behavior; state-time migration is not attempted.
+- Test source `tests/animation/hot_reload.cpp`, CTest
+  `animation_hot_reload`. NOT RUN by user instruction.
+- Project clients must register/poll assets explicitly; editor save by
+  itself does not automatically broadcast graph updates to remote
+  running clients. Model lifetime must outlive the registry/player.
+- Next: GPU crowd/pose-sharing opt-in and integrate camera budget policy
+  in FPS client; full test/build/visual validation later.
