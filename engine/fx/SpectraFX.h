@@ -5,6 +5,7 @@
 // GPU simulation remain separate workstreams.
 #pragma once
 #include "VfxGraphAssets.h"
+#include "SpectraModuleSchema.h"
 
 namespace aiverse::spectra {
 
