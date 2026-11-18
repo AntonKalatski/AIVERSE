@@ -4694,3 +4694,33 @@ maxCandidates=1 plan can still request the only missing
 fine tile beneath two already resident coarse ancestors,
 and verify maxExaminedPages caps fully-resident full-screen
 coverage. Append separate test-source handoff.
+
+## Stage 7AG — regression for absent fine tile beneath resident coarse mips (2026-11-18)
+
+Code/test commit: 7bc72f9cfc685ab8aecde0e0722ab16c1b0404c7.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+File: tests/render/virtual_texture_prefetch.cpp.
+
+New GPU-independent test residentCoarseDoesNotStarveFine:
+a 4x4 tile grid with 3 mips and one nonresident-candidate
+slot has its two coarse ancestors reported as already resident.
+The planner must skip these ancestors during enumeration
+and issue the one missing mip0 page (3,3), with exactly
+three unique lookups, two skipped resident pages and no
+candidate-cap blockage. Tightening maxExaminedPages to two
+must stop before the fine page and set candidateLimitReached
+without performing a third callback. A zero lookup budget
+is rejected during planner initialization.
+
+The existing CMake/CTest target virtual_texture_prefetch
+is unchanged and now includes this regression source.
+No runtime, RHI backend, ECS or disk format changes.
+
+Actual verification: GitHub test-source commit succeeded.
+Native C++ compilation NOT RUN, CTest NOT RUN, GPU NOT RUN.
+Test asserts are source-level only, not passing evidence.
+
+Next: Update native texture documentation with the separate
+maxExaminedPages CPU safety bound. Then compile/run the
+focused verifier on a full source checkout and correct
+actual failures. Keep PR #21 Draft pending driver checks.
