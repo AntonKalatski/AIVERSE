@@ -1,6 +1,7 @@
-#include "engine/world/TerraWeaveArbor.h"
+#include "engine/world/TerraWeaveArborMesh.h"
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <future>
 #include <stdexcept>
@@ -81,6 +82,34 @@ void testInstancesAndIndependentWorkers() {
     instance.yawMilliDegrees = 180000;
     sameTree(original, generateTree(profile, instance, TreeLOD::High));
 }
+void testGeneratedGeometry() {
+    TreeProfile profile;
+    profile.primaryBranches = 12;
+    for (TreeLOD tier : {TreeLOD::High, TreeLOD::Medium, TreeLOD::Low, TreeLOD::Impostor}) {
+        const TreeSkeleton tree = generateTree(profile, 777, tier);
+        const ArborMesh mesh = buildArborMesh(tree);
+        if (tier == TreeLOD::Impostor) {
+            assert(mesh.vertices.empty() && mesh.indices.empty());
+            continue;
+        }
+        assert(!mesh.vertices.empty() && !mesh.indices.empty());
+        assert(mesh.indices.size() % 3 == 0);
+        bool bark = false, leaf = false;
+        for (const auto& v : mesh.vertices) {
+            bark |= v.material == 0;
+            leaf |= v.material == 1;
+            assert(std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z));
+            assert(std::isfinite(v.nx) && std::isfinite(v.ny) && std::isfinite(v.nz));
+            assert(v.material <= 1);
+        }
+        assert(bark && leaf);
+        for (uint32_t idx : mesh.indices) assert(idx < mesh.vertices.size());
+    }
+    bool threw = false;
+    try { (void)buildArborMesh(generateTree(profile, 42), {2, true}); }
+    catch (const std::invalid_argument&) { threw = true; }
+    assert(threw);
+}
 void testInvalidProfiles() {
     TreeProfile profile;
     bool threw = false;
@@ -107,4 +136,5 @@ int main() {
     testTreeShapesAndLods();
     testInstancesAndIndependentWorkers();
     testInvalidProfiles();
+    testGeneratedGeometry();
 }
