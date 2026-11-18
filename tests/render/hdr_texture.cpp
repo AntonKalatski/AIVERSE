@@ -1,0 +1,149 @@
+// Synthetic Radiance RGBE fixtures and native RHI contract tests.
+// Test SOURCE ONLY: this file does not claim a test execution result.
+#include "engine/render/HdrTexture.h"
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+using namespace aiverse;
+namespace {
+void require(bool ok, const char* why) {
+    if (!ok) throw std::runtime_error(why);
+}
+std::string hdr(const std::string& sizeLine, const std::string& pixels) {
+    return std::string("#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n") +
+           sizeLine + "\n" + pixels;
+}
+void pixel(std::string& data, uint8_t r, uint8_t g, uint8_t b, uint8_t e) {
+    data.push_back(char(r)); data.push_back(char(g));
+    data.push_back(char(b)); data.push_back(char(e));
+}
+struct MockGpu final : gfx::Device {
+    gfx::DeviceInfo info_;
+    std::string error_ = "mock texture allocation rejected";
+    bool supported = true, reject = false;
+    int creations = 0, destructions = 0;
+    gfx::TextureDesc last;
+    std::vector<uint16_t> uploaded;
+    const gfx::DeviceInfo& info() const override { return info_; }
+    const std::string& lastError() const override { return error_; }
+    bool supports(gfx::PixelFormat format) const override {
+        return supported && format == gfx::PixelFormat::RGBA16F;
+    }
+    gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override { return {}; }
+    void updateBuffer(gfx::BufferHandle,const void*,size_t,size_t) override {}
+    void destroyBuffer(gfx::BufferHandle) override {}
+    gfx::TextureHandle createTexture(const gfx::TextureDesc& d) override {
+        if (reject || gfx::validateTextureDesc(d) != gfx::TextureDescError::None)
+            return {};
+        last = d;
+        const auto* half = static_cast<const uint16_t*>(d.data);
+        if (half && d.width > 0 && d.height > 0)
+            uploaded.assign(half, half + size_t(d.width)*size_t(d.height)*4u);
+        return {uint32_t(++creations)};
+    }
+    void updateTexture(gfx::TextureHandle,int,int,int,int,const void*,int) override {}
+    void destroyTexture(gfx::TextureHandle) override { ++destructions; }
+    gfx::ShaderHandle createShader(const gfx::ShaderDesc&) override { return {}; }
+    void destroyShader(gfx::ShaderHandle) override {}
+    gfx::PipelineHandle createPipeline(const gfx::PipelineDesc&) override { return {}; }
+    void destroyPipeline(gfx::PipelineHandle) override {}
+    void beginFrame(int,int) override {}
+    void endFrame() override {}
+    void beginPass(const gfx::PassDesc&) override {}
+    void endPass() override {}
+    void setViewport(const gfx::Rect&) override {}
+    void setScissor(const gfx::Rect&) override {}
+    void setPipeline(gfx::PipelineHandle) override {}
+    void setVertexBuffer(gfx::BufferHandle,size_t) override {}
+    void setIndexBuffer(gfx::BufferHandle,size_t) override {}
+    void setTexture(int,gfx::TextureHandle) override {}
+    void setUniforms(int,const void*,size_t) override {}
+    void draw(uint32_t,uint32_t) override {}
+    void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t) override {}
+};
+void flatAndUpload() {
+    std::string pixels;
+    pixel(pixels,128,0,0,129); // red = 1
+    pixel(pixels,255,0,0,130); // red = 255/64 > 1
+    const auto data = hdr("-Y 1 +X 2",pixels);
+    render::RadianceImage image; std::string error;
+    require(render::parseRadianceHdr(data,image,error), "flat RGBE decode");
+    require(error.empty() && image.width == 2 && image.height == 1 &&
+            image.rgba16f.size() == 8u, "decoded RGBA16F extent");
+    require(image.rgba16f[0] == 0x3c00u && image.rgba16f[3] == 0x3c00u &&
+            image.rgba16f[4] > 0x3c00u, "linear HDR value above one retained");
+    MockGpu gpu;
+    auto texture = render::loadRadianceHdr(gpu,data,error);
+    require(texture.valid() && gpu.creations == 1 &&
+            gpu.last.format == gfx::PixelFormat::RGBA16F &&
+            gpu.uploaded == image.rgba16f,
+            "one-call upload copies all authored HDR texels");
+    gpu.destroyTexture(texture);
+    require(gpu.destructions == 1, "caller owns returned GPU texture");
+    gpu.supported = false;
+    require(!render::uploadRadianceHdr(gpu,image,error).valid() &&
+            !error.empty() && gpu.creations == 1,
+            "unsupported GPU format does not allocate");
+    gpu.supported = true; gpu.reject = true;
+    require(!render::loadRadianceHdr(gpu,data,error).valid() &&
+            !error.empty(), "allocation failure surfaced");
+}
+void rleAndOrientation() {
+    std::string pixels;
+    pixel(pixels,2,2,0,8); // Radiance modern RLE scanline header
+    pixel(pixels,136,128); // 8 red values
+    pixel(pixels,136,0);   // 8 green values
+    pixel(pixels,136,0);   // 8 blue values
+    pixel(pixels,136,129); // exponent, red=1
+    render::RadianceImage image; std::string error;
+    require(render::parseRadianceHdr(hdr("-Y 1 +X 8",pixels),image,error) &&
+            image.rgba16f.size() == 8u*4u,
+            "modern RLE scanline decoded");
+    for (int x=0;x<8;++x)
+        require(image.rgba16f[size_t(x)*4] == 0x3c00u,
+                "all eight RLE run texels decoded");
+    pixels.clear();
+    pixel(pixels,128,0,0,129);
+    pixel(pixels,0,128,0,129);
+    require(render::parseRadianceHdr(hdr("+Y 1 -X 2",pixels),image,error),
+            "orientation parse");
+    require(image.rgba16f[0] == 0 && image.rgba16f[1] == 0x3c00u &&
+            image.rgba16f[4] == 0x3c00u, "horizontal orientation flipped");
+}
+void errorsAndBoundary() {
+    using render::hdr_detail::toHalf;
+    require(toHalf(1.0f) == 0x3c00u && toHalf(0.0f) == 0 &&
+            toHalf(65504.0f) == 0x7bffu, "half normal/zero/saturation");
+    require(toHalf(std::ldexp(1.0f,-15)) == 0x0200u &&
+            toHalf(std::ldexp(1.0f,-14) - std::ldexp(1.0f,-25)) == 0x0400u,
+            "half subnormal/normal rounding boundary");
+    render::RadianceImage image; std::string error;
+    require(!render::parseRadianceHdr("not hdr",image,error) &&
+            !error.empty() && image.rgba16f.empty(), "bad signature rejected");
+    std::string pixels;
+    pixel(pixels,2,2,0,8);
+    pixel(pixels,0,0); // zero-sized RLE code is malformed
+    require(!render::parseRadianceHdr(hdr("-Y 1 +X 8",pixels),image,error) &&
+            !error.empty() && image.rgba16f.empty(), "invalid RLE run rejected");
+    require(!render::parseRadianceHdr(hdr("-Y 1 +X 2",std::string(7,'a')),
+                                      image,error), "truncated flat image rejected");
+    require(!render::parseRadianceHdr(hdr("-Y 20000 +X 2",std::string()),
+                                      image,error), "oversized extent rejected");
+}
+}
+int main() {
+    try {
+        flatAndUpload();
+        rleAndOrientation();
+        errorsAndBoundary();
+    } catch (const std::exception& e) {
+        std::fprintf(stderr,"HDR texture contract FAILED: %s\n",e.what());
+        return 1;
+    }
+    std::puts("Radiance HDR decode/upload contract: OK");
+    return 0;
+}
