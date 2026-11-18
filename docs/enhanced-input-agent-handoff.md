@@ -491,3 +491,15 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Tests authored (execution postponed):** RTS routing expectations updated to seven contexts; verify planet/possession activation and Axis2D motion. Follow-up smoke list: Q/E with selections, orbit body cycle, remapped wheel pinch/twist, possession fire/steer, reset on leaving view.
 
 **Next:** audit contextual activation and C++ headers; finish docs/agent handoff. Then code is feature-complete for the stated scope, pending dedicated build/test/bugfix pass.
+
+## Stage 39 — code-only integration audit / top-down project switches (2026-11-18)
+
+**Source correction:** `GameClient` now tracks whether `RTS.TopDownAbilities` was synthesized by the engine. A later `topDownConfigure` re-registers an engine-generated ability mapping when the map/hero changes, preventing stale ability keys/indices from a previous level. A full authored `RTS.TopDownAbilities` context is never overwritten. Existing preset IDs remain unchanged.
+
+**Editor correction:** `GameWindow` no longer refreshes project input twice per frame (once before script-card click processing, again in its input path); the earlier load remains, which is necessary so all direct-play pointer/camera actions use the same current authored scheme.
+
+**Static audit (no test execution):** inspected source files for native core, adapter, JSON/profile file I/O, per-local-user routing/profiles, FPS, RTS, top-down, planet, editor, and CTest. Basic bracket/quote balancing across 21 files found no unmatched delimiters, and declared top-down/planet method signatures match their call sites by text inspection. This is NOT a compiler, linker, unit-test or runtime validation; platform-specific type correctness and behavior remain unverified at user's request.
+
+**Post-implementation validation checklist:** (1) configure/build editor, RTS and FPS targets on macOS Apple Silicon, Linux, Windows; (2) CTest `library_enhanced_input`, `library_enhanced_input_adapter`, `library_enhanced_input_config`, `library_enhanced_rts_input`; (3) full ECS/determinism and FPS/RTS regression tests; (4) FPS F10 capture+Swap+restart+reset and project JSON reload; (5) editor dock focus/tab switching, project/Input window and direct GameWindow mouse selection; (6) keyboard/gamepad, drag, gestures and top-down/planet/possession mode transitions; (7) local multiplayer owner swap and per-player profiles; (8) Android/iOS/Web input smoke tests. Fix test/build failures in this same feature branch and append Stage 40 logs before making PR ready.
+
+**Feature status:** implementation delivered at source level, tests intentionally deferred. PR #20 stays Draft; no claim of green CI or working binary.
