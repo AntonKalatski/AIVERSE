@@ -296,14 +296,10 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
             if(found->second.graph)program=found->second.graph;
         }
     }
-    if(!st.genericViewPose && st.wasGenericViewPose && program) {
-        // Returning from the generic engine View to the legacy specialized
-        // path must never resume a stale GraphInstance state.
-        st.graph.reset(program);
-        st.poseValid=false;
-        updatePose=true;
-    }
-    st.wasGenericViewPose=st.genericViewPose;
+    // Defer the ownership handoff until the generic pose has actually
+    // passed validation below. Otherwise an invalid View pose switches to
+    // legacy animation without restarting its stale clocks in this frame.
+    const bool wasGenericViewPose=st.wasGenericViewPose;
     if(st.graph.graph()!=program.get()){st.graph.reset(program);st.poseValid=false;updatePose=true;}
     if(st.genericViewPose && genericView_) {
         const Entity presentation=genericView_->presentationEntity(st.genericViewId);
@@ -318,6 +314,18 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
             st.genericViewPose=false;
         }
     }
+    if(!st.genericViewPose && wasGenericViewPose) {
+        // Reactivating the legacy renderer is a fresh animation owner.
+        // Reset both clocks: the graph instance and the imported clip
+        // Animator must not resume pre-MotionWeave playback time.
+        st.graph.reset(program);
+        A.setModel(nullptr);
+        A.setModel(&m);
+        st.baseKind=-1;
+        st.poseValid=false;
+        updatePose=true;
+    }
+    st.wasGenericViewPose=st.genericViewPose;
     if (program && !st.genericViewPose) {
         // Rebuild defaults each frame so removing a Lua override restores automatic inputs.
         auto& p = st.graph.parameters();
