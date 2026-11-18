@@ -316,10 +316,12 @@ public:
             opts.originX=source.geometry.points.front().x.toDouble();
             opts.originZ=source.geometry.points.front().z.toDouble();
         }else if(source.body.footprint==lib::nereid::WaterFootprint::Infinite) {
-            opts.originX=double(render::nereidPatchAnchor(
-                opts.cameraX,opts.oceanPatchRadius));
-            opts.originZ=double(render::nereidPatchAnchor(
-                opts.cameraZ,opts.oceanPatchRadius));
+            opts.originX=render::nereidPatchAnchor64(
+                opts.preciseCamera?opts.cameraX64:double(opts.cameraX),
+                double(opts.oceanPatchRadius));
+            opts.originZ=render::nereidPatchAnchor64(
+                opts.preciseCamera?opts.cameraZ64:double(opts.cameraZ),
+                double(opts.oceanPatchRadius));
         }else{
             opts.originX=source.body.center.x.toDouble();
             opts.originZ=source.body.center.z.toDouble();
@@ -351,8 +353,11 @@ public:
             opts.lod=selectedLod(slot.source,observer,slot.selectedLod);
             slot.selectedLod=opts.lod;
             if(observer) {
-                opts.cameraX=float(observer->x.toDouble());
-                opts.cameraZ=float(observer->z.toDouble());
+                opts.cameraX64=observer->x.toDouble();
+                opts.cameraZ64=observer->z.toDouble();
+                opts.preciseCamera=true;
+                opts.cameraX=float(opts.cameraX64);
+                opts.cameraZ=float(opts.cameraZ64);
             }
             applyWaterMeshBasis(opts,slot.source);
             const auto* geometry=slot.source.useGeometry?&slot.source.geometry:nullptr;
