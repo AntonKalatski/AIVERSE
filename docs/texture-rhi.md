@@ -33,8 +33,13 @@ SHA, unverified platforms and the next exact task.
   back all created handles. `tests/render/render_target_set.cpp` is a CPU-only
   mock-device lifetime and rollback test registered as `render_target_set`.
   This is separate from the existing Lua `render::RenderTexture` paint canvas.
-- **Import:** KTX2/DDS source importers still drop extra array layers and cube
-  faces; the new GPU resources are not yet exercised through the asset pipeline.
+- **Import:** the KTX2 parser now preserves all array layers, cube faces and
+  3D slices, and `TextureAsset.h::uploadKtx2Image` offers an opt-in,
+  dimension-aware GPU upload with authored mips and CPU fallback.
+  The legacy model material path deliberately still selects the first 2D
+  slice, since its shaders are sampler2D. DDS still drops arrays/cube faces;
+  BasisLZ/UASTC transcoding, HDR/EXR and color-space-complete compressed
+  texture formats remain unimplemented.
 
 
 | Stage | Deliverable | Acceptance |
@@ -126,6 +131,35 @@ single-sample resolve target per color. If the backend cannot implement
 the selected render pass, `targets.begin` returns false, not a fallback.
 Always check `init` and `begin` results. These APIs are under native
 verification and should not be assumed to run on every device.
+
+## KTX2 arrays, cubemaps and 3D volumes
+
+```cpp
+#include "engine/render/TextureCodec.h"
+#include "engine/render/TextureAsset.h"
+
+// ktx2Bytes are the encoded KTX2 container bytes read by the caller.
+aiverse::render::CompressedImage source;
+std::string error;
+if (aiverse::render::parseKtx2(ktx2Bytes, source, error)) {
+    aiverse::render::TextureUploadOptions opt;
+    // For native compressed sRGB GPU paths ONLY when the material shader
+    // explicitly decodes sRGB; otherwise use the RGBA8_sRGB CPU fallback.
+    opt.trustShaderSrgbDecode = false;
+    auto tex = aiverse::render::uploadKtx2Image(device, source, opt, error);
+    if (tex.valid()) {
+        // Bind only with a shader sampler matching the imported dimension.
+        // Destroy the texture when the consuming resource ends its lifetime.
+        device.destroyTexture(tex);
+    }
+}
+```
+
+`CompressedImage::levels` keeps all faces/layers/slices for every mip.
+`decodeBlocksSlice(source, level, index, rgba)` retrieves a specified
+2D slice for CPU processing. The generic uploader does **not**
+automatically convert a glTF material's existing 2D sampler into an
+array/cubemap shader. Native SDK builds and GPU tests are still pending.
 
 ## References and handoff
 
