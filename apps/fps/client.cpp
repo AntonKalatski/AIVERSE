@@ -557,7 +557,8 @@ struct App {
         if(aimHeld)cam.fovY=(weapon.range>=700_fx||(actor.attachments[actor.weaponIndex]&1))?0.28f:0.65f;
         audio::ListenerPose listener;auto globalEye=visual(eye);listener.pos[0]=globalEye.x;listener.pos[1]=globalEye.y;listener.pos[2]=globalEye.z;auto forward=render::normalize(cam.target-cam.eye());listener.forward[0]=forward.x;listener.forward[1]=forward.y;listener.forward[2]=forward.z;audio.setListener(listener);
         if(streamedScene)streamedScene->update(device,{&actor.pos,1});
-        renderer.beginScene(cam,device.framebufferWidth(),device.framebufferHeight());
+        genericSceneView.beginScene(renderer,cam,
+            device.framebufferWidth(),device.framebufferHeight());
         if(streamedScene)streamedScene->draw(renderer,origin,32);
         staticGeometry.draw(renderer);
         chunks.update(actor.pos,2,2,[&](const auto& file,auto& data){return platform::readContentFile(projectRoot+"/"+file,data);});
