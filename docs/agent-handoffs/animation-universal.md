@@ -217,3 +217,24 @@ before calling this stage validated.
 - Next: CI compile pass and optional real-model screenshot/replay fixture.
   Check imported graph parameter names (the host provides common defaults)
   and ensure no graphics regression or invalid asset handling.
+
+
+## Stage 9: velocity-aware pose inertialization — 2026-11-18
+
+- Code commit: `5e606780d6423bf526350b7ac7bab18c95b80e1b`.
+- Public utility: `libraries/include/aiverselib/animation/PoseInertialization.h`.
+- Added `PoseInertializer` with bounded Hermite-cubic residuals and per-bone
+  local translation/scale/morph offsets plus quaternion-log angular offsets.
+  Optional outgoing/incoming velocities allow continuity at transition start.
+  API: `begin`, `advance`, `apply`, `active`, `reset`.
+- Test: `tests/animation/inertialization.cpp`, CMake executable
+  `aiverse_animation_inertial_tests`, CTest `animation_inertialization`.
+- Compatibility: no existing animation graph or save format changed. The
+  utility is opt-in; the native graph does NOT yet automatically execute
+  inertialization on its state transitions. It is presentation-only.
+- Validation: NOT RUN (GitHub-only source access). Required commands:
+  `cmake --build build/ecs-test --target aiverse_animation_inertial_tests`
+  and `ctest --test-dir build/ecs-test -R animation_inertialization --output-on-failure`.
+- Next: validate CMake and existing FPS/RTS test suites; implement a
+  presentation-only physical-pose blend adapter and shared animation budget
+  with tests, then full per-genre integration and GPU stress benchmarks.
