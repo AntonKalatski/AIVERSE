@@ -32,3 +32,9 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 - Do not change fixed-point math, Earth/Box3D gravity authority, and wind/storm candidate order in the unindexed reference. Existing `windAt`, `gravityAt`, `stormsAt`, and `sampleNatureField` remain supported. The indexed API invokes their **shared policy** through ordered visitors to make parity testable.
 - The index is a derived read-only **snapshot**, not a mutable ECS mirror; rebuild for a new authoritative tick or after edits/rollback/load. It does not accelerate WeatherFront/Quake simulation, terrain/water, or external physics. Avoid retained historical snapshots.
 - Handoff Stage 15: `docs/agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md`; Stage 16: `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`. All tests added, native compile/CTest/CI **NOT RUN** in connector environment.
+
+## Stage 17 — editor debug view integration
+
+- `engine/physis/PhysisDebugPalette.h` supplies only read-only display colour helpers. The editor PHYSIS window is `apps/editor/windows/PhysisWindow.cpp`, using the existing window plugin registrar; **do not** put ImGui or editor includes into `engine/physis`.
+- Editor live PHYSIS is strictly read-only. Demo simulation is a fresh private `aiverse::World`, stepped only with explicit controls; never use it as a surrogate for actual game integration. The 2D heatmap outlines storm/wind/gravity volumes but is not a 3D Scene overlay or editable Inspector.
+- Stage 17 test `physis_editor_view` / CMake / CI: authored, **NOT RUN**. Full editor build and macOS visual QA still mandatory. Handoff: `docs/agent-handoffs/physis-editor-debug-view-2026-11-18.md`.
