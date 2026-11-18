@@ -24,7 +24,8 @@ using GraphAssets = fx::SpectraGraphAssets;
 using GraphLoadResult = fx::SpectraGraphLoadResult;
 
 inline constexpr const char* kName = "AIVERSE SpectraFX";
-inline constexpr int kGraphVersion = 1;
+inline constexpr int kGraphVersion = 2; // latest authoring format
+inline constexpr int kLegacyGraphVersion = 1; // still supported
 
 inline bool compileGraph(const Json& graph, const Json& overrides, Effect& out,
                          std::vector<std::string>& errors) {
