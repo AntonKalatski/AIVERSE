@@ -16,7 +16,10 @@ The public SpectraFX headers are `engine/fx/SpectraFX.h` and `libraries/include/
 `libraries/include/aiverselib/genre/EcsVfxPresentation.h` (read-only ECS renderer bridge,
 tick-event bindings). Never put renderer handles, float particles or graphics timing into
 authoritative gameplay ECS, never duplicate an FPS-only/RTS-only VFX engine, and do not remove
-legacy `RtsFx` before production parity tests. **GPU VFX, visual graph editor and automatic
+legacy `RtsFx` before production parity tests. The basic graph-v1 ImGui canvas is in
+`apps/editor/windows/SpectraGraphWindow.cpp`, graph CRUD in
+`apps/editor/core/SpectraGraphOps.cpp` and the editor-only in-memory preview
+in `apps/editor/EditorFxOps.cpp`. **GPU VFX, full Niagara graph dataflow and automatic
 native-client integration are not complete.** Current test targets are committed but not
 verified as passing. Every new VFX stage MUST append a separate handoff commit after code and
 tests and record exact SHA, verification status and next work.
