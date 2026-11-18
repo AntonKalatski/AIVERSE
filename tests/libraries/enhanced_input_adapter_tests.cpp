@@ -4,7 +4,10 @@
 #include <iostream>
 #include <span>
 #include <string_view>
+#include <type_traits>
 namespace p = aiverse::platform;
+static_assert(std::is_same_v<p::InputFlowAdapter,p::EnhancedInputAdapter>);
+static_assert(std::is_same_v<p::InputFlowUsers,p::EnhancedInputUsers>);
 namespace in = aiverse::lib::gameplay::inputflow;
 #define CHECK(x) do { if(!(x)) { std::cerr << "Input adapter failed " << __LINE__ << ": " #x "\n"; std::abort(); } } while(false)
 
