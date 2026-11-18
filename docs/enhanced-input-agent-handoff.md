@@ -275,3 +275,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Limits:** gestures are input signals (not simulation commands), and UI must capture/fence touches first. Rotation gestures and multi-finger gestures other than exactly two are not implemented. The existing genre-specific RTS region gesture remains unchanged until it is migrated.
 
 **Next agent:** verify builds and add a reference action-driven camera path; integrate RTS pointer/zoom and editor GameWindow where current behavior can be preserved, then update docs.
+
+## Stage 18 — RTS camera actions and lifecycle cleanup (2026-11-18)
+
+**Implementation:** Extended `enhanced_presets::rtsReference()` with `CameraPan` (arrows) and `IdleCameraPan` (WASD when selection is empty), both `Axis2D` Actions in a new `RTS.Camera` context. Camera bindings are non-consuming so gameplay A/P/R/E/S/H actions remain available. Existing `RTS.Gameplay` mapping IDs 1..7 remain untouched for rebinding profile compatibility. `apps/client/GameClient.cpp::frame` now samples semantic camera axes rather than raw `keys_` for keyboard camera pan; gamepad and pointer-edge movement remain unchanged. `ClientUi.cpp::setScreen` clears semantic input when transitioning away from Playing to prevent held keys on pause/menu.
+
+**Tests:** `enhanced_rts_input_tests.cpp` now asserts arrows/idle camera analog values, action coexistence and dual contexts. No on-device/CI verification yet.
+
+**Behavior:** Axis mapping is combined with original gamepad and edge scroll, clamped per direction to preserve normal speed (identical arrow+W no longer doubles speed, intentional). Pointer selection, project scripts and top-down possession still have their specialized input, preserving game rules and commands. Project `input/actions.json` is a complete replacement and must define camera bindings explicitly if desired.
+
+**Next agent:** migrate compatible editor GameWindow camera controls, verify old RTS movement/selection and keyboard focus, run CMake+CTest for library RTS input and native clients, then log results.
