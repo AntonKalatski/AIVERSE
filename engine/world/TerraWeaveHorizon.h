@@ -24,6 +24,7 @@ struct HorizonSettings {
     uint32_t terrainResolution = 48;   // 48x48 quads for all 12km
     uint32_t atlasTilePixels = 48;     // ~8MB with default region sizes
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
+    uint32_t crownDetail = 2;         // 1..3 CPU-only crown silhouette quality
     bool distantTerrain = true;       // opt-in manifest, disabled unless requested
 };
 
@@ -102,7 +103,7 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.terrainBeginCm<0 || s.atlasTilePixels<16 ||
         s.atlasTilePixels>64 || s.terrainResolution<8 ||
         s.terrainResolution>96 || s.canopyHeightCm<100 ||
-        s.canopyHeightCm>10000)
+        s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3)
         throw std::invalid_argument("TerraWeave Horizon settings");
     const uint64_t tiles=uint64_t(s.middleTilesPerSide)*s.middleTilesPerSide+
                          uint64_t(s.distantTilesPerSide)*s.distantTilesPerSide;
@@ -218,30 +219,102 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 const uint32_t slot=static_cast<uint32_t>(out.clusters.size());
                 const uint32_t px=(slot%(atlasSide/s.atlasTilePixels))*s.atlasTilePixels;
                 const uint32_t py=(slot/(atlasSide/s.atlasTilePixels))*s.atlasTilePixels;
+                // A canopy is a mixture of small overlapping crowns, not
+                // one vertical rectangle per image column. All shapes use
+                // stable world-cell hashes and integer pixel coverage:
+                // camera motion cannot change their profile until a whole
+                // region is explicitly rebaked.
                 const int32_t heightRange=std::max(1,top-bottom);
                 const uint32_t p=s.atlasTilePixels;
-                for(uint32_t col=1;col+1<p;++col) {
-                    const int64_t columnX=gx*cell+
-                        int64_t(col)*cell/(p-1);
-                    const auto shadeBiome=climateAt(terrain,biomes,columnX,z).biome;
-                    const uint32_t strength=horizon_detail::canopyStrength(shadeBiome);
-                    const uint64_t var=detail::hash2(gx*256+col,gz,terrain.seed^salt);
-                    if ((var&255u)>=strength)continue;
-                    const int32_t ground=heightAtCm(terrain,columnX,z);
-                    const int32_t canopy=std::max(200,s.canopyHeightCm*
-                        (70+static_cast<int>((var>>16)%61))/100);
-                    const int32_t yStart=ground+canopy*32/100-bottom;
-                    const int32_t yTop=ground+canopy-bottom;
-                    const int32_t first=std::clamp(int64_t(yStart)*p/heightRange,int64_t(1),int64_t(p-2));
-                    const int32_t last=std::clamp(int64_t(yTop)*p/heightRange,int64_t(1),int64_t(p-2));
-                    const uint8_t g=static_cast<uint8_t>(80+((var>>32)%40));
-                    for(int32_t iy=first;iy<=last;++iy) {
-                        const uint32_t ry=p-1-static_cast<uint32_t>(iy);
-                        const size_t at=(size_t(py+ry)*atlasSide+px+col)*4;
-                        out.atlasRgba[at]=static_cast<uint8_t>(25+(var>>8)%20);
-                        out.atlasRgba[at+1]=g;
-                        out.atlasRgba[at+2]=static_cast<uint8_t>(25+(var>>24)%20);
-                        out.atlasRgba[at+3]=255;
+                const uint32_t crownCount=3u+(p/6u)*s.crownDetail;
+                for(uint32_t crown=0;crown<crownCount;++crown) {
+                    const uint64_t h=detail::hash2(
+                        gx*257+int64_t(crown),gz*131+int64_t(crown)/3,
+                        terrain.seed^salt^0x4c45414643524f57ULL);
+                    const uint32_t column=2u+static_cast<uint32_t>(
+                        (h&65535ULL)*(p-4u)/65536ULL);
+                    const int64_t sampleX=gx*cell+int64_t(column)*cell/(p-1);
+                    const auto subBiome=climateAt(terrain,biomes,sampleX,z).biome;
+                    const uint32_t coverage=horizon_detail::canopyStrength(subBiome);
+                    if (((h>>16)&255ULL)>=coverage)continue;
+                    const int32_t surface=heightAtCm(terrain,sampleX,z);
+                    const int32_t crownCm=std::max<int32_t>(220,
+                        int64_t(s.canopyHeightCm)*
+                        (68+int32_t((h>>27)%60))/100);
+                    const int32_t heightCenter=surface+crownCm*66/100-bottom;
+                    const int32_t imageY=int32_t(p-1)-
+                        int32_t(int64_t(heightCenter)*p/heightRange);
+                    const int32_t rx=std::max<int32_t>(2,int32_t(p/11u)+
+                        int32_t((h>>40)%4));
+                    const int32_t ry=std::clamp<int32_t>(
+                        int32_t(int64_t(crownCm)*p*52/
+                                (int64_t(heightRange)*100)),2,
+                        std::max<int32_t>(2,int32_t(p/3u)));
+                    const bool needleShape=subBiome==Biome::Tundra ||
+                        (subBiome==Biome::Forest&&((h>>47)&3ULL)==0);
+                    const int32_t loX=std::max<int32_t>(1,int32_t(column)-rx);
+                    const int32_t hiX=std::min<int32_t>(int32_t(p)-2,
+                                                        int32_t(column)+rx);
+                    const int32_t loY=std::max<int32_t>(1,imageY-ry);
+                    const int32_t hiY=std::min<int32_t>(int32_t(p)-2,imageY+ry);
+                    for(int32_t row=loY;row<=hiY;++row) {
+                        const int32_t dy=row-imageY;
+                        // Conifer tapers at the top while broadleaf crowns
+                        // remain rounded/elliptical.
+                        const int32_t width=needleShape ?
+                            std::max<int32_t>(1,rx*(dy+ry+1)/(2*ry+1)) : rx;
+                        for(int32_t col=loX;col<=hiX;++col) {
+                            const int32_t dx=col-int32_t(column);
+                            const int64_t ellipse=
+                                int64_t(dx)*dx*4096/(int64_t(width)*width)+
+                                int64_t(dy)*dy*4096/(int64_t(ry)*ry);
+                            if(ellipse>4096)continue;
+                            // One-pixel soft coverage for alpha mask filtering.
+                            const uint32_t alpha=ellipse<=3277 ? 255u :
+                                static_cast<uint32_t>(
+                                    (4096-ellipse)*255/819);
+                            if(alpha<128u)continue;
+                            const size_t at=(size_t(py+uint32_t(row))*
+                                atlasSide+px+uint32_t(col))*4;
+                            const int32_t shade=std::clamp<int32_t>(
+                                12-int32_t(ellipse/260)+
+                                (imageY-row)*3+int32_t((h>>52)%17)-8,
+                                -30,40);
+                            const int32_t baseGreen=subBiome==Biome::Tundra
+                                ? 92 : subBiome==Biome::Wetland ? 102 : 89;
+                            const uint8_t green=static_cast<uint8_t>(
+                                std::clamp(baseGreen+shade,40,158));
+                            const uint8_t red=static_cast<uint8_t>(
+                                std::clamp(28+shade/3,14,68));
+                            const uint8_t blue=static_cast<uint8_t>(
+                                std::clamp(25+shade/4,16,65));
+                            // Painter's order is stable; silhouettes overlap
+                            // naturally and do not add card geometry.
+                            if(alpha>=out.atlasRgba[at+3] ||
+                                ((h>>55)&1ULL)==0) {
+                                out.atlasRgba[at]=red;
+                                out.atlasRgba[at+1]=green;
+                                out.atlasRgba[at+2]=blue;
+                                out.atlasRgba[at+3]=static_cast<uint8_t>(alpha);
+                            }
+                        }
+                    }
+                    // Occasional thin exposed trunk helps break the flat
+                    // "hedge wall" outline, without generating real trees.
+                    if((h&3ULL)==0) {
+                        const int32_t groundRow=int32_t(p-1)-
+                            int32_t(int64_t(surface-bottom)*p/heightRange);
+                        const int32_t trunkStart=std::max(imageY,0);
+                        for(int32_t row=trunkStart;row<=std::min<int32_t>(
+                                groundRow,int32_t(p)-2);++row) {
+                            const size_t at=(size_t(py+uint32_t(row))*
+                                atlasSide+px+column)*4;
+                            if(out.atlasRgba[at+3])continue;
+                            out.atlasRgba[at]=47;
+                            out.atlasRgba[at+1]=37;
+                            out.atlasRgba[at+2]=24;
+                            out.atlasRgba[at+3]=255;
+                        }
                     }
                 }
                 out.clusters.push_back({x,z,cell,bottom,top,px,py,p,
