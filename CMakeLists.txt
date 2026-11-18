@@ -2192,3 +2192,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_disasters COMMAND aiverse_physis_disasters_test)
     set_tests_properties(physis_disasters PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 5: generic Simulation tick, Archive persistence, headless view snapshots.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_integration_test tests/physis_integration_test.cpp)
+    target_link_libraries(aiverse_physis_integration_test PRIVATE aiverse_engine)
+    add_test(NAME physis_integration COMMAND aiverse_physis_integration_test)
+    set_tests_properties(physis_integration PROPERTIES LABELS "PHYSIS")
+endif()
