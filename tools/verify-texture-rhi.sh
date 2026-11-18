@@ -78,6 +78,7 @@ targets=(
     aiverse_virtual_texture_streamer_test
     aiverse_virtual_texture_disk_queue_test
     aiverse_virtual_texture_file_streamer_test
+    aiverse_virtual_texture_prefetch_test
     aiverse_ktx2_layers_test
     aiverse_ktx2_transcode_test
     aiverse_dds_layers_test
@@ -104,9 +105,9 @@ for target in "${targets[@]}"; do
     fi
 done
 
-test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture)$'
+test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture)$'
 if [[ "$want_vulkan" -eq 1 ]]; then
-    test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture|vulkan_backend)$'
+    test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture|vulkan_backend)$'
 fi
 
 echo "Running focused CTest... (see $logs/ctest.log)"
