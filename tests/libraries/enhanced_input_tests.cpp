@@ -200,5 +200,41 @@ int main() {
     CHECK(conflicts[0].higherContext=="Player");
     CHECK(conflicts[0].shadowed);
 
+    // Advanced trigger timings + inverted chord gate. Assertions are executed in CI later.
+    InputSystem advanced;
+    for(const char* name:{"Double","LongRelease","Repeat","Guard","Aim"})
+        CHECK(advanced.defineAction({name,ValueType::Boolean}));
+    MappingContext combat{"Advanced"};
+    combat.bind("Double",{Device::Keyboard,60},{},{Trigger::doubleTap(0.25f)});
+    combat.bind("LongRelease",{Device::Keyboard,61},{},{Trigger::holdAndRelease(0.15f)});
+    combat.bind("Repeat",{Device::Keyboard,62},{},{Trigger::pulse(0.1f)});
+    combat.bind("Aim",{Device::Keyboard,63});
+    combat.bind("Guard",{Device::Keyboard,64},{},{Trigger::pressed(),Trigger::notChord("Aim")});
+    CHECK(advanced.registerContext(combat));
+    CHECK(advanced.activateContext("Advanced"));
+    advanced.setControl({Device::Keyboard,60},1);
+    CHECK(!has(advanced.update(0.01f),"Double",Phase::Triggered));
+    advanced.setControl({Device::Keyboard,60},0);
+    advanced.update(0.01f);
+    advanced.setControl({Device::Keyboard,60},1);
+    CHECK(has(advanced.update(0.1f),"Double",Phase::Triggered));
+    advanced.setControl({Device::Keyboard,61},1);
+    advanced.update(0.2f);
+    advanced.setControl({Device::Keyboard,61},0);
+    CHECK(has(advanced.update(0.01f),"LongRelease",Phase::Triggered));
+    advanced.setControl({Device::Keyboard,62},1);
+    CHECK(!has(advanced.update(0.05f),"Repeat",Phase::Triggered));
+    CHECK(has(advanced.update(0.06f),"Repeat",Phase::Triggered));
+    CHECK(!has(advanced.update(0.02f),"Repeat",Phase::Triggered));
+    CHECK(has(advanced.update(0.09f),"Repeat",Phase::Triggered));
+    advanced.setControl({Device::Keyboard,63},1);
+    advanced.setControl({Device::Keyboard,64},1);
+    CHECK(!has(advanced.update(0.01f),"Guard",Phase::Triggered));
+    advanced.setControl({Device::Keyboard,64},0);
+    advanced.setControl({Device::Keyboard,63},0);
+    advanced.update(0.01f);
+    advanced.setControl({Device::Keyboard,64},1);
+    CHECK(has(advanced.update(0.01f),"Guard",Phase::Triggered));
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
