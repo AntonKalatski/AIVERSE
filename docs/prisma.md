@@ -410,6 +410,50 @@ No new serialised settings or shader variants were introduced.
 This stage is code-only, intentionally NOT compiled or GPU-tested yet.
 See `docs/handoffs/prisma-stage-21.md`.
 
+
+## Stage 22 — experimental depth-based Depth of Field
+
+The new `depthOfField` entry in `postfx.effects` is handled by the shared
+PRISMA data catalog (MCP and editor parameter discovery are data-driven).
+Parameters are `focusDepth` (0..1 **GPU device depth**, not metres),
+`focusRange` (depth interval), `maxBlur` (0..16 output pixels) and
+`intensity` (0..1). Defaults: 0.5, 0.08, 8, 1 respectively.
+This entry defaults to High post quality and is classified Heavy in
+the cost estimation model.
+
+The opt-in `AIVERSE_PRISMA_DOF=1` activates one full-resolution
+nine-neighbour blur pass **before** SDR FXAA and Bloom; it reads the
+scene color and render-target depth using the existing GLSL/MSL
+fullscreen-program path and produces a new color texture used as
+the source by subsequent effects. The hardware depth is deliberately
+not represented as physical focus distance, since the PostFrame
+currently lacks a portable inverse-projection/near-far contract.
+The blur radius follows the distance between sampled hardware
+depth and `focusDepth`, with a central sharp interval. The shader
+is a bounded, approximate defocus, **not** cinematic hexagonal bokeh,
+depth-layer separation or physically accurate lens simulation.
+
+The pass samples the original scene depth, but uses its own
+scratch depth attachment of matching dimensions, avoiding read/write
+feedback on the same depth texture. It can run only when the
+configured effect, opt-in flag, necessary GPU resources and
+pipeline are present. Without the flag, existing image processing
+continues unchanged. DoF is disabled on low/medium quality by its
+default `minQuality=high`, unless a project explicitly overrides it.
+
+Example game.json `postfx.effects` entry:
+```json
+{"type":"depthOfField","focusDepth":0.65,"focusRange":0.08,"maxBlur":6,"intensity":0.8}
+```
+
+All native compilation, CTest and visual/GPU smoke are intentionally
+**NOT RUN** at the user's request. Real Metal/GL depth texture
+sampling compatibility, reverse-Z behavior and scene-depth
+interpretation need later validation. The next feature is
+true world-distance autofocus via camera projection data, followed
+by multi-resolution CoC separation and physically-inspired bokeh.
+See `docs/handoffs/prisma-stage-22.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
