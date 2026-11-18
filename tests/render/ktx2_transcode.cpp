@@ -114,10 +114,22 @@ void optionalCodecConfig() {
     Ktx2LibktxOptions options;
     require(options.preferNativeCompression && options.allowRgba8Fallback,
             "libktx default GPU target and fallback policy");
+    using HdrImportFn = aiverse::gfx::TextureHandle (*)(
+        aiverse::gfx::Device&,std::string_view,std::string&);
+    const HdrImportFn hdrImport=&uploadKtx2UastcHdrWithLibktx;
+    require(hdrImport!=nullptr,
+            "full-mip RGBA16F UASTC HDR optional loader ABI available");
 #if defined(AIVERSE_TEXTURE_WITH_LIBKTX)
     // Real BasisLZ/UASTC bytes and device tests require linked libktx
     // and a production asset fixture in a dedicated CI gate.
     require(sizeof(ktxTexture2) > 0, "real libktx public header available");
+    // Check APIs needed for the real LDR and HDR import paths are exported by
+    // the installed development package; actual compressed sample validation
+    // belongs to the separate codec and GPU asset CI suites.
+    require(&ktxTexture2_TranscodeBasis!=nullptr &&
+            &ktxTexture2_GetImageOffset!=nullptr &&
+            &ktxTexture2_IsHDR!=nullptr,
+            "installed libktx exports Basis and UASTC HDR entry points");
 #endif
 }
 void nativePassthrough(){
