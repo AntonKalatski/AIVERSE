@@ -1499,3 +1499,42 @@ before calling this stage validated.
   into the generic View. Commit documentation architecture
   stage then separate Stage 54 handoff.
 
+## Stage 54 — canonical View architecture contract and AI agent skill (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22 based on `feature/universal-entity-inspector-fps`.
+- **Implementation/documentation SHA:** `57c627f52066507749ee1dc104089973972624d9`.
+- **Paths:** `AGENTS.md`,
+  `modules/rts/view/RtsView.h` (compatibility-only comments),
+  new `docs/view.md`, new
+  `skills/gameplay/aiverse-view/SKILL.md`.
+- **Architecture rule:** `aiverse::View` / `AIVERSE::View`
+  is now the documented canonical scene-view API for ALL games.
+  Core `engine/view` MUST NOT include game/RTS/FPS/RPG/editor
+  logic. Hosts project simulation and authored content into
+  `view::Object`, `view::MeshObject` and shared MotionWeave input
+  records, then consume the same scene/animation/Renderer3D systems.
+  Dependency is host -> View -> MotionWeave/Renderer3D, never reverse.
+- **Compatibility:** `game::RtsView` is explicitly marked as a
+  historical compatibility adapter for old RTS/editor map,
+  terrain/fog/roads/unit effects, not the place for new reusable
+  engine features. Old applications and tests retain their
+  old types and source paths; no renderer/gameplay ABI change
+  in this documentation-only stage.
+- **Testing:** documentation/repo metadata only;
+  **NOT RUN** (user explicitly deferred all build/CTest/TSAN
+  and rendering validation). `view_genre_boundary` and
+  `view_genre_independent` checks are available from prior stages.
+- **Risk:** full legacy RtsView retirement is NOT complete;
+  an engine-wide rename without first migrating RTS Rules/Map/
+  fog/procedural dependencies would break existing projects.
+  The new generic View is already used for supported draw
+  paths from both FPS and RTS host adapters.
+- **Next agent:** inspect `modules/rts/view/RtsView.h`,
+  `RtsViewDraw.cpp`, `RtsTerrainRender.cpp`,
+  `RtsFog.h`, `engine/view/View.h` and `docs/view.md`.
+  Extract the next generic scene component (camera/layer/
+  scene-object packet) without changing game semantics.
+  Code commit then new Stage 55 handoff, no test execution
+  unless the user explicitly authorizes it.
+
