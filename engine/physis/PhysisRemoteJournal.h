@@ -5,6 +5,8 @@
 #pragma once
 #include "PhysisRemoteServer.h"
 #include "engine/core/Hash.h"
+#include "engine/net/Crypto.h"
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <filesystem>
@@ -228,33 +230,39 @@ public:
             if(error)*error="PHYSIS journal parent directory does not exist";
             return false;
         }
-        const auto temporary=std::filesystem::path(file_.string()+".next");
-        {
-            std::ofstream output(temporary,std::ios::binary|std::ios::trunc);
-            if(!output) {
-                if(error)*error="PHYSIS journal temp write denied";
-                return false;
-            }
-            output.write(reinterpret_cast<const char*>(bytes.data()),
-                         std::streamsize(bytes.size()));
-            output.flush();
-            if(!output.good()) {
-                if(error)*error="PHYSIS journal temp write failed";
-                return false;
-            }
-        }
+        // Secure, unpredictable temp basename. The containing directory
+        // MUST be owned by the single authorized server process.
+        const auto nonce=net::randomKey();
+        const auto temporary=std::filesystem::path(
+            file_.string()+".next-"+net::toHexString(nonce.data(),16));
 #ifndef _WIN32
-        ::chmod(temporary.c_str(),0600);
-        const int fd=::open(temporary.c_str(),O_RDONLY);
-        if(fd<0 || ::fsync(fd)!=0) {
-            if(fd>=0)::close(fd);
-            if(error)*error="PHYSIS journal fsync failed";
+        const int fd=::open(temporary.c_str(),
+                            O_WRONLY|O_CREAT|O_EXCL,0600);
+        if(fd<0) {
+            if(error)*error="PHYSIS journal safe temp creation failed";
             return false;
         }
-        ::close(fd);
+        std::size_t offset=0;
+        bool good=true;
+        while(offset<bytes.size()) {
+            const auto written=::write(fd,bytes.data()+offset,bytes.size()-offset);
+            if(written<0 && errno==EINTR)continue;
+            if(written<=0) {good=false;break;}
+            offset+=std::size_t(written);
+        }
+        if(good && ::fsync(fd)!=0)good=false;
+        if(::close(fd)!=0)good=false;
+        if(!good) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary,ignored);
+            if(error)*error="PHYSIS journal write or fsync failed";
+            return false;
+        }
         std::error_code ec;
         std::filesystem::rename(temporary,file_,ec);
         if(ec) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary,ignored);
             if(error)*error="PHYSIS journal atomic rename failed: "+ec.message();
             return false;
         }
@@ -268,9 +276,30 @@ public:
             }
         }
 #else
-        if(!MoveFileExW(temporary.wstring().c_str(),file_.wstring().c_str(),
+        HANDLE fd=CreateFileW(temporary.wstring().c_str(),GENERIC_WRITE,
+                              0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+        if(fd==INVALID_HANDLE_VALUE) {
+            if(error)*error="PHYSIS Windows journal temp create failed";
+            return false;
+        }
+        std::size_t offset=0;
+        bool good=true;
+        while(offset<bytes.size()) {
+            DWORD written=0;
+            const DWORD wanted=DWORD(std::min<std::size_t>(
+                bytes.size()-offset,1024u*1024u));
+            if(!WriteFile(fd,bytes.data()+offset,wanted,&written,nullptr) ||
+               written==0) {good=false;break;}
+            offset+=written;
+        }
+        if(good && !FlushFileBuffers(fd))good=false;
+        if(!CloseHandle(fd))good=false;
+        if(!good ||
+           !MoveFileExW(temporary.wstring().c_str(),file_.wstring().c_str(),
                         MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)) {
-            if(error)*error="PHYSIS journal atomic Windows replace failed";
+            std::error_code ignored;
+            std::filesystem::remove(temporary,ignored);
+            if(error)*error="PHYSIS Windows journal flush/replace failed";
             return false;
         }
 #endif
