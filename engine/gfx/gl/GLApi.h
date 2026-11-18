@@ -58,6 +58,11 @@
   #define GL_EXTENSIONS 0x1F03
   #define GL_NUM_EXTENSIONS 0x821D
   #define GL_TEXTURE_MAX_LEVEL 0x813D
+  #define GL_TEXTURE_3D 0x806F
+  #define GL_TEXTURE_2D_ARRAY 0x8C1A
+  #define GL_TEXTURE_CUBE_MAP 0x8513
+  #define GL_TEXTURE_CUBE_MAP_POSITIVE_X 0x8515
+  #define GL_TEXTURE_WRAP_R 0x8072
   #define GL_TEXTURE_COMPARE_MODE 0x884C
   #define GL_TEXTURE_COMPARE_FUNC 0x884D
   #define GL_COMPARE_REF_TO_TEXTURE 0x884E
@@ -110,6 +115,9 @@
     X(void, glActiveTexture, (GLenum t)) \
     X(void, glGenerateMipmap, (GLenum t)) \
     X(void, glCompressedTexImage2D, (GLenum t, GLint l, GLenum f, GLsizei w, GLsizei h, GLint b, GLsizei s, const void* d)) \
+    X(void, glTexImage3D, (GLenum t, GLint l, GLint f, GLsizei w, GLsizei h, GLsizei depth, GLint border, GLenum fmt, GLenum type, const void* data)) \
+    X(void, glTexSubImage3D, (GLenum t, GLint l, GLint x, GLint y, GLint z, GLsizei w, GLsizei h, GLsizei depth, GLenum fmt, GLenum type, const void* data)) \
+    X(void, glCompressedTexImage3D, (GLenum t, GLint l, GLenum f, GLsizei w, GLsizei h, GLsizei depth, GLint border, GLsizei size, const void* data)) \
     X(void, glDrawElementsInstanced, (GLenum m, GLsizei c, GLenum t, const void* i, GLsizei n)) \
     X(void, glBlendFuncSeparate, (GLenum a, GLenum b, GLenum c, GLenum d)) \
     X(void, glBlendEquation, (GLenum m)) \

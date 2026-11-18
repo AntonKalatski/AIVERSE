@@ -59,7 +59,14 @@ private:
 };
 
 struct GLBuffer { GLuint id = 0; GLenum target = 0; size_t size = 0; Usage usage = Usage::Immutable; };
-struct GLTexture { GLuint id = 0; PixelFormat fmt = PixelFormat::RGBA8; int w = 0, h = 0; bool mips = false; };
+struct GLTexture {
+    GLuint id = 0;
+    PixelFormat fmt = PixelFormat::RGBA8;
+    TextureDimension dimension = TextureDimension::Texture2D;
+    GLenum target = GL_TEXTURE_2D;
+    int w = 0, h = 0, depth = 1, layers = 1, levels = 1;
+    bool mips = false, compressed = false;
+};
 struct GLFramebuffer { uint32_t color = 0, depth = 0; GLuint fbo = 0; };
 struct GLShader { GLuint program = 0; std::string vs, fs; int textures = 0, uniforms = 0; bool linear = false; };
 struct GLPipeline { PipelineDesc desc; GLuint program = 0; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; };
@@ -106,6 +113,12 @@ public:
         if (ext.empty() && flavor == Backend::GL33) s3tc_ = true; // core profiles hide the list; every desktop GPU has DXT
         astc_ = has("texture_compression_astc");
         hdr_ = flavor == Backend::GL33 || has("EXT_color_buffer_float") || has("EXT_color_buffer_half_float");
+    }
+    bool supportsTextureDimension(TextureDimension dim) const override {
+        // Common OpenGL ES 3 / desktop GL 3.3 subset. 1D and cube arrays need
+        // platform-specific support; never emulate them as ordinary 2D textures.
+        return dim == TextureDimension::Texture2D || dim == TextureDimension::Texture2DArray ||
+               dim == TextureDimension::Texture3D || dim == TextureDimension::Cube;
     }
     bool supports(PixelFormat f) const override {
         switch (f) {
@@ -162,13 +175,96 @@ public:
     }
 
     // ---------- textures ----------
+    // Native ES3 / GL3.3 dimension support. Keep the existing Texture2D path below
+    // unchanged; non-2D targets are sampled through matching GLSL sampler types.
+    TextureHandle createDimensionalTexture(const TextureDesc& d) {
+        if (!supportsTextureDimension(d.dimension) || d.renderTarget || d.storage ||
+            d.sampleCount != 1 || d.format == PixelFormat::Depth) {
+            error_ = "GL: texture dimension or usage unsupported"; return {};
+        }
+        if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "GL: HDR textures unsupported"; return {}; }
+        const GLenum target = d.dimension == TextureDimension::Texture3D ? GL_TEXTURE_3D :
+                              d.dimension == TextureDimension::Texture2DArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_CUBE_MAP;
+        const GLenum compressed = compressedEnum(d.format);
+        if (compressed && (!supports(d.format) || !d.levelData || !d.levelSize || d.levelCount < 1 ||
+            d.dimension == TextureDimension::Texture3D)) {
+            error_ = "GL: compressed arrays/cubes require complete block payloads"; return {};
+        }
+        const int z = d.dimension == TextureDimension::Texture3D ? d.depth : d.arrayLayers;
+        const bool autoMips = d.mipmaps && !compressed &&
+                              d.format != PixelFormat::RGBA16F && d.format != PixelFormat::RGBA32F;
+        const int levels = compressed ? d.levelCount : d.mipLevels > 0 ? d.mipLevels :
+                           autoMips ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
+        const GLenum internal = d.format == PixelFormat::R8 ? GL_R8 :
+                                d.format == PixelFormat::RGBA16F ? GL_RGBA16F :
+                                d.format == PixelFormat::RGBA32F ? GL_RGBA32F :
+                                d.format == PixelFormat::RGBA8_sRGB ? GL_SRGB8_ALPHA8 : GL_RGBA8;
+        const GLenum format = d.format == PixelFormat::R8 ? GL_RED : GL_RGBA;
+        const GLenum type = d.format == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
+                            d.format == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+        const size_t bpp = d.format == PixelFormat::R8 ? 1 :
+                           d.format == PixelFormat::RGBA16F ? 8 :
+                           d.format == PixelFormat::RGBA32F ? 16 : 4;
+        GLTexture t;
+        t.fmt = d.format; t.dimension = d.dimension; t.target = target;
+        t.w = d.width; t.h = d.height; t.depth = d.depth; t.layers = d.arrayLayers;
+        t.levels = levels; t.mips = autoMips; t.compressed = compressed != 0;
+        glGenTextures(1, &t.id);
+        if (!t.id) { error_ = "GL: texture allocation failed"; return {}; }
+        glBindTexture(target, t.id);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        for (int l = 0; l < levels; ++l) {
+            const int w = std::max(1, d.width >> l), h = std::max(1, d.height >> l);
+            const int slices = d.dimension == TextureDimension::Texture3D ? std::max(1, d.depth >> l) : z;
+            const size_t faceBytes = size_t(w) * size_t(h) * bpp;
+            if (compressed) {
+                if (!d.levelData[l]) { glDeleteTextures(1, &t.id); error_ = "GL: missing mip payload"; return {}; }
+                if (d.dimension == TextureDimension::Cube) {
+                    if (d.levelSize[l] % 6 != 0) { glDeleteTextures(1, &t.id); error_="GL: bad cube payload"; return {}; }
+                    const size_t one = d.levelSize[l] / 6;
+                    const auto* src = static_cast<const uint8_t*>(d.levelData[l]);
+                    for (int face = 0; face < 6; ++face)
+                        glCompressedTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(face),
+                          l, compressed, w, h, 0, GLsizei(one), src + size_t(face) * one);
+                } else {
+                    glCompressedTexImage3D(target, l, compressed, w, h, slices, 0,
+                                           GLsizei(d.levelSize[l]), d.levelData[l]);
+                }
+            } else if (d.dimension == TextureDimension::Cube) {
+                const auto* src = static_cast<const uint8_t*>(d.data);
+                for (int face = 0; face < 6; ++face)
+                    glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(face), l,
+                        GLint(internal), w, h, 0, format, type,
+                        l == 0 && src ? src + size_t(face) * faceBytes : nullptr);
+            } else {
+                glTexImage3D(target, l, GLint(internal), w, h, slices, 0, format, type, l == 0 ? d.data : nullptr);
+            }
+        }
+        glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, levels - 1);
+        const bool linear = d.filter == Filter::Linear && d.format != PixelFormat::RGBA32F;
+        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, levels > 1 ?
+            (linear ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST) :
+            (linear ? GL_LINEAR : GL_NEAREST));
+        const GLint wrap = d.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+        glTexParameteri(target, GL_TEXTURE_WRAP_S, wrap);
+        glTexParameteri(target, GL_TEXTURE_WRAP_T, wrap);
+        glTexParameteri(target, GL_TEXTURE_WRAP_R, wrap);
+        if (autoMips && d.data && levels > 1) glGenerateMipmap(target);
+        if (glGetError() != GL_NO_ERROR) {
+            glDeleteTextures(1, &t.id); error_ = "GL: unsupported dimensional texture allocation"; return {};
+        }
+        return {textures_.add(t)};
+    }
+
     TextureHandle createTexture(const TextureDesc& d) override {
         if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
             error_ = textureDescErrorString(e); return {};
         }
-        if (d.dimension != TextureDimension::Texture2D || d.depth != 1 || d.arrayLayers != 1 ||
-            d.sampleCount != 1 || d.mipLevels > 1) {
-            error_ = "texture dimension, array, multisampling or explicit mips not yet supported by this backend";
+        if (d.dimension != TextureDimension::Texture2D)
+            return createDimensionalTexture(d);
+        if (d.sampleCount != 1 || d.storage || d.mipLevels > 1) {
+            error_ = "GL: 2D multisampling, storage images and explicit mip allocations are unsupported";
             return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
@@ -224,7 +320,7 @@ public:
     }
     void updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) override {
         auto* t = textures_.get(h.id);
-        if (!t) return;
+        if (!t || t->dimension != TextureDimension::Texture2D || t->compressed || t->fmt == PixelFormat::Depth) return;
         glBindTexture(GL_TEXTURE_2D, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         const int bpp = t->fmt == PixelFormat::R8 ? 1 : t->fmt == PixelFormat::RGBA32F ? 16 : t->fmt == PixelFormat::RGBA16F ? 8 : 4;
@@ -237,6 +333,51 @@ public:
                 glTexSubImage2D(GL_TEXTURE_2D, 0, x, y + r, w, 1, fmt, type, static_cast<const uint8_t*>(pixels) + size_t(r) * rowPitch);
         }
         if (t->mips) glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override {
+        auto* t = textures_.get(h.id);
+        if (!t || !u.data || t->compressed || t->fmt == PixelFormat::Depth ||
+            u.mipLevel < 0 || u.mipLevel >= t->levels || u.arrayLayer < 0 ||
+            u.x < 0 || u.y < 0 || u.z < 0 || u.width < 1 || u.height < 1 || u.depth < 1)
+            return false;
+        const int mw = std::max(1, t->w >> u.mipLevel), mh = std::max(1, t->h >> u.mipLevel);
+        const int md = t->dimension == TextureDimension::Texture3D ?
+                       std::max(1, t->depth >> u.mipLevel) : 1;
+        if (u.x > mw - u.width || u.y > mh - u.height || u.z > md - u.depth ||
+            (t->dimension != TextureDimension::Texture3D && (u.z != 0 || u.depth != 1)) ||
+            (t->dimension == TextureDimension::Texture2D && u.arrayLayer != 0) ||
+            (t->dimension == TextureDimension::Cube && u.arrayLayer >= 6) ||
+            (t->dimension == TextureDimension::Texture2DArray && u.arrayLayer >= t->layers))
+            return false;
+        const int bpp = t->fmt == PixelFormat::R8 ? 1 :
+                        t->fmt == PixelFormat::RGBA16F ? 8 :
+                        t->fmt == PixelFormat::RGBA32F ? 16 : 4;
+        if (u.rowPitchBytes < u.width * bpp) return false;
+        const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
+        if (imagePitch < u.rowPitchBytes * u.height) return false;
+        const GLenum format = t->fmt == PixelFormat::R8 ? GL_RED : GL_RGBA;
+        const GLenum type = t->fmt == PixelFormat::RGBA16F ? GL_HALF_FLOAT :
+                            t->fmt == PixelFormat::RGBA32F ? GL_FLOAT : GL_UNSIGNED_BYTE;
+        glBindTexture(t->target, t->id);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        const auto* src = static_cast<const uint8_t*>(u.data);
+        if (t->dimension == TextureDimension::Texture2D ||
+            t->dimension == TextureDimension::Cube) {
+            const GLenum target = t->dimension == TextureDimension::Cube ?
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(u.arrayLayer) : GL_TEXTURE_2D;
+            for (int y = 0; y < u.height; ++y)
+                glTexSubImage2D(target, u.mipLevel, u.x, u.y + y, u.width, 1, format, type,
+                                src + size_t(y) * size_t(u.rowPitchBytes));
+        } else {
+            const int z = t->dimension == TextureDimension::Texture3D ? u.z : u.arrayLayer;
+            for (int zz = 0; zz < u.depth; ++zz)
+                for (int y = 0; y < u.height; ++y)
+                    glTexSubImage3D(t->target, u.mipLevel, u.x, u.y + y, z + zz,
+                      u.width, 1, 1, format, type,
+                      src + size_t(zz) * size_t(imagePitch) + size_t(y) * size_t(u.rowPitchBytes));
+        }
+        if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
+        return glGetError() == GL_NO_ERROR;
     }
     void destroyTexture(TextureHandle h) override {
         if (auto* t = textures_.get(h.id)) { glDeleteTextures(1, &t->id); textures_.remove(h.id); }
@@ -528,7 +669,13 @@ public:
     void setTexture(int slot, TextureHandle h) override {
         auto* t = textures_.get(h.id);
         glActiveTexture(GL_TEXTURE0 + GLenum(slot));
-        glBindTexture(GL_TEXTURE_2D, t ? t->id : 0);
+        if (t) glBindTexture(t->target, t->id);
+        else {
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glBindTexture(GL_TEXTURE_3D, 0);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+        }
     }
     void setUniforms(int slot, const void* data, size_t size) override {
         if (slot < 0 || slot >= kMaxUniformSlots || size == 0) return;
