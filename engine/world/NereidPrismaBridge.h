@@ -20,6 +20,7 @@ inline void updateNereidPrismaUnderwater(
     input.depthMetres=float(water.depthMetres);
     input.distortion=water.distortion;
     input.scattering=water.scattering;
+    input.surfaceBlend=water.surfaceBlend;
     prisma.setUnderwater(input,deltaSeconds);
 }
 } // namespace aiverse::world
