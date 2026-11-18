@@ -460,14 +460,17 @@ public:
         }
 
         std::map<Control,bool> consumed;
-        struct Aggregate { Value value; bool active = false, triggered = false, began = false; };
+        struct Aggregate { Value value; bool active = false, triggered = false,
+                           began = false, interrupted = false; };
         std::map<std::string,Aggregate> result;
+        std::set<std::string> presentedActions;
 
         for (const auto& [name,priority] : ordered) {
             (void)priority;
             for (const auto& mapping : contexts_.at(name).mappings) {
                 const auto actionIt = actions_.find(mapping.action);
                 if (actionIt == actions_.end()) continue;
+                presentedActions.insert(mapping.action);
                 auto& runtime = mappingRuntime_[{name,mapping.id}];
                 const Raw raw = sample(mapping.control);
                 const Value physicalValue = applyModifiers({raw.value,0,0}, mapping.modifiers);
@@ -487,6 +490,7 @@ public:
                     fired = evaluateTriggers(mapping.triggers, runtime, down, pressed, released,
                                              tapWithinFrame, dt, chordLevels);
                 else {
+                    if (physicalDown) result[mapping.action].interrupted = true;
                     resetTiming(runtime);
                     runtime.wasDown = physicalDown;
                 }
@@ -536,9 +540,12 @@ public:
                 events_.push_back({name, Phase::Started, value});
             if (triggered) events_.push_back({name, Phase::Triggered, value});
             else if (actionDown) events_.push_back({name, Phase::Ongoing, value});
-            if ((!actionDown && previous.active) || quickPulse)
-                events_.push_back({name, !chordOK ? Phase::Canceled :
+            if ((!actionDown && previous.active) || quickPulse) {
+                const bool interrupted = !chordOK || aggregate.interrupted ||
+                    !presentedActions.contains(name);
+                events_.push_back({name, interrupted ? Phase::Canceled :
                     (previous.triggered || triggered ? Phase::Completed : Phase::Canceled), {}});
+            }
             states_[name] = {value, actionDown, triggered || (actionDown && previous.triggered)};
         }
 
