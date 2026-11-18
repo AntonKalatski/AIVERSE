@@ -620,3 +620,30 @@ failure invariants; then implement MRT color-output pipeline
 format matching, MSAA/resolve and storage texture support in
 separate documented stages. Check existing single-color
 pipelines and frame transitions on Vulkan validation layers.
+
+## Stage 4E — Vulkan mip/layer attachment GPU test added (2026-11-18)
+
+**Code commit:** `06fe04ebb2560657cabc1a983c13748cc315b290`.
+**Changed:** `tests/render/vulkan_tests.cpp`.
+
+**Test source added:** `vulkan_backend` now contains an integration
+case that allocates color and depth `Texture2DArray` resources
+with three mips, starts an offscreen render-target pass targeting
+mip 1 / array layer 1, clears color and depth, ends it, samples
+the selected layer/mip through a 2D `TextureView` and custom
+nearest sampler, then checks screen pixels. It also asserts that
+an invalid mip is rejected without starting a new pass.
+
+**Validation status:** GitHub commit succeeded. The test
+**HAS NOT BEEN COMPILED OR RUN** (no native Vulkan environment
+in this turn); do not infer Vulkan correctness from the test's
+presence. CI workflows for earlier commits were queued/cancelled,
+not confirmed passing. Check a real Vulkan+validation layer run
+before marking stage production ready.
+
+**Next:** Run the actual compiler/tests; debug Vulkan image view
+creation, layout transitions and pipeline compatibility errors.
+After GPU validation, implement MRT with color formats and multiple
+pipeline attachment slots, then multisampled textures and resolve
+operations. The current native APIs still support only one color
+target and no MSAA resolve.
