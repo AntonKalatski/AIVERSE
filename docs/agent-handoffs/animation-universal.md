@@ -325,3 +325,23 @@ before calling this stage validated.
 - Next: create controlled offline clip->fixed-track exporter, then wire
   into one chosen motor replacing, not adding to, its existing movement source.
   Humanoid retargeting and ragdoll assets remain open.
+
+
+## Stage 14 — semantic Humanoid Avatar Retargeting (2026-11-18)
+
+- Implementation commits: `56adfa8a30b85c018391f66db08687dad2d2a433`, fixture correction `93e585e94c7536ef674bf97dab5bd4d8c8200d37`.
+- Added `HumanoidRetarget.h`: explicit semantic bone roles for body, arms,
+  legs, head, optional root/toes; `HumanoidAvatar::compile()` validates
+  ancestry, duplicate bindings and pose order. `HumanoidRetargeter`
+  transfers source rotations relative to source global bind orientation onto
+  destination global bind orientation and compensates changed parents in
+  destination local rotation. Pelvis/root motion transfer is opt-in, scaled
+  from average measured hip-to-foot bind length when both feet are mapped.
+- `placeFeet()` optionally uses existing TwoBoneIK for direct thigh/shin/foot chains.
+- Test fixture: `tests/animation/humanoid_retarget.cpp`, CTest `animation_humanoid_retarget` registered. **NOT RUN** per user request.
+- Caveats: semantic maps are explicit; no automatic detection/Unity muscle
+  value import, twist-chain redistribution, universal different-axis
+  coordinate conversion or production DCC-compatible Avatar profile yet.
+  No direct integration into Unity import pipeline or Editor window yet.
+- Next: authored fixed root-track export, ragdoll definition/pose bridge,
+  avatar editor workflow and integration/optimization.
