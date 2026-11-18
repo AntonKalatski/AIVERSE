@@ -299,3 +299,59 @@ Source test: `tests/terraweave_heightmap_test.cpp` (CTest
 `terraweave_heightmap`) verifies signed heights, seam continuity,
 legacy overflow rejection and invalid inputs. The inline `MapDoc` helper
 is not yet exercised end-to-end in a running editor.
+
+
+## Stage 2f — shared forest model submission adapter (CPU / RHI bridge)
+
+`engine/render/TerraWeaveForestAdapter.h` exposes
+`aiverse::terraweave::ArborForestAdapter`. It bridges deterministic
+`FloraBatch` instances to the **existing** `render::Renderer3D::drawModel`
+path. It does not own or replace Renderer3D, ECS, streaming or shaders.
+
+- `addPrototype(TreeProfile, meshSeed, ArborMeshSettings)` builds **one**
+  `render::Model` per species. Duplicate/zero species IDs are rejected.
+  Changing the tree's mesh on every instance defeats batching; only transform,
+  yaw and scale vary by `FoliageInstance`. All nodes use existing model
+  projected-size LODs.
+- `prototype(speciesId)` gives the stable shared model pointer, valid while
+  the adapter lives. `uploadModels(gfx::Device&)` and
+  `releaseModels(gfx::Device&)` MUST run on the GPU-owning render thread.
+  Release GPU resources before destroying the device or the adapter.
+- `forEachDraw(batches, ForestRenderOriginCm, callback)` is a GPU-free
+  inspection/submission primitive, and `submit(Renderer3D&, batches, origin)`
+  forwards directly to `Renderer3D::drawModel`. Call `submit` between
+  `beginScene` and `render`, only after model upload.
+- `ForestRenderOriginCm` is signed world **centimetres**, with fields
+  `x,y,z`. For X/Z, subtract origin using int64 BEFORE float metre conversion,
+  to preserve precision in large worlds. Camera and renderer must use the same
+  rebased coordinate frame; model draw transforms are metres.
+- `ModelDraw::persistentId` is a namespaced stable hash of
+  `FoliageInstance::key` and species, independent of the draw index.
+  Draw flags are `kDrawStatic`. An `Impostor` Flora batch currently uses
+  the existing lowest geometry LOD as fallback: no billboard atlas exists.
+
+Minimal native / host render integration sketch:
+
+```cpp
+#include "engine/render/TerraWeaveForestAdapter.h"
+using namespace aiverse::terraweave;
+
+ArborForestAdapter forest;
+TreeProfile pine;
+pine.speciesId = 21;
+pine.shape = CrownShape::Conifer;
+forest.addPrototype(pine, 0x5678);           // CPU / setup stage
+forest.uploadModels(device);                 // render thread, check bool
+auto batches = buildFloraBatches(placements, view);
+renderer.beginScene(camera, width, height);
+forest.submit(renderer, batches, {originXcm, originYcm, originZcm});
+// ... other scene draws and renderer.render(pass)
+forest.releaseModels(device);                // render thread at shutdown
+```
+
+The adapter **does not register with WorldScene or the editor** yet. It
+does not provide per-tree geometry variation, guaranteed indirect draw
+counts, actual impostors, material cutout textures, scene screenshots,
+GPU validation, or an opt-in manifest format. Existing projects remain
+untouched. Validation is added to `tests/terraweave_model_test.cpp`;
+see `AGENT_HANDOFF.md` for observed test results and next task.
