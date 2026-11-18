@@ -31,13 +31,17 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
            std::isfinite(s.specular)&&std::isfinite(s.refractionStrength)&&
            std::isfinite(s.absorption)&&std::isfinite(s.shoreFoamDepth)&&
            std::isfinite(s.depthTint)&&
+           std::isfinite(s.underwaterDistortion)&&
+           std::isfinite(s.underwaterScattering)&&
            s.opacity>0 && s.opacity<0.99f &&
            s.specular>=0.85f && s.specular<=1.f &&
            s.foamStrength>=0 && s.foamStrength<=1 &&
            s.refractionStrength>=0 && s.refractionStrength<=1 &&
            s.absorption>=0 && s.absorption<=4 &&
            s.shoreFoamDepth>=0 && s.shoreFoamDepth<=20 &&
-           s.depthTint>=0 && s.depthTint<=1;
+           s.depthTint>=0 && s.depthTint<=1 &&
+           s.underwaterDistortion>=0 && s.underwaterDistortion<=1 &&
+           s.underwaterScattering>=0 && s.underwaterScattering<=1;
 }
 
 // Upload at content/render setup, not every simulation tick.
