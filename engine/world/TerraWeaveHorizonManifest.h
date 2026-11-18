@@ -69,6 +69,8 @@ horizonSceneFromManifest(
         j,"orientationViews",settings.orientationViews,1,2));
     settings.maxCachedRegions=static_cast<uint32_t>(worldInteger(
         j,"maxCachedRegions",settings.maxCachedRegions,0,4));
+    settings.regionHysteresisCm=static_cast<int32_t>(worldInteger(
+        j,"regionHysteresisCm",settings.regionHysteresisCm,0,100000));
     settings.nearBlendCm=static_cast<int32_t>(worldInteger(
         j,"nearBlendCm",settings.nearBlendCm,0,10000000));
     settings.tierBlendCm=static_cast<int32_t>(worldInteger(
