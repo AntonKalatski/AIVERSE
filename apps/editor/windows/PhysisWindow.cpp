@@ -231,14 +231,17 @@ private:
     void drawRemoteEdit(Editor& ed) {
         ui::section(ICON_GLOBE,"PHYSIS · Remote Editing");
         auto& remote=physis_remote::link();
+        // Poll the handshake even before EditorLink is fully authenticated.
+        // Otherwise a host-started loopback connector could never finish.
+        remote.poll(net::nowMs());
         if(!remote.attached()) {
-            ui::hint("Нет авторизованного соединения с сервером PHYSIS.");
+            ui::hint(remote.authenticating() ?
+                "Проверяем полномочия и защищённый канал PHYSIS..." :
+                "Нет авторизованного соединения с сервером PHYSIS.");
             ui::hint("Сетевой хост подключает канал после проверки доступа.");
             return;
         }
-        // PHYSIS has its own editor/admin protocol, not the usual
-        // player InputFrame channel. Poll only an attached trusted Conn.
-        remote.poll(net::nowMs());
+        // PHYSIS has its own admin protocol, not normal InputFrame.
         const auto* client=remote.client();
         if(!client)return;
         const auto status=client->status();
