@@ -25,17 +25,17 @@ struct NereidUnderwaterView {
 
 // Priority semantics follow shared NEREID samples where possible, but only
 // fully submerged camera volumes participate in this *visual* view query.
-inline NereidUnderwaterView sampleNereidUnderwater(
-        const std::vector<NereidSceneSurface>& surfaces,Vec3 camera) {
+template<class EachFn>
+inline NereidUnderwaterView sampleNereidUnderwaterFrom(
+        EachFn&& each,Vec3 camera) {
     const NereidSceneSurface* winner=nullptr;
     uint64_t winnerId=0;
-    for(size_t i=0;i<surfaces.size();++i) {
-        const auto& s=surfaces[i];
+    each([&](const NereidSceneSurface& s,size_t i) {
         const auto& body=s.body;
         if(!body.enabled || body.surfaceY<=body.bottomY ||
-           camera.y>=body.surfaceY || camera.y<body.bottomY)continue;
+           camera.y>=body.surfaceY || camera.y<body.bottomY)return;
         const auto* geometry=s.useGeometry?&s.geometry:nullptr;
-        if(!lib::nereid::coversWaterBody(body,geometry,camera))continue;
+        if(!lib::nereid::coversWaterBody(body,geometry,camera))return;
         const uint64_t id=s.id?s.id:
             ((uint64_t(1)<<63)|(uint64_t(i)+1));
         if(!winner || body.priority>winner->body.priority ||
@@ -44,7 +44,7 @@ inline NereidUnderwaterView sampleNereidUnderwater(
              (body.surfaceY==winner->body.surfaceY && id<winnerId)))) {
             winner=&s;winnerId=id;
         }
-    }
+    });
     NereidUnderwaterView out;
     if(!winner)return out;
     const auto& body=winner->body;
@@ -61,5 +61,20 @@ inline NereidUnderwaterView sampleNereidUnderwater(
     out.deepB=std::clamp(style.deepB,0.f,1.f);
     out.turbidity=1.f-out.transmission;
     return out;
+}
+inline NereidUnderwaterView sampleNereidUnderwater(
+        const std::vector<NereidSceneSurface>& surfaces,Vec3 camera) {
+    return sampleNereidUnderwaterFrom([&](auto&& visit) {
+        for(size_t i=0;i<surfaces.size();++i)visit(surfaces[i],i);
+    },camera);
+}
+inline NereidUnderwaterView sampleNereidUnderwater(
+        const NereidWaterScene& scene,Vec3 camera) {
+    return sampleNereidUnderwaterFrom([&](auto&& visit) {
+        size_t i=0;
+        scene.forEachSource([&](const NereidSceneSurface& s) {
+            visit(s,i++);
+        });
+    },camera);
 }
 } // namespace aiverse::world
