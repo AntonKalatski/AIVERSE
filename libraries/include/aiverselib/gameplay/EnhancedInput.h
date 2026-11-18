@@ -262,6 +262,11 @@ public:
         mappingRuntime_.clear();
     }
     bool isContextActive(const std::string& name) const { return active_.contains(name); }
+    // Read-only declaration access for editor/host trigger-aware presentation.
+    const Action* actionDefinition(const std::string& name) const {
+        const auto it=actions_.find(name);
+        return it==actions_.end()?nullptr:&it->second;
+    }
     const MappingContext* context(const std::string& name) const {
         const auto it = contexts_.find(name);
         return it == contexts_.end() ? nullptr : &it->second;
