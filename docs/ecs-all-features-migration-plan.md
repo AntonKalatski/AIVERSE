@@ -390,3 +390,51 @@ consumers, to ECS components and structured read projections; then
 retire `fps.ecsMirror` as a writeback source for projectiles. Carry
 through native compiler/CTest, FPS networking, Editor lifecycle and RTS
 shared-mechanics integration before any default enablement.
+
+
+## FPS projectile end-of-tick one-way ECS mirror (2026-11-18)
+
+The live `fps.ecsMirror` in `modules/fps/FpsModule.cpp` now calls
+`syncDynamicEntities(sim,config_.ecsAuthority)` instead of always
+importing `State::projectiles` into `ProjectileRuntime`.
+
+- **ECS authority ON:** the end-of-tick mirror enumerates actual
+  `ProjectileRuntime` components, validates unique nonzero projectile
+  source IDs and `DynamicEntityIndex` mapping, sorts by canonical
+  `order`/ID, refreshes `ProjectileEntity` editor projections and
+  reconstructs `State::projectiles` as a **one-way compatibility view**.
+  It never assigns a projectile Runtime from the State vector.
+- **Default legacy mode:** the old State → derived ECS projection behavior
+  remains unchanged.
+- **Legacy setup and save v9 load:** the original
+  `syncDynamicEntities(Simulation&)` API is retained as an overload
+  forwarding to the State → ECS restore mode, including its historical
+  C++ symbol for native callers. Restoring an old save still constructs
+  canonical Runtime values from the decoded State snapshot; the new
+  ECS → State direction applies only during the live mirror barrier.
+
+All known built-in FPS projectile **producers and mutators** have now
+been routed to ECS when `fps.ecsAuthority` is enabled: accepted weapon
+shots, Frag/Smoke/Flash actions, programmed flight, ordinary ballistic
+bullets/grenade bounce/smoke expiry, and bomb-round projectile cleanup.
+The one shared physical solver and synchronous impact/damage ordering
+remain in place. Code must not introduce a new direct
+`State::projectiles` write that expects the mirror to publish it into
+ECS; use a native Runtime command/producer instead.
+
+**Regression source:** `tests/fps/projectile_spawn.inc` deliberately
+sets `ProjectileRuntime.value.damage=17` while poisoning the
+State compatibility vector with damage 777, invokes the new ECS mirror
+mode, and verifies that Runtime remains authoritative and that the State
+view is repaired. Its real weapon/grenade/round-reset fixtures also
+compare default and ECS modes, v9 saves, deep/COW rollback and stable
+IDs. These tests are **registered but not natively executed** yet.
+
+**Remaining migration scope:** ActorRuntime and loot/vehicle Runtime
+still have legacy state reconciliation; editor/save/network projections
+still exist; physical and nonphysical projectile policies are not yet a
+fully independent generic scheduled `addProjectileFlightSystem` for
+both built-in genres. Do not mark all ECS migration waves complete and
+do not turn the FPS gate ON by default until CMake/CTest, playable FPS,
+RTS compatibility, same-tick order, editor, network and rollback gates
+have concrete passing evidence.
