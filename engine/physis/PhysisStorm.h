@@ -134,7 +134,9 @@ inline Forcing stormForcingAt(const World& world,
     const Vec3 position{Fixed::fromInt(mx), cell.elevation, Fixed::fromInt(mz)};
     const auto influence = stormsAt(world, position, tick);
     result.pressureOffset = influence.pressureOffset;
-    result.precipitationBoost = influence.precipitationBoost;
+    // Climate's precipitation formula multiplies the humidity excess by 4;
+    // normalize authored storm intensity into that same forcing scale.
+    result.precipitationBoost = influence.precipitationBoost * 4;
     // Physical storm wind is added by windWithStormsAt, not also to the
     // slowly relaxing climate wind. Avoid double-applying storm velocity.
     return result;
