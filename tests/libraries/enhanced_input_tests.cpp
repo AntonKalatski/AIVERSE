@@ -446,5 +446,49 @@ int main() {
     CHECK(!has(lateContext.events(),"ActionHold",Phase::Triggered));
     CHECK(has(lateContext.update(0.06f),"ActionHold",Phase::Triggered));
 
+    // Stage 54: Action-level Chord gating participates in priority
+    // consumption, not merely ActionState.active after the lower context
+    // has already lost access to the physical button.
+    InputFlow actionPriority;
+    CHECK(actionPriority.defineAction({"Gate",ValueType::Boolean}));
+    CHECK(actionPriority.defineAction({"High",ValueType::Boolean,{},
+                                       {Trigger::chord("Gate")}}));
+    CHECK(actionPriority.defineAction({"Low",ValueType::Boolean}));
+    MappingContext priorityHigh{"HighContext"},priorityLow{"LowContext"};
+    priorityHigh.bind("Gate",{Device::Keyboard,160});
+    priorityHigh.bind("High",{Device::MouseButton,0});
+    priorityLow.bind("Low",{Device::MouseButton,0});
+    CHECK(actionPriority.registerContext(priorityHigh));
+    CHECK(actionPriority.registerContext(priorityLow));
+    CHECK(actionPriority.activateContext("HighContext",100));
+    CHECK(actionPriority.activateContext("LowContext",0));
+    actionPriority.setControl({Device::MouseButton,0},1);
+    CHECK(has(actionPriority.update(0.016f),"Low",Phase::Triggered));
+    CHECK(!actionPriority.state("High")->active);
+    actionPriority.setControl({Device::Keyboard,160},1);
+    CHECK(has(actionPriority.update(0.016f),"High",Phase::Triggered));
+    CHECK(!actionPriority.state("Low")->active);
+    actionPriority.setControl({Device::Keyboard,160},0);
+    CHECK(has(actionPriority.update(0.016f),"Low",Phase::Triggered));
+    CHECK(!actionPriority.state("High")->active);
+
+    // Long acyclic Action prerequisite chains must not depend on declaration
+    // order or an arbitrary fixed depth of eight actions.
+    InputFlow deep;
+    MappingContext deepCtx{"Deep"};
+    for (int index=0;index<12;++index) {
+        Action item;
+        item.name="Node"+std::to_string(index);
+        if(index<11)item.triggers.push_back(Trigger::chord("Node"+std::to_string(index+1)));
+        CHECK(deep.defineAction(item));
+        deepCtx.bind(item.name,{Device::Keyboard,180+index});
+    }
+    CHECK(deep.registerContext(deepCtx));
+    CHECK(deep.activateContext("Deep"));
+    for(int index=0;index<12;++index)
+        deep.setControl({Device::Keyboard,180+index},1);
+    CHECK(has(deep.update(0.016f),"Node0",Phase::Triggered));
+    CHECK(deep.state("Node0")->active);
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
