@@ -236,6 +236,7 @@ private:
     void setupSystems(Simulation&,const Json&,State&);
     void tickSystems(Simulation&);
     void tickProjectilePrograms(Simulation&);
+    bool stepProgrammedProjectile(Simulation&,Projectile&,std::vector<Projectile>&,std::size_t liveCount);
     void actorSystems(Simulation&,Actor&,Input&);
     bool traceShot(Simulation&,uint8_t,Vec3,Vec3,int32_t,const WeaponConfig&,const std::vector<Actor>&,Projectile* projectile=nullptr);
     void damage(Simulation&,uint8_t,Actor&,int32_t,bool head=false);
