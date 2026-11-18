@@ -225,7 +225,7 @@ public:
     Entity actorEntity(Simulation& sim, uint8_t slot) const;
     void syncActorEntities(Simulation& sim) const; // rebuild ECS actor state and inspector projections
     void hydrateActorsFromEcs(Simulation& sim) const; // authoritative -> compatibility tick workspace
-    void syncDynamicEntities(Simulation& sim) const; // projectile, loot and vehicle ECS views
+    void syncDynamicEntities(Simulation& sim,bool projectProjectilesFromEcs=false) const; // ECS runtime -> read-only projectile view at mirror; legacy restore still supported
     void hydrateDynamicsFromEcs(Simulation& sim) const; // canonical dynamic pools -> ordered tick workspaces
     State authoritativeStateCopy(Simulation& sim) const; // v9 save/hash assembled from ECS payloads
     RoyaleView royaleView(Simulation&,uint8_t slot) const;
