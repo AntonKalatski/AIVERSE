@@ -5105,3 +5105,24 @@ Next: add readback per-backend fixtures and GPU integration
 tests for z-slices/mip, verify row orientation and upload
 format across platforms. Existing WebGL2 still refuses native
 asynchronous readback.
+
+## Stage 8I — focused Texture RHI GitHub Actions (2026-11-18)
+
+CI source commit: 528263eb70544fceedf632599d8f1354bb0a53d7.
+New file: .github/workflows/texture-rhi.yml.
+Adds opt-in workflow_dispatch and path-filtered pull_request
+workflow with concurrency cancellation; Linux CPU matrix
+OpenEXR OFF/ON and separate Vulkan compile + lavapipe
+test job, uploaded configure/build/CTest logs.
+Runs the existing tools/verify-texture-rhi.sh with
+the bounded native test list, -DAIVERSE_BUILD_CLIENT=OFF,
+editor/server/tools/headless OFF, Vulkan ON in Vulkan job.
+Vulkan success is explicitly NOT a real hardware PASS
+unless CTest logs show actual driver execution.
+Compatibility: CI-only YAML, no source/gameplay changes.
+Actual verification: GitHub YAML commit succeeded; workflows
+NOT RUN or confirmed successful yet; existing repository
+CI mostly queued/cancelled at recent heads.
+Next: inspect actions for this exact HEAD, download logs
+when a job completes, fix observed native compile/test failures,
+then evaluate real Metal/GLES3 GPU tests and reviewer gates.
