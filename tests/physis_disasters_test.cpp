@@ -112,6 +112,15 @@ void externalAuthorityKeepsFireAndQuakeWithoutFlooding() {
     CHECK(replayed.fuel == expected.fuel);
     CHECK(replayed.quake == expected.quake);
     CHECK(replayed.waterDepth == Fixed{});
+
+    // Bad host policy must fail before any authoritative climate/tick writes.
+    const auto beforeTick = world.resourceConst<State>()->tick;
+    bool invalidRejected = false;
+    try {
+        advanceEnvironmentWithDisasters(world, static_cast<FloodMode>(255));
+    } catch (const std::invalid_argument&) { invalidRejected = true; }
+    CHECK(invalidRejected);
+    CHECK(world.resourceConst<State>()->tick == beforeTick);
 }
 
 void quakesAndTickGuard() {
