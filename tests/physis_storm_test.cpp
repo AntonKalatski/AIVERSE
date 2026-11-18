@@ -41,7 +41,7 @@ void testVorticesAndTracks() {
     world.eachExistingConst<StormEvent>([&](Entity,const StormEvent& e){moved=e;});
     CHECK(moved.center.x==55_fx);
     Sample sample{};
-    CHECK(physis::sample(world,0,0,sample)); // below: no dependency on any renderer
+    CHECK(aiverse::physis::sample(world,0,0,sample)); // below: no dependency on any renderer
     CHECK(sample.atmosphere.rain>Fixed{});
     CHECK(sample.atmosphere.pressure<1013_fx);
     World snapshot=world;
