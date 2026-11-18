@@ -139,6 +139,18 @@ struct Mapping {
     std::vector<Trigger> triggers;
     bool consume = true;
 };
+enum class RebindPolicy : std::uint8_t { Allow, Reject, Swap };
+
+// A collision is descriptive, not an error: shared controls may be intentional.
+// Ordered by the same context priority/name order as dispatch.
+struct BindingConflict {
+    Control control;
+    std::string higherContext, lowerContext;
+    std::string higherAction, lowerAction;
+    std::uint64_t higherMappingId=0, lowerMappingId=0;
+    bool shadowed=false; // the earlier active binding consumes the control
+};
+
 struct MappingContext {
     std::string name;
     std::vector<Mapping> mappings{};
@@ -204,15 +216,55 @@ public:
         return it == contexts_.end() ? nullptr : &it->second;
     }
     // Runtime rebinding is scoped to a mapping id and leaves all other contexts untouched.
-    bool rebind(const std::string& contextName, std::uint64_t id, Control control) {
+    bool rebind(const std::string& contextName, std::uint64_t id, Control control,
+                RebindPolicy policy = RebindPolicy::Allow) {
         auto it = contexts_.find(contextName);
         if (it == contexts_.end()) return false;
-        for (auto& mapping : it->second.mappings) if (mapping.id == id) {
-            mapping.control = control;
-            mappingRuntime_.erase({contextName, id});
-            return true;
+        Mapping* target=nullptr;
+        std::vector<Mapping*> colliding;
+        for(auto& mapping:it->second.mappings){
+            if(mapping.id==id)target=&mapping;
+            else if(mapping.control==control)colliding.push_back(&mapping);
         }
-        return false;
+        if(!target)return false;
+        if(policy==RebindPolicy::Reject && !colliding.empty())return false;
+        if(policy==RebindPolicy::Swap && colliding.size()>1)return false;
+        const Control previous=target->control;
+        if(policy==RebindPolicy::Swap && colliding.size()==1){
+            Mapping* other=colliding.front();
+            other->control=previous;
+            mappingRuntime_.erase({contextName,other->id});
+        }
+        target->control=control;
+        mappingRuntime_.erase({contextName,id});
+        return true;
+    }
+
+    // Optional editor/user-facing collision report, using actual dispatch precedence.
+    // Disabled contexts are ignored by default because they cannot shadow an action.
+    std::vector<BindingConflict> conflicts(bool activeOnly=true) const {
+        struct Bound { std::string context,action; std::uint64_t id; Control control;
+                       bool consume; int priority; };
+        std::vector<Bound> ordered;
+        for(const auto& [name,context]:contexts_){
+            const auto active=active_.find(name);
+            if(activeOnly && active==active_.end())continue;
+            for(const auto& mapping:context.mappings)
+                ordered.push_back({name,mapping.action,mapping.id,mapping.control,mapping.consume,
+                                   active==active_.end()?0:active->second});
+        }
+        std::stable_sort(ordered.begin(),ordered.end(),[](const Bound& a,const Bound& b){
+            if(a.priority!=b.priority)return a.priority>b.priority;
+            return a.context<b.context;
+        });
+        std::vector<BindingConflict> result;
+        for(std::size_t i=0;i<ordered.size();++i)
+            for(std::size_t j=i+1;j<ordered.size();++j)
+                if(ordered[i].control==ordered[j].control)
+                    result.push_back({ordered[i].control,ordered[i].context,ordered[j].context,
+                                      ordered[i].action,ordered[j].action,ordered[i].id,
+                                      ordered[j].id,ordered[i].consume});
+        return result;
     }
 
     void setControl(Control control, float value) {
