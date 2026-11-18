@@ -2082,3 +2082,113 @@ PostFx full-screen depth sampling with an explicit scene-depth
 resource and linear-view-distance reconstruction. Preserve Prisma's
 postprocessing ownership and NEREID's geometry/ECS authority. Add the
 next handoff section after every implementation stage.
+
+## Stage 21 — Prisma per-pixel underwater scene-depth sampling
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Starting point:** Stage 20 handoff `35218a99b9c40cab107dbbfcb1247413f546b412`.
+No unrelated feature branch or fresh main merge in this stage.
+
+### Implementation commits/files
+
+- `d2477d356afba19fe2185e898b9d8087d4af220d`:
+  `engine/render/PostFx.h` distinguishes main scene depth from
+  anti-alias/intermediate depth targets using a composite (size,role) key.
+- `94143dce9fcf3b3bd136ef6eb004f3b2039755ca`:
+  `engine/render/PostFx.cpp` extends the existing composite uniform
+  block with four inverse-view-projection columns and camera position,
+  and reserves an optional slot 5 for the scene depth texture.
+- `4ef0ccf49af53e6e153bf3d890ba3ff6d3b5a453`:
+  `engine/render/PostFx.cpp` binds completed scene depth only when
+  the underwater effect is active, PostFx quality is Medium/High,
+  there is no ShaderGraph texture-slot collision, depth attachment
+  is valid and it differs from the destination attachment.
+- `a68d469a8fe60a0b98630aec2328a8975b88c861`:
+  `engine/render/PostFx.cpp` emits backend-specific
+  `PF_DEPTH_SAMPLE` macros, using GLSL `sampler2D` versus Metal
+  `depth2d<float>`.
+- `006db2c6744759327d313672ed434e32bba27c76`:
+  fixes escaping of shader macro line breaks so generated GLSL/MSL
+  preprocessor directives end at actual newlines.
+- `8cc84dd49fbd72e4f62c0794243aeca321791711`:
+  `engine/render/PostFxShaders.h` uses optional per-pixel scene
+  depth, clip-range-aware NDC Z, and inverse view-projection to
+  reconstruct each opaque pixel's position and compute view distance.
+- `3c11342b4713af30c79c04b76d1fe42e59d54ce0`:
+  the full-screen compositor retries the existing non-depth underwater
+  shader when the depth variant cannot be created on a backend.
+- `36395ee5852fedf782e605fbfe384833d2ae9865`:
+  `tests/ecs_nereid_renderer_contract_test.cpp` source-contract
+  checks for GLSL/MSL-agnostic reconstruction, NDC clip ranges, sky
+  fallback and quality-tier handling (authored, not run).
+- `1877bc250bee88fe06dc097b1e90f5e6da74cb49`:
+  intermediate PostFx effects use their own depth attachment (role 2),
+  avoiding inadvertent clearing of the main scene depth.
+- `de8f65bd56711dd935e80f6332373175d893a83a`:
+  includes required `<utility>` for keyed depth resources.
+
+### Contract / ownership
+
+NEREID remains the sole source of water bodies and camera optical
+parameters. Prisma owns the full-screen rendering and scene depth.
+The existing `updateNereidPrismaUnderwater(worldScene,prisma,camera,dt)`
+API and water JSON format are unchanged.
+
+On Medium/High, when eligible, Prisma renders the opaque scene to its
+existing depth texture, finishes that scene pass, then optionally binds
+that depth texture at sampler slot 5 of the existing composite. No
+second scene capture or second fullscreen render pass was introduced.
+The two different clip conventions are handled by `underwaterCamera.w`
+(0 = [-1,1] OpenGL clip depth; 1 = [0,1] Metal/other zero-to-one depth).
+`inverseViewProj0..3` represent column-major inverse VP. World
+reconstruction uses screen UV in Y-up coordinates and samples depth
+with the renderer's `TUV` flip convention. Underwater optical distance
+is the actual distance from the view camera to the reconstructed opaque
+pixel, capped at 120 metres, instead of the earlier camera-water depth
+heuristic. Background/sky depth near 1, invalid W and unavailable depth
+fall back to Stage 20's heuristic.
+
+**Feature gating:** Low tier retains the cheap heuristic. Medium/High
+enable optional per-pixel depth only if the texture can be sampled
+without feedback, no ShaderGraph texture slot conflict exists, and the
+backend accepts a depth sampler shader. The shader compiler falls back
+to the original non-depth underwater variant when needed. All normal
+PostFx effects remain independently configurable and underwater
+remains opt-in. Intermediate FXAA/bloom/fullscreen passes no longer
+clear the main scene-depth texture; the final anti-alias pass has
+another depth resource.
+
+**Important limitations:** This is view-ray distance to the
+depth-captured opaque geometry, NOT physically correct
+per-pixel underwater segment length through arbitrary multiple
+water surfaces. The water surface height/volume membership comes
+from a single NEREID camera query. Transparent geometry, sky pixels,
+thin geometry and mixed depths continue to use screen-space
+approximations. Depth from overlapping NEREID water and custom
+renderers requires real GPU tests. ShaderGraph compositing currently
+uses the non-depth fallback to avoid sampler slot conflicts.
+No changes were made to gameplay ECS, PHYSIS, RTS `waterNetwork` or Terra.
+
+### Verification and follow-up
+
+**Actually done:** reviewed Renderer3D/PostFx/RHI existing
+API and current shader sources through GitHub, pushed implementation
+commits and authored source-contract tests. **NOT RUN / UNVERIFIED:**
+C++ build, CTest, `./run-tests.sh`, actual OpenGL or Metal shader
+compilation, framebuffer screenshots, mobile GPU performance, visual
+depth reconstruction and previous RTS/FPS regression. Source-level
+contract assertions do not imply PASS. PR #23 must remain Draft.
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+**Next agent:** run/repair compiled tests and shader creation on real
+Metal and GL. Compare depth-aware and fallback underwater views in
+Low/Medium/High; test fullscreen passes, ShaderGraph, HDR/SDR,
+repeated resize, clip ranges, and invalid depth, ensuring no
+read/write attachment feedback. Then add **true underwater ray
+segment clipping against NEREID water surface** for shallow scene
+depths, with independent quality gates. Continue to append actual
+handoff after every stage.
