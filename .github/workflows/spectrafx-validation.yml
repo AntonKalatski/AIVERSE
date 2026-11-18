@@ -1,0 +1,78 @@
+# Focused SpectraFX compilation + CPU/RHI-regression gates.
+# A successful job does NOT imply live Metal shader execution or GPU image parity.
+name: SpectraFX validation
+
+on:
+  pull_request:
+    paths:
+      - 'engine/fx/**'
+      - 'tests/vfx_*.cpp'
+      - 'apps/editor/core/SpectraGraphOps.cpp'
+      - 'apps/editor/windows/SpectraGraphWindow.cpp'
+      - 'apps/editor/EditorFxOps.cpp'
+      - 'CMakeLists.txt'
+      - '.github/workflows/spectrafx-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spectrafx-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  headless:
+    name: C++ CPU + mocked GPU protocol / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build libx11-dev libegl-dev libgles-dev libvulkan-dev
+      - name: Configure focused tests
+        run: >
+          cmake -S . -B build/spectrafx-ci -DCMAKE_BUILD_TYPE=Debug
+          -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_EDITOR=OFF
+          -DAIVERSE_BUILD_SERVER=OFF -DAIVERSE_BUILD_TOOLS=OFF
+          -DAIVERSE_BUILD_TESTS=ON
+      - name: Build SpectraFX regression targets
+        run: >
+          cmake --build build/spectrafx-ci
+          --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests
+          aiverse_vfx_assets_tests aiverse_vfx_gpu_tests
+          aiverse_vfx_graph_runtime_tests --parallel 2
+      - name: Run headless SpectraFX tests
+        run: ctest --test-dir build/spectrafx-ci --output-on-failure -L SpectraFX
+
+  editor:
+    name: Editor graph CRUD + ImGui compile / Linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install graphics headers
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build libx11-dev libegl-dev libgles-dev libvulkan-dev
+      - name: Configure editor and MCP tests
+        run: >
+          cmake -S . -B build/spectrafx-editor-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug -DAIVERSE_BUILD_EDITOR=ON
+          -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_CLIENT=OFF
+          -DAIVERSE_BUILD_SERVER=OFF -DAIVERSE_BUILD_TOOLS=OFF
+      - name: Build editor and graph operations
+        run: >
+          cmake --build build/spectrafx-editor-ci
+          --target aiverse_editor aiverse_vfx_ops_tests --parallel 2
+      - name: Run MCP graph operations regression
+        run: ctest --test-dir build/spectrafx-editor-ci --output-on-failure -R '^vfx_graph_ops$'
