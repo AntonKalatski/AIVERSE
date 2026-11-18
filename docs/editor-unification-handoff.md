@@ -1433,3 +1433,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `b49dbb32b4dfecb1509f418e1f583be548a28cd7`.
 - Extended `tests/ecs_integer_health_commit_test.cpp`: two ordered `DamageRequest` entries with generation-safe source/target Entity IDs are byte-serialized, reloaded, byte-compared, and hashed; corrupt format and truncated bytes must reject without changing the existing destination; altering source Entity generation must change checksum. Oversized 16,385-event queues must reject serialization.
 - Verification: GitHub test edit succeeded; **no native compilation or CTest execution**. Test target already registered in CMake/standalone ECS runner. Next: update skill, audit source wiring and check CI before production use.
+
+
+### 2026-11-18 — Agent skill requires versioned ECS DamageQueue persistence
+- Implementation SHA: `2bb9af0beb062fd49644de817cfcbccc25b187e8`.
+- Updated `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md`: document `saveDamageQueue/loadDamageQueue/hashDamageQueue`, v1 bounds-checked byte format, transactional load, generation-safe hash and the GameModule serializer/hash integration requirement. World COW snapshots are not enough for persistent saves.
+- Verification: documentation commit, **native C++ execution not confirmed**. Next: execute CTest and regression suite; keep old FPS/RTS save paths untouched until migration parity evidence.
