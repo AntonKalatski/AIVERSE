@@ -1,7 +1,7 @@
 // PHYSIS Stage 14: read-only, renderer-agnostic environmental debug heatmaps.
 // CPU diagnostics only. Never advances simulation or creates authoritative ECS.
 #pragma once
-#include "PhysisPresentation.h"
+#include "PhysisSpatialIndex.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -138,9 +138,11 @@ inline bool diagnosticNeeds3DField(DiagnosticLayer layer) {
 
 // Bounded, pure, row-major read. Optional layer has no outside-world fallback:
 // a valid result means the cell belongs to the climate grid.
-inline bool sampleDiagnosticRaster(const World& world,
+template<class FieldSampler>
+inline bool sampleDiagnosticRasterWithFieldSampler(const World& world,
                                    const DiagnosticRequest& request,
-                                   DiagnosticRaster& output) {
+                                   DiagnosticRaster& output,
+                                   FieldSampler&& sampleField) {
     const auto* state = world.resourceConst<State>();
     if (!state) return false;
     if (request.width <= 0 || request.height <= 0 || request.stride <= 0 ||
@@ -190,7 +192,7 @@ inline bool sampleDiagnosticRaster(const World& world,
                 NatureFieldSample sampleValue;
                 const Vec3 query{Fixed::fromInt(xMeters),
                                  coord->elevation, Fixed::fromInt(zMeters)};
-                if (!sampleNatureField(world, query, sampleValue) ||
+                if (!sampleField(query, sampleValue) ||
                     !sampleValue.hasAtmosphere)
                     continue;
                 value = diagnosticValue(sampleValue, request.layer);
@@ -213,6 +215,28 @@ inline bool sampleDiagnosticRaster(const World& world,
     }
     output = std::move(next);
     return true;
+}
+
+// Backwards-compatible reference sampler, preserving all existing call sites.
+inline bool sampleDiagnosticRaster(const World& world,
+                                   const DiagnosticRequest& request,
+                                   DiagnosticRaster& output) {
+    return sampleDiagnosticRasterWithFieldSampler(world, request, output,
+        [&](Vec3 position, NatureFieldSample& sample) {
+            return sampleNatureField(world, position, sample);
+        });
+}
+
+// Optional indexed sampler: direct weather/hazard cells still stay O(cells);
+// wind/gravity layers query the transient snapshot-backed spatial broadphase.
+// Index must be rebuilt when an updated world/tick is to be observed.
+inline bool sampleDiagnosticRasterIndexed(const FieldSpatialIndex& index,
+                                          const DiagnosticRequest& request,
+                                          DiagnosticRaster& output) {
+    return sampleDiagnosticRasterWithFieldSampler(index.world(), request, output,
+        [&](Vec3 position, NatureFieldSample& sample) {
+            return index.sample(position, sample);
+        });
 }
 
 } // namespace aiverse::physis
