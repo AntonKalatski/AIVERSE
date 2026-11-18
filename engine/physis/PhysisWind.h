@@ -64,9 +64,9 @@ inline Vec3 localWindAt(const World& world, Vec3 position, std::uint64_t tick) {
         const auto z = position.z.floorInt();
         const auto y = position.y.floorInt();
         const auto period = (tick - zone.startTick) / zone.gustPeriodTicks;
-        const auto key = mix64(cellKey(seed ^ zone.seed, std::int32_t(x),
-                                      std::int32_t(z)) ^ mix64(std::uint64_t(y)) ^
-                               mix64(period));
+        const auto key = mix64(seed ^ zone.seed ^ mix64(static_cast<std::uint64_t>(x)) ^
+                               mix64(static_cast<std::uint64_t>(z)) ^
+                               mix64(static_cast<std::uint64_t>(y)) ^ mix64(period));
         const Fixed amplitude = fxClamp(zone.gustAmplitude,
                                        Fixed{}, Fixed::fromInt(100)) * weight;
         velocity = velocity + Vec3{
