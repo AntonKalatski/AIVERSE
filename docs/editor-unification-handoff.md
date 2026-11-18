@@ -961,3 +961,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h`: `KinematicProjectileComponent` (origin/current/destination, owner/target, shotId, elapsed/duration, alive), pure `stepKinematicProjectile` fixed-point endpoint interpolation per simulation tick, `KinematicArrivalEvent`, and `addKinematicProjectileSystem`. The system iterates the ECS pool in dense order, stages arrival events, emits them after iteration, and defers destruction. No collision world, physics forces or RNG. Target tracking is **not** implemented: the endpoint is fixed at launch, and the arrival sink must resolve stale/dead targets.
 - Verification: GitHub source commit only, no native compilation or CTest. Not registered as a standalone library package or connected to RTS yet. Physics and hitscan systems remain separate existing/planned paths.
 - Next: add independent host tests for travel duration, event ordering, expiry and snapshot rollback; register public package/skill and CMake; connect real RTS adapter behind parity gate.
+
+
+### 2026-11-18 — ECS energy regeneration policy deduplication
+- Implementation SHA: `9f1fd207014a4b223e47ab3df885b769da95d550`.
+- Changed `libraries/include/aiverselib/genre/EcsTimedMechanics.h` to call the shared pure `stepFixedResourceRegeneration` rather than maintaining independent Fixed arithmetic. Its existing zero floor, valid rate gate and maximum cap are unchanged, and authoritative EnergyRegenerationComponent continues to live in ECS.
+- Verification: static source reasoning/edit only; **not compiled/tested**. Existing `ecs_cross_genre_timed_mechanics_test` is the validation gate.
+- Next: port direct RTS Unit health/energy policy calls without moving their existing authoritative component storage.
