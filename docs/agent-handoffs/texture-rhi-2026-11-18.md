@@ -5078,3 +5078,30 @@ real image GPU sampling NOT RUN.
 Next: run CMake/CTest with system OpenEXR 3 on developer machine,
 check PNG/EXR color handling in final renderer and audit
 library dependency packaging for app distribution.
+
+## Stage 8H — 3D texture mip-slice GPU readback and inspector (2026-11-18)
+
+Code commit: f694c31dad3f67dca7cb48a0841154c297616142.
+Files: engine/gfx/{gl/GfxGL.cpp,metal/GfxMetal.mm,
+vulkan/VkResources.cpp}, apps/editor/windows/TextureResourcesWindow.cpp.
+Metal readTextureAsync now accepts Texture3D with each
+mip depth slice selected via request.arrayLayer; 3D blits
+use sourceSlice=0 and sourceOrigin.z. GLES3/GL33 attaches
+the requested 3D slice with glFramebufferTextureLayer
+to an intermediate PBO/fence readback framebuffer.
+Vulkan VkBufferImageCopy now supports Texture3D with
+imageSubresource baseArrayLayer 0 and imageOffset.z for
+the requested mip-slice. Existing 2D/arrays/cubes unchanged.
+Inspector adds per-mip depth slice slider and enables
+bounded 16MiB async readback previews for 3D textures.
+Textures with compressed/depth/MSAA/unsupported formats
+still reject. 3D readback is presentation-only.
+Compatibility: additive readback capability, no ECS,
+asset format, shaders, serialization, net changes.
+Verification: GitHub code/commit succeeded. Metal/GL/Vulkan
+native build NOT RUN, readback-on-device NOT RUN, editor
+preview UI NOT RUN, no real GPU confidence claimed.
+Next: add readback per-backend fixtures and GPU integration
+tests for z-slices/mip, verify row orientation and upload
+format across platforms. Existing WebGL2 still refuses native
+asynchronous readback.
