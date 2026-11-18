@@ -222,3 +222,7 @@ The project Input Actions editor and FPS F10 Settings each expose Allow duplicat
 ### RTS camera gesture Actions
 
 Default `RTS.Gestures` context maps touch slot-zero relative drag to `CameraTouchDrag` Axis2D, two-finger centroid motion to `CameraTouchPan` Axis2D and two-finger pinch to `CameraPinch` Axis1D. The RTS client now uses these semantic values for camera pan/zoom while preserving terrain-ground projection and existing touch-selection behavior. Scale the values through authored Action modifiers rather than rebuilding the device gesture algorithm. Projects with older complete custom input assets retain the previous raw-delta fallback.
+
+### RTS Select/Command mouse rebinding
+
+`RTS.Pointer` controls now affect the actual world gesture entrypoints, not merely Action event notifications. The native event is delivered unchanged to the UI first; after UI capture, `ClientInputRouting::logicalMouseButton` translates an authored mouse button to logical Select (0), Command (1) or camera pan (2) for the world handler. Unbound buttons do not select/order. The pointer's position, drag-box geometry, garrison logic and existing validated Commands remain unchanged.
