@@ -545,3 +545,17 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Known limitation:** the preview establishes *physical/action-value presence*, not a full recursively evaluated trigger dependency graph. Chained Chord/NotChord gates and cycles still require an explicit resolution policy; do not describe this as recursive Unreal dependency parity.
 
 **Next agent task:** inspect `EnhancedInput.h::chordSatisfied/evaluateTriggers`, `EnhancedInputConfig.h::checkChords`, and `tests/libraries/enhanced_input_tests.cpp`. Define deterministic handling of cyclic and chained chord dependencies without evaluation-order ambiguity, update API/config/editor docs and tests, and write Stage 43 before proceeding. Keep legacy `Input.h` and simulation Commands unchanged.
+
+## Stage 43 — introduce AIVerse InputFlow as the official subsystem name (2026-11-18)
+
+**Goal/status:** IMPLEMENTED the canonical public C++ name in GitHub; compile/CTest and platform validation **NOT RUN** (user requested implementation before testing). Product name: **AIVerse InputFlow** (short: **InputFlow**), emphasizing the pipeline of Device → Mapping Context → Action → Trigger → gameplay Commands, independently of game genre.
+
+**Changed files/API:** `libraries/include/aiverselib/gameplay/EnhancedInput.h` renames the C++ implementation class from `InputSystem` to `InputFlow` and adds `using InputSystem = InputFlow` in the legacy `aiverse::lib::gameplay::enhanced` namespace. New canonical public header `libraries/include/aiverselib/gameplay/InputFlow.h` exports `aiverse::lib::gameplay::inputflow::InputFlow`, associated Actions, Contexts, Values, Modifiers, Triggers, Controls and RebindPolicy; offers the friendly aliases `InputAction`, `InputContext`, `InputValue`, `InputActionEvent`, and `InputActionState`. New code should include `InputFlow.h`, not depend on the old implementation header directly. Existing `EnhancedInput.h` consumers, `enhanced::InputSystem`, JSON schema v1 (`input/actions.json`) and `AIVERSE::lib_input` continue to work unchanged.
+
+**Documentation:** `docs/enhanced-input.md`, `skills/ui/aiverse-input/SKILL.md`, and root `AGENTS.md` now identify AIVerse InputFlow as the canonical public API. Legacy file names/IDs are intentionally preserved for source and asset compatibility.
+
+**Evidence:** GitHub source commits: `8ccca5eb83ba82897599dd9711872016e4b1a6ab` (renamed implementation and alias), `b4b7b3ec5ddb3f8637c3252237e640b1252608f4` (new facade). No tests run, no CI pass claimed.
+
+**Known risks/limitations:** Tooling, editor window, FPS/RTS clients and platform adapters still need to adopt `inputflow::InputFlow` and visible InputFlow labels; old API remains supported. The class-name change should be compile-verified in the later test phase.
+
+**Next agent / Stage 44:** Update `engine/platform/EnhancedInputAdapter.h`, `EnhancedInputConfig.h`, `EnhancedInputPresets.h`, `EnhancedInputUsers.h`, `EnhancedInputUserProfiles.h`, `apps/fps/client.cpp`, `apps/client/ClientInputRouting.h`, `apps/editor/windows/InputWindow.cpp` and `GameWindow.cpp` to include `aiverselib/gameplay/InputFlow.h` and use the `inputflow` namespace/branding; retain compatibility paths, stable IDs and JSON schema. Update tests, catalog, and this handoff after that stage. Testing remains deferred.
