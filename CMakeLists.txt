@@ -519,7 +519,7 @@ target_link_libraries(aiverse_shader_graph PUBLIC aiverse_engine)
 
 # Canonical post-processing implementation: PRISMA.
 # Keep existing aiverse_postfx_data target alive for older native targets.
-add_library(aiverse_postfx_data STATIC engine/render/PrismaData.cpp)
+add_library(aiverse_postfx_data STATIC engine/render/PrismaData.cpp engine/render/PrismaVolumeData.cpp)
 add_library(aiverse_prisma_data ALIAS aiverse_postfx_data)
 add_library(AIVERSE::prisma_data ALIAS aiverse_postfx_data)
 target_link_libraries(aiverse_postfx_data PUBLIC aiverse_engine aiverse_shader_graph)
