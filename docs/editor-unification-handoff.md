@@ -1749,3 +1749,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `538e370629d0647766cb5cde57802ae122da524e`.
 - Updated `tests/fps/tests.cpp` to include `projectile_spawn.inc` and execute `ecsProjectileSpawnAuthorityParity()` alongside other actual FPS projectile source-ownership tests. This runs actual weapon shooting plus Frag/Smoke/Flash input actions in both legacy and ECS-authority hosts, with deep/COW, v9 cross-load and rollback coverage when the native FPS test binary executes.
 - **Verification:** source commit only; native compilation, assertions, FPS transport/server integration **not run**. Next: inspect CI and address any build/test failures before changing production defaults.
+
+
+### 2026-11-18 — C++20 libc++ build blocker: removed shared_ptr::unique()
+- Implementation SHA: `31f1bef0b3b28d7436d06d9edc652fba48908451`.
+- User's local macOS Clang/libc++ build failed at `engine/core/ECS.h` on `std::shared_ptr<T>::unique()` (13 usages total, including paged pool COW, resource detach, World copy paths, structural update and shared pool/resource counters). This C++20 standard-library method is no longer available in the toolchain.
+- Replaced all 13 occurrences preserving the original boolean predicate: `shared.unique()` => `(shared.use_count() == 1)`, `!shared.unique()` => `(shared.use_count() != 1)`. This retains the previous behavior for empty handles and same single-owner vs shared-owner decisions. No gameplay component schema, save, network wire or scheduler changes.
+- Verified by source transformation count: exactly 13 expressions replaced and zero `.unique()` occurrences remain in `engine/core/ECS.h`. **No native compilation or test run in this environment**; user's Mac build is the next verification step.
+- Rebuild from branch: `git pull --ff-only origin feature/universal-entity-inspector-fps` then `cmake --build build/ecs-test --parallel 4 --target aiverse_fps_tests aiverse_ecs_projectile_composition_test aiverse_ecs_hitscan_resolution_test`. Run `ctest --test-dir build/ecs-test --output-on-failure -R '^(fps|ecs_projectile_composition_test|ecs_hitscan_resolution_test)$'` when compile succeeds.
