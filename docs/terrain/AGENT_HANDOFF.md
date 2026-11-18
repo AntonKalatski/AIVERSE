@@ -1700,3 +1700,51 @@ genre independence and the per-stage handoff rule.
   changing gameplay, and register it as an opt-in build tool. Add
   docs for exact invocation. A separate test agent validates
   region-key edge cases, stale hashes, partial outputs and cancellation.
+
+## Stage 10b — host-only bulk Horizon archive CLI (COMMITTED; NOT TESTED)
+
+- `7a5ad0698dd1da1b81d0634f4fa933a2e4593119`:
+  `engine/render/TerraWeaveHorizonScene.h` exposes read-only
+  `settings()`, allowing the host tool to reuse the same manifest
+  configuration used by runtime.
+- `4e17b7139dcd5415163b3647831d07e6b1d3c75b`:
+  `tools/horizon/main.cpp` CLI `aiverse_horizon_bake`:
+  `--manifest <world.json> --out <dir> --cells minX minZ maxX maxZ`
+  with `--force`, `--max-regions N`, `--quiet`.
+  It reads the same Horizon manifest, resolves procedural seed
+  inheritance from an optional near forest block without generating
+  any near tree models, creates the output directory, uses stable
+  <cellX>_<cellZ>.twh asset filenames, skips valid cached archives,
+  and stages writes to a `.partial` file before rename.
+  No runtime filesystem writes, GPU device or ECS changes.
+- `a1e59600763933b02c9a10133d9ddba3b5466a0e`:
+  `CMakeLists.txt` registers `aiverse_horizon_bake`
+  for `AIVERSE_BUILD_TOOLS=ON`, non-Emscripten, linked against
+  the existing model/world libraries; it is an ordinary optional
+  build target, **not a new test**.
+
+**Example (once built by the tester/other agent):**
+```sh
+./build/<config>/aiverse_horizon_bake \
+  --manifest content/world.json \
+  --out content/world/horizon-cache \
+  --cells -4 -4 4 4
+```
+Pack the resulting `*.twh` files as normal game assets, and set
+`terraweaveHorizon.archivePrefix` to `world/horizon-cache`.
+
+**Scope limits:** CLI bakes *procedural* terrain/biomes only and
+does not have access to independently authored collision tiles,
+painted biomes or water/road maps. Native projects can use
+`bakeHorizonBatch` with immutable `HorizonSurfaceSources`
+and a nonzero `authoredContentHash` for that path.
+Windows replacing a pre-existing `.twh` may require an explicit
+file replacement policy (rename-over-existing has platform
+differences); current implementation reports an error rather
+than deleting the old asset.
+
+**Actual verification:** GitHub commits and source review only.
+No builds, tests, CLI execution or filesystem writes were
+performed. The user delegated all testing to another agent.
+Next functional stage is per-region selective invalidation
+for authored modifications, avoiding full CPU atlas re-bake.
