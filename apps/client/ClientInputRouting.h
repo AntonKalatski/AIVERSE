@@ -40,6 +40,21 @@ public:
             if(event.phase==ei::Phase::Triggered)actions.push_back(event.action);
         return actions;
     }
+    // Advance time-based Hold/Pulse/DoubleTap triggers once per presentation frame.
+    // The adapter handles OS events immediately; only time advances here.
+    std::vector<std::string> advance(float dt) {
+        std::vector<std::string> actions;
+        for(const auto& event:input_.update(dt))
+            if(event.phase==ei::Phase::Triggered)actions.push_back(event.action);
+        return actions;
+    }
+    // A script-defined hotkey takes precedence over generic input Actions.
+    // Suppressing its held physical control also prevents later Hold/Pulse.
+    void suppressKey(platform::Key key) {
+        if(key==platform::Key::Unknown)return;
+        input_.setControl({ei::Device::Keyboard,int(key)},0);
+        input_.update(0.0f);
+    }
     // Top-down possession is a higher-priority, optional context.
     // A project-specific action asset can omit it; in that case legacy buttons
     // remain usable but semantic customization requires a matching Action.
