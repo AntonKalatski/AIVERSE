@@ -1,5 +1,6 @@
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
+#include "libraries/include/aiverselib/genre/EcsHitscanSystems.h"
 #include <algorithm>
 #include <optional>
 namespace aiverse::fps {
@@ -122,10 +123,20 @@ void Module::damage(Simulation& sim,uint8_t source,Actor& targetView,int32_t amo
 }
 bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_t amount,const WeaponConfig& weapon,const std::vector<Actor>& targets,Projectile* projectile) {
     auto& s=state(sim);Fixed best=1_fx;uint8_t victim=0;const Actor* pose=nullptr;
-    for(const auto& target:targets) {
-        if(target.slot==source||target.health<=0||target.life!=s.actors[target.slot-1].life)continue;
-        Fixed fraction;Vec3 normal;
-        if(world::intersect(eye,delta,actorBounds(target,config_.motor),fraction,normal)&&fraction<best){best=fraction;victim=target.slot;pose=&target;}
+    // Rewind pose selection still comes from the original tick history.
+    // Share only the deterministic nearest-hit policy; keep vehicle and
+    // world occlusion queries below in their exact legacy order.
+    const auto actorHit=lib::genre::selectClosestHitscanCandidate(
+        targets,eye,delta,best,
+        [&](const Actor& target) {
+            return target.slot!=source && target.health>0 &&
+                target.life==s.actors[target.slot-1].life;
+        },
+        [&](const Actor& target) {return actorBounds(target,config_.motor);});
+    if(actorHit) {
+        best=actorHit.fraction;
+        victim=actorHit.target->slot;
+        pose=actorHit.target;
     }
     uint32_t vehicleId=0;for(const auto& v:s.vehicles)if(v.health>0&&v.driver!=source){Fixed fraction;Vec3 normal;if(world::intersect(eye,delta,{v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}},fraction,normal)&&fraction<best){best=fraction;victim=0;vehicleId=v.id;}}
     auto penetration=projectile?projectile->penetration:weapon.penetration;bool blocked=false;
