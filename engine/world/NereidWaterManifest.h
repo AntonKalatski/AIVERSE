@@ -136,6 +136,7 @@ inline NereidSceneSurface surface(const Json& j) {
         if(v.has("opacity"))s.style.opacity=scalar(v["opacity"],"opacity",0.001f,0.98f);
         if(v.has("specular"))s.style.specular=scalar(v["specular"],"specular",0.85f,1.f);
         if(v.has("foamStrength"))s.style.foamStrength=scalar(v["foamStrength"],"foamStrength",0.f,1.f);
+        if(v.has("refractionStrength"))s.style.refractionStrength=scalar(v["refractionStrength"],"refractionStrength",0.f,1.f);
     }
     return s;
 }
