@@ -122,4 +122,35 @@ inline bool prepare(const program::Program& source, Payload& output,
     return true;
 }
 
+// Stage 22 executable Metal-subset validation. The ABI can represent more
+// instructions than the first GPU interpreter is allowed to evaluate.
+// This separate gate prevents a program from being partially executed.
+inline bool prepareForMetal(const Json& json,Payload& output,std::string& reason) {
+    output=Payload{};
+    if(json.isNull()) {reason.clear();return true;}
+    program::Program source;
+    std::vector<std::string> errors;
+    if(!program::compile(json,source,errors)) {
+        reason=errors.empty()?"invalid CPU particle program":errors.front();
+        return false;
+    }
+    if(!prepare(source,output,reason))return false;
+    if(output.statementCount>24 || output.instructionCount>192) {
+        reason="GPU VM executable budget: at most 24 statements and 192 instructions";
+        output=Payload{};
+        return false;
+    }
+    for(uint32_t i=0;i<output.statementCount;++i) {
+        const Statement& st=output.statements[i];
+        if(st.instructionCount>48 || st.firstInstruction+st.instructionCount>
+           output.instructionCount) {
+            reason="GPU VM executable statement exceeds 48 instructions";
+            output=Payload{};
+            return false;
+        }
+    }
+    reason.clear();
+    return true;
+}
+
 } // namespace aiverse::spectra::gpu_program
