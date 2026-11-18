@@ -1770,3 +1770,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implemented `Module::clearProjectiles(Simulation&)` in `modules/fps/FpsModule.cpp`. Default FPS still clears legacy `State::projectiles`. Under `fps.ecsAuthority`, collects all live `ProjectileRuntime` entities, sorts by source projectile ID for deterministic retirement order, destroys them directly in World, removes indexed projectile kind/ID mappings while retaining loot/vehicle indices, then clears the same-tick State compatibility projection. Unlike the former mirror-only behavior, no stale projectile Runtime remains between the reset and `fps.ecsMirror`.
 - **Verification:** code committed but **call site is not yet rewired**; C++ native build and gameplay tests not run. Destroying Entities earlier may change allocator reuse versus historical compatibility behavior, so verify save/replay and stable event order under both storage modes.
 - **Next:** replace `tickSystems` round-reset vector clear with this helper, then add native round-reset regression across deep/COW and v9 saves before default-enabling ECS authority.
+
+
+### 2026-11-18 — Live bomb-round reset now clears canonical projectile ECS components
+- **Implementation SHA:** `6fb59b267c9ab882ca9b03a8a4f23474b8dc21b2`.
+- Changed the actual `modules/fps/FpsSystems.cpp::tickSystems` bomb-round reset branch to invoke `clearProjectiles(sim)` rather than writing only `State::projectiles.clear()`. Under `fps.ecsAuthority`, all existing projectile Runtime entities and source-ID keys are retired at the round-reset barrier. Legacy mode retains its vector clear. Loot/vehicle reset logic and actor/bomb/round event ordering remain at their previous source location, no new save field.
+- **Verification:** source committed; **native compilation, bomb round resets, same-tick player input, v9 cross-mode save, deep/COW rollback and network parity not yet run**. Full authority remains default-OFF, and external World allocator lifetime must be checked.
+- **Next:** add FPS regression focused on immediate reset of Runtime/index, ordering, and cross-storage snapshot parity.
