@@ -473,6 +473,133 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         int lw = std::max(1, w / plan.startDiv), lh = std::max(1, h / plan.startDiv);
         for (int i = 0; i < plan.levels && lw >= 2 && lh >= 2; ++i, lw /= 2, lh /= 2) down.push_back(target(set, kBloomDown + i, lw, lh));
         if (!down.empty()) {
+            // Stage 16: opt-in complete Bloom graph. All physical textures
+            // remain in the existing per-viewport Sized cache; the graph
+            // handles pass dependencies/order, not cross-frame ownership.
+            bool bloomChainHandled = false;
+            const char* chainFlag = std::getenv("AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN");
+            if (chainFlag && std::strcmp(chainFlag, "1") == 0 && src.tex.valid()) {
+                const PrismaGraphFormat format =
+                    hdrFrame_ ? PrismaGraphFormat::RGBA16F : PrismaGraphFormat::RGBA8;
+                PrismaRenderGraph graph;
+                const auto sourceId = graph.addResource({
+                    "bloom-chain-source", format, static_cast<uint32_t>(src.w),
+                    static_cast<uint32_t>(src.h), true});
+                std::vector<PrismaGraphId> downIds;
+                std::vector<PrismaGraphId> upIds(down.size(), kInvalidPrismaGraphId);
+                std::vector<gfx::TextureHandle> handles{src.tex};
+                std::vector<Target> upTargets(down.size());
+                for (size_t i = 0; i < down.size(); ++i) {
+                    downIds.push_back(graph.addResource({
+                        "bloom-down-" + std::to_string(i), format,
+                        static_cast<uint32_t>(down[i].w),
+                        static_cast<uint32_t>(down[i].h), true}));
+                    handles.push_back(down[i].tex);
+                }
+                for (int i = static_cast<int>(down.size()) - 2; i >= 0; --i) {
+                    upTargets[static_cast<size_t>(i)] =
+                        target(set, kBloomUp + i, down[static_cast<size_t>(i)].w,
+                               down[static_cast<size_t>(i)].h);
+                    const auto& t = upTargets[static_cast<size_t>(i)];
+                    upIds[static_cast<size_t>(i)] = graph.addResource({
+                        "bloom-up-" + std::to_string(i), format,
+                        static_cast<uint32_t>(t.w), static_cast<uint32_t>(t.h), true});
+                    handles.push_back(t.tex);
+                }
+                struct BloomGraphOp {
+                    Prog pipeline;
+                    Target destination;
+                    SimpleU uniforms;
+                    PrismaGraphId input0;
+                    PrismaGraphId input1;
+                };
+                std::vector<BloomGraphOp> ops;
+                auto addBloomPass = [&](const std::string& name, Prog program,
+                                        Target dst, PrismaGraphId in0,
+                                        PrismaGraphId in1, const SimpleU& uniforms,
+                                        PrismaGraphId output) {
+                    PrismaGraphPass p;
+                    p.name = name;
+                    p.reads = {in0};
+                    if (in1 != kInvalidPrismaGraphId) p.reads.push_back(in1);
+                    p.writes = {output};
+                    graph.addPass(std::move(p));
+                    ops.push_back({program, dst, uniforms, in0, in1});
+                };
+                SimpleU bu{};
+                put(bu.px, float(plan.startDiv) * 0.5f / float(w),
+                    float(plan.startDiv) * 0.5f / float(h), flip, 0);
+                put(bu.p0, bloom->get("threshold"), bloom->get("knee"), 0, 0);
+                addBloomPass("bloom-prefilter", kPrefilter, down[0], sourceId,
+                             kInvalidPrismaGraphId, bu, downIds[0]);
+                for (size_t i = 1; i < down.size(); ++i) {
+                    put(bu.px, 1.0f / float(down[i-1].w),
+                        1.0f / float(down[i-1].h), flip, 0);
+                    addBloomPass("bloom-downsample-" + std::to_string(i),
+                                 kDown, down[i], downIds[i-1],
+                                 kInvalidPrismaGraphId, bu, downIds[i]);
+                }
+                const float scatter = 0.3f + 0.7f * bloom->get("radius");
+                PrismaGraphId lowestId = downIds.back();
+                Target lowest = down.back();
+                for (int i = static_cast<int>(down.size()) - 2; i >= 0; --i) {
+                    put(bu.px, 1.0f / float(lowest.w),
+                        1.0f / float(lowest.h), flip, 0);
+                    put(bu.p0, scatter, 0, 0, 0);
+                    addBloomPass("bloom-upsample-" + std::to_string(i), kUp,
+                                 upTargets[static_cast<size_t>(i)], lowestId,
+                                 downIds[static_cast<size_t>(i)], bu,
+                                 upIds[static_cast<size_t>(i)]);
+                    lowestId = upIds[static_cast<size_t>(i)];
+                    lowest = upTargets[static_cast<size_t>(i)];
+                }
+                const auto graphPlan = graph.compile();
+                std::vector<gfx::TextureHandle> depths;
+                bool ready = graphPlan.valid;
+                if (ready) for (const auto& op : ops) {
+                    const auto depth = depthFor(set, op.destination.w, op.destination.h);
+                    depths.push_back(depth);
+                    ready = ready && depth.valid() && op.destination.tex.valid();
+                }
+                for (auto hnd : handles) ready = ready && hnd.valid();
+                if (ready) {
+                    PrismaRhiExecutor executor(dev);
+                    const auto run = executor.execute(
+                        graph, graphPlan, handles,
+                        [&](gfx::Device& gpu, PrismaGraphId id,
+                            const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
+                            const auto& op = ops[id];
+                            gpu.setViewport({0, 0, op.destination.w, op.destination.h});
+                            gpu.setPipeline(pipes_[op.pipeline]);
+                            gpu.setVertexBuffer(triangle_);
+                            gpu.setUniforms(0, &op.uniforms, sizeof op.uniforms);
+                            gpu.setTexture(0, view.resource(op.input0));
+                            if (op.input1 != kInvalidPrismaGraphId)
+                                gpu.setTexture(1, view.resource(op.input1));
+                            gpu.draw(3);
+                            return true;
+                        },
+                        [](gfx::Device&, PrismaGraphId,
+                           const PrismaGraphDispatchView<gfx::TextureHandle>&) {
+                            return false;
+                        }, {}, true,
+                        [&](PrismaGraphId id) { return depths[id]; });
+                    if (run.success) {
+                        stats_.passes += static_cast<int>(run.passes);
+                        bloomTex = lowest.tex;
+                        bloomNorm = 0.0f;
+                        for (size_t k = 0; k < down.size(); ++k)
+                            bloomNorm += std::pow(scatter, float(k));
+                        bloomChainHandled = true;
+                    } else {
+                        if (error_.empty()) error_ = run.error;
+                        // Never repeat a partially submitted GPU graph.
+                        bloomChainHandled = run.passes > 0;
+                        stats_.passes += static_cast<int>(run.passes);
+                    }
+                }
+            }
+            if (!bloomChainHandled) {
             SimpleU u{};
             const float spread = float(plan.startDiv) * 0.5f;
             put(u.px, spread / float(w), spread / float(h), flip, 0);
@@ -546,6 +673,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             bloomTex = low.tex;
             bloomNorm = 0;
             for (size_t k = 0; k < down.size(); ++k) bloomNorm += std::pow(scatter, float(k));
+            } // legacy Bloom chain
         }
     }
 
