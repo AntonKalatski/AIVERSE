@@ -295,3 +295,15 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Verification:** GitHub source changes only, no full editor compile/interactive test yet. A focused validation must check ImGui key enum mappings, window focus cancellation, readAsset load/reload and project input hot-rebind. Test selection + keyboard camera, script HUD popup, region camera and initial missing input file fallback.
 
 **Next agent:** check CI and compiler outputs; fix any editor/RTS input warnings and verify functional parity. Do not mark PR ready without green validation. Continue documenting new stages.
+
+## Stage 20 — validated editor project asset writes (2026-11-18)
+
+**Problem:** `InputWindow::save` previously removed an existing `input/actions.json` before renaming the temporary file. On Windows or filesystem errors this could lose user-authored mappings.
+
+**Fix:** New `engine/platform/EnhancedInputFileIO.h` provides schema-validated `loadAssetFile/saveAssetFile` and the shared `detail::saveValidatedJsonFile` writer (atomic POSIX replace or Windows backup/restore fallback). `EnhancedInputProfileIO.h` reuses the same writer. `apps/editor/windows/InputWindow.cpp` now loads/saves via the checked library instead of handwritten destructive file operations. The UI still rejects empty Actions/Contexts and retains its last in-memory buffer on errors.
+
+**Test coverage added:** `enhanced_input_config_tests.cpp` now creates a project action asset in a temporary file, validates roundtrip, attempts invalid replacement and verifies the previous data stays intact. The pre-existing user-profile roundtrip/failure tests remain.
+
+**Source/test status:** GitHub source committed; CMake/CTest and macOS/Windows GUI verification remain pending. Need check user asset read-only errors and project-switch/reload behavior on actual OS. Both file APIs are presentation-only; no sim/ECS format changed.
+
+**Next agent:** inspect CI and build; debug errors; run UI focus/rebind/camera functional test and full AGENTS.md validation before making PR ready.
