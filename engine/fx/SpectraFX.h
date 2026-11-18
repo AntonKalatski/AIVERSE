@@ -8,6 +8,7 @@
 #include "VfxGraphAssets.h"
 #include "SpectraModuleSchema.h"
 #include "SpectraAuthoring.h"
+#include "SpectraFunctionAssets.h"
 #include "SpectraGpuParticles.h"
 #include "SpectraGraphRuntime.h"
 #include "SpectraBatchWorld.h"
