@@ -11,6 +11,10 @@
 
 namespace aiverse::terraweave {
 
+// Explicit supported extent avoids undefined signed overflow on arbitrary input.
+// World position is always signed integer centimetres (+/-10,000 km).
+inline constexpr int64_t kWorldLimitCm = 1000000000LL;
+
 enum class Biome : uint8_t { Ocean = 0, Tundra, Desert, Grassland, Forest, Wetland, Alpine };
 constexpr uint32_t biomeBit(Biome biome) { return 1u << static_cast<unsigned>(biome); }
 constexpr uint32_t kLandBiomes = biomeBit(Biome::Tundra) | biomeBit(Biome::Desert) |
@@ -148,6 +152,9 @@ inline int32_t clamp32(int64_t n) {
 inline int32_t heightAtCm(const TerrainSettings& s, int64_t xCm, int64_t zCm) {
     if (s.basePeriodCm <= 0 || s.octaves == 0 || s.octaves > 12 || s.reliefCm < 0)
         throw std::invalid_argument("TerraWeave terrain settings");
+    if (xCm < -kWorldLimitCm || xCm > kWorldLimitCm ||
+        zCm < -kWorldLimitCm || zCm > kWorldLimitCm)
+        throw std::out_of_range("TerraWeave terrain world extent");
     int64_t sum = 0, totalWeight = 0, weight = 65536;
     int32_t period = s.basePeriodCm;
     for (uint32_t i = 0; i < s.octaves; ++i) {
@@ -187,6 +194,13 @@ inline TerrainChunk generateChunk(const TerrainSettings& t, const BiomeSettings&
                                   int32_t spacingCm = 100) {
     if (resolution == 0 || resolution > 1024 || spacingCm <= 0)
         throw std::invalid_argument("TerraWeave chunk settings");
+    const int64_t spanCm = int64_t(resolution) * spacingCm;
+    if (spanCm > kWorldLimitCm)
+        throw std::out_of_range("TerraWeave chunk span");
+    const int64_t maxIndex = (kWorldLimitCm - spanCm) / spanCm;
+    if (key.x < -maxIndex || key.x > maxIndex ||
+        key.z < -maxIndex || key.z > maxIndex)
+        throw std::out_of_range("TerraWeave chunk world extent");
     TerrainChunk out;
     out.key = key; out.resolution = resolution; out.spacingCm = spacingCm;
     const size_t side = size_t(resolution) + 1;
@@ -206,6 +220,10 @@ inline TerrainChunk generateChunk(const TerrainSettings& t, const BiomeSettings&
 inline int32_t slopePermilleAt(const TerrainSettings& t, int64_t x, int64_t z,
                               int32_t stepCm = 100) {
     if (stepCm <= 0) throw std::invalid_argument("TerraWeave slope step");
+    if (stepCm > kWorldLimitCm ||
+        x < -kWorldLimitCm + stepCm || x > kWorldLimitCm - stepCm ||
+        z < -kWorldLimitCm + stepCm || z > kWorldLimitCm - stepCm)
+        throw std::out_of_range("TerraWeave slope world extent");
     const int64_t dx = static_cast<int64_t>(heightAtCm(t, x + stepCm, z)) -
                        heightAtCm(t, x - stepCm, z);
     const int64_t dz = static_cast<int64_t>(heightAtCm(t, x, z + stepCm)) -
@@ -223,6 +241,12 @@ inline std::vector<FoliageInstance> scatter(const TerrainSettings& t, const Biom
     if (cfg.spacingCm <= 0 || cfg.densityPermille > 1000 ||
         bounds.maxX < bounds.minX || bounds.maxZ < bounds.minZ)
         throw std::invalid_argument("TerraWeave scatter settings");
+    // Slopes sample +/-100 cm around each point: leave this border clear.
+    if (bounds.minX < -kWorldLimitCm + 100 ||
+        bounds.minZ < -kWorldLimitCm + 100 ||
+        bounds.maxX > kWorldLimitCm - 100 ||
+        bounds.maxZ > kWorldLimitCm - 100)
+        throw std::out_of_range("TerraWeave scatter world extent");
     if (bounds.maxX == bounds.minX || bounds.maxZ == bounds.minZ ||
         cfg.densityPermille == 0 || species.empty()) return {};
 
