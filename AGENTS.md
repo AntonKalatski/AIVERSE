@@ -1267,8 +1267,24 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   tests passed. Record all tests as NOT RUN until the testing agent
   provides actual build/report evidence.
 - New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
-  Horizon quality presets and `TWH1` prebaked atlas archive interfaces
+  Horizon quality presets and `TWH3` prebaked atlas archive interfaces
   are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
   versions/fingerprints consistent whenever the bake format changes.
   Don't introduce file-system writes or game-authority mutations
   into rendering/presentation code.
+
+### TerraWeave Horizon terrain borders and offline atlas migration (2026-11-18)
+
+- Horizon far-terrain grid world coordinates **must** use the globally
+  aligned signed rational lattice in `engine/world/TerraWeaveHorizon.h`,
+  not camera-local interpolation. Border normals use ghost-neighbor
+  samples and match on overlapping regions if the height source matches.
+- `terrainSkirtDepthCm` only adds outer downward geometry to existing
+  terrain primitive/material 0; no additional backend, model or ECS.
+- `TerraWeaveHorizonArchive.h` currently uses **TWH3** and invalidates
+  TWH1/TWH2 assets. Re-run `aiverse_horizon_bake` for static game packs.
+  Preserve current archive version/fingerprint semantics when extending
+  Horizon geometry; never silently read old incompatible assets.
+- After each functionality stage, append to
+  `docs/terrain/AGENT_HANDOFF.md`. Another agent runs ALL
+  compiler/CTest/platform-GPU validations; label them NOT RUN here.
