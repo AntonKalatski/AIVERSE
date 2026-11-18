@@ -160,6 +160,7 @@ inline ecfg::Asset rtsReference() {
     result.actions.push_back({"CameraTouchDrag",ei::ValueType::Axis2D});
     result.actions.push_back({"CameraTouchPan",ei::ValueType::Axis2D});
     result.actions.push_back({"CameraPinch",ei::ValueType::Axis1D});
+    result.actions.push_back({"CameraTwist",ei::ValueType::Axis1D});
     ei::MappingContext gestures{"RTS.Gestures"};
     gestures.bind("CameraTouchDrag",{ei::Device::Touch,1,0},{},{},false);
     gestures.bind("CameraTouchDrag",{ei::Device::Touch,2,0},
@@ -168,6 +169,7 @@ inline ecfg::Asset rtsReference() {
     gestures.bind("CameraTouchPan",{ei::Device::Touch,5,0},
                   {ei::Modifier::swapXY()},{},false);
     gestures.bind("CameraPinch",{ei::Device::Touch,3,0},{},{},false);
+    gestures.bind("CameraTwist",{ei::Device::Touch,6,0},{},{},false);
     id=1;
     for(auto& mapping:gestures.mappings)mapping.id=id++;
     result.contexts.push_back({std::move(gestures),0,true});
