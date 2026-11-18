@@ -486,7 +486,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
                         {o.pos.x+rd*std::cos(a1),gy,o.pos.z+rd*std::sin(a1)},
                         rgba(255,60,40,220)});
                 }
-                r.circleXZ({o.pos.x, gy, o.pos.z}, 0.6f, rgba(255, 70, 50, 150), 16, gy);
+                ::aiverse::View::submitCircle(r,{
+                    {o.pos.x,gy,o.pos.z},0.6f,rgba(255,70,50,150),16,gy});
             }
             continue;
         }
@@ -544,7 +545,11 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             } else { // flyer blob, unless the type supplies an authored shadow
                 const float k = hasFx ? fx.v[EntityFxValues::kShadowScale] : 1.0f;
                 const float a = hasFx ? std::clamp(fx.opacity() * fx.v[EntityFxValues::kShadow], 0.0f, 1.0f) : 1.0f;
-                if (a > 0 && k > 0) r.circleXZ({o.pos.x, ground, o.pos.z}, 0.35f * k, rgba(0, 0, 0, uint8_t(std::lround(90 * a))), 16, ground + 0.03f);
+                if(a>0 && k>0)
+                    ::aiverse::View::submitCircle(r,{
+                        {o.pos.x,ground,o.pos.z},0.35f*k,
+                        rgba(0,0,0,uint8_t(std::lround(90*a))),16,
+                        ground+0.03f});
             }
             // No clock call for the common case with no additional shadow.
             if (traceView) objectShadowMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - afterDraw).count();

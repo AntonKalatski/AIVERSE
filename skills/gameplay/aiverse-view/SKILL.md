@@ -57,3 +57,25 @@ generic height samplers and optional normal estimation.
 Never put gameplay state/authoritative visibility into
 these presentation components.
 
+## Visibility and generic scene layers
+
+Use `engine/view/VisibilityField.h` and
+`AIVERSE::view_visibility` for a reusable GPU visibility
+effect. A game module provides only the visual byte mask,
+display settings, size, time and a scene height sampler.
+The field builds its sheet, blends the mask, uploads its
+texture and draws on the render thread. This does NOT
+authorize gameplay visibility or targeting. The host
+owns source-of-truth vision data and calls `shutdown`
+before the graphics device is released.
+
+Use `ViewLayerProviders` and `ViewLayerQueue` to
+compose scene passes with externally owned callbacks.
+Collect and flush synchronously **in the same frame**.
+Never cache callbacks capturing stack references or
+execute GPU passes on the MotionWeave worker pool.
+
+`ScenePacketBatch` supports generic Object, MeshObject,
+LineObject, TriangleObject and CircleXZObject, with no
+gameplay action, order, weapon, network or genre values.
+

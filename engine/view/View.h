@@ -44,10 +44,19 @@ struct TriangleObject {
     render::float3 a{},b{},c{};
     uint32_t rgba=0xffffffffu;
 };
+// A simple visual ring in the scene's XZ plane. The host chooses whether
+// it means selection, targeting, a debug gizmo, an indicator or anything else.
+struct CircleXZObject {
+    render::float3 center{};
+    float radius=1.f;
+    uint32_t rgba=0xffffffffu;
+    int segments=40;
+    float y=0.03f;
+};
 // A draw-command stream can interleave skinned models, ordinary meshes
 // and debug primitives without changing the host's original draw order.
 // All ModelDraw pointers are borrowed until a synchronous submit returns.
-using ScenePacket=std::variant<Object,MeshObject,LineObject,TriangleObject>;
+using ScenePacket=std::variant<Object,MeshObject,LineObject,TriangleObject,CircleXZObject>;
 class ScenePacketBatch final {
 public:
     void reserve(size_t n){packets_.reserve(n);}
@@ -179,6 +188,12 @@ public:
                                const TriangleObject& triangle) {
         renderer.triangle(triangle.a,triangle.b,triangle.c,triangle.rgba);
     }
+    static void submitCircle(render::Renderer3D& renderer,
+                             const CircleXZObject& circle) {
+        if(circle.radius>0.f && circle.segments>=3)
+            renderer.circleXZ(circle.center,circle.radius,circle.rgba,
+                              circle.segments,circle.y);
+    }
     // Synchronous ordered dispatch for arbitrary mixed scene packets.
     // The renderer retains its own internal batching and pass order.
     void submitPacket(render::Renderer3D& renderer,
@@ -193,6 +208,8 @@ public:
                 submitLine(renderer,item);
             else if constexpr(std::is_same_v<Item,TriangleObject>)
                 submitTriangle(renderer,item);
+            else if constexpr(std::is_same_v<Item,CircleXZObject>)
+                submitCircle(renderer,item);
         },packet);
     }
     void submitPackets(render::Renderer3D& renderer,

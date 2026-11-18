@@ -259,3 +259,41 @@ The host is responsible for mask semantics and lifetime during
 the synchronous update. This is visual fade/blur and GPU
 rendering only, never simulation-side visibility authority.
 
+## Generic circular overlays
+
+`view::CircleXZObject` and `View::submitCircle` send a
+world-space ring directly to Renderer3D. The scene packet
+variant also accepts `CircleXZObject`, preserving ordered
+batch submission alongside models, meshes, lines and triangles.
+The host decides whether rings represent selection,
+markers, shadows or visual debugging. No game state
+enters the View.
+
+The game compatibility view routes previously hard-coded
+radar marker rings and simple projected circle shadows
+through these same generic packets.
+
+## Visibility and scene-layer lifecycle
+
+The reusable `view::VisibilityField` has a **visual-only**
+0/1/2 visibility mask supplied by the host. Import
+`<engine/view/VisibilityField.h>` and separately link
+`AIVERSE::view_visibility` when the effect is needed.
+Call `init(device)`, `setLook()` (or
+`parseVisibilityLook` from generic JSON), `build(device,
+w,h,heightSampler)` when the ground geometry changes,
+`update(mask,w,h,seconds)` each presentation frame, and
+`draw(renderer,seconds,lowTier)` in the desired
+render pass. Call `shutdown()` before releasing its GPU
+device. The field stores GPU textures and must remain on
+the render thread; callers own the mask source and whether
+terrain shader fog or a separate sheet is drawn.
+
+`ViewLayerProviders` is intentionally only an ordered
+registration/composition seam. Host-owned providers
+may add terrain, visibility, roads, planet or post layers
+without importing any game types into `engine/view`.
+A `ViewLayerQueue` must be **flushed synchronously**
+before returning from the frame scope; callbacks frequently
+borrow textures, camera matrices and terrain references.
+
