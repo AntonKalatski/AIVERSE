@@ -33,6 +33,7 @@ enum class Field : uint8_t {
     TintR, TintG, TintB, TintA,
     Attribute0, Attribute1, Attribute2, Attribute3,
     Attribute4, Attribute5, Attribute6, Attribute7,
+    Param0, Param1, Param2, Param3, Param4, Param5, Param6, Param7,
     Invalid
 };
 struct Instruction {
@@ -57,6 +58,9 @@ struct Context {
     float& rotation;
     std::array<float,8>& attributes;
     float age=0, ageNormalized=0, dt=0, uid=0;
+    // Optional per-instance uniforms, snapshotted onto each particle at
+    // spawn. Null means all zeros (older runtime/context clients are safe).
+    const std::array<float,8>* instanceParams=nullptr;
 };
 
 inline bool number(float x) {return std::isfinite(x) && std::abs(x)<=1.0e7f;}
@@ -73,13 +77,17 @@ inline Field fieldOf(std::string_view name) {
         {"attribute0",Field::Attribute0},{"attribute1",Field::Attribute1},
         {"attribute2",Field::Attribute2},{"attribute3",Field::Attribute3},
         {"attribute4",Field::Attribute4},{"attribute5",Field::Attribute5},
-        {"attribute6",Field::Attribute6},{"attribute7",Field::Attribute7}
+        {"attribute6",Field::Attribute6},{"attribute7",Field::Attribute7},
+        {"param0",Field::Param0},{"param1",Field::Param1},
+        {"param2",Field::Param2},{"param3",Field::Param3},
+        {"param4",Field::Param4},{"param5",Field::Param5},
+        {"param6",Field::Param6},{"param7",Field::Param7}
     };
     for(const auto& e:entries)if(name==e.name)return e.field;
     return Field::Invalid;
 }
 inline bool writable(Field f) {
-    return f>=Field::PositionX && f<Field::Invalid;
+    return f>=Field::PositionX && f<=Field::Attribute7; // params read-only
 }
 inline float read(Field f,const Context& c) {
     switch(f) {
@@ -102,6 +110,8 @@ inline float read(Field f,const Context& c) {
     default:
         if(f>=Field::Attribute0 && f<=Field::Attribute7)
             return c.attributes[size_t(f)-size_t(Field::Attribute0)];
+        if(f>=Field::Param0 && f<=Field::Param7 && c.instanceParams)
+            return (*c.instanceParams)[size_t(f)-size_t(Field::Param0)];
         return 0;
     }
 }
