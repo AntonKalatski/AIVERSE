@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -23,6 +24,7 @@ struct MotionWeaveScheduleStats {
     size_t eligible=0,parallelEntities=0,serialEntities=0;
     size_t batches=0,workerThreads=0;
     size_t estimatedSafeCost=0,dispatchedEntities=0;
+    size_t uniqueGraphs=0,offscreenEntities=0;
     uint64_t heaviestBatchCost=0;
     double workerPhaseMs=0,serialPhaseMs=0;
     bool usedWorkers=false;
@@ -51,35 +53,51 @@ public:
         const auto* inputs=read.poolIfExists<AnimationInputsComponent>();
         const auto* assets=read.poolIfExists<AnimationAssetComponent>();
         const auto* hints=read.poolIfExists<AnimationWorkHintComponent>();
-        std::vector<size_t> safe,unsafe;
-        std::vector<uint32_t> weight;
-        safe.reserve(prepared.players->size());
-        unsafe.reserve(prepared.players->size()/4+1);
-        weight.reserve(prepared.players->size());
+        // Reuse allocation capacity across frames. Cache graph classification
+        // only within the current frame: hot reload may reuse freed addresses.
+        safe_.clear();unsafe_.clear();weight_.clear();graphPlans_.clear();
+        safe_.reserve(prepared.players->size());
+        unsafe_.reserve(prepared.players->size()/4+1);
+        weight_.reserve(prepared.players->size());
+        const auto* budget=read.poolIfExists<AnimationBudgetComponent>();
         for(size_t i=0;i<prepared.players->size();++i) {
             const Entity e=prepared.players->entityAt(i);
             if(!world.alive(e)||!prepared.poses->has(e.index))continue;
             const auto* asset=assets?assets->tryGet(e.index):nullptr;
             const auto* input=inputs?inputs->tryGet(e.index):nullptr;
             const auto* hint=hints?hints->tryGet(e.index):nullptr;
-            const bool workerSafe=(!asset || !asset->graph ||
-                    workerSafeGraph(*asset->graph)) &&
+            GraphPlan plan{};
+            if(asset && asset->graph) {
+                const auto* compiled=asset->graph.get();
+                const auto [it,inserted]=graphPlans_.try_emplace(compiled);
+                if(inserted) {
+                    it->second={workerSafeGraph(*compiled),
+                                estimateAnimationWork(*compiled)};
+                }
+                plan=it->second;
+            }
+            const bool workerSafe=plan.safe &&
                 (!input || !input->overrides.environment) &&
                 (!hint || !hint->mainThread);
-            if(!workerSafe) {unsafe.push_back(i);continue;}
-            safe.push_back(i);
-            const uint32_t base=asset && asset->graph?
-                estimateAnimationWork(*asset->graph):1;
-            const uint32_t cost=scaledAnimationCost(base,
+            if(!workerSafe){unsafe_.push_back(i);continue;}
+            safe_.push_back(i);
+            uint32_t cost=scaledAnimationCost(plan.cost,
                 hint?hint->multiplier:1.f);
-            weight.push_back(cost);
+            const auto* visibility=budget?budget->tryGet(e.index):nullptr;
+            const auto* pose=prepared.poses->tryGet(e.index);
+            if(visibility && !visibility->visible && pose && pose->valid) {
+                cost=std::max<uint32_t>(1,cost/4);
+                ++last_.offscreenEntities;
+            }
+            weight_.push_back(cost);
             last_.estimatedSafeCost+=cost;
         }
-        last_.eligible=safe.size()+unsafe.size();
-        last_.parallelEntities=safe.size();
-        last_.serialEntities=unsafe.size();
+        last_.eligible=safe_.size()+unsafe_.size();
+        last_.parallelEntities=safe_.size();
+        last_.serialEntities=unsafe_.size();
+        last_.uniqueGraphs=graphPlans_.size();
         const bool eligible=workerCount()>0 &&
-            safe.size()>=std::max<size_t>(1,options_.minimumParallelActors) &&
+            safe_.size()>=std::max<size_t>(1,options_.minimumParallelActors) &&
             last_.estimatedSafeCost>=options_.minimumParallelCost;
         const auto now=[](){return std::chrono::steady_clock::now();};
         const auto millis=[](auto span) {
@@ -89,7 +107,7 @@ public:
         if(eligible) {
             const size_t target=(workerCount()+1)*
                 std::max<size_t>(1,options_.chunksPerWorker);
-            const auto jobs=partitionAnimationWork(weight,target,
+            const auto jobs=partitionAnimationWork(weight_,target,
                 options_.minChunkActors);
             last_.batches=jobs.size();
             for(const auto& c:jobs)
@@ -98,24 +116,24 @@ public:
                 workers_.parallelFor(jobs.size(),[&](size_t j) {
                     const auto& c=jobs[j];
                     evaluateAnimationPresentationRange(world,prepared,dt,
-                        c.begin,c.end,&safe);
+                        c.begin,c.end,&safe_);
                 });
                 last_.usedWorkers=true;
-                last_.dispatchedEntities=safe.size();
+                last_.dispatchedEntities=safe_.size();
             } else {
                 evaluateAnimationPresentationRange(world,prepared,dt,0,
-                    safe.size(),&safe);
+                    safe_.size(),&safe_);
             }
         } else {
             evaluateAnimationPresentationRange(world,prepared,dt,0,
-                safe.size(),&safe);
+                safe_.size(),&safe_);
         }
         last_.workerPhaseMs=millis(now()-start);
         // Complete barrier: environment, Lua and host callbacks are now
         // guaranteed not to overlap any worker graph evaluation.
         const auto callbackStart=now();
         evaluateAnimationPresentationRange(world,prepared,dt,0,
-            unsafe.size(),&unsafe);
+            unsafe_.size(),&unsafe_);
         last_.serialPhaseMs=millis(now()-callbackStart);
         return last_;
     }
@@ -123,5 +141,9 @@ private:
     MotionWeaveWorkerPool workers_;
     MotionWeaveScheduleOptions options_;
     MotionWeaveScheduleStats last_;
+    struct GraphPlan {bool safe=true;uint32_t cost=1;};
+    std::unordered_map<const render::AnimationGraph*,GraphPlan> graphPlans_;
+    std::vector<size_t> safe_,unsafe_;
+    std::vector<uint32_t> weight_;
 };
 } // namespace aiverse::lib::animation

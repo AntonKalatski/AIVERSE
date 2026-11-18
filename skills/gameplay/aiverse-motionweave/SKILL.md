@@ -24,3 +24,31 @@ Read `docs/motionweave.md`, `docs/animation-graphs.md`,
 `docs/agent-handoffs/animation-universal.md` and `AGENTS.md`.
 **After each code stage**, commit a separate dated handoff entry listing
 SHA, changed files, API contracts, actual tests/NOT RUN, risks and next task.
+
+## Multithreading and backend selection
+
+To enable persistent multithreading in a native host:
+
+```cpp
+aiverse::motionweave::MotionWeaveScheduler scheduler;
+auto stats=aiverse::motionweave::MotionWeave::update(world,dt,scheduler);
+```
+
+Keep the scheduler alive for the game view's lifetime. The older two-argument
+`MotionWeave::update` remains sequential. Call `update` only after projecting
+input parameters into a **presentation-only** ECS World. Never mutate, remove
+components or snapshot the World while workers execute.
+
+The scheduler computes safe clip/blend/IK/MotionMatching entities on cost-balanced
+worker jobs. Lua/native callbacks, traits and environment contacts execute
+on the caller thread after a complete barrier. Force serialization with
+`AnimationWorkHintComponent::mainThread=true` when a host has another
+thread-bound integration; use `multiplier` to guide work partitioning.
+
+For FPS prefer `fps.visual.animationMode="auto"`: simple skinned crowds can
+use GPU baked instancing (24 enter/12 exit by default); custom graphs and rigs
+use the CPU scheduler. Optional `fps.visual.animationStats=true` shows a
+non-authoritative debugging overlay. The independent CTest targets are
+`motionweave_workers`, `motionweave_hybrid`,
+`motionweave_cost_balancing`, `motionweave_backend_selection`, and
+`motionweave_graph_cost_cache`: **NOT RUN** pending user's test stage.

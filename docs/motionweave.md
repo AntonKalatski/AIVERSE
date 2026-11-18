@@ -60,3 +60,61 @@ Naming changes do not imply the large animation PR is feature-complete.
 Before further implementation read `AGENTS.md` and the latest entry in
 `docs/agent-handoffs/animation-universal.md`. Every implementation stage
 must be followed by its **own committed, append-only handoff**.
+
+## Multithreaded presentation runtime
+
+For a game with many animated characters, create a **persistent host-owned**
+scheduler once and pass it to the three-argument MotionWeave update:
+
+```cpp
+#include <aiverselib/motionweave/MotionWeave.h>
+
+aiverse::motionweave::MotionWeaveScheduler scheduler;
+auto stats = aiverse::motionweave::MotionWeave::update(
+    presentationWorld, frameDt, scheduler);
+```
+
+The existing two-argument `MotionWeave::update(world,dt)` is still
+**sequential** for compatibility. The scheduler owns a persistent, bounded
+work-stealing thread pool (up to seven background threads plus the frame
+thread). Each frame it classifies models/compiled graphs, separates
+independent clip, blend, controller, motion-matching and compatible IK
+work into cost-weighted chunks, then executes them in parallel.
+Native/Lua callbacks, animation traits, environment contacts, and
+callback-sensitive rig operations **always run on the frame thread
+after the workers have finished**. A `mainThread=true`
+`AnimationWorkHintComponent` forces this lane explicitly.
+
+`MotionWeaveScheduleOptions` exposes minimum entity count, minimum
+estimated work and chunk sizing. `AnimationWorkHintComponent` also
+supports a per-character cost multiplier. Graph safety/cost plans are
+memoized per frame, while dense work-list allocation capacity is reused.
+Invisible characters with an already valid pose carry reduced estimated
+work. Caller code must not change World structure or snapshot it until
+`MotionWeave::update` returns.
+
+`MotionWeaveScheduleStats` provides eligible/parallel/serial actor counts,
+batches, worker count, estimated work, unique graph count, offscreen actor
+count and safe/serial phase times. These measurements are non-authoritative
+presentation diagnostics; they never affect gameplay lockstep/checksums.
+
+### Automatic backend for FPS
+
+FPS supports `fps.visual.animationMode: "auto" | "cpu" | "gpu"`
+and legacy `bakedCrowd: true`. With an eligible simple imported,
+skinned model, auto mode enters GPU baked instancing at 24 visible
+remote characters and exits at 12, avoiding frequent toggling.
+Complex custom graphs, IK/controller requirements and `graphFile`
+stay on CPU; the FPS client lazily constructs the persistent scheduler
+when 16+ palette characters are present.
+`fps.visual.animationStats: true` enables optional HUD diagnostics.
+
+GPU scene draws and uploads remain on the graphics thread.
+The fast crowd path reuses AIVERSE's existing baked skinning and
+Renderer3D instancing; MotionWeave does not claim a new GPU compute
+skinning backend.
+
+**Test status:** all new worker/scheduler/backend CTest fixtures are
+committed but **NOT RUN** (user-requested deferral). Verify compilation,
+TSAN, macOS FPS screenshots, FPS save/network parity and real FPS/RTS
+benchmarks before declaring production readiness.
