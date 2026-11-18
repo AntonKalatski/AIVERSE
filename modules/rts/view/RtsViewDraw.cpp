@@ -2,6 +2,7 @@
 // baked or posed skinning, dissolve, selection outline, attachments on sockets, effect anchors;
 // projectiles leaving muzzles; building ghosts and previews for portraits / editor.
 #include "RtsView.h"
+#include "engine/view/View.h"
 
 #include <algorithm>
 #include <cmath>
@@ -214,7 +215,19 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     if (d.tint.w <= 0.0f && !(d.flags & kDrawKeepShadow)) return;   // fully transparent (view.entity_fx opacity 0): nothing to draw, no anchors
     // immobile, finished, plain placement: scenery the light baker captures / lightmaps (agent-lightbake)
     if ((t.structure || t.speed <= Fixed{}) && !L.air && !st.dead && o.build >= 1 && !hasFx && !tintOverride && !placement) d.flags |= kDrawStatic;
-    r.drawModel(d);
+    if(st.genericViewPose && genericView_ && !tintOverride && !placement &&
+       show==&ch) {
+        // This is an adapter: the RTS module builds its authored draw packet,
+        // while the engine View owns generic model+pose submission.
+        // Never submit twice or mutate an already-updated pose here.
+        ::aiverse::view::Object packet;
+        packet.id=st.genericViewId;
+        packet.draw=d;
+        packet.graph=ch.graph;
+        genericView_->submitOne(r,packet);
+    } else {
+        r.drawModel(d);
+    }
 
     // ---- attachments on sockets (weapons, cargo, banners)
     // No attachment or effect can consume the state mask on plain models.

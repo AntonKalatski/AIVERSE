@@ -171,3 +171,28 @@ processes only opaque named counters/boolean state transitions, with no
 FPS/RTS/action-type semantics. `playAnimationSlot` lives beside the
 generic ECS `AnimationMontageSlotsComponent` definition.
 
+## Engine View migration
+
+The canonical scene/view type is `aiverse::View` (also
+`aiverse::view::View`) in `engine/view/View.h`, linked through
+`AIVERSE::view`. Host code supplies `aiverse::view::Object`
+records containing stable IDs, generic `render::ModelDraw` packets,
+optional AnimationGraph and named parameters. The generic View
+manages independent presentation ECS states, animation LOD budgets,
+worker scheduling and pose-based scene submission.
+
+Use `View::update(span,dt)` before `View::submit(renderer,span)`
+or `View::submitOne(renderer,object)`. A packet may contain a model
+with no animation graph. View does not depend on RTS, FPS, camera
+controller, game rules, network, combat, map or terrain modules.
+
+A transition adapter still exists in
+`modules/rts/view/RtsView.cpp` and `RtsViewDraw.cpp`: it projects
+only simple, eligible compiled animation graphs into the generic
+View and delegates their **final ModelDraw submission** to
+`View::submitOne`. Complex RTS procedural animation, contact IK,
+genre-specific attachments/FX/fog/terrain remain in the game
+host until each has a generic render contract. The compatibility
+class `game::RtsView` remains for older game code; it is not the
+canonical engine View and should not be used in new projects.
+

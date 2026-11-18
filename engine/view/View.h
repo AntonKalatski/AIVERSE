@@ -82,25 +82,28 @@ public:
 
     // Call only AFTER update(), before borrowed ModelDraw storage expires.
     // The renderer does not interpret source identity, movement or genre.
-    void submit(render::Renderer3D& renderer,
-                std::span<const Object> objects) const {
-        for(const auto& obj:objects) {
-            if(!obj.visible || !obj.draw.model)continue;
-            render::ModelDraw draw=obj.draw;
-            if(obj.graph) {
-                const Entity e=bridge_.find(obj.id);
-                if(presentation_.alive(e)) {
-                    const auto* pose=presentation_.tryGetConst<
-                        lib::animation::AnimationPoseComponent>(e);
-                    if(pose && pose->valid) {
-                        draw.pose=&pose->local;
-                        draw.nodeWorld=&pose->matrices;
-                    }
+    // One draw packet from any host. This is the same renderer pipeline
+    // used for streamed, procedural, static and animated objects.
+    void submitOne(render::Renderer3D& renderer,const Object& obj) const {
+        if(!obj.visible || !obj.draw.model)return;
+        render::ModelDraw draw=obj.draw;
+        if(obj.graph) {
+            const Entity e=bridge_.find(obj.id);
+            if(presentation_.alive(e)) {
+                const auto* pose=presentation_.tryGetConst<
+                    lib::animation::AnimationPoseComponent>(e);
+                if(pose && pose->valid) {
+                    draw.pose=&pose->local;
+                    draw.nodeWorld=&pose->matrices;
                 }
             }
-            if(!draw.persistentId)draw.persistentId=obj.id;
-            renderer.drawModel(draw);
         }
+        if(!draw.persistentId)draw.persistentId=obj.id;
+        renderer.drawModel(draw);
+    }
+    void submit(render::Renderer3D& renderer,
+                std::span<const Object> objects) const {
+        for(const auto& obj:objects)submitOne(renderer,obj);
     }
 
     const Stats& stats() const noexcept{return stats_;}
