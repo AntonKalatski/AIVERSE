@@ -3202,3 +3202,46 @@ over their live texture pools without exposing swapchain/dummy internal
 images. Include correctly scaled 3D mip depth, cube-array faces and MSAA
 samples, and record the code commit followed by a separate handoff. Then
 add an ImGui texture-resource view in the editor and native regression tests.
+
+## Stage 8B — backend live GPU texture enumeration (2026-11-18)
+
+**Code commit:** `be7f180d627655ac3d30059ff03ac619e55bb5a8`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Paths:** `engine/gfx/Gfx.h`, `engine/gfx/gl/GfxGL.cpp`,
+`engine/gfx/metal/GfxMetal.mm`, `engine/gfx/vulkan/VkDevice.h`,
+`engine/gfx/vulkan/VkResources.cpp`.
+
+**Source implementation:** Metal/GL/Vulkan `Device::textureResources()`
+overrides now enumerate only user-created, currently alive resources
+from the corresponding backend texture pool (excluding swapchain,
+internal dummy images, samplers/views). The returned typed entries
+cover handle, texture dimension, pixel format, width/height/depth,
+array and cube face counts, mip levels, sample count, attachment/storage
+usage and a conservative estimated byte footprint via Stage 8A.
+Pool gains a read-only `each`/`eachWithId` overload; existing mutable
+iteration behavior is unchanged. `Gfx.h` now explicitly includes
+`<algorithm>` for its new `std::max` footprint calculation.
+No GPU synchronous readback or driver allocation query is used.
+
+**Compatibility:** Inspection is opt-in, read-only and requires the
+graphics owner thread. No existing rendering behavior changes,
+save/network/ECS changes or new external dependencies.
+
+**Limits:** Estimated bytes are *not* physical VRAM residency,
+texture memory allocator footprint or shared texture accounting.
+Editor GUI is not wired yet. As with existing pool-based handles,
+only query and act on returned entries on the device owner thread;
+do not treat a stale handle ID as permanent identity after deletion.
+
+**Actual verification:** GitHub code/tree/commit/ref update succeeded.
+C++/Objective-C++ compile, CTest, editor UI and live GPU resource
+inspection: **NOT RUN**; CI passing result not confirmed.
+Potential Metal SDK type availability and Vulkan linkage must be
+checked by building native targets.
+
+**Next:** Integrate a read-only ImGui editor texture inspector
+with optional request to `gfx::Device::textureResources()`,
+sorting/filtering by dimension/format and estimated bytes. Build
+and run the editor as well as `texture_contract` CTest and
+cross-backend resource allocation regression tests. Commit
+implementation and handoff separately.
