@@ -1037,3 +1037,58 @@ comparison for `cellSizeCm=100` vs `200`, and verify that
 the world-space camera tracking/LOD selection remains stable.
 Move costly per-tile scatter to the existing async chunk scheduler
 once baseline GPU behaviour is measured.
+
+## Stage 5 — external height and placement sources for universal forest (COMMITTED; UNVERIFIED)
+
+**Branch**: `feature/terraweave`, Draft PR #24. Concurrent agents
+are changing adjacent TerraWeave components; fetch current file SHAs.
+
+**Files/commits**:
+- `5c2cf60f533ebf3a2ac8613095c5b374963261c2` —
+  `engine/world/TerraWeaveForestScene.h` adds optional
+  `HeightSource = std::function<int32_t(int64_t,int64_t)>`
+  and `PlacementFilter = std::function<bool(const FoliageInstance&)>`
+  with `setHeightSource`/`setPlacementFilter`. Both invalidate the
+  resident cache and revision when changed. During `streamAt`,
+  placement instances are re-elevated from the provider and rejected
+  by the optional placement filter before publishing to host cache.
+  Samples outside supported ±1,000,000,000cm heights are rejected.
+- `4ed8816a3ac95a873d4e52cc09b8b202d9de9811` —
+  `tests/terraweave_forest_scene_test.cpp`: verifies height
+  callback updates while preserving placement keys, filters,
+  invalidation/revisions and an invalid height exception.
+- `e170f218bdfce3c5124faba2bb1938d4f8c7ee33` —
+  registers `aiverse_terraweave_forest_scene_test` in CMake.
+- `ed67760eb9c9d6b18cb841d6137360608c34ea47` —
+  includes the new target in isolated GCC/Clang workflow.
+- `e31b0fe1c820a0db9980b39c610953ddfcdb393d` —
+  `docs/terrain/TERRAWEAVE.md`: public provider API and limitations.
+
+**Design:** The generic forest host does not depend on any genre or
+specific MapDoc/WorldScene collision representation. Caller supplies
+an immutable snapshot-based height/predicate provider. Placed trees
+remain cosmetic; geometry reuse, collision, ECS and GPU ownership do
+not change. No extra RHI backend. Applying providers changes only
+the final height/allow-list, NOT the underlying procedural noise
+biome/slope prefilters. A project requiring physically correct
+authored-surface biomes must supply/extend a full terrain evaluation
+provider in a subsequent stage.
+
+**Actual verification:** C++ code and test files committed via
+GitHub connector. No local CMake compilation, CTest, editor launch,
+GPU screenshot or performance test observed. Container GitHub
+DNS/network lookup failed during prior steps. The user had previously
+deferred full tests: do not report them as passing.
+
+**Next agent:** integrate the provider with the existing
+`WorldScene` terrain/collision snapshot (with exact coordinate
+conversion), and build the typed road/water/structure exclusion
+provider. Prefer immutable snapshots for eventual worker threads,
+with ownership/lifetime and stale revisions documented. Then
+implement bounded asynchronous patch jobs or reuse the existing
+`AsyncChunkStream`, rather than generating terrain synchronously
+on the renderer thread. Add targeted tests for overridden height
+matching physical collision, camera origin rebasing, and stable
+multichunk persistence. After formal tests resume, compile all eight
+isolated TerraWeave CTest targets and optional `terraweave_editor`;
+inspect Metal/GL/Vulkan screenshots and stats.
