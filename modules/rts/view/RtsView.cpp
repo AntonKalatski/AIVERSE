@@ -1,5 +1,6 @@
 #include "RtsView.h"
 #include "engine/view/View.h"
+#include "engine/view/GeometryBounds.h"
 #include "engine/view/SceneLayers.h"
 #include "engine/view/SceneLayerProviders.h"
 #include "RtsRoadView.h"
@@ -287,8 +288,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         if(state!=anims_.end())base=base*state->second.objXf;base=base*ch->fix;const auto& model=*ch->model;
         const auto& matrices=!stage&&state!=anims_.end()&&state->second.world.size()==model.nodes.size()?state->second.world:model.bindWorld;
         for(size_t node=0;node<model.nodes.size()&&node<matrices.size();++node){int mesh=model.nodes[node].mesh;if(mesh<0||size_t(mesh)>=model.meshes.size())continue;auto transform=base*matrices[node];const auto& primitives=model.meshes[size_t(mesh)].primitives;
-            for(size_t part=0;part<primitives.size()&&part<256;++part){auto a=primitives[part].boundsMin,b=primitives[part].boundsMax;float3 lo{1e20f,1e20f,1e20f},hi{-1e20f,-1e20f,-1e20f};
-                for(float x:{a.x,b.x})for(float y:{a.y,b.y})for(float z:{a.z,b.z}){auto v=transform.transformPoint({x,y,z});lo={std::min(lo.x,v.x),std::min(lo.y,v.y),std::min(lo.z,v.z)};hi={std::max(hi.x,v.x),std::max(hi.y,v.y),std::max(hi.z,v.z)};}
+            for(size_t part=0;part<primitives.size()&&part<256;++part){auto a=primitives[part].boundsMin,b=primitives[part].boundsMax;
+                const auto bounds=::aiverse::view::transformAabb(a,b,transform);
+                if(!bounds.valid)continue; // skip malformed visual bounds
+                const auto lo=bounds.min,hi=bounds.max;
                 uint64_t id=key^((node+1)*0x9e3779b97f4a7c15ull)^((part+1)*0xbf58476d1ce4e5b9ull);id^=id>>30;id*=0xbf58476d1ce4e5b9ull;id^=id>>27;id=(id&0x3fffffffffffffffull)+2;
                 animationObstacles_.push_back({&o,o.entity,lo,hi,a,b,id,transform});(*animationSurfaceFrames_)[id]=transform;
             }
