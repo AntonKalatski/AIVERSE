@@ -926,3 +926,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `tests/fps/tests.cpp`: new `ecsReloadAuthorityParity` drives 25 tick-accurate FPS inputs in two independent built-in modules, one legacy and one with `fps.ecsAuthority=true`. It checks authoritative ActorRuntime after every tick, source-state equality, shared reload start/completion/fire suppression and reserve accounting, weapon selection, v9 save cross-mode load, pre-reload-completion snapshot restoration, replay checksums and per-tick parity.
 - Verification: static authored fixture/commit only. **No native compile or actual assertions executed**. Evaluate its tick-0 and weapon-switch expectations through the native test runner, and resolve any failure before claiming parity.
 - Next: compile `aiverse_fps_tests` and run FPS tests; then continue separating the real FPS fire/damage and dynamic state systems from `State::actors` behind explicit per-feature gates.
+
+
+### 2026-11-18 — Shared accepted-shot accounting extraction
+- Implementation SHA: `f8b41cf113dc9042824716192073068fb429a9e8`.
+- Changed `libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h`: extracted pure `commitAcceptedShot(ammo,nextFireTick,now,interval,shots?)` policy, used by generic ECS weapon launch after its existing acceptance checks. No RNG or structural writes, and no new validation inside the helper. Existing generic accepted-shot semantics remain decrement ammo and set nextFireTick.
+- Verification: GitHub commit only; native C++ compilation and test execution **not run**.
+- Next: call the same policy from real FPS `Module::shoot` while preserving its prior validation/hitscan/rewind and save v9 ordering; then document that separate commit.
