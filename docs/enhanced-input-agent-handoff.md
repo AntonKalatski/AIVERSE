@@ -435,3 +435,15 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Tests authored (deferred):** RTS bridge test checks logical 0/1/2 defaults and rebinding Select to mouse-button 3 while suppressing unbound physical button 0.
 
 **Next:** revisit top-down dynamic game.json abilities and input focus UI ownership, then cross-file source review. No tests run as requested.
+
+## Stage 34 — top-down project-configured ability keys through Actions (2026-11-18)
+
+**Problem:** top-down movement/weapons used `RTS.TopDown` Actions but custom `game.json.topDown.buttons[*].key` still bypassed Enhanced Input, so generated game-specific ability buttons could not be remapped through the shared API.
+
+**Fix:** when a top-down hero is configured, `GameClient::topDownConfigure` synthesizes `TopDownAbility0..N` Boolean Actions and `RTS.TopDownAbilities` Mapping Context from the game's configured button keys if the project hasn't authored that context already. The context uses Pressed triggers and stable binding IDs. Project-authored `RTS.TopDownAbilities` can override this, preserving full user control. `ClientInputRouting::setTopDownEnabled` toggles the optional ability context together with `RTS.TopDown`. `topDownEvent` now dispatches buttonDown based on semantic Triggered Action names; per-key held state releases the corresponding button when its Action becomes inactive, even if the author changed its physical key. On focus loss all held ability flags and virtual controls are canceled.
+
+**Compatibility:** touch HUD pointer buttons and the ability execution rules remain in `TopDownControls`/native Commands, not generic input. Game commerce scripts and vehicle authority remain specific mechanics. The generated context is runtime-only; for authoring custom controls, include `RTS.TopDownAbilities` and `TopDownAbilityN` Actions in the project's full input asset.
+
+**Source audit fix:** corrected the `in::Device` typo in `enhanced_rts_input_tests.cpp` to the declared `ei::Device` namespace. Tests are authored but not executed per user request.
+
+**Next:** finish source-level review, ensure no legacy direct key leaks, and leave runtime/CI/CTest to the subsequent validation phase.
