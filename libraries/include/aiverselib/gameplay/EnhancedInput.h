@@ -167,11 +167,51 @@ struct MappingContext {
     }
 };
 
+namespace detail {
+// Chord / NotChord dependencies must be acyclic, including mapping-level edges.
+// This makes negative gates and chained dependencies order-independent.
+inline bool chordGraphAcyclic(const std::map<std::string,Action>& actions,
+                             const std::map<std::string,MappingContext>& contexts) {
+    std::map<std::string,std::set<std::string>> edges;
+    auto add = [&](const std::string& from, const std::vector<Trigger>& triggers) {
+        auto& dependencies = edges[from];
+        for (const auto& trigger : triggers)
+            if (trigger.kind == TriggerKind::Chord || trigger.kind == TriggerKind::NotChord)
+                dependencies.insert(trigger.chordAction);
+    };
+    for (const auto& [name, action] : actions) add(name,action.triggers);
+    for (const auto& [name, context] : contexts) {
+        (void)name;
+        for (const auto& mapping : context.mappings) add(mapping.action,mapping.triggers);
+    }
+    std::map<std::string,int> marks;
+    auto visit = [&](auto&& self, const std::string& name) -> bool {
+        const int mark=marks[name];
+        if (mark==1) return false;
+        if (mark==2) return true;
+        marks[name]=1;
+        for (const auto& dependency : edges[name])
+            if (edges.contains(dependency) && !self(self,dependency)) return false;
+        marks[name]=2;
+        return true;
+    };
+    for (const auto& [name, dependencies] : edges) {
+        (void)dependencies;
+        if (!visit(visit,name)) return false;
+    }
+    return true;
+}
+} // namespace detail
+
 class InputFlow {
 public:
     // Defining an action or context with an existing name replaces it and resets its runtime state.
     bool defineAction(Action action) {
         if (action.name.empty()) return false;
+        // Stage candidate configuration: invalid cycles leave the live system intact.
+        auto proposed=actions_;
+        proposed[action.name]=action;
+        if (!detail::chordGraphAcyclic(proposed,contexts_)) return false;
         const std::string name = action.name;
         actions_[name] = std::move(action);
         actionRuntime_.erase(name);
@@ -196,6 +236,9 @@ public:
                 mapping.id = next++;
             }
         }
+        auto proposed=contexts_;
+        proposed[context.name]=context;
+        if (!detail::chordGraphAcyclic(actions_,proposed)) return false;
         const std::string name = context.name;
         contexts_[name] = std::move(context);
         eraseContextRuntime(name);
@@ -314,12 +357,10 @@ public:
             return a.first < b.first;
         });
 
-        // Pass 1: chord levels are sampled in context dispatch order.
-        // A consuming high-priority mapping must prevent a lower context from
-        // satisfying a chord. Compare the final action-modified value, not the
-        // raw physical control (e.g. an action-level DeadZone may remove it).
-        // This preview intentionally doesn't advance trigger timers or phases.
-        std::map<std::string,Value> previewValues;
+        // Pass 1: snapshot candidate controls in context priority order.
+        // Do not advance trigger timers or emit phases during this preview.
+        struct PreviewBinding { const Mapping* mapping; Value value; };
+        std::map<std::string,std::vector<PreviewBinding>> candidates;
         std::set<Control> previewConsumed;
         for (const auto& [name,priority] : ordered) {
             (void)priority;
@@ -329,14 +370,47 @@ public:
                 const float raw = sample(mapping.control).value;
                 const Value v = applyModifiers({raw,0,0},mapping.modifiers);
                 if (!v.actuated()) continue;
-                previewValues[mapping.action] += v;
+                candidates[mapping.action].push_back({&mapping,v});
                 if (mapping.consume) previewConsumed.insert(mapping.control);
             }
         }
-        std::map<std::string,bool> rawLevels;
-        for (const auto& [name, action] : actions_) {
-            const Value value = constrain(applyModifiers(previewValues[name],action.modifiers),action.type);
-            if (value.actuated()) rawLevels[name] = true;
+
+        // Pass 1b: recursively resolve same-frame Action levels through the
+        // acyclic Chord/NotChord graph, including mapping and Action gates.
+        // Timing triggers affect events, not held chord prerequisite levels.
+        std::map<std::string,bool> chordLevels;
+        std::map<std::string,int> visiting;
+        auto resolve = [&](auto&& self, const std::string& actionName) -> bool {
+            const auto action=actions_.find(actionName);
+            if (action==actions_.end()) return false;
+            if (visiting[actionName]==2) return chordLevels[actionName];
+            if (visiting[actionName]==1) return false; // defensive native-state guard
+            visiting[actionName]=1;
+            auto gatesSatisfied = [&](std::span<const Trigger> triggers) {
+                for (const auto& trigger : triggers) {
+                    if (trigger.kind!=TriggerKind::Chord &&
+                        trigger.kind!=TriggerKind::NotChord) continue;
+                    const bool prerequisite=self(self,trigger.chordAction);
+                    if (trigger.kind==TriggerKind::Chord && !prerequisite) return false;
+                    if (trigger.kind==TriggerKind::NotChord && prerequisite) return false;
+                }
+                return true;
+            };
+            Value aggregate{};
+            if (const auto it=candidates.find(actionName); it!=candidates.end())
+                for (const auto& candidate : it->second)
+                    if (gatesSatisfied(candidate.mapping->triggers))
+                        aggregate+=candidate.value;
+            const Value value=constrain(applyModifiers(aggregate,action->second.modifiers),
+                                         action->second.type);
+            const bool enabled=value.actuated() && gatesSatisfied(action->second.triggers);
+            chordLevels[actionName]=enabled;
+            visiting[actionName]=2;
+            return enabled;
+        };
+        for (const auto& [name,action] : actions_) {
+            (void)action;
+            resolve(resolve,name);
         }
 
         std::map<Control,bool> consumed;
@@ -356,11 +430,11 @@ public:
                 const bool pressed = !blocked && (raw.pressed || (down && !runtime.wasDown));
                 const bool released = !blocked && (raw.released || (!down && runtime.wasDown));
                 const bool tapWithinFrame = pressed && released;
-                const bool chordOK = chordSatisfied(mapping.triggers, rawLevels);
+                const bool chordOK = chordSatisfied(mapping.triggers, chordLevels);
                 // Track the unblocked source even if a chord isn't yet available.
                 const bool fired = !blocked && chordOK &&
                     evaluateTriggers(mapping.triggers, runtime, down, pressed, released,
-                                     tapWithinFrame, dt, rawLevels);
+                                     tapWithinFrame, dt, chordLevels);
                 if (blocked || !chordOK) {
                     runtime.wasDown = down;
                     if (!down) { runtime.seconds = 0; runtime.holdFired = false; }
@@ -390,9 +464,9 @@ public:
             const bool release = !actionDown && runtime.wasDown;
             bool triggered = aggregate.triggered && (!aggregate.active || actionDown);
             if (!action.triggers.empty()) {
-                const bool chordOK = chordSatisfied(action.triggers, rawLevels);
+                const bool chordOK = chordSatisfied(action.triggers, chordLevels);
                 const bool actionGate = evaluateTriggers(action.triggers, runtime, actionDown,
-                                                         press, release, press && release, dt, rawLevels);
+                                                         press, release, press && release, dt, chordLevels);
                 triggered = triggered && chordOK && actionGate;
             } else {
                 runtime.wasDown = actionDown;
