@@ -2296,6 +2296,11 @@ endif()
 # transaction contracts. No genre module dependency; authoring uses MapDoc.
 if(AIVERSE_BUILD_TESTS)
     # Stage 23: native field registry and tick-boundary command reconciliation.
+    # Stage 24: editor command gateway and authenticated server ingress.
+    add_executable(aiverse_physis_live_edit_test tests/physis_live_edit_test.cpp)
+    target_link_libraries(aiverse_physis_live_edit_test PRIVATE aiverse_engine)
+    add_test(NAME physis_live_edit COMMAND aiverse_physis_live_edit_test)
+    set_tests_properties(physis_live_edit PROPERTIES LABELS "PHYSIS;EDITOR")
     add_executable(aiverse_physis_field_runtime_test tests/physis_field_runtime_test.cpp)
     target_link_libraries(aiverse_physis_field_runtime_test PRIVATE aiverse_engine)
     add_test(NAME physis_field_runtime COMMAND aiverse_physis_field_runtime_test)
