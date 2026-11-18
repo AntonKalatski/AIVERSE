@@ -975,3 +975,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `tests/ecs_kinematic_projectile_test.cpp`: unrelated strategy/shooter `GameModule` hosts install the same `addKinematicProjectileSystem`, spawn three fixed-endpoint projectiles with distinct durations, check stable arrival order, exact fixed-point destinations, deferred despawn, and snapshot replay checksum parity with both deep and COW snapshots. Assertions use throwing `check`, so Release/NDEBUG does not disable them.
 - Verification: GitHub commit only. Test **not compiled or executed**, not registered in CMake or standalone test runner yet. Do not claim RTS gameplay integration or native test success.
 - Next: wire test into CMake/standalone suite and library catalog, compile; then connect real RTS projectile adapters behind compatibility gate and preserve old target/death semantics.
+
+
+### 2026-11-18 — Real RTS ECS Unit health/energy regeneration reuses generic policy
+- Implementation SHA: `642bf57afec14ed3663ea404c13ddfef9df423af`.
+- Changed `modules/rts/RtsEconomy.cpp`: within the real `sysEconomy` ECS `w.each<Unit,Owner>` loop, health regen and energy regen now call `lib::genre::stepFixedResourceRegeneration` instead of duplicating fixed-point arithmetic; `Unit.hp`/`Unit.energy` remain the sole authoritative ECS fields. Preserved original conditions, `Stat::MaxHp` cap, `Stat::EnergyRegen` modifier, multiplication order, stage timing and save/replay layout. No separate copy/mirror or genre-specific fork of the calculation.
+- Verification: source change committed. **Native build, RTS scenario checksums and lockstep/rollback comparisons not executed**; those remain required before declaring parity. This is real shared-policy adoption inside an existing RTS ECS system, **not full RTS mechanic extraction**.
+- Next: add focused pure regression test for rates, caps, positive/negative values, and continue migrating real combat/projectile paths after native validation.
