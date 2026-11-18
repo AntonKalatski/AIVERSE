@@ -93,6 +93,7 @@ inline StormInfluence stormContribution(const StormEvent& event,
 template<class StormVisitor>
 inline StormInfluence stormsAtWith(const World& world, Vec3 position,
                                    std::uint64_t tick, StormVisitor&& visitStorms) {
+    (void)world; // visitor supplies candidates; keeping World mirrors reference API.
     StormInfluence total;
     visitStorms([&](Entity, const StormEvent& event) {
         const auto influence = stormContribution(event, position, tick);
