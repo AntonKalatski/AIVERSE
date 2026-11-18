@@ -186,3 +186,7 @@ Default `RTS.Pointer` context provides `Select` (left click), `Command` (right c
 ### Hidden Game tabs cannot capture input
 
 When the embedded Game tab is hidden behind another dock tab, `Editor::event` now stops forwarding ordinary input into its client and calls `ClientHost::suspendInput()`. This sends a hosted `FocusLost` and clears any captured keyboard/pointer/touch interaction, including during a rebind operation in Input Actions. Global OS focus loss is still forwarded. Restoring the Game tab re-establishes focus through the existing `ClientHost::place` lifecycle.
+
+### Modifier-to-trigger ordering
+
+Action-level modifiers run before the final action value determines lifecycle. For example, an Axis1D action with an Action `DeadZone(0.3)` is inactive for stick values below the threshold and cannot emit a normal `Triggered`; moving past the threshold starts it, dropping below completes it. Mapping-level Pressed/Tap/Released pulses retain their momentary event behavior.
