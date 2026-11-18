@@ -176,9 +176,16 @@ constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
         d.levelCount > maxTextureMipLevels(d.width, d.height, d.depth) ||
         (d.mipLevels > 0 && d.levelCount > 0 && d.mipLevels != d.levelCount))
         return TextureDescError::InvalidMipCount;
-    if (d.sampleCount < 1) return TextureDescError::InvalidSampleCount;
+    if (d.sampleCount != 1 && d.sampleCount != 2 && d.sampleCount != 4 &&
+        d.sampleCount != 8 && d.sampleCount != 16)
+        return TextureDescError::InvalidSampleCount;
+    const bool blockCompressed = d.format == PixelFormat::ETC2_RGB8 ||
+        d.format == PixelFormat::ETC2_RGBA8 || d.format == PixelFormat::BC1 ||
+        d.format == PixelFormat::BC3 || d.format == PixelFormat::BC7 ||
+        d.format == PixelFormat::ASTC_4x4 || d.format == PixelFormat::ASTC_6x6;
     if (d.sampleCount > 1 && (d.dimension != TextureDimension::Texture2D ||
-        !d.renderTarget || d.data || d.mipmaps || d.mipLevels > 1 || d.levelCount > 0 || d.storage))
+        !d.renderTarget || d.data || d.mipmaps || d.mipLevels > 1 ||
+        d.levelCount > 0 || d.storage || d.compare || blockCompressed))
         return TextureDescError::InvalidUsage;
     if (d.compare && d.format != PixelFormat::Depth) return TextureDescError::InvalidUsage;
     if (d.storage && d.format == PixelFormat::Depth) return TextureDescError::InvalidUsage;
@@ -285,6 +292,7 @@ struct PipelineDesc {
     PixelFormat colorFormat = PixelFormat::RGBA8;   // colour target it draws into: RGBA8 (screen, RGBA8 targets) or RGBA8_sRGB
                                                     // RGBA16F passes select a cached linear-target variant on both backends
     const char* label = nullptr;
+    int sampleCount = 1; // 1 legacy; MSAA pipelines must explicitly match render-pass samples
 };
 
 // Default: render to the screen. With targets: render into textures (both must match in size).
@@ -311,6 +319,11 @@ struct RenderTargetAttachment {
     int arrayLayer = 0;
     bool clear = true;
     float clearColor[4] = {0, 0, 0, 0}; // color attachments only
+    // Optional resolve destination: must be single-sampled with identical
+    // pixel format and mip-sized extent. Source must be multisampled.
+    TextureHandle resolveTexture;
+    int resolveMipLevel = 0;
+    int resolveArrayLayer = 0;
 };
 struct RenderTargetPassDesc {
     std::array<RenderTargetAttachment, kMaxRenderTargetColors> colors{};
@@ -328,6 +341,9 @@ inline bool validateRenderTargetPassDesc(const RenderTargetPassDesc& desc) {
     for (int i = 0; i < desc.colorCount; ++i) {
         const auto& a = desc.colors[size_t(i)];
         if (!a.texture.valid() || a.mipLevel < 0 || a.arrayLayer < 0) return false;
+        if (a.resolveTexture.valid() &&
+            (a.resolveTexture == a.texture || a.resolveMipLevel < 0 ||
+             a.resolveArrayLayer < 0)) return false;
         for (int k = 0; k < 4; ++k)
             if (!std::isfinite(a.clearColor[k])) return false;
         for (int j = 0; j < i; ++j) {
@@ -336,6 +352,7 @@ inline bool validateRenderTargetPassDesc(const RenderTargetPassDesc& desc) {
                 a.arrayLayer == b.arrayLayer) return false; // simultaneous write alias
         }
     }
+    if (desc.depth.resolveTexture.valid()) return false; // depth resolve is not portable
     if (desc.depth.texture.valid()) {
         if (desc.depth.mipLevel < 0 || desc.depth.arrayLayer < 0 ||
             !std::isfinite(desc.clearDepth) || desc.clearDepth < 0.0f ||

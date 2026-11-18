@@ -104,6 +104,23 @@ int main() {
     check(!validateRenderTargetPassDesc(rp), "reject invalid depth clear value");
     rp = RenderTargetPassDesc{}; rp.colorCount = 5;
     check(!validateRenderTargetPassDesc(rp), "reject color count > 4");
+    rp = RenderTargetPassDesc{}; rp.colorCount = 1; rp.colors[0].texture.id = 2;
+    rp.colors[0].resolveTexture.id = 3;
+    check(validateRenderTargetPassDesc(rp), "valid optional resolve descriptor");
+    rp.colors[0].resolveTexture.id = 2;
+    check(!validateRenderTargetPassDesc(rp), "reject resolve to same subresource");
+    rp.colors[0].resolveTexture.id = 3; rp.colors[0].resolveMipLevel = -1;
+    check(!validateRenderTargetPassDesc(rp), "reject negative resolve mip");
+    rp.colors[0].resolveMipLevel = 0; rp.depth.resolveTexture.id = 4;
+    check(!validateRenderTargetPassDesc(rp), "reject unsupported depth resolve");
+    d = size2D(8,8); d.renderTarget = true; d.sampleCount = 4;
+    check(validateTextureDesc(d) == TextureDescError::None, "MSAA color target");
+    d.compare = true; d.format = PixelFormat::Depth;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA depth compare must be explicit");
+    d.compare = false; d.format = PixelFormat::BC7;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA compressed texture disallowed");
+    d.format = PixelFormat::RGBA8; d.sampleCount = 3;
+    check(validateTextureDesc(d) == TextureDescError::InvalidSampleCount, "reject nonstandard MSAA samples");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }
