@@ -618,3 +618,58 @@ feature branches.
 4. Follow with biome masks, painted exclusion regions, terrain+water/roads
    ownership, camera-relative chunk streaming and shader alpha material.
 5. Append another stage to this file with exact commits and verification.
+
+
+## Stage 3b — shared multi-angle Arbor impostor (COMMITTED; TEST EXECUTION DEFERRED)
+
+**Branch/PR:** `feature/terraweave`, draft PR #24 (base is
+`feature/universal-entity-inspector-fps`). Existing sources are
+concurrently edited by other agents; always fetch current branch HEAD
+and file SHA before writing or rebasing.
+
+**Code commits and files:**
+- `7a9eeb2e507b0cde80dedf83e9704af38b2a0da7` —
+  `engine/render/TerraWeaveImpostorAtlas.h` creates deterministic
+  4/8/16-view RGBA8 silhouette atlas, one base model and one stable
+  Material override vector per view; provides azimuth selection.
+- `15b743d99eaf8a7178ec97de13fa289e8ba23118` —
+  `engine/render/TerraWeaveForestAdapter.h` chooses camera-relative
+  atlas frame for `TreeLOD::Impostor`, reuses one GPU model and
+  texture per species, assigns `ModelDraw::materials` to cached view.
+- `8d6b0ae05f7c6f3c349ec973e198ca8a3cdd10b5` and
+  `b5d3494a8bea3b19040d02c61f29b232ffc56ca9` —
+  `tests/terraweave_model_test.cpp` updates *deferred* assertions for
+  atlas dimensions, deterministic colours/pixels, material UV slices,
+  camera azimuth and per-tree orientation.
+- `8503c32cce5d8d3b45ebdc0eb85d337e2b3d126a` —
+  `docs/terrain/TERRAWEAVE.md` API/architecture.
+- This handoff update is committed separately; inspect latest HEAD
+  for its own commit SHA.
+
+**Design:** geometry remains shared among all trees of a species.
+Each eight-view impostor uses one 1024×256 RGBA8 texture, one four-vertex
+model and eight `Material` override vectors with UV transforms.
+It **does not duplicate models or textures per camera direction**.
+`ArborForestAdapter::forEachDraw` computes a world-camera vs
+tree-local-yaw azimuth index; `Renderer3D` groups draw submissions
+via its normal material-state logic. CPU baker is independent from
+renderer backends/genre. All coordinates are signed cm until the
+existing presentation adapter converts them to metres.
+
+**Actually verified:** GitHub source reads and pushes only. User asked
+to defer tests. **Compilation, CTest, scene screenshots, GPU captures
+and benchmarks NOT RUN.** Added checks are still unverified.
+
+**Known limitations:** rasterized cards use simple colours (not textured
+albedo/normal/depth), nearest-angle selection may pop during camera
+orbit, multi-view atlas only supports fixed horizontal azimuths.
+Alpha-edge filtering/mipmap coverage and exact draw batching still
+require GPU verification. Scene/editor auto-spawning is not provided
+by this stage. No gameplay ECS state or legacy map files were touched.
+
+**Next:** add deterministic spread of the geometry→impostor transition
+to avoid a sharp visible LOD ring; optionally crossfade individual
+trees using standard renderer mechanisms after checking material
+semantics. Implement an opt-in runtime forest-scene host that owns
+persistent prototypes, bounded placement chunks and upload lifecycle.
+Capture screenshot/performance once the user requests tests.
