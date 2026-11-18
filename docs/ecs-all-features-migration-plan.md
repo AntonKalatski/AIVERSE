@@ -295,3 +295,50 @@ common `ProjectileProgram` math across FPS/RTS. Rebuild ordered legacy
 views only for save v9 and network compatibility, never as a second
 writable authority. No default switch until FPS/RTS replay/save/transport
 and editor integration tests pass natively.
+
+
+## FPS direct ProjectileRuntime flight ownership checkpoint (2026-11-18)
+
+The live `fps.compat.projectilePrograms` stage has now been updated on the
+`fps.ecsAuthority=true` path: the **simulation of programmed projectile
+flight, collision, immediate impact and branch spawn mutates the canonical
+`ProjectileRuntime` ECS component**, not `State::projectiles`.
+Original source order is restored from the `ProjectileRuntime.order` plus
+existing projectile IDs, so a swap-remove in the ECS pool does not reorder
+gameplay. Expirations are staged until after stable traversal and removed
+via the World entity allocator; spawned children become new
+`ProjectileRuntime` entities with stable `DynamicEntityIndex` keys.
+
+The default FPS path still loops the legacy `State::projectiles` vector.
+**Both call one shared `Module::stepProgrammedProjectile` solver** for
+physical flight programs; the existing public
+`selectSweptProjectileContact`, projectile modifiers and synchronous
+damage/impact policies retain the same ordering. This is a *real ECS
+source-of-truth cutover for the programmed-projectile stage*, not just
+another ECS projection.
+
+**Remaining compatibility limitation:** after the ECS projectile stage
+finishes, it creates an ordered `State::projectiles` read/projection for
+legacy grenade, round/mode and weapon spawning code in the following `fps`
+stage; these existing consumers can still modify the vector, which is
+mirrored back into ECS at the end-of-tick barrier. Full exclusive
+`ProjectileRuntime` authority for all FPS projectile operations requires
+converting these remaining consumers and spawn paths next. Do not remove
+`fps.ecsHydrate`/`fps.ecsMirror` until that work, v9 binary save
+compatibility, network prediction, replay and Editor tests all pass.
+
+**Verification source:** `tests/fps/projectiles.inc` adds live FPS
+`ecsProjectileProgramStageParity` and
+`ecsProjectileBranchAuthorityParity`, called by `aiverse_fps_tests`.
+These tests compare deep/COW World snapshots and tick checksums, real
+fly-through/branch damage, the in-place `ProjectileRuntime` owner,
+stale legacy projections, `DynamicEntityIndex` mapping, child creation
+and mixed nonprogrammed objects. They also replay snapshots and cross-load
+save v9 between legacy and ECS storage configurations.
+
+**Not yet verified:** native compilation/execution of this branch and
+all assertions, load/replay across networking, performance and editor
+regression. The code stays behind existing default-OFF
+`fps.ecsAuthority`. Next wave is to convert remaining nonprogrammed
+grenade/mode updates and direct in-tick spawns before making the entire
+frame ECS-only.
