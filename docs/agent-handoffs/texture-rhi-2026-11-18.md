@@ -4953,3 +4953,25 @@ C++ compile NOT RUN, real libktx runtime decode NOT RUN.
 Next: Add real ETC1S/UASTC test assets (licensed), compile with
 AIVERSE_TEXTURE_WITH_LIBKTX=ON and validate format selection
 on BC7/ASTC/ETC2 and RGBA8 devices. Document dependency.
+
+## Stage 8C — Vulkan compute shader SPIR-V compiler (2026-11-18)
+
+Code commit 0bd7e79e0e62efd47c28710cfe225665869ce582.
+Files: engine/gfx/vulkan/VkShaderCompiler.h and .cpp.
+Adds compileComputeProgram(glslBody,spv,error), using
+glslang::TShader(EShLangCompute) and TProgram link, with
+Vulkan 1.1 SPIR-V 1.3 target and explicit GLSL450 input.
+Automatically adds default workgroup local_size_x=64
+when the source does not declare it. Source capped to 1MiB;
+empty/invalid compilation fails closed with diagnostics.
+Compatible binding convention documented in header:
+storage images 0..3, sampled textures 4..11, storage
+buffers 12..15, optional uniform buffer 16.
+This stage only adds compiler source and API declaration;
+native Vulkan pipeline/device support is the NEXT stage.
+Verification: GitHub source/tree/ref commit succeeded.
+glslang compiler NOT RUN, Vulkan graphics build NOT RUN.
+No native or driver tests claimed passed.
+Next: Add Vulkan compute resource/pipeline/descriptor/dispatch
+backend, appropriate VkApi loader commands and storage-image
+capability and memory barriers; document fallbacks.
