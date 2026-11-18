@@ -6,7 +6,7 @@
 #include <vector>
 
 namespace p = aiverse::platform;
-namespace ei = aiverse::lib::gameplay::enhanced;
+namespace ei = aiverse::lib::gameplay::inputflow;
 using aiverse::client::ClientInputRouting;
 #define CHECK(x) do { if(!(x)){std::cerr<<"RTS input test line "<<__LINE__<<": " #x "\n";std::abort();} } while(false)
 static bool contains(const std::vector<std::string>& actions,const char* key) {
@@ -103,5 +103,5 @@ int main() {
     route.onEvent(key(p::Key::A,false),true);
     route.system().deactivateContext("RTS.Modal");
     CHECK(contains(route.onEvent(key(p::Key::A),true),"AttackMove"));
-    std::cout<<"RTS semantic input / context routing passed\n";
+    std::cout<<"RTS InputFlow semantic input / context routing passed\n";
 }
