@@ -648,3 +648,51 @@ asynchronous forest streaming subsystem. Future work: worker jobs
 with revision checks, explicit camera/observer streaming priorities,
 sampled-world-terrain alignment, collision/navmesh, editor scene
 preview and GPU resource/performance validation.
+
+## Stage 4 — opt-in forest Scene overlay and authored-map exclusions
+
+**Scene integration**: `apps/editor/TerraWeaveForestPreview.h` owns a
+persistent `ArborForestAdapter`. The existing
+`Editor::renderScene` calls it after the normal terrain/objects draw
+but before `Renderer3D::render` (no extra render pass).
+`TerrainWindow` has a checkbox to show the generated forest;
+it is **off by default**, and enabled only when
+`MapDoc::extra.terraweave.version == 1`. The Game window and
+simulation remain unchanged.
+
+Preview generates a bounded 5×5 window of 32-metre source tiles around
+the camera; placements are global-lattice deterministic even across tile
+boundaries. They are regenerated when the active camera tile,
+MapDoc revision or saved TerraWeave recipe changes. Two procedural
+tree species are preconfigured (broadleaf + conifer) and generated only
+once per editor preview lifetime; both geometry and multi-view impostors
+are shared via `ArborForestAdapter`. The renderer chooses actual
+per-branch LOD and reuses existing GPU instancing/batching/shadows.
+
+**Coordinate space**: procedural `scatter` uses absolute world cm
+(e.g. optional generator `originXcm`), but the editor/renderer uses
+map-relative metres. The overlay subtracts the recipe origin BEFORE
+building draw transforms and samples the *current* editor heightfield
+so subsequent sculpt/undo operations move tree roots with the terrain.
+It changes no map data or gameplay entities.
+
+**Authored map exclusions**:
+`apps/editor/TerraWeavePlacementMask.h` rejects placements on
+water/rock/block/road map cells, within a configurable rectangular
+clearance around `MapData::entities`, and within a segment-distance
+clearance around legacy `MapData::roads`. Mask is presentation-only:
+long-double distance arithmetic is allowed here but must not be used
+for authoritative network/lockstep placement. It currently does NOT
+parse `roadNetwork` splines, building footprints, `waterNetwork`,
+or the dynamic collider/navmesh world; those need real provider adapters.
+
+**Resource lifecycle:** an explicit unchecked preview releases GPU
+tree prototypes through the existing RHI. Project/map changes or
+editor shutdown release preview resources. Browser/mobile runtime and
+production world streaming are not part of this editor-only feature.
+
+**Testing:** `tests/terraweave_preview_test.cpp` smoke-compiles the
+preview header, checks opt-in toggle and authored placement masks.
+The isolated GCC/Clang workflow also builds `terraweave_preview`.
+No evidence of a passing editor build, renderer screenshot or measured
+GPU performance exists at this stage; maintain PR #24 as Draft.
