@@ -117,6 +117,31 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         throw std::invalid_argument("TerraWeave Horizon rings do not cover ranges");
 }
 
+// Worst-case resident atlas/mesh budget, independent of sampled biome and
+// without claiming any particular GPU driver's measured draw-call count.
+struct HorizonBudget {
+    size_t atlasBytes = 0;
+    size_t maxVertices = 0;
+    size_t maxTriangles = 0;
+    size_t maxForestClusters = 0;
+};
+
+inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
+    validateHorizonSettings(s);
+    const size_t clusters=size_t(s.middleTilesPerSide)*s.middleTilesPerSide+
+                          size_t(s.distantTilesPerSide)*s.distantTilesPerSide;
+    const size_t atlasSide=
+        size_t(horizon_detail::checkedSquareRootCeil(
+            static_cast<uint32_t>(clusters)))*s.atlasTilePixels;
+    const size_t terrainVertices=s.distantTerrain ?
+        size_t(s.terrainResolution+1)*(s.terrainResolution+1):0;
+    const size_t terrainTriangles=s.distantTerrain ?
+        size_t(s.terrainResolution)*s.terrainResolution*2:0;
+    // Two crossed cards per cluster, each with 4 vertices and 2 triangles.
+    return {atlasSide*atlasSide*4,terrainVertices+clusters*8,
+            terrainTriangles+clusters*4,clusters};
+}
+
 // Each call is deterministic for a snapped camera region, with fixed memory
 // bounds. Bake on a worker in production; upload prepared models via the RHI.
 inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
