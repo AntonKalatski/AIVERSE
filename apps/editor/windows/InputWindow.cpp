@@ -23,7 +23,8 @@ const char* kValueNames[]{"Boolean","Axis1D","Axis2D","Axis3D"};
 const char* kDeviceNames[]{"Keyboard","Mouse Button","Mouse Axis","Mouse Wheel",
                             "Gamepad Button","Gamepad Axis","Touch"};
 const char* kModifierNames[]{"Scale","Negate","Dead Zone","Swizzle","Normalize"};
-const char* kTriggerNames[]{"Down","Pressed","Released","Hold","Tap","Chord"};
+const char* kTriggerNames[]{"Down","Pressed","Released","Hold","Tap","Chord",
+                            "Double Tap","Hold & Release","Pulse","Not Chord"};
 
 bool uniqueName(const std::vector<ei::Action>& actions, const std::string& name) {
     return !name.empty() && std::none_of(actions.begin(),actions.end(),
@@ -94,17 +95,21 @@ bool drawTriggers(std::vector<ei::Trigger>& triggers,const std::vector<ei::Actio
         ImGui::PushID(int(n));
         auto& trig=triggers[n];
         int kind=int(trig.kind);
-        if(ImGui::Combo("Trigger",&kind,kTriggerNames,6)) {
+        if(ImGui::Combo("Trigger",&kind,kTriggerNames,10)) {
             trig=ei::Trigger{};trig.kind=ei::TriggerKind(kind);
-            if(trig.kind==ei::TriggerKind::Hold||trig.kind==ei::TriggerKind::Tap)
-                trig.seconds=0.25f;
-            if(trig.kind==ei::TriggerKind::Chord&&!actions.empty())
-                trig.chordAction=actions.front().name;
+            if(trig.kind==ei::TriggerKind::Hold||trig.kind==ei::TriggerKind::Tap||
+               trig.kind==ei::TriggerKind::DoubleTap||trig.kind==ei::TriggerKind::HoldAndRelease||
+               trig.kind==ei::TriggerKind::Pulse)trig.seconds=0.25f;
+            if((trig.kind==ei::TriggerKind::Chord||trig.kind==ei::TriggerKind::NotChord)&&
+               !actions.empty())trig.chordAction=actions.front().name;
             changed=true;
         }
-        if(trig.kind==ei::TriggerKind::Hold||trig.kind==ei::TriggerKind::Tap)
-            changed|=ImGui::SliderFloat("Seconds",&trig.seconds,0.0f,10.0f);
-        if(trig.kind==ei::TriggerKind::Chord) {
+        if(trig.kind==ei::TriggerKind::Hold||trig.kind==ei::TriggerKind::Tap||
+           trig.kind==ei::TriggerKind::DoubleTap||trig.kind==ei::TriggerKind::HoldAndRelease||
+           trig.kind==ei::TriggerKind::Pulse)
+            changed|=ImGui::SliderFloat("Seconds",&trig.seconds,
+                                         trig.kind==ei::TriggerKind::Pulse?0.01f:0.0f,10.0f);
+        if(trig.kind==ei::TriggerKind::Chord||trig.kind==ei::TriggerKind::NotChord) {
             if(ImGui::BeginCombo("Requires action",trig.chordAction.c_str())) {
                 for(const auto& action:actions)
                     if(ImGui::Selectable(action.name.c_str(),trig.chordAction==action.name)) {
