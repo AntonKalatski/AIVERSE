@@ -29,6 +29,36 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## Multi-local-user device ownership and scoped cancellation (Stage 50)
+
+`InputFlow::cancelDevices({Device::Keyboard, ...}, deviceIndex = -1)`
+removes only the listed device families from the raw input buffer and resets
+their Mapping runtimes. It leaves other owned device channels untouched. A
+subsequent `update(0)` or the next normal presentation update emits
+`Canceled` when an affected Action no longer has a live source; an Action
+also mapped to an unaffected held device remains active. Unlike global
+`cancelAll()`, device cancellation is **deferred to the next update**, not
+an immediate Action event.
+
+`platform::InputFlowAdapter` exposes `cancelKeyboard()`,
+`cancelPointer()`, and `cancelTouch()` (which also clears tracked fingers
+and gesture baselines). `InputFlowUsers::setKeyboardOwner`,
+`setPointerOwner`, `setTouchOwner`, and `assignGamepad` now cancel only
+the transferred device class, preserving unrelated held actions from a
+different controller, keyboard or pointer. Owners can be unassigned with
+`clearKeyboardOwner`, `clearPointerOwner`, and `clearTouchOwner`. A UI
+capture event `onEvent(e, false)` cancels only the captured event's class,
+while `FocusLost` still globally cancels all devices.
+
+`InputFlowUsers::pollGamepads()` remains one physical poll per frame with
+per-user logical pad index 0. `InputFlowAdapter::pollGamepads()` is for
+single-user clients and must not be called on the same hardware frame as
+the multi-user router. Local users may have independent mapping schemes and
+profiles but still share one presentation input backend.
+
+Stage 50 routing tests are authored, **not yet executed**. Device removal
+is intentionally a presentation-layer operation, never an ECS state write.
+
 ## Action lifetime across focus, gating and context changes (Stage 49)
 
 An Action's `active` flag now reflects its **effective** Action-level
