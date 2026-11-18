@@ -25,9 +25,18 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
                           "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_AUTO_EXPOSURE"};
 
 // Target roles inside one Sized set.
-enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100 };
+enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
+struct MotionUniforms {
+    float px[4], p0[4], sun[4];
+    float inv0[4], inv1[4], inv2[4], inv3[4];
+    float prev0[4], prev1[4], prev2[4], prev3[4];
+};
+const char* kMotionFields[] = {
+    "px", "p0", "sun", "inv0", "inv1", "inv2", "inv3",
+    "prev0", "prev1", "prev2", "prev3"
+};
 struct CompositeU {
     float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4];
 };
@@ -119,6 +128,7 @@ void Prisma::shutdown() {
         for (auto& history : view.history) release(history);
     }
     exposureViews_.clear();
+    motionViews_.clear();
     for (auto& [p, l] : luts_) release(l.tex);
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
@@ -152,6 +162,7 @@ void Prisma::configure(const Json& game, const Json& map, std::vector<std::strin
 void Prisma::setSettings(PrismaSettings s) {
     // New map/project configuration invalidates adaptation across scenes.
     resetAutoExposure();
+    resetMotionHistory();
     baseSettings_ = s;
     settings_ = std::move(s);
     error_.clear();
@@ -162,6 +173,17 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 }
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
+
+void Prisma::setObjectMotionVectors(uint64_t id, gfx::TextureHandle texture) {
+    motionViews_[id].objectVelocity = texture;
+}
+void Prisma::resetMotionHistory(uint64_t id) {
+    auto it = motionViews_.find(id);
+    if (it != motionViews_.end()) it->second.valid = false;
+}
+void Prisma::resetMotionHistory() {
+    for (auto& [id, view] : motionViews_) view.valid = false;
+}
 
 void Prisma::resetAutoExposure() {
     for (auto& [id, view] : exposureViews_) {
@@ -256,12 +278,17 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kExposureLog, nullptr, 1, "prisma exposure luminance"},
         {prisma::kExposureReduce, nullptr, 1, "prisma exposure reduce"},
         {prisma::kExposureAdapt, nullptr, 3, "prisma exposure adapt"},
+        {prisma::kMotionVectors, nullptr, 7, "prisma camera motion vectors"},
+        {prisma::kMotionBlur, nullptr, 3, "prisma shutter motion blur"},
     };
     const Def& d = defs[p];
-    Built b = buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body);
+    Built b = (p == kMotionVectors)
+        ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body)
+        : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body);
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = 2; sd.uniformSlots = 1; sd.label = d.label;
+    sd.textureSlots = p == kMotionVectors ? 3 : 2;
+    sd.uniformSlots = 1; sd.label = d.label;
     shaders_[p] = dev_->createShader(sd);
     if (!shaders_[p].valid()) {
         failed_[p] = true;
