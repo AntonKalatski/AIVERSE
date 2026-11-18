@@ -113,35 +113,58 @@ inline const char* kDepthOfField = R"(
 
 // Stage 23: HDR log-luminance pyramid. All pyramid targets use RGBA16F.
 // Values are log2(luma) stored in R (signed HDR float, never RGBA8).
+// First pass stores weighted log2 luminance in R and total weight in G.
+// p0.x = centerWeight (0 uniform, 1 strongly center-biased)
+// p0.y = centerRadius (relative normalized image coordinates)
+// sun.x/sun.y = min/max metering log2 luminance clamps.
+// Later reduction preserves numerator/denominator rather than averaging
+// already-normalized values, so center weighting remains correct.
 inline const char* kExposureLog = R"(
     vec2 uv = TUV(s);
     vec2 t = px.xy * 0.5;
-    vec3 a = TEX0(clamp(uv + vec2(-t.x,-t.y), vec2(0.0), vec2(1.0))).rgb;
-    vec3 b = TEX0(clamp(uv + vec2( t.x,-t.y), vec2(0.0), vec2(1.0))).rgb;
-    vec3 c = TEX0(clamp(uv + vec2(-t.x, t.y), vec2(0.0), vec2(1.0))).rgb;
-    vec3 d = TEX0(clamp(uv + vec2( t.x, t.y), vec2(0.0), vec2(1.0))).rgb;
-    float la = log2(max(dot(max(a, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
-    float lb = log2(max(dot(max(b, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
-    float lc = log2(max(dot(max(c, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
-    float ld = log2(max(dot(max(d, vec3(0.0)), vec3(0.2126,0.7152,0.0722)),0.0001));
-    RETURN(vec4((la+lb+lc+ld)*0.25,0.0,0.0,1.0));
+    vec2 q0 = clamp(uv + vec2(-t.x,-t.y), vec2(0.0), vec2(1.0));
+    vec2 q1 = clamp(uv + vec2( t.x,-t.y), vec2(0.0), vec2(1.0));
+    vec2 q2 = clamp(uv + vec2(-t.x, t.y), vec2(0.0), vec2(1.0));
+    vec2 q3 = clamp(uv + vec2( t.x, t.y), vec2(0.0), vec2(1.0));
+    vec3 a = max(TEX0(q0).rgb, vec3(0.0));
+    vec3 b = max(TEX0(q1).rgb, vec3(0.0));
+    vec3 c = max(TEX0(q2).rgb, vec3(0.0));
+    vec3 d = max(TEX0(q3).rgb, vec3(0.0));
+    vec4 luminance = vec4(dot(a,vec3(0.2126,0.7152,0.0722)),
+                          dot(b,vec3(0.2126,0.7152,0.0722)),
+                          dot(c,vec3(0.2126,0.7152,0.0722)),
+                          dot(d,vec3(0.2126,0.7152,0.0722)));
+    vec4 logL = clamp(log2(max(luminance,vec4(0.0001))),
+                      vec4(sun.x),vec4(max(sun.x,sun.y)));
+    float radius = max(p0.y,0.05);
+    vec2 center = vec2(0.5,0.5);
+    vec2 d0 = (q0-center)/radius, d1 = (q1-center)/radius;
+    vec2 d2 = (q2-center)/radius, d3 = (q3-center)/radius;
+    vec4 weights = mix(vec4(1.0),
+                       vec4(exp(-2.0*dot(d0,d0)),exp(-2.0*dot(d1,d1)),
+                            exp(-2.0*dot(d2,d2)),exp(-2.0*dot(d3,d3))),
+                       clamp(p0.x,0.0,1.0));
+    RETURN(vec4(dot(logL,weights)*0.25,
+                (weights.x+weights.y+weights.z+weights.w)*0.25,0.0,1.0));
 )";
 
 inline const char* kExposureReduce = R"(
     vec2 uv = TUV(s);
     vec2 t = px.xy * 0.5;
-    float a = TEX0(clamp(uv + vec2(-t.x,-t.y),vec2(0.0),vec2(1.0))).r;
-    float b = TEX0(clamp(uv + vec2( t.x,-t.y),vec2(0.0),vec2(1.0))).r;
-    float c = TEX0(clamp(uv + vec2(-t.x, t.y),vec2(0.0),vec2(1.0))).r;
-    float d = TEX0(clamp(uv + vec2( t.x, t.y),vec2(0.0),vec2(1.0))).r;
-    RETURN(vec4((a+b+c+d)*0.25,0.0,0.0,1.0));
+    vec2 a = TEX0(clamp(uv + vec2(-t.x,-t.y),vec2(0.0),vec2(1.0))).rg;
+    vec2 b = TEX0(clamp(uv + vec2( t.x,-t.y),vec2(0.0),vec2(1.0))).rg;
+    vec2 c = TEX0(clamp(uv + vec2(-t.x, t.y),vec2(0.0),vec2(1.0))).rg;
+    vec2 d = TEX0(clamp(uv + vec2( t.x, t.y),vec2(0.0),vec2(1.0))).rg;
+    vec2 mean = (a+b+c+d)*0.25;
+    RETURN(vec4(mean.x,mean.y,0.0,1.0));
 )";
 
 // TEX0: 1x1 mean log2(luminance); TEX1: previous 1x1 exposure factor.
 // p0=(deltaSeconds, speedUp, speedDown, historyValid).
 // sun=(keyValue, minEV, maxEV, compensationEV).
 inline const char* kExposureAdapt = R"(
-    float logL = TEX0(vec2(0.5)).r;
+    vec2 weighted = TEX0(vec2(0.5)).rg;
+    float logL = weighted.x / max(weighted.y,0.0000001);
     float ev = clamp(log2(max(sun.x,0.0001))-logL+sun.w,sun.y,sun.z);
     float target = exp2(ev);
     float previous = max(TEX1(vec2(0.5)).r,0.0001);
