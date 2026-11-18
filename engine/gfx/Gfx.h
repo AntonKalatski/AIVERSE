@@ -20,6 +20,7 @@
 //   * vertex buffer: one interleaved stream; GLSL attribute location = VertexAttr::location,
 //     MSL [[attribute(location)]] via [[stage_in]] at buffer(0).
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>

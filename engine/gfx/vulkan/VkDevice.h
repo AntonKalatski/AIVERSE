@@ -28,6 +28,10 @@ public:
         for (size_t i = 0; i < items_.size(); ++i)
             if (alive_[i]) f(uint32_t(i + 1), items_[i]);
     }
+    template <class F> void eachWithId(F&& f) const {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) f(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -128,6 +132,7 @@ public:
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
+    std::vector<TextureResourceInfo> textureResources() const override;
     bool supportsTextureViews() const override { return true; }
     bool supportsTextureDimension(TextureDimension d) const override {
         return d != TextureDimension::CubeArray || cubeArray_;

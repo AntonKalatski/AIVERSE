@@ -7,6 +7,33 @@
 
 namespace aiverse::gfx::vk {
 
+std::vector<TextureResourceInfo> VulkanDevice::textureResources() const {
+    std::vector<TextureResourceInfo> result;
+    textures_.eachWithId([&](uint32_t id, const VTexture& tex) {
+        if (!tex.image) return;
+        TextureResourceInfo item;
+        item.handle = {id};
+        item.dimension = tex.dimension;
+        item.format = tex.format;
+        item.width = tex.width;
+        item.height = tex.height;
+        item.depth = tex.volumeDepth;
+        item.arrayLayers = tex.layers;
+        item.mipLevels = tex.levels;
+        item.sampleCount = tex.samples;
+        item.renderTarget = tex.renderTarget || tex.depth;
+        item.storage = false; // currently no writable sampled Vulkan images
+        TextureDesc desc;
+        desc.width = tex.width; desc.height = tex.height;
+        desc.depth = tex.volumeDepth; desc.arrayLayers = tex.layers;
+        desc.dimension = tex.dimension; desc.format = tex.format;
+        desc.mipLevels = tex.levels; desc.sampleCount = tex.samples;
+        item.estimatedBytes = estimateTextureFootprint(desc);
+        result.push_back(item);
+    });
+    return result;
+}
+
 // ---------- memory ----------
 namespace { constexpr VkDeviceSize kBlockSize = VkDeviceSize(64) << 20; }
 

@@ -108,6 +108,10 @@ public:
         for (size_t i = 0; i < items_.size(); ++i)
             if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
     }
+    template <class F> void each(F&& fn) const {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -227,6 +231,32 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
+    std::vector<TextureResourceInfo> textureResources() const override {
+        std::vector<TextureResourceInfo> result;
+        textures_.each([&](uint32_t id, const GLTexture& tex) {
+            if (!tex.id) return;
+            TextureResourceInfo item;
+            item.handle = {id};
+            item.dimension = tex.dimension;
+            item.format = tex.fmt;
+            item.width = tex.w;
+            item.height = tex.h;
+            item.depth = tex.dimension == TextureDimension::Texture3D ? tex.depth : 1;
+            item.arrayLayers = tex.layers;
+            item.mipLevels = tex.levels;
+            item.sampleCount = tex.samples;
+            item.renderTarget = tex.renderTarget;
+            item.storage = false; // GL storage images currently unsupported
+            TextureDesc d;
+            d.width = item.width; d.height = item.height; d.depth = item.depth;
+            d.arrayLayers = item.arrayLayers; d.dimension = item.dimension;
+            d.format = item.format; d.mipLevels = item.mipLevels;
+            d.sampleCount = item.sampleCount;
+            item.estimatedBytes = estimateTextureFootprint(d);
+            result.push_back(item);
+        });
+        return result;
+    }
     const std::string& lastError() const override { return error_; }
 
     // ---------- buffers ----------

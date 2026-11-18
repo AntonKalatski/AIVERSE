@@ -34,6 +34,10 @@ public:
         for (size_t i = 0; i < items_.size(); ++i)
             if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
     }
+    template <class F> void each(F&& fn) const {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -93,6 +97,37 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
+    std::vector<TextureResourceInfo> textureResources() const override {
+        std::vector<TextureResourceInfo> result;
+        textures_.each([&](uint32_t id, const MTTexture& tex) {
+            if (!tex.tex) return;
+            TextureResourceInfo item;
+            item.handle = {id};
+            item.dimension = tex.dimension;
+            item.format = tex.fmt;
+            item.width = int(tex.tex.width);
+            item.height = int(tex.tex.height);
+            item.depth = tex.dimension == TextureDimension::Texture3D ?
+                         int(tex.tex.depth) : 1;
+            item.arrayLayers = tex.dimension == TextureDimension::Cube ? 6 :
+                tex.dimension == TextureDimension::CubeArray ?
+                int(tex.tex.arrayLength)*6 :
+                tex.dimension == TextureDimension::Texture2DArray ?
+                int(tex.tex.arrayLength) : 1;
+            item.mipLevels = int(tex.tex.mipmapLevelCount);
+            item.sampleCount = int(tex.tex.sampleCount);
+            item.renderTarget = (tex.tex.usage & MTLTextureUsageRenderTarget) != 0;
+            item.storage = (tex.tex.usage & MTLTextureUsageShaderWrite) != 0;
+            TextureDesc d;
+            d.dimension = item.dimension; d.format = item.format;
+            d.width = item.width; d.height = item.height; d.depth = item.depth;
+            d.arrayLayers = item.arrayLayers; d.mipLevels = item.mipLevels;
+            d.sampleCount = item.sampleCount;
+            item.estimatedBytes = estimateTextureFootprint(d);
+            result.push_back(item);
+        });
+        return result;
+    }
     uint64_t frameSerial() const override { return frame_; }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
