@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <map>
 #include <vector>
 #include <utility>
 
@@ -199,6 +200,66 @@ inline std::optional<HorizonTerrainClipPlan> planHorizonNearGroundClipping(
             }
         }
     return plan;
+}
+
+// Populate a complete immutable snapshot of near-surface heights at the
+// precise perimeter vertices of the clipped far terrain. No renderer or
+// WorldScene object is consulted after this bake. If even one required
+// height is unavailable, do not attempt a half-welded seam.
+inline void populateHorizonNearSeamSamples(
+        HorizonBake& bake,const HorizonSurfaceSources* source) {
+    bake.nearSeamSamples.clear();
+    if(!source || !source->nearGroundHeightAtCm ||
+       bake.nearClipRects.empty() || !bake.maxNearClipTriangles)
+        return;
+    const auto planned=planHorizonNearGroundClipping(bake);
+    if(!planned)return; // geometric limit, old full-quad path is used
+    constexpr size_t kMaxSamples=4096;
+    std::map<std::pair<int64_t,int64_t>,int32_t> samples;
+    for(const HorizonClipTriangle& tri:planned->triangles) {
+        for(const HorizonClipPoint& p:tri.corners) {
+            const RectCm* rectAtEdge=nullptr;
+            for(const RectCm& r:bake.nearClipRects) {
+                constexpr double epsilon=0.00001;
+                const bool vertical=(
+                    std::abs(p.x-double(r.minX))<epsilon ||
+                    std::abs(p.x-double(r.maxX))<epsilon) &&
+                    p.z>=double(r.minZ)-epsilon &&
+                    p.z<=double(r.maxZ)+epsilon;
+                const bool horizontal=(
+                    std::abs(p.z-double(r.minZ))<epsilon ||
+                    std::abs(p.z-double(r.maxZ))<epsilon) &&
+                    p.x>=double(r.minX)-epsilon &&
+                    p.x<=double(r.maxX)+epsilon;
+                if(vertical||horizontal) {rectAtEdge=&r;break;}
+            }
+            if(!rectAtEdge)continue;
+            const auto key=std::pair<int64_t,int64_t>{
+                static_cast<int64_t>(std::llround(p.x*65536.0)),
+                static_cast<int64_t>(std::llround(p.z*65536.0))};
+            if(samples.contains(key))continue;
+            if(samples.size()>=kMaxSamples)return;
+            // On a half-open tile's east/south edge, the exact border
+            // coordinate may resolve to an unloaded neighboring tile.
+            // Sample at most 1 cm inside the known resident rectangle.
+            const auto& r=*rectAtEdge;
+            const int64_t sx=std::clamp(
+                static_cast<int64_t>(std::llround(p.x)),
+                r.minX,r.maxX-1);
+            const int64_t sz=std::clamp(
+                static_cast<int64_t>(std::llround(p.z)),
+                r.minZ,r.maxZ-1);
+            const auto height=source->nearGroundHeightAtCm(sx,sz);
+            if(!height || *height < -kWorldLimitCm ||
+                          *height > kWorldLimitCm)
+                return; // no partial snapping on incomplete source data
+            samples.emplace(key,*height);
+        }
+    }
+    bake.nearSeamSamples.reserve(samples.size());
+    for(const auto& [key,height]:samples)
+        bake.nearSeamSamples.push_back({
+            key.first,key.second,height});
 }
 
 } // namespace aiverse::terraweave
