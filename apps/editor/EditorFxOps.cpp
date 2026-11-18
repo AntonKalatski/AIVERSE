@@ -147,7 +147,7 @@ void Editor::registerFxPreviewOps() {
             const Json overrides=p.has("overrides")?p["overrides"]:Json::object();
             if(!spectra::compileGraph(p["graph"],overrides,compiled,errors)) {
                 std::string why="SpectraFX graph compile failed:";
-                for(const auto& e:errors)why+="\\n"+e;
+                for(const auto& e:errors)why+="\n"+e;
                 throw std::runtime_error(why);
             }
             render::RTSCamera& cam=playing()?gameCam:sceneCam;
@@ -182,7 +182,7 @@ void Editor::registerFxPreviewOps() {
             response.set("emitters",Json::number(int64_t(compiled.emitters.size())));
             response.set("particles",Json::number(int64_t(gameFx_.stats().particles)));
             response.set("view",Json::string(playing()?"game":"scene"));
-            response.set("next",Json::string(playing()?"view_screenshot {\\"window\\":\\"game\\"}":"view_screenshot {\\"window\\":\\"scene\\"}"));
+            response.set("next",Json::string(playing()?"view_screenshot {\"window\":\"game\"}":"view_screenshot {\"window\":\"scene\"}"));
             return response;
         },true});
 }
