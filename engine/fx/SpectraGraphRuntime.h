@@ -21,6 +21,8 @@ struct GraphRuntimeOptions {
     ComputePreference preference = ComputePreference::Automatic;
     uint32_t capacity = 1024; // GPU-only slots; not a CPU EffectDef particle budget
     bool gpuIndirect = false; // opt-in GPU-authored compaction/draw, Metal only
+    // Opt-in Stage-22 bounded Metal VM. Unsupported programs use exact CPU effects.
+    bool gpuProgram = false;
 };
 
 struct GraphGpuEligibility {
