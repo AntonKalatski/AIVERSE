@@ -61,6 +61,35 @@ void testFarThinning() {
     assert(batches.size() == 1 && batches[0].lod == TreeLOD::Impostor);
     assert(batches[0].instances.size() == 1);
 }
+void testStaggeredImpostorTransition() {
+    FloraView view{0, 0, 100, 300, 600, 1100, 1000};
+    view.impostorBlendWidthCm = 300; // stable [450,750] transition
+    const std::vector<FoliageInstance> input{
+        makeInstance(1, 1, 400, 0),
+        makeInstance(2, 1, 800, 0),
+        makeInstance(3, 1, 600, 0),
+        makeInstance(4, 1, 600, 0)
+    };
+    const auto batches = buildFloraBatches(input, view);
+    assert(flatten(batches).size() == input.size());
+    auto shuffled = input;
+    std::reverse(shuffled.begin(), shuffled.end());
+    const auto again = buildFloraBatches(shuffled, view);
+    assert(flatten(batches) == flatten(again));
+    bool nearLow = false, farImpostor = false;
+    for (const auto& batch : batches) {
+        for (const auto& instance : batch.instances) {
+            if (instance.key == 1) nearLow = batch.lod == TreeLOD::Low;
+            if (instance.key == 2) farImpostor = batch.lod == TreeLOD::Impostor;
+        }
+    }
+    assert(nearLow && farImpostor);
+    view.impostorBlendWidthCm = 900; // would overlap the medium LOD tier
+    bool invalid = false;
+    try { (void)buildFloraBatches(input, view); }
+    catch (const std::invalid_argument&) { invalid = true; }
+    assert(invalid);
+}
 void testValidation() {
     FloraView invalid;
     invalid.mediumRangeCm = -1;
@@ -77,5 +106,6 @@ void testValidation() {
 int main() {
     testGroupsAndLod();
     testFarThinning();
+    testStaggeredImpostorTransition();
     testValidation();
 }
