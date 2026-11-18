@@ -413,3 +413,39 @@ For a terrain vertex-only or mixed atlas+terrain edit, use
 GPU and performance checks. The current feature agent should
 update `docs/terrain/AGENT_HANDOFF.md` with implementation
 commits and `NOT RUN`, but must not claim success.
+
+## GPU Horizon region cache ownership (Stage 13)
+
+For forests spanning many kilometres, opt into
+`HorizonSettings::maxCachedGpuRegions`
+(0–3) and `gpuCacheBudgetMiB` (8–96)
+to retain recent fully uploaded `render::Model`
+regions without copying GPU resources. Use
+`HorizonGpuRegionCache` from
+`engine/render/TerraWeaveHorizonGpuCache.h`;
+do not create per-species or per-tree GPU page
+caches.
+
+All cache `take`, `retain`, `prune`, and
+`clear(device)` operations run on the
+RHI owner thread. Do not cache a model from
+an old authored `sourceRevision_`; never
+submit a cached model after a terrain/mask
+revision that could affect it. Keep the
+last visible model while the new region
+bakes and uploads, then retain the old
+one if within the bounded LRU budget.
+Always drain `AsyncChunkStream` canceled
+results even when a GPU cache hit returns
+without a new worker submission.
+
+`WorldScene::shutdown(device)` MUST release
+the active GPU model and every inactive
+cached GPU model before the device dies.
+Use `HorizonRuntimeStats` GPU cache fields
+to diagnose retention; estimated GPU bytes
+are NOT driver measured or GPU performance.
+Build, sanitizer/CTest, Metal/GL/Vulkan,
+WebGL, and benchmark execution are assigned
+to the dedicated test agent. Record
+`NOT RUN` until that agent provides logs.
