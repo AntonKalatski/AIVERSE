@@ -309,6 +309,7 @@ public:
     static void applyWaterMeshBasis(
             lib::nereid::WaterSurfaceMeshOptions& opts,
             const NereidSceneSurface& source) {
+        opts.originY=source.body.surfaceY.toDouble();
         // Use a stable near-body world anchor, not an absolute position cast
         // to float. Read-only presentation geometry, no gameplay changes.
         if(source.useGeometry && source.geometry.enabled &&
@@ -445,11 +446,13 @@ public:
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize)const {
         const double worldOriginX=double(origin.x)*double(cellSize);
         const double worldOriginZ=double(origin.z)*double(cellSize);
+        const double worldOriginY=double(origin.y)*double(cellSize);
         for(const auto& slot:slots_) {
             if(!slot.visible || !slot.gpu->resident())continue;
             const auto& basis=slot.gpu->key();
             const auto transform=render::mat4::translate({
-                float(basis.originX-worldOriginX),0.f,
+                float(basis.originX-worldOriginX),
+                float(basis.originY-worldOriginY),
                 float(basis.originZ-worldOriginZ)});
             slot.gpu->draw(renderer,transform);
         }
