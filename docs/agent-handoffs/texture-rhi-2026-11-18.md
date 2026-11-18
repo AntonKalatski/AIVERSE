@@ -873,3 +873,39 @@ distinct per-target clears/readback, including MSAA resolve. Run
 native macOS build and validation. Complete Vulkan MRT renderpass
 and pipeline layouts before claiming cross-backend support.
 Commit code and handoff independently per stage.
+
+## Stage 4L — GL explicit MRT pipeline count/format validation (2026-11-18)
+
+**Implementation commit:** `58d1401ad5c5581e2974691c85f2d858b73b223c`.
+**Path:** `engine/gfx/gl/GfxGL.cpp`.
+
+**Source implementation:** Validate `PipelineDesc.colorAttachmentCount`
+at GL pipeline creation (1..4). Track the active explicit MRT
+pass's color count and common pixel format, and on `setPipeline`
+reject mismatched depth-only/color-count/color-formats instead
+of silently using the wrong output layout. The legacy
+`beginPass` clears this MRT-only validation state and stays
+compatible with ordinary single-color scenes. HDR variants
+automatically propagate `RGBA16F` to additional color slots,
+maintaining parity with the new Metal MRT pipeline policy.
+`endPass` releases MRT-specific pass validation state.
+
+**Compatibility:** This affects only explicit `beginRenderTargets`
+and the new `PipelineDesc.colorAttachmentCount>1` use path.
+The original legacy one-color paths remain available.
+
+**Risks / limits:** GL does not reflect fragment shader output
+locations against `PipelineDesc`; fragment outputs must be
+authored at locations 0..N-1. Mixed attachment formats remain
+unsupported by the common HDR policy. GL separate target
+blending is not exposed by this implementation.
+
+**Verification:** GitHub code commit confirmed; no native compiler,
+GL context, CTest or successful CI result available. **NOT RUN**.
+Do not claim production-ready MRT.
+
+**Next:** Add a headless GL MRT GPU fixture with two GLSL output
+locations and per-color readback (including clearing only one
+color). Then implement Vulkan MRT with render pass + pipeline
+compatibility and source test. Follow the mandatory separate
+code and handoff commit protocol.
