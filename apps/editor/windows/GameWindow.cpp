@@ -14,7 +14,7 @@
 #include "modules/rts/view/ScriptHud.h"
 #include "apps/client/RegionSettings.h"
 #include "engine/i18n/Localization.h"
-#include "engine/platform/EnhancedInputPresets.h"
+#include "engine/platform/InputFlow.h"
 #include <filesystem>
 #include <string_view>
 #include "modules/rts/RtsScript.h"
@@ -129,8 +129,8 @@ public:
     }
 
 private:
-    using InputCore=lib::gameplay::enhanced::InputSystem;
-    using InputDevice=lib::gameplay::enhanced::Device;
+    using InputCore=lib::gameplay::inputflow::InputFlow;
+    using InputDevice=lib::gameplay::inputflow::Device;
     InputCore cameraActions_;
     std::string cameraProject_;
     std::filesystem::file_time_type cameraAssetTime_{};
@@ -195,12 +195,12 @@ private:
         cameraProject_=dir;
         cameraAssetExists_=exists;
         cameraAssetTime_=exists?lastWrite:std::filesystem::file_time_type{};
-        auto asset=platform::enhanced_presets::rtsReference();
+        auto asset=platform::inputflow_presets::rtsReference();
         if(exists) {
             try {
-                platform::enhanced_config::Asset authored;
+                platform::inputflow_config::Asset authored;
                 std::string err;
-                if(platform::enhanced_config::readAsset(Json::parseFile(assetPath.string()),authored,&err))
+                if(platform::inputflow_config::readAsset(Json::parseFile(assetPath.string()),authored,&err))
                     asset=std::move(authored);
                 else ed.ws().log("input","Game camera mapping: "+err,true);
             } catch(const std::exception& e) {
@@ -208,7 +208,7 @@ private:
             }
         }
         std::string error;
-        if(!platform::enhanced_config::installAsset(cameraActions_,asset,&error))
+        if(!platform::inputflow_config::installAsset(cameraActions_,asset,&error))
             ed.ws().log("input","Game camera action install failed: "+error,true);
     }
 
