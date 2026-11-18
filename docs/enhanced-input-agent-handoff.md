@@ -145,3 +145,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Conflict resolutions:** `AGENTS.md` retains inspector's ECS/renderer rules and adds input ownership and stage-by-stage handoff. `libraries/catalog.json` updates only `input` package 0.2.0 while retaining all inspector library entries. `tests/libraries/CMakeLists.txt` retains inspector test targets and appends three enhanced input test targets, dropping the redundant additional `endif() # voxel packages` from the input branch. FPS client kept from input branch; inspector did not modify that path after common base. Do not overwrite the merged inspector/editor or ECS sources with outdated main.
 
 **Validation:** source and tree comparison over GitHub connector; no native compile or CTest yet (build container cannot resolve GitHub DNS). Run CMake/CTest on the merged branch, audit the FPS client against current `modules/fps`, then add editor/RTS contexts and runtime binding settings. Update this handoff after each stage before proceeding.
+
+## Stage 6 — runtime ID / touch hardening (2026-11-18)
+
+**Changes:** `EnhancedInput.h::InputSystem::registerContext` now rejects duplicate explicit mapping IDs, unknown referenced action names and invalid MAX ids before modifying registered contexts. Automatic mapping IDs skip all authored IDs. `EnhancedInputAdapter.h` reuses freed touch slots (0–31), ignores repeated begin for the same touch ID and ignores fingers over the supported 32-slot maximum without wrapping. `enhanced_input_tests.cpp` adds registration regression checks.
+
+**Compatibility:** legacy `gameplay/Input.h` is unchanged. Action values, FPS/RTS network Commands and profile schema 1 are unchanged. Native C++ projects may continue linking `AIVERSE::lib_input`.
+
+**Verification:** source-level assertions reviewed; merged CI was queued when checked. No compiler or CTest run yet. Continue checking GitHub Actions or run the isolated `aiverse_enhanced_input_tests` on a machine with the checkout.
+
+**Next agent:** finish the editor Input Actions/Contexts UI and integrate safe project asset editing, then migrate RTS/hosted game UI arbitration and verify. Add a document section after each stage.
