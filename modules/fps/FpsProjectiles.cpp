@@ -1,5 +1,6 @@
 // FPS collision/damage adapter for the shared deterministic projectile program.
 #include "FpsModule.h"
+#include "libraries/include/aiverselib/genre/EcsSweepQuerySystems.h"
 #include <algorithm>
 namespace aiverse::fps {
 void Module::tickProjectilePrograms(Simulation& sim) {
@@ -53,10 +54,16 @@ void Module::tickProjectilePrograms(Simulation& sim) {
             if(length>s.distanceLeft){auto ratio=s.distanceLeft/length;delta=delta*ratio;dt*=ratio;length=s.distanceLeft;}
             Fixed fraction=1_fx;std::optional<Candidate> victim;
             const Vec3 extent{s.radius,s.radius,s.radius};
-            for(const auto& t:targets){Fixed enter;Vec3 normal;
-                if(world::intersect(p.pos,delta,{t.bounds.min-extent,t.bounds.max+extent},enter,normal)&&
-                   (!victim||enter<fraction||(enter==fraction&&t.id.index<victim->id.index))){fraction=enter;victim=t;}
-            }
+            // The same sweep query now serves FPS physical/projectile-program
+            // flight and any other native genre. Endpoint hits and stable
+            // target-ID ties preserve the original resolver semantics.
+            const auto swept=lib::genre::selectSweptProjectileContact(
+                targets,p.pos,delta,extent,
+                [](const Candidate& t) {return t.bounds;},
+                [](const Candidate& a,const Candidate& b) {
+                    return a.id.index<b.id.index;
+                });
+            if(swept) {fraction=swept.fraction;victim=*swept.target;}
             uint32_t wall=0;
             if(f.blockTerrain){
                 const auto end=p.pos+delta;
