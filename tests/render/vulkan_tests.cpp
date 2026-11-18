@@ -234,6 +234,78 @@ int main() {
         CHECK(near(img.at(W - 4, H / 2), 100, 0, 0));
         d.destroyTexture(t); d.destroyTexture(tr);
     }
+    {   // sampled dimensional resources: actual GPU image/view + GLSL sampler type pairing
+        auto checkDimension = [&](TextureDesc desc, const std::vector<uint8_t>& pixels,
+                                  const char* fs, int r, int g, int b) {
+            desc.filter = Filter::Nearest;
+            desc.data = pixels.data();
+            CHECK(d.supportsTextureDimension(desc.dimension));
+            const TextureHandle imageTex = d.createTexture(desc);
+            CHECK(imageTex.valid());
+            ShaderDesc shaderDesc; shaderDesc.glslVertex = kVs;
+            shaderDesc.glslFragment = fs; shaderDesc.textureSlots = 1;
+            const ShaderHandle shader = d.createShader(shaderDesc);
+            CHECK(shader.valid());
+            const PipelineHandle pip = shader.valid() ? pipeline(d, shader) : PipelineHandle{};
+            CHECK(pip.valid());
+            if (imageTex.valid() && pip.valid()) {
+                Image img = frame(d, [&] {
+                    d.beginPass(screen);
+                    d.setPipeline(pip); d.setTexture(0, imageTex);
+                    d.setVertexBuffer(vbFull); d.draw(6);
+                    d.endPass();
+                });
+                CHECK(img.w == W && img.h == H);
+                if (img.w == W && img.h == H) CHECK(near(img.at(W / 2, H / 2), r, g, b));
+            }
+            if (pip.valid()) d.destroyPipeline(pip);
+            if (shader.valid()) d.destroyShader(shader);
+            if (imageTex.valid()) d.destroyTexture(imageTex);
+        };
+        auto solidLayers = [](int faces, const std::vector<int>& colours) {
+            std::vector<uint8_t> p(size_t(faces) * 2 * 2 * 4, 255);
+            for (int face = 0; face < faces; ++face)
+                for (int i = 0; i < 4; ++i) {
+                    uint8_t* v = p.data() + (size_t(face) * 4 + size_t(i)) * 4;
+                    v[0] = uint8_t(colours[size_t(face) * 3]);
+                    v[1] = uint8_t(colours[size_t(face) * 3 + 1]);
+                    v[2] = uint8_t(colours[size_t(face) * 3 + 2]);
+                }
+            return p;
+        };
+        TextureDesc desc; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Texture1D;
+        desc.height = 1;
+        checkDimension(desc, {255, 0, 0, 255, 255, 0, 0, 255},
+            R"(in vec2 v_uv; uniform sampler1D tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,0.3); })", 255, 0, 0);
+        desc = TextureDesc{}; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Texture3D; desc.depth = 2;
+        checkDimension(desc, solidLayers(2, {255,0,0, 0,0,255}),
+            R"(in vec2 v_uv; uniform sampler3D tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,vec3(v_uv,0.75)); })", 0, 0, 255);
+        desc = TextureDesc{}; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Texture2DArray; desc.arrayLayers = 3;
+        checkDimension(desc, solidLayers(3, {255,0,0, 0,255,0, 0,0,255}),
+            R"(in vec2 v_uv; uniform sampler2DArray tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,vec3(v_uv,1.0)); })", 0, 255, 0);
+        desc = TextureDesc{}; desc.width = desc.height = 2;
+        desc.dimension = TextureDimension::Cube; desc.arrayLayers = 6;
+        checkDimension(desc, solidLayers(6, {255,0,0, 0,255,0, 0,0,255,
+                                              255,255,0, 0,255,255, 255,0,255}),
+            R"(in vec2 v_uv; uniform samplerCube tex0; out vec4 o_color;
+               void main(){ o_color=texture(tex0,vec3(1.0,0.0,0.0)); })", 255, 0, 0);
+        if (d.supportsTextureDimension(TextureDimension::CubeArray)) {
+            desc = TextureDesc{}; desc.width = desc.height = 2;
+            desc.dimension = TextureDimension::CubeArray; desc.arrayLayers = 12;
+            auto colours = std::vector<int>(36, 0);
+            for (int i = 0; i < 6; ++i) colours[size_t(i) * 3] = 255;
+            for (int i = 6; i < 12; ++i) colours[size_t(i) * 3 + 1] = 255;
+            checkDimension(desc, solidLayers(12, colours),
+                R"(in vec2 v_uv; uniform samplerCubeArray tex0; out vec4 o_color;
+                   void main(){ o_color=texture(tex0,vec4(1.0,0.0,0.0,1.0)); })", 0, 255, 0);
+        }
+    }
     {   // shadow map: depth-only pass, compare sampler (LEQUAL), GL depth values
         TextureDesc sd2; sd2.width = W; sd2.height = H; sd2.format = PixelFormat::Depth; sd2.renderTarget = true; sd2.compare = true;
         const TextureHandle sm = d.createTexture(sd2);
