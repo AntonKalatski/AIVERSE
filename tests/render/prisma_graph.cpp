@@ -328,6 +328,44 @@ void fxaaGraphContract() {
     check(result.success && result.executedPasses == 1 && draws == 1,
           "FXAA graph resolves scene/output handles and dispatches once");
 }
+
+void bloomPrefilterGraphContract() {
+    // Stage 15: the prefilter is one raster pass, supports both SDR/HDR,
+    // and samples the input at full size into a smaller target.
+    for (auto fmt : {PrismaGraphFormat::RGBA8, PrismaGraphFormat::RGBA16F}) {
+        PrismaRenderGraph graph;
+        auto source = graph.addResource(resource("bloom-source", true, fmt, 1920, 1080));
+        auto down = graph.addResource(resource("bloom-prefilter", true, fmt, 960, 540));
+        graph.addPass(pass("bloom-prefilter", {source}, {down}));
+        const auto plan = graph.compile();
+        check(plan.valid && plan.slots.empty() &&
+              plan.order == std::vector<PrismaGraphId>({0}),
+              "bloom prefilter has one compiled pass and no graph allocations");
+        if (!plan.valid) continue;
+        PrismaGraphBindings<int> handles;
+        handles.external = {31, 41};
+        unsigned calls = 0;
+        auto resolved = dispatchPrismaGraph(graph, plan, handles,
+            [&](const PrismaGraphPass& p, PrismaGraphId id,
+                const PrismaGraphDispatchView<int>& view) {
+                ++calls;
+                return id == 0 && p.kind == PrismaGraphPassKind::Raster &&
+                       view.resource(source) == 31 && view.resource(down) == 41 &&
+                       view.graph.resources()[source].width == 1920 &&
+                       view.graph.resources()[down].width == 960;
+            });
+        check(resolved.success && resolved.executedPasses == 1 && calls == 1,
+              "bloom prefilter binds source and destination without aliasing");
+        handles.external[down] = 0;
+        resolved = dispatchPrismaGraph(graph, plan, handles,
+            [&](const PrismaGraphPass&, PrismaGraphId,
+                const PrismaGraphDispatchView<int>&) {
+                ++calls; return true;
+            });
+        check(!resolved.success && resolved.executedPasses == 0 && calls == 1,
+              "missing bloom output prevents any GPU callback");
+    }
+}
 }
 int main() {
     positive();
@@ -337,6 +375,7 @@ int main() {
     poolContract();
     rhiFormatContract();
     fxaaGraphContract();
+    bloomPrefilterGraphContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
