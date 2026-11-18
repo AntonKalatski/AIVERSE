@@ -1,0 +1,96 @@
+name: Texture RHI focused verification
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'engine/gfx/**'
+      - 'engine/render/**'
+      - 'apps/editor/windows/TextureResourcesWindow.cpp'
+      - 'tests/render/**'
+      - 'tools/verify-texture-rhi.sh'
+      - '.github/workflows/texture-rhi.yml'
+      - 'CMakeLists.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: texture-rhi-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu:
+    name: Linux texture / OpenEXR=${{ matrix.openexr }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        openexr: [OFF, ON]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: System build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ python3 \
+            libx11-dev libegl1-mesa-dev libgles2-mesa-dev libgl-dev \
+            libvulkan-dev libopenexr-dev
+      - name: Focused CMake configure / compile / CTest
+        run: |
+          chmod +x tools/verify-texture-rhi.sh
+          tools/verify-texture-rhi.sh \
+            --build-dir "${{ github.workspace }}/build/texture-rhi-ci" \
+            --jobs 4 \
+            -DAIVERSE_BUILD_CLIENT=OFF \
+            -DAIVERSE_BUILD_EDITOR=OFF \
+            -DAIVERSE_BUILD_HEADLESS=OFF \
+            -DAIVERSE_BUILD_SERVER=OFF \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_TEXTURE_WITH_OPENEXR=${{ matrix.openexr }}
+      - name: Upload explicit build / CTest evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: texture-rhi-linux-openexr-${{ matrix.openexr }}-logs
+          path: build/texture-rhi-ci/verify-logs/
+          if-no-files-found: warn
+
+  vulkan-build:
+    name: Vulkan compute compile + source CTests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: System build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ python3 \
+            libx11-dev libegl1-mesa-dev libgles2-mesa-dev libgl-dev \
+            libvulkan-dev mesa-vulkan-drivers vulkan-tools
+      - name: Compile native Vulkan implementation and focused tests
+        run: |
+          chmod +x tools/verify-texture-rhi.sh
+          tools/verify-texture-rhi.sh \
+            --vulkan --jobs 4 \
+            --build-dir "${{ github.workspace }}/build/texture-rhi-vulkan" \
+            -DAIVERSE_BUILD_CLIENT=OFF \
+            -DAIVERSE_BUILD_EDITOR=OFF \
+            -DAIVERSE_BUILD_HEADLESS=OFF \
+            -DAIVERSE_BUILD_SERVER=OFF \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_VULKAN=ON
+          # A zero CTest exit can still indicate a SKIPPED GPU scenario.
+          grep -Ei 'vulkan_backend|passed|failed|skipped' \
+            build/texture-rhi-vulkan/verify-logs/ctest.log || true
+      - name: Upload build and Vulkan execution logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: texture-rhi-vulkan-logs
+          path: build/texture-rhi-vulkan/verify-logs/
+          if-no-files-found: warn
