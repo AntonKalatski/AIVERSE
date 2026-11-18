@@ -2579,3 +2579,41 @@ to `TextureMipResidency.complete` and update an independent
 sampler only after complete mip/face residency. Test real GPU
 LOD bounds, including stale resource destruction and reset.
 Continue source/handoff commits separately.
+
+## Stage 7F — native texture RHI skill and AGENTS.md registration (2026-11-18)
+
+**Code/documentation commit:** `b122e213c894c63846a95fe895312ba89f2a9705`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `AGENTS.md`, new
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Agent-facing deliverable:** Register one concise reusable native
+C++ texture recipe in AGENTS.md so future FPS, RTS and other projects
+choose existing `gfx::Device` resources, `gfx::RenderTargetSet`,
+`gfx::TextureStreamQueue`, `gfx::TextureMipResidency` and
+`render::parseKtx2`/`parseDdsTexture`/`uploadContainerTexture`
+instead of rewriting texture backends or per-genre systems.
+The skill includes API mapping, a one-mip layered stream
+example, old model sampler2D compatibility, BC5 normal-Z
+reconstruction and GPU compressed-format gates, resource
+ownership, mip-ready LOD clamps and exact CMake/CTest
+verification commands. It states clearly that streaming is
+render-thread deferred submissions, not GPU async readback,
+and that this PR's platform GPU verification is still pending.
+
+**Compatibility:** Documentation-only changes; no source C++
+implementation, ECS/save/network data, assets or runtime
+behavior changed. Agent skill is explicitly scoped to native
+project consumers and warns against using GPU resources in
+deterministic ECS simulation.
+
+**Actual validation:** GitHub code/tree/commit/ref update succeeded.
+No C++ compile, GPU validation or CTest executed.
+GitHub Actions have not been confirmed green; do not imply
+production-readiness from the skill examples.
+
+**Next:** Run the full CPU texture test matrix and GPU
+format/readback tests on native targets. Continue remaining
+virtual-texture page cache/feedback, native async readback,
+BasisLZ/UASTC/OpenEXR integration and editor resource
+inspection as separate bounded stages with handoffs.
