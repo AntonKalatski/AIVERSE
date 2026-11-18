@@ -74,6 +74,9 @@ compile_run ecs-cross-genre-inventory -Ilibraries/include \
     tests/ecs_cross_genre_inventory_test.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+compile_run ecs-fixed-regeneration-policy -Ilibraries/include \
+    tests/ecs_fixed_regeneration_policy_test.cpp \
+    engine/core/Fixed.cpp
 compile_run ecs-waves tests/ecs_wave_executor_test.cpp
 compile_run ecs-guarded tests/ecs_guarded_world_test.cpp
 compile_run ecs-snapshot-delta tests/ecs_snapshot_delta_test.cpp
