@@ -2208,3 +2208,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_wind COMMAND aiverse_physis_wind_test)
     set_tests_properties(physis_wind PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 9: composable fixed-point gravity policy, independent of Box3D.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_gravity_test tests/physis_gravity_test.cpp)
+    target_link_libraries(aiverse_physis_gravity_test PRIVATE aiverse_engine)
+    add_test(NAME physis_gravity COMMAND aiverse_physis_gravity_test)
+    set_tests_properties(physis_gravity PROPERTIES LABELS "PHYSIS")
+endif()
