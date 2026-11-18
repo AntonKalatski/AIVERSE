@@ -233,6 +233,7 @@ private:
     void tick(Simulation&);
     void moveActorEcs(Simulation&,Actor&,const Input&); // direct ECS motor, legacy workspace updated for other systems
     void shoot(Simulation&,Actor&);
+    void spawnProjectile(Simulation&,Projectile); // native ECS authority on spawn; legacy State remains tick projection
     void equipInitial(Actor&) const;
     void setupSystems(Simulation&,const Json&,State&);
     void tickOrdinaryProjectiles(Simulation&); // original same-tick impact stage
