@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <span>
+#include <type_traits>
 #include <string_view>
 using namespace aiverse::lib::gameplay::inputflow;
 #define CHECK(x) do { if (!(x)) { std::cerr << "InputFlow failed line " << __LINE__ << ": " #x "\n"; std::abort(); } } while(false)
@@ -12,6 +13,9 @@ static bool has(std::span<const ActionEvent> events, std::string_view action, Ph
     return false;
 }
 static bool near(float a,float b) { return std::abs(a-b) < 0.001f; }
+
+static_assert(std::is_same_v<InputFlow,aiverse::lib::gameplay::enhanced::InputSystem>,
+              "InputFlow rename must preserve the Enhanced InputSystem alias");
 
 int main() {
     const Control w{Device::Keyboard,1}, a{Device::Keyboard,2}, s{Device::Keyboard,3}, d{Device::Keyboard,4};
