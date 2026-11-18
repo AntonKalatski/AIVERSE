@@ -4,6 +4,7 @@
 #include "libraries/include/aiverselib/genre/EcsSweepQuerySystems.h"
 #include <algorithm>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace aiverse::fps {
