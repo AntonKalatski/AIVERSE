@@ -65,9 +65,9 @@ public:
     // Do not poll a gamepad backend twice in a single frame when another host owns polling.
     void pollGamepads() {
         using namespace lib::gameplay::enhanced;
-        platform::pollGamepads();
+        ::aiverse::platform::pollGamepads();
         for (int pad = 0; pad < kMaxGamepads; ++pad) {
-            const auto& state = platform::gamepad(pad);
+            const auto& state = ::aiverse::platform::gamepad(pad);
             for (int button = 0; button < int(PadButton::Count); ++button) {
                 const float value = state.connected && state.down(PadButton(button)) ? 1.0f : 0.0f;
                 input_.setControl({Device::GamepadButton, button, pad}, value);
