@@ -119,7 +119,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         // DOWNWARD without altering the true sampled top-edge heights.
         // It hides sub-mesh cracks between a coarse far field and neighboring
         // landscape while preserving deterministic world-position edges.
-        if(b.terrainSkirtDepthCm>0){
+        if(b.terrainSkirtDepthCm>0 && model->indices.size()>begin){
             const uint32_t lowerFirst=
                 static_cast<uint32_t>(model->vertices.size());
             const auto rimIndex=[n](uint32_t side,uint32_t i)->uint32_t{
