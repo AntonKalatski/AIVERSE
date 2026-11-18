@@ -1,5 +1,6 @@
 #include "WorldScene.h"
 #include "TerraWeaveForestManifest.h"
+#include "TerraWeaveHorizonManifest.h"
 #include "TerraWeaveWorldHeightSource.h"
 #include "engine/render/ModelTextureCache.h"
 #include <algorithm>
@@ -53,6 +54,7 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     // Opt-in only. The existing WorldScene codepath is identical when the
     // manifest has no terraweaveForest block.
     terraForest_=forestSceneFromManifest(manifest);
+    terraHorizon_=horizonSceneFromManifest(manifest,terraForest_.get());
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
@@ -245,6 +247,20 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             terraForestReady_=true;
         }
     }
+    if(terraHorizon_&&!observers.empty()){
+        const Vec3 observer=observers.front();
+        const double xCm=observer.x.toDouble()*100.0;
+        const double zCm=observer.z.toDouble()*100.0;
+        if(!std::isfinite(xCm)||!std::isfinite(zCm)||
+           std::fabs(xCm)>double(terraweave::kWorldLimitCm)||
+           std::fabs(zCm)>double(terraweave::kWorldLimitCm))
+            throw JsonError("world.terraweaveHorizon: observer outside supported extent");
+        // CPU region baking runs through AsyncChunkStream; update performs
+        // only bounded requests and GPU publication on the render thread.
+        terraHorizon_->update(device,{
+            static_cast<int64_t>(std::llround(xCm)),
+            static_cast<int64_t>(std::llround(zCm))});
+    }
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
@@ -256,10 +272,17 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
             int64_t(origin.x)*factor, 0, int64_t(origin.z)*factor
         });
     }
+    if(terraHorizon_&&terraHorizon_->ready()){
+        const int64_t factor=int64_t(size)*100;
+        terraHorizon_->submit(renderer,{
+            int64_t(origin.x)*factor,0,int64_t(origin.z)*factor
+        });
+    }
 }
 void WorldScene::shutdown(gfx::Device& device) {
     stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
     if(terraForest_)terraForest_->shutdownAsync(); // join workers before releasing captured resources
+    if(terraHorizon_)terraHorizon_->shutdown(device); // worker join + RHI release
     if(terraForest_&&terraForestReady_){
         terraForest_->releaseModels(device);
         terraForestReady_=false;
