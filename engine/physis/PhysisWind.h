@@ -36,9 +36,11 @@ inline Fixed radialWeight(Vec3 delta, Fixed radius) {
     if (radius <= Fixed{} ||
         fxAbs(delta.x) >= radius || fxAbs(delta.y) >= radius ||
         fxAbs(delta.z) >= radius) return Fixed{};
-    const Fixed d2 = delta.lengthSq();
-    if (d2 >= radius * radius) return Fixed{};
-    return fxClamp(Fixed::fromInt(1) - fxSqrt(d2) / radius,
+    // Normalize before squaring. Squaring world-distance coordinates in Q47.16
+    // can overflow for a large but otherwise valid radius (e.g. 10 km+).
+    const Vec3 normalized = delta / radius;
+    const Fixed normalizedDistance = fxSqrt(normalized.lengthSq());
+    return fxClamp(Fixed::fromInt(1) - normalizedDistance,
                    Fixed{}, Fixed::fromInt(1));
 }
 
