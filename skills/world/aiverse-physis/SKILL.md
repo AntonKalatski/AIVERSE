@@ -31,6 +31,8 @@ description: Reuse AIVERSE PHYSIS for deterministic weather, wind, gusts, storms
 | Read-only raster for editor diagnostics | `PhysisDiagnostics.h` | `DiagnosticRequest`, `DiagnosticRaster`, `sampleDiagnosticRaster` |
 | Snapshot spatial broadphase (optional) | `PhysisSpatialIndex.h` | `FieldSpatialIndex`, `sample`, `stats`, `candidateCount` |
 | Indexed diagnostics (optional) | `PhysisDiagnostics.h` | `sampleDiagnosticRasterIndexed` |
+| Debug palette (non-authoritative) | `PhysisDebugPalette.h` | `DebugColor`, `debugColor`, `diagnosticColor` |
+| Dockable editor debug | `apps/editor/windows/PhysisWindow.cpp` | `AIVERSE_EDITOR_WINDOW(PhysisWindow)`, read-only live / private demo |
 | Generic native host | `PhysisIntegration.h` | `InstallOptions`, `install`, `forEachPresentationCell` |
 | Optional Box3D consumption | `engine/physics/PhysisBox3D.h` | `applyPhysisToBody`, `PhysisBodyMaterial` |
 
@@ -110,3 +112,25 @@ This is a query-time broadphase, **not** a new streaming/grid simulation,
 destruction engine or validated benchmark. Stage 16 test code checks reference
 versus indexed Fixed values; actual CTest/CI PASS remains unverified until run.
 See `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
+
+## Editor PHYSIS debug window (Stage 17)
+
+The standard editor auto-discovers `apps/editor/windows/PhysisWindow.cpp`:
+open **Мир → PHYSIS · Природа**. Hidden by default. It reads live
+`Editor::sim()` only when `physis::State` exists. The window provides
+a bounded 2D heatmap, 14 selectable layers, palettes, scalar values,
+wind/gravity inspection, and outlines for WindZone/StormEvent/GravityField.
+It **does not modify live authoritative ECS** or game project assets.
+
+If PHYSIS is not installed in the current game, the editor offers
+**Создать / сбросить демо**: a separate `aiverse::World` with a storm, wind,
+gravity and fire. Only demo buttons advance this private World. Do not
+mistake the sample for a deployed game's PHYSIS integration, and do not
+reuse the demo world as an authoritative server simulation.
+
+`PhysisDebugPalette.h` provides CPU colour mapping and invalid-cell masking
+for other tools without adding render dependencies to PHYSIS. Reference CTest
+`physis_editor_view` covers the palette and COW diagnostic data, but the
+GUI must additionally be built and manually reviewed in the real editor.
+**Editor build / CTest / screenshot / click-through NOT RUN yet.**
+Handoff: `docs/agent-handoffs/physis-editor-debug-view-2026-11-18.md`.
