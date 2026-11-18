@@ -44,6 +44,7 @@
 #include "ClientSpine.h"
 #include "ClientServices.h"
 #include "ClientGamepad.h"
+#include "ClientInputRouting.h"
 #include "modules/rts/view/RtsViewScript.h"
 #include "modules/rts/view/RegionSwipe.h"
 
@@ -388,6 +389,7 @@ private:
     std::vector<Notice> notices_;
 
     // input
+    ClientInputRouting inputShortcuts_;  // presentation-only semantic Actions -> validated Commands
     std::vector<Entity> selection_;
     std::array<std::vector<Entity>, 10> groups_;
     Mode mode_ = Mode::Normal;
