@@ -44,6 +44,8 @@ struct HorizonSettings {
     uint32_t terrainGridSnapSteps = 4; // 1..16 grid steps; stabilize distant mountain silhouettes
     int32_t innerTerrainLipCm = 40; // 0..200cm, modest seam lip around owned near-ground quads
     uint32_t maxNearClipTriangles = 2048; // 0=off, bounded extra triangles for partial near overlap
+    uint32_t maxNearWeldSlopePermille = 2500; // 0=off; reject new wedge >2.5m/m rather than distort seam
+    uint32_t nearSeamNormalBlendPercent = 65; // 0=original normals, 100=area-weighted welded normals
 };
 
 struct HorizonCluster {
@@ -114,6 +116,9 @@ struct HorizonBake {
         int32_t nearHeightCm=0;
     };
     std::vector<NearSeamSample> nearSeamSamples; // capped at 4096 unique points
+    uint32_t maxNearWeldSlopePermille = 0; // 0=disable steepness guard
+    uint32_t nearSeamNormalBlendPercent = 0; // 0..100; render-only shading
+    bool nearWeldSlopeFallback = false; // source heights not welded for excessive wedge
 };
 
 namespace horizon_detail {
@@ -183,6 +188,8 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.terrainGridSnapSteps==0 || s.terrainGridSnapSteps>16 ||
         s.innerTerrainLipCm<0 || s.innerTerrainLipCm>200 ||
         s.maxNearClipTriangles>8192 ||
+        s.maxNearWeldSlopePermille>8000 ||
+        s.nearSeamNormalBlendPercent>100 ||
         s.regionHysteresisCm<0 ||
         s.regionHysteresisCm>=s.middleTileCm/2 ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
@@ -380,6 +387,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.terrainSkirtDepthCm=s.terrainSkirtDepthCm;
     out.innerTerrainLipCm=s.innerTerrainLipCm;
     out.maxNearClipTriangles=s.maxNearClipTriangles;
+    out.maxNearWeldSlopePermille=s.maxNearWeldSlopePermille;
+    out.nearSeamNormalBlendPercent=s.nearSeamNormalBlendPercent;
     if (out.originXcm < -kWorldLimitCm+100 ||
         out.originZcm < -kWorldLimitCm+100 ||
         out.originXcm+out.sideCm>kWorldLimitCm-100 ||
@@ -433,6 +442,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         previous->terrainSkirtDepthCm==s.terrainSkirtDepthCm &&
         previous->innerTerrainLipCm==s.innerTerrainLipCm &&
         previous->maxNearClipTriangles==s.maxNearClipTriangles &&
+        previous->maxNearWeldSlopePermille==s.maxNearWeldSlopePermille &&
+        previous->nearSeamNormalBlendPercent==s.nearSeamNormalBlendPercent &&
         (source && source->ownsNearTerrainRect
             ? previous->nearOwnedQuads.size()==size_t(s.terrainResolution)*
                                               s.terrainResolution
