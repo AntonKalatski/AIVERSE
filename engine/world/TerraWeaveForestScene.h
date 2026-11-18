@@ -6,6 +6,7 @@
 
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include "engine/world/AsyncChunkStream.h"
+#include "engine/world/TerraWeaveExclusions.h"
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
@@ -118,6 +119,12 @@ public:
         placementFilter_ = std::move(filter);
         invalidate();
     }
+    // Geometry prepared by any project/terrain provider. Immutable while
+    // workers are running; a new shared snapshot invalidates old results.
+    void setPlacementMask(std::shared_ptr<const FoliageExclusionMask> mask) {
+        placementMask_ = std::move(mask);
+        invalidate();
+    }
 
     // Invalidate resident foliage if generation settings / landscape are
     // explicitly changed. Game-specific persistent harvest/removal sets
@@ -200,6 +207,8 @@ public:
                     if (int64_t(instance.heightCm) < -kWorldLimitCm ||
                         int64_t(instance.heightCm) > kWorldLimitCm)
                         throw std::out_of_range("TerraWeave forest sampled height extent");
+                    if (placementMask_ &&
+                        placementMask_->excludes(instance.xCm, instance.zCm)) continue;
                     if (placementFilter_ && !placementFilter_(instance)) continue;
                     instances[write++] = instance;
                 }
@@ -292,6 +301,7 @@ private:
         std::vector<RectCm> exclusions;
         HeightSource heightSource;
         PlacementFilter placementFilter;
+        std::shared_ptr<const FoliageExclusionMask> placementMask;
         int32_t side = 0;
         uint64_t revision = 0;
     };
@@ -308,6 +318,7 @@ private:
         snap->exclusions = exclusions_;
         snap->heightSource = heightSource_;
         snap->placementFilter = placementFilter_;
+        snap->placementMask = placementMask_;
         snap->side = settings_.chunkSizeCm;
         snap->revision = revision_;
         return snap;
@@ -326,6 +337,8 @@ private:
                 if (int64_t(instance.heightCm) < -kWorldLimitCm ||
                     int64_t(instance.heightCm) > kWorldLimitCm)
                     throw std::out_of_range("TerraWeave forest sampled height extent");
+                if (s.placementMask &&
+                    s.placementMask->excludes(instance.xCm, instance.zCm)) continue;
                 if (s.placementFilter && !s.placementFilter(instance)) continue;
                 instances[write++] = instance;
             }
@@ -427,6 +440,7 @@ private:
     std::vector<RectCm> exclusions_;
     HeightSource heightSource_;
     PlacementFilter placementFilter_;
+    std::shared_ptr<const FoliageExclusionMask> placementMask_;
     std::map<std::pair<int64_t, int64_t>, std::vector<FoliageInstance>> patches_;
     ForestCameraCm observer_;
     uint64_t revision_ = 1;
