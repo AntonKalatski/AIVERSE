@@ -100,6 +100,30 @@ end-of-tick queue without a golden parity test. The native cross-genre
 fixture is `ecs_cross_genre_impact_queue_test`; compilation and real
 RTS/FPS integration remain pending.
 
+**Implemented hitscan capability split (2026-11-18):** Use
+`AIVERSE::lib_ecs_hitscan` (`EcsHitscanSystems.h`) to select the nearest
+valid fixed-point ray hit over current or rewound poses. For games that can
+stage hits after a source ECS traversal, compose
+`AIVERSE::lib_ecs_hitscan_resolution`
+(`EcsHitscanResolutionSystems.h`, `HitscanIntentComponent`,
+`addHitscanResolutionSystem`) with
+`AIVERSE::lib_ecs_impact_damage` and its `DamageQueue`/resolution barrier.
+Skills: `skills/gameplay/aiverse-ecs-hitscan/SKILL.md`,
+`skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md`.
+Test: `ecs_hitscan_resolution_test` exercises two independent GameModule hosts,
+invalid/blocked fire requests, stable multi-shooter order, full ECS health
+reduction and deep/COW snapshot replay. As of this entry native execution
+has **not** been verified.
+
+**Do not silently change live FPS timing:** `modules/fps/FpsSystems.cpp`
+still resolves authoritative hits synchronously within the legacy tick,
+including rewind, armor, head/limb multipliers and kill/loot hooks. It reuses
+shared hitscan and ordered-impact policies, but the independent hitscan
+resolution system stages hit events until after traversal. Switching the live
+FPS to it requires same-tick damage ordering golden tests and network/save
+checksum parity. The kinematic no-physics RTS path and physical-ballistic
+path remain independently composable; no `isFPS`/`isRTS` motion flag.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
