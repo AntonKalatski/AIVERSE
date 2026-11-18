@@ -458,6 +458,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             }
             SimpleU measure{};
             put(measure.px, 1.0f / float(pw), 1.0f / float(ph), flip, 0);
+            if (level == 0) {
+                put(measure.p0, autoEffect->get("centerWeight"),
+                    autoEffect->get("centerRadius"), 0, 0);
+                put(measure.sun, autoEffect->get("minMeterLogL"),
+                    autoEffect->get("maxMeterLogL"), 0, 0);
+            }
             draw(set, mip, pipes_[level == 0 ? kExposureLog : kExposureReduce],
                  &measure, sizeof measure, {{0, source}});
             source = mip.tex;
@@ -469,6 +475,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             if (mip.tex.valid() && depthFor(set, 1, 1).valid()) {
                 SimpleU measure{};
                 put(measure.px, 1, 1, flip, 0);
+                put(measure.p0, autoEffect->get("centerWeight"),
+                    autoEffect->get("centerRadius"), 0, 0);
+                put(measure.sun, autoEffect->get("minMeterLogL"),
+                    autoEffect->get("maxMeterLogL"), 0, 0);
                 draw(set, mip, pipes_[kExposureLog], &measure, sizeof measure,
                      {{0, scene.tex}});
                 source = mip.tex;
