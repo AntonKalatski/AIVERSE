@@ -167,7 +167,30 @@ uint64_t exercise(bool cow) {
     check(run()==expected,"impact queue checksum diverged after rollback");
     return expected;
 }
+// Submission failure must not mutate the request queue or consume IDs.
+static void exerciseQueueBoundaries() {
+    World world;
+    world.setResource<lg::OrderedImpactQueue>();
+    auto* queue=world.resource<lg::OrderedImpactQueue>();
+    check(queue!=nullptr,"missing queue resource");
+    lg::OrderedProjectileImpact impact;
+    queue->nextSequence=0;
+    check(lg::enqueueOrderedImpact(world,impact)==0 &&
+          queue->nextSequence==0 && queue->pending.empty(),
+          "invalid zero sequence accepted");
+    queue->nextSequence=UINT64_MAX;
+    check(lg::enqueueOrderedImpact(world,impact)==0 &&
+          queue->nextSequence==UINT64_MAX && queue->pending.empty(),
+          "sequence ID overflow accepted");
+    queue->nextSequence=8;
+    queue->pending.resize(lg::OrderedImpactQueue::kMaximumPending);
+    check(lg::enqueueOrderedImpact(world,impact)==0 &&
+          queue->nextSequence==8 &&
+          queue->pending.size()==lg::OrderedImpactQueue::kMaximumPending,
+          "queue capacity failure mutated state");
+}
 int main() {
+    exerciseQueueBoundaries();
     const uint64_t baseline=exercise<ShooterTag>(false);
     check(exercise<StrategyTag>(false)==baseline,
           "shooting and strategy hosts diverged");
