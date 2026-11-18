@@ -432,8 +432,15 @@ first. `render::uploadKtx2WithLibktx(device,ktxBytes,options,error)`
 selects BC7, ASTC 4x4, ETC2 RGBA or BC3 using the RHI capability
 query; it otherwise falls back to RGBA8 if permitted. The adapter
 is completely opt-in; no codec is vendored and default builds
-still fail Basis input explicitly. UASTC HDR beyond the LDR
-adapter requires a separate RGBA16F/BC6H path. Check the upstream
+still fail Basis input explicitly. For **UASTC HDR**, use the separate
+`render::uploadKtx2UastcHdrWithLibktx(device,ktxBytes,error)`
+API. It uses system libktx's `KTX_TTF_RGBA_HALF` path,
+validates original mip/face/array/volume topology, and uploads
+a full mip chain as linear RHI RGBA16F (never RGBA8). This
+path requires a GPU with matching RGBA16F dimension/support.
+Native BC6H or ASTC HDR compressed import is still separate.
+The HDR code has a public-header compile fixture but **no**
+production encoded HDR asset/GPU fidelity verification yet. Check the upstream
 license and real GPU output before releasing.
 Test source: `tests/render/ktx2_transcode.cpp` (`ktx2_transcode`).
 

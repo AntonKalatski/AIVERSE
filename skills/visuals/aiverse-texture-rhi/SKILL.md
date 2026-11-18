@@ -277,7 +277,12 @@ cmake -S . -B build/texture-rhi -DAIVERSE_TEXTURE_WITH_LIBKTX=ON
 Call `render::uploadKtx2WithLibktx(device,encoded,options,error)`.
 The adapter prefers native BC7/ASTC/ETC2/BC3 if the GPU supports
 the matching linear/sRGB format; it can fall back to RGBA8.
-This is LDR Basis/ETC1S/UASTC, not UASTC HDR BC6H decoding.
+LDR imports use the normal KTX2 container callback. For HDR UASTC,
+call `render::uploadKtx2UastcHdrWithLibktx(device,encoded,error)`
+instead: it requests the real `KTX_TTF_RGBA_HALF` decoder,
+preserves all mips/faces/slices and imports an RGBA16F GPU
+resource (if supported). This is not native BC6H/ASTC_HDR.
+Real HDR codec and GPU readback tests are still required.
 No codec is bundled; license/packaging and GPU fidelity
 must be verified with the installed upstream package.
 
