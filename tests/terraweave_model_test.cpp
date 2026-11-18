@@ -98,7 +98,15 @@ int main() {
     forest.addPrototype(oak, 17);
     assert(forest.prototypeCount() == 1);
     const auto* shared = forest.prototype(oak.speciesId);
-    assert(shared && shared->meshes.size() == 3);
+    assert(shared && shared->nodes.size() == oak.primaryBranches + 1);
+    assert(shared->meshes.size() == shared->nodes.size() * 3);
+    const auto* billboard = forest.billboardPrototype(oak.speciesId);
+    assert(billboard && billboard != shared);
+    assert(billboard->nodes.size() == 1 && billboard->meshes.size() == 1);
+    assert(billboard->indices.size() == 6 && billboard->vertices.size() == 4);
+    assert(billboard->materials[0].alpha == aiverse::render::AlphaMode::Mask);
+    assert(!billboard->materials[0].castShadow);
+    assert(billboard->images.size() == 1 && billboard->images[0].rgba.size() == 128u * 256u * 4u);
     bool duplicateRejected = false;
     try { forest.addPrototype(oak, 18); }
     catch (const std::invalid_argument&) { duplicateRejected = true; }
@@ -117,7 +125,7 @@ int main() {
         draws.push_back(draw);
     });
     assert(draws.size() == 2);
-    assert(draws[0].model == shared && draws[1].model == shared);
+    assert(draws[0].model == shared && draws[1].model == billboard);
     assert(draws[0].persistentId && draws[0].persistentId != draws[1].persistentId);
     assert(draws[0].flags == aiverse::render::kDrawStatic);
     assert(std::fabs(draws[0].world.at(0, 3) - 10.0f) < 0.0001f);
@@ -131,8 +139,42 @@ int main() {
         draws.push_back(draw);
     });
     assert(draws[0].persistentId == stableId); // stable hash, not draw index
-    assert(draws[0].model == shared);
+    assert(draws[0].model == shared && draws[1].model == billboard);
 
+
+    // A full-tree impostor has real transparent pixels and cutout foliage.
+    const auto& image = billboard->images[0].rgba;
+    uint32_t transparent = 0, opaque = 0, brown = 0, green = 0;
+    for (size_t k = 0; k < image.size(); k += 4) {
+        if (image[k + 3] == 0) ++transparent;
+        else {
+            assert(image[k + 3] == 255);
+            ++opaque;
+            if (image[k + 1] > image[k]) ++green;
+            else ++brown;
+        }
+    }
+    assert(transparent > 0 && opaque > 0 && green > 0 && brown > 0);
+    assert(image[3] == 0);
+    const auto billboardRepeat = makeArborBillboardModel(oak, 17);
+    assert(billboardRepeat->images[0].rgba == billboard->images[0].rgba);
+    assert(billboardRepeat->indices == billboard->indices);
+    bool badBillboardSettings = false;
+    try { (void)makeArborBillboardModel(oak, 17, {16, 256, 2}); }
+    catch (const std::invalid_argument&) { badBillboardSettings = true; }
+    assert(badBillboardSettings);
+
+    // A far tree rotates its +Z-facing card towards the real camera, not
+    // towards the tree's authored yaw or the world origin.
+    std::vector<aiverse::render::ModelDraw> eastFacing;
+    forest.forEachDraw(
+        std::vector<FloraBatch>{FloraBatch{1001, TreeLOD::Impostor, {first}}},
+        origin, [&](const auto& draw) { eastFacing.push_back(draw); },
+        ForestCameraCm{first.xCm + 10000, first.zCm});
+    assert(eastFacing.size() == 1);
+    assert(eastFacing.front().model == billboard);
+    assert(std::fabs(eastFacing.front().world.at(0, 2) - 2.0f) < 0.0001f);
+    assert(eastFacing.front().persistentId == stableId);
     bool unknownRejected = false;
     try {
         forest.forEachDraw(
