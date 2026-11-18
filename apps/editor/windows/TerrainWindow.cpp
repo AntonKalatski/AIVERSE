@@ -68,6 +68,17 @@ public:
                 report(ed, result);
             }
             ui::help("Параметры поколения сохраняются в карте только после генерации. При явной замене удаляется старый детальный слой; Undo восстанавливает его.");
+            ImGui::BeginDisabled(!d.extra["terraweave"].isObject());
+            bool forest = ed.terraWeaveForestPreviewEnabled();
+            if (ui::checkbox("Показывать процедурный лес в «Сцене»", &forest))
+                ed.setTerraWeaveForestPreviewEnabled(forest);
+            ImGui::EndDisabled();
+            if (forest)
+                ui::hint(("TerraWeave · растений в кадре: " +
+                          std::to_string(ed.terraWeaveForestPreviewCount()) +
+                          " (редактор, без изменений игрового мира)").c_str());
+            else if (!d.extra["terraweave"].isObject())
+                ui::hint("Для показа леса сначала сгенерируйте terrain TerraWeave.");
         }
 
         bool active = ed.tool == Tool::Count && owner_;
