@@ -1236,3 +1236,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `tests/run_ecs_experiment_suite.sh` to compile/run the new two-host ordered-impact queue test with only generic `Simulation`, Fixed and Json sources and public library includes. This prevents accidental dependencies on `modules/fps` or `modules/rts`.
 - **Verification:** source edit committed. `bash -n`, native build and actual execution **not run** in current environment (GitHub DNS unavailable for a full checkout).
 - **Next:** run CTest, standalone script and sanitizer in native checkout; fix failures before enabling built-in gameplay paths.
+
+
+### 2026-11-18 — Portable ECS impact queue capacity type
+- **Implementation SHA:** `441bc126ec4f568bca99b826949fcce11dab5a3f`.
+- In `EcsImpactQueueSystems.h`, explicitly included `<cstddef>` and used `std::size_t` for queue capacity instead of relying on an incidental global `size_t` declaration from another standard header. No gameplay semantics change.
+- **Verification:** source edit only; no native compiler result yet. Run cross-genre impact queue CTest and standalone suite.
