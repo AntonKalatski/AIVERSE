@@ -50,9 +50,12 @@ inline StormInfluence stormContribution(const StormEvent& event,
     const Fixed ax = fxAbs(delta.x), az = fxAbs(delta.z);
     if (ax >= event.outerRadiusMeters || az >= event.outerRadiusMeters ||
         fxAbs(delta.y) >= event.heightMeters) return out;
-    // Planar distance in metres. Signed Q47.16 math only.
-    const Fixed distance = fxSqrt(delta.x * delta.x + delta.z * delta.z);
-    if (distance >= event.outerRadiusMeters) return out;
+    // Normalize before squaring to avoid Q47.16 overflow for wide hurricanes.
+    const Fixed normX = delta.x / event.outerRadiusMeters;
+    const Fixed normZ = delta.z / event.outerRadiusMeters;
+    const Fixed normalizedDistance = fxSqrt(normX * normX + normZ * normZ);
+    if (normalizedDistance >= Fixed::fromInt(1)) return out;
+    const Fixed distance = normalizedDistance * event.outerRadiusMeters;
     const Fixed vertical = Fixed::fromInt(1) -
         fxAbs(delta.y) / event.heightMeters;
     const Fixed edgeWeight = fxClamp((event.outerRadiusMeters - distance) /
