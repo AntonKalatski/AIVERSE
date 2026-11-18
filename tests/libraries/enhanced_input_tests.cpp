@@ -1,0 +1,138 @@
+#include <aiverselib/gameplay/EnhancedInput.h>
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <span>
+#include <string_view>
+using namespace aiverse::lib::gameplay::enhanced;
+#define CHECK(x) do { if (!(x)) { std::cerr << "EnhancedInput failed line " << __LINE__ << ": " #x "\n"; std::abort(); } } while(false)
+
+static bool has(std::span<const ActionEvent> events, std::string_view action, Phase phase) {
+    for (const auto& event : events) if (event.action == action && event.phase == phase) return true;
+    return false;
+}
+static bool near(float a,float b) { return std::abs(a-b) < 0.001f; }
+
+int main() {
+    const Control w{Device::Keyboard,1}, a{Device::Keyboard,2}, s{Device::Keyboard,3}, d{Device::Keyboard,4};
+    InputSystem inputs;
+    CHECK(inputs.defineAction({"Move",ValueType::Axis2D,{Modifier::normalize()}}));
+    CHECK(inputs.defineAction({"Fire",ValueType::Boolean}));
+    MappingContext gameplay{"Gameplay"};
+    gameplay.bind("Move",w,{Modifier::swapXY()});
+    gameplay.bind("Move",s,{Modifier::swapXY(),Modifier::negate()});
+    gameplay.bind("Move",a,{Modifier::negate()});
+    gameplay.bind("Move",d);
+    gameplay.bind("Fire",{Device::MouseButton,0},{},{Trigger::pressed()});
+    CHECK(inputs.registerContext(gameplay));
+    CHECK(inputs.activateContext("Gameplay",0));
+    inputs.setControl(w,1);
+    CHECK(has(inputs.update(0.016f),"Move",Phase::Started));
+    CHECK(near(inputs.state("Move")->value.y,1));
+    inputs.setControl(d,1);
+    CHECK(has(inputs.update(0.016f),"Move",Phase::Triggered));
+    CHECK(near(inputs.state("Move")->value.x,0.707107f));
+    CHECK(near(inputs.state("Move")->value.y,0.707107f));
+    inputs.setControl(w,0); inputs.setControl(d,0);
+    CHECK(has(inputs.update(0.016f),"Move",Phase::Completed));
+    CHECK(!inputs.state("Move")->active);
+    inputs.setControl({Device::MouseButton,0},1);
+    CHECK(has(inputs.update(0.016f),"Fire",Phase::Triggered));
+    CHECK(has(inputs.update(0.016f),"Fire",Phase::Ongoing));
+    inputs.setControl({Device::MouseButton,0},0);
+    CHECK(has(inputs.update(0.016f),"Fire",Phase::Completed));
+    CHECK(inputs.rebind("Gameplay",5,{Device::Keyboard,99})); // fifth binding is Fire
+    inputs.setControl({Device::MouseButton,0},1);
+    CHECK(!has(inputs.update(0.016f),"Fire",Phase::Triggered));
+    inputs.setControl({Device::Keyboard,99},1);
+    CHECK(has(inputs.update(0.016f),"Fire",Phase::Triggered));
+    inputs.cancelAll();
+    CHECK(has(inputs.events(),"Fire",Phase::Canceled));
+    CHECK(inputs.state("Fire")==nullptr);
+
+    InputSystem timing;
+    CHECK(timing.defineAction({"Charge",ValueType::Boolean}));
+    CHECK(timing.defineAction({"Tap",ValueType::Boolean}));
+    CHECK(timing.defineAction({"Release",ValueType::Boolean}));
+    MappingContext timed{"Gameplay"};
+    timed.bind("Charge",{Device::Keyboard,10},{},{Trigger::hold(0.2f)});
+    timed.bind("Tap",{Device::Keyboard,11},{},{Trigger::tap(0.25f)});
+    timed.bind("Release",{Device::Keyboard,12},{},{Trigger::released()});
+    CHECK(timing.registerContext(timed));
+    CHECK(timing.activateContext("Gameplay"));
+    timing.setControl({Device::Keyboard,10},1);
+    CHECK(has(timing.update(0.1f),"Charge",Phase::Ongoing));
+    CHECK(!has(timing.events(),"Charge",Phase::Triggered));
+    CHECK(has(timing.update(0.11f),"Charge",Phase::Triggered));
+    CHECK(!has(timing.update(0.1f),"Charge",Phase::Triggered)); // hold is one-shot
+    timing.setControl({Device::Keyboard,10},0);
+    CHECK(has(timing.update(0.016f),"Charge",Phase::Completed));
+    timing.setControl({Device::Keyboard,11},1);
+    CHECK(has(timing.update(0.1f),"Tap",Phase::Started));
+    timing.setControl({Device::Keyboard,11},0);
+    CHECK(has(timing.update(0.01f),"Tap",Phase::Triggered));
+    CHECK(has(timing.events(),"Tap",Phase::Completed));
+    timing.setControl({Device::Keyboard,11},1);
+    timing.setControl({Device::Keyboard,11},0); // tap entirely between updates
+    CHECK(has(timing.update(0.01f),"Tap",Phase::Triggered));
+    timing.setControl({Device::Keyboard,12},1);
+    timing.update(0.01f);
+    timing.setControl({Device::Keyboard,12},0);
+    CHECK(has(timing.update(0.01f),"Release",Phase::Triggered));
+
+    InputSystem contexts;
+    CHECK(contexts.defineAction({"GameplayFire",ValueType::Boolean}));
+    CHECK(contexts.defineAction({"MenuAccept",ValueType::Boolean}));
+    MappingContext game{"Game"}, menu{"Menu"};
+    const Control space{Device::Keyboard,32};
+    game.bind("GameplayFire",space);
+    menu.bind("MenuAccept",space);
+    CHECK(contexts.registerContext(game)); CHECK(contexts.registerContext(menu));
+    CHECK(contexts.activateContext("Game",0));
+    contexts.setControl(space,1);
+    CHECK(has(contexts.update(0.016f),"GameplayFire",Phase::Triggered));
+    CHECK(contexts.activateContext("Menu",100));
+    CHECK(has(contexts.update(0.016f),"MenuAccept",Phase::Triggered));
+    CHECK(!contexts.state("GameplayFire")->active);
+    CHECK(has(contexts.events(),"GameplayFire",Phase::Completed));
+    contexts.deactivateContext("Menu");
+    CHECK(has(contexts.update(0.016f),"GameplayFire",Phase::Started));
+
+    InputSystem chord;
+    CHECK(chord.defineAction({"Aim",ValueType::Boolean}));
+    CHECK(chord.defineAction({"AltFire",ValueType::Boolean}));
+    MappingContext chordContext{"Combat"};
+    chordContext.bind("Aim",{Device::MouseButton,1});
+    chordContext.bind("AltFire",{Device::Keyboard,70},{},{Trigger::pressed(),Trigger::chord("Aim")});
+    CHECK(chord.registerContext(chordContext));
+    CHECK(chord.activateContext("Combat"));
+    chord.setControl({Device::MouseButton,1},1);
+    chord.setControl({Device::Keyboard,70},1);
+    CHECK(has(chord.update(0.016f),"AltFire",Phase::Triggered)); // same-frame chord
+    chord.setControl({Device::Keyboard,70},0);
+    chord.update(0.016f);
+    chord.setControl({Device::MouseButton,1},0);
+    chord.update(0.016f);
+    chord.setControl({Device::Keyboard,70},1);
+    CHECK(!has(chord.update(0.016f),"AltFire",Phase::Triggered));
+
+    InputSystem analog;
+    CHECK(analog.defineAction({"Steer",ValueType::Axis1D}));
+    CHECK(analog.defineAction({"MouseX",ValueType::Axis1D}));
+    MappingContext vehicle{"Vehicle"};
+    vehicle.bind("Steer",{Device::GamepadAxis,0,1},{Modifier::deadZone(0.2f)});
+    vehicle.bind("MouseX",{Device::MouseAxis,0},{Modifier::scale(0.1f)});
+    CHECK(analog.registerContext(vehicle));
+    CHECK(analog.activateContext("Vehicle"));
+    analog.setControl({Device::GamepadAxis,0,1},0.1f);
+    analog.update(0.016f);
+    CHECK(!analog.state("Steer")->active);
+    analog.setControl({Device::GamepadAxis,0,1},0.6f);
+    analog.addDelta({Device::MouseAxis,0},3);
+    CHECK(has(analog.update(0.016f),"Steer",Phase::Triggered));
+    CHECK(near(analog.state("Steer")->value.x,0.5f));
+    CHECK(near(analog.state("MouseX")->value.x,0.3f));
+    CHECK(has(analog.update(0.016f),"MouseX",Phase::Completed));
+
+    std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
+}
