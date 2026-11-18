@@ -5,6 +5,7 @@
 #include "PrismaGraphResourcePool.h"
 #include "../gfx/Gfx.h"
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,6 +49,8 @@ public:
     // Compute: bool(Device&, passId, DispatchView&) OUTSIDE any render pass.
     // Caller must not call beginPass/endPass inside either callback.
     // Copy passes use Device::copyColor and require one source and destination.
+    // Optional per-pass raster depth resolver overrides rasterDepth (Metal uses
+    // matching target dimensions for each level of a down/up-sample chain).
     // This method MUST be called outside any currently open RHI pass.
     // It does not present, wait for GPU fences or alter authoritative ECS.
     template <typename RasterFn, typename ComputeFn>
@@ -56,7 +59,8 @@ public:
                               const std::vector<gfx::TextureHandle>& external,
                               RasterFn&& raster, ComputeFn&& compute,
                               gfx::TextureHandle rasterDepth = {},
-                              bool clearRasterTargets = true) {
+                              bool clearRasterTargets = true,
+                              std::function<gfx::TextureHandle(PrismaGraphId)> rasterDepthForPass = {}) {
         PrismaRhiExecution result;
         if (!plan.valid || plan.resources.size() != graph.resources().size() ||
             plan.order.size() != graph.passes().size() ||
@@ -160,7 +164,7 @@ public:
                 desc.clearColor[3] = 1.0f;
                 // Metal may require a depth attachment. The host supplies one
                 // sized for the output, or leaves invalid where backend permits.
-                desc.depthTarget = rasterDepth;
+                desc.depthTarget = rasterDepthForPass ? rasterDepthForPass(id) : rasterDepth;
                 device_.beginPass(desc);
                 const bool ok = raster(device_, id, view);
                 device_.endPass();
