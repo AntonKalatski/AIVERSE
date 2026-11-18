@@ -4660,3 +4660,37 @@ and feedback CPU fixture targets on a complete native checkout,
 fix errors, then validate an actual RGBA8 feedback pass on
 Metal/GL33/GLES3/Vulkan and confirm integer-ID fidelity.
 WebGL2 still needs a separate portable path.
+
+## Stage 7AF — prevent resident coarse levels from starving fine mip prefetch (2026-11-18)
+
+Code commit: c5de29e27ad178b10364ec323dde969bc495712c.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Changed file: engine/gfx/VirtualTexturePrefetch.h.
+
+Bug: prior planner counted all coarse candidate keys against
+maxCandidates before checking exact residency/pending status.
+A large fully-resident ancestor range could fill the cap and
+prevent the desired finer mip tiles from being inspected,
+causing repeated no-progress prefetch frames.
+
+Fix: the exact-resident/pending callback is now applied once
+per unique key while enumerating tiles. Resident or pending
+keys are tracked separately and do not consume the nonresident
+candidate budget. Added maxExaminedPages (default 16384)
+to cap total visited unique tiles/callbacks even if all
+coarse keys are resident. Stats now includes examinedPages;
+alreadyResident counts unique visited skipped tiles.
+Existing priority, pin promotion, sorted emission and
+maxRequestsPerFrame semantics remain unchanged.
+
+Compatibility: additive config/stats field and internal CPU
+planner behavior only. No RHI Device ABI, save/network, ECS,
+GPU render targets, shader or asset format changes.
+
+Actual verification: GitHub code update succeeded.
+C++ build NOT RUN, CTest NOT RUN, GPU NOT RUN.
+Next: Extend virtual_texture_prefetch CTest to verify a
+maxCandidates=1 plan can still request the only missing
+fine tile beneath two already resident coarse ancestors,
+and verify maxExaminedPages caps fully-resident full-screen
+coverage. Append separate test-source handoff.
