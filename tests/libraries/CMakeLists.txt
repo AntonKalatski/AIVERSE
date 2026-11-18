@@ -273,3 +273,15 @@ else()
     target_compile_options(aiverse_enhanced_input_adapter_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
 add_test(NAME library_enhanced_input_adapter COMMAND aiverse_enhanced_input_adapter_tests)
+
+# Asset + rebinding schema: uses the engine JSON implementation only on the host/client side.
+add_executable(aiverse_enhanced_input_config_tests enhanced_input_config_tests.cpp
+    ../../engine/data/Json.cpp ../../engine/core/Fixed.cpp)
+target_link_libraries(aiverse_enhanced_input_config_tests PRIVATE AIVERSE::gameplay_native)
+target_compile_features(aiverse_enhanced_input_config_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(aiverse_enhanced_input_config_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(aiverse_enhanced_input_config_tests PRIVATE -Wall -Wextra -Werror -pedantic)
+endif()
+add_test(NAME library_enhanced_input_config COMMAND aiverse_enhanced_input_config_tests)
