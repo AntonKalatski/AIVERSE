@@ -13,8 +13,8 @@
 namespace aiverse::terraweave {
 namespace horizon_archive_detail {
 
-inline constexpr uint32_t kMagic=0x31485754u; // "TWH1" in little endian
-inline constexpr uint32_t kVersion=1;
+inline constexpr uint32_t kMagic=0x32485754u; // "TWH2" in little endian
+inline constexpr uint32_t kVersion=2;
 inline constexpr size_t kHeaderBytes=24; // magic,version,fingerprint,checksum
 inline constexpr size_t kMaxBytes=20u*1024u*1024u;
 
