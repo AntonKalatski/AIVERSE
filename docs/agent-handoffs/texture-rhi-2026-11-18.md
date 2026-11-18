@@ -2002,3 +2002,47 @@ GPU fixtures for 2–4 mixed-format MRT output and verify proper
 pipeline cache separation. Follow with storage images and
 streaming/readback features in separate bounded stages, each
 documented immediately afterward.
+
+## Stage 4U — reusable RenderTargetSet per-attachment format policy (2026-11-18)
+
+**Source commits:** `69ee1e1ac6a25863d3b6680e639a06d1e8c10300`
+(native owner) and `2f605fe3d231d571a79644b4ca889a7857c45b66`
+(regression test source).
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/RenderTargetSet.h`,
+`tests/render/render_target_set.cpp`.
+
+**API:** `RenderTargetSet::Config` gains
+`bool perAttachmentFormats = false` and
+`std::array<PixelFormat, kMaxRenderTargetColors> colorFormats`.
+The previous `colorFormat` still configures **every** color target by
+default. When per-attachment formats are enabled, a separate format
+is selected for each slot at allocation and verified before touching
+the GPU. The conservative backend-portable set is RGBA8,
+RGBA8_sRGB and RGBA16F; unsupported compressed/typed formats fail
+closed. Each MSAA resolve target gets its corresponding color
+format. The new `colorFormat(index)` accessor reports the expected
+pipeline output slot format. Depth-only sets now validate their
+depth descriptor independently, without treating color slot zero
+as an allocated attachment.
+
+**Test source:** Mock device now advertises the declared color
+format capabilities. New `mixedFormats()` tests a three-color
+RGBA8/RGBA16F/RGBA8_sRGB target set with depth, per-slot owner
+metadata, pass entry, correct lifetime cleanup, fail-before-allocation
+on BC7 MRT and depth-only creation. Prior allocation rollback and
+MSAA tests remain in place.
+
+**Verification:** GitHub code/test commits confirmed.
+**Build NOT RUN; CTest NOT RUN; Metal/GL/Vulkan GPU test NOT RUN.**
+Backend runtime support and mixed-format shader output compatibility
+must still be checked on real devices.
+
+**Native caller contract:** Configure compatible
+`PipelineDesc.colorAttachmentCount`, `colorFormat`, and
+`additionalColorFormats` matching `targets.colorFormat(i)`.
+Use explicit MRT fragment output locations 0..N-1 and
+`targets.sampledColor(i)` when MSAA resolves are requested.
+Continue recording architecture/API/files/actual tests and next work
+after each bounded step. Next: Vulkan MSAA/resolve; streaming/upload
+lifecycle and import format coverage are still unfinished.
