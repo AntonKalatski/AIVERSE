@@ -1194,3 +1194,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Published `ecs-hitscan` as `AIVERSE::lib_ecs_hitscan` in `libraries/catalog.json`, with `EcsHitscanSystems.h`, reusable AI skill and the independent `ecs_hitscan_selection_test` fixture. The library catalog was parsed as JSON and checked for duplicate package IDs before writing. Native games can now link this policy through the catalog-generated CMake INTERFACE target with `aiverse_world`.
 - This does not imply full ECS-authoritative FPS hitscan or damage; real `FpsSystems.cpp::traceShot` consumes the policy while preserving FPS-specific rewind, penetration and damage.
 - Verification: GitHub commit only; native CMake/configure/C++ tests not run. Next link FPS target to the public package and test cross-host parity.
+
+
+### 2026-11-18 — Agent skill for queued ECS impacts
+- **Implementation SHA:** `e4b5b30eb7ff0b02a5c051c1393cf7d5b9f247e7`.
+- Added `skills/gameplay/aiverse-ecs-impact-queue/SKILL.md` describing public queue setup and registration, five policy callback stages, bounded event/sequence resource, deterministic processing and explicit legacy RTS immediate-side-effect warning. Cross-genre test and native linkage requirements are documented.
+- **Verification:** document committed, not compiled. Catalog target in skill is not yet available until a following catalog update.
+- **Next:** publish the catalog package, register CTest and standalone runner and verify native results.
