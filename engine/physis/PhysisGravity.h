@@ -58,7 +58,8 @@ inline Vec3 gravityContribution(const GravityField& field,
 // Deterministic field selection: strongest override priority wins; ties are
 // broken with the smallest generation-safe Entity ID (not ECS iteration order).
 // Additive fields are superimposed in fixed-point arithmetic.
-inline Vec3 gravityAt(const World& world, Vec3 position) {
+template<class FieldVisitor>
+inline Vec3 gravityAtWith(const World& world, Vec3 position, FieldVisitor&& visitFields) {
     const GravitySettings defaults{};
     const auto* settings = world.resourceConst<GravitySettings>();
     const GravitySettings& config = settings ? *settings : defaults;
@@ -68,7 +69,7 @@ inline Vec3 gravityAt(const World& world, Vec3 position) {
     std::uint64_t selectedEntity = 0;
     Vec3 overrideAcceleration{};
     Fixed overrideWeight{};
-    world.eachExistingConst<GravityField>([&](Entity e, const GravityField& field) {
+    visitFields([&](Entity e, const GravityField& field) {
         if (!field.enabled) return;
         const Fixed weight = gravityWeight(field, position);
         if (weight <= Fixed{}) return;
@@ -96,4 +97,9 @@ inline Vec3 gravityAt(const World& world, Vec3 position) {
     result.z = fxClamp(result.z, -cap, cap);
     return result;
 }
+inline Vec3 gravityAt(const World& world, Vec3 position) {
+    return gravityAtWith(world, position,
+        [&](auto&& callback) { world.eachExistingConst<GravityField>(callback); });
+}
+
 } // namespace aiverse::physis
