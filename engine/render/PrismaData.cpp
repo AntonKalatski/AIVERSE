@@ -74,6 +74,11 @@ std::vector<PrismaTypeDef> buildCatalog() {
     c.push_back({T::Letterbox, "letterbox", "Кинорамка", "Bars at the top and bottom (cinematic).", C::Cheap, kLow, {
         num("amount", 0.12f, 0, 0.5f, "share of the screen height covered by both bars", "Высота полос"),
         col("color", 0, 0, 0, 0, 1, "bar colour", "Цвет")}});
+    c.push_back({T::DepthOfField, "depthOfField", "Глубина резкости", "Screen-space depth-based defocus. focusDepth and focusRange use hardware depth in [0,1]; optical distance units are not inferred.", C::Heavy, kHigh, {
+        num("focusDepth", 0.5f, 0, 1, "focus point in device depth (0..1)", "Глубина фокуса"),
+        num("focusRange", 0.08f, 0.001f, 1, "sharp depth interval around focus", "Диапазон резкости"),
+        num("maxBlur", 8.0f, 0, 16, "maximum blur radius in output pixels", "Радиус размытия"),
+        num("intensity", 1.0f, 0, 1, "defocus blend strength", "Сила размытия")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -351,6 +356,7 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::ChromaticAberration: return {2.0f, 0};
     case T::Sharpen: return {2.0f, 0};
     case T::Fxaa: return {6.0f, 1};
+    case T::DepthOfField: return {10.0f, 1};
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel
