@@ -181,6 +181,35 @@ test addition currently covers only RHI format mappings in
 and numerical parity remain **NOT RUN**. See
 `docs/handoffs/prisma-stage-13.md`.
 
+
+## Stage 14 — experimental graph-driven SDR FXAA
+
+The first production call site of `PrismaRhiExecutor` is an **opt-in**
+SDR FXAA prepass in `Prisma::resolve()`. Set
+`AIVERSE_PRISMA_GRAPH_FXAA=1` to create a two-external-resource graph
+(`scene-fxaa` -> `fxaa-output`) and execute the existing FXAA pipeline,
+same uniforms and texture bindings, through a single RHI raster pass.
+
+The default code path is unchanged. The experimental path is only used
+when FXAA is active, the scene is RGBA8/SDR, the FXAA pipeline is valid,
+both color textures exist, and the matching depth attachment was created.
+If the graph cannot be compiled/dispatched, the original direct `draw()`
+path runs instead. Graph preflight happens before any draw submission;
+the shader uses exactly one full-screen draw and writes the complete
+destination. The opt-in pass clears neither color nor depth.
+
+The graph has no internally allocated targets; it uses the existing
+`Sized` per-view resources. It does **not** switch on graph-rendered
+HDR, bloom, temporal AA, or the final composite. There is no new
+JSON schema, editor toggle or change to SpectraFX. This is a guarded
+runtime foothold, not a whole-chain render-graph migration.
+
+GPU parity and native CMake/CTest remain **NOT RUN**. The test source in
+`tests/render/prisma_graph.cpp` checks only graph structure and
+single-pass binding/dispatch logic, not Metal/GL pixel correctness.
+For reproduction and outstanding validation, read
+`docs/handoffs/prisma-stage-14.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
