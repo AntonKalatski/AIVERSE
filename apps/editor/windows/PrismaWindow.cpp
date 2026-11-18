@@ -6,6 +6,10 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "../core/PrismaOps.h"
