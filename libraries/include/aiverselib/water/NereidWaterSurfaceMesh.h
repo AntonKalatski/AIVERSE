@@ -49,6 +49,9 @@ struct WaterSurfaceStyle {
     float opacity=0.73f;
     float specular=0.95f;
     float refractionStrength=0.f; // opt-in trace-tier opaque-scene refraction
+    float absorption=0.f; // optical attenuation per metre, 0..4
+    float shoreFoamDepth=0.f; // depth-based shallow foam width in metres, 0..20
+    float depthTint=0.f; // deep-water tint contribution, 0..1
 };
 
 namespace water_mesh_detail {
