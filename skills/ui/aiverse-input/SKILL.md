@@ -40,6 +40,12 @@ Pressed/Released/Tap/DoubleTap/Hold/Pulse trigger edges until physical release,
 while continuous Down-level Actions remain visible. Avoid replaying stale OS
 KeyDown on focus regain. Tests authored but NOT RUN; see Stage 51 handoff.
 
+**Stage 52 RTS captured input:** `ClientInputRouting::onEvent(e,false)`
+suspends only the event's device class, so UI mouse capture cannot erase
+active keyboard camera movement. The RTS client also blocks legacy
+`keys_` fallback on RmlUi/text/modal capture and clears it when gameplay
+keyboard input is disabled. Real UI/native regressions NOT RUN.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
