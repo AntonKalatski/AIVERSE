@@ -684,3 +684,14 @@ multi-plane reflection fallback. Add depth/refraction, per-pixel foam
 or underwater view as another isolated renderer stage with a new
 handoff after every implementation commit. Keep deterministic water
 CPU authoritative and all GPU effects presentation-only.
+
+### Stage 7C follow-up: coarse-LOD foam fix
+
+**Implementation commit:** `a6fe7057b63485a8e9806e97ac4d979f23b826cf`.
+After source review, the far surface geometry was discovered to contain
+boundary-only vertices for some shapes. Per-vertex shoreline foam
+therefore coloured the **entire far surface** as foam. The far LOD now
+skips shoreline foam entirely (near/medium retain the distance-based
+mask). The `ecs_nereid_surface_mesh_test` fixture asserts far box
+vertex foam is zero. This is a visualization correctness fix; the
+GPU/CTest pipeline is **still not verified**.
