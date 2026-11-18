@@ -267,6 +267,7 @@ New game code uses the branded API; old EnhancedInput* includes remain available
 
 namespace flow = aiverse::lib::gameplay::inputflow;
 
+int main() {
 flow::InputFlow input;
 input.defineAction({"Jump", flow::ValueType::Boolean});
 flow::InputContext gameplay{"Gameplay"};
@@ -278,6 +279,9 @@ input.activateContext("Gameplay");
 aiverse::platform::InputFlowAdapter adapter{input};
 // Event callback: adapter.onEvent(e); frame: input.update(dt);
 // Route semantic ActionEvent into validated project Commands.
+(void)adapter;
+return 0;
+}
 ```
 
 The public platform facade `engine/platform/InputFlow.h` exports
@@ -291,3 +295,5 @@ profile filenames are preserved for compatibility.
 
 CI is displayed as **AIVerse InputFlow targeted checks**, but the
 existing test target names remain unchanged for test-runner compatibility.
+
+**Canonical implementation types:** `aiverse::lib::gameplay::inputflow::InputFlow`, `aiverse::platform::InputFlowAdapter`, and `aiverse::platform::InputFlowUsers` are now the actual C++ class names. The older `enhanced::InputSystem`, `platform::EnhancedInputAdapter` and `platform::EnhancedInputUsers` remain type aliases for source compatibility. Headers and other host integration paths are not renamed to avoid disrupting existing projects.
