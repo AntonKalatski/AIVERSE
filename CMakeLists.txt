@@ -2238,3 +2238,11 @@ if(AIVERSE_BUILD_TESTS)
         set_tests_properties(physis_box3d PROPERTIES LABELS "PHYSIS;PHYSICS")
     endif()
 endif()
+
+# PHYSIS Stage 13: unified immutable NatureFieldSample for native consumers.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_presentation_test tests/physis_presentation_test.cpp)
+    target_link_libraries(aiverse_physis_presentation_test PRIVATE aiverse_engine)
+    add_test(NAME physis_presentation COMMAND aiverse_physis_presentation_test)
+    set_tests_properties(physis_presentation PROPERTIES LABELS "PHYSIS")
+endif()
