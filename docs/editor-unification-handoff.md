@@ -1309,3 +1309,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `c5625676b797d516e55667470a295b12c1e61686`.
 - Updated `skills/gameplay/aiverse-ecs-impact-queue/SKILL.md`: use provided `saveOrderedImpactQueue`, `loadOrderedImpactQueue` and `hashOrderedImpactQueue` from `GameModule` for stable versioned bytes and full checksum, while World snapshots already clone the resource. Explicitly warns that snapshots do not serialize the byte save format automatically.
 - **Verification:** documentation only, native test remains unverified.
+
+### 2026-11-18 — Standalone regression runner for ECS hitscan resolution
+- Implementation SHA: `5588ca512d3866704363dc7ed006abb8a5612f7d`.
+- `tests/run_ecs_experiment_suite.sh` now compiles/runs `ecs-hitscan-resolution` with the same public library and world/simulation/fixed-point sources as `ecs-hitscan-selection`. The test covers source order, invalid/occluded requests, consumed intent and deterministic deep/COW replay.
+- Verification: GitHub code commit only. No native compiler or standalone suite executed here. Next: expose public package+skill and check outstanding CI.
