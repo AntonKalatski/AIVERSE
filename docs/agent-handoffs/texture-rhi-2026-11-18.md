@@ -3516,3 +3516,54 @@ working Vulkan device, and test analogous Metal/GL texture
 enumeration and editor GUI. Check actual format/memory numbers,
 including compressed textures, cube arrays, 3D and MSAA. Continue
 separate source/handoff commits.
+
+## Stage 8F — editor readback preview for selected mip/array/cubemap face (2026-11-18)
+
+**Code commit:** `09c2ef46a680bb5a3d31e8ac6fcc783f4745c7b4`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Changed file:** `apps/editor/windows/TextureResourcesWindow.cpp`.
+
+**Implementation/API:** The opt-in, read-only `Графика → GPU Текстуры`
+inspector now exposes `Read mip` and `Read face / layer`
+controls plus an explicit `Read GPU mip / face` action.
+The editor calls the existing optional
+`gfx::Device::readTextureAsync(TextureHandle,TextureReadbackDesc,
+TextureReadFn)`, without treating Texture2DArray/Cube and
+multisampled/depth resources as sampler2D. A later owner-thread
+callback produces a bounded CPU preview sampled down to at
+most 32×32 colored squares using ImGui draw-list rectangles:
+no additional GPU preview allocations or texture ownership
+are introduced. RGBA8/sRGB use original channels; RGBA16F
+diagnostics are approximately tonemapped for display with
+explicit warning. The full readback result vector is discarded
+after creating its small preview, avoiding persistent large
+CPU texture copies.
+
+**Lifetime/safety:** Async callbacks hold a `weak_ptr` to
+a private preview state, not the editor window's `this`.
+Every new request increments a revision; stale callbacks and
+destroyed UI windows cannot publish into invalid state.
+If the selected resource disappears, the live GPU table
+clears its selection. Unsupported GPU formats and device
+operations display a readable fail-closed message; the UI
+never implies that unsupported readback succeeded.
+The existing direct 2D ImGui texture preview remains
+unchanged and closed by default.
+
+**Compatibility:** No authoritative ECS/gameplay/save/network
+changes. The inspector reuses `Device::textureResources` and
+optional readback; it does not modify native game texture handles.
+
+**Verification:** GitHub code commit succeeded. **Editor C++
+build NOT RUN, CTest NOT RUN, real Metal/GL/Vulkan readback/UI
+validation NOT RUN, mobile/WebGL not checked.** Preview pixel
+orientation, driver format support, shader binding and lifetime
+still need real-device checks.
+
+**Next:** Run editor build and all texture CPU fixtures; verify
+readback previews for Metal GL33 GLES3 and Vulkan on actual
+resources with selected mip/layer/cubemap face. Complete
+remaining BasisLZ/UASTC transcode, broad OpenEXR codec coverage
+and compute storage-image support as separate bounded stages.
+Record every tested SHA and actual outcomes; leave PR Draft
+until validated.
