@@ -1158,3 +1158,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `216cbfdd1163ed28cde5da5083a09172bdbfbc54`.
 - Added `tests/ecs_hitscan_selection_test.cpp`: constructs candidate hitboxes independently of FPS/RTS modules, runs the same shared policy from FPS-style and RTS-style host instantiations, and checks fixed-point 3/10 nearest intersection, stable tie resolution, invalid/stale target eligibility, fallback to next valid snapshot pose, obstruction maximum-fraction cutoff and no-hit outcome. Exceptions enforce assertions even with NDEBUG.
 - This is a pure hitscan candidate-selection test; it **does not** yet test a complete FPS rewind server, damage side effects or network replay. Native compile/run not performed. Next register with CMake/standalone runner, publish library metadata and skill, and verify build.
+
+### 2026-11-18 — Registered native hitscan CTest
+- Implementation SHA: `738ae12e49820e9a059d84f71aa2cd1e394557c9`.
+- `CMakeLists.txt` registers `aiverse_ecs_hitscan_selection_test` and `ecs_hitscan_selection_test`, linking `aiverse_engine`, `aiverse_world` and `AIVERSE::libraries` without FPS or RTS gameplay modules. This exercises the shared public policy in unrelated host fixtures.
+- Verification: GitHub source commit only; native CMake configure/compile/CTest not run.
