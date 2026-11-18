@@ -1371,3 +1371,55 @@ Then validate DDS cube array / 3D on real backends,
 complete GL/Vulkan MSAA/resolve, and extend remaining
 compressed and HDR pixel formats. After each bounded stage
 commit handoff separately with exact SHA and test status.
+
+## Stage 5A — native BC4/BC5/EAC_R11 and BC5 CPU normal reconstruction (2026-11-18)
+
+**Code commit:** `b47def0ba8c23dc284907ce44bc25e74f4d9b2c9`.
+**Working branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Changed:** `engine/gfx/Gfx.h`, Metal, GL and Vulkan RHI
+texture implementations, `engine/render/TextureCodec.h/.cpp`,
+`engine/render/ImageDds.cpp`, `engine/render/TextureAsset.h`,
+`engine/render/Model.cpp` (nine files).
+
+**Source work:** Append `PixelFormat::BC4`, `PixelFormat::BC5`,
+`PixelFormat::EAC_R11` without renumbering existing public enum
+entries; add compressed-format validation, native Metal pixel formats
+(BC4/BC5 on BC-capable hardware, EAC_R11 on Apple GPUs), GL RGTC1/2
+and EAC_R11 compressed enums with capability checks, and Vulkan
+BC4/BC5/EAC_R11 `VkFormat` mappings, compressed-image flags and
+correct 8/16-byte block validation. Extend `BlockFormat` by appending
+BC5 and KTX2 vkFormat 141 mapping; new CPU BC5 block decoder
+reconstructs tangent-space positive normal Z to match existing DDS
+BC5 CPU fallback. DDS container parser now preserves BC5 blocks
+instead of eagerly converting all data to RGBA8. The generic asset
+GPU upload helper offers native BC4/BC5/EAC_R11 where supported.
+
+**Important BC5 parity guard:** Native BC5 GPU sampling exposes RG
+only; it does not reconstruct positive normal Z. The new
+`TextureUploadOptions.shaderReconstructsBc5NormalZ` defaults to
+**false**, preserving the existing CPU-decoded RGBA normal-map
+behavior; enable it only in consumers whose shaders correctly
+reconstruct Z. Existing model GPU compressed path adds BC4/EAC_R11
+support but keeps BC5 on the decoded fallback.
+
+**Compatibility:** All existing `PixelFormat` and `BlockFormat`
+numeric values are preserved by appending entries. Existing 2D
+materials, saves, network, ECS authority and asset schemas unchanged.
+No new file dependencies.
+
+**NOT implemented:** sRGB compressed BC native format variants
+(other than existing manual shader decode), BC5 signed SNORM,
+BC6H, RGBA integer/float variants, HDR/EXR, BasisLZ/UASTC
+transcoding or GL/Vulkan MSAA resolves.
+
+**Verification:** GitHub source commit/ref update confirmed.
+Native Metal/GL/Vulkan compile, CTest and GPU validation:
+**NOT RUN** (repository checkout unavailable through this runtime).
+No passing CI result asserted.
+
+**Next:** Add unit tests for BC5 CPU decoded RGBA normal,
+KTX2 VK_FORMAT_BC5_UNORM and DDS DX10 BC5 preserved blocks.
+Use mock device to prove native BC5 GPU upload is gated by
+`shaderReconstructsBc5NormalZ` and that the default path
+still reconstructs the Z component. Validate native compiler and
+GPU format support. Commit test stage and separate handoff.
