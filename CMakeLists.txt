@@ -2122,3 +2122,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_vfx_ecs_tests PRIVATE aiverse_fx aiverse_engine)
     add_test(NAME vfx_ecs_presentation COMMAND aiverse_vfx_ecs_tests)
 endif()
+
+# Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
+    target_include_directories(aiverse_vfx_assets_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_vfx_assets_tests PRIVATE aiverse_fx)
+    add_test(NAME vfx_graph_assets COMMAND aiverse_vfx_assets_tests)
+endif()
