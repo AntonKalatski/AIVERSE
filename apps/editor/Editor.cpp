@@ -22,6 +22,7 @@
 #include "modules/rts/RtsTiles.h"
 #include "modules/rts/view/RtsCamera.h"
 #include "modules/rts/view/RtsOverlayData.h"
+#include "modules/rts/view/RtsSelectionPresentation.h"
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -425,7 +426,7 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
             if (!planetLocal(d.entities[i].at, eb, el) || eb != body) continue;
             if (objectHidden(d.entities[i].owner, d.entities[i].type) || objectLocked(d.entities[i].owner, d.entities[i].type)) continue;
             const int t = rules().findType(d.entities[i].type);
-            const float r = t >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(t)) + 0.2f : 0.6f;
+            const float r = t >= 0 ? game::view_adapter::selectionRadius(rules(),uint16_t(t)) + 0.2f : 0.6f;
             const float dd = length(el - local);
             if (dd < r && dd < bestD) { best = int(i); bestD = dd; }
         }
@@ -447,7 +448,7 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
             const auto& allTypes = rules().types;
             const bool structure = ti >= 0 && allTypes[size_t(ti)].structure;
             const float radius = ti >= 0
-                ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(ti))
+                ? game::view_adapter::selectionRadius(rules(),uint16_t(ti))
                 : 0.6f;
             const float halfX = structure
                 ? std::max(.5f, float(allTypes[size_t(ti)].footprintW) * .5f)
@@ -483,7 +484,7 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
         const auto& e = d.entities[i];
         if (objectHidden(e.owner, e.type) || objectLocked(e.owner, e.type)) continue;
         const int t = rules().findType(e.type);
-        const float radius = t >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(t)) + 0.2f : 0.6f;
+        const float radius = t >= 0 ? game::view_adapter::selectionRadius(rules(),uint16_t(t)) + 0.2f : 0.6f;
         const float groundY = const_cast<game::RtsView&>(view_).heightAt(editGrid(), e.x, e.z);
         float2 at, edge, top;
         if (!cam.worldToScreen({e.x, groundY, e.z}, vp.pointsW, vp.pointsH, at)) continue;
@@ -511,7 +512,7 @@ int Editor::pickEntity(const Viewport& vp, const RTSCamera& cam, float sx, float
         const auto& e = d.entities[i];
         if (objectHidden(e.owner, e.type) || objectLocked(e.owner, e.type)) continue;
         const int t = rules().findType(e.type);
-        const float r = t >= 0 ? const_cast<game::RtsView&>(view_).selectionRadius(uint16_t(t)) + 0.2f : 0.6f;
+        const float r = t >= 0 ? game::view_adapter::selectionRadius(rules(),uint16_t(t)) + 0.2f : 0.6f;
         const float dd = std::hypot(x - e.x, z - e.z);
         if (dd < r && dd < bestD) { best = int(i); bestD = dd; }
     }
