@@ -14,8 +14,8 @@
 namespace aiverse::terraweave {
 namespace horizon_archive_detail {
 
-inline constexpr uint32_t kMagic=0x36485754u; // "TWH6" in little endian
-inline constexpr uint32_t kVersion=6;
+inline constexpr uint32_t kMagic=0x37485754u; // "TWH7" in little endian
+inline constexpr uint32_t kVersion=7;
 inline constexpr size_t kHeaderBytes=24; // magic,version,fingerprint,checksum
 inline constexpr size_t kMaxBytes=20u*1024u*1024u;
 
@@ -69,6 +69,9 @@ inline void validate(const HorizonBake& b) {
        b.terrainSkirtDepthCm<0||b.terrainSkirtDepthCm>5000||
        b.innerTerrainLipCm<0||b.innerTerrainLipCm>200 ||
        b.maxNearClipTriangles>8192 ||
+       b.maxNearWeldSlopePermille>8000 ||
+       b.nearSeamNormalBlendPercent>100 ||
+       (b.nearWeldSlopeFallback && !b.nearSeamSamples.empty()) ||
        b.nearClipRects.size()>1024 ||
        b.nearSeamSamples.size()>4096 ||
        std::any_of(b.nearSeamSamples.begin(),b.nearSeamSamples.end(),
@@ -156,6 +159,8 @@ inline uint64_t horizonArchiveFingerprint(
     add(settings.terrainGridSnapSteps);
     add(static_cast<uint32_t>(settings.innerTerrainLipCm));
     add(settings.maxNearClipTriangles);
+    add(settings.maxNearWeldSlopePermille);
+    add(settings.nearSeamNormalBlendPercent);
     add(settings.terrainResolution);
     add(settings.atlasTilePixels);
     add(static_cast<uint32_t>(settings.canopyHeightCm));
@@ -179,7 +184,7 @@ inline std::vector<uint8_t> encodeHorizonArchive(
                 bake.clusters.size()*60+bake.terrainVertices.size()*32+
                 bake.nearOwnedQuads.size()+
                 bake.nearClipRects.size()*32+
-                bake.nearSeamSamples.size()*20+128);
+                bake.nearSeamSamples.size()*20+140);
     put32(out,kMagic);
     put32(out,kVersion);
     put64(out,fingerprint);
@@ -190,6 +195,9 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     putI32(out,bake.terrainSkirtDepthCm);
     putI32(out,bake.innerTerrainLipCm);
     put32(out,bake.maxNearClipTriangles);
+    put32(out,bake.maxNearWeldSlopePermille);
+    put32(out,bake.nearSeamNormalBlendPercent);
+    put32(out,bake.nearWeldSlopeFallback?1u:0u);
     putI64(out,bake.cameraXcm);putI64(out,bake.cameraZcm);
     put32(out,bake.atlasWidth);put32(out,bake.atlasHeight);
     put32(out,static_cast<uint32_t>(bake.terrainVertices.size()));
@@ -249,6 +257,12 @@ inline HorizonBake decodeHorizonArchive(
     b.terrainSkirtDepthCm=getI32(bytes,at);
     b.innerTerrainLipCm=getI32(bytes,at);
     b.maxNearClipTriangles=get32(bytes,at);
+    b.maxNearWeldSlopePermille=get32(bytes,at);
+    b.nearSeamNormalBlendPercent=get32(bytes,at);
+    const uint32_t slopeFallback=get32(bytes,at);
+    if(slopeFallback>1u)
+        throw std::invalid_argument("TerraWeave Horizon slope fallback flag");
+    b.nearWeldSlopeFallback=slopeFallback!=0u;
     b.cameraXcm=getI64(bytes,at);b.cameraZcm=getI64(bytes,at);
     b.atlasWidth=get32(bytes,at);b.atlasHeight=get32(bytes,at);
     const uint32_t terrainCount=get32(bytes,at);
