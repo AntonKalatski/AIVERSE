@@ -1031,3 +1031,27 @@ or equivalent immutable snapshot while worker jobs are running.
 Do not capture mutable ECS world objects in worker callbacks.
 Callback source values and GPU visual agreement have **not**
 been verified by tests or screenshots in this stage.
+
+### Horizon snapshot connection in WorldScene (stage 9b)
+
+`TerraWeaveHorizonScene::setSurfaceSources(
+std::shared_ptr<const HorizonSurfaceSources>)` accepts an immutable
+sampling snapshot from the owner thread. Internally the worker copies
+the shared pointer *before* invoking `bakeHorizon`. Replacing a
+snapshot cancels the selected asynchronous cell and queues a new
+revision on the next `update()`; the last successfully uploaded
+model remains available until a replacement succeeds.
+
+`WorldScene` now populates authored `AuthoredWorldHeightSnapshot`
+and `FoliageExclusionMask` whenever **either** an opt-in near forest
+or an opt-in Horizon renderer is active. It supplies resident height
+tiles to the far-terrain sampler and uses resident collision-box
+footprints to clear canopy. It does not modify source collision,
+gameplay ECS or deterministic placement IDs. Unloaded terrain tiles
+fall back to the Horizon procedural height seed; this is not yet a
+guarantee of seamless authored terrain beyond the resident world.
+
+Do **not** call `setSurfaceSources` once per frame: it invalidates
+the current pending region and would cause repeated CPU bakes.
+Only publish an updated snapshot when the underlying authored
+terrain/obstacle residency changes, as `WorldScene` currently does.
