@@ -1597,3 +1597,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `54cd9fa586ac190f762603c391a562e62f47ae85`.
 - Extended `ecsProjectileBranchAuthorityParityCase` in `tests/fps/projectiles.inc`: before the first FPS tick it inserts a passive, nonprogrammed projectile into the legacy `State` and **only into the ECS `ProjectileRuntime` pool** for the authoritative host, leaving its legacy `State::projectiles` projection intentionally stale. This checks `fps.ecsHydrate` index discovery, direct-ECS stage handling of mixed nonprogrammed/programmed bullets, original ordering of branch children, Entity IDs and projections across COW/deep snapshots and save v9, while ensuring the passive object remains after active branches expire.
 - **Verification:** GitHub source committed; native compilation/CTest/assertions **not run**. Validate the runtime `DynamicEntityIndex` reconciliation before claiming fully authoritative ECS projectile ownership. Compatibility paths still mutate vector later in main tick.
+
+
+### 2026-11-18 — Explicit std::size_t include for FPS direct projectile executor
+- **Code SHA:** `5cc5039a3102ca3037b9321e969df4be13798e23`.
+- Included `<cstddef>` explicitly in `modules/fps/FpsModule.h` for the new private `stepProgrammedProjectile(...,std::size_t)` declaration. Avoids relying on transitive C++ header contents.
+- **Verification:** source commit only, native build/CTest not run.
