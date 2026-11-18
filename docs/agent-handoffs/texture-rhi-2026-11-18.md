@@ -5267,3 +5267,25 @@ Verification: GitHub test commit succeeded; C++ compile
 NOT RUN; Vulkan CTest/readback NOT RUN; no PASS claims.
 Next: run Vulkan backend test with SDK and compute-capable
 driver, inspect precise texture bytes and fix any failures.
+
+## Stage 8P — UASTC_HDR decoder ABI and libktx dependency fixture (2026-11-18)
+
+Test code commit: 4ea9117d44e981970295dc61a543ab9a7bbe2f55.
+File: tests/render/ktx2_transcode.cpp.
+Adds an actual typed function pointer instantiation for
+uploadKtx2UastcHdrWithLibktx(Device&,bytes,error), ensuring
+the newly added HDR entry point remains compilable from
+a native consumer even when the codec macro is disabled.
+When AIVERSE_TEXTURE_WITH_LIBKTX=ON the fixture checks
+that the installed libktx development package exposes
+ktxTexture2_TranscodeBasis, ktxTexture2_GetImageOffset and
+ktxTexture2_IsHDR, in addition to the existing type check.
+This test does NOT include production encoded UASTC_HDR
+payloads; true half-texture content/GPU uploads still
+need runtime test assets and a native library build.
+Compatibility: source test-only; no renderer or save changes.
+Verification: GitHub source commit succeeded; native
+C++/libktx compile, CTest, HDR GPU output NOT RUN.
+Next: check exact libc/SDK ABI on Linux/macOS/Windows
+and add real UASTC_HDR texture fixture when a licensed
+sample becomes available.
