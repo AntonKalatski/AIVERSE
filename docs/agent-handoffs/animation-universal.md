@@ -238,3 +238,29 @@ before calling this stage validated.
 - Next: validate CMake and existing FPS/RTS test suites; implement a
   presentation-only physical-pose blend adapter and shared animation budget
   with tests, then full per-genre integration and GPU stress benchmarks.
+
+
+## Stage 10: external-physics pose blend adapter — 2026-11-18
+
+- Implementation commit: `f890280d4d0d213eeaa6a58ccfb1d2b2ddbf4d6d`.
+- Pure policy: `libraries/include/aiverselib/animation/PhysicalPoseBlend.h`,
+  `blendPhysicalPose(Pose&, const Pose&, boneWeights, globalWeight)`.
+- Validates all bone/morph data and masks before mutating output (atomic
+  failure). Blends local translations, rotations, scales, morphs.
+- Added optional `AnimationPhysicalPoseComponent` with externally supplied
+  local skeletal pose/mask/weight to the independent presentation World.
+- `stepAnimationPresentation` overlays physical pose after graph/montages
+  and reevaluates every frame while a physical pose is active, regardless
+  of animation LOD sampling interval.
+- Test: `tests/animation/physical_pose.cpp` / executable
+  `aiverse_animation_physical_pose_tests`, CTest `animation_physical_pose`.
+- Does NOT create ragdoll bodies/constraints, convert world-space body
+  transforms to local joints, or replace the authoritative physics solver.
+  Such adapters belong to future independent stages.
+- Compatibility: opt-in components; existing gameplay/save/rollback and
+  RtsView paths unchanged.
+- Validation: NOT RUN (no local checkout). Build with
+  `cmake --build build/ecs-test --target aiverse_animation_physical_pose_tests`,
+  then `ctest --test-dir build/ecs-test -R animation_physical_pose --output-on-failure`.
+- Next: shared camera-size/priority evaluation budget, CI build fixes,
+  production FPS character preview and more authoritative motor integration.
