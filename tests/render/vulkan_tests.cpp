@@ -345,6 +345,112 @@ void main() {
         if (target0.valid()) d.destroyTexture(target0);
         if (target1.valid()) d.destroyTexture(target1);
     }
+    {   // Vulkan 4x MSAA: two color outputs, matching depth and independent resolves.
+        TextureDesc ms; ms.width = W; ms.height = H;
+        ms.renderTarget = true; ms.sampleCount = 4;
+        const TextureHandle ms0 = d.createTexture(ms);
+        const TextureHandle ms1 = d.createTexture(ms);
+        TextureDesc depthMs = ms; depthMs.format = PixelFormat::Depth;
+        const TextureHandle msDepth = d.createTexture(depthMs);
+        TextureDesc resolveDesc = ms; resolveDesc.sampleCount = 1;
+        const TextureHandle resolve0 = d.createTexture(resolveDesc);
+        const TextureHandle resolve1 = d.createTexture(resolveDesc);
+        if (!ms0.valid() || !ms1.valid() || !msDepth.valid() ||
+            !resolve0.valid() || !resolve1.valid()) {
+            std::printf("Vulkan MSAA resolve: 4x unavailable on this device; fixture skipped\n");
+        } else {
+            RenderTargetPassDesc pass;
+            pass.colorCount = 2;
+            pass.colors[0].texture = ms0;
+            pass.colors[1].texture = ms1;
+            pass.colors[0].resolveTexture = resolve0;
+            pass.colors[1].resolveTexture = resolve1;
+            pass.colors[0].clearColor[0] = 1.0f;
+            pass.colors[0].clearColor[3] = 1.0f;
+            pass.colors[1].clearColor[1] = 1.0f;
+            pass.colors[1].clearColor[3] = 1.0f;
+            pass.depth.texture = msDepth;
+            pass.clearDepth = 1.0f;
+            Image cleared = frame(d, [&] {
+                const bool started = d.beginRenderTargets(pass);
+                CHECK(started);
+                if (started) d.endPass();
+                d.beginPass(screen);
+                d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                d.setTexture(0, resolve0);
+                d.setViewport({0, 0, W / 2, H});
+                d.draw(6);
+                d.setTexture(0, resolve1);
+                d.setViewport({W / 2, 0, W / 2, H});
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(cleared.w == W && cleared.h == H);
+            if (cleared.w == W && cleared.h == H) {
+                CHECK(near(cleared.at(4, H / 2), 255, 0, 0));
+                CHECK(near(cleared.at(W - 4, H / 2), 0, 255, 0));
+            }
+
+            ShaderDesc sdMrt;
+            sdMrt.glslVertex = kVs;
+            sdMrt.glslFragment = R"(
+in vec2 v_uv;
+layout(location=0) out vec4 o0;
+layout(location=1) out vec4 o1;
+void main() {
+    o0 = vec4(0.0, 0.0, 1.0, 1.0);
+    o1 = vec4(1.0, 1.0, 0.0, 1.0);
+}
+)";
+            const ShaderHandle shader = d.createShader(sdMrt);
+            CHECK(shader.valid());
+            PipelineDesc pd;
+            pd.shader = shader;
+            pd.attrs[0] = {0, VertexFormat::Float3, 0};
+            pd.attrs[1] = {1, VertexFormat::Float2, 12};
+            pd.attrCount = 2;
+            pd.stride = sizeof(Vtx);
+            pd.indexType = IndexType::None;
+            pd.depthTest = pd.depthWrite = false;
+            pd.colorAttachmentCount = 2;
+            pd.sampleCount = 4;
+            const PipelineHandle pipeline = shader.valid() ? d.createPipeline(pd) : PipelineHandle{};
+            CHECK(pipeline.valid());
+            if (pipeline.valid()) {
+                Image filled = frame(d, [&] {
+                    const bool started = d.beginRenderTargets(pass);
+                    CHECK(started);
+                    if (started) {
+                        d.setPipeline(pipeline);
+                        d.setVertexBuffer(vbFull);
+                        d.draw(6);
+                        d.endPass();
+                    }
+                    d.beginPass(screen);
+                    d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                    d.setTexture(0, resolve0);
+                    d.setViewport({0, 0, W / 2, H});
+                    d.draw(6);
+                    d.setTexture(0, resolve1);
+                    d.setViewport({W / 2, 0, W / 2, H});
+                    d.draw(6);
+                    d.endPass();
+                });
+                CHECK(filled.w == W && filled.h == H);
+                if (filled.w == W && filled.h == H) {
+                    CHECK(near(filled.at(4, H / 2), 0, 0, 255));
+                    CHECK(near(filled.at(W - 4, H / 2), 255, 255, 0));
+                }
+            }
+            if (pipeline.valid()) d.destroyPipeline(pipeline);
+            if (shader.valid()) d.destroyShader(shader);
+        }
+        if (ms0.valid()) d.destroyTexture(ms0);
+        if (ms1.valid()) d.destroyTexture(ms1);
+        if (msDepth.valid()) d.destroyTexture(msDepth);
+        if (resolve0.valid()) d.destroyTexture(resolve0);
+        if (resolve1.valid()) d.destroyTexture(resolve1);
+    }
     {   // a dynamic buffer rewritten between draws of one frame: each draw keeps its data
         const BufferHandle dyn = d.createBuffer(bufferDesc(Usage::Dynamic, top.size() * sizeof(Vtx), nullptr));
         const auto bottom = quad(-1, -1, 1, 0, 0);
