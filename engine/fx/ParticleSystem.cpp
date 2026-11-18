@@ -218,6 +218,8 @@ void ParticleSystem::Impl::build(EffectRT& e, std::vector<std::string>& errors) 
         const EmitterDef& d = e.def.emitters[i];
         const std::string where = "fx/" + e.name + ".json: emitters[" + std::to_string(i) + "]";
         EmitterRT r;
+        if(!d.particleProgram.isNull())
+            spectra::program::compile(d.particleProgram,r.particleProgram,errors);
         r.tex = texture(d.texture, errors, where);
         r.batch = batchFor(r.tex, d.blend, d.shaderGraph);
         if(!batches[r.batch].error.empty()) errors.push_back(where + ": " + batches[r.batch].error);
@@ -234,7 +236,8 @@ void ParticleSystem::Impl::build(EffectRT& e, std::vector<std::string>& errors) 
         r.modules = d.localSpace || d.maxParticles > 0 || d.speedLimit.max > 0 || d.speedLimit.curved() || d.noise.enabled() || d.collision.enabled ||
                     !d.subEmitters.empty() || d.trail.enabled || d.light.enabled || d.velocity.x != 0 || d.velocity.y != 0 || d.velocity.z != 0 ||
                     r.anim || d.force.enabled || d.speedLimitAxes.enabled || d.externalForces > 0 || d.trigger.enabled || d.spin3D ||
-                    d.spinBySpeed.enabled || d.ringBuffer;
+                    d.spinBySpeed.enabled || d.ringBuffer ||
+                    !d.particleProgram.isNull();
         lutColor(r.startLut, d.startColor);
         lutColor(r.startMinLut, d.startColorMin);
         lutColor(r.colorSpeed, d.colorBySpeed);
@@ -337,6 +340,7 @@ void ParticleSystem::Impl::die(size_t i, bool events) {
         if (in->live > 0) --in->live;
     }
     const EmitterDef& d = defOf(p);
+    if(events)runProgram(p,spectra::program::Stage::Death,0.f);
     if (events && rtOf(p).modules) queueSub(p, FxSubEvent::Death, p.pos);
     if (p.trail >= 0 && !d.trail.dieWithParticles && trails[size_t(p.trail)].count > 1) {   // the trail fades out on its own
         orphans.push_back({p.trail, p.effect, p.emitter, p.scale, sizeNow(p, lifeT(p)), d.trail.inheritColor ? colorNow(p) : p.tint});
@@ -544,6 +548,12 @@ void ParticleSystem::Impl::stepParticle(size_t& i, float dt, bool& removed) {
     }
     p.pos += vt * dt;
     p.vtot = vt;
+    // Additional expression-program updates run once after standard
+    // integration, before collision/triggers, without replacing base physics.
+    if(er.particleProgram.enabled(spectra::program::Stage::Update)) {
+        runProgram(p,spectra::program::Stage::Update,dt);
+        p.vtot=p.vel; // expose any scripted velocity change to the renderer
+    }
     if (d.spin.curved()) p.rot += d.spin.at(t, prand(p.uid, 31)) * kDeg * dt * ((p.flags & 32) ? -1.0f : 1.0f);
     else p.rot += p.spin * dt;
     if (modules) {
@@ -587,6 +597,7 @@ void ParticleSystem::Impl::stepParticle(size_t& i, float dt, bool& removed) {
             }
             if (hit) {
                 p.age += c.lifeLoss / p.invLife;
+                runProgram(p,spectra::program::Stage::Collision,dt);
                 queueSub(p, FxSubEvent::Collision, p.pos);
                 const float sp = render::length(p.vel);
                 if (sp < c.minKillSpeed * p.scale || (c.maxKillSpeed > 0 && before > c.maxKillSpeed * p.scale) || p.age * p.invLife >= 1.0f) {
@@ -605,6 +616,8 @@ void ParticleSystem::Impl::stepParticle(size_t& i, float dt, bool& removed) {
             const bool known = p.flags & 8, was = p.flags & 4;
             p.flags = uint8_t((p.flags & ~12) | 8 | (inside ? 4 : 0));
             FxTriggerAction act = inside ? tg.inside : tg.outside;
+            if((known && inside!=was) || (!known && act==FxTriggerAction::Callback))
+                runProgram(p,spectra::program::Stage::Trigger,dt);
             if (known && inside != was) {
                 FxTriggerAction edge = inside ? tg.enter : tg.exit;
                 if (edge == FxTriggerAction::Kill) act = edge;
