@@ -12,6 +12,7 @@
 #include <tuple>
 #include <span>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -79,6 +80,10 @@ struct HorizonSurfaceSources {
     // intersecting the requested distant terrain footprint. Return false
     // for overflow to disable fine clipping for this bake safely.
     std::function<bool(RectCm,std::vector<RectCm>&)> collectNearTerrainRects;
+    // Exact authored near-surface height in world centimetres; nullopt
+    // means the point is not resident. Called on CPU during baking only.
+    std::function<std::optional<int32_t>(int64_t,int64_t)>
+        nearGroundHeightAtCm;
 };
 
 struct HorizonBake {
@@ -102,6 +107,13 @@ struct HorizonBake {
     // snapshot of the exact resident tiles used by this bake (at most 1024).
     std::vector<RectCm> nearClipRects;
     uint32_t maxNearClipTriangles = 0; // 0=coarse legacy; cap on additional partial triangles
+    // CPU-baked render-only seam samples. Q16 centimetres retain fractional
+    // polygon intersection coordinates across archive roundtrips.
+    struct NearSeamSample {
+        int64_t xQ16cm=0,zQ16cm=0;
+        int32_t nearHeightCm=0;
+    };
+    std::vector<NearSeamSample> nearSeamSamples; // capped at 4096 unique points
 };
 
 namespace horizon_detail {
