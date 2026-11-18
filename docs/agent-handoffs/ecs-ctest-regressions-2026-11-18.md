@@ -56,3 +56,37 @@ The agent's container had no local AIVERSE checkout and
 `git ls-remote https://github.com/chromealex/AIVERSE.git` failed DNS resolution,
 so this handoff does **not** certify a successful macOS build or CTest.
 Preserve shared-branch concurrent agent work; do not force-push.
+
+## Completed follow-up — final hitscan selection assertion (2026-11-18)
+
+User's Mac Studio rerun after rebuilding reported **3/4 passed**, with
+`ecs_hitscan_resolution_test` and `fps` passing; the only remaining
+failure was `ecs_hitscan_selection_test` throwing `unexpected on-hit effect`.
+(The fourth passing test was `ecs_projectile_composition_test`.)
+
+Root cause: `resolveOrderedProjectileImpact` unconditionally invokes its
+`AfterDirect` hook immediately after `DirectHit` regardless of whether
+the weapon has any optional effect. The test incorrectly supplied a
+throwing callback as if the hook would be skipped when no on-hit effect
+is configured. Changing the common library would break existing
+cross-genre ordered impact expectations.
+
+Fix commit: `28899abf48d27506a364cf5e4ca213a08fdf4663`
+in `tests/ecs_hitscan_selection_test.cpp`. The empty on-hit stage is
+implemented as an effect-free hook that counts invocations and asserts
+its position after direct damage. The blocked-hit case also asserts
+no hooks run. No gameplay library, collision policy, or FPS/RTS logic
+was modified.
+
+**Validation pending:** rerun the user-side macOS CMake target and the
+four-test CTest filter below. This agent had GitHub-source access but no
+native Mac build/CTest; do not claim all four tests are green until
+user/CI confirms.
+
+```sh
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake --build build/ecs-test --parallel 4 \
+  --target aiverse_ecs_hitscan_selection_test
+ctest --test-dir build/ecs-test --output-on-failure \
+  -R '^(fps|ecs_projectile_composition_test|ecs_hitscan_resolution_test|ecs_hitscan_selection_test)$'
+```
