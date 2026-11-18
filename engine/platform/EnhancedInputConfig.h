@@ -279,14 +279,20 @@ inline bool readTriggers(const Json& value,std::vector<ei::Trigger>& out,
         if(kind=="down")t=ei::Trigger::down();
         else if(kind=="pressed")t=ei::Trigger::pressed();
         else if(kind=="released")t=ei::Trigger::released();
-        else if(kind=="hold"||kind=="tap"){
+        else if(kind=="hold"||kind=="tap"||kind=="doubleTap"||
+                kind=="holdAndRelease"||kind=="pulse"){
             float seconds=0;
-            if(!number(j["seconds"],seconds,0,120,at+".seconds",error))return false;
-            t=kind=="hold"?ei::Trigger::hold(seconds):ei::Trigger::tap(seconds);
-        }else if(kind=="chord"){
+            if(!number(j["seconds"],seconds,kind=="pulse"?0.01f:0.0f,
+                       120,at+".seconds",error))return false;
+            if(kind=="hold")t=ei::Trigger::hold(seconds);
+            else if(kind=="tap")t=ei::Trigger::tap(seconds);
+            else if(kind=="doubleTap")t=ei::Trigger::doubleTap(seconds);
+            else if(kind=="holdAndRelease")t=ei::Trigger::holdAndRelease(seconds);
+            else t=ei::Trigger::pulse(seconds);
+        }else if(kind=="chord"||kind=="notChord"){
             std::string action;
             if(!text(j["action"],action,at+".action",error))return false;
-            t=ei::Trigger::chord(std::move(action));
+            t=kind=="chord"?ei::Trigger::chord(std::move(action)):ei::Trigger::notChord(std::move(action));
         }else return fail(error,at+".type","unknown trigger");
         out.push_back(std::move(t));
     }
@@ -304,11 +310,17 @@ inline Json writeTriggers(std::span<const ei::Trigger> triggers) {
         case ei::TriggerKind::Hold:type="hold";break;
         case ei::TriggerKind::Tap:type="tap";break;
         case ei::TriggerKind::Chord:type="chord";break;
+        case ei::TriggerKind::NotChord:type="notChord";break;
+        case ei::TriggerKind::DoubleTap:type="doubleTap";break;
+        case ei::TriggerKind::HoldAndRelease:type="holdAndRelease";break;
+        case ei::TriggerKind::Pulse:type="pulse";break;
         }
         item.set("type",Json::string(type));
-        if(trigger.kind==ei::TriggerKind::Hold||trigger.kind==ei::TriggerKind::Tap)
+        if(trigger.kind==ei::TriggerKind::Hold||trigger.kind==ei::TriggerKind::Tap||
+           trigger.kind==ei::TriggerKind::DoubleTap||
+           trigger.kind==ei::TriggerKind::HoldAndRelease||trigger.kind==ei::TriggerKind::Pulse)
             item.set("seconds",Json::number(double(trigger.seconds)));
-        if(trigger.kind==ei::TriggerKind::Chord)
+        if(trigger.kind==ei::TriggerKind::Chord||trigger.kind==ei::TriggerKind::NotChord)
             item.set("action",Json::string(trigger.chordAction));
         result.push(std::move(item));
     }
@@ -333,7 +345,8 @@ inline bool checkChords(const std::vector<ei::Trigger>& triggers,
                        const std::set<std::string>& names,const std::string& ownName,
                        const std::string& at,std::string* error) {
     for(const auto& t:triggers)
-        if(t.kind==ei::TriggerKind::Chord&&(t.chordAction==ownName||!names.contains(t.chordAction)))
+        if((t.kind==ei::TriggerKind::Chord||t.kind==ei::TriggerKind::NotChord)&&
+           (t.chordAction==ownName||!names.contains(t.chordAction)))
             return fail(error,at,"chord references missing or same action: "+t.chordAction);
     return true;
 }
