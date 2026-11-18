@@ -7,6 +7,9 @@
 #include <array>
 #include <cctype>
 #include <cstdio>
+#include <cmath>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -51,6 +54,79 @@ const char* textureFormatName(gfx::PixelFormat f) {
     case gfx::PixelFormat::BC6H_SFloat: return "BC6H SF";
     }
     return "Unknown";
+}
+struct TextureReadPreview {
+    uint64_t revision = 0;
+    uint32_t resourceId = 0;
+    int mip = 0, layer = 0, width = 0, height = 0;
+    int cellsX = 0, cellsY = 0;
+    bool pending = false;
+    std::string status;
+    std::vector<ImU32> cells; // 32x32 max; never hold the full GPU readback
+};
+
+// Read the exact linear 16-bit float texel, including negatives. Tonemap
+// positive HDR values only for an approximate on-screen diagnostic.
+float diagnosticHalf(const uint8_t* p) {
+    const uint16_t bits = uint16_t(p[0]) | (uint16_t(p[1]) << 8);
+    const int sign = bits & 0x8000u ? -1 : 1;
+    const int exponent = (bits >> 10) & 31;
+    const int mantissa = bits & 1023;
+    if (exponent == 31) return 0.f; // malformed/non-finite content, preview only
+    if (exponent == 0) return float(sign) * std::ldexp(float(mantissa), -24);
+    return float(sign) * std::ldexp(1.f + float(mantissa)/1024.f, exponent - 15);
+}
+uint8_t diagnosticByte(float linear) {
+    // Approximate Reinhard exposure then linear->sRGB presentation.
+    const float v = std::max(0.f, linear);
+    const float mapped = v / (1.f + v);
+    const float display = mapped <= .0031308f ? mapped * 12.92f :
+        1.055f * std::pow(mapped, 1.f/2.4f) - .055f;
+    return uint8_t(std::clamp(int(display * 255.f + .5f),0,255));
+}
+void decodeReadPreview(TextureReadPreview& state, gfx::TextureReadbackResult image) {
+    state.pending = false;
+    state.cells.clear();
+    state.cellsX = state.cellsY = state.width = state.height = 0;
+    if (!image.success()) {
+        state.status = "GPU readback failed or resource was released.";
+        return;
+    }
+    const int bpp = image.format == gfx::PixelFormat::RGBA16F ? 8 : 4;
+    if (image.format != gfx::PixelFormat::RGBA16F &&
+        image.format != gfx::PixelFormat::RGBA8 &&
+        image.format != gfx::PixelFormat::RGBA8_sRGB) {
+        state.status = "Readback returned an unsupported preview format.";
+        return;
+    }
+    const size_t expected = size_t(image.width) * size_t(image.height) * size_t(bpp);
+    if (image.width <= 0 || image.height <= 0 ||
+        image.pixels.size() != expected) {
+        state.status = "Readback pixel count does not match the texture dimensions.";
+        return;
+    }
+    state.width = image.width;
+    state.height = image.height;
+    state.cellsX = std::min(32,image.width);
+    state.cellsY = std::min(32,image.height);
+    state.cells.reserve(size_t(state.cellsX)*size_t(state.cellsY));
+    for (int y=0;y<state.cellsY;++y) {
+        for (int x=0;x<state.cellsX;++x) {
+            const int sx = int((int64_t(x)*image.width)/state.cellsX);
+            const int sy = int((int64_t(y)*image.height)/state.cellsY);
+            const uint8_t* sample = image.pixels.data() +
+                (size_t(sy)*size_t(image.width)+size_t(sx))*size_t(bpp);
+            uint8_t rgb[3]{};
+            if (bpp == 8) {
+                for (int c=0;c<3;++c)
+                    rgb[c] = diagnosticByte(diagnosticHalf(sample+c*2));
+            } else {
+                for (int c=0;c<3;++c) rgb[c]=sample[c];
+            }
+            state.cells.push_back(IM_COL32(rgb[0],rgb[1],rgb[2],255));
+        }
+    }
+    state.status = "Captured a small CPU preview of the selected GPU subresource.";
 }
 bool matchesTextureFilter(const gfx::TextureResourceInfo& r, const char* value) {
     if (!value || !*value) return true;
@@ -122,8 +198,68 @@ public:
                              ImVec2(0.f, flip ? 1.f : 0.f),
                              ImVec2(1.f, flip ? 0.f : 1.f));
             } else {
-                ImGui::TextDisabled("Preview needs a 2D single-sample color resource.");
-                ImGui::TextDisabled("Arrays, cubes and MSAA require an explicit readback.");
+                ImGui::TextDisabled("Native 2D preview is unavailable for this resource.");
+            }
+
+            // Readback is optional per backend; requests must be made on the
+            // device thread, outside render/compute encoders. A callback runs
+            // later at beginFrame and owns its staging bytes. Never capture
+            // EditorWindow 'this' in an asynchronous GPU callback.
+            readMip_ = std::clamp(readMip_,0,std::max(0,chosen->mipLevels-1));
+            readLayer_ = std::clamp(readLayer_,0,std::max(0,chosen->arrayLayers-1));
+            ImGui::SliderInt("Read mip", &readMip_, 0, std::max(0,chosen->mipLevels-1));
+            if (chosen->arrayLayers > 1)
+                ImGui::SliderInt("Read face / layer", &readLayer_, 0, chosen->arrayLayers-1);
+            else readLayer_ = 0;
+            if (ImGui::Button("Read GPU mip / face")) {
+                auto state = preview_;
+                const uint64_t revision = ++state->revision;
+                state->resourceId = selectedId_;
+                state->mip = readMip_;
+                state->layer = readLayer_;
+                state->status.clear();
+                state->cells.clear();
+                state->pending = true;
+                std::weak_ptr<TextureReadPreview> weak = state;
+                gfx::TextureReadbackDesc request;
+                request.mipLevel = readMip_;
+                request.arrayLayer = readLayer_;
+                if (!editor.device().readTextureAsync(chosen->handle, request,
+                    [weak,revision](gfx::TextureReadbackResult result) {
+                        if (auto state = weak.lock()) {
+                            if (state->revision == revision)
+                                decodeReadPreview(*state,std::move(result));
+                        }
+                    })) {
+                    state->pending = false;
+                    state->status = "GPU readback unsupported for this format/backend or active pass.";
+                } else {
+                    state->status = "GPU transfer pending; result arrives in a later frame.";
+                }
+            }
+            if (preview_->resourceId == selectedId_) {
+                ImGui::TextDisabled("%s", preview_->status.c_str());
+                if (preview_->pending)
+                    ImGui::TextDisabled("Pending GPU fence/completion...");
+                else if (!preview_->cells.empty()) {
+                    ImGui::Text("%dx%d mip %d face/layer %d",
+                                preview_->width,preview_->height,
+                                preview_->mip,preview_->layer);
+                    const float display = 160.f;
+                    const float dx = display / float(preview_->cellsX);
+                    const float dy = display / float(preview_->cellsY);
+                    const ImVec2 start = ImGui::GetCursorScreenPos();
+                    ImDrawList* draw = ImGui::GetWindowDrawList();
+                    for (int y=0;y<preview_->cellsY;++y)
+                        for (int x=0;x<preview_->cellsX;++x) {
+                            const ImVec2 a{start.x+dx*x,start.y+dy*y};
+                            const ImVec2 b{start.x+dx*(x+1),start.y+dy*(y+1)};
+                            draw->AddRectFilled(a,b,
+                                preview_->cells[size_t(y)*size_t(preview_->cellsX)+size_t(x)]);
+                        }
+                    ImGui::Dummy(ImVec2(display,display));
+                    ImGui::TextDisabled("CPU 32x32 max diagnostic; HDR approximately tonemapped.");
+                }
             }
             ImGui::Separator();
         }
@@ -185,6 +321,8 @@ private:
     bool renderTargetsOnly_ = false;
     bool sortByBytes_ = true;
     uint32_t selectedId_ = 0;
+    int readMip_ = 0, readLayer_ = 0;
+    std::shared_ptr<TextureReadPreview> preview_ = std::make_shared<TextureReadPreview>();
 };
 
 AIVERSE_EDITOR_WINDOW(TextureResourcesWindow);
