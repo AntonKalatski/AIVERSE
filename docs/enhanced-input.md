@@ -230,3 +230,7 @@ Default `RTS.Gestures` context maps touch slot-zero relative drag to `CameraTouc
 ### Generated top-down ability mappings
 
 Top-down's game-specific button definitions in `game.json.topDown.buttons` are registered at runtime as `TopDownAbility0`, `TopDownAbility1`, etc., in the optional `RTS.TopDownAbilities` context. Their press/release is routed through semantic Actions; UI touch-stick buttons and the actual ability Commands remain the responsibility of the top-down module. A project can author a custom context with that name in `input/actions.json` to override generated keys without altering engine code.
+
+### Action updates and timers
+
+Game clients must call the input pipeline every presentation frame, even when no keyboard/mouse events arrive. RTS now combines immediate `onEvent(e)` evaluation with `advance(dt)` for Hold/Pulse and other timed triggers, routing both through the same validated gameplay Command handler. Top-down custom ability Actions also handle delayed triggers and release on context cancellation. Modal/text capture cancels held actions, while script-author-defined hotkeys still take precedence over generic RTS bindings.
