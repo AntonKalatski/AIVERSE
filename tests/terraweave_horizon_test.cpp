@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstdint>
 #include <stdexcept>
+#include <set>
 #include <vector>
 
 using namespace aiverse::terraweave;
@@ -47,13 +48,29 @@ int main() {
         assert(cluster.atlasY+cluster.atlasSize<=bake.atlasHeight);
         assert(cluster.topCm>cluster.bottomCm);
         const int64_t dx=cluster.centerXcm, dz=cluster.centerZcm;
-        assert(dx*dx+dz*dz>=int64_t(settings.closeForestEndCm)*
-                                 settings.closeForestEndCm);
+        const int64_t visibleStart=std::max<int32_t>(
+            0,settings.closeForestEndCm-settings.nearBlendCm);
+        assert(dx*dx+dz*dz>=visibleStart*visibleStart);
     }
     uint32_t coverage=0;
     for(size_t i=3;i<bake.atlasRgba.size();i+=4)
         coverage+=bake.atlasRgba[i]>0;
     assert(coverage>0);
+    // Crowns must be shaped, not uniform solid columns/hedge stripes.
+    std::set<uint32_t> leafColours;
+    for(size_t i=0;i<bake.atlasRgba.size();i+=4) {
+        if (bake.atlasRgba[i+3]>=128) {
+            const uint32_t color=uint32_t(bake.atlasRgba[i]) |
+                (uint32_t(bake.atlasRgba[i+1])<<8) |
+                (uint32_t(bake.atlasRgba[i+2])<<16);
+            leafColours.insert(color);
+        }
+    }
+    assert(leafColours.size()>25);
+    assert(horizon_detail::smoothCoverage(50,100,200)==0);
+    assert(horizon_detail::smoothCoverage(200,100,200)==255);
+    assert(horizon_detail::smoothCoverage(150,100,200)>110);
+    assert(horizon_detail::smoothCoverage(150,100,200)<145);
     const auto repeat=bakeHorizon(terrain,climate,settings,0,0);
     assert(bake.atlasRgba==repeat.atlasRgba);
     assert(bake.clusters.size()==repeat.clusters.size());
@@ -89,6 +106,18 @@ int main() {
     bool rejected=false;
     auto bad=settings;
     bad.atlasTilePixels=128;
+    try {validateHorizonSettings(bad);}
+    catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected);
+    rejected=false;
+    bad=settings;
+    bad.crownDetail=0;
+    try {validateHorizonSettings(bad);}
+    catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected);
+    rejected=false;
+    bad=settings;
+    bad.tierBlendCm=settings.middleForestEndCm;
     try {validateHorizonSettings(bad);}
     catch(const std::invalid_argument&){rejected=true;}
     assert(rejected);
