@@ -108,13 +108,7 @@ public:
         const auto* queue=world.resourceConst<lg::OrderedImpactQueue>();
         const auto* trace=world.resourceConst<HitTrace>();
         check(queue && trace,"world resources missing during hash");
-        hash.u64(queue->nextSequence);
-        hash.u32(uint32_t(queue->pending.size()));
-        for(const auto& entry:queue->pending) {
-            hash.u64(entry.sequence);
-            hash.u64(entry.impact.target.packed());
-            hash.i64(entry.impact.damage.raw);
-        }
+        lg::hashOrderedImpactQueue(hash,*queue);
         hash.u32(uint32_t(trace->stages.size()));
         for(int stage:trace->stages)hash.i32(stage);
     }
@@ -140,6 +134,23 @@ uint64_t exercise(bool cow) {
               "callback-generated request was not deferred");
         check(trace&&trace->stages==std::vector<int>({11,21,30,40,12,22}),
               "immediate direct/on-hit/splash order changed");
+        const std::string savedQueue=lg::saveOrderedImpactQueue(*queue);
+        check(!savedQueue.empty(),"impact queue save failed");
+        lg::OrderedImpactQueue loadedQueue;
+        check(lg::loadOrderedImpactQueue(savedQueue,loadedQueue) &&
+              lg::saveOrderedImpactQueue(loadedQueue)==savedQueue,
+              "impact queue serialization round-trip mismatch");
+        auto invalidQueue=savedQueue;
+        invalidQueue.pop_back();
+        check(!lg::loadOrderedImpactQueue(invalidQueue,loadedQueue) &&
+              lg::saveOrderedImpactQueue(loadedQueue)==savedQueue,
+              "truncated queue load overwrote a valid destination");
+        invalidQueue=savedQueue;
+        invalidQueue[0]=char(255); // invalid format version
+        check(!lg::loadOrderedImpactQueue(invalidQueue,loadedQueue) &&
+              lg::saveOrderedImpactQueue(loadedQueue)==savedQueue,
+              "invalid format queue load overwrote a valid destination");
+
         check(first.tryGetConst<TestHealth>(host->primary)->current==90,
               "first direct hit applied incorrectly");
         check(first.tryGetConst<TestHealth>(host->ally)->current==100,
