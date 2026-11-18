@@ -54,6 +54,45 @@ static void exerciseSharedSweptContacts() {
                "nonoverlapping target incorrectly hit by shared sweep");
 }
 
+// Reproduce the exact legacy FPS grenade bounce expression as an independent
+// reference (including fixed-point division, collision epsilon and velocity
+// update-before-cast). Both collision and free flight must match byte-for-byte.
+static void exerciseSharedBounceMotion() {
+    world::SpatialWorld collision;
+    checkSweep(collision.add({51,{{-10_fx,-2_fx,-10_fx},
+                                   {10_fx,0_fx,10_fx}}}),
+               "bounce fixture ground collider invalid");
+    const Fixed dt=Fixed::fromRatio(1,20);
+    struct Case {Vec3 position,velocity;};
+    const std::vector<Case> cases{
+        {{0_fx,1_fx,0_fx},{0_fx,-20_fx,0_fx}},
+        {{0_fx,1_fx,0_fx},{2_fx,4_fx,1_fx}},
+        {{0_fx,Fixed::fromRatio(1,10),0_fx},{1_fx,-3_fx,0_fx}}
+    };
+    for(const Case& initial:cases) {
+        Vec3 expectedPosition=initial.position;
+        Vec3 expectedVelocity=initial.velocity;
+        expectedVelocity.y-=10_fx*dt;
+        const auto delta=expectedVelocity*dt;
+        const Vec3 half{Fixed::fromRatio(1,10),
+                        Fixed::fromRatio(1,10),
+                        Fixed::fromRatio(1,10)};
+        const auto hit=collision.cast(expectedPosition,delta,half);
+        if(hit.hit) {
+            expectedPosition+=delta*fxMax(Fixed{},
+                hit.fraction-Fixed::fromRatio(1,100));
+            expectedVelocity=(expectedVelocity-hit.normal*
+                expectedVelocity.dot(hit.normal)*2_fx)/2_fx;
+        } else expectedPosition+=delta;
+        Vec3 actualPosition=initial.position;
+        Vec3 actualVelocity=initial.velocity;
+        lg::stepBouncingProjectile(actualPosition,actualVelocity,collision,dt);
+        checkSweep(actualPosition==expectedPosition &&
+                   actualVelocity==expectedVelocity,
+                   "shared bounce physics diverged from legacy FPS formula");
+    }
+}
+
 struct ShooterWeaponSource {int32_t magazine=20;};
 struct StrategyTurretSource {int32_t range=200;};
 struct ImpactLog {
@@ -140,6 +179,7 @@ uint64_t test(bool cow) {
 }
 int main(){
     exerciseSharedSweptContacts();
+    exerciseSharedBounceMotion();
     const uint64_t shooter=test<ShooterWeaponSource>(false);
     assert(test<StrategyTurretSource>(false)==shooter);
     assert(test<ShooterWeaponSource>(true)==shooter);
