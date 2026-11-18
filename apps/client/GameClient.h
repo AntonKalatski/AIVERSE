@@ -250,6 +250,7 @@ private:
     net::RollbackSession* tdHooked_ = nullptr;
     bool tdMouseHeld_ = false, tdFireHeld_ = false;
     std::vector<bool> tdAbilityKeysHeld_;
+    bool tdAutoAbilityContext_=false; // authored project context is never overwritten
     // ClientCommerce.cpp: the city economy (rules "commerce"): the deals at the door in front of the hero
     struct CommerceChoice { std::string label; game::CommerceOp op; int premise; int64_t value; int career = -1; };
     int commerceDoor();
