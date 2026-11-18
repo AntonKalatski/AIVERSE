@@ -85,7 +85,9 @@ inline void io(Archive& a, QuakeEvent& v) {
       v.startTick, v.durationTicks);
 }
 
-inline void registerPersistence(Simulation& simulation, bool disasters = false) {
+inline void registerPersistence(Simulation& simulation, bool disasters = false,
+                                bool windZones = false, bool gravityFields = false,
+                                bool storms = false, bool forces = false) {
     // Must be called during GameModule::setup before the registry is sealed.
     simulation.registerPersistentComponent<Cell>("physis.cell", 1);
     simulation.registerPersistentComponent<Atmosphere>("physis.atmosphere", 1);
@@ -93,13 +95,23 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false) 
     simulation.registerPersistentComponent<ClimateZone>("physis.climate_zone", 1);
     simulation.registerPersistentComponent<WeatherFront>("physis.weather_front", 1);
     simulation.registerPersistentComponent<SurfaceMaterial>("physis.material", 1);
-    simulation.registerPersistentComponent<WindZone>("physis.wind_zone", 1);
-    simulation.registerPersistentComponent<WindShelter>("physis.wind_shelter", 1);
-    simulation.registerPersistentComponent<GravityField>("physis.gravity_field", 1);
-    simulation.registerPersistentResource<GravitySettings>("physis.gravity_settings", 1);
-    simulation.registerPersistentComponent<StormEvent>("physis.storm_event", 1);
-    simulation.registerPersistentComponent<ForceReceiver>("physis.force_receiver", 1);
-    simulation.registerPersistentComponent<ForceOutput>("physis.force_output", 1);
+    // Stage 1-5 save registries must remain byte-compatible by default.
+    // New components are opt-in: native ECS saves include a strict schema
+    // manifest and changing its count invalidates old save files.
+    if (windZones) {
+        simulation.registerPersistentComponent<WindZone>("physis.wind_zone", 1);
+        simulation.registerPersistentComponent<WindShelter>("physis.wind_shelter", 1);
+    }
+    if (gravityFields) {
+        simulation.registerPersistentComponent<GravityField>("physis.gravity_field", 1);
+        simulation.registerPersistentResource<GravitySettings>("physis.gravity_settings", 1);
+    }
+    if (storms)
+        simulation.registerPersistentComponent<StormEvent>("physis.storm_event", 1);
+    if (forces) {
+        simulation.registerPersistentComponent<ForceReceiver>("physis.force_receiver", 1);
+        simulation.registerPersistentComponent<ForceOutput>("physis.force_output", 1);
+    }
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
@@ -114,6 +126,10 @@ struct InstallOptions {
     bool enableDisasters = false;
     bool enableStorms = false;
     bool enableForces = false;
+    // Enable these when a native host uses WindZone/WindShelter or custom
+    // GravityField/GravitySettings and needs them in save/replay.
+    bool enableWindZones = false;
+    bool enableGravityFields = false;
     // Use ExternalAuthority when NEREID or another water simulation owns
     // water volumes; fire and quakes keep running without duplicate flooding.
     FloodMode floodMode = FloodMode::LocalShallow;
@@ -130,7 +146,9 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
     initialize(simulation.world(), options.climate);
     if (options.enableDisasters)
         initializeDisasters(simulation.world(), options.disasters);
-    registerPersistence(simulation, options.enableDisasters);
+    registerPersistence(simulation, options.enableDisasters,
+                        options.enableWindZones, options.enableGravityFields,
+                        options.enableStorms, options.enableForces);
     simulation.addSystem("physis.environment",
         [hazards=options.enableDisasters, storms=options.enableStorms,
          flood=options.floodMode](Simulation& sim) {
