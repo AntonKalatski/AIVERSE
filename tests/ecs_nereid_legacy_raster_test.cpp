@@ -54,7 +54,7 @@ template<class Tag> struct Host final:GameModule {
         }
         probe=w.create();
         w.add<Tag>(probe);
-        Transform transform;transform.pos={10_fx,7_fx,10_fx};
+        Transform transform;transform.pos={40_fx,7_fx,252_fx};
         w.add<Transform>(probe,transform);
         w.add<nw::WaterProbeComponent>(probe);
         w.add<nw::WaterContactComponent>(probe);
@@ -77,6 +77,8 @@ template<class Tag> uint64_t run(bool cow) {
     check(sim.world().get<nw::WaterContactComponent>(host->probe).sampledTick==
           sim.tick()-1,"indexed contact tick");
     const std::string bytes=sim.serialize();
+    check(sim.world().get<nw::WaterContactComponent>(host->probe).sample.found,
+          "initial probe should sample sea water");
     const uint64_t original=sim.checksum();
     auto copy=std::make_unique<Simulation>(SimConfig{9001,20,0,true},
                                            std::make_unique<Host<Tag>>());
@@ -87,6 +89,8 @@ template<class Tag> uint64_t run(bool cow) {
     SimSnapshot snapshot;sim.saveState(snapshot);
     sim.world().get<Transform>(host->probe).pos={40_fx,7_fx,220_fx};
     sim.step();
+    check(!sim.world().get<nw::WaterContactComponent>(host->probe).sample.found,
+          "moved probe must be on dry land");
     const uint64_t moved=sim.checksum();
     check(moved!=original,"raster probe mutation not hashed");
     sim.loadState(snapshot);
@@ -105,6 +109,22 @@ int main() {
     check(rect.size()==3,"wrong vertical run merge");
     std::vector<uint8_t> none(12,0);
     check(nw::waterBodiesFromRaster(none,4,3).empty(),"dry raster produced water");
+    // Importing from canonical game tiles avoids any rerasterization.
+    std::vector<char> tiles={'~','~','.','~','.','.','.','~'};
+    nw::WaterRasterImportConfig settings;
+    settings.cellMeters=4_fx;
+    const auto baked=oldwater::importBakedWaterCellsToNereid(tiles,4,2,settings);
+    check(baked.size()==3,"canonical tile rectangles not preserved");
+    World bakedWorld;
+    for(const auto& body:baked) {
+        const Entity e=bakedWorld.create();
+        bakedWorld.add<nw::WaterBodyComponent>(e,body);
+    }
+    for(int z=0;z<2;++z)for(int x=0;x<4;++x) {
+        const Vec3 p{Fixed::fromInt(x*4+2),Fixed{},Fixed::fromInt(z*4+2)};
+        check(nw::sampleWater(bakedWorld,p).found==(tiles[size_t(z)*4+size_t(x)]=='~'),
+              "actual baked water tile parity");
+    }
     const uint64_t baseline=run<TacticalHostTag>(false);
     check(run<DrivingHostTag>(false)==baseline,"genre raster divergence");
     check(run<TacticalHostTag>(true)==baseline,"COW tactical divergence");
