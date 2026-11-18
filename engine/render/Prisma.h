@@ -10,6 +10,7 @@
 #pragma once
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include "PrismaData.h"
@@ -17,6 +18,7 @@
 #include "PrismaVolumes.h"
 #include "PrismaRenderGraph.h" // GPU-free post-pass graph planner; executor follows later
 #include "PrismaBloomGraph.h" // persistent compiled Bloom topology per viewport
+#include "PrismaRhiExecutor.h" // opt-in per-view graph GPU context
 #include "Renderer3D.h"
 
 namespace aiverse::render {
@@ -70,6 +72,7 @@ private:
         std::map<int, Target> targets;     // by role
         std::map<uint64_t, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
         PrismaBloomGraphCache bloomGraph; // invalidates on size, mip count or HDR format changes
+        std::unique_ptr<PrismaRhiExecutor> graphExecutor; // optional persistent per-view context
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
     enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kProgCount };
