@@ -4395,3 +4395,39 @@ backpressure and cross-frame planning.
 Next: add prefetch adapter fixture and native AI skill usage.
 Commit source and handoff separately, then execute real native
 build/CTest when implementation is complete.
+
+## Stage 7Y — integrated visibility-prefetch-to-GPU test source (2026-11-18)
+
+Test source commit: 641c7977ac0b68dd9be1b20ad5c6080d2c75bab3.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+File: tests/render/virtual_texture_file_streamer.cpp.
+
+The existing native filesystem+mock Device CTest now additionally
+includes VirtualTexturePrefetchAdapter.h and exercises automatic
+UV visibility to disk page queue to owned GPU atlas/table uploads.
+First-frame request budget submits coarse and intermediate mip pages;
+the following frame skips those pending pages and requests the
+fine mip; a third frame does not issue duplicate reads. After
+worker/GPU completion, exact residency of three visible pages
+is verified and the coarsest mip is pinned. The fixture also
+constructs a separately pending unpinned coarse page, requests
+the visible region and checks promotion to a pinned fallback
+before GPU residency is published. All pages are synthetic
+fixed-size RGBA8 assets under a temporary test directory.
+
+No additional CMake target is required: the existing
+aiverse_virtual_texture_file_streamer_test / virtual_texture_file_streamer
+target now builds this integration test.
+
+Compatibility: test-only update; no native RHI, ECS, save/network
+or asset-layout modification. No automatic camera-to-UV projection;
+that is still the caller's responsibility.
+
+Verification: GitHub test-source commit succeeded. Native C++
+build NOT RUN; CTest NOT RUN; actual disk/GPU hardware tests
+NOT RUN. Do not report this fixture as passing.
+
+Next: Document prefetchVisibleVirtualPages in the native texture
+skill, along with the UV visibility adapter ownership and
+coarse fallback pinning guarantees, then hand off. Later
+compile/run CTest and fix actual failures.
