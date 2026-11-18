@@ -19,6 +19,20 @@ namespace aiverse::render {
 
 struct PostFxStats { int passes = 0; int effects = 0; int width = 0, height = 0; };
 
+// Per-frame, presentation-only environmental tint from a volume system.
+// PostFx never queries ECS or owns the meaning of any water volume.
+struct PostFxUnderwater {
+    bool submerged=false;
+    float tintR=0, tintG=0, tintB=0;
+    float absorption=0;
+    float depthMetres=0;
+};
+struct PostFxUnderwaterState {
+    float blend=0;
+    float tintR=0, tintG=0, tintB=0;
+    float absorption=0, depthMetres=0;
+};
+
 class PostFx : public PostProcess {
 public:
     bool init(gfx::Device& dev);
@@ -27,6 +41,12 @@ public:
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
     void setSettings(PostFxSettings s);
+    // Apply the volume owner's latest camera sample, once per frame.
+    // deltaSeconds is supplied by the host and only affects visual fading.
+    void setUnderwater(PostFxUnderwater target,float deltaSeconds);
+    const PostFxUnderwaterState& underwater()const{return underwater_;}
+    void resetUnderwater(){underwater_={};}
+
     const PostFxSettings& settings() const { return settings_; }
 
     void setQuality(PostFxQuality q) { quality_ = q; }
@@ -91,6 +111,7 @@ private:
     gfx::TextureHandle graphTexture(const std::string& path);
     double graphEpoch_ = -1;
     uint64_t frame_ = 0;
+    PostFxUnderwaterState underwater_{};
     PostFxStats stats_;
     std::string error_;
 };
