@@ -3602,3 +3602,45 @@ mips/layers and test selection changes during pending readbacks,
 resource destruction before completion, unsupported WebGL2 paths
 and accepted failed transfers. Then validate all texture CTests,
 render passes and platform GPUs before merging.
+
+## Stage 6M — opt-in KTX2 BasisLZ/UASTC transcoder bridge (2026-11-18)
+
+**Code commit:** `81498d54244fed7eaebf267d27aac6f5bcb21444`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**New file:** `engine/render/Ktx2Transcode.h`.
+
+**Implementation/API:** Added native C++ callback contract
+`Ktx2Transcoder`, `parseKtx2WithTranscoder`, and
+`uploadKtx2WithTranscoder`. For regular KTX2 containers, the
+existing built-in `parseKtx2` is reused unchanged. For KTX2
+containers whose VkFormat is zero or whose supercompression
+is BasisLZ, callers must provide a decoder/transcoder callback
+that yields a canonical `CompressedImage` with all mip/array/
+cube/volume slices, not just the first face. The new bridge
+checks dimensions, layer/cube consistency, allowed mip counts,
+payload byte extents and a per-mip 512 MiB budget before passing
+data to the shared GPU uploader. A missing/failed callback or
+invalid result fails closed with a descriptive error. GPU
+output format selection remains the callback's responsibility,
+including block compression and the target device capability.
+
+**Critical limitation:** This stage does **not** include or
+implement the actual Basis Universal codec. No Basis library
+exists under the repository's `third_party` directory.
+Full ETC1S/BasisLZ and UASTC transcoding requires integrating
+a correctly licensed and tested external codec provider into
+the application or build; the public callback is the seam for
+that dependency. No false claim of successful Basis transcoding.
+Existing KTX2/DDS importer and ECS/save/network paths remain
+unchanged.
+
+**Actual verification:** GitHub code commit completed.
+**Native C++ compilation NOT RUN; CTest NOT RUN; real Basis
+codec, GPU texture upload, CI pass NOT RUN/NOT CONFIRMED.**
+
+**Next:** Add synthetic Basis-marked KTX2 source with a mock
+callback and a malformed-output fixture; register a CPU CTest
+and record actual results after tests run. Later vendor/test a
+real Basis codec (or use the app's compatible external provider)
+and verify transcode formats and full mip/layer/cube fidelity.
+Add new handoffs after each stage.
