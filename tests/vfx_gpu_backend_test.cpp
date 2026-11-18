@@ -18,7 +18,7 @@ class RecordingMetalDevice final:public gfx::Device {
 public:
     gfx::DeviceInfo description{gfx::Backend::Metal,false,false,"Recording Metal"};
     std::string error;
-    bool availableCompute=true,frame=false,pass=false,computing=false,badOrder=false;
+    bool availableCompute=true,healthy=true,frame=false,pass=false,computing=false,badOrder=false;
     uint32_t next=1,lastMode=99,lastDrawCount=0;
     size_t uploadBytes=0;
     std::vector<uint32_t> stages;
@@ -39,6 +39,8 @@ public:
     void destroyPipeline(gfx::PipelineHandle)override{}
     const std::string& lastError() const override{return error;}
     bool supportsCompute()const override{return availableCompute;}
+    bool gpuHealthy() const override {return healthy;}
+    bool canUpdateSharedBuffers() const override {return !pass && !computing;}
     gfx::ComputeHandle createCompute(const gfx::ComputeDesc&)override{return {next++};}
     void destroyCompute(gfx::ComputeHandle)override{}
     bool beginCompute(gfx::ComputeHandle)override{
@@ -147,13 +149,65 @@ int main() {
           "GPU dispatch order must be spawn, integrate, expand");
     mock.beginPass(gfx::PassDesc{});
     emitter.draw();
-    check(mock.lastDrawCount==config.capacity*6,
-          "GPU billboard index count does not match pool capacity");
+    check(mock.lastDrawCount==config.burst*6,
+          "GPU draw should submit only occupied slots, not full capacity");
+    check(emitter.stats().submittedSlots==config.burst,
+          "GPU active draw prefix incorrectly includes unused tail");
+    emitter.clear(); // forbidden while GPU render encoder is active
+    check(emitter.stats().alive==config.burst,
+          "clear inside an active pass must preserve CPU/GPU slot bookkeeping");
+    check(!emitter.reason().empty(),
+          "GPU clear must report invalid encoder timing");
+    mock.endPass();
+    emitter.clear();
+    check(emitter.stats().alive==0 && emitter.stats().submittedSlots==0,
+          "clear between encoders must drop the active GPU draw range");
+    const auto dispatches=emitter.stats().gpuDispatches;
+    check(emitter.step(1.f/60.f), "GPU empty-pool step failed");
+    check(emitter.stats().gpuDispatches==dispatches,
+          "empty GPU pool must not dispatch unnecessary compute work");
+    mock.beginPass(gfx::PassDesc{});
+    mock.lastDrawCount=0;
+    emitter.draw();
+    check(mock.lastDrawCount==0,"empty GPU pool still submitted a draw");
     mock.endPass();
     mock.endFrame();
     check(!mock.badOrder,"GPU API called during invalid frame/encoder state");
-    check(emitter.stats().alive==config.burst,"GPU alive slot tracking lost particles");
     emitter.shutdown();
+
+    // A device-loss transition is explicit: RequireGpu must NEVER silently
+    // switch to CPU, even after successful Metal initialization.
+    config.backend=ComputePreference::RequireGpu;
+    mock.healthy=true;
+    check(emitter.init(&mock,config),"RequireGpu should initialize on simulated healthy Metal");
+    mock.beginFrame(800,600);
+    mock.healthy=false;
+    check(!emitter.step(1.f/60.f),"RequireGpu must fail on GPU device loss");
+    check(!emitter.ready() && !emitter.gpuActive(),
+          "RequireGpu must not report an active GPU after device loss");
+    check(emitter.backend()==ComputeBackend::Metal,
+          "RequireGpu silently switched to CPU on GPU loss");
+    check(emitter.reason().find("RequireGpu")!=std::string::npos,
+          "RequireGpu device-loss diagnostic missing");
+    mock.endFrame();
+    emitter.shutdown();
+
+    // Auto can migrate to a CPU emitter, but must report the discontinuity.
+    config.backend=ComputePreference::Automatic;
+    mock.healthy=true;
+    check(emitter.init(&mock,config),"Auto Metal init failed");
+    check(emitter.burstAt({0,0,0}),"GPU birth before fallback failed");
+    mock.beginFrame(800,600);
+    mock.healthy=false;
+    check(!emitter.step(1.f/60.f),
+          "GPU device loss cannot be reported as seamless successful simulation");
+    check(emitter.backend()==ComputeBackend::Cpu && emitter.ready(),
+          "Auto did not transition to usable CPU fallback");
+    check(emitter.stats().gpuFallbacks==1 && emitter.stats().lostOnFallback==config.burst,
+          "Auto fallback must report discarded GPU-resident particles");
+    mock.endFrame();
+    emitter.shutdown();
+    mock.healthy=true;
 
     // Explicit hard GPU requirement never silently reports a CPU implementation.
     config.backend=ComputePreference::RequireGpu;
