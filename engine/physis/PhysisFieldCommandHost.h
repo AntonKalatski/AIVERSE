@@ -3,6 +3,7 @@
 // A host must persist/replicate the external immutable journal separately.
 #pragma once
 #include "PhysisFieldJournal.h"
+#include "PhysisFieldRuntime.h"
 #include "engine/sim/Simulation.h"
 #include <memory>
 #include <stdexcept>
@@ -63,6 +64,10 @@ private:
 // Return a handle owned by the caller. Simulation callbacks capture it safely.
 // Must be called once, after installTrackedFromMap, during GameModule::setup.
 inline std::shared_ptr<FieldCommandHost> installFieldCommandHost(Simulation& sim) {
+    if (sim.world().resourceConst<FieldRuntimeState>())
+        throw std::logic_error("PHYSIS canonical editable runtime already installed; use its Simulation command route");
+    if (sim.world().resourceConst<FieldCommandCheckpoint>())
+        throw std::logic_error("PHYSIS field command host already installed");
     if (!sim.world().resourceConst<RuntimeFieldRegistry>())
         throw std::logic_error("PHYSIS tracked fields must be installed first");
     sim.world().setResource<FieldCommandCheckpoint>();
