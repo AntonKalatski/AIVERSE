@@ -469,6 +469,48 @@ eligibility must fall back to CPU until GPU program parity
 is implemented. Tests were deferred by the user; no CTest,
 native build or Metal shader verification has been run.
 
+## Named per-instance CPU particle VM inputs (Stage 20)
+
+Graph v2 supports up to eight **named runtime instance scalars**.
+Add a root `instanceParameters` map of names to
+`{slot:0..7,default,min,max}` and an
+`InstanceParameter` value node with
+`properties:{"name":"lift"}`; link it into a
+`ParticleProgramModule` expression via
+`{"$runtime":"node_id"}`. At graph compile time the node
+is lowered to a read-only VM `param0` … `param7`
+instruction, but its value is **not** constant-folded.
+
+C++:
+- `GraphRuntime::setNamedProgramParameter(name,value,affectExisting)`
+  validates against the graph schema and changes only this source.
+- `GraphRuntime::setProgramParameter(slot,value,affectExisting)`
+  works with raw numbered CPU VM inputs.
+- `ParticleSystem::playWithProgramParameters(effect,pos,dir,scale,tint,
+  std::array<float,8>)` and the matching `BatchWorld` overload
+  set values **before prewarm and Spawn**, so initial particles
+  never receive the wrong default.
+- `ParticleSystem::setProgramParameter(handle,slot,value,true)`
+  updates particles already alive, including after a one-shot's
+  emission instance has ended.
+- `CueEvent` / `AttachedCue` carry optional `programParams`
+  and `programParamMask`, and a continuous source's parameter
+  changes do not force an unnecessary emitter restart.
+
+Editor v2 offers **Параметры экземпляра (runtime)** with
+validated JSON metadata and sliders for current preview values.
+`fx_graph_preview` accepts `instanceValues` as a map of names
+to numeric values, uses the mature CPU particle backend, and
+keeps overrides when the preview loops.
+
+Use `examples/spectrafx/per_instance_parameters_v2.vfx.json`
+for a complete graph example. Source changes are **committed but
+not built/tested**: user deferred tests while finishing functions.
+Do not enable arbitrary particle VM code on the limited Metal
+compute backend; advanced graph effects must retain CPU fallback
+and `RequireGpu` must reject loss of behavior. Every code stage
+requires a separate handoff commit.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
