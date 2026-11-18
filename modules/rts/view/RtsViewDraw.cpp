@@ -2,7 +2,7 @@
 // baked or posed skinning, dissolve, selection outline, attachments on sockets, effect anchors;
 // projectiles leaving muzzles; building ghosts and previews for portraits / editor.
 #include "RtsView.h"
-#include "RtsPreviewPresentation.h"
+#include "RtsPreviewRenderProvider.h"
 #include "engine/view/View.h"
 
 #include <algorithm>
@@ -332,46 +332,61 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
 }
 
 void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const MapGrid& grid, double time) {
-    if (type >= looks_.size()) return;
-    loadType(type);
-    // The ghost description is authored by a host adapter, not by the
-    // renderer. The temporary state belongs to this RtsView instance.
-    const auto description=view_adapter::makeGhostPresentation(type,pos,ok,time);
-    auto& ghost=ghostAnim_;
-    ghost.type=description.type;
-    ghost.choice=0;
-    ghost.objXf=mat4{};
-    ghost.world.clear();
-    ghost.yaw=0;
-    SceneObject o;
-    o.type=description.type;
-    o.owner=description.owner;
-    o.pos=description.position;
-    const float4 tint=description.tint;
-    if (planets_.active()) { // planets: on the sphere, oriented to the local up
-        mat4 place;
-        if (planetPlacement(o, place)) drawObject(r, ghost, o, 0, 1, &tint, &place);
-        return;
-    }
-    drawObject(r, ghost, o, heightAt(grid, pos.x, pos.z), 1, &tint);
+    view_adapter::RtsPreviewRenderProvider::submitGhost(type,pos,ok,time,
+        [&](uint16_t requested) {
+            if(requested>=looks_.size())return false;
+            loadType(requested);
+            return true;
+        },
+        [&](const view_adapter::GhostPresentation& description) {
+            // The temporary state is owned by this host; the provider
+            // knows nothing about ECS, model residency or planet placement.
+            auto& ghost=ghostAnim_;
+            ghost.type=description.type;
+            ghost.choice=0;
+            ghost.objXf=mat4{};
+            ghost.world.clear();
+            ghost.yaw=0;
+            SceneObject o;
+            o.type=description.type;
+            o.owner=description.owner;
+            o.pos=description.position;
+            const float4 tint=description.tint;
+            if(planets_.active()) {
+                mat4 place;
+                if(planetPlacement(o,place))
+                    drawObject(r,ghost,o,0,1,&tint,&place);
+            } else {
+                drawObject(r,ghost,o,heightAt(grid,o.pos.x,o.pos.z),1,&tint);
+            }
+        });
 }
 
 void RtsView::drawPreview(Renderer3D& r, uint16_t type, uint8_t owner, double time, float yaw) {
-    if (type >= looks_.size()) return;
-    loadType(type);
-    const auto description=view_adapter::makeModelPreviewPresentation(type,owner,yaw);
-    SceneObject o;
-    o.type=description.type;
-    o.owner=description.owner;
-    o.facing=description.facing;
-    EntityAnim& st=stateFor(description.sourceKey,o);
-    const float dt=view_adapter::previewFrameDt(time,st.lastSeenTime);
-    st.lastSeenTime = time;
-    const bool lodWas = animLod_;
-    animLod_ = false;
-    animate(st, o, dt, nullptr);
-    animLod_ = lodWas;
-    drawObject(r, st, o, 0, 1);
+    EntityAnim* current=nullptr;
+    SceneObject object;
+    view_adapter::RtsPreviewRenderProvider::submitModelPreview(
+        type,owner,time,yaw,
+        [&](uint16_t requested) {
+            if(requested>=looks_.size())return false;
+            loadType(requested);
+            return true;
+        },
+        [&](const view_adapter::ModelPreviewPresentation& description) {
+            object.type=description.type;
+            object.owner=description.owner;
+            object.facing=description.facing;
+            current=&stateFor(description.sourceKey,object);
+            return current->lastSeenTime;
+        },
+        [&](const view_adapter::ModelPreviewPresentation&,float dt) {
+            current->lastSeenTime=time;
+            const bool lodWas=animLod_;
+            animLod_=false;
+            animate(*current,object,dt,nullptr);
+            animLod_=lodWas;
+            drawObject(r,*current,object,0,1);
+        });
 }
 
 } // namespace aiverse::game
