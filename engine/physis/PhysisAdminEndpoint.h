@@ -130,13 +130,20 @@ public:
         net::wipe(key.data(),key.size());
         conn_=std::move(conn);
         began_=false;
+        started_=0;
         if(error)error->clear();
         return true;
     }
     void poll(std::uint64_t nowMs) {
         if(!conn_ || !handshake_)return;
+        if(!started_)started_=nowMs?nowMs:1;
         conn_->update(nowMs);
         if(conn_->state()==net::ConnState::Closed)return;
+        if(nowMs>started_ && nowMs-started_>10000 &&
+           !handshake_->authenticated()) {
+            conn_->close();
+            return;
+        }
         if(conn_->state()==net::ConnState::Connected && !began_) {
             began_=handshake_->begin(*conn_);
             if(!began_)conn_->close();
@@ -156,7 +163,8 @@ public:
                conn_->state()==net::ConnState::Connected;
     }
     bool rejected()const {
-        return handshake_ && handshake_->rejected();
+        return (handshake_ && handshake_->rejected()) ||
+               (conn_ && conn_->state()==net::ConnState::Closed);
     }
     std::unique_ptr<net::Conn> takeAuthenticated() {
         if(!ready())return {};
@@ -167,6 +175,7 @@ private:
     std::unique_ptr<net::Conn> conn_;
     std::unique_ptr<ClientHandshake> handshake_;
     bool began_=false;
+    std::uint64_t started_=0;
 };
 #endif // native
 } // namespace aiverse::physis::remote::admin

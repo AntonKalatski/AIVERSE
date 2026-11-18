@@ -82,10 +82,11 @@ public:
             if(kind!=Kind::Hello)return deny(conn);
             const std::string candidate(data.begin(),data.end());
             if(!validPrincipal(candidate) || !lookup_)return deny(conn);
-            const auto key=lookup_(candidate);
+            auto key=lookup_(candidate);
             if(!key || net::isZero(*key))return deny(conn);
             principal_=candidate;
             secret_=*key;
+            net::wipe(key->data(),key->size());
             nonce_.resize(32);
             net::secureRandom(nonce_.data(),nonce_.size());
             conn.send(encode(Kind::Challenge,nonce_));

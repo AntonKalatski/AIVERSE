@@ -35,7 +35,11 @@ public:
                            std::uint8_t playerSlot,
                            std::uint16_t commandType,
                            std::string* error=nullptr) {
-        if(!clientInstance || !playerSlot || !commandType) {
+        if(!clientInstance || !playerSlot || !commandType ||
+           (client_ && client_->unresolved() &&
+            (client_->instance()!=clientInstance ||
+             playerSlot!=editorPlayerSlot_ ||
+             commandType!=commandType_))) {
             if(error)*error="PHYSIS invalid admin connection identity";
             net::wipe(key.data(),key.size());
             return false;
@@ -96,6 +100,9 @@ public:
     // Disconnect retains pending request so it can be queried after a new
     // transport attaches with the SAME authenticated client instance ID.
     void disconnect() {
+#ifndef __EMSCRIPTEN__
+        pendingAdmin_.reset();
+#endif
         if(connection_)connection_->close();
         connection_.reset();
         if(client_)client_->disconnected();

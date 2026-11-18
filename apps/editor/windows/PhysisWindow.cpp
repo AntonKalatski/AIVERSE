@@ -239,6 +239,10 @@ private:
                 "Проверяем полномочия и защищённый канал PHYSIS..." :
                 "Нет авторизованного соединения с сервером PHYSIS.");
             ui::hint("Сетевой хост подключает канал после проверки доступа.");
+            const auto explanation=remote.message();
+            if(!explanation.empty())
+                ImGui::TextUnformatted(explanation.data(),
+                                       explanation.data()+explanation.size());
             return;
         }
         // PHYSIS has its own admin protocol, not normal InputFrame.
