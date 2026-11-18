@@ -39,6 +39,30 @@ public:
 
     size_t tileCount() const { return tiles_.size(); }
 
+    // True ONLY if every WorldScene terrain tile touched by the half-open
+    // rectangle is resident and owns rendered ground geometry. A coarse
+    // Horizon quad may be omitted only when near geometry fully covers it.
+    // Rectangular coverage avoids a circular near-hole that can expose sky
+    // when authored terrain tiles have not been streamed yet.
+    bool coversRect(int64_t x0,int64_t z0,int64_t x1,int64_t z1) const {
+        if(x0>=x1||z0>=z1||x0<-kWorldLimitCm||
+           z0<-kWorldLimitCm||x1>kWorldLimitCm||
+           z1>kWorldLimitCm)
+            return false;
+        const int64_t left=detail::floorDiv(x0,cellSizeCm_);
+        const int64_t right=detail::floorDiv(x1-1,cellSizeCm_);
+        const int64_t top=detail::floorDiv(z0,cellSizeCm_);
+        const int64_t bottom=detail::floorDiv(z1-1,cellSizeCm_);
+        const int64_t width=right-left+1,height=bottom-top+1;
+        if(width<=0||height<=0||width*height>4096)return false;
+        for(int64_t z=top;z<=bottom;++z)
+            for(int64_t x=left;x<=right;++x)
+                if(!tiles_.contains(world::Cell{
+                    static_cast<int32_t>(x),0,static_cast<int32_t>(z)}))
+                    return false;
+        return true;
+    }
+
     // A null result means that no loaded WorldScene heightfield covers this
     // point. Caller may fall back to deterministic procedural height.
     // The same two triangles as the terrain collider are interpolated in
