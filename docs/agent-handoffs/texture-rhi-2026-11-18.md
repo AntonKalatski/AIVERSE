@@ -3484,3 +3484,35 @@ No passing CI claimed.
 **Next:** Perform native builds and texture/VT CTests; correct actual
 failures. Add real hardware shader capture for page-table/physical
 atlas sampling and backend readback. Ensure CI completes before merging.
+
+## Stage 8F — Vulkan live resource enumeration regression fixture (2026-11-18)
+
+**Code commit:** `36667df7470167ab07285e2e6b207e79f4754419`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Path:** `tests/render/vulkan_tests.cpp`.
+
+**Source:** In the existing `vulkan_backend` integration fixture,
+create an 8×8 RGBA8 `Texture2DArray` with two physical layers and
+four explicitly allocated mips. Assert that `Device::textureResources()`
+reports the live user texture with the correct type/format/extent/
+layers/mips/sample count and an estimated footprint of 680 bytes;
+check renderTarget/storage flags remain false. Destroy that handle
+and assert the resource no longer appears in the returned snapshot.
+The fixture is conditional on successful native texture allocation
+and records CHECK failure rather than silently claiming success.
+This validates inventory lifecycle, not actual GPU memory telemetry.
+
+**Compatibility:** Test-only; no new runtime/editor/backend API
+or save/network/ECS source changes.
+
+**Validation:** GitHub source commit confirmed.
+Vulkan SDK compile, CTest and real GPU/lavapipe execution:
+**NOT RUN** in this environment. The full feature branch
+still needs native compiler validation and cannot be considered
+production ready.
+
+**Next:** Run `aiverse_vulkan_tests`/`vulkan_backend` on a
+working Vulkan device, and test analogous Metal/GL texture
+enumeration and editor GUI. Check actual format/memory numbers,
+including compressed textures, cube arrays, 3D and MSAA. Continue
+separate source/handoff commits.
