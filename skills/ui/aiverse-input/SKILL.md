@@ -18,6 +18,13 @@ same consumed prerequisite control still use a deterministic conservative
 fallback. See `docs/enhanced-input.md` and the Stage 47–48 handoff. Tests are
 written but not yet executed; do not mark InputFlow validated or production-ready.
 
+**Stage 49 lifecycle:** when a Mapping/Action chord becomes false or a
+higher Context consumes its control, the active Action cancels and Hold/Pulse
+timers restart only after eligibility returns. Reactivation of a context
+initializes Mapping press history from current held controls. Do not treat
+physical down as sufficient for `ActionState.active`; inspect `state()`
+after the Action-level gates. Tests authored, not run. See handoff Stage 49.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
