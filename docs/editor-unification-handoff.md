@@ -1833,3 +1833,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `940064fa6120bd3a0b8fec6e92cf75ce4ac38606`.
 - `tests/ecs_hitscan_selection_test.cpp` also used the nearest-rounded `Fixed::fromRatio(3,10)` as the expected fraction. Corrected it to `3_fx/10_fx` to match the shared engine's truncated slab-intersection division. This is the same failure mode as the reported `ecs_hitscan_resolution_test`, and would affect the standalone/CTest sweep after the originally failed subset is rerun.
 - Test expectation only; **not** a native test pass.
+
+### 2026-11-18 — Reject malformed ECS allocator and RTS pool records
+- **Code SHA:** `d8937196965a79c60d0832590f6a04b5afb9ec89`; current branch `feature/universal-entity-inspector-fps`.
+- **Files:** `engine/core/ECS.h`, `engine/sim/Simulation.cpp`, `modules/rts/RtsSave.cpp`, `tests/ecs_native_persistence_test.cpp`.
+- Added allocator invariants before byte-state application, plus generation/liveness/duplicate validation for RTS built-in pool entries. Source tests cover five malformed allocator states.
+- No on-disk version or checksum update; no native compilation, sanitizers or live network test run here. See `docs/agent-handoffs/native-ecs-persistence.md` for exact proof limits and next command.
+- **Next:** build targeted CTest, inspect legacy save compatibility and run real RTS malformed-pool regression.
+

@@ -114,3 +114,13 @@ over a newer version. No green CI logs means no passing-CI claim.
 - **Risks/limits:** compilation/linkage on macOS/Windows/Linux is unproven. The new test uses repository `templates/mushrooms` files; assert those paths exist at test runtime. COW fixture covers in-process snapshots, not an actual UDP session or cross-CPU determinism.
 - **Next action:** in a full checkout run `cmake --build <build> --target aiverse_ecs_native_rts_integration_test` and `ctest --test-dir <build> -R '^ecs_native_(persistence|rts_integration)_test$' --output-on-failure`. Fix native diagnostics, append actual result and only then proceed with persisted schema corruption and network session tests.
 
+
+## Completed stage 5 — Validate entity allocator and real RTS pool rows (2026-11-18)
+- **Implementation SHA:** `d8937196965a79c60d0832590f6a04b5afb9ec89` on PR #7 `feature/universal-entity-inspector-fps`.
+- **Files:** `engine/core/ECS.h`, `engine/sim/Simulation.cpp`, `modules/rts/RtsSave.cpp`, `tests/ecs_native_persistence_test.cpp`.
+- **Change:** added `World::validEntityState` guard for bounded entity allocator size, matching generation/alive arrays, binary alive values and exactly-once free-list membership of dead slots. `Simulation::deserialize` rejects malformed allocators before touching running state. `RtsSave::ioPool` now fails on invalid Entity generation, destroyed handles or duplicate component row indices rather than inserting inconsistent sparse-set entries.
+- **Tests added:** five invalid allocator shapes (column count, duplicate free slot, out-of-range free slot, live/free collision, nonboolean alive value); existing disk round-trip and COW tests remain registered.
+- **Compatibility:** valid v4–v10 existing save layout and v9 checksum are unchanged. Files with logically invalid allocator/pool membership may now be rejected, intentionally. Bound is 16,777,216 entity slots. `pendingDestroy` may contain stale handles intentionally and is not rejected.
+- **Verification:** code committed and source reviewed through GitHub. Native Linux/macOS/Windows compile, CTest and runtime: **NOT RUN** (local container cannot resolve github.com); current GitHub Actions results not confirmed green. Do not assert validated production safety.
+- **Next action:** compile `aiverse_ecs_native_persistence_test` and `aiverse_ecs_native_rts_integration_test`, run `ctest --test-dir <build> -R 'ecs_native_(persistence|rts_integration)_test' --output-on-failure`; check prior legacy save fixtures and fuzz malformed RTS pool bytes. Fix failures, then commit the next handoff.
+
