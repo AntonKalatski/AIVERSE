@@ -3454,3 +3454,33 @@ image support and mobile/web compatibility. After the user-requested
 implementation pass, run `./run-tests.sh --quick`, then full
 `./run-tests.sh` and real Metal/GL/Vulkan GPU captures; fix failures
 and record exact tested HEAD and outcomes.
+
+## Stage 8E — refresh architecture docs and repair duplicated test commands (2026-11-18)
+
+**Documentation commit:** `1d1f790a7e7a85f0db607fcaaf3da816ab8cc35b`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Path:** `docs/texture-rhi.md`.
+
+**Documentation work:** Replace stale statements suggesting virtual
+page tables/physical atlas streaming are wholly absent: the CPU-backed
+`VirtualTextureStreamer`, fixed 2DArray physical atlas, GPU-uploadable
+page table, LRU and GLSL/MSL snippets now exist in source. Clarify that
+true hardware sparse textures, GPU-feedback-driven requests, disk paging
+and native shader validation are NOT implemented or verified. Document
+the new `Device::textureResources()` read-only snapshot and optional
+editor **Графика → GPU Текстуры** table/2D thumbnail with byte estimates
+distinct from driver-reported VRAM. Fix an earlier duplicated/broken
+Markdown fenced validation block by replacing it with a single coherent
+CMake/CTest command including the texture and virtual texture CPU tests
+and Vulkan native GPU validation instructions.
+
+**Compatibility:** Documentation-only stage, no C++ runtime changes.
+No FPS/RTS ECS, networking, saves or existing renderer API modifications.
+
+**Actual validation:** GitHub document update committed.
+Native C++ build, CTest and live GPU/editor validation: **NOT RUN**.
+No passing CI claimed.
+
+**Next:** Perform native builds and texture/VT CTests; correct actual
+failures. Add real hardware shader capture for page-table/physical
+atlas sampling and backend readback. Ensure CI completes before merging.
