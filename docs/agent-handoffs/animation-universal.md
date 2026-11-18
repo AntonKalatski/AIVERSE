@@ -345,3 +345,26 @@ before calling this stage validated.
   No direct integration into Unity import pipeline or Editor window yet.
 - Next: authored fixed root-track export, ragdoll definition/pose bridge,
   avatar editor workflow and integration/optimization.
+
+
+## Stage 15 — procedural Humanoid Ragdoll asset and optional physics constraints (2026-11-18)
+
+- Code commit: `a8551175fee87a0beb9cc642db381b9168fbe5a2`.
+- Added `libraries/include/aiverselib/animation/RagdollAsset.h`:
+  generates capsule/sphere rigidbody `physics::World` scene JSON using
+  semantic humanoid bone links; body-to-bind offsets allow conversion of
+  simulated world rigid poses back into model-local skeletal bone poses.
+  Features joint anchors, authored body radii/density/friction, tick rate.
+- Extended optional `engine/physics/World.cpp` hinge scene parsing with
+  validated `"limits":[min,max]` and Box3D angular joint limits. Existing
+  scenes without limits keep their prior behavior.
+- Added `tests/animation/ragdoll.cpp`, CTest `animation_ragdoll_asset`.
+- **NOT RUN** (user requested deferred tests). Physical tests require
+  `AIVERSE_ENABLE_PHYSICS=ON`, rigidbody state readback bridge, and an
+  actual long-running stability scenario.
+- Limits: generated ragdoll does not yet implement self-collision filtering,
+  full 3-axis ball/socket constraints, bone drive / motors, transition to get-up
+  animation or server-authoritative physics. Ragdoll is a separate opt-in
+  Box3D world; animation runtime only consumes returned poses.
+- Next: add explicit physics body readback and recovery bridge; then
+  animation authoring tools and parallel/LOD integration.
