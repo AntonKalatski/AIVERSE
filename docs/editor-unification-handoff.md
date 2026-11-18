@@ -1253,3 +1253,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `bef1f346551233b6bda0d352906bb94229892b11`.
 - Extended `tests/ecs_cross_genre_impact_queue_test.cpp` with `exerciseQueueBoundaries`: rejects zero/overflowed sequence IDs and full (8192-event) queue submissions without allocating new IDs or changing existing pending events. Existing two-host ordering/COW regression remains.
 - **Verification:** source committed only, assertions **not executed**. A native build must check both C++ compilation and full execution.
+
+
+### 2026-11-18 — Whole-engine ECS migration plan updated for impact queue
+- **Documentation SHA:** `1d5ce77437d7ab8acb9b4ca82d001902281e7aba`.
+- Appended implementation status and compatibility caveats to `docs/ecs-all-features-migration-plan.md`; distinguishes the immutable 120-package audit baseline from the current catalog, and the new opt-in separately scheduled queue system from legacy RTS/FPS immediate hit implementations.
+- **Verification:** docs-only source commit, native gameplay migration remains pending.
+- **Next:** update AGENTS and issue tracker, perform static wiring audit, obtain compile/test evidence.
