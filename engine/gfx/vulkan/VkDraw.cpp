@@ -491,9 +491,11 @@ bool VulkanDevice::drawIndexedIndirect(BufferHandle commands, size_t offset,
 bool VulkanDevice::copyColor(TextureHandle from, TextureHandle to) {
     if (!recording_ || inPass_) return false;
     VTexture* dst = textures_.get(to.id);
-    if (!dst || dst->format != PixelFormat::RGBA8 || dst->levels != 1) return false;
+    if (!dst || dst->dimension != TextureDimension::Texture2D ||
+        dst->format != PixelFormat::RGBA8 || dst->levels != 1) return false;
     VTexture* src = from.valid() ? textures_.get(from.id) : &back_;
-    if (!src || src->depth || src->width != dst->width || src->height != dst->height) return false;
+    if (!src || src->dimension != TextureDimension::Texture2D ||
+        src->depth || src->width != dst->width || src->height != dst->height) return false;
     VkCommandBuffer cb = slots_[size_t(slot_)].main;
     barrierImage(cb, src->image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     barrierImage(cb, dst->image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);

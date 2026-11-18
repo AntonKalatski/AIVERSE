@@ -118,7 +118,7 @@ bool VulkanDevice::supports(PixelFormat f) const {
     return (fp.optimalTilingFeatures & need) == need;
 }
 
-void VulkanDevice::barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels, uint32_t baseLevel) {
+void VulkanDevice::barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels, uint32_t baseLevel, uint32_t arrayLayers) {
     auto b = vkStruct<VkImageMemoryBarrier>(VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER);
     b.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
     b.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
@@ -126,7 +126,7 @@ void VulkanDevice::barrierImage(VkCommandBuffer cb, VkImage image, bool depth, V
     b.newLayout = to;
     b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     b.image = image;
-    b.subresourceRange = {VkImageAspectFlags(depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), baseLevel, levels, 0, 1};
+    b.subresourceRange = {VkImageAspectFlags(depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), baseLevel, levels, 0, arrayLayers};
     // Conservative full barriers: correctness first; the RHI's passes are coarse anyway.
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
 }
@@ -296,11 +296,14 @@ bool isCompressed(PixelFormat f) {
 
 bool VulkanDevice::createImage(VTexture& t, VkImageUsageFlags usage) {
     auto ci = vkStruct<VkImageCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
-    ci.imageType = VK_IMAGE_TYPE_2D;
+    ci.imageType = t.dimension == TextureDimension::Texture1D ? VK_IMAGE_TYPE_1D :
+                   t.dimension == TextureDimension::Texture3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+    ci.flags = (t.dimension == TextureDimension::Cube || t.dimension == TextureDimension::CubeArray) ?
+               VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
     ci.format = t.vkFormat;
-    ci.extent = {uint32_t(std::max(1, t.width)), uint32_t(std::max(1, t.height)), 1};
+    ci.extent = {uint32_t(std::max(1, t.width)), uint32_t(std::max(1, t.height)), uint32_t(std::max(1, t.volumeDepth))};
     ci.mipLevels = uint32_t(t.levels);
-    ci.arrayLayers = 1;
+    ci.arrayLayers = uint32_t(t.layers);
     ci.samples = VK_SAMPLE_COUNT_1_BIT;
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = usage;
@@ -315,29 +318,40 @@ bool VulkanDevice::createImage(VTexture& t, VkImageUsageFlags usage) {
     vkBindImageMemory(device_, t.image, t.alloc.memory, t.alloc.offset);
     auto vi = vkStruct<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
     vi.image = t.image;
-    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vi.viewType = t.dimension == TextureDimension::Texture1D ? VK_IMAGE_VIEW_TYPE_1D :
+                  t.dimension == TextureDimension::Texture3D ? VK_IMAGE_VIEW_TYPE_3D :
+                  t.dimension == TextureDimension::Texture2DArray ? VK_IMAGE_VIEW_TYPE_2D_ARRAY :
+                  t.dimension == TextureDimension::Cube ? VK_IMAGE_VIEW_TYPE_CUBE :
+                  t.dimension == TextureDimension::CubeArray ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
     vi.format = t.vkFormat;
-    vi.subresourceRange = {VkImageAspectFlags(t.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT), 0, uint32_t(t.levels), 0, 1};
+    vi.subresourceRange = {VkImageAspectFlags(t.depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT),
+                           0, uint32_t(t.levels), 0, uint32_t(t.layers)};
     if (t.format == PixelFormat::R8) vi.components = {VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ZERO, VK_COMPONENT_SWIZZLE_ONE};
     if (t.format == PixelFormat::ETC2_RGB8 || t.format == PixelFormat::BC1) vi.components.a = VK_COMPONENT_SWIZZLE_ONE;
-    vkCreateImageView(device_, &vi, nullptr, &t.view);
+    if (vkCreateImageView(device_, &vi, nullptr, &t.view) != VK_SUCCESS) {
+        vkDestroyImage(device_, t.image, nullptr);
+        memory_.release(t.alloc);
+        t.image = VK_NULL_HANDLE;
+        error_ = "vkCreateImageView failed";
+        return false;
+    }
     return true;
 }
 
 // Every image rests in SHADER_READ_ONLY_OPTIMAL between operations; passes and copies return it there.
 void VulkanDevice::initImageLayout(VTexture& t, VkCommandBuffer cb, bool clear) {
-    if (!clear || t.compressed) { barrierImage(cb, t.image, t.depth, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL); return; }
-    barrierImage(cb, t.image, t.depth, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    if (!clear || t.compressed) { barrierImage(cb, t.image, t.depth, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers)); return; }
+    barrierImage(cb, t.image, t.depth, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
     if (t.depth) {
         VkClearDepthStencilValue v{1.0f, 0};
-        VkImageSubresourceRange r{VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+        VkImageSubresourceRange r{VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers)};
         vkCmdClearDepthStencilImage(cb, t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &v, 1, &r);
     } else {
         VkClearColorValue v{};
-        VkImageSubresourceRange r{VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, 1};
+        VkImageSubresourceRange r{VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers)};
         vkCmdClearColorImage(cb, t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &v, 1, &r);
     }
-    barrierImage(cb, t.image, t.depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    barrierImage(cb, t.image, t.depth, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
 }
 
 VkSampler VulkanDevice::samplerFor(const TextureDesc& d, const VTexture& t) {
@@ -363,85 +377,122 @@ VkSampler VulkanDevice::samplerFor(const TextureDesc& d, const VTexture& t) {
     return s;
 }
 
-void VulkanDevice::uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb) {
+void VulkanDevice::uploadImage(VTexture& t, int level, int x, int y, int w, int h,
+                               const void* data, size_t bytes, VkCommandBuffer cb,
+                               int z, int depth, int baseArrayLayer, int layerCount) {
     VkBuffer src; VkDeviceSize off;
     void* p = stagingWrite(bytes, src, off);
     if (!p) return;
     std::memcpy(p, data, bytes);
     VkBufferImageCopy c{};
     c.bufferOffset = off;
-    c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(level), 0, 1};
-    c.imageOffset = {x, y, 0};
-    c.imageExtent = {uint32_t(w), uint32_t(h), 1};
+    c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(level),
+                          uint32_t(baseArrayLayer), uint32_t(layerCount)};
+    c.imageOffset = {x, y, z};
+    c.imageExtent = {uint32_t(w), uint32_t(h), uint32_t(depth)};
     vkCmdCopyBufferToImage(cb, src, t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
 }
 
-void VulkanDevice::generateMips(VTexture& t, VkCommandBuffer cb) {   // level 0 in TRANSFER_DST; all levels end in SHADER_READ_ONLY
-    int w = t.width, h = t.height;
+void VulkanDevice::generateMips(VTexture& t, VkCommandBuffer cb) {
+    // Level zero is TRANSFER_DST; each generated level finishes in SHADER_READ.
+    int w = t.width, h = t.height, z = t.volumeDepth;
     for (int l = 1; l < t.levels; ++l) {
-        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, uint32_t(l - 1));
+        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, uint32_t(l - 1), uint32_t(t.layers));
         VkImageBlit b{};
-        b.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(l - 1), 0, 1};
-        b.srcOffsets[1] = {w, h, 1};
-        w = std::max(1, w / 2); h = std::max(1, h / 2);
-        b.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(l), 0, 1};
-        b.dstOffsets[1] = {w, h, 1};
-        vkCmdBlitImage(cb, t.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_LINEAR);
-        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, uint32_t(l - 1));
+        b.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(l - 1), 0, uint32_t(t.layers)};
+        b.srcOffsets[1] = {w, h, z};
+        w = std::max(1, w / 2); h = std::max(1, h / 2); z = std::max(1, z / 2);
+        b.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(l), 0, uint32_t(t.layers)};
+        b.dstOffsets[1] = {w, h, z};
+        vkCmdBlitImage(cb, t.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &b, VK_FILTER_LINEAR);
+        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, uint32_t(l - 1), uint32_t(t.layers));
     }
-    barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, uint32_t(t.levels - 1));
+    barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, uint32_t(t.levels - 1), uint32_t(t.layers));
 }
 
 TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
         error_ = textureDescErrorString(e); return {};
     }
-    if (d.dimension != TextureDimension::Texture2D || d.depth != 1 || d.arrayLayers != 1 ||
-        d.sampleCount != 1 || d.mipLevels > 1) {
-        error_ = "texture dimension, array, multisampling or explicit mips not yet supported by this backend";
+    if (d.sampleCount != 1 || d.storage ||
+        (d.dimension != TextureDimension::Texture2D && (d.renderTarget || d.format == PixelFormat::Depth))) {
+        error_ = "Vulkan: multisample/storage and layered/3D render attachments not yet supported";
         return {};
     }
     VTexture t;
     t.format = d.format;
     t.vkFormat = vkFormat(d.format);
-    t.width = std::max(1, d.width); t.height = std::max(1, d.height);
+    t.dimension = d.dimension;
+    t.width = d.width;
+    t.height = d.height;
+    t.volumeDepth = d.dimension == TextureDimension::Texture3D ? d.depth : 1;
+    t.layers = d.dimension == TextureDimension::Texture2DArray ||
+               d.dimension == TextureDimension::Cube || d.dimension == TextureDimension::CubeArray ?
+               d.arrayLayers : 1;
     t.depth = d.format == PixelFormat::Depth;
     t.renderTarget = d.renderTarget;
     t.compressed = isCompressed(d.format);
     if (!supports(d.format) && !t.depth) { error_ = "texture format unsupported"; return {}; }
-    if (t.compressed) t.levels = std::max(1, d.levelCount);
-    else if (d.mipmaps && !t.depth && !d.renderTarget && d.format != PixelFormat::RGBA16F && d.format != PixelFormat::RGBA32F) {
+    if (t.compressed && (!d.levelCount || !d.levelData || !d.levelSize)) {
+        error_ = "Vulkan: compressed texture requires complete mip payloads"; return {};
+    }
+    if (t.compressed) t.levels = d.levelCount;
+    else if (d.levelCount > 0 && d.levelData) t.levels = d.levelCount;
+    else if (d.mipLevels > 0) t.levels = d.mipLevels;
+    else if (d.mipmaps && !t.depth && !d.renderTarget &&
+             d.format != PixelFormat::RGBA16F && d.format != PixelFormat::RGBA32F) {
         VkFormatProperties fp;
         vkGetPhysicalDeviceFormatProperties(gpu_, t.vkFormat, &fp);
-        const auto need = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+        const auto need = VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT |
+                          VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
         if ((fp.optimalTilingFeatures & need) == need) {
             t.generateMips = true;
-            for (int s = std::max(t.width, t.height); s > 1; s >>= 1) ++t.levels;
+            t.levels = maxTextureMipLevels(t.width, t.height, t.volumeDepth);
         }
     }
-    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if (t.depth) usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                              VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    if (t.depth) usage = VK_IMAGE_USAGE_SAMPLED_BIT |
+                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     else if (d.renderTarget) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     if (!createImage(t, usage)) return {};
     t.sampler = samplerFor(d, t);
     VkCommandBuffer cb = transferCmd();
-    if (t.compressed && d.levelData) {
-        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        for (int l = 0; l < t.levels; ++l)
-            uploadImage(t, l, 0, 0, std::max(1, t.width >> l), std::max(1, t.height >> l), d.levelData[l], d.levelSize[l], cb);
-        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (d.levelCount > 0 && d.levelData) {
+        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_UNDEFINED,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
+        for (int l = 0; l < t.levels; ++l) {
+            if (!d.levelData[l]) { error_ = "Vulkan: missing level payload"; break; }
+            const int w = std::max(1, t.width >> l), h = std::max(1, t.height >> l);
+            const int z = std::max(1, t.volumeDepth >> l);
+            const size_t bytes = t.compressed ? d.levelSize[l] :
+                                 size_t(w) * size_t(h) * size_t(z) * size_t(t.layers) * texelBytes(d.format);
+            uploadImage(t, l, 0, 0, w, h, d.levelData[l], bytes, cb,
+                        0, z, 0, t.layers);
+        }
+        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
     } else if (d.data && !t.depth) {
-        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        uploadImage(t, 0, 0, 0, t.width, t.height, d.data, size_t(t.width) * size_t(t.height) * texelBytes(d.format), cb);
+        barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_UNDEFINED,
+                     VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
+        const size_t bytes = size_t(t.width) * size_t(t.height) *
+                             size_t(t.volumeDepth) * size_t(t.layers) * texelBytes(d.format);
+        uploadImage(t, 0, 0, 0, t.width, t.height, d.data, bytes, cb,
+                    0, t.volumeDepth, 0, t.layers);
         if (t.generateMips) generateMips(t, cb);
-        else barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        else barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
     } else initImageLayout(t, cb, true);
     return {textures_.add(t)};
 }
 
 void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) {
     VTexture* t = textures_.get(h.id);
-    if (!t || t->compressed || t->depth || w <= 0 || hh <= 0) return;
+    if (!t || t->dimension != TextureDimension::Texture2D || t->compressed || t->depth || w <= 0 || hh <= 0) return;
     const size_t bpp = texelBytes(t->format), row = size_t(w) * bpp;
     std::vector<uint8_t> packed;
     const void* src = pixels;
@@ -455,6 +506,44 @@ void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, c
     uploadImage(*t, 0, x, y, w, hh, src, row * size_t(hh), cb);
     if (t->generateMips) generateMips(*t, cb);
     else barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
+bool VulkanDevice::updateTextureRegion(TextureHandle handle, const TextureUploadDesc& u) {
+    VTexture* t = textures_.get(handle.id);
+    if (!t || t->compressed || t->depth || !u.data || u.width <= 0 ||
+        u.height <= 0 || u.depth <= 0 || u.mipLevel < 0 || u.mipLevel >= t->levels ||
+        u.x < 0 || u.y < 0 || u.z < 0 || u.arrayLayer < 0 || u.arrayLayer >= t->layers)
+        return false;
+    const int w = std::max(1, t->width >> u.mipLevel);
+    const int h = std::max(1, t->height >> u.mipLevel);
+    const int d = std::max(1, t->volumeDepth >> u.mipLevel);
+    if (u.x > w - u.width || u.y > h - u.height || u.z > d - u.depth ||
+        (t->dimension != TextureDimension::Texture3D && (u.z != 0 || u.depth != 1)))
+        return false;
+    const size_t bpp = texelBytes(t->format);
+    const size_t row = size_t(u.width) * bpp;
+    if (u.rowPitchBytes < 0 || size_t(u.rowPitchBytes) < row) return false;
+    const size_t imagePitch = u.slicePitchBytes > 0 ? size_t(u.slicePitchBytes) :
+                              size_t(u.rowPitchBytes) * size_t(u.height);
+    if (imagePitch < size_t(u.rowPitchBytes) * size_t(u.height)) return false;
+    std::vector<uint8_t> packed(row * size_t(u.height) * size_t(u.depth));
+    const auto* source = static_cast<const uint8_t*>(u.data);
+    for (int z = 0; z < u.depth; ++z)
+        for (int y = 0; y < u.height; ++y)
+            std::memcpy(packed.data() + (size_t(z) * size_t(u.height) + size_t(y)) * row,
+                        source + size_t(z) * imagePitch + size_t(y) * size_t(u.rowPitchBytes), row);
+    VkCommandBuffer cb = transferCmd();
+    const bool regen = t->generateMips && u.mipLevel == 0;
+    barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regen ? VK_REMAINING_MIP_LEVELS : 1,
+                 uint32_t(u.mipLevel), uint32_t(t->layers));
+    uploadImage(*t, u.mipLevel, u.x, u.y, u.width, u.height, packed.data(), packed.size(), cb,
+                u.z, u.depth, u.arrayLayer, 1);
+    if (regen) generateMips(*t, cb);
+    else barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1,
+                      uint32_t(u.mipLevel), uint32_t(t->layers));
+    return true;
 }
 
 void VulkanDevice::destroyTexture(TextureHandle h) {

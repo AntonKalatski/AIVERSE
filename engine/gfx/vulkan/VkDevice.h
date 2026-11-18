@@ -70,7 +70,8 @@ struct VTexture {
     Allocation alloc;
     PixelFormat format = PixelFormat::RGBA8;
     VkFormat vkFormat = VK_FORMAT_UNDEFINED;
-    int width = 0, height = 0, levels = 1;
+    int width = 0, height = 0, volumeDepth = 1, layers = 1, levels = 1;
+    TextureDimension dimension = TextureDimension::Texture2D;
     bool depth = false, renderTarget = false, generateMips = false, compressed = false;
 };
 
@@ -112,12 +113,14 @@ public:
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
+    bool supportsTextureDimension(TextureDimension) const override { return true; }
 
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
     void destroyBuffer(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
+    bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override;
     void destroyTexture(TextureHandle h) override;
     ShaderHandle createShader(const ShaderDesc& d) override;
     void destroyShader(ShaderHandle h) override;
@@ -165,7 +168,8 @@ private:
     bool createImage(VTexture& t, VkImageUsageFlags usage);
     VkSampler samplerFor(const TextureDesc& d, const VTexture& t);
     void* stagingWrite(size_t size, VkBuffer& buf, VkDeviceSize& offset);
-    void uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb);
+    void uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb,
+                     int z = 0, int depth = 1, int baseArrayLayer = 0, int layerCount = 1);
     void generateMips(VTexture& t, VkCommandBuffer cb);
     void initImageLayout(VTexture& t, VkCommandBuffer cb, bool clear);
     // VkDraw.cpp
@@ -178,7 +182,7 @@ private:
 public:   // helpers shared by the translation units
     VkCommandBuffer transferCmd();               // main command buffer outside passes, else the pre-frame one
     void barrierImage(VkCommandBuffer cb, VkImage image, bool depth, VkImageLayout from, VkImageLayout to, uint32_t levels = VK_REMAINING_MIP_LEVELS,
-                      uint32_t baseLevel = 0);
+                      uint32_t baseLevel = 0, uint32_t arrayLayers = 1);
     void deferDestroy(std::function<void()> fn) { garbage_.push_back({serial_, std::move(fn)}); }
     VkFormat vkFormat(PixelFormat f) const;
 
