@@ -302,6 +302,37 @@ int main() {
     chained.setControl({Device::Keyboard,112},1);
     CHECK(has(chained.update(0.016f),"Finisher",Phase::Triggered));
 
+    // A high-priority binding whose mapping Chord is false must not reserve
+    // its physical key before a lower-priority provider and its dependent
+    // action are evaluated. When the gate is active, it must consume the key.
+    InputFlow conditional;
+    for (const char* name:{"Modal","MenuAction","Move","FollowUp"})
+        CHECK(conditional.defineAction({name,ValueType::Boolean}));
+    MappingContext ui{"UI"}, gameCtx{"Game"};
+    ui.bind("Modal",{Device::Keyboard,130});
+    ui.bind("MenuAction",{Device::Keyboard,131},{},{Trigger::chord("Modal")});
+    gameCtx.bind("Move",{Device::Keyboard,131});
+    gameCtx.bind("FollowUp",{Device::Keyboard,132},{},
+                 {Trigger::pressed(),Trigger::chord("Move")});
+    CHECK(conditional.registerContext(ui));
+    CHECK(conditional.registerContext(gameCtx));
+    CHECK(conditional.activateContext("UI",100));
+    CHECK(conditional.activateContext("Game",0));
+    conditional.setControl({Device::Keyboard,131},1);
+    conditional.setControl({Device::Keyboard,132},1);
+    CHECK(has(conditional.update(0.016f),"FollowUp",Phase::Triggered));
+    CHECK(conditional.state("Move")->active);
+    CHECK(!conditional.state("MenuAction")->active);
+    conditional.setControl({Device::Keyboard,131},0);
+    conditional.setControl({Device::Keyboard,132},0);
+    conditional.update(0.016f);
+    conditional.setControl({Device::Keyboard,130},1);
+    conditional.setControl({Device::Keyboard,131},1);
+    conditional.setControl({Device::Keyboard,132},1);
+    CHECK(!has(conditional.update(0.016f),"FollowUp",Phase::Triggered));
+    CHECK(conditional.state("MenuAction")->active);
+    CHECK(!conditional.state("Move")->active);
+
     // Cycles involving positive or negative chords must be rejected before
     // mutating live native Action or Context definitions.
     InputFlow cyclic;
