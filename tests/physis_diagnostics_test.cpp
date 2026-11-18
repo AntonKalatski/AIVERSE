@@ -99,6 +99,72 @@ void testLayersAndDeterminism() {
     CHECK(br.tick == 0);
     CHECK(br.rawValues != ar.rawValues || br.tick != ar.tick);
 }
+void testAllLayersMatchFullNatureSampling() {
+    World world;
+    Settings cfg;
+    cfg.originX = -2; cfg.originZ = -1;
+    cfg.width = 3; cfg.height = 2; cfg.cellSizeMeters = 100;
+    initialize(world, cfg);
+    initializeDisasters(world);
+    CHECK(ignite(world, -2, -1));
+    const Entity e = cellAt(world, -2, -1);
+    world.get<Surface>(e).wetness = Fixed::fromRatio(1, 2);
+    world.get<Surface>(e).snowpack = Fixed::fromRatio(1, 4);
+    world.get<Atmosphere>(e).rain = Fixed::fromRatio(3, 4);
+    WindZone zone;
+    zone.center = {-150_fx, 0_fx, -50_fx};
+    zone.radiusMeters = 200_fx;
+    zone.velocity = {12_fx, 6_fx, -4_fx};
+    world.add<WindZone>(world.create(), zone);
+    GravityField field;
+    field.mode = GravityMode::Attract;
+    field.center = {-150_fx, 50_fx, -50_fx};
+    field.radiusMeters = 300_fx;
+    world.add<GravityField>(world.create(), field);
+    StormEvent cyclone;
+    cyclone.center = {-150_fx, 0_fx, -50_fx};
+    cyclone.eyeRadiusMeters = 40_fx;
+    cyclone.outerRadiusMeters = 500_fx;
+    world.add<StormEvent>(world.create(), cyclone);
+
+    const DiagnosticLayer layers[] = {
+        DiagnosticLayer::TemperatureCelsius, DiagnosticLayer::RelativeHumidity,
+        DiagnosticLayer::PressureHpa, DiagnosticLayer::Rain, DiagnosticLayer::Snow,
+        DiagnosticLayer::SurfaceWetness, DiagnosticLayer::SnowpackMeters,
+        DiagnosticLayer::SurfaceIce, DiagnosticLayer::WindSpeedMetersPerSecond,
+        DiagnosticLayer::VerticalWindMetersPerSecond, DiagnosticLayer::GravityMagnitude,
+        DiagnosticLayer::Fire, DiagnosticLayer::Quake, DiagnosticLayer::LocalFloodMeters
+    };
+    for (auto layer : layers) {
+        DiagnosticRequest request;
+        request.originX = cfg.originX;
+        request.originZ = cfg.originZ;
+        request.width = cfg.width;
+        request.height = cfg.height;
+        request.layer = layer;
+        DiagnosticRaster raster;
+        CHECK(sampleDiagnosticRaster(world, request, raster));
+        CHECK(raster.sampleCount == 6);
+        for (int z = 0; z < cfg.height; ++z)
+            for (int x = 0; x < cfg.width; ++x) {
+                const auto index = size_t(z * cfg.width + x);
+                const Entity cell = cellAt(world, cfg.originX + x, cfg.originZ + z);
+                const auto* position = world.tryGetConst<Cell>(cell);
+                CHECK(position != nullptr);
+                if (!position) continue;
+                NatureFieldSample full;
+                const Vec3 center{Fixed::fromInt((cfg.originX + x) * 100 + 50),
+                                  position->elevation,
+                                  Fixed::fromInt((cfg.originZ + z) * 100 + 50)};
+                CHECK(sampleNatureField(world, center, full));
+                CHECK(full.hasAtmosphere);
+                CHECK(raster.valid[index] == 1);
+                CHECK(raster.rawValues[index] == diagnosticValue(full, layer).raw);
+            }
+    }
+    CHECK(world.resourceConst<State>()->tick == 0);
+}
+
 void testStrideAndReadOnly() {
     World world;
     Settings s;
@@ -119,6 +185,7 @@ void testStrideAndReadOnly() {
 int main() {
     testRasterAndInvalidInputs();
     testLayersAndDeterminism();
+    testAllLayersMatchFullNatureSampling();
     testStrideAndReadOnly();
     std::printf("PHYSIS Diagnostics: %s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
