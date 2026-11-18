@@ -1517,3 +1517,56 @@ require design and renderer validation.
 mask discontinuities, snapshot change during pending CPU job,
 old GPU proxy retention and destruction order, optional
 Horizon-only scenes, and no-effects when both modules absent.
+
+## Stage 9c — immutable Horizon atlas LRU and camera hysteresis (CODE COMMITTED, TESTING DELEGATED)
+
+**Branch:** `feature/terraweave`, PR #24 Draft, base
+`feature/universal-entity-inspector-fps`.
+
+**Commits/files:**
+- `2de0338b2d0ee2e722e63db9f1d99929973d48d4`:
+  `engine/world/TerraWeaveHorizon.h` adds
+  `maxCachedRegions` (0–4, default 2) and validation.
+- `71ed672d84c4c8fbd5a2666501f410fa7cb67852`:
+  `engine/render/TerraWeaveHorizonScene.h` introduces
+  thread-safe bounded LRU of `shared_ptr<const HorizonBake>`
+  snapshots keyed by `world::Cell`, with coherent source
+  generation tokens, safe cache invalidation and ownership
+  of old surface generations through in-flight workers.
+  `HorizonRuntimeStats` adds `cachedRegions/cacheHits`.
+  Worker still prepares a new render::Model for each CPU-cache
+  hit and re-uploads on the RHI thread; no GPU cache is claimed.
+- `2542ff4c43789c370279925dfb33f3642117926d`:
+  `engine/world/TerraWeaveHorizonManifest.h` exposes
+  `maxCachedRegions` setting (0 disables CPU retention).
+- `91617b912864037a891073c6ab2ad43a29abdf66`:
+  `engine/world/TerraWeaveHorizon.h` adds
+  `regionHysteresisCm` (default 3200, less than ½
+  `middleTileCm`) and validation.
+- `3d05d2be12e166171456e42dc1b04c4adbb72cdc`:
+  `engine/render/TerraWeaveHorizonScene.h` holds the
+  previously selected region within an expanded cell before
+  requesting a new CPU bake.
+- `1be779f0041616a3f73aded5f9985a71c533c819`:
+  manifest exposes `regionHysteresisCm`.
+- Additional stage explanations in `docs/terrain/TERRAWEAVE.md`.
+
+**Implemented vs pending:** CPU re-bakes are skipped for the most
+recent region(s) unless authored surface revision changes. A
+bounded hysteresis prevents rapid streaming at cell boundaries.
+The renderer still owns one GPU model only; there is no disk
+atlas cache and no per-frame animated transparency. The
+cache does not eliminate CPU-to-GPU upload cost.
+
+**Verification:** GitHub writes and source inspection performed.
+The user explicitly assigned ALL tests to a different agent:
+**NO builds, CTests, benchmarks, live renders or screenshots
+performed or claimed.** Remain Draft.
+
+**Next implementation-only scope:** implement an engine-generic
+Horizon quality preset/API for mobile/desktop and a future optional
+static-world pre-baked atlas asset adapter; do not create or execute
+test targets in this agent's work. The other agent should validate
+cache misses/hits, source revision races, camera jitter near
+128m cell edges, memory during one/two atlas allocations,
+hysteresis after large teleports and GPU rollback on failed upload.
