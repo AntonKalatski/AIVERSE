@@ -17,7 +17,7 @@
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
 #include "libraries/include/aiverselib/animation/AnimationHotReload.h"
 #include "libraries/include/aiverselib/animation/AnimationAssetLoader.h"
-#include "libraries/include/aiverselib/animation/ReplicatedAnimationActions.h"
+#include "modules/fps/view/FpsAnimationEvents.h"
 #include "libraries/include/aiverselib/animation/AnimationPhaseTransfer.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/render/ImGuiLayer.h"
@@ -54,7 +54,7 @@ struct App {
     std::shared_ptr<const render::AnimationGraph> characterGraph;
     std::map<uint8_t,Entity> characterEntities;
     std::map<uint8_t,uint32_t> characterLives;
-    std::map<uint8_t,motionweave::ReplicatedAnimationActions> characterActions;
+    std::map<uint8_t,fps::view::ReplicatedAnimationActions> characterActions;
     std::map<std::string,std::shared_ptr<const motionweave::MontageDefinition>> characterMontages;
     float characterScale=1.f,characterHeightOffset=0.f;
     bool characterBakedCrowd=false,characterBakeAvailable=false;

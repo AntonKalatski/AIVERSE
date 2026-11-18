@@ -39,6 +39,18 @@ struct AnimationMontageSlotsComponent {
     std::vector<MontagePlayer> players;
     std::vector<AnimationNotifyEvent> events; // last frame, for audio/VFX only
 };
+inline bool playAnimationSlot(AnimationMontageSlotsComponent& slots,
+        std::shared_ptr<const MontageDefinition> asset) {
+    if(!asset)return false;
+    for(auto& player:slots.players)
+        if(player.slot()==asset->slot)return player.play(std::move(asset));
+    if(slots.players.size()>=8)return false;
+    slots.players.emplace_back();
+    if(!slots.players.back().play(std::move(asset))) {
+        slots.players.pop_back();return false;
+    }
+    return true;
+}
 // Host-supplied LOCAL bone pose from an independent physics simulation.
 struct AnimationPhysicalPoseComponent {
     render::Pose local;

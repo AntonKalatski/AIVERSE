@@ -1,6 +1,6 @@
-#include <aiverselib/animation/ReplicatedAnimationActions.h>
+#include "modules/fps/view/FpsAnimationEvents.h"
 #include <cassert>
-using namespace aiverse::lib::animation;
+using namespace aiverse::fps::view;
 int main() {
     ReplicatedAnimationActions actions;
     auto t=actions.observe({50,1,8,0,100});
