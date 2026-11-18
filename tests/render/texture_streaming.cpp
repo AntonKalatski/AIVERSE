@@ -91,10 +91,23 @@ void frameBudgetsAndCopies() {
             "staging memory budget");
     require(!queue.enqueue(first, up, source, sizeof source).valid(),
             "staging overcommit rejected");
-    require(queue.drain() == 1 && gpu.writes.size() == 1 &&
-            gpu.writes[0][0] == 42, "first frame transfers copied CPU bytes");
+    std::vector<uint64_t> completionTickets;
+    require(queue.drain([&](TextureUploadTicket ticket, TextureStreamId resource, bool ok) {
+                require(ok && resource == first, "first completion resource/result");
+                completionTickets.push_back(ticket.value);
+            }) == 1 && gpu.writes.size() == 1 &&
+            gpu.writes[0][0] == 42 && completionTickets.size() == 1 &&
+            completionTickets[0] == t0.value,
+            "first frame transfers copied CPU bytes and notifies caller");
     require(queue.stats().stagedBytes == 16, "one staging allocation retired");
-    require(queue.drain() == 1 && gpu.writes[1][0] == 77,
+    require(queue.drain([&](TextureUploadTicket ticket, TextureStreamId resource, bool ok) {
+                require(ok && resource == second && ticket == t1,
+                        "second completion resource/result");
+                completionTickets.push_back(ticket.value);
+                // Queue mutation in a completion is safe: notifications run
+                // after the frame loop, not during internal iteration.
+            }) == 1 && gpu.writes[1][0] == 77 &&
+            completionTickets.size() == 2,
             "second frame respects upload count and source ownership");
     require(queue.stats().completedUploads == 2, "two successful transfers");
     require(queue.texture(first).valid(), "stream handle still maps to GPU");
@@ -157,8 +170,12 @@ void pitchedVolumeAndFailure() {
             "failed write fixture queued");
     require(queue.enqueue(volume, u, source, sizeof source).valid(),
             "second queued job to be cancelled after failure");
-    require(queue.drain() == 1 && queue.failed(volume),
-            "failed GPU upload quarantines resource");
+    bool failedCompletion = false;
+    require(queue.drain([&](TextureUploadTicket, TextureStreamId id, bool ok) {
+                failedCompletion = id == volume && !ok;
+                require(queue.failed(volume), "callback observes failed resource status");
+            }) == 1 && queue.failed(volume) && failedCompletion,
+            "failed GPU upload quarantines resource and reports failure");
     require(queue.stats().failedUploads == 1 &&
             queue.stats().pendingUploads == 0 &&
             queue.stats().cancelledUploads == 1, "later uploads cancelled on failure");

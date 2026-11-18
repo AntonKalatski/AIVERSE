@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <map>
 #include <string>
@@ -46,6 +47,10 @@ struct TextureStreamStats {
 // a new resource after the old one has been destroyed.
 class TextureStreamQueue {
 public:
+    // Callback is dispatched after the frame's drain loop has completed,
+    // so it may safely queue/cancel/destroy resources for a later frame.
+    // It is invoked on the device thread, never a background worker.
+    using CompletionFn = std::function<void(TextureUploadTicket, TextureStreamId, bool)>;
     explicit TextureStreamQueue(Device& device, TextureStreamConfig config = {})
         : device_(&device), config_(config) {}
     ~TextureStreamQueue() { shutdown(); }
@@ -207,8 +212,10 @@ public:
     // Each update is sent in FIFO order with strict byte/upload count budgets.
     // On failure mark that resource failed and cancel its remaining uploads;
     // the caller should destroy/recreate it to recover.
-    size_t drain() {
+    size_t drain(const CompletionFn& completion = {}) {
         if (!device_) return 0;
+        struct Result { TextureUploadTicket ticket; TextureStreamId resource; bool ok; };
+        std::vector<Result> results;
         size_t submitted = 0, transferred = 0;
         while (!pending_.empty() && submitted < config_.uploadsPerFrame) {
             const size_t bytes = pending_.front().bytes.size();
@@ -222,6 +229,7 @@ public:
             const bool ok = device_->updateTextureRegion(it->second.gpu, job.upload);
             ++submitted;
             transferred += bytes;
+            results.push_back({job.ticket, job.resource, ok});
             if (ok) ++completed_;
             else {
                 it->second.failed = true;
@@ -238,6 +246,10 @@ public:
                 }
             }
         }
+        // Deliberately invoke callbacks only after the queue iteration.
+        // The callback can now destroy a resource or schedule more work.
+        if (completion)
+            for (const auto& r : results) completion(r.ticket, r.resource, r.ok);
         return submitted;
     }
 
