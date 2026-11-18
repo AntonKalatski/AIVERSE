@@ -180,9 +180,11 @@ bool GraphRuntime::step(float dt) {
     if(!initialized_)return false;
     if(!useComputeWrapper_) {cpu_.update(dt);return true;}
     const bool success=gpu_.step(dt);
-    // The internal simple-emitter wrapper may itself fall back to CPU after
-    // a GPU health error. Retain its ownership and report its actual backend.
+    // This wrapper owns any subsequent CPU fallback. Report the real state,
+    // including RequireGpu failure and a lost-device transition.
     backend_=gpu_.backend();
+    initialized_=gpu_.ready();
+    if(!success) reason_=gpu_.reason();
     return success;
 }
 void GraphRuntime::draw(const fx::FxFog& fog) {
