@@ -2291,3 +2291,18 @@ if(AIVERSE_BUILD_TESTS)
         set_tests_properties(physis_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
     endif()
 endif()
+
+# PHYSIS Stage 19: deterministic authored field assets and editor Move gizmo
+# transaction contracts. No genre module dependency; authoring uses MapDoc.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_field_assets_test tests/physis_field_assets_test.cpp)
+    target_link_libraries(aiverse_physis_field_assets_test PRIVATE aiverse_engine)
+    add_test(NAME physis_field_assets COMMAND aiverse_physis_field_assets_test)
+    set_tests_properties(physis_field_assets PROPERTIES LABELS "PHYSIS")
+    if(TARGET aiverse_editor_core)
+        add_executable(aiverse_physis_field_authoring_test tests/physis_field_authoring_test.cpp)
+        target_link_libraries(aiverse_physis_field_authoring_test PRIVATE aiverse_editor_core)
+        add_test(NAME physis_field_authoring COMMAND aiverse_physis_field_authoring_test)
+        set_tests_properties(physis_field_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
+    endif()
+endif()
