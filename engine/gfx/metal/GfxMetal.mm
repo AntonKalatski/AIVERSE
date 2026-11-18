@@ -30,6 +30,10 @@ public:
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { items_[id - 1] = T{}; alive_[id - 1] = 0; free_.push_back(id - 1); } }
+    template <class F> void each(F&& fn) {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -56,6 +60,7 @@ struct MTTexture {
     TextureDimension dimension = TextureDimension::Texture2D;
     bool mips = false;
 };
+struct MTTextureView { id<MTLTexture> tex; uint32_t parentId = 0; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
 struct MTShaderCompilation { MTShader value; std::string error; std::atomic<bool> done{false}; };
 struct MTPipeline { id<MTLRenderPipelineState> state; id<MTLRenderPipelineState> icbPbrState; id<MTLArgumentEncoder> icbPbrEncoder; id<MTLDepthStencilState> depth; PipelineDesc desc; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; Device::ShaderJob hdrShaderJob; Device::PipelineJob hdrPipelineJob; };
@@ -105,6 +110,30 @@ public:
         }
     }
     bool supportsTextureDimension(TextureDimension) const override { return true; }
+    bool supportsTextureViews() const override { return true; }
+
+    static MTLSamplerAddressMode addressMode(SamplerAddressMode a) {
+        switch (a) {
+        case SamplerAddressMode::Repeat: return MTLSamplerAddressModeRepeat;
+        case SamplerAddressMode::MirrorRepeat: return MTLSamplerAddressModeMirrorRepeat;
+        case SamplerAddressMode::ClampToBorder: return MTLSamplerAddressModeClampToBorderColor;
+        case SamplerAddressMode::ClampToEdge: return MTLSamplerAddressModeClampToEdge;
+        }
+        return MTLSamplerAddressModeClampToEdge;
+    }
+    static MTLCompareFunction compareFunction(CompareFunction f) {
+        switch (f) {
+        case CompareFunction::Never: return MTLCompareFunctionNever;
+        case CompareFunction::Less: return MTLCompareFunctionLess;
+        case CompareFunction::LessEqual: return MTLCompareFunctionLessEqual;
+        case CompareFunction::Equal: return MTLCompareFunctionEqual;
+        case CompareFunction::Greater: return MTLCompareFunctionGreater;
+        case CompareFunction::GreaterEqual: return MTLCompareFunctionGreaterEqual;
+        case CompareFunction::NotEqual: return MTLCompareFunctionNotEqual;
+        case CompareFunction::Always: return MTLCompareFunctionAlways;
+        }
+        return MTLCompareFunctionLessEqual;
+    }
 
     static MTLTextureType textureType(TextureDimension d) {
         switch (d) {
@@ -487,6 +516,88 @@ public:
         if (t->mips && u.mipLevel == 0) generateMips(t->tex);
         return true;
     }
+    TextureViewHandle createTextureView(TextureHandle h, const TextureViewDesc& view) override {
+        MTTexture* t = textures_.get(h.id);
+        if (!t || !t->tex) { error_ = "Metal texture view: invalid parent"; return {}; }
+        TextureDesc parent;
+        parent.width = int(t->tex.width); parent.height = int(t->tex.height);
+        parent.depth = t->dimension == TextureDimension::Texture3D ? int(t->tex.depth) : 1;
+        parent.arrayLayers = t->dimension == TextureDimension::Cube ? 6 :
+                             t->dimension == TextureDimension::CubeArray ? int(t->tex.arrayLength) * 6 :
+                             t->dimension == TextureDimension::Texture2DArray ? int(t->tex.arrayLength) : 1;
+        parent.dimension = t->dimension;
+        parent.format = t->fmt;
+        parent.mipLevels = int(t->tex.mipmapLevelCount);
+        if (!validateTextureViewDesc(parent, view)) {
+            error_ = "Metal texture view: mip, layer, aspect or view dimension invalid"; return {};
+        }
+        // Explicit views select a subresource and can reinterpret an array slice
+        // as 2D or a cube array as one cube.
+        const MTLTextureType type = textureType(view.dimension);
+        id<MTLTexture> native = [t->tex newTextureViewWithPixelFormat:t->tex.pixelFormat
+                                 textureType:type
+                                 levels:NSMakeRange(NSUInteger(view.baseMipLevel), NSUInteger(view.mipLevelCount))
+                                 slices:NSMakeRange(NSUInteger(view.baseArrayLayer), NSUInteger(view.arrayLayerCount))];
+        if (!native) { error_ = "Metal texture view: native allocation rejected"; return {}; }
+        return {views_.add({native, h.id})};
+    }
+    void destroyTextureView(TextureViewHandle h) override { views_.remove(h.id); }
+
+    SamplerHandle createSampler(const SamplerDesc& d) override {
+        if (!validateSamplerDesc(d) || d.lodBias != 0.0f) {
+            error_ = "Metal sampler: invalid descriptor or unsupported LOD bias"; return {};
+        }
+        if (d.addressU == SamplerAddressMode::ClampToBorder ||
+            d.addressV == SamplerAddressMode::ClampToBorder ||
+            d.addressW == SamplerAddressMode::ClampToBorder) {
+            // Border color is only available for newer Metal families.
+            if (@available(macOS 10.12, iOS 14.0, *)) {}
+            else { error_ = "Metal sampler: border clamp unavailable on this OS"; return {}; }
+        }
+        MTLSamplerDescriptor* sd = [MTLSamplerDescriptor new];
+        sd.minFilter = d.minFilter == Filter::Linear ?
+                       MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+        sd.magFilter = d.magFilter == Filter::Linear ?
+                       MTLSamplerMinMagFilterLinear : MTLSamplerMinMagFilterNearest;
+        sd.mipFilter = d.mipFilter == SamplerMipFilter::None ? MTLSamplerMipFilterNotMipmapped :
+                       d.mipFilter == SamplerMipFilter::Linear ? MTLSamplerMipFilterLinear :
+                       MTLSamplerMipFilterNearest;
+        sd.sAddressMode = addressMode(d.addressU);
+        sd.tAddressMode = addressMode(d.addressV);
+        sd.rAddressMode = addressMode(d.addressW);
+        sd.lodMinClamp = d.minLod; sd.lodMaxClamp = d.maxLod;
+        sd.maxAnisotropy = NSUInteger(std::max(1, std::min(16, int(d.maxAnisotropy))));
+        sd.compareFunction = d.compare ? compareFunction(d.comparison) : MTLCompareFunctionNever;
+        id<MTLSamplerState> native = [device_ newSamplerStateWithDescriptor:sd];
+        if (!native) { error_ = "Metal sampler: native allocation failed"; return {}; }
+        return {samplers_.add(native)};
+    }
+    void destroySampler(SamplerHandle h) override { samplers_.remove(h.id); }
+
+    bool bindTextureView(int slot, TextureViewHandle h, SamplerHandle sampler = {}) override {
+        if (!enc_ || slot < 0 || slot >= 16) return false;
+        MTTextureView* view = views_.get(h.id);
+        if (!view || !view->tex) return false;
+        MTTexture* parent = textures_.get(view->parentId);
+        if (!parent) return false;
+        id<MTLSamplerState> state = sampler.valid() ? (samplers_.get(sampler.id) ?
+            *samplers_.get(sampler.id) : nil) : parent->sampler;
+        if (!state) return false;
+        icbFragmentTextures_[slot] = view->tex;
+        icbFragmentSamplers_[slot] = state;
+        if (bindingCacheEnabled_ && boundTextures_[slot] == view->tex &&
+            boundSamplers_[slot] == state) return true;
+        [enc_ setFragmentTexture:view->tex atIndex:NSUInteger(slot)];
+        [enc_ setVertexTexture:view->tex atIndex:NSUInteger(slot)];
+        [enc_ setFragmentSamplerState:state atIndex:NSUInteger(slot)];
+        [enc_ setVertexSamplerState:state atIndex:NSUInteger(slot)];
+        if (bindingCacheEnabled_) {
+            boundTextures_[slot] = view->tex;
+            boundSamplers_[slot] = state;
+        }
+        return true;
+    }
+
     // Own command buffer: textures are usually created while loading, outside of a frame.
     void generateMips(id<MTLTexture> tex) {
         id<MTLCommandBuffer> cb = [queue_ commandBuffer];
@@ -495,7 +606,16 @@ public:
         [blit endEncoding];
         [cb commit];
     }
-    void destroyTexture(TextureHandle h) override { textures_.remove(h.id); }
+    void destroyTexture(TextureHandle h) override {
+        // Parent/view ownership: remove children before allowing texture handle reuse.
+        std::vector<uint32_t> dependent;
+        views_.each([&](uint32_t id, MTTextureView& v) {
+            if (v.parentId == h.id) dependent.push_back(id);
+        });
+        for (uint32_t id : dependent) views_.remove(id);
+        clearBindings();
+        textures_.remove(h.id);
+    }
 
     // ---------- shaders / pipelines ----------
     ShaderHandle createShader(const ShaderDesc& d) override {
@@ -1657,6 +1777,8 @@ private:
     std::string error_;
     Pool<MTBuffer> buffers_;
     Pool<MTTexture> textures_;
+    Pool<MTTextureView> views_;
+    Pool<id<MTLSamplerState>> samplers_;
     std::map<std::pair<std::string,bool>,std::shared_ptr<MTShaderCompilation>> asyncShaderCompiles_;
     struct IcbPbrShaderCache { id<MTLFunction> fragment; bool attempted = false; };
     std::map<std::pair<std::string,bool>, IcbPbrShaderCache> icbPbrShaders_;
