@@ -10,8 +10,10 @@ int failures=0;
 #define CHECK(c) do { if(!(c)){std::printf("PHYSIS SIM FAIL %s:%d %s\n",__FILE__,__LINE__,#c);++failures;} } while(0)
 class GenericHost final : public GameModule {
     FloodMode floodMode_ = FloodMode::LocalShallow;
+    bool extended_ = false;
 public:
-    explicit GenericHost(FloodMode floodMode = FloodMode::LocalShallow) : floodMode_(floodMode) {}
+    explicit GenericHost(FloodMode floodMode = FloodMode::LocalShallow, bool extended = false)
+        : floodMode_(floodMode), extended_(extended) {}
     std::string name() const override { return "physis-generic-host"; }
     void setup(Simulation& simulation, const Json&, const Json&) override {
         InstallOptions options;
@@ -20,6 +22,10 @@ public:
         options.climate.seed=123;
         options.enableDisasters=true;
         options.floodMode=floodMode_;
+        options.enableWindZones=extended_;
+        options.enableGravityFields=extended_;
+        options.enableStorms=extended_;
+        options.enableForces=extended_;
         install(simulation, options);
         (void)ignite(simulation.world(),0,0,Fixed::fromInt(1));
     }
@@ -28,8 +34,10 @@ public:
     int result(Simulation&) override { return 0; }
     bool serializeState(Simulation&,Archive& archive) override { return archive.ok(); }
 };
-std::unique_ptr<Simulation> make(FloodMode floodMode = FloodMode::LocalShallow) {
-    auto sim=std::make_unique<Simulation>(SimConfig{},std::make_unique<GenericHost>(floodMode));
+std::unique_ptr<Simulation> make(FloodMode floodMode = FloodMode::LocalShallow,
+                                  bool extended = false) {
+    auto sim=std::make_unique<Simulation>(
+        SimConfig{},std::make_unique<GenericHost>(floodMode,extended));
     sim->setup(Json::object(),Json::object());
     return sim;
 }
@@ -80,6 +88,27 @@ void externalAuthorityHostAndPersistence() {
     CHECK(restored->checksum()==one->checksum());
 }
 
+void optionalSchemaCompatibility() {
+    auto baseline=make(FloodMode::LocalShallow);
+    auto extended=make(FloodMode::LocalShallow,true);
+    CHECK(baseline->persistentEcs().componentCount()==8);
+    CHECK(extended->persistentEcs().componentCount()==14);
+    for (int i=0;i<3;++i) { baseline->step(); extended->step(); }
+    const auto baselineSave=baseline->serialize();
+    const auto extendedSave=extended->serialize();
+    auto baselinePeer=make();
+    auto extendedPeer=make(FloodMode::LocalShallow,true);
+    std::string error;
+    CHECK(baselinePeer->deserialize(baselineSave,&error));
+    CHECK(baselinePeer->checksum()==baseline->checksum());
+    CHECK(extendedPeer->deserialize(extendedSave,&error));
+    CHECK(extendedPeer->checksum()==extended->checksum());
+    // Strict persistence manifests intentionally reject cross-option saves.
+    error.clear();
+    CHECK(!extendedPeer->deserialize(baselineSave,&error));
+    CHECK(!error.empty());
+}
+
 void snapshot() {
     auto s=make();
     s->step();
@@ -96,6 +125,7 @@ int main(){
     serializationAndHost();
     snapshot();
     externalAuthorityHostAndPersistence();
+    optionalSchemaCompatibility();
     std::printf("PHYSIS integration: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
