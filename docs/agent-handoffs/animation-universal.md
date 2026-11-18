@@ -998,3 +998,39 @@ before calling this stage validated.
 - **Risks:** event edge state lives in client-only presentation; repeat counts greater than one intentionally collapse into a single visual action per observed snapshot. No interpolation / montage phase migration from GPU crowds yet.
 - **Next agent action:** update `apps/fps/client.cpp` to load opt-in `fps.visual.montages` (project-local shot/reload/death files) via `compileMontageAsset`, attach `AnimationMontageSlotsComponent` to CPU actor entities, use `ReplicatedAnimationActions` keyed by replicated remote slot, preserve historic box/GPU fallbacks and render death montage while active. Commit code and then Stage 42 separately.
 
+## Stage 42 — FPS cosmetic Montage runtime wiring (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Code SHA:** `5d0dc6fe244cac121cdf46374dd16efef7617e31`.
+- **Paths:** `apps/fps/client.cpp`, `docs/fps.md`.
+- **Architecture/API:** project-config opt-in `fps.visual.montages` with
+  `shot`, `reload`, `death` relative JSON asset paths. The client loads
+  `compileMontageAsset` models using current skinned character, logs and
+  skips invalid montage assets (retaining fallback). Each remote actor
+  gets optional `AnimationMontageSlotsComponent`. Confirmed replicated
+  snapshot counters are consumed by `ReplicatedAnimationActions` to
+  start/restart matching masked `MontagePlayer` sections. Montage
+  notifies feed existing cosmetic cue stream, not gameplay writes.
+- **Lifecycle:** newly seen actors never fire phantom shot/montage
+  cues; actor slot disappearance erases state, and life change
+  clears active montage players. Active death montage can continue
+  rendering after server health reaches zero; actor hides once ended.
+  Valid montage configuration pins CPU Graph skinning rather than
+  GPU-baked, ensuring mask/overlays are available.
+- **Compatibility:** no network, save, weapon timer, damage, hit
+  resolution or server-side movement schema changes. Absent assets
+  preserve prior FPS palette/GPU/cube presentation fallback.
+- **Tests:** none executed (user explicitly requested postponing
+  builds/tests); deferred `motionweave_replicated_cues` covers event
+  deduplication, but FPS end-to-end montage/audio/render fixtures
+  and live model screenshots are still required.
+- **Risks:** effect events use the confirmed snapshot's coarse tick,
+  not exact animation start times; missed packets collapse repeated
+  shots to one visual montage. GPU↔CPU phase migration and RTS native
+  MotionWeave adapter remain unfinished.
+- **Next step:** implement a reusable conversion between CPU Graph
+  clip-clock phase and baked Crowd animator phase; migrate FPS
+  presentation states during backend switching rather than resetting
+  entity worlds; preserve the above cosmetic event history. Commit
+  code and then Stage 43 handoff.
+
