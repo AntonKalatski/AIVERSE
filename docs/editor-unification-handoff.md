@@ -1505,3 +1505,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `7c030beb5143e085da6e786a1a98dd5ffad17ebb`.
 - Updated `EcsProjectileSystems.h` to expose public `EcsSweepQuerySystems.h` transitively. Any native project already using `AIVERSE::lib_ecs_projectile_systems` can now compose deterministic dynamic-target swept contact selection with its physical flight and existing impact/damage stages without importing FPS or RTS. The header is not part of the nonphysical `EcsKinematicProjectileSystems` dependency closure.
 - Verification: GitHub source commit only; native builds/tests pending. Next cover stable selection, extent expansion and endpoint contact in cross-genre projectile tests, update corresponding skill.
+
+
+### 2026-11-18 — Swept physical-projectile shared collision regression
+- Implementation SHA: `0ff656f20f961dc0d4cd1d76faa206fcc1a15de5`.
+- Extended existing `tests/ecs_projectile_composition_test.cpp` (registered for ShooterWeaponSource and StrategyTurretSource hosts) to call `exerciseSharedSweptContacts` before its flight/snapshot checks. The new exception-based assertions cover deterministic nearest hit with out-of-order target IDs, exact tie preference for smaller semantic ID, endpoint contact at fraction=1, expansion of target AABB by projectile radius/extent and a no-hit case. It uses the public collision selector exported from `EcsProjectileSystems.h`, with no reference to FPS or RTS gameplay module implementations.
+- Verification: GitHub source commit only. CTest/standalone suite execution not performed; expected 0.3, 1.0 and 0.2 fixed-point collision fractions must be confirmed against native `world::intersect` implementation. Next: update the public projectile AI skill and package manifest, check native builds and real FPS projectile-program parity.
