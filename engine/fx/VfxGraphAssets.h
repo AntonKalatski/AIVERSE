@@ -1,4 +1,4 @@
-// AIVERSE versioned VFX graph asset registry and CPU backend hot reload.
+// AIVERSE SpectraFX: versioned visual effect graph assets and CPU hot reload.
 // No genre assumptions; exposed parameters are instance variants of a graph.
 // Owns metadata only: ParticleSystem owns compiled runtime effects/handles.
 #pragma once
@@ -14,7 +14,7 @@
 
 namespace aiverse::fx {
 
-struct VfxGraphLoadResult {
+struct SpectraGraphLoadResult {
     int effect = -1;
     bool recompiled = false;
     bool fallback = false; // invalid reload kept previous good compiled effect
@@ -22,18 +22,18 @@ struct VfxGraphLoadResult {
     std::vector<std::string> errors;
 };
 
-class VfxGraphAssets {
+class SpectraGraphAssets {
 public:
     using FileReader = std::function<bool(const std::string& path, std::string& text)>;
 
-    VfxGraphAssets(ParticleSystem& particles, FileReader reader)
+    SpectraGraphAssets(ParticleSystem& particles, FileReader reader)
         : ps_(particles), reader_(std::move(reader)) {}
 
     // Content path: fx/graphs/<safe-name>.vfx.json. Optional exposed-parameter
     // overrides create independent variants. Re-read on call to support editor
     // live refresh; unchanged content returns the previous compiled ID.
-    VfxGraphLoadResult load(const std::string& name, const Json& overrides = Json::object()) {
-        VfxGraphLoadResult result;
+    SpectraGraphLoadResult load(const std::string& name, const Json& overrides = Json::object()) {
+        SpectraGraphLoadResult result;
         if (!vfxgraph_detail::nameOk(name)) {
             result.errors.push_back("vfx asset: invalid name (path traversal denied)");
             return result;
@@ -75,7 +75,7 @@ public:
             return result;
         }
         EffectDef definition;
-        if (!compileVfxGraph(json, overrides, definition, result.errors)) {
+        if (!compileSpectraGraph(json, overrides, definition, result.errors)) {
             if (old != compiled_.end()) {
                 result.effect = old->second.id;
                 result.fallback = true;
@@ -133,5 +133,10 @@ private:
     FileReader reader_;
     std::unordered_map<std::string, Entry> compiled_;
 };
+
+
+// Source-compatibility aliases for early VFX graph integrations.
+using VfxGraphLoadResult = SpectraGraphLoadResult;
+using VfxGraphAssets = SpectraGraphAssets;
 
 } // namespace aiverse::fx
