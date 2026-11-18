@@ -1092,3 +1092,103 @@ matching physical collision, camera origin rebasing, and stable
 multichunk persistence. After formal tests resume, compile all eight
 isolated TerraWeave CTest targets and optional `terraweave_editor`;
 inspect Metal/GL/Vulkan screenshots and stats.
+
+
+## Stage 6 — authored-world forest alignment, mask correctness and persistent tree identities
+
+**Branch**: `feature/terraweave`, PR #24 remains Draft. Files/commits
+completed in this stage:
+
+1. `9435bb8d9f64a8a82a0d5166fe8c8ee5c0a06b0b` —
+   `engine/world/TerraWeaveForestScene.h`: fixed both sync
+   `streamAt` and async `preparePatch` so a **standalone**
+   `setPlacementMask` works even with no height or predicate callbacks.
+   Previously the mask was silently skipped in that case.
+2. `ca3c1e63648e76408984279f060ba1afbe52623e` —
+   new `engine/world/TerraWeaveWorldHeightSource.h`:
+   immutable `AuthoredWorldHeightSnapshot` and typed height tile,
+   triangulated interpolation matching WorldScene collider mesh,
+   signed global world centimetres with negative-safe cell indexing.
+3. `7c0c8d5453f507d1dbc3e83c16aac2067dbcaea1` —
+   `engine/world/TerraWeaveForestScene.h`:
+   `setLandscapeSources(HeightSource, shared_ptr<const FoliageExclusionMask>)`
+   publishes a single coherent height/footprint source revision rather
+   than invalidating all queued async work twice.
+4. `2fd9f5e1ab92832df63d9a9783e0a24a994523d3` —
+   `engine/world/WorldScene.h`: optional `Prepared` per-chunk
+   height samples and footprint geometry.
+5. `3aa68800b4551a251f2020cb0bbbe2dc4425a68b` —
+   `engine/world/WorldScene.cpp`: convert loaded terrain Fixed
+   metres to centimetres during worker preparation, account snapshot
+   CPU footprint against chunk reservations, rebuild one immutable
+   resident terrain + collision-box mask when a relevant chunk is
+   published/unloaded, and publish both to the forest via one
+   revision-safe call. Fallback to procedural height if no loaded
+   authored terrain tile covers a sample. Does not run on legacy
+   scenes lacking `terraweaveForest`.
+6. `f2f063d6f1ab46b9c2136dc47d7f554f478ce3dc` —
+   `engine/world/TerraWeaveExclusions.h`: spatial bucket lookup for
+   collision building footprints (64 m cells, >256-bucket shapes in
+   an overflow list). Avoid scanning all streamed building boxes
+   for every forest candidate.
+7. `2a7304027c7663f3be79b712d94273e8556125a1` —
+   `engine/world/TerraWeaveForestScene.h`: stable
+   `ForestTreeIdentity{key,speciesId}` removal/restoration API and
+   sortable snapshot for native game save integration; filters only
+   `visibleBatches()`, so the same tree stays removed after cache
+   eviction/regeneration. Bound set at 1,000,000 identities and expose
+   a `removed` count in scene stats.
+8. `427a2f3ccd4d6b25019503264ecb1082b1bda8da` —
+   `docs/terrain/TERRAWEAVE.md`: implementation contracts, units,
+   limitations, and examples.
+
+**Correctness contract:** The typed authored source matches the
+triangulation used by `readChunkCollision`, with centimetre-level
+rounding; it never updates simulation physics or authoritative ECS.
+The snapshot and mask are immutable during worker use; old
+snapshots stay owned by callbacks captured in a revision of
+`TerraWeaveForestScene`. No worker may mutate GPU state or ECS
+structural data. A changed landscape invalidates previous foliage
+patches. All tree positions remain signed cm until the render adapter.
+
+**Compatibility and limitations:** Unmodified/disabled WorldScene
+manifests are unchanged. Only a manifest with explicit
+`terraweaveForest` includes this host integration. Resident authored
+heightfield tiles are used; unloaded tile samples fall back to
+procedural noise and can exhibit visible terrain boundaries.
+Collision boxes are conservatively projected to X/Z regardless of Y;
+roads/water/complex meshes need their own explicit masks.
+The scatter core still chooses species by its own procedural
+biome/slope, so an authored steep/underwater surface needs a custom
+placement policy for correct ecology. Rebuilding a snapshot when
+terrain residency changes invalidates all current async patches,
+which may cause temporary missing trees during frequent chunk churn.
+`removedTrees()` is a visual state export, not an authoritative
+save/network/destruction system and needs generator version/seed
+matching for persistence.
+
+**Actual tests:** user explicitly requested to run tests later.
+Only GitHub file reads and successful code/doc commits were
+performed; **no CMake/CTest, runtime, GPU screenshot, performance
+benchmarks, headless cross-genre replays or CI success verified**
+for this stage. These implementations must be considered
+unverified until the user resumes testing.
+
+**Next agent instructions:**
+- Inspect HEAD and current file SHAs before editing, because other
+  agents are committing simultaneously on this feature branch.
+- Once tests resume, build the TerraWeave targets + `aiverse_world` /
+  `aiverse_editor`, exercise negative-coordinate tile edges,
+  irregular terrain resolutions, collision-box footprints, sync and
+  async mask-only settings, concurrent landscape revisions, undo
+  of editor heightfield changes, and persistence across patch unload.
+- Attach the native save layer to `removedTrees()` with generator
+  fingerprint/version; add opt-in gameplay tree interaction ECS,
+  collision/navmesh footprint updates and network replication using
+  generic mechanics modules, not genre-specific one-off code.
+- Consider per-tile revision invalidation rather than invalidating
+  the whole forest when a single WorldScene tile arrives; this is
+  a performance enhancement, not yet implemented.
+- Finish true multi-view impostor image-quality work and capture
+  actual Metal/GL/Vulkan outputs when visual tests resume.
+- Append the next stage to this document, recording real results.
