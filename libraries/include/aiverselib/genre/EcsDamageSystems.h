@@ -52,6 +52,55 @@ struct DamageQueue {
     std::vector<DamageRequest> pending;
 };
 
+// The generic ECS damage queue is authoritative whenever a host schedules
+// flight and damage at separate barriers. Snapshot copies are automatic, but
+// byte saves and checksums must explicitly include this resource.
+inline void io(Archive& a,DamageRequest& request) {
+    a(request.target,request.source,request.shotId,request.amount);
+}
+inline void io(Archive& a,DamageQueue& queue) {
+    uint32_t schema=1;
+    a(schema);
+    if(!a.ok()||schema!=1){a.fail();return;}
+    constexpr uint32_t kMaxRequests=16384;
+    constexpr uint32_t kBytesPerRequest=24; // two 8-byte Entities, two int32
+    const uint32_t n=a.count(queue.pending.size(),kBytesPerRequest);
+    if(!a.ok()||n>kMaxRequests){a.fail();return;}
+    if(!a.writing())queue.pending.resize(n);
+    for(auto& request:queue.pending) {
+        a(request);
+        if(!a.ok())return;
+    }
+}
+// Format v1; bounded, transactional decode never overwrites a valid queue
+// when bytes are truncated, invalid or include unexpected trailing content.
+inline std::string saveDamageQueue(const DamageQueue& queue) {
+    if(queue.pending.size()>16384)return {};
+    DamageQueue copy=queue;
+    std::string bytes;
+    Archive archive(&bytes);
+    archive(copy);
+    return archive.ok()?bytes:std::string{};
+}
+inline bool loadDamageQueue(const std::string& bytes,DamageQueue& destination) {
+    if(bytes.size()>1024*1024)return false;
+    Archive archive(bytes);
+    DamageQueue copy;
+    archive(copy);
+    if(!archive.ok()||archive.remaining()!=0)return false;
+    destination=std::move(copy);
+    return true;
+}
+inline void hashDamageQueue(Hasher& hash,const DamageQueue& queue) {
+    hash.u32(uint32_t(queue.pending.size()));
+    for(const auto& request:queue.pending) {
+        hash.u64(request.target.packed());
+        hash.u64(request.source.packed());
+        hash.u32(request.shotId);
+        hash.i32(request.amount);
+    }
+}
+
 struct DamageApplied {
     Entity target=kNullEntity;
     Entity source=kNullEntity;
