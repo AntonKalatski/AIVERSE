@@ -189,6 +189,18 @@ void ecsProjectileBranchAuthorityParityCase(bool cow) {
         ecs->world().enableCowSnapshots(true);
     }
     fps::Input input;input.buttons=fps::Fire;input.sequence=1;
+    // Insert a nonprogrammed cloud before the first shot. Only the
+    // authoritative ECS Runtime exists initially (no State vector edit),
+    // while the legacy baseline receives the equivalent source object.
+    // This checks mixed projectile ownership and ECS hydration/reindex.
+    fps::Projectile passive;
+    passive.id=9001;passive.owner=1;passive.kind=4;
+    passive.expires=1000;passive.pos={10_fx,5_fx,10_fx};
+    state(*legacy).projectiles.push_back(passive);
+    const Entity passiveEntity=ecs->world().create();
+    ecs->world().add<fps::ProjectileRuntime>(
+        passiveEntity,fps::ProjectileRuntime{passive,0});
+
     const auto command=fps::command(1,input);
     legacy->inject(command);
     ecs->inject(command);
@@ -234,7 +246,10 @@ void ecsProjectileBranchAuthorityParityCase(bool cow) {
         maxAllocated=std::max(maxAllocated,state(*legacy).nextObject);
     }
     CHECK(maxAllocated>3); // the original bullet created branch children
-    CHECK(state(*legacy).projectiles.empty());
+    CHECK(state(*legacy).projectiles.size()==1);
+    CHECK(state(*legacy).projectiles.front().id==passive.id);
+    CHECK(state(*ecs).projectiles.size()==1);
+    CHECK(state(*ecs).projectiles.front().id==passive.id);
     for(size_t slot=1;slot<=3;++slot)
         CHECK(state(*legacy).actors[slot].health==90);
     const auto checksum=legacy->checksum();
