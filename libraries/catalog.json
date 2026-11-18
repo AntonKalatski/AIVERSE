@@ -2394,6 +2394,28 @@
       ]
     },
     {
+      "id": "ecs-ordered-impact",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-ordered-impact/SKILL.md",
+      "summary": "Genre-independent ordered ECS projectile impact dispatch for direct damage, queued on-hit effects and splash candidates with injected faction, armor and damage policies",
+      "notes": "Live ordinary RTS weapon projectiles use this shared policy. It is a synchronous policy inside the existing RTS ECS tick, not a separate scheduled damage stage; FPS and RTS ability adapters remain pending.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_ordered_impact",
+      "dependencies": [
+        "tests/ecs_kinematic_projectile_test.cpp",
+        "docs/ecs-mechanic-composition.md",
+        "libraries/include/aiverselib/genre/EcsMechanicSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
       "id": "ecs-kinematic-projectiles",
       "version": "0.1.0",
       "layer": "simulation",
