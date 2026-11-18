@@ -5451,3 +5451,24 @@ Next: compile virtual_texture_feedback CTest, compile GLSL/MSL
 helper snippets with backend shader toolchains, and wire a real
 material/terrain feedback draw through VirtualTextureFeedbackPass
 with correct explicit mip selection and camera-visible geometry.
+
+
+## Stage 8X — reject nonfinite material feedback UV in GPU helpers (2026-11-19)
+
+Runtime source commit: 9e93e6b9ae159754773e801acd29b2ca1c197947.
+Test source commit: aecd1fa6e0621ac388d89d2f5de6994fa6f4602b.
+Files: engine/gfx/VirtualTextureFeedback.h and
+tests/render/virtual_texture_feedback.cpp.
+GLSL material feedback helper now checks isnan/isinf on UV before
+integer tile conversion; MSL checks all(isfinite(uv)). The existing
+CPU equivalent already rejects nonfinite doubles; new fixture covers
+NaN, positive and negative infinity. This prevents undefined or
+implementation-specific float-to-int page selection for bad material
+coordinates. All valid UV and packed-ID behavior remains unchanged.
+
+Verification: GitHub commits succeeded. Native C++ CTest and
+GLSL/MSL compilation/GPU execution NOT RUN. This is not a verified
+backend fix until shader toolchains compile both snippets.
+Next: run texture feedback CPU CTest, compile GLSL 330/ES 300 and
+MSL material helpers with their encoder definitions, then integrate
+a concrete renderer draw and compare GPU RGBA8 IDs to CPU results.
