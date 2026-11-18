@@ -1,6 +1,6 @@
 // AIVERSE NEREID -- opt-in ECS sampling; no FPS/RTS or rendering coupling.
 #pragma once
-#include <aiverselib/water/NereidWater.h>
+#include <aiverselib/water/NereidGeometry.h>
 #include "engine/sim/CommonComponents.h"
 #include "engine/sim/Simulation.h"
 #include <string>
@@ -14,7 +14,9 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
     WaterSample sample;
     world.eachExistingConst<WaterBodyComponent>(
         [&](Entity entity,const WaterBodyComponent& body) {
-            if(!world.alive(entity) || !coversXZ(body,position))return;
+            if(!world.alive(entity))return;
+            const auto* geometry=world.tryGetConst<WaterGeometryComponent>(entity);
+            if(!coversWaterBody(body,geometry,position))return;
             const bool better=!sample.found ||
                 body.priority>sample.priority ||
                 (body.priority==sample.priority &&
@@ -76,6 +78,11 @@ inline void registerNereidWaterPersistence(Simulation& sim) {
     sim.registerPersistentComponent<WaterBodyComponent>("nereid.water_body",1);
     sim.registerPersistentComponent<WaterProbeComponent>("nereid.water_probe",1);
     sim.registerPersistentComponent<WaterContactComponent>("nereid.water_contact",1);
+}
+
+// Optional schema: register when any water body uses polygon/spline geometry.
+inline void registerNereidGeometryPersistence(Simulation& sim) {
+    sim.registerPersistentComponent<WaterGeometryComponent>("nereid.geometry",1);
 }
 
 } // namespace aiverse::lib::nereid
