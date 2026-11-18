@@ -19,14 +19,25 @@ public:
     gfx::DeviceInfo description{gfx::Backend::Metal,false,false,"Recording Metal"};
     std::string error;
     bool availableCompute=true,healthy=true,frame=false,pass=false,computing=false,badOrder=false;
-    uint32_t next=1,lastMode=99,lastDrawCount=0;
+    uint32_t next=1,lastMode=99,lastDrawCount=0,liveSlotHandle=0;
     size_t uploadBytes=0;
+    std::vector<uint32_t> lastLiveSlots;
     std::vector<uint32_t> stages;
 
     const gfx::DeviceInfo& info() const override{return description;}
-    gfx::BufferHandle createBuffer(const gfx::BufferDesc&)override{return {next++};}
-    void updateBuffer(gfx::BufferHandle,const void*,size_t count,size_t=0)override{
+    gfx::BufferHandle createBuffer(const gfx::BufferDesc& desc)override{
+        const uint32_t id=next++;
+        if(desc.label && std::strcmp(desc.label,"SpectraFX GPU live-slot gather map")==0)
+            liveSlotHandle=id;
+        return {id};
+    }
+    void updateBuffer(gfx::BufferHandle handle,const void* data,size_t count,size_t=0)override{
         if(pass||computing)badOrder=true;
+        if(handle.id==liveSlotHandle && count>0) {
+            if(count%sizeof(uint32_t)!=0 || !data) {badOrder=true;return;}
+            lastLiveSlots.resize(count/sizeof(uint32_t));
+            std::memcpy(lastLiveSlots.data(),data,count);
+        }
         uploadBytes+=count;
     }
     void destroyBuffer(gfx::BufferHandle)override{}
@@ -209,9 +220,8 @@ int main() {
     emitter.shutdown();
     mock.healthy=true;
 
-    // Multiple-frame reuse: holes in the pool remain degenerate vertices,
-    // but the unused tail must never be submitted or simulated. This proves
-    // high-water-mark culling is not incorrectly presented as compaction.
+    // Live-slot gather: physical state slots can contain gaps, but the
+    // GPU's vertex output must be dense and indexed by alive ordinal.
     RecordingMetalDevice sparseDevice;
     spectra::ComputeParticles sparse;
     config.backend=ComputePreference::Automatic;
@@ -230,13 +240,15 @@ int main() {
     };
     sparseFrame(true);sparseFrame(true);
     for(int i=0;i<6;++i)sparseFrame(false);
-    check(sparse.stats().alive==3 && sparse.stats().submittedSlots==6,
-          "sparse pool should retain live high-index slots and dead holes");
-    check(sparseDevice.lastDrawCount==36,
-          "sparse prefix must draw through last live slot (not only alive count)");
+    check(sparse.stats().alive==3 && sparse.stats().submittedSlots==3,
+          "sparse physical pool should produce exactly three dense GPU quads");
+    check(sparseDevice.lastDrawCount==18,
+          "dense GPU gather must draw only live particles, not physical holes");
+    check(sparseDevice.lastLiveSlots==std::vector<uint32_t>({3,4,5}),
+          "GPU gather map must preserve the three surviving physical state slots");
     sparseFrame(false);
     check(sparse.stats().alive==0 && sparse.stats().submittedSlots==0,
-          "all expired GPU particles must release draw prefix");
+          "all expired GPU particles must release dense draw count");
     check(sparseDevice.lastDrawCount==0,
           "expired sparse GPU pool still submitted geometry");
     check(!sparseDevice.badOrder,"sparse GPU mock encountered encoder/order violation");
