@@ -104,13 +104,15 @@ int main() {
     world.setView(camera,camera.proj(1280.f/720.f,false)*camera.view(),1280,720);
     check(one.burstAt({0,0,0}),"first effect instance failed to emit");
     check(two.burstAt({0.2f,0,0}),"second effect instance failed to emit");
-    // Independent runtimes must NOT tick or draw the whole shared world.
-    check(one.step(0.5f)&&two.step(0.5f),"shared source no-op step failed");
     world.update(0.05f); // EXACTLY ONCE for the entire shared particle world
     std::vector<fx::FxParticleInfo> snapshot;
     world.particles().snapshot(snapshot);
     check(snapshot.size()==12,"expected 5+7 particles across two different effects");
-    check(std::abs(snapshot[0].age-0.05f)<0.001f,
+    const float firstAge=snapshot[0].age;
+    // Independent runtimes must NOT tick or draw the whole shared world.
+    check(one.step(0.5f)&&two.step(0.5f),"shared source no-op step failed");
+    world.particles().snapshot(snapshot);
+    check(std::abs(snapshot[0].age-firstAge)<0.00001f,
           "per-instance step accidentally advanced the shared world");
 
     one.draw();
