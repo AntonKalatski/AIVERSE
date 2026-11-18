@@ -137,10 +137,57 @@ int main() {
     CHECK(!users.input(0)->state("PadJump"));
     CHECK(!users.assignGamepad(1,1)); // one physical pad per user
     users.unassignGamepad(0);
-    CHECK(has(users.input(1)->events(),"PadJump",in::Phase::Canceled));
+    CHECK(has(users.update(1,0.016f),"PadJump",in::Phase::Canceled));
     e.type=p::EventType::FocusLost;
     users.onEvent(e);
     CHECK(!users.input(0)->state("Walk"));
+    // Stage 50: changing pointer/keyboard ownership must preserve a gamepad
+    // held by the same local player. Release/cancellation happens on update().
+    p::InputFlowUsers ownership;
+    in::InputFlow primary, secondary;
+    CHECK(primary.defineAction({"Walk",in::ValueType::Boolean}));
+    CHECK(primary.defineAction({"Click",in::ValueType::Boolean}));
+    CHECK(primary.defineAction({"PadJump",in::ValueType::Boolean}));
+    in::MappingContext combined{"Combined"};
+    combined.bind("Walk",{in::Device::Keyboard,int(p::Key::W)});
+    combined.bind("Click",{in::Device::MouseButton,0});
+    combined.bind("PadJump",{in::Device::GamepadButton,int(p::PadButton::A)});
+    CHECK(primary.registerContext(combined));
+    CHECK(primary.activateContext("Combined"));
+    CHECK(ownership.addUser(10,std::move(primary)));
+    CHECK(ownership.addUser(11,std::move(secondary)));
+    CHECK(ownership.setKeyboardOwner(10));
+    CHECK(ownership.setPointerOwner(10));
+    CHECK(ownership.assignGamepad(0,10));
+    e={};e.type=p::EventType::KeyDown;e.key=p::Key::W;ownership.onEvent(e);
+    e={};e.type=p::EventType::MouseDown;e.button=0;ownership.onEvent(e);
+    ownership.pollGamepads();
+    ownership.update(10,0.016f);
+    CHECK(ownership.input(10)->state("Walk")->active);
+    CHECK(ownership.input(10)->state("Click")->active);
+    CHECK(ownership.input(10)->state("PadJump")->active);
+    CHECK(ownership.setPointerOwner(11));
+    CHECK(has(ownership.update(10,0.016f),"Click",in::Phase::Canceled));
+    CHECK(ownership.input(10)->state("Walk")->active);
+    CHECK(ownership.input(10)->state("PadJump")->active);
+    CHECK(ownership.setKeyboardOwner(11));
+    CHECK(has(ownership.update(10,0.016f),"Walk",in::Phase::Canceled));
+    CHECK(ownership.input(10)->state("PadJump")->active);
+    ownership.unassignGamepad(0);
+    CHECK(has(ownership.update(10,0.016f),"PadJump",in::Phase::Canceled));
+    // UI pointer capture must not clear keyboard state even for the same user.
+    CHECK(ownership.setKeyboardOwner(10));
+    CHECK(ownership.setPointerOwner(10));
+    e={};e.type=p::EventType::KeyDown;e.key=p::Key::W;ownership.onEvent(e);
+    ownership.update(10,0.016f);
+    CHECK(ownership.input(10)->state("Walk")->active);
+    e={};e.type=p::EventType::MouseDown;e.button=0;
+    ownership.onEvent(e,false);
+    ownership.update(10,0.016f);
+    CHECK(ownership.input(10)->state("Walk")->active);
+    ownership.clearKeyboardOwner();
+    CHECK(ownership.keyboardOwner()==p::InputFlowUsers::kUnassigned);
+    CHECK(has(ownership.update(10,0.016f),"Walk",in::Phase::Canceled));
     p::detail::setGamepadBackend(nullptr);
 
     std::cout << "InputFlow platform adapter passed\n";
