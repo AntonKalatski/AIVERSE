@@ -16,6 +16,8 @@ PHYSIS is the **genre-independent** nature simulation for AIVERSE. Weather, loca
 | `engine/physis/PhysisForces.h` | Quadratic wind drag, force receiver/output ECS and pure force sampling |
 | `engine/physis/PhysisPresentation.h` | Unified read-only `NatureFieldSample` for native Terrain/FX/Physics hosts |
 | `engine/physics/PhysisBox3D.h` | **Optional Box3D** physics::Scene adapter; does not modify PHYSIS core |
+| `engine/physis/PhysisPresentation.h` | Read-only 3D `sampleNatureField` snapshot with weather/wind/gravity/hazards |
+| `engine/physis/PhysisDiagnostics.h` | Read-only bounded debug raster, scalar layers and 16-bit normalization |
 | `engine/physis/PhysisIntegration.h` | Generic Simulation::addSystem, persistent ECS schemas, read-only presentation feed |
 
 ## Quick integration for any C++ native game
@@ -76,6 +78,8 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Stage 9: [Gravity fields](agent-handoffs/physis-gravity-2026-11-18.md)
 - Stage 10: [Hurricane and tornado events](agent-handoffs/physis-storm-2026-11-18.md)
 - Stage 11: [Forces and Box3D adapter](agent-handoffs/physis-forces-box3d-2026-11-18.md)
+- Stage 12: [Numerical bounds and native CI](agent-handoffs/physis-numerical-ci-2026-11-18.md)
+- Stage 14: [Read-only diagnostic rasters](agent-handoffs/physis-diagnostics-2026-11-18.md)
 - Stage 12: [Numeric safety and CI](agent-handoffs/physis-numerical-ci-2026-11-18.md)
 - Stage 13: [Unified nature field sampling and save-schema compatibility](agent-handoffs/physis-sampling-persistence-2026-11-18.md)
 
@@ -175,3 +179,28 @@ wind/gravity/storm/force component types by default. Set
 unchanged when these switches are off. **Switching flags on an existing saved
 game changes the manifest and is not an automatic save migration.** Save and
 load must use the same feature flags. Tests are authored, not run.
+
+## Diagnostic raster for editor/debug consumers
+
+```cpp
+#include "engine/physis/PhysisDiagnostics.h"
+aiverse::physis::DiagnosticRequest query;
+query.originX = -16; query.originZ = -16;
+query.width = 32; query.height = 32;
+query.stride = 1;
+query.layer = aiverse::physis::DiagnosticLayer::WindSpeedMetersPerSecond;
+aiverse::physis::DiagnosticRaster raster;
+if (aiverse::physis::sampleDiagnosticRaster(sim.world(), query, raster)) {
+    // raster.rawValues = Fixed::raw data; raster.valid = inside PHYSIS grid
+    // diagnosticNormalized(raster, i) = 0..65535 for view/shader coloring
+}
+```
+
+The diagnostic API is **CPU-only and read-only**: it does not render an
+overlay in Scene, change physics, mutate the authoritative World, or sample
+NEREID water. It is capped at 65,536 cells per query; missing climate/hazard
+cells are marked invalid, not replaced with misleading zeros. Only PHYSIS
+standalone shallow flooding is displayed by `LocalFloodMeters` (NEREID remains
+canonical water authority). A future editor adapter may upload/use the returned
+raster as a heatmap, with no PHYSIS dependency on the renderer. Tests are
+authored but not yet confirmed by native CTest/CI.
