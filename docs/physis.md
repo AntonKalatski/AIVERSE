@@ -204,3 +204,52 @@ standalone shallow flooding is displayed by `LocalFloodMeters` (NEREID remains
 canonical water authority). A future editor adapter may upload/use the returned
 raster as a heatmap, with no PHYSIS dependency on the renderer. Tests are
 authored but not yet confirmed by native CTest/CI.
+
+## Transient spatial broadphase — Stage 16 (opt-in)
+
+`engine/physis/PhysisSpatialIndex.h` provides a non-authoritative copy-only
+spatial bucket index of `WindZone`, `WindShelter`, `GravityField` and
+`StormEvent`. Its purpose is to avoid visiting every environmental volume for
+every wind/gravity/storm sample in terrain/foliage/debug/physics consumers.
+
+```cpp
+#include "engine/physis/PhysisSpatialIndex.h"
+aiverse::physis::SpatialFieldIndex index;
+index.rebuild(sim.world());  // after a committed tick, before read-only sampling
+aiverse::physis::NatureFieldSample nature;
+aiverse::physis::sampleNatureFieldIndexed(sim.world(), index, position, nature);
+aiverse::physis::DiagnosticRaster heatmap;
+aiverse::physis::sampleDiagnosticRasterIndexed(sim.world(), index, request, heatmap);
+```
+
+The existing unindexed `windAt`, `gravityAt`, `stormsAt`,
+`sampleNatureField` and `sampleDiagnosticRaster` remain the reference APIs.
+Their definitions still work unchanged; consumers opt in by calling their
+`Indexed` counterparts. The candidate visitor preserves the exact original
+ECS visitation sequence even when combining indexed and global large volumes,
+so Fixed accumulation and shelter multiplication order remain identical.
+
+**Important invalidation:** `SpatialFieldIndex` is a SNAPSHOT, not an
+authoritative ECS resource. Rebuild after **every** component mutation,
+structural change, rollback, save/load, or committed tick. A tick mismatch
+falls back to the unindexed reference; edits during the same tick cannot be
+detected automatically and require an explicit rebuild. Do not persist,
+network-replicate, or share the index as a live mutable pointer. Concurrent
+queries of an immutable snapshot are allowed only when the World is not being
+modified; index rebuild belongs to the host/barrier.
+
+The spatial buckets are signed X/Y/Z in metres (default 256 m), so negative
+coordinates work. To bound memory, each finite volume uses at most 256
+bucket references and each typed index at most 65,536 assignments. Very large
+volumes, global gravity and overflow-risk bounds go into an always-visited
+fallback list rather than being dropped. The improvement depends on locality;
+it does not claim measured frame-time gains or full sparse world streaming.
+`SpatialFieldIndex` does not call Box3D and is unrelated to the NEREID or
+TerraWeave ownership boundaries.
+
+CTest `physis_spatial_index` covers indexed/reference parity for wind,
+storm, gravity, full NatureFieldSample and all 14 diagnostic layers, negative
+coordinates, global fallback, tick invalidation and World copy/restore. The
+test has been authored; native compilation/CTest remains **NOT RUN** until
+actual CI or local test logs are obtained. Stage handoff:
+[`agent-handoffs/physis-spatial-index-2026-11-18.md`](agent-handoffs/physis-spatial-index-2026-11-18.md).
