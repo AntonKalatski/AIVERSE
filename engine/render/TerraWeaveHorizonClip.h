@@ -209,6 +209,7 @@ inline std::optional<HorizonTerrainClipPlan> planHorizonNearGroundClipping(
 inline void populateHorizonNearSeamSamples(
         HorizonBake& bake,const HorizonSurfaceSources* source) {
     bake.nearSeamSamples.clear();
+    bake.nearWeldSlopeFallback=false;
     if(!source || !source->nearGroundHeightAtCm ||
        bake.nearClipRects.empty() || !bake.maxNearClipTriangles)
         return;
@@ -254,6 +255,71 @@ inline void populateHorizonNearSeamSamples(
                           *height > kWorldLimitCm)
                 return; // no partial snapping on incomplete source data
             samples.emplace(key,*height);
+        }
+    }
+    // Preflight all would-be welded triangles before committing a SINGLE
+    // seam sample. A true height match is preserved wherever we weld, but
+    // a nearly vertical newly introduced wedge is worse than the original
+    // horizontal clip. An impossible region reverts entirely to the prior
+    // exact X/Z cutout, rather than clamping Y and reintroducing a crack.
+    if(bake.maxNearWeldSlopePermille && !samples.empty()){
+        const uint32_t n=bake.terrainResolution;
+        for(const auto& triangle:planned->triangles){
+            const uint32_t x=triangle.quadIndex%n;
+            const uint32_t z=triangle.quadIndex/n;
+            const size_t i=size_t(z)*(n+1)+x,step=n+1;
+            const std::array<size_t,3> srcIds=triangle.sourceHalf==0 ?
+                std::array<size_t,3>{i,i+step,i+1} :
+                std::array<size_t,3>{i+1,i+step,i+step+1};
+            const auto& pa=bake.terrainVertices[srcIds[0]];
+            const auto& pb=bake.terrainVertices[srcIds[1]];
+            const auto& pc=bake.terrainVertices[srcIds[2]];
+            const double ax=double(pb.xCm-pa.xCm);
+            const double az=double(pb.zCm-pa.zCm);
+            const double bx=double(pc.xCm-pa.xCm);
+            const double bz=double(pc.zCm-pa.zCm);
+            const double baseArea=ax*bz-az*bx;
+            if(std::abs(baseArea)<1e-7){
+                bake.nearWeldSlopeFallback=true;
+                return;
+            }
+            std::array<double,3> original{},welded{};
+            for(size_t j=0;j<3;++j){
+                const auto p=triangle.corners[j];
+                const double px=p.x-double(pa.xCm);
+                const double pz=p.z-double(pa.zCm);
+                const double w1=(px*bz-pz*bx)/baseArea;
+                const double w2=(ax*pz-az*px)/baseArea;
+                const double y=(1.0-w1-w2)*pa.heightCm+
+                    w1*pb.heightCm+w2*pc.heightCm;
+                original[j]=welded[j]=y;
+                const auto key=std::pair<int64_t,int64_t>{
+                    static_cast<int64_t>(std::llround(p.x*65536.0)),
+                    static_cast<int64_t>(std::llround(p.z*65536.0))};
+                if(auto it=samples.find(key);it!=samples.end())
+                    welded[j]=it->second;
+            }
+            const auto gradient=[&](const std::array<double,3>& y) {
+                const auto& p0=triangle.corners[0];
+                const auto& p1=triangle.corners[1];
+                const auto& p2=triangle.corners[2];
+                const double u=p1.x-p0.x,v=p1.z-p0.z;
+                const double w=p2.x-p0.x,q=p2.z-p0.z;
+                const double det=u*q-v*w;
+                if(std::abs(det)<1e-7)return 0.0;
+                const double dy1=y[1]-y[0],dy2=y[2]-y[0];
+                const double dx=(dy1*q-dy2*v)/det;
+                const double dz=(dy2*u-dy1*w)/det;
+                return std::hypot(dx,dz)*1000.0;
+            };
+            const double baseSlope=gradient(original);
+            const double newSlope=gradient(welded);
+            if(!std::isfinite(newSlope) ||
+               (newSlope>double(bake.maxNearWeldSlopePermille) &&
+                newSlope>baseSlope+0.001)){
+                bake.nearWeldSlopeFallback=true;
+                return;
+            }
         }
     }
     bake.nearSeamSamples.reserve(samples.size());
