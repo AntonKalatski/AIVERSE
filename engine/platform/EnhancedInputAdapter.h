@@ -102,10 +102,28 @@ public:
         }
     }
 
+    // Per-device ownership/capture changes must not clear other local devices.
+    // Canceled events for affected Actions are resolved at the next update().
+    void cancelKeyboard() {
+        using namespace lib::gameplay::inputflow;
+        input_.cancelDevices({Device::Keyboard});
+    }
+    void cancelPointer() {
+        using namespace lib::gameplay::inputflow;
+        input_.cancelDevices({Device::MouseButton,Device::MouseAxis,Device::MouseWheel});
+    }
+    void cancelTouch() {
+        using namespace lib::gameplay::inputflow;
+        input_.cancelDevices({Device::Touch});
+        touches_.clear();
+        gestureActive_=false;
+        gestureDistance_=gestureCenterX_=gestureCenterY_=gestureAngle_=0;
+    }
     void focusLost() {
         input_.cancelAll();
         touches_.clear();
         gestureActive_=false;
+        gestureDistance_=gestureCenterX_=gestureCenterY_=gestureAngle_=0;
     }
 private:
     struct TouchEntry { int slot=0; float x=0,y=0; };
