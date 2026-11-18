@@ -1622,3 +1622,146 @@ per-pixel shoreline foam driven by depth. NEREID remains sole owner
 of water geometry/material presentation and ECS sampling; do not
 duplicate postprocess control, alter legacy RTS waterNetwork, or
 modify PHYSIS and TerraWeave implementations.
+
+## Stage 17 — depth optics, shoreline foam and underwater camera view
+
+**Branch:** `feature/nereid-water-core` (draft NEREID PR #23).
+**Starting head:** `b62416786d231124d641acc08e7372b97acbf2b8`.
+**Other feature branches:** NOT merged or modified.
+**Implementation commits:**
+- `31e07517914855ff1774c5846c234b4552813cd3`:
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h`.
+  Opt-in style parameters `absorption`, `shoreFoamDepth`, `depthTint`.
+- `26682eb08f30cdb5f26a17ac72d248cf8863f969`:
+  `engine/render/NereidWaterRenderer.h`. Validation and tagged water
+  `drawMesh` material controls without adding uniform/texture slots.
+- `97d615c6b05c09aa90ca9a8c00f24c7794cd9e65`:
+  `engine/render/NereidSurfaceResident.h`. Cached visual key includes
+  all new optical parameters.
+- `05fb803976abf17b672fe68af9b51046ea6f02b9`:
+  `engine/world/NereidWaterScene.h`. Per-body comparison includes optics.
+- `2f8686c14e38a0ba00ac1f9a9b01c5baef87157e`:
+  `engine/world/NereidWaterManifest.h`. JSON style parsing/bounds.
+- `87f5c082afb63ecf3971a2b70912881d2eb6f249`:
+  `engine/render/Shaders.h`. Depth optics and foam in GLSL and Metal.
+- `8037893d76a1dac75bc57236ef767a7d163db632`:
+  `tests/ecs_nereid_renderer_contract_test.cpp`. Optical source checks.
+- `6125cf34ff2a77a1cca0ce69e4caa3b1ee639d2b`:
+  new `engine/world/NereidUnderwaterView.h`: read-only camera optical
+  state from an immutable collection of genre-neutral water surfaces.
+- `b6b04d37de5045f61950208c6eadf937a02de5cc`:
+  `engine/render/Shaders.h`. Depth optics composite AFTER SSR to avoid
+  the reflection result overwriting shallow shoreline foam.
+- `0421880f0122f89e17e0eee857d46b7dbfa4a0b8`:
+  renderer contract test adds underwater selection, priority, exclusions
+  and shader post-SSR ordering assertions.
+- `1e1305e004b13dc6db5d6a196f16be14765ef0b4`:
+  `engine/world/NereidWaterScene.h` introduces read-only per-source visitor.
+- `ebeef4208371f5e23b5b43ba42fc159a89d2feec`:
+  `engine/world/NereidUnderwaterView.h` supports direct scene sampling
+  without copying meshes/geometry each frame.
+- `7973ab79e00266e5d7f71acd3009604a37cdac3e`,
+  `67cd3040fb81da8f63000898cc3c63cfbdada74e`:
+  `engine/world/WorldScene.h/.cpp` exposes
+  `scene.nereidUnderwaterAt(camera)` for the Prisma owner.
+- `d41c3bad1195b89baa29195dfc5b7f8dd0904efa`:
+  contract test of list-vs-scene camera sampling parity.
+
+### Rendering, ownership and API
+
+`WaterSurfaceStyle` optional params (all **zero by default**):
+- `absorption` in [0,4] per metre: Beer–Lambert-like exponential
+  transmission `exp(-thickness*absorption)`, where `thickness` is the
+  vertical separation between the water plane and the depth-unprojected
+  captured opaque surface.
+- `depthTint` in [0,1]: contribution of the deep-water tint as the
+  opaque background becomes attenuated.
+- `shoreFoamDepth` in [0,20] metres: smooth, *screen-space* shallow
+  band driven by scene depth, independent from vertex shoreline foam.
+- `refractionStrength` (Stage 16) remains an independent [0,1] control.
+
+GLSL and Metal share the **existing trace-tier SSR capture** on
+texture slots 4/5 and the same water draw sentinel. To avoid a new
+uniform block, NEREID tagged draws repurpose the existing per-draw
+`u_color.rgb` as absorption, foam depth, tint strength; non-water
+draws retain their original RGB tint semantics. `u_color.a` remains
+opacity. `u_params.w` is the existing refraction control on marked
+water, and remains emissive on unmarked materials. The water fragment
+uses the per-vertex authored material tint, so the repurposed RGB
+does not unintentionally darken the water's base colour. Depth-gated
+optical effects apply after existing SSR. Invalid depth, background
+samples and refracted objects above the surface leave existing water
+rendering unchanged.
+
+Example:
+```json
+{
+  "nereidWater": {
+    "surfaces": [{
+      "kind": "lake", "shape": "box", "id": 17,
+      "center": [0,0,0], "halfExtents": [60,40],
+      "surfaceY": 3, "bottomY": -30,
+      "style": {
+        "refractionStrength": 0.45,
+        "absorption": 0.20,
+        "depthTint": 0.65,
+        "shoreFoamDepth": 1.2
+      }
+    }]
+  }
+}
+```
+
+**Underwater camera view:** `sampleNereidUnderwater(surfaces,camera)`
+and `sampleNereidUnderwater(scene,camera)` return
+`NereidUnderwaterView` with `submerged`, `waterId`,
+`waterSurfaceY`, `depthMetres`, `transmission`, `absorption`,
+`deepR/G/B` and `turbidity`. Only enabled, containing water
+volumes participate, with priority > height > ID tie breaks. These
+queries do **not** read an active writable ECS pool, mutate simulation,
+create a genre dependency or perform any GPU draw. Native scenes
+consume `WorldScene::nereidUnderwaterAt(Vec3 camera)`.
+
+**Prisma boundary:** this stage exposes a *read-only optical input*
+for the separate Prisma postprocessing owner. A fullscreen camera
+underwater compositor is **NOT yet wired** into Prisma or PostFx,
+and must not be reported as implemented. Prisma should accept the
+returned optical parameters through its own existing per-frame
+parameter and quality API; water membership comes from NEREID and is
+not recomputed by the postprocessor.
+
+### Verification, risks and next action
+
+**Actually performed:** GitHub connector source review and commits,
+authored source-level tests for material bounds, cache invalidation,
+GLSL/MSL shader optical fragments, underwater volume priority, missing
+volumes, and scene-vs-snapshot parity.
+
+**NOT RUN / UNVERIFIED:** native C++ compilation, CTest, full
+`./run-tests.sh`, GLSL/Metal compiler, device render, framebuffer
+capture, depth thickness accuracy, performance, FPS/RTS regressions,
+and interoperability with Prisma. Authored fixture assertions are
+NOT a passing execution result.
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+**Known limitations:** simplified screen-space vertical thickness, not
+Snell refraction or physical light transport. Depth-driven foam uses
+a constant pale tint, not custom per-pixel foamColor; existing authored
+vertex foam still uses the configured material tint. Disabled trace
+tier or absent opaque depth falls back to the older appearance. Thin
+objects, steep banks, transparent objects and multiple water layers
+may create visual approximations. Neither shaders nor the entire
+Render3D/PostFx pipeline have been compiled or tested in this turn.
+
+**Next agent:** run tests and fix compile/GLSL/MSL and RHI shader
+integration issues first. Then implement the Prisma-owned fullscreen
+underwater visual pass (camera fog/colour/exposure), using
+`WorldScene::nereidUnderwaterAt` rather than adding duplicate water
+detection to Prisma. Review underwater camera transitions, crossing
+surface from both sides, foam near steep banks, shallow/high-opacity
+blending, quality presets, and GL/Metal parity. Update this handoff
+immediately after each implementation stage.
