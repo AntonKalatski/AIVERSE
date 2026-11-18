@@ -36,7 +36,7 @@ void projectilePrograms() {
 }
 
 
-void ecsProjectileProgramStageParity() {
+void ecsProjectileProgramStageParityCase(bool cow) {
     // Production FPS programmed bullets are now a separate ordered
     // Simulation stage. Prove ecsAuthority's canonical runtime pools and the
     // default legacy State mode still have identical tick-visible effects.
@@ -58,6 +58,10 @@ void ecsProjectileProgramStageParity() {
     auto ecsRules=rules;
     ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
     auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    if(cow) {
+        legacy->world().enableCowSnapshots(true);
+        ecs->world().enableCowSnapshots(true);
+    }
     auto input=fps::Input{};
     input.buttons=fps::Fire;
     input.sequence=1;
@@ -111,4 +115,9 @@ void ecsProjectileProgramStageParity() {
         checkBoth();
     }
     CHECK(legacy->checksum()==expected);
+}
+
+void ecsProjectileProgramStageParity() {
+    ecsProjectileProgramStageParityCase(false); // deep snapshots
+    ecsProjectileProgramStageParityCase(true);  // COW snapshots
 }
