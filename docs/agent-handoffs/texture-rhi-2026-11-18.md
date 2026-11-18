@@ -3030,3 +3030,45 @@ Then run `aiverse_virtual_texture_page_table_test`, add a real
 shader capture that looks up page table rows, and complete
 native readback/feedback when supported. Continue separate
 code/handoff commits.
+
+## Stage 7J — GL33/GLES3 nonblocking texture readback via PBO+fence (2026-11-18)
+
+**Code commit:** `0b975df615d7de9042d7e3bb3d5e8ff98caaf16c`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/gl/GLApi.h`, `engine/gfx/gl/GfxGL.cpp`.
+
+**Implementation:** Added a GL33/GLES3 override for
+`readTextureAsync` supporting single-sample RGBA8/sRGB_RGBA8
+2D, 2D-array and cubemap faces at a selected mip. It builds a
+temporary framebuffer, attaches the exact selected mip/array
+layer/cube face, queues nonblocking `glReadPixels` into a
+`GL_PIXEL_PACK_BUFFER`, then inserts a GPU `GLsync` fence.
+`beginFrame` polls `glClientWaitSync(timeout=0)`, maps only
+signaled PBOs, copies/flips bottom-up framebuffer data into packed
+top-left RGBA8 rows, deletes completed fences/PBOs, and invokes
+app callbacks afterward on the GL context owner thread.
+Device destructor releases in-flight resources. Up to 32
+readbacks, 256 MiB each, are allowed. Unsupported formats,
+MSAA, depth, nested passes and invalid subresources return
+false, without invoking callbacks. The WebGL2 build returns
+false explicitly because portable native glMapBufferRange
+readback cannot be promised there. GL loader adds the needed
+PBO mapping/fence functions and Windows GL33 constants.
+
+**Compatibility:** Existing `captureNextFrame` path is unaffected;
+no ECS/simulation/serialization changes. Asynchronous completion
+is not a blocking `glFinish`; callbacks need future frames
+and an active context. On an accepted GPU failure the callback
+receives an empty `TextureReadbackResult`.
+
+**Actual verification:** Source committed to GitHub.
+**C++ compilation NOT RUN, CTest NOT RUN, GL33/GLES3/Android GPU
+test NOT RUN, WebGL2 build NOT RUN**. The pending tests must
+check GL entrypoint availability, framebuffer completeness,
+row orientation, destroyed source lifetime, poll behavior,
+signal/failure cleanup and no callback on rejected input.
+
+**Next:** Implement a Vulkan image-to-host-staging readback with
+frame-fence ownership, then add portable GPU fixtures and editor
+image preview/readback plumbing. Continue source commit +
+append-only handoff on every bounded stage.
