@@ -1386,3 +1386,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Scope limitation:** this is a real scheduling boundary extraction but remains an explicit **compatibility system** over legacy State vectors. Not yet a universal `ProjectileFlightComponent` ECS authority conversion. Built-in FPS will use canonical `ProjectileRuntime` pools between ticks only with `ecsAuthority` gate, hydrated before this stage and committed at the existing mirror stage.
 - **Verification:** GitHub source commit only, no compiler, CTest, FPS save, replay, transport or rollback proof yet. Existing `tests/fps/projectiles.inc` and `ecsDynamicAuthorityParity` are required, plus a new cross-storage programmed projectile fixture.
 - **Next:** add actual FPS parity test with ECS authority ON/OFF over projectile flight and target damage, snapshot restore and save v9 cross-load; then run native FPS suite and fix failures.
+
+
+### 2026-11-18 — AI skill updated for shared FPS integer health commit
+- Implementation SHA: `7009970b39775377e038f09cf19bc696d3b51f66`.
+- Updated `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md` to identify the shared `applyIntegerHitPointDamage` primitive in real FPS `Module::damage` and generic `addDamageResolutionSystem`, clarify its required post-mitigation placement, and forbid secondary live FPS health authority while `ActorRuntime` remains canonical.
+- Verification: documentation commit only; native C++ and FPS save/rollback parity still pending.
