@@ -1524,3 +1524,41 @@ device format queries. Run CTest `texture_contract` and
 BC5 DDS/KTX2 tests; fix any compiler/SDK enum errors before
 expanding typed pixel formats. Continue separate implementation
 and handoff commits after every stage.
+
+## Stage 5D — compressed mip/face payload validation before GPU calls (2026-11-18)
+
+**Code commit:** `d94b2b416763903697fc4f45f0c7314051abe900`.
+**Branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Paths:** `engine/gfx/Gfx.h`, `tests/render/texture_contract.cpp`.
+
+**Source implementation:** `validateTextureDesc` now rejects a
+block-compressed texture unless `levelCount >= 1`, `levelData` and
+`levelSize` are present, and every mip has a non-null payload
+with enough bytes for all blocks, array layers/cube faces and volume
+slices. Arithmetic uses overflow-checked products before comparing
+byte sizes. Compressed initial data cannot be mixed with ordinary
+`TextureDesc.data`, auto-generated mips, storage images, render targets
+or multisample attachments. This common contract runs before GPU
+allocation and prevents legacy GL/Metal compressed branches from
+reading missing level arrays or uploading truncated face payloads.
+
+**CPU test source:** Extended `texture_contract` with BC5
+missing/truncated/valid block cases, compressed mip generation
+rejection and six-face compressed cube byte sizing.
+
+**API and compatibility:** No public signatures or enum values
+changed. Correct compressed source buffers remain accepted;
+invalid/undersized payload requests now fail with
+`TextureDescError::InvalidUsage` instead of invoking undefined GPU
+behavior. No save/network/ECS change.
+
+**Verification:** Code successfully committed through GitHub.
+Native compilation, CTest and GPU checks **NOT RUN** due to unavailable
+repository checkout and queued CI; do not report passing tests.
+
+**Next:** Compile `aiverse_texture_contract_test` and actual
+client/editor on supported platforms; check that existing compressed
+atlas/model callers supply full `levelCount/levelData/levelSize`.
+Run Vulkan/Metal/GL compressed texture regression tests, fix any
+remaining GPU-specific upload bugs, and continue the other feature
+stages only with separate source+handoff commits.
