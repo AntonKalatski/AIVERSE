@@ -865,3 +865,14 @@ ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_
 **Validation:** change committed, **macOS rebuild NOT YET RUN** after fix. Previous four dedicated InputFlow CTest suites passed on user's macOS; the full editor build had not passed at the reported SHA. No CI/GUI PASS is claimed for this fix.
 
 **Next local step:** after `git pull --ff-only origin feature/aiv990_enhanced_input`, run `./run-tests.sh --jobs 4 --ctest-jobs 4`; because the test runner configures and builds, this will recompile the changed editor header and run CTest only if compilation succeeds. If it still fails, record first compiler error plus latest `build/all-tests/test-reports/*/build.log`. After all tests pass, validate direct editor InputFlow Actions capture and hosted-client focus. Keep PR #20 Draft until full verification.
+
+
+## Stage 59 — scope RTS MouseWheel switch case (2026-11-18)
+
+**User-reported compiler failure:** Full macOS Debug editor build reached 98%, then Clang rejected `apps/client/GameClient.cpp:726`: `cannot jump from switch statement to this case label`, due to `const auto* zoom` initialized directly under `case EventType::MouseWheel` without a scoped block. It also reported errors at subsequent `TouchBegin`, `TouchMove`, `TouchEnd`, `KeyDown` and `default` labels, all caused by the same unscoped declaration. `./run-tests.sh` reported `FAIL build (exit 2)`; full CTest was not reached.
+
+**Fix:** In `apps/client/GameClient.cpp::event`, surround the semantic wheel branch with `case EventType::MouseWheel: { ... break; }`. No changes to CameraZoom mappings, presentation zoom scaling, InputFlow API, serialized Commands or ECS simulation. Source commit `becf55ed62250db86f7ad26561aa5c2e4b5da080`.
+
+**Evidence:** Exact user-supplied macOS Clang diagnostic and source inspection. Updated code is committed, but **a successful post-fix editor compilation/full test run is NOT YET confirmed**. Prior four focused InputFlow CTest suites were reported PASS by user; this does not prove the full editor binary is built.
+
+**Next agent / user validation:** pull `feature/aiv990_enhanced_input` and rerun `./run-tests.sh --jobs 4 --ctest-jobs 4`; if the build fails, capture first compiler diagnostic and the build log. Preserve `isWindowInFront` public access fix from Stage 58. If full build/tests pass, record exact HEAD, test summary, and proceed to editor InputFlow Actions tab capture + gameplay smoke. Do not mark PR #20 ready without integration evidence.
