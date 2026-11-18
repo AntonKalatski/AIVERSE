@@ -1,99 +1,240 @@
-// Universal NEREID water presentation layer for any WorldScene/native game.
-// Not an ECS simulation, liquid solver, or legacy RTS water replacement.
+// NEREID: immutable water presentation snapshots with stable per-body GPU residency.
+// No gameplay mutation, native genre dependencies, or legacy RTS ownership.
 #pragma once
 #include "engine/render/NereidSurfaceResident.h"
 #include "engine/world/WorldAssets.h"
-#include <memory>
-#include <vector>
-#include <cstdint>
-#include <stdexcept>
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <map>
+#include <memory>
+#include <stdexcept>
+#include <vector>
 
 namespace aiverse::world {
 
 struct NereidSceneSurface {
+    // Stable nonzero id supplied by host; 0 means legacy index-based id.
+    // Live ECS adapters must supply generation-safe entity id, never a pool index.
+    uint64_t id=0;
     lib::nereid::WaterBodyComponent body{};
-    // Optional geometry copied from the authoritative scene snapshot.
     lib::nereid::WaterGeometryComponent geometry{};
     bool useGeometry=false;
     lib::nereid::WaterSurfaceMeshOptions mesh{};
     lib::nereid::WaterSurfaceStyle style{};
 };
 
+// Strictly presentation-only equality; no hashing of padding or ECS mutation.
+inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
+                                   const NereidSceneSurface& b) {
+    const auto& x=a.body;const auto& y=b.body;
+    const auto& m=a.mesh;const auto& n=b.mesh;
+    const auto& u=a.style;const auto& v=b.style;
+    if(x.kind!=y.kind || x.footprint!=y.footprint ||
+       x.center.x!=y.center.x || x.center.y!=y.center.y ||
+       x.center.z!=y.center.z || x.surfaceY!=y.surfaceY ||
+       x.bottomY!=y.bottomY || x.halfExtents.x!=y.halfExtents.x ||
+       x.halfExtents.y!=y.halfExtents.y || x.radius!=y.radius ||
+       x.flow.x!=y.flow.x || x.flow.y!=y.flow.y ||
+       x.flow.z!=y.flow.z || x.priority!=y.priority ||
+       x.enabled!=y.enabled || a.useGeometry!=b.useGeometry ||
+       m.lod!=n.lod || m.uvScale!=n.uvScale ||
+       m.foamWidth!=n.foamWidth || m.oceanPatchRadius!=n.oceanPatchRadius ||
+       m.maxVertices!=n.maxVertices ||
+       u.deepR!=v.deepR || u.deepG!=v.deepG || u.deepB!=v.deepB ||
+       u.foamR!=v.foamR || u.foamG!=v.foamG || u.foamB!=v.foamB ||
+       u.foamStrength!=v.foamStrength || u.opacity!=v.opacity ||
+       u.specular!=v.specular)return false;
+    // Camera coordinates are intentionally excluded: resident ocean patches
+    // separately snap their camera anchor to a stable grid.
+    if(!a.useGeometry)return true;
+    if(a.geometry.enabled!=b.geometry.enabled ||
+       a.geometry.kind!=b.geometry.kind ||
+       a.geometry.points.size()!=b.geometry.points.size())return false;
+    for(size_t i=0;i<a.geometry.points.size();++i) {
+        const auto& p=a.geometry.points[i];const auto& q=b.geometry.points[i];
+        if(p.x!=q.x || p.z!=q.z || p.halfWidth!=q.halfWidth)return false;
+    }
+    return true;
+}
+
+struct NereidSceneStats {
+    size_t visible=0, resident=0, pending=0;
+    uint32_t uploadsAttempted=0;
+    size_t estimatedBytesAdmitted=0;
+};
+
 class NereidWaterScene final {
+    struct Slot {
+        NereidSceneSurface source;
+        uint64_t revision=0;
+        std::unique_ptr<render::NereidSurfaceResident> gpu=
+            std::make_unique<render::NereidSurfaceResident>();
+        bool visible=true;
+    };
 public:
     static constexpr size_t kMaxSurfaces=64;
-    // Snapshot/copy before calling update; no dangling ECS World references.
-    // Each replacement bumps the revision and rebuilds changed GPU geometry.
-    void setSurfaces(std::vector<NereidSceneSurface> surfaces) {
-        if(surfaces.size()>kMaxSurfaces)
+    // No GPU operations inside snapshot submission. Removed resources wait
+    // in retired_ until the next device-thread update/shutdown.
+    void setSurfaces(std::vector<NereidSceneSurface> incoming) {
+        if(incoming.size()>kMaxSurfaces)
             throw std::invalid_argument("nereid.scene: too many water surfaces");
-        surfaces_=std::move(surfaces);
-        ++revision_;
-        // Preserve prior GPU meshes until update commits the replacements.
+        std::map<uint64_t,size_t> seen;
+        for(size_t i=0;i<incoming.size();++i) {
+            if(incoming[i].id==0)
+                incoming[i].id=(uint64_t(1)<<63)|(uint64_t(i)+1);
+            if(!seen.emplace(incoming[i].id,i).second)
+                throw std::invalid_argument("nereid.scene: duplicate water id");
+        }
+        // Preallocate before moving GPU owners: invalid input never touches
+        // the current snapshot, and slots keep identity across reorder.
+        std::vector<Slot> next;next.reserve(incoming.size());
+        std::map<uint64_t,size_t> oldIds;
+        for(size_t i=0;i<slots_.size();++i)oldIds.emplace(slots_[i].source.id,i);
+        for(auto& source:incoming) {
+            Slot slot;
+            const auto found=oldIds.find(source.id);
+            if(found!=oldIds.end()) {
+                auto& old=slots_[found->second];
+                slot.gpu=std::move(old.gpu);
+                slot.revision=old.revision;
+                slot.visible=old.visible;
+                if(!sameNereidSceneSurface(source,old.source))++slot.revision;
+            }else slot.revision=++nextRevision_;
+            slot.source=std::move(source);
+            next.push_back(std::move(slot));
+        }
+        for(auto& old:slots_)if(old.gpu)retired_.push_back(std::move(old.gpu));
+        slots_=std::move(next);
+        nextUpload_=0;
     }
     void setMaxUploadsPerFrame(uint32_t count) {
-        if(count==0 || count>16)
+        if(count<1 || count>16)
             throw std::invalid_argument("nereid.scene: upload count must be 1..16");
         maxUploadsPerFrame_=count;
     }
+    void setMaxEstimatedUploadBytes(size_t bytes) {
+        if(bytes<1024 || bytes>64u*1024u*1024u)
+            throw std::invalid_argument("nereid.scene: estimated upload budget out of range");
+        maxEstimatedUploadBytes_=bytes;
+    }
+    // 0 disables distance culling. Uses horizontal source bounds (not
+    // a camera frustum); infinite oceans are always eligible.
+    void setVisibilityRange(float metres) {
+        if(!std::isfinite(metres)||metres<0 || metres>1000000)
+            throw std::invalid_argument("nereid.scene: invalid visibility range");
+        visibilityRange_=metres;
+    }
     uint32_t maxUploadsPerFrame()const{return maxUploadsPerFrame_;}
-    // Round-robin scheduling caps rebuilds per frame, including failed attempts.
-    // Retiring disabled/removed surfaces is immediate and does not consume budget.
-    void update(gfx::Device& device,const Vec3* observer=nullptr) {
-        while(resident_.size()>surfaces_.size()) {
-            resident_.back()->release(device);
-            resident_.pop_back();
+    size_t maxEstimatedUploadBytes()const{return maxEstimatedUploadBytes_;}
+    const NereidSceneStats& stats()const{return stats_;}
+
+    // Conservative upper bound based on maxVertices; the existing mesh
+    // builder uses 32-bit indices and 3 vertices per triangle at most.
+    // This caps scheduling demand, NOT actual graphics driver allocations.
+    static size_t estimatedUploadBytes(const NereidSceneSurface& s) {
+        const size_t count=s.mesh.maxVertices;
+        return count*(sizeof(render::MeshVertex)+6*sizeof(uint32_t));
+    }
+    static bool visibleFrom(const NereidSceneSurface& s,const Vec3* observer,
+                            float distance) {
+        if(!s.body.enabled)return false;
+        if(!observer || distance<=0)return true;
+        if(!s.useGeometry && s.body.footprint==lib::nereid::WaterFootprint::Infinite)
+            return true;
+        double minX=0,maxX=0,minZ=0,maxZ=0;
+        if(s.useGeometry && s.geometry.enabled) {
+            if(s.geometry.points.empty())return false;
+            minX=maxX=s.geometry.points.front().x.toDouble();
+            minZ=maxZ=s.geometry.points.front().z.toDouble();
+            for(const auto& p:s.geometry.points) {
+                const double width=s.geometry.kind==lib::nereid::WaterGeometryKind::RiverSpline
+                    ?p.halfWidth.toDouble():0.0;
+                const double x=p.x.toDouble(),z=p.z.toDouble();
+                minX=std::min(minX,x-width);maxX=std::max(maxX,x+width);
+                minZ=std::min(minZ,z-width);maxZ=std::max(maxZ,z+width);
+            }
+        }else{
+            const double x=s.body.center.x.toDouble(),z=s.body.center.z.toDouble();
+            const double hx=s.body.footprint==lib::nereid::WaterFootprint::Box
+                ?s.body.halfExtents.x.toDouble():s.body.radius.toDouble();
+            const double hz=s.body.footprint==lib::nereid::WaterFootprint::Box
+                ?s.body.halfExtents.y.toDouble():s.body.radius.toDouble();
+            minX=x-hx;maxX=x+hx;minZ=z-hz;maxZ=z+hz;
         }
-        while(resident_.size()<surfaces_.size())
-            resident_.push_back(std::make_unique<render::NereidSurfaceResident>());
-        if(surfaces_.empty()){nextUpload_=0;return;}
-        // Remove disabled bodies immediately; they must not retain stale images.
-        for(size_t i=0;i<surfaces_.size();++i)
-            if(!surfaces_[i].body.enabled)resident_[i]->release(device);
-        uint32_t attempts=0;
-        const size_t count=surfaces_.size();
-        const size_t start=nextUpload_%count;
-        for(size_t scanned=0;scanned<count && attempts<maxUploadsPerFrame_;++scanned) {
-            const size_t i=(start+scanned)%count;
-            if(!surfaces_[i].body.enabled)continue;
-            auto opts=surfaces_[i].mesh;
+        const double x=observer->x.toDouble(),z=observer->z.toDouble();
+        const double dx=std::max({minX-x,0.0,x-maxX});
+        const double dz=std::max({minZ-z,0.0,z-maxZ});
+        return dx*dx+dz*dz<=double(distance)*double(distance);
+    }
+    void update(gfx::Device& device,const Vec3* observer=nullptr) {
+        for(auto& old:retired_)old->release(device);
+        retired_.clear();
+        stats_={};
+        if(slots_.empty()){nextUpload_=0;return;}
+        for(auto& slot:slots_) {
+            slot.visible=visibleFrom(slot.source,observer,visibilityRange_);
+            if(slot.visible)++stats_.visible;
+            if(!slot.source.body.enabled)slot.gpu->release(device);
+        }
+        const size_t start=nextUpload_%slots_.size();
+        for(size_t scanned=0;scanned<slots_.size();++scanned) {
+            const size_t i=(start+scanned)%slots_.size();
+            auto& slot=slots_[i];
+            if(!slot.visible)continue;
+            auto opts=slot.source.mesh;
             if(observer) {
                 opts.cameraX=float(observer->x.toDouble());
                 opts.cameraZ=float(observer->z.toDouble());
             }
-            const auto* geometry=surfaces_[i].useGeometry?&surfaces_[i].geometry:nullptr;
-            if(!resident_[i]->needsUpdate(surfaces_[i].body,geometry,
-                                          revision_,opts,surfaces_[i].style))
+            const auto* geometry=slot.source.useGeometry?&slot.source.geometry:nullptr;
+            if(!slot.gpu->needsUpdate(slot.source.body,geometry,
+                                      slot.revision,opts,slot.source.style))continue;
+            ++stats_.pending;
+            if(stats_.uploadsAttempted>=maxUploadsPerFrame_)continue;
+            const size_t bytes=estimatedUploadBytes(slot.source);
+            // Permit one oversized request to prevent permanent starvation.
+            if(stats_.uploadsAttempted>0 &&
+               bytes>maxEstimatedUploadBytes_-std::min(stats_.estimatedBytesAdmitted,
+                                                       maxEstimatedUploadBytes_))
                 continue;
-            ++attempts;
-            resident_[i]->update(device,surfaces_[i].body,geometry,revision_,
-                                 opts,surfaces_[i].style);
-            nextUpload_=(i+1)%count;
+            ++stats_.uploadsAttempted;
+            stats_.estimatedBytesAdmitted+=bytes;
+            slot.gpu->update(device,slot.source.body,geometry,slot.revision,
+                             opts,slot.source.style);
+            nextUpload_=(i+1)%slots_.size();
         }
+        for(const auto& slot:slots_)if(slot.gpu->resident())++stats_.resident;
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize)const {
         const auto transform=render::mat4::translate({
             float(-double(origin.x)*double(cellSize)),0.f,
             float(-double(origin.z)*double(cellSize))});
-        for(const auto& surface:resident_)surface->draw(renderer,transform);
+        for(const auto& slot:slots_)
+            if(slot.visible)slot.gpu->draw(renderer,transform);
     }
     void shutdown(gfx::Device& device) {
-        for(auto& surface:resident_)surface->release(device);
-        resident_.clear();
+        for(auto& slot:slots_)slot.gpu->release(device);
+        for(auto& slot:retired_)slot->release(device);
+        retired_.clear();
+        stats_={};
         nextUpload_=0;
     }
-    size_t visibleSurfaceCount() const {
+    size_t visibleSurfaceCount()const {
         size_t count=0;
-        for(const auto& surface:resident_)if(surface->resident())++count;
+        for(const auto& slot:slots_)
+            if(slot.visible && slot.gpu->resident())++count;
         return count;
     }
 private:
-    std::vector<NereidSceneSurface> surfaces_;
-    std::vector<std::unique_ptr<render::NereidSurfaceResident>> resident_;
-    uint64_t revision_=0;
+    std::vector<Slot> slots_;
+    std::vector<std::unique_ptr<render::NereidSurfaceResident>> retired_;
+    uint64_t nextRevision_=0;
     uint32_t maxUploadsPerFrame_=2;
+    size_t maxEstimatedUploadBytes_=8u*1024u*1024u;
+    float visibilityRange_=0;
     size_t nextUpload_=0;
+    NereidSceneStats stats_{};
 };
-
 } // namespace aiverse::world
