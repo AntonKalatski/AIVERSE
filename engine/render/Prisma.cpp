@@ -477,7 +477,59 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             const float spread = float(plan.startDiv) * 0.5f;
             put(u.px, spread / float(w), spread / float(h), flip, 0);
             put(u.p0, bloom->get("threshold"), bloom->get("knee"), 0, 0);
-            draw(set, down[0], pipes_[kPrefilter], &u, sizeof u, {{0, src.tex}});
+            // Stage 15: optionally route bloom's *first* prefilter pass
+            // through the same graph/RHI contract used by experimental FXAA.
+            // The remaining bloom down/up passes keep the existing path.
+            bool bloomGraphDrawn = false;
+            const char* bloomOptIn = std::getenv("AIVERSE_PRISMA_GRAPH_BLOOM_PREFILTER");
+            if (bloomOptIn && std::strcmp(bloomOptIn, "1") == 0 &&
+                src.tex.valid() && down[0].tex.valid()) {
+                const gfx::TextureHandle prefilterDepth =
+                    depthFor(set, down[0].w, down[0].h);
+                if (prefilterDepth.valid()) {
+                    PrismaRenderGraph graph;
+                    const PrismaGraphFormat pixelFormat =
+                        hdrFrame_ ? PrismaGraphFormat::RGBA16F : PrismaGraphFormat::RGBA8;
+                    const auto input = graph.addResource({
+                        "bloom-source", pixelFormat,
+                        static_cast<uint32_t>(src.w), static_cast<uint32_t>(src.h), true});
+                    const auto output = graph.addResource({
+                        "bloom-prefilter", pixelFormat,
+                        static_cast<uint32_t>(down[0].w),
+                        static_cast<uint32_t>(down[0].h), true});
+                    PrismaGraphPass prefilter;
+                    prefilter.name = "bloom-prefilter";
+                    prefilter.reads = {input};
+                    prefilter.writes = {output};
+                    graph.addPass(std::move(prefilter));
+                    const auto graphPlan = graph.compile();
+                    PrismaRhiExecutor executor(dev);
+                    const std::vector<gfx::TextureHandle> external{
+                        src.tex, down[0].tex};
+                    const auto result = executor.execute(
+                        graph, graphPlan, external,
+                        [&](gfx::Device& gpu, PrismaGraphId,
+                            const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
+                            gpu.setViewport({0, 0, down[0].w, down[0].h});
+                            gpu.setPipeline(pipes_[kPrefilter]);
+                            gpu.setVertexBuffer(triangle_);
+                            gpu.setUniforms(0, &u, sizeof u);
+                            gpu.setTexture(0, view.resource(input));
+                            gpu.draw(3);
+                            return true;
+                        },
+                        [](gfx::Device&, PrismaGraphId,
+                           const PrismaGraphDispatchView<gfx::TextureHandle>&) {
+                            return false;
+                        },
+                        prefilterDepth);
+                    bloomGraphDrawn = result.success;
+                    if (bloomGraphDrawn) ++stats_.passes;
+                    else if (error_.empty()) error_ = result.error;
+                }
+            }
+            if (!bloomGraphDrawn)
+                draw(set, down[0], pipes_[kPrefilter], &u, sizeof u, {{0, src.tex}});
             for (size_t i = 1; i < down.size(); ++i) {
                 put(u.px, 1.0f / float(down[i - 1].w), 1.0f / float(down[i - 1].h), flip, 0);
                 draw(set, down[i], pipes_[kDown], &u, sizeof u, {{0, down[i - 1].tex}});
