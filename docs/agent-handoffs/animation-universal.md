@@ -264,3 +264,26 @@ before calling this stage validated.
   then `ctest --test-dir build/ecs-test -R animation_physical_pose --output-on-failure`.
 - Next: shared camera-size/priority evaluation budget, CI build fixes,
   production FPS character preview and more authoritative motor integration.
+
+
+## Stage 11: shared presentation animation budget policy — 2026-11-18
+
+- Code commit: `bd9cbf95177c4ade4adfeacd5ce6ec6ba3815541`.
+- Header: `libraries/include/aiverselib/animation/AnimationBudgetPolicy.h`.
+- Opt-in `AnimationSignificanceComponent` stores host-supplied projected
+  screen size, importance, visibility, and an always-evaluate override.
+- `assignAnimationBudgets(World&, AnimationBudgetPolicy)` ranks entities
+  by force override, significance, and stable Entity ID; assigns full-rate,
+  medium-rate, low-rate or offscreen intervals to AnimationBudgetComponent.
+  Forced high-priority entities may exceed full-rate slots by design.
+- Test `tests/animation/budget.cpp` / CTest `animation_budget_policy`
+  exercises stable tie-breaking, forced importance, visibility and
+  dynamic changes in priority; no gameplay authority or physics writes.
+- This is a CPU scheduling policy, NOT a GPU crowd renderer, multithreaded
+  evaluation implementation or actual measured frame-time budget.
+- Compatibility: entirely opt-in; existing client assigns its own distance
+  thresholds and does NOT yet call this significance allocator.
+- Validation: NOT RUN. Build target `aiverse_animation_budget_tests` and
+  execute `ctest --test-dir build/ecs-test -R animation_budget_policy --output-on-failure`.
+- Next: comprehensive CMake build, CTest and screenshot CI; integrate budget
+  policy with real camera visibility and GPU performance counters.
