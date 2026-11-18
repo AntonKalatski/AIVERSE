@@ -38,7 +38,14 @@ horizonSceneFromManifest(
     biomes.seaLevelCm=static_cast<int32_t>(worldInteger(
         j,"seaLevelCm",biomes.seaLevelCm,-1000000,1000000));
 
-    terraweave::HorizonSettings settings;
+    const std::string quality=j.getStr("quality","balanced");
+    terraweave::HorizonQualityPreset preset;
+    if(quality=="minimal")preset=terraweave::HorizonQualityPreset::Minimal;
+    else if(quality=="mobile")preset=terraweave::HorizonQualityPreset::Mobile;
+    else if(quality=="balanced")preset=terraweave::HorizonQualityPreset::Balanced;
+    else if(quality=="high")preset=terraweave::HorizonQualityPreset::High;
+    else throw JsonError("world.terraweaveHorizon.quality: expected minimal|mobile|balanced|high");
+    terraweave::HorizonSettings settings=terraweave::horizonSettingsForQuality(preset);
     settings.middleTileCm=static_cast<int32_t>(worldInteger(
         j,"middleTileCm",settings.middleTileCm,1000,200000));
     settings.middleTilesPerSide=static_cast<uint32_t>(worldInteger(
