@@ -43,22 +43,28 @@ public:
             int slot = 0;
             for (; slot < 32; ++slot) {
                 bool used = false;
-                for (const auto& [id, activeSlot] : touches_) {
+                for (const auto& [id, touch] : touches_) {
                     (void)id;
-                    if (activeSlot == slot) { used = true; break; }
+                    if (touch.slot == slot) { used = true; break; }
                 }
                 if (!used) break;
             }
             if (slot == 32) break; // ignore excess touches; profile indices are 0..31
-            touches_[event.touchId] = slot;
+            touches_[event.touchId] = {slot,event.x,event.y};
             input_.setControl({Device::Touch, 0, slot}, 1);
+            break;
+        }
+        case EventType::TouchMove: {
+            const auto it = touches_.find(event.touchId);
+            if (it != touches_.end()) touchMotion(it->second,event);
             break;
         }
         case EventType::TouchEnd:
         case EventType::TouchCancel: {
             const auto it = touches_.find(event.touchId);
             if (it != touches_.end()) {
-                input_.setControl({Device::Touch, 0, it->second}, 0);
+                if (event.type == EventType::TouchEnd) touchMotion(it->second,event);
+                input_.setControl({Device::Touch, 0, it->second.slot}, 0);
                 touches_.erase(it);
             }
             break;
@@ -94,7 +100,17 @@ public:
         touches_.clear();
     }
 private:
+    struct TouchEntry { int slot=0; float x=0,y=0; };
+    void touchMotion(TouchEntry& touch,const Event& event) {
+        using namespace lib::gameplay::enhanced;
+        // Touch code 0 is finger-down; code 1/2 are per-frame relative motion.
+        // Coalesced TouchMove events accumulate until InputSystem::update().
+        const float dx=event.x-touch.x, dy=event.y-touch.y;
+        if(dx!=0) input_.addDelta({Device::Touch,1,touch.slot},dx);
+        if(dy!=0) input_.addDelta({Device::Touch,2,touch.slot},dy);
+        touch.x=event.x;touch.y=event.y;
+    }
     lib::gameplay::enhanced::InputSystem& input_;
-    std::map<std::int64_t, int> touches_;
+    std::map<std::int64_t, TouchEntry> touches_;
 };
 } // namespace aiverse::platform
