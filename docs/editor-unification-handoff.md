@@ -1107,3 +1107,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Extended `tests/ecs_kinematic_projectile_test.cpp` (already registered in CTest and standalone ECS suite) to include `EcsOrderedImpactSystems.h` and exercise `resolveOrderedProjectileImpact`. Fixture constructs actual ECS Entity handles, records callback order `direct, onHit, spatialQuery, splashEnemyA, splashEnemyB`, skips the direct target in the splash query, filters allied candidates, checks direct damage happens before splash, and confirms zero-splash impacts never run the spatial query. Existing cross-host motion and rollback tests remain.
 - Verification: source committed in GitHub only. No native compiler / CTest run; assertions use `check` with exceptions so they are active in Release. The scenario covers **policy dispatch semantics**, not full RTS damage hook integration.
 - Next: publish this API in the native library catalog/AI skill, and obtain native build plus gameplay/rollback parity results.
+
+### 2026-11-18 — Shared ordered-impact native agent skill
+- Code/documentation SHA: `26a829866a87ca90e2815df7b94115b8f7c8cba9`.
+- Added `skills/gameplay/aiverse-ecs-ordered-impact/SKILL.md`: tells project agents to use reusable ECS impact ordering independently of projectile motion mode, preserve per-projectile direct/on-hit/splash sequencing, and inject project-specific armor, faction, Lua/status policies. Documents real RTS integration scope and pending FPS/ability adapters.
+- Verification: skill file committed, not executed; catalog package target named by the skill must be registered in the next change.
