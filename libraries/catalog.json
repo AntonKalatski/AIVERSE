@@ -2652,6 +2652,21 @@
       "runtime": "header",
       "linkDependencies": ["aiverse_engine"],
       "packageDependencies": []
+    },
+    {
+      "id": "nereid-buoyancy",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidBuoyancySystems.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID shared deterministic buoyancy and flow drag output for host physics",
+      "notes": "Stage 2 policy only; host owns gravity, canonical velocity, collision and force integration. Requires same-tick contact sample. Unverified native tests.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_buoyancy",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
     }
   ]
 }

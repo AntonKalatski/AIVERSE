@@ -1616,6 +1616,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_ecs_nereid_water_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_water_test COMMAND aiverse_ecs_nereid_water_test)
+    # NEREID stage 2: shared deterministic buoyancy/drag policy.
+    add_executable(aiverse_ecs_nereid_buoyancy_test tests/ecs_nereid_buoyancy_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_buoyancy_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_buoyancy)
+    add_test(NAME ecs_nereid_buoyancy_test COMMAND aiverse_ecs_nereid_buoyancy_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
