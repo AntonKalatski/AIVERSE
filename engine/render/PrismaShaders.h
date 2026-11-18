@@ -87,6 +87,29 @@ inline const char* kShafts = R"(
     RETURN(vec4(acc * (p0.w / p0.x), 1.0));
 )";
 
+
+// Stage 22 experimental depth-based defocus. TEX0 color, TEX1 scene depth.
+// px.xy=1/resolution; px.z=RT UV flip; p0=(focusDepth,range,maxRadius,intensity).
+// Hardware depth deliberately remains [0,1] (no unsupported near/far inference).
+inline const char* kDepthOfField = R"(
+    vec2 uv = TUV(s);
+    vec3 original = TEX0(uv).rgb;
+    float depth = TEX1(uv).r;
+    float coc = clamp((abs(depth - p0.x) - p0.y * 0.5) /
+                      max(p0.y, 0.0001), 0.0, 1.0) * p0.w;
+    vec2 radius = px.xy * p0.z * coc;
+    vec3 sum = original * 2.0;
+    sum += TEX0(uv + vec2( radius.x, 0.0)).rgb;
+    sum += TEX0(uv + vec2(-radius.x, 0.0)).rgb;
+    sum += TEX0(uv + vec2(0.0,  radius.y)).rgb;
+    sum += TEX0(uv + vec2(0.0, -radius.y)).rgb;
+    sum += TEX0(uv + radius * vec2( 0.7071,  0.7071)).rgb;
+    sum += TEX0(uv + radius * vec2(-0.7071,  0.7071)).rgb;
+    sum += TEX0(uv + radius * vec2( 0.7071, -0.7071)).rgb;
+    sum += TEX0(uv + radius * vec2(-0.7071, -0.7071)).rgb;
+    RETURN(vec4(sum * 0.1, 1.0));
+)";
+
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
 inline const char* kFxaaHelpers = R"(
 PF_FN float pfLuma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
