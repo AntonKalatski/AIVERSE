@@ -3331,3 +3331,46 @@ Check new window menu registration, memory estimates, filter and
 lifecycle, then run the texture-focused CTests. If the build is clean,
 continue native async readback/GPU validation and production importer
 integrations. Record exact results in a new handoff.
+
+## Stage 7M — virtual texture streaming coordinator mock tests (2026-11-18)
+
+**Code commit:** `88ba89f5dc89369688ef7ed170e529894f26f97a`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Files:** `tests/render/virtual_texture_streamer.cpp` and
+`CMakeLists.txt`.
+
+**Test source:** Registered `aiverse_virtual_texture_streamer_test` /
+CTest `virtual_texture_streamer` under the existing
+`AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN` gate. Synthetic mock GPU
+checks physical atlas + table allocation, coarsest parent fallback
+publication only after GPU upload completion, sample invalidation
+before an evicted physical slot can be overwritten, deterministic
+LRU eviction with a pinned intermediate page, fine-over-coarse
+page-table replacement, explicit eviction and safety of pinned
+pages, cancellation and re-staging, refusal of truncated physical
+page bytes, GPU upload failure quarantine, callbacks and complete
+ownership cleanup. The fixture uses no external image, GPU or
+virtual texture asset.
+
+**Implementation:** Test-only source and CMake registration.
+Production runtime code remains the Stage 7L
+`engine/gfx/VirtualTextureStreamer.h`, and the prior page
+cache/table/GLSL/MSL helpers are reused unchanged.
+
+**Actual verification:** GitHub test commit succeeded.
+**C++ compilation NOT RUN, CTest NOT RUN, GPU test NOT RUN.**
+The fixture's own correctness is still subject to compilation
+and execution; no fabricated PASS result.
+
+**Verification later:**
+```sh
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_virtual_texture_streamer_test
+ctest --test-dir build/texture-rhi --output-on-failure -R '^virtual_texture_streamer$'
+```
+
+**Next:** Document the unified virtual texture physical atlas
+API in the native AI skill. Add editor resource telemetry showing
+the public page cache stats and page-table entries. GPU texture
+readback tests, complete OpenEXR/Basis transcoding, rendering
+integration and platform builds are still outstanding.
