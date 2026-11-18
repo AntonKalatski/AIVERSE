@@ -77,3 +77,13 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Preserve the genre-independent PHYSIS/NEREID/TerraWeave/Box3D boundaries.
   Source tests are authored but NOT RUN. Stage handoff:
   docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
+
+
+### Stage 21 grouped yaw/scale extension
+- Use editor-only physis_authoring::transformFields for atomic group Y-axis
+  yaw and uniform geometry scale around the active member, one Undo.
+- Scale zone radius (and storm eye/outer radius/height), group-relative
+  positions in XYZ, NOT wind velocity, storm strength or gravity forces.
+  Validate all outputs against canonical parser BEFORE writing MapDoc.
+- C++ fixture testGroupRotationAndScale has been authored but NOT RUN.
+  No physics/runtime edit, new ECS component or save schema was introduced.

@@ -214,3 +214,12 @@ live Simulation ECS; the generic native installFromMap remains the only
 explicit startup importer. Handoff:
 docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
 New test fixtures are NOT RUN in CTest.
+
+
+Stage 21 also provides numeric group yaw and uniform scale controls in the
+PHYSIS field panel. The active field's center is the pivot. Use
+physis_authoring::transformFields for one atomic Undo transaction. It
+rotates positions in X/Z and uniformly scales group spacing and spatial
+radii/heights; never treat it as orientation of the vector wind/force
+field itself. Native validation rejects the whole group if any radius,
+height or location is invalid. C++ and Scene UI tests NOT RUN.

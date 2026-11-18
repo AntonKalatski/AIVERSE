@@ -1311,3 +1311,10 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
 - See docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
   Source test cases added but C++ compilation/CTest/macOS GUI QA NOT RUN.
   PR #25 must stay draft until verified.
+
+
+- PHYSIS Stage 21 extension: physis_authoring::transformFields performs one
+  editor-only group rotation around global Y and uniform spatial scale
+  about the active selected marker. It scales radii/storm extents but NOT
+  wind velocity or force strengths. No new runtime authority or schema.
+  See the Stage 21 handoff; GUI/CTest verification still pending.

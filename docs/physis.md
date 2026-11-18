@@ -479,3 +479,24 @@ Source fixtures for group Undo/Redo, atomic rejection, new ID generation,
 custom-key preservation and regular/FPS map roundtrips are in
 tests/physis_field_authoring_test.cpp. Native build, CTest and GUI QA
 NOT RUN. See docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
+
+
+### Group rotation and uniform geometric scale (Stage 21 extension)
+
+With any PHYSIS fields selected, choose **Поворот вокруг Y, град** and
+**Масштаб геометрии**, then **Применить к выбранным**. The active member's
+center is the pivot. Both operations are performed in one atomic MapDoc
+transaction by physis_authoring::transformFields. Rotation changes the
+world-space X/Z arrangement around the common Y axis; uniform scale
+changes the offsets in XYZ and the sources' spatial extents (wind/gravity
+radius; storm eye radius, outer radius and height). Wind velocity/direction,
+storm forces, gravity acceleration, enabled flags and IDs are NOT changed.
+This is intentional: field values are independent from geometry.
+
+Whole-config native validation rejects an invalid transformed position,
+radius, height or source combination, leaving the entire original
+selection unchanged. Orientation/heading rotation, per-axis nonuniform
+scaling, volumetric 3D rotation gizmos and live ECS writeback are not
+implemented. Rotation uses editor double math and writes 3-decimal metre
+coordinates; authoritative runtime still reads quantized Fixed map inputs.
+New rotation/scale/Undo fixtures are authored but native CTest is NOT RUN.
