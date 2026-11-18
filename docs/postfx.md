@@ -11,10 +11,11 @@ are drawn after the effects and are never post-processed.
 
 Public C++ class: `aiverse::render::Prisma` (`engine/render/Prisma.h`); the `PostFx` type alias, `postfx` JSON block and `postfx_*` editor commands remain compatible.
 
-Code: `engine/render/PostFxData.*` (format, catalog, presets, cost model; GPU-free),
+Canonical PRISMA source: `engine/render/PrismaData.{h,cpp}` (format/catalog/presets/cost), `engine/render/Prisma.{h,cpp}` + `PrismaShaders.h` (GPU renderer), `engine/render/PrismaScreenLighting.{h,cpp}` (TAA and screen lighting); editor `apps/editor/core/PrismaOps.{h,cpp}`, `apps/editor/windows/PrismaWindow.cpp`. Legacy `PostFx*` and `ScreenLighting*` source names are forwarding compatibility shims. See `docs/prisma.md` for SpectraFX ownership boundary.
+
+Historical module references: `engine/render/PostFxData.*` (format, catalog, presets, cost model; GPU-free),
 `engine/render/PostFx.*` + `PostFxShaders.h` (renderer), `apps/editor/core/PostFxOps.*` (MCP),
-`apps/editor/windows/PostFxWindow.cpp` (window). Hook: `Renderer3D::render(pass, &postFx)` +
-`Renderer3D::resolvePostFx()`.
+`apps/editor/windows/PostFxWindow.cpp` (window). Hook: `Renderer3D::render(pass, &prisma)` + `Renderer3D::resolvePrisma()` (legacy `resolvePostFx()` retained).
 
 ## Format
 
