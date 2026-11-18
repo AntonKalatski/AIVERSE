@@ -103,7 +103,8 @@ public:
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
-    render::Prisma& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
+    render::Prisma& prisma() { return postFx_; } // canonical PRISMA editor API
+    render::Prisma& postFx() { return prisma(); } // legacy alias; existing tools depend on it
     bool postFxInScene = true;                     // false: only the Game view is post-processed
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
