@@ -415,6 +415,16 @@ inline bool readAsset(const Json& json,Asset& out,std::string* error=nullptr) {
     for(const auto& c:result.contexts)
         for(const auto& m:c.context.mappings)
             if(!checkChords(m.triggers,names,m.action,"input.contexts."+c.context.name,error))return false;
+    // Check transitive dependencies (including NotChord and cross-context
+    // mappings) after all forward references have been resolved. Reject cycles
+    // transactionally before touching the caller's Asset.
+    std::map<std::string,ei::Action> graphActions;
+    std::map<std::string,ei::MappingContext> graphContexts;
+    for(const auto& action:result.actions)graphActions.emplace(action.name,action);
+    for(const auto& context:result.contexts)
+        graphContexts.emplace(context.context.name,context.context);
+    if(!ei::enhanced::detail::chordGraphAcyclic(graphActions,graphContexts))
+        return fail(error,"input","cyclic chord/notChord dependency");
     out=std::move(result);
     return true;
 }
