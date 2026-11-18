@@ -152,7 +152,8 @@ private:
     bool planet() const { return view_.planetMode(); }
     void planetCameraKeys(double dt);
     void fitPlanetCamera();
-    bool planetCameraEvent(const platform::Event& e, bool uiWants);
+    bool planetCameraEvent(const platform::Event& e, bool uiWants,
+                           const std::vector<std::string>& actions);
     bool objectScreen(const SceneObject& o, float lift, float2& sp) const;   // flat maps: worldToScreen({x, lift, z})
     static Vec3 simPoint(float3 g);   // planets: picked sim-space point -> command point (1/256 units)
     RtsModule& mod() { return *static_cast<RtsModule*>(&sim_->module()); }
