@@ -85,7 +85,11 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("maxEV", 6.0f, 0.0f, 12.0f, "maximum automatic exposure in EV stops", "Максимум EV"),
         num("speedUp", 3.0f, 0.01f, 20.0f, "adaptation speed when exposure increases (1/seconds)", "Скорость осветления"),
         num("speedDown", 1.0f, 0.01f, 20.0f, "adaptation speed when exposure decreases (1/seconds)", "Скорость затемнения"),
-        num("compensation", 0.0f, -5.0f, 5.0f, "exposure compensation in EV stops", "Коррекция EV")}});
+        num("compensation", 0.0f, -5.0f, 5.0f, "exposure compensation in EV stops", "Коррекция EV"),
+        num("centerWeight", 0.0f, 0.0f, 1.0f, "0=uniform metering; 1=center-weighted", "Приоритет центра"),
+        num("centerRadius", 0.35f, 0.05f, 1.0f, "normalized center-metering radius", "Радиус замера"),
+        num("minMeterLogL", -10.0f, -16.0f, 0.0f, "lower log2 luminance clamp for metering", "Нижняя граница замера"),
+        num("maxMeterLogL", 10.0f, 0.0f, 16.0f, "upper log2 luminance clamp for metering", "Верхняя граница замера")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
