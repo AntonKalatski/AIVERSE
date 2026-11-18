@@ -622,6 +622,10 @@ public:
     }
 
     PipelineHandle createPipeline(const PipelineDesc& d) override {
+        if (d.sampleCount != 1) {
+            error_ = "GL: multisample pipeline variants are not implemented";
+            return {};
+        }
         auto* s = shaders_.get(d.shader.id);
         if (!s) { error_ = "pipeline: invalid shader"; return {}; }
         return {pipelines_.add(GLPipeline{d, s->program, {}, {}, false})};

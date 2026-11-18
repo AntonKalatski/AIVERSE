@@ -354,12 +354,13 @@ public:
         if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
             error_ = textureDescErrorString(e); return {};
         }
-        // Stage 2A: sampleable dimensions with explicit per-face/slice writes. MSAA and
-        // attachment slices require the later view/render-pass stage.
-        if (d.sampleCount != 1 ||
-            (d.renderTarget && (d.dimension == TextureDimension::Texture1D ||
-                                d.dimension == TextureDimension::Texture3D))) {
-            error_ = "Metal: multisample/1D/3D render targets are not supported by this pass";
+        if (d.renderTarget && (d.dimension == TextureDimension::Texture1D ||
+                               d.dimension == TextureDimension::Texture3D)) {
+            error_ = "Metal: 1D/3D render targets are unsupported";
+            return {};
+        }
+        if (d.sampleCount > 1 && ![device_ supportsTextureSampleCount:NSUInteger(d.sampleCount)]) {
+            error_ = "Metal: requested MSAA sample count is unsupported by the device";
             return {};
         }
         const MTLPixelFormat cf = compressedFormat(d.format);
@@ -387,8 +388,10 @@ public:
             : d.mipLevels > 0 ? d.mipLevels
             : generate ? maxTextureMipLevels(d.width, d.height, d.depth) : 1;
         MTLTextureDescriptor* td = [MTLTextureDescriptor new];
-        td.textureType = textureType(d.dimension);
+        td.textureType = d.sampleCount > 1 ? MTLTextureType2DMultisample :
+                         textureType(d.dimension);
         td.pixelFormat = pf;
+        td.sampleCount = NSUInteger(d.sampleCount);
         td.width = NSUInteger(d.width);
         td.height = NSUInteger(d.height);
         td.depth = NSUInteger(d.dimension == TextureDimension::Texture3D ? d.depth : 1);
@@ -397,7 +400,8 @@ public:
         td.mipmapLevelCount = NSUInteger(levels);
         td.usage = MTLTextureUsageShaderRead | (d.storage ? MTLTextureUsageShaderWrite : 0) |
                    (d.renderTarget || d.format == PixelFormat::Depth ? MTLTextureUsageRenderTarget : 0);
-        if (d.format == PixelFormat::Depth) td.storageMode = MTLStorageModePrivate;
+        if (d.format == PixelFormat::Depth || d.sampleCount > 1)
+            td.storageMode = MTLStorageModePrivate;
         MTTexture t;
         t.fmt = d.format; t.dimension = d.dimension;
         t.tex = [device_ newTextureWithDescriptor:td];
@@ -520,7 +524,10 @@ public:
     }
     TextureViewHandle createTextureView(TextureHandle h, const TextureViewDesc& view) override {
         MTTexture* t = textures_.get(h.id);
-        if (!t || !t->tex) { error_ = "Metal texture view: invalid parent"; return {}; }
+        if (!t || !t->tex || t->tex.sampleCount > 1) {
+            error_ = "Metal texture view: invalid parent or multisampled resource";
+            return {};
+        }
         TextureDesc parent;
         parent.width = int(t->tex.width); parent.height = int(t->tex.height);
         parent.depth = t->dimension == TextureDimension::Texture3D ? int(t->tex.depth) : 1;
@@ -692,6 +699,7 @@ public:
         pd.vertexFunction = s->vs;
         pd.fragmentFunction = s->fs; // depth-only shaders without fs_main get nil (no fragment stage)
         pd.vertexDescriptor = vd;
+        pd.rasterSampleCount = NSUInteger(std::max(1, d.sampleCount));
         // Metal requires opt-in at pipeline creation for pipeline states
         // referenced by indirect render commands. Without this the driver may
         // silently discard ICB draws or fail an entire command buffer.
@@ -793,6 +801,10 @@ public:
         pipeline.icbPbrEncoder = encoder;
     }
     PipelineHandle createPipeline(const PipelineDesc& d) override {
+        if (d.sampleCount < 1 || ![device_ supportsTextureSampleCount:NSUInteger(d.sampleCount)]) {
+            error_ = "Metal pipeline: unsupported raster sample count";
+            return {};
+        }
         auto* s = shaders_.get(d.shader.id);
         if (!s) { error_ = "pipeline: invalid shader"; return {}; }
         auto* pd = pipelineDescriptor(d, s);
@@ -817,6 +829,9 @@ public:
         return {pipelines_.add(p)};
     }
     PipelineJob createPipelineAsync(const PipelineDesc& d) override {
+        if (d.sampleCount < 1 || ![device_ supportsTextureSampleCount:NSUInteger(d.sampleCount)]) {
+            return Device::createPipelineAsync(d);
+        }
         auto* shader=shaders_.get(d.shader.id);
         if (!shader) return Device::createPipelineAsync(d);
         struct Result { MTPipeline value; std::string error; std::atomic<bool> done{false}; PipelineHandle published; };
@@ -1079,7 +1094,7 @@ public:
             const MTTexture* t = textures_.get(a.texture.id);
             if (!t || !t->tex || a.mipLevel < 0 || a.arrayLayer < 0 ||
                 a.mipLevel >= int(t->tex.mipmapLevelCount) ||
-                a.arrayLayer >= sliceCount(*t) || t->tex.sampleCount != 1 ||
+                a.arrayLayer >= sliceCount(*t) ||
                 !(t->tex.usage & MTLTextureUsageRenderTarget) ||
                 (t->fmt == PixelFormat::Depth) != depth ||
                 t->dimension == TextureDimension::Texture1D ||
@@ -1113,6 +1128,35 @@ public:
             depth = textures_.get(desc.depth.texture.id);
         }
         if (!width || !height) return false;
+        const int samples = color ? int(color->tex.sampleCount) : int(depth->tex.sampleCount);
+        if (color && depth && color->tex.sampleCount != depth->tex.sampleCount) {
+            error_ = "Metal: color and depth sample count mismatch"; return false;
+        }
+        const MTTexture* resolve = nullptr;
+        if (color && desc.colors[0].resolveTexture.valid()) {
+            const auto& a = desc.colors[0];
+            int rw = 0, rh = 0;
+            if (samples <= 1 || !(resolve = textures_.get(a.resolveTexture.id)) ||
+                !resolve->tex || resolve->tex.sampleCount != 1 ||
+                resolve->tex.pixelFormat != color->tex.pixelFormat ||
+                !(resolve->tex.usage & MTLTextureUsageRenderTarget) ||
+                resolve->dimension == TextureDimension::Texture1D ||
+                resolve->dimension == TextureDimension::Texture3D ||
+                a.resolveMipLevel < 0 ||
+                a.resolveMipLevel >= int(resolve->tex.mipmapLevelCount) ||
+                a.resolveArrayLayer < 0 ||
+                a.resolveArrayLayer >= sliceCount(*resolve)) {
+                error_ = "Metal: incompatible MSAA resolve resource"; return false;
+            }
+            rw = std::max(1, int(resolve->tex.width) >> a.resolveMipLevel);
+            rh = std::max(1, int(resolve->tex.height) >> a.resolveMipLevel);
+            if (rw != width || rh != height) {
+                error_ = "Metal: resolve mip extent differs from MSAA source"; return false;
+            }
+        }
+        if (depth && desc.depth.resolveTexture.valid()) {
+            error_ = "Metal: depth resolve is unsupported"; return false;
+        }
         finishGpuEncodedIcbPreparation();
         MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
         if (color) {
@@ -1121,7 +1165,13 @@ public:
             rp.colorAttachments[0].level = NSUInteger(a.mipLevel);
             rp.colorAttachments[0].slice = NSUInteger(a.arrayLayer);
             rp.colorAttachments[0].loadAction = a.clear ? MTLLoadActionClear : MTLLoadActionLoad;
-            rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+            rp.colorAttachments[0].storeAction = resolve ?
+                MTLStoreActionMultisampleResolve : MTLStoreActionStore;
+            if (resolve) {
+                rp.colorAttachments[0].resolveTexture = resolve->tex;
+                rp.colorAttachments[0].resolveLevel = NSUInteger(a.resolveMipLevel);
+                rp.colorAttachments[0].resolveSlice = NSUInteger(a.resolveArrayLayer);
+            }
             rp.colorAttachments[0].clearColor = MTLClearColorMake(
                 a.clearColor[0], a.clearColor[1], a.clearColor[2], a.clearColor[3]);
         }
@@ -1137,6 +1187,7 @@ public:
         if (!encoder) { error_ = "Metal: render target encoder creation failed"; return false; }
         enc_ = encoder;
         passW_ = width; passH_ = height;
+        explicitPassSamples_ = samples;
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
         pipelineId_ = 0;
         clearBindings();
@@ -1191,6 +1242,7 @@ public:
     }
     void endPass() override {
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
+        explicitPassSamples_ = 0;
     }
 
     void setViewport(const Rect& r) override {
@@ -1209,6 +1261,10 @@ public:
         if (!enc_ || !p) return;
         if (hdrPass_ && !p->desc.depthOnly && p->desc.colorFormat != PixelFormat::RGBA16F) {
             h = hdrPipeline(h); p = pipelines_.get(h.id); if (!p) { pipelineId_ = 0; return; }
+        }
+        if (explicitPassSamples_ && p->desc.sampleCount != explicitPassSamples_) {
+            error_ = "Metal: pipeline sample count does not match active render target pass";
+            pipelineId_ = 0; return;
         }
         pipelineId_ = h.id;
         [enc_ setRenderPipelineState:p->state];
@@ -1860,6 +1916,7 @@ private:
     bool firstPass_ = true;
     bool screenReadable_ = false;   // setScreenReadable: drawables stay copyable (copyColor)
     bool hdrPass_ = false;
+    int explicitPassSamples_ = 0;
     DeviceInfo info_;
     std::string error_;
     Pool<MTBuffer> buffers_;

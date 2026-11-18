@@ -43,6 +43,10 @@ void VulkanDevice::destroyShader(ShaderHandle h) {
 }
 
 PipelineHandle VulkanDevice::createPipeline(const PipelineDesc& d) {
+    if (d.sampleCount != 1) {
+        error_ = "Vulkan: multisample pipeline variants are not implemented";
+        return {};
+    }
     if (!shaders_.get(d.shader.id)) { error_ = "pipeline: invalid shader"; return {}; }
     VPipeline p;
     p.desc = d;
