@@ -135,6 +135,7 @@ void testAllLayersMatchFullNatureSampling() {
         DiagnosticLayer::VerticalWindMetersPerSecond, DiagnosticLayer::GravityMagnitude,
         DiagnosticLayer::Fire, DiagnosticLayer::Quake, DiagnosticLayer::LocalFloodMeters
     };
+    FieldSpatialIndex index(world, {.tileSizeMeters = 100, .maxTilesPerVolume = 16});
     for (auto layer : layers) {
         DiagnosticRequest request;
         request.originX = cfg.originX;
@@ -144,6 +145,12 @@ void testAllLayersMatchFullNatureSampling() {
         request.layer = layer;
         DiagnosticRaster raster;
         CHECK(sampleDiagnosticRaster(world, request, raster));
+        DiagnosticRaster indexed;
+        CHECK(sampleDiagnosticRasterIndexed(index, request, indexed));
+        CHECK(indexed.rawValues == raster.rawValues);
+        CHECK(indexed.valid == raster.valid);
+        CHECK(indexed.sampleCount == raster.sampleCount);
+        CHECK(indexed.minRaw == raster.minRaw && indexed.maxRaw == raster.maxRaw);
         CHECK(raster.sampleCount == 6);
         for (int z = 0; z < cfg.height; ++z)
             for (int x = 0; x < cfg.width; ++x) {
