@@ -134,3 +134,39 @@ for other tools without adding render dependencies to PHYSIS. Reference CTest
 GUI must additionally be built and manually reviewed in the real editor.
 **Editor build / CTest / screenshot / click-through NOT RUN yet.**
 Handoff: `docs/agent-handoffs/physis-editor-debug-view-2026-11-18.md`.
+
+## Stage 18 Scene viewport and authored map configuration
+
+Before changing PHYSIS editor workflows read `docs/editor-unification-handoff.md`.
+The standard Scene viewport now imports `apps/editor/PhysisSceneOverlay.h`
+and draws opt-in projected PHYSIS heatmap tiles/rings, read-only against the
+running generic Simulation. Open **Мир → PHYSIS · Природа**, enable the
+3D Scene overlay (available only when the project installed PHYSIS).
+The 2D demo World is independent, and must never be written to a game save.
+
+The common Inspector's map properties page offers PHYSIS authoring
+(`apps/editor/PhysisAuthoring.h`), with structured grid/climate/feature
+settings plus advanced JSON. Apply validates first, snapshots MapDoc once,
+and supports Undo/Redo for both regular and FPS map document formats.
+It stores a map-level `"physis"` block, but does not mutate a live World.
+
+Native projects opt in without genre dependency:
+
+```cpp
+#include "engine/physis/PhysisProjectConfig.h"
+void MyGame::setup(aiverse::Simulation& sim, const Json& rules,
+                   const Json& map) {
+    aiverse::physis::installFromMap(sim, map);
+}
+```
+
+The loader reads grid/climate/enable flags, rejects malformed input, respects
+`FloodMode::ExternalAuthority` for NEREID-managed water and registers
+optional component persistence. It does **not** instantiate authored field
+arrays (future explicit entity spawn adapter), nor automatically add weather
+to RTS/FPS modules.
+
+Handoff: `docs/agent-handoffs/physis-editor-scene-inspector-2026-11-18.md`.
+Actual `physis_authoring`, `physis_project_config`, `physis_scene_geometry`
+CTest and interactive editor screenshot/launch: **NOT RUN**. Do not advertise
+a verified UI or migrated runtime until CI/checkout evidence exists.
