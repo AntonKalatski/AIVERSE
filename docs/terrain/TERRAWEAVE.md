@@ -266,3 +266,36 @@ final scalable forest strategy. Generate a bounded catalogue of
 species/variant prototypes and reuse meshes across instance transforms.
 `buildFloraBatches` already groups placement data; the next renderer
 adapter must submit these groups through existing model instancing.
+
+## Stage 2f: baking TerraWeave into existing editor MapDoc heightfields
+
+`engine/world/TerraWeaveHeightmap.h` provides a pure
+`generateLegacyCorners(TerrainSettings, widthCells, heightCells,
+LegacyHeightfieldOptions)` adapter. Inputs use centimetres; output is the
+existing MapData signed-int16 corner format, **1/16 map metre** per
+sample. Coordinates and output ranges are validated; overflow/saturation
+throws instead of corrupting map heights. Offset/spacing can be configured.
+
+`apps/editor/core/TerraWeaveMapAdapter.h` provides:
+```cpp
+#include "apps/editor/core/TerraWeaveMapAdapter.h"
+aiverse::editor::bakeTerraWeaveTerrain(
+    mapDoc, terrainSettings, {0, 0, 100});
+// For intentional regeneration replacing authored corner data:
+aiverse::editor::bakeTerraWeaveTerrain(
+    mapDoc, terrainSettings, {0, 0, 100},
+    aiverse::editor::TerraWeaveExistingTerrain::ReplaceExplicitly);
+```
+
+The editor adapter writes through `MapDoc::beginEdit()` and
+`MapDoc::touched()` after constructing all generated heights, preserving
+undo and the existing view-revision notification. It never silently
+overwrites manual sculpting, never changes `rules.terrain.model`, and
+rejects planet maps (separate cube-sphere adapter needed). This is
+**one-shot baking API**, not yet an editor button, regeneration graph,
+streaming terrain or painted override stack.
+
+Source test: `tests/terraweave_heightmap_test.cpp` (CTest
+`terraweave_heightmap`) verifies signed heights, seam continuity,
+legacy overflow rejection and invalid inputs. The inline `MapDoc` helper
+is not yet exercised end-to-end in a running editor.
