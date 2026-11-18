@@ -55,6 +55,94 @@ int main() {
     view::TriangleObject tri{{0,0,0},{1,0,0},{0,1,0},0xffffffffu};
     assert(line.end.x==1.f && tri.c.y==1.f);
     assert(!mesh.visible && mesh.mesh==nullptr);
+    // RTS presentation-owner regression: an imported model has real clips
+    // AND a pure graph. MotionWeave must integrate its graph clock once
+    // per update; the dormant legacy Animator clock must remain stationary.
+    Model animatedModel;
+    animatedModel.nodes.resize(1);
+    animatedModel.order={0};
+    animatedModel.nodes[0].name="root";
+    AnimClip walk;
+    walk.name="Walk";
+    walk.duration=1.f;
+    AnimChannel rootTranslation;
+    rootTranslation.node=0;
+    rootTranslation.times={0.f,1.f};
+    rootTranslation.values={0.f,0.f,0.f,2.f,0.f,0.f};
+    walk.channels.push_back(rootTranslation);
+    animatedModel.clips.push_back(walk);
+    auto pureGraph=AnimationGraph::compile(animatedModel,Json::parse(R"({
+        "parameters":{"speed":1.0},
+        "nodes":[{"id":"walk","kind":"clip","clip":"Walk","parameter":"speed"}],
+        "output":"walk"
+    })"));
+    view::ScenePacketBatch rtsPackets;
+    view::Object rtsObject;
+    rtsObject.id=303;
+    rtsObject.generation=1;
+    rtsObject.draw.model=&animatedModel;
+    rtsObject.graph=pureGraph;
+    rtsObject.parameters.set("speed",1.f);
+    rtsPackets.add(rtsObject);
+    Animator dormantLegacy;
+    dormantLegacy.setModel(&animatedModel);
+    dormantLegacy.play(0,0,Animator::Play{});
+    dormantLegacy.update(.125f); // a clock from an earlier legacy frame
+    const float legacyClock=dormantLegacy.time(0);
+    auto firstRts=view.update(rtsPackets,.1f);
+    assert(firstRts.source.created==1);
+    assert(firstRts.animated==1);
+    const Entity rtsEntity=view.presentationEntity(303);
+    assert(view.presentation().alive(rtsEntity));
+    auto* player=view.presentation().tryGetConst<
+        lib::animation::AnimationPlayerComponent>(rtsEntity);
+    assert(player && player->instance);
+    assert(std::abs(player->instance->stateTime()-.1f)<.0001f);
+    const auto& firstPose=view.presentation().get<
+        lib::animation::AnimationPoseComponent>(rtsEntity);
+    assert(firstPose.valid && firstPose.local.size()==1);
+    const float firstX=firstPose.local[0].t.x;
+    assert(std::abs(firstX-.2f)<.005f);
+    auto nextRts=view.update(rtsPackets,.1f);
+    assert(nextRts.source.updated==1 && nextRts.source.restarted==0);
+    player=view.presentation().tryGetConst<
+        lib::animation::AnimationPlayerComponent>(rtsEntity);
+    assert(player && player->instance);
+    assert(std::abs(player->instance->stateTime()-.2f)<.0001f);
+    const auto& secondPose=view.presentation().get<
+        lib::animation::AnimationPoseComponent>(rtsEntity);
+    assert(secondPose.valid && std::abs(secondPose.local[0].t.x-.4f)<.005f);
+    assert(std::abs(dormantLegacy.time(0)-legacyClock)<.0001f);
+    // RTS switches to legacy when custom graph/control/contact features
+    // become active. Reinitialize legacy clocks instead of continuing
+    // the old clip at its pre-MotionWeave timestamp.
+    rtsPackets.clear();
+    auto absent=view.update(rtsPackets,.1f);
+    assert(absent.source.removed==1);
+    assert(!view.presentation().alive(rtsEntity));
+    dormantLegacy.setModel(nullptr);
+    dormantLegacy.setModel(&animatedModel);
+    assert(dormantLegacy.clip(0)<0);
+    AnimationGraphInstance fallbackGraph;
+    fallbackGraph.reset(pureGraph);
+    fallbackGraph.update(.1f);
+    Pose legacyPose;
+    fallbackGraph.evaluate(legacyPose);
+    assert(std::abs(fallbackGraph.stateTime()-.1f)<.0001f);
+    assert(std::abs(legacyPose[0].t.x-firstX)<.005f);
+    // Returning to generic View after a legacy period starts a fresh
+    // player, rather than resuming the discarded presentation entity.
+    auto resumed=view.update(rtsPackets,.1f);
+    assert(resumed.animated==0);
+    rtsPackets.add(rtsObject);
+    resumed=view.update(rtsPackets,.1f);
+    assert(resumed.source.created==1);
+    const Entity resumedEntity=view.presentationEntity(303);
+    const auto* resumedPlayer=view.presentation().tryGetConst<
+        lib::animation::AnimationPlayerComponent>(resumedEntity);
+    assert(resumedPlayer && resumedPlayer->instance);
+    assert(std::abs(resumedPlayer->instance->stateTime()-.1f)<.0001f);
+
     view.clear();
     assert(view.presentation().countExisting<lib::animation::AnimationPlayerComponent>()==0);
 }
