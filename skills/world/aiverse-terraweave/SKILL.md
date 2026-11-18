@@ -133,3 +133,29 @@ results in `docs/terrain/AGENT_HANDOFF.md`.
   heightmap matching, navmesh/collision, or GPU validation.
 - **No tests ran at user request.** Record every implementation stage
   and exact unverified status in `docs/terrain/AGENT_HANDOFF.md`.
+
+## Scene forest preview (Stage 4, opt-in)
+
+In the editor Terrain window, generate a TerraWeave terrain (recipe
+`map.extra.terraweave.version=1`) and enable
+`Показывать процедурный лес в «Сцене»`. This previews two shared
+Arbor species in the editor's existing `Renderer3D`, including
+branch LOD and multiview impostor selection. It does **not** add
+gameplay trees to the map, ECS world, collision or save data.
+Close the toggle to release GPU resources.
+
+Implementation: `apps/editor/TerraWeaveForestPreview.h` (bounded
+camera-relative scatter) and `TerraWeavePlacementMask.h` (editor-only
+road/structure/water exclusions and unit conversion).
+Renderer callback: `Editor::renderScene()`, after
+`Renderer3D::beginScene` and before `render`.
+Legacy map cells are always one metre in editor display even if
+the generation recipe's source cell size differs from 100 cm; use
+the conversion helpers rather than directly multiplying raw
+generator positions by 0.01.
+
+DO NOT claim this is async streaming or ECS gameplay. The preview
+may stutter on first prototype upload or camera tile changes.
+Scene screenshots and GPU benchmark measurements must be collected
+before considering this feature production ready. Report tests
+actually run in `docs/terrain/AGENT_HANDOFF.md`.
