@@ -51,6 +51,24 @@ public:
         else if(!enabled && input_.isContextActive(context))
             input_.deactivateContext(context);
     }
+    // The world may still need pointer coordinates/drag sequences, but the
+    // initiating physical mouse button must respect project-owned Select and
+    // Command Action mappings. Return -1 when an unassigned button is pressed.
+    int logicalMouseButton(int physical) const {
+        const auto* ctx=input_.context("RTS.Pointer");
+        if(!ctx || !input_.isContextActive("RTS.Pointer"))return physical;
+        bool select=false,command=false;
+        for(const auto& mapping:ctx->mappings) {
+            if(mapping.control.device!=ei::Device::MouseButton ||
+               mapping.control.code!=physical || mapping.control.deviceIndex!=0)continue;
+            if(mapping.action=="Select")select=true;
+            if(mapping.action=="Command")command=true;
+        }
+        if(select)return 0; // explicit tie-break; conflicts() reports duplicates
+        if(command)return 1;
+        if(physical==2)return 2; // independent camera pan
+        return -1;
+    }
     void reset() {adapter_.focusLost();}
 private:
     ei::InputSystem input_;
