@@ -1307,3 +1307,35 @@ Fix any static/API errors. Add direct `uploadDdsImage` name/format
 documentation or alias in the shared `TextureAsset.h`, then test DDS
 cubemap and 3D resource creation on Metal/Vulkan/GL. Continue the
 separate code-commit + handoff-commit protocol after every stage.
+
+## Stage 6G — shared DDS/KTX2 resource uploader API (2026-11-18)
+
+**Code commit:** `9adeddd31691f98d950ab2f60d1cf155bfed8fd5`.
+**Branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Changed:** `engine/render/TextureAsset.h`.
+
+**Implementation:** Rename the dimension-aware implementation function
+to `uploadContainerTexture(gfx::Device&, CompressedImage&, options, error)`
+(the actual signature accepts a const CompressedImage reference), since
+both the new `parseDdsTexture` and `parseKtx2` emit the same mip-major
+`CompressedImage` representation. Retain an inline
+`uploadKtx2Image` wrapper for existing callers and introduce
+`uploadDdsImage` for native project consumption, both delegating to
+the same implementation. Diagnostic strings now refer to container
+data rather than KTX2 exclusively. Memory ownership, CPU fallback,
+full mip/layer/face uploads, sRGB options and GPU cleanup semantics
+are unchanged. Legacy model `sampler2D` import path is unchanged.
+
+**API/save compatibility:** Old public `uploadKtx2Image` name remains;
+new opt-in DDS and generic aliases added. No save/network/ECS changes
+or on-disk format changes. No new dependency added.
+
+**Verification:** GitHub source update/commit confirmed. C++ compile,
+DDS/KTX2 CTests, GPU sampling and CI completion: **NOT RUN**.
+No completed successful GitHub Actions outcome observed.
+
+**Next:** Add a CPU mock-device test exercising
+`parseDdsTexture` -> `uploadDdsImage` with a genuine multi-layer
+DDS fixture, then run the texture-related CTests on a real native
+clone and fix failures before extending backends. Continue separate
+source and handoff commits after every bounded stage.
