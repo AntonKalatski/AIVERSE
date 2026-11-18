@@ -51,6 +51,17 @@ void testVorticesAndTracks() {
     advanceEnvironmentWithStorms(world);
     CHECK(windWithStormsAt(world,{60_fx,0_fx,50_fx})==next);
 }
+void testLargeRadiusStorm() {
+    StormEvent storm;
+    storm.center = {};
+    storm.eyeRadiusMeters = Fixed::fromInt(100000);
+    storm.outerRadiusMeters = Fixed::fromInt(10000000);
+    storm.heightMeters = Fixed::fromInt(10000000);
+    const auto effect = stormContribution(
+        storm, {2000000_fx, 0_fx, 0_fx}, 0);
+    CHECK(effect.pressureOffset < Fixed{});
+    CHECK(effect.wind.z > Fixed{});
+}
 void testHurricaneAndDisasters() {
     World world;
     Settings cfg; cfg.width=1;cfg.height=1;cfg.cellSizeMeters=100;
@@ -73,5 +84,5 @@ void testHurricaneAndDisasters() {
     CHECK(stormsAt(world,hurricane.center,1).pressureOffset<Fixed{});
 }
 }
-int main(){testVorticesAndTracks();testHurricaneAndDisasters();
+int main(){testVorticesAndTracks();testHurricaneAndDisasters();testLargeRadiusStorm();
 std::printf("PHYSIS Storm: %s\n",failures?"FAIL":"PASS");return failures?1:0;}
