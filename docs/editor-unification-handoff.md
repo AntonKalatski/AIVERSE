@@ -1763,3 +1763,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `957fdd8d4e329df855b0aca59cbca474c12a7dba`.
 - Added `Module::clearProjectiles(Simulation&)` declaration to `modules/fps/FpsModule.h`, intended to remove authoritative `ProjectileRuntime` ECS entities synchronously at bomb-round reset rather than leaving stale entities until `fps.ecsMirror`. The default legacy path must retain its existing vector reset behavior.
 - **Verification:** declaration committed; definition + actual call are pending. **Native compilation not yet performed**. Next implementation must keep stable Entity destroy/source ID ordering and v9 compatibility.
+
+
+### 2026-11-18 — ECS authoritative projectile round-reset cleanup implemented
+- **Implementation SHA:** `b874140ca50336544cb47a66892812a5708cb17b`.
+- Implemented `Module::clearProjectiles(Simulation&)` in `modules/fps/FpsModule.cpp`. Default FPS still clears legacy `State::projectiles`. Under `fps.ecsAuthority`, collects all live `ProjectileRuntime` entities, sorts by source projectile ID for deterministic retirement order, destroys them directly in World, removes indexed projectile kind/ID mappings while retaining loot/vehicle indices, then clears the same-tick State compatibility projection. Unlike the former mirror-only behavior, no stale projectile Runtime remains between the reset and `fps.ecsMirror`.
+- **Verification:** code committed but **call site is not yet rewired**; C++ native build and gameplay tests not run. Destroying Entities earlier may change allocator reuse versus historical compatibility behavior, so verify save/replay and stable event order under both storage modes.
+- **Next:** replace `tickSystems` round-reset vector clear with this helper, then add native round-reset regression across deep/COW and v9 saves before default-enabling ECS authority.
