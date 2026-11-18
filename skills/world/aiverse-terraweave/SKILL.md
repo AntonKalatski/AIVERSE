@@ -308,7 +308,7 @@ implementation stage, stating `NOT RUN` explicitly.
   entities.
 - Static worlds can `encodeHorizonArchive(bake, fingerprint)`
   and `decodeHorizonArchive(bytes, fingerprint)` using
-  `TerraWeaveHorizonArchive.h` (format `TWH1`,
+  `TerraWeaveHorizonArchive.h` (format `TWH3`,
   explicit little-endian, bounded bytes, source hash and
   noncryptographic payload checksum). Default runtime has
   NO filesystem access; optionally set `HorizonArchiveStore`
@@ -519,3 +519,38 @@ generic `ModelDraw::primitiveMaterialFilter`:
   render-thread release remain mandatory.
   Document alpha/skyline limitations and leave
   CMake/CTest/device validation to the testing agent.
+
+## Horizon far-terrain global lattice and outer skirts (Stage 16)
+
+Never return to camera-local height sampling with
+`origin + x*side/resolution`; that changed height
+sampling phase between neighboring 512m camera regions
+for High 64×64 terrain and non-dividing resolutions.
+Always use the globally anchored signed rational
+grid `floorDiv(globalIndex*regionSide,resolution)`,
+also for negative world positions.
+
+`HorizonTerrainVertex` now records
+`slopeXPermille/slopeZPermille` sampled from
+both neighboring globally aligned height values,
+including ghost samples beyond the current patch.
+For authored edits, invalidate an extra grid-step
+band so dependent border normals are refreshed.
+
+`HorizonSettings::terrainSkirtDepthCm` (0..5000)
+adds a downward-facing outer skirt **inside
+material slot 0** and without a new draw call.
+Minimal quality disables it; Mobile defaults to
+600cm and Balanced/High to 1200cm. Include
+the added 4(N+1) vertices / 8N triangles in
+analytic geometry budgets; changing skirts can
+trigger safe full-GPU-model fallback.
+
+Current static-content archive is **TWH3**;
+TWH1/TWH2 files are obsolete and must be
+rebuilt via `aiverse_horizon_bake` or runtime
+fallback. World-origin agreement only holds
+when the two bakes sample the same immutable
+authored terrain snapshot. No CMake/CTest/GPU
+results are claimed in this stage; the dedicated
+testing agent owns regression and visual checks.
