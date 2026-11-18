@@ -6,11 +6,7 @@
 #include "engine/net/Udp.h"
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"
-#include "engine/platform/EnhancedInputAdapter.h"
-#include "engine/platform/EnhancedInputConfig.h"
-#include "engine/platform/EnhancedInputProfileIO.h"
-#include "engine/platform/EnhancedInputUserProfiles.h"
-#include "engine/platform/EnhancedInputPresets.h"
+#include "engine/platform/InputFlow.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
 #include "engine/platform/ContentReader.h"
@@ -29,7 +25,7 @@
 #include <cstdio>
 
 using namespace aiverse;
-namespace ein = aiverse::lib::gameplay::enhanced;
+namespace ein = aiverse::lib::gameplay::inputflow;
 namespace {
 render::float3 visual(Vec3 v){return {float(v.x.toDouble()),float(v.y.toDouble()),float(v.z.toDouble())};}
 struct App {
@@ -44,10 +40,10 @@ struct App {
     render::GeometryScene staticGeometry;
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
     i18n::Localization lang;
-    ein::InputSystem actions;
-    platform::EnhancedInputAdapter inputAdapter{actions};
-    platform::enhanced_config::UserProfiles userProfiles;
-    ein::InputSystem projectActions;
+    ein::InputFlow actions;
+    platform::InputFlowAdapter inputAdapter{actions};
+    platform::inputflow_config::UserProfiles userProfiles;
+    ein::InputFlow projectActions;
     bool settingsOpen=false;
     std::string rebindContext, settingsError;
     std::uint64_t rebindMapping=0;
@@ -66,12 +62,12 @@ struct App {
     // These defaults reproduce the reference FPS controls; the network command layout is unchanged.
     void configureInput() {
         std::string error;
-        if(!platform::enhanced_config::installAsset(actions,platform::enhanced_presets::fpsReference(),&error))
-            throw std::runtime_error("FPS Enhanced Input preset: "+error);
+        if(!platform::inputflow_config::installAsset(actions,platform::inputflow_presets::fpsReference(),&error))
+            throw std::runtime_error("FPS InputFlow preset: "+error);
     }
 
     void loadInputConfig() {
-        namespace cfg=platform::enhanced_config;
+        namespace cfg=platform::inputflow_config;
         std::string text,error;
         // A project asset is a complete mapping scheme. Never store authored
         // keys inside the OS user profile.
@@ -80,15 +76,15 @@ struct App {
                 cfg::Asset asset;
                 if(!cfg::readAsset(Json::parse(text),asset,&error) ||
                    !cfg::installAsset(actions,asset,&error))
-                    std::fprintf(stderr,"Enhanced Input asset ignored: %s\n",error.c_str());
+                    std::fprintf(stderr,"InputFlow asset ignored: %s\n",error.c_str());
             }catch(const std::exception& ex){
-                std::fprintf(stderr,"Enhanced Input asset ignored: %s\n",ex.what());
+                std::fprintf(stderr,"InputFlow asset ignored: %s\n",ex.what());
             }
         }
         projectActions=actions; // reloading player settings must preserve project defaults
         userProfiles.setScope(platform::userDataDir(),projectRoot);
         if(!userProfiles.load(0,actions,&error))
-            std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",error.c_str());
+            std::fprintf(stderr,"InputFlow profile ignored: %s\n",error.c_str());
     }
     // One transactional path for both single-player FPS and future couch co-op.
     bool rebindInput(const std::string& context,std::uint64_t id,ein::Control control,
@@ -99,7 +95,7 @@ struct App {
     void drawInputSettings() {
         if(!settingsOpen)return;
         ImGui::SetNextWindowSize({600,570},ImGuiCond_FirstUseEver);
-        if(!ImGui::Begin("Input Settings (F10)",&settingsOpen)){
+        if(!ImGui::Begin("InputFlow Settings (F10)",&settingsOpen)){
             ImGui::End();return;
         }
         ImGui::TextWrapped("Click Rebind, then press a keyboard key or mouse/gamepad button. "
@@ -138,7 +134,7 @@ struct App {
                 for(const auto& mapping:context->mappings) {
                     ImGui::PushID(name.c_str());
                     ImGui::PushID(int(mapping.id)); // stable mapping id for runtime profile
-                    const auto binding=platform::enhanced_config::detail::writeControl(mapping.control).dump(0);
+                    const auto binding=platform::inputflow_config::detail::writeControl(mapping.control).dump(0);
                     ImGui::Text("%s  %s",mapping.action.c_str(),binding.c_str());
                     ImGui::SameLine();
                     if(ImGui::SmallButton("Rebind")){
