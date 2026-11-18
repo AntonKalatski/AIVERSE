@@ -345,3 +345,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Regression:** `enhanced_input_tests.cpp` now covers a sub-threshold Axis1D Action-level dead zone, a Scale(0) disabled Action, a threshold crossing that starts action, and crossing back below threshold that completes it.
 
 **Validation:** source and tests committed, no execution results from full project CI yet. Run `library_enhanced_input` and FPS input+gamepad integration before merging. Next agent should check composite chord and same-frame tap regressions, record actual compiler/test results in Stage 25.
+
+## Stage 25 — independent cross-platform Enhanced Input CI gate (2026-11-18)
+
+**Change:** new `.github/workflows/enhanced-input.yml` runs a focused C++20 library regression matrix on `ubuntu-24.04`, `macos-15`, `windows-2022`. It configures the existing standalone `tests/libraries/CMakeLists.txt`, builds four targets (`aiverse_enhanced_input_tests`, `aiverse_enhanced_input_adapter_tests`, `aiverse_enhanced_input_config_tests`, `aiverse_enhanced_rts_input_tests`) with warning-as-error settings already set by CMake, and runs their CTest names. Push, PR changes in input-related files and explicit manual workflow dispatch can trigger it.
+
+**Why:** the monolithic engine CI was still queued after multiple incremental commits. The focused job has a much smaller compile surface than complete editor/FPS packages, but does not replace full platform CI and macOS visual play-test.
+
+**Validation:** workflow committed; GitHub Actions results not yet completed at writing. Watch the matrix for compiler warnings, link errors, test assertions and Windows filesystem backup behavior. The current feature remains a draft PR, pending green results.
+
+**Next agent:** inspect `Actions → Enhanced Input targeted checks` and fix failures; run full editor/client/FPS builds, engine regressions and manual input/hosted viewport smoke tests. Add Stage 26 with exact per-platform PASS/FAIL evidence before marking PR ready.
