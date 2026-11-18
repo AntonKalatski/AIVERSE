@@ -15,12 +15,24 @@ SHA, unverified platforms and the next exact task.
   paths; the portable GL33/GLES3 subset has 2D/3D/2DArray/Cube, not 1D/CubeArray.
 - **Texture views/samplers:** Metal and Vulkan have subresource views and independent
   samplers; GL has independent samplers but only *whole-resource identity* views.
-- **Offscreen passes:** the new `RenderTargetPassDesc` can select a mip/layer and
-  color/depth attachment with strict matching. Metal/GL/Vulkan implementations
-  currently accept **at most one color attachment**. MRT layout is only a contract.
+- **Offscreen passes and MRT:** `RenderTargetPassDesc` selects mips/layers and
+  1–4 color attachments, each with its own clear operation, plus optional depth.
+  Metal, GL33/GLES3 and Vulkan now have source implementations for same-format
+  multi-target rendering. Metal and Vulkan graphics pipelines expose explicit
+  color output counts and additional per-slot formats. GLSL/MSL shaders must
+  explicitly write the corresponding fragment output locations. Native
+  cross-backend GPU validation is still outstanding.
 - **MSAA:** the shared descriptor/resolve contract and Metal allocation, pipeline
-  sample counts and color resolves are implemented in source. GL/Vulkan still
-  reject explicit resolves; none of these paths has a verified GPU test result.
+  sample counts and per-color resolve operations are implemented in source.
+  GL/Vulkan still reject explicit MSAA resolves; none of these paths has a
+  verified GPU result. Tests in `tests/render/vulkan_tests.cpp` include
+  MRT clear/output and nonzero mip/layer rendering, but remain unexecuted.
+- **Reusable native owner:** `engine/gfx/RenderTargetSet.h` provides a
+  genre-agnostic owner of color/depth targets and optional MSAA resolve targets.
+  `begin`/`end` wrap an explicit offscreen pass; allocation failure rolls
+  back all created handles. `tests/render/render_target_set.cpp` is a CPU-only
+  mock-device lifetime and rollback test registered as `render_target_set`.
+  This is separate from the existing Lua `render::RenderTexture` paint canvas.
 - **Import:** KTX2/DDS source importers still drop extra array layers and cube
   faces; the new GPU resources are not yet exercised through the asset pipeline.
 
@@ -50,9 +62,9 @@ SHA, unverified platforms and the next exact task.
   multisample attachments; default 1x pipelines cannot draw into MSAA targets.
 - New GPU texture handles are presentation state only, not ECS-authoritative.
   No changes to serialization, game saves or replication.
-- **Known missing pieces:** MRT with multiple color outputs, GL/Vulkan MSAA
-  creation/resolve, virtual/streamed textures, expanded formats and file
-  import/transcoding, and real-device validation.
+- **Known missing pieces:** mixed-format MRT and independent blend policies,
+  GL/Vulkan MSAA creation/resolve, virtual/streamed textures, expanded formats
+  and file import/transcoding, and real-device validation.
 - The old `TextureCache` and `render::RenderTexture` still use 2D-only paths.
 
 ## Example: selected array layer and mip
@@ -85,6 +97,35 @@ never sample a subresource while simultaneously writing to that subresource.
 Use a matching `TextureViewDesc` and independent sampler for post-pass reads
 where supported. The code is a usage example, not a claim of verified GPU
 execution on this branch.
+
+## Native offscreen render target owner
+
+```cpp
+#include "engine/gfx/RenderTargetSet.h"
+
+gfx::RenderTargetSet targets;
+gfx::RenderTargetSet::Config cfg;
+cfg.width = 1024;
+cfg.height = 512;
+cfg.colorCount = 2;                  // two same-format color targets
+cfg.depth = true;
+cfg.mipLevels = 1;
+if (targets.init(device, cfg)) {
+    if (targets.begin(0, 0, true, true, {0, 0, 0, 1})) {
+        // Use a matching PipelineDesc.colorAttachmentCount=2 and a shader
+        // writing both fragment color outputs at locations 0 and 1.
+        targets.end();
+    }
+    // Sample via targets.sampledColor(0/1) in later render passes.
+    targets.shutdown();  // required before the Device is destroyed
+}
+```
+
+For MSAA, choose `cfg.sampleCount = 4`; the owner allocates a matching
+single-sample resolve target per color. If the backend cannot implement
+the selected render pass, `targets.begin` returns false, not a fallback.
+Always check `init` and `begin` results. These APIs are under native
+verification and should not be assumed to run on every device.
 
 ## References and handoff
 
