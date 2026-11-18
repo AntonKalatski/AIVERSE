@@ -210,3 +210,7 @@ Action-level modifiers run before the final action value determines lifecycle. F
 ## Top-down shared Action scheme
 
 RTS sample includes an optional `RTS.TopDown` mapping context (disabled for ordinary RTS) with `TopDownMove` Axis2D, `TopDownFire`, `TopDownAim`, `TopDownEnter`, `TopDownWeaponNext`, `TopDownWeaponPrev`, `TopDownWeapon1` through `TopDownWeapon9`. The client activates it only while controlling a top-down hero. Movement/fire/aim and weapon/enter Actions are evaluated through Enhanced Input, with old key fallback when a custom project schema intentionally omits the TopDown context. Configured game-specific ability buttons and HUD touch sticks remain the specialized `TopDownControls` layer.
+
+### Editor/FPS rebinding collision policies
+
+The project Input Actions editor and FPS F10 Settings each expose Allow duplicate, Reject duplicate and Swap keys. Swap exchanges controls between exactly two colliding mappings while preserving their mapping IDs; a three-way collision is intentionally rejected. The FPS user profile persists **both swapped mapping overrides** transactionally, and the UI shows conflicts across mapping contexts, including whether an earlier binding consumes input and shadows a later Action. Trigger-based shared buttons remain valid when Allow is chosen.
