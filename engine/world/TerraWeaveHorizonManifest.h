@@ -13,7 +13,8 @@ namespace aiverse::world {
 inline std::unique_ptr<terraweave::TerraWeaveHorizonScene>
 horizonSceneFromManifest(
     const Json& manifest,
-    const terraweave::TerraWeaveForestScene* forest = nullptr) {
+    const terraweave::TerraWeaveForestScene* forest = nullptr,
+    AssetReader reader = {}) {
     if (!manifest.has("terraweaveHorizon")) return {};
     const Json& j=manifest["terraweaveHorizon"];
     if (!j.isObject())
@@ -84,8 +85,32 @@ horizonSceneFromManifest(
         j,"tierBlendCm",settings.tierBlendCm,0,10000000));
     settings.distantTerrain=j.getBool("distantTerrain",true);
     terraweave::validateHorizonSettings(settings);
-    return std::make_unique<terraweave::TerraWeaveHorizonScene>(
+    auto scene=std::make_unique<terraweave::TerraWeaveHorizonScene>(
         terrain,biomes,settings);
+    // Read-only prebaked assets are strictly opt-in. The game pack owns
+    // access to the archive files; runtime never writes into content.
+    const std::string archivePrefix=j.getStr("archivePrefix");
+    if(!archivePrefix.empty()){
+        if(!reader || !safeAssetPath(archivePrefix))
+            throw JsonError("world.terraweaveHorizon.archivePrefix: invalid asset folder");
+        auto store=std::make_shared<terraweave::HorizonArchiveStore>();
+        store->authoredContentHash=static_cast<uint64_t>(worldInteger(
+            j,"archiveContentHash",0,0,INT32_MAX));
+        store->read=[reader,prefix=archivePrefix](
+                int32_t cx,int32_t cz,std::vector<uint8_t>& out)->bool {
+            // The only variable filename components are bounded integer
+            // region coordinates; caller cannot supply a traversal path.
+            const std::string asset=prefix+"/"+std::to_string(cx)+
+                                    "_"+std::to_string(cz)+".twh";
+            std::string bytes;
+            if(!reader(asset,bytes))return false;
+            if(bytes.size()>20u*1024u*1024u)return false;
+            out.assign(bytes.begin(),bytes.end());
+            return true;
+        };
+        scene->setArchiveStore(std::move(store));
+    }
+    return scene;
 }
 
 } // namespace aiverse::world
