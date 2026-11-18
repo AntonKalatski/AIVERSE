@@ -160,3 +160,38 @@ chunk renderer over creating a second independent renderer. Preserve
 legacy map checksums. Add forest LOD group batching and instance buffers,
 editor preview and a screenshot test. Update this handoff again after
 each phase.
+
+## Stage 2b — Flora stable LOD batch preparation (COMMITTED; NOT TESTED YET)
+
+- `5c1e233eff8edb756b3401af14bc2c5e93710814`:
+  `engine/world/TerraWeaveFlora.h` introduces `FloraView`,
+  `FloraBatch` and `buildFloraBatches(placements, view)`.
+- `6a01f25e815d75f1398eb753eea58838be831c9a`:
+  `tests/terraweave_flora_test.cpp`: species+LOD grouping, radius
+  culling, stable order/dedup, configurable far thinning, validation.
+- `97763f8e85b806d453268dae338c6859298361d4`:
+  `CMakeLists.txt` registers test `aiverse_terraweave_flora_test` /
+  CTest `terraweave_flora`.
+- `1bad4434381c7316761796d036b675542975a7e3`:
+  `docs/terrain/TERRAWEAVE.md` updated with public Flora API.
+
+**Verification:** files committed to PR #24, but no successful
+CTest/CI run observed. Run:
+```sh
+cmake -S . -B build/terraweave-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/terraweave-test --target aiverse_terraweave_test aiverse_terraweave_arbor_test aiverse_terraweave_flora_test -j
+ctest --test-dir build/terraweave-test --output-on-failure -R '^terraweave(_arbor|_flora)?$'
+```
+
+**Scope**: CPU-only visibility/cull/LOD batch descriptions; uses no
+GPU APIs and does not mutate ECS. `FloraView` units are centimetres.
+Do not claim GPU instancing is delivered. It requires a new render
+adapter through `gfx::Device`, prototype registry, shader parity,
+quality fallback and profiling.
+
+**Next priorities**: resolve any compiler failures; patch TerraWeave
+core world-coordinate overflow at large signed coordinates (currently
+not hardened); wire geometry into real editor/runtime renderer,
+stabilize save formats and scene regeneration, integrate road
+exclusion masks and biome painting. Maintain the stage-by-stage
+handoff here.
