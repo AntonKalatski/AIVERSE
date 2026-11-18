@@ -160,3 +160,99 @@ void ecsProjectileProgramStageParity() {
     ecsProjectileProgramStageParityCase(false); // deep snapshots
     ecsProjectileProgramStageParityCase(true);  // COW snapshots
 }
+
+
+void ecsProjectileBranchAuthorityParityCase(bool cow) {
+    // Branching shots may retire a source and create multiple children in one
+    // tick. Verify ECS Entity recycling, stable projectile order and v9 saves.
+    auto rules=Json::parse(R"({
+        "fps":{"tickRate":20,"mode":"deathmatch",
+               "weapon":{"damage":10,"intervalTicks":1000,
+                         "bulletSpeed":200,"bulletGravity":0,
+                         "flight":{"modifiers":[
+                             {"kind":"split","count":2,"angle":0},
+                             {"kind":"damage","factor":0.5},
+                             {"kind":"flyThrough","count":1}
+                         ]}},
+               "motor":{"gravity":1}}
+    })");
+    auto map=Json::parse(R"({
+        "players":[{"team":1},{"team":2},{"team":2},{"team":2}],
+        "spawns":[[0,0.01,0],[0,0.01,4],[0,0.01,8],[0,0.01,12]],
+        "colliders":[{"id":1,"min":[-100,-2,-100],"max":[100,0,100]}]
+    })");
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    if(cow) {
+        legacy->world().enableCowSnapshots(true);
+        ecs->world().enableCowSnapshots(true);
+    }
+    fps::Input input;input.buttons=fps::Fire;input.sequence=1;
+    const auto command=fps::command(1,input);
+    legacy->inject(command);
+    ecs->inject(command);
+    auto compare=[&]() {
+        CHECK(legacy->checksum()==ecs->checksum());
+        CHECK(state(*legacy).actors==state(*ecs).actors);
+        const auto& left=state(*legacy).projectiles;
+        const auto& right=state(*ecs).projectiles;
+        CHECK(left.size()==right.size());
+        CHECK(state(*legacy).nextObject==state(*ecs).nextObject);
+        size_t runtimeCount=0;
+        ecs->world().eachExistingConst<fps::ProjectileRuntime>(
+            [&](Entity entity,const fps::ProjectileRuntime& runtime) {
+                if(ecs->world().alive(entity)) {
+                    ++runtimeCount;
+                    CHECK(runtime.order<right.size());
+                    CHECK(runtime.value.id==right[runtime.order].id);
+                    CHECK(runtime.value.pos==right[runtime.order].pos);
+                }
+            });
+        CHECK(runtimeCount==right.size());
+        const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+        CHECK(index!=nullptr);
+        for(size_t i=0;i<right.size();++i) {
+            CHECK(left[i].id==right[i].id);
+            CHECK(left[i].pos==right[i].pos);
+            CHECK(left[i].program.age==right[i].program.age);
+            const auto key=(uint64_t(1)<<32)|right[i].id;
+            CHECK(index->byKey.contains(key));
+            const auto entity=index->byKey.at(key);
+            CHECK(ecs->world().alive(entity));
+            const auto* value=ecs->world().tryGetConst<fps::ProjectileRuntime>(entity);
+            CHECK(value && value->order==i);
+        }
+    };
+    legacy->step();ecs->step();
+    compare();
+    SimSnapshot preLegacy,preEcs;
+    legacy->saveState(preLegacy);ecs->saveState(preEcs);
+    uint32_t maxAllocated=state(*legacy).nextObject;
+    for(int tick=0;tick<8;++tick) {
+        legacy->step();ecs->step();compare();
+        maxAllocated=std::max(maxAllocated,state(*legacy).nextObject);
+    }
+    CHECK(maxAllocated>3); // the original bullet created branch children
+    CHECK(state(*legacy).projectiles.empty());
+    for(size_t slot=1;slot<=3;++slot)
+        CHECK(state(*legacy).actors[slot].health==90);
+    const auto checksum=legacy->checksum();
+    const auto legacyBytes=legacy->serialize(),ecsBytes=ecs->serialize();
+    auto fromLegacy=simulation(ecsRules,map),fromEcs=simulation(rules,map);
+    CHECK(fromLegacy->deserialize(legacyBytes));
+    CHECK(fromEcs->deserialize(ecsBytes));
+    CHECK(fromLegacy->checksum()==checksum);
+    CHECK(fromEcs->checksum()==checksum);
+    // Replay branch allocation with identical ECS generations and order.
+    legacy->loadState(preLegacy);ecs->loadState(preEcs);
+    compare();
+    for(int tick=0;tick<8;++tick) {
+        legacy->step();ecs->step();compare();
+    }
+    CHECK(ecs->checksum()==checksum);
+}
+void ecsProjectileBranchAuthorityParity() {
+    ecsProjectileBranchAuthorityParityCase(false);
+    ecsProjectileBranchAuthorityParityCase(true);
+}
