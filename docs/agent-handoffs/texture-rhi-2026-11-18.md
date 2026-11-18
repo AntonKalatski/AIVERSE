@@ -4358,3 +4358,40 @@ Next: Provide optional, genre-independent requestPage integration
 with VirtualTextureFileStreamer. It must not interpret parent
 fallback as exact residency. Then document native game integration,
 with a source commit and a separate append-only handoff.
+
+## Stage 7X — connect UV visibility plans to real disk-backed VT uploads (2026-11-18)
+
+Source commit: e21efd6f3a1a8545fae76699f46e0dd8e9101d6f.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Files: engine/gfx/VirtualTextureFileStreamer.h and new
+engine/gfx/VirtualTexturePrefetchAdapter.h.
+
+API: prefetchVisibleVirtualPages(VirtualTextureFileStreamer&,
+VirtualTexturePrefetchPlanner&, visibleRegions) returns bounded
+VirtualTexturePrefetchDispatch containing planner stats, accepted
+new disk-page tickets and refused count. It skips both EXACT
+resident pages and pending disk/GPU pages; parent-fallback
+sampling does not suppress detail loading. It upgrades pins
+on already resident/pending coarsest fallback pages.
+VirtualTextureFileStreamer now exposes exactResidentPage,
+pendingPage and pinPage; duplicate requestPage(key,pin=true)
+also promotes an existing pending request to pinned.
+Work is sorted coarse-to-fine by the Stage 7V planner; if
+queue capacity rejects a page, it stops before submitting
+finer pages and allows a later frame to replan. GPU Device
+work remains solely inside streamer.pump(); I/O remains on
+the existing worker. No genre-specific state is introduced.
+
+Compatibility: new opt-in C++ header and additive inline
+facade methods only. No RHI backend virtuals, serialization,
+game ECS, save/network or disk asset format changed.
+
+Actual verification: GitHub source/tree commit succeeded.
+C++ build NOT RUN, CTest NOT RUN, real disk/GPU integration
+NOT RUN. Adapter still needs a deterministic test fixture
+covering exact-vs-parent residency, dedup, pin upgrade,
+backpressure and cross-frame planning.
+
+Next: add prefetch adapter fixture and native AI skill usage.
+Commit source and handoff separately, then execute real native
+build/CTest when implementation is complete.
