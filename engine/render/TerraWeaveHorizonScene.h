@@ -126,12 +126,18 @@ public:
                         }
                     }
                     if(!baked){
-                        baked=std::make_shared<const HorizonBake>(bakeHorizon(
+                        auto generated=bakeHorizon(
                             terrain_,biomes_,settings_,x,z,surface.get(),
                             generation?generation->previous.get():nullptr,
                             generation?std::span<const RectCm>(
                                 generation->edited.data(),generation->edited.size())
-                                :std::span<const RectCm>{}));
+                                :std::span<const RectCm>{});
+                        // Persist exact near-terrain boundary heights with
+                        // the immutable bake. GPU and cache never consult
+                        // live streamed WorldScene collision/height data.
+                        populateHorizonNearSeamSamples(generated,surface.get());
+                        baked=std::make_shared<const HorizonBake>(
+                            std::move(generated));
                         if(diskAllowed && archive->write){
                             try {
                                 auto bytes=encodeHorizonArchive(*baked,fingerprint);
