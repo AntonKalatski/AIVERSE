@@ -62,8 +62,8 @@ Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMas
         mMacros += "#define TEX" + n + "(p) tex" + n + ".sample(tex" + n + "_s, p)\n";
     }
     if(defines.find("PF_UNDERWATER_DEPTH")!=std::string::npos) {
-        gMacros += "#define PF_DEPTH_SAMPLE(p) texture(tex5, p).r\\n";
-        mMacros += "#define PF_DEPTH_SAMPLE(p) tex5.sample(tex5_s, p)\\n";
+        gMacros += "#define PF_DEPTH_SAMPLE(p) texture(tex5, p).r\n";
+        mMacros += "#define PF_DEPTH_SAMPLE(p) tex5.sample(tex5_s, p)\n";
     }
     b.fs = defines + block + gTex + "in vec2 v_screen;\nout vec4 o_color;\n" + common + gMacros +
            "#define RETURN(c) { o_color = (c); return; }\n#define PF_FN\n" + (helpers ? helpers : "") +
