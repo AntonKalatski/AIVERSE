@@ -695,3 +695,58 @@ skips shoreline foam entirely (near/medium retain the distance-based
 mask). The `ecs_nereid_surface_mesh_test` fixture asserts far box
 vertex foam is zero. This is a visualization correctness fix; the
 GPU/CTest pipeline is **still not verified**.
+
+## Stage 8 — safe planar reflection fallback for multiple surface elevations
+
+**Implementation SHA:** `5a6d804ca6a0869f1033ca4eb447329485a789e4`.
+**Branch:** `feature/nereid-water-core`. **Base:** `feature/universal-entity-inspector-fps`.
+
+**Files changed:**
+- Added `engine/render/NereidWaterReflectionPolicy.h`, a pure renderer-only
+  finite/tolerance test `render::sameWaterReflectionPlane(y,selectedY)`.
+- `engine/render/Renderer3D.h`: transient per-frame `reflectionPlaneY_`
+  and `reflectionPlaneValid_`.
+- `engine/render/Renderer3DReflect.cpp`: only store the selected
+  reflection plane when the existing `lights.beginReflection` succeeded.
+- `engine/render/Renderer3D.cpp`: reset the selection at each
+  `beginScene`; tagged NEREID water on a different Y uses U0.params.x=-2
+  instead of -1. Unmarked meshes and debug draw modes remain unchanged.
+- `engine/render/Shaders.h`: GLSL/MSL retain wave shading and SSR for
+  the tagged secondary surface, but feed zero specular to
+  `waterReflect` so its **wrong-plane planar texture** is not blended.
+- `tests/ecs_nereid_renderer_contract_test.cpp`: tests same/different
+  plane policy and GLSL/MSL sentinel fragments in addition to previous
+  style/flag checks.
+
+### Behavior / limits
+
+The existing renderer has only **one** planar mirror target. This
+stage guarantees an opt-in NEREID surface at a different elevation does
+not consume a reflection rendered for another elevation. When
+trace-tier SSR is available, secondary surfaces may still use it.
+When not, they receive normal lit water, waves and environmental light,
+but **not** planar reflections; this is not a multi-plane reflection
+renderer. Same-height NEREID bodies may reuse the selected plane.
+Tolerance is 0.025 world units. No new serialization, ECS state,
+physics or legacy waterNetwork changes.
+
+### Verification
+
+**Actually executed:** compiled a standalone reproduction of
+`sameWaterReflectionPlane` with Debian GCC 14.2.0 using
+`-std=c++20 -Wall -Wextra -Werror` and ran a main that tested
+near/equal, different elevation and NaN cases; exit 0. This isolated
+smoke check does **not** link AIVERSE or compile the repository header
+in a full checkout.
+
+**NOT RUN / UNVERIFIED:** full CMake build, NEREID CTest, GLSL/MSL shader
+compilation, GPU screenshot, CI regression suite. At inspection, GitHub
+Actions for the previous head were queued and Linux arm64 was
+in progress; no passing NEREID check was available. PR stays draft.
+
+**Next:** build and run every existing/new NEREID CTest,
+especially `ecs_nereid_renderer_contract_test` and visual
+water-at-two-heights on OpenGL and Metal. Examine linked shader
+compilation logs, test both trace enabled/disabled and a single
+legacy water plane. Then implement isolated depth/refraction and
+explicit shader material controls only after that baseline is green.

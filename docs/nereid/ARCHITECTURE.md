@@ -285,3 +285,22 @@ NEREID surface levels need a future multi-plane solution or
 selective SSR/environment fallback. No actual hardware rendering,
 shader cross-compilation or C++ tests have yet been executed in
 this stage.
+
+## Stage 8 — per-surface planar reflection safety
+
+`Renderer3DReflect.cpp` renders at most one planar-water reflection
+per frame and records its selected world-space Y only when the render
+target successfully begins. `Renderer3D` resets that derived state
+each scene. The pure `NereidWaterReflectionPolicy.h` helper compares
+world Y using a finite, 0.025-unit tolerance.
+
+The opt-in `kDrawWaterSurface` flag now maps to existing U0.params.x:
+`-1` for water using the selected planar reflection, `-2` for
+water at another Y when a reflection pass exists. Both select the
+existing open-water six-train wave shader and remain eligible for
+trace-tier SSR; GLSL and MSL suppress only the invalid planar
+`waterReflect` lookup for `-2`. Other materials and old unflagged
+water behavior remain unchanged. The reflection-plane flag is
+**presentation-only derived state**, never a WaterBody ECS source.
+Multiple simultaneous planar reflection passes are still unsupported;
+secondary surfaces fall back to SSR (when available) or lighting.

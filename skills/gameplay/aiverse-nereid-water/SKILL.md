@@ -207,3 +207,20 @@ Run `ecs_nereid_surface_mesh_test` and
 `ecs_nereid_renderer_contract_test`, then actual GL/Metal
 rendering, before marking this verified. Maintain GPU handle
 lifetime and avoid changing ECS from renderer code.
+
+## Stage 8 — water at several heights
+
+The current Renderer3D planar mirror is single-plane. NEREID's
+`kDrawWaterSurface` surfaces at a different Y now explicitly skip
+the primary plane reflection instead of showing the wrong scene
+image. The matching policy is
+`render::sameWaterReflectionPlane` in
+`engine/render/NereidWaterReflectionPolicy.h`.
+Secondary surfaces retain wave shading and trace-tier SSR when
+active. Do not claim separate multi-plane reflections or correct
+refraction exist yet.
+
+When working on render paths, test multiple water heights and both
+OpenGL and Metal; the new `ecs_nereid_renderer_contract_test`
+contains basic CPU/shader-source checks but cannot substitute GPU
+compilation or screenshots.
