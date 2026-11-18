@@ -2387,3 +2387,39 @@ for flat RGBE, RLE, orientation, HDR values, malformed input,
 binary16 boundary and device upload/failure; record exact new
 source commit and deferred test status in the next handoff. After
 that tackle EXR import and texture readback/streaming coverage.
+
+## Stage 5M — standalone Radiance HDR CPU/GPU-contract test source (2026-11-18)
+
+**Source commit:** `0382dcd42e25c26523d4b737d44d9349e1ee361d`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** New `tests/render/hdr_texture.cpp` and `CMakeLists.txt`.
+
+**Implementation:** Registered the GPU-independent CTest target
+`aiverse_hdr_texture_test` / `hdr_texture` under
+`AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN`. The new synthetic
+fixture source constructs flat RGBE with radiance >1.0, a modern
+per-channel RLE scanline, flipped horizontal orientation, truncated
+payloads, invalid run-length packets, oversized image metadata,
+and a binary16 subnormal-to-normal boundary. A mock `gfx::Device`
+captures RGBA16F upload bytes and verifies caller GPU ownership,
+unsupported-format early refusal and failed allocation reporting.
+The tests are self-contained (no external .hdr asset).
+
+**Execution:** Source and CMake registry commit confirmed on GitHub.
+**No CMake configuration, compilation, CTest or real GPU tests ran**,
+per user's plan to finish feature source before verification.
+Do not claim the fixture passes.
+
+**How to run after implementation is complete:**
+
+```sh
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_hdr_texture_test
+ctest --test-dir build/texture-rhi --output-on-failure -R '^hdr_texture$'
+```
+
+**Next:** Add optional OpenEXR uncompressed scanline support
+(half/float RGB[A] channels), and integrate texture load into
+project-native APIs; keep unsupported EXR compression explicit.
+Work on background streaming and portable readback as separate
+source stages with handoff after each.
