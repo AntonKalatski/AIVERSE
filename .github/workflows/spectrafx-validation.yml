@@ -52,7 +52,7 @@ jobs:
           cmake --build build/spectrafx-ci
           --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests
           aiverse_vfx_assets_tests aiverse_vfx_gpu_tests
-          aiverse_vfx_graph_runtime_tests --parallel 2
+          aiverse_vfx_graph_runtime_tests aiverse_vfx_shared_batch_tests --parallel 2
       - name: Build real Metal compute smoke
         if: runner.os == 'macOS'
         run: cmake --build build/spectrafx-ci --target aiverse_vfx_metal_smoke --parallel 2
