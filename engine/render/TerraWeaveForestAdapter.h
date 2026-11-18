@@ -34,7 +34,7 @@ public:
     // Mesh seeds are per species: an individual FoliageInstance varies only
     // in position/yaw/scale, so the GPU can instance identical geometry.
     void addPrototype(const TreeProfile& profile, uint64_t meshSeed,
-                      ArborMeshSettings mesh = {}) {
+                      ArborMeshSettings mesh = {8, true}) {
         if (profile.speciesId == 0 || models_.contains(profile.speciesId))
             throw std::invalid_argument("TerraWeave duplicate/zero forest species");
         BranchLodSettings settings;
@@ -95,6 +95,8 @@ public:
         };
         if (!inside(origin.x) || !inside(origin.y) || !inside(origin.z))
             throw std::out_of_range("TerraWeave forest render origin");
+        if (camera && (!inside(camera->x) || !inside(camera->z)))
+            throw std::out_of_range("TerraWeave forest camera extent");
         for (const FloraBatch& batch : batches) {
             const render::Model* model = batch.lod == TreeLOD::Impostor
                 ? billboardPrototype(batch.speciesId)
@@ -143,11 +145,15 @@ public:
     void submit(render::Renderer3D& renderer, const std::vector<FloraBatch>& batches,
                 ForestRenderOriginCm origin = {}) const {
         const auto camera = renderer.cameraPos();
-        if (!std::isfinite(camera.x) || !std::isfinite(camera.z))
-            throw std::invalid_argument("TerraWeave invalid camera coordinates");
+        const double relativeXcm = double(camera.x) * 100.0;
+        const double relativeZcm = double(camera.z) * 100.0;
+        if (!std::isfinite(relativeXcm) || !std::isfinite(relativeZcm) ||
+            std::fabs(relativeXcm) > double(kWorldLimitCm) * 2.0 ||
+            std::fabs(relativeZcm) > double(kWorldLimitCm) * 2.0)
+            throw std::out_of_range("TerraWeave forest camera extent");
         const ForestCameraCm cameraCm{
-            origin.x + static_cast<int64_t>(std::llround(double(camera.x) * 100.0)),
-            origin.z + static_cast<int64_t>(std::llround(double(camera.z) * 100.0))
+            origin.x + static_cast<int64_t>(std::llround(relativeXcm)),
+            origin.z + static_cast<int64_t>(std::llround(relativeZcm))
         };
         forEachDraw(batches, origin, [&](const render::ModelDraw& draw) {
             renderer.drawModel(draw);
