@@ -180,6 +180,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
         case HorizonQualityPreset::Minimal:
             settings.atlasTilePixels=16;
             settings.terrainResolution=16;
+            settings.terrainSkirtDepthCm=0; // mobile-minimum eliminates outer skirt geometry
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
             settings.maxCachedGpuRegions=0;
@@ -189,6 +190,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
         case HorizonQualityPreset::Mobile:
             settings.atlasTilePixels=24;
             settings.terrainResolution=24;
+            settings.terrainSkirtDepthCm=600;
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
             settings.maxCachedGpuRegions=0;
@@ -230,9 +232,11 @@ inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
             static_cast<uint32_t>(clusters*s.orientationViews)))*
             s.atlasTilePixels;
     const size_t terrainVertices=s.distantTerrain ?
-        size_t(s.terrainResolution+1)*(s.terrainResolution+1):0;
+        size_t(s.terrainResolution+1)*(s.terrainResolution+1) +
+        (s.terrainSkirtDepthCm>0 ? size_t(4)*(s.terrainResolution+1):0):0;
     const size_t terrainTriangles=s.distantTerrain ?
-        size_t(s.terrainResolution)*s.terrainResolution*2:0;
+        size_t(s.terrainResolution)*s.terrainResolution*2 +
+        (s.terrainSkirtDepthCm>0 ? size_t(8)*s.terrainResolution:0):0;
     // Two crossed cards per cluster, each with 4 vertices and 2 triangles.
     return {atlasSide*atlasSide*4,terrainVertices+clusters*8,
             terrainTriangles+clusters*4,clusters};
