@@ -86,6 +86,27 @@ inline ecfg::Asset rtsReference() {
     std::uint64_t id=1;
     for(auto& mapping:gameplay.mappings) mapping.id=id++;
     result.contexts.push_back({std::move(gameplay),0,true});
+    // Keep published RTS.Gameplay mapping IDs unchanged. Non-consuming camera
+    // bindings live in their own higher-ordered context so A/P/R/E/S/H hotkeys
+    // still fire, while WASD/arrows can be rebound independently.
+    result.actions.push_back({"CameraPan",ei::ValueType::Axis2D});
+    result.actions.push_back({"IdleCameraPan",ei::ValueType::Axis2D});
+    ei::MappingContext camera{"RTS.Camera"};
+    const auto cameraBind=[&](const char* action,Key key,
+                              std::vector<ei::Modifier> mods={}) {
+        camera.bind(action,{ei::Device::Keyboard,int(key)},std::move(mods),{},false);
+    };
+    cameraBind("CameraPan",Key::Up,{ei::Modifier::swapXY()});
+    cameraBind("CameraPan",Key::Down,{ei::Modifier::swapXY(),ei::Modifier::negate()});
+    cameraBind("CameraPan",Key::Left,{ei::Modifier::negate()});
+    cameraBind("CameraPan",Key::Right);
+    cameraBind("IdleCameraPan",Key::W,{ei::Modifier::swapXY()});
+    cameraBind("IdleCameraPan",Key::S,{ei::Modifier::swapXY(),ei::Modifier::negate()});
+    cameraBind("IdleCameraPan",Key::A,{ei::Modifier::negate()});
+    cameraBind("IdleCameraPan",Key::D);
+    id=1;
+    for(auto& mapping:camera.mappings)mapping.id=id++;
+    result.contexts.push_back({std::move(camera),0,true});
     return result;
 }
 } // namespace aiverse::platform::enhanced_presets
