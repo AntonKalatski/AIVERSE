@@ -5222,3 +5222,30 @@ GLES and OpenEXR/libktx runtime not run.
 Next: review code for local/native compile failures,
 consume CI logs once results are actually available;
 fix issues with separate code and handoff commits.
+
+## Stage 8N — optional UASTC_HDR -> RGBA16F full mip import (2026-11-18)
+
+Source commit: 65f21b4a3dd7a7b48fb457e67207cd61db799e61.
+File: engine/render/Ktx2Libktx.h.
+Adds uploadKtx2UastcHdrWithLibktx(Device&,encoded,error),
+separate from LDR CompressedImage / RGBA8 transcoding.
+Enabled only with system Khronos libktx. Validates KTX2
+header/mip index via existing inspect, verifies Basis HDR
+and linear transfer metadata, then calls real libktx
+TranscodeBasis(KTX_TTF_RGBA_HALF). It checks source
+dimensions/layers/cube faces/mips after transcode.
+Allocates RHI RGBA16F texture (2D/array/cube/3D as supported),
+validates every libktx image offset and total 512MiB budget,
+uploads every mip and face/depth slice using existing
+Device::updateTextureRegion; destroys partially uploaded
+GPU texture on any failure. No 8-bit downgrade or HDR
+tone mapping. Without libktx macro it fails explicitly.
+Unlike texture-pack writers it does not modify ECS/save data.
+Known limitation: does not create native BC6H/ASTC HDR
+compressed output; uses RGBA_HALF for compatibility.
+Verification: GitHub code commit succeeded, libktx native
+header/build NOT RUN, UASTC_HDR real file test NOT RUN,
+RGBA16F Vulkan/Metal/GL GPU reads NOT RUN.
+Next: dedicated HDR fixture with real UASTC_HDR encoded data
+and GPU mock tests for mips, topology and unsupported codec;
+update docs/AI skills for HDR API, and run libktx CI.
