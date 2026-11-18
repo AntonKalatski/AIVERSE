@@ -90,10 +90,11 @@ inline StormInfluence stormContribution(const StormEvent& event,
 }
 
 // Read-only physical wind contribution; storms do not modify WindZone or physics.
-inline StormInfluence stormsAt(const World& world, Vec3 position,
-                               std::uint64_t tick) {
+template<class StormVisitor>
+inline StormInfluence stormsAtWith(const World& world, Vec3 position,
+                                   std::uint64_t tick, StormVisitor&& visitStorms) {
     StormInfluence total;
-    world.eachExistingConst<StormEvent>([&](Entity, const StormEvent& event) {
+    visitStorms([&](Entity, const StormEvent& event) {
         const auto influence = stormContribution(event, position, tick);
         total.wind = total.wind + influence.wind;
         total.precipitationBoost += influence.precipitationBoost;
@@ -108,6 +109,12 @@ inline StormInfluence stormsAt(const World& world, Vec3 position,
     total.pressureOffset = fxClamp(total.pressureOffset,
                                    Fixed::fromInt(-150), Fixed{});
     return total;
+}
+
+inline StormInfluence stormsAt(const World& world, Vec3 position,
+                               std::uint64_t tick) {
+    return stormsAtWith(world, position, tick,
+        [&](auto&& callback) { world.eachExistingConst<StormEvent>(callback); });
 }
 
 inline Vec3 windWithStormsAt(const World& world, Vec3 position) {
