@@ -679,3 +679,39 @@ before calling this stage validated.
   fallback behavior. Commit code first, then **Stage 33** handoff
   separately; mark tests NOT RUN until executed.
 
+## Stage 33 — persistent MotionWeave worker pool (2026-11-18)
+
+- **Branch / PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft;
+  base `feature/universal-entity-inspector-fps`.
+- **Implementation commit:** `ad5b1a854ac6009caadfc830d75a6bfee4165fa0`.
+- **Code paths:** new
+  `libraries/include/aiverselib/animation/MotionWeaveWorkers.h`,
+  `tests/animation/motionweave_workers.cpp`, root `CMakeLists.txt`.
+- **Design/API:** `MotionWeaveWorkerPool` is a host-owned fixed worker pool,
+  defaulting to up to seven background workers, plus the submitting frame
+  thread. `parallelFor(taskCount,callback)` runs jobs via one atomic task
+  index with a blocking synchronization barrier. The pool persists across
+  frames rather than constructing fresh std::jthread workers each update.
+  Serialized submissions, error capture/rethrow AFTER all workers have
+  completed, and WebAssembly sequential fallback are included.
+- **Compatibility:** legacy `stepAnimationPresentationParallel` and
+  `MotionWeave::update` are untouched in this stage; the pool is an opt-in
+  reusable primitive for the next integrated scheduler stage. Gameplay
+  simulation, ECS schema, save, network and editor APIs unchanged.
+- **Tests:** `aiverse_motionweave_worker_tests` / CTest
+  `motionweave_workers` was added for worker reuse, task completion,
+  barrier, post-exception recovery, empty tasks, and single-thread fallback.
+  **NOT RUN** (user explicitly deferred execution); no claim about CI.
+- **Known risks:** workers do not support concurrent World structural
+  mutations. No implicit thread-safe access to Lua, native callbacks or
+  shared graph state; graph classification must be added before use.
+  Exception propagation doesn't make partially written output transactional.
+  The old scheduler still creates fresh threads and globally falls back.
+- **Next stage:** read `AnimationJobScheduler.h` and
+  `EcsAnimationSystems.h`, add an index-selected graph evaluation helper
+  that reuses pre-detached ECS write pools. Partition worker-safe entities
+  from callback/rig/environment-bound entities and run those serially only
+  AFTER the worker barrier; use `MotionWeaveWorkerPool::parallelFor` for
+  safe independent tasks. Commit the implementation first, then Stage 34
+  handoff in a separate commit.
+
