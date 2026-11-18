@@ -4,6 +4,7 @@
 // Rendering, shadows and buffer upload remain owned by Renderer3D/gfx::Device.
 #pragma once
 #include "engine/world/TerraWeaveHorizon.h"
+#include "engine/render/TerraWeaveHorizonClip.h"
 #include "engine/render/Model.h"
 #include <algorithm>
 #include <cmath>
@@ -68,6 +69,10 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         // the host supplies exact resident authored terrain coverage. This
         // prevents a sky hole where nearby terrain has not loaded yet.
         std::vector<uint8_t> farQuad(size_t(n)*n,1u);
+        const auto clipped=planHorizonNearGroundClipping(b);
+        // A rejected plan (too fragmented) preserves the preceding
+        // conservative coarse-quad implementation. No partial application.
+        const auto fineClipping=clipped && !clipped->touchedQuads.empty();
         for (uint32_t z=0;z<=n;++z) {
             for (uint32_t x=0;x<=n;++x) {
                 const auto& v=b.terrainVertices[size_t(z)*(n+1)+x];
@@ -108,6 +113,8 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
                     farQuad[quad]=0u; // near ground owns the full quad
                     continue;
                 }
+                if(fineClipping && clipped->touchedQuads[quad])
+                    continue; // replaced by bounded clipped triangles below
                 const uint32_t i=start+static_cast<uint32_t>(idx);
                 const uint32_t stride=n+1;
                 model->indices.insert(model->indices.end(),{
@@ -115,6 +122,85 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
                     i+1,i+stride,i+stride+1
                 });
             }
+        if(fineClipping){
+            // Only polygons clipped from the two ORIGINAL source triangles
+            // are emitted. Barycentric interpolation stays on each triangle's
+            // surface plane, so clipping does not invent a new height seam.
+            for(const auto& triangle:clipped->triangles){
+                const uint32_t x=triangle.quadIndex%n;
+                const uint32_t z=triangle.quadIndex/n;
+                const uint32_t i=start+z*(n+1)+x,step=n+1;
+                const std::array<uint32_t,3> vertexIds=triangle.sourceHalf==0 ?
+                    std::array<uint32_t,3>{i,i+step,i+1} :
+                    std::array<uint32_t,3>{i+1,i+step,i+step+1};
+                // Copy source vertices before push_back can reallocate.
+                const std::array<render::ModelVertex,3> baseVertices{
+                    model->vertices[vertexIds[0]],
+                    model->vertices[vertexIds[1]],
+                    model->vertices[vertexIds[2]]
+                };
+                const std::array<HorizonClipPoint,3> srcCoords{{
+                    {double(b.terrainVertices[vertexIds[0]-start].xCm),
+                     double(b.terrainVertices[vertexIds[0]-start].zCm)},
+                    {double(b.terrainVertices[vertexIds[1]-start].xCm),
+                     double(b.terrainVertices[vertexIds[1]-start].zCm)},
+                    {double(b.terrainVertices[vertexIds[2]-start].xCm),
+                     double(b.terrainVertices[vertexIds[2]-start].zCm)}
+                }};
+                const double ax=srcCoords[1].x-srcCoords[0].x;
+                const double az=srcCoords[1].z-srcCoords[0].z;
+                const double bx=srcCoords[2].x-srcCoords[0].x;
+                const double bz=srcCoords[2].z-srcCoords[0].z;
+                const double area=ax*bz-az*bx;
+                if(std::abs(area)<1e-8)continue;
+                const uint32_t first=
+                    static_cast<uint32_t>(model->vertices.size());
+                for(const HorizonClipPoint& point:triangle.corners){
+                    const double px=point.x-srcCoords[0].x;
+                    const double pz=point.z-srcCoords[0].z;
+                    const double w1=(px*bz-pz*bx)/area;
+                    const double w2=(ax*pz-az*px)/area;
+                    const std::array<double,3> w{1.0-w1-w2,w1,w2};
+                    const auto interpolate=[&](auto field){
+                        return float(w[0]*field(baseVertices[0])+
+                                     w[1]*field(baseVertices[1])+
+                                     w[2]*field(baseVertices[2]));
+                    };
+                    render::ModelVertex v;
+                    v.pos={
+                        float((point.x-double(b.originXcm))*0.01),
+                        interpolate([](const auto& s){return s.pos.y;}),
+                        float((point.z-double(b.originZcm))*0.01)
+                    };
+                    v.nrm=render::normalize(render::float3{
+                        interpolate([](const auto& s){return s.nrm.x;}),
+                        interpolate([](const auto& s){return s.nrm.y;}),
+                        interpolate([](const auto& s){return s.nrm.z;})
+                    });
+                    v.uv={
+                        interpolate([](const auto& s){return s.uv.x;}),
+                        interpolate([](const auto& s){return s.uv.y;})
+                    };
+                    uint32_t color=0;
+                    for(uint32_t shift=0;shift<=24;shift+=8){
+                        const auto ch=[shift](const render::ModelVertex& s){
+                            return double((s.color>>shift)&255u);
+                        };
+                        const double value=w[0]*ch(baseVertices[0])+
+                                           w[1]*ch(baseVertices[1])+
+                                           w[2]*ch(baseVertices[2]);
+                        const auto rounded=static_cast<uint32_t>(
+                            std::clamp(std::round(value),0.0,255.0));
+                        color|=rounded<<shift;
+                    }
+                    v.color=color;
+                    model->vertices.push_back(v);
+                }
+                model->indices.insert(model->indices.end(),{
+                    first,first+1,first+2
+                });
+            }
+        }
         // An optional lightweight ring extends the outer silhouette
         // DOWNWARD without altering the true sampled top-edge heights.
         // It hides sub-mesh cracks between a coarse far field and neighboring
