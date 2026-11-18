@@ -1,4 +1,4 @@
-# AIVERSE Enhanced Input — agent handoff (living document)
+# AIVerse InputFlow — agent handoff (living document)
 
 Branch: `feature/aiv990_enhanced_input` (base `feature/universal-entity-inspector-fps`). Owner: input subsystem. Updated 2026-11-18.
 
@@ -559,3 +559,20 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Known risks/limitations:** Tooling, editor window, FPS/RTS clients and platform adapters still need to adopt `inputflow::InputFlow` and visible InputFlow labels; old API remains supported. The class-name change should be compile-verified in the later test phase.
 
 **Next agent / Stage 44:** Update `engine/platform/EnhancedInputAdapter.h`, `EnhancedInputConfig.h`, `EnhancedInputPresets.h`, `EnhancedInputUsers.h`, `EnhancedInputUserProfiles.h`, `apps/fps/client.cpp`, `apps/client/ClientInputRouting.h`, `apps/editor/windows/InputWindow.cpp` and `GameWindow.cpp` to include `aiverselib/gameplay/InputFlow.h` and use the `inputflow` namespace/branding; retain compatibility paths, stable IDs and JSON schema. Update tests, catalog, and this handoff after that stage. Testing remains deferred.
+
+
+## Stage 44 — apply InputFlow name throughout runtime, editor, tests and catalog (2026-11-18)
+
+**Goal/status:** IMPLEMENTED IN SOURCE; compilation, CTest and device testing **NOT RUN** per the user's implementation-first instruction.
+
+**Canonical C++ API:** `libraries/include/aiverselib/gameplay/InputFlow.h` exports `aiverse::lib::gameplay::inputflow::InputFlow` and the related `InputAction`, `InputContext`, `InputValue`, `InputActionEvent`, and `InputActionState` aliases. New `engine/platform/InputFlow.h` is the platform facade: `InputFlowAdapter`, `InputFlowUsers`, `InputFlowUserProfiles`, `InputFlowAsset`, `InputFlowProfile`, `inputflow_config`, `inputflow_presets`. Underlying engine logic remains presentation-side; no authoritative ECS or command changes.
+
+**Exact files changed:** `libraries/include/aiverselib/gameplay/{EnhancedInput.h,InputFlow.h}`; `engine/platform/{InputFlow.h,EnhancedInputAdapter.h,EnhancedInputConfig.h,EnhancedInputPresets.h,EnhancedInputUsers.h,EnhancedInputUserProfiles.h}`; `apps/fps/client.cpp`; `apps/client/ClientInputRouting.h`; `apps/editor/windows/{InputWindow.cpp,GameWindow.cpp}`; `tests/libraries/{enhanced_input_tests.cpp,enhanced_input_adapter_tests.cpp,enhanced_input_config_tests.cpp,enhanced_rts_input_tests.cpp}`; `libraries/catalog.json`; `.github/workflows/enhanced-input.yml`; `AGENTS.md`; `docs/enhanced-input.md`; `skills/ui/aiverse-input/SKILL.md`; this handoff. UI names are now **InputFlow Settings (F10)** and **InputFlow Actions**; catalog's canonical source and CI display name use InputFlow. Core tests include a compile-time alias compatibility assertion.
+
+**Compatibility invariants:** Keep `EnhancedInput.h`, `enhanced::InputSystem` (alias of the InputFlow implementation), the `EnhancedInput*` platform headers and their old classes, `AIVERSE::lib_input`, `input/actions.json`, user profile filenames and CTest target names. They are legacy identifiers, not a different implementation. All projects with the old API remain intended to work without migration.
+
+**Actual verification:** Source changes accepted by GitHub; no local compiler run, no CTest, no real device checks, no passing CI results verified. Status **NOT RUN**, not PASS. Automated checks may still report queued or cancelled because of incremental commits. Merge PR #20 only after validation in the dedicated later phase.
+
+**Known risks:** C++ namespace/class alias usage in all platform targets and ImGui UI labels require compile/runtime verification. Some old filenames and docs deliberately retain EnhancedInput spelling. Version 1 authored assets and saved profiles must not be renamed by the branding change.
+
+**Next agent (Stage 45):** Read both InputFlow.h headers, then `apps/fps/client.cpp`, `apps/client/ClientInputRouting.h`, `apps/editor/windows/InputWindow.cpp`, `libraries/catalog.json` and this handoff. Continue any feature work with canonical InputFlow names; after each stage append a fresh numbered handoff. When the user authorizes the test phase, compile the four existing `aiverse_enhanced_*_tests` targets and full editor/FPS/RTS builds, then run `./run-tests.sh` and review cross-platform CI. Fix failures and record command, SHA, PASS/FAIL in Stage 45 before marking Draft PR ready.
