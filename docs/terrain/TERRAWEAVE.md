@@ -740,3 +740,74 @@ Tests: `tests/terraweave_forest_scene_test.cpp` and CTest target
 `terraweave_forest_scene` (height override, stable keys, filter,
 revision invalidation, invalid height). Tests have been authored,
 but are not claimed to have executed.
+
+
+## Stage 6 — actual WorldScene terrain heights and footprint placement
+
+The opt-in `WorldScene` path now uses a typed, immutable bridge from
+loaded `world::ChunkCollision::terrain` to TerraWeave forest placement.
+`engine/world/TerraWeaveWorldHeightSource.h` contains
+`AuthoredHeightTileCm` and `AuthoredWorldHeightSnapshot`.
+The snapshot's `sample(worldXcm, worldZcm)` returns an optional
+signed **centimetre** elevation from loaded terrain tiles. It uses
+`WorldAssets::cellSize` and negative-safe global floor division,
+then **piecewise triangular interpolation** matching the exact
+`readChunkCollision` triangles `(a,c,b)` / `(a,d,c)`, not
+bilinear smoothing across the diagonal. Source height samples are
+converted from `world::Fixed` metres to integer centimetres at
+the worker preparation boundary. The difference from the underlying
+Fixed collision surface is at most centimetre-scale sampling/rounding,
+and the operation is presentation-only.
+
+`WorldScene::Prepared` caches authored height samples and collision
+box footprints **only when `terraweaveForest` was explicitly
+enabled**. On terrain/footprint-bearing chunk publish or unload,
+`WorldScene::update` assembles one immutable snapshot from all
+resident tiles, plus an exclusion mask from resident collision-box
+X/Z footprints. It calls the new
+`TerraWeaveForestScene::setLandscapeSources(heightSource, mask)`
+exactly once per update: one generation revision invalidation, with
+old snapshots safely held by any in-flight asynchronous work.
+The forest's own revision-safe async publisher discards stale results.
+
+For areas with no currently loaded authored height tile, the adapter
+falls back to TerraWeave's configured deterministic
+`heightAtCm`. **This can create a seam between authored and procedural
+terrain when loading/unloading tiles**; it is not a full world terrain
+replacement or a solution for arbitrary physics triangle meshes.
+The footprint mask conservatively excludes the X/Z projections of
+all resident collision boxes, regardless of altitude. WorldSpace
+`kWorldLimitCm` checks and explicit chunk CPU reservation accounting
+remain in effect. Legacy scenes without `terraweaveForest` keep the
+original code path and do not allocate these snapshots.
+
+`FoliageExclusionMask` now buckets building rectangles into 64 m
+spatial buckets for per-candidate checks. Large rectangles (>256
+buckets) use a bounded per-shape overflow path rather than being
+duplicated across tens of thousands of buckets. Road and polygon
+queries preserve their prior behaviour.
+
+## Stage 6b — stable removal/restore state for interactive trees
+
+`TerraWeaveForestScene` also exposes
+`ForestTreeIdentity {key, speciesId}` and
+`removeTree(id)`, `restoreTree(id)`,
+`setRemovedTrees(vector<ForestTreeIdentity>)`, and
+`removedTrees()`. It tracks a bounded sorted set of identities
+(up to 1,000,000) separately from deterministic scatter outputs.
+`visibleBatches()` excludes removed trees immediately; residency
+eviction/regeneration does not resurrect them. `ForestSceneStats`
+adds `removed`. This allows a native game to serialize stable tree
+removal state with its own save format or map an interactive tree to
+a gameplay ECS entity **without allocating ECS entities for all
+decorative foliage**.
+
+The removed-tree identity is meaningful only under the matching
+generator seed/version/species configuration. The host still owns
+actual game save/load, authoritative harvesting, inventory,
+network replication and collision/navmesh updates. This visual
+filter alone does not implement those gameplay systems.
+
+**Verification:** this stage was committed through the repository
+connector; source inspection only. Builds, CTest, live GPU launch and
+screenshots remain explicitly **not run**, per user request.
