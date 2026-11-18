@@ -40,6 +40,7 @@ struct HorizonSettings {
     bool distantTerrain = true;       // opt-in manifest, disabled unless requested
     // Trailing to preserve older aggregate HorizonSettings initializers.
     int32_t terrainSkirtDepthCm = 1200; // 0=off, lower outer edge by 12m
+    uint32_t terrainGridSnapSteps = 4; // 1..16 grid steps; stabilize distant mountain silhouettes
 };
 
 struct HorizonCluster {
@@ -68,6 +69,10 @@ struct HorizonSurfaceSources {
     std::function<Biome(int64_t, int64_t)> biomeAt;
     // Road, water, and building masks suppress individual crown samples.
     std::function<bool(int64_t, int64_t)> allowsCanopyAt;
+    // Exact half-open world-centimetre rectangle, covered in its entirety
+    // by already resident authored near-terrain geometry. If unset, the
+    // backwards-compatible radial cutout is used instead.
+    std::function<bool(int64_t, int64_t, int64_t, int64_t)> ownsNearTerrainRect;
 };
 
 struct HorizonBake {
@@ -82,6 +87,10 @@ struct HorizonBake {
     std::vector<HorizonCluster> clusters;
     // Trailing to preserve existing aggregate HorizonBake initializers.
     int32_t terrainSkirtDepthCm = 0;
+    // One byte per coarse terrain cell; 1 means near terrain owns the
+    // FULL quad and its two triangles must be omitted from distant ground.
+    // Empty = legacy radial cutout mode, for procedural worlds.
+    std::vector<uint8_t> nearOwnedQuads;
 };
 
 namespace horizon_detail {
@@ -148,6 +157,7 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.maxCachedRegions>4 || s.maxCachedGpuRegions>3 ||
         s.gpuCacheBudgetMiB<8 || s.gpuCacheBudgetMiB>96 ||
         s.regionTransitionMs>1000 ||
+        s.terrainGridSnapSteps==0 || s.terrainGridSnapSteps>16 ||
         s.regionHysteresisCm<0 ||
         s.regionHysteresisCm>=s.middleTileCm/2 ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
@@ -279,9 +289,12 @@ inline HorizonTerrainLattice makeHorizonTerrainLattice(
         throw std::out_of_range("TerraWeave Horizon lattice observer");
     const int64_t side=int64_t(s.distantTileCm)*s.distantTilesPerSide;
     const int64_t n=s.terrainResolution;
+    const int64_t stride=s.terrainGridSnapSteps;
+    const int64_t xStep=detail::floorDiv(cameraXcm*n,side);
+    const int64_t zStep=detail::floorDiv(cameraZcm*n,side);
     return {side,
-        detail::floorDiv(cameraXcm*n,side)-n/2,
-        detail::floorDiv(cameraZcm*n,side)-n/2,
+        detail::floorDiv(xStep,stride)*stride-n/2,
+        detail::floorDiv(zStep,stride)*stride-n/2,
         s.terrainResolution};
 }
 
@@ -348,6 +361,10 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         previous->terrainResolution==s.terrainResolution &&
         previous->terrainBeginCm==s.terrainBeginCm &&
         previous->terrainSkirtDepthCm==s.terrainSkirtDepthCm &&
+        (source && source->ownsNearTerrainRect
+            ? previous->nearOwnedQuads.size()==size_t(s.terrainResolution)*
+                                              s.terrainResolution
+            : previous->nearOwnedQuads.empty()) &&
         (!s.distantTerrain || previous->terrainVertices.size()==
           size_t(s.terrainResolution+1)*(s.terrainResolution+1));
     for (const RectCm& r : edited) {
@@ -596,6 +613,24 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
 
     if(s.distantTerrain) {
         const uint32_t n=s.terrainResolution;
+        if(source && source->ownsNearTerrainRect) {
+            if(compatible)out.nearOwnedQuads=previous->nearOwnedQuads;
+            else out.nearOwnedQuads.resize(size_t(n)*n,0);
+            for(uint32_t z=0;z<n;++z)
+                for(uint32_t x=0;x<n;++x) {
+                    const int64_t minX=lattice.worldX(x);
+                    const int64_t minZ=lattice.worldZ(z);
+                    const int64_t maxX=lattice.worldX(int64_t(x)+1);
+                    const int64_t maxZ=lattice.worldZ(int64_t(z)+1);
+                    if(compatible && !dirtyAt((minX+maxX)/2,
+                                              (minZ+maxZ)/2,
+                                              regionSide/n+1))
+                        continue;
+                    out.nearOwnedQuads[size_t(z)*n+x]=
+                        source->ownsNearTerrainRect(minX,minZ,maxX,maxZ)
+                            ? uint8_t(1):uint8_t(0);
+                }
+        }
         if(compatible)out.terrainVertices=previous->terrainVertices;
         else out.terrainVertices.resize(size_t(n+1)*(n+1));
         for(uint32_t z=0;z<=n;++z)
