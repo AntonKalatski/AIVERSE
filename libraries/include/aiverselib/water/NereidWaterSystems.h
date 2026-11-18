@@ -10,6 +10,24 @@ namespace aiverse::lib::nereid {
 
 // Selection is independent of ECS pool insertion order. Higher priority wins,
 // then higher surface, then smallest generation-safe Entity ID. No RNG / floats.
+inline void considerWaterCandidate(WaterSample& sample,Entity entity,
+                                   const WaterBodyComponent& body,Vec3 position) {
+    const bool better=!sample.found ||
+        body.priority>sample.priority ||
+        (body.priority==sample.priority &&
+         (body.surfaceY>sample.surfaceY ||
+          (body.surfaceY==sample.surfaceY && entity.packed()<sample.body.packed())));
+    if(!better)return;
+    sample.body=entity;
+    sample.kind=body.kind;
+    sample.surfaceY=body.surfaceY;
+    sample.bottomY=body.bottomY;
+    sample.flow=body.flow;
+    sample.priority=body.priority;
+    sample.depth=fxClamp(body.surfaceY-position.y,Fixed{},body.surfaceY-body.bottomY);
+    sample.found=true;
+    sample.submerged=position.y<body.surfaceY && position.y>=body.bottomY;
+}
 inline WaterSample sampleWater(const World& world,Vec3 position) {
     WaterSample sample;
     world.eachExistingConst<WaterBodyComponent>(
@@ -17,21 +35,7 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
             if(!world.alive(entity))return;
             const auto* geometry=world.tryGetConst<WaterGeometryComponent>(entity);
             if(!coversWaterBody(body,geometry,position))return;
-            const bool better=!sample.found ||
-                body.priority>sample.priority ||
-                (body.priority==sample.priority &&
-                 (body.surfaceY>sample.surfaceY ||
-                  (body.surfaceY==sample.surfaceY && entity.packed()<sample.body.packed())));
-            if(!better)return;
-            sample.body=entity;
-            sample.kind=body.kind;
-            sample.surfaceY=body.surfaceY;
-            sample.bottomY=body.bottomY;
-            sample.flow=body.flow;
-            sample.priority=body.priority;
-            sample.depth=fxClamp(body.surfaceY-position.y,Fixed{},body.surfaceY-body.bottomY);
-            sample.found=true;
-            sample.submerged=position.y<body.surfaceY && position.y>=body.bottomY;
+            considerWaterCandidate(sample,entity,body,position);
         });
     return sample;
 }
