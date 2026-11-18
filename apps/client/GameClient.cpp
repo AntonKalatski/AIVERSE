@@ -929,17 +929,21 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         float speed = cam_.distance * 0.9f * float(dt);
         float fx = std::sin(cam_.yaw), fz = std::cos(cam_.yaw);
         float3 fwd{-fx, 0, -fz}, right{fz, 0, -fx};
-        auto key = [&](Key k) { return keys_[int(k)]; };
+        const auto* arrow=inputShortcuts_.system().state("CameraPan");
+        const auto* idle=inputShortcuts_.system().state("IdleCameraPan");
+        const float arrowX=arrow?arrow->value.x:0.0f,arrowY=arrow?arrow->value.y:0.0f;
+        const float idleX=idle?idle->value.x:0.0f,idleY=idle?idle->value.y:0.0f;
         float W = platform::windowWidth(), H = platform::windowHeight();
         // edge scrolling only while the cursor is inside the window (macOS reports moves outside it too)
         bool edges = !regionSwipe_.enabled && !platform::isTouchDevice() && std::string(platform::name()) != "web" && mouseX_ >= 0 && mouseY_ >= 0 && mouseX_ <= W && mouseY_ <= H;
         bool noSel = selection_.empty();
         if (!ui_.textInputFocused() && !possessedUnit().valid() && !topDownActive()) {
-            if (key(Key::Up) || (noSel && key(Key::W)) || (edges && mouseY_ < 3)) cam_.target += fwd * speed;
-            if (key(Key::Down) || (noSel && key(Key::S)) || (edges && mouseY_ > H - 3)) cam_.target += fwd * -speed;
-            if (key(Key::Right) || (noSel && key(Key::D)) || (edges && mouseX_ > W - 3)) cam_.target += right * speed;
-            if (key(Key::Left) || (noSel && key(Key::A)) || (edges && mouseX_ < 3)) cam_.target += right * -speed;
-            cam_.target += right * (speed * padPanX_) + fwd * (-speed * padPanY_);   // gamepad right stick / d-pad
+            const float panY=arrowY+(noSel?idleY:0.0f)+
+                float(edges && mouseY_<3)-float(edges && mouseY_>H-3)-padPanY_;
+            const float panX=arrowX+(noSel?idleX:0.0f)+
+                float(edges && mouseX_>W-3)-float(edges && mouseX_<3)+padPanX_;
+            cam_.target += fwd*(speed*std::clamp(panY,-1.0f,1.0f));
+            cam_.target += right*(speed*std::clamp(panX,-1.0f,1.0f));
         }
         auto& g = mod().state(*sim_).grid;
         if (planet()) planetCameraKeys(dt);
