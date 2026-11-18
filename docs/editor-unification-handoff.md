@@ -1413,3 +1413,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h`: added `resolveHitscanIntent` pure generic policy taking `HitscanIntentComponent`, shooter entity, current or immutable historical target range, eligibility, hitboxes and live-entity mapping. Returns both `HitscanResolvedEvent` and a pointer to the matched immutable pose, preserving FPS historical head/limb checks. The scheduled `addHitscanResolutionSystem` now calls this **same** policy, copying a request before clearing `requested`, and still batches callbacks after ECS iteration; no change to intended order or one-shot semantics.
 - **No gameplay migration claim yet**: live FPS still calls the shared nearest-candidate helper directly until its own `traceShot` is migrated in a separate implementation commit. This helper enables in-tick immediate resolution without postponing damage to the next system barrier.
 - Verification: GitHub code commit only, not compiled or exercised. Follow-up tests must check invalid/blocked intents, rewind pose lifetime, snapshot/rollback and multiple sources.
+
+
+### 2026-11-18 — FPS programmed-projectile parity fixture enabled in test main
+- **Implementation SHA:** `bd4c7f43f43c17742741e18329149883bdc2c366`.
+- Changed `tests/fps/tests.cpp` to execute `ecsProjectileProgramStageParity()` directly after existing `projectilePrograms()` during `aiverse_fps_tests`. This ensures the live `fps.compat.projectilePrograms` stage is covered against both ECS authority and legacy storage in normal native FPS test runs.
+- **Verification:** source edit committed, **C++ compilation, actual FPS suite, COW/sanitizer and network tests unverified**. Tests may identify ordering or save parity differences that must be resolved before production status.
+- **Next:** inspect CI, verify latest branch source, and run `ctest --output-on-failure -R 'fps|ecs_'` plus transport/Editor gates on a native checkout.
