@@ -131,6 +131,31 @@ public:
         }
     }
 
+    // Transfer unused allocations to an external retirement mechanism instead
+    // of destroying them while GPU work could still reference their textures.
+    // Retire callback takes Handle; it must attach the correct last-submitted
+    // GPU fence before invoking device destruction at completion.
+    template <typename Retire>
+    void retireUnused(Retire&& retire) {
+        auto it = entries_.begin();
+        while (it != entries_.end()) {
+            if (!it->selected) {
+                retire(it->handle);
+                it = entries_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    // Transfer all allocations to the host's deferred retirement queue.
+    // The caller must ensure the resource completion fence is valid.
+    template <typename Retire>
+    void retireAll(Retire&& retire) {
+        for (auto& entry : entries_) retire(entry.handle);
+        entries_.clear();
+    }
+
     // Full teardown after all GPU work referencing these handles has completed.
     template <typename Release>
     void clear(Release&& release) {
