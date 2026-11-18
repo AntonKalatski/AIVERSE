@@ -41,6 +41,20 @@ struct ForestSceneStats {
     size_t species = 0;
     uint64_t revision = 0;
     size_t preparing = 0, discarded = 0; // asynchronous streaming diagnostics
+    size_t removed = 0; // persisted hidden tree identities
+};
+
+// A stable resource/tree identity for gameplay-driven removal and restoration.
+// The presentation forest does not own a gameplay entity for each tree.
+// Native games may serialize this POD key set alongside their save data.
+struct ForestTreeIdentity {
+    uint64_t key = 0;
+    uint32_t speciesId = 0;
+    constexpr bool operator<(const ForestTreeIdentity& other) const {
+        return speciesId == other.speciesId ? key < other.key :
+                                             speciesId < other.speciesId;
+    }
+    constexpr bool operator==(const ForestTreeIdentity&) const = default;
 };
 
 // Header-only native-project API. Call addSpecies before streamAt/uploadModels.
@@ -230,6 +244,33 @@ public:
         }
     }
 
+    // Gameplay systems can call this on the owning update thread when a
+    // tree is harvested/destroyed; the stable key survives chunk unloading.
+    // This is a presentation filter, NOT a substitute for authoritative ECS
+    // inventory, collision, save versioning or network replication.
+    bool removeTree(ForestTreeIdentity id) {
+        if (!id.speciesId) throw std::invalid_argument("TerraWeave tree species");
+        if (removed_.size() >= 1000000 && !removed_.contains(id))
+            throw std::length_error("TerraWeave removed-tree state too large");
+        return removed_.insert(id).second;
+    }
+    bool restoreTree(ForestTreeIdentity id) { return removed_.erase(id) != 0; }
+
+    void setRemovedTrees(const std::vector<ForestTreeIdentity>& ids) {
+        if (ids.size() > 1000000)
+            throw std::length_error("TerraWeave removed-tree state too large");
+        std::set<ForestTreeIdentity> replacement;
+        for (const auto& id : ids) {
+            if (!id.speciesId)
+                throw std::invalid_argument("TerraWeave tree species");
+            replacement.insert(id);
+        }
+        removed_ = std::move(replacement);
+    }
+    std::vector<ForestTreeIdentity> removedTrees() const {
+        return {removed_.begin(), removed_.end()};
+    }
+
     std::vector<FloraBatch> visibleBatches() const {
         if (!residentStarted_) return {};
         size_t count = 0;
@@ -241,7 +282,10 @@ public:
         placements.reserve(count);
         for (const auto& [key, patch] : patches_) {
             (void)key;
-            placements.insert(placements.end(), patch.begin(), patch.end());
+            for (const FoliageInstance& instance : patch) {
+                if (!removed_.contains({instance.key, instance.speciesId}))
+                    placements.push_back(instance);
+            }
         }
         FloraView view = settings_.view;
         view.cameraXcm = observer_.x;
@@ -285,7 +329,7 @@ public:
         }
         const auto state = async_ ? async_->status() : world::AsyncChunkStream::Status{};
         return {patches_.size(), n, species_.size(), revision_,
-                state.preparing, state.discarded};
+                state.preparing, state.discarded, removed_.size()};
     }
 
     const ForestSceneSettings& settings() const { return settings_; }
@@ -449,6 +493,7 @@ private:
     ForestSceneSettings settings_;
     ArborForestAdapter adapter_;
     std::vector<FoliageSpecies> species_;
+    std::set<ForestTreeIdentity> removed_;
     std::vector<RectCm> exclusions_;
     HeightSource heightSource_;
     PlacementFilter placementFilter_;
