@@ -362,6 +362,43 @@ runtime Niagara GPU-per-particle graph execution.
 The Stage-16 code is committed but testing is intentionally
 deferred per user instruction. Record actual tests later.
 
+## Visual v2 authoring and non-destructive drafts (Stage 17)
+
+Open **SpectraFX** in the AIVERSE editor. New graphs use version 2,
+while existing version-1 assets remain editable and can be upgraded
+via the v1→v2 toolbar action. The grouped node catalog now includes
+typed data/math/vector/logic nodes and module stages in addition to
+Spawn, Initialize, Update and Sprite/Mesh/Ribbon Output.
+Data links connect a value output to a named input property;
+execution links remain the separate module chain.
+The visual canvas distinguishes data wires from execution wires.
+
+The right inspector offers literal number/bool/vector/colour
+editors, editable Curve/Gradient keys and typed controls for
+common noise, force, collision, trail, light and render settings.
+Complex/custom fields remain editable as JSON without
+flattening $node references or unsupported curve types.
+
+Use `fx_graph_node_catalog` to discover valid node classes
+and `fx_graph_edit` to perform safe in-memory
+`new|upgrade|add|connect|disconnect|deleteNode|setProperty`
+operations. Check the returned `validation` object for strict
+compiler diagnostics, but do not assume an intermediate invalid
+graph is a fatal authoring error.
+
+If the graph is incomplete, call `fx_graph_draft_set` to save
+under `fx/graphs/_drafts`; it never replaces a published graph.
+Retrieve drafts with `fx_graph_draft_list`/`fx_graph_draft_get`,
+and publish via `fx_graph_draft_publish` only after the compiler
+accepts the complete graph. Existing `fx_graph_set` remains the
+strict direct-publication path. Native tooling reuses
+`engine/fx/SpectraAuthoring.h` via the canonical
+`SpectraFX.h` include.
+
+The user explicitly deferred tests. This Stage-17 work is
+source-committed, not compiler/GUI validated. See the handoff
+for exact SHAs and the next functional stage.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
