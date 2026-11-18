@@ -1456,3 +1456,27 @@ No green CI outcome asserted.
 actual BC4/BC5/EAC R11 sampling on each backend with GPU
 capability checks. Audit DDS/KTX2 sRGB handling and BC1_RGB
 opaque semantics. Continue per-stage handoff after fixes.
+
+## Stage 6I — update DDS and block-compressed format reference (2026-11-18)
+
+**Documentation commit:** `2e612ecf43acc24dee89e2576651729f1f1391ac`.
+**Branch:** `feature/texture-rhi-unification` (PR #21 Draft).
+**Changed:** `docs/texture-rhi.md`.
+
+**Documentation:** Explain the now-shared layered KTX2/DDS
+`CompressedImage` representation, DDS mip/face ordering
+conversion, `parseDdsTexture` and `uploadDdsImage` native
+usage with `TextureUploadOptions`. Record BC4/BC5/EAC_R11
+source-level capability mapping on Metal/GL/Vulkan, explicit
+BC5 normal-Z reconstruction requirement, all remaining
+native/format/transcoding limitations, and unrun GPU tests.
+The older `decodeDds` 2D model path remains separate.
+
+**Verification:** GitHub documentation commit completed;
+C++ build, compiler tests, and native GPU validation:
+**NOT RUN**. No green CI outcome asserted.
+
+**Next:** Run new and existing texture-related native CTests
+on the current branch and fix errors, then continue GL/Vulkan
+MSAA, remaining typed formats and asset pipeline integration.
+Update this handoff after every code/documentation stage.
