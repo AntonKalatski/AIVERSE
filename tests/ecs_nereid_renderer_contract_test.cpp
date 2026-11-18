@@ -4,6 +4,7 @@
 #include "engine/world/NereidWaterScene.h"
 #include "engine/world/NereidWaterManifest.h"
 #include "engine/world/NereidEcsPresentation.h"
+#include "engine/world/NereidUnderwaterView.h"
 #include "engine/render/Shaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
 #include <iostream>
@@ -476,5 +477,49 @@ int main() {
           std::string(render::shaders::kLitMSL).find(
           "shallow = clamp(1.0 - thickness / u.color.g")!=std::string::npos,
           "Metal Beer-Lambert approximation or shore foam missing");
+    // Underwater visual state is derived from ECS/manifest snapshot only.
+    // It neither mutates ECS nor requires a graphics or postfx backend.
+    world::NereidSceneSurface underwaterLake;
+    underwaterLake.id=123;
+    underwaterLake.body.footprint=lib::nereid::WaterFootprint::Box;
+    underwaterLake.body.center={0_fx,0_fx,0_fx};
+    underwaterLake.body.halfExtents={20_fx,20_fx};
+    underwaterLake.body.surfaceY=10_fx;
+    underwaterLake.body.bottomY=-50_fx;
+    underwaterLake.style.absorption=0.5f;
+    underwaterLake.style.deepR=0.1f;
+    const std::vector<world::NereidSceneSurface> opticalVolumes{underwaterLake};
+    auto submerged=world::sampleNereidUnderwater(opticalVolumes,
+                                                 {0_fx,8_fx,0_fx});
+    check(submerged.submerged && submerged.waterId==123 &&
+          submerged.depthMetres==2.0 &&
+          submerged.transmission<0.38f && submerged.transmission>0.36f,
+          "camera view must derive underwater extinction from depth");
+    check(!world::sampleNereidUnderwater(opticalVolumes,
+                                        {0_fx,11_fx,0_fx}).submerged &&
+          !world::sampleNereidUnderwater(opticalVolumes,
+                                        {30_fx,8_fx,0_fx}).submerged,
+          "camera outside water must not inherit underwater visuals");
+    auto higher=underwaterLake;
+    higher.id=124;
+    higher.body.priority=2;
+    higher.body.surfaceY=12_fx;
+    const auto chosen=world::sampleNereidUnderwater({underwaterLake,higher},
+                                                    {0_fx,8_fx,0_fx});
+    check(chosen.waterId==124 && chosen.depthMetres==4,
+          "underwater view must honor shared priority selection");
+    auto finiteInvalid=underwaterLake;
+    finiteInvalid.body.enabled=false;
+    check(!world::sampleNereidUnderwater({finiteInvalid},
+                                         {0_fx,8_fx,0_fx}).submerged,
+          "disabled water may not affect camera optics");
+    // Foam and extinction happen *after* SSR to keep shore foam visible.
+    const auto glShader=std::string(render::shaders::kLitFS);
+    const auto metalShader=std::string(render::shaders::kLitMSL);
+    check(glShader.find("float foamWeight = shallow")>
+          glShader.find("vec3 rc = ssrWater") &&
+          metalShader.find("float foamWeight = shallow")>
+          metalShader.find("float3 rc = ssrWater"),
+          "depth optics must composite after SSR in both backends");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
