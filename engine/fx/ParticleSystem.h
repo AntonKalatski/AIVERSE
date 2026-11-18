@@ -131,6 +131,12 @@ public:
     // the whole effect. Returns an invalid handle when nothing was started (off, culled, budget).
     FxHandle play(int effect, float3 pos, float3 dir = {0, 1, 0}, float scale = 1, float4 tint = {1, 1, 1, 1});
     FxHandle play(const std::string& effectName, float3 pos, float3 dir = {0, 1, 0}, float scale = 1, float4 tint = {1, 1, 1, 1});
+    // Eight per-instance, read-only particle VM scalar inputs param0..param7.
+    // Changes apply to future births; set affectExisting=true to update
+    // currently live particles owned by the same generation-safe handle.
+    // This does NOT recompile the effect/graph or mutate gameplay ECS.
+    bool setProgramParameter(FxHandle h, uint32_t slot, float value,
+                             bool affectExisting = false);
     void move(FxHandle h, float3 pos);                 // attached effects (trails, burning buildings)
     void move(FxHandle h, float3 pos, float3 dir);
     void stop(FxHandle h);                             // stops emitting; live particles fade out
