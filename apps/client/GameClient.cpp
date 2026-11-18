@@ -504,7 +504,11 @@ Vec3 GameClient::placeCentre(float sx, float sy, bool& ok) {
 
 // ------------------------------------------------------------------ input
 
-void GameClient::event(const Event& e) {
+void GameClient::event(const Event& incoming) {
+    // UI/platform routing sees the physical device; only world-level gameplay
+    // receives the logical button assigned to semantic Select/Command Actions.
+    Event mapped=incoming;
+    const Event& e=mapped;
     if (mapLoading_) { if (e.type == EventType::KeyDown && e.key == Key::Escape) toMenu(); return; }
     if (!padInjecting_ && (e.type == EventType::MouseMove || e.type == EventType::MouseDown || e.type == EventType::TouchBegin))
         gamepad_.mouseUsed(e.x, e.y);   // a real pointer hides the pad cursor (ClientGamepad.cpp)
@@ -520,6 +524,12 @@ void GameClient::event(const Event& e) {
     if (e.type == EventType::MouseUp || e.type == EventType::TouchEnd || e.type == EventType::TouchCancel) uiWants = uiOwnsPointer_;
     inputShortcuts_.setTopDownEnabled(screen_==Screen::Playing && topDownActive());
     const auto inputActions=inputShortcuts_.onEvent(e,screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
+    if(!uiWants && screen_==Screen::Playing && !topDownActive() &&
+       !regionSwipe_.enabled && !planet() &&
+       (e.type==EventType::MouseDown||e.type==EventType::MouseUp)) {
+        mapped.button=inputShortcuts_.logicalMouseButton(incoming.button);
+        if(mapped.button<0)return; // unassigned physical button cannot select/order
+    }
     if (!uiWants) overlay_.handleEvent(e);
     mapDragEvent(e, uiWants);   // rules "mapClick": drag from a map-drag HUD element onto the map (ClientScriptCmd.cpp)
     if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) keys_[int(e.key)] = e.type == EventType::KeyDown;
