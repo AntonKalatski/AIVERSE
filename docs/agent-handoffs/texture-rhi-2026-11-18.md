@@ -2989,3 +2989,44 @@ callback delivery order.
 sync/deferred semantics) and Vulkan staging/fence readback,
 then add runtime GPU tests and editor inspection hooks.
 Maintain separate code + handoff commits per stage.
+
+## Stage 7J — virtual page-table RHI dirty-row tests and integer pitch bound (2026-11-18)
+
+**Code commit:** `b444c4955b8accf789dcb9be573fdc5a23abda0e`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/VirtualTexturePageTable.h`,
+new `tests/render/virtual_texture_page_table.cpp`, `CMakeLists.txt`.
+
+**Fix:** `VirtualTexturePageTable::flush` now clamps the upload
+batch's row count to `INT_MAX / rowPitchBytes` in addition to
+the caller's byte budget. This prevents signed overflow of
+`TextureUploadDesc.slicePitchBytes` for large page-table uploads
+before calling the GPU backend. Rows remain dirty on a failed
+GPU subresource update for a later retry.
+
+**Test source:** New `virtual_texture_page_table` CTest uses a mock
+gfx::Device and physical page cache. Validates nearest-filtered
+RGBA8 Texture2DArray creation with initially invalid entries,
+parent-mip physical page lookup encoding, separate virtual layers,
+full dirty rows only after cache changes, bounded per-frame row
+uploads, rejection of budgets smaller than one row, preservation of
+dirty rows on GPU failure and retry, single-row dirtiness after
+one detail tile is resident, fallback invalidation after eviction,
+and mismatched virtual dimensions/invalid inspection. No actual
+GPU shader lookup or feedback test exists yet.
+
+**Compatibility:** Only new opt-in CPU helpers/tests; no changes
+to existing render passes, ECS, saves, networking or asset files.
+The GPU page table is owned by its caller and must be destroyed
+when the hosting renderer shuts down.
+
+**Validation:** GitHub code commit/update succeeded. C++ compile,
+CTest, Metal/GL/Vulkan GPU validation **NOT RUN** (no local checkout).
+Do not claim page-table GPU fidelity without a native shader fixture.
+
+**Next:** Provide portable GLSL/MSL virtual texture sampling helpers,
+including physical atlas layer/mip decode and tile border addressing.
+Then run `aiverse_virtual_texture_page_table_test`, add a real
+shader capture that looks up page table rows, and complete
+native readback/feedback when supported. Continue separate
+code/handoff commits.
