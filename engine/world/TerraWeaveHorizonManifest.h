@@ -65,6 +65,8 @@ horizonSceneFromManifest(
         j,"middleForestEndCm",settings.middleForestEndCm,0,10000000));
     settings.terrainBeginCm=static_cast<int32_t>(worldInteger(
         j,"terrainBeginCm",settings.terrainBeginCm,0,10000000));
+    settings.terrainSkirtDepthCm=static_cast<int32_t>(worldInteger(
+        j,"terrainSkirtDepthCm",settings.terrainSkirtDepthCm,0,5000));
     settings.terrainResolution=static_cast<uint32_t>(worldInteger(
         j,"terrainResolution",settings.terrainResolution,8,96));
     settings.atlasTilePixels=static_cast<uint32_t>(worldInteger(
