@@ -3,6 +3,7 @@
 #pragma once
 
 #include "apps/editor/core/MapDoc.h"
+#include "engine/world/TerraWeave.h"
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
