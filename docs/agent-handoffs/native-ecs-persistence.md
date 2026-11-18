@@ -165,3 +165,12 @@ over a newer version. No green CI logs means no passing-CI claim.
   Paste the **first compiler error and roughly 15 lines before/after**, not just the last `make Error 2`. After fixing, build `aiverse_ecs_native_rts_integration_test` separately; only run CTest once both executables exist.
 - **Verification:** source review/CI status read, owner-provided Make/CTest summary. Native compilation by the agent **NOT RUN** because the repository is not locally mounted and `github.com` is not resolvable from the available container. **Blocker remains open**.
 - **Handoff:** resume by correlating the local HEAD and the first actual compiler diagnostic, fix minimal code, run targeted build/CTest, and append another entry with SHA and PASS/FAIL.
+
+## 2026-11-18 — Mac Studio mixed-type auto build fix
+
+- **Branch / PR:** `feature/universal-entity-inspector-fps`, PR #7. **Implementation commit:** `bb9000396147f92aed0897c803a5610b4851df5d`.
+- **File changed:** `tests/ecs_native_persistence_test.cpp`.
+- **Owner-provided real compiler result (before fix):** AppleClang x86_64, C++20, `build/ecs-test`, reported two compilation errors: line 53 declared `legacy` as `std::unique_ptr<Simulation>` and `legacyBytes` as `std::string` under the same `auto`; line 103 declared `before` as `std::string` and `originalHash` as `uint64_t` under the same `auto`. Both are invalid because one `auto` declaration list requires the same deduced type.
+- **Fix:** split each mixed-type declaration into separate statements, with explicit `std::string` and `uint64_t` for serialized data and checksum. No engine implementation, serializer, compatibility or protocol changes.
+- **Verification:** source-level anchors verified against current branch, then committed on the shared branch. **Native compile and CTest after fix: NOT RUN by this agent.** Previous `CTest` showed both native persistence tests `Not Run` because their executables had not built; do not misreport that as runtime failure.
+- **Next agent:** on Mac Studio, pull the branch; run `cmake --build build/ecs-test --target aiverse_ecs_native_persistence_test aiverse_ecs_native_rts_integration_test -j1` and `ctest --test-dir build/ecs-test --no-tests=error -R '^ecs_native_(persistence|rts_integration)_test$' --output-on-failure`. Capture any next compile/runtime diagnostics, fix, and append a new handoff entry.

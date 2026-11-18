@@ -1921,3 +1921,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Owner's Mac Studio reported `make Error 2` while building `aiverse_ecs_native_persistence_test`. Both `ecs_native_persistence_test` (#56) and `ecs_native_rts_integration_test` (#55) were **Not Run**, because no executable files were present. No C++ compiler error text was supplied, so root cause is **not confirmed**; do not mark these tests as FAIL assertions.
 - Remote PR #7 was inspected for relevant C++ files and workflows; no source changes made at this checkpoint. The first compiler diagnostic is needed before a safe correction. See `docs/agent-handoffs/native-ecs-persistence.md` for the exact single-thread verbose build command.
 - Next: `cmake --build build/ecs-test --target aiverse_ecs_native_persistence_test -j1 --verbose 2>&1 | tee /tmp/aiverse-native-ecs-build.log`, then capture the first `error:` with preceding context. Fix and retest both executable targets.
+
+### 2026-11-18 — Fix mixed-type auto declarations in native ECS test
+
+- **Code SHA:** `bb9000396147f92aed0897c803a5610b4851df5d` on `feature/universal-entity-inspector-fps` (PR #7).
+- **File:** `tests/ecs_native_persistence_test.cpp`. User's Mac Studio compiler reported two errors for mixed-type variables under one `auto` declaration (legacy/legacyBytes, before/originalHash). Split declarations and explicitly typed serialized data and checksum. No engine runtime changes.
+- **Verified:** compiler output from user confirms the two pre-fix errors; source correction committed. **Post-fix native compile/CTest NOT RUN.** Both prior native ECS tests were `Not Run` due to missing binaries, not failed assertions.
+- **Next:** build both native ECS test targets, then run the two CTest cases; write exact results to `docs/agent-handoffs/native-ecs-persistence.md`.
