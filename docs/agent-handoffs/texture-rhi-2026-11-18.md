@@ -5423,3 +5423,31 @@ no ECS, genre, serialization or native backend modifications.
 Next: compile with the project's exception settings and run
 virtual_texture_feedback_pass; connect a concrete shader/material
 feedback draw and verify GPU pixel fidelity across Metal/GL/Vulkan.
+
+
+## Stage 8W — material UV-to-page feedback shader helpers (2026-11-19)
+
+Source commit: 17eff4e4d73a2e11776e07560da78ed27a949126.
+Test source commit: 465a5c3c230d82481948dac6a9977d438fc96388.
+Files: engine/gfx/VirtualTextureFeedback.h and
+tests/render/virtual_texture_feedback.cpp.
+Added CPU virtualTextureFeedbackPageAtUV(u,v,mip,layer,tilesX,tilesY)
+and matching GLSL/MSL material helper snippets. These calculate
+ceil-divided page counts at explicit mip, clamp UV=1 to the last
+page, reject invalid UV/topology and emit the existing 32-bit
+packed RGBA8 feedback ID. Material snippets depend on the existing
+aiverseEncodeFeedback / aiverse_encode_feedback encoder functions:
+include/concatenate encoder source BEFORE material helper source.
+Shader consumers must supply an explicit mip and virtual layer,
+use an unblended linear RGBA8 single-output target and no sRGB.
+CPU fixture covers origin, UV upper edge, mip, non-power-of-two
+tile counts, invalid arguments and packed ID validity.
+
+This is a reusable shader building block, NOT a wired material
+pipeline or a demonstrated GPU shader compile.
+Verification: GitHub commits succeeded. C++ compilation, CTest,
+GLSL/MSL shader validation and GPU execution NOT RUN.
+Next: compile virtual_texture_feedback CTest, compile GLSL/MSL
+helper snippets with backend shader toolchains, and wire a real
+material/terrain feedback draw through VirtualTextureFeedbackPass
+with correct explicit mip selection and camera-visible geometry.
