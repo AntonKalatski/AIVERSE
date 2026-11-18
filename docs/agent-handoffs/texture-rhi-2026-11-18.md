@@ -827,3 +827,49 @@ different clear values, and readback of both attachments.
 Then implement corresponding Metal MRT pipeline/attachments and
 Vulkan MRT render-pass/pipeline variants in bounded stages.
 Run builds before merging and continue appending exact SHA/tests.
+
+## Stage 4K — Metal 2–4 color MRT pipeline/output and per-attachment resolve (2026-11-18)
+
+**Implementation commit:** `da0cdbdfcc44ded5947d04d8a7e0f43a7e6e6b1d`.
+**Paths:** `engine/gfx/Gfx.h`, `engine/gfx/metal/GfxMetal.mm`,
+`tests/render/texture_contract.cpp`.
+
+**Source implementation:** Append `PipelineDesc.colorAttachmentCount=1`
+and `additionalColorFormats[3]` to the existing color-format and sample
+count contract: slot zero remains `colorFormat`. Metal pipeline creation
+now configures native color attachment pixel formats, write masks and
+blend modes for each declared color output. The new explicit Metal
+`beginRenderTargets` accepts up to four active color attachments,
+validates all mip sizes, sample counts and pixel formats, supports
+a depth target and separate optional resolve target per color slot,
+and creates a single Metal encoder containing those attachments.
+The current implementation intentionally requires all color
+attachments to share the same format; heterogeneous MRT requires
+a shader/HDR-policy integration stage. An active explicit pass
+checks the pipeline's color output count, attachment formats and
+MSAA sample count on `setPipeline` and rejects mismatches.
+Legacy one-color/default pipeline behavior is preserved by defaults.
+
+**Requirements:** Shader authors must supply `fs_main` outputs at
+Metal `[[color(0)]]`..`[[color(N-1)]]` to write every attachment.
+The generic RHI does not rewrite shader entry points. Existing
+`beginPass` remains the legacy path and is not subject to explicit
+MRT validation.
+
+**Limits and risks:** No native compilation or GPU validation has
+run. Verify the Objective-C++ pipeline descriptor loop, Metal API
+availability and correct MSL multiple-output pipeline compilation.
+The ICB/PBR optimized path must remain disabled for MRT until
+explicitly validated. HDR/mixed formats are not fully implemented.
+No GL/Vulkan multisample implementation, no unified MRT pipeline
+metadata validation on those backends.
+
+**Verification:** GitHub source commit confirmed. `cmake` build,
+`ctest`, Metal capture, runtime pipeline tests: **NOT RUN**.
+No CI passing status observed.
+
+**Next:** Add a Metal MRT integration test with two outputs and
+distinct per-target clears/readback, including MSAA resolve. Run
+native macOS build and validation. Complete Vulkan MRT renderpass
+and pipeline layouts before claiming cross-backend support.
+Commit code and handoff independently per stage.
