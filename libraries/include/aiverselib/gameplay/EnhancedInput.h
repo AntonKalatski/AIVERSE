@@ -101,7 +101,7 @@ enum class TriggerKind : std::uint8_t { Down, Pressed, Released, Hold, Tap, Chor
 struct Trigger {
     TriggerKind kind = TriggerKind::Down;
     float seconds = 0;
-    std::string chordAction;
+    std::string chordAction{};
 
     static Trigger down() { return {}; }
     static Trigger pressed() { return {TriggerKind::Pressed}; }
@@ -126,8 +126,8 @@ struct ActionState {
 struct Action {
     std::string name;
     ValueType type = ValueType::Boolean;
-    std::vector<Modifier> modifiers;
-    std::vector<Trigger> triggers;
+    std::vector<Modifier> modifiers{};
+    std::vector<Trigger> triggers{};
 };
 
 struct Mapping {
@@ -140,7 +140,7 @@ struct Mapping {
 };
 struct MappingContext {
     std::string name;
-    std::vector<Mapping> mappings;
+    std::vector<Mapping> mappings{};
 
     void bind(std::string action, Control control,
               std::vector<Modifier> modifiers = {}, std::vector<Trigger> triggers = {},
