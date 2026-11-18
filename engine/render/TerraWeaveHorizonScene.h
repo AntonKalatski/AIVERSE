@@ -185,28 +185,33 @@ public:
             std::lock_guard lock(cacheMutex_);
             cache_.clear(); // old source generation must never escape
         }
-        if(stream_ && cataloged_) {
-            bool affectsCurrent=true;
-            if(!edited.empty() && activeBake_) {
-                affectsCurrent=false;
-                const int64_t x0=activeBake_->originXcm;
-                const int64_t z0=activeBake_->originZcm;
-                const int64_t x1=x0+activeBake_->sideCm;
-                const int64_t z1=z0+activeBake_->sideCm;
-                const int64_t pad=settings_.distantTileCm;
-                for(const RectCm& r:edited)
-                    if(r.maxX>x0-pad && r.minX<x1+pad &&
-                       r.maxZ>z0-pad && r.minZ<z1+pad) {
-                        affectsCurrent=true;break;
-                    }
-            }
-            if(affectsCurrent) {
-                stream_->remove(cell_,[](world::Cell){});
-                cataloged_=false; // next update schedules current dirty cell
-            }
-            // If none of the edited tiles touch this Horizon, keep
-            // its already-uploaded model and avoid unnecessary rebakes.
+        // Decide if the current visible region itself changed. Even when
+        // it did not, pending workers preparing ANOTHER region still capture
+        // an old source generation and must be invalidated.
+        bool affectsActive=true;
+        if(activeCell_ && !edited.empty() && activeBake_) {
+            affectsActive=false;
+            const int64_t x0=activeBake_->originXcm;
+            const int64_t z0=activeBake_->originZcm;
+            const int64_t x1=x0+activeBake_->sideCm;
+            const int64_t z1=z0+activeBake_->sideCm;
+            const int64_t pad=settings_.distantTileCm;
+            for(const RectCm& r:edited)
+                if(r.maxX>x0-pad && r.minX<x1+pad &&
+                   r.maxZ>z0-pad && r.minZ<z1+pad) {
+                    affectsActive=true;
+                    break;
+                }
         }
+        if(stream_ && cataloged_) {
+            stream_->remove(cell_,[](world::Cell){});
+            cataloged_=false;
+        }
+        if(!affectsActive && activeCell_)
+            activeRevision_=generation->revision; // unchanged visible region
+        // The GPU cache still carries old generation tags; update(device)
+        // will release all stale entries on the RHI owner thread. No GPU
+        // calls are made here because no device is supplied to this API.
     }
     // Configure optional packed/static game-asset lookup before streaming
     // starts. No implicit filesystem access is ever performed by the engine.
@@ -231,19 +236,55 @@ public:
         int64_t wantedX=detail::floorDiv(observer.x,side);
         int64_t wantedZ=detail::floorDiv(observer.z,side);
         const int64_t margin=settings_.regionHysteresisCm;
-        if(cataloged_ && margin>0) {
+        const std::optional<world::Cell> anchorCell = cataloged_ ?
+            std::optional<world::Cell>{cell_} : activeCell_;
+        if(anchorCell && margin>0) {
             const auto inExpandedCell=[side,margin](int64_t position,
                                                      int32_t cell) {
                 const int64_t lo=int64_t(cell)*side-margin;
                 const int64_t hi=(int64_t(cell)+1)*side+margin;
                 return position>=lo && position<hi;
             };
-            if(inExpandedCell(observer.x,cell_.x))wantedX=cell_.x;
-            if(inExpandedCell(observer.z,cell_.z))wantedZ=cell_.z;
+            if(inExpandedCell(observer.x,anchorCell->x))
+                wantedX=anchorCell->x;
+            if(inExpandedCell(observer.z,anchorCell->z))
+                wantedZ=anchorCell->z;
         }
         const world::Cell desired{
             static_cast<int32_t>(wantedX),0,static_cast<int32_t>(wantedZ)
         };
+        // Source revisions invalidate cached geometry. Cached entries
+        // can only be retired on the owning gfx::Device thread.
+        gpuCache_.prune(device,sourceRevision_);
+
+        // Fast return for the already visible region, including a teleport
+        // back from an in-flight request to the previous camera region.
+        if(activeCell_ && *activeCell_==desired &&
+           activeRevision_==sourceRevision_) {
+            if(cataloged_){
+                stream_->remove(cell_,[](world::Cell){});
+                cataloged_=false;
+            }
+            cell_=desired;
+            drainCanceledJobs();
+            return;
+        }
+
+        // Reuse GPU buffers and atlas without a worker bake or RHI upload.
+        // Evict the current model into the bounded LRU only AFTER removing
+        // the desired cached entry; this prevents eviction of the target.
+        if(auto cached=gpuCache_.take(desired,sourceRevision_)){
+            if(cataloged_){
+                stream_->remove(cell_,[](world::Cell){});
+                cataloged_=false;
+            }
+            retireActive(device,desired);
+            adoptCached(desired,std::move(*cached));
+            cell_=desired;
+            drainCanceledJobs();
+            return;
+        }
+
         if(!cataloged_||!(desired==cell_)) {
             if(cataloged_)stream_->remove(cell_,[](world::Cell){});
             if(!stream_->add(desired,kRegionBudget))
@@ -255,6 +296,8 @@ public:
             1,1,[&](world::Cell cell,const world::AsyncChunkStream::Payload& payload) {
                 if(!(cell==cell_))return false;
                 auto prepared=std::static_pointer_cast<Prepared>(payload);
+                if(prepared->sourceRevision!=sourceRevision_)
+                    return false; // stale worker from previous terrain revision
                 // If the next region is empty (e.g. ocean and terrain
                 // proxy disabled), retire the old forest rather than leaving
                 // stale distant silhouettes on-screen indefinitely.
