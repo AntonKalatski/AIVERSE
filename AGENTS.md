@@ -1267,7 +1267,7 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   tests passed. Record all tests as NOT RUN until the testing agent
   provides actual build/report evidence.
 - New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
-  Horizon quality presets and `TWH6` prebaked atlas archive interfaces
+  Horizon quality presets and `TWH7` prebaked atlas archive interfaces
   are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
   versions/fingerprints consistent whenever the bake format changes.
   Don't introduce file-system writes or game-authority mutations
@@ -1356,3 +1356,25 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   existing material-0 triangles without adding a new model
   or draw call. Real GPU seam quality is still unverified;
   the separate testing agent owns CMake/CTest/driver captures.
+
+### TerraWeave Horizon slope-safe near seam and TWH7 (Stage 20)
+
+- **Current archive TWH7:** `TerraWeaveHorizonArchive.h`
+  includes bounded near-weld slope/normal settings and the
+  weld-fallback flag. TWH1–TWH6 are historical and must
+  be rebaked with `aiverse_horizon_bake` or regenerated.
+- `maxNearWeldSlopePermille=2500` (0=off) preflights
+  all new welded clip triangle gradients. An unsafe weld
+  is fully disabled for its region; precise X/Z clipping
+  remains and `nearWeldSlopeFallback` is explicit.
+  Do not misrepresent a missing weld as seam-free geometry.
+- `nearSeamNormalBlendPercent=65` repairs shared clipped
+  vertex normals with area-weighted geometric face normals
+  during existing CPU Model construction. No changes
+  to collision, near terrain ownership, GPU topology,
+  materials or backend APIs are permitted for this stage.
+- `HorizonRuntimeStats` exposes smoothed normal count and
+  slope safety fallback through the GPU LRU. User assigns
+  compilation, CTest, GPU screenshots and benchmarks
+  to another dedicated testing agent; always report
+  `NOT RUN` unless actual evidence is provided.
