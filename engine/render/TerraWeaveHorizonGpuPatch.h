@@ -40,11 +40,19 @@ inline bool horizonCanReuseHorizonLayout(const HorizonBake& oldBake,
         oldBake.terrainSkirtDepthCm != nextBake.terrainSkirtDepthCm ||
         oldBake.innerTerrainLipCm != nextBake.innerTerrainLipCm ||
         oldBake.nearOwnedQuads != nextBake.nearOwnedQuads ||
+        oldBake.maxNearClipTriangles != nextBake.maxNearClipTriangles ||
+        oldBake.nearClipRects.size() != nextBake.nearClipRects.size() ||
         oldBake.atlasWidth != nextBake.atlasWidth ||
         oldBake.atlasHeight != nextBake.atlasHeight ||
         oldBake.terrainVertices.size() != nextBake.terrainVertices.size() ||
         oldBake.clusters.size() != nextBake.clusters.size())
         return false;
+    for(size_t i=0;i<oldBake.nearClipRects.size();++i) {
+        const auto& a=oldBake.nearClipRects[i];
+        const auto& b=nextBake.nearClipRects[i];
+        if(a.minX!=b.minX||a.minZ!=b.minZ||
+           a.maxX!=b.maxX||a.maxZ!=b.maxZ)return false;
+    }
     for(size_t i=0;i<oldBake.terrainVertices.size();++i) {
         const auto& a=oldBake.terrainVertices[i];
         const auto& b=nextBake.terrainVertices[i];
