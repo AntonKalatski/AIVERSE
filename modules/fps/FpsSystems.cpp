@@ -2,6 +2,7 @@
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
 #include "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h"
 #include "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+#include "libraries/include/aiverselib/genre/EcsProjectileSystems.h"
 #include "libraries/include/aiverselib/genre/EcsDamageSystems.h"
 #include <algorithm>
 #include <optional>
@@ -330,15 +331,12 @@ bool Module::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
     } else if(p.kind==4) {
         remove=now>=p.expires;
     } else if(now<p.expires) {
-        p.velocity.y-=10_fx*sim.dt();
-        auto delta=p.velocity*sim.dt();
-        auto hit=collision_.cast(p.pos,delta,{Fixed::fromRatio(1,10),
-                                             Fixed::fromRatio(1,10),
-                                             Fixed::fromRatio(1,10)});
-        if(hit.hit) {
-            p.pos+=delta*fxMax(Fixed{},hit.fraction-Fixed::fromRatio(1,100));
-            p.velocity=(p.velocity-hit.normal*p.velocity.dot(hit.normal)*2_fx)/2_fx;
-        } else p.pos+=delta;
+        // Physical bounce is a shared policy; fuse, blast, smoke and flash
+        // still belong to the independent gameplay effect stages below.
+        // The default config reproduces the exact previous fixed-point
+        // gravity/cast/contact-inset/reflection/division sequence.
+        lib::genre::stepBouncingProjectile(p.pos,p.velocity,
+                                            collision_,sim.dt());
     } else {
         if(p.kind==2) {
             p.kind=4;
