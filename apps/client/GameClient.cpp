@@ -99,7 +99,7 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
         postFx_.init(dev);
-        postFxBase_ = render::PostFx::defaultQualityFor(dev, platform::isTouchDevice());
+        postFxBase_ = render::Prisma::defaultQualityFor(dev, platform::isTouchDevice());
         postFx_.setQuality(postFxBase_);
         postFx_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {
             std::string bytes;
