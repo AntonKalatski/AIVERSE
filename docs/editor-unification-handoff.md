@@ -1378,3 +1378,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `ce2ab7f5cd95784c0a5845308f1edb2e2b29362d`.
 - `tests/run_ecs_experiment_suite.sh` now compiles/runs `ecs_integer_health_commit_test.cpp` from the public library include with the engine Fixed implementation, independent of FPS/RTS modules.
 - Verification: connector file update only; **native `bash -n`, compilation and execution still not run**. A full native test matrix including `aiverse_fps_tests` remains mandatory.
+
+
+### 2026-11-18 — Real FPS programmable-projectile phase split out of monolithic tick
+- **Implementation SHA:** `28218ca43083764103dc43ee4cfbc0b32435e0d5`.
+- Changed `modules/fps/FpsModule.cpp`: registered `fps.compat.projectilePrograms` as an independent ordered `Simulation::addSystem` stage immediately after optional `fps.ecsHydrate` and before `fps` (which still calls `tickSystems`, royale, rewind history and actor movement). Removed duplicate `tickProjectilePrograms` call from the main `tick`. The new stage guards on winner like the previous early return; it shares the same `State` workspace and calls the **same projectile algorithm**, retaining its per-pellet collision, split, damage, events and exact update order. No save v9/network schema changes.
+- **Scope limitation:** this is a real scheduling boundary extraction but remains an explicit **compatibility system** over legacy State vectors. Not yet a universal `ProjectileFlightComponent` ECS authority conversion. Built-in FPS will use canonical `ProjectileRuntime` pools between ticks only with `ecsAuthority` gate, hydrated before this stage and committed at the existing mirror stage.
+- **Verification:** GitHub source commit only, no compiler, CTest, FPS save, replay, transport or rollback proof yet. Existing `tests/fps/projectiles.inc` and `ecsDynamicAuthorityParity` are required, plus a new cross-storage programmed projectile fixture.
+- **Next:** add actual FPS parity test with ECS authority ON/OFF over projectile flight and target damage, snapshot restore and save v9 cross-load; then run native FPS suite and fix failures.
