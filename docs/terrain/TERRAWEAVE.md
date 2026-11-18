@@ -1055,3 +1055,34 @@ Do **not** call `setSurfaceSources` once per frame: it invalidates
 the current pending region and would cause repeated CPU bakes.
 Only publish an updated snapshot when the underlying authored
 terrain/obstacle residency changes, as `WorldScene` currently does.
+
+### Horizon cache and camera-cell hysteresis (stage 9c)
+
+`HorizonSettings::maxCachedRegions` (default 2, range 0–4)
+enables a **bounded CPU-side LRU cache of immutable baked Horizon
+regions**. Re-entering a recently visited camera region reuses its
+already rasterized forest/terrain snapshot, while a new GPU model
+is still uploaded through the existing `Renderer3D` RHI path.
+This saves CPU canopy baking, not GPU upload work. `0` disables
+retention for constrained devices. A new authored landscape
+`setSurfaceSources()` revision invalidates cached regions and
+cancels the current pending publication. Old worker snapshots
+continue to exist only as long as jobs need them.
+
+`HorizonSettings::regionHysteresisCm` (default 3200 cm)
+holds the selected 128-metre camera cell until the observer moves
+a further 32 metres past its previous boundary, reducing repeated
+streaming near grid edges. It must be less than half the
+`middleTileCm` cell side. Both fields are configurable through
+`terraweaveHorizon` JSON.
+
+`TerraWeaveHorizonScene::runtimeStats()` now returns
+`cachedRegions` and `cacheHits` in addition to previous
+CPU/GPU/geometry stats. The default cache can retain two packed
+RGBA atlases **in addition to** the current render model, so
+memory grows predictably; cache capacity is not a hard ceiling
+for all temporary worker/upload staging allocations.
+
+No disk cache or runtime skip-GPU-upload was implemented by this
+stage. Benchmarks and cache-key/invalidation/camera-boundary tests
+are explicitly delegated to a separate test agent.
