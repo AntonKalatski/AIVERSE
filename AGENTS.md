@@ -163,6 +163,26 @@ editor and Apple Metal smoke before claiming production readiness.
 Continue `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
 with a separate handoff commit for every code stage.
 
+**Stage 16 — SpectraFX typed graph v2 (source committed, tests deferred):**
+`engine/fx/SpectraValueGraph.h` and
+`engine/fx/SpectraGraphV2.h` add a strictly bounded
+data-node DAG with numeric/vector math, typed exposed parameters,
+data-port edges, age-sampled CPU curves and advanced FxEffect
+module stages (noise, collision, force, trail, light,
+sub-emitters, etc.). `engine/fx/VfxGraph.h` dispatches on
+`version:1|2`; `spectra::compileGraph`, native graph assets,
+MCP and existing runtime clients keep their API.
+V2 lowers to the already-established v1 effect compiler and
+`fx::parseEffect`; invalid output fields must NEVER bypass
+that parser, and no GPU-only or genre-specific source is
+permitted. This is a typed **authoring frontend**, not
+arbitrary executable per-particle shader/bytecode.
+An example is `examples/spectrafx/typed_noise_trail_v2.vfx.json`.
+The user requested completing functionality before running tests.
+Continue adding features with bounded implementation stages and
+a **separate handoff commit after each stage**; record tests as
+NOT RUN until actually executed.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
