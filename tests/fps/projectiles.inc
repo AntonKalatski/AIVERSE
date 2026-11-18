@@ -240,12 +240,13 @@ void ecsProjectileBranchAuthorityParityCase(bool cow) {
     compare();
     SimSnapshot preLegacy,preEcs;
     legacy->saveState(preLegacy);ecs->saveState(preEcs);
-    uint32_t maxAllocated=state(*legacy).nextObject;
+    const uint32_t beforeBranchAllocation=state(*legacy).nextObject;
+    uint32_t maxAllocated=beforeBranchAllocation;
     for(int tick=0;tick<8;++tick) {
         legacy->step();ecs->step();compare();
         maxAllocated=std::max(maxAllocated,state(*legacy).nextObject);
     }
-    CHECK(maxAllocated>3); // the original bullet created branch children
+    CHECK(maxAllocated>beforeBranchAllocation); // branch child IDs were allocated
     CHECK(state(*legacy).projectiles.size()==1);
     CHECK(state(*legacy).projectiles.front().id==passive.id);
     CHECK(state(*ecs).projectiles.size()==1);
