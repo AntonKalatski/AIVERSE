@@ -1392,3 +1392,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `7009970b39775377e038f09cf19bc696d3b51f66`.
 - Updated `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md` to identify the shared `applyIntegerHitPointDamage` primitive in real FPS `Module::damage` and generic `addDamageResolutionSystem`, clarify its required post-mitigation placement, and forbid secondary live FPS health authority while `ActorRuntime` remains canonical.
 - Verification: documentation commit only; native C++ and FPS save/rollback parity still pending.
+
+
+### 2026-11-18 — FPS real programmed projectile phase parity regression source
+- **Implementation SHA:** `5ce137a9aac331e4e23834cdd5dd77338e6f1f81`.
+- Extended `tests/fps/projectiles.inc` with `ecsProjectileProgramStageParity`: executes a real four-player FPS programmed fly-through bullet after the newly separated `fps.compat.projectilePrograms` stage, compares actor and projectile state plus full checksums on every tick between default State and `ecsAuthority=true` hosts, confirms deterministic damage and despawn, saves a pre-flight snapshot, reloads v9 bytes across both storage configurations, then restores and replays to the exact original checksum.
+- **Verification:** GitHub source committed; **native compile and test not yet executed**, test function not yet invoked by `tests/fps/tests.cpp` main until next implementation step. Source is grounded on existing `projectilePrograms` fixture's known flyThrough health expectations; verify at runtime.
+- **Next:** call the fixture from existing FPS test main, then run native `aiverse_fps_tests`, `fps_transport` and relevant CTest before further authority cutover.
