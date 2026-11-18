@@ -25,6 +25,8 @@ struct HorizonSettings {
     uint32_t atlasTilePixels = 48;     // ~8MB with default region sizes
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
     uint32_t crownDetail = 2;         // 1..3 CPU-only crown silhouette quality
+    int32_t nearBlendCm = 6000;       // masked silhouette fade-in before near trees end
+    int32_t tierBlendCm = 16000;      // stochastic mid-to-far overlap around 1 km
     bool distantTerrain = true;       // opt-in manifest, disabled unless requested
 };
 
@@ -82,6 +84,16 @@ inline uint32_t biomeColor(Biome biome, int32_t heightCm, uint64_t noise) {
     };
     return rgba(add(r),add(g),add(b));
 }
+inline uint32_t smoothCoverage(int64_t value, int64_t start, int64_t end) {
+    if (end<=start) return value>=end ? 255u : 0u;
+    if (value<=start) return 0u;
+    if (value>=end) return 255u;
+    // Q16 smoothstep; deterministic integer CPU baker.
+    const int64_t t=(value-start)*65536/(end-start);
+    const int64_t t2=t*t/65536;
+    const int64_t eased=t2*(3*65536-2*t)/65536;
+    return static_cast<uint32_t>(eased*255/65536);
+}
 inline uint32_t canopyStrength(Biome b) {
     switch(b) {
         case Biome::Forest: return 230;
@@ -103,7 +115,11 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.terrainBeginCm<0 || s.atlasTilePixels<16 ||
         s.atlasTilePixels>64 || s.terrainResolution<8 ||
         s.terrainResolution>96 || s.canopyHeightCm<100 ||
-        s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3)
+        s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3 ||
+        s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
+        int64_t(s.nearBlendCm)>s.middleForestEndCm-s.closeForestEndCm ||
+        s.tierBlendCm<0 ||
+        int64_t(s.tierBlendCm)>s.middleForestEndCm-s.closeForestEndCm)
         throw std::invalid_argument("TerraWeave Horizon settings");
     const uint64_t tiles=uint64_t(s.middleTilesPerSide)*s.middleTilesPerSide+
                          uint64_t(s.distantTilesPerSide)*s.distantTilesPerSide;
@@ -179,7 +195,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.clusters.reserve(possible);
 
     const auto addLayer = [&](int32_t cell,uint32_t count,int32_t minDistance,
-                              int32_t maxDistance,uint64_t salt) {
+                              int32_t maxDistance,uint64_t salt,bool middle) {
         const int64_t centerCellX=detail::floorDiv(cameraXcm,cell);
         const int64_t centerCellZ=detail::floorDiv(cameraZcm,cell);
         const int64_t half=count/2;
@@ -191,10 +207,30 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 const int64_t z=gz*cell+cell/2;
                 const int64_t dx=x-cameraXcm,dz=z-cameraZcm;
                 const int64_t dist2=dx*dx+dz*dz;
-                // Half-open distance bands prevent mid/far clusters
-                // from being present twice on an exact LOD boundary.
                 if (dist2<int64_t(minDistance)*minDistance ||
                     dist2>=int64_t(maxDistance)*maxDistance)continue;
+                // Spatial alpha-to-coverage: each cluster's silhouette
+                // progressively appears/disappears through world-stable
+                // pixel dithering, without one draw per cluster or a
+                // new alpha-blended shader. The near geometry retains
+                // ownership up to closeForestEndCm.
+                const int64_t dist=static_cast<int64_t>(std::sqrt(
+                    static_cast<double>(dist2)));
+                uint32_t visibility=255;
+                if(middle) {
+                    const uint32_t begin=horizon_detail::smoothCoverage(
+                        dist,s.closeForestEndCm-s.nearBlendCm,
+                        s.closeForestEndCm);
+                    const uint32_t end=255u-horizon_detail::smoothCoverage(
+                        dist,s.middleForestEndCm-s.tierBlendCm/2,
+                        s.middleForestEndCm+(s.tierBlendCm-s.tierBlendCm/2));
+                    visibility=begin*end/255u;
+                } else {
+                    visibility=horizon_detail::smoothCoverage(
+                        dist,s.middleForestEndCm-s.tierBlendCm/2,
+                        s.middleForestEndCm+(s.tierBlendCm-s.tierBlendCm/2));
+                }
+                if(!visibility)continue;
                 if (x-cell/2<-kWorldLimitCm+100 ||
                     z-cell/2<-kWorldLimitCm+100 ||
                     x+cell/2>kWorldLimitCm-100 ||
@@ -274,6 +310,13 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                                 static_cast<uint32_t>(
                                     (4096-ellipse)*255/819);
                             if(alpha<128u)continue;
+                            // Stable world-space pixel threshold. A single
+                            // shared atlas remains sufficient; coverage in
+                            // the transition band has no extra geometry.
+                            if(visibility<255u &&
+                                (detail::hash2(gx*4096+col,gz*4096+row,
+                                    terrain.seed^salt^0x4449544845524c4fULL)
+                                    &255ULL)>=visibility)continue;
                             const size_t at=(size_t(py+uint32_t(row))*
                                 atlasSide+px+uint32_t(col))*4;
                             const int32_t shade=std::clamp<int32_t>(
@@ -322,11 +365,14 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
             }
     };
     addLayer(s.middleTileCm,s.middleTilesPerSide,
-             s.closeForestEndCm,s.middleForestEndCm,0x9c6f54574d49444dULL);
+             std::max(0,s.closeForestEndCm-s.nearBlendCm),
+             s.middleForestEndCm+s.tierBlendCm/2,
+             0x9c6f54574d49444dULL,true);
     const int32_t farRadius=static_cast<int32_t>(
         int64_t(s.distantTilesPerSide)*s.distantTileCm/2);
     addLayer(s.distantTileCm,s.distantTilesPerSide,
-             s.middleForestEndCm,farRadius,0x9c6f54574641524dULL);
+             s.middleForestEndCm-s.tierBlendCm/2,
+             farRadius,0x9c6f54574641524dULL,false);
 
     if(s.distantTerrain) {
         const uint32_t n=s.terrainResolution;
