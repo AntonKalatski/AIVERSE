@@ -1810,3 +1810,62 @@ handling of uncompressed mip chains. No ECS/gameplay changes.
 then GL/Vulkan MSAA/resolve, mixed-format MRT and typed formats in
 separate bounded stages. Continue append-only per-stage handoffs,
 with exact source SHAs and actual test outcomes.
+
+## Stage 6L — preserve declared Texture3D with a single depth slice (2026-11-18)
+
+**Code commit:** `3adb75295497168b0d271b263ca27a46184e22fa`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/render/TextureCodec.h`,
+`engine/render/TextureCodec.cpp`, `engine/render/ImageDds.cpp`,
+`engine/render/TextureAsset.h`,
+`tests/render/ktx2_layers.cpp`, `tests/render/dds_layers.cpp`,
+`tests/render/texture_asset.cpp`.
+
+**Root cause:** Both DDS DX10 `resourceDimension=TEXTURE3D` and
+KTX2 `pixelDepth>0` declare a volume texture even when its depth
+happens to be **one**. Previously `CompressedImage` stored only
+numeric `depth`, and `uploadContainerTexture` inferred Texture3D
+only from `depth>1`: authored 3D textures with one z slice were
+silently turned into Texture2D.
+
+**Implementation and API:** New additive
+`CompressedImage::threeDimensional` boolean (defaults false for
+existing manually built 2D images). KTX2 marks it when `pixelDepth`
+is nonzero; DDS DX10/legacy parser marks it when the header declares
+a volume. Both parsers preserve a true 3D image at depth=1.
+The generic uploader chooses Texture3D when either this flag is set
+or `depth>1` (for compatible legacy callers). Invalid combinations
+(1D/cube/array with declared 3D) fail closed. Native BC paths remain
+restricted to 2D/arrays/cubemaps, even when a 3D image has depth=1:
+3D compressed textures continue through CPU fallback.
+
+**Test additions (source only):** Synthetic single-slice volume in
+`ktx2_layers` and `dds_layers`; invalid 3D/cube KTX2 combination;
+`texture_asset` mock checks that a one-slice volume allocates a
+Texture3D rather than Texture2D. Existing mock lifetime count
+adjusted for the added successful allocation.
+
+**Verification performed:** GitHub code commit succeeded. Local
+C++ build **NOT RUN**, `ktx2_layers` / `dds_layers` /
+`texture_asset` CTests **NOT RUN**, native GPU sampling **NOT RUN**.
+The execution container still cannot resolve GitHub for a native
+checkout; no green CI status verified. This is source-level
+implementation, not platform certification.
+
+**Next agent should run:**
+
+```sh
+git switch feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target \
+  aiverse_ktx2_layers_test aiverse_dds_layers_test aiverse_texture_asset_test
+ctest --test-dir build/texture-rhi --output-on-failure \
+  -R '^(ktx2_layers|dds_layers|texture_asset)$'
+```
+
+Check actual Vulkan, Metal and GL 3D sampling with depth=1. Run the
+remaining target set from `docs/texture-rhi.md` and report genuine
+results. Continue with GL/Vulkan MSAA and resolve, mixed MRT and typed
+formats only after validating the current source stages. Any
+additional implementation must have its own append-only handoff.
