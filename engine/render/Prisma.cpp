@@ -817,11 +817,67 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 put(u.px, spread / float(w), spread / float(h), flip, 0);
                 put(u.p0, shafts->get("threshold"), 0, 0, 0);
                 put(u.sun, sx, sy, 0, float(w) / float(h));
-                draw(set, a, pipes_[kShaftsPre], &u, sizeof u, {{0, src.tex}});
+                const SimpleU prefilterU = u;
                 put(u.px, 1.0f / float(a.w), 1.0f / float(a.h), flip, 0);
                 put(u.p0, float(plan.samples), 0.3f + 0.6f * shafts->get("length"), 0.97f, 1.6f);
-                draw(set, b, pipes_[kShafts], &u, sizeof u, {{0, a.tex}});
-                shaftTex = b.tex;
+                const SimpleU radialU = u;
+                bool shaftGraphHandled = false;
+                const char* graphFlag = std::getenv("AIVERSE_PRISMA_GRAPH_SUN_SHAFTS");
+                if (graphFlag && std::strcmp(graphFlag, "1") == 0 &&
+                    src.tex.valid() && a.tex.valid() && b.tex.valid()) {
+                    const auto depth = depthFor(set, a.w, a.h);
+                    if (depth.valid()) {
+                        const auto fmt = hdrFrame_ ? PrismaGraphFormat::RGBA16F :
+                                                     PrismaGraphFormat::RGBA8;
+                        PrismaRenderGraph graph;
+                        const auto source = graph.addResource({
+                            "shafts-source", fmt, static_cast<uint32_t>(src.w),
+                            static_cast<uint32_t>(src.h), true});
+                        const auto mask = graph.addResource({
+                            "shafts-mask", fmt, static_cast<uint32_t>(a.w),
+                            static_cast<uint32_t>(a.h), true});
+                        const auto output = graph.addResource({
+                            "shafts-radial", fmt, static_cast<uint32_t>(b.w),
+                            static_cast<uint32_t>(b.h), true});
+                        PrismaGraphPass pre;
+                        pre.name = "shafts-prefilter"; pre.reads = {source};
+                        pre.writes = {mask}; graph.addPass(std::move(pre));
+                        PrismaGraphPass radial;
+                        radial.name = "shafts-radial"; radial.reads = {mask};
+                        radial.writes = {output}; graph.addPass(std::move(radial));
+                        if (!set.graphExecutor)
+                            set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
+                        const auto run = set.graphExecutor->execute(
+                            graph, graph.compile(),
+                            std::vector<gfx::TextureHandle>{src.tex, a.tex, b.tex},
+                            [&](gfx::Device& gpu, PrismaGraphId id,
+                                const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
+                                const SimpleU& params = id == 0 ? prefilterU : radialU;
+                                gpu.setViewport({0, 0, a.w, a.h});
+                                gpu.setPipeline(id == 0 ? pipes_[kShaftsPre] : pipes_[kShafts]);
+                                gpu.setVertexBuffer(triangle_);
+                                gpu.setUniforms(0, &params, sizeof params);
+                                gpu.setTexture(0, view.resource(id == 0 ? source : mask));
+                                gpu.draw(3);
+                                return true;
+                            },
+                            [](gfx::Device&, PrismaGraphId,
+                               const PrismaGraphDispatchView<gfx::TextureHandle>&) {
+                                return false;
+                            }, depth);
+                        shaftGraphHandled = run.success || run.passes > 0;
+                        stats_.passes += static_cast<int>(run.passes);
+                        if (!run.success && error_.empty()) error_ = run.error;
+                        if (run.success) shaftTex = b.tex;
+                    }
+                }
+                if (!shaftGraphHandled) {
+                    draw(set, a, pipes_[kShaftsPre], &prefilterU,
+                         sizeof prefilterU, {{0, src.tex}});
+                    draw(set, b, pipes_[kShafts], &radialU,
+                         sizeof radialU, {{0, a.tex}});
+                    shaftTex = b.tex;
+                }
                 const float* col = shafts->color("color");
                 const float k = shafts->get("intensity") * vis;
                 for (int i = 0; i < 3; ++i) shaftColor[i] = col[i] * k;
