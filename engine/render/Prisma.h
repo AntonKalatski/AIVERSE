@@ -45,6 +45,11 @@ public:
     void clearCameraVolumes();
     // Camera cuts/teleports invalidate the temporal exposure history per viewport.
     void resetAutoExposure();
+    // Stable presentation-only camera/view identity. 0 is the legacy default.
+    // Set before rendering a view, even when two views have equal dimensions.
+    void setViewId(uint64_t id) { viewId_ = id; }
+    uint64_t viewId() const { return viewId_; }
+    void resetAutoExposure(uint64_t id);
 
     void setQuality(PrismaQuality q) {
         if (quality_ != q) { quality_ = q; resetAutoExposure(); }
@@ -79,9 +84,12 @@ private:
         std::map<uint64_t, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
         PrismaBloomGraphCache bloomGraph; // invalidates on size, mip count or HDR format changes
         std::unique_ptr<PrismaRhiExecutor> graphExecutor; // optional persistent per-view context
-        int exposureCurrent = 0; // 1x1 RGBA16F ping-pong history index
-        bool exposureValid = false;
-        double exposureTime = 0;
+    };
+    struct ExposureView {
+        gfx::TextureHandle history[2];
+        int current = 0;
+        bool valid = false;
+        double time = 0;
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
     enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kProgCount };
@@ -111,6 +119,9 @@ private:
     std::map<std::string, std::pair<gfx::ShaderHandle, gfx::PipelineHandle>> composites_;
     std::map<std::string, bool> compositeFailed_;
     std::vector<Sized> sizes_;
+    // Temporal state is keyed by view identity, NOT by render target size.
+    std::map<uint64_t, ExposureView> exposureViews_;
+    uint64_t viewId_ = 0;
     std::map<std::string, Lut> luts_;
     ImageLoader loader_;
     std::map<std::string,gfx::TextureHandle> graphTextures_;
