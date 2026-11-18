@@ -134,6 +134,23 @@ public:
         return stats_;
     }
 
+    // A mixed packet stream can be the single source of animation inputs
+    // and draw order. Extract only model packets; static meshes and debug
+    // primitives do not enter the presentation ECS World. The scratch
+    // storage is reused across frames and is never retained by the bridge.
+    // Call exactly once per frame before submitPackets(), not in addition
+    // to update(objects,dt), or animations would advance twice.
+    Stats update(const ScenePacketBatch& batch,float dt) {
+        packetObjects_.clear();
+        packetObjects_.reserve(batch.size());
+        for(const ScenePacket& packet:batch.packets()) {
+            if(const auto* object=std::get_if<Object>(&packet))
+                packetObjects_.push_back(*object);
+        }
+        return update(std::span<const Object>(
+            packetObjects_.data(),packetObjects_.size()),dt);
+    }
+
     // Precomputed model packets need no animation evaluation or source
     // registration. This is the canonical synchronous path for host-supplied
     // poses, baked samples, stage/LOD models and attachments.
@@ -242,6 +259,7 @@ private:
     lib::animation::AnimationBudgetPolicy budgets_;
     size_t workerCount_=0,minimumParallelActors_=16;
     Stats stats_;
+    std::vector<Object> packetObjects_;
 };
 } // namespace aiverse::view
 
