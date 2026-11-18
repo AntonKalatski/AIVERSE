@@ -38,6 +38,8 @@ inline bool horizonCanReuseHorizonLayout(const HorizonBake& oldBake,
         oldBake.terrainResolution != nextBake.terrainResolution ||
         oldBake.terrainBeginCm != nextBake.terrainBeginCm ||
         oldBake.terrainSkirtDepthCm != nextBake.terrainSkirtDepthCm ||
+        oldBake.innerTerrainLipCm != nextBake.innerTerrainLipCm ||
+        oldBake.nearOwnedQuads != nextBake.nearOwnedQuads ||
         oldBake.atlasWidth != nextBake.atlasWidth ||
         oldBake.atlasHeight != nextBake.atlasHeight ||
         oldBake.terrainVertices.size() != nextBake.terrainVertices.size() ||
