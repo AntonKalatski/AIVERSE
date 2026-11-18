@@ -376,3 +376,30 @@ It has no genre, game geometry schema, simulation,
 AI or physics dependencies. Deferred CTest:
 `view_triangle_facing` (**NOT RUN**).
 
+
+## Unified mixed-packet animation update
+
+Hosts that build one ordered `view::ScenePacketBatch` can now use that
+same batch to drive MotionWeave before submitting the renderer commands:
+
+```cpp
+aiverse::View scene;
+aiverse::view::ScenePacketBatch batch;
+batch.add(animatedObject); // view::Object with stable ID + optional graph
+batch.add(staticMesh);     // view::MeshObject
+batch.add(debugLine);      // view::LineObject
+
+scene.update(batch, frameDt); // evaluates Object packets once
+scene.submitPackets(renderer, batch); // keeps mixed draw order
+```
+
+`View::update(const ScenePacketBatch&,float)` extracts only Object packets
+into reusable frame-local scratch storage. It keeps source ID/generation,
+AnimationGraph, budget and visibility semantics identical to the original
+`update(span<const Object>,float)`; other packet types do not become
+animation sources. The bridge synchronizes missing sources, so a source
+removed from the batch will leave the presentation World on the next update.
+Do **not** also call `update(objects,dt)` in the same frame: that would
+advance animation twice. All packet resources remain host-owned until
+synchronous render submission. This is an API convenience, not a new
+render pass or a change to authoritative gameplay.
