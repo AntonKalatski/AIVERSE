@@ -30,7 +30,7 @@ struct AnimationPoseComponent {
     std::vector<render::mat4> matrices;
     bool valid = false;
 };
-// Optional overlay montage slots, shared across native FPS/RTS/RPG views.
+// Optional masked overlay slots shared by every kind of animated entity.
 // Per-frame notifies from AnimationGraph Clip nodes; cosmetic only.
 struct AnimationGraphNotifiesComponent {
     std::vector<render::AnimationGraphNotify> events;

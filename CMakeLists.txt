@@ -690,6 +690,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_backend_phase_transfer COMMAND aiverse_motionweave_phase_transfer_tests)
 endif()
 
+# Genre-independent native MotionWeave snapshot-to-presentation bridge.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_source_bridge_tests tests/animation/motionweave_source_bridge.cpp)
+    target_link_libraries(aiverse_motionweave_source_bridge_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_source_bridge COMMAND aiverse_motionweave_source_bridge_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
