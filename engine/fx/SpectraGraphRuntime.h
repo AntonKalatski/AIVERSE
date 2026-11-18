@@ -16,6 +16,7 @@ struct GraphRuntimeOptions {
     fx::FxQuality quality = fx::FxQuality::High;
     ComputePreference preference = ComputePreference::Automatic;
     uint32_t capacity = 1024; // GPU-only slots; not a CPU EffectDef particle budget
+    bool gpuIndirect = false; // opt-in GPU-authored compaction/draw, Metal only
 };
 
 struct GraphGpuEligibility {
