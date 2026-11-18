@@ -16,6 +16,9 @@
 namespace aiverse::platform {
 using InputFlowAdapter = EnhancedInputAdapter;
 using InputFlowUsers = EnhancedInputUsers;
+using InputFlowUserProfiles = enhanced_config::UserProfiles;
+using InputFlowAsset = enhanced_config::Asset;
+using InputFlowProfile = enhanced_config::Profile;
 namespace inputflow_config = enhanced_config;
 namespace inputflow_presets = enhanced_presets;
 } // namespace aiverse::platform
