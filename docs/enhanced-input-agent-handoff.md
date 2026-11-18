@@ -1,8 +1,10 @@
 # AIVERSE Enhanced Input — agent handoff (living document)
 
-Branch: `feature/aiv990_enhanced_input` (base `main`). Owner: input subsystem. Updated 2026-11-18.
+Branch: `feature/aiv990_enhanced_input` (base `feature/universal-entity-inspector-fps`). Owner: input subsystem. Updated 2026-11-18.
 
-**Mandatory workflow:** after EVERY stage update this file before moving on. Describe changed files and public API, architecture/invariants, exactly which build/tests ran (and results), remaining work, and precise next-agent instructions. No stage is considered complete without its handoff update. Keep previous-stage summaries so an agent can reconstruct decisions.
+**Mandatory workflow:** after EVERY stage update this file **in the same branch, before moving to another stage**. Record (1) numbered stage/date/goal/status, (2) architecture/API/invariants and exact file paths/commit, (3) the build/test commands and actual PASS/FAIL/NOT RUN evidence, (4) blockers, limitations and risks, and (5) a precise next-agent task with file/function entrypoints and acceptance criteria. No stage is considered complete without its handoff update. Never overwrite older stages or infer successful tests from queued CI. Keep `docs/enhanced-input.md` and `skills/ui/aiverse-input/SKILL.md` synchronized with any public changes. The user currently wants implementation first, testing later. See the binding rule in root `AGENTS.md`.
+
+**Continuation protocol:** read this document's most recent stages, inspect the current Git branch head before writes, make a stage-scoped change, append the stage handoff and commit it, then begin the next stage. The next agent must be able to continue without asking the user to repeat architectural decisions.
 
 ## Stage 1 — audit and design (complete)
 
