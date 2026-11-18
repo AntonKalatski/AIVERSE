@@ -1086,3 +1086,50 @@ Later regression matrix must cover:
 2. Library assets import explicit definitions by copy. Production graphs do not auto-read external libraries at runtime; the caller may import before compilation. Function graph output is currently one typed value (use Vec3/Vec4 for multiple related components).
 3. Full Niagara feature parity still needs user attributes, true per-particle runtime Update/Spawn/Event programmable stages, GPU codegen, multi-material compute pools, and richer graphical function/node editors. Previous experimental Metal GPU mode remains strictly opt-in.
 4. **Next bounded Stage 19:** implement a typed, bounded **per-particle expression program IR** with CPU interpreter and spawn/update/event module hooks, then connect graph-v2 particle program declarations to the shared CPU particle runtime using optional per-emitter programs; ensure existing particle behavior is unchanged without a program. Continue handoff after each code stage with actual SHA and test status.
+
+## Stage 19 — compiled runtime per-particle expression VM (FUNCTIONAL CODE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** close the gap between compile-time-only typed v2 graph expressions and genuine **per-particle runtime** effects by adding a bounded, pure CPU program with Spawn/Update/Death/Collision/Trigger hooks and eight custom scalar attributes. User explicitly asked to finish functions before running tests; do not claim native compilation or performance parity.
+
+### Exact source and documentation SHAs
+
+| SHA | Path | Change |
+|---|---|---|
+| `f2b3843cdb934d019d86935bceb27cbc1da77b56` | `engine/fx/SpectraParticleProgram.h` | New pure typed scalar expression VM: bounded compilation, fixed-stack evaluator, field reads/writes, statically limited stages/instructions and finite-value guards |
+| `fba221e5cf7f099eb109134b334bbdf9497a3667` | `engine/fx/FxEffect.h` | `EmitterDef::particleProgram` optional JSON definition |
+| `bcf3bea4afa54ac8cbbb2ac4793ac104a0e8b8a8` | `engine/fx/FxEffect.cpp` | Validate program during strict effect parse and preserve in stable `effectToJson` roundtrip |
+| `396800d17de302ed1bc45703a9dc9cbc5c861ef5` | `engine/fx/FxInternal.h` | Compile-only `EmitterRT::particleProgram`, 8 per-particle visual attributes and `Impl::runProgram` helper |
+| `d1676c5beede74856b7fdc3575295897b576625b` | `engine/fx/ParticleSystem.cpp` | Compile VM once per emitter, execute per-particle Update, Death, Collision and Trigger stages at correct lifecycle boundaries |
+| `acddb8e3dd15949eeaf8195af87ac726c894ff30` | `engine/fx/FxEmit.cpp` | Execute Spawn program once after initial particle values/uid and before trails/birth events |
+| `fa3b99258599948fdaa73506251c247572963687` | `engine/fx/SpectraGraphV2.h` | `ParticleProgramModule` lowering to effect's nested `particleProgram` field |
+| `1acd0ef6cb861f4738ebf4f182bd533206f63ae4` | `engine/fx/SpectraAuthoring.h` | Authoring catalog for program module in v2 visual editor |
+| `298b2fa9c880e81b4f477092108ec0ef358e5ad6` | `examples/spectrafx/runtime_particle_program_v2.vfx.json` | Full effect sample: user attribute, age-rising force, fading alpha, changing size, death hook |
+| `618d65e764532c0ff5961194da748d5acba2f994` | `docs/spectrafx.md` | Program format, runtime event timing, VM resources and fallback constraints |
+| `fc6a097052c56bd6587f7741ba5fcafa6845b91b` | `skills/visuals/aiverse-spectrafx/SKILL.md` | AI-authoring recipe for per-particle programs |
+| `16e8b57cd11c22f692c8f58759f0e64b5c9bf1b0` | `AGENTS.md` | Strict precompiled VM use and genre independence contract |
+
+### Runtime API / schema / compatibility
+
+Per emitter `particleProgram` JSON has `{"version":1, "spawn":[...], "update":[...], "death":[...], "collision":[...], "trigger":[...]}`. Each stage accepts a bounded list of statements of the form `{"op":"set|add|addRate|multiply","target":"writable.scalar.field","value":expression}`. Expressions are numbers, scalar field references `{"var":"ageNormalized"}`, or bounded trees of built-in arithmetic/comparison/trig operations (`add/subtract/multiply/divide/min/max/pow/sin/cos/abs/negate/sqrt/floor/ceil/saturate/clamp/lerp/select/greater/less/equal`). Readable fields: `age`, `ageNormalized`, `dt`, `uid`, `position.x/y/z`, `velocity.x/y/z`, `size`, `rotation`, `tint.r/g/b/a`, `attribute0..7`. Writable fields exclude time/age/uid and include all position/velocity/appearance/custom attributes. `addRate` integrates the value with timestep `dt`. Nonfinite or excessive values are rejected or not written, tint channels clamped 0..1.
+
+The JSON program is validated during `fx::parseEffect` (so invalid program definitions fail the normal published asset gate), serialized by `effectToJson`, and compiled **once** to numeric bytecode in `ParticleSystem::Impl::EmitterRT`. Runtime evaluation uses a preallocated/fixed local stack, no JSON interpreter, heap, reflection, external IO or game-specific dependency per particle. Each particle owns a fixed array of eight custom scalar attributes, used to store a value in Spawn and reuse in Update or event handlers. `Impl::runProgram` adapts existing particle fields to the VM. The VM is presentation-only and never modifies deterministic ECS.
+
+Hook timing: Spawn after built-in attribute/position initialization and before trails/birth events; Update after standard gravity/forces/integration but before physics collision/trigger checks; Collision after a real contact is resolved, before queued sub-emitters; Trigger on activation/enter/exit conditions; Death on regular eventful particle demise before its final release. Effects with no `particleProgram` use the existing `ParticleSystem` update path unchanged (no VM execution and no authored behavior change).
+
+V2 `ParticleProgramModule` is a stage-chain node whose `properties` become emitter `particleProgram`; the whole compiled effect still uses the strict existing CPU `FxEffect` schema. Native `GraphRuntime` must reject this advanced effect from limited Metal GPU eligibility and use the full CPU fallback; no GPU VM or user-provided shader generation is claimed. Old graph v1 and old FX JSON remain source compatible. No CMake/source target registration is needed (new header-only VM included from existing .cpp files).
+
+### Verification status — NOT RUN (per user)
+
+No local compiler or CMake/CTest execution, Metal GPU runtime test, editor launch or native visual parity run. The user explicitly postponed tests until functional completion. The GitHub connector wrote files successfully but **there is no passing test result to report**. When eventually testing, cover:
+- compile-time rejection of malformed program stages, recursive expressions, unknown targets, NaN/Infinity, invalid ops, too many statements/instructions;
+- zero-alloc hot path and CPU Update/Spawn/death/collision/trigger semantics with real `ParticleSystem::snapshot`;
+- custom attribute continuity over frame time, addRate dt scaling, tint/size modification, and no behavior change for effects without programs;
+- v2 graph compiler lowering, strict serialization roundtrip, CPU fallback vs Metal eligibility, multi-genre native project imports and CTest/GUI integration.
+
+### Known limitations and next FUNCTIONAL stage
+
+1. VM is a bounded **scalar** register/stack program with per-particle custom scalar attributes, not an arbitrary HLSL/MSL/GLSL shader compiler, GPU bytecode, user C++/Lua script or complex material function graph.
+2. Program expressions are supplied as declarative JSON. The v2 visual node editor can create `ParticleProgramModule` and edit its JSON, but compiling arbitrary V2 **data node DAG** automatically into this bytecode has not yet been integrated. Do not confuse static `{"$node"}` evaluator with runtime VM inputs.
+3. Runtime results affect position/velocity/tint/size/rotation, but separate arbitrary vector attributes and renderer shaderGraph binding of custom attributes are not yet implemented. Existing editor preview remains CPU.
+4. **Next bounded Stage 20:** add V2 data graph-to-runtime program codegen / authoring APIs and per-effect/per-instance parameter overrides without re-creating shaders. Then extend GPU compute handling of compatible program operations behind opt-in backend checking, and integrate with material attributes/renderer. Keep a separate handoff after each stage, exact SHAs and tests-deferred record.
