@@ -1,11 +1,11 @@
-#include <aiverselib/gameplay/EnhancedInput.h>
+#include <aiverselib/gameplay/InputFlow.h>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <span>
 #include <string_view>
-using namespace aiverse::lib::gameplay::enhanced;
-#define CHECK(x) do { if (!(x)) { std::cerr << "EnhancedInput failed line " << __LINE__ << ": " #x "\n"; std::abort(); } } while(false)
+using namespace aiverse::lib::gameplay::inputflow;
+#define CHECK(x) do { if (!(x)) { std::cerr << "InputFlow failed line " << __LINE__ << ": " #x "\n"; std::abort(); } } while(false)
 
 static bool has(std::span<const ActionEvent> events, std::string_view action, Phase phase) {
     for (const auto& event : events) if (event.action == action && event.phase == phase) return true;
@@ -15,7 +15,7 @@ static bool near(float a,float b) { return std::abs(a-b) < 0.001f; }
 
 int main() {
     const Control w{Device::Keyboard,1}, a{Device::Keyboard,2}, s{Device::Keyboard,3}, d{Device::Keyboard,4};
-    InputSystem inputs;
+    InputFlow inputs;
     CHECK(inputs.defineAction({"Move",ValueType::Axis2D,{Modifier::normalize()}}));
     CHECK(inputs.defineAction({"Fire",ValueType::Boolean}));
     MappingContext gameplay{"Gameplay"};
@@ -51,7 +51,7 @@ int main() {
     CHECK(has(inputs.events(),"Fire",Phase::Canceled));
     CHECK(inputs.state("Fire")==nullptr);
 
-    InputSystem timing;
+    InputFlow timing;
     CHECK(timing.defineAction({"Charge",ValueType::Boolean}));
     CHECK(timing.defineAction({"Tap",ValueType::Boolean}));
     CHECK(timing.defineAction({"Release",ValueType::Boolean}));
@@ -81,7 +81,7 @@ int main() {
     timing.setControl({Device::Keyboard,12},0);
     CHECK(has(timing.update(0.01f),"Release",Phase::Triggered));
 
-    InputSystem contexts;
+    InputFlow contexts;
     CHECK(contexts.defineAction({"GameplayFire",ValueType::Boolean}));
     CHECK(contexts.defineAction({"MenuAccept",ValueType::Boolean}));
     MappingContext game{"Game"}, menu{"Menu"};
@@ -99,7 +99,7 @@ int main() {
     contexts.deactivateContext("Menu");
     CHECK(has(contexts.update(0.016f),"GameplayFire",Phase::Started));
 
-    InputSystem chord;
+    InputFlow chord;
     CHECK(chord.defineAction({"Aim",ValueType::Boolean}));
     CHECK(chord.defineAction({"AltFire",ValueType::Boolean}));
     MappingContext chordContext{"Combat"};
@@ -117,7 +117,7 @@ int main() {
     chord.setControl({Device::Keyboard,70},1);
     CHECK(!has(chord.update(0.016f),"AltFire",Phase::Triggered));
 
-    InputSystem analog;
+    InputFlow analog;
     CHECK(analog.defineAction({"Steer",ValueType::Axis1D}));
     CHECK(analog.defineAction({"MouseX",ValueType::Axis1D}));
     MappingContext vehicle{"Vehicle"};
@@ -137,7 +137,7 @@ int main() {
 
     // Raw C++ context registrations must reject bad actions/duplicate explicit IDs;
     // auto IDs must not collide with authored IDs.
-    InputSystem registrations;
+    InputFlow registrations;
     CHECK(registrations.defineAction({"Use",ValueType::Boolean}));
     MappingContext repeated{"Repeated"};
     repeated.bind("Use",{Device::Keyboard,90});
@@ -159,7 +159,7 @@ int main() {
           registered->mappings[1].id == 2);
 
     // Action modifiers must gate lifecycle as well as the numeric value.
-    InputSystem deadzoneActions;
+    InputFlow deadzoneActions;
     CHECK(deadzoneActions.defineAction({"Throttle",ValueType::Axis1D,{Modifier::deadZone(0.3f)}}));
     CHECK(deadzoneActions.defineAction({"Disabled",ValueType::Axis1D,{Modifier::scale(0)}}));
     MappingContext deadzoneContext{"Deadzone"};
@@ -181,7 +181,7 @@ int main() {
     CHECK(!deadzoneActions.state("Throttle")->active);
 
     // Same-context collisions can be rejected, swapped or accepted explicitly.
-    InputSystem collisions;
+    InputFlow collisions;
     CHECK(collisions.defineAction({"Walk",ValueType::Boolean}));
     CHECK(collisions.defineAction({"Interact",ValueType::Boolean}));
     MappingContext player{"Player"};
@@ -201,7 +201,7 @@ int main() {
     CHECK(conflicts[0].shadowed);
 
     // Advanced trigger timings + inverted chord gate. Assertions are executed in CI later.
-    InputSystem advanced;
+    InputFlow advanced;
     for(const char* name:{"Double","LongRelease","Repeat","Guard","Aim"})
         CHECK(advanced.defineAction({name,ValueType::Boolean}));
     MappingContext combat{"Advanced"};
@@ -238,7 +238,7 @@ int main() {
 
     // A chord may only be satisfied by an actually reachable Action. An
     // input consumed by a higher-priority UI context cannot serve as Aim.
-    InputSystem layered;
+    InputFlow layered;
     CHECK(layered.defineAction({"Aim",ValueType::Boolean}));
     CHECK(layered.defineAction({"AltFire",ValueType::Boolean}));
     CHECK(layered.defineAction({"MenuAccept",ValueType::Boolean}));
@@ -257,7 +257,7 @@ int main() {
     CHECK(!layered.state("Aim")->active);
 
     // Chord providers also respect modifiers applied to the final Action.
-    InputSystem gated;
+    InputFlow gated;
     CHECK(gated.defineAction({"Aim",ValueType::Axis1D,
                               {Modifier::deadZone(0.5f)}}));
     CHECK(gated.defineAction({"AltFire",ValueType::Boolean}));
