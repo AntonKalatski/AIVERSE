@@ -1,11 +1,15 @@
 ---
 name: aiverse-input
-description: Build genre-independent Enhanced Input Actions, Mapping Contexts, Modifiers, Triggers and rebinding profiles in AIVERSE C++ projects. Preserve legacy input helpers.
+description: Build games with AIVerse InputFlow, the genre-independent C++ Actions, Mapping Contexts, Modifiers, Triggers and rebinding system. Preserve legacy input helpers.
 ---
 
-# AIVERSE Input (Enhanced Input, presentation only)
+# AIVerse InputFlow (presentation only)
 
 Read \`docs/enhanced-input.md\` and \`docs/enhanced-input-agent-handoff.md\` **before changing the input system**. Read \`AGENTS.md\` and \`libraries/catalog.json\` in engine root. The handoff contains stage status, all changed files, test coverage, caveats and next-agent instructions. The documentation MUST be updated **after each stage** — no stage is finished without its handoff section.
+
+## Canonical InputFlow API
+
+For new C++ games include `<aiverselib/gameplay/InputFlow.h>` and use `aiverse::lib::gameplay::inputflow::InputFlow` with `InputAction`, `InputContext`, `InputValue` and the other re-exported types. Keep `EnhancedInput.h`, `enhanced::InputSystem`, `AIVERSE::lib_input`, `input/actions.json` and existing user profiles working for older games. Do not rename an authored asset or a serialized gameplay command to achieve branding.
 
 ## Pick the existing mechanism first
 
