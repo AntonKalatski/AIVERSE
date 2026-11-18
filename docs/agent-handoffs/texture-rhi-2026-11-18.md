@@ -1960,3 +1960,45 @@ sample-count mismatch rejection, multi-target clear/resolve, sRGB
 conversion, depth attachments, and lifetime cleanup. Revisit mixed
 attachment blend policies and sample-count flexibility separately.
 Always append a new handoff after each code stage.
+
+## Stage 4T — Vulkan mixed-format MRT renderpass and pipeline compatibility (2026-11-18)
+
+**Code commit:** `2060e448c75550b789a3706072f55f99a1f2b42d`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Files:** `engine/gfx/vulkan/VkDevice.h`, `engine/gfx/vulkan/VkDraw.cpp`.
+
+**Implementation:** Vulkan MRT pass validation no longer rejects
+different formats in separate color output slots (within the already
+supported RGBA8/RGBA8_sRGB/RGBA16F set). MRT renderpass creation and
+cache keys now hold the full fixed-size array of per-attachment
+`VkFormat` rather than assuming all colors share attachment zero's
+format. `VkAttachmentDescription::format` is populated per slot.
+The per-frame `passFormats_` records the active pass formats; Vulkan
+graphics pipeline variant cache keys additionally compare every
+attachment format to avoid an incompatible pipeline being reused for
+the same first output format. `setPipeline` checks
+`PipelineDesc.colorFormat` and `additionalColorFormats` against the
+corresponding actual pass slots, preserving legacy single-output
+permissiveness. Automatic HDR specialization applies only when *all*
+active color outputs are RGBA16F; heterogeneous passes require an
+explicit matching pipeline. No save, ECS, material-cache or
+replication changes.
+
+**Limitations:** Only matching attachment dimensions and single
+samples are supported by this Vulkan source stage. Per-target
+blend policies are still global. Texture create/resolve and pipeline
+support for MSAA have not been implemented in Vulkan yet. The loader
+and renderpass API remain backward compatible with single-format MRT.
+
+**Verification:** GitHub source update and branch commit completed.
+**C++ compilation NOT RUN, Vulkan validation NOT RUN, CTest NOT RUN**,
+as requested for deferred testing. Mixed format renderpass
+compatibility and cache behavior must be checked with validation
+layers and a real Vulkan driver before approval.
+
+**Next stage:** Vulkan multisample image creation + renderpass
+resolve attachments and pipeline raster sample matching. Add
+GPU fixtures for 2–4 mixed-format MRT output and verify proper
+pipeline cache separation. Follow with storage images and
+streaming/readback features in separate bounded stages, each
+documented immediately afterward.
