@@ -22,6 +22,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
     auto model=std::make_unique<render::Model>();
     model->path="terraweave/horizon";
     model->batching.autoLod=false;
+    model->batching.allowGeometryPool=false; // required for safe mutable terrain vertex ranges
 
     render::Material ground;
     ground.name="TerraWeave Horizon Terrain";
