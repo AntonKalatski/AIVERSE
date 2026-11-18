@@ -353,3 +353,52 @@ Then launch AIVERSE Editor, open **Графика → SpectraFX**, verify create
 3. **Preview lifecycle:** The ephemeral effect uses a reserved runtime name inside the editor's existing CPU particle system. Reloading the particle registry from another window invalidates this preview; add a dedicated visual preview resource or reload-aware integration, and validate multi-window interactions.
 4. **Engine GPU work still absent:** Design explicit RHI compute capability checks and GPU particle buffers (spawn/update/compact, emitters, alive counters, sorting, events), CPU fallback for GLES3/WebGL2 and per-device benchmarks; do not silently enable GPU path before parity tests.
 5. **Next bounded implementation:** First run/repair native builds and vfx tests, then extend SpectraFX v1 module editor and production genre-neutral rendering adapters. Record the next implementation SHA/test outcomes in a separate handoff commit **before** beginning another stage.
+
+## Stage 9 — typed SpectraFX module inspector and source preservation (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** replace blind raw-JSON edits for common graph-v1 fields with shared, validated field metadata, without losing unrecognized/complex emitter properties or binding logic to one game genre.
+
+### Exact committed changes
+
+| Commit SHA | File | Change |
+|---|---|---|
+| `fef79683d36a7bf1d707bf2023f1700eccb7359a` | `engine/fx/SpectraModuleSchema.h` | New pure C++ authoring field specifications and safe typed field validation/update/remove |
+| `ecce17c209acd851f9051ad0fe9ae940900e3869` | `apps/editor/windows/SpectraGraphWindow.cpp` | Generic typed UI controls in SpectraFX graph-v1 inspector with advanced JSON fallback |
+| `c8baa6bf043984dbcd4ef4d2a54a1dedc0b025e6` | `tests/vfx_graph_compiler_test.cpp` | Added schema/validation/no-mutation/unknown-property retention/CPU-compile checks |
+| `de2d28d41348c9d5865d0c080223955dbad7ff06` | `engine/fx/SpectraFX.h` | Exposes schema through official public native C++ header |
+| `d2d5f69bd192fe537e5f77292cd34b080ea1596c` | `docs/spectrafx.md` | Typed authoring contract, supported common field list and limitations |
+| `c97c5272b8fbf4d8414c3f0410f7c29d7eadbc8d` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent workflow for typed fields and complex module fallback |
+
+### Architecture, APIs, serialization
+
+The header `engine/fx/SpectraModuleSchema.h` defines `aiverse::spectra::FieldKind`, `FieldSpec`, `fieldsForNode(type)`, `fieldForNode(type,key)`, `validateTypedField(spec,value,error)`, `applyTypedField(node,key,value,error)`, `removeTypedField(node,key,error)`. The canonical include `engine/fx/SpectraFX.h` exports these declarations. This metadata is pure authoring logic and is **not** a replacement for the existing strict emitter loader `fx::parseEffect`.
+
+Typed fields cover common `Spawn`, `Initialize`, `Update`, `SpriteOutput`, `MeshOutput` and `RibbonOutput` properties. Widgets support bounded number/integer, boolean, nonempty string, validated enum choice and finite 3D vectors. An edit is performed on a copied node and committed only if its own field validation succeeds. Updating or removing a typed field leaves unknown and unrelated JSON properties untouched. The GUI shows complex existing values (curves/ranges) as JSON-only rather than converting them to scalar values. Selected node's raw JSON inspector stays available for all advanced/unsupported data.
+
+The graph format is unchanged (version 1, `nodes[].properties`, `nodes[].position`), so legacy `fx/*.json`, graph assets, old C++ aliases and simulation save files remain compatible. Nothing writes renderer handles to deterministic ECS state, and no GPU compute code was added. Runtime authoring, CPU effect, ECS event and client modules were not modified.
+
+### Tests actually executed
+
+**NOT RUN:** There is no local AIVERSE checkout in this environment and external GitHub access from the container was unavailable (DNS failure). GitHub connector writes and reads succeeded, but do not establish compiler or runtime correctness. `tests/vfx_graph_compiler_test.cpp` was extended; neither CMake/CTest nor GUI interaction was run. No CI status was verified. Therefore **do not mark stage 9 production-ready**.
+
+Local QA commands for the next agent:
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_editor aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+Manual editor QA: open **Графика → SpectraFX**; test each typed control, non-destructive curve/gradient handling, undo/redo for sliders and text fields, JSON inspector synchronization, project switching, save/reload, bad enum handling and Scene preview. Check native includes and CMake public target `AIVERSE::spectrafx` compile on macOS.
+
+### Risks, known limitations and exact next stage
+
+1. GUI code has not been compiled or interacted with on a real ImGui renderer. In particular, validate active-widget undo grouping, String text editing, default field additions and multi-window preview lifecycle. Fix actual build/UI failures before calling this complete.
+2. The schema covers only frequent scalar/vector fields, not a full Niagara module library. Nested `noise`, `collision`, `trail`, `light`, `subEmitters`, curves, gradients and complex shader data still require the existing JSON/particle tools.
+3. The typed schema is intentionally a convenience layer; `parseEffect` is the final authority when saving an entire graph. Typed edits can leave an incomplete graph until connected.
+4. No GPU backend or GPU execution is present. The next independent stage should **first verify and repair stage 7–9 builds/tests**, then design and implement RHI compute capabilities, GPU simulation buffers and a CPU/GPU execution selector with GLES3/WebGL fallback. Do not merge genre-specific VFX engines, alter deterministic ECS ownership, or make unverified performance/parity claims.
+5. After the next bounded code stage, append another **separate handoff commit** to this file with implementation SHA, actual test results, risks and precise continuation steps. Preserve all concurrent agents' work.
