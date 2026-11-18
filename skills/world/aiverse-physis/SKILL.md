@@ -28,6 +28,9 @@ description: Reuse AIVERSE PHYSIS for deterministic weather, wind, gusts, storms
 | Hurricane/tornado vortex fields | `PhysisStorm.h` | `StormEvent`, `StormKind`, `windWithStormsAt`, `stormsAt` |
 | Shared drag/gravity force policy | `PhysisForces.h` | `ForceReceiver`, `ForceOutput`, `evaluateForces`, `advanceForces` |
 | Combined read-only 3D climate + hazard + force fields | `PhysisPresentation.h` | `NatureFieldSample`, `sampleNatureField` |
+| Read-only raster for editor diagnostics | `PhysisDiagnostics.h` | `DiagnosticRequest`, `DiagnosticRaster`, `sampleDiagnosticRaster` |
+| Snapshot spatial broadphase (optional) | `PhysisSpatialIndex.h` | `FieldSpatialIndex`, `sample`, `stats`, `candidateCount` |
+| Indexed diagnostics (optional) | `PhysisDiagnostics.h` | `sampleDiagnosticRasterIndexed` |
 | Generic native host | `PhysisIntegration.h` | `InstallOptions`, `install`, `forEachPresentationCell` |
 | Optional Box3D consumption | `engine/physics/PhysisBox3D.h` | `applyPhysisToBody`, `PhysisBodyMaterial` |
 
@@ -74,3 +77,36 @@ For Box3D integration also run `physics_runtime`, `physics_scene`; for shared wa
 ## Mandatory agent handoff
 
 **Every implementation stage** must commit its code/tests, then a **separate documentation commit** to `docs/agent-handoffs/physis-<stage>-YYYY-MM-DD.md` with branch, exact implementation SHA, paths, public API, actual test PASS/FAIL/NOT RUN results, known limitations and next explicit task. Update root `AGENTS.md`, `engine/physis/AGENTS.md` and `docs/physis.md` when changing ownership/contract. Do not commit into another agent's active Water or Terra branch; no force pushes.
+
+## Optional many-query acceleration (Stage 15–16)
+
+For temperature/humidity/rain/snow/fire/quake diagnostic heatmaps, call
+`sampleDiagnosticRaster`; scalar layers now read relevant ECS state directly
+without traversing every wind/storm/gravity field.
+
+For large numbers of **3D** wind/gravity/storm queries in one committed tick:
+```cpp
+#include "engine/physis/PhysisSpatialIndex.h"
+#include "engine/physis/PhysisDiagnostics.h"
+aiverse::physis::FieldSpatialIndex spatial(sim.world(),
+    {.tileSizeMeters=256, .maxTilesPerVolume=1024});
+aiverse::physis::NatureFieldSample data;
+bool found = spatial.sample(queryPosition, data);
+aiverse::physis::DiagnosticRaster raster;
+aiverse::physis::DiagnosticRequest req;
+req.layer = aiverse::physis::DiagnosticLayer::GravityMagnitude;
+aiverse::physis::sampleDiagnosticRasterIndexed(spatial, req, raster);
+```
+
+`FieldSpatialIndex` copies the authoritative ECS World using the engine's
+COW/snapshot contract and builds derived X/Z tile bins. Very large volumes and
+global gravity use fallback lists; original fixed-point candidate order, storm
+timing and gravity priority are retained. It is **not persisted** and must be
+recreated after a PHYSIS tick, storm movement, authoritative mutation, rollback
+or load if new state should be visible. Do not keep a separate mutable copy of
+weather. No Box3D, NEREID or TerraWeave header is needed to use it.
+
+This is a query-time broadphase, **not** a new streaming/grid simulation,
+destruction engine or validated benchmark. Stage 16 test code checks reference
+versus indexed Fixed values; actual CTest/CI PASS remains unverified until run.
+See `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
