@@ -363,7 +363,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // procedural effects, attachments and rendering styling stay here.
     // The core View receives only identity, model, graph and named values.
     for(auto& [key,st]:anims_) { (void)key;st.genericViewPose=false; }
-    std::vector<::aiverse::view::Object> genericObjects;
+    ::aiverse::view::ScenePacketBatch genericObjects;
     if(genericViewEnabled_) {
         genericObjects.reserve(s.objects.size());
         for(size_t oi=0;oi<s.objects.size();++oi) {
@@ -414,7 +414,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             packet.parameters.set("dead",st.dead?1.f:0.f);
             packet.significance.visible=true;
             packet.significance.pixels=64.f;
-            genericObjects.push_back(std::move(packet));
+            genericObjects.add(std::move(packet));
             st.genericViewId=key;
             st.genericViewPose=true;
         }
