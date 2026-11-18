@@ -11,10 +11,12 @@ Read \`docs/enhanced-input.md\` and \`docs/enhanced-input-agent-handoff.md\` **b
 the *effective* same-frame Action graph, including transitive Action- and
 Mapping-level gates and Action modifiers. JSON and native definitions reject
 cyclic dependencies (also inverted cycles) transactionally. When sharing a
-physical control, use `consume=false`; consumption of conditionally gated
-bindings across priority contexts is a documented remaining edge case. See
-`docs/enhanced-input.md` and the Stage 47 handoff. Tests are written but not
-yet executed; do not mark InputFlow validated or production-ready.
+physical control, use `consume=false` where simultaneous delivery is intended.
+Stage 48 adds a bounded gate-aware refinement so a false high-priority mapping
+Chord does not steal a lower-priority binding. Feedback patterns involving the
+same consumed prerequisite control still use a deterministic conservative
+fallback. See `docs/enhanced-input.md` and the Stage 47–48 handoff. Tests are
+written but not yet executed; do not mark InputFlow validated or production-ready.
 
 ## Canonical InputFlow API
 
