@@ -325,11 +325,86 @@ performance measurements. Runtime Metal shader compilation, GPU
 resource hazards, multi-frame correctness and framebuffer output
 remain **NOT VERIFIED**.
 
+## Automatic graph-to-backend routing (Stage 11 — source committed, not verified)
+
+`engine/fx/SpectraGraphRuntime.{h,cpp}` introduces a new **optional,
+genre-independent** `aiverse::spectra::GraphRuntime`. It compiles a graph-v1
+asset or accepts a precompiled `fx::EffectDef` and decides whether it can run
+without semantic loss on the existing Metal compute prototype. Every
+unsupported graph is executed with the **exact same full EffectDef** on
+`fx::ParticleSystem`; complex modules are never stripped to fit the GPU.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::GraphRuntime runner;
+aiverse::spectra::GraphRuntimeOptions options;
+options.preference = aiverse::spectra::ComputePreference::Automatic;
+options.quality = aiverse::fx::FxQuality::High;
+options.capacity = 1024;
+
+if (!runner.initGraph(device, graphJson, aiverse::Json::object(), options)) {
+    // runner.reason() and runner.errors() describe the rejection
+}
+
+// After Device::beginFrame, before the scene render pass:
+runner.setView(camera, viewProj, width, height);
+runner.burstAt({0, 1, 0}, {0, 1, 0});
+runner.step(1.f / 60.f);
+
+// While the scene pass is open:
+runner.draw(fog);
+// On match change/rollback: runner.clear() outside an active encoder.
+// Before device shutdown: runner.shutdown().
+```
+
+The schema validator `inspectGraphGpuEligibility(effect, options)` does not
+require a GPU and is safe for native modules, headless tests and editor tools.
+It returns `GraphGpuEligibility { eligible, gpu, reason }`. GPU v1 is allowed
+**only** for one additive `builtin:soft` camera-aligned point emitter
+containing one burst of 1–64 particles, constant speed/life/size/drag,
+zero spread, world-Y gravity, and the default white-to-transparent
+colour ramp. The current prototype supports only this limited payload.
+Custom colours/gradients, multiple emitters, random ranges/curves,
+custom shader graphs, trails/ribbons, noise, force fields, sub-emitters,
+lights, collisions, texture animation, or any other unsupported module
+force a full CPU fallback. The validator compares normalized complete
+effect definitions against a known-supported template and also explicitly
+checks sensitive unsupported modules and colour keys.
+
+`ComputePreference::RequireGpu` fails if the graph is not eligible,
+the real device does not expose Metal compute, the quality tier is too
+low or the shader/pipeline cannot initialize. `Automatic` and
+`PreferGpu` instead use the unchanged CPU asset. `CpuOnly` never
+attempts GPU. A GPU health failure inside `ComputeParticles` can
+subsequently fall back to its restricted CPU equivalent; `GraphRuntime`
+continues to own that instance and reports the actual backend.
+
+The editor and MCP `fx_graph_validate`, `fx_graph_get`,
+`fx_graph_list` responses now add **`metalGpuEligible`** and
+**`metalGpuReason`** after successful compilation. These are only
+**asset capability diagnostics**, **not** proof that Metal is present
+or that GPU execution succeeded. The SpectraFX visual editor shows the
+same capability verdict under the properties inspector; its in-memory
+graph preview still uses the established CPU renderer.
+
+**Important boundaries:** This is an opt-in native API. It is not
+automatically wired into existing FPS, RTS, editor gameplay, ECS
+authoritative state, file assets or current save protocols. The
+existing production client renderer stays on CPU. Actual Apple Silicon
+GPU rendering, MSL compilation, multiple frames in flight and all
+regression tests remain **unverified** until run in a real checkout.
+
+Source tests: `tests/vfx_graph_runtime_test.cpp` exercises a supported
+graph, strict rejections and CPU fallback; `tests/vfx_graph_ops_test.cpp`
+checks MCP eligibility diagnostics. CTest name:
+`vfx_graph_runtime` (label `SpectraFX`).
+
 ## Validation checklist
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
-cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests -j4
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
 ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
 python3 tools/skills/catalog.py check
 ```
