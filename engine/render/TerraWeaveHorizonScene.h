@@ -4,6 +4,7 @@
 // stays displayed until a new region has been successfully uploaded.
 #pragma once
 #include "engine/render/TerraWeaveHorizonModel.h"
+#include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
@@ -12,17 +13,32 @@
 #include <chrono>
 #include <limits>
 #include <memory>
+#include <functional>
+#include <vector>
 #include <map>
 #include <mutex>
 #include <stdexcept>
 
 namespace aiverse::terraweave {
 
+// Host-owned asset plumbing for static worlds; all callbacks execute on
+// the bounded Horizon CPU worker. Paths/storage belong to the game, not RHI.
+struct HorizonArchiveStore {
+    std::function<bool(int32_t cellX,int32_t cellZ,
+                       std::vector<uint8_t>& archive)> read;
+    std::function<void(int32_t cellX,int32_t cellZ,
+                       const std::vector<uint8_t>& archive)> write;
+    // Stable content hash of authored terrain/biome/masks. Set to zero for
+    // procedural worlds; with live authored sources, zero disables disk reuse.
+    uint64_t authoredContentHash=0;
+};
+
 struct HorizonRuntimeStats {
     size_t clusters=0, atlasBytes=0, vertices=0, triangles=0;
     double cpuPrepareMs=0, gpuUploadMs=0;
     size_t preparing=0, discarded=0; // stream status on owning thread
     size_t cachedRegions=0, cacheHits=0; // bounded CPU bake reuse
+    size_t archiveHits=0; // full re-use across game launches, when configured
 };
 
 class TerraWeaveHorizonScene {
@@ -62,8 +78,43 @@ public:
                 }
                 if(!baked){
                     const auto surface=generation?generation->surface:nullptr;
-                    baked=std::make_shared<const HorizonBake>(bakeHorizon(
-                        terrain_,biomes_,settings_,x,z,surface.get()));
+                    const auto archive=archiveStore_;
+                    const bool diskAllowed=archive &&
+                        (!surface || archive->authoredContentHash!=0);
+                    const uint64_t fingerprint=diskAllowed ?
+                        horizonArchiveFingerprint(terrain_,biomes_,settings_,
+                                                  archive->authoredContentHash)
+                        : 0;
+                    if(diskAllowed && archive->read){
+                        try {
+                            std::vector<uint8_t> bytes;
+                            if(archive->read(cell.x,cell.z,bytes)){
+                                auto previous=decodeHorizonArchive(bytes,fingerprint);
+                                // Reject a wrong/colliding storage key even
+                                // if its settings and payload are valid.
+                                if(previous.cameraXcm==x && previous.cameraZcm==z){
+                                    baked=std::make_shared<const HorizonBake>(
+                                        std::move(previous));
+                                    ++archiveHits_;
+                                }
+                            }
+                        } catch(const std::exception&) {
+                            // Missing/corrupt/stale cache assets are not a
+                            // reason to fail streaming. Generate afresh.
+                        }
+                    }
+                    if(!baked){
+                        baked=std::make_shared<const HorizonBake>(bakeHorizon(
+                            terrain_,biomes_,settings_,x,z,surface.get()));
+                        if(diskAllowed && archive->write){
+                            try {
+                                auto bytes=encodeHorizonArchive(*baked,fingerprint);
+                                archive->write(cell.x,cell.z,bytes);
+                            } catch(const std::exception&) {
+                                // Caching is best effort, never gameplay state.
+                            }
+                        }
+                    }
                     if(settings_.maxCachedRegions){
                         std::lock_guard lock(cacheMutex_);
                         if(sources_.load(std::memory_order_acquire)==generation){
@@ -111,10 +162,18 @@ public:
             cataloged_=false; // update() schedules a new revision for this cell
         }
     }
+    // Configure optional packed/static game-asset lookup before streaming
+    // starts. No implicit filesystem access is ever performed by the engine.
+    void setArchiveStore(std::shared_ptr<const HorizonArchiveStore> store) {
+        if(streamStarted_)throw std::logic_error(
+            "TerraWeave Horizon archive store must be set before update");
+        archiveStore_=std::move(store);
+    }
     const TerrainSettings& terrainSettings() const {return terrain_;}
     const BiomeSettings& biomeSettings() const {return biomes_;}
 
     void update(gfx::Device& device,ForestCameraCm observer) {
+        streamStarted_=true;
         if(observer.x<-kWorldLimitCm||observer.x>kWorldLimitCm||
            observer.z<-kWorldLimitCm||observer.z>kWorldLimitCm)
             throw std::out_of_range("TerraWeave Horizon camera extent");
@@ -227,6 +286,7 @@ public:
             out.cachedRegions=cache_.size();
         }
         out.cacheHits=cacheHits_.load(std::memory_order_relaxed);
+        out.archiveHits=archiveHits_.load(std::memory_order_relaxed);
         return out;
     }
     const world::AsyncChunkStream::Status& status() const {
@@ -266,6 +326,9 @@ private:
     std::map<world::Cell,CacheEntry> cache_;
     uint64_t cacheTick_=0; // protected by cacheMutex_
     std::atomic<size_t> cacheHits_{0};
+    std::atomic<size_t> archiveHits_{0};
+    std::shared_ptr<const HorizonArchiveStore> archiveStore_;
+    bool streamStarted_=false;
 };
 
 } // namespace aiverse::terraweave
