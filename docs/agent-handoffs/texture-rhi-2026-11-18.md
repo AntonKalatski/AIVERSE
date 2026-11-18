@@ -3292,3 +3292,42 @@ publishing, LRU+pinning, parent fallbacks, cancellation, staged
 source ownership and upload failure quarantine. Register it in
 CTest, then integrate virtual texture preview/telemetry into
 editor and real GPU scenes. Continue separate code/handoff commits.
+
+## Stage 8C — dockable GPU texture-resource inspector in editor (2026-11-18)
+
+**Implementation commit:** `2408ed1accde2363b69141198531c9a3cc8f585b`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**New file:** `apps/editor/windows/TextureResourcesWindow.cpp`.
+
+**Source implementation:** Register `TextureResourcesWindow` as a normal
+dockable AIVERSE editor window under menu group `look` (Графика),
+closed by default. It accesses the editor's existing `device()`
+and calls the new Metal/GL/Vulkan `textureResources()` snapshot to
+display live user-created texture handles, dimensionality, pixel
+format, texture extent/depth/layer count, mip levels, sample count,
+render-target/MSAA counts and total estimated GPU resource bytes.
+Includes ID/format/dimension text filter, render-target-only filter,
+and sorted-by-estimated-bytes or stable-handle ordering. Uses the
+existing editor WindowRegistry macro; the CMake editor target
+automatically includes `apps/editor/windows/*.cpp`, so no direct
+CMake edit is necessary. It does not read back image pixels or
+change texture resource state.
+
+**Correctness/compatibility:** The inspector is read-only, optional
+and does not alter FPS/RTS components or ECS authority, network
+or save data. Estimates exclude driver allocation overhead,
+swapchain and internal textures; a row's handle is ephemeral.
+No cached persistent GPU state is kept by the inspector.
+
+**Verification:** GitHub source commit confirmed. macOS/Windows editor
+build, interactive ImGui window, GL/Vulkan/Metal live texture enumeration,
+CTest: **NOT RUN** (no local native checkout). GitHub Actions completion
+not confirmed. The window must be tested under the editor's actual
+ImGui version before describing it as functional.
+
+**Next:** Build `aiverse_editor` for macOS/Windows and inspect
+GPU texture allocations while loading multiple 2D/array resources.
+Check new window menu registration, memory estimates, filter and
+lifecycle, then run the texture-focused CTests. If the build is clean,
+continue native async readback/GPU validation and production importer
+integrations. Record exact results in a new handoff.
