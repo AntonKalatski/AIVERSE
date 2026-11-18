@@ -207,14 +207,34 @@ inline const char* kComposite = R"(
 #endif
 #ifdef PF_UNDERWATER
     {
-        // Prisma owns the full-screen pass; NEREID only supplies camera
-        // volume optics. Beer-Lambert extinction approximates view distance
-        // with a bounded camera-depth baseline; no new texture slots.
+        // Prisma owns the full-screen composite. All distortion samples use
+        // the resolved scene source, with a clamped UV to avoid edge wraps.
+        // underwater1.z is distortion strength, .w is scattering.
+        // graphFrame.y is a decaying impulse on crossing the water surface.
+        float phase = graphFrame.x;
+        float pulse = graphFrame.y;
+        float strength = clamp(underwater0.w * underwater1.z +
+                               pulse * 0.004, 0.0, 0.02);
+        vec2 wave = vec2(sin(s.y * 31.0 + phase * 2.7) +
+                         sin(s.x * 43.0 - phase * 1.8) * 0.35,
+                         cos(s.x * 27.0 + phase * 2.1));
+        vec2 warped = clamp(uv + TDIR(wave * strength),
+                            vec2(0.002), vec2(0.998));
+        if (strength > 0.00001) {
+            vec3 warpedColor = TEX0(warped).rgb;
+            col = mix(col, warpedColor, clamp(underwater0.w + pulse * 0.35,0.0,1.0));
+        }
+        // Screen-space approximation: near-depth haze and environmental
+        // scattering. No per-object depth/caustics are claimed here.
         float opticalDistance = min(underwater1.y + 5.0, 120.0);
         float extinction = 1.0 - exp(-underwater1.x * opticalDistance);
-        float weight = clamp(underwater0.w * max(0.12, extinction), 0.0, 1.0);
+        float scatterWeight = clamp(underwater1.w *
+                                    (0.2 + 0.8 * extinction),0.0,1.0);
+        float weight = clamp(underwater0.w *
+                             max(0.12, extinction + scatterWeight * 0.25),
+                             0.0, 1.0);
         col = mix(col, underwater0.rgb, weight);
-        // Submerged ambient light falls with depth but never goes fully dark.
+        col += underwater0.rgb * scatterWeight * underwater0.w * 0.06;
         col *= 1.0 - underwater0.w * clamp(underwater1.y * 0.012, 0.0, 0.35);
     }
 #endif
