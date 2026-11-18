@@ -162,6 +162,21 @@ order and must not silently replace synchronous FPS multi-pellet execution.
 Select physical sweep, non-physical pursuit or instant hitscan per *weapon
 capability*, never per genre.
 
+**FPS projectile state migration, current branch:** in
+`fps.ecsAuthority=true`, `fps.compat.projectilePrograms` now runs
+`Module::stepProgrammedProjectile` directly against authoritative
+`ProjectileRuntime` components, sorting by recorded `order`/ID and applying
+immediate hits before actor updates. The default FPS mode calls that **same**
+solver from the legacy source vector. New branches/expiry are committed to
+the ECS World at a structural barrier and projected into
+`State::projectiles` only for still-unmigrated grenade/spawn/round logic.
+**Do not switch a second projectile solver or reintroduce a writable State
+source into this phase.** Mixed nonprogrammed objects, Entity-generation
+recycling, COW, v9 saves, rewind and synchronous damage order must retain
+parity; see `ecsProjectileProgramStageParity` and
+`ecsProjectileBranchAuthorityParity` in `tests/fps/projectiles.inc`.
+Native test execution is still pending.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
