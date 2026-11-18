@@ -293,6 +293,12 @@ struct PipelineDesc {
                                                     // RGBA16F passes select a cached linear-target variant on both backends
     const char* label = nullptr;
     int sampleCount = 1; // 1 legacy; MSAA pipelines must explicitly match render-pass samples
+    // Color slot 0 uses colorFormat above; additional slots are opt-in.
+    // Fragment shaders must write explicit outputs 0..colorAttachmentCount-1.
+    int colorAttachmentCount = 1;
+    PixelFormat additionalColorFormats[3] = {
+        PixelFormat::RGBA8, PixelFormat::RGBA8, PixelFormat::RGBA8
+    };
 };
 
 // Default: render to the screen. With targets: render into textures (both must match in size).

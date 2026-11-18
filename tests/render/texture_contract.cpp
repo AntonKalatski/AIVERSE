@@ -82,6 +82,10 @@ int main() {
     sampler.maxLod = 8.0f; sampler.maxAnisotropy = 0.0f;
     check(!validateSamplerDesc(sampler), "invalid anisotropy");
 
+    PipelineDesc oldPipeline;
+    check(oldPipeline.colorAttachmentCount == 1 &&
+          oldPipeline.additionalColorFormats[0] == PixelFormat::RGBA8,
+          "legacy pipeline retains one color output");
     RenderTargetPassDesc rp;
     check(!validateRenderTargetPassDesc(rp), "empty offscreen pass is invalid");
     rp.colorCount = 1; rp.colors[0].texture.id = 1;
