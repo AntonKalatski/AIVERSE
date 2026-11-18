@@ -4,6 +4,7 @@
 #include <aiverselib/gameplay/EnhancedInput.h>
 #include "Platform.h"
 #include "Gamepad.h"
+#include <cmath>
 #include <cstdint>
 #include <map>
 
@@ -52,11 +53,15 @@ public:
             if (slot == 32) break; // ignore excess touches; profile indices are 0..31
             touches_[event.touchId] = {slot,event.x,event.y};
             input_.setControl({Device::Touch, 0, slot}, 1);
+            updateGesture(true);
             break;
         }
         case EventType::TouchMove: {
             const auto it = touches_.find(event.touchId);
-            if (it != touches_.end()) touchMotion(it->second,event);
+            if (it != touches_.end()) {
+                touchMotion(it->second,event);
+                updateGesture(false);
+            }
             break;
         }
         case EventType::TouchEnd:
@@ -66,6 +71,7 @@ public:
                 if (event.type == EventType::TouchEnd) touchMotion(it->second,event);
                 input_.setControl({Device::Touch, 0, it->second.slot}, 0);
                 touches_.erase(it);
+                updateGesture(true);
             }
             break;
         }
@@ -98,6 +104,7 @@ public:
     void focusLost() {
         input_.cancelAll();
         touches_.clear();
+        gestureActive_=false;
     }
 private:
     struct TouchEntry { int slot=0; float x=0,y=0; };
@@ -110,7 +117,30 @@ private:
         if(dy!=0) input_.addDelta({Device::Touch,2,touch.slot},dy);
         touch.x=event.x;touch.y=event.y;
     }
+    // Codes 3,4,5 on touch deviceIndex 0: pinch distance delta, two-finger
+    // centroid X/Y delta. No jump when the second finger joins or leaves.
+    void updateGesture(bool reset) {
+        using namespace lib::gameplay::enhanced;
+        if(touches_.size()!=2) { gestureActive_=false; return; }
+        const auto& a=touches_.begin()->second;
+        const auto& b=std::next(touches_.begin())->second;
+        const float centerX=(a.x+b.x)*0.5f, centerY=(a.y+b.y)*0.5f;
+        const float distance=std::hypot(a.x-b.x,a.y-b.y);
+        if(gestureActive_ && !reset) {
+            const float pinch=distance-gestureDistance_;
+            const float dx=centerX-gestureCenterX_,dy=centerY-gestureCenterY_;
+            if(pinch!=0)input_.addDelta({Device::Touch,3,0},pinch);
+            if(dx!=0)input_.addDelta({Device::Touch,4,0},dx);
+            if(dy!=0)input_.addDelta({Device::Touch,5,0},dy);
+        }
+        gestureDistance_=distance;
+        gestureCenterX_=centerX;
+        gestureCenterY_=centerY;
+        gestureActive_=true;
+    }
     lib::gameplay::enhanced::InputSystem& input_;
     std::map<std::int64_t, TouchEntry> touches_;
+    bool gestureActive_=false;
+    float gestureDistance_=0,gestureCenterX_=0,gestureCenterY_=0;
 };
 } // namespace aiverse::platform
