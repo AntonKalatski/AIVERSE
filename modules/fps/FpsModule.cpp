@@ -884,7 +884,11 @@ void Module::tick(Simulation& sim) {
 State Module::authoritativeStateCopy(Simulation& sim) const {
     // Serialize/hash from canonical ECS payloads, never from a possibly stale
     // State::actors/projectiles/loot/vehicles compatibility workspace.
-    State result=state(sim);
+    // Saving/checksumming must not detach a shared COW State merely to
+    // read it. The mutable state(sim) accessor is reserved for gameplay writes.
+    const State* stored=sim.world().resourceConst<State>();
+    if(!stored)throw std::logic_error("FPS State missing during save/checksum");
+    State result=*stored;
     if(!config_.ecsAuthority)return result;
     const World& world=sim.world();
     const auto* index=world.resourceConst<ActorEntityIndex>();
@@ -925,12 +929,18 @@ State Module::authoritativeStateCopy(Simulation& sim) const {
 }
 void Module::hashState(Simulation& sim,Hasher& hash) {
     State materialized;
-    State* authoritative=&state(sim);
+    // Read through the const ECS resource API: resource<State>() performs
+    // copy-on-write detachment even for a read-only checksum. A hash must
+    // preserve the snapshot's resource sharing and have no World side effects.
+    const State* stored=sim.world().resourceConst<State>();
+    if(!stored)throw std::logic_error("FPS State missing during checksum");
     if(config_.ecsAuthority) {
         materialized=authoritativeStateCopy(sim);
-        authoritative=&materialized;
+        stored=&materialized;
     }
-    State& s=*authoritative;
+    // Archive's output-only path takes non-const references for its
+    // bidirectional IO API, but never writes any State field while writing().
+    State& s=const_cast<State&>(*stored);
     hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,s);hash.str(bytes);
     if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:s.actors)meleeIo(m,actor);hash.str(extra);}
     for(auto& p:s.projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
