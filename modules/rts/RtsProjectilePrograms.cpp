@@ -1,5 +1,6 @@
 // Ordered projectile programs on flat maps and planetary surfaces. All structural ECS edits occur outside world.each.
 #include "RtsInternal.h"
+#include "../../libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
 #include "KingstonRocketCollision.h"
 #include "../../engine/core/FixedMath.h"
 #include <algorithm>
@@ -214,21 +215,39 @@ void RtsModule::sysProjectilePrograms(Simulation& sim, const std::vector<Entity>
                 sim.emit({kEvImpact,shot.owner,target,shot.source,e.payload,at});
                 applyPayload(sim,e.payload,ctx);
             } else {
+                // Programmed weapon impacts share the same ordered resolver as
+                // standard RTS shots. Preserve the program's *immediate* on-hit
+                // payload and index-sorted splash (not the ordinary shot's
+                // deferred payload or spatial-query iteration order).
                 const WeaponDef* wd=projectileWeapon(shot);
-                dealDamage(sim,target,shot.damage*ps.damageScale,shot.damageType,shot.source,shot.owner,wd);
-                if (shot.onHit>=0 && w.alive(target)) {
-                    EffectCtx ctx; ctx.caster=shot.source; ctx.owner=shot.owner; ctx.sourceType=shot.sourceType;
-                    ctx.target=target; ctx.point=flat(at); ctx.origin=shot.start; ctx.scale=ps.damageScale;
-                    applyPayload(sim,shot.onHit,ctx);
-                }
-                if (shot.splash>Fixed{}) {
-                    std::vector<Entity> splash;
-                    gs.hash.query(at,shot.splash,[&](Entity t) {
-                        if (t!=target && eligible(t) && distance(at,w.get<Transform>(t).pos)<=shot.splash) splash.push_back(t);
+                const Fixed damage=shot.damage*ps.damageScale;
+                lib::genre::resolveOrderedProjectileImpact(
+                    {entity,shot.source,target,at,damage,shot.splash},
+                    [&](Entity victim) {
+                        dealDamage(sim,victim,damage,shot.damageType,shot.source,shot.owner,wd);
+                    },
+                    [&](Entity victim) {
+                        if (shot.onHit>=0 && w.alive(victim)) {
+                            EffectCtx ctx; ctx.caster=shot.source; ctx.owner=shot.owner; ctx.sourceType=shot.sourceType;
+                            ctx.target=victim; ctx.point=flat(at); ctx.origin=shot.start; ctx.scale=ps.damageScale;
+                            applyPayload(sim,shot.onHit,ctx);
+                        }
+                    },
+                    [&](Vec3 centre,Fixed radius,auto&& visit) {
+                        std::vector<Entity> splash;
+                        gs.hash.query(centre,radius,[&](Entity candidate) {
+                            if (candidate!=target && eligible(candidate) &&
+                                distance(centre,w.get<Transform>(candidate).pos)<=radius)
+                                splash.push_back(candidate);
+                        });
+                        std::sort(splash.begin(),splash.end(),
+                                  [](Entity a,Entity b){return a.index<b.index;});
+                        for (Entity candidate:splash)visit(candidate);
+                    },
+                    [](Entity) {return true;}, // query already applied RTS filters
+                    [&](Entity victim) {
+                        dealDamage(sim,victim,damage,shot.damageType,shot.source,shot.owner,wd);
                     });
-                    std::sort(splash.begin(),splash.end(),[](Entity a,Entity b){return a.index<b.index;});
-                    for (Entity t:splash) dealDamage(sim,t,shot.damage*ps.damageScale,shot.damageType,shot.source,shot.owner,wd);
-                }
             }
         };
         bool spent=false;   // the flight ended at a wall or at its range without a direct hit
