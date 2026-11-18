@@ -351,6 +351,16 @@ public:
         return it == states_.end() ? nullptr : &it->second;
     }
     std::span<const ActionEvent> events() const { return events_; }
+    // Enumerate every declared context (including inactive UI/vehicle/modal contexts) for Settings UI.
+    std::vector<std::string> registeredContexts() const {
+        std::vector<std::string> names;
+        names.reserve(contexts_.size());
+        for (const auto& [name,context] : contexts_) {
+            (void)context;
+            names.push_back(name);
+        }
+        return names;
+    }
     std::vector<std::string> activeContexts() const {
         std::vector<std::string> out;
         out.reserve(active_.size());
