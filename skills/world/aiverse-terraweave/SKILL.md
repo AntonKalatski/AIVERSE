@@ -606,3 +606,42 @@ GPU index topology changes invalidate
 partial VB/atlas reuse and trigger
 full upload. All validation is owned
 by another test agent; mark NOT RUN.
+
+## Exact near-ground rectangle clipping — TWH5 (Stage 18)
+
+For `WorldScene` worlds with loaded near terrain,
+implement `HorizonSurfaceSources::ownsNearTerrainRect`
+AND `collectNearTerrainRects` using a single immutable
+height snapshot. The second callback returns sorted,
+non-overlapping half-open world-centimetre rectangles;
+the core accepts at most 1024 per far region.
+
+`planHorizonNearGroundClipping(bake)` in
+`engine/render/TerraWeaveHorizonClip.h` uses only CPU
+polygon subtraction, preserves the two original coarse
+triangle planes and their winding, and emits no more
+than `maxNearClipTriangles` partial triangles. The
+`makeHorizonModel` stage interpolates vertex height,
+normal, UV and colour barycentrically on those planes.
+All geometry remains on material slot 0, and the
+existing forest material remains slot 1. Do not
+create one material/model/draw per near tile.
+
+Quality caps: Minimal 0 (feature off), Mobile 512,
+Balanced 2048, High 4096; manifest accepts 0..8192.
+A geometric budget overflow triggers a complete
+fallback to coarse Stage 17 full-quad ownership,
+not partially applied clipping. UI diagnostics:
+`nearClipQuads`, `nearClipTriangles`,
+`nearClipFallback`. In-place GPU patch reuse
+MUST compare stored clip rectangles/settings and
+fall back to a full model upload on topology changes.
+
+Current static atlas archive is **TWH5**. It stores
+bounded near coverage rectangles and a cap with a
+new fingerprint; TWH1–TWH4 must be regenerated,
+not silently interpreted as current data. The cut
+is exact in X/Z, not a height-aware vertical weld;
+keep that documented until real GPU tests prove
+a stitched seam. Separate test agent owns all
+build/CTest/platform rendering/performance work.
