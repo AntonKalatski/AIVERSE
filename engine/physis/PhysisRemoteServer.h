@@ -57,7 +57,9 @@ public:
                !decode(entry.originalFrame,packet) ||
                packet.kind!=Message::Submit ||
                packet.clientInstance!=key.instance ||
-               packet.requestId!=key.request)
+               packet.requestId!=key.request ||
+               (reservedCommandType_ &&
+                packet.command.type!=reservedCommandType_))
             {
                 if(error)*error="PHYSIS journal record has invalid identity";
                 return false;
@@ -89,8 +91,7 @@ public:
             if(entry.receipt.result==Result::Applied) {
                 if(!state || state->revision<=entry.expectedRevision ||
                    sim.tick()<entry.observedTick ||
-                   (state->revision==entry.expectedRevision+1 &&
-                    !matches(*state,entry.desired))) {
+                   !matches(*state,entry.desired)) {
                     entry.receipt.result=Result::Conflict;
                     entry.receipt.revision=state?state->revision:0;
                     entry.receipt.detail="PHYSIS applied edit invalidated by rollback";

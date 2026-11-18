@@ -34,8 +34,8 @@ public:
             if(error)*error="PHYSIS admin requires credential lookup and ACL";
             return false;
         }
-        if(!journal_.attach(gateway_,error))return false;
         gateway_.setReservedCommandType(reservedFieldCommandType);
+        if(!journal_.attach(gateway_,error))return false;
         if(!listener_.open(port,true)) {
             if(error)*error="PHYSIS loopback admin WebSocket listener failed";
             return false;
