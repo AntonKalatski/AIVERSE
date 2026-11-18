@@ -134,3 +134,17 @@ over a newer version. No green CI logs means no passing-CI claim.
 - **Verification:** inspected the existing workflow invocation, target names and CMake registrations via GitHub. `bash -n` on the updated script, actual CMake/CTest, RTS runtime and CI success: **NOT RUN** in the current container (GitHub checkout not mountable, DNS for github.com unavailable). Running CI remains the acceptance gate.
 - **Next:** obtain a completed `ecs-gameplay` CI run on PR #7; fix source/test failures with real logs; record the checked commit and PASS/FAIL result before declaring native ECS persistence production-ready.
 
+
+## Validation checkpoint — user-reported Mac Studio ECS/FPS subset (2026-11-18)
+- **Reporter:** project owner, local `/Users/aleksandrfeer/Projects/AIVERSE/build/ecs-test` checkout. Exact checkout commit SHA and full invocation were not included; **do not attribute these outcomes to a specific branch SHA without checking `git rev-parse HEAD`**.
+- **Observed CTest:** `ecs_projectile_composition_test` (#47) **PASS** 0.04s; `ecs_hitscan_selection_test` (#53) **PASS** 0.63s; `ecs_hitscan_resolution_test` (#54) **PASS** 0.04s; `fps` (#94) **PASS** 16.32s; total **4/4**, elapsed **17.04s**.
+- **Verification source:** actual CTest output supplied by user (not an inferred test result). Scope is precisely the four listed tests; a successful full CI or all ECS tests has **not** been established.
+- **Critical outstanding gate:** `ecs_native_persistence_test` and `ecs_native_rts_integration_test` **were not in this test selection**. Native component/resource serialization v10, migration v1→v2, corrupted state recovery and real RTS `NativeModule` round-trip still require executing these tests.
+- **Next agent action:** verify local HEAD and test discovery:
+  ```bash
+  git rev-parse HEAD
+  cmake --build build/ecs-test --target aiverse_ecs_native_persistence_test aiverse_ecs_native_rts_integration_test -j8
+  ctest --test-dir build/ecs-test --no-tests=error --output-on-failure -R '^ecs_native_(persistence|rts_integration)_test$'
+  ```
+  Capture the full output and note whether the tested HEAD matches the PR. If a test is absent, reconfigure the existing CMake build with `AIVERSE_BUILD_TESTS=ON`; do not treat zero discovered tests as a pass. After actual passes, run `bash tests/run_ecs_experiment_suite.sh` and the real RTS/FPS parity suite.
+- **CI on latest remote branch at this checkpoint:** queued; no observed successful workflow result. No new native build was executed by this agent.
