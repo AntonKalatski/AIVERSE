@@ -2,6 +2,7 @@
 #include "engine/platform/EnhancedInputFileIO.h"
 #include "engine/platform/EnhancedInputPresets.h"
 #include "engine/platform/EnhancedInputProfileIO.h"
+#include "engine/platform/EnhancedInputUserProfiles.h"
 #include <chrono>
 #include <filesystem>
 #include <cmath>
@@ -99,15 +100,18 @@ int main() {
     CHECK(!conf::readProfile(invalidCode,profile,&err));
     // Both built-in presets can be authored, serialized and installed with stable mapping IDs.
     for(const auto preset:{p::enhanced_presets::fpsReference(),p::enhanced_presets::rtsReference()}){
-        CHECK(!preset.actions.empty()&&preset.contexts.size()==1);
+        CHECK(!preset.actions.empty()&&!preset.contexts.empty());
         conf::Asset decoded;
         CHECK(conf::readAsset(conf::writeAsset(preset),decoded,&err));
-        CHECK(decoded.contexts[0].context.mappings.size()==preset.contexts[0].context.mappings.size());
-        for(std::size_t i=0;i<decoded.contexts[0].context.mappings.size();++i)
-            CHECK(decoded.contexts[0].context.mappings[i].id==i+1);
+        CHECK(decoded.contexts.size()==preset.contexts.size());
+        for(std::size_t j=0;j<decoded.contexts.size();++j){
+            CHECK(decoded.contexts[j].context.mappings.size()==preset.contexts[j].context.mappings.size());
+            for(std::size_t i=0;i<decoded.contexts[j].context.mappings.size();++i)
+                CHECK(decoded.contexts[j].context.mappings[i].id==i+1);
+        }
         ei::InputSystem runtime;
         CHECK(conf::installAsset(runtime,decoded,&err));
-        CHECK(runtime.registeredContexts().size()==1);
+        CHECK(runtime.registeredContexts().size()==preset.contexts.size());
     }
     // Host profile persistence: disk roundtrip, invalid writes do not replace prior state.
     const auto unique=std::chrono::steady_clock::now().time_since_epoch().count();
@@ -136,7 +140,34 @@ int main() {
     conf::Asset afterAssetFailure;
     CHECK(conf::loadAssetFile(assetFile,afterAssetFailure,&err));
     CHECK(afterAssetFailure.contexts[0].context.mappings[0].action=="Move");
+    // Per-user store keeps player zero's legacy filename and isolates other
+    // local players. A Swap persists both mapping IDs across a reload.
+    conf::UserProfiles users;
+    const auto userRoot=std::filesystem::path(file.string()+".users");
+    users.setScope(userRoot,"demo-project");
+    ei::InputSystem p0,p1;
+    CHECK(conf::installAsset(p0,p::enhanced_presets::fpsReference(),&err));
+    p1=p0;
+    CHECK(users.load(0,p0,&err)&&users.load(1,p1,&err));
+    CHECK(users.path(0)!=users.path(1));
+    const int originalCode=p1.context("FPS")->mappings[0].control.code;
+    const int alternateCode=p1.context("FPS")->mappings[1].control.code;
+    CHECK(users.rebind(1,p1,"FPS",1,{ei::Device::Keyboard,alternateCode},
+                       ei::RebindPolicy::Swap,&err));
+    CHECK(p1.context("FPS")->mappings[0].control.code==alternateCode);
+    CHECK(p1.context("FPS")->mappings[1].control.code==originalCode);
+    ei::InputSystem reloaded;
+    CHECK(conf::installAsset(reloaded,p::enhanced_presets::fpsReference(),&err));
+    conf::UserProfiles nextRun;
+    nextRun.setScope(userRoot,"demo-project");
+    CHECK(nextRun.load(1,reloaded,&err));
+    CHECK(reloaded.context("FPS")->mappings[0].control.code==alternateCode);
+    CHECK(reloaded.context("FPS")->mappings[1].control.code==originalCode);
+    CHECK(!nextRun.profile(0));
+    CHECK(nextRun.reset(1,reloaded,p0,&err));
+    CHECK(reloaded.context("FPS")->mappings[0].control.code==originalCode);
     std::error_code cleanup;
+    std::filesystem::remove_all(userRoot,cleanup);
     std::filesystem::remove(assetFile,cleanup);
     std::filesystem::remove(file,cleanup);
     std::cout<<"Enhanced Input config/schema/profile roundtrip passed\n";
