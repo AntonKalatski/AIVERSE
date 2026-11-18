@@ -2824,3 +2824,41 @@ then implement bounded image readback interfaces/backends and
 editor diagnostics; realistic sparse/virtual physical-page
 streaming is still a separate unimplemented subsystem.
 Keep source/handoff commits separate and update tests status.
+
+## Stage 8A — native texture API documentation and AI skill routing (2026-11-18)
+
+**Code/docs commit:** `3627d46f70694e26ec43ad9437bd13c76f09ac3c`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Paths:** `skills/visuals/aiverse-texture-rhi/SKILL.md`,
+`docs/texture-rhi.md`, `AGENTS.md`.
+
+**What changed:** The existing texture RHI agent skill now covers the
+new `gfx::TextureResidentStreamer` facade as the preferred
+native-project entry point for staged mip uploads, rather than asking
+agents to reinvent manual ticket→mip completion tracking.
+A compact standalone native C++ example demonstrates
+`create` → `stageNext` → `drain` → checked
+`sampledTexture`/LOD-clamped `residentSampler` → `destroy`.
+The skill and `AGENTS.md` explicitly point native developers to
+the Radiance RGBE and restricted uncompressed OpenEXR importers,
+and warn against treating the GPU cache as ECS-authoritative.
+`docs/texture-rhi.md` now distinguishes source-level mixed-format
+MRT/MSAA from GPU certification, documents streaming ownership,
+CPU GPU-byte budgets versus actual virtual texturing, BC6H mappings,
+HDR/EXR limitations, and updates the grouped texture CTest commands.
+
+**What did not change:** No engine ABI, actual sampler/renderer
+bindings, asset format, save game, ECS or backend driver code was
+changed by this stage. Native game integration is an API recipe,
+not evidence of running a game or verifying an importer.
+
+**Verification:** GitHub docs/tree commit succeeded. **CMake,
+C++ build, CTest, GPU, README translation check and skill
+catalog check NOT RUN**. No passing CI status asserted.
+
+**Next exact step:** Implement readback contracts and native
+backend extensions (with CPU+GPU fixtures), or integrate
+resident streaming/inspection with the editor. After the
+code commit, append a separate handoff with exact executed
+verification status. Do not merge PR #21 while native build
+and platform GPU tests are unverified.
