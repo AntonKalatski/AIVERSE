@@ -4871,3 +4871,37 @@ Next: Document the public VirtualTextureFeedbackPass API
 and native renderer usage, then perform a real native build,
 focused CTest and backend shader render/readback checks.
 Do not merge PR #21 while those checks remain pending.
+
+## Stage 7AK — native render feedback pass skill and architecture handoff (2026-11-18)
+
+Docs/skill source commit: ff078bfc20e64514f78ea72b0bbfa90e9964e8c4.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Paths: skills/visuals/aiverse-texture-rhi/SKILL.md,
+docs/texture-rhi.md, AGENTS.md.
+
+Changes: Public API recipe for VirtualTextureFeedbackPass
+owns a single RGBA8 UNORM offscreen color attachment,
+clears invalid feedback pixels, then delegates rendering
+to caller-owned opaque feedback shaders (one color output),
+requests asynchronous texture readback at endAndCapture,
+and uses submitVisiblePages plus fileStreamer.pump on
+later frames. The native agent skill and AGENTS contract
+direct game developers to use the shared, genre-independent
+helper instead of creating one-off camera/terrain/RTS managers.
+Document no depth/MSAA/sRGB/blending/dithering/postprocess
+and the readback limitations; no actual camera draw, shader
+compilation or RenderGraph registration is claimed.
+Add aiverse_virtual_texture_feedback_pass_test and CTest
+virtual_texture_feedback_pass to native verification instructions.
+
+Compatibility: Documentation only. No graphics backend source,
+save/network, ECS simulation or game genre code changed.
+
+Actual verification: GitHub docs/tree/ref commit succeeded.
+C++ build NOT RUN, CTest NOT RUN, GPU shader/render NOT RUN,
+skill catalog audit NOT RUN. No CI status declared passed.
+
+Next: Run source builds and CPU CTests with the merged main
+InputFlow targets, then validate feedback drawing and packed ID
+readback on Metal/GL33/GLES3/Vulkan. Repair actual failures
+before marking PR ready and keep this append-only handoff up to date.
