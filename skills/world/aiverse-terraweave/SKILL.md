@@ -216,3 +216,39 @@ before claiming trees match ground physics.
 - No stage-6 compilation/GPU/CTest was run, at user request. Cite
   `docs/terrain/AGENT_HANDOFF.md` for exact commits, limitations
   and verification status.
+
+## Kilometre-scale Horizon HLOD (new)
+
+Use `terraweaveHorizon` in the **WorldScene manifest** only when the
+project needs a visibly distant forest/mountain skyline. It is opt-in.
+Read `docs/terrain/TERRAWEAVE.md` § TerraWeave Horizon before changing
+limits, CPU generation or renderer integration.
+
+- **Near** detailed tree models, **mid** 128m forest cluster cards,
+  **far** 512m cluster cards; do not allocate individual tree ECS
+  entities or individual tree impostor draw calls beyond the near
+  forest streaming range.
+- The Horizon CPU baker samples terrain/biome masks and creates one
+  shared atlas. `makeHorizonModel` creates two material primitives
+  (coarse terrain + forest clusters). The existing `Renderer3D` and
+  `gfx::Device` remain the only render paths.
+- `TerraWeaveHorizonScene` uses the existing `AsyncChunkStream` for
+  one staged region at a time; publish/upload only on the owning render
+  thread, keep the old model displayed until the next completes, and
+  discard a canceled cell result. Never start an unbounded future per
+  camera move.
+- `estimateHorizonBudget` is a **theoretical** atlas/geometry bound;
+  do not confuse it with measured GPU draw calls or frame times.
+  Default maximum: ~7.75 MB RGBA atlas, <8k triangles, 832 cluster
+  slots. Distant trees are implied by the atlas, not generated.
+- `distantTerrain` creates a coarse terrain ring outside
+  `terrainBeginCm` and must not overlap an independently authored
+  far-ground renderer without an ownership/clipping policy.
+- Verify CTest `terraweave_horizon`, a running WorldScene and near/mid/
+  far screenshots on Metal and GL/Vulkan, shadow consistency, memory,
+  camera snapping and transition popping before moving Draft PR to
+  review. Document untested limitations in `AGENT_HANDOFF.md`.
+
+Known limits: crossed silhouette cards approximate the forest but are
+not baked photorealistic multiview normal/depth impostors; alpha
+overdraw, atlas uploads and visible transitions are not literally free.
