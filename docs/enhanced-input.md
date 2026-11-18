@@ -146,3 +146,7 @@ The generic RTS client uses `apps/client/ClientInputRouting.h` for `AttackMove`,
 ## In-game input rebinding (FPS example)
 
 Press **F10** while playing the FPS sample to open Input Settings and release pointer lock. Select **Rebind** beside any mapping and press a new keyboard key, mouse button or gamepad button; moving a pad axis past 0.8 can bind that axis. The UI displays duplicate-control warnings within each context. Changes use the existing `rebindInput` and `platform::syncUserData` profile persistence; they do **not** change the project's authored `input/actions.json`. Escape cancels active capture. Close Settings and click the viewport to resume locked-pointer gameplay. Editor-side binding authoring remains in the Logic → Input Actions window.
+
+## Complete default mapping presets
+
+The shared engine header `engine/platform/EnhancedInputPresets.h` provides `enhanced_presets::fpsReference()` and `rtsReference()`, returning editable full assets with stable mapping IDs. Both reference clients use these presets, and **Logic → Input Actions → Use FPS defaults / Use RTS defaults** fills the editor buffer with the corresponding complete scheme. Save to write `<project>/input/actions.json`. Existing user rebinding profiles continue to apply by mapping ID. Avoid removing/reordering mapping IDs in a published project without planning a profile migration.
