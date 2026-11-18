@@ -284,6 +284,143 @@ public:
     const ArborForestAdapter& adapter() const { return adapter_; }
 
 private:
+    struct GenerationSnapshot {
+        TerrainSettings terrain;
+        BiomeSettings biomes;
+        ScatterSettings scatter;
+        std::vector<FoliageSpecies> species;
+        std::vector<RectCm> exclusions;
+        HeightSource heightSource;
+        PlacementFilter placementFilter;
+        int32_t side = 0;
+        uint64_t revision = 0;
+    };
+    struct PreparedPatch final : world::AsyncChunkStream::Resource {
+        uint64_t revision = 0;
+        std::vector<FoliageInstance> instances;
+    };
+    std::shared_ptr<const GenerationSnapshot> captureSnapshot() const {
+        auto snap = std::make_shared<GenerationSnapshot>();
+        snap->terrain = settings_.terrain;
+        snap->biomes = settings_.biomes;
+        snap->scatter = settings_.scatter;
+        snap->species = species_;
+        snap->exclusions = exclusions_;
+        snap->heightSource = heightSource_;
+        snap->placementFilter = placementFilter_;
+        snap->side = settings_.chunkSizeCm;
+        snap->revision = revision_;
+        return snap;
+    }
+    static std::vector<FoliageInstance> preparePatch(
+            const GenerationSnapshot& s, int64_t cx, int64_t cz) {
+        const int64_t minX = cx * s.side, minZ = cz * s.side;
+        auto instances = scatter(s.terrain, s.biomes, s.scatter,
+            {minX, minZ, minX + s.side, minZ + s.side},
+            s.species, s.exclusions);
+        if (s.heightSource || s.placementFilter) {
+            size_t write = 0;
+            for (auto instance : instances) {
+                if (s.heightSource)
+                    instance.heightCm = s.heightSource(instance.xCm, instance.zCm);
+                if (int64_t(instance.heightCm) < -kWorldLimitCm ||
+                    int64_t(instance.heightCm) > kWorldLimitCm)
+                    throw std::out_of_range("TerraWeave forest sampled height extent");
+                if (s.placementFilter && !s.placementFilter(instance)) continue;
+                instances[write++] = instance;
+            }
+            instances.resize(write);
+        }
+        return instances;
+    }
+    void streamAsyncAt(ForestCameraCm camera) {
+        // All catalog mutation/publication remains on the caller's update
+        // thread. Only pure preparePatch(snapshot) runs on the worker thread.
+        residentStarted_ = true;
+        observer_ = camera;
+        if (!async_) {
+            asyncSnapshot_.store(captureSnapshot(), std::memory_order_release);
+            world::StreamLimits limits;
+            limits.residentChunks = settings_.maxResidentChunks;
+            limits.residentBytes = asyncReservation_ * settings_.maxResidentChunks;
+            limits.retryUpdates = 2;
+            async_ = std::make_unique<world::AsyncChunkStream>(
+                limits, asyncReservation_ * (settings_.maxPendingJobs + 1u),
+                settings_.maxPendingJobs,
+                [this](world::Cell cell) -> world::AsyncChunkStream::Payload {
+                    const auto snap = asyncSnapshot_.load(std::memory_order_acquire);
+                    if (!snap) return {};
+                    auto result = std::make_shared<PreparedPatch>();
+                    result->revision = snap->revision;
+                    result->instances = preparePatch(*snap, cell.x, cell.z);
+                    return result;
+                });
+        }
+        const int64_t side = settings_.chunkSizeCm;
+        const int64_t cx = detail::floorDiv(camera.x, side);
+        const int64_t cz = detail::floorDiv(camera.z, side);
+        using Key = std::pair<int64_t, int64_t>;
+        std::vector<Key> candidates;
+        for (int64_t dz = -int64_t(settings_.radiusChunks);
+                dz <= int64_t(settings_.radiusChunks); ++dz)
+            for (int64_t dx = -int64_t(settings_.radiusChunks);
+                    dx <= int64_t(settings_.radiusChunks); ++dx) {
+                const int64_t minX = (cx + dx) * side;
+                const int64_t minZ = (cz + dz) * side;
+                if (minX < -kWorldLimitCm + 100 ||
+                    minZ < -kWorldLimitCm + 100 ||
+                    minX + side > kWorldLimitCm - 100 ||
+                    minZ + side > kWorldLimitCm - 100) continue;
+                candidates.push_back({cx + dx, cz + dz});
+            }
+        std::sort(candidates.begin(), candidates.end(), [cx,cz](Key a,Key b) {
+            const int64_t ax=a.first-cx, az=a.second-cz;
+            const int64_t bx=b.first-cx, bz=b.second-cz;
+            const int64_t da=ax*ax+az*az, db=bx*bx+bz*bz;
+            return da==db?a<b:da<db;
+        });
+        if (candidates.size() > settings_.maxResidentChunks)
+            candidates.resize(settings_.maxResidentChunks);
+        std::set<world::Cell> wanted;
+        std::vector<world::Cell> pins;
+        pins.reserve(candidates.size());
+        for (const Key& key : candidates) {
+            // Forest key range is limited to +/-1e9 cm, so uint32 Cell
+            // coordinates cannot overflow for any supported chunk size.
+            world::Cell cell{static_cast<int32_t>(key.first), 0,
+                             static_cast<int32_t>(key.second)};
+            wanted.insert(cell);
+            pins.push_back(cell);
+        }
+        for (auto it = asyncCatalog_.begin(); it != asyncCatalog_.end();) {
+            if (wanted.contains(*it)) { ++it; continue; }
+            const world::Cell cell=*it;
+            async_->remove(cell, [this](world::Cell old) {
+                patches_.erase({old.x, old.z});
+            });
+            patches_.erase({cell.x, cell.z});
+            it=asyncCatalog_.erase(it);
+        }
+        for (const world::Cell& cell : pins) {
+            if (asyncCatalog_.contains(cell)) continue;
+            if (!async_->add(cell, asyncReservation_))
+                throw std::runtime_error("TerraWeave async chunk reservation failed");
+            asyncCatalog_.insert(cell);
+        }
+        async_->update({}, std::span<const world::Cell>(pins.data(),pins.size()),
+            settings_.requestsPerUpdate, settings_.publicationsPerUpdate,
+            [this](world::Cell cell,const world::AsyncChunkStream::Payload& payload) {
+                const auto& patch = static_cast<const PreparedPatch&>(*payload);
+                if (patch.revision != revision_ || !asyncCatalog_.contains(cell))
+                    return false;
+                patches_[{cell.x,cell.z}] = patch.instances;
+                return true;
+            },
+            [this](world::Cell cell) {
+                patches_.erase({cell.x,cell.z});
+            });
+    }
+
     ForestSceneSettings settings_;
     ArborForestAdapter adapter_;
     std::vector<FoliageSpecies> species_;
@@ -295,6 +432,10 @@ private:
     uint64_t revision_ = 1;
     bool residentStarted_ = false;
     bool gpuUploaded_ = false;
+    size_t asyncReservation_ = 0;
+    std::atomic<std::shared_ptr<const GenerationSnapshot>> asyncSnapshot_{};
+    std::unique_ptr<world::AsyncChunkStream> async_;
+    std::set<world::Cell> asyncCatalog_;
 };
 
 } // namespace aiverse::terraweave
