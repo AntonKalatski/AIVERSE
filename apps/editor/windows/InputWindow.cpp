@@ -163,11 +163,32 @@ public:
         if(ImGui::Button(dirty_?"Save changes *":"Save changes"))save(dir);
         ImGui::SameLine();
         ImGui::TextDisabled("%s",exists_?"Asset exists":"No asset yet");
+        int policy=int(capturePolicy_);
+        if(ImGui::Combo("On capture conflict",&policy,
+                        "Allow duplicate\0Reject duplicate\0Swap keys\0\0"))
+            capturePolicy_=ei::RebindPolicy(policy);
         if(!error_.empty())ImGui::TextWrapped("Input: %s",error_.c_str());
         ImGui::Separator();
         actions();
         ImGui::Separator();
         contexts();
+        // Report conflicts in the actual context ordering, including shadows
+        // between multiple active contexts, not only adjacent bindings.
+        ei::InputSystem inspector;
+        std::string validation;
+        if(ecfg::installAsset(inspector,asset_,&validation)){
+            const auto warnings=inspector.conflicts();
+            if(!warnings.empty()&&ImGui::CollapsingHeader("Control conflicts")) {
+                for(const auto& c:warnings){
+                    ImGui::TextWrapped("%s:%s (%llu) / %s:%s (%llu) — %s",
+                        c.higherContext.c_str(),c.higherAction.c_str(),
+                        static_cast<unsigned long long>(c.higherMappingId),
+                        c.lowerContext.c_str(),c.lowerAction.c_str(),
+                        static_cast<unsigned long long>(c.lowerMappingId),
+                        c.shadowed?"later mapping shadowed":"shared control");
+                }
+            }
+        }
         if(capture_) {
             ImGui::Separator();
             ImGui::TextUnformatted("Press a key to bind; Escape cancels.");
@@ -175,9 +196,22 @@ public:
             else if(auto key=capturedKey()) {
                 const auto [context,mapping]=*capture_;
                 if(context<asset_.contexts.size() && mapping<asset_.contexts[context].context.mappings.size()) {
-                    auto& c=asset_.contexts[context].context.mappings[mapping].control;
-                    c={ei::Device::Keyboard,int(*key),0};
-                    dirty_=true;
+                    auto& mappings=asset_.contexts[context].context.mappings;
+                    const ei::Control requested{ei::Device::Keyboard,int(*key),0};
+                    std::vector<std::size_t> duplicates;
+                    for(std::size_t k=0;k<mappings.size();++k)
+                        if(k!=mapping&&mappings[k].control==requested)duplicates.push_back(k);
+                    if(capturePolicy_==ei::RebindPolicy::Reject&&!duplicates.empty())
+                        error_="That key is already used in this context.";
+                    else if(capturePolicy_==ei::RebindPolicy::Swap&&duplicates.size()>1)
+                        error_="Cannot swap a key assigned to multiple mappings.";
+                    else {
+                        const ei::Control previous=mappings[mapping].control;
+                        if(capturePolicy_==ei::RebindPolicy::Swap&&!duplicates.empty())
+                            mappings[duplicates.front()].control=previous;
+                        mappings[mapping].control=requested;
+                        error_.clear();dirty_=true;
+                    }
                 }
                 capture_.reset();
             }
@@ -305,6 +339,7 @@ private:
     bool exists_=false,dirty_=false;
     char actionName_[96]{},contextName_[96]{};
     std::optional<std::pair<std::size_t,std::size_t>> capture_;
+    ei::RebindPolicy capturePolicy_=ei::RebindPolicy::Swap;
 };
 AIVERSE_EDITOR_WINDOW(InputWindow);
 } // namespace aiverse::editor
