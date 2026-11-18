@@ -9,18 +9,20 @@ bool readContentFile(const std::string&,std::string&){return false;}
 int main() {
     using namespace aiverse::view;
     ScenePacketBatch batch;
-    batch.reserve(5);
+    batch.reserve(6);
     Object object;object.id=42;object.generation=7;
     MeshObject mesh;mesh.flags=128;
     LineObject line{{0,0,0},{0,1,0},0xff};
     TriangleObject triangle{{0,0,0},{1,0,0},{0,1,0},0xffffffff};
     CircleXZObject circle{{3,0,4},.7f,0xff00ff00u,24,.05f};
+    QuadXZObject ribbon{{0,0,0},{4,0,5},.5f,0xffaabbccu,.04f};
     batch.add(object);
     batch.add(mesh);
     batch.add(line);
     batch.add(triangle);
     batch.add(circle);
-    assert(batch.size()==5);
+    batch.add(ribbon);
+    assert(batch.size()==6);
     const auto& packets=batch.packets();
     assert(std::holds_alternative<Object>(packets[0]));
     assert(std::get<Object>(packets[0]).id==42);
@@ -32,6 +34,11 @@ int main() {
     assert(std::get<TriangleObject>(packets[3]).c.y==1.f);
     assert(std::holds_alternative<CircleXZObject>(packets[4]));
     assert(std::get<CircleXZObject>(packets[4]).segments==24);
+    assert(std::holds_alternative<QuadXZObject>(packets[5]));
+    assert(std::get<QuadXZObject>(packets[5]).start.x==0.f);
+    assert(std::get<QuadXZObject>(packets[5]).end.z==5.f);
+    assert(std::get<QuadXZObject>(packets[5]).width==.5f);
+    assert(std::get<QuadXZObject>(packets[5]).y==.04f);
     // Updating the same mixed stream must count only Object packets;
     // empty/model-less objects must not allocate animation sources.
     View scene(0);
