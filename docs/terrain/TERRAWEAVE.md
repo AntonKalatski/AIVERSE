@@ -1421,3 +1421,11 @@ CTest, platform GPU screenshots, GPU memory tracking,
 and frame-time measurements are the separate
 validation agent's responsibility. Runtime GPU
 reuse and lifecycle are not yet verified.
+
+
+The GPU residency counters additionally include
+`gpuCacheEvictions`, counting models explicitly released from
+the inactive LRU due to count/byte limits or stale terrain
+revisions. This excludes active-region replacement when no
+cache could retain the old model and does not measure GPU
+driver allocations or frame time.
