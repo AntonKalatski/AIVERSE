@@ -50,8 +50,8 @@ Use \`Modifier::scale/negate/deadZone/swapXY/normalize\`, \`Trigger::down/presse
 
 \`\`\`sh
 cmake -S tests/libraries -B /tmp/aiverse-input-tests -DCMAKE_BUILD_TYPE=Debug
-cmake --build /tmp/aiverse-input-tests --target aiverse_enhanced_input_tests aiverse_enhanced_input_adapter_tests aiverse_enhanced_input_config_tests
-ctest --test-dir /tmp/aiverse-input-tests --output-on-failure -R library_enhanced_input
+cmake --build /tmp/aiverse-input-tests --target aiverse_enhanced_input_tests aiverse_enhanced_input_adapter_tests aiverse_enhanced_input_config_tests aiverse_enhanced_rts_input_tests
+ctest --test-dir /tmp/aiverse-input-tests --output-on-failure -R 'library_enhanced_(input|rts_input)'
 python3 tools/libraries/catalog.py check
 python3 tests/libraries/run.py
 python3 tests/libraries/native_consumer.py
