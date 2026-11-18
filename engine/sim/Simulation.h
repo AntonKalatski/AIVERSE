@@ -164,6 +164,7 @@ public:
     void present(std::vector<SimEvent> events);
 
     World& world() { return world_; }
+    const World& world() const { return world_; }
     Random& rng() { return rng_; }
     GameModule& module() { return *module_; }
     uint32_t tick() const { return tick_; }
