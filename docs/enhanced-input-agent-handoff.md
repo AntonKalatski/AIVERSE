@@ -876,3 +876,14 @@ ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_
 **Evidence:** Exact user-supplied macOS Clang diagnostic and source inspection. Updated code is committed, but **a successful post-fix editor compilation/full test run is NOT YET confirmed**. Prior four focused InputFlow CTest suites were reported PASS by user; this does not prove the full editor binary is built.
 
 **Next agent / user validation:** pull `feature/aiv990_enhanced_input` and rerun `./run-tests.sh --jobs 4 --ctest-jobs 4`; if the build fails, capture first compiler diagnostic and the build log. Preserve `isWindowInFront` public access fix from Stage 58. If full build/tests pass, record exact HEAD, test summary, and proceed to editor InputFlow Actions tab capture + gameplay smoke. Do not mark PR #20 ready without integration evidence.
+
+
+## Stage 60 — macOS Clang planet-camera switch-case scopes (2026-11-18)
+
+**User-reported build error:** Mac Debug editor build reached 92% and failed in `apps/client/ClientPlanet.cpp`. The `planetCameraEvent()` switch declared `const auto* wheel` and `const float value` directly under `case EventType::MouseWheel`, followed by `const auto fired = [...] ` directly under `case EventType::KeyDown`. Clang reported `cannot jump from switch statement to this case label` at subsequent `KeyDown`, `TouchMove` and `default` labels. All three reported errors share the unscoped local-initialization cause.
+
+**Fix:** `apps/client/ClientPlanet.cpp`: wrap `case EventType::MouseWheel: { ... }` and `case EventType::KeyDown: { ... }` in explicit scopes. No changes to wheel zoom, `PlanetNextBody`, `FocusCamera`, touch camera controls, InputFlow Actions, ECS Commands or gameplay semantics. Code commit `9d4ecfba4f1e64ad7bcdc166c5c23c35fdcb9a5c`. This mirrors the earlier Stage 59 scoped `GameClient.cpp` wheel correction.
+
+**Verification:** exact user-supplied local compiler diagnostics plus source-level correction; **post-fix local compilation/CTest not yet confirmed**. Four focused InputFlow suites previously passed (Stage 57). The editor's complete Debug build still needs a fresh user run; keep PR #20 Draft.
+
+**Next agent/test:** `git pull --ff-only origin feature/aiv990_enhanced_input` then `./run-tests.sh --jobs 4 --ctest-jobs 4` from the repository root. Capture the next first compiler error or PASS summary. If the build succeeds, conduct a native editor InputFlow Settings capture and planet/RTS/FPS smoke. Preserve exact branches and per-stage handoff updates; do not claim a successful full build from a source-only fix.
