@@ -9,7 +9,7 @@ Read \`docs/enhanced-input.md\` and \`docs/enhanced-input-agent-handoff.md\` **b
 
 ## Canonical InputFlow API
 
-For new C++ games include `<aiverselib/gameplay/InputFlow.h>` and use `aiverse::lib::gameplay::inputflow::InputFlow` with `InputAction`, `InputContext`, `InputValue` and the other re-exported types. Keep `EnhancedInput.h`, `enhanced::InputSystem`, `AIVERSE::lib_input`, `input/actions.json` and existing user profiles working for older games. Do not rename an authored asset or a serialized gameplay command to achieve branding.
+For new C++ games include `<aiverselib/gameplay/InputFlow.h>` and use `aiverse::lib::gameplay::inputflow::InputFlow` with `InputAction`, `InputContext`, `InputValue` and the other re-exported types. For platform hosts include `engine/platform/InputFlow.h`, using `platform::InputFlowAdapter`, `platform::InputFlowUsers`, `platform::InputFlowUserProfiles`, `platform::inputflow_config` and `platform::inputflow_presets`. Keep `EnhancedInput.h`, `enhanced::InputSystem`, `AIVERSE::lib_input`, `input/actions.json` and existing user profiles working for older games. Do not rename an authored asset or a serialized gameplay command to achieve branding.
 
 ## Pick the existing mechanism first
 
