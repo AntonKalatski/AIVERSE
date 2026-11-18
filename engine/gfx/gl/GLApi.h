@@ -87,6 +87,17 @@
   #define GL_DEPTH 0x1801
   #define GL_DEPTH_ATTACHMENT 0x8D00
   #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
+  #define GL_PIXEL_PACK_BUFFER 0x88EB
+  #define GL_PIXEL_PACK_BUFFER_BINDING 0x88ED
+  #define GL_STREAM_READ 0x88E1
+  #define GL_MAP_READ_BIT 0x0001
+  #define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
+  #define GL_ALREADY_SIGNALED 0x911A
+  #define GL_TIMEOUT_EXPIRED 0x911B
+  #define GL_CONDITION_SATISFIED 0x911C
+  #define GL_WAIT_FAILED 0x911D
+  struct __GLsync;
+  typedef struct __GLsync* GLsync;
   #define GL_RENDERBUFFER 0x8D41
   #define GL_MAX_SAMPLES 0x8D57
   #define GL_TIME_ELAPSED 0x88BF
@@ -159,7 +170,12 @@
     X(GLenum, glCheckFramebufferStatus, (GLenum t)) \
     X(void, glDrawBuffers, (GLsizei n, const GLenum* b)) \
     X(void, glClearBufferfv, (GLenum buffer, GLint drawbuffer, const GLfloat* value)) \
-    X(void, glBlitFramebuffer, (GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield m, GLenum f))
+    X(void, glBlitFramebuffer, (GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield m, GLenum f)) \
+    X(GLsync, glFenceSync, (GLenum condition, GLbitfield flags)) \
+    X(GLenum, glClientWaitSync, (GLsync sync, GLbitfield flags, GLuint64 timeout)) \
+    X(void, glDeleteSync, (GLsync sync)) \
+    X(void*, glMapBufferRange, (GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)) \
+    X(GLboolean, glUnmapBuffer, (GLenum target))
   #define AIVERSE_GL_DECLARE(ret, name, args) typedef ret (APIENTRY* PFN_##name) args; extern PFN_##name name;
   AIVERSE_GL_FUNCS(AIVERSE_GL_DECLARE)
   #undef AIVERSE_GL_DECLARE

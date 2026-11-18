@@ -127,6 +127,13 @@ struct GLSampler { GLuint native = 0; };
 struct GLFramebuffer { uint32_t color = 0, depth = 0; GLuint fbo = 0; };
 struct GLShader { GLuint program = 0; std::string vs, fs; int textures = 0, uniforms = 0; bool linear = false; };
 struct GLPipeline { PipelineDesc desc; GLuint program = 0; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; };
+struct GLTextureRead {
+    GLuint pbo = 0;
+    GLsync fence = nullptr;
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::RGBA8;
+    Device::TextureReadFn callback;
+};
 
 constexpr size_t kUniformRingSize = 1 << 20;
 constexpr int kMaxUniformSlots = 8;
@@ -202,6 +209,11 @@ public:
         }
     }
     ~GLDevice() override {
+        for (auto& read : textureReads_) {
+            if (read.fence) glDeleteSync(read.fence);
+            if (read.pbo) glDeleteBuffers(1, &read.pbo);
+        }
+        textureReads_.clear();
 #if defined(__APPLE__) || defined(_WIN32)
         if (queryActive_) glEndQuery(GL_TIME_ELAPSED);
         for (const auto& t:timedQueries_) glDeleteQueries(1,&t.query);
@@ -800,6 +812,7 @@ public:
 #endif
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
+        deliverTextureReads();
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
 #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
@@ -829,6 +842,129 @@ public:
         fn(fbW_, fbH_, std::move(px));
     }
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
+
+    bool readTextureAsync(TextureHandle h, TextureReadbackDesc request,
+                          TextureReadFn callback) override {
+#if defined(__EMSCRIPTEN__)
+        // WebGL2 exposes neither portable PBO mapping nor a fence-backed
+        // GLES glMapBufferRange path in this native interface.
+        (void)h; (void)request; (void)callback;
+        error_ = "WebGL2: native asynchronous texture readback is unsupported";
+        return false;
+#else
+        const GLTexture* t = textures_.get(h.id);
+        if (!callback || inPass_ || !t || !t->id || t->compressed ||
+            t->renderbuffer || t->samples != 1 ||
+            (t->fmt != PixelFormat::RGBA8 &&
+             t->fmt != PixelFormat::RGBA8_sRGB) ||
+            request.mipLevel < 0 || request.mipLevel >= t->levels ||
+            request.arrayLayer < 0 || textureReads_.size() >= 32)
+            return false;
+        if (t->dimension != TextureDimension::Texture2D &&
+            t->dimension != TextureDimension::Texture2DArray &&
+            t->dimension != TextureDimension::Cube)
+            return false;
+        const int layers = t->dimension == TextureDimension::Cube ? 6 : t->layers;
+        if (request.arrayLayer >= layers) return false;
+        const int width = std::max(1, t->w >> request.mipLevel);
+        const int height = std::max(1, t->h >> request.mipLevel);
+        const size_t bytes = size_t(width) * size_t(height) * 4u;
+        if (bytes > (size_t(256) << 20)) return false;
+        GLint oldReadFbo = 0, oldPackPbo = 0, oldPackAlignment = 4;
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldReadFbo);
+        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &oldPackPbo);
+        glGetIntegerv(GL_PACK_ALIGNMENT, &oldPackAlignment);
+        GLuint fbo = 0, pbo = 0;
+        glGenFramebuffers(1, &fbo);
+        glGenBuffers(1, &pbo);
+        if (!fbo || !pbo) {
+            if (fbo) glDeleteFramebuffers(1, &fbo);
+            if (pbo) glDeleteBuffers(1, &pbo);
+            error_ = "GL: texture readback framebuffer/PBO allocation failed";
+            return false;
+        }
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+        if (t->dimension == TextureDimension::Texture2DArray)
+            glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                      t->id, request.mipLevel, request.arrayLayer);
+        else
+            glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                t->dimension == TextureDimension::Cube ?
+                  GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(request.arrayLayer) :
+                  GL_TEXTURE_2D,
+                t->id, request.mipLevel);
+        const bool complete = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) ==
+                              GL_FRAMEBUFFER_COMPLETE;
+        if (complete) {
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo);
+            glBufferData(GL_PIXEL_PACK_BUFFER, GLsizeiptr(bytes), nullptr, GL_STREAM_READ);
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        }
+        const GLenum pendingError = glGetError();
+        GLsync fence = nullptr;
+        if (complete && pendingError == GL_NO_ERROR)
+            fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(oldPackPbo));
+        glPixelStorei(GL_PACK_ALIGNMENT, oldPackAlignment);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, GLuint(oldReadFbo));
+        glDeleteFramebuffers(1, &fbo);
+        if (!fence || glGetError() != GL_NO_ERROR) {
+            if (fence) glDeleteSync(fence);
+            glDeleteBuffers(1, &pbo);
+            error_ = "GL: texture readback attachment, transfer or sync failed";
+            return false;
+        }
+        // A fence is not a CPU wait; flushing only submits pending commands.
+        glFlush();
+        textureReads_.push_back({pbo, fence, width, height, t->fmt, std::move(callback)});
+        return true;
+#endif
+    }
+
+    void deliverTextureReads() {
+        struct Completed {
+            TextureReadFn callback;
+            TextureReadbackResult result;
+        };
+        std::vector<Completed> completed;
+        for (size_t i = 0; i < textureReads_.size();) {
+            GLTextureRead& read = textureReads_[i];
+            const GLenum status = glClientWaitSync(read.fence, 0, 0);
+            if (status == GL_TIMEOUT_EXPIRED) { ++i; continue; }
+            TextureReadbackResult result;
+            result.format = read.format;
+            if (status == GL_ALREADY_SIGNALED || status == GL_CONDITION_SATISFIED) {
+                const size_t row = size_t(read.width)*4u;
+                const size_t bytes = row*size_t(read.height);
+                GLint oldPbo = 0;
+                glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &oldPbo);
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, read.pbo);
+                const uint8_t* p = static_cast<const uint8_t*>(
+                    glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, GLsizeiptr(bytes), GL_MAP_READ_BIT));
+                if (p) {
+                    result.width = read.width;
+                    result.height = read.height;
+                    result.pixels.resize(bytes);
+                    for (int y=0;y<read.height;++y)
+                        std::memcpy(result.pixels.data()+size_t(y)*row,
+                                    p+size_t(read.height-1-y)*row, row);
+                    if (glUnmapBuffer(GL_PIXEL_PACK_BUFFER) != GL_TRUE) {
+                        result = {};
+                        result.format = read.format;
+                    }
+                }
+                glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(oldPbo));
+            }
+            glDeleteSync(read.fence);
+            glDeleteBuffers(1, &read.pbo);
+            completed.push_back({std::move(read.callback),std::move(result)});
+            textureReads_.erase(textureReads_.begin()+ptrdiff_t(i));
+        }
+        for (auto& item : completed)
+            if (item.callback) item.callback(std::move(item.result));
+    }
 
     bool supportsRenderTargetPasses() const override { return true; }
 
@@ -1303,6 +1439,7 @@ private:
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
     std::vector<GLFramebuffer> fbos_;
+    std::vector<GLTextureRead> textureReads_;
     struct GLResolve { uint32_t dst = 0; int mip = 0, layer = 0; };
     GLuint scopedFbo_ = 0;
     std::array<GLResolve, kMaxRenderTargetColors> scopedResolves_{};
