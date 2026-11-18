@@ -120,3 +120,32 @@ before calling this stage validated.
 - Next: implement a reusable montage/slot overlay driven by clip sections;
   then run all animation tests and add FPS visual integration with real
   optional models. Continue separate handoffs for every stage.
+
+
+## Stage 4: montage sections, overlay and notifies — 2026-11-18
+
+- Implementation: `c13e4174550f242d0600a5d41c138b6dee26d68d`.
+- Added: `libraries/include/aiverselib/animation/AnimationMontage.h`,
+  `MontageDefinition::compile()` and `MontagePlayer`.
+- Montages define slot name, clip sections, chaining/looping, explicit
+  notifies and optional bone subtree mask. A bounded playback update
+  crosses section boundaries and returns ordered events for audio/VFX.
+- `MontagePlayer::apply()` overrides only the played clip channels on top
+  of an existing AnimationGraph pose, with optional blend-in/out weight.
+- Added optional `AnimationMontageSlotsComponent` to the separate
+  presentation World. `stepAnimationPresentation()` updates these players
+  and evaluates overlays after graph evaluation, before world matrices.
+- Test `tests/animation/montage.cpp` / CTest `animation_montage` exercises
+  section progression, chaining, looping, bounded cycle guard, overlays
+  and composition with ECS AnimationGraph host.
+- Compatibility: no existing RtsView behavior changed; FPS is not
+  connected. Montages are view-only. No automatic notify import, runtime
+  animation graph montage node, network authority, additive montage
+  blending, montage preview UI, or synced slot group orchestration.
+- Validation: NOT RUN. Build with
+  `cmake --build build/ecs-test --target aiverse_animation_montage_tests`
+  and `ctest --test-dir build/ecs-test -R animation_montage --output-on-failure`.
+- Next: run CMake/tests/CI for all new targets, fix build failures, then
+  integrate first real FPS character model and character animation path.
+  Future stages still needed for Humanoid retarget, motion warping,
+  inertialization, physical animation, editor and performance.
