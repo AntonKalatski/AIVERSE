@@ -317,6 +317,37 @@ Coverage is source-level only: native C++/CTest/GPU validation remains
 outstanding. The `virtual_texture_prefetch` CTest and the existing
 `virtual_texture_file_streamer` CTest contain authored cases.
 
+## Optional GPU feedback → prefetch source pipeline
+
+`engine/gfx/VirtualTextureFeedback.h` adds a bounded 32-bit tile
+feedback ID layout in a **linear RGBA8 UNORM** render target:
+11 bits x + 11 bits y + 5 bits mip + 4 bits virtual layer + valid bit.
+Zero is reserved for unused pixels. GLSL and MSL fragment helpers
+encode the same ID, and `VirtualTextureFeedbackDecoder` refuses
+non-RGBA8, malformed/truncated or over-budget readback results.
+It groups visible pages by frequency and produces normalized
+`VirtualTextureVisibleRegion` requests for the genre-independent
+coarse-first prefetch planner.
+
+`engine/gfx/VirtualTextureFeedbackRuntime.h` connects the optional
+`Device::readTextureAsync` to the CPU decoder and then to
+`prefetchVisibleVirtualPages`. It owns no render pass, shaders,
+images or feedback draw commands. Game/editor render code must
+generate feedback with **no sRGB write conversion, blending,
+MSAA, dithering or postprocess**, end the feedback pass, call
+`capture(feedbackTexture)` and later `submit(fileStreamer)` after
+async callbacks have arrived on the graphics thread. Continue
+calling `fileStreamer.pump()` to upload physical pages.
+The runtime uses a weak callback state, allowing destruction
+before a GPU command completes without dangling owner pointers.
+
+This is an opt-in shader feedback path, **not** automatically
+integrated in the editor, camera, material graph or Terra.
+Only Metal/GL33/GLES3/Vulkan have source readback code; WebGL2
+fails closed. Real shader compilation, per-backend render capture
+and readback accuracy remain NOT RUN. The CPU contracts are
+`virtual_texture_feedback` and `virtual_texture_file_streamer`.
+
 ## Live GPU texture inspector — source-only
 
 `Device::textureResources()` now enumerates user-created live textures from
@@ -382,10 +413,10 @@ cmake --build build/texture-rhi --target \
   aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test \
   aiverse_virtual_texture_streamer_test \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
-  aiverse_virtual_texture_prefetch_test \
+  aiverse_virtual_texture_prefetch_test aiverse_virtual_texture_feedback_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|hdr_texture|exr_texture)$'
+  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|hdr_texture|exr_texture)$'
 ```
 
 Build `aiverse_editor` and a native client to detect editor/renderer
@@ -405,6 +436,8 @@ need separate native builds and visual/readback validation.
 - `engine/gfx/VirtualTextureFileStreamer.h` — disk-to-GPU physical atlas coordinator
 - `engine/gfx/VirtualTexturePrefetch.h` — bounded normalized UV visibility planner
 - `engine/gfx/VirtualTexturePrefetchAdapter.h` — disk-page request integration
+- `engine/gfx/VirtualTextureFeedback.h` — bounded RGBA8 page feedback codec
+- `engine/gfx/VirtualTextureFeedbackRuntime.h` — optional async readback-to-prefetch coordinator
 - `engine/gfx/VirtualTextureSampling.h` — GLSL/MSL virtual page lookup
 - `engine/render/TextureAsset.h` — DDS/KTX2 GPU uploads
 - `apps/editor/windows/TextureResourcesWindow.cpp` — live GPU inspector

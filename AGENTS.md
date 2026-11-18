@@ -46,7 +46,8 @@ offscreen rendering, KTX2/DDS assets or mip streaming, **start with**
 `gfx::RenderTargetSet`, `gfx::TextureStreamQueue`,
 `gfx::TextureMipResidency`, `gfx::TextureResidentStreamer`,
 `gfx::VirtualTextureStreamer`, `gfx::VirtualTexturePrefetchPlanner`,
-`gfx::prefetchVisibleVirtualPages`, `Device::readTextureAsync`,
+`gfx::prefetchVisibleVirtualPages`, `gfx::VirtualTextureFeedbackRuntime`,
+`Device::readTextureAsync`,
 `render::loadRadianceHdr`, `render::loadOpenExr`, `render::parseKtx2`,
 `render::parseDdsTexture` and `render::uploadContainerTexture`.
 Do not regenerate or fork genre-specific texture managers in FPS,
