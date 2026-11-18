@@ -1,5 +1,7 @@
 # Focused SpectraFX compilation + CPU/RHI-regression gates.
-# A successful job does NOT imply live Metal shader execution or GPU image parity.
+# macOS additionally compiles and attempts a real Metal compute smoke.
+# If no real Metal device is present it is reported SKIPPED, not PASS;
+# this is not a complete render-image / performance validation.
 name: SpectraFX validation
 
 on:
@@ -7,6 +9,7 @@ on:
     paths:
       - 'engine/fx/**'
       - 'tests/vfx_*.cpp'
+      - 'tests/vfx_*.mm'
       - 'apps/editor/core/SpectraGraphOps.cpp'
       - 'apps/editor/windows/SpectraGraphWindow.cpp'
       - 'apps/editor/EditorFxOps.cpp'
@@ -50,6 +53,9 @@ jobs:
           --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests
           aiverse_vfx_assets_tests aiverse_vfx_gpu_tests
           aiverse_vfx_graph_runtime_tests --parallel 2
+      - name: Build real Metal compute smoke
+        if: runner.os == 'macOS'
+        run: cmake --build build/spectrafx-ci --target aiverse_vfx_metal_smoke --parallel 2
       - name: Run headless SpectraFX tests
         run: ctest --test-dir build/spectrafx-ci --output-on-failure -L SpectraFX
 
