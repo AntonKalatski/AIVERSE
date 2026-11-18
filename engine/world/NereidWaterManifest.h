@@ -114,8 +114,12 @@ inline NereidSceneSurface surface(const Json& j) {
         s.mediumDistance=scalar(j["mediumDistance"],"mediumDistance",1.f,1000000.f);
     if(j.has("farDistance"))
         s.farDistance=scalar(j["farDistance"],"farDistance",1.f,1000000.f);
-    if(s.farDistance<=s.mediumDistance)
-        throw JsonError("nereidWater: farDistance must exceed mediumDistance");
+    if(j.has("lodHysteresis"))
+        s.lodHysteresis=scalar(j["lodHysteresis"],"lodHysteresis",0.f,100000.f);
+    if(s.farDistance<=s.mediumDistance ||
+       s.lodHysteresis>=s.mediumDistance ||
+       2*s.lodHysteresis>=s.farDistance-s.mediumDistance)
+        throw JsonError("nereidWater: invalid LOD distances/hysteresis");
     if(j.has("oceanPatchRadius"))
         s.mesh.oceanPatchRadius=scalar(j["oceanPatchRadius"],"oceanPatchRadius",1.f,100000.f);
     if(j.has("uvScale"))s.mesh.uvScale=scalar(j["uvScale"],"uvScale",0.0001f,128.f);
