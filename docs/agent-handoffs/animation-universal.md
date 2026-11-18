@@ -1331,3 +1331,45 @@ before calling this stage validated.
   shadows) to engine View, then gradually retire genre-specific
   RtsView. Implement separately and append Stage 50 handoff.
 
+## Stage 50 — model submission extracted to genre-neutral engine View (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22; base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `39b6f837aa662e2474bf7aa5e0c1d60d1f175adc`.
+- **Files:** `engine/view/View.h`,
+  `modules/rts/view/RtsViewDraw.cpp`, `docs/motionweave.md`.
+- **API:** `View::submitOne(Renderer3D&,const view::Object&)`
+  now handles generic single-object model/pose GPU submission and
+  `View::submit(renderer,span)` delegates each object through that
+  single implementation. It borrows the host-owned
+  `render::ModelDraw` fields (materials, transforms, tint, flags,
+  persistent ID) and uses MotionWeave's ECS pose matrices if present.
+- **Migration:** for the narrow eligible safe Graph set from
+  Stage 49, existing `RtsViewDraw::drawObject` constructs its
+  usual fully styled `ModelDraw` packet, but delegates the final
+  renderer submission to `aiverse::View::submitOne`. It does
+  **not** draw a second duplicate entity. Stage/LOD/preview
+  draw or any unsupported graph still invokes legacy r.drawModel.
+  RTS-only model placement, gameplay data selection, overlays,
+  fog and terrain remain in the game-side adapter.
+- **Compatibility:** canonical engine `aiverse::View` is genre
+  independent, old `aiverse::game::RtsView` remains for source
+  compatibility. No changes to simulation/save/network/checksums,
+  shader or renderer internals.
+- **Tests:** **NOT RUN** (requested deferred tests). Pending
+  validation includes renderer batching/persistentId regression,
+  editor Scene View, model/LOD overlays and deterministic gameplay
+  parity. There is not yet a full production cutover of RtsView.
+- **Risks:** the generic View's ModelDraw pointer references must
+  remain valid until submit returns. This intermediate migration
+  still constructs an RTS-side draw packet; next step should
+  extract pure, reusable data mapping while respecting the
+  existing variants, materials and construction/LOD semantics.
+- **Next agent action:** review `RtsViewDraw.cpp` for all render
+  flags, attachments, shadows, pose/world matrix consumers.
+  Extract universal model-instance packet assembly from the
+  game-specific rules into an engine-level builder where it
+  improves reuse; continue converting genre host adapters rather
+  than adding FPS/RTS special cases to `View`. Commit Stage 51
+  implementation then separate handoff before other work.
+
