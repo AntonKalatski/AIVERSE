@@ -65,7 +65,7 @@ std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetR
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
     auto json=Json::parse(text);auto collision=readChunkCollision(json,assets_.cellSize);
     auto out=std::make_shared<Prepared>();size_t bytes=4096;
-    if(terraForest_){
+    if(terraForest_ || terraHorizon_){
         out->terrainResolution=uint32_t(collision.terrain.resolution);
         out->terrainHeightsCm.reserve(collision.terrain.heights.size());
         for(const Fixed& height:collision.terrain.heights){
@@ -157,7 +157,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 for(auto& image:model->images)if(!image.tex.valid())throw JsonError("world.mesh: GPU texture upload failed");
             }
             resident_[cell]=prepared;
-            if(terraForest_ &&
+            if((terraForest_ || terraHorizon_) &&
                (prepared->terrainResolution || !prepared->placementBoxes.empty()))
                 landscapeChanged=true;
             return true;
@@ -165,13 +165,13 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
     },[&](Cell cell){
         auto it=resident_.find(cell);
         if(it==resident_.end())return;
-        if(terraForest_ &&
+        if((terraForest_ || terraHorizon_) &&
            (it->second->terrainResolution || !it->second->placementBoxes.empty()))
             landscapeChanged=true;
         releaseChunk(device,*it->second);
         resident_.erase(it);
     },uploadBytes_);
-    if(terraForest_ && landscapeChanged){
+    if((terraForest_ || terraHorizon_) && landscapeChanged){
         // Publish a single immutable snapshot for both terrain heights and
         // obstacle footprints. Async foliage jobs keep old snapshots alive
         // until canceled; revision checks discard their stale results.
@@ -215,17 +215,35 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         }
         const std::shared_ptr<const terraweave::AuthoredWorldHeightSnapshot> heights =
             std::move(mutableHeights);
-        const terraweave::TerrainSettings fallback=terraForest_->settings().terrain;
         std::shared_ptr<const terraweave::FoliageExclusionMask> mask;
         if(boxes)mask=std::move(mutableMask);
-        terraForest_->setLandscapeSources(
-            [heights,fallback](int64_t x,int64_t z)->int32_t{
+        if(terraForest_){
+            const terraweave::TerrainSettings fallback=
+                terraForest_->settings().terrain;
+            terraForest_->setLandscapeSources(
+                [heights,fallback](int64_t x,int64_t z)->int32_t{
+                    if(const auto sample=heights->sample(x,z))return *sample;
+                    return terraweave::heightAtCm(fallback,x,z);
+                },
+                mask);
+        }
+        if(terraHorizon_){
+            // An immutable source snapshot is shared by each in-flight
+            // Horizon worker. The far-ground and canopy samples now use
+            // the same resident authored tiles/obstacle footprint snapshot
+            // as near foliage. Unloaded regions fall back to the Horizon
+            // generator's own procedural terrain seed.
+            const auto fallback=terraHorizon_->terrainSettings();
+            auto surface=std::make_shared<terraweave::HorizonSurfaceSources>();
+            surface->heightAtCm=[heights,fallback](int64_t x,int64_t z){
                 if(const auto sample=heights->sample(x,z))return *sample;
-                // Unloaded heightfield chunks remain procedural. The world
-                // host may supply a complete custom provider to avoid seams.
                 return terraweave::heightAtCm(fallback,x,z);
-            },
-            std::move(mask));
+            };
+            if(mask)surface->allowsCanopyAt=[mask](int64_t x,int64_t z){
+                return !mask->excludes(x,z);
+            };
+            terraHorizon_->setSurfaceSources(std::move(surface));
+        }
     }
     if(terraForest_){
         if(!observers.empty()) {
