@@ -1277,6 +1277,195 @@
       ]
     },
     {
+      "id": "aiverse-ecs-hitscan",
+      "package": "ecs-hitscan",
+      "path": "skills/gameplay/aiverse-ecs-hitscan/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Shared deterministic hitscan candidate ray intersection with eligibility, immutable rewind poses and nearest-hit tie consistency for FPS, RTS and native games",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_hitscan",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_world"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsHitscanSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-hitscan-resolution",
+      "package": "ecs-hitscan-resolution",
+      "path": "skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Independent reusable ECS hitscan resolution system: one-shot intents, deterministic nearest-target callbacks, stable hit records and deferred hit application for native games",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_hitscan_resolution",
+      "dependencies": [
+        "aiverse-ecs-hitscan"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-impact-damage",
+      "package": "ecs-impact-damage",
+      "path": "skills/gameplay/aiverse-ecs-impact-damage/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Genre-independent ECS projectile-impact to damage resolution: health/damage components, collider-entity mapping, ordered damage queue, configurable damage policy and applied-event callback",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_impact_damage",
+      "dependencies": [
+        "aiverse-ecs-projectile-systems"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsDamageSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-impact-queue",
+      "package": "ecs-impact-queue",
+      "path": "skills/gameplay/aiverse-ecs-impact-queue/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Composable ECS ordered impact resolution stage with bounded rollback-owned request queue, stable sequence IDs and host-injected direct/on-hit/splash policies",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_impact_queue",
+      "dependencies": [
+        "aiverse-ecs-ordered-impact"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsImpactQueueSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-inventory",
+      "package": "ecs-inventory",
+      "path": "skills/gameplay/aiverse-ecs-inventory/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Genre-independent authoritative ECS inventory item add/remove/transfer transactions with deterministic request IDs, capacity/weight checks and ordered outcomes.",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_inventory",
+      "dependencies": [
+        "aiverse-inventory"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsInventorySystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-kinematic-projectiles",
+      "package": "ecs-kinematic-projectiles",
+      "path": "skills/gameplay/aiverse-ecs-kinematic-projectiles/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Shared nonphysical ECS projectiles with deterministic fixed-tick endpoint arrival or moving-target pursuit; canonical arrival events and deferred despawn",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_kinematic_projectiles",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-locomotion",
+      "package": "ecs-locomotion",
+      "path": "skills/gameplay/aiverse-ecs-locomotion/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Reusable ECS movement input/state/output components over the existing deterministic stepMotion character locomotion policy, with jump edges and rollback.",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_locomotion",
+      "dependencies": [
+        "aiverse-character-locomotion"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsLocomotionSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-ordered-impact",
+      "package": "ecs-ordered-impact",
+      "path": "skills/gameplay/aiverse-ecs-ordered-impact/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Genre-independent ordered ECS projectile impact dispatch for direct damage, queued on-hit effects and splash candidates with injected faction, armor and damage policies",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_ordered_impact",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-projectile-systems",
+      "package": "ecs-projectile-systems",
+      "path": "skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Genre-independent ECS projectile motion/impact assembly: shared flight components, deterministic ballistic or injected guidance policy, read-only collision provider, ordered hit records and deferred despawn",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_projectile_systems",
+      "dependencies": [
+        "aiverse-weapon-policies"
+      ],
+      "backendDependencies": [
+        "aiverse_world"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsProjectileSystems.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-timed-mechanics",
+      "package": "ecs-timed-mechanics",
+      "path": "skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Reusable ECS weapon reload/fire gating, hit-point and energy regeneration, and deterministic entity expiration systems for any genre.",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_timed_mechanics",
+      "dependencies": [
+        "aiverse-ecs-weapon-launch"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsTimedMechanics.h",
+      "keywords": []
+    },
+    {
+      "id": "aiverse-ecs-weapon-launch",
+      "package": "ecs-weapon-launch",
+      "path": "skills/gameplay/aiverse-ecs-weapon-launch/SKILL.md",
+      "domain": "gameplay",
+      "summary": "Universal ECS fire intent, weapon ammo/cooldown, deterministic deferred projectile creation, integrated with shared ballistic flight and impact/damage pipeline",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_ecs_weapon_launch",
+      "dependencies": [
+        "aiverse-ecs-impact-damage"
+      ],
+      "backendDependencies": [],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h",
+      "keywords": []
+    },
+    {
       "id": "aiverse-editor-extension",
       "package": null,
       "path": "skills/workflow/aiverse-editor-extension/SKILL.md",
