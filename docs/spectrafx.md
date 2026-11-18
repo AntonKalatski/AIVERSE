@@ -312,8 +312,10 @@ GLES3/GL33/WebGL2 do not run the compute kernel, so the existing CPU
 particle renderer is used instead. Do not report those platforms as
 GPU-supported. The dedicated test
 `tests/vfx_gpu_backend_test.cpp` checks the selection policy, bounds,
-headless CPU-fallback emissions and lifetime; **this is not a Metal GPU
-integration test**. CI and native GPU validation are still required.
+headless CPU-fallback emissions and lifetime. It also contains a recording
+Metal RHI mock that verifies spawn→integrate→expand dispatch ordering and
+render-pass command sequencing **without compiling/launching real GPU
+shaders**. It is not a Metal GPU integration test. CI and native GPU validation are still required.
 
 **Known limitations:** no GPU compaction, no camera culling/LOD for
 per-particle draws, no GPU-particle soft intersection, no mesh/ribbon
