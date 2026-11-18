@@ -526,6 +526,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_warp_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_motion_warp COMMAND aiverse_animation_warp_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_inertial_tests tests/animation/inertialization.cpp)
+    target_link_libraries(aiverse_animation_inertial_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_inertialization COMMAND aiverse_animation_inertial_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
