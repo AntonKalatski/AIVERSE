@@ -1575,3 +1575,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `4374480daacdc1beb69bd531287dd4f131822bc5`.
 - Updated `tests/fps/tests.cpp` to invoke `ecsProjectileBranchAuthorityParity()` after the existing `ecsProjectileProgramStageParity()` fixture. Native FPS tests now cover real programmed branch-spawn ordering, `ProjectileRuntime` source ownership, Entity identity/index, v9 cross-loading and deep/COW rollback by source.
 - **Verification:** GitHub update only, **native compilation/CTest/assertions not yet executed**. Continue with static code review, then native build, FPS/RTS save and transport tests before merge.
+
+
+### 2026-11-18 — Extract FPS ordinary projectile stage from round mechanics
+- Implementation SHA: `030c814405beda3293967f1127547bcacd26d3c2`.
+- `modules/fps/FpsSystems.cpp` split the previous `tickSystems` projectile iteration into `Module::tickOrdinaryProjectiles`, preserving the same per-projectile tick loop, traceShot collision/impact timing, grenade bounce/fuse/flash/smoke rules, order, and immediate effect callbacks. `tickSystems` now owns round/bomb logic only.
+- **Transitional code state:** declaration and Simulation registration of `tickOrdinaryProjectiles` are still required in the following code commits; do not build the intermediate SHA alone. Preserve original order `fps.compat.projectilePrograms -> fps.compat.ordinaryProjectiles -> fps` (round mechanics, royale, actor tick). No native build run yet.
