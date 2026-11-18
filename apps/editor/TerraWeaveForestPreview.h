@@ -74,15 +74,24 @@ public:
 
         constexpr int64_t kPreviewTileCm = 3200;
         constexpr int kRadiusInTiles = 2;
-        const int64_t tx = terraweave::detail::floorDiv(cameraXcm, kPreviewTileCm);
-        const int64_t tz = terraweave::detail::floorDiv(cameraZcm, kPreviewTileCm);
+        // Camera/render coordinates are map-local; generator coordinates are
+        // world-absolute and may have a nonzero origin in the saved recipe.
+        const auto origin = terraweave_ops_detail::origin(recipe);
+        const int64_t globalCameraXcm = cameraXcm + origin.worldOriginXcm;
+        const int64_t globalCameraZcm = cameraZcm + origin.worldOriginZcm;
+        if (globalCameraXcm < -terraweave::kWorldLimitCm ||
+            globalCameraXcm > terraweave::kWorldLimitCm ||
+            globalCameraZcm < -terraweave::kWorldLimitCm ||
+            globalCameraZcm > terraweave::kWorldLimitCm)
+            throw std::out_of_range("TerraWeave preview absolute camera extent");
+        const int64_t tx = terraweave::detail::floorDiv(globalCameraXcm, kPreviewTileCm);
+        const int64_t tz = terraweave::detail::floorDiv(globalCameraZcm, kPreviewTileCm);
         const std::string recipeKey = recipe.dump();
         if (cachedRevision_ != doc.revision || cachedTileX_ != tx ||
             cachedTileZ_ != tz || cachedRecipe_ != recipeKey) {
             placements_.clear();
             const auto t = terraweave_ops_detail::terrain(recipe);
             const auto b = terraweave::BiomeSettings{};
-            const auto origin = terraweave_ops_detail::origin(recipe);
             // The existing map's cell size controls its generated extent.
             // Clamp each preview tile to the current 2D authored map bounds.
             const int64_t mapMinX = origin.worldOriginXcm;
@@ -123,6 +132,8 @@ public:
                         const int64_t localXcm = item.xCm - origin.worldOriginXcm;
                         const int64_t localZcm = item.zCm - origin.worldOriginZcm;
                         item.heightCm = sampleHeightCm(localXcm, localZcm);
+                        item.xCm = localXcm;
+                        item.zCm = localZcm;
                         placements_.push_back(item);
                     }
                 }
