@@ -260,3 +260,16 @@ else()
     target_compile_options(aiverse_enhanced_input_tests PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
 add_test(NAME library_enhanced_input COMMAND aiverse_enhanced_input_tests)
+
+# Platform bridge: test with the shared gamepad implementation and a fake backend.
+add_executable(aiverse_enhanced_input_adapter_tests
+    enhanced_input_adapter_tests.cpp ../../engine/platform/gamepad/GamepadCommon.cpp)
+target_link_libraries(aiverse_enhanced_input_adapter_tests PRIVATE AIVERSE::lib_input)
+target_include_directories(aiverse_enhanced_input_adapter_tests PRIVATE ../..)
+target_compile_features(aiverse_enhanced_input_adapter_tests PRIVATE cxx_std_20)
+if(MSVC)
+    target_compile_options(aiverse_enhanced_input_adapter_tests PRIVATE /W4 /WX)
+else()
+    target_compile_options(aiverse_enhanced_input_adapter_tests PRIVATE -Wall -Wextra -Werror -pedantic)
+endif()
+add_test(NAME library_enhanced_input_adapter COMMAND aiverse_enhanced_input_adapter_tests)
