@@ -20,6 +20,7 @@
 #include "modules/fps/view/FpsAnimationEvents.h"
 #include "libraries/include/aiverselib/animation/AnimationPhaseTransfer.h"
 #include "engine/render/GeometryScene.h"
+#include "engine/view/View.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
 #include "imgui.h"
@@ -48,6 +49,9 @@ struct App {
     platform::ContentReader contentReader;
     render::GeometryScene staticGeometry;
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
+    // Universal engine View receives generic renderer packets from FPS.
+    // Server/net/player semantics remain entirely in this host adapter.
+    ::aiverse::View genericSceneView;
     // Client-only visual ECS: never add float poses to the authoritative FPS Simulation.
     World characterPresentation;
     std::unique_ptr<render::Model> characterModel;
@@ -582,12 +586,21 @@ struct App {
                         *render::mat4::rotateY(yaw)
                         *render::mat4::scale({characterScale,characterScale,characterScale});
                     draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
+                    const auto submitCharacter=[&](const render::ModelDraw& packetDraw) {
+                        ::aiverse::view::Object packet;
+                        packet.id=remote.slot;
+                        packet.generation=remote.life;
+                        packet.draw=packetDraw;
+                        // This client already evaluates its own optional
+                        // MotionWeave pose. Do not duplicate evaluation.
+                        genericSceneView.submitOne(renderer,packet);
+                    };
                     if(characterBakedCrowd) {
                         const auto* sample=characterPresentation.tryGetConst<
                             motionweave::AnimationCrowdSampleComponent>(found->second);
                         if(sample && sample->valid) {
                             draw.baked=&sample->sample;
-                            renderer.drawModel(draw);
+                            submitCharacter(draw);
                             animated=true;
                         }
                     } else {
@@ -596,7 +609,7 @@ struct App {
                         if(posed && posed->valid) {
                             draw.nodeWorld=&posed->matrices;
                             draw.pose=&posed->local;
-                            renderer.drawModel(draw);
+                            submitCharacter(draw);
                             animated=true;
                         }
                     }

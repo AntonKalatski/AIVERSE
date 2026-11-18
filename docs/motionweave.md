@@ -196,3 +196,27 @@ host until each has a generic render contract. The compatibility
 class `game::RtsView` remains for older game code; it is not the
 canonical engine View and should not be used in new projects.
 
+### Host migration status
+
+Both existing game frontends now send at least their supported
+animated-model draws through the universal engine
+`aiverse::View::submitOne`:
+
+- The legacy game-side `game::RtsView` delegates a strictly
+  eligible subset of pure AnimationGraph pose evaluation and the
+  final styled model draw.
+- The FPS reference client projects its existing CPU Graph / GPU
+  Baked `render::ModelDraw` through `View::submitOne`, preserving
+  the precomputed pose. Its replicated gameplay state never enters
+  engine View.
+
+The common CMake name `AIVERSE::View` (legacy lowercase
+`AIVERSE::view` also works) and public
+`<engine/view/View.h>` describe the preferred engine API. The
+old `aiverse_game_view`/RTS-specific presentation remains
+compatibility code during migration; it is **not** identical to
+the new generic View yet. Shared camera/culling/terrain/lighting
+composition and full legacy game adapter removal require further
+refactoring. No source-level genre dependency is allowed inside
+`engine/view`.
+
