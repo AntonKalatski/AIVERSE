@@ -142,3 +142,7 @@ Capture temporarily suppresses global editor shortcuts (e.g. F5) and cancels whe
 ## RTS client integration
 
 The generic RTS client uses `apps/client/ClientInputRouting.h` for `AttackMove`, `Patrol`, `Repair`, `Reclaim`, `Stop`, `Hold` and `FocusCamera`. Each action resolves from `RTS.Gameplay` Mapping Context; optional project `input/actions.json` overrides the complete default shortcut set, as in FPS. RmlUi/Modal capture runs first and semantic shortcuts cannot pass through captured UI. Scripted command hotkeys retain first refusal, followed by semantic Actions -> existing `issue(Command)` calls. Numeric control groups and client pointer gestures remain backward-compatible.
+
+## In-game input rebinding (FPS example)
+
+Press **F10** while playing the FPS sample to open Input Settings and release pointer lock. Select **Rebind** beside any mapping and press a new keyboard key, mouse button or gamepad button; moving a pad axis past 0.8 can bind that axis. The UI displays duplicate-control warnings within each context. Changes use the existing `rebindInput` and `platform::syncUserData` profile persistence; they do **not** change the project's authored `input/actions.json`. Escape cancels active capture. Close Settings and click the viewport to resume locked-pointer gameplay. Editor-side binding authoring remains in the Logic → Input Actions window.
