@@ -111,6 +111,26 @@ void checkInputValidation() {
         (void)scatter(t, b, {}, {0, 0, 100, 100}, {a, duplicate});
     } catch (const std::invalid_argument&) { threw = true; }
     assert(threw);
+
+    threw = false;
+    try { (void)heightAtCm(t, std::numeric_limits<int64_t>::max(), 0); }
+    catch (const std::out_of_range&) { threw = true; }
+    assert(threw);
+
+    threw = false;
+    try { (void)generateChunk(t, b, {std::numeric_limits<int64_t>::max(), 0}, 32, 100); }
+    catch (const std::out_of_range&) { threw = true; }
+    assert(threw);
+
+    threw = false;
+    try { (void)slopePermilleAt(t, kWorldLimitCm, 0); }
+    catch (const std::out_of_range&) { threw = true; }
+    assert(threw);
+
+    threw = false;
+    try { (void)scatter(t, b, {}, {-kWorldLimitCm, 0, 1000, 1000}, {FoliageSpecies{}}); }
+    catch (const std::out_of_range&) { threw = true; }
+    assert(threw);
 }
 }
 
