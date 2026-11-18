@@ -1820,3 +1820,46 @@ before calling this stage validated.
   gameplay-specific map data into engine/view.
   Code commit, then Stage 62 handoff.
 
+## Stage 62 — generic View surface composition and normals (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22 targeting `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `0cedb72bc23237ceec6ce3b1f3eca167cebc5783`.
+- **Files:** new `engine/view/Surface.h` and
+  `tests/view/surface.cpp`, changed
+  `modules/rts/view/RtsTerrain.cpp`,
+  root `CMakeLists.txt` and `docs/view.md`.
+- **Design/API:** `view::composeSurfaceHeight(x,z,base,layer)`
+  combines arbitrary host-owned base and overlay height functions
+  without callback allocation, while
+  `view::sampleSurface(x,z,step,heightAt)` returns an optional
+  visual height and central-difference surface normal. The
+  reusable View layer imports only Math3D and standard C++;
+  no MapGrid, RtsView, roads, FPS, terrain mechanics or
+  authoritative collision data is compiled into core.
+- **Host integration:** legacy `RtsView::groundAt` now calls
+  `composeSurfaceHeight` using its original map height and
+  road surface lambdas. For finite inputs, operations preserve
+  the exact original evaluation order and return same height
+  as the previous conditional implementation. No duplicate
+  surface query work beyond the original base+overlay path.
+- **Compatibility:** read-only presentation surface values,
+  unchanged save/rollback/network, physics motor, terrain mesh
+  and current GPU surface upload contracts. The normal sampler
+  is optional and has no automatic motor/collision effects.
+- **Tests:** CTest `view_surface_composition` created for
+  height overlays, horizontal and sloped normals, invalid
+  normal-step handling. **NOT RUN**, user explicitly asked
+  to defer CMake/CTest and real-world graphics validation.
+- **Known risks:** floating-point slope/normal math is a
+  presentation policy only; an authoritative motor must use
+  deterministic collision normals. Migrating planet sphere
+  surfaces will need a different 3D sampling interface rather
+  than forcing a planet into the flat x/z height query.
+- **Next actionable stage:** add an optional, genre-neutral
+  `ISceneLayerProvider` or equivalent View scene pass contract
+  so the existing game-specific terrain/fog/road/planet systems
+  can register render passes externally instead of being
+  hardwired into the canonical View; keep legacy host adapter
+  backward compatible. Commit code, append Stage 63 handoff.
+
