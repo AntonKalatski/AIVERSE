@@ -1652,6 +1652,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         tests/ecs_nereid_sampling_bench.cpp)
     target_link_libraries(aiverse_ecs_nereid_sampling_bench PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
+    # NEREID stage 7B: presentation-only surface mesh, no gfx dependency.
+    add_executable(aiverse_ecs_nereid_surface_mesh_test
+        tests/ecs_nereid_surface_mesh_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_surface_mesh_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_surface_mesh_test COMMAND aiverse_ecs_nereid_surface_mesh_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)

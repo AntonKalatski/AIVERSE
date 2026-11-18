@@ -88,6 +88,9 @@ for nereid in water buoyancy geometry query_index native_pipeline; do
         "tests/ecs_nereid_${nereid}_test.cpp" "${NEREID_CORE[@]}"
 done
 # Legacy bridge imports only from the editor-time RtsWater geometry code.
+# Presentation geometry must compile on both Linux and macOS independently of RHI.
+compile_run ecs-nereid-surface-mesh -Ilibraries/include \
+    tests/ecs_nereid_surface_mesh_test.cpp "${NEREID_CORE[@]}"
 compile_run ecs-nereid-legacy-raster -Ilibraries/include \
     tests/ecs_nereid_legacy_raster_test.cpp modules/rts/view/RtsWater.cpp \
     "${NEREID_CORE[@]}"
