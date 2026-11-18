@@ -15,6 +15,9 @@
 #include <vector>
 
 namespace aiverse::editor {
+
+void registerSpectraFunctionOps(Workspace& ws); // reusable v2 function libraries
+
 namespace {
 namespace fs = std::filesystem;
 
@@ -404,6 +407,7 @@ void registerSpectraGraphOps(Workspace& ws) {
         response.set("next", strGraph("fx_preview {\"effect\":\"" + effect + "\"}"));
         return response;
     });
+    registerSpectraFunctionOps(ws);
 }
 
 } // namespace aiverse::editor
