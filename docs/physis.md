@@ -59,6 +59,8 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Stage 3: [Environment](agent-handoffs/physis-environment-2026-11-18.md)
 - Stage 4: [Disasters](agent-handoffs/physis-disasters-2026-11-18.md)
 - Stage 5: [Simulation/persistence](agent-handoffs/physis-integration-2026-11-18.md)
+- Stage 6: [PHYSIS / NEREID / TerraWeave ownership and reuse](agent-handoffs/physis-ownership-terra-water-2026-11-18.md)
+- Stage 7: [External water authority mode](agent-handoffs/physis-flood-authority-2026-11-18.md)
 
 Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
 
