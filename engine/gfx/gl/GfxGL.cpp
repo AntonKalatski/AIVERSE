@@ -29,6 +29,13 @@ namespace {
 
 // desktop GL only (ES / WebGL always encode into sRGB attachments); GLES headers lack the name
 constexpr GLenum kGL_FRAMEBUFFER_SRGB = 0x8DB9;
+constexpr GLenum kGL_MAX_ANISOTROPY = 0x84FF;
+constexpr GLenum kGL_TEXTURE_ANISOTROPY = 0x84FE;
+constexpr GLenum kGL_TEXTURE_MIN_LOD = 0x813A;
+constexpr GLenum kGL_TEXTURE_MAX_LOD = 0x813B;
+constexpr GLenum kGL_TEXTURE_LOD_BIAS = 0x8501;
+constexpr GLenum kGL_CLAMP_TO_BORDER = 0x812D;
+constexpr GLenum kGL_MIRRORED_REPEAT = 0x8370;
 
 // compressed formats (may be missing from older headers)
 constexpr GLenum kGL_ETC2_RGB8 = 0x9274, kGL_ETC2_RGBA8 = 0x9278, kGL_DXT1_RGBA = 0x83F1, kGL_DXT5 = 0x83F3,
@@ -54,6 +61,10 @@ public:
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; free_.push_back(id - 1); } }
+    template <class F> void each(F&& fn) {
+        for (size_t i = 0; i < items_.size(); ++i)
+            if (alive_[i]) fn(uint32_t(i + 1), items_[i]);
+    }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
 };
@@ -67,6 +78,8 @@ struct GLTexture {
     int w = 0, h = 0, depth = 1, layers = 1, levels = 1;
     bool mips = false, compressed = false;
 };
+struct GLTextureView { uint32_t parentId = 0; };
+struct GLSampler { GLuint native = 0; };
 struct GLFramebuffer { uint32_t color = 0, depth = 0; GLuint fbo = 0; };
 struct GLShader { GLuint program = 0; std::string vs, fs; int textures = 0, uniforms = 0; bool linear = false; };
 struct GLPipeline { PipelineDesc desc; GLuint program = 0; PipelineHandle hdr; ShaderHandle hdrShader; bool hdrFailed = false; };
@@ -113,6 +126,12 @@ public:
         if (ext.empty() && flavor == Backend::GL33) s3tc_ = true; // core profiles hide the list; every desktop GPU has DXT
         astc_ = has("texture_compression_astc");
         hdr_ = flavor == Backend::GL33 || has("EXT_color_buffer_float") || has("EXT_color_buffer_half_float");
+        anisotropy_ = has("texture_filter_anisotropic");
+        if (anisotropy_) {
+            GLfloat maxAniso = 1.0f;
+            glGetFloatv(kGL_MAX_ANISOTROPY, &maxAniso);
+            maxAnisotropy_ = std::max(1.0f, maxAniso);
+        }
     }
     bool supportsTextureDimension(TextureDimension dim) const override {
         // Common OpenGL ES 3 / desktop GL 3.3 subset. 1D and cube arrays need
@@ -120,6 +139,9 @@ public:
         return dim == TextureDimension::Texture2D || dim == TextureDimension::Texture2DArray ||
                dim == TextureDimension::Texture3D || dim == TextureDimension::Cube;
     }
+    // Core GL 3.3 / GLES 3 has independent sampler objects, but not native
+    // arbitrary subresource texture views. Identity views can still be bound.
+    bool supportsTextureViews() const override { return false; }
     bool supports(PixelFormat f) const override {
         switch (f) {
             case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8: return etc2_;
@@ -270,6 +292,9 @@ public:
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
         GLTexture t; t.fmt = d.format; t.w = d.width; t.h = d.height;
         t.mips = d.mipmaps && d.format != PixelFormat::Depth && !d.renderTarget;
+        t.compressed = compressedEnum(d.format) != 0;
+        t.levels = t.compressed ? std::max(1, d.levelCount) :
+                   t.mips ? maxTextureMipLevels(d.width, d.height) : 1;
         glGenTextures(1, &t.id);
         glBindTexture(GL_TEXTURE_2D, t.id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -379,7 +404,116 @@ public:
         if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
         return glGetError() == GL_NO_ERROR;
     }
+    TextureViewHandle createTextureView(TextureHandle h, const TextureViewDesc& v) override {
+        // Explicitly support only identity views on the GL33/GLES3 portability path.
+        // Real aliases of individual mips/faces require GL_ARB_texture_view / GL 4.3
+        // and must not be silently reinterpreted as the whole parent.
+        const GLTexture* t = textures_.get(h.id);
+        if (!t) { error_ = "GL texture view: invalid parent"; return {}; }
+        TextureDesc parent;
+        parent.width = t->w; parent.height = t->h; parent.depth = t->depth;
+        parent.arrayLayers = t->layers; parent.dimension = t->dimension;
+        parent.format = t->fmt; parent.mipLevels = t->levels;
+        if (!validateTextureViewDesc(parent, v) ||
+            v.dimension != t->dimension || v.baseMipLevel != 0 ||
+            v.mipLevelCount != t->levels || v.baseArrayLayer != 0 ||
+            v.arrayLayerCount != t->layers) {
+            error_ = "GL texture view: only whole-resource identity views are supported"; return {};
+        }
+        return {views_.add({h.id})};
+    }
+    void destroyTextureView(TextureViewHandle h) override { views_.remove(h.id); }
+
+    SamplerHandle createSampler(const SamplerDesc& s) override {
+        if (!validateSamplerDesc(s) ||
+            (s.maxAnisotropy > 1.0f && !anisotropy_) ||
+            (s.lodBias != 0.0f && info_.backend != Backend::GL33) ||
+            (info_.backend != Backend::GL33 &&
+             (s.addressU == SamplerAddressMode::ClampToBorder ||
+              s.addressV == SamplerAddressMode::ClampToBorder ||
+              s.addressW == SamplerAddressMode::ClampToBorder))) {
+            error_ = "GL sampler: unsupported addressing, anisotropy or LOD bias"; return {};
+        }
+        auto address = [](SamplerAddressMode mode) -> GLint {
+            switch (mode) {
+            case SamplerAddressMode::ClampToEdge: return GL_CLAMP_TO_EDGE;
+            case SamplerAddressMode::Repeat: return GL_REPEAT;
+            case SamplerAddressMode::MirrorRepeat: return GLint(kGL_MIRRORED_REPEAT);
+            case SamplerAddressMode::ClampToBorder: return GLint(kGL_CLAMP_TO_BORDER);
+            }
+            return GL_CLAMP_TO_EDGE;
+        };
+        auto compare = [](CompareFunction mode) -> GLint {
+            switch (mode) {
+            case CompareFunction::Never: return GL_NEVER;
+            case CompareFunction::Less: return GL_LESS;
+            case CompareFunction::LessEqual: return GL_LEQUAL;
+            case CompareFunction::Equal: return GL_EQUAL;
+            case CompareFunction::Greater: return GL_GREATER;
+            case CompareFunction::GreaterEqual: return GL_GEQUAL;
+            case CompareFunction::NotEqual: return GL_NOTEQUAL;
+            case CompareFunction::Always: return GL_ALWAYS;
+            }
+            return GL_LEQUAL;
+        };
+        GLuint sampler = 0;
+        glGenSamplers(1, &sampler);
+        if (!sampler) { error_ = "GL sampler allocation failed"; return {}; }
+        const GLint min = s.minFilter == Filter::Linear ? GL_LINEAR : GL_NEAREST;
+        const GLint mag = s.magFilter == Filter::Linear ? GL_LINEAR : GL_NEAREST;
+        const GLint minMip = s.mipFilter == SamplerMipFilter::None ? min :
+                             s.mipFilter == SamplerMipFilter::Nearest ?
+                             (min == GL_LINEAR ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST) :
+                             (min == GL_LINEAR ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_LINEAR);
+        glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER, minMip);
+        glSamplerParameteri(sampler, GL_TEXTURE_MAG_FILTER, mag);
+        glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, address(s.addressU));
+        glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, address(s.addressV));
+        glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, address(s.addressW));
+        glSamplerParameterf(sampler, kGL_TEXTURE_MIN_LOD, s.minLod);
+        glSamplerParameterf(sampler, kGL_TEXTURE_MAX_LOD, s.maxLod);
+        if (info_.backend == Backend::GL33 && s.lodBias != 0.0f)
+            glSamplerParameterf(sampler, kGL_TEXTURE_LOD_BIAS, s.lodBias);
+        if (anisotropy_ && s.maxAnisotropy > 1.0f)
+            glSamplerParameterf(sampler, kGL_TEXTURE_ANISOTROPY,
+                                std::min(s.maxAnisotropy, maxAnisotropy_));
+        glSamplerParameteri(sampler, GL_TEXTURE_COMPARE_MODE, s.compare ? GL_COMPARE_REF_TO_TEXTURE : GL_NONE);
+        if (s.compare) glSamplerParameteri(sampler, GL_TEXTURE_COMPARE_FUNC, compare(s.comparison));
+        if (glGetError() != GL_NO_ERROR) {
+            glDeleteSamplers(1, &sampler); error_ = "GL sampler settings rejected"; return {};
+        }
+        return {samplers_.add({sampler})};
+    }
+    void destroySampler(SamplerHandle h) override {
+        GLSampler* s = samplers_.get(h.id);
+        if (!s) return;
+        glDeleteSamplers(1, &s->native);
+        samplers_.remove(h.id);
+    }
+    bool bindTextureView(int slot, TextureViewHandle viewHandle, SamplerHandle samplerHandle = {}) override {
+        if (slot < 0 || slot >= 16) return false;
+        const GLTextureView* v = views_.get(viewHandle.id);
+        if (!v) return false;
+        const GLTexture* t = textures_.get(v->parentId);
+        if (!t) return false;
+        GLuint sampler = 0;
+        if (samplerHandle.valid()) {
+            const GLSampler* s = samplers_.get(samplerHandle.id);
+            if (!s) return false;
+            sampler = s->native;
+        }
+        glActiveTexture(GL_TEXTURE0 + GLenum(slot));
+        glBindTexture(t->target, t->id);
+        glBindSampler(GLuint(slot), sampler);
+        return glGetError() == GL_NO_ERROR;
+    }
+
     void destroyTexture(TextureHandle h) override {
+        std::vector<uint32_t> children;
+        views_.each([&](uint32_t id, GLTextureView& view) {
+            if (view.parentId == h.id) children.push_back(id);
+        });
+        for (uint32_t id : children) views_.remove(id);
         if (auto* t = textures_.get(h.id)) { glDeleteTextures(1, &t->id); textures_.remove(h.id); }
         for (size_t i = 0; i < fbos_.size();) {
             if (fbos_[i].color == h.id || fbos_[i].depth == h.id) { glDeleteFramebuffers(1, &fbos_[i].fbo); fbos_.erase(fbos_.begin() + long(i)); }
@@ -667,8 +801,12 @@ public:
         if (auto* ib = buffers_.get(b.id)) glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib->id);
     }
     void setTexture(int slot, TextureHandle h) override {
+        if (slot < 0 || slot >= 16) return;
         auto* t = textures_.get(h.id);
         glActiveTexture(GL_TEXTURE0 + GLenum(slot));
+        // Default texture-specific filtering must not inherit a previously bound
+        // independent sampler from bindTextureView.
+        glBindSampler(GLuint(slot), 0);
         if (t) glBindTexture(t->target, t->id);
         else {
             glBindTexture(GL_TEXTURE_2D, 0);
@@ -763,12 +901,16 @@ private:
 #endif
     size_t uboAlign_ = 256, uboOffset_ = 0;
     bool etc2_ = false, s3tc_ = false, bptc_ = false, astc_ = false;
+    bool anisotropy_ = false;
+    float maxAnisotropy_ = 1.0f;
     bool srgbWrite_ = false;   // GL33: GL_FRAMEBUFFER_SRGB enabled for the current pass
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
     std::vector<GLFramebuffer> fbos_;
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
+    Pool<GLTextureView> views_;
+    Pool<GLSampler> samplers_;
     Pool<GLShader> shaders_;
     Pool<GLPipeline> pipelines_;
     uint32_t pipelineId_ = 0, vbId_ = 0, ibId_ = 0; // ids, not pointers: pools may reallocate

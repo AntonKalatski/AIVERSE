@@ -63,6 +63,13 @@
   #define GL_TEXTURE_CUBE_MAP 0x8513
   #define GL_TEXTURE_CUBE_MAP_POSITIVE_X 0x8515
   #define GL_TEXTURE_WRAP_R 0x8072
+  #define GL_MIRRORED_REPEAT 0x8370
+  #define GL_CLAMP_TO_BORDER 0x812D
+  #define GL_TEXTURE_MIN_LOD 0x813A
+  #define GL_TEXTURE_MAX_LOD 0x813B
+  #define GL_TEXTURE_LOD_BIAS 0x8501
+  #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+  #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
   #define GL_TEXTURE_COMPARE_MODE 0x884C
   #define GL_TEXTURE_COMPARE_FUNC 0x884D
   #define GL_COMPARE_REF_TO_TEXTURE 0x884E
@@ -114,6 +121,11 @@
     X(void, glUniformBlockBinding, (GLuint p, GLuint i, GLuint b)) \
     X(void, glActiveTexture, (GLenum t)) \
     X(void, glGenerateMipmap, (GLenum t)) \
+    X(void, glGenSamplers, (GLsizei count, GLuint* samplers)) \
+    X(void, glDeleteSamplers, (GLsizei count, const GLuint* samplers)) \
+    X(void, glBindSampler, (GLuint unit, GLuint sampler)) \
+    X(void, glSamplerParameteri, (GLuint sampler, GLenum pname, GLint value)) \
+    X(void, glSamplerParameterf, (GLuint sampler, GLenum pname, GLfloat value)) \
     X(void, glCompressedTexImage2D, (GLenum t, GLint l, GLenum f, GLsizei w, GLsizei h, GLint b, GLsizei s, const void* d)) \
     X(void, glTexImage3D, (GLenum t, GLint l, GLint f, GLsizei w, GLsizei h, GLsizei depth, GLint border, GLenum fmt, GLenum type, const void* data)) \
     X(void, glTexSubImage3D, (GLenum t, GLint l, GLint x, GLint y, GLint z, GLsizei w, GLsizei h, GLsizei depth, GLenum fmt, GLenum type, const void* data)) \
