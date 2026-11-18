@@ -32,7 +32,9 @@ static void exerciseSharedSweptContacts() {
         {4,{{-1_fx,0_fx,3_fx},{1_fx,2_fx,4_fx}}},
         {12,{{-1_fx,0_fx,5_fx},{1_fx,2_fx,6_fx}}}
     };
-    // SpatialWorld::intersect computes (lo-start)/delta using Fixed::operator/\n    // (truncate), not Fixed::fromRatio (round-to-nearest).\n    const auto nearest=query(tied,noExtent);
+    // SpatialWorld::intersect computes (lo-start)/delta using Fixed::operator/
+    // (truncate), not Fixed::fromRatio (round-to-nearest).
+    const auto nearest=query(tied,noExtent);
     checkSweep(nearest && nearest.target->id==4 &&
                nearest.fraction==3_fx/10_fx,
                "shared projectile sweep lost nearest-hit tie semantics");
