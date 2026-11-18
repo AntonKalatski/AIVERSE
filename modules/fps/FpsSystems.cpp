@@ -433,7 +433,7 @@ void Module::tickSystems(Simulation& sim) {
         if(now<s.match.end)return;
         int scoreA=s.match.scoreA,scoreB=s.match.scoreB;s.match={};s.match.start=now;s.match.scoreA=scoreA;s.match.scoreB=scoreB;s.match.carrier=0;++s.round;
         for(auto& a:s.actors){auto slot=a.slot,team=a.team;auto money=a.money,kills=a.kills;auto life=a.life,sequence=a.lastSequence;a=Actor{};a.slot=slot;a.team=team;a.life=life+1;a.money=money;a.kills=kills;a.lastSequence=sequence;a.pos=spawns_[slot-1];equipInitial(a);a.armor=c.startArmor;if(team==1&&!s.match.carrier)s.match.carrier=slot;}
-        s.projectiles.clear();s.loot=initialLoot_;s.vehicles=initialVehicles_;s.history.clear();return;
+        clearProjectiles(sim);s.loot=initialLoot_;s.vehicles=initialVehicles_;s.history.clear();return;
     }
     if(now<s.match.start+c.freezeTicks)return;
     bool attack=false,defense=false;for(const auto& a:s.actors)if(a.health>0&&!a.downed){attack|=a.team==1;defense|=a.team==2;}
