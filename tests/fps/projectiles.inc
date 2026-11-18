@@ -34,3 +34,81 @@ void projectilePrograms() {
     net::authority::Snapshot decoded;CHECK(net::authority::decodeSnapshot(net::authority::encodeSnapshot(snapshot),decoded));
     bool rejected=false;try{auto bad=base;bad.member("fps").member("weapon").set("bulletSpeed",Json::number(int64_t(0)));fps::readConfig(bad);}catch(const std::exception&){rejected=true;}CHECK(rejected);
 }
+
+
+void ecsProjectileProgramStageParity() {
+    // Production FPS programmed bullets are now a separate ordered
+    // Simulation stage. Prove ecsAuthority's canonical runtime pools and the
+    // default legacy State mode still have identical tick-visible effects.
+    const auto rules=Json::parse(R"({
+        "fps":{"tickRate":20,"mode":"deathmatch",
+               "weapon":{"damage":10,"intervalTicks":1000,
+                         "bulletSpeed":200,"bulletGravity":0,
+                         "flight":{"modifiers":[
+                             {"kind":"flyThrough","count":2,"falloff":0.5}
+                         ]}},
+               "motor":{"gravity":1}}
+    })");
+    const auto map=Json::parse(R"({
+        "players":[{"team":1},{"team":2},{"team":2},{"team":2}],
+        "spawns":[[0,0.01,0],[0,0.01,4],[0,0.01,8],[0,0.01,12]],
+        "colliders":[{"id":1,"min":[-100,-2,-100],
+                                 "max":[100,0,100]}]
+    })");
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+    auto input=fps::Input{};
+    input.buttons=fps::Fire;
+    input.sequence=1;
+    input.viewTick=0;
+    auto command=fps::command(1,input);
+    command.tick=0;
+    legacy->inject(command);
+    ecs->inject(command);
+    auto checkBoth=[&]() {
+        CHECK(legacy->checksum()==ecs->checksum());
+        const auto& a=state(*legacy);
+        const auto& b=state(*ecs);
+        CHECK(a.actors==b.actors);
+        CHECK(a.projectiles.size()==b.projectiles.size());
+        for(size_t i=0;i<a.projectiles.size();++i) {
+            CHECK(a.projectiles[i].id==b.projectiles[i].id);
+            CHECK(a.projectiles[i].pos==b.projectiles[i].pos);
+            CHECK(a.projectiles[i].remaining==b.projectiles[i].remaining);
+            CHECK(a.projectiles[i].program.age==b.projectiles[i].program.age);
+        }
+    };
+    legacy->step();ecs->step(); // shot created after projectile program phase
+    checkBoth();
+    CHECK(!state(*legacy).projectiles.empty());
+    SimSnapshot beforeProgramLegacy,beforeProgramEcs;
+    legacy->saveState(beforeProgramLegacy);
+    ecs->saveState(beforeProgramEcs);
+    for(int i=0;i<12;++i) {
+        legacy->step();ecs->step();
+        checkBoth();
+    }
+    CHECK(state(*legacy).projectiles.empty());
+    CHECK(state(*legacy).actors[1].health==90);
+    CHECK(state(*legacy).actors[2].health==95);
+    CHECK(state(*legacy).actors[3].health==98);
+    const uint64_t expected=legacy->checksum();
+    const auto legacySave=legacy->serialize();
+    const auto ecsSave=ecs->serialize();
+    auto fromLegacy=simulation(ecsRules,map);
+    auto fromEcs=simulation(rules,map);
+    CHECK(fromLegacy->deserialize(legacySave));
+    CHECK(fromEcs->deserialize(ecsSave));
+    CHECK(fromLegacy->checksum()==expected);
+    CHECK(fromEcs->checksum()==expected);
+    // SaveState must also rewind the pending projectile and repeat every hit.
+    legacy->loadState(beforeProgramLegacy);
+    ecs->loadState(beforeProgramEcs);
+    checkBoth();
+    for(int i=0;i<12;++i) {
+        legacy->step();ecs->step();
+        checkBoth();
+    }
+    CHECK(legacy->checksum()==expected);
+}
