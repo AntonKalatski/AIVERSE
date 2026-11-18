@@ -1,4 +1,5 @@
 #include "engine/platform/EnhancedInputAdapter.h"
+#include "engine/platform/EnhancedInputUsers.h"
 #include <cstdlib>
 #include <iostream>
 #include <span>
@@ -101,5 +102,36 @@ int main() {
     e={};e.type=p::EventType::FocusLost;adapter.onEvent(e);
     CHECK(has(actions.events(),"PadJump",in::Phase::Canceled));
     CHECK(!actions.state("Stick"));
+    // Local multiplayer: events and controllers belong to only one logical user.
+    p::EnhancedInputUsers users;
+    in::InputSystem u0,u1;
+    CHECK(u0.defineAction({"Walk",in::ValueType::Boolean}));
+    CHECK(u1.defineAction({"PadJump",in::ValueType::Boolean}));
+    in::MappingContext kb{"Keyboard"};
+    kb.bind("Walk",{in::Device::Keyboard,int(p::Key::W)});
+    in::MappingContext gamepad{"Gamepad"};
+    gamepad.bind("PadJump",{in::Device::GamepadButton,int(p::PadButton::A)});
+    CHECK(u0.registerContext(kb)&&u0.activateContext("Keyboard"));
+    CHECK(u1.registerContext(gamepad)&&u1.activateContext("Gamepad"));
+    CHECK(users.addUser(0,std::move(u0)));
+    CHECK(users.addUser(1,std::move(u1)));
+    CHECK(users.setKeyboardOwner(0));
+    CHECK(users.assignGamepad(0,1));
+    e={};e.type=p::EventType::KeyDown;e.key=p::Key::W;
+    users.onEvent(e);
+    CHECK(has(users.update(0,0.016f),"Walk",in::Phase::Triggered));
+    CHECK(users.update(1,0.016f).empty());
+    p::detail::setGamepadBackend(&fakeGamepads);
+    users.pollGamepads();
+    CHECK(has(users.update(1,0.016f),"PadJump",in::Phase::Triggered));
+    CHECK(!users.input(0)->state("PadJump"));
+    CHECK(!users.assignGamepad(1,1)); // one physical pad per user
+    users.unassignGamepad(0);
+    CHECK(has(users.input(1)->events(),"PadJump",in::Phase::Canceled));
+    e.type=p::EventType::FocusLost;
+    users.onEvent(e);
+    CHECK(!users.input(0)->state("Walk"));
+    p::detail::setGamepadBackend(nullptr);
+
     std::cout << "Enhanced Input platform adapter passed\n";
 }
