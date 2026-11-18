@@ -251,7 +251,7 @@ endif()
 
 # Enhanced Input is a platform-free, header-only native input-action subsystem.
 add_executable(aiverse_enhanced_input_tests enhanced_input_tests.cpp)
-target_link_libraries(aiverse_enhanced_input_tests PRIVATE AIVERSE::lib_input)
+target_link_libraries(aiverse_enhanced_input_tests PRIVATE AIVERSE::InputFlow)
 target_compile_features(aiverse_enhanced_input_tests PRIVATE cxx_std_20)
 if(MSVC)
     target_compile_options(aiverse_enhanced_input_tests PRIVATE /W4 /WX)
@@ -263,7 +263,7 @@ add_test(NAME library_enhanced_input COMMAND aiverse_enhanced_input_tests)
 # Platform bridge: test with the shared gamepad implementation and a fake backend.
 add_executable(aiverse_enhanced_input_adapter_tests
     enhanced_input_adapter_tests.cpp ../../engine/platform/gamepad/GamepadCommon.cpp)
-target_link_libraries(aiverse_enhanced_input_adapter_tests PRIVATE AIVERSE::lib_input)
+target_link_libraries(aiverse_enhanced_input_adapter_tests PRIVATE AIVERSE::InputFlow)
 target_include_directories(aiverse_enhanced_input_adapter_tests PRIVATE ../..)
 target_compile_features(aiverse_enhanced_input_adapter_tests PRIVATE cxx_std_20)
 if(MSVC)
@@ -287,7 +287,7 @@ add_test(NAME library_enhanced_input_config COMMAND aiverse_enhanced_input_confi
 
 # Native RTS client shortcut bridge uses the same action/context core, without simulation.
 add_executable(aiverse_enhanced_rts_input_tests enhanced_rts_input_tests.cpp)
-target_link_libraries(aiverse_enhanced_rts_input_tests PRIVATE AIVERSE::lib_input)
+target_link_libraries(aiverse_enhanced_rts_input_tests PRIVATE AIVERSE::InputFlow)
 target_include_directories(aiverse_enhanced_rts_input_tests PRIVATE ../..)
 target_compile_features(aiverse_enhanced_rts_input_tests PRIVATE cxx_std_20)
 if(MSVC)
