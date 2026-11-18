@@ -54,3 +54,46 @@ Then run existing `animation_graphs`, `unity_anim_controller`, `fps`
 and RTS gameplay/render suites. Never claim these tests pass without execution.
 
 See `docs/agent-handoffs/animation-universal.md` for commits and blockers.
+
+## Extended API and authoring (November 2026)
+
+- `HumanoidRetarget.h`: `HumanoidAvatar` binds semantic body roles to
+  full bone paths. `HumanoidRetargeter` transfers bind-relative global
+  rotations and pelvis/root motion to the destination rig. Optional
+  TwoBoneIK plants feet. Use `HumanoidProfile.h` for versioned
+  `aiverse-humanoid-v1` JSON and conservative initial mapping.
+- `RagdollAsset.h` generates Box3D body/hinge scene JSON with inverse
+  binding offsets; `PhysicsRagdollBridge.h` samples body poses when
+  `AIVERSE_ENABLE_PHYSICS=ON`. Negative `collisionGroup` suppresses
+  self-contact: allocate a distinct group for each character. Recovery
+  uses `AnimationRecoveryComponent` and `PoseInertializer`.
+- `EcsRootMotionSystems.h` provides **fixed-point authoritative**
+  `RootMotionIntentComponent`, `RootMotionStateComponent`, optional
+  `RootMotionResultComponent`, `RootMotionTracksResource` and
+  `addRootMotionMotorSystem` with a collision-motor callback.
+  Quantize clips OFFLINE using `RootMotionBaker.h` or
+  `aiverse_root_motion_bake MODEL CLIP ROOT --id N --rate N --out FILE`.
+  Register persistent components/resources from the owning game module.
+  Do not add this system in parallel with another transform-moving motor.
+- `AnimationJobScheduler.h` supports worker-safe parallel evaluation;
+  graphs with native/Lua traits or contact environment fall back to serial.
+  `AnimationHotReload.h` provides transactional compile/poll/apply.
+- `AnimationCrowdSystems.h` outputs GPU `BakedSample` for uncomplicated
+  Idle/Walk/Run/Death clips; `fps.visual.bakedCrowd=true` enables the
+  optional FPS path. Complex rigs stay on palette skinning.
+- `AnimationEventDispatch.h` collects Graph Clip and Montage cues
+  into a bounded cosmetic event stream; gameplay hit/damage/reload remains
+  authoritative. Graph Clip nodes support
+  `notifies:[{"time":0.35,"name":"step"}]`.
+- Editor window `animation_assets` / operation `animation_assets_open`
+  provides Humanoid Avatar, Ragdoll, Montage and Root Motion panels.
+  Workspace/MCP operations: `animation_avatar_suggest`,
+  `animation_avatar_validate`, `animation_ragdoll_generate`,
+  `animation_root_motion_generate`, `animation_montage_validate`,
+  `animation_asset_get`, `animation_asset_save`.
+
+**Verification is deferred by user instruction.** None of these new tests
+has been executed in this change set. CI/renderer, CTest, physics and
+network replay parity must be done before merging or enabling defaults.
+See all stage checkpoints in
+`docs/agent-handoffs/animation-universal.md`.

@@ -103,11 +103,19 @@ Lua может также создавать графы и реализовыв�
 
 Это собственная система AIVERSE, ориентированная на принципы AnimGraph. В неё не входят
 визуальный редактор Blueprint, совместимость с Unreal Control Rig VM,
-ретаргетинг, montage slots/notifies, root-motion authority или motion warping.
-Существующий terrain foot IK и procedural modifiers применяются после графа;
-при их одновременном использовании учитывайте порядок и не дублируйте коррекцию ног.
-Граф не генерирует старые clip events: звуки/VFX запускайте из подтверждённых событий
-игры. Модельные mesh LOD и construction stages используют существующий mapping костей.
+полная автоматическая интеграция Humanoid/Avatar, Unreal Control Rig VM
+или root-motion motor в RTS/FPS. Новый самостоятельный модуль
+`aiverselib/animation` предоставляет семантический Humanoid Retargeter,
+Montage, extract-only Motion Warping, фиксированный ECS Root Motion motor
+с явной регистрацией и Ragdoll/Box3D bridge. Эти модули подключаются
+проектом, а не включаются автоматически для каждого жанра.
+`kind:"clip"` теперь поддерживает массив
+`"notifies":[{"time":0.35,"name":"step"}]`; экземпляр графа
+возвращает `notifies()` после update, но не дублирует legacy clip events
+`RtsView`. Эти события предназначены для звука/VFX, не для авторитетного
+урона или hit detection. Старые `RtsView` terrain foot IK/procedural
+модификаторы применяются после графа и должны учитывать порядок IK.
+LOD и construction stage используют старый mapping костей.
 
 Проверки: `aiverse_animation_tests` (CPU pose, blending, transitions, IK, validation),
 основной `aiverse_tests` и сборка клиента. Визуальная проверка должна использовать
