@@ -472,16 +472,27 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const PrismaEffect* bloom = find(PrismaType::Bloom);
     if (bloom && program(kPrefilter).valid() && program(kDown).valid() && program(kUp).valid()) {
         const BloomPlan plan = bloomPlan(quality_);
+        const char* chainFlag = std::getenv("AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN");
+        const bool chainEnabled = chainFlag && std::strcmp(chainFlag, "1") == 0;
+        const char* poolFlag = std::getenv("AIVERSE_PRISMA_GRAPH_BLOOM_POOL");
+        const bool pooledBloom = chainEnabled && poolFlag && std::strcmp(poolFlag, "1") == 0;
         std::vector<Target> down;
         int lw = std::max(1, w / plan.startDiv), lh = std::max(1, h / plan.startDiv);
-        for (int i = 0; i < plan.levels && lw >= 2 && lh >= 2; ++i, lw /= 2, lh /= 2) down.push_back(target(set, kBloomDown + i, lw, lh));
+        for (int i = 0; i < plan.levels && lw >= 2 && lh >= 2; ++i, lw /= 2, lh /= 2) {
+            if (pooledBloom) {
+                Target descriptor;
+                descriptor.w = lw; descriptor.h = lh;
+                down.push_back(descriptor);
+            } else {
+                down.push_back(target(set, kBloomDown + i, lw, lh));
+            }
+        }
         if (!down.empty()) {
             // Stage 16: opt-in complete Bloom graph. All physical textures
             // remain in the existing per-viewport Sized cache; the graph
             // handles pass dependencies/order, not cross-frame ownership.
             bool bloomChainHandled = false;
-            const char* chainFlag = std::getenv("AIVERSE_PRISMA_GRAPH_BLOOM_CHAIN");
-            if (chainFlag && std::strcmp(chainFlag, "1") == 0 && src.tex.valid()) {
+            if (chainEnabled && src.tex.valid()) {
                 const PrismaGraphFormat format =
                     hdrFrame_ ? PrismaGraphFormat::RGBA16F : PrismaGraphFormat::RGBA8;
                 std::vector<PrismaBloomMip> mipSizes;
@@ -494,11 +505,18 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 // texture handles remain dynamic.
                 auto& cache = set.bloomGraph;
                 if (cache.configure(static_cast<uint32_t>(src.w),
-                                    static_cast<uint32_t>(src.h), format, mipSizes)) {
+                                    static_cast<uint32_t>(src.h), format, mipSizes,
+                                    pooledBloom)) {
                 std::vector<Target> upTargets(down.size());
-                for (size_t i = 0; i + 1 < down.size(); ++i)
-                    upTargets[i] = target(set, kBloomUp + static_cast<int>(i),
-                                          down[i].w, down[i].h);
+                for (size_t i = 0; i + 1 < down.size(); ++i) {
+                    if (pooledBloom) {
+                        upTargets[i].w = down[i].w;
+                        upTargets[i].h = down[i].h;
+                    } else {
+                        upTargets[i] = target(set, kBloomUp + static_cast<int>(i),
+                                              down[i].w, down[i].h);
+                    }
+                }
 
                 std::vector<gfx::TextureHandle> handles(
                     cache.graph().resources().size());
@@ -549,9 +567,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 if (ready) for (const auto& op : ops) {
                     const auto depth = depthFor(set, op.destination.w, op.destination.h);
                     depths.push_back(depth);
-                    ready = ready && depth.valid() && op.destination.tex.valid();
+                    ready = ready && depth.valid() &&
+                        (pooledBloom || op.destination.tex.valid());
                 }
-                for (auto hnd : handles) ready = ready && hnd.valid();
+                for (size_t id = 0; id < handles.size(); ++id)
+                    if (cache.graph().resources()[id].external)
+                        ready = ready && handles[id].valid();
                 if (ready) {
                     if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
                     auto& executor = *set.graphExecutor;
@@ -577,7 +598,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                         [&](PrismaGraphId id) { return depths[id]; });
                     if (run.success) {
                         stats_.passes += static_cast<int>(run.passes);
-                        bloomTex = (down.size() == 1) ? down.back().tex : upTargets[0].tex;
+                        bloomTex = pooledBloom ? run.resources[cache.outputId()] :
+                            ((down.size() == 1) ? down.back().tex : upTargets[0].tex);
                         bloomNorm = 0.0f;
                         for (size_t k = 0; k < down.size(); ++k)
                             bloomNorm += std::pow(scatter, float(k));
@@ -592,6 +614,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 } // compiled/cached Bloom graph is valid
             }
             if (!bloomChainHandled) {
+            if (pooledBloom) for (size_t i = 0; i < down.size(); ++i)
+                down[i] = target(set, kBloomDown + static_cast<int>(i),
+                                 down[i].w, down[i].h);
             SimpleU u{};
             const float spread = float(plan.startDiv) * 0.5f;
             put(u.px, spread / float(w), spread / float(h), flip, 0);
