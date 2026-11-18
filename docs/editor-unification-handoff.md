@@ -1176,3 +1176,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - All gameplay rules (friendly fire, armor, shields, statuses, target liveness, spatial radius and splash) remain host-injected callbacks, with no FPS/RTS dependency and no second authoritative HP/projectile state. It respects caller-controlled order, not a false global same-tick sort. **Compatibility warning:** the existing RTS immediate per-projectile damage path must not be wholesale replaced with a single end-of-tick barrier without proving identical effects ordering.
 - **Verification:** GitHub file creation only, native C++ compile and tests **not executed**. This is a new public source header, not yet a catalog package or built-in FPS/RTS integration.
 - **Next:** add shooter+strategy regression for callback/queue ordering and COW snapshots, publish the native catalog package and agent skill, register CTest and standalone runner. Verify native build before any legacy adoption.
+
+### 2026-11-18 — AI skill for shared ECS hitscan
+- Implementation SHA: `d1dbab0c76e66c134812614cac6a1c7790e756e0`.
+- New `skills/gameplay/aiverse-ecs-hitscan/SKILL.md` describes shared fixed-point target selection, rewind snapshots, deterministic tie-breaking, native weapon/occlusion adapters, and composition with ordered impact/damage. It explicitly warns that the public policy is not yet a separately registered `HitscanSystem` and that real FPS integration still owns vehicle, penetration, damage and net rollback.
+- Verification: GitHub documentation commit only; public library catalog target named in the skill is still pending registration.
