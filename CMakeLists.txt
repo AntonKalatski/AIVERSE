@@ -1780,6 +1780,13 @@ if(TARGET aiverse_world AND (AIVERSE_BUILD_TESTS OR AIVERSE_BUILD_TOOLS))
     endif()
 endif()
 
+# GPU-free PRISMA graph planner tests; included by default in the unified CTest runner.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_prisma_graph_tests tests/render/prisma_graph.cpp)
+    target_include_directories(aiverse_prisma_graph_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME prisma_graph COMMAND aiverse_prisma_graph_tests)
+endif()
+
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_shader_graph_tests tests/shader_graph/compiler.cpp)
     target_link_libraries(aiverse_shader_graph_tests PRIVATE aiverse_shader_graph aiverse_postfx_data aiverse_fx)
