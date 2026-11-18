@@ -25,7 +25,6 @@ struct HorizonSettings {
     int32_t closeForestEndCm = 25000;  // individual tree renderer owns this
     int32_t middleForestEndCm = 100000;
     int32_t terrainBeginCm = 110000;   // no proxy terrain over near authored ground
-    int32_t terrainSkirtDepthCm = 1200; // 0=off, lower outer edge by 12m to conceal small gaps
     uint32_t terrainResolution = 48;   // 48x48 quads for all 12km
     uint32_t atlasTilePixels = 48;     // ~8MB with default region sizes
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
@@ -39,6 +38,8 @@ struct HorizonSettings {
     int32_t nearBlendCm = 6000;       // masked silhouette fade-in before near trees end
     int32_t tierBlendCm = 16000;      // stochastic mid-to-far overlap around 1 km
     bool distantTerrain = true;       // opt-in manifest, disabled unless requested
+    // Trailing to preserve older aggregate HorizonSettings initializers.
+    int32_t terrainSkirtDepthCm = 1200; // 0=off, lower outer edge by 12m
 };
 
 struct HorizonCluster {
@@ -74,12 +75,13 @@ struct HorizonBake {
     int32_t sideCm = 0;
     uint32_t terrainResolution = 0;
     int32_t terrainBeginCm = 0;
-    int32_t terrainSkirtDepthCm = 0;
     int64_t cameraXcm = 0, cameraZcm = 0;
     uint32_t atlasWidth = 0, atlasHeight = 0;
     std::vector<uint8_t> atlasRgba; // one atlas, shared by all forest cluster cards
     std::vector<HorizonTerrainVertex> terrainVertices;
     std::vector<HorizonCluster> clusters;
+    // Trailing to preserve existing aggregate HorizonBake initializers.
+    int32_t terrainSkirtDepthCm = 0;
 };
 
 namespace horizon_detail {
