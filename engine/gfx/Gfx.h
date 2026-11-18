@@ -20,6 +20,7 @@
 //   * vertex buffer: one interleaved stream; GLSL attribute location = VertexAttr::location,
 //     MSL [[attribute(location)]] via [[stage_in]] at buffer(0).
 #pragma once
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
@@ -296,6 +297,57 @@ struct PassDesc {
     float clearDepth = 1.0f;
 };
 
+
+constexpr int kMaxRenderTargetColors = 4;
+
+// The new pass API is explicit and offscreen-only. It never implicitly binds
+// the swapchain: use the existing PassDesc for screen/legacy single-target paths.
+// Each attachment selects a single mip and layer/face. All active attachments
+// must have identical mip-sized extents and sample counts.
+// A Texture3D attachment uses arrayLayer as a depth plane at the selected mip.
+struct RenderTargetAttachment {
+    TextureHandle texture;
+    int mipLevel = 0;
+    int arrayLayer = 0;
+    bool clear = true;
+    float clearColor[4] = {0, 0, 0, 0}; // color attachments only
+};
+struct RenderTargetPassDesc {
+    std::array<RenderTargetAttachment, kMaxRenderTargetColors> colors{};
+    int colorCount = 0;
+    RenderTargetAttachment depth; // texture invalid = no depth attachment
+    float clearDepth = 1.0f;
+};
+
+// CPU-only structural validation; actual image formats, flags, extents, subresources
+// and capability limits must additionally be verified by the device implementation.
+inline bool validateRenderTargetPassDesc(const RenderTargetPassDesc& desc) {
+    if (desc.colorCount < 0 || desc.colorCount > kMaxRenderTargetColors ||
+        (desc.colorCount == 0 && !desc.depth.texture.valid()))
+        return false;
+    for (int i = 0; i < desc.colorCount; ++i) {
+        const auto& a = desc.colors[size_t(i)];
+        if (!a.texture.valid() || a.mipLevel < 0 || a.arrayLayer < 0) return false;
+        for (int k = 0; k < 4; ++k)
+            if (!std::isfinite(a.clearColor[k])) return false;
+        for (int j = 0; j < i; ++j) {
+            const auto& b = desc.colors[size_t(j)];
+            if (a.texture == b.texture && a.mipLevel == b.mipLevel &&
+                a.arrayLayer == b.arrayLayer) return false; // simultaneous write alias
+        }
+    }
+    if (desc.depth.texture.valid()) {
+        if (desc.depth.mipLevel < 0 || desc.depth.arrayLayer < 0 ||
+            !std::isfinite(desc.clearDepth) || desc.clearDepth < 0.0f ||
+            desc.clearDepth > 1.0f) return false;
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const auto& a = desc.colors[size_t(i)];
+            if (a.texture == desc.depth.texture) return false;
+        }
+    }
+    return true;
+}
+
 struct DeviceInfo {
     Backend backend = Backend::GLES3;
     bool clipDepthZeroToOne = false;
@@ -397,6 +449,11 @@ public:
 
     // Commands (only valid between beginPass/endPass)
     virtual void beginPass(const PassDesc& d) = 0;
+    // Offscreen multi-attachment pass with explicit mip/array layer selection.
+    // Success opens a regular render pass; finish with endPass(). Failure must
+    // leave the active pass unchanged and never begin a reduced/silent fallback.
+    virtual bool supportsRenderTargetPasses() const { return false; }
+    virtual bool beginRenderTargets(const RenderTargetPassDesc&) { return false; }
     virtual void endPass() = 0;
     virtual void setViewport(const Rect& r) = 0;
     virtual void setScissor(const Rect& r) = 0;   // w==0 disables

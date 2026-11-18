@@ -81,6 +81,29 @@ int main() {
     check(!validateSamplerDesc(sampler), "invalid sampler LOD");
     sampler.maxLod = 8.0f; sampler.maxAnisotropy = 0.0f;
     check(!validateSamplerDesc(sampler), "invalid anisotropy");
+
+    RenderTargetPassDesc rp;
+    check(!validateRenderTargetPassDesc(rp), "empty offscreen pass is invalid");
+    rp.colorCount = 1; rp.colors[0].texture.id = 1;
+    check(validateRenderTargetPassDesc(rp), "single color attachment");
+    rp.colorCount = 2; rp.colors[1].texture.id = 2;
+    check(validateRenderTargetPassDesc(rp), "two distinct color attachments");
+    rp.colors[1].texture.id = 1;
+    check(!validateRenderTargetPassDesc(rp), "reject simultaneous writes to same subresource");
+    rp.colors[1].mipLevel = 1;
+    check(validateRenderTargetPassDesc(rp), "distinct mip subresources are structurally legal");
+    rp.depth.texture.id = 3; rp.clearDepth = 0.5f;
+    check(validateRenderTargetPassDesc(rp), "color plus depth");
+    rp.depth.texture.id = 1;
+    check(!validateRenderTargetPassDesc(rp), "reject color and depth alias");
+    rp.depth.texture.id = 3; rp.colorCount = 0;
+    check(validateRenderTargetPassDesc(rp), "depth-only pass");
+    rp.depth.mipLevel = -1;
+    check(!validateRenderTargetPassDesc(rp), "reject invalid depth mip");
+    rp.depth.mipLevel = 0; rp.clearDepth = 2.0f;
+    check(!validateRenderTargetPassDesc(rp), "reject invalid depth clear value");
+    rp = RenderTargetPassDesc{}; rp.colorCount = 5;
+    check(!validateRenderTargetPassDesc(rp), "reject color count > 4");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }
