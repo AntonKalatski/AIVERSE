@@ -3,6 +3,7 @@
 // Native/editor MCP operations remain in apps/editor/core/SpectraGraphOps.cpp.
 #include "../Editor.h"
 #include "../EditorUtil.h"
+#include "../core/FxOps.h"
 #include "engine/fx/SpectraFX.h"
 #include <algorithm>
 #include <cmath>
