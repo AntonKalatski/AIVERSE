@@ -2270,3 +2270,19 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_editor_view COMMAND aiverse_physis_editor_view_test)
     set_tests_properties(physis_editor_view PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 18: projected debug geometry and atomic map-document Inspector
+# authoring. The authoring test needs the existing editor_core/MapDoc library;
+# geometry remains engine-only and is built in all headless PHYSIS test jobs.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_scene_geometry_test tests/physis_scene_geometry_test.cpp)
+    target_link_libraries(aiverse_physis_scene_geometry_test PRIVATE aiverse_engine)
+    add_test(NAME physis_scene_geometry COMMAND aiverse_physis_scene_geometry_test)
+    set_tests_properties(physis_scene_geometry PROPERTIES LABELS "PHYSIS")
+    if(TARGET aiverse_editor_core)
+        add_executable(aiverse_physis_authoring_test tests/physis_authoring_test.cpp)
+        target_link_libraries(aiverse_physis_authoring_test PRIVATE aiverse_editor_core)
+        add_test(NAME physis_authoring COMMAND aiverse_physis_authoring_test)
+        set_tests_properties(physis_authoring PROPERTIES LABELS "PHYSIS;EDITOR")
+    endif()
+endif()
