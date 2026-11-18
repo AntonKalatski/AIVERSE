@@ -410,3 +410,124 @@ were made to legacy RTS terrain, save/replay/networking or editors.
 4. Then connect terrain corner heightfield and road/building exclusion
    adapters; verify FPS/RTS regression checksums and save/replay determinism.
 5. Append a new stage to this exact handoff file after each phase.
+
+
+## Stage 2g — structural BranchLOD per tree branch (COMMITTED; TESTS UNVERIFIED)
+
+**Branch:** `feature/terraweave` (PR #24 remains Draft).
+**Commits:**
+- `3fbb6cafce85e70a7af0f4af62d8071878e1cdd0`:
+  `engine/world/TerraWeaveArbor.h` — add `LeafCluster::parentBranch`,
+  fill it from deterministic branch generation.
+- `efdddbb9e41c39befaff7cb6c2716f029e6d88c0`:
+  `engine/world/TerraWeaveArborMesh.h` — `ArborMeshSettings::leafPlanes`
+  can choose a single leaf card or the previous crossed pair.
+- `dda5e55d2582909019206945d32dd34bf7daebf5`:
+  `engine/world/TerraWeaveBranchLod.h` — independent Full/Reduced/Minimal
+  branch meshes; respect the leaf-to-branch relationship.
+- `0ce7cd300e718b324e92f0ee8e8ad4c71febf325`:
+  `engine/render/TerraWeaveModelAdapter.h` —
+  `makeArborBranchLodModel` with one `render::Node` per branch and
+  three mesh alternatives per node; the native renderer independently
+  selects each node's projected-size LOD.
+- `15c6e82d22afa8706d0388a5638c457b5d0a0848`:
+  `tests/terraweave_model_test.cpp` — parent topology, per-branch
+  triangles monotonically decreasing, LOD indices, repeatability and
+  invalid thresholds.
+
+**Architecture/API:** render-only, deterministic seeds, centimetre CPU
+geometry -> metre model vertices, no new renderer or ECS entity per branch.
+Existing `makeArborModel` kept unchanged for compatibility.
+Default `BranchLodSettings` thresholds: 96 and 30 screen pixels.
+Per-branch LOD works because existing `Renderer3DModels.cpp` evaluates
+each `render::Node` and its own `MeshDef::lods`, independently of the
+overall model. `TreeBranch::parent` remains the render node parent.
+The renderer also considers the shadow-camera projected size, so shadow
+LOD may require extra detail.
+
+**Verification:** GitHub commits and source inspection completed.
+**No compiler, CTest, GPU render or screenshot test executed/observed**
+for this stage. Do not claim tests passed.
+
+**Limitations:** one structural draw node per branch increases CPU
+model traversal and may increase draw submissions. Existing renderer
+instancing may group compatible meshes across trees, but no measured
+numbers or large-forest benchmarks. The leaf cards near camera still
+use placeholder opaque green unless project textures are supplied.
+`BranchDetail::Minimal` preserves branches with 3-sided tubes + one
+leaf plane; it does not merge branches or support full-tree impostors
+(that follows in Stage 2h).
+
+## Stage 2h — final alpha-masked whole-tree billboard (COMMITTED; UNVERIFIED)
+
+**Commits:**
+- `adf4f0184a6cca012276fbcb2e85f7313251559f`:
+  `engine/render/TerraWeaveArborBillboard.h` —
+  `makeArborBillboardModel` CPU-rasterizes a real transparent RGBA8
+  tree silhouette (bark and leaf clusters) and a single XY quad,
+  `render::AlphaMode::Mask`, no fake green rectangle.
+- `a10670d6bf0dcf249a227fb85910689e5728c192`:
+  `engine/render/TerraWeaveForestAdapter.h` —
+  per-species model pair (near structural + far billboard),
+  conditional Flora batch submission, view-facing yaw for far trees,
+  upload/release via the existing gfx Device path.
+- `f8c5935aa1ba1ec38b16c97e77c85db103305a09`:
+  `tests/terraweave_model_test.cpp` — alpha pixels, mask,
+  repeatable silhouette, model choice, facing and persistent IDs.
+- `e5ff1bc696d40eb85faf0657f0626678f1b68fb3`:
+  `engine/render/TerraWeaveForestAdapter.h` — camera extent hardening,
+  default 8 radial segments to preserve three distinct geometry tiers.
+- `d9831237ea54d5186ea5b13cd3de35e61db2c91b`:
+  `docs/terrain/TERRAWEAVE.md` — updated native API/usage and
+  explicit one-view procedural billboard limitations.
+
+**Behavior and invariants:** no separate GPU pipeline. Only far
+`TreeLOD::Impostor` Flora batches use the billboard; all closer
+instances use one shared branch-LOD model per species. Every whole-tree
+impostor is one quad, one alpha-masked material/texture, camera-facing
+horizontal yaw and origin-relative transform. Both near and impostor
+share the same stable `ModelDraw::persistentId`. Models are uploaded
+and released by `ArborForestAdapter::uploadModels/releaseModels` on the
+render thread. Textured billboard is generated on the CPU, with no
+platform shader dependencies. Billboard has castShadow=false.
+
+**Actual verification:** source changes pushed to GitHub and test
+assertions updated. No local repository clone was available in this
+runtime, and no network resolution for Git clone was available.
+**CMake/CTest, real scene render, GLSL/MSL and GPU screenshots: NOT RUN.**
+No CI pass/fail observed from the last queried head; check the newest
+isolated TerraWeave GitHub workflow before asserting status.
+
+**Reproduce (same CI target as previous stage):**
+```sh
+cmake -S . -B build/terraweave-ci -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF \
+  -DAIVERSE_BUILD_CLIENT=OFF -DAIVERSE_BUILD_SERVER=OFF \
+  -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_BUILD_TOOLS=OFF -DAIVERSE_FBX=OFF
+cmake --build build/terraweave-ci --parallel 2 --target \
+  aiverse_terraweave_test aiverse_terraweave_arbor_test \
+  aiverse_terraweave_flora_test aiverse_terraweave_model_test
+ctest --test-dir build/terraweave-ci --output-on-failure \
+  -R '^terraweave(_arbor|_flora|_model)?$'
+```
+
+**Next exactly:**
+1. Review isolated GCC/Clang workflow results (and CTest), fix any
+   header/adapter test errors first. In particular validate
+   `makeArborBranchLodModel` with renderer upload and its per-node
+   projected-size selection (including camera and shadow clip).
+2. Add an opt-in forest placement path to the WorldScene runtime/editor.
+   A standalone adapter header alone does **not** draw forests in any
+   existing game. Keep legacy scenes unaffected if TerraWeave is disabled.
+3. Capture a real GPU screenshot of a partially simplified tree, its
+   individual branch LOD switch, then whole-tree billboard; verify
+   GL/Metal/Vulkan and alpha masking. Quantify 100/1,000/10,000 tree
+   model nodes, draw submissions, triangles and memory.
+4. For production, add multi-view (8/16) baked albedo+normal/depth
+   impostor atlas, temporal or dithered tree↔impostor crossfade and
+   shadow policy to avoid visible pop. Consider branch cluster merge
+   to lower draw count without losing local LOD selection.
+5. Append complete measured results and a new handoff stage.
+
+As always, no untested claim of a passing build, GPU visual quality,
+or runtime integration is permitted.
