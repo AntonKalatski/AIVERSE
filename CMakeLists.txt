@@ -541,6 +541,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_budget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_budget_policy COMMAND aiverse_animation_budget_tests)
 endif()
+# Fixed-tick authored root motion for authoritative ECS motor integration.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_root_motor_tests tests/animation/root_motor.cpp)
+    target_link_libraries(aiverse_animation_root_motor_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_root_motor COMMAND aiverse_animation_root_motor_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
