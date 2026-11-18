@@ -1,6 +1,7 @@
 // Kinematic projectile system: fixed-tick travel and replay in unrelated hosts.
 #include <aiverselib/genre/EcsKinematicProjectileSystems.h>
 #include <aiverselib/genre/EcsOrderedImpactSystems.h>
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -172,8 +173,53 @@ static void exerciseOrderedImpacts() {
     check(stages==std::vector<int>({1,2}),
           "direct-only projectile incorrectly triggered splash");
 }
+// Programmed RTS shots have a different splash candidate ordering from
+// ordinary shots: their adapter sorts by stable entity index after querying.
+// The shared impact policy must preserve *host-provided* ordering unchanged.
+static void exerciseProgrammedImpactOrder() {
+    World world;
+    const Entity projectile=world.create();
+    const Entity shooter=world.create();
+    const Entity direct=world.create();
+    const Entity splashA=world.create();
+    const Entity splashB=world.create();
+    const Entity outOfRange=world.create();
+    std::vector<int> observed;
+    const lg::OrderedProjectileImpact hit{
+        projectile,shooter,direct,Vec3{},12_fx,2_fx
+    };
+    bool onHitResolved=false;
+    lg::resolveOrderedProjectileImpact(hit,
+        [&](Entity target) {
+            check(target==direct,"programmed hit wrong direct target");
+            observed.push_back(1);
+        },
+        [&](Entity target) {
+            check(target==direct,"programmed on-hit wrong target");
+            onHitResolved=true; // immediate programmed on-hit, not deferred
+            observed.push_back(2);
+        },
+        [&](Vec3 point,Fixed radius,auto&& visit) {
+            check(point==Vec3{}&&radius==2_fx,"programmed splash origin/radius");
+            // Spatial query order is intentionally reverse entity index.
+            std::vector<Entity> candidates;
+            for(Entity e:{splashB,outOfRange,direct,splashA})
+                if(e!=direct && e!=outOfRange)candidates.push_back(e);
+            std::sort(candidates.begin(),candidates.end(),
+                      [](Entity a,Entity b){return a.index<b.index;});
+            for(Entity e:candidates)visit(e);
+        },
+        [](Entity) {return true;}, // prefiltered by program-specific query
+        [&](Entity victim) {
+            check(onHitResolved,"programmed splash ran before immediate on-hit");
+            observed.push_back(victim==splashA?3:victim==splashB?4:0);
+        });
+    check(observed==std::vector<int>({1,2,3,4}),
+          "programmed impact ordering no longer matches RTS adapter");
+}
 int main() {
     exerciseOrderedImpacts();
+    exerciseProgrammedImpactOrder();
     // Validation failure must leave the component byte-level state alone.
     lg::KinematicProjectileComponent invalid;
     invalid.mode=lg::KinematicMotionMode::Pursuit;
