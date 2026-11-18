@@ -696,3 +696,47 @@ preview header, checks opt-in toggle and authored placement masks.
 The isolated GCC/Clang workflow also builds `terraweave_preview`.
 No evidence of a passing editor build, renderer screenshot or measured
 GPU performance exists at this stage; maintain PR #24 as Draft.
+
+## Stage 5 — authored terrain and placement providers for generic forests
+
+`engine/world/TerraWeaveForestScene.h` now supports two optional host
+callbacks, independent of RTS, FPS and the actual terrain storage:
+
+```cpp
+TerraWeaveForestScene forest(settings);
+forest.addSpecies(profile, species, prototypeSeed);
+
+// A snapshot from a project/engine physics terrain provider, integer cm:
+forest.setHeightSource([&surface](int64_t xCm, int64_t zCm) -> int32_t {
+    return surface.heightAtCm(xCm, zCm);
+});
+
+// Exclusion/footprint/water provider; evaluated after height sampling:
+forest.setPlacementFilter([&surface](const FoliageInstance& tree) -> bool {
+    return surface.allowTree(tree.xCm, tree.zCm, tree.heightCm);
+});
+
+forest.streamAt({cameraXcm, cameraZcm});
+```
+
+Providers are invoked only during `streamAt()` on the owning CPU
+work phase. Any replacement automatically invalidates resident
+patches and increments the host revision. The deterministic placement
+IDs do not change when elevation or filtering changes; only final
+`heightCm` and presence can change. An invalid returned height outside
+the supported forest world extent throws before GPU submission.
+
+**Important:** callbacks must read an immutable terrain/collision
+snapshot for the duration of a regeneration. Do not capture mutable
+ECS data and race it against asynchronous workers. The current host
+is still synchronous, and these callbacks are presentation-only.
+They do **not** change the biome/slope evaluation in the underlying
+`scatter()`: if a project has independently authored very steep or
+underwater terrain, its `PlacementFilter` must reject unsuitable
+candidates. A later core API can support complete terrain-surface
+sampling for both selection and final height.
+
+Tests: `tests/terraweave_forest_scene_test.cpp` and CTest target
+`terraweave_forest_scene` (height override, stable keys, filter,
+revision invalidation, invalid height). Tests have been authored,
+but are not claimed to have executed.
