@@ -1509,3 +1509,116 @@ origin contract, and UV phase is surface-relative.
 then isolate water refraction/depth inputs (and optional underwater
 compositing via Prisma). Verify both Metal and GLSL and preserve the
 single-reflection-plane fallback before merging PR #23.
+
+## Stage 16 — high-Y water basis and opt-in trace-tier refraction
+
+**Branch:** `feature/nereid-water-core` (draft NEREID PR #23).
+**Starting head:** `1a10bad823d4712ffad876162d25f40ce7ce3abd`.
+**No additional branches merged.**
+
+### Implementation commits and changed files
+
+- `f5fb1ff37e41e8a6ae961c6f82c7c4ca9420a0f3` —
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h`:
+  `WaterSurfaceMeshOptions::originY` and subtraction of origin before
+  converting water surface height to `float`.
+- `6e6e29a5259a3a1d759e7a1754b8fbfaba3de5f6` —
+  `engine/render/NereidSurfaceResident.h`: `originY` added to
+  the GPU residency key to invalidate buffers when the vertical
+  coordinate basis changes.
+- `c39fd3822a6143a1ab38b41007efcc5261680c31` —
+  `engine/world/NereidWaterScene.h`: uses the water surface height as
+  local Y origin and offsets draws by `float(originY -
+  renderOriginCellY*cellSize)`.
+- `ea7aa973c6b2b5a393148c57c5239a4b11d8dd31`,
+  `6f527548842ec573c844e96943f882eace2e933a`,
+  `d4b7eb5125eda577ce592c5bed03b4e43fdc02d7`,
+  `3078067d246d4107c3076f6f4a3dd08ebf46ffa0`,
+  `53c8076caf9afb7c8c5b75721593189e55d4c389` —
+  water style `refractionStrength` (defaults to zero; validated 0..1),
+  passed to existing `Renderer3D::drawMesh(...,emissive)` parameter,
+  cached in the material key, and configurable through the existing
+  `nereidWater.surfaces[].style` manifest object.
+- `6a450ca9b2c4f28ba3f45c9d15194dd8d9f181c9` —
+  `engine/render/Shaders.h`: **both GLSL and Metal** now implement
+  opt-in depth-gated refraction by sampling the existing scene capture
+  from SSR slots 4/5. The NEREID water sentinel distinguishes the use
+  of the existing draw uniform's fourth parameter as refraction strength
+  instead of emissive glow; ordinary materials retain their previous
+  emissive behavior. Refracted background is sampled only within screen
+  UV bounds, with a valid captured opaque depth, and only if unprojected
+  opaque geometry lies physically below the visible water surface.
+  Water above another water plane still respects the established
+  single-planar-reflection fallback.
+- `25a8daa7cb4317d260f7642afe25ad4d2a6414ed` —
+  `tests/ecs_nereid_renderer_contract_test.cpp`: authored high-Y
+  mesh and cache-key checks, manifest invalid values, and GLSL/MSL
+  depth-gate shader-source contracts.
+
+### Usage and constraints
+
+Example manifest material (only effective with the existing trace-tier
+opaque scene colour/depth capture):
+```json
+{
+  "nereidWater": {
+    "surfaces": [
+      {
+        "id": 12,
+        "kind": "lake", "shape": "box",
+        "halfExtents": [50, 50],
+        "surfaceY": 8, "bottomY": -20,
+        "style": {"opacity": 0.73, "specular": 0.95,
+                  "refractionStrength": 0.55}
+      }
+    ]
+  }
+}
+```
+
+`refractionStrength=0` preserves the previous water shader; the
+sampling path requires the same `trace2.w` ready flag as the existing
+SSR. This is a **simple screen-space opaque-background displacement
+and depth-thickness attenuation**, not full Snell-ray tracing,
+multi-layer transmission, caustics or a true underwater volume.
+No additional RHI color/depth attachment or texture binding has been
+introduced. The computed refraction contribution is clamped,
+and invalid/background/above-water depth samples are rejected.
+
+`originY` is independent of gameplay water height: the surface mesh
+contains local float Y, while the scene renders it with a double
+difference from the caller's render-origin Cell Y. The broader
+Renderer3D camera/view-projection must still use a **compatible
+floating origin** for worlds at very large altitudes; this module
+cannot rebase arbitrary other world geometry on its own.
+Scene renderer primitives remain on the standard RHI path.
+
+### Verification and next action
+
+**Actually performed:** inspected the existing Renderer3D trace capture,
+SSR shader helpers, source API, wrote implementation and source-test
+fixtures through the connected GitHub tool.
+
+**NOT RUN / UNVERIFIED:** C++ compilation, unified runner/CTest,
+GLSL shader compilation, Metal shader compilation, GLSL/Metal GPU
+captures, actual scene depth accuracy, cross-platform build, editor
+visual test, runtime performance and FPS/RTS regressions. Do not
+interpret source-assertion tests as passing tests or PR readiness.
+
+Testing agent commands:
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+In actual GL/Metal scenes additionally inspect water at multiple Y
+heights, overlapping opaque bank geometry, high-Y floating-origin
+movement, refraction off/on with trace tier disabled/enabled,
+single-planar-reflection fallback, alpha-blend ordering and water
+over the sky/background. Validate no sampling feedback hazards.
+
+**Next:** fix compiler/shader/runtime failures first; then a dedicated
+underwater volume compositor coordinated with Prisma and optional
+per-pixel shoreline foam driven by depth. NEREID remains sole owner
+of water geometry/material presentation and ECS sampling; do not
+duplicate postprocess control, alter legacy RTS waterNetwork, or
+modify PHYSIS and TerraWeave implementations.
