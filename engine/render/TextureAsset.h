@@ -78,6 +78,8 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
     case BlockFormat::BC5: compressed = gfx::PixelFormat::BC5; break;
     case BlockFormat::EAC_R11: compressed = gfx::PixelFormat::EAC_R11; break;
     case BlockFormat::BC7: compressed = gfx::PixelFormat::BC7; break;
+    case BlockFormat::BC6H_UFloat: compressed = gfx::PixelFormat::BC6H_UFloat; break;
+    case BlockFormat::BC6H_SFloat: compressed = gfx::PixelFormat::BC6H_SFloat; break;
     case BlockFormat::ETC2_RGB8: compressed = gfx::PixelFormat::ETC2_RGB8; break;
     case BlockFormat::ETC2_RGBA8: compressed = gfx::PixelFormat::ETC2_RGBA8; break;
     case BlockFormat::ASTC_4x4: compressed = gfx::PixelFormat::ASTC_4x4; break;
@@ -127,7 +129,7 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
             std::vector<uint8_t> rgba;
             if (!decodeBlocksSlice(in, int(level), slice, rgba) ||
                 rgba.size() != stride) {
-                error = "container CPU fallback unavailable for this format (ASTC requires native GPU)";
+                error = "container CPU fallback unavailable for this format (ASTC/BC6H require native GPU)";
                 return {};
             }
             std::copy(rgba.begin(), rgba.end(),

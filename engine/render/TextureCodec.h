@@ -16,7 +16,7 @@
 namespace aiverse::render {
 
 // None = uncompressed RGBA8 (levels hold width*height*4 bytes each).
-enum class BlockFormat : uint8_t { None, ETC2_RGB8, ETC2_RGBA8, EAC_R11, BC1, BC3, BC4, BC7, ASTC_4x4, ASTC_6x6, BC5 };
+enum class BlockFormat : uint8_t { None, ETC2_RGB8, ETC2_RGBA8, EAC_R11, BC1, BC3, BC4, BC7, ASTC_4x4, ASTC_6x6, BC5, BC6H_UFloat, BC6H_SFloat };
 
 struct CompressedImage {
     BlockFormat format = BlockFormat::None;

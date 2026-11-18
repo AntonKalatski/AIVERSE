@@ -310,6 +310,8 @@ bool mapVkFormat(uint32_t vk, BlockFormat& f, bool& srgb) {
     case 138: f = BlockFormat::BC3; srgb = true; return true;
     case 139: f = BlockFormat::BC4; return true;
     case 141: f = BlockFormat::BC5; return true;
+    case 143: f = BlockFormat::BC6H_UFloat; return true;
+    case 144: f = BlockFormat::BC6H_SFloat; return true;
     case 145: f = BlockFormat::BC7; return true;
     case 146: f = BlockFormat::BC7; srgb = true; return true;
     case 147: f = BlockFormat::ETC2_RGB8; return true;
@@ -331,7 +333,9 @@ int blockBytes(BlockFormat f) {
     switch (f) {
     case BlockFormat::ETC2_RGB8: case BlockFormat::EAC_R11: case BlockFormat::BC1: case BlockFormat::BC4: return 8;
     case BlockFormat::ETC2_RGBA8: case BlockFormat::BC3: case BlockFormat::BC5:
-    case BlockFormat::BC7: case BlockFormat::ASTC_4x4: case BlockFormat::ASTC_6x6: return 16;
+    case BlockFormat::BC7: case BlockFormat::BC6H_UFloat:
+    case BlockFormat::BC6H_SFloat: case BlockFormat::ASTC_4x4:
+    case BlockFormat::ASTC_6x6: return 16;
     case BlockFormat::None: break;
     }
     return 4;
@@ -352,6 +356,8 @@ const char* blockFormatName(BlockFormat f) {
     case BlockFormat::BC4: return "BC4";
     case BlockFormat::BC5: return "BC5";
     case BlockFormat::BC7: return "BC7";
+    case BlockFormat::BC6H_UFloat: return "BC6H_UFloat";
+    case BlockFormat::BC6H_SFloat: return "BC6H_SFloat";
     case BlockFormat::ASTC_4x4: return "ASTC_4x4";
     case BlockFormat::ASTC_6x6: return "ASTC_6x6";
     }
@@ -493,7 +499,9 @@ bool decodeBlock(BlockFormat f, const uint8_t* block, uint8_t out[64]) {
         return true;
     }
     case BlockFormat::BC7: decodeBc7(block, out); return true;
-    case BlockFormat::ASTC_4x4: case BlockFormat::ASTC_6x6: case BlockFormat::None: break;
+    case BlockFormat::ASTC_4x4: case BlockFormat::ASTC_6x6:
+    case BlockFormat::BC6H_UFloat: case BlockFormat::BC6H_SFloat:
+    case BlockFormat::None: break; // no HDR-to-RGBA8 CPU decoder
     }
     return false;
 }

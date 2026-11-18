@@ -54,7 +54,8 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          RGBA8_sRGB, // sampling decodes sRGB; render targets encode on write and blend in linear; alpha stays linear
                          RGBA16F, // linear HDR radiance, 8 bytes/pixel; check supports()
                          BC4, BC5, EAC_R11, // one/two-channel compressed data maps; check supports()
-                         RG8, R16F, RG16F, R32F, RG32F }; // single/dual-channel sampled data textures
+                         RG8, R16F, RG16F, R32F, RG32F,
+                         BC6H_UFloat, BC6H_SFloat }; // HDR GPU block compression // single/dual-channel sampled data textures
 // Shared compression metadata used by all texture backends. A requested
 // compressed format must NEVER be allocated as RGBA8 when unsupported.
 constexpr bool isCompressedTextureFormat(PixelFormat f) {
@@ -63,6 +64,7 @@ constexpr bool isCompressedTextureFormat(PixelFormat f) {
     case PixelFormat::EAC_R11: case PixelFormat::BC1:
     case PixelFormat::BC3: case PixelFormat::BC4:
     case PixelFormat::BC5: case PixelFormat::BC7:
+    case PixelFormat::BC6H_UFloat: case PixelFormat::BC6H_SFloat:
     case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6:
         return true;
     default:
