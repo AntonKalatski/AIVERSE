@@ -4,6 +4,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "../PhysisSceneOverlay.h"
+#include "../PhysisFieldEditor.h"
 #include "engine/physis/PhysisDebugPalette.h"
 #include <algorithm>
 #include <cstdint>
@@ -59,6 +60,10 @@ public:
                 showDemo_ = true;
             }
         }
+
+        // Project-authored wind/storm/gravity sources are always editable,
+        // including edit mode where no running PHYSIS ECS World exists.
+        drawPhysisFieldsPanel(ed);
 
         const aiverse::World* world = showDemo_ && demo_ ? demo_.get() : live;
         if (!world) {
