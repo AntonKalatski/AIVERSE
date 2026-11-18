@@ -28,6 +28,8 @@ struct HorizonGpuRegion {
     size_t atlasBytes=0, vertexCount=0, triangleCount=0;
     size_t nearClipQuads=0, nearClipTriangles=0;
     bool nearClipFallback=false;
+    size_t weldedNearVertices=0;
+    int32_t maxNearWeldDeltaCm=0;
     size_t estimatedGpuBytes=0; // only texture+VB/IB, conservative mip allowance
 };
 
