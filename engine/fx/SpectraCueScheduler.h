@@ -46,6 +46,7 @@ struct CueSchedulerStats {
     uint64_t acceptedTicks = 0, duplicateTicks = 0;
     uint64_t acceptedCues = 0, emittedCues = 0;
     uint64_t droppedBudget = 0, droppedUnbound = 0, failedSpawns = 0;
+    uint64_t evictedOneShots = 0;
     uint64_t stoppedSources = 0, restartedSources = 0;
     size_t queued = 0, attached = 0, trackedOneShots = 0;
 };
@@ -94,6 +95,7 @@ public:
     const CueBudgets& budgets() const { return budgets_; }
     bool haveTick() const { return haveTick_; }
     size_t registeredEffects() const { return effects_.size(); }
+    const std::string& lastError() const { return error_; }
 private:
     struct EffectRef { int id = -1; };
     struct Active {
@@ -119,6 +121,7 @@ private:
     std::deque<Queued> queue_;
     std::deque<fx::FxHandle> oneShots_;
     bool haveTick_ = false;
+    std::string error_;
 };
 
 } // namespace aiverse::spectra
