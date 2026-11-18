@@ -292,13 +292,19 @@ bool ComputeParticles::step(float dt) {
         return false;
     }
     const uint32_t count=uint32_t(pendingStates_.size());
-    // Keep compute bounded to the occupied prefix rather than always
-    // dispatching every slot. This is NOT compaction: holes are still present.
+    // Keep the physical state pool stable, but gather all surviving physical
+    // slots into contiguous GPU vertices for a dense indexed draw. The CPU
+    // knows lifetimes and slot ownership; it never reads GPU positions.
     uint32_t updatePrefix=0;
-    for(uint32_t i=0;i<uint32_t(ages_.size());++i)
-        if(ages_[i]>0.f)updatePrefix=i+1;
+    aliveSlots_.clear();
+    for(uint32_t i=0;i<uint32_t(ages_.size());++i) {
+        if(ages_[i]<=0.f)continue;
+        updatePrefix=i+1; // integrate every physical slot alive before dt
+        if(ages_[i]>dt)aliveSlots_.push_back(i);
+    }
+    const uint32_t compactCount=uint32_t(aliveSlots_.size());
     if(updatePrefix==0 && count==0) {
-        drawSlotPrefix_=0;
+        drawCount_=0;
         stats_.submittedSlots=stats_.alive=0;
         verticesReady_=true;
         reason_.clear();
@@ -309,40 +315,46 @@ bool ComputeParticles::step(float dt) {
         device_->updateBuffer(slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t));
         stats_.uploadedBytes+=size_t(count)*(sizeof(ParticleState)+sizeof(uint32_t));
     }
+    if(compactCount>0) {
+        device_->updateBuffer(liveSlots_,aliveSlots_.data(),size_t(compactCount)*sizeof(uint32_t));
+        stats_.uploadedBytes+=size_t(compactCount)*sizeof(uint32_t);
+    }
     if(!device_->beginCompute(compute_)) {
         reason_="Metal compute encoder unavailable: call step between beginFrame/endFrame, before rendering";
-        return false;
+        return false; // pending births, age/free lists and draw count remain unchanged
     }
     device_->setComputeBuffer(0,states_);
     device_->setComputeBuffer(1,seeds_);
     device_->setComputeBuffer(2,slots_);
     device_->setComputeBuffer(3,vertices_);
+    device_->setComputeBuffer(4,liveSlots_);
     Uniforms u{};
     u.gravityDt={desc_.gravityY,dt,desc_.drag,0};
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
     u.up={up_.x,up_.y,up_.z,0};
-    u.meta={0,desc_.capacity,count,0};
+    u.meta={0,desc_.capacity,count,compactCount};
     if(count){device_->setComputeUniforms(&u,sizeof(u));device_->dispatch(count);++stats_.gpuDispatches;}
     if(updatePrefix>0) {
         u.meta[0]=1;
         device_->setComputeUniforms(&u,sizeof(u));
         device_->dispatch(updatePrefix);++stats_.gpuDispatches;
+    }
+    if(compactCount>0) {
         u.meta[0]=2;
         device_->setComputeUniforms(&u,sizeof(u));
-        device_->dispatch(updatePrefix);++stats_.gpuDispatches;
+        device_->dispatch(compactCount);++stats_.gpuDispatches;
     }
     device_->endCompute();
     pendingStates_.clear();pendingSlots_.clear();
+    // Commit CPU lifespan/free-slot changes only after GPU dispatch submission.
     for(uint32_t i=0;i<desc_.capacity;++i) {
         if(ages_[i]<=0.f)continue;
         ages_[i]-=dt;
         if(ages_[i]<=0.f){ages_[i]=-1.f;freeSlots_.push_back(i);}
     }
-    stats_.alive=desc_.capacity-uint32_t(freeSlots_.size());
-    drawSlotPrefix_=0;
-    for(uint32_t i=0;i<uint32_t(ages_.size());++i)
-        if(ages_[i]>0.f)drawSlotPrefix_=i+1;
-    stats_.submittedSlots=drawSlotPrefix_;
+    stats_.alive=compactCount;
+    drawCount_=compactCount;
+    stats_.submittedSlots=drawCount_;
     verticesReady_=true;reason_.clear();
     return true;
 }
@@ -352,7 +364,7 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     if(backend_==ComputeBackend::Cpu) {
         cpu_.render(fog);stats_.drawCalls=uint32_t(cpu_.stats().drawCalls);return;
     }
-    if(!verticesReady_||!pipeline_.valid()||drawSlotPrefix_==0)return;
+    if(!verticesReady_||!pipeline_.valid()||drawCount_==0)return;
     DrawUniforms u{};
     std::memcpy(u.viewProj,viewProj_.m,sizeof(u.viewProj));
     u.fog[0]=fog.color.x;u.fog[1]=fog.color.y;u.fog[2]=fog.color.z;u.fog[3]=fog.density;
@@ -363,7 +375,7 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     device_->setIndexBuffer(indices_);
     device_->setUniforms(0,&u,sizeof(u));
     device_->setTexture(0,texture_);
-    device_->drawIndexed(drawSlotPrefix_*6);
+    device_->drawIndexed(drawCount_*6);
     stats_.drawCalls=1;
 }
 void ComputeParticles::switchToCpu(const std::string& why) {
