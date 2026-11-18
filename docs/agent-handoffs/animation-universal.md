@@ -985,3 +985,16 @@ before calling this stage validated.
   until explicit test stage; any further implementation must be followed
   by a separate Stage 41 handoff.
 
+## Stage 41 — authoritative snapshot to cosmetic montage signals (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Code SHAs:** `7c7eb66c3988af7832f972bad0a4e45cb98296b7` and include fix `07bdc76f3e0d56327f9759bce6c3d365690fd67e`.
+- **Paths:** `libraries/include/aiverselib/animation/ReplicatedAnimationActions.h` (new),
+  `tests/animation/replicated_cues.cpp` (new), `CMakeLists.txt`.
+- **Architecture:** `ReplicatedAnimationActions::observe(ReplicatedAnimationState)` compares confirmed tick/life/shot/reloadUntil/health counters to emit **cosmetic-only** fire, reload, death or respawn action edges. First-sighting, repeated and out-of-order snapshots are suppressed; same slot new life resets edge history.
+  `playAnimationSlot(AnimationMontageSlotsComponent&,shared_ptr<const MontageDefinition>)` restarts the same slot or adds an independent masked slot (bounded 8).
+- **Compatibility:** not wired into FPS rendering yet. No gameplay commands, damage/hit logic, network schema or deterministic simulation changed.
+- **Tests:** new CTest `motionweave_replicated_cues` for initial state, duplicate snapshot, delayed events, life reset and stale ticks. **NOT RUN**; user explicitly deferred all tests.
+- **Risks:** event edge state lives in client-only presentation; repeat counts greater than one intentionally collapse into a single visual action per observed snapshot. No interpolation / montage phase migration from GPU crowds yet.
+- **Next agent action:** update `apps/fps/client.cpp` to load opt-in `fps.visual.montages` (project-local shot/reload/death files) via `compileMontageAsset`, attach `AnimationMontageSlotsComponent` to CPU actor entities, use `ReplicatedAnimationActions` keyed by replicated remote slot, preserve historic box/GPU fallbacks and render death montage while active. Commit code and then Stage 42 separately.
+
