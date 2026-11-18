@@ -28,6 +28,7 @@ description: Reuse AIVERSE PHYSIS for deterministic weather, wind, gusts, storms
 | Hurricane/tornado vortex fields | `PhysisStorm.h` | `StormEvent`, `StormKind`, `windWithStormsAt`, `stormsAt` |
 | Shared drag/gravity force policy | `PhysisForces.h` | `ForceReceiver`, `ForceOutput`, `evaluateForces`, `advanceForces` |
 | Combined read-only 3D climate + hazard + force fields | `PhysisPresentation.h` | `NatureFieldSample`, `sampleNatureField` |
+| Optional transient spatial broadphase | `PhysisSpatialIndex.h` | `SpatialFieldIndex::rebuild`, `sampleNatureFieldIndexed`, `sampleDiagnosticRasterIndexed` |
 | Generic native host | `PhysisIntegration.h` | `InstallOptions`, `install`, `forEachPresentationCell` |
 | Optional Box3D consumption | `engine/physics/PhysisBox3D.h` | `applyPhysisToBody`, `PhysisBodyMaterial` |
 
@@ -74,3 +75,20 @@ For Box3D integration also run `physics_runtime`, `physics_scene`; for shared wa
 ## Mandatory agent handoff
 
 **Every implementation stage** must commit its code/tests, then a **separate documentation commit** to `docs/agent-handoffs/physis-<stage>-YYYY-MM-DD.md` with branch, exact implementation SHA, paths, public API, actual test PASS/FAIL/NOT RUN results, known limitations and next explicit task. Update root `AGENTS.md`, `engine/physis/AGENTS.md` and `docs/physis.md` when changing ownership/contract. Do not commit into another agent's active Water or Terra branch; no force pushes.
+
+
+## Spatial sampling for many local fields (optional Stage 16)
+
+Use `PhysisSpatialIndex.h` when sampling many nearby points in the same
+committed World tick. Build a transient `SpatialFieldIndex` once, then call
+`sampleNatureFieldIndexed` / `sampleDiagnosticRasterIndexed` for nearby
+wind, shelter, gravity and storm fields. The original APIs remain the
+reference behavior. Bucket assignment has finite budgets with a global
+fallback for large/global volumes: fields are never dropped to save memory.
+
+**MUST rebuild** the index after EVERY World component edit, tick, load,
+rollback, or structural change. It owns copies, not persistent ECS or live
+references; same-tick edits cannot be detected automatically. It never owns
+Box3D or NEREID/Terra authority. New CTest `physis_spatial_index` verifies
+reference parity, but compiled PASS status is **NOT RUN** until test logs exist.
+Refer to `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
