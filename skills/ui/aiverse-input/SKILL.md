@@ -58,3 +58,6 @@ python3 tests/libraries/native_consumer.py
 \`\`\`
 
 For FPS/client integration also build \`aiverse_fps_client\`, run sample tests and full engine verification per \`AGENTS.md\`. Run GCC and Clang/MSVC/Apple CI where possible; do not claim a platform has been verified without success. Review \`docs/enhanced-input-agent-handoff.md\` for current stage and outstanding work.
+
+
+In addition to the commands above, verify the workflow `.github/workflows/enhanced-input.yml` (Linux/macOS/Windows). Its green status is necessary but not sufficient: editor/FPS/client full builds and a manual hosted-focus/rebinding smoke test are mandatory before merging.
