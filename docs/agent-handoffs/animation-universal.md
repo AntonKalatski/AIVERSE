@@ -1069,3 +1069,38 @@ before calling this stage validated.
   `ReplicatedAnimationActions` deduplication state. Add a backend
   handoff fixture, commit code then Stage 44 handoff.
 
+## Stage 44 — FPS CPU/GPU phase continuity and event-history preservation (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Implementation SHA:** `f7599ee5e827f2f29cc44da2b8f82173498cc1c7`.
+- **Changed files:** `apps/fps/client.cpp`; new
+  `libraries/include/aiverselib/animation/AnimationPhaseTransfer.h`;
+  `tests/animation/backend_phase_transfer.cpp`; root
+  `CMakeLists.txt` and `docs/fps.md`.
+- **Architecture/API:** `captureGraphClipPhase` for the generated
+  `idle`/`move` Graph nodes and `captureBakedClipPhase` for
+  `Animator` provide normalized phase within the original clip.
+  FPS captures each remote visual actor's phase before auto
+  CPU↔GPU backend replacement, seeds the new
+  `AnimationPhaseSeedComponent` (CPU) or
+  `AnimationCrowdComponent::initialNormalizedPhase` (baked)
+  and preserves `ReplicatedAnimationActions` event history.
+- **Backward compatibility:** keeps existing lookups and
+  `fps.visual.animationMode` config, save/network protocol and
+  authoritative counters unchanged. Death/shot/reload Montage
+  assets are pinned to CPU Graph mode, so no upper-body overlay
+  is lost to baked GPU limitations.
+- **Tests:** `motionweave_backend_phase_transfer` is added and
+  verifies representative Graph/Animator normalized phase mapping.
+  **NOT RUN**, including visual tests and CI (user deferred).
+- **Limits:** no guarantee of visually identical poses across
+  different authored clip blends; the simple fallback uses
+  Idle/Walk/Run names and only continuous clip phase, not a
+  crossfade of the previous and next skinning pipelines. Advanced
+  controllers/IK/motion matching stay CPU-only.
+- **Next step:** complete RTS opt-in MotionWeave adapter, preserving
+  current existing RtsView animation authoring and environmental
+  IK semantics. Avoid replacing universal RtsView's live legacy
+  graph state unless per-entity feature parity is established;
+  write code commit and Stage 45 handoff.
+
