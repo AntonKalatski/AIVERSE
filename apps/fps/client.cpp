@@ -14,6 +14,7 @@
 #include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
 #include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
+#include "libraries/include/aiverselib/animation/AnimationHotReload.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
@@ -51,6 +52,9 @@ struct App {
     std::map<uint8_t,uint32_t> characterLives;
     float characterScale=1.f,characterHeightOffset=0.f;
     bool characterBakedCrowd=false;
+    lib::animation::AnimationHotReloadRegistry animationReload;
+    std::filesystem::path characterGraphFile;
+    unsigned animationReloadFrame=0;
     i18n::Localization lang;
     std::set<platform::Key> keys;
     fps::Input input;
@@ -137,11 +141,28 @@ struct App {
                 def.set("output",Json::string(output));
                 def.set("parameters",Json::parse(R"({"moving":0,"speed":0})"));
             }
-            const auto compiled=render::AnimationGraph::compile(*model,def);
+            auto compiled=render::AnimationGraph::compile(*model,def);
+            // Optional project-local hot-reloadable graph asset; file revisions
+            // never affect authoritative FPS simulation or networking.
+            const auto graphFile=view.getStr("graphFile");
+            if(!graphFile.empty()) {
+                const auto local=std::filesystem::path(graphFile).lexically_normal();
+                if(local.is_absolute() || local.empty() ||
+                   *local.begin()==".." ||
+                   graphFile.find("..")!=std::string::npos)
+                    throw std::invalid_argument("animation graphFile escapes project");
+                characterGraphFile=std::filesystem::path(projectRoot)/local;
+                if(!animationReload.pollFile("fpsCharacter",*model,
+                                             characterGraphFile))
+                    if(!animationReload.lookup("fpsCharacter") ||
+                       !animationReload.lookup("fpsCharacter")->graph)
+                        throw std::runtime_error("FPS animation graphFile failed to compile");
+                compiled=animationReload.lookup("fpsCharacter")->graph;
+            }
             // Complex imported controllers always use palette/graph evaluation.
             // Simple clip crowds can use the existing instanced GPU baked skinning.
             const bool wantsBaked=view.getBool("bakedCrowd",false) &&
-                !view["animationGraph"].isObject();
+                !view["animationGraph"].isObject() && characterGraphFile.empty();
             characterBakedCrowd=wantsBaked && model->skinned() &&
                 render::bakeAnimations(device,*model);
             const double scale=view["scale"].toDouble(1.0);
@@ -163,6 +184,13 @@ struct App {
     }
     void updateCharacterAnimations(double dt,const fps::Actor& local) {
         if (!characterModel || !characterGraph) return;
+        if(!characterGraphFile.empty() && ++animationReloadFrame%30u==0u) {
+            if(animationReload.pollFile("fpsCharacter",*characterModel,
+                                        characterGraphFile)) {
+                characterGraph=animationReload.lookup("fpsCharacter")->graph;
+                animationReload.apply(characterPresentation);
+            }
+        }
         for (const auto& remote:client->snapshot().actors) {
             if (remote.slot==local.slot) continue;
             Entity e;
@@ -184,6 +212,9 @@ struct App {
                     auto& asset=characterPresentation.add<lib::animation::AnimationAssetComponent>(e);
                     asset.model=characterModel.get();
                     asset.graph=characterGraph;
+                    if(!characterGraphFile.empty())
+                        characterPresentation.add<lib::animation::AnimationGraphKeyComponent>(
+                            e,lib::animation::AnimationGraphKeyComponent{"fpsCharacter"});
                     characterPresentation.add<lib::animation::AnimationPlayerComponent>(e);
                     characterPresentation.add<lib::animation::AnimationPoseComponent>(e);
                     characterPresentation.add<lib::animation::AnimationInputsComponent>(e);

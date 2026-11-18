@@ -306,3 +306,15 @@ Complex avatars with IK, upper-body layers, and imported controllers
 stay in palette mode. The palette path now uses the shared
 `AnimationSignificanceComponent` / `assignAnimationBudgets`
 rather than hard-coded per-distance pose sampling.
+
+
+### Hot-reloadable FPS AnimationGraph
+
+Optional `fps.visual.graphFile: "animations/hero.json"` loads a
+project-relative AnimationGraph file instead of the generated Idle/Walk/Run
+graph. The client polls for changed file timestamps on its presentation
+thread (every 30 rendered frames), recompiles transactionally, retains the
+last good graph after an invalid edit, and swaps immutable graph pointers
+on existing presentation entities. Game/network simulation is unchanged.
+Changing a graph restarts its visual state machine. This file is resolved
+inside the current project; it must not contain parent-path traversal.
