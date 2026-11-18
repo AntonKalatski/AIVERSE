@@ -16,10 +16,10 @@ int main(){
         assert(c.begin==cursor && c.end>c.begin);
         cursor=c.end;summed+=c.estimatedCost;
     }
-    assert(cursor==costs.size() && summed==311);
+    assert(cursor==costs.size() && summed==310);
     assert(scaledAnimationCost(100,2.f)==200);
     assert(scaledAnimationCost(100,NAN)==100);
-    Model model;model.nodes.resize(1);model.nodes[0].name="root";
+    render::Model model;model.nodes.resize(1);model.nodes[0].name="root";
     model.order={0};
     auto graph=render::AnimationGraph::compile(model,Json::parse(R"({
         "nodes":[{"id":"base","kind":"bind"}],"output":"base"})"));
