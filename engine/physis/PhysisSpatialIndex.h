@@ -71,8 +71,13 @@ public:
         const auto minimum = std::numeric_limits<std::int64_t>::min();
         // Saturated/overflow-prone bounds are kept in the global fallback,
         // never silently culled. PHYSIS's precise radial check stays authoritative.
-        if (radius.raw > limit - center.x.raw || center.x.raw < minimum + radius.raw ||
-            radius.raw > limit - center.z.raw || center.z.raw < minimum + radius.raw) {
+        const auto boundOverflows = [&](std::int64_t coordinate) {
+            // Compute max-coordinate / coordinate-min only in the sign range
+            // where subtraction is defined (never max - negative int64).
+            return (coordinate > 0 && radius.raw > limit - coordinate) ||
+                   (coordinate < 0 && radius.raw > coordinate - minimum);
+        };
+        if (boundOverflows(center.x.raw) || boundOverflows(center.z.raw)) {
             global_.push_back(ordinal);
             return;
         }
