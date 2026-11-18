@@ -1423,3 +1423,36 @@ Use mock device to prove native BC5 GPU upload is gated by
 `shaderReconstructsBc5NormalZ` and that the default path
 still reconstructs the Z component. Validate native compiler and
 GPU format support. Commit test stage and separate handoff.
+
+## Stage 5B — BC5 CPU/native parity regression fixtures (2026-11-18)
+
+**Code commit:** `b0a1ce1225e1a716d33efb76a02ba395e4544514`.
+**Branch:** `feature/texture-rhi-unification`, draft PR #21.
+**Changed:** `tests/render/texture_asset.cpp`,
+`tests/render/dds_layers.cpp`, `tests/render/ktx2_layers.cpp`.
+
+**Test source added:** Synthetic BC5 RGTC2 blocks with constant
+R=255/G=128 are checked through `decodeBlocksSlice` with the
+expected reconstructed tangent-space Z≈128. The mock GPU
+asset test verifies that default BC5 uploads receive RGBA8
+CPU-decoded normals even if the GPU advertises native BC5,
+while `shaderReconstructsBc5NormalZ=true` explicitly allows
+native `PixelFormat::BC5` compressed uploads. DDS DX10 format
+83 blocks remain stored as `BlockFormat::BC5` and decode
+to the same channels. KTX2 vkFormat 141 is mapped to BC5
+and decoded in CPU fallback. The tests reuse existing
+`texture_asset`, `dds_layers` and `ktx2_layers` targets.
+
+**Compatibility:** Test-only stage, no gameplay, native API,
+save/network or serialized asset changes. Confirms intended
+default BC5 normal-map semantics.
+
+**Verification:** GitHub code commit/ref update succeeded.
+C++ compile, CTests, Metal/GL/Vulkan native GPU validation:
+**NOT RUN** (full repository clone not available here).
+No green CI outcome asserted.
+
+**Next:** Compile and execute all three CPU tests, then run
+actual BC4/BC5/EAC R11 sampling on each backend with GPU
+capability checks. Audit DDS/KTX2 sRGB handling and BC1_RGB
+opaque semantics. Continue per-stage handoff after fixes.
