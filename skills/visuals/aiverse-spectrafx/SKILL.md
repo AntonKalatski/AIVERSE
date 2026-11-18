@@ -436,6 +436,39 @@ functions, root function JSON editor and library
 import/export actions. User deferred tests; do not
 claim these code changes compile/run until validated.
 
+## Per-particle CPU expression VM (Stage 19)
+
+Per-particle motion, colour, size and eight user scalar
+attributes now support a bounded, precompiled expression
+program: add a v2 `ParticleProgramModule` with
+`properties:{"version":1,"spawn":[...],"update":[...]}`
+to the stage chain, or set a legacy emitter's
+`particleProgram`. The core compiler/interpreter is
+`engine/fx/SpectraParticleProgram.h`; `FxEffect.cpp`
+validates and serializes the program, and `ParticleSystem`
+executes it per particle using fixed memory, no JSON
+parse/heap allocation in the hot loop.
+
+Each program stage `spawn/update/death/collision/trigger`
+contains numeric expressions and assignment actions
+`set/add/addRate/multiply` to
+`position.x/y/z`, `velocity.x/y/z`, `size`,
+`rotation`, `tint.r/g/b/a`, or
+`attribute0..7`. Named read-only fields include
+`ageNormalized`, `age`, `dt` and `uid`.
+Age-dependent expressions run at the current particle age
+rather than being baked to a static FxRange curve.
+`addRate` multiplies by dt for time-scaled motion.
+Expressions may use unary/binary/ternary numeric ops, but
+never run unrestricted scripts or write ECS/gameplay.
+
+Example `examples/spectrafx/runtime_particle_program_v2.vfx.json`.
+Do not route effects containing `particleProgram` onto
+the simple billboard GPU backend. Strict full-effect
+eligibility must fall back to CPU until GPU program parity
+is implemented. Tests were deferred by the user; no CTest,
+native build or Metal shader verification has been run.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
