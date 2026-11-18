@@ -71,6 +71,31 @@ int main() {
     manual.volumes[0].weight=0.25f;
     expect(std::abs(exposure(manual.resolve(base,{0,0,0}))-0.75f)<0.001f,"color grading fades from neutral");
 
+    // A local exposure override must NOT reset the authored global saturation,
+    // contrast or quality tier. These defaults used to overwrite unrelated fields.
+    const PrismaSettings styledBase = parsePrisma(Json::parse(R"({"effects":[
+        {"type":"colorGrade","exposure":0,"saturation":1.35,"contrast":1.2,"minQuality":"high"}]})"),Json());
+    const Json exposureOnly = Json::parse(R"({"volumes":[
+        {"id":"exposure-only","shape":"global","profile":{"effects":[
+            {"type":"colorGrade","exposure":2}]}}]})");
+    issues.clear();
+    const auto local = parsePrismaVolumes(exposureOnly,Json(),&issues);
+    auto result = local.resolve(styledBase,{0,0,0});
+    const auto* grade = result.find(PrismaType::ColorGrade);
+    expect(issues.empty() && grade != nullptr,"explicit-effect-mask profile parsed");
+    if (grade) {
+        expect(std::abs(grade->get("exposure")-2.f)<0.001f,"local exposure changed");
+        expect(std::abs(grade->get("saturation")-1.35f)<0.001f,"global saturation preserved");
+        expect(std::abs(grade->get("contrast")-1.2f)<0.001f,"global contrast preserved");
+        expect(grade->minQuality==PrismaQuality::High,"global minQuality preserved");
+    }
+    const Json explicitDisable = Json::parse(R"({"volumes":[
+        {"id":"off","profile":{"effects":[{"type":"colorGrade","enabled":false}]}}]})");
+    auto disabled = parsePrismaVolumes(explicitDisable,Json()).resolve(styledBase,{0,0,0});
+    expect(disabled.find(PrismaType::ColorGrade)!=nullptr &&
+           !disabled.find(PrismaType::ColorGrade)->enabled,
+           "explicit effect disable works without changing other values");
+
     const Json bad = Json::parse(R"({"volumes":[{"shape":"sphere","center":[0,0,0],"radius":-4,
                           "profile":{"effects":[]}}]})");
     issues.clear();
