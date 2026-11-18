@@ -2394,6 +2394,28 @@
       ]
     },
     {
+      "id": "ecs-hitscan",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "cpp-subsystem",
+      "source": "libraries/include/aiverselib/genre/EcsHitscanSystems.h",
+      "skill": "skills/gameplay/aiverse-ecs-hitscan/SKILL.md",
+      "summary": "Shared deterministic hitscan candidate ray intersection with eligibility, immutable rewind poses and nearest-hit tie consistency for FPS, RTS and native games",
+      "notes": "Live FPS traceShot uses this policy over lag-compensated Actor snapshots. The policy chooses nearest candidate only; environment/vehicle obstruction and downstream damage remain host-specific. C++ native builds and replay parity remain unverified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_ecs_hitscan",
+      "dependencies": [
+        "tests/ecs_hitscan_selection_test.cpp",
+        "docs/ecs-mechanic-composition.md",
+        "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+      ],
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_world"
+      ],
+      "packageDependencies": []
+    },
+    {
       "id": "ecs-ordered-impact",
       "version": "0.1.0",
       "layer": "simulation",
