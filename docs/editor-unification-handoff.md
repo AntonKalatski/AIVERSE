@@ -1797,3 +1797,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - No gameplay defaults, v9-compatible games, or network packets were changed. Native compile and CTest were NOT RUN because the local container cannot resolve `github.com`. Workflow state: CI: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451051); AIVERSE Studio validation: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451024); ECS 2.0 experimental checks: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451070); GPU batching focused regression: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451007).
 - **Next:** build/test the two `ecs_native_*` targets on a full checkout, report actual failures and fix before enabling production use. Full handoff: `docs/agent-handoffs/native-ecs-persistence.md`.
 
+
+
+### 2026-11-18 — Whole-engine migration plan updated for live FPS projectile creation and reset
+- **Documentation SHA:** `dd726cdd2cfb5d78aefc27da348202733b59c1e4`.
+- Added explicit source-of-truth tracking to `docs/ecs-all-features-migration-plan.md` for live FPS weapon shots, Frag/Smoke/Flash actions and bomb-round projectile reset using direct ECS runtime entities at their original stage. Defines remaining transitional State projection writers, World Entity ID/allocator ordering gates, native test fixtures and v9/network acceptance requirements. Keeps legacy mode and default-OFF `fps.ecsAuthority`.
+- **Verification:** documentation commit only; no native compilation/CTest.
