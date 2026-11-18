@@ -1904,3 +1904,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `82b39ed022ba4ffad4790e0a57061b006dcb78f5`.
 - Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` with the new live end-of-tick Runtime→State projection, unique source-ID validation, matching editor views, and the backward-compatible single-argument setup/v9 import overload. Requires agents not to write the legacy State vector as projectile authority, and cites stale-State override regression and native test gates.
 - **Verification:** documentation only; native gameplay checks still unexecuted.
+
+
+### 2026-11-18 — FPS one-way ProjectileRuntime lifecycle source audit (25/25)
+- Re-fetched 10 current-branch files: FPS public header, main module, systems, programmed projectile solver, new spawn/reset fixture, FPS main test, AGENTS, ECS projectile skill, whole-engine migration plan and this handoff.
+- **25/25 targeted static assertions passed**: old public `syncDynamicEntities(sim)` and new overload are both present; live mirror chooses the ECS→State mode; setup/v9 load still use old import; ECS mirror enumerates Runtime and has **no** Runtime-from-State assignment; IDs unique and indexed; weapon and grenade spawns, bomb reset, programmed and ordinary stages all use canonical Runtime when enabled; deep/COW + poisoned State + v9 fixture is registered; agent docs and plan match the cutover.
+- At inspection, PR #7 head was `da1cbcf6885a64a8775882cb28095c7cd86ee910`; all four GitHub Actions (`CI`, `ECS 2.0 experimental checks`, `AIVERSE Studio validation`, `GPU batching focused regression`) were **queued**, so there is **no observed native compiler/test pass**.
+- **Next native gate:** compile FPS and editor binaries, run `ctest --output-on-failure -R 'fps|ecs_'`, network `fps_transport`, sanitizer/replay tests and verify old v9 save byte compatibility and deterministic Entity allocator restoration. Do not enable ECS authority by default until results and any failures are recorded.
