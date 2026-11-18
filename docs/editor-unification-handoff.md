@@ -1736,3 +1736,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `c121d7ef5e53bdf577fee5dcb1ebd328ea18e2b3`.
 - Changed `modules/fps/FpsSystems.cpp::action` for actual `Frag`, `Smoke` and `Flash` commands to call the same `Module::spawnProjectile` as accepted weapon shots. Legacy inventory consumption, projectile ID allocation, fuse, initial velocity, damage, count limit and tick order are unchanged; under `fps.ecsAuthority`, grenades now receive a canonical ECS Entity and `ProjectileRuntime` as soon as the input action succeeds, not only during `fps.ecsMirror`. Default-off mode still appends the legacy vector.
 - **Verification:** GitHub source commit only. No C++ compilation, grenade behavior/round parity, v9 save/load, network transport, snapshot rollback or Editor checks run. Next: native FPS regression for both weapon/throwable paths, plus round-reset/source-of-truth migration.
+
+
+### 2026-11-18 — Live FPS weapon+throwable immediate ECS spawn parity fixture
+- **Implementation SHA:** `91a80fbab26ddbe5f7a28e4a45b7f12e4866944d`.
+- Added `tests/fps/projectile_spawn.inc` with `ecsProjectileSpawnAuthorityParity` run in both deep and COW snapshot modes. Uses production input commands to fire an ordinary bullet and throw Frag/Smoke/Flash actions, and compares legacy vs `ecsAuthority` state/checksums/actor fields and every `ProjectileRuntime` kind/ID/order/velocity/position/damage via `DynamicEntityIndex` after each tick. Verifies all three throwables existed, object ID counter advanced, v9 cross-mode save load, pre-fuse rollback, 10-tick continuation and replay checksum.
+- **Verification:** GitHub test source added, **not yet referenced from `tests/fps/tests.cpp` main**, native C++ compilation and execution not performed. Requires normal FPS test data and CTest. The helper's immediate creation is verified in source; after-tick fixture alone cannot distinguish whether an entity was created before `fps.ecsMirror`.
+- **Next:** include and invoke new fixture in `aiverse_fps_tests`, add a mid-tick spawn visibility invariant if needed, check native CI and test status. 
