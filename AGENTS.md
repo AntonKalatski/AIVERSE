@@ -1195,3 +1195,27 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+
+
+## TerraWeave procedural terrain/foliage (2026-11-18)
+
+Universal world generation lives in `engine/world/TerraWeave.h` (namespace
+`aiverse::terraweave`), independent of RTS/FPS and usable by native C++
+project modules. Read `docs/terrain/TERRAWEAVE.md` and the
+`skills/world/aiverse-terraweave/SKILL.md` before implementation.
+
+- Preserve existing RTS terrain rendering, simulation and editor contracts.
+  TerraWeave is an optional generic generator, **not** a new parallel terrain
+  renderer. Explicitly convert its integer centimetres to old map units.
+- Genre-independent components and systems: chunk/vegetation patch entities
+  for cosmetic foliage; entities per individual tree only when gameplay needs
+  them. Never allocate one ECS entity per grass blade.
+- All authoritative generation must be deterministic, independent of chunk
+  partition, job timing and input species order. Use stable seeds, integer or
+  Fixed math and explicit generator-version migration for saved worlds.
+- Generate chunks in pure jobs; ECS changes in deterministic commit order.
+  Rendering uploads use the RHI. Shader changes need GLSL+MSL and quality tiers.
+- **After every development stage update
+  `docs/terrain/AGENT_HANDOFF.md`** with exact commits, API/files, tests
+  actually run, limitations and the next step. No tests may be marked passing
+  without recorded execution.
