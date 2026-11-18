@@ -206,6 +206,7 @@ void Editor::openGame(const std::string& idOrDir) {
     }
     ws_.changes.clear();
     if (dev_) terraWeaveForestPreview_.release(*dev_);
+    terraWeaveForestPreview_.setEnabled(false);
     reloadRules();
     selection = {};
     showPicker_ = false;
@@ -298,6 +299,7 @@ void Editor::reclaimEditorAssets(bool force) {
 
 void Editor::newMap(int w, int h) {
     if (dev_) terraWeaveForestPreview_.release(*dev_);
+    terraWeaveForestPreview_.setEnabled(false);
     doc().reset(w, h);
     selection = {};
     syncGrid();
@@ -311,6 +313,7 @@ void Editor::openMap(const std::string& file) {
     std::string norm = fs::weakly_canonical(fs::path(file), ec).string();
     if (doc().load(ec ? file : norm, &err)) {
         if (dev_) terraWeaveForestPreview_.release(*dev_);
+        terraWeaveForestPreview_.setEnabled(false);
         status = "Открыто: " + ws_.relative(doc().path);
         selection = {};
         syncGrid();
@@ -844,6 +847,11 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (!ws_.project.isFps()) fieldPreview_.fill(ws_.project.rules, ws_.map, scene_);   // grid fields: the map's initial values
     const auto afterFields = std::chrono::steady_clock::now();
     const bool planets = !ws_.project.isFps() && view_.planetMode();
+    // A map undo may have removed the TerraWeave recipe since last frame.
+    // Release stale preview buffers even when the Terrain panel is closed.
+    if (terraWeaveForestPreview_.enabled() &&
+        !doc().data.extra["terraweave"].isObject())
+        setTerraWeaveForestPreviewEnabled(false);
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
     r3d_.beginScene(useCam, vp.w, vp.h);
