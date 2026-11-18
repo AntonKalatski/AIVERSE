@@ -130,13 +130,14 @@ bool GameClient::planetCameraEvent(const Event& e, bool uiWants,
         if (e.button != 2 || !panning_) return false;
         panning_ = false;
         return true;
-    case EventType::MouseWheel:
+    case EventType::MouseWheel: {
         if (uiWants) return true;
         const auto* wheel=inputShortcuts_.system().state("CameraZoom");
         const float value=wheel?wheel->value.x:e.wheelY;
         if(value!=0.0f)pc.zoom(std::pow(0.88f,value));
         return true;
-    case EventType::KeyDown:
+    }
+    case EventType::KeyDown: {
         if (uiWants) return false;
         const auto fired=[&](const char* name){
             return std::find(actions.begin(),actions.end(),name)!=actions.end();
@@ -156,6 +157,7 @@ bool GameClient::planetCameraEvent(const Event& e, bool uiWants,
             fitCamera();return true;
         }
         return false;
+    }
     case EventType::TouchMove: {
         if (!touches_.count(e.touchId)) return false;
         if (touches_.size() == 1 && !sendDrag_) {
