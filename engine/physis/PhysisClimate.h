@@ -68,16 +68,20 @@ inline Forcing forcingAt(const World& world, const Cell& cell, std::uint64_t tic
     return result;
 }
 
-inline void advanceClimate(World& world) {
-    // Advance the underlying atmosphere+surface components with regional
-    // climate forcing. Exactly ONE authoritative tick is consumed.
+template<class SurfaceProvider>
+inline void advanceClimateWithSurface(World& world, SurfaceProvider&& surfaceProvider) {
+    // Exactly ONE atmosphere pass + ONE surface pass + ONE committed tick.
     advanceWith(world, [&](const Cell& cell, std::uint64_t tick) {
         return forcingAt(static_cast<const World&>(world), cell, tick);
-    });
-    // Eulerian front motion after weather step, independent of render frames.
+    }, surfaceProvider);
+    // Weather fronts move only after all affected cells see the same positions.
     world.eachExisting<WeatherFront>([](Entity, WeatherFront& front) {
         front.center += front.velocity;
     });
+}
+
+inline void advanceClimate(World& world) {
+    advanceClimateWithSurface(world, [](const Cell&) { return SurfaceParameters{}; });
 }
 
 } // namespace aiverse::physis

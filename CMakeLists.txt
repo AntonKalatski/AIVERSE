@@ -2176,3 +2176,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_climate COMMAND aiverse_physis_climate_test)
     set_tests_properties(physis_climate PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 3: material-specific accumulation / read-only environmental responses.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_environment_test tests/physis_environment_test.cpp)
+    target_link_libraries(aiverse_physis_environment_test PRIVATE aiverse_engine)
+    add_test(NAME physis_environment COMMAND aiverse_physis_environment_test)
+    set_tests_properties(physis_environment PROPERTIES LABELS "PHYSIS")
+endif()

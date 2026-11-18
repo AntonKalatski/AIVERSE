@@ -30,6 +30,7 @@ struct Atmosphere {
 struct Surface {
     Fixed wetness{};   // normalized 0..1, authoritative; renderers consume it
     Fixed snowpack{};  // metres of snow water-equivalent (simplified accumulation)
+    Fixed ice{};       // normalized 0..1; freezing surface coverage
 };
 
 struct Settings {
@@ -166,10 +167,52 @@ struct Forcing {
     Fixed precipitationBoost{};
 };
 
+// Opt-in material response coefficients. Default values preserve the Stage-1
+// rain/snow accumulation rates. All coefficients are per fixed simulation tick.
+struct SurfaceParameters {
+    Fixed wettingRate = Fixed::fromRatio(1, 16);
+    Fixed dryingRate = Fixed::fromRatio(1, 256);
+    Fixed snowAccumulationRate = Fixed::fromRatio(1, 128);
+    Fixed meltRate = Fixed::fromRatio(1, 128);
+    Fixed freezingRate = Fixed::fromRatio(1, 32);
+    Fixed thawingRate = Fixed::fromRatio(1, 32);
+    Fixed freezingPoint{};
+};
+
+// Standalone system pass: call only after atmosphere and before tick increment.
+// Hosts that bypass advanceWith() may call this once with their own scheduling.
+template<class SurfaceProvider>
+inline void advanceSurface(World& world, SurfaceProvider&& getParameters) {
+    const auto* state = world.resourceConst<State>();
+    if (!state) throw std::logic_error("PHYSIS not initialized");
+    for (const Entity entity : state->cells) {
+        if (!world.alive(entity)) continue;
+        const auto* coord = world.tryGetConst<Cell>(entity);
+        const auto* atmosphere = world.tryGetConst<Atmosphere>(entity);
+        if (!coord || !atmosphere) continue;
+        auto* surface = world.tryGet<Surface>(entity);
+        if (!surface) continue;
+        const SurfaceParameters parameters = getParameters(*coord);
+        surface->wetness = fxClamp(
+            surface->wetness + atmosphere->rain * parameters.wettingRate -
+            parameters.dryingRate, Fixed{}, Fixed::fromInt(1));
+        const bool frozen = atmosphere->temperature <= parameters.freezingPoint;
+        surface->snowpack = fxClamp(
+            surface->snowpack + atmosphere->snow * parameters.snowAccumulationRate -
+            (frozen ? Fixed{} : parameters.meltRate),
+            Fixed{}, Fixed::fromInt(10));
+        surface->ice = fxClamp(
+            surface->ice + (frozen ? surface->wetness * parameters.freezingRate :
+                            -parameters.thawingRate),
+            Fixed{}, Fixed::fromInt(1));
+    }
+}
+
 // A single deterministic scheduler entry point, independently extendable by
-// any data-only forcing provider. Each grid cell is written exactly once.
-template<class ForcingProvider>
-inline void advanceWith(World& world, ForcingProvider&& getForcing) {
+// any data-only forcing provider. Each grid cell is written exactly once per pass.
+template<class ForcingProvider, class SurfaceProvider>
+inline void advanceWith(World& world, ForcingProvider&& getForcing,
+                        SurfaceProvider&& getSurfaceParameters) {
     auto* state = world.resource<State>();
     if (!state) throw std::logic_error("PHYSIS not initialized");
     if (state->tick == std::numeric_limits<std::uint64_t>::max())
@@ -183,8 +226,7 @@ inline void advanceWith(World& world, ForcingProvider&& getForcing) {
         const auto* coord = world.tryGetConst<Cell>(entity);
         if (!coord) continue;
         auto* atmosphere = world.tryGet<Atmosphere>(entity);
-        auto* surface = world.tryGet<Surface>(entity);
-        if (!atmosphere || !surface) continue;
+        if (!atmosphere) continue;
         const Forcing forcing = getForcing(*coord, tick);
         const auto key = mix64(cellKey(seed, coord->x, coord->z) ^
                                mix64(tick + 0x6a09e667f3bcc909ull));
@@ -216,14 +258,15 @@ inline void advanceWith(World& world, ForcingProvider&& getForcing) {
             Fixed{}, Fixed::fromInt(1));
         atmosphere->rain = atmosphere->temperature > Fixed{} ? precipitation : Fixed{};
         atmosphere->snow = atmosphere->temperature <= Fixed{} ? precipitation : Fixed{};
-        surface->wetness = fxClamp(surface->wetness + atmosphere->rain / 16 -
-                                  Fixed::fromRatio(1, 256), Fixed{}, Fixed::fromInt(1));
-        const auto melt = atmosphere->temperature > Fixed{} ?
-            Fixed::fromRatio(1, 128) : Fixed{};
-        surface->snowpack = fxClamp(surface->snowpack + atmosphere->snow / 128 - melt,
-                                    Fixed{}, Fixed::fromInt(10));
     }
+    advanceSurface(world, getSurfaceParameters);
     ++state->tick;
+}
+
+// Source-compatible default surface materials.
+template<class ForcingProvider>
+inline void advanceWith(World& world, ForcingProvider&& getForcing) {
+    advanceWith(world, getForcing, [](const Cell&) { return SurfaceParameters{}; });
 }
 
 // Simple seeded environment: no forcing source or genre-specific behavior.
