@@ -29,6 +29,30 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## Action lifetime across focus, gating and context changes (Stage 49)
+
+An Action's `active` flag now reflects its **effective** Action-level
+`Chord`/`NotChord` eligibility, not just the unmodified physical key. When
+a required prerequisite disappears, the Action returns a zero value and emits
+`Canceled` rather than remaining active until the held key is released.
+Mappings interrupted by a higher-priority consuming context likewise cancel
+their existing Action. Ordinary physical release of a successfully triggered
+Action still completes normally.
+
+A blocked Mapping or failed Mapping/Action chord gate clears its Hold/Pulse/
+DoubleTap timing history. Restoring the chord while the key stays physically
+down restarts a timed Hold from the newly eligible interval; it does not
+inherit time from behind a modal. When a context is activated or a mapping
+is replaced while a key is already held, InputFlow initializes its mapping
+history from the current persistent control sample instead of inventing a
+new physical key-down transition. FocusLost through InputFlowAdapter still
+uses `cancelAll()` and clears all raw controls.
+
+The new lifecycle regression tests are authored but **not yet executed**.
+Interaction edges that occur *before the very first update of a newly
+activated context* still depend on host event ordering and must be
+verified in the macOS/Windows editor smoke phase.
+
 ## Chord dependencies and deterministic evaluation (Stage 47)
 
 `Chord("Aim")` and `NotChord("Aim")` are **level predicates** on an effective
