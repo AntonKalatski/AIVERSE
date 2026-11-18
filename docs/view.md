@@ -545,3 +545,30 @@ A dedicated `view_rts_selection_presentation` fixture checks unit
 and building radii, both Rules lookup overloads and invalid indices.
 **NOT RUN** — compiler/CTest and native RTS/editor parity remain
 to be executed.
+
+## Standalone RTS ghost and model preview authoring (Stage 84)
+
+`modules/rts/view/RtsPreviewPresentation.h` owns pure host-side
+presentation descriptions, independent of the `game::RtsView` class:
+
+- `makeGhostPresentation(type,position,allowed,time)` chooses placement
+  position, owner, valid/invalid tint and the existing animated alpha pulse.
+- `makeModelPreviewPresentation(type,owner,yaw)` chooses the preview
+  identity key and initial facing.
+- `previewFrameDt(now,previous)` clamps animation time to the
+  historical 0..0.1s window, with a zero-delta first frame.
+
+The legacy `RtsView::drawGhost` and `drawPreview` now consume these
+descriptions. Complex model choice, placement-on-planets, LODs, material
+overrides and GPU submissions remain in the specialized host renderer,
+which already forwards reusable draw commands to `aiverse::View`.
+The former `static EntityAnim ghost` has been changed to the
+instance-owned `ghostAnim_`, preventing ghost runtime state from
+crossing independent editor/client `RtsView` instances.
+
+This is a **bounded architecture migration** and not full removal
+of the legacy class. To retire it, extract host-owned model/terrain
+resource providers and wire the editor/client to those providers
+and the canonical View. The dedicated `view_rts_preview_presentation`
+test covers adapter data without constructing RtsView. Native
+compile/CTest/visual comparison are **NOT RUN** at this stage.
