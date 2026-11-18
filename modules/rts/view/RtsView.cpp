@@ -252,9 +252,8 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             q.append("planet scene",::aiverse::view::LayerPhase::Geometry,
                 [&]{drawPlanets(r,s,time,vision,grid);});
         });
-        ::aiverse::view::ViewLayerQueue passes;
-        providers.collect(passes,{time,0.f,frame_});
-        passes.flush();
+        // Universal View owns the synchronous presentation barrier.
+        ::aiverse::View::submitLayers(providers,{time,0.f,frame_});
         return;
     }
     animationObstacles_.clear();
@@ -351,7 +350,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     });
     // Synchronous flush is the GPU pass boundary: callback captures cannot
     // escape this RtsView::draw frame; there is no parallel render submission.
-    layers.flush();
+    ::aiverse::View::submitLayers(layers);
 
     const auto afterGround = std::chrono::steady_clock::now();
     const float dt = lastTime_ < 0 ? 0.0f : float(std::clamp(time - lastTime_, 0.0, 0.1));
