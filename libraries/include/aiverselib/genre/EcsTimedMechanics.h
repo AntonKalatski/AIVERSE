@@ -21,6 +21,32 @@ struct WeaponReloadComponent {
 };
 struct ReloadIntentComponent {bool requested=false;};
 
+// Deterministic shared one-tick reload policy, also usable from transitional
+// legacy host adapters. The native FPS adapter feeds the canonical ActorRuntime
+// values without introducing a second mutable weapon state.
+inline void stepWeaponReload(WeaponStateComponent& weapon,
+                             WeaponReloadComponent& reload,
+                             uint32_t tick,bool requested) {
+    if(reload.finishesAt && tick>=reload.finishesAt) {
+        // Keep the exact pre-existing FPS transfer order and result for
+        // valid inventory states (including completion+new request same tick).
+        const int32_t transferred=std::min(reload.magazineCapacity-weapon.ammo,
+                                           reload.reserve);
+        weapon.ammo+=transferred;
+        reload.reserve-=transferred;
+        reload.finishesAt=0;
+    }
+    if(!requested || reload.finishesAt || reload.reserve<=0 ||
+       reload.magazineCapacity<=0 || reload.durationTicks==0 ||
+       weapon.ammo>=reload.magazineCapacity ||
+       tick>=std::numeric_limits<uint32_t>::max()-reload.durationTicks)
+        return;
+    reload.finishesAt=tick+reload.durationTicks;
+}
+
+// A transport adapter may compose an Actor's legacy save fields into these
+// data-only parameters; systems and adapters MUST both use this one function.
+
 // Register before weapon launch. Completion occurs before a new reload request
 // is considered; requests are consumed even when no ammo/reserve is available.
 // External systems should only submit one-tick ReloadIntent values.
@@ -41,20 +67,7 @@ inline void addWeaponReloadSystem(Simulation& sim,std::string systemName) {
             ReloadIntentComponent* intent=intents?intents->tryGet(entity.index):nullptr;
             const bool requested=intent && intent->requested;
             if(intent)intent->requested=false;
-            if(reload->finishesAt && tick>=reload->finishesAt) {
-                const int32_t available=std::max<int32_t>(0,reload->magazineCapacity-weapon.ammo);
-                const int32_t transferred=std::min(available,std::max<int32_t>(0,reload->reserve));
-                weapon.ammo+=transferred;
-                reload->reserve-=transferred;
-                reload->finishesAt=0;
-            }
-            if(!requested || reload->finishesAt || reload->reserve<=0 ||
-               reload->magazineCapacity<=0 || reload->durationTicks==0 ||
-               weapon.ammo>=reload->magazineCapacity ||
-               tick>=std::numeric_limits<uint32_t>::max()-reload->durationTicks)
-                continue;
-            reload->finishesAt=tick+reload->durationTicks;
-            if(!reload->finishesAt)reload->finishesAt=1;
+            stepWeaponReload(weapon,*reload,tick,requested);
         }
     });
 }
