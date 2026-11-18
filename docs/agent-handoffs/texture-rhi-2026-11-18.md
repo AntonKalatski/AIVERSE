@@ -4067,3 +4067,34 @@ Validate the resulting `.rgba` files with the real C++
 filesystem loader and atlas/page-table shader on a GPU;
 then implement camera visibility prefetch or GPU feedback,
 with separate source/handoff commits.
+
+## Stage 6N — harden KTX2 external transcoder boundary (2026-11-18)
+
+Code SHA: 6f0569f638f186fb8606a9d7065101e80f4dcac3.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Changed file: engine/render/Ktx2Transcode.h.
+
+Implementation: Stage 6M's external callback boundary now validates the KTX2
+source header/index before calling Basis Universal: magic, total input budget,
+dimensions, declared 1D/3D/cube/array topology, mip count, compression scheme
+and level index ranges. Callback output must preserve source extents,
+array layers, cube faces and mip count. Unknown BlockFormat enum values,
+non-exact mip sizes and aggregate decoded payload exceeding 512 MiB fail closed.
+Exceptions inside a plugin callback clear output and report failure.
+Non-Basis KTX2 still goes through the standard parseKtx2 parser.
+
+API: Existing Ktx2Transcoder, validateTranscodedImage,
+parseKtx2WithTranscoder and uploadKtx2WithTranscoder signatures remain unchanged.
+The actual BasisLZ/UASTC codec is not bundled; an external codec is required.
+This stage does NOT provide a real native Basis transcoder.
+
+Compatibility: No RHI backend, ECS, save/network, other importer or material
+shader behavior changed.
+
+Actual verification: GitHub source commit succeeded. Native C++ compiler
+NOT RUN, CTest NOT RUN, GPU NOT RUN. Full native checkout unavailable.
+No passing result is claimed.
+
+Next: Synthetic CTest fixture covering valid layered Basis transcode,
+truncated index, mismatched topology/levels, unknown format, failure,
+callback exception and exact mip payloads. Commit source and handoff separately.
