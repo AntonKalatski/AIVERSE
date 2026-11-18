@@ -1399,3 +1399,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Extended `tests/fps/projectiles.inc` with `ecsProjectileProgramStageParity`: executes a real four-player FPS programmed fly-through bullet after the newly separated `fps.compat.projectilePrograms` stage, compares actor and projectile state plus full checksums on every tick between default State and `ecsAuthority=true` hosts, confirms deterministic damage and despawn, saves a pre-flight snapshot, reloads v9 bytes across both storage configurations, then restores and replays to the exact original checksum.
 - **Verification:** GitHub source committed; **native compile and test not yet executed**, test function not yet invoked by `tests/fps/tests.cpp` main until next implementation step. Source is grounded on existing `projectilePrograms` fixture's known flyThrough health expectations; verify at runtime.
 - **Next:** call the fixture from existing FPS test main, then run native `aiverse_fps_tests`, `fps_transport` and relevant CTest before further authority cutover.
+
+
+### 2026-11-18 — Generic ECS DamageQueue versioned bytes and complete checksum
+- Implementation SHA: `fb9542e0474f2903b93776b438ead0e6fe9b9241`.
+- Extended `libraries/include/aiverselib/genre/EcsDamageSystems.h` with explicit `Archive` IO for `DamageRequest` and `DamageQueue`, versioned v1 layout, bounded 16,384-request input, `saveDamageQueue`, transactional `loadDamageQueue` and `hashDamageQueue` covering both generation-safe Entity IDs, shot ID and damage amount in enqueue order. This completes a shared persistence primitive needed by real host rollback/save integrations.
+- Verification: source committed only, **native C++ compilation, save round-trip and live game/save parity still not executed**. Adding a serializer alone does not automatically wire `GameModule::serializeState` or hash to this resource.
+- Next: add CTest round-trip/truncation/checksum mutation checks in the existing integer-damage fixture, update AI skill and complete native test gates before using it as authoritative pending damage in FPS/RTS.
