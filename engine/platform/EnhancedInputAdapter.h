@@ -39,7 +39,17 @@ public:
             if (event.wheelY != 0) input_.addDelta({Device::MouseWheel, 1}, event.wheelY);
             break;
         case EventType::TouchBegin: {
-            const int slot = nextTouchSlot_++;
+            if (touches_.contains(event.touchId)) break; // repeated touch event is not another finger
+            int slot = 0;
+            for (; slot < 32; ++slot) {
+                bool used = false;
+                for (const auto& [id, activeSlot] : touches_) {
+                    (void)id;
+                    if (activeSlot == slot) { used = true; break; }
+                }
+                if (!used) break;
+            }
+            if (slot == 32) break; // ignore excess touches; profile indices are 0..31
             touches_[event.touchId] = slot;
             input_.setControl({Device::Touch, 0, slot}, 1);
             break;
@@ -82,11 +92,9 @@ public:
     void focusLost() {
         input_.cancelAll();
         touches_.clear();
-        nextTouchSlot_ = 0;
     }
 private:
     lib::gameplay::enhanced::InputSystem& input_;
     std::map<std::int64_t, int> touches_;
-    int nextTouchSlot_ = 0;
 };
 } // namespace aiverse::platform
