@@ -37,7 +37,7 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
-## Genre-independent ECS mechanics contract (2026-11-18)
+**Animation feature continuation:** read `docs/agent-handoffs/animation-universal.md` before editing `engine/render/Animation*`, adding animation ECS components or connecting FPS/RTS animation; use separate presentation World to preserve simulation checksum.\n\n## Genre-independent ECS mechanics contract (2026-11-18)
 
 **Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`
 (baseline 120 catalog packages, RTS tick stage map, FPS authority backlog, migration
