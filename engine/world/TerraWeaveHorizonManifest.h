@@ -67,6 +67,10 @@ horizonSceneFromManifest(
         j,"terrainBeginCm",settings.terrainBeginCm,0,10000000));
     settings.terrainSkirtDepthCm=static_cast<int32_t>(worldInteger(
         j,"terrainSkirtDepthCm",settings.terrainSkirtDepthCm,0,5000));
+    settings.terrainGridSnapSteps=static_cast<uint32_t>(worldInteger(
+        j,"terrainGridSnapSteps",settings.terrainGridSnapSteps,1,16));
+    settings.innerTerrainLipCm=static_cast<int32_t>(worldInteger(
+        j,"innerTerrainLipCm",settings.innerTerrainLipCm,0,200));
     settings.terrainResolution=static_cast<uint32_t>(worldInteger(
         j,"terrainResolution",settings.terrainResolution,8,96));
     settings.atlasTilePixels=static_cast<uint32_t>(worldInteger(
