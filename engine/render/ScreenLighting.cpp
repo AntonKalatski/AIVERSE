@@ -30,7 +30,7 @@ Source shader(const char* body,bool sunShadow) {
     return s;
 }
 }
-bool ScreenLighting::init(gfx::Device& d, PostFx& post) {
+bool ScreenLighting::init(gfx::Device& d, Prisma& post) {
     dev_=&d;post_=&post;
     const float tri[]={-1,-1,3,-1,-1,3};gfx::BufferDesc vb;vb.data=tri;vb.size=sizeof tri;vb.label="screen lighting";
     triangle_=d.createBuffer(vb);
