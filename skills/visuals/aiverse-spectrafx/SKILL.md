@@ -280,6 +280,54 @@ two draws for incompatible blend states, and source-scoped cleanup.
 This is a source test until actual CI confirms a pass. See the
 Stage 14B handoff before extending GPU pooling.
 
+## Bounded multi-source ECS cues (Stage 15)
+
+The native `spectra::CueScheduler` owns presentation-only events
+and attachment handles over one existing `spectra::BatchWorld`.
+It is a shared CPU particle scheduler, NOT a separate RHI renderer or
+automatic multi-emitter Metal/GPU runtime. Use the engine's canonical
+`engine/fx/SpectraFX.h` for `CueScheduler`, `CueEvent`,
+`CueBudgets`, `AttachedCue` and `CueSchedulerStats`. Native ECS
+projects include `<aiverselib/genre/SpectraFX.h>` for adapter helpers
+`syncEcsCueSources(world, scheduler, resolvePose)` and
+`acceptSimCueTick(scheduler, committedTick, simEvents)`.
+
+Protocol:
+1. Initialize `BatchWorld` once and register complete CPU effect defs or
+   graphs using `scheduler.registerEffect`/`registerGraph`.
+2. Bind a module-defined `uint32_t` event type to an effect name with
+   `scheduler.bindCue` (no FPS-/RTS-specific enum in this library).
+3. Once per committed game tick call `acceptTick`, or
+   `acceptSimCueTick` for the existing `SimEvent` fixed-point data.
+   Duplicate/decreasing ticks do not enqueue extra particle events.
+4. Once per presentation frame, set the shared world's view, read ECS
+   source components with `syncEcsCueSources` using a **read-only**
+   render pose resolver, then call `scheduler.flush()`,
+   `shared.update(dt)` **once**, and `shared.draw(fog)` **once**
+   inside the graphics render pass.
+5. **Before any rollback/replay/new match**, call
+   `scheduler.resetForRollback()` so pending events, sources and tracked
+   one-shot handles are killed and the tick cursor is cleared.
+   It must not clear another producer's effects in the same BatchWorld.
+6. Destroy scheduler **before** shutting down BatchWorld/graphics Device.
+
+`CueBudgets` caps queued events, starts per tick/frame, active ECS
+attachments, and one-shot handle history. The bounded history
+**kills oldest** handles before evicting them so rollback cannot leak
+their live particles. Component identity uses `Entity::packed()`
+(including generation) and reuses the existing `SpectraSourceComponent`
+type, not a new ECS component. Source omission detaches, revision/effect
+change restarts. Use `scheduler.stats()` for budget/drop and replay
+diagnostics.
+
+Test source: `tests/vfx_cue_scheduler_test.cpp`, CTest
+`vfx_cue_scheduler` / target `aiverse_vfx_cue_scheduler_tests`,
+now part of `SpectraFX validation` workflow. It covers two game
+genres, queue caps, ECS generation reuse, effect handle ownership and
+rollback without altering unrelated effects in a shared renderer.
+**Not yet verified executed** in this connector-only session. Check
+CI logs and run real macOS Metal smoke separately before production use.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
