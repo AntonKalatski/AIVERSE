@@ -118,10 +118,25 @@ public:
         if(observer.x<-kWorldLimitCm||observer.x>kWorldLimitCm||
            observer.z<-kWorldLimitCm||observer.z>kWorldLimitCm)
             throw std::out_of_range("TerraWeave Horizon camera extent");
+        // Keep the current region until the camera moves past the cell
+        // boundary plus a hysteresis margin. This prevents rapid rebuilds
+        // when the observer oscillates near a 128m streaming edge.
+        const int64_t side=settings_.middleTileCm;
+        int64_t wantedX=detail::floorDiv(observer.x,side);
+        int64_t wantedZ=detail::floorDiv(observer.z,side);
+        const int64_t margin=settings_.regionHysteresisCm;
+        if(cataloged_ && margin>0) {
+            const auto inExpandedCell=[side,margin](int64_t position,
+                                                     int32_t cell) {
+                const int64_t lo=int64_t(cell)*side-margin;
+                const int64_t hi=(int64_t(cell)+1)*side+margin;
+                return position>=lo && position<hi;
+            };
+            if(inExpandedCell(observer.x,cell_.x))wantedX=cell_.x;
+            if(inExpandedCell(observer.z,cell_.z))wantedZ=cell_.z;
+        }
         const world::Cell desired{
-            static_cast<int32_t>(detail::floorDiv(observer.x,settings_.middleTileCm)),
-            0,
-            static_cast<int32_t>(detail::floorDiv(observer.z,settings_.middleTileCm))
+            static_cast<int32_t>(wantedX),0,static_cast<int32_t>(wantedZ)
         };
         if(!cataloged_||!(desired==cell_)) {
             if(cataloged_)stream_->remove(cell_,[](world::Cell){});
