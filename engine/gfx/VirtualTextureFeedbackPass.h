@@ -96,10 +96,19 @@ public:
     template<class DrawFeedback>
     bool renderAndCapture(DrawFeedback&& drawFeedback) {
         if (!begin()) return false;
-        if (!std::forward<DrawFeedback>(drawFeedback)(*device_)) {
+        // A throwing renderer must not leave the Device inside an active
+        // pass: the next frame must be able to render or tear down safely.
+        // Preserve the caller's exception after restoring RHI pass state.
+        try {
+            if (!std::forward<DrawFeedback>(drawFeedback)(*device_)) {
+                targets_.end();
+                error_ = "feedback draw callback refused or failed";
+                return false;
+            }
+        } catch (...) {
             targets_.end();
-            error_ = "feedback draw callback refused or failed";
-            return false;
+            error_ = "feedback draw callback threw an exception";
+            throw;
         }
         return endAndCapture();
     }
