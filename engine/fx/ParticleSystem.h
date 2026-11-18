@@ -130,6 +130,11 @@ public:
     // `dir`: emission axis (the effect's "direction" is relative to it, +Y = dir). `scale` sizes
     // the whole effect. Returns an invalid handle when nothing was started (off, culled, budget).
     FxHandle play(int effect, float3 pos, float3 dir = {0, 1, 0}, float scale = 1, float4 tint = {1, 1, 1, 1});
+    // Atomic start: VM instance params are set BEFORE prewarm/spawn code.
+    // Existing play ABI remains unchanged for legacy games.
+    FxHandle playWithProgramParameters(int effect,float3 pos,float3 dir,
+                                       float scale,float4 tint,
+                                       const std::array<float,8>& params);
     FxHandle play(const std::string& effectName, float3 pos, float3 dir = {0, 1, 0}, float scale = 1, float4 tint = {1, 1, 1, 1});
     // Eight per-instance, read-only particle VM scalar inputs param0..param7.
     // Changes apply to future births; set affectExisting=true to update
