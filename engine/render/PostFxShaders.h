@@ -215,9 +215,15 @@ inline const char* kComposite = R"(
         float pulse = graphFrame.y;
         float strength = clamp(underwater0.w * underwater1.z +
                                pulse * 0.004, 0.0, 0.02);
-        vec2 wave = vec2(sin(s.y * 31.0 + phase * 2.7) +
-                         sin(s.x * 43.0 - phase * 1.8) * 0.35,
+        // Low: one directional wave; Medium: two; High: three.
+        // Dynamic uniforms retain one shared shader variant for all tiers.
+        vec2 wave = vec2(sin(s.y * 31.0 + phase * 2.7), 0.0);
+        if (underwater2.z > 1.5)
+            wave += vec2(0.35 * sin(s.x * 43.0 - phase * 1.8),
                          cos(s.x * 27.0 + phase * 2.1));
+        if (underwater2.z > 2.5)
+            wave += vec2(0.16 * sin((s.x + s.y) * 67.0 + phase * 1.1),
+                         0.12 * cos((s.x - s.y) * 59.0 - phase));
         vec2 warped = clamp(uv + TDIR(wave * strength),
                             vec2(0.002), vec2(0.998));
         if (strength > 0.00001) {
@@ -228,7 +234,7 @@ inline const char* kComposite = R"(
         // scattering. No per-object depth/caustics are claimed here.
         float opticalDistance = min(underwater1.y + 5.0, 120.0);
         float extinction = 1.0 - exp(-underwater1.x * opticalDistance);
-        float scatterWeight = clamp(underwater1.w *
+        float scatterWeight = clamp(underwater1.w * underwater2.y *
                                     (0.2 + 0.8 * extinction),0.0,1.0);
         float weight = clamp(underwater0.w *
                              max(0.12, extinction + scatterWeight * 0.25),
