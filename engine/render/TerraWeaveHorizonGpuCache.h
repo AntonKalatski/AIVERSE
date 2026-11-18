@@ -26,6 +26,8 @@ struct HorizonGpuRegion {
     int64_t originXcm=0, originZcm=0;
     size_t clusters=0, terrainQuads=0;
     size_t atlasBytes=0, vertexCount=0, triangleCount=0;
+    size_t nearClipQuads=0, nearClipTriangles=0;
+    bool nearClipFallback=false;
     size_t estimatedGpuBytes=0; // only texture+VB/IB, conservative mip allowance
 };
 
