@@ -205,6 +205,22 @@ void reconnectAndRestore() {
     CHECK(registry(*sim).revision==1);
     CHECK(gateway.entries().size()==1);
 }
+
+void latencyAndReorderSimulation() {
+    auto sim=make();
+    ServerGateway gateway;
+    RemoteClient client(573112);
+    CHECK(client.begin(edit(Fixed::fromInt(44)),kEdit,4));
+    // A reliable Conn still has latency/jitter, and the receipt may arrive
+    // well after the request has been executed on the authoritative tick.
+    auto [c,s]=net::makeLoopbackPair({75,25,42});
+    drive(client,gateway,*sim,*c,*s,0,4500);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    const auto entity=registry(*sim).byId.at("wind-1").entity;
+    CHECK(sim->world().get<WindZone>(entity).velocity.x==Fixed::fromInt(44));
+}
+
 void denied() {
     auto sim=make();
     ServerGateway gateway;
@@ -337,6 +353,7 @@ int main() {
     concurrentAdmissions();
     reconnectAndRestore();
     editorBridge();
+    latencyAndReorderSimulation();
     initialRevisionProbe();
     appliedReceiptAfterRollback();
     denied();
