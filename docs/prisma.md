@@ -111,6 +111,38 @@ Tests are appended to `tests/render/prisma_graph.cpp` / CTest `prisma_graph`.
 Native build, CTest and GPU tests have **NOT RUN** in the GitHub-only agent
 environment; see `docs/handoffs/prisma-stage-11.md`.
 
+
+## Stage 12 — Physical Resource Pool (GPU-agnostic)
+
+`engine/render/PrismaGraphResourcePool.h` provides a host-owned pool of
+physical render target handles for `PrismaGraphPlan::slots`. The host creates
+targets with a `create(format,width,height)` callback and releases them
+with `release(handle)`; this header never calls GPU/RHI APIs.
+
+- `prepare(graph, plan, create, release)` reuses allocations with identical
+  format/dimensions and matching history resource name, or creates new targets.
+  It never selects the same allocation twice within a single frame. On
+  allocation failure it releases targets allocated during that prepare call
+  and preserves the previous pool entries.
+- `markHistoryWritten(name)` marks successfully produced temporal pixels valid;
+  `invalidateHistory()` discards temporal *contents* on camera cuts/teleports
+  without discarding reusable GPU storage. If `prepare` returns a false
+  history-valid bit, the caller must avoid reading the old history and use
+  a non-temporal fallback. Resize changes resource descriptors and always
+  allocates a fresh history.
+- `pruneUnused(release)` frees allocations not selected by the last successful
+  prepare; `clear(release)` releases all allocations. **Call both only after
+  GPU fence completion**, not while earlier frames might still reference them.
+- Use one pool instance per independent camera/view/temporal stream, not one
+  global mutable history across cameras. The pool does not allocate external
+  resource bindings, compute barriers, issue render passes or integrate itself
+  into the existing `Prisma::resolve`. It is an opt-in host contract.
+
+Tests for reusable physical slots, valid/invalid history, resize/pruning,
+allocation rollback and clearing are in `tests/render/prisma_graph.cpp`.
+Native build/CTest/GPU screenshot verification is **NOT RUN** for Stage 12.
+See `docs/handoffs/prisma-stage-12.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
