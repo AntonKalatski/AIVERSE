@@ -309,3 +309,22 @@ chunk culling uses normalized planes and sphere radius.
 The host alone owns quadtree LOD, horizon occlusion and
 rendering policy. All CTest validation remains **NOT RUN**.
 
+## Spherical horizon culling
+
+`engine/view/Horizon.h` exports
+`view::sphericalCapHiddenByHorizon(cameraLocal,
+occluderRadius,capAxis,cosCapHalfAngle,maxSurfaceRadius)`.
+It is a reusable floating-point visibility test for
+any curved surface, sphere chunks, visual planet and
+orbital scene; it knows nothing about game planets,
+RTS/FPS or data models. The host supplies the camera
+in the body's local coordinate frame and its precomputed
+angular cap and radius bounds.
+
+The old planetary renderer delegates its horizon
+angle comparison to this helper, while retaining
+its LOD/build budget, face tree and graphics pipeline.
+Inside the occluder or with invalid occluder radius
+the helper returns "not hidden" conservatively.
+Test `view_spherical_horizon` is deferred (**NOT RUN**).
+

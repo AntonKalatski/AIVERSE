@@ -85,3 +85,10 @@ bounds. Do not copy the same frustum algorithm into
 terrain, planet or game-specific renderers. This is
 presentation culling, NEVER authoritative collision.
 
+For curved worlds use `engine/view/Horizon.h` and
+`view::sphericalCapHiddenByHorizon` with geometry
+bounds supplied by the host. It is genre-independent
+presentation culling only. Do not duplicate the
+planet's horizon formula or put game planet types
+in the View library.
+

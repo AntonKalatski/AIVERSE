@@ -1,6 +1,7 @@
 // Planet renderer (see RtsPlanetRender.h).
 #include "RtsPlanetRender.h"
 #include "engine/view/Frustum.h"
+#include "engine/view/Horizon.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -671,13 +672,11 @@ void PlanetRenderer::draw(Renderer3D& r, const PlanetViewFrame& fr, double secon
             const int ci = stack.back().first;
             stack.pop_back();
             Chunk& c = b.chunks[size_t(ci)];
-            // horizon: hidden when the whole angular cap of the chunk lies beyond the horizon of the
-            // occluder (the lowest ground of the body): angle(eye, chunk) - cap > acos(R0/eye) + acos(R0/maxR)
-            if (eyeR > occR) {
-                const float3 eyeDir = eyeL * (1.0f / eyeR);
-                const float aE = std::acos(std::clamp(dot(eyeDir, c.dir), -1.0f, 1.0f)), aC = std::acos(std::clamp(c.cosAngle, -1.0f, 1.0f));
-                const float aH = std::acos(occR / eyeR) + std::acos(std::clamp(occR / std::max(c.maxR, occR), -1.0f, 1.0f));
-                if (aE - aC > aH) { ++stats_.culledHorizon; continue; }
+            // Generic View geometry bounds now own spherical horizon math;
+            // the planet module still owns its own local frame and LOD tree.
+            if(::aiverse::view::sphericalCapHiddenByHorizon(
+                eyeL,occR,c.dir,c.cosAngle,c.maxR)) {
+                ++stats_.culledHorizon;continue;
             }
             const float3 cv = C + rot.transformDir(c.center);
             if (!frustum.visibleSphere(cv, c.boundR)) { ++stats_.culledFrustum; continue; }
