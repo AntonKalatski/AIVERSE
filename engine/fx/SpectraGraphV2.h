@@ -18,6 +18,7 @@ inline bool isOutput(std::string_view t) {
     return t=="SpriteOutput" || t=="MeshOutput" || t=="RibbonOutput";
 }
 inline const char* moduleKey(std::string_view t) {
+    if(t=="ParticleProgramModule")return "particleProgram";
     if(t=="NoiseModule")return "noise";
     if(t=="CollisionModule")return "collision";
     if(t=="TrailModule")return "trail";
