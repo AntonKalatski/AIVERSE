@@ -785,3 +785,45 @@ complete MRT with format-aware pipeline variants,
 GL/Vulkan multisampling/resolve and high-level RenderTexture,
 followed by extended formats, KTX2/DDS imports and streaming.
 Always append a new handoff after each bounded source stage.
+
+## Stage 4J — GL33/GLES3 2–4 color MRT passes (2026-11-18)
+
+**Implementation commit:** `fbb4f3c11eaa45ada4c21dff904a3300ab8db163`.
+**Paths:** `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/gl/GLApi.h`.
+
+**Source implementation:** GL `beginRenderTargets` now accepts up to
+`kMaxRenderTargetColors=4` distinct color subresources, optionally with
+one depth subresource. It checks `GL_MAX_COLOR_ATTACHMENTS` and
+`GL_MAX_DRAW_BUFFERS`, validates all mip-level dimensions/array layers,
+requires equal color attachment pixel formats (the existing HDR/linear
+shader policy is shared) and equal extents for all active targets.
+It attaches each color to a separate GL FBO slot, configures all
+`glDrawBuffers`, and uses `glClearBufferfv(GL_COLOR, slot, rgba)`
+so clear values do not overwrite other color attachments.
+Windows GL33 loading adds `glClearBufferfv` and needed enums.
+Explicit resolve targets still fail closed rather than silently
+dropping their requested resolve. Legacy `beginPass` remains intact.
+
+**Limits / risks:** GL shaders must explicitly declare fragment
+outputs at locations 0..N-1 to write each target; the new RHI
+does not generate or patch shader outputs. Mixed-format MRT, MSAA
+and resolves are still unsupported. This is not a shared
+`PipelineDesc` color-format system across Metal and Vulkan.
+No FBO cache: a fresh framebuffer is validated/created per
+explicit render-target pass and deleted at `endPass`.
+Before native use, verify GL `glClearBufferfv` entry-point loading
+and framebuffer completeness on Windows GL33, Android GLES3,
+WebGL2 and Linux EGL. Test depth-only cases and nonzero mip/layer.
+
+**Verification:** GitHub code commit and source update confirmed;
+native C++ build, GPU execution and CI green result: **NOT RUN**.
+At start of this stage, latest CI workflows on branch
+`9f175e5...` were queued, previous runs had cancelled results.
+Do not mark the feature production-ready.
+
+**Next actionable stage:** Add GPU test with two different
+fragment outputs (`layout(location=0)` and `layout(location=1)`),
+different clear values, and readback of both attachments.
+Then implement corresponding Metal MRT pipeline/attachments and
+Vulkan MRT render-pass/pipeline variants in bounded stages.
+Run builds before merging and continue appending exact SHA/tests.
