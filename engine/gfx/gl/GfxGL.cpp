@@ -622,6 +622,10 @@ public:
     }
 
     PipelineHandle createPipeline(const PipelineDesc& d) override {
+        if (d.colorAttachmentCount < 1 || d.colorAttachmentCount > kMaxRenderTargetColors) {
+            error_ = "GL: pipeline color output count must be 1..4";
+            return {};
+        }
         if (d.sampleCount != 1) {
             error_ = "GL: multisample pipeline variants are not implemented";
             return {};
@@ -655,6 +659,8 @@ public:
         const auto shader = createShader(sd);
         if (!shader.valid()) { std::fprintf(stderr, "[gfx] HDR shader: %s\n", error_.c_str()); return {}; }
         pd.shader = shader; pd.colorFormat = PixelFormat::RGBA16F;
+        for (int i = 1; i < pd.colorAttachmentCount; ++i)
+            pd.additionalColorFormats[i - 1] = PixelFormat::RGBA16F;
         const auto variant = createPipeline(pd);
         if (!variant.valid()) { std::fprintf(stderr, "[gfx] HDR pipeline: %s\n", error_.c_str()); destroyShader(shader); return {}; }
         p = pipelines_.get(h.id); // pool may have reallocated
@@ -836,6 +842,8 @@ public:
         }
         scopedFbo_ = framebuffer;
         inPass_ = true;
+        explicitPassColors_ = desc.colorCount;
+        explicitPassFormat_ = sharedColorFormat;
         passW_ = width; passH_ = height;
         hdrPass_ = desc.colorCount > 0 && sharedColorFormat == PixelFormat::RGBA16F;
         glBindVertexArray(vao_);
@@ -863,6 +871,7 @@ public:
     }
 
     void beginPass(const PassDesc& d) override {
+        explicitPassColors_ = -1;
         inPass_ = true;
         const auto* color = textures_.get(d.colorTarget.id);
         hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
@@ -901,6 +910,7 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         if (scopedFbo_) { glDeleteFramebuffers(1, &scopedFbo_); scopedFbo_ = 0; }
         inPass_ = false;
+        explicitPassColors_ = -1;
         glDisable(GL_POLYGON_OFFSET_FILL);
         if (srgbWrite_) { glDisable(kGL_FRAMEBUFFER_SRGB); srgbWrite_ = false; }
         passW_ = fbW_; passH_ = fbH_;
@@ -941,6 +951,26 @@ public:
         pipelineId_ = p ? h.id : 0;
         if (!p) return;
         const auto& d = p->desc;
+        if (explicitPassColors_ >= 0) {
+            const int pipelineColors = d.depthOnly ? 0 : d.colorAttachmentCount;
+            if (pipelineColors != explicitPassColors_) {
+                error_ = "GL: pipeline color output count differs from active MRT pass";
+                pipelineId_ = 0;
+                return;
+            }
+            if (explicitPassColors_ > 0 && d.colorFormat != explicitPassFormat_) {
+                error_ = "GL: pipeline color format differs from MRT attachments";
+                pipelineId_ = 0;
+                return;
+            }
+            for (int i = 1; i < explicitPassColors_; ++i) {
+                if (d.additionalColorFormats[i - 1] != explicitPassFormat_) {
+                    error_ = "GL: additional pipeline color format differs from MRT attachments";
+                    pipelineId_ = 0;
+                    return;
+                }
+            }
+        }
         glUseProgram(p->program);
         if (d.cull == CullMode::None) glDisable(GL_CULL_FACE);
         else { glEnable(GL_CULL_FACE); glCullFace(d.cull == CullMode::Back ? GL_BACK : GL_FRONT); glFrontFace(GL_CCW); }
@@ -1089,6 +1119,8 @@ private:
     std::vector<GLFramebuffer> fbos_;
     GLuint scopedFbo_ = 0;
     bool inPass_ = false;
+    int explicitPassColors_ = -1;
+    PixelFormat explicitPassFormat_ = PixelFormat::RGBA8;
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
     Pool<GLTextureView> views_;
