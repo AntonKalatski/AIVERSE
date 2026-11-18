@@ -1574,6 +1574,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::libraries)
     add_test(NAME ecs_kinematic_projectile_test
         COMMAND aiverse_ecs_kinematic_projectile_test)
+    add_executable(aiverse_ecs_cross_genre_impact_queue_test
+        tests/ecs_cross_genre_impact_queue_test.cpp)
+    target_link_libraries(aiverse_ecs_cross_genre_impact_queue_test PRIVATE
+        aiverse_engine AIVERSE::lib_ecs_impact_queue)
+    add_test(NAME ecs_cross_genre_impact_queue_test
+        COMMAND aiverse_ecs_cross_genre_impact_queue_test)
     add_executable(aiverse_ecs_hitscan_selection_test
         tests/ecs_hitscan_selection_test.cpp)
     target_link_libraries(aiverse_ecs_hitscan_selection_test PRIVATE
