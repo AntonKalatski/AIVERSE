@@ -18,7 +18,7 @@ BodyDesc box(float y=5.0f) {
     return d;
 }
 void testNoDoubleGravity() {
-    World physisWorld;
+    aiverse::World physisWorld;
     Settings settings;
     settings.width=2;settings.height=2;
     initialize(physisWorld,settings);
@@ -37,7 +37,7 @@ void testNoDoubleGravity() {
     CHECK(!applyPhysisToBody(withAdapter,physisWorld,kNoBody,material));
 }
 void testZeroGAndWindAndVortex() {
-    World world;
+    aiverse::World world;
     Settings settings;settings.width=2;settings.height=2;
     initialize(world,settings);
     GravitySettings zero;zero.baseline={};
