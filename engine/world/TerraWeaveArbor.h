@@ -38,6 +38,7 @@ struct TreeBranch {
 struct LeafCluster {
     int32_t xCm = 0, yCm = 0, zCm = 0;
     uint32_t radiusCm = 0, variation = 0;
+    int32_t parentBranch = -1; // structural owner, independent per-branch LOD
     constexpr bool operator==(const LeafCluster&) const = default;
 };
 
@@ -122,7 +123,7 @@ inline TreeSkeleton generateTree(const TreeProfile& p, uint64_t instanceSeed,
             const uint32_t radius = p.leafRadiusCm *
                 (80u + static_cast<uint32_t>(leafSeed % 41u)) / 100u;
             out.leaves.push_back({x, y, z, radius,
-                static_cast<uint32_t>(leafSeed >> 32)});
+                static_cast<uint32_t>(leafSeed >> 32), static_cast<int32_t>(i + 1)});
         }
     }
     return out;
