@@ -1192,3 +1192,141 @@ unverified until the user resumes testing.
 - Finish true multi-view impostor image-quality work and capture
   actual Metal/GL/Vulkan outputs when visual tests resume.
 - Append the next stage to this document, recording real results.
+
+## Stage 6 — bounded async forest jobs + typed exclusion geometry (COMMITTED; NOT TESTED)
+
+Work on this branch was coordinated with a parallel agent; retrieve
+current HEAD before changing anything under `engine/world`.
+
+**Commits:**
+- `833582c98bef6cbd1dc452467198dc1bf0258c36` and
+  `76704ec0469743ce98b1b7a2d1a3222d775a0609`:
+  `ChunkStreamer.h/.cpp` supports dynamic removal of catalog cells.
+- `6edaaee27906c71c0cc93e34f0dbea707a560185` and
+  `3015096bb6a7692d753f0b45a0b93a47680654c5`:
+  `AsyncChunkStream.h/.cpp` can remove canceled dynamic cells,
+  retaining staging reservations until completed/canceled work drains.
+- `1a9c083964089440b27fc6eaaa96545072b812a2` and
+  `7a4b7466e33c4c993fba9bcaf16449e5f0596ac6`:
+  `TerraWeaveForestScene.h` adds opt-in worker scheduling,
+  bounded chunk reservations, snapshot revision tokens,
+  stale-result rejection and render-thread publish.
+- `478b5de3ef06bf142c1841d863f9a5a962784ac9`:
+  `TerraWeaveForestManifest.h` enables bounded asynchronous
+  generation by default only for the opt-in WorldScene manifest.
+  Direct native `ForestSceneSettings` construction remains synchronous
+  unless opted in.
+- `17c0f3a94f08152190ab669065234f23445b3667`:
+  `WorldScene.cpp` joins forest worker before shutdown.
+- `79f9928de1bd085960c3557b26003855da1c18f9` and
+  `cb762cf2fd9724b3f10a6909fe6ef62afecbe1ce`:
+  `TerraWeaveExclusions.h` (buffered road segments, rectangular
+  structures, footprint/water polygons) and
+  `TerraWeaveForestScene.h` mask callback support.
+- `80aa190851de58a9452ef2fb7c7f156bba0c0409`:
+  forest scene CTest target now links the existing
+  `aiverse_world` streaming library needed by async methods.
+
+**Verification:** GitHub commits succeeded. No C++ compiler/CTest or
+runtime race test observed. Note that another agent subsequently
+added `setLandscapeSources`, authored terrain snapshots and fixes for
+mask-only predicates; inspect its latest handoff/history rather than
+reimplementing those changes.
+
+**Known caveats:** asynchronous `HeightSource` and
+`PlacementFilter` must capture immutable snapshots whose lifetime
+outlives pending tasks; mutable ECS access would race. The bounded
+worker queue is not proof of a frame-time budget. The typed exclusion
+geometry is presentation-only, not an authoritative collision system.
+Formal race, stale revision, fallback/mobile and lockstep validation
+remain needed.
+
+## Stage 7 — TerraWeave Horizon, aggregated forest/terrain HLOD (COMMITTED; UNVERIFIED)
+
+**Goal requested:** forest and mountain/landscape visibility across
+several kilometres without rendering a billboard/model per tree.
+
+**Commits/files:**
+- `c5cb0845897ebb16abe783e136a23f6f08323656`:
+  `engine/world/TerraWeaveHorizon.h` creates coarse forest
+  **cluster** silhouettes directly from deterministic climate and
+  height samples, without individual trees, plus low-poly terrain
+  sample grid and packed single RGBA8 atlas.
+- `907b4a50febc3e18de16bb0f425f890427aeda96`:
+  int64 clamp portability fix.
+- `ff0fb85a8444921785fab8e01af3418a217f2ed2`:
+  `HorizonBudget` and `estimateHorizonBudget` upper bounds for
+  atlas bytes/triangles/vertices/cluster slots.
+- `6bee547a2d7d5c882431d5a7d65e907d2a56746f`:
+  `engine/render/TerraWeaveHorizonModel.h` combines coarse
+  terrain + crossed alpha-masked forest cards into one
+  `render::Model` with two material primitives and one atlas.
+- `eb8e929e6255886302dd3263d29d3d423903e294`:
+  terrain proxy slope normals from signed height gradients.
+- `132b7e105c41ee041ce457c3d265c357da855e76` and
+  `57aca4701df888cea0ff417af4be2892f7d52316`:
+  `engine/render/TerraWeaveHorizonScene.h`, async region CPU
+  preparation via existing `AsyncChunkStream`, stale region
+  cancellation, render-thread GPU upload/rollback, keeping
+  previous GPU model visible until successful replacement.
+- `2bec856136910e37ffd3924c53a8bfb658d63055`:
+  `engine/world/TerraWeaveHorizonManifest.h`, opt-in
+  `terraweaveHorizon` config (can inherit seeds from near forest).
+- `a675f775e27bddeb38f5e0753dd8a655761442cd`,
+  `a85e3d93f7089495390d839e06c138acb71ef76b`:
+  `engine/world/WorldScene.h/.cpp` owns Horizon with
+  update/draw/shutdown, without changing scenes lacking opt-in.
+- `2d2cf991143b270386fb9316cf7bda673db877e5` and
+  `5f81dacdbfb4677c91a10a0302abcea7ed03261d`:
+  `tests/terraweave_horizon_test.cpp` deterministic atlas,
+  mesh topology/indices, resident budget limits and constructor.
+- `6e2b270e96d7bbeeacbadbffbb1431fc66c4c070`:
+  CMake test registration (links `aiverse_world`, models, zstd).
+- `154d6025bbb0e22adb7e9f8aeaa70912d885c360`:
+  isolated GCC/Clang workflow includes Horizon target.
+- `ec476fb4f6ff6d510de28923c6c8168973c39ccf`:
+  `docs/terrain/TERRAWEAVE.md` HLOD architecture, config,
+  budgets and known visual limitations.
+- `3e61539f58657c3b2d55db9fe6161dabd4bd193c`:
+  `skills/world/aiverse-terraweave/SKILL.md` agent usage.
+
+**Architecture:** nearby trees remain the existing ForestScene
+LOD/geometry. At ~250m..1km the canopy is represented by 128m
+cluster silhouette ribbons, at ~1km..6km by 512m clusters, using
+one packed RGBA atlas and two crossed cards per cluster. One
+coarse **48×48-quad** terrain grid is clipped around near ground.
+Both terrain and forest share one Model with at most two material
+primitives. Generic RHI upload/draw, not a new shader backend.
+No per-tree ECS data or separate far-tree model for this layer.
+
+**Theoretical worst-case default** (from `estimateHorizonBudget`):
+832 possible cluster slots; atlas 1392×1392 RGBA8 =
+7,750,656 bytes (~7.39 MiB), max 9,057 vertices and 7,936
+triangles. These are **not actual GPU measurements**. Runtime
+cost also includes mipmaps, texture upload, alpha overdraw, CPU
+bakes and renderer passes.
+
+**Verification actually performed:** GitHub file writes and
+source/API inspection only. Container `git ls-remote` for
+github.com fails DNS resolution. No CMake/CTest success, GUI
+screenshots or frame-time/draw-call benchmarks have been observed.
+Keep PR Draft. Do not claim the Horizon renderer visually passed.
+
+**Critical remaining work:**
+1. Run GCC/Clang and real macOS editor/runtime builds, CTest
+   `terraweave_horizon` and pre-existing TerraWeave/world-async tests.
+   Resolve any compiler, ABI, race, upload and depth-pass issues.
+2. Test `terraweaveHorizon` in a real WorldScene with close/mid/far
+   camera views and visual captures (Metal + Vulkan/GL), inspect
+   silhouette atlas orientation, clipping, terrain boundaries and
+   alpha-cutout material consistency.
+3. Tune per-tier crossfade or stable dither near ~250m and ~1km;
+   avoid HLOD popping or simultaneous duplicate individual/cluster
+   trees. Compare CPU/GPU timings and memory on mobile/WebGL.
+4. For static worlds, prebake/persist horizon atlases as assets
+   (with fingerprint/version/hash), avoiding repeated CPU work on
+   camera translation; implement horizon origin-shifting verification.
+5. Distinct authored terrain vs procedural terrain may disagree:
+   `distantTerrain` must be disabled or explicitly coordinated
+   with native authored terrain ownership and biome masks.
+6. Preserve stage-by-stage handoff and do not merge before tests.
