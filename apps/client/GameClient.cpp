@@ -587,7 +587,7 @@ void GameClient::event(const Event& incoming) {
     if (screen_ == Screen::Menu && !engineMenu_ && e.type == EventType::KeyDown && e.key == Key::Escape && !e.repeat) { luaEmit("back", Json()); return; }
     if (screen_ == Screen::Paused && e.type == EventType::KeyDown && e.key == Key::Escape && !uiWants) { setScreen(Screen::Playing); return; }
     if (screen_ != Screen::Playing || !sim_) return;
-    if (planet() && planetCameraEvent(e, uiWants)) return;   // orbit camera (ClientPlanet.cpp)
+    if (planet() && planetCameraEvent(e, uiWants, inputActions)) return;   // orbit camera (ClientPlanet.cpp)
     if (regionEvent(e, uiWants)) return;
     if (topDownEvent(e, uiWants, inputActions)) return;   // top-down heroes: sticks, buttons, WASD + mouse aim (ClientTopDown.cpp)
     World& w = sim_->world();
