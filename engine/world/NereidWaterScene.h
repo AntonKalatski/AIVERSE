@@ -306,6 +306,25 @@ public:
         return n*(sizeof(lib::nereid::WaterSurfaceVertex)+
                   6*sizeof(uint32_t));
     }
+    static void applyWaterMeshBasis(
+            lib::nereid::WaterSurfaceMeshOptions& opts,
+            const NereidSceneSurface& source) {
+        // Use a stable near-body world anchor, not an absolute position cast
+        // to float. Read-only presentation geometry, no gameplay changes.
+        if(source.useGeometry && source.geometry.enabled &&
+           !source.geometry.points.empty()) {
+            opts.originX=source.geometry.points.front().x.toDouble();
+            opts.originZ=source.geometry.points.front().z.toDouble();
+        }else if(source.body.footprint==lib::nereid::WaterFootprint::Infinite) {
+            opts.originX=double(render::nereidPatchAnchor(
+                opts.cameraX,opts.oceanPatchRadius));
+            opts.originZ=double(render::nereidPatchAnchor(
+                opts.cameraZ,opts.oceanPatchRadius));
+        }else{
+            opts.originX=source.body.center.x.toDouble();
+            opts.originZ=source.body.center.z.toDouble();
+        }
+    }
     void update(gfx::Device& device,const Vec3* observer=nullptr) {
         for(auto& old:retired_)old->release(device);
         retired_.clear();
@@ -335,6 +354,7 @@ public:
                 opts.cameraX=float(observer->x.toDouble());
                 opts.cameraZ=float(observer->z.toDouble());
             }
+            applyWaterMeshBasis(opts,slot.source);
             const auto* geometry=slot.source.useGeometry?&slot.source.geometry:nullptr;
             if(!slot.gpu->needsUpdate(slot.source.body,geometry,
                                       slot.revision,opts,slot.source.style)) {
@@ -418,11 +438,16 @@ public:
             (pendingJob_?pendingJob_->reservation:0);
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize)const {
-        const auto transform=render::mat4::translate({
-            float(-double(origin.x)*double(cellSize)),0.f,
-            float(-double(origin.z)*double(cellSize))});
-        for(const auto& slot:slots_)
-            if(slot.visible)slot.gpu->draw(renderer,transform);
+        const double worldOriginX=double(origin.x)*double(cellSize);
+        const double worldOriginZ=double(origin.z)*double(cellSize);
+        for(const auto& slot:slots_) {
+            if(!slot.visible || !slot.gpu->resident())continue;
+            const auto& basis=slot.gpu->key();
+            const auto transform=render::mat4::translate({
+                float(basis.originX-worldOriginX),0.f,
+                float(basis.originZ-worldOriginZ)});
+            slot.gpu->draw(renderer,transform);
+        }
     }
     void shutdown(gfx::Device& device) {
         // Shutdown is an explicit synchronization barrier; never abandon a
