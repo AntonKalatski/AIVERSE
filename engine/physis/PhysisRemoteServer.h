@@ -96,6 +96,25 @@ public:
                    entry.receipt.revision!=before.revision)changed=true;
                 continue;
             }
+            // Journal restored after server restart: a durable intent may
+            // have been written before the command was queued, or a Queued
+            // snapshot may have been written before its ECS effect. Never
+            // reconstruct success without matching persisted World state.
+            if(entry.receipt.result==Result::Unknown) {
+                if(state && state->revision==entry.expectedRevision+1 &&
+                   matches(*state,entry.desired)) {
+                    entry.receipt.result=Result::Applied;
+                    entry.receipt.revision=state->revision;
+                    entry.receipt.detail="PHYSIS recovered applied edit from saved ECS";
+                    changed=true;
+                } else if(state && state->revision>entry.expectedRevision) {
+                    entry.receipt.result=Result::Conflict;
+                    entry.receipt.revision=state->revision;
+                    entry.receipt.detail="PHYSIS recovered edit cannot match ECS";
+                    changed=true;
+                }
+                continue;
+            }
             if(entry.receipt.result!=Result::Queued) continue;
             if(!state) {
                 entry.receipt.result=Result::Rejected;
@@ -182,6 +201,29 @@ public:
                     else {
                         existing->second.lastTouchedMs=nowMs;
                         reply.receipt=existing->second.receipt;
+                        // An intent persisted BEFORE enqueue may have been
+                        // interrupted by server crash. Retry only this exact
+                        // authorized original frame and revision, never a
+                        // different request with the same ID.
+                        if(reply.receipt.result==Result::Unknown &&
+                           journalHealthy_ && !hasPendingEdit()) {
+                            const auto* state=simulation.world().resourceConst<FieldRuntimeState>();
+                            if(state && state->revision==existing->second.expectedRevision &&
+                               !simulation.hasCommandSink()) {
+                                std::uint32_t tick=0;
+                                std::string error;
+                                if(admitAuthorizedFieldEdit(simulation,
+                                     request.command,request.command.type,
+                                     authenticatedPrincipal,canWrite,tick,&error)) {
+                                    reply.receipt.result=Result::Queued;
+                                    reply.receipt.scheduledTick=tick;
+                                    reply.receipt.revision=existing->second.expectedRevision;
+                                    reply.receipt.detail="PHYSIS recovered intent requeued";
+                                    existing->second.receipt=reply.receipt;
+                                    if(!persistJournal(&error))journalHealthy_=false;
+                                }
+                            }
+                        }
                     }
                 } else if(!canWrite(authenticatedPrincipal,request.command)) {
                     answer(Result::Denied,"PHYSIS server editor ACL denied");
