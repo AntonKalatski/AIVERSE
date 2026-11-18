@@ -1,7 +1,7 @@
 // PHYSIS Stage 18 — opt-in generic native GameModule map-configuration loader.
 // Authored by any genre's editor map; never depends on editor, RTS/FPS or Box3D.
 #pragma once
-#include "PhysisIntegration.h"
+#include "PhysisFieldAssets.h"
 #include "engine/data/Json.h"
 #include <optional>
 #include <stdexcept>
@@ -70,9 +70,9 @@ inline std::optional<InstallOptions> optionsFromMap(const Json& map) {
     else if (mode == "ExternalAuthority") options.floodMode = FloodMode::ExternalAuthority;
     else throw std::invalid_argument("PHYSIS invalid floodMode");
 
-    // Authored ECS field volumes are intentionally NOT auto-imported here:
-    // they require versioned stable entity IDs and explicit spawn policy owned
-    // by the host. Unknown optional keys are preserved by MapDoc, not consumed.
+    // Authored field arrays are parsed in installFromMap, stable-sorted by
+    // map IDs and spawned as ordinary PHYSIS ECS components. If a host needs
+    // to attach external gameplay state to a field, it owns that association.
     return options;
 }
 
@@ -81,7 +81,11 @@ inline std::optional<InstallOptions> optionsFromMap(const Json& map) {
 inline bool installFromMap(Simulation& sim, const Json& map) {
     const auto options = optionsFromMap(map);
     if (!options) return false;
+    // Parse/validate all authored field volumes BEFORE mutating/initializing
+    // ECS or sealing persistence. No partial setup from malformed map input.
+    const auto fields = parseFieldAssets(map["physis"], *options);
     install(sim, *options);
+    spawnFieldAssets(sim.world(), fields);
     return true;
 }
 
