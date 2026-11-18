@@ -1059,7 +1059,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         r3d_.render(pass, &postFx_);
         fx_.render(r3d_.lighting);
         r3d_.lighting.fogDensity = fogBase;
-        r3d_.resolvePostFx();   // post effects (if any) under the HUD
+        r3d_.resolvePrisma();   // post effects (if any) under the HUD
         view_.drawOverlays(cam_, scene_, platform::windowWidth(), platform::windowHeight());
         view_.drawCanvas(canvas_);
         topDownDraw();
