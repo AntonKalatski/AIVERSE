@@ -1353,3 +1353,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `e9990503283b3bfe8ead7994a387f15f8551007b`.
 - `libraries/include/aiverselib/genre/EcsDamageSystems.h` adds `applyIntegerHitPointDamage(int32_t&,int32_t)`, an immediate, allocation-free deterministic HP update after armor/faction/shield and other host policies are already applied. `addDamageResolutionSystem` now calls the same primitive. Handles nonpositive damage/current without mutation and large damage without signed subtraction overflow.
 - Verification: GitHub source edit only; **native compiler, CTest, real FPS/RTS parity NOT run**. Next: adopt same helper in live FPS `damage` after knockdown resolution with the old event ordering unchanged; add edge-case regression and run FPS save/rollback checks.
+
+
+### 2026-11-18 — Live FPS damage uses same HP commit as generic ECS system
+- Implementation SHA: `8aebe28d5f0e95107bcf6b9eadee6558b1325c00`.
+- Changed `modules/fps/FpsSystems.cpp::Module::damage` to invoke the shared `lib::genre::applyIntegerHitPointDamage(target.health,amount)` from `EcsDamageSystems.h` after the existing gear/armor and knockdown checks. The same primitive now executes inside the generic `addDamageResolutionSystem` and the live FPS path. Existing immediate health updates, source/hits/kill credit, loot, death events and authoritative `ActorRuntime` writeback are left in their original call order and save v9 layout.
+- **Scope:** this is real cross-genre shared-algorithm use, **not** independent FPS `HitPointsComponent` authority or queued ECS damage adoption. Do not add a second mutable HP owner while `ActorRuntime` remains canonical. RTS fixed-point detailed `dealDamage` is intentionally unaffected by the integer primitive.
+- Verification: GitHub commit only; **native compilation, FPS tests, rollback/save and real gameplay parity remain unverified**. Next: add edge-case policy tests, run native FPS ECS-authority ON/OFF and network suites, then incrementally split semantic stages without reordering effects.
