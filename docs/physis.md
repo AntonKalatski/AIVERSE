@@ -22,6 +22,8 @@ PHYSIS is the **genre-independent** nature simulation for AIVERSE. Weather, loca
 | `engine/physis/PhysisSpatialIndex.h` | Transient COW snapshot, 2D bins, ordered candidate selection for wind/gravity/storm fields |
 | `engine/physis/PhysisSceneGeometry.h` | Pure Fixed-metre tile quads for Scene projection (presentation only) |
 | `engine/physis/PhysisProjectConfig.h` | Optional JSON `physis` map block → `InstallOptions` / `installFromMap` for any native GameModule |
+| `engine/physis/PhysisFieldAssets.h` | Validated, stable-ID wind/storm/gravity asset parser and deterministic ECS spawning |
+| `apps/editor/PhysisFieldEditor.h` | Universal editor field list, typed inspector, Scene markers and one-Undo drag gizmo |
 | `apps/editor/PhysisAuthoring.h` | Validated RTS/FPS map authoring, one `MapDoc::beginEdit` per Apply, Undo/Redo |
 | `apps/editor/PhysisSceneOverlay.h` | Editor-only camera projection of read-only PHYSIS fields and zone rings |
 | `engine/physis/PhysisIntegration.h` | Generic Simulation::addSystem, persistent ECS schemas, read-only presentation feed |
@@ -94,7 +96,8 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Stage 16: [Snapshot-backed spatial index](agent-handoffs/physis-spatial-index-2026-11-18.md)
 - Stage 17: [PHYSIS editor debug view](agent-handoffs/physis-editor-debug-view-2026-11-18.md)
 - Main merge: [merged InputFlow/main verification](agent-handoffs/physis-main-merge-2026-11-18.md)
-- Stage 18: [Scene overlay + Inspector authoring/Undo](agent-handoffs/physis-editor-scene-inspector-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+- Stage 18: [Scene overlay + Inspector authoring/Undo](agent-handoffs/physis-editor-scene-inspector-2026-11-18.md)
+- Stage 19: [Field assets, Gizmos and single-Undo editing](agent-handoffs/physis-field-assets-gizmos-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
 
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 
@@ -333,10 +336,13 @@ void MyGame::setup(aiverse::Simulation& sim,
 `installFromMap` returns false for absent/disabled configuration; otherwise
 it strictly reads grid/climate parameters and flags, registers persistence and
 one fixed-tick PHYSIS system, and returns true. It does not install itself
-into RTS, FPS or other genre modules automatically. The extensible authored
-arrays for individual WindZone/StormEvent/GravityField instances are preserved
-in map JSON but are **not automatically instantiated** by this loader: stable
-entity IDs and per-project spawning policy still need a separate adapter.
+into RTS, FPS or other genre modules automatically. As of **Stage 19**, validated individual `windZones`, `storms` and
+`gravityFields` arrays **are** spawned deterministically when explicitly
+installed via `installFromMap`. Each asset requires a stable unique `id`;
+the native importer sorts IDs before creating ECS entities, including across
+field types. Unknown extra keys are preserved by the editor but are not
+interpreted by the importer. Runtime IDs are authoritative ECS entities;
+the authored JSON ID is not itself a persisted component.
 
 **Validation:** stage 18 source tests `physis_scene_geometry`,
 `physis_project_config`, and `physis_authoring` were written and registered
@@ -345,3 +351,70 @@ unified build; the PHYSIS-focused headless CI compiles the other two.
 Studio validation was updated to build/run all three and compile the editor.
 As of this commit, **C++ build, CTest, CI PASS, editor interaction and
 screenshot are NOT RUN / UNVERIFIED**. See the separate Stage 18 handoff.
+
+## Stage 19 — individually authored WindZone, StormEvent and GravityField
+
+Open **Мир → PHYSIS · Природа**. The section **PHYSIS — объекты и Gizmo**
+can create, list, select and remove wind zones, tornadoes/hurricanes and
+local gravitational fields even while the game is not running. Existing
+MapProps Inspector shows the selected PHYSIS field's position, radius and
+type-dependent properties. The advanced field JSON editor preserves unknown
+extra properties but rejects invalid typed values.
+
+Turn on **Редактировать маркеры мышью** and click a W/S/G marker in Scene:
+drag in the X/Z plane; hold **Shift** to change Y. The first effective
+movement calls `MapDoc::beginEdit` and subsequent movements call
+`MapDoc::touched`; **one whole drag equals one Undo/Redo operation**.
+When the marker editor is off, normal genre-independent Scene mouse selection
+works as before. A PHYSIS marker is a map document asset, **not** a fake live
+ECS selection or a Box3D body. An active game `World` is not mutated.
+
+Map example:
+
+```json
+{
+  "physis": {
+    "enabled": true,
+    "grid": {"originX": -4, "originZ": -4, "width": 8,
+             "height": 8, "cellSizeMeters": 100, "seed": 8},
+    "climate": {"baseTemperature": 15, "baseHumidity": 0.5},
+    "enableStorms": true,
+    "enableWindZones": true,
+    "enableGravityFields": true,
+    "floodMode": "ExternalAuthority",
+    "windZones": [
+      {"id": "wind-1", "center": [0,0,0],
+       "radiusMeters": 120, "velocity": [15,0,0], "gustAmplitude": 3}
+    ],
+    "storms": [
+      {"id": "storm-1", "kind": "Tornado", "center": [50,0,25],
+       "eyeRadiusMeters": 20, "outerRadiusMeters": 150,
+       "heightMeters": 300, "tangentialWind": 45, "updraft": 25}
+    ],
+    "gravityFields": [
+      {"id": "gravity-1", "mode": "Uniform", "center": [0,0,0],
+       "radiusMeters": 200, "acceleration": [0,-2,0],
+       "overrideBaseline": true}
+    ]
+  }
+}
+```
+
+The generic native `installFromMap(sim, map)` validates all assets **before**
+changing PHYSIS World state and spawns components in lexicographic stable-ID
+order; corresponding `enableWindZones`, `enableStorms`,
+`enableGravityFields` flags are required for nonempty arrays so persistence
+schemas match. Stable IDs are authoring keys and **are not added to the
+persistent ECS component schema**; deterministic spawn order and unchanged
+map/save manifest are required for consistent replay. Edits to authored
+map JSON do not hot-reload live PHYSIS or rebind existing ECS entities.
+
+The core library contains no editor/genre/Box3D/NEREID/TerraWeave dependency.
+Water remains NEREID-owned; setting `ExternalAuthority` disables PHYSIS's
+separate shallow flood. Box3D dynamics are still an optional independent
+consumer of PHYSIS forces.
+
+**Source tests added:** `physis_field_assets` and (editor_core only)
+`physis_field_authoring`, plus expanded `physis_project_config` persistence
+fixture. Registered in focused Linux/macOS PHYSIS and Studio CI.
+**Native compilation, CTest and graphical drag QA NOT RUN / NOT VERIFIED.**
