@@ -28,7 +28,7 @@ struct HorizonAtlasUploadPlan {
     size_t changedTiles = 0;
 };
 
-inline bool horizonCanReuseModelGeometry(const HorizonBake& oldBake,
+inline bool horizonCanReuseHorizonLayout(const HorizonBake& oldBake,
                                          const HorizonBake& nextBake) {
     if (oldBake.originXcm != nextBake.originXcm ||
         oldBake.originZcm != nextBake.originZcm ||
@@ -45,8 +45,7 @@ inline bool horizonCanReuseModelGeometry(const HorizonBake& oldBake,
     for(size_t i=0;i<oldBake.terrainVertices.size();++i) {
         const auto& a=oldBake.terrainVertices[i];
         const auto& b=nextBake.terrainVertices[i];
-        if(a.xCm!=b.xCm||a.zCm!=b.zCm||
-           a.heightCm!=b.heightCm||a.colorRgba!=b.colorRgba)return false;
+        if(a.xCm!=b.xCm||a.zCm!=b.zCm)return false;
     }
     for(size_t i=0;i<oldBake.clusters.size();++i) {
         const auto& a=oldBake.clusters[i];
@@ -62,14 +61,30 @@ inline bool horizonCanReuseModelGeometry(const HorizonBake& oldBake,
     return true;
 }
 
+// Old atlas-only API retains strict geometry equivalence; a separate
+// terrain-vertex planner may reuse the same index/cluster layout while
+// vertex heights, normals and colours change.
+inline bool horizonCanReuseModelGeometry(const HorizonBake& oldBake,
+                                         const HorizonBake& nextBake) {
+    if(!horizonCanReuseHorizonLayout(oldBake,nextBake))return false;
+    for(size_t i=0;i<oldBake.terrainVertices.size();++i) {
+        const auto& a=oldBake.terrainVertices[i];
+        const auto& b=nextBake.terrainVertices[i];
+        if(a.heightCm!=b.heightCm||a.colorRgba!=b.colorRgba)return false;
+    }
+    return true;
+}
+
 // Returns nullopt if geometry cannot be safely reused or updateTexture
 // would upload a large fraction of the atlas / issue too many mip regenerations.
 // An empty plan means the current GPU model already contains the correct data.
 inline std::optional<HorizonAtlasUploadPlan> planHorizonAtlasUpload(
     const HorizonBake& oldBake, const HorizonBake& nextBake,
     uint32_t atlasTilePixels, size_t maxTextureUpdates=6,
-    uint32_t maxUploadPercent=25) {
-    if(!horizonCanReuseModelGeometry(oldBake,nextBake) ||
+    uint32_t maxUploadPercent=25, bool allowTerrainVertexChanges=false) {
+    if(!(allowTerrainVertexChanges ?
+         horizonCanReuseHorizonLayout(oldBake,nextBake) :
+         horizonCanReuseModelGeometry(oldBake,nextBake)) ||
        atlasTilePixels==0||maxTextureUpdates==0||
        maxTextureUpdates>64||maxUploadPercent==0||
        maxUploadPercent>100||
