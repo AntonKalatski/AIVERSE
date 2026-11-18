@@ -814,3 +814,84 @@ run or observed. DO NOT mark as passing or ready to merge.
    configurable preview budget. Then integrate async chunk streaming
    via existing `AsyncChunkStream`, not a duplicate scheduler.
 5. Append a fresh handoff stage with measured tests and next step.
+
+
+## Stage 3d — opt-in native & WorldScene streamed forest (COMMITTED; TESTS DEFERRED)
+
+**Branch:** `feature/terraweave`, draft PR #24; base
+`feature/universal-entity-inspector-fps`. Do not modify legacy
+game projects or main automatically.
+
+**Commits / changed files:**
+- `13e0cf245704eed1a93daa4979c3e13f279b21a6`:
+  `engine/world/TerraWeaveForestScene.h` — persistent shared model
+  prototypes, bounded per-chunk CPU foliage cache, deterministic nearest
+  residency/eviction, explicit exclusion invalidation, GPU lifecycle and
+  Renderer3D submission, CPU stats.
+- `d87e17e53aa7a33441fc326831fa062f7eb0550d`:
+  `engine/world/TerraWeaveForestManifest.h` — optional JSON schema
+  parser and `forestSceneFromManifest`, validated species/foliage
+  configuration, seeds, camera LOD ranges and rectangular exclusions.
+- `9c94303571be1eeb0d095da593ebee3e64f08392`:
+  `engine/world/WorldScene.h` — optional forest host ownership and
+  model-upload state.
+- `47e2bea0006a710d36eebf35515e2389f5b54751`:
+  `engine/world/WorldScene.cpp` — create host if root
+  `terraweaveForest` exists; build and release resident CPU patches
+  in `update`; upload prototypes through existing GPU update stage,
+  submit between Renderer3D begin/render in `draw`, release in shutdown.
+- `438bb52c0265ebeead2b24d9ae0c844469442833` and
+  `53b416df88ba94e907da97b3f13eb44b51eeff0f`:
+  forest host/schema defaults aligned so a 24,000 cm render cull is
+  covered by a 6,400 cm chunk × 4-chunk resident radius, with 64
+  resident chunks budget; avoid the previous 50,000 cm cull vs
+  3,200 cm × 3 radius mismatch.
+- `c84eca7792e26bffc4302106a8ec7ee0463ab145`:
+  `docs/terrain/TERRAWEAVE.md` — opt-in manifest example, public
+  native API and limitations.
+- This stage handoff is another documentation commit; retrieve the
+  current branch head for its SHA.
+
+**Architecture/API:** `TerraWeaveForestScene` can be called directly
+from any native genre host (no RTS dependency). `addSpecies` registers
+`TreeProfile`, `FoliageSpecies` and mesh seed before first render.
+`streamAt(ForestCameraCm)` uses integer cm and pure deterministic
+`scatter`, caches only the nearest bounded chunks, and gives stable
+instance identities regardless of chunk eviction/regeneration.
+`setExclusions` accepts world-space half-open rectangles and invalidates
+CPU patches. `visibleBatches` uses existing Flora LOD. Render thread
+calls `uploadModels`, `submit`, `releaseModels`. `WorldScene`
+automatically owns the host **only** when the top-level manifest
+contains an explicit `terraweaveForest` block. Without it, the
+old path is unchanged. A tree is cosmetic, not a per-tree ECS entity.
+
+**Actual verification performed:** read target source and committed
+changes successfully through the GitHub connector. **No CMake/CTest,
+binary launch, GPU screenshot or performance measurement executed**;
+tests were explicitly deferred by the user. No claims of CI passing.
+No source files under unrelated agent features modified.
+
+**Known limitations / risks:**
+- CPU `streamAt` is synchronous, bounded but may cause a hitch
+  when many patches first enter range; no worker queue/cancellation yet.
+- Forest manifest is only integrated into the existing asynchronous
+  `WorldScene` host, not automatically into the RTS MapDoc editor.
+- Only first observer controls forest residency; multi-observer union
+  needs a future policy.
+- Procedural forest height samples from TerraWeave seeds, not arbitrary
+  authored terrain/physics heightmap; trees may float/intersect the
+  independently authored ground until a height source adapter exists.
+- No gameplay collision/navmesh obstruction, save/harvest, growth,
+  water and road generator bindings or editor forest placement UI.
+- No budget/perf proof, alpha atlas GPU proof, or actual viewer demo.
+- Implementation assumes the normal WorldScene GPU update/draw/shutdown
+  ordering; validate all three in a real scene after tests resume.
+
+**Concrete next steps:** implement a generic CPU height source override
+for scattering plus road/exclusion integration to align tree bases to
+authored terrain; then move streaming generation to worker jobs with
+bounded staging and revision-check commit, maintaining deterministic
+order. Wire an opt-in editor forest preview, inspect model LOD and
+GPU batching, and only afterward perform CMake/CTest, headless,
+Metal/GL/Vulkan screenshots, FPS/RTS regressions and benchmarks.
+Append a new handoff after each phase.
