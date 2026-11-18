@@ -55,3 +55,30 @@ inside components, no authoritative per-genre mirror.
   Migrate each path with a deliberate authoritative-state ownership transition
   and golden replay/save/network parity. Do not mark production-ready on
   static review; compile and execute CTest on target platforms.
+
+
+## First built-in game integrations (2026-11-18)
+
+The opt-in `addWeaponReloadSystem` and real `fps::Module::tick`
+both call `stepWeaponReload` from `EcsTimedMechanics.h`. In FPS,
+the adapter builds temporary typed values from the same canonical legacy
+`ActorRuntime` weapon fields, at the original per-actor tick location.
+**This is shared-policy adoption, not standalone per-feature component
+authority**. Preserve exact same-tick reload completion, selection and
+fire conditions; verify `ecsReloadAuthorityParity` before extracting
+a dedicated scheduler stage.
+
+The built-in RTS `RtsModule::sysEconomy` updates its existing ECS
+`Unit.hp` and `Unit.energy` via
+`stepFixedResourceRegeneration` in `FixedRegeneration.h`.
+The generic ECS `EnergyRegenerationComponent` system uses that same
+fixed-point function, too. The RTS unit is still the single canonical
+owner and no second health/energy component should be attached until
+a complete ownership migration is versioned and parity-tested.
+
+Additional regression:
+`ecs_fixed_regeneration_policy_test` (integer/fractional Fixed,
+negative rates, caps, stable operation order), together with normal
+RTS game replay/save and FPS cross-genre tests. Native execution is
+not yet verified. See `docs/editor-unification-handoff.md` and
+`docs/ecs-all-features-migration-plan.md`.
