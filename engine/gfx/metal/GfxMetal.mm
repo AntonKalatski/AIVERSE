@@ -463,8 +463,9 @@ public:
             return false;
         const int bpp = t->fmt == PixelFormat::R8 ? 1 : t->fmt == PixelFormat::RGBA32F ? 16 :
                         t->fmt == PixelFormat::RGBA16F ? 8 : 4;
-        if (u.rowPitchBytes < u.width * bpp ||
-            (u.depth > 1 && u.slicePitchBytes < u.rowPitchBytes * u.height)) return false;
+        if (u.rowPitchBytes < u.width * bpp) return false;
+        const int imagePitch = u.slicePitchBytes > 0 ? u.slicePitchBytes : u.rowPitchBytes * u.height;
+        if (imagePitch < u.rowPitchBytes * u.height) return false;
         if (t->dimension == TextureDimension::Texture1D) {
             [t->tex replaceRegion:MTLRegionMake1D(NSUInteger(u.x), NSUInteger(u.width))
                        mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
@@ -473,7 +474,7 @@ public:
             [t->tex replaceRegion:MTLRegionMake3D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.z),
                     NSUInteger(u.width), NSUInteger(u.height), NSUInteger(u.depth))
                        mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
-                       bytesPerRow:NSUInteger(u.rowPitchBytes) bytesPerImage:NSUInteger(u.slicePitchBytes)];
+                       bytesPerRow:NSUInteger(u.rowPitchBytes) bytesPerImage:NSUInteger(imagePitch)];
         } else if (t->dimension == TextureDimension::Texture2D) {
             [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
                        mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data bytesPerRow:NSUInteger(u.rowPitchBytes)];
@@ -481,7 +482,7 @@ public:
             [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
                        mipmapLevel:NSUInteger(u.mipLevel) slice:NSUInteger(u.arrayLayer)
                          withBytes:u.data bytesPerRow:NSUInteger(u.rowPitchBytes)
-                      bytesPerImage:NSUInteger(u.slicePitchBytes ? u.slicePitchBytes : u.rowPitchBytes * u.height)];
+                      bytesPerImage:NSUInteger(imagePitch)];
         }
         if (t->mips && u.mipLevel == 0) generateMips(t->tex);
         return true;
