@@ -1570,3 +1570,36 @@ test targets in this agent's work. The other agent should validate
 cache misses/hits, source revision races, camera jitter near
 128m cell edges, memory during one/two atlas allocations,
 hysteresis after large teleports and GPU rollback on failed upload.
+
+## Stage 9d — native Horizon quality tiers (SOURCE COMMITTED; TESTS ASSIGNED TO OTHER AGENT)
+
+**Commits/files:**
+- `3b7a0fe487c6c0e6fabc928d614211f2e4c57565`:
+  `engine/world/TerraWeaveHorizon.h` adds
+  `HorizonQualityPreset` enum and
+  `horizonSettingsForQuality` for minimal/mobile/balanced/high.
+  Constructor validation remains centralized in
+  `validateHorizonSettings`; presets do not modify ECS or RHI.
+- `d76d35bea787168f983f32e6699c3be3420ded76`:
+  `engine/world/TerraWeaveHorizonManifest.h` parses
+  `terraweaveHorizon.quality` and applies per-field overrides.
+- API matrix documented in `docs/terrain/TERRAWEAVE.md`.
+
+**Behavior:** Minimal/mobile use a 16/24px atlas tile, 16/24
+terrain grid, one-view projection and no cached CPU regions.
+Balanced retains the previous defaults; High selects two-view,
+denser crowns and a 64-resolution distant terrain grid, with
+the same number of forest cluster cards. Genre independent,
+opt-in manifest only; unconfigured worlds remain unchanged.
+
+**Verification performed:** GitHub write operations and manual
+source inspection only. **No CMake, CTest, CI inspection, GPU
+renders, screenshot comparisons or benchmark executed** because
+the user assigned tests to a different agent. Other agent should
+validate every preset/field combination on desktop and mobile.
+
+**Next functional work:** optional pre-baked persistent asset
+cache for static-world Horizon regions to avoid CPU rasterization
+across restarts, with version/fingerprint and strict size bounds;
+full per-frame crossfade would need shared Renderer3D shader
+semantics and actual visual validation.
