@@ -101,3 +101,32 @@ For few bodies and probes, the linear sampler may be cheaper.
 Stage 4 authored test: `ecs_nereid_query_index_test`, not yet executed.
 Run all four `ecs_nereid_.*_test` cases plus existing RTS water tests,
 and record actual build/CTest results in `docs/nereid/HANDOFF.md`.
+
+## Stage 5 — legacy waterNetwork / tile-map importer (experimental)
+
+For **existing** RTS/editor water, read
+`modules/rts/view/NereidLegacyWaterAdapter.h` and
+`docs/nereid/ARCHITECTURE.md`.
+
+Do not import control points directly: old `waterNetwork` uses
+Catmull-Rom and a 0.75-cell bake margin; straight-line conversion
+changes river edges. Use
+`game::water::importBakedWaterCellsToNereid(cells,w,h,config)`
+for the simulation's canonical `~` raster, or
+`game::water::importWaterNetworkToNereid(network,w,h,legacyCm,config)`
+only when source-network (pre-postprocessing) parity is desired.
+The bridge returns Box `WaterBodyComponent` values for a native
+project to attach; it does not modify the old map, editor, or ECS
+implicitly. `WaterRasterImportConfig` provides Fixed coordinates
+and surface/depth/priority, and must use the map's cell-metre scale.
+
+This is a **load-time import**, not a per-tick conversion. For
+runtime-updated maps, perform a deliberate body replacement and
+rebuild indexed sampling next tick. The resulting rectangular cover
+matches the legacy mask at **cell centres**, not at all sub-cell
+positions; baked `~` cells also lose per-body semantic WaterKind.
+
+The generic raster conversion lives in
+`aiverselib/water/NereidRasterImport.h` and does **not** depend
+on RTS. Test: `ecs_nereid_legacy_raster_test` (authored, NOT RUN).
+Record actual results and any fixes in `docs/nereid/HANDOFF.md`.

@@ -159,3 +159,43 @@ Nothing about the indexed data itself is authoritative or persistent.
 No changes to NEREID persistence schemas, renderer, RTS/editor waterNetwork
 or existing save streams. Two-host indexed/reference parity test:
 `ecs_nereid_query_index_test` (author-written, NOT RUN yet).
+
+## Stage 5 — read-only adoption of legacy baked-water raster
+
+The legacy `waterNetwork` stores editor-side Catmull-Rom splines
+and sea shorelines in **cells**, with variable river width in metres.
+Its `waterCells` function adds a 0.75-cell edge tolerance, interpolates
+sea frontiers and supports headland/shore features. Consequently,
+interpreting its original control points directly as NEREID straight
+spline segments **would not preserve existing wet cells**.
+
+Instead, `NereidRasterImport.h` implements a deterministic pure
+converter from a generic binary raster to disjoint
+`WaterBodyComponent` rectangles. Row-run compression also merges
+identical spans in adjacent rows. This represents the baked water mask
+exactly **at cell centres**, not an equivalent continuous shoreline.
+Coordinates are X/Z world metres, `cellMeters` is explicitly Fixed,
+and body heights are provided by the caller. There is no change to
+existing NEREID schemas.
+
+`modules/rts/view/NereidLegacyWaterAdapter.h` is the only
+legacy-dependent header:
+- `importWaterNetworkToNereid` uses the untouched legacy
+  `buildGeometry` + `waterCells` rasterizer, and is appropriate for
+  map source previews/baking.
+- `importBakedWaterCellsToNereid` consumes the actual canonical game
+  map cells (`~` by default), including post-bake changes; **prefer
+  this for native gameplay migration**.
+
+The adapter returns data without altering the input map or automatically
+registering a game system. A native host opts in by creating entities,
+registering `registerNereidWaterPersistence`, adding probes and
+choosing one contact-sampling stage. No old RTS/editor save protocol,
+shore/bank geometry or navigation is migrated automatically.
+Baked cell masks lose per-body sea/river provenance, so callers specify
+a common `WaterKind` and an explicit water surface/depth. To support
+multiple semantic water levels, source distinct masks explicitly.
+
+Fixture: `ecs_nereid_legacy_raster_test` (authored, NOT RUN)
+compares all centres of an 80x64 legacy river/sea/strait map against
+both NEREID sampling policies and verifies native save/COW/rollback.

@@ -292,3 +292,111 @@ water geometry changes. This test has **not run**.
   parity tests before any native/editor migration. Maintain a handoff
   section after every implementation commit with exact SHA, files, test
   commands/results, current limitations and next task.
+
+## Stage 5 — legacy raster-to-ECS import (code committed; tests not run)
+
+**Branch:** `feature/nereid-water-core`.
+**Initial implementation:** `4447c5ddeb86de1e715eafd8b12c4190d7b200d0`.
+**Follow-up correction:** `b55062501c78c26c9f9b5317b0ef9f2241895753`
+(baked-tile API, wet-to-dry test, input validation).
+**Test expectation correction:** `630367954294b22454f898d93e9aa1473c7e25b6`.
+
+Changed files:
+- Added `libraries/include/aiverselib/water/NereidRasterImport.h`: pure
+  generic row-run rectangularisation, water-body conversion.
+- Added `modules/rts/view/NereidLegacyWaterAdapter.h`: optional read-only
+  legacy map bridge, under the *legacy* module (core remains genre-free).
+- Added `tests/ecs_nereid_legacy_raster_test.cpp`: cell-centre parity
+  against the existing waterCells raster, baked-tile parity,
+  indexed-vs-reference checks, two independent native hosts,
+  persistence, COW and rollback.
+- Updated `CMakeLists.txt`: `aiverse_ecs_nereid_legacy_raster_test`
+  links the core engine and `RtsWater.cpp` directly (no editor/runtime
+  or rendering target).
+- Updated `libraries/catalog.json` description to reflect stages 1–5.
+
+### API
+
+`aiverselib/water/NereidRasterImport.h` (generic):
+- `WaterRasterImportConfig`: Fixed `cellMeters`, `surfaceY`,
+  `bottomY`, common `kind`, `priority`, `maxRectangles`.
+- `rectangleWaterCells(wet,width,height,maxRectangles)`: deterministic
+  run-length compression into disjoint rectangular spans, merges
+  same-width spans across adjacent rows.
+- `waterBodiesFromRaster(wet,width,height,config)`: returns
+  `std::vector<WaterBodyComponent>` Box shapes in world-metres X/Z,
+  with Y surface/depth from config; caller creates ECS entities.
+  Each wet grid cell centre is covered, each dry centre is excluded.
+  Input cap 4,194,304 cells (4 MiB mask); rectangle cap defaults 262,144.
+
+`modules/rts/view/NereidLegacyWaterAdapter.h`:
+- `game::water::importBakedWaterCellsToNereid(cells,w,h,cfg,'~')`
+  reads **canonical simulation map tiles**, exact matching `~`.
+  Prefer this path for games which edit baked maps after `waterNetwork`.
+- `game::water::importWaterNetworkToNereid(network,w,h,legacyCm,cfg)`
+  uses the **existing** `buildGeometry` and `waterCells` functions
+  to reproduce the editor's network *source* wet mask before subsequent
+  bridge/map editing. It validates matching legacy and Fixed cell metres.
+
+Both are **explicit load-time converters**, not live systems. The returned
+data can be attached to any native game's water-body ECS. They do NOT
+touch `Network`, shore types, tiles, map saves, editor UI or old RTS
+navigation. `WaterKind` is set by the importer config because baked
+raster cells do **not** retain ocean/river identity; **never** infer the
+legacy body type from the merged mask.
+
+Example:
+```cpp
+#include "modules/rts/view/NereidLegacyWaterAdapter.h"
+namespace nw=aiverse::lib::nereid;
+nw::registerNereidWaterPersistence(sim);
+nw::WaterRasterImportConfig cfg;
+cfg.cellMeters=4_fx;
+cfg.surfaceY=8_fx;
+cfg.bottomY=-4_fx;
+for (const auto& body : aiverse::game::water::importBakedWaterCellsToNereid(
+        legacyMapCells, width, height, cfg)) {
+    const aiverse::Entity e=sim.world().create();
+    sim.world().add<nw::WaterBodyComponent>(e,body);
+}
+nw::addIndexedWaterSamplingSystem(sim,"water.sample");
+```
+
+### Actual verification
+
+- GitHub connector wrote code; **native C++ build/CTest NOT RUN**.
+- The newest CI had queued/pending jobs, with older pushes cancelled;
+  a cancelled workflow is **not** proof that tests pass.
+- Authored parity tests check every cell centre in an 80x64 map,
+  short exact-span fixtures, source-network compatibility, baked
+  tile-map compatibility, two genres, persistence and rollback.
+- The authored test was inspected and corrected before documentation:
+  initial probe is wet, moved probe dry; expected rectangles for a
+  two-column vertical merge is 2, not 3.
+
+Run:
+```sh
+cmake -S . -B build/ecs-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/ecs-test --target \
+  aiverse_ecs_nereid_water_test aiverse_ecs_nereid_buoyancy_test \
+  aiverse_ecs_nereid_geometry_test aiverse_ecs_nereid_query_index_test \
+  aiverse_ecs_nereid_legacy_raster_test -j 4
+ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_.*_test$'
+```
+Also run legacy `water_*` tests, FPS and RTS ECS tests.
+
+### Limits and specific next step
+
+- This is cell-based parity at **grid centres**, not sub-cell shoreline
+  fidelity. For high-quality polygon/mesh rendering use legacy shore data
+  or a separate presentation adapter.
+- Large fragmented rasters can produce many rectangles and ECS entities.
+  Measure memory, rebuild and broadphase cost before enabling by default.
+- The raster is not a moving/hydraulic water solver. Regenerate bodies
+  explicitly if a host changes its baked map during gameplay. Do not
+  silently sync two canonical sources.
+- Next agent: compile all five tests, fix any compiler or runtime
+  failure, verify old `water_*` bake output unchanged, and benchmark
+  rectangle counts/import time and indexed sampling. Then add a native
+  opt-in migration path or independent render/shoreline adapter, with
+  further per-stage handoff.
