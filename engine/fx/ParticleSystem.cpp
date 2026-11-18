@@ -910,6 +910,18 @@ template <class I> auto* findInstance(I& impl, FxHandle h) {
 }
 } // namespace
 
+bool ParticleSystem::setProgramParameter(FxHandle h, uint32_t slot, float value,
+                                         bool affectExisting) {
+    if(slot>=8 || !spectra::program::number(value))return false;
+    auto& I=*impl_;
+    auto* in=findInstance(I,h);
+    if(!in)return false; // stale generation or a completed instance
+    in->programParams[slot]=value;
+    if(affectExisting)
+        for(auto& p:I.particles)
+            if(p.owner==h.id)p.programParams[slot]=value;
+    return true;
+}
 void ParticleSystem::move(FxHandle h, float3 pos) { if (auto* in = findInstance(*impl_, h)) in->pos = pos; }
 void ParticleSystem::move(FxHandle h, float3 pos, float3 dir) {
     if (auto* in = findInstance(*impl_, h)) { in->pos = pos; if (render::length(dir) > 1e-5f) in->setDir(render::normalize(dir)); }
