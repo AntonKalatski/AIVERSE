@@ -5052,3 +5052,29 @@ format change. Verification: GitHub source commit only,
 native OpenEXR headers/compile/test NOT RUN.
 Next: wire CMake, add synthetic OpenEXR-generated ZIP/PIZ
 test, verify fixture and real OpenEXR native decoding.
+
+## Stage 8G — OpenEXR 3 optional CMake and ZIP/ZIPS/PIZ fixtures (2026-11-18)
+
+Code commit: 3ea20363b15909316fce92f7742c7e07418c8e43.
+Files: CMakeLists.txt, engine/render/ExrOpenExr.h,
+tests/render/exr_texture.cpp.
+Adds AIVERSE_TEXTURE_WITH_OPENEXR=ON opt-in to find
+OpenEXR 3 imported OpenEXR::OpenEXR, link runtime and
+EXR fixture with public macro. OFF default stays dependency-free
+and keeps the original narrow uncompressed parser.
+Native test, only when enabled, uses installed library to
+WRITE three small RGB[A] EXR files (ZIP/ZIPS/PIZ) and
+decode them using parseOpenExrWithLibrary; asserts
+linear HALF RGBA including negative blue and alpha.
+Explicit includes stdexcept/cstdlib added to the external
+header. No external library vendored into repo.
+Limitations: tests are source fixtures, not executed.
+Multipart/deep EXR still unsupported; uncompressed narrow
+import remains the default without system library.
+Compatibility: opt-in CMake only; no default build ABI changes.
+Verification: GitHub code/tree/ref commit succeeded,
+native CMake configure NOT RUN, OpenEXR test NOT RUN,
+real image GPU sampling NOT RUN.
+Next: run CMake/CTest with system OpenEXR 3 on developer machine,
+check PNG/EXR color handling in final renderer and audit
+library dependency packaging for app distribution.
