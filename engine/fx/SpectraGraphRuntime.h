@@ -61,7 +61,7 @@ public:
     void clear();
 
     ComputeBackend backend() const { return backend_; }
-    bool gpuActive() const { return initialized_ && backend_ == ComputeBackend::Metal; }
+    bool gpuActive() const { return initialized_ && backend_ == ComputeBackend::Metal && gpu_.gpuActive(); }
     const std::string& reason() const { return reason_; }
     const std::vector<std::string>& errors() const { return errors_; }
     const fx::ParticleSystem& cpuFallback() const {
