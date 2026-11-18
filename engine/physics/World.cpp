@@ -75,7 +75,24 @@ World::World(const Json& scene,int workers):scene_(scene),workers_(workers){
         for(size_t i=0;i<joints.size();++i){auto& j=joints[i];auto* a=find(j.getStr("a"));auto* b=find(j.getStr("b"));check(a&&b&&a!=b,"invalid joint bodies");
             auto kind=j.getStr("kind","distance");auto aa=vec(j["anchorA"],{0,0,0}),ab=vec(j["anchorB"],{0,0,0});
             if(kind=="distance"){auto d=b3DefaultDistanceJointDef();d.base.bodyIdA=a->body;d.base.bodyIdB=b->body;d.base.localFrameA.p=aa;d.base.localFrameB.p=ab;d.length=number(j,"length",1,0.01f,1000);b3CreateDistanceJoint(world_,&d);}
-            else if(kind=="hinge"){auto d=b3DefaultRevoluteJointDef();d.base.bodyIdA=a->body;d.base.bodyIdB=b->body;d.base.localFrameA.p=aa;d.base.localFrameB.p=ab;b3CreateRevoluteJoint(world_,&d);}
+            else if(kind=="hinge"){
+                auto d=b3DefaultRevoluteJointDef();
+                d.base.bodyIdA=a->body;d.base.bodyIdB=b->body;
+                d.base.localFrameA.p=aa;d.base.localFrameB.p=ab;
+                const auto hinge=b3CreateRevoluteJoint(world_,&d);
+                check(b3Joint_IsValid(hinge),"invalid hinge joint");
+                const auto& limits=j["limits"];
+                if(!limits.isNull()){
+                    check(limits.isArray()&&limits.size()==2,"hinge limits need [min,max]");
+                    const float low=float(limits[0].fx().toDouble());
+                    const float high=float(limits[1].fx().toDouble());
+                    check(std::isfinite(low)&&std::isfinite(high)&&
+                          low>=-3.14f&&high<=3.14f&&low<high,
+                          "hinge limits out of range");
+                    b3RevoluteJoint_SetLimits(hinge,low,high);
+                    b3RevoluteJoint_EnableLimit(hinge,true);
+                }
+            }
             else check(false,"unsupported joint "+kind);
         }
     }catch(...){release();throw;}
