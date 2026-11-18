@@ -4183,3 +4183,47 @@ and RGBA16F 2D/array/volume images and confirms readback.
 Build native editor, then add Vulkan compute descriptor/pipeline
 only if the backend supports the necessary synchronization/bindings.
 Do not present the capability as cross-backend storage support.
+
+## Stage 5P — native compressed sRGB format selection (2026-11-18)
+
+Code commit: 71259009accf0d2e6943bda692c59a97a5c4093e.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Paths: engine/gfx/Gfx.h, engine/gfx/gl/GfxGL.cpp,
+engine/gfx/metal/GfxMetal.mm, engine/gfx/vulkan/VkResources.cpp,
+engine/render/TextureAsset.h, tests/render/texture_contract.cpp,
+tests/render/texture_asset.cpp, apps/editor/windows/TextureResourcesWindow.cpp.
+
+Implementation: added native PixelFormat variants BC1_sRGB, BC3_sRGB,
+BC7_sRGB, ETC2_RGB8_sRGB, ETC2_RGBA8_sRGB, ASTC_4x4_sRGB,
+ASTC_6x6_sRGB. Shared compressed-format block byte/dimension
+calculations include the variants. OpenGL maps to standard
+compressed sRGB GL enums; GLES/WebGL sRGB S3TC capability is
+gated separately from base S3TC. Metal maps to sRGB variants
+on Apple-supported families and macOS BC; Vulkan uses matching
+VK_FORMAT_*_SRGB_BLOCK and native per-format device probing.
+TextureAsset now selects hardware-sRGB compressed upload for
+appropriate KTX2/DDS color-space metadata rather than requiring
+opt-in manual shader gamma conversion or CPU RGBA8 fallback.
+Unsupported hardware formats still use CPU fallback where a
+decoder exists; ASTC and BC6H remain fail-closed without a
+compatible native GPU or external decoder. BC1_RGB special
+opaque-index semantics continue to avoid the BC1_RGBA shortcut.
+Editor texture resource names include all appended formats.
+
+Test sources added: texture_contract checks sRGB block sizes
+and ASTC block dimensions; texture_asset mock verifies native
+BC7_sRGB and BC1_sRGB GPU descriptors without manual shader opt-in.
+
+Compatibility: Enum values are appended to preserve earlier
+numeric identifiers. No ECS/gameplay, save/network schema,
+material shader or non-texture backend API changes.
+
+Verification: GitHub code commit/ref update succeeded.
+C++ compile NOT RUN; CTest NOT RUN; GL/WebGL/GLES, Metal
+and Vulkan sampling/readback NOT RUN. The enum names and
+backend support require real platform compiler/GPU checks.
+
+Next: Add synthetic KTX2 sRGB format upload tests for
+ETC2/ASTC and reject unsupported mobile sRGB compression
+without silently selecting UNORM; then run native build
+and GPU tests before merge. Maintain per-stage handoff.
