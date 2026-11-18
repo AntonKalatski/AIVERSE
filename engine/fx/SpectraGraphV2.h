@@ -4,6 +4,7 @@
 #pragma once
 #include "SpectraValueGraph.h"
 #include "SpectraRuntimeCodegen.h"
+#include "SpectraInstanceParameters.h"
 #include "VfxGraph.h"
 #include <cmath>
 #include <functional>
@@ -130,9 +131,15 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
         (void)unused;
         if(key!="version" && key!="parameters" && key!="nodes" &&
            key!="links" && key!="outputs" && key!="forceFields" &&
-           key!="metadata" && key!="description" && key!="functions")
+           key!="metadata" && key!="description" && key!="functions" &&
+           key!="instanceParameters")
             return fail("unknown root key '"+key+"'");
     }
+    // Named instance parameters have an independent bounded namespace from
+    // compile-time graph.parameters. They are never constant-folded.
+    spectra::InstanceParameterTable instanceParameters;
+    if(!spectra::loadInstanceParameterTable(graph["instanceParameters"],
+                                            instanceParameters,errors))return false;
     const Json& nodes=graph["nodes"],&links=graph["links"],&outputs=graph["outputs"];
     const Json& functions=graph["functions"];
     if(!nodes.isArray()||nodes.size()==0||nodes.size()>256)
@@ -214,8 +221,22 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
                std::abs(p[size_t(1)].toDouble())>100000)
                 return fail("invalid node position at '"+id+"'");
         }
+        Json normalized=original;
+        if(type=="InstanceParameter") {
+            const Json& props=original["properties"];
+            const std::string name=props.getStr("name",original.getStr("name"));
+            const auto found=instanceParameters.find(name);
+            if(found==instanceParameters.end())
+                return fail("unknown runtime instance parameter '"+name+"'");
+            if(props.has("slot") && (!props["slot"].isNumber() ||
+               props.getInt("slot",-1)!=int64_t(found->second.slot)))
+                return fail("slot mismatch for runtime instance parameter '"+name+"'");
+            Json p=props.isObject()?props:Json::object();
+            p.set("slot",Json::number(int64_t(found->second.slot)));
+            normalized.set("properties",std::move(p));
+        }
         types[id]=type;
-        copied.emplace(id,original);
+        copied.emplace(id,std::move(normalized));
     }
     Json executionLinks=Json::array();
     std::set<std::pair<std::string,std::string>> destinationPorts;
