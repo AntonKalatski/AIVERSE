@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -45,6 +46,15 @@ struct HorizonTerrainVertex {
     int64_t xCm = 0, zCm = 0;
     int32_t heightCm = 0;
     uint32_t colorRgba = 0xffffffffu;
+};
+
+// Optional immutable host-supplied landscape data. Passed as a borrowed pointer
+// only for the duration of bakeHorizon; the async host owns a shared snapshot.
+struct HorizonSurfaceSources {
+    std::function<int32_t(int64_t, int64_t)> heightAtCm;
+    std::function<Biome(int64_t, int64_t)> biomeAt;
+    // Road, water, and building masks suppress individual crown samples.
+    std::function<bool(int64_t, int64_t)> allowsCanopyAt;
 };
 
 struct HorizonBake {
@@ -169,8 +179,24 @@ inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
 inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                               const BiomeSettings& biomes,
                               const HorizonSettings& s,
-                              int64_t cameraXcm, int64_t cameraZcm) {
+                              int64_t cameraXcm, int64_t cameraZcm,
+                              const HorizonSurfaceSources* source = nullptr) {
     validateHorizonSettings(s);
+    const auto heightSample = [&](int64_t x, int64_t z) -> int32_t {
+        const int32_t h = source && source->heightAtCm ?
+            source->heightAtCm(x, z) : heightAtCm(terrain, x, z);
+        if (h < -kWorldLimitCm || h > kWorldLimitCm)
+            throw std::out_of_range("TerraWeave Horizon sampled height extent");
+        return h;
+    };
+    const auto biomeSample = [&](int64_t x, int64_t z) -> Biome {
+        return source && source->biomeAt ?
+            source->biomeAt(x, z) : climateAt(terrain, biomes, x, z).biome;
+    };
+    const auto canopyAllowed = [&](int64_t x, int64_t z) {
+        return !source || !source->allowsCanopyAt ||
+               source->allowsCanopyAt(x, z);
+    };
     if (cameraXcm < -kWorldLimitCm || cameraXcm > kWorldLimitCm ||
         cameraZcm < -kWorldLimitCm || cameraZcm > kWorldLimitCm)
         throw std::out_of_range("TerraWeave Horizon observer");
@@ -243,7 +269,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
 
                 // Coarse vegetation sample: one evaluation per column. Never
                 // instantiate individual distant trees or their ECS components.
-                const auto biome=climateAt(terrain,biomes,x,z).biome;
+                const auto biome=biomeSample(x,z);
                 const uint32_t density=horizon_detail::canopyStrength(biome);
                 if (!density)continue;
                 const uint64_t tileHash=detail::hash2(gx,gz,terrain.seed^salt);
@@ -251,7 +277,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 int32_t low=std::numeric_limits<int32_t>::max();
                 int32_t high=std::numeric_limits<int32_t>::min();
                 for (int a=-1;a<=1;++a)for(int b=-1;b<=1;++b) {
-                    const int32_t h=heightAtCm(terrain,x+a*cell/3,z+b*cell/3);
+                    const int32_t h=heightSample(x+a*cell/3,z+b*cell/3);
                     low=std::min(low,h);high=std::max(high,h);
                 }
                 const int32_t bottom=low-250;
@@ -290,11 +316,11 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                         gx*cell+axisSample : x;
                     const int64_t sampleZ=orientation==1 ?
                         gz*cell+axisSample : z;
-                    const auto subBiome=climateAt(
-                        terrain,biomes,sampleX,sampleZ).biome;
+                    if (!canopyAllowed(sampleX, sampleZ)) continue;
+                    const auto subBiome=biomeSample(sampleX,sampleZ);
                     const uint32_t coverage=horizon_detail::canopyStrength(subBiome);
                     if (((h>>16)&255ULL)>=coverage)continue;
-                    const int32_t surface=heightAtCm(terrain,sampleX,sampleZ);
+                    const int32_t surface=heightSample(sampleX,sampleZ);
                     const int32_t crownCm=std::max<int32_t>(220,
                         int64_t(s.canopyHeightCm)*
                         (68+int32_t((h>>27)%60))/100);
@@ -404,8 +430,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
             for(uint32_t x=0;x<=n;++x) {
                 const int64_t wx=out.originXcm+int64_t(x)*out.sideCm/n;
                 const int64_t wz=out.originZcm+int64_t(z)*out.sideCm/n;
-                const int32_t h=heightAtCm(terrain,wx,wz);
-                const auto biome=climateAt(terrain,biomes,wx,wz).biome;
+                const int32_t h=heightSample(wx,wz);
+                const auto biome=biomeSample(wx,wz);
                 const uint32_t color=horizon_detail::biomeColor(
                     biome,h,detail::hash2(wx/51200,wz/51200,terrain.seed));
                 out.terrainVertices.push_back({wx,wz,h,color});
