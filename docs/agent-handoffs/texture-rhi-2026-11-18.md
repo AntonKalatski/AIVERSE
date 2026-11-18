@@ -4905,3 +4905,31 @@ Next: Run source builds and CPU CTests with the merged main
 InputFlow targets, then validate feedback drawing and packed ID
 readback on Metal/GL33/GLES3/Vulkan. Repair actual failures
 before marking PR ready and keep this append-only handoff up to date.
+
+## Stage 8A — native libktx Basis/UASTC adapter (2026-11-18)
+
+Source commit: 0533b36ee19729f38172ebb1357208aa673030b1.
+Branch feature/texture-rhi-unification; Draft PR #21.
+New header: engine/render/Ktx2Libktx.h.
+Provides makeLibktxBasisTranscoder(Device&,options) and
+uploadKtx2WithLibktx, using actual Khronos libktx decode API
+when compiled with AIVERSE_TEXTURE_WITH_LIBKTX and linked.
+Codec is NOT vendored; disabled mode fails closed with clear error.
+Selects BC7 -> ASTC 4x4 -> ETC2 RGBA -> BC3 based on
+Device::supports for correct sRGB/linear native formats,
+or uncompressed RGBA32 (RGBA8 texels) fallback.
+Uses libktx mip/layer/face offset functions to pack full
+mip-major array/cube/volume output and bounded 512MiB memory.
+Original KTX topology and decoded payload sizes are also
+verified by existing parseKtx2WithTranscoder code.
+Explicit current limitation: UASTC HDR targets requiring
+RGBA16F/BC6H are not supported by this LDR output adapter.
+No CMake option/linkage added yet in this stage; next stage
+must add explicit opt-in dependency wiring and tests.
+Compatibility: opt-in header only, no existing RHI/ABI, save
+or ECS format changed.
+Verification: GitHub source commit succeeded; libktx headers
+not available locally, C++ compile NOT RUN, libktx runtime
+test NOT RUN, GPU upload validation NOT RUN.
+Next: CMake optional libktx target, smoke/negative fixtures,
+agent skill and production native build with libktx installed.
