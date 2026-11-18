@@ -52,3 +52,33 @@ Existing maps must remain unchanged when TerraWeave is disabled.
   `docs/terrain/AGENT_HANDOFF.md` with SHA, API/files, actual tests,
   limitations and next agent instructions. Never claim tests pass without
   running them. This is part of the deliverable, not optional.
+
+
+## Arbor BranchLOD and final billboard (Stage 2g–2h)
+
+- Near geometry: use `makeArborBranchLodModel(profile, prototypeSeed, BranchLodSettings)`
+  for one shared `render::Model` per species. Each `render::Node` is the
+  original trunk/branch with an independent `MeshDef::lods` chain.
+  `LeafCluster::parentBranch` associates foliage with its structural branch.
+  Never regenerate complete trees per LOD or create ECS entities per branch.
+- `buildArborBranchMesh(tree, branchIndex, BranchDetail)` builds local Full,
+  Reduced and Minimal meshes. Default transition diameters are 96px / 30px
+  *per branch*. Keep high-detail bark where visible while individually
+  reducing nearby twigs and distant foliage.
+- Far representation: `makeArborBillboardModel(profile, prototypeSeed)`
+  generates a transparent RGBA8 tree silhouette and one camera-facing quad.
+  This is a real alpha-masked impostor model, but single-view / low fidelity;
+  a multi-angle texture atlas with normals is not implemented.
+- `ArborForestAdapter::addPrototype` registers and reuses both models per
+  species; `uploadModels` and `releaseModels` operate on both on the
+  render thread. Use `buildFloraBatches` and `submit` to switch to the
+  billboard only for `TreeLOD::Impostor`. Existing Renderer3D chooses
+  individual branch mesh LODs and handles normal model batching.
+- `ForestRenderOriginCm` and `ForestCameraCm` use integer centimetres;
+  `forEachDraw(batches, origin, callback, camera)` can inspect the selected
+  near/far model on the CPU. Pass the real camera position for accurate
+  impostor yaw when calling directly. `submit` derives it from Renderer3D.
+- Verify `aiverse_terraweave_model_test` on GCC+Clang and on real RHI.
+  Do not assert CI passed before inspecting logs; use
+  `docs/terrain/AGENT_HANDOFF.md` for the exact current verification state.
+  The adapter is not yet connected to any editor/game WorldScene automatically.
