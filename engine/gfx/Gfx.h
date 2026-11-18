@@ -536,6 +536,10 @@ public:
     // MUST NOT create a reduced 2D resource in its place.
     virtual bool supportsTextureDimension(TextureDimension dim) const { return dim == TextureDimension::Texture2D; }
     virtual bool supportsTextureViews() const { return false; }
+    // Read/write images are optional. A backend must reject unsupported
+    // format/dimension combinations rather than silently allocating an
+    // ordinary sampled-only texture.
+    virtual bool supportsStorageTexture(PixelFormat, TextureDimension) const { return false; }
     virtual TextureViewHandle createTextureView(TextureHandle, const TextureViewDesc&) { return {}; }
     virtual void destroyTextureView(TextureViewHandle) {}
     virtual SamplerHandle createSampler(const SamplerDesc&) { return {}; }
@@ -587,6 +591,10 @@ public:
     virtual bool beginCompute(ComputeHandle) { return false; }
     virtual void setComputeBuffer(int,BufferHandle) {}
     virtual void setComputeTexture(int,TextureHandle) {}
+    // Explicit writable binding: false unless a compute encoder is active
+    // and the texture was created with TextureDesc::storage=true.
+    // setComputeTexture remains backward-compatible for sampled input images.
+    virtual bool bindComputeStorageTexture(int,TextureHandle) { return false; }
     virtual void setComputeUniforms(const void*,size_t) {}
     // 64 threads per X group; dispatch provides total logical threads. Bounds-check in shader.
     virtual void dispatch(uint32_t,uint32_t=1) {}

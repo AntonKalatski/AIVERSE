@@ -51,6 +51,20 @@ int main() {
     check(validateTextureDesc(d) == TextureDescError::None, "depth comparison");
     d.storage = true;
     check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "depth storage rejected");
+    d = size2D();
+    d.format = PixelFormat::RGBA8; d.storage = true;
+    check(validateTextureDesc(d) == TextureDescError::None,
+          "uncompressed writable RGBA8 texture descriptor is structurally valid");
+    d.dimension = TextureDimension::Texture2DArray; d.arrayLayers = 4;
+    check(validateTextureDesc(d) == TextureDescError::None,
+          "array writable image descriptor has valid generic shape");
+    d.dimension = TextureDimension::Texture3D;
+    d.arrayLayers = 1; d.depth = 4;
+    check(validateTextureDesc(d) == TextureDescError::None,
+          "3D writable image descriptor has valid generic shape");
+    d.format = PixelFormat::BC7;
+    check(validateTextureDesc(d) == TextureDescError::InvalidUsage,
+          "compressed writable image is forbidden by common descriptor");
     // View subresources must remain in the parent's mip/layer bounds.
     d = size2D(64,64); d.mipLevels = 7;
     TextureViewDesc v; v.baseMipLevel = 1; v.mipLevelCount = 4;

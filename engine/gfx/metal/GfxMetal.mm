@@ -63,6 +63,7 @@ struct MTTexture {
     PixelFormat fmt = PixelFormat::RGBA8;
     TextureDimension dimension = TextureDimension::Texture2D;
     bool mips = false;
+    bool storage = false;
 };
 struct MTTextureView { id<MTLTexture> tex; uint32_t parentId = 0; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
@@ -151,6 +152,15 @@ public:
     }
     bool supportsTextureDimension(TextureDimension) const override { return true; }
     bool supportsTextureViews() const override { return true; }
+    bool supportsStorageTexture(PixelFormat format, TextureDimension dimension) const override {
+        // Portable Metal writeable texture subset, avoiding compressed,
+        // sRGB, multisample, depth and unverified typed storage formats.
+        const bool sizeSupported = dimension == TextureDimension::Texture2D ||
+                                   dimension == TextureDimension::Texture2DArray ||
+                                   dimension == TextureDimension::Texture3D;
+        return supportsCompute() && sizeSupported &&
+               (format == PixelFormat::RGBA8 || format == PixelFormat::RGBA16F);
+    }
 
     static MTLSamplerAddressMode addressMode(SamplerAddressMode a) {
         switch (a) {
@@ -350,7 +360,24 @@ public:
         if (auto* b=buffers_.get(h.id)) [compute_ setBuffer:current(*b) offset:0 atIndex:NSUInteger(slot)];
     }
     void setComputeTexture(int slot,TextureHandle h) override {
+        if (!compute_ || slot < 0 || slot >= 16) return;
         if (auto* t=textures_.get(h.id)) [compute_ setTexture:t->tex atIndex:NSUInteger(slot)];
+    }
+    bool bindComputeStorageTexture(int slot,TextureHandle h) override {
+        if (!compute_ || slot < 0 || slot >= 16) {
+            error_ = "Metal: a writable texture requires an active compute encoder and slot 0..15";
+            return false;
+        }
+        const MTTexture* t = textures_.get(h.id);
+        if (!t || !t->tex || !t->storage ||
+            !(t->tex.usage & MTLTextureUsageShaderWrite) ||
+            t->tex.sampleCount > 1 ||
+            !supportsStorageTexture(t->fmt,t->dimension)) {
+            error_ = "Metal: texture was not created for supported compute writes";
+            return false;
+        }
+        [compute_ setTexture:t->tex atIndex:NSUInteger(slot)];
+        return true;
     }
     void setComputeUniforms(const void* data,size_t size) override { if(size<=4096)[compute_ setBytes:data length:size atIndex:8]; }
     void dispatch(uint32_t x,uint32_t y) override {
@@ -496,6 +523,10 @@ public:
         if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
             error_ = textureDescErrorString(e); return {};
         }
+        if (d.storage && !supportsStorageTexture(d.format,d.dimension)) {
+            error_ = "Metal: unsupported writable texture format or dimension";
+            return {};
+        }
         if (d.renderTarget && (d.dimension == TextureDimension::Texture1D ||
                                d.dimension == TextureDimension::Texture3D)) {
             error_ = "Metal: 1D/3D render targets are unsupported";
@@ -559,7 +590,7 @@ public:
         if (d.format == PixelFormat::Depth || d.sampleCount > 1)
             td.storageMode = MTLStorageModePrivate;
         MTTexture t;
-        t.fmt = d.format; t.dimension = d.dimension;
+        t.fmt = d.format; t.dimension = d.dimension; t.storage = d.storage;
         t.tex = [device_ newTextureWithDescriptor:td];
         if (!t.tex) { error_ = "Metal: requested texture type, dimensions or pixel format unavailable"; return {}; }
 
