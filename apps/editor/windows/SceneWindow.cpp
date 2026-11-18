@@ -17,6 +17,7 @@
 #include "../EditorUtil.h"
 #include "../EditorWorldEdit.h"
 #include "../PhysisSceneOverlay.h"
+#include "../PhysisFieldEditor.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/GpuIcbPolicy.h"
 #include "modules/rts/view/RtsRoadView.h"
@@ -195,6 +196,9 @@ public:
                 for (double& value : totals) value = 0.0;
             }
         }
+        // PHYSIS authored markers capture only explicit marker clicks/drags.
+        // Ordinary FPS/RTS/other selection paths remain untouched otherwise.
+        const bool physisMarkerInput = processPhysisFieldGizmo(ed, vp_, ed.sceneCam);
         if(ed.ws().project.isFps()) {
             ImGuiIO& io = ImGui::GetIO();
             const bool navigation = vp_.hovered || (ImGui::IsWindowFocused() && !io.WantTextInput);
@@ -226,7 +230,8 @@ public:
             // FPS previously rendered the shared selection HUD without ever
             // updating the selection. Pick using the same scene model as RTS.
             // During play the inspector stays read-only.
-            if (vp_.hovered && !io.WantTextInput && !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+            if (!physisMarkerInput && vp_.hovered && !io.WantTextInput &&
+                !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
                 const Selection hovered = ed.pickObject(vp_, ed.sceneCam, io.MousePos.x, io.MousePos.y);
                 ed.setHover(hovered);
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
@@ -286,7 +291,7 @@ public:
                     fpsDragLastY_ = io.MousePos.y;
                 }
             }
-            if (fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+            if (!physisMarkerInput && fpsDragActive_ && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
                 (io.MousePos.x != fpsDragLastX_ || io.MousePos.y != fpsDragLastY_)) {
                 if (ed.transformTool != TransformTool::Move && fpsGizmoAxis_ >= 0) {
                     DocumentEntityRef ref;
@@ -373,10 +378,14 @@ public:
                 fpsDragActive_ = false;
                 fpsGizmoAxis_ = -1;
             }
-        } else {if (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_) input(ed);}
+        } else {if (!physisMarkerInput &&
+            (ImGui::IsWindowFocused() || vp_.hovered || looking_ || panning_)) input(ed);}
         // Optional PHYSIS diagnostics project into the actual camera using
         // read-only ECS data. The shared selection HUD remains above the overlay.
         drawPhysisSceneOverlay(ed, vp_, ed.sceneCam);
+        // Authored markers are separate from live simulation: visible even
+        // without PHYSIS installed in the current GameModule.
+        drawPhysisFieldMarkers(ed, vp_, ed.sceneCam);
         // The selection overlay is genre-independent (including FPS).
         hud(ed);
         StudioLuaExtensions::get().drawScene(ed, vp_);
