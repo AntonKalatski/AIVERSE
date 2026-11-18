@@ -160,3 +160,11 @@ HEAD and append; do not force-push or replace their entries.
 - **Verification:** fetched repaired blob from exact source, checked structural invariants before publish (189 lines vs 186 original; exactly one manifest loop, exactly one summary footer, no CR bytes, literal `$'\r'` suffix trim). **Actual Bash -n, Python smoke and macOS full test still NOT RUN**, because no engine checkout is mounted; do not claim success. Test script `tests/test_unified_runner.py` already has Bash syntax and CRLF fixtures to execute locally after pull.
 - **Next:** run `bash -n run-tests.sh` and `python3 tests/test_unified_runner.py` on a real checkout before any full CTest; continue with targeted seven CTest failures. Add root-runner shell syntax validation in CI to prevent recurrence.
 
+
+## Stage 12 — CI gate for unified runner and CRLF fixture (2026-11-18)
+- **Implementation SHA:** `3aca181ca15dcce2b0c4412c3242eb4ce21bc4cf` on shared PR #7, `.github/workflows/ecs-experiments.yml`.
+- **Behavior:** the ECS experimental workflow's Linux/macOS normal and sanitizer jobs now validate `bash -n run-tests.sh` and execute `python3 tests/test_unified_runner.py` before the existing standalone ECS test suite. Pull-request path filters include `run-tests.sh`, `tests/extra-test-suites.txt`, and `tests/test_unified_runner.py`, so editing the single-command runner triggers this guard.
+- **Motivation:** a remote source-edit script accidentally duplicated runner content at Stage 8 (repaired Stage 11). A CI syntax + fake-tool smoke stage should reject this before a user runs the full multi-hour suite.
+- **Verification:** workflow source edit committed, static exact-path checks only. GitHub job is not confirmed completed; local user Mac CI/Bash checks **NOT RUN by this agent**. Do not claim green.
+- **Next:** inspect `ECS 2.0 experimental checks` CI for this SHA and run `bash -n run-tests.sh && python3 tests/test_unified_runner.py` locally; then targeted seven CTest and `./run-tests.sh` full when convenient. Record actual outputs and SHA.
+

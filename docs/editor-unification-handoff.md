@@ -2034,3 +2034,7 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Correct CRLF script edit (source replacement quoting issue)
 - **Code SHA:** `1e98755c81db330781c5e619c5b760746cb3ba97` restored correct `run-tests.sh` after its earlier CRLF patch accidentally duplicated the file suffix because JS `String.replace` interpreted `$'` in the replacement string. This was discovered through source verification and corrected with callback replacement from last good version; no user test ran the malformed version.
 - Structural checks of the published candidate passed, actual native `bash -n` and full tests **NOT RUN**. Next verify `bash -n run-tests.sh` and `python3 tests/test_unified_runner.py` before rerunning targeted CTest.
+
+### 2026-11-18 — CI validates root test runner before ECS suites
+- **Code SHA:** `3aca181ca15dcce2b0c4412c3242eb4ce21bc4cf`. `.github/workflows/ecs-experiments.yml` now runs `bash -n run-tests.sh` and `python3 tests/test_unified_runner.py` on macOS/Linux, with pull-request triggers for root runner, extras manifest and smoke fixture.
+- **Actual CI results not yet known**; the change prevents repeating earlier source-edit corruption. Full handoff in `docs/agent-handoffs/unified-test-runner.md`.
