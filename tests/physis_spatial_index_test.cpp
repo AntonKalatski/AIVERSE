@@ -130,6 +130,81 @@ void parityAndSnapshots() {
     CHECK(rebuilt.windAt(compare) == aiverse::physis::windAt(world,compare));
 }
 
+void totalReferenceBudgetAndParity() {
+    World world;
+    Settings settings;
+    settings.originX = -5;
+    settings.originZ = -5;
+    settings.width = 10;
+    settings.height = 10;
+    initialize(world, settings);
+
+    // Many individually tiny fields: each is under the old per-volume cap,
+    // but together they previously allocated unbounded bucket references.
+    for (int i = 0; i < 200; ++i) {
+        WindZone w;
+        w.center = {Fixed::fromInt((i % 20 - 10) * 35), 0_fx,
+                    Fixed::fromInt((i / 20 - 5) * 35)};
+        w.radiusMeters = 45_fx;
+        w.velocity = {Fixed::fromInt(i % 4 - 2), 0_fx, 1_fx};
+        world.add<WindZone>(world.create(), w);
+        WindShelter shelter;
+        shelter.center = w.center;
+        shelter.radiusMeters = w.radiusMeters;
+        shelter.attenuation = Fixed::fromRatio(1, 10);
+        world.add<WindShelter>(world.create(), shelter);
+        GravityField gravity;
+        gravity.center = w.center;
+        gravity.radiusMeters = w.radiusMeters;
+        gravity.acceleration = {0_fx, Fixed::fromRatio(i % 5, 10), 0_fx};
+        world.add<GravityField>(world.create(), gravity);
+        StormEvent storm;
+        storm.center = w.center;
+        storm.eyeRadiusMeters = 4_fx;
+        storm.outerRadiusMeters = 45_fx;
+        storm.heightMeters = 50_fx;
+        storm.tangentialWind = 2_fx;
+        world.add<StormEvent>(world.create(), storm);
+    }
+    constexpr std::uint32_t budget = 8;
+    FieldIndexSettings config;
+    config.tileSizeMeters = 25;
+    config.maxTilesPerVolume = 1024;
+    config.maxTotalBucketReferences = budget;
+    FieldSpatialIndex index(world, config);
+    const auto stats = index.stats();
+    CHECK(stats.windZones == 200);
+    CHECK(stats.shelters == 200);
+    CHECK(stats.gravityFields == 200);
+    CHECK(stats.storms == 200);
+    // Four independent typed tables, each with its own total budget.
+    CHECK(stats.bucketReferences <= budget * 4);
+    CHECK(stats.globalReferences > 0);
+
+    for (int z = -300; z <= 300; z += 75)
+        for (int x = -300; x <= 300; x += 75) {
+            const Vec3 pos{Fixed::fromInt(x), 0_fx, Fixed::fromInt(z)};
+            CHECK(index.windAt(pos) == aiverse::physis::windAt(world, pos));
+            CHECK(index.gravityAt(pos) == aiverse::physis::gravityAt(world, pos));
+            const auto slowStorm = aiverse::physis::stormsAt(world, pos, 0);
+            const auto fastStorm = index.stormsAt(pos);
+            CHECK(slowStorm.wind == fastStorm.wind);
+            CHECK(slowStorm.precipitationBoost == fastStorm.precipitationBoost);
+            CHECK(slowStorm.pressureOffset == fastStorm.pressureOffset);
+            CHECK(index.windWithStormsAt(pos) ==
+                  aiverse::physis::windWithStormsAt(world, pos));
+        }
+
+    bool rejected = false;
+    try { FieldSpatialIndex invalid(world, {.maxTotalBucketReferences = 0}); }
+    catch (const std::invalid_argument&) { rejected = true; }
+    CHECK(rejected);
+    rejected = false;
+    try { FieldSpatialIndex invalid(world, {.maxTotalBucketReferences = 1048577}); }
+    catch (const std::invalid_argument&) { rejected = true; }
+    CHECK(rejected);
+}
+
 void invalidConfigurationAndRebuild() {
     World world;
     Settings s;
@@ -160,6 +235,7 @@ void invalidConfigurationAndRebuild() {
 int main() {
     parityAndSnapshots();
     invalidConfigurationAndRebuild();
+    totalReferenceBudgetAndParity();
     std::printf("PHYSIS SpatialIndex: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
