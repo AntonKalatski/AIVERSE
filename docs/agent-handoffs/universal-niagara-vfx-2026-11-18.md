@@ -1245,3 +1245,86 @@ The CPU particle renderer previously populated the existing 40-byte `Vertex::gra
 3. Full cross-platform GPU expression bytecode/kernel lowering and per-instance GPU parameter streams are unfinished. Any new GPU VM must have strict compile-time capability validation and a safe CPU fallback, and must not introduce genre dependencies or renderer state in authoritative ECS.
 4. **Next bounded functional Stage 22:** implement an optional GPU-compatible expression subset for the Metal backend (read-only param inputs, finite arithmetic, supported spawn/update scalar targets) with conservative rejection for unsupported stages/nodes; avoid enabling by default. Continue native editor, runtime settings, material integration and final feature parity before running the user-deferred test suite.
 5. Every new implementation stage must append a **separate handoff commit** to this living file, preserving other concurrent agents' entries and including exact SHA and what was/not actually tested.
+
+## Stage 22 — opt-in Metal particle VM interpreter and per-particle parameter buffers (CODE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** move beyond Stage-21's CPU-only scalar particle VM by actually executing a strictly bounded Spawn/Update subset in Metal compute, retaining the existing 64-byte GPU particle state and preserving every unsupported effect on the complete CPU backend. The user explicitly requested functional work first and testing later. No FPS/RTS genre dependency, authoritative ECS writes or forced production GPU activation.
+
+### Source commits and files (exact)
+
+| Commit | File | Implementation |
+|---|---|---|
+| `9e9ce2a2ec0d383fe2d7e22a25fb3ec7cb7234b6` | `engine/fx/SpectraGpuProgram.h` | Added `gpu_program::prepareForMetal()`: strict executable budget/entire-program capability gate on the pre-existing fixed GPU payload |
+| `662ef76397958c34800e8015fbbb6f7054ce41db` | `engine/fx/SpectraGpuShaders.h` | New MSL bounded stack interpreter (`vmRead/vmWrite/vmEvaluate/vmRun`) and Spawn/Update GPU hooks; program and param buffer bindings |
+| `e72b3c99d2b726afc87bf5a729c084ef1dace73f` | `engine/fx/SpectraGpuParticles.h` | Opt-in `ComputeEmitterDesc::gpuProgram`, complete particleProgram JSON, typed parameter GPU buffers and `setProgramParameter` |
+| `f3de3a5fdfb3a4c3f837ee4d867f3f1b4360eb30` | `engine/fx/SpectraGpuParticles.cpp` | Strict Metal VM eligibility at init; reject GPU when disabled/incompatible; preserve complete VM in CPU fallback |
+| `db90ddd3e514525be38689c9a4f117c97e355331` | `engine/fx/SpectraGpuParticles.cpp` | Persistent buffers for the 10,256-byte program ABI and 32-byte per-slot seed/live program parameters; allocation, disposal, resource budgets and clear path |
+| `f477ff9f9a16cb75bf84fb4319b9295a692c30d5` | `engine/fx/SpectraGpuParticles.cpp` | Snapshot params on birth; upload param state before compute; RHI slots 7,9,10; pass through bounded VM on Spawn/Update; existing-parameter updates and CPU fallback parity hooks |
+| `a70f8787772d23ea5d90a2888f66da9ac58c1413` | `engine/fx/SpectraGraphRuntime.h` | Public `GraphRuntimeOptions::gpuProgram` default-off opt-in |
+| `311cd845e01dac2df6b579910f2a32f3879f3cc4` | `engine/fx/SpectraGraphRuntime.cpp` | Whole-effect GPU VM source validation/dispatch, program serialization equality, per-source named parameter forwarding, CPU fallback |
+| `03cff21fe53f370cc08da4c2b45ddb46551bcd64` | `engine/fx/SpectraGraphRuntime.cpp` | Correctly handle named schemas without a GPU-executable particle program |
+| `de15d2424eb7c5c3f4a815b6a772eb4e79e36f47` | `examples/spectrafx/gpu_vm_lift_v2.vfx.json` | Example: v2 named lift parameter, runtime age expression, per-particle Spawn/Update rise and fade |
+| `9da635ad1f241c8d3b3472dde00f1d3ac71ac264` | `engine/fx/SpectraGpuProgram.h` | Compile-time ABI assertions for fixed enum values and payload sizes |
+| `de86610baccd2eba208fb6cee9becc9344ca7489` | `engine/fx/SpectraGpuParticles.cpp` | Cleanup tracked CPU fallback handles during clear |
+| `260f4fee6c131ffa433844f9c4a6d8f199fc5042` | `apps/editor/core/SpectraGraphOps.cpp` | MCP compile diagnostics: `metalVmEligible`, `metalVmReason` separately from legacy GPU compatibility |
+| `f2f9581fc8ff8b883fe0e16ede03886ed388bcfb` | `apps/editor/windows/SpectraGraphWindow.cpp` | Graph editor shows opt-in GPU VM compatibility and CPU fallback reason |
+| `c7af921aac784af9b8a3712c0e18b0c75619157d` | `docs/spectrafx.md` | Public Stage-22 implementation/API/platform/safety/validation documentation |
+| `d4a772c661807788fcfdf8f77806dbf693121627` | `skills/visuals/aiverse-spectrafx/SKILL.md` | AI agent usage instructions and strict GPU subset |
+| `a4cfaa43ac22948281cf9b3dd989e209715634ee` | `AGENTS.md` | Multi-agent handoff and tests-deferred safety contract |
+
+**Concurrent work:** another agent previously added `SpectraGpuProgram.h` with `gpu_program::Payload` and a nonexecuting `prepare()` stage. Stage 22 **extends** that existing ABI; do not duplicate its compiler or misstate the original payload definition as newly introduced by this stage.
+
+### Public API, CPU/GPU semantics and compatibility
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::GraphRuntimeOptions opts;
+opts.preference = aiverse::spectra::ComputePreference::Automatic;
+opts.gpuProgram = true;              // experimental, default FALSE
+opts.gpuIndirect = false;            // independent opt-in from Stage 14
+
+aiverse::spectra::GraphRuntime fx;
+if (!fx.initGraph(device, graphJson, aiverse::Json::object(), opts)) {
+    // fx.reason() / fx.errors()
+}
+fx.setNamedProgramParameter("lift",3.0f);       // future births
+fx.burstAt({0,2,0},{0,1,0});
+fx.setNamedProgramParameter("lift",5.0f,true);  // also live particles
+// Per presentation frame: Device beginFrame; fx.step before scene render pass;
+// fx.draw inside scene pass; endPass/endFrame. Release before device teardown.
+```
+
+The existing Stage-22 CPU GPU-payload gate now validates the entire `particleProgram` and rejects unsupported stages. Executable MSL reads a bounded, fixed-layout `gpu_program::Payload` stored on GPU, without shader code generation or CPU JSON interpretation at every particle update. Only Spawn/Update stages with <=24 statements, <=192 total instructions and <=48 instructions per statement are accepted. Supported reads: age, ageNormalized, dt, world xyz position, xyz velocity, size, tint rgba, and param0..7. Supported writes: position xyz, velocity xyz, size, tint rgba. Supported ops: numeric constants, field read, add/subtract/multiply, min/max, abs/negate/saturate, clamp, lerp. Supported actions: set, add, addRate, multiply. Nonfinite / out-of-range intermediate and output values are skipped, size/tint remain bounded.
+
+Unsupported: custom attribute0..7 registers, rotation, uid, death/collision/trigger program stages, comparisons, conditional Select, division/pow/sqrt/trigonometric expressions, any other shaderGraph/material plugins, particle events, force fields, multiple emitters, ribbons/meshes, arbitrary graph stages. The normal strict whole-effect JSON equality gate remains active; a program alone does **not** grant eligibility. `RequireGpu` refuses semantic loss; `Automatic`/`PreferGpu` retain the complete original CPU effect. Legacy Graph v1 and ordinary effects remain unchanged. `gpuProgram` stays disabled unless native caller explicitly enables it.
+
+On Metal, the VM is fixed ABI version 1 and uses extra RHI storage buffer slots: **7** = spawn-time 32-byte `VmParams` (two float4), **9** = persistent per-physical-particle 32-byte `VmParams` state, **10** = validated 10,256-byte program payload; **8** remains the existing per-frame uniforms. Per-particle GPU position/velocity remain in the original 64-byte particle state; vertex layout remains 40 bytes. GPU snapshot params are captured before Spawn and carried into every Update. For `affectExisting=true`, presentation CPU tracks only lifespan/slot identity, modifies its parameter snapshots and uploads state to GPU at the next safe compute step; it does **not** read positions from the GPU. Both Stage 13 host-gather and Stage 14 GPU-indirect draw paths use the same Spawn/Update VM.
+
+`GraphRuntime::initGraph` allows named v2 `instanceParameters` on GPU only if `gpuProgram` is enabled AND an actual particleProgram exists; otherwise it explicitly selects full CPU or rejects `RequireGpu`. Raw and named parameter setters route to the actual CPU or Metal wrapper, without changing authoritative ECS data. The MCP/editor `metalVmEligible` and `metalVmReason` fields diagnose **asset compatibility only**, not real hardware availability. Editor preview remains CPU.
+
+### Verification status — tests explicitly deferred
+
+**NOT RUN:** no local build, CTest, Metal MSL shader compiler/real-device render, shader readback, editor GUI interaction, benchmark or native genre-client integration test was run in this stage, following the user's explicit instruction to finish functions first. GitHub file updates and SHA observations were performed. Compile-time ABI assertions are **written**, not compiler-confirmed. No test outcome may be claimed PASS. The prior handoff documented queued/cancelled CI for previous feature commits; do not reuse old statuses as Stage-22 validation evidence.
+
+Later validation commands:
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_graph_tests aiverse_vfx_shared_batch_tests aiverse_vfx_cue_scheduler_tests aiverse_editor aiverse_vfx_metal_smoke -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+On Apple Silicon specifically compare GPU/CPU Spawn+Update math, per-instance default/change, >1 independent source with same graph but different `lift`, direct versus indirect draw, shader payload layout/slot limits, full CPU fallback for forbidden ops, clear/reinit/device-loss and MSL compile errors. Existing macOS smoke has no GPU VM cases yet; extend it when tests are scheduled, and add numerical/visual parity screenshots and GPU timings.
+
+### Known limitations and next FUNCTIONAL stage
+
+1. Stage-22 GPU VM is **experimental source code, not validated** on a real Metal device. Large fixed payload and two 32-byte-per-slot buffers increase GPU memory/bandwidth compared with the earlier simple billboard path; evaluate performance during the postponed QA phase before enabling in production.
+2. The GPU interpreter does not store `attribute0..7`, render arbitrary CPU custom graphInputs/material shader graphs, execute collision/death/trigger event programs, or handle GPU-born subemitters. Unsupported effects MUST retain full CPU.
+3. Only Metal has this GPU VM implementation. The checked-in future GLSL compute source does NOT yet implement the VM; Vulkan/GL/GLES/WebGL fallback to CPU. Preserve this contract.
+4. Multiple advanced effects still use separate `ComputeParticles` resources. A genre-neutral GPU shared emitter pool, richer simulation/render modules, cross-material sorting/soft particles and native production integrations remain functional work.
+5. **Next bounded Stage 23:** add a GPU custom particle attribute storage extension plus input/output mappings for selected VM variables, then expand Metal GPU eligibility one feature at a time while retaining strict CPU fallback. Alternatively, implement multi-emitter GPU pooling and editor authoring of performance tiers. Keep it opt-in. The user wants **functions first; tests later**. Append a separate handoff commit after every next implementation stage in this same file.
