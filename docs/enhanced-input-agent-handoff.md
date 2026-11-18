@@ -165,3 +165,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Validation:** GitHub source updates only; no compiler/CTest results. Verify ImGui named key enum range and project asset backup/rename path with Clang/macOS, GCC/Linux and MSVC/Windows. Ensure Input Actions window works with FPS and RTS; remapping F5 must not begin Play. The editor does not generate complete FPS defaults automatically, so users must build the full scheme when creating an asset.
 
 **Next agent:** migrate the common RTS client hotkeys to semantic actions, preserve `scriptCommandKey`/control groups/hosted view UI handling, add focused tests and run full CTest/CI before marking complete. Update this handoff after Stage 8.
+
+## Stage 8 — RTS semantic shortcut migration (2026-11-18)
+
+**Code:** `apps/client/ClientInputRouting.h` defines default semantic Actions `AttackMove`, `Patrol`, `Repair`, `Reclaim`, `Stop`, `Hold`, `FocusCamera` under Mapping Context `RTS.Gameplay`. The handler accepts platform KeyDown/KeyUp only, raises `Triggered` events, and immediately cancels held state when RmlUi/modal/text/paused UI captures input, or on focus loss. `GameClient::event` now consumes those semantic actions instead of hardcoded A/P/R/E/S/H/Space, preserving `scriptCommandKey` precedence and the existing command implementations. `GameClient::initStep(0)` optionally loads a full project-authored `input/actions.json` into that same local input system, falling back to defaults on a parse/config error. Core simulation, FPS network input and RTS Command wire formats are unchanged. Control groups, selection pointer gestures, WASD camera scrolling and other specialized client inputs remain on their current paths for compatibility.
+
+**Files:** `apps/client/ClientInputRouting.h`, `apps/client/GameClient.h`, `apps/client/GameClient.cpp`, `tests/libraries/enhanced_rts_input_tests.cpp`, `tests/libraries/CMakeLists.txt`, `docs/enhanced-input.md`, this handoff.
+
+**Test cases added:** pressed-only RTS actions, KeyUp and hold/repeat, UI modal/focus cancel and higher-priority context overriding a shortcut. Full build/CTest still pending, and a real RTS example should verify script keys, ctrl groups and hosted-client input.
+
+**Next agent:** complete default camera/mouse action migration where it is safe, add user-facing rebinding profile UI (separate from authored assets), and verify compiler, CTest, macOS hosted FPS/RTS and other platforms. Never claim end-to-end validation from source-level review.
