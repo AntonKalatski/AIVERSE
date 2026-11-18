@@ -1446,3 +1446,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `tests/fps/projectiles.inc`: extracted `ecsProjectileProgramStageParityCase(bool cow)`; the `ecsProjectileProgramStageParity` entrypoint now tests both default deep snapshots and explicit ECS COW snapshots. Both validate tick-by-tick default-versus-`ecsAuthority` programmed projectile state/health, v9 cross-load and replay restore.
 - **Verification:** source committed only; native compile, FPS CTest, COW and platform parity **not run**. COW enablement uses supported `World::enableCowSnapshots` API.
 - **Next:** native compile/CTest and transport/Editor regression; resolve any differences before replacing `fps.compat.projectilePrograms` workspace with direct `ProjectileRuntime` ECS iteration.
+
+
+### 2026-11-18 — Engine-wide ECS migration plan checkpoint
+- Documentation SHA: `c05d2c4856216d6d372cf98e77290a0503b20a75`.
+- Updated `docs/ecs-all-features-migration-plan.md` with current real FPS common HP primitive adoption, versioned `DamageQueue` byte/hash API, test coverage and explicit non-completeness of actual per-feature ECS health authority.
+- Verification: source documentation only, no native build result.
