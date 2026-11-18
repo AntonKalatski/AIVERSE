@@ -4545,3 +4545,46 @@ the native texture agent skill, and connect the decoder to
 the regular device readTextureAsync call in an opt-in
 owner-thread helper with safe callback ownership. Do not
 merge without actual Metal/GL/Vulkan shader and CTest checks.
+
+## Stage 7AC — async GPU feedback-to-disk prefetch runtime facade (2026-11-18)
+
+Code commit: 8bef3d8085bbb327818f3123d1dc847fea34c0e2.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+New file: engine/gfx/VirtualTextureFeedbackRuntime.h.
+
+Implementation: Header-only VirtualTextureFeedbackRuntime composes
+the Stage 7AA RGBA8 page feedback decoder, Stage 7V CPU UV
+prefetch planner and Stage 7X disk-backed request adapter.
+initialize(Device&,feedbackConfig,prefetchConfig) validates
+consistent virtual tile geometry and bounded decoder budgets.
+capture(TextureHandle,TextureReadbackDesc) only requests the
+existing optional asynchronous RHI readback, outside encoders.
+The callback owns a weak_ptr to shared decoder state, never
+captures the helper's this pointer, and can safely be dropped
+after shutdown. A second capture is refused while the prior
+request is pending or its decoded result awaits consumption.
+submit(VirtualTextureFileStreamer&) sends decoded visible tile
+requests to the normal disk staging queue on its owner thread;
+the caller independently invokes streamer.pump() to issue GPU
+uploads and publish page-table mappings.
+
+Explicit limits: app must render a linear non-sRGB RGBA8 feedback
+texture with shader IDs and no blending/tone mapping. No
+implicit camera pass, scene shader insertion or GPU compute
+feedback pipeline is created. RHI backends still require
+actual asynchronous readback support. There is no blocking
+GPU wait or cross-thread Device call in this facade.
+
+Compatibility: Pure optional native header, no change to Device
+virtual API, ECS authority, save schema, network, gameplay
+or existing backend render paths.
+
+Actual verification: GitHub file commit succeeded.
+C++ compiler NOT RUN; CTest NOT RUN; real asynchronous
+Metal/GL/Vulkan feedback rendering/readback NOT RUN.
+
+Next: Add a CPU/mock RHI test that simulates deferred completion,
+device refusal, second-pending capture, shutdown with a stale
+callback, and visibility submission to the file streamer.
+Update native texture skill/AGENTS.md, and keep PR #21 Draft
+until full native verification.
