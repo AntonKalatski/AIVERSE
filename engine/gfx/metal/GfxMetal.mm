@@ -1302,6 +1302,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [enc_ setRenderPipelineState:pipeline->state];
         return true;
     }
+    bool supportsGpuAuthoredIndirectDraw() const override {
+        // This is the plain Metal indirect-buffer path, not GPU-encoded ICB.
+        // No unstable ICB feature flags or render-pass inheritance required.
+        return supportsCompute();
+    }
     bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) override {
         if (!enc_ || !pipelines_.get(pipelineId_) || !buffers_.get(ibId_)) return false;
         auto* args = buffers_.get(arguments.id);
