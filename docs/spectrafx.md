@@ -192,6 +192,54 @@ module UI. Source-level smoke coverage was added to
 drag/link interactions and GPU screenshots are **NOT RUN** in the
 connector-backed development environment. Manual QA is required.
 
+## Typed module properties (stage 9 — source committed, not yet build-verified)
+
+`engine/fx/SpectraModuleSchema.h` provides a **headless, genre-neutral**
+catalog for common graph-v1 fields. The canonical public header
+`engine/fx/SpectraFX.h` includes it so native projects and the editor use
+the same types and value bounds.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::Json node = aiverse::Json::parse(
+    R"({"id":"emitter","type":"Spawn","properties":{"burst":8}})");
+std::string error;
+bool changed = aiverse::spectra::applyTypedField(
+    node, "burst", aiverse::Json::number(int64_t(24)), error);
+// Also available: fieldsForNode("Spawn"), fieldForNode(...),
+// validateTypedField(...), removeTypedField(...).
+```
+
+The **SpectraFX** visual window now has **Типизированные модули** above
+**Расширенные свойства (JSON)**. The typed inspector supports number,
+integer, boolean, string, choice and 3-component vector properties. Its
+catalog currently includes:
+
+| Stage | Common fields |
+|---|---|
+| Spawn | `burst`, `rate`, `perMeter`, `delay`, `duration`, `loop` |
+| Initialize | `life`, `speed`, `size`, `direction`, `spread`, `shape`, `radius`, `gravity` |
+| Update | `drag`, `spin`, `rotation`, `speedLimit`, `stretch`, `velocity`, `hidden` |
+| SpriteOutput | `texture`, `blend`, `align`, `fps` |
+| MeshOutput | `blend`, `align` |
+| RibbonOutput | `hidden` |
+
+All typed field operations are **opt-in edits**. Validation rejects wrong
+types, invalid enum choices and values outside declared ranges without
+mutating the source node. The inspector does not coerce a MinMaxCurve,
+range-array, colour gradient, mesh list or nested effect module into a
+scalar: such fields remain intact and must be edited via advanced JSON or
+the existing particle module tools. Unknown properties are always
+preserved when updating one typed field. The graph compiler
+(`parseEffect`) remains the final validation authority.
+
+This is authoring metadata only, not an executable GPU node program.
+These changes require **native build and GUI verification**; source
+commits and added tests do not prove a passing editor build.
+`tests/vfx_graph_compiler_test.cpp` contains schema/compile-contract
+checks on top of the preexisting SpectraFX CTest target.
+
 ## Validation checklist
 
 ```bash
