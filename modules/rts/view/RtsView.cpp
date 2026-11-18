@@ -243,7 +243,19 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
     const RtsScene& s=hierarchy?resolved:input;
     fx_ = s.entityFx.get();   // view.entity_fx
-    if (planets_.active()) { drawPlanets(r, s, time, vision, grid); return; }   // RtsPlanetView.cpp
+    if (planets_.active()) {
+        // Planet geometry is a host-owned provider of the same generic
+        // View layer pipeline, not a special mode inside engine View.
+        ::aiverse::view::ViewLayerProviders providers;
+        providers.add("planet scene",[&](auto& q,const auto&){
+            q.append("planet scene",::aiverse::view::LayerPhase::Geometry,
+                [&]{drawPlanets(r,s,time,vision,grid);});
+        });
+        ::aiverse::view::ViewLayerQueue passes;
+        providers.collect(passes,{time,0.f,frame_});
+        passes.flush();
+        return;
+    }
     animationObstacles_.clear();
     bool contacts = fx_ && !fx_->animations.empty();
     if (!contacts) {
@@ -566,27 +578,57 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     }
 
     const auto afterAnimations = std::chrono::steady_clock::now();
-    // grid fields (RtsFieldView): overlays under the fog sheet
-    if (!s.fields.empty() && s.fieldDefs) {
-        if (fieldDefsSeen_ != s.fieldDefs || fieldDefsCount_ != s.fieldDefs->size()) {
-            fieldView_.setFields(*s.fieldDefs);
-            fieldDefsSeen_ = s.fieldDefs; fieldDefsCount_ = s.fieldDefs->size();
-        }
-        const bool lowFields = r.materialQuality() == MaterialQuality::Low || r.shadowQuality() == ShadowQuality::Off;
-        fieldView_.draw(r, s.fields, vision, grid, *this, time, lowFields, s.viewer);
-    }
-    // fog of war (RtsFog): faded, blurred field; a sheet draped over the ground, or the terrain shader
-    // on heightfield maps (a sheet would cut the relief)
-    if (vision && !vision->empty()) {
-        if (fogMeshDirty_ && dev_) { fog_.build(*dev_, grid.w, grid.h, [&](float x, float z) { return heightAt(grid, x, z); }); fogMeshDirty_ = false; }
-        const bool changed = fog_.update(*vision, grid.w, grid.h, time);
-        const bool low = r.shadowQuality() == ShadowQuality::Off || r.shadowQuality() == ShadowQuality::Low;
-        if (hasTerrain_ && !tiles && terrain_.shaderFog()) terrain_.setFog(&fog_.field(), fog_.look(), changed);
-        else fog_.draw(r, time, low);
-    }
-    lights_.draw(r, s, time, vision, grid, *this);
-    // selection / hover rings, move markers, placement footprint and game overlays (after the fog sheet)
-    overlays_.drawWorld(r, s, time, vision, grid, *this);
+    // Game-owned providers for visibility, field markers and scene
+    // decoration. The engine View only schedules opaque ordered passes.
+    ::aiverse::view::ViewLayerProviders viewProviders;
+    viewProviders.add("field visuals",[&](auto& q,const auto&){
+        q.append("world fields",LayerPhase::Effects,[&]{
+            if (!s.fields.empty() && s.fieldDefs) {
+                if (fieldDefsSeen_ != s.fieldDefs ||
+                    fieldDefsCount_ != s.fieldDefs->size()) {
+                    fieldView_.setFields(*s.fieldDefs);
+                    fieldDefsSeen_=s.fieldDefs;
+                    fieldDefsCount_=s.fieldDefs->size();
+                }
+                const bool lowFields =
+                    r.materialQuality()==MaterialQuality::Low ||
+                    r.shadowQuality()==ShadowQuality::Off;
+                fieldView_.draw(r,s.fields,vision,grid,*this,time,
+                                lowFields,s.viewer);
+            }
+        });
+    });
+    viewProviders.add("visibility surface",[&](auto& q,const auto&){
+        q.append("visibility surface",LayerPhase::Effects,[&]{
+            if(vision && !vision->empty()) {
+                if(fogMeshDirty_ && dev_) {
+                    fog_.build(*dev_,grid.w,grid.h,[&](float x,float z) {
+                        return heightAt(grid,x,z);
+                    });
+                    fogMeshDirty_=false;
+                }
+                const bool changed=fog_.update(*vision,grid.w,grid.h,time);
+                const bool low=r.shadowQuality()==ShadowQuality::Off ||
+                    r.shadowQuality()==ShadowQuality::Low;
+                if(hasTerrain_ && !tiles && terrain_.shaderFog())
+                    terrain_.setFog(&fog_.field(),fog_.look(),changed);
+                else fog_.draw(r,time,low);
+            }
+        });
+    });
+    viewProviders.add("scene illumination",[&](auto& q,const auto&){
+        q.append("scene illumination",LayerPhase::Effects,[&]{
+            lights_.draw(r,s,time,vision,grid,*this);
+        });
+    });
+    viewProviders.add("world indicators",[&](auto& q,const auto&){
+        q.append("world indicators",LayerPhase::Overlay,[&]{
+            overlays_.drawWorld(r,s,time,vision,grid,*this);
+        });
+    });
+    ::aiverse::view::ViewLayerQueue latePasses;
+    viewProviders.collect(latePasses,{time,dt,frame_});
+    latePasses.flush();
     if (traceView) {
         static unsigned samples = 0;
         static double totals[5] = {};
