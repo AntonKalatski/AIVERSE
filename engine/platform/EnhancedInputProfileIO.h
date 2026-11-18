@@ -1,7 +1,7 @@
 // Validated, crash-conscious user-profile persistence for Enhanced Input.
 // Host/presentation only. Never call from deterministic ECS systems.
 #pragma once
-#include "EnhancedInputConfig.h"
+#include "EnhancedInputFileIO.h"
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -33,50 +33,15 @@ inline bool loadProfileFile(const std::filesystem::path& file,Profile& out,std::
     }
 }
 
-// The temporary file is fully written and validated before an existing profile is touched.
-// POSIX rename replaces atomically. On Windows, rename-to-backup is used if replacement fails.
-// On any write failure, the caller's in-memory binding must remain unchanged.
+// Profile serialization shares the same validated atomic/backup file writer as project assets.
 inline bool saveProfileFile(const std::filesystem::path& file,const Profile& profile,std::string* error=nullptr) {
-    Profile valid;
-    if(!readProfile(writeProfile(profile),valid,error))return false;
-    std::error_code ec;
-    if(!file.parent_path().empty()) {
-        std::filesystem::create_directories(file.parent_path(),ec);
-        if(ec)return detail::ioError(error,"profile directory",ec);
+    try {
+        const Json serialized=writeProfile(profile);
+        Profile checked;
+        if(!readProfile(serialized,checked,error))return false;
+        return detail::saveValidatedJsonFile(file,serialized,error);
+    } catch(const std::exception& e) {
+        return detail::inputFileError(error,e.what());
     }
-    const auto temp=std::filesystem::path(file.string()+".tmp");
-    const auto backup=std::filesystem::path(file.string()+".bak");
-    {
-        std::ofstream stream(temp,std::ios::binary|std::ios::trunc);
-        if(!stream){if(error)*error="cannot open temporary profile";return false;}
-        stream<<writeProfile(valid).dump(2)<<'\n';
-        stream.flush();
-        if(!stream){if(error)*error="cannot write temporary profile";return false;}
-        stream.close();
-        if(!stream){if(error)*error="cannot close temporary profile";return false;}
-    }
-    std::filesystem::rename(temp,file,ec);
-    if(!ec)return true;
-    // Windows does not rename over an existing destination. Do not delete the
-    // existing profile first; move it to a backup and restore it if commit fails.
-    ec.clear();
-    const bool original=std::filesystem::exists(file,ec);
-    if(ec)return detail::ioError(error,"profile existence",ec);
-    if(!original){if(error)*error="cannot commit temporary profile";return false;}
-    std::filesystem::remove(backup,ec);
-    if(ec)return detail::ioError(error,"profile backup cleanup",ec);
-    std::filesystem::rename(file,backup,ec);
-    if(ec)return detail::ioError(error,"profile backup",ec);
-    std::filesystem::rename(temp,file,ec);
-    if(ec) {
-        const auto writeError=ec;
-        std::error_code restored;
-        std::filesystem::rename(backup,file,restored);
-        if(error)*error=std::string("profile commit: ")+writeError.message()+
-                          (restored?" (also failed to restore backup: "+restored.message()+")":"");
-        return false;
-    }
-    std::filesystem::remove(backup,ec); // profile committed; a stale backup is harmless
-    return true;
 }
 } // namespace aiverse::platform::enhanced_config
