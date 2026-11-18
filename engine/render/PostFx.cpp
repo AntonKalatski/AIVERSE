@@ -145,25 +145,8 @@ void PostFx::configure(const Json& game, const Json& map, std::vector<std::strin
 void PostFx::setSettings(PostFxSettings s) { settings_ = std::move(s); error_.clear(); }
 
 void PostFx::setUnderwater(PostFxUnderwater target,float deltaSeconds) {
-    const float dt=std::isfinite(deltaSeconds)?
-        std::clamp(deltaSeconds,0.f,0.25f):0.f;
-    const float alpha=1.f-std::exp(-dt*6.f);
-    auto smooth=[alpha](float& v,float goal){v+=alpha*(goal-v);};
-    auto finite=[](float v,float lo,float hi) {
-        return std::isfinite(v)?std::clamp(v,lo,hi):lo;
-    };
-    smooth(underwater_.blend,target.submerged?1.f:0.f);
-    if(target.submerged) {
-        smooth(underwater_.tintR,finite(target.tintR,0.f,1.f));
-        smooth(underwater_.tintG,finite(target.tintG,0.f,1.f));
-        smooth(underwater_.tintB,finite(target.tintB,0.f,1.f));
-        smooth(underwater_.absorption,finite(target.absorption,0.f,4.f));
-        smooth(underwater_.depthMetres,finite(target.depthMetres,0.f,10000.f));
-    }
-    if(underwater_.blend<0.0001f && !target.submerged)
-        underwater_={};
+    underwater_=advancePostFxUnderwater(underwater_,target,deltaSeconds);
 }
-
 
 bool PostFx::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PostFxQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
