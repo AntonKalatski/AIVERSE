@@ -1778,3 +1778,45 @@ before calling this stage validated.
   adding any genre conditionals to core View.
   Commit code first, then Stage 61 handoff separately.
 
+## Stage 61 — FPS world primitives through ordered View packet batch (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22 targeting `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `4224ff3bb404820ff8300714566cf8690a4a6cd5`.
+- **Changed code/docs:** `apps/fps/client.cpp`,
+  `docs/fps.md`.
+- **Host integration:** the reference FPS client now accumulates
+  generic `view::MeshObject` records in a
+  `view::ScenePacketBatch` for its existing loot,
+  vehicles, projectile and planted-object boxes.
+  `View::submitPackets` sends these records to the
+  same Renderer3D mesh path. A synchronous flush/
+  clear occurs **before** the pre-existing battle-zone
+  wall pass; a second flush sends the crate meshes
+  after that pass, retaining original drawing order.
+- **Architecture:** FPS host code alone translates
+  server snapshots and gameplay classifications into
+  color/transform/size. Shared View receives only
+  model/mesh data, with no game/genre fields. The
+  same batch API applies to any other host.
+- **Compatibility:** no change to scene positions,
+  material flags, graphics pipelines, authoritative
+  simulation, network protocol or save format.
+  Existing cube/model fallbacks remain unchanged.
+- **Tests:** all builds, CTest, GPU screenshots, TSAN
+  and actual FPS playthroughs are **NOT RUN**,
+  per user request. Existing `view_scene_packets`
+  fixture is also deferred.
+- **Known limits:** packet batching here reduces
+  front-end submission glue, not necessarily GPU
+  draw calls; Renderer3D still owns GPU batching.
+  World packet data borrows `cube` and is flushed
+  before renderer pass completion.
+- **Next:** create a generic reusable surface/layer
+  **resource** contract (not RTS terrain rules)
+  and let legacy host modules attach terrain/
+  fog/road/planet visuals as independent providers
+  to a View composition frame. Avoid copying
+  gameplay-specific map data into engine/view.
+  Code commit, then Stage 62 handoff.
+
