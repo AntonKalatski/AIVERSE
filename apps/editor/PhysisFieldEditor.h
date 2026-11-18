@@ -31,6 +31,12 @@ struct PhysisFieldEditorState {
     bool show3DAxes = true;
     int dragAxis = -1;
     double dragAxisStart = 0.0;
+    int dragTransform = 0; // 0 no, 2 yaw, 3 scale
+    Json dragBaseline;
+    physis_authoring::FieldPivot dragTransformPivot{};
+    double dragRingInitialAngle = 0;
+    double dragRingInitialRadius = 1;
+    std::uint64_t dragKnownRevision = 0;
     bool boxSelectEnabled = false;
     bool boxSelecting = false;
     bool boxAdditive = false;
@@ -79,6 +85,8 @@ inline void setPhysisFieldSelection(std::vector<std::string> ids) {
     state.dragEdited = false;
     state.dragOriginal.clear();
     state.dragAxis=-1;
+    state.dragTransform=0;
+    state.dragBaseline=Json{};
 }
 
 // Ctrl/Shift toggles membership; a plain selection replaces it.
@@ -280,6 +288,32 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
             }
         }
     }
+    if ((state.gizmoMode==2 || state.gizmoMode==3) &&
+        state.editMode && !state.selectedIds.empty()) {
+        physis_authoring::FieldPivot p{};
+        if (physisCurrentPivot(ed,p)) {
+            const auto pivot=physisPivot3(p);
+            const float radius=std::clamp(camera.distance*0.4f,3.0f,180.0f);
+            const ImU32 color=state.gizmoMode==2 ?
+                IM_COL32(255,192,88,240):IM_COL32(95,225,205,240);
+            ImVec2 previous{};
+            bool previousValid=false;
+            for (int i=0;i<=64;++i) {
+                const double angle=double(i)*6.283185307179586/64.0;
+                render::float2 projected{};
+                const bool valid=camera.worldToScreen({
+                       pivot.x+radius*float(std::cos(angle)),pivot.y,
+                       pivot.z+radius*float(std::sin(angle))},
+                       vp.pointsW,vp.pointsH,projected) &&
+                       std::isfinite(projected.x)&&std::isfinite(projected.y);
+                if (valid && previousValid)
+                    draw->AddLine(previous,
+                        {vp.originX+projected.x,vp.originY+projected.y},color,2.8f);
+                if (valid) previous={vp.originX+projected.x,vp.originY+projected.y};
+                previousValid=valid;
+            }
+        }
+    }
     if (state.boxSelecting) {
         const ImVec2 a{std::clamp(state.boxStart.x,vp.originX,vp.originX+vp.pointsW),
                        std::clamp(state.boxStart.y,vp.originY,vp.originY+vp.pointsH)};
@@ -303,6 +337,8 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
         state.dragging=false;
         state.draggingRadius=false;
         state.dragAxis=-1;
+        state.dragTransform=0;
+        state.dragBaseline=Json{};
         state.boxSelecting=false;
         state.dragOriginal.clear();
         return false;
@@ -334,7 +370,53 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
             state.draggingRadius=false;
             state.dragEdited=false;
             state.dragAxis=-1;
+            state.dragTransform=0;
+            state.dragBaseline=Json{};
             state.dragOriginal.clear();
+            return true;
+        }
+        if (state.dragTransform!=0) {
+            if (ed.doc().revision!=state.dragKnownRevision) {
+                state.dragging=false;
+                state.dragTransform=0;
+                state.dragBaseline=Json{};
+                state.error="PHYSIS map was changed during the gizmo drag";
+                return true;
+            }
+            render::float3 hit{};
+            const auto& pivot=state.dragTransformPivot;
+            if (camera.screenToGround(io.MousePos.x-vp.originX,
+                        io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
+                        hit,float(pivot.y))) {
+                const double dx=double(hit.x)-pivot.x;
+                const double dz=double(hit.z)-pivot.z;
+                const double radius=std::hypot(dx,dz);
+                if (radius>0.0001) {
+                    double yaw=0,scale=1;
+                    if (state.dragTransform==2) {
+                        const double angle=std::atan2(dz,dx);
+                        const double delta=angle-state.dragRingInitialAngle;
+                        yaw=std::atan2(std::sin(delta),std::cos(delta)) *
+                            (180.0/3.14159265358979323846);
+                    } else {
+                        scale=radius/state.dragRingInitialRadius;
+                        scale=std::clamp(scale,0.01,100.0);
+                    }
+                    const auto rev=ed.doc().revision;
+                    if (physis_authoring::transformFields(
+                            ed.doc(),state.selectedIds,pivot.x,pivot.y,pivot.z,
+                            yaw,scale,&state.error,&state.dragBaseline,
+                            !state.dragEdited)) {
+                        if (ed.doc().revision!=rev) {
+                            state.dragEdited=true;
+                            state.dragKnownRevision=ed.doc().revision;
+                        }
+                        state.draftId.clear();
+                        state.error.clear();
+                    }
+                }
+            }
+            state.lastMouseY=io.MousePos.y;
             return true;
         }
         std::string collection;
@@ -454,6 +536,62 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
         return false;
     const bool additive=io.KeyCtrl || io.KeyShift;
     const Json config=physis_authoring::read(ed.doc());
+
+    // World-space ring selection: rotate around Y or uniformly scale source
+    // geometry, deriving every frame from a fixed baseline map snapshot.
+    if (!additive && (state.gizmoMode==2 || state.gizmoMode==3) &&
+        !state.selectedIds.empty() &&
+        (state.gizmoMode==3 || state.selectedIds.size()>1)) {
+        physis_authoring::FieldPivot p{};
+        if (physisCurrentPivot(ed,p)) {
+            const render::float3 at=physisPivot3(p);
+            const float radius=std::clamp(camera.distance*0.4f,3.0f,180.0f);
+            double best=10.0*10.0;
+            ImVec2 prior{};
+            bool priorValid=false;
+            for (int i=0;i<=64;++i) {
+                const double angle=double(i)*6.283185307179586/64.0;
+                render::float2 projection{};
+                const bool valid=camera.worldToScreen({
+                    at.x+radius*float(std::cos(angle)),at.y,
+                    at.z+radius*float(std::sin(angle))},vp.pointsW,vp.pointsH,
+                    projection)&&std::isfinite(projection.x)&&std::isfinite(projection.y);
+                if (valid) {
+                    const ImVec2 here{vp.originX+projection.x,vp.originY+projection.y};
+                    if (priorValid)
+                        best=std::min(best,physis_gizmo::segmentDistanceSq(
+                             io.MousePos.x,io.MousePos.y,
+                             prior.x,prior.y,here.x,here.y));
+                    prior=here;
+                }
+                priorValid=valid;
+            }
+            if (best<10.0*10.0) {
+                render::float3 hit{};
+                if (camera.screenToGround(io.MousePos.x-vp.originX,
+                         io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,hit,at.y)) {
+                    const double dx=double(hit.x)-p.x,dz=double(hit.z)-p.z;
+                    const double radial=std::hypot(dx,dz);
+                    if (radial>0.0001) {
+                        state.dragTransform=state.gizmoMode;
+                        state.dragBaseline=config;
+                        state.dragTransformPivot=p;
+                        state.dragRingInitialAngle=std::atan2(dz,dx);
+                        state.dragRingInitialRadius=radial;
+                        state.dragKnownRevision=ed.doc().revision;
+                        state.dragging=true;
+                        state.draggingRadius=false;
+                        state.dragAxis=-1;
+                        state.dragEdited=false;
+                        state.dragOriginal.clear();
+                        state.lastMouseY=io.MousePos.y;
+                        ed.select({Selection::MapProps,-1,{}});
+                        return true;
+                    }
+                }
+            }
+        }
+    }
 
     if (!additive && state.show3DAxes && state.gizmoMode==0 &&
         !state.selectedIds.empty()) {
@@ -705,16 +843,20 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
         ImGui::Checkbox("Оси X/Y/Z##physis", &state.show3DAxes);
         ImGui::TextDisabled("Рамка с пустого места; Shift/Ctrl добавляет.");
         ImGui::Combo("Gizmo##physis", &state.gizmoMode,
-                     "Перемещение\0Радиус\0");
+                     "Перемещение\0Радиус\0Поворот Y\0Масштаб\0");
         ImGui::Checkbox("Привязка к сетке##physis", &state.snapEnabled);
         if (state.snapEnabled) {
             ImGui::DragFloat("Шаг привязки, м##physis", &state.snapStepMeters,
                              0.25f, 0.25f, 1000.f, "%.2f");
             state.snapStepMeters = std::clamp(state.snapStepMeters, 0.25f, 1000.f);
         }
-        ImGui::TextDisabled(state.gizmoMode == 0 ?
-            "Тяните выбранную группу (Shift — высота). Один drag = одно Undo." :
-            "Радиус изменяет только активное поле.");
+        const char* hints[]={
+            "Группа: тяните X/Y/Z или центр (Shift — высота).",
+            "Радиус меняет только активное поле.",
+            "Тяните кольцо поворота Y; требуется несколько полей.",
+            "Тяните кольцо равномерного масштаба геометрии."
+        };
+        ImGui::TextDisabled("%s",hints[std::clamp(state.gizmoMode,0,3)]);
         ImGui::TextDisabled("Ctrl/Shift + клик — добавить или убрать поле из группы.");
         const char* pivots[]={"Активное поле","Средняя точка","Центр границ","Начало мира","Заданный"};
         ImGui::Combo("Pivot##physis",&state.pivotMode,pivots,5);
