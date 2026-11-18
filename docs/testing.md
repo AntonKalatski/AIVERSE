@@ -74,3 +74,15 @@ CLI, Bash syntax, CTest and extra execution, nonzero failure propagation and
 handling of a bad manifest. Run it directly with
 `python3 tests/test_unified_runner.py` before full compilation, or use the
 normal full `./run-tests.sh` to run it automatically.
+
+## Assertions must remain active
+
+The unified runner now uses CMake **Debug**, not `RelWithDebInfo` or
+`Release`. Many ECS test cases rely on `assert(...)`: optimized CMake
+configurations commonly define `NDEBUG`, silently removing those checks,
+as visible in Mac Studio's unused assert-only variable warnings.
+
+The `--no-build` mode rejects an existing non-Debug CMake cache. After
+updating the runner, execute `./run-tests.sh` once to reconfigure
+`build/all-tests` as Debug and rebuild its test binaries. Benchmark
+timing should be measured in separate optimized builds.

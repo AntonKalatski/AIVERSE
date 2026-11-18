@@ -17,7 +17,9 @@ class UnifiedRunnerTests(unittest.TestCase):
         self.root = Path(temp.name)
         (self.root / "tests").mkdir()
         (self.root / "build" / "fixture").mkdir(parents=True)
-        (self.root / "build" / "fixture" / "CMakeCache.txt").write_text("")
+        (self.root / "build" / "fixture" / "CMakeCache.txt").write_text(
+            "CMAKE_BUILD_TYPE:STRING=Debug\nAIVERSE_BUILD_TESTS:BOOL=ON\n"
+        )
         shutil.copy2(SOURCE / "run-tests.sh", self.root / "run-tests.sh")
         (self.root / "tests" / "extra-test-suites.txt").write_text(
             "sample|bash|tests/sample.sh|\n"
@@ -87,6 +89,21 @@ class UnifiedRunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("error: synthetic compiler failure", result.stdout)
         self.assertIn("Build failed; tests were NOT RUN", result.stdout)
+        self.assertNotIn("FAKE_CTEST_ARGS", result.stdout)
+
+    def test_build_keeps_asserts_enabled(self):
+        result = self.invoke("--quick")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("CMAKE_BUILD_TYPE=Debug", result.stdout)
+        self.assertIn("--config Debug", result.stdout)
+
+    def test_no_build_rejects_disabled_assertions(self):
+        (self.root / "build" / "fixture" / "CMakeCache.txt").write_text(
+            "CMAKE_BUILD_TYPE:STRING=RelWithDebInfo\n"
+        )
+        result = self.invoke("--no-build", "--quick")
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("requires a Debug CMake cache", result.stdout)
         self.assertNotIn("FAKE_CTEST_ARGS", result.stdout)
 
     def test_rejects_unsafe_registry_paths(self):

@@ -71,6 +71,11 @@ if (( ! SKIP_BUILD )); then
     command -v cmake >/dev/null 2>&1 || die "cmake is missing"
 else
     [[ -f "$BUILD_DIR/CMakeCache.txt" ]] || die "No configured build in $BUILD_DIR"
+    # An optimized CMake test build typically defines NDEBUG, hiding asserts.
+    if ! grep -Eq '^CMAKE_BUILD_TYPE:[^=]*=Debug$' "$BUILD_DIR/CMakeCache.txt" &&
+       ! grep -Eq '^CMAKE_CONFIGURATION_TYPES:[^=]*=([^;]*;)*Debug(;|$)' "$BUILD_DIR/CMakeCache.txt"; then
+        die "--no-build requires a Debug CMake cache (asserts enabled); rerun without --no-build"
+    fi
 fi
 
 LOG_DIR="$BUILD_DIR/test-reports/$(date -u +%Y%m%d-%H%M%S)-$$"
@@ -112,7 +117,7 @@ if (( ! SKIP_BUILD )); then
     # Building the default target also produces test executables, preventing
     # CTest "Not Run" from missing binaries after an incomplete target build.
     if ! stage configure cmake -S "$ROOT" -B "$BUILD_DIR" \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DCMAKE_BUILD_TYPE=Debug \
         -DAIVERSE_BUILD_TESTS=ON \
         -DAIVERSE_BUILD_EDITOR=ON \
         -DAIVERSE_BUILD_TOOLS=ON \
@@ -122,7 +127,7 @@ if (( ! SKIP_BUILD )); then
         printf '\nConfigure failed; tests were NOT RUN. See %s/configure.log\n' "$LOG_DIR" >&2
         exit 1
     fi
-    if ! stage build cmake --build "$BUILD_DIR" --config RelWithDebInfo --parallel "$JOBS"; then
+    if ! stage build cmake --build "$BUILD_DIR" --config Debug --parallel "$JOBS"; then
         printf '\nBuild failed; tests were NOT RUN. First compiler errors:\n' >&2
         grep -n -m 12 -E 'error:|fatal error:|Undefined symbols|undefined reference|FAILED:|ld: ' \
             "$LOG_DIR/build.log" >&2 || true
@@ -132,11 +137,11 @@ if (( ! SKIP_BUILD )); then
 fi
 
 if [[ -n "$CTEST_FILTER" ]]; then
-    stage ctest ctest --test-dir "$BUILD_DIR" --config RelWithDebInfo \
+    stage ctest ctest --test-dir "$BUILD_DIR" --config Debug \
         --no-tests=error --output-on-failure --parallel "$CTEST_JOBS" \
         --output-junit "$LOG_DIR/ctest.xml" -R "$CTEST_FILTER" || true
 else
-    stage ctest ctest --test-dir "$BUILD_DIR" --config RelWithDebInfo \
+    stage ctest ctest --test-dir "$BUILD_DIR" --config Debug \
         --no-tests=error --output-on-failure --parallel "$CTEST_JOBS" \
         --output-junit "$LOG_DIR/ctest.xml" || true
 fi
