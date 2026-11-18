@@ -4933,3 +4933,23 @@ not available locally, C++ compile NOT RUN, libktx runtime
 test NOT RUN, GPU upload validation NOT RUN.
 Next: CMake optional libktx target, smoke/negative fixtures,
 agent skill and production native build with libktx installed.
+
+## Stage 8B — opt-in system libktx CMake integration (2026-11-18)
+
+Code commit: 4f54f932f933f36423f6def2d8ee7f2b62ac9d8d.
+Files: CMakeLists.txt, tests/render/ktx2_transcode.cpp.
+New CMake option AIVERSE_TEXTURE_WITH_LIBKTX=ON explicitly
+requires installed ktx.h and libktx, wires both into
+aiverse_runtime as public interface dependency and existing
+aiverse_ktx2_transcode_test. OFF is default and has no
+additional package dependency. Test source includes
+Ktx2Libktx.h and checks default options; if enabled, checks
+compiler sees the real ktxTexture2 API. Existing bridge
+synthetic fixture is preserved.
+Compatibility: opt-in CMake and test-only; OFF behavior unchanged.
+Verification: GitHub tree/commit succeeded; CMake configure
+NOT RUN (GitHub repository clone unavailable from this container),
+C++ compile NOT RUN, real libktx runtime decode NOT RUN.
+Next: Add real ETC1S/UASTC test assets (licensed), compile with
+AIVERSE_TEXTURE_WITH_LIBKTX=ON and validate format selection
+on BC7/ASTC/ETC2 and RGBA8 devices. Document dependency.
