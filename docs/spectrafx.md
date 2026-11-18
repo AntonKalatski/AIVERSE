@@ -1112,6 +1112,96 @@ the full source effect on CPU, not silently drop the program.
 User requested postponing builds/tests; source is committed
 but **not compiled or runtime verified**.
 
+## Graph v2 named live instance parameters (Stage 20 — functional source committed, tests deferred)
+
+Graphs can declare up to **eight named CPU particle VM scalar inputs**
+separately from compile-time `parameters`. Runtime instance values
+can change without rebuilding an effect, recompiling a graph, or changing
+another instance's data. This is **presentation-only**, genre-neutral
+and does not write values into gameplay ECS.
+
+The graph-v2 `instanceParameters` root maps a safe name to
+`{slot,default,min,max}` (unique slots 0..7, finite bounded floats).
+A data node of type `InstanceParameter` refers to `properties.name`,
+and a `ParticleProgramModule` expression using
+`{"$runtime":"node_id"}` is lowered at compile time to the CPU VM
+read `param0` … `param7`. The values stay dynamic at particle
+runtime, unlike normal graph `$param` literals.
+
+```json
+{
+  "version": 2,
+  "instanceParameters": {
+    "lift": {"slot": 0, "default": 2.2, "min": 0, "max": 25},
+    "intensity": {"slot": 1, "default": 1, "min": 0, "max": 10}
+  }
+}
+```
+
+Embed the declaration alongside the normal `nodes`, `links`,
+`outputs` and `parameters` fields. See
+`examples/spectrafx/per_instance_parameters_v2.vfx.json` for a
+complete graph whose per-particle upward acceleration uses the
+named `lift` value. `engine/fx/SpectraInstanceParameters.h`
+contains the shared validation metadata.
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+// Same graph asset can be compiled by multiple independent runtimes:
+aiverse::spectra::GraphRuntime fireA, fireB;
+fireA.initGraph(device, graphJson);
+fireB.initGraph(device, graphJson);
+
+fireA.setNamedProgramParameter("lift", 2.5f);
+fireB.setNamedProgramParameter("lift", 10.0f);
+
+// For already-live particles, propagate the new value explicitly:
+fireA.setNamedProgramParameter("lift", 5.0f, true);
+
+// Or without a graph schema, use raw CPU VM slot 0..7:
+fireA.setProgramParameter(0, 5.0f, true);
+```
+
+Calling `setProgramParameter(slot,value,affectExisting=false)` on
+`GraphRuntime` changes future births for that **source only**;
+`affectExisting=true` additionally updates current particles
+owned by its tracked handles. The public `fx::ParticleSystem`
+also offers `setProgramParameter(handle,slot,value,affectExisting)`
+and atomic `playWithProgramParameters(effect,pos,dir,scale,tint,params)`,
+which sets all eight scalars **before prewarm and Spawn callbacks**.
+`spectra::BatchWorld` exposes the same atomic playback and per-handle
+setter. The standard `play` remains source-compatible and passes zeros.
+
+`spectra::CueEvent` and `AttachedCue` optionally carry
+`programParams[8]` plus a `programParamMask`. The cue scheduler
+applies enabled values before a new one-shot/attached effect starts.
+Changes to the parameters on an existing continuous source update
+the current particles **without restarting the effect**. Disabled
+slots remain zero; removing an override clears the old slot value.
+The scheduler still owns the handles solely on the presentation side.
+
+In the SpectraFX editor (version 2), the right panel has
+**Параметры экземпляра (runtime)**. It edits a validated JSON schema,
+shows named slider values for the current preview instance, and
+passes `instanceValues` to the in-memory `fx_graph_preview`
+operation. The preview runs the existing CPU ParticleSystem with
+values applied before first Spawn and persists them during loop
+restarts. This does not create new `fx/*.json` files.
+
+**Backend contract:** arbitrary CPU particle VM and named
+`InstanceParameter` graphs do not run on the experimental Metal
+simple-billboard kernel. `GraphRuntime::initGraph` selects the full
+CPU runtime for such graphs; `RequireGpu` rejects the request
+rather than silently dropping instance parameters. No GPU VM/JIT
+translation, HLSL/MSL codegen, or GPU-side arbitrary per-instance
+parameter buffer is implied.
+
+**Status:** the user requested functional implementation first.
+All changes above are committed source; neither native compile,
+CTest, GUI preview nor cross-platform GPU execution was run for
+Stage 20. Do not claim source completeness or parity until verified.
+
 ## Validation checklist
 
 ```bash
