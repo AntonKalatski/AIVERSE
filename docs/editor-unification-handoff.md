@@ -1085,3 +1085,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Code SHA: `c1575e21c6ed3119ccbcbf965a63921135e187ed`.
 - The destination-resolver fixture checks `shot.target.valid()` before attempting an ECS target lookup. For a null or missing target it deterministically retains the shot's last known destination, including the timeout test projectile.
 - Verification: source commit only, not built. The real RTS currently performs its own `w.alive(pr.target)` target validity checks, not this test's resolver.
+
+
+### 2026-11-18 — Shared deterministic ordered projectile impact policy
+- Implementation SHA: `c44f3638788e4b18d62e4724082bd58b9d9574db`.
+- Added public `libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h` with `OrderedProjectileImpact` (ECS projectile, shooter, target, Fixed damage, location and splash radius) and `resolveOrderedProjectileImpact` which preserves canonical per-projectile order: resolve direct target, stage direct-hit effects, visit eligible splash candidates in the host spatial query's order. Prevents applying splash twice to the primary target. All armor/status/faction/distance logic remains injected by caller callbacks. No `SpatialWorld`, RTS/FPS module, or rigid-body dependency.
+- Intent: extract the live RTS direct+splash impact block without batching/reordering damage (which could change shields, callbacks and network replay). This generic resolver is a policy used from an ECS gameplay system, not yet a separately scheduled impact system.
+- Verification: GitHub source commit only; no compilation or CTest observed. Next: integrate into `RtsCombat.cpp::sysProjectiles` and add portable callback-order regressions.
