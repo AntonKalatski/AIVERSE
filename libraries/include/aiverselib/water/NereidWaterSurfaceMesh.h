@@ -19,6 +19,8 @@ enum class WaterSurfaceLod : uint8_t { Near, Medium, Far };
 struct WaterSurfaceMeshOptions {
     WaterSurfaceLod lod=WaterSurfaceLod::Medium;
     float cameraX=0, cameraZ=0;
+    // Optional double-precision world anchor; output positions are relative.
+    double originX=0, originZ=0;
     float oceanPatchRadius=256;
     float uvScale=0.05f;
     float foamWidth=3.0f;
@@ -92,16 +94,17 @@ inline bool simplePolygon(const std::vector<P>& points) {
     }
     return true;
 }
-inline uint32_t vertex(WaterSurfaceMesh& mesh,P p,float y,float uvScale) {
-    mesh.vertices.push_back({float(p.x),y,float(p.z),
-                             float(p.x)*uvScale,float(p.z)*uvScale,0});
+inline uint32_t vertex(WaterSurfaceMesh& mesh,P p,float y,float uvScale,
+                       double originX=0,double originZ=0) {
+    mesh.vertices.push_back({float(p.x-originX),y,float(p.z-originZ),
+                             float((p.x-originX)*uvScale),float((p.z-originZ)*uvScale),0});
     return uint32_t(mesh.vertices.size()-1);
 }
 inline void tri(WaterSurfaceMesh& mesh,uint32_t a,uint32_t b,uint32_t c) {
     mesh.indices.push_back(a);mesh.indices.push_back(b);mesh.indices.push_back(c);
 }
 inline bool earClip(WaterSurfaceMesh& mesh,const std::vector<P>& points,
-                    float y,float uvScale) {
+                    float y,float uvScale,double originX=0,double originZ=0) {
     if(!simplePolygon(points))return false;
     const size_t n=points.size();
     double area=0;
@@ -111,7 +114,7 @@ inline bool earClip(WaterSurfaceMesh& mesh,const std::vector<P>& points,
     }
     if(std::abs(area)<=1e-9)return false;
     const int sign=area>0?1:-1;
-    for(P p:points)vertex(mesh,p,y,uvScale);
+    for(P p:points)vertex(mesh,p,y,uvScale,originX,originZ);
     std::vector<uint32_t> remaining;
     for(size_t i=0;i<n;++i)remaining.push_back(uint32_t(i));
     while(remaining.size()>3) {
@@ -173,14 +176,16 @@ inline void splitMesh(WaterSurfaceMesh& mesh,int levels,uint32_t maxVertices) {
     }
 }
 inline void foam(WaterSurfaceMesh& mesh,
-                 const std::vector<std::pair<P,P>>& boundary,float width) {
+                 const std::vector<std::pair<P,P>>& boundary,float width,
+                 double originX=0,double originZ=0) {
     if(width<=0 || boundary.empty())return;
     const double ww=double(width)*width;
     for(auto& vertex:mesh.vertices) {
         double closest=std::numeric_limits<double>::infinity();
         for(const auto& edge:boundary)
             closest=std::min(closest,distanceSq({vertex.x,vertex.z},
-                                                edge.first,edge.second));
+                {edge.first.x-originX,edge.first.z-originZ},
+                {edge.second.x-originX,edge.second.z-originZ}));
         vertex.shore=float(std::clamp(1.0-std::sqrt(closest/ww),0.0,1.0));
     }
 }
@@ -202,15 +207,17 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
        !std::isfinite(options.cameraX) ||
        !std::isfinite(options.cameraZ) ||
        !std::isfinite(options.oceanPatchRadius) ||
+       !std::isfinite(options.originX) ||
+       !std::isfinite(options.originZ) ||
        options.oceanPatchRadius<=0 || options.maxVertices<4 ||
        options.foamWidth<0)return mesh;
     const float y=float(body.surfaceY.toDouble());
     std::vector<std::pair<P,P>> boundary;
     auto addQuad=[&](P a,P b,P c,P d) {
-        const auto ia=vertex(mesh,a,y,options.uvScale);
-        const auto ib=vertex(mesh,b,y,options.uvScale);
-        const auto ic=vertex(mesh,c,y,options.uvScale);
-        const auto id=vertex(mesh,d,y,options.uvScale);
+        const auto ia=vertex(mesh,a,y,options.uvScale,options.originX,options.originZ);
+        const auto ib=vertex(mesh,b,y,options.uvScale,options.originX,options.originZ);
+        const auto ic=vertex(mesh,c,y,options.uvScale,options.originX,options.originZ);
+        const auto id=vertex(mesh,d,y,options.uvScale,options.originX,options.originZ);
         tri(mesh,ia,ib,ic);tri(mesh,ia,ic,id);
         const P pts[]={a,b,c,d};
         for(int i=0;i<4;++i)boundary.emplace_back(pts[i],pts[(i+1)%4]);
@@ -221,7 +228,7 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
         if(geometry->kind==WaterGeometryKind::Polygon) {
             std::vector<P> points;points.reserve(input.size());
             for(const auto& p:input)points.push_back({p.x.toDouble(),p.z.toDouble()});
-            if(!earClip(mesh,points,y,options.uvScale))return {};
+            if(!earClip(mesh,points,y,options.uvScale,options.originX,options.originZ))return {};
             for(size_t i=0;i<points.size();++i)
                 boundary.emplace_back(points[i],points[(i+1)%points.size()]);
         }else if(geometry->kind==WaterGeometryKind::RiverSpline) {
@@ -255,8 +262,8 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
                                 points[i].z+normal.z*width});
                 right.push_back({points[i].x-normal.x*width,
                                  points[i].z-normal.z*width});
-                vertex(mesh,left.back(),y,options.uvScale);
-                vertex(mesh,right.back(),y,options.uvScale);
+                vertex(mesh,left.back(),y,options.uvScale,options.originX,options.originZ);
+                vertex(mesh,right.back(),y,options.uvScale,options.originX,options.originZ);
             }
             for(size_t i=0;i+1<n;++i) {
                 const uint32_t a=uint32_t(i*2),b=uint32_t((i+1)*2);
@@ -285,12 +292,12 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
             const int segments=options.lod==WaterSurfaceLod::Near?64:
                 options.lod==WaterSurfaceLod::Medium?32:12;
             constexpr double tau=6.28318530717958647692;
-            vertex(mesh,{x,z},y,options.uvScale);
+            vertex(mesh,{x,z},y,options.uvScale,options.originX,options.originZ);
             std::vector<P> ring;ring.reserve(size_t(segments));
             for(int i=0;i<segments;++i) {
                 const double t=tau*i/double(segments);
                 P p{x+r*std::cos(t),z+r*std::sin(t)};
-                ring.push_back(p);vertex(mesh,p,y,options.uvScale);
+                ring.push_back(p);vertex(mesh,p,y,options.uvScale,options.originX,options.originZ);
             }
             for(int i=0;i<segments;++i) {
                 const int j=(i+1)%segments;
@@ -307,7 +314,7 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
     // No interior gradients exist there: suppress vertex foam rather than
     // tinting an entire far-away water surface white.
     if(options.lod!=WaterSurfaceLod::Far)
-        foam(mesh,boundary,options.foamWidth);
+        foam(mesh,boundary,options.foamWidth,options.originX,options.originZ);
     return mesh;
 }
 
