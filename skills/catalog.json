@@ -2255,6 +2255,37 @@
       ]
     },
     {
+      "id": "aiverse-niagara-vfx",
+      "package": null,
+      "path": "skills/visuals/aiverse-niagara-vfx/SKILL.md",
+      "domain": "workflow",
+      "summary": "Universal Niagara-style graph assets, CPU backend and cross-genre ECS VFX bindings",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md",
+      "keywords": [
+        "niagara",
+        "vfx",
+        "visual",
+        "effects",
+        "particle",
+        "graph",
+        "cpu",
+        "gpu",
+        "ecs",
+        "universal",
+        "ниягара",
+        "визуальные",
+        "эффекты",
+        "частицы",
+        "граф",
+        "универсальн"
+      ]
+    },
+    {
       "id": "aiverse-object-interactions",
       "package": "object-interactions",
       "path": "skills/gameplay/aiverse-object-interactions/SKILL.md",
