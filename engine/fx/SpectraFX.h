@@ -6,6 +6,7 @@
 #pragma once
 #include "VfxGraphAssets.h"
 #include "SpectraModuleSchema.h"
+#include "SpectraGpuParticles.h"
 
 namespace aiverse::spectra {
 
