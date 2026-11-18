@@ -171,6 +171,7 @@ public:
     }
     const TerrainSettings& terrainSettings() const {return terrain_;}
     const BiomeSettings& biomeSettings() const {return biomes_;}
+    const HorizonSettings& settings() const {return settings_;}
 
     void update(gfx::Device& device,ForestCameraCm observer) {
         streamStarted_=true;
