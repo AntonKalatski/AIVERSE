@@ -1,4 +1,4 @@
-#include "modules/rts/view/RtsPreviewPresentation.h"
+#include "modules/rts/view/RtsPreviewRenderProvider.h"
 #include <cassert>
 #include <cmath>
 
@@ -28,4 +28,43 @@ int main() {
     assert(std::fabs(previewFrameDt(5.05,5.)-.05f)<.00001f);
     assert(std::fabs(previewFrameDt(9.,5.)-.1f)<.00001f);
     assert(previewFrameDt(4.,5.)==0.f);
+    // A separate host can render the same authored preview without linking
+    // against RtsView, its model loaders, or genre-specific renderer code.
+    int readyCalls=0,ghostDraws=0,previewDraws=0;
+    bool submitted=RtsPreviewRenderProvider::submitGhost(
+        17,{2,3,4},false,0.,
+        [&](uint16_t type){++readyCalls;return type==17;},
+        [&](const GhostPresentation& request){
+            ++ghostDraws;
+            assert(request.type==17 && request.owner==1);
+            assert(request.tint.x==1.f);
+        });
+    assert(submitted && readyCalls==1 && ghostDraws==1);
+    submitted=RtsPreviewRenderProvider::submitGhost(
+        18,{2,3,4},true,0.,
+        [&](uint16_t){++readyCalls;return false;},
+        [&](const GhostPresentation&){++ghostDraws;});
+    assert(!submitted && readyCalls==2 && ghostDraws==1);
+    int clockReads=0;
+    submitted=RtsPreviewRenderProvider::submitModelPreview(
+        23,5,6.0,0.5f,
+        [&](uint16_t type){return type==23;},
+        [&](const ModelPreviewPresentation& request){
+            ++clockReads;
+            assert(request.sourceKey==preview.sourceKey);
+            return 5.95;
+        },
+        [&](const ModelPreviewPresentation& request,float dt){
+            ++previewDraws;
+            assert(request.owner==5);
+            assert(std::fabs(dt-.05f)<.00001f);
+        });
+    assert(submitted && previewDraws==1 && clockReads==1);
+    submitted=RtsPreviewRenderProvider::submitModelPreview(
+        24,5,6.0,0.5f,
+        [&](uint16_t){return false;},
+        [&](const ModelPreviewPresentation&){++clockReads;return 0.;},
+        [&](const ModelPreviewPresentation&,float){++previewDraws;});
+    assert(!submitted && previewDraws==1 && clockReads==1);
+
 }
