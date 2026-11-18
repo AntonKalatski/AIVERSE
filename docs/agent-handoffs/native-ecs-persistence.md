@@ -148,3 +148,20 @@ over a newer version. No green CI logs means no passing-CI claim.
   ```
   Capture the full output and note whether the tested HEAD matches the PR. If a test is absent, reconfigure the existing CMake build with `AIVERSE_BUILD_TESTS=ON`; do not treat zero discovered tests as a pass. After actual passes, run `bash tests/run_ecs_experiment_suite.sh` and the real RTS/FPS parity suite.
 - **CI on latest remote branch at this checkpoint:** queued; no observed successful workflow result. No new native build was executed by this agent.
+
+## 2026-11-18 — Mac Studio native ECS compile gate blocked (owner-provided CTest output)
+
+- **Branch / PR:** `feature/universal-entity-inspector-fps`, PR #7. **User-local HEAD SHA not included**; do not attribute the local failure to a specific remote SHA without `git rev-parse HEAD`.
+- **Owner's actual output:** `make[1]: *** [CMakeFiles/aiverse_ecs_native_persistence_test.dir/rule] Error 2`, `make: *** [aiverse_ecs_native_persistence_test] Error 2`. Subsequent `ctest --test-dir build/ecs-test -R '^ecs_native_(persistence|rts_integration)_test$'` reported `ecs_native_rts_integration_test` #55 **Not Run** and `ecs_native_persistence_test` #56 **Not Run**, both because their executable files were not found. Total: 0/2 executed. These are **build failures, not assertions failing at runtime**.
+- **Diagnosis limit:** the supplied excerpt contains only Make's final exit code, **no compiler diagnostic** (`error:`, file, line, or linker output), so no specific C++ root cause is confirmed. The failed first target may have prevented compiling the second; do not infer that both sources independently fail.
+- **Repository inspection performed:** reviewed `engine/sim/PersistentEcs.h`, `engine/core/Archive.h`, `engine/sim/Simulation.cpp/.h`, `tests/ecs_native_persistence_test.cpp`, `tests/ecs_native_rts_integration_test.cpp`, current PR/CI status. The GitHub workflows checked for the branch were still queued; no compiler log from a completed CI run was available. No speculative code changes were made.
+- **Next exact reproduction (macOS):**
+  ```bash
+  cd ~/Projects/AIVERSE
+  git rev-parse HEAD
+  cmake --build build/ecs-test --target aiverse_ecs_native_persistence_test -j1 --verbose 2>&1 | tee /tmp/aiverse-native-ecs-build.log
+  grep -n -m 12 -E 'error:|fatal error:|undefined reference|Undefined symbols|FAILED:' /tmp/aiverse-native-ecs-build.log
+  ```
+  Paste the **first compiler error and roughly 15 lines before/after**, not just the last `make Error 2`. After fixing, build `aiverse_ecs_native_rts_integration_test` separately; only run CTest once both executables exist.
+- **Verification:** source review/CI status read, owner-provided Make/CTest summary. Native compilation by the agent **NOT RUN** because the repository is not locally mounted and `github.com` is not resolvable from the available container. **Blocker remains open**.
+- **Handoff:** resume by correlating the local HEAD and the first actual compiler diagnostic, fix minimal code, run targeted build/CTest, and append another entry with SHA and PASS/FAIL.
