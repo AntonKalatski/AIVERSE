@@ -3644,3 +3644,44 @@ and record actual results after tests run. Later vendor/test a
 real Basis codec (or use the app's compatible external provider)
 and verify transcode formats and full mip/layer/cube fidelity.
 Add new handoffs after each stage.
+
+## Stage 8H — focused native Texture RHI build/test log runner (2026-11-18)
+
+**Code commit:** `c89f80fbdba75282352dcc10e8242b92b398d7d8`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**New path:** `tools/verify-texture-rhi.sh`.
+
+**Source/tool:** Standalone Bash script configuring a dedicated
+`build/texture-rhi` CMake tree with `AIVERSE_BUILD_TESTS=ON`,
+building the 13 texture-related CPU test targets, running focused
+CTest and writing `configure.log`, `build.log`, `ctest.log`
+and `summary.txt` into `build/texture-rhi/verify-logs/`.
+Optional `--editor` builds `aiverse_editor`; optional `--vulkan`
+also builds and invokes `vulkan_backend`. Parallelism configurable
+with `--jobs N`, build dir with `--build-dir PATH`, other
+`-DCMAKE_*=value` flags forwarded. All target build failures
+are collected, not dropped; script exits nonzero on any failed
+build or test. A Vulkan skip due to no driver is explicitly
+flagged in the summary rather than considered GPU validation.
+Run as `bash tools/verify-texture-rhi.sh --editor --vulkan`
+on a machine with a real checkout and graphics SDK.
+
+**Compatibility:** New developer-only test script. No engine/game
+source, ECS/save/network, asset or editor runtime changes.
+GitHub contents API created the file; invoking it with `bash`
+does not depend on executable file mode.
+
+**Actual validation:** GitHub source commit confirmed.
+Script invocation, CMake configure, compilation, CTest, GPU and
+editor testing: **NOT RUN** in this environment. Do not interpret
+script presence as passing verification. Existing GH Actions
+jobs on older branch commits remain queued without a runner
+assigned (ubuntu-latest, windows-latest, macos-latest);
+not passing on current HEAD.
+
+**Next:** On macOS/Windows/Linux with native repo checkout,
+run `bash tools/verify-texture-rhi.sh --editor` and add
+`--vulkan` on Vulkan-enabled machines; send/share the generated
+summary and failing logs. Fix *actual* compile/test failures
+in the source branch, append separate code/handoff commits,
+and only then consider PR #21 production ready.
