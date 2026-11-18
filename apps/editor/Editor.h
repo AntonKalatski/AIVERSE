@@ -29,7 +29,7 @@
 #include "engine/gfx/Gfx.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/ImGuiLayer.h"
-#include "engine/render/PostFx.h"
+#include "engine/render/Prisma.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
@@ -103,7 +103,7 @@ public:
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
-    render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
+    render::Prisma& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;                     // false: only the Game view is post-processed
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
@@ -339,7 +339,7 @@ private:
     int fpsRuntimeRulesRevision_ = -1; // same signed revision domain as rulesRevision_
     std::string fpsRuntimeProjectDir_;
 
-    render::PostFx postFx_;
+    render::Prisma postFx_;
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
     std::vector<double> editorTypeLastUsed_;
