@@ -7,6 +7,7 @@
 // deliberately handled by separate systems consuming canonical impact events.
 #pragma once
 #include "EcsMechanicSystems.h"
+#include "EcsSweepQuerySystems.h"
 #include "Weapons.h"
 #include <cstdint>
 #include <string>
