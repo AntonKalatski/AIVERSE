@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <vector>
 #include "ParticleSystem.h"
+#include "SpectraParticleProgram.h"
 
 namespace aiverse::fx {
 
@@ -163,6 +164,7 @@ struct ParticleSystem::Impl {
         float du = 1, dv = 1;          // one flipbook cell in UV
         // optional modules (FxEffect.h); `modules` false keeps the original per-particle path
         bool modules = false;
+        spectra::program::Program particleProgram;
         ColorLut startLut, startMinLut, colorSpeed, trailColor, trailLife, colorMinLut;
         ScalarLut sizeSpeed, trailWidth, sizeMinLut, sizeYLut, sizeZLut, spinSpeed, lightRadius, lightIntensity, noiseRemap;
         FxTexture trailTex;
@@ -212,6 +214,7 @@ struct ParticleSystem::Impl {
     };
     struct Particle {
         float3 pos, vel;
+        std::array<float,8> customAttributes{}; // arbitrary scalar VFX attributes
         float age, invLife;
         float size, rot, spin, scale;
         float4 tint;
@@ -311,6 +314,15 @@ struct ParticleSystem::Impl {
     const EmitterDef& defOf(const Particle& p) const { return effects[p.effect].def.emitters[p.emitter]; }
     const EmitterRT& rtOf(const Particle& p) const { return effects[p.effect].em[p.emitter]; }
     float lifeT(const Particle& p) const { return std::min(p.age * p.invLife, 1.0f); }
+    void runProgram(Particle& p, spectra::program::Stage stage, float dt) {
+        const auto& bytecode=rtOf(p).particleProgram;
+        if(!bytecode.enabled(stage))return;
+        spectra::program::Context ctx{p.pos,p.vel,p.tint,p.size,p.rot,
+            p.customAttributes,p.age,lifeT(p),dt,float(p.uid)};
+        // Runtime math failures are bounded and ignored for this visual cue;
+        // never allow NaN or unbounded values to poison renderer resources.
+        (void)spectra::program::execute(bytecode,stage,ctx);
+    }
     float4 colorNow(const Particle& p) const;
     float sizeNow(const Particle& p, float t) const;   // world size (life curves, by speed, noise; no screen caps)
 
