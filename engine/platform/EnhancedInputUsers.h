@@ -1,5 +1,5 @@
-// Multi-local-player presentation routing for AIVERSE Enhanced Input.
-// Each local player owns an independent InputSystem and input lifecycles.
+// Multi-local-player presentation routing for AIVerse InputFlow.
+// Each local player owns an independent InputFlow and input lifecycles.
 // One platform event or gamepad sample is delivered only to its assigned owner.
 // No game genre, simulation state, network command or ECS dependencies.
 #pragma once
@@ -13,7 +13,7 @@
 
 namespace aiverse::platform {
 
-class EnhancedInputUsers {
+class InputFlowUsers {
 public:
     using UserId = std::uint32_t;
     using Core = lib::gameplay::inputflow::InputFlow;
@@ -120,7 +120,7 @@ public:
         }
     }
 
-    // Returned events are owned by each user's InputSystem until that user
+    // Returned events are owned by each user's InputFlow until that user
     // receives another update/cancel. Call after onEvent/pollGamepads.
     std::span<const lib::gameplay::inputflow::ActionEvent> update(UserId id,float dt) {
         auto* system=input(id);
@@ -134,7 +134,7 @@ public:
 private:
     struct User {
         Core input;
-        EnhancedInputAdapter adapter{input};
+        InputFlowAdapter adapter{input};
     };
     bool moveOwner(UserId& target,UserId id) {
         if(!users_.contains(id))return false;
@@ -150,4 +150,6 @@ private:
     UserId keyboardOwner_=kUnassigned, pointerOwner_=kUnassigned, touchOwner_=kUnassigned;
 };
 
+// Source compatibility for callers using the original local-user routing type.
+using EnhancedInputUsers = InputFlowUsers;
 } // namespace aiverse::platform
