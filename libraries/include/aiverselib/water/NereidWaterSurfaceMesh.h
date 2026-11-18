@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstddef>
+#include <iterator>
 #include <limits>
 #include <map>
 #include <utility>
@@ -81,7 +83,8 @@ inline bool simplePolygon(const std::vector<P>& points) {
     if(n<3)return false;
     for(size_t i=0;i<n;++i) {
         const P a=points[i],b=points[(i+1)%n];
-        if(distanceSq(a,a,b)<=1e-16)return false;
+        const double dx=b.x-a.x,dz=b.z-a.z;
+        if(dx*dx+dz*dz<=1e-16)return false;
         for(size_t j=i+1;j<n;++j) {
             if(j==i || j==(i+1)%n || (j+1)%n==i)continue;
             if(segmentCross(a,b,points[j],points[(j+1)%n]))return false;
