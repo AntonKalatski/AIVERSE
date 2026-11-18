@@ -306,6 +306,58 @@ int main() {
                    void main(){ o_color=texture(tex0,vec4(1.0,0.0,0.0,1.0)); })", 0, 255, 0);
         }
     }
+    {   // Native views + independent samplers: bind one array slice as a 2D texture.
+        TextureDesc td; td.width = 2; td.height = 2;
+        td.dimension = TextureDimension::Texture2DArray;
+        td.arrayLayers = 3; td.filter = Filter::Nearest;
+        std::vector<uint8_t> px(3 * 2 * 2 * 4, 255);
+        for (int slice = 0; slice < 3; ++slice)
+            for (int pixel = 0; pixel < 4; ++pixel) {
+                uint8_t* dst = px.data() + (size_t(slice) * 4 + size_t(pixel)) * 4;
+                dst[0] = slice == 0 ? 255 : 0;
+                dst[1] = slice == 1 ? 255 : 0;
+                dst[2] = slice == 2 ? 255 : 0;
+            }
+        td.data = px.data();
+        const TextureHandle array = d.createTexture(td);
+        CHECK(array.valid());
+        CHECK(d.supportsTextureViews());
+        TextureViewDesc vd;
+        vd.dimension = TextureDimension::Texture2D;
+        vd.baseArrayLayer = 2;
+        const TextureViewHandle blue = array.valid() ? d.createTextureView(array, vd) : TextureViewHandle{};
+        vd.baseArrayLayer = 1;
+        const TextureViewHandle green = array.valid() ? d.createTextureView(array, vd) : TextureViewHandle{};
+        CHECK(blue.valid() && green.valid());
+        SamplerDesc sp;
+        sp.minFilter = sp.magFilter = Filter::Nearest;
+        sp.mipFilter = SamplerMipFilter::None;
+        const SamplerHandle sampler = d.createSampler(sp);
+        CHECK(sampler.valid());
+        if (blue.valid() && green.valid() && sampler.valid()) {
+            Image img = frame(d, [&] {
+                d.beginPass(screen);
+                d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                d.setViewport({0, 0, W / 2, H});
+                CHECK(d.bindTextureView(0, blue, sampler));
+                d.draw(6);
+                d.setViewport({W / 2, 0, W / 2, H});
+                CHECK(d.bindTextureView(0, green, sampler));
+                d.draw(6);
+                d.endPass();
+            });
+            if (img.w == W && img.h == H) {
+                CHECK(near(img.at(4, H / 2), 0, 0, 255));
+                CHECK(near(img.at(W - 4, H / 2), 0, 255, 0));
+            } else CHECK(false);
+            d.destroySampler(sampler);
+            CHECK(!d.bindTextureView(0, green, sampler)); // destroyed sampler must be rejected
+        } else if (sampler.valid()) d.destroySampler(sampler);
+        if (array.valid()) d.destroyTexture(array);
+        CHECK(!d.bindTextureView(0, blue)); // destroying parent invalidates child views
+        d.destroyTextureView(blue);
+        d.destroyTextureView(green);
+    }
     {   // shadow map: depth-only pass, compare sampler (LEQUAL), GL depth values
         TextureDesc sd2; sd2.width = W; sd2.height = H; sd2.format = PixelFormat::Depth; sd2.renderTarget = true; sd2.compare = true;
         const TextureHandle sm = d.createTexture(sd2);
