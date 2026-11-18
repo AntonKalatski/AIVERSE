@@ -425,3 +425,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Tests authored (deferred):** `enhanced_rts_input_tests.cpp` expects five default RTS contexts and verifies TopDown context toggling, `RTS.Gestures` active. Existing platform adapter test covers raw two-finger motion. No CI/CTest run requested now.
 
 **Next:** source audit, remove unnecessary duplicate legacy state where safe, document what project-owned touch HUD/Script abilities intentionally remain specialized. Do not move gesture projection or network Commands into the platform input library.
+
+## Stage 33 — action-aware RTS pointer selection and commands (2026-11-18)
+
+**Problem:** although RTS.Pointer had `Select`/`Command` Actions, the world input handler still used physical `MouseButton(0/1)` to start drag-selection or smart orders. An authored rebinding could update InputSystem without changing gameplay.
+
+**Fix:** `ClientInputRouting::logicalMouseButton(physical)` resolves a native button through the currently active `RTS.Pointer` context, treating Select as logical 0 and Command as logical 1. Unassigned buttons return -1, middle mouse remains logical 2 for panning by default; ambiguous duplicate physical bindings are visible via `InputSystem::conflicts` and Select takes precedence. `GameClient::event` preserves the original native Event for UI/platform routing and before passing world clicks to script commands, tools, selection and smart orders rewrites only the logical button in a local Event copy. This makes RTS selection/command mouse-button rebinding functional **without** duplicating the geometry of click/box/garrison interactions, and bypasses it for top-down, planet and region modes.
+
+**Tests authored (deferred):** RTS bridge test checks logical 0/1/2 defaults and rebinding Select to mouse-button 3 while suppressing unbound physical button 0.
+
+**Next:** revisit top-down dynamic game.json abilities and input focus UI ownership, then cross-file source review. No tests run as requested.
