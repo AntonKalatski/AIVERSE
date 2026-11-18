@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -23,6 +24,9 @@ struct NereidSceneSurface {
     bool useGeometry=false;
     lib::nereid::WaterSurfaceMeshOptions mesh{};
     lib::nereid::WaterSurfaceStyle style{};
+    // Optional camera-distance LOD; fixed thresholds are presentation-only.
+    bool autoLod=false;
+    float mediumDistance=120.f, farDistance=400.f;
 };
 
 // Strictly presentation-only equality; no hashing of padding or ECS mutation.
@@ -42,6 +46,8 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        m.lod!=n.lod || m.uvScale!=n.uvScale ||
        m.foamWidth!=n.foamWidth || m.oceanPatchRadius!=n.oceanPatchRadius ||
        m.maxVertices!=n.maxVertices ||
+       a.autoLod!=b.autoLod ||
+       a.mediumDistance!=b.mediumDistance || a.farDistance!=b.farDistance ||
        u.deepR!=v.deepR || u.deepG!=v.deepG || u.deepB!=v.deepB ||
        u.foamR!=v.foamR || u.foamG!=v.foamG || u.foamB!=v.foamB ||
        u.foamStrength!=v.foamStrength || u.opacity!=v.opacity ||
@@ -62,7 +68,8 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
 struct NereidSceneStats {
     size_t visible=0, resident=0, pending=0;
     uint32_t uploadsAttempted=0;
-    size_t estimatedBytesAdmitted=0;
+    size_t estimatedBytesAdmitted=0; // legacy metric name: now exact VB+IB array bytes
+    size_t preparedBytes=0, budgetDeferred=0;
 };
 
 class NereidWaterScene final {
@@ -72,6 +79,7 @@ class NereidWaterScene final {
         std::unique_ptr<render::NereidSurfaceResident> gpu=
             std::make_unique<render::NereidSurfaceResident>();
         bool visible=true;
+        std::optional<render::NereidPreparedSurface> prepared;
     };
 public:
     static constexpr size_t kMaxSurfaces=64;
@@ -101,7 +109,11 @@ public:
                 slot.gpu=std::move(old.gpu);
                 slot.revision=old.revision;
                 slot.visible=old.visible;
-                if(!sameNereidSceneSurface(source,old.source))++slot.revision;
+                slot.prepared=std::move(old.prepared);
+                if(!sameNereidSceneSurface(source,old.source)) {
+                    ++slot.revision;
+                    slot.prepared.reset();
+                }
             }else slot.revision=++nextRevision_;
             slot.source=std::move(source);
             next.push_back(std::move(slot));
@@ -175,6 +187,19 @@ public:
         const double dz=std::max({minZ-z,0.0,z-maxZ});
         return dx*dx+dz*dz<=double(distance)*double(distance);
     }
+    static lib::nereid::WaterSurfaceLod selectedLod(
+            const NereidSceneSurface& s,const Vec3* observer) {
+        using L=lib::nereid::WaterSurfaceLod;
+        if(!s.autoLod || !observer)return s.mesh.lod;
+        if(!s.useGeometry && s.body.footprint==lib::nereid::WaterFootprint::Infinite)
+            return s.mesh.lod;
+        const double dx=s.body.center.x.toDouble()-observer->x.toDouble();
+        const double dz=s.body.center.z.toDouble()-observer->z.toDouble();
+        const double sq=dx*dx+dz*dz;
+        if(sq>double(s.farDistance)*s.farDistance)return L::Far;
+        if(sq>double(s.mediumDistance)*s.mediumDistance)return L::Medium;
+        return L::Near;
+    }
     void update(gfx::Device& device,const Vec3* observer=nullptr) {
         for(auto& old:retired_)old->release(device);
         retired_.clear();
@@ -183,7 +208,10 @@ public:
         for(auto& slot:slots_) {
             slot.visible=visibleFrom(slot.source,observer,visibilityRange_);
             if(slot.visible)++stats_.visible;
-            if(!slot.source.body.enabled)slot.gpu->release(device);
+            if(!slot.source.body.enabled) {
+                slot.gpu->release(device);
+                slot.prepared.reset();
+            }
         }
         const size_t start=nextUpload_%slots_.size();
         for(size_t scanned=0;scanned<slots_.size();++scanned) {
@@ -191,25 +219,49 @@ public:
             auto& slot=slots_[i];
             if(!slot.visible)continue;
             auto opts=slot.source.mesh;
+            opts.lod=selectedLod(slot.source,observer);
             if(observer) {
                 opts.cameraX=float(observer->x.toDouble());
                 opts.cameraZ=float(observer->z.toDouble());
             }
             const auto* geometry=slot.source.useGeometry?&slot.source.geometry:nullptr;
             if(!slot.gpu->needsUpdate(slot.source.body,geometry,
-                                      slot.revision,opts,slot.source.style))continue;
+                                      slot.revision,opts,slot.source.style)) {
+                slot.prepared.reset();continue;
+            }
             ++stats_.pending;
+            // A changed camera-relative patch/LOD invalidates staged CPU data.
+            const bool infinite=(!geometry || !geometry->enabled) &&
+                slot.source.body.footprint==lib::nereid::WaterFootprint::Infinite;
+            const auto expected=render::makeNereidSurfaceKey(
+                slot.revision,infinite,opts,slot.source.style);
+            if(slot.prepared &&
+               !render::sameNereidSurfaceKey(slot.prepared->key,expected))
+                slot.prepared.reset();
             if(stats_.uploadsAttempted>=maxUploadsPerFrame_)continue;
-            const size_t bytes=estimatedUploadBytes(slot.source);
-            // Permit one oversized request to prevent permanent starvation.
-            if(stats_.uploadsAttempted>0 &&
-               bytes>maxEstimatedUploadBytes_-std::min(stats_.estimatedBytesAdmitted,
-                                                       maxEstimatedUploadBytes_))
+            if(!slot.prepared) {
+                slot.prepared=render::NereidSurfaceResident::prepare(
+                    slot.source.body,geometry,slot.revision,opts,slot.source.style);
+                if(!slot.prepared) {
+                    ++stats_.uploadsAttempted; // failed geometry still counts as an attempt
+                    nextUpload_=(i+1)%slots_.size();
+                    continue;
+                }
+            }
+            const size_t bytes=slot.prepared->bufferBytes;
+            stats_.preparedBytes+=bytes;
+            // Strict per-frame byte budget. Oversize surfaces remain deferred:
+            // caller must raise the budget or choose a lower LOD.
+            if(bytes>maxEstimatedUploadBytes_ ||
+               bytes>maxEstimatedUploadBytes_-stats_.estimatedBytesAdmitted) {
+                ++stats_.budgetDeferred;
                 continue;
+            }
             ++stats_.uploadsAttempted;
             stats_.estimatedBytesAdmitted+=bytes;
-            slot.gpu->update(device,slot.source.body,geometry,slot.revision,
-                             opts,slot.source.style);
+            const auto result=slot.gpu->uploadPrepared(device,*slot.prepared);
+            if(result!=render::NereidSurfaceUpdate::Failed)
+                slot.prepared.reset();
             nextUpload_=(i+1)%slots_.size();
         }
         for(const auto& slot:slots_)if(slot.gpu->resident())++stats_.resident;
