@@ -4291,3 +4291,38 @@ GitHub source commit succeeded. Native compiler NOT RUN,
 CTest NOT RUN, actual GPU shader tests NOT RUN.
 Next: Build the grouped texture suite on a native checkout
 and fix genuine compiler/test errors; preserve stage handoffs.
+
+## Stage 7V — pure UV visibility prefetch planner (2026-11-18)
+
+Code commit: bd1e38fdd4d732d98820527a15293923996cde3d.
+Branch: feature/texture-rhi-unification; PR #21 Draft.
+New file: engine/gfx/VirtualTexturePrefetch.h.
+
+Public API: gfx::VirtualTexturePrefetchPlanner with initialize(config),
+plan(regions,exactResident), stats(), reset(); descriptors
+VirtualTextureVisibleRegion, VirtualTexturePrefetchConfig,
+VirtualTexturePrefetchRequest and VirtualTexturePrefetchStats.
+The planner takes only normalized UV rectangle visibility, mip
+target, virtual layer and priority: no FPS, RTS, camera entity,
+foliage/terrain or GPU API dependencies. It validates finite input,
+clips rectangle bounds, sorts higher-priority views first,
+constructs deduplicated coarse-to-fine mip page requests, pins
+coarsest pages if selected, optionally skips EXACT resident pages
+and caps regions/candidates/new requests per frame. Stable
+ordering is mip descending, priority descending, layer/y/x.
+Unspecified application visibility and desired mip selection
+remain caller-driven, not guesses about camera or textures.
+
+Compatibility: CPU-only opt-in header, no existing renderer
+usage/ABI, ECS save/network or source asset-format changes.
+Known limitation: candidate budget caps page enumeration; when
+world UV coverage exceeds it, later fine mips are deferred.
+A camera/visibility adapter and deterministic fixture are next.
+
+Verification: GitHub code commit completed. C++ compilation,
+CTest, full native build and Metal/GL/Vulkan GPU tests NOT RUN.
+Next: add a mock CPU CTest for invalid rectangles, overlapping
+views, coarse-first order, clipping, exact-resident exclusion and
+candidate/request limits, then integrate with the existing
+VirtualTextureFileStreamer requestPage API. Keep per-stage
+implementation/handoff separate.
