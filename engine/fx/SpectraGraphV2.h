@@ -51,18 +51,38 @@ inline bool nestedSet(Json& root,const std::string& dotted,Json value) {
         const size_t dot=dotted.find('.',from);
         const std::string key=dotted.substr(from,dot==std::string::npos?
                                             std::string::npos:dot-from);
-        if(key.empty() || key.size()>64 || ++depth>6)return false;
-        for(char c:key)
+        if(key.empty() || key.size()>64 || ++depth>8)return false;
+        for(const char c:key)
             if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||
                  (c>='0'&&c<='9')||c=='_'))return false;
-        if(dot==std::string::npos) {
-            target->set(key,std::move(value));
-            return true;
-        }
-        Json* next=target->find(key);
-        if(!next) { target->set(key,Json::object()); next=target->find(key); }
-        if(!next || !next->isObject())return false;
-        target=next;
+        const bool last=dot==std::string::npos;
+        if(target->isObject()) {
+            if(last) {
+                target->set(key,std::move(value));
+                return true;
+            }
+            Json* next=target->find(key);
+            if(!next) {
+                target->set(key,Json::object());
+                next=target->find(key);
+            }
+            if(!next || (!next->isObject() && !next->isArray()))return false;
+            target=next;
+        } else if(target->isArray()) {
+            // Numeric dot segments address a bounded existing array element
+            // (e.g. particleProgram.update.0.value), never auto-grow arrays.
+            size_t index=0;
+            for(const char digit:key) {
+                if(digit<'0'||digit>'9'||index>100000)return false;
+                index=index*10+size_t(digit-'0');
+            }
+            if(index>=target->size())return false;
+            if(last) {
+                target->at(index)=std::move(value);
+                return true;
+            }
+            target=&target->at(index);
+        } else return false;
         from=dot+1;
     }
     return false;
