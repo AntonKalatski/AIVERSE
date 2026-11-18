@@ -3,12 +3,27 @@
 Base: `feature/universal-entity-inspector-fps` at `dd711f5e2a7f66ed25bd7330875e6e87b7109e55`.
 Implementation branch: `feature/texture-rhi-unification`.
 
-## Status
+## Status — staged source implementation (not GPU-validated)
 
-Stage 1 defines descriptor contracts and ensures existing backends **reject** unsupported
-dimensions rather than silently allocating Texture2D. The new view, sampler and subresource
-methods are intentionally unsupported defaults until the corresponding backend lands.
-Do not advertise them as functional yet. Existing Texture2D clients retain legacy defaults.
+Stages 1–4H have source commits on this feature branch. **No native C++ build,
+GPU validation or CTest result has been confirmed passing for these changes.**
+Do not call the entire texture stack production-ready merely because a C++ method exists.
+Read the append-only `docs/agent-handoffs/texture-rhi-2026-11-18.md` for per-stage
+SHA, unverified platforms and the next exact task.
+
+- **Dimensions:** Metal/Vulkan have native sampled 1D/2D/3D/2DArray/Cube/CubeArray
+  paths; the portable GL33/GLES3 subset has 2D/3D/2DArray/Cube, not 1D/CubeArray.
+- **Texture views/samplers:** Metal and Vulkan have subresource views and independent
+  samplers; GL has independent samplers but only *whole-resource identity* views.
+- **Offscreen passes:** the new `RenderTargetPassDesc` can select a mip/layer and
+  color/depth attachment with strict matching. Metal/GL/Vulkan implementations
+  currently accept **at most one color attachment**. MRT layout is only a contract.
+- **MSAA:** the shared descriptor/resolve contract and Metal allocation, pipeline
+  sample counts and color resolves are implemented in source. GL/Vulkan still
+  reject explicit resolves; none of these paths has a verified GPU test result.
+- **Import:** KTX2/DDS source importers still drop extra array layers and cube
+  faces; the new GPU resources are not yet exercised through the asset pipeline.
+
 
 | Stage | Deliverable | Acceptance |
 |---|---|---|
@@ -23,11 +38,53 @@ Do not advertise them as functional yet. Existing Texture2D clients retain legac
 
 ## Current compatibility constraints
 
-- `gfx::TextureDesc` extended fields are appended; `Texture2D` remains the default.
-- `gfx::Device` new methods are virtual with safe invalid/false defaults and need backend overrides.
-- No change to serialization, game save data or ECS simulation.
-- Texture arrays/cube/3D/MSAA are not yet available at runtime.
-- The old `TextureCache` and `render::RenderTexture` still use 2D pathways.
+- `gfx::TextureDesc` and `PipelineDesc` new fields are appended with legacy 2D
+  and 1x-sample defaults. Existing `PassDesc`, `beginPass`, `setTexture`
+  and `render::RenderTexture` remain available.
+- A successful `beginRenderTargets` is ended with `endPass()`. It is offscreen
+  only. Check its boolean return before issuing draw commands; unsupported
+  MRT/resolves must fail explicitly, never downgrade.
+- Render-target textures need `renderTarget=true`; color/depth attachments must
+  have matching extent and sample counts at the requested mip.
+- Metal MSAA pipelines explicitly set `PipelineDesc.sampleCount` to match
+  multisample attachments; default 1x pipelines cannot draw into MSAA targets.
+- New GPU texture handles are presentation state only, not ECS-authoritative.
+  No changes to serialization, game saves or replication.
+- **Known missing pieces:** MRT with multiple color outputs, GL/Vulkan MSAA
+  creation/resolve, virtual/streamed textures, expanded formats and file
+  import/transcoding, and real-device validation.
+- The old `TextureCache` and `render::RenderTexture` still use 2D-only paths.
+
+## Example: selected array layer and mip
+
+```cpp
+gfx::TextureDesc tex;
+tex.width = 512;
+tex.height = 512;
+tex.dimension = gfx::TextureDimension::Texture2DArray;
+tex.arrayLayers = 4;
+tex.mipLevels = 3;
+tex.renderTarget = true;
+gfx::TextureHandle target = device.createTexture(tex);
+
+gfx::RenderTargetPassDesc pass;
+pass.colorCount = 1;
+pass.colors[0].texture = target;
+pass.colors[0].mipLevel = 1;   // 256x256
+pass.colors[0].arrayLayer = 2;
+pass.colors[0].clearColor[3] = 1.0f;
+if (device.beginRenderTargets(pass)) {
+    // Set a compatible pipeline and issue draw calls.
+    device.endPass();
+}
+device.destroyTexture(target);
+```
+
+The client must keep the texture alive until all GPU work completes and must
+never sample a subresource while simultaneously writing to that subresource.
+Use a matching `TextureViewDesc` and independent sampler for post-pass reads
+where supported. The code is a usage example, not a claim of verified GPU
+execution on this branch.
 
 ## References and handoff
 
