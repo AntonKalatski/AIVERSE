@@ -170,3 +170,7 @@ The platform adapter also exposes gesture channels under `Device::Touch`, `devic
 ### RTS camera Actions
 
 Default RTS mapping includes `RTS.Camera` context with `CameraPan` (arrow keys) and `IdleCameraPan` (WASD when there is no unit selection). Both actions are Axis2D and do not consume the underlying key, so other RTS hotkeys continue to work. Arrow and WASD input are combined with edge scrolling and legacy gamepad camera pan in the presentation layer, and never written directly to ECS. Old `RTS.Gameplay` mapping IDs remain stable.
+
+### Editor GameWindow camera bindings
+
+In the editor's direct RTS play-test, the Game window uses the same semantic `CameraPan` and `IdleCameraPan` mappings through its own presentation `InputSystem`. It samples bound keyboard keys only while the Game window owns focus and no text field is active. It reads optional project `input/actions.json` and refreshes the mapping shortly after it changes. Unlike the standalone RTS client, the editor retains historical always-available WASD camera navigation even while a unit is selected. In hosted-client mode, the embedded game uses its own action routing and the synthetic focus-loss bridge.
