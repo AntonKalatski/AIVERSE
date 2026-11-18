@@ -127,21 +127,28 @@ private:
         const auto& b=std::next(touches_.begin())->second;
         const float centerX=(a.x+b.x)*0.5f, centerY=(a.y+b.y)*0.5f;
         const float distance=std::hypot(a.x-b.x,a.y-b.y);
+        const float angle=std::atan2(a.y-b.y,a.x-b.x);
         if(gestureActive_ && !reset) {
             const float pinch=distance-gestureDistance_;
             const float dx=centerX-gestureCenterX_,dy=centerY-gestureCenterY_;
             if(pinch!=0)input_.addDelta({Device::Touch,3,0},pinch);
             if(dx!=0)input_.addDelta({Device::Touch,4,0},dx);
             if(dy!=0)input_.addDelta({Device::Touch,5,0},dy);
+            float twist=angle-gestureAngle_;
+            constexpr float pi=3.14159265358979323846f;
+            if(twist>pi)twist-=2.0f*pi;
+            if(twist< -pi)twist+=2.0f*pi;
+            if(twist!=0)input_.addDelta({Device::Touch,6,0},twist);
         }
         gestureDistance_=distance;
         gestureCenterX_=centerX;
         gestureCenterY_=centerY;
+        gestureAngle_=angle;
         gestureActive_=true;
     }
     lib::gameplay::enhanced::InputSystem& input_;
     std::map<std::int64_t, TouchEntry> touches_;
     bool gestureActive_=false;
-    float gestureDistance_=0,gestureCenterX_=0,gestureCenterY_=0;
+    float gestureDistance_=0,gestureCenterX_=0,gestureCenterY_=0,gestureAngle_=0;
 };
 } // namespace aiverse::platform
