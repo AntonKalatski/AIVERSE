@@ -1,4 +1,5 @@
 #include "engine/platform/EnhancedInputConfig.h"
+#include "engine/platform/EnhancedInputPresets.h"
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -92,5 +93,17 @@ int main() {
         ]
     })JSON");
     CHECK(!conf::readProfile(invalidCode,profile,&err));
+    // Both built-in presets can be authored, serialized and installed with stable mapping IDs.
+    for(const auto preset:{p::enhanced_presets::fpsReference(),p::enhanced_presets::rtsReference()}){
+        CHECK(!preset.actions.empty()&&preset.contexts.size()==1);
+        conf::Asset decoded;
+        CHECK(conf::readAsset(conf::writeAsset(preset),decoded,&err));
+        CHECK(decoded.contexts[0].context.mappings.size()==preset.contexts[0].context.mappings.size());
+        for(std::size_t i=0;i<decoded.contexts[0].context.mappings.size();++i)
+            CHECK(decoded.contexts[0].context.mappings[i].id==i+1);
+        ei::InputSystem runtime;
+        CHECK(conf::installAsset(runtime,decoded,&err));
+        CHECK(runtime.registeredContexts().size()==1);
+    }
     std::cout<<"Enhanced Input config/schema/profile roundtrip passed\n";
 }
