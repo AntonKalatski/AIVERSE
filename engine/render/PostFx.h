@@ -29,6 +29,7 @@ struct PostFxUnderwater {
     float absorption=0;
     float depthMetres=0;
     float distortion=0, scattering=0;
+    float surfaceBlend=-1; // negative: legacy binary; otherwise 0..1 near boundary
 };
 struct PostFxUnderwaterState {
     float blend=0;
@@ -37,6 +38,7 @@ struct PostFxUnderwaterState {
     float distortion=0, scattering=0;
     float crossing=0;
     bool wasSubmerged=false;
+    float surfaceBlend=0;
 };
 
 // Pure presentation transition policy, testable without a GPU device.
@@ -52,8 +54,11 @@ inline PostFxUnderwaterState advancePostFxUnderwater(
         state.crossing=1.f;
     state.wasSubmerged=target.submerged;
     state.crossing*=std::exp(-dt*8.f);
-    smooth(state.blend,target.submerged?1.f:0.f);
-    if(target.submerged) {
+    const float opacity=target.surfaceBlend>=0.f ?
+        finite(target.surfaceBlend,0.f,1.f) : (target.submerged?1.f:0.f);
+    smooth(state.blend,opacity);
+    state.surfaceBlend=opacity;
+    if(target.submerged || opacity>0.f) {
         smooth(state.tintR,finite(target.tintR,0.f,1.f));
         smooth(state.tintG,finite(target.tintG,0.f,1.f));
         smooth(state.tintB,finite(target.tintB,0.f,1.f));
@@ -65,6 +70,21 @@ inline PostFxUnderwaterState advancePostFxUnderwater(
     if(state.blend<0.0001f && state.crossing<0.0001f && !target.submerged)
         state={};
     return state;
+}
+
+struct PostFxUnderwaterBudget {
+    float distortion=0,scattering=0,crossing=0;
+    uint32_t samples=0;
+};
+// Explicit mobile-friendly quality policy: no extra scene passes or textures.
+inline PostFxUnderwaterBudget postFxUnderwaterBudget(PostFxQuality quality) {
+    switch(quality) {
+        case PostFxQuality::Off:return {};
+        case PostFxQuality::Low:return {0.2f,0.25f,0.3f,1};
+        case PostFxQuality::Medium:return {0.6f,0.7f,0.7f,2};
+        case PostFxQuality::High:return {1.f,1.f,1.f,3};
+    }
+    return {};
 }
 
 class PostFx : public PostProcess {
