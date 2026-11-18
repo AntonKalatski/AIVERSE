@@ -1640,6 +1640,13 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_legacy_raster_test
         COMMAND aiverse_ecs_nereid_legacy_raster_test)
+    # NEREID stage 6: adaptive/indexed sampling parity and native-game setup.
+    add_executable(aiverse_ecs_nereid_native_pipeline_test
+        tests/ecs_nereid_native_pipeline_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_native_pipeline_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_buoyancy)
+    add_test(NAME ecs_nereid_native_pipeline_test
+        COMMAND aiverse_ecs_nereid_native_pipeline_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
