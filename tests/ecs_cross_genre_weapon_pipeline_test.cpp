@@ -176,7 +176,29 @@ uint64_t exerciseCooldown(bool cow) {
     const uint64_t expected=fireAgain();
     sim.loadState(afterShot);
     require(fireAgain()==expected,"cooldown snapshot replay mismatch");
-    return expected;
+    // Once the interval has elapsed, the remaining round must fire exactly
+    // once. This distinguishes a rejected early request from a stuck weapon.
+    while(sim.tick()<6)sim.step();
+    SimSnapshot ready;
+    sim.saveState(ready);
+    auto fireReady=[&]() {
+        auto* intent=sim.world().tryGet<lg::FireIntentComponent>(host->gun);
+        require(intent!=nullptr,"ready fixture missing intent");
+        intent->requested=true;
+        sim.step();
+        const auto* state=sim.world().tryGetConst<lg::WeaponStateComponent>(host->gun);
+        const auto* queue=sim.world().resourceConst<lg::ProjectileSpawnQueue>();
+        const auto* consumed=sim.world().tryGetConst<lg::FireIntentComponent>(host->gun);
+        require(state&&state->ammo==0,"ready weapon did not consume final round");
+        require(queue&&queue->nextShotId==3&&queue->pending.empty(),
+                "ready weapon did not spawn exactly one shot");
+        require(consumed&&!consumed->requested,"ready shot intent not consumed");
+        return sim.checksum();
+    };
+    const uint64_t readyChecksum=fireReady();
+    sim.loadState(ready);
+    require(fireReady()==readyChecksum,"ready shot rollback/replay mismatch");
+    return readyChecksum;
 }
 int main(){
     const uint64_t expected=exercise<ShooterTag>(false);
