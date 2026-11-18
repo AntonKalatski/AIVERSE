@@ -1,4 +1,5 @@
 #include "engine/platform/EnhancedInputConfig.h"
+#include "engine/platform/EnhancedInputFileIO.h"
 #include "engine/platform/EnhancedInputPresets.h"
 #include "engine/platform/EnhancedInputProfileIO.h"
 #include <chrono>
@@ -123,7 +124,20 @@ int main() {
     conf::Profile afterFailure;
     CHECK(conf::loadProfileFile(file,afterFailure,&err));
     CHECK(afterFailure.rebindings[0].control.code==int(p::Key::Up));
+    // Project-authored assets use the same non-destructive persistence primitive.
+    const auto assetFile=std::filesystem::path(file.string()+".actions");
+    CHECK(conf::saveAssetFile(assetFile,asset,&err));
+    conf::Asset diskAsset;
+    CHECK(conf::loadAssetFile(assetFile,diskAsset,&err));
+    CHECK(diskAsset.actions.size()==3 && diskAsset.contexts.size()==1);
+    conf::Asset invalidAsset=diskAsset;
+    invalidAsset.contexts[0].context.mappings[0].action="MissingAction";
+    CHECK(!conf::saveAssetFile(assetFile,invalidAsset,&err));
+    conf::Asset afterAssetFailure;
+    CHECK(conf::loadAssetFile(assetFile,afterAssetFailure,&err));
+    CHECK(afterAssetFailure.contexts[0].context.mappings[0].action=="Move");
     std::error_code cleanup;
+    std::filesystem::remove(assetFile,cleanup);
     std::filesystem::remove(file,cleanup);
     std::cout<<"Enhanced Input config/schema/profile roundtrip passed\n";
 }
