@@ -29,10 +29,15 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
            std::isfinite(s.foamR)&&std::isfinite(s.foamG)&&std::isfinite(s.foamB)&&
            std::isfinite(s.foamStrength)&&std::isfinite(s.opacity)&&
            std::isfinite(s.specular)&&std::isfinite(s.refractionStrength)&&
+           std::isfinite(s.absorption)&&std::isfinite(s.shoreFoamDepth)&&
+           std::isfinite(s.depthTint)&&
            s.opacity>0 && s.opacity<0.99f &&
            s.specular>=0.85f && s.specular<=1.f &&
            s.foamStrength>=0 && s.foamStrength<=1 &&
-           s.refractionStrength>=0 && s.refractionStrength<=1;
+           s.refractionStrength>=0 && s.refractionStrength<=1 &&
+           s.absorption>=0 && s.absorption<=4 &&
+           s.shoreFoamDepth>=0 && s.shoreFoamDepth<=20 &&
+           s.depthTint>=0 && s.depthTint<=1;
 }
 
 // Upload at content/render setup, not every simulation tick.
@@ -55,7 +60,8 @@ inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
         const mat4& transform=mat4::identity()) {
     if(mesh.indexCount==0 || !validNereidWaterStyle(style))return;
     renderer.drawMesh(mesh,transform,
-                      {1.f,1.f,1.f,style.opacity},
+                      {style.absorption,style.shoreFoamDepth,
+                       style.depthTint,style.opacity},
                       kDrawNoCastShadow|kDrawWaterSurface,
                       style.specular,style.refractionStrength);
 }
