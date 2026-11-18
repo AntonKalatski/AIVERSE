@@ -68,6 +68,52 @@ void floodConservesWaterWithoutRain() {
     CHECK(hazardAt(world, 1, 0, downstream));
     CHECK(downstream.waterDepth > Fixed{});
 }
+void externalAuthorityKeepsFireAndQuakeWithoutFlooding() {
+    Settings settings;
+    settings.width = 3;
+    settings.height = 1;
+    settings.seed = 19;
+    settings.baseHumidity = Fixed{}; // keep fire burning
+    World world;
+    initialize(world, settings);
+    initializeDisasters(world);
+    world.get<HazardCell>(cellAt(world, 0, 0)).waterDepth = Fixed::fromInt(4);
+    CHECK(ignite(world, 1, 0));
+
+    const Entity quakeEntity = world.create();
+    QuakeEvent quake;
+    quake.centerX = 1;
+    quake.centerZ = 0;
+    quake.startTick = 1;
+    quake.durationTicks = 5;
+    world.add<QuakeEvent>(quakeEntity, quake);
+
+    advanceEnvironmentWithDisasters(world, FloodMode::ExternalAuthority);
+    CHECK(world.resourceConst<State>()->tick == 1);
+    for (int x = 0; x < 3; ++x) {
+        HazardCell h{};
+        CHECK(hazardAt(world, x, 0, h));
+        CHECK(h.waterDepth == Fixed{});
+    }
+    HazardCell burning{};
+    CHECK(hazardAt(world, 1, 0, burning));
+    CHECK(burning.fire > Fixed{});
+    CHECK(burning.quake > Fixed{});
+
+    const World checkpoint = world;
+    advanceEnvironmentWithDisasters(world, FloodMode::ExternalAuthority);
+    HazardCell expected{};
+    CHECK(hazardAt(world, 1, 0, expected));
+    world = checkpoint;
+    advanceEnvironmentWithDisasters(world, FloodMode::ExternalAuthority);
+    HazardCell replayed{};
+    CHECK(hazardAt(world, 1, 0, replayed));
+    CHECK(replayed.fire == expected.fire);
+    CHECK(replayed.fuel == expected.fuel);
+    CHECK(replayed.quake == expected.quake);
+    CHECK(replayed.waterDepth == Fixed{});
+}
+
 void quakesAndTickGuard() {
     World world;
     Settings settings; settings.width = 2; settings.height = 1;
@@ -100,6 +146,7 @@ int main() {
     fireAndDeterminism();
     floodConservesWaterWithoutRain();
     quakesAndTickGuard();
+    externalAuthorityKeepsFireAndQuakeWithoutFlooding();
     std::printf("PHYSIS disasters: %s\n", failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;
 }
