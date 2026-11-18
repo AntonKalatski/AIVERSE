@@ -411,5 +411,37 @@ int main() {
     restored.setControl({Device::Keyboard,144},1);
     CHECK(has(restored.update(0.016f),"Use",Phase::Triggered));
 
+    // Stage 51: a KeyDown buffered BEFORE context activation is not a new
+    // Pressed/DoubleTap/Hold, even when it is still in raw.pressed this frame.
+    InputFlow lateContext;
+    CHECK(lateContext.defineAction({"MappingPressed",ValueType::Boolean}));
+    CHECK(lateContext.defineAction({"ActionPressed",ValueType::Boolean,{},
+                                    {Trigger::pressed()}}));
+    CHECK(lateContext.defineAction({"ActionHold",ValueType::Boolean,{},
+                                    {Trigger::hold(0.1f)}}));
+    CHECK(lateContext.defineAction({"Continuous",ValueType::Boolean}));
+    MappingContext late{"Late"};
+    late.bind("MappingPressed",{Device::Keyboard,150},{},{Trigger::pressed()});
+    late.bind("ActionPressed",{Device::Keyboard,151});
+    late.bind("ActionHold",{Device::Keyboard,152});
+    late.bind("Continuous",{Device::Keyboard,153});
+    CHECK(lateContext.registerContext(late));
+    for (int code : {150,151,152,153})
+        lateContext.setControl({Device::Keyboard,code},1);
+    CHECK(lateContext.activateContext("Late"));
+    CHECK(!has(lateContext.update(0.2f),"MappingPressed",Phase::Triggered));
+    CHECK(!has(lateContext.events(),"ActionPressed",Phase::Triggered));
+    CHECK(!has(lateContext.events(),"ActionHold",Phase::Triggered));
+    CHECK(has(lateContext.events(),"Continuous",Phase::Triggered));
+    for (int code : {150,151,152,153})
+        lateContext.setControl({Device::Keyboard,code},0);
+    lateContext.update(0.016f);
+    for (int code : {150,151,152,153})
+        lateContext.setControl({Device::Keyboard,code},1);
+    CHECK(has(lateContext.update(0.05f),"MappingPressed",Phase::Triggered));
+    CHECK(has(lateContext.events(),"ActionPressed",Phase::Triggered));
+    CHECK(!has(lateContext.events(),"ActionHold",Phase::Triggered));
+    CHECK(has(lateContext.update(0.06f),"ActionHold",Phase::Triggered));
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
