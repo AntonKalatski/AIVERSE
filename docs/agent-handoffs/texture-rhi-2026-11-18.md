@@ -4724,3 +4724,31 @@ Next: Update native texture documentation with the separate
 maxExaminedPages CPU safety bound. Then compile/run the
 focused verifier on a full source checkout and correct
 actual failures. Keep PR #21 Draft pending driver checks.
+
+## Stage 7AH — document separate prefetch CPU lookup and candidate budgets (2026-11-18)
+
+Documentation commit: 73981a02610e49b5edcad0eaa9d5e2f4baf9b84e.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+Files: skills/visuals/aiverse-texture-rhi/SKILL.md,
+docs/texture-rhi.md.
+
+Changes: The native visible-UV usage example configures
+maxExaminedPages alongside maxCandidates. Architecture
+documentation explicitly distinguishes a bounded number
+of all unique page/residency lookups (including already
+resident or queued mip ancestors) from the budget for
+nonresident pages that still need uploads. This captures
+the Stage 7AF no-starvation scheduling correction and
+prevents agents from treating the two caps as equivalent.
+
+Compatibility: Documentation-only; no production code, ECS,
+serialization, disk layout or network change.
+
+Actual verification: GitHub doc commit succeeded.
+Native C++ compile, CTest, skill-catalog audit and GPU tests
+NOT RUN. PR remains Draft.
+
+Next: Native build/test all texture RHI sources and relevant
+editor + real Metal/GL/Vulkan feedback shader readbacks.
+Record exact tested HEAD and fix compiler/behavior errors.
+Do not claim the source as production-ready until validation.
