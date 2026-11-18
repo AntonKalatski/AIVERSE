@@ -216,7 +216,10 @@ void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
         if(s.projectiles.size()>=256||!bag(a,kind==Action::Frag?3:kind==Action::Smoke?4:5,-1))return;
         uint8_t grenade=kind==Action::Frag?1:kind==Action::Smoke?2:3;
         auto eye=a.pos+Vec3{{},stanceHeight(a,config_.motor)-Fixed::fromRatio(1,10),{}};
-        s.projectiles.push_back({s.nextObject++,now+c.grenadeFuse,a.slot,grenade,eye,direction(a.yaw,a.pitch)*15_fx+Vec3{{},3_fx,{}},100,{},0});return;
+        spawnProjectile(sim,Projectile{s.nextObject++,now+c.grenadeFuse,a.slot,
+            grenade,eye,direction(a.yaw,a.pitch)*15_fx+Vec3{{},3_fx,{}},
+            100,{},0});
+        return;
     }
     if(kind==Action::Drop) {
         if(s.loot.size()>=256||!(a.owned&(1u<<a.weaponIndex)))return;
