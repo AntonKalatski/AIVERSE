@@ -7,6 +7,7 @@
 #include "engine/net/WebSocket.h"
 #include "engine/platform/Platform.h"
 #include "engine/platform/EnhancedInputAdapter.h"
+#include "engine/platform/EnhancedInputConfig.h"
 #include "engine/world/ChunkScene.h"
 #include "engine/world/WorldScene.h"
 #include "engine/platform/ContentReader.h"
@@ -18,6 +19,8 @@
 #include "engine/audio/Audio.h"
 #include "engine/platform/EngineDir.h"
 #include <fstream>
+#include <filesystem>
+#include <iterator>
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
@@ -40,6 +43,7 @@ struct App {
     i18n::Localization lang;
     ein::InputSystem actions;
     platform::EnhancedInputAdapter inputAdapter{actions};
+    platform::enhanced_config::Profile inputProfile;
     fps::Input input;
     bool fireHeld=false,fireQueued=false,jumpQueued=false,aimHeld=false,prone=false;uint32_t buySelection=0;
     audio::AudioEngine audio;double stepSound=0,viewTime=0;uint32_t lastReload=0;
@@ -107,8 +111,74 @@ struct App {
         actions.registerContext(std::move(fpsContext));
         actions.activateContext("FPS",0);
     }
+
+    std::string inputProfilePath() const {
+        // Stable local FNV-1a ID: do not use std::hash (implementation-dependent).
+        std::uint64_t hash=14695981039346656037ULL;
+        for(unsigned char c:projectRoot){hash^=c;hash*=1099511628211ULL;}
+        return platform::userDataDir()+"/enhanced-input-"+std::to_string(hash)+".json";
+    }
+    bool saveInputProfile() const {
+        const std::string file=inputProfilePath(), temp=file+".tmp";
+        {
+            std::ofstream out(temp,std::ios::binary|std::ios::trunc);
+            if(!out)return false;
+            out<<platform::enhanced_config::writeProfile(inputProfile).dump(2);
+            if(!out)return false;
+        }
+        std::error_code error;
+        std::filesystem::rename(temp,file,error);
+        if(error){
+            std::error_code ignored;
+            std::filesystem::remove(file,ignored);
+            error.clear();std::filesystem::rename(temp,file,error);
+        }
+        if(error)return false;
+        platform::syncUserData();
+        return true;
+    }
+    void loadInputConfig() {
+        namespace cfg=platform::enhanced_config;
+        std::string text,error;
+        // Full project mapping asset replaces built-in FPS defaults when present/valid.
+        // Project-specific actions stay in the project, never inside engine libraries.
+        if(platform::readContentFile(projectRoot+"/input/actions.json",text)){
+            try{
+                cfg::Asset asset;
+                if(!cfg::readAsset(Json::parse(text),asset,&error) ||
+                   !cfg::installAsset(actions,asset,&error))
+                    std::fprintf(stderr,"Enhanced Input asset ignored: %s\n",error.c_str());
+            }catch(const std::exception& ex){
+                std::fprintf(stderr,"Enhanced Input asset ignored: %s\n",ex.what());
+            }
+        }
+        std::ifstream file(inputProfilePath(),std::ios::binary);
+        if(file){
+            try{
+                const std::string source((std::istreambuf_iterator<char>(file)),
+                                         std::istreambuf_iterator<char>());
+                cfg::Profile profile;
+                if(cfg::readProfile(Json::parse(source),profile,&error) &&
+                   cfg::applyProfile(actions,profile,&error))
+                    inputProfile=std::move(profile);
+                else std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",error.c_str());
+            }catch(const std::exception& ex){
+                std::fprintf(stderr,"Enhanced Input profile ignored: %s\n",ex.what());
+            }
+        }
+    }
+    // Host/UI entry point for reassignment; persists a validated context-local mapping id.
+    bool rebindInput(const std::string& context,std::uint64_t id,ein::Control control) {
+        if(!actions.rebind(context,id,control))return false;
+        auto it=std::find_if(inputProfile.rebindings.begin(),inputProfile.rebindings.end(),
+           [&](const auto& entry){return entry.context==context&&entry.mappingId==id;});
+        if(it!=inputProfile.rebindings.end())it->control=control;
+        else inputProfile.rebindings.push_back({context,id,control});
+        return saveInputProfile();
+    }
     void init(gfx::Device& device) {
         configureInput();
+        loadInputConfig();
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
             auto reader=[&](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);};
