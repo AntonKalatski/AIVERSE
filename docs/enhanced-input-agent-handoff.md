@@ -116,3 +116,24 @@ Stage 3: add a tiny adapter for \`platform::Event\` and \`platform::GamepadState
 
 **Next agent**
 Stage 4 must add validated action/context JSON schemas and per-user rebinding profile persistence, without changing \`rules.json\` gameplay data contracts. Update input skill and catalog, install tests for invalid JSON, save/load roundtrip and override priorities. Then update this handoff immediately. Stage 5: migrate RTS/editor to configurable contexts, expose actions UI, verify all sample projects.
+
+## Stage 4 — validated project assets + user profiles + agent skill/catalog (written; CI pending)
+
+**Code**
+- \`engine/platform/EnhancedInputConfig.h\`: JSON \`Asset\` / \`ContextConfig\` / \`Profile\` / \`Rebind\` models and schema-version 1. \`readAsset\`, \`writeAsset\`, \`installAsset\` (stages a new InputSystem before replacing current); \`readProfile\`, \`writeProfile\`, \`applyProfile\` (validates every target id before rebinding). Uses the existing \`engine/data/Json.h\`, string key/button/axis names from platform enums, limits on objects/counts/numerics and helpful path errors. **Host/presentation only**, not linked into core deterministic ECS.
+- \`apps/fps/client.cpp\`: loads optional complete \`<project>/input/actions.json\` (invalid or missing -> built-in mapping fallback), then local profile under \`platform::userDataDir()/enhanced-input-<stable FNV path hash>.json\`. \`App::rebindInput(context,id,Control)\` is a local host/UI hook that updates the profile and writes a temp+rename file; \`platform::syncUserData()\` after write. No user-visible binding editor yet.
+- \`tests/libraries/enhanced_input_config_tests.cpp\` and its CMake target/CTest \`library_enhanced_input_config\`: JSON asset/profile roundtrip, chord config, stable code names, unknown IDs/duplicate bindings/unsupported code/version fail closed.
+- \`docs/enhanced-input.md\`: user-facing architecture, examples, complete JSON schema, profile format, native/ECS usage and validation.
+- \`skills/ui/aiverse-input/SKILL.md\`: rewritten for Action/Context API and requires a doc handoff after each step.
+- \`libraries/catalog.json\`: existing input package 0.1.1 -> 0.2.0, dependency pins for new headers/docs and descriptions. Legacy source remains \`gameplay/Input.h\`.
+- \`AGENTS.md\`: added Enhanced Input ownership row and per-stage agent handoff rule.
+
+**Supported contract:** asset path is a convention for the standalone FPS sample, not an implied existing \`rules.json\` or \`game.json\` option. If present, the asset contains the **entire** desired FPS action set (not a partial merge). Pure header can be consumed by a native C++ project via \`AIVERSE::lib_input\`. The platform JSON adapter requires engine JSON includes. Keep \`input/actions.json\` inside each concrete project's own repo, not in the engine repo.
+
+**Verification status:** implementation and documentation committed; Linux/Apple/MSVC compiler and CTest have not yet returned success. Draft PR #20 triggers CI; prior CI runs were canceled due new commits. Explicitly investigate final CI results and do not merge until green. The repo is too large to pull in the current tool container (network DNS is unavailable); validate through Github Actions and user's local Mac build.
+
+**Next agent: Stage 5**
+1. Fix any compiler/test failures from draft PR #20 CI. Check new header for GCC/MSVC aggregate warnings and \`tests/libraries/CMakeLists.txt\` nesting. Run isolated library targets and full engine build.
+2. Add editor input settings (Input Actions / Mapping Contexts / modifier/trigger UI, capture key to rebind, priority and conflict warnings), using \`docs/editor-windows.md\` and ImGui/RmlUi event capture correctly.
+3. Integrate RTS \`apps/client\` and in-editor hosted game input with higher-priority UI/Modal/Viewport contexts, preserving text input/IME and the existing RTS Commands. Treat gameplay actions as client->Commands, not sim mutations.
+4. Test pad disconnect, held key during modal activation, duplicate explicit IDs, chord consumption precedence, same-frame tap, focus loss; update reference docs, tests, skill/catalog and this handoff after the next stage. Keep unrelated editor changes minimal.
