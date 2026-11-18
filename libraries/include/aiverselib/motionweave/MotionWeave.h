@@ -5,6 +5,7 @@
 // Simulation::world(), which must remain deterministic.
 #pragma once
 #include <aiverselib/animation/EcsAnimationSystems.h>
+#include <aiverselib/animation/MotionWeaveScheduler.h>
 
 namespace aiverse::lib::animation {
 
@@ -14,6 +15,12 @@ namespace aiverse::lib::animation {
 struct MotionWeave {
     static void update(World& presentation,float dt) {
         stepAnimationPresentation(presentation,dt);
+    }
+    // Host-owned scheduler enables persistent multithreading. The original
+    // two-argument overload remains sequential and backwards-compatible.
+    static MotionWeaveScheduleStats update(
+            World& presentation,float dt,MotionWeaveScheduler& scheduler) {
+        return scheduler.update(presentation,dt);
     }
 };
 

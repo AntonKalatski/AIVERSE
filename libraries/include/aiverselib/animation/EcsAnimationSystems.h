@@ -5,6 +5,7 @@
 #include "AnimationMontage.h"
 #include "PhysicalPoseBlend.h"
 #include "PoseInertialization.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -87,7 +88,8 @@ inline AnimationPreparedPools prepareAnimationPresentation(World& world) {
     return p;
 }
 inline void evaluateAnimationPresentationRange(World& world,
-        const AnimationPreparedPools& p,float dt,size_t begin,size_t end) {
+        const AnimationPreparedPools& p,float dt,size_t begin,size_t end,
+        const std::vector<size_t>* selected=nullptr) {
     if(!p.players || !p.poses || !std::isfinite(dt) || dt<0.f)return;
     auto* players=p.players;
     auto* poses=p.poses;
@@ -97,7 +99,10 @@ inline void evaluateAnimationPresentationRange(World& world,
     auto* graphNotifies=p.graphNotifies;
     auto* recoveries=p.recoveries;
     const World& read=world;
-    for(size_t i=begin;i<std::min(end,players->size());++i) {
+    const size_t available=selected?selected->size():players->size();
+    for(size_t k=begin;k<std::min(end,available);++k) {
+        const size_t i=selected?(*selected)[k]:k;
+        if(i>=players->size())continue;
         const Entity e=players->entityAt(i);
         if (!world.alive(e)) continue;
         auto* pose=poses->tryGet(e.index);

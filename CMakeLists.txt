@@ -637,6 +637,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_motionweave_worker_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
     add_test(NAME motionweave_workers COMMAND aiverse_motionweave_worker_tests)
 endif()
+# Hybrid MotionWeave scheduler regression; validates callback lane separation.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_hybrid_tests tests/animation/motionweave_hybrid.cpp)
+    target_link_libraries(aiverse_motionweave_hybrid_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_hybrid COMMAND aiverse_motionweave_hybrid_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
