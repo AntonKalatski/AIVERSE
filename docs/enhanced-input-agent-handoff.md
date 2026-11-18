@@ -405,3 +405,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Unverified:** code committed; actual compilation, F10 UI, and profile restart/Swap smoke tests intentionally deferred until user testing phase. Need verify ImGui combo labels, capture and syncUserData on real macOS/Windows.
 
 **Next:** per-user player profiles and optional Action-based RTS touch camera gestures, then source-level closure audit. No tests run yet.
+
+## Stage 31 — shared per-user profile store, FPS migration and authored preset test fix (2026-11-18)
+
+**New API:** `engine/platform/EnhancedInputUserProfiles.h` (`enhanced_config::UserProfiles`) provides `setScope(userDataDir,projectIdentifier)`, `path(userId)`, `load(userId,InputSystem)`, `rebind(userId,InputSystem,context,id,control,policy)`, and `reset(userId,InputSystem,projectDefaults)`. Profiles are isolated by project and numeric local-user ID. File hashing is stable FNV-1a; user 0 retains the existing FPS `enhanced-input-HASH.json` name for backwards compatibility; users 1+ use `-user-<id>`. All writes validate first, preserve previous state on failure and persist **both IDs** for Swap.
+
+**FPS integration:** `apps/fps/client.cpp` now uses `UserProfiles` for load/rebind instead of duplicating per-profile storage logic; project-authored defaults are cached before applying player 0 overrides. F10 UI includes `Restore project defaults`, which resets the user's profile without changing `input/actions.json`, and uses the shared transactional persistence. Still a single network/local player in FPS sample; the multi-user service is available for native split-screen projects.
+
+**Tests authored and obvious stale assumptions fixed (execution deferred):** `enhanced_input_config_tests.cpp` no longer assumes RTS has exactly one context (it grew Gameplay/Camera/Pointer/TopDown); checks all contexts' stable IDs. New profile tests cover two isolated player paths, swapping two FPS keys, restart/restore and reset to defaults. `enhanced_rts_input_tests.cpp` expects four default RTS contexts. Catalog and agent skill updated.
+
+**Next:** close remaining RTS touch/gesture routing and player UI input focus; inspect source/CI only, no tests until user requests test phase.
