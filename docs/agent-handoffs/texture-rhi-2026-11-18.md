@@ -4464,3 +4464,46 @@ texture tests. Fix any compile/test failures, especially
 disk->GPU prefetch callback ordering and backend source integration.
 Add GPU feedback only as a separate bounded pipeline with
 safe synchronization and a separate handoff.
+
+## Stage 7AA — bounded RGBA8 GPU feedback codec for virtual textures (2026-11-18)
+
+Code commit: 44dab9d947f51b62ec46827515135a6734f95785.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+New file: engine/gfx/VirtualTextureFeedback.h.
+
+Implementation: Defines a portable *opt-in* 32-bit virtual page ID
+stored as four RGBA8 UNORM bytes: x/y use 11 bits each, mip uses
+five bits, virtual layer four bits, and the MSB marks valid pixels.
+Zero is an invalid/cleared pixel. CPU
+encodeVirtualTextureFeedback/decodeVirtualTextureFeedbackId
+roundtrip this layout. Bounded VirtualTextureFeedbackDecoder
+accepts only exact packed linear RGBA8 GPU readback data,
+validates virtual tile bounds and format, skips invalid pixels,
+deduplicates pages and ranks them by observed pixel frequency.
+The decoder converts page coordinates to normalized
+VirtualTextureVisibleRegion rectangles for the existing
+UV prefetch planner, retaining source mip/layer and priority.
+Shader snippets kVirtualTextureFeedbackGLSL and
+kVirtualTextureFeedbackMSL encode the same integer bit layout.
+
+Source limits: 2048x2048 mip-zero tile grid, <=31 mip levels,
+<=16 virtual layers, 16MiB max readback pixels (config limit),
+65536 max unique page records, bounded output regions.
+This is a feedback codec + shader helper, NOT a registered
+render pass, GPU feedback camera or automatic readback loop.
+App must render the helpers to unblended non-sRGB RGBA8
+and call Device::readTextureAsync, then feed decoded regions
+to prefetchVisibleVirtualPages. Its callback still executes on
+the graphics-device owner thread in a later frame.
+
+Compatibility: CPU/GLSL/MSL header only; no change to
+gfx::Device ABI, RHI backend, ECS, save/network or asset format.
+
+Verification: GitHub source commit succeeded. C++ compilation,
+CTest, GLSL/MSL shader compilation, GPU write/readback accuracy
+and native platform tests NOT RUN.
+
+Next: Add CPU codec roundtrip, malformed readback, multi-layer
+and frequency priority regression tests; register in CMake and
+focused verifier, then add usage instructions to the agent skill.
+Run native GPU feedback render/readback before release.
