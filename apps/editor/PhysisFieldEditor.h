@@ -175,6 +175,9 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
     }
     if (picked.empty()) return false;
     selectPhysisField(picked);
+    // Open the common Inspector's MapProps panel for the selected PHYSIS field.
+    // The PHYSIS field is authored JSON, not a fake runtime ECS Selection.
+    ed.select({Selection::MapProps,-1,{}});
     render::float3 ground;
     if (camera.screenToGround(io.MousePos.x-vp.originX,
         io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,ground,
@@ -190,61 +193,15 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
     return true;
 }
 
-inline void drawPhysisFieldsPanel(Editor& ed) {
+inline void drawPhysisFieldProperties(Editor& ed) {
     using namespace physis_authoring;
     auto& state = physisFieldEditorState();
-    const Json config = read(ed.doc());
-    ui::section(ICON_GLOBE,"PHYSIS — объекты и Gizmo");
-    if (!config.isObject()) {
-        ui::hint("Создайте PHYSIS в свойствах карты, затем добавляйте поля.");
-        if (ImGui::Button("Открыть свойства карты##physisProps")) {
-            ed.select({Selection::MapProps,-1,{}});
-            ed.focusWindow("inspector");
-        }
-        return;
-    }
-    ImGui::Checkbox("Показать маркеры в Сцене", &state.showMarkers);
-    ImGui::Checkbox("Редактировать маркеры мышью", &state.editMode);
-    if (state.editMode)
-        ImGui::TextDisabled("Перетащите маркер в Сцене (Shift — высота). Один drag = одно Undo.");
-
-    const double x = std::clamp(double(ed.sceneCam.target.x),-1000000.0,1000000.0);
-    const double y = std::clamp(double(ed.sceneCam.target.y),-1000000.0,1000000.0);
-    const double z = std::clamp(double(ed.sceneCam.target.z),-1000000.0,1000000.0);
-    const auto add = [&](aiverse::physis::AuthoredFieldKind kind) {
-        std::string id;
-        if (addField(ed.doc(),kind,x,y,z,id,&state.error)) {
-            selectPhysisField(id);
-            state.editMode = true;
-            state.showMarkers = true;
-        }
-    };
-    if (ImGui::SmallButton("+ Ветер")) add(aiverse::physis::AuthoredFieldKind::Wind);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("+ Смерч/ураган")) add(aiverse::physis::AuthoredFieldKind::Storm);
-    ImGui::SameLine();
-    if (ImGui::SmallButton("+ Гравитация")) add(aiverse::physis::AuthoredFieldKind::Gravity);
-    if (!state.error.empty()) ui::toneText(ui::Tone::Error,"%s",state.error.c_str());
-
     std::string collection;
-    std::size_t index=0;
+    std::size_t index = 0;
     Json selected;
-    bool exists = findField(read(ed.doc()),state.selectedId,collection,index,&selected);
-    if (!exists && !state.selectedId.empty()) selectPhysisField("");
-    if (ImGui::BeginChild("##physisFields",ImVec2(0,140),ImGuiChildFlags_Borders)) {
-        for (const char* key : {"windZones","storms","gravityFields"}) {
-            const auto& fields=read(ed.doc())[key];
-            if (!fields.isArray()) continue;
-            for (const auto& entry : fields.items()) {
-                const std::string id=entry.getStr("id");
-                if (ImGui::Selectable((id+"##physisField").c_str(),
-                                      id==state.selectedId))
-                    selectPhysisField(id);
-            }
-        }
-    }
-    ImGui::EndChild();
-    if (!exists) return;
+    if (!findField(read(ed.doc()), state.selectedId, collection, index, &selected))
+        return;
+    ui::section(ICON_PENCIL,"PHYSIS — параметры поля");
 
     if (state.draftId!=state.selectedId) {
         state.draftId=state.selectedId;
@@ -325,6 +282,65 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
         if (removeField(ed.doc(),state.selectedId,&state.error))
             selectPhysisField("");
     }
+}
+
+inline void drawPhysisFieldsPanel(Editor& ed) {
+    using namespace physis_authoring;
+    auto& state = physisFieldEditorState();
+    const Json config = read(ed.doc());
+    ui::section(ICON_GLOBE,"PHYSIS — объекты и Gizmo");
+    if (!config.isObject()) {
+        ui::hint("Создайте PHYSIS в свойствах карты, затем добавляйте поля.");
+        if (ImGui::Button("Открыть свойства карты##physisProps")) {
+            ed.select({Selection::MapProps,-1,{}});
+            ed.focusWindow("inspector");
+        }
+        return;
+    }
+    ImGui::Checkbox("Показать маркеры в Сцене", &state.showMarkers);
+    ImGui::Checkbox("Редактировать маркеры мышью", &state.editMode);
+    if (state.editMode)
+        ImGui::TextDisabled("Перетащите маркер в Сцене (Shift — высота). Один drag = одно Undo.");
+
+    const double x = std::clamp(double(ed.sceneCam.target.x),-1000000.0,1000000.0);
+    const double y = std::clamp(double(ed.sceneCam.target.y),-1000000.0,1000000.0);
+    const double z = std::clamp(double(ed.sceneCam.target.z),-1000000.0,1000000.0);
+    const auto add = [&](aiverse::physis::AuthoredFieldKind kind) {
+        std::string id;
+        if (addField(ed.doc(),kind,x,y,z,id,&state.error)) {
+            selectPhysisField(id);
+            state.editMode = true;
+            state.showMarkers = true;
+        }
+    };
+    if (ImGui::SmallButton("+ Ветер")) add(aiverse::physis::AuthoredFieldKind::Wind);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+ Смерч/ураган")) add(aiverse::physis::AuthoredFieldKind::Storm);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+ Гравитация")) add(aiverse::physis::AuthoredFieldKind::Gravity);
+    if (!state.error.empty()) ui::toneText(ui::Tone::Error,"%s",state.error.c_str());
+
+    if (ImGui::BeginChild("##physisFields",ImVec2(0,140),ImGuiChildFlags_Borders)) {
+        for (const char* key : {"windZones","storms","gravityFields"}) {
+            const auto& fields=read(ed.doc())[key];
+            if (!fields.isArray()) continue;
+            for (const auto& entry : fields.items()) {
+                const std::string id=entry.getStr("id");
+                if (ImGui::Selectable((id+"##physisField").c_str(),
+                                      id==state.selectedId))
+                    selectPhysisField(id);
+            }
+        }
+    }
+    ImGui::EndChild();
+    if (!state.selectedId.empty()) {
+        std::string collection;
+        std::size_t index=0;
+        if (!findField(read(ed.doc()),state.selectedId,collection,index))
+            selectPhysisField("");
+    }
+    drawPhysisFieldProperties(ed);
+
 }
 
 } // namespace aiverse::editor
