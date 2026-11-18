@@ -1006,3 +1006,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `4612b8509791f535fd1e5b7d1caae15b243ef64d`.
 - Registered `aiverse_ecs_fixed_regeneration_policy_test` under CMake CTest using public `AIVERSE::lib_ecs_timed_mechanics` and engine headers; independent of RTS/FPS module linkage.
 - Verification: CMake text committed; **configure/compile/CTest not run**. Next: include fixture in standalone ECS suite, update catalog/skill, check native results.
+
+
+### 2026-11-18 — Fixed regen parity standalone suite integration
+- Implementation SHA: `ebe06f36e9f70efddb21dc366fb9ac06f2195bc8`.
+- Changed `tests/run_ecs_experiment_suite.sh` to build and run the focused fixed-point regen parity fixture independently, using the public header and the engine Fixed implementation only.
+- Verification: script committed through GitHub; **no bash -n, native compilation or execution performed** because a repository checkout was unavailable.
+- Next: update native catalog's dependency list, skill and persistent issue; execute on an agent with repository checkout.
