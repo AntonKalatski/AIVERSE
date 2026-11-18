@@ -1225,3 +1225,53 @@ before calling this stage validated.
   not double-evaluate or change gameplay authority. Commit code
   separately and append Stage 48.
 
+## Stage 48 — new engine-level, genre-independent AIVERSE View (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft;
+  based on `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `ec2a803cd0e0972805351f2db87792969446ad31`.
+- **Changed files:** new `engine/view/View.h`, new
+  `tests/view/view.cpp`; root `CMakeLists.txt`.
+- **Architecture/API:** new canonical `aiverse::View`
+  (also `aiverse::view::View`), `AIVERSE::view` INTERFACE CMake
+  target and engine-level `aiverse::view::Object` data contract.
+  A ViewObject contains only stable source ID/generation, a generic
+  `render::ModelDraw` packet, optional immutable AnimationGraph,
+  named AnimationParameters, significance and visibility.
+  `View::update(span<Object>,float)` reconciles objects with
+  `MotionWeaveSourceBridge`, assigns shared animation budgets,
+  updates optional per-object animation in a PRIVATE presentation
+  ECS World, and reports generic stats. `View::submit(Renderer3D&,
+  span<Object>)` forwards models to the existing renderer with
+  optional evaluated pose/matrices. No RTS/FPS/AI/gameplay types,
+  order IDs, weapons, server counters or genre conditionals.
+  `View::clear` and `presentationEntity` expose controlled lifetime
+  and mapping. Unanimated static models render through the same
+  View draw packet path.
+- **Compatibility:** existing `game::RtsView` remains as the
+  pre-migration compatibility adapter for extensive RTS-only
+  terrain, fog, unit event mappings, scripted effects and contact
+  queries. This code stage introduces a functional, independent
+  engine-level `View`; it does NOT yet rename or remove the legacy
+  type, and does not claim all legacy RtsView features are migrated.
+  Existing FPS clients and simulation/network schemas unchanged.
+- **Tests:** new CTest `view_genre_independent` checks generic
+  static/animated object projection, named arbitrary input,
+  generation restart, removal and lifetime. **NOT RUN** per user
+  request, including CMake/editor/FPS/RTS smoke builds and TSAN.
+- **Risks:** submit() borrows host-owned ModelDraw pointers and must
+  be called after update() while those models/materials remain alive.
+  The default View constructor currently specifies zero background
+  workers; this conservative default avoids new worker threads in
+  small/static scenes, but the host can explicitly pass worker count.
+  No generic terrain/fog/camera or shared RTS feature extraction
+  has happened yet. The eventual RtsView rename must be handled
+  with a source-compatible shim while removing RTS semantics.
+- **Next actionable stage:** add a `modules/rts/view`-owned
+  adapter that projects safe compiled RtsView animation objects
+  into `aiverse::View` or the generic SourceBridge without
+  duplicating evaluation. Keep complex procedural and contact IK
+  on their existing code path until parity; start with opt-in
+  static/simple Graph scene integration. Commit code then separate
+  Stage 49 handoff. Do not add RTS includes to engine/view.
+
