@@ -1892,3 +1892,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Documentation SHA:** `96e09a7f304c56b6bbdbca2b6f83dec4e29618f4`.
 - Updated `docs/ecs-all-features-migration-plan.md` with the concrete single-writer projectile cutover: live FPS mirror reads `ProjectileRuntime` and derives State/editor projection; default mode plus original public one-argument API preserve State→ECS legacy save v9 import; all known built-in projectile mutation sources use ECS on the authority gate. Lists still-legacy Actor/loot/vehicle ownership and comprehensive native regression gates.
 - **Verification:** documentation committed. Static wiring audit 17/17 passed earlier, **not native gameplay pass**.
+
+
+### 2026-11-18 — AGENTS mandate one-way FPS ProjectileRuntime writer and legacy v9 import
+- **Implementation SHA:** `4de40df4c9194624595d6526e2ed27cacd6122be`.
+- Updated `AGENTS.md` with a mandatory single-writer rule: all known live projectile lifecycle operations write canonical `ProjectileRuntime` with `fps.ecsAuthority=true`; end-of-tick `syncDynamicEntities(sim,true)` derives the State editor/save view only; only setup/legacy v9 deserialization retains the original `syncDynamicEntities(sim)` State→Runtime import. The stale-State 777 vs Runtime 17 mirror fixture is documented.
+- **Verification:** source documentation committed, native compiler/CTest/Editor/network still not run.
