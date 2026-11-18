@@ -518,6 +518,7 @@ void GameClient::event(const Event& e) {
     if (e.type == EventType::MouseDown || e.type == EventType::TouchBegin) uiOwnsPointer_ = uiWants;
     if (e.type == EventType::MouseMove || e.type == EventType::TouchMove) uiWants = uiWants && !boxing_ && !sendDrag_ && !panning_;
     if (e.type == EventType::MouseUp || e.type == EventType::TouchEnd || e.type == EventType::TouchCancel) uiWants = uiOwnsPointer_;
+    inputShortcuts_.setTopDownEnabled(screen_==Screen::Playing && topDownActive());
     const auto inputActions=inputShortcuts_.onEvent(e,screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
     if (!uiWants) overlay_.handleEvent(e);
     mapDragEvent(e, uiWants);   // rules "mapClick": drag from a map-drag HUD element onto the map (ClientScriptCmd.cpp)
@@ -576,7 +577,7 @@ void GameClient::event(const Event& e) {
     if (screen_ != Screen::Playing || !sim_) return;
     if (planet() && planetCameraEvent(e, uiWants)) return;   // orbit camera (ClientPlanet.cpp)
     if (regionEvent(e, uiWants)) return;
-    if (topDownEvent(e, uiWants)) return;   // top-down heroes: sticks, buttons, WASD + mouse aim (ClientTopDown.cpp)
+    if (topDownEvent(e, uiWants, inputActions)) return;   // top-down heroes: sticks, buttons, WASD + mouse aim (ClientTopDown.cpp)
     World& w = sim_->world();
     switch (e.type) {
     case EventType::MouseDown:
