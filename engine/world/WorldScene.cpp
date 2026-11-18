@@ -53,6 +53,8 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     // can later override them via setNereidSurfaces().
     const auto water=parseNereidWaterManifest(manifest);
     nereidWater_.setMaxUploadsPerFrame(water.maxUploadsPerFrame);
+    nereidWater_.setAsyncPreparation(water.asyncPrepare);
+    nereidWater_.setMaxWaterStagingBytes(water.maxStagingBytes);
     nereidWater_.setMaxEstimatedUploadBytes(water.maxEstimatedUploadBytes);
     nereidWater_.setVisibilityRange(water.visibilityRange);
     if(manifest.has("nereidWater"))nereidWater_.setSurfaces(water.surfaces);
