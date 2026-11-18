@@ -1330,3 +1330,13 @@ Keep PR Draft. Do not claim the Horizon renderer visually passed.
    `distantTerrain` must be disabled or explicitly coordinated
    with native authored terrain ownership and biome masks.
 6. Preserve stage-by-stage handoff and do not merge before tests.
+
+### Horizon stage follow-up fixes (same day, still unverified)
+- `b89901e8714ac651860993c1b98586376ad9f572`:
+  `TerraWeaveHorizonScene.h` now retires an old GPU proxy if the next
+  region has no visible clusters and `distantTerrain=false`
+  (ocean/desert), preventing stale silhouettes.
+- `d4bc70b51ad98c757cc232a1bae6bfa270df95cc`:
+  `TerraWeaveHorizon.h` uses half-open mid/far distance bands,
+  preventing duplicate card ownership on an exact LOD boundary.
+No new build/CTest/GPU verification was performed for these fixes.
