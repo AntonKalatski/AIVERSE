@@ -3245,3 +3245,50 @@ sorting/filtering by dimension/format and estimated bytes. Build
 and run the editor as well as `texture_contract` CTest and
 cross-backend resource allocation regression tests. Commit
 implementation and handoff separately.
+
+## Stage 7L — virtual texture physical page upload/publish coordinator (2026-11-18)
+
+**Code commit:** `4064825167f76c9d8225c5da2b207c8671e5e083`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**File:** new `engine/gfx/VirtualTextureStreamer.h`.
+
+**Implementation/API:** New native, genre-independent
+`gfx::VirtualTextureStreamer` composes the existing
+`VirtualTexturePageCache`, `VirtualTexturePageTable` and
+`TextureStreamQueue`. `initialize` allocates a fixed-budget
+Texture2DArray physical atlas and RGBA8 Texture2DArray page table.
+`stage(VirtualPageKey,packedBytes,pin)` reserves a page or reuses
+the deterministic LRU physical slot, **invalidates stale table
+entries on the GPU before overwriting evicted physical slices**,
+and deep-copies a complete physical page through the staging
+queue. `drain` publishes a virtual page in the GPU table only
+after successful GPU upload completion, rebuilds nearest parent-mip
+fallback mappings, then dispatches app callbacks after synchronizing
+the table. `cancel`, `evict`, `pin`, `touch`,
+`physicalAtlas`, `pageTableTexture`, `resolve`,
+`encodedPageTable`, `pageStats` and `streamStats` expose
+lifetime, diagnostics and resource access. If an invalidating
+page-table upload fails, the entire facade becomes non-sampleable
+rather than risking an old virtual coordinate reading overwritten
+physical texels. Source pixels must include the intended gutter.
+
+**Architecture:** Fixed-count 2DArray atlas bounds physical GPU
+memory while the logical virtual texture may contain many pages.
+The 16-bit physical slot encoding and mip-fallback page-table
+layout are from prior Stage 7H–7K virtual texture work and the
+existing GLSL/MSL shader helpers. Graphics device owns backend
+work; this facade owns its physical texture handles and must be
+destroyed before `gfx::Device`. No genre-specific ECS, save
+format or network changes. No runtime disk worker, automatic
+feedback pass, disk paging, BC page transcoding or sparse API
+allocation yet.
+
+**Tests actually performed:** New header committed to GitHub.
+**C++ compile NOT RUN; CTest NOT RUN; native GPU shader/render
+NOT RUN.** This source-only stage is not production certified.
+
+**Next:** Add a mock-device fixture verifying budgeted page
+publishing, LRU+pinning, parent fallbacks, cancellation, staged
+source ownership and upload failure quarantine. Register it in
+CTest, then integrate virtual texture preview/telemetry into
+editor and real GPU scenes. Continue separate code/handoff commits.
