@@ -3,6 +3,7 @@
 // wrecks, depleted extractors).
 #include "RtsInternal.h"
 #include "../../libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h"
+#include "../../libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
 #include <algorithm>
 #include <map>
 
@@ -310,15 +311,30 @@ void RtsModule::sysProjectiles(Simulation& sim) {
         if (w.alive(pr.target) && w.has<Unit>(pr.target)) { pr.aim = lift(sim, w.get<Transform>(pr.target).pos, Fixed::fromRatio(4, 10)); }
         if (!lib::genre::advanceKinematicPursuit(tr.pos, pr.aim, pr.speed * dt)) return;
         const WeaponDef* pwd = projectileWeapon(pr);
-        if (w.alive(pr.target) && w.has<Unit>(pr.target)) dealDamage(sim, pr.target, pr.damage, pr.damageType, pr.source, pr.owner, pwd);
-        if (pr.onHit >= 0 && w.alive(pr.target)) onHits.push_back({pr.onHit, pr.source, pr.target, pr.owner, pr.sourceType, pr.aim});
-        if (pr.splash.raw > 0) {
-            gs.hash.query(pr.aim, pr.splash, [&](Entity s) {
-                if (s == pr.target || !w.has<Unit>(s)) return;
-                if (!hostile(sim, pr.owner, w.get<Owner>(s).player)) return;
-                if (dist2D(w.get<Transform>(s).pos, pr.aim) <= pr.splash) dealDamage(sim, s, pr.damage, pr.damageType, pr.source, pr.owner, pwd);
+        // Shared ECS impact dispatch retains the old per-projectile ordering:
+        // direct damage, queued on-hit payload, then in-order splash damage.
+        // RTS-specific armor, shields, factions and callbacks remain policies.
+        lib::genre::resolveOrderedProjectileImpact(
+            {p, pr.source, pr.target, pr.aim, pr.damage, pr.splash},
+            [&](Entity target) {
+                if (w.alive(target) && w.has<Unit>(target))
+                    dealDamage(sim, target, pr.damage, pr.damageType, pr.source, pr.owner, pwd);
+            },
+            [&](Entity target) {
+                if (pr.onHit >= 0 && w.alive(target))
+                    onHits.push_back({pr.onHit, pr.source, target, pr.owner, pr.sourceType, pr.aim});
+            },
+            [&](Vec3 center, Fixed radius, auto&& visitor) {
+                gs.hash.query(center, radius, [&](Entity candidate) { visitor(candidate); });
+            },
+            [&](Entity candidate) {
+                return w.has<Unit>(candidate) &&
+                    hostile(sim, pr.owner, w.get<Owner>(candidate).player) &&
+                    dist2D(w.get<Transform>(candidate).pos, pr.aim) <= pr.splash;
+            },
+            [&](Entity target) {
+                dealDamage(sim, target, pr.damage, pr.damageType, pr.source, pr.owner, pwd);
             });
-        }
         w.destroyLater(p);
     });
     sysProjectilePrograms(sim, programs);
