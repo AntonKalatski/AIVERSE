@@ -98,10 +98,10 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
-        postFx_.init(dev);
-        postFxBase_ = render::Prisma::defaultQualityFor(dev, platform::isTouchDevice());
-        postFx_.setQuality(postFxBase_);
-        postFx_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {
+        prisma_.init(dev);
+        prismaBase_ = render::Prisma::defaultQualityFor(dev, platform::isTouchDevice());
+        prisma_.setQuality(prismaBase_);
+        prisma_.setImageLoader([](const std::string& path, int& w, int& h, std::vector<uint8_t>& rgba) {
             std::string bytes;
             return platform::readContentFile(path, bytes) && render::decodeImage(bytes, w, h, rgba);
         });
@@ -234,7 +234,7 @@ void GameClient::shutdown() {
     audio_.shutdown();
     if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
     view_.shutdown(*dev_);
-    postFx_.shutdown();
+    prisma_.shutdown();
     r3d_.setBakedLighting(nullptr);
     baked_.release();
     r3d_.shutdown();
@@ -244,9 +244,9 @@ void GameClient::shutdown() {
     overlay_.shutdown();
 }
 
-void GameClient::configurePostFx(const Json& map) {
-    postFx_.configure(manifest_["postfx"], map["postfx"]);
-    postFx_.setQuality(postFxBase_);
+void GameClient::configurePrisma(const Json& map) {
+    prisma_.configure(manifest_["postfx"], map["postfx"]);
+    prisma_.setQuality(prismaBase_);
 }
 
 void GameClient::startMatch(size_t idx, const Json& initialVars) {
@@ -295,7 +295,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         if (viewScripts_.load(*sim_, rules, map, uint8_t(spectator_ ? 0 : human_))) viewScripts_.attach(*sim_);
         view_.lights().configure(manifest_["lighting"], map["lighting"], map["lights"]); // day/night, map lights
         if (auto pe = game::configurePlayerColors(manifest_["playerColors"]); !pe.empty()) std::fprintf(stderr, "%s\n", pe.c_str());
-        configurePostFx(map);
+        configurePrisma(map);
         configureBakedLighting(maps_[idx].file);
         quality_.reset(int(r3d_.shadowQuality()), int(r3d_.lights.quality()));
     } catch (const std::exception& e) {
@@ -941,8 +941,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             r3d_.lights.setQuality(aiverse::render::LightQuality(quality_.lights()));
             shadowQuality_ = boundShadowQuality_ = quality_.shadows();
             // post effects follow: one tier down per governor step, but keep the cheap look (low)
-            if (postFxBase_ != render::PostFxQuality::Off)
-                postFx_.setQuality(render::PostFxQuality(std::max(1, int(postFxBase_) - quality_.stepsDown())));
+            if (prismaBase_ != render::PrismaQuality::Off)
+                prisma_.setQuality(render::PrismaQuality(std::max(1, int(prismaBase_) - quality_.stepsDown())));
         }
 
         steerPossessed();
@@ -1056,7 +1056,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
-        r3d_.render(pass, &postFx_);
+        r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD
