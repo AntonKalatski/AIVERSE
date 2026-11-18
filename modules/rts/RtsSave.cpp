@@ -232,7 +232,8 @@ bool RtsModule::serializeState(Simulation& sim, Archive& a) {
     }
     uint32_t pools = uint32_t(kPools::count);
     io(a, pools);
-    if (a.writing() && w.poolCount() != kPools::count) return false;   // an unlisted component type exists
+    // Native C++ extra pools are allowed only when registered for deterministic persistence.
+    if (a.writing() && w.poolCount() != kPools::count + sim.persistentEcs().componentCount()) return false;
     const size_t expect = a.writing() ? kPools::count : a.formatVersion < 7 ? kPoolsBefore7 : a.formatVersion < 8 ? kPoolsBefore8 : kPools::count;
     if (!a.writing() && pools != expect) { a.fail(); return false; }
     kPools::run(a, w, expect);

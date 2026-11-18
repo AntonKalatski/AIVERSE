@@ -1551,3 +1551,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - No game rule/config change, new component type or v9 save schema. Legacy mode keeps the original immediate source-vector loop, but invokes the same solver to avoid two divergent algorithms.
 - **Verification:** GitHub source commit only; native compiler, `fps` tests, deep/COW rollback, dynamic Entity allocator ordering, network and save v9 parity **NOT executed**. Added method declaration in preceding SHA `b853ab8fd414375e76b99c40e5ac3b3a32df1c9a`. Check consistency of `DynamicEntityIndex` after projectile expired/recreated, especially snapshot restore and branch split budget.
 - **Next:** add direct-ECS authority tests showing an in-place `ProjectileRuntime` change survives into the next stage, add deterministic mixed programmed/non-programmed order/branch tests and compile `aiverse_fps_tests` before any default flip.
+
+### 2026-11-18 — Native ECS persistence registry on shared PR #7
+- Added per-Simulation registered native ECS component/resource schemas with deterministic field-wise save/hash, strict ID/version/entity validation and v10 chunks. Existing no-native ECS projects retain save v9 bytes and hashes.
+- Registered pools are permitted by RTS fixed-pool whitelist; unregistered pools still fail. World snapshot/COW includes registered state. New standalone and CTest fixture covers order, save/load, COW, legacy and schema failure.
+- Native compilation, CTest, platform replay and Mac editor smoke tests are NOT YET RUN in this session. The older whole-Simulation load is not fully transactional: the custom schema chunk itself is staged.

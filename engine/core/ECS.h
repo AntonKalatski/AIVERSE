@@ -493,6 +493,10 @@ public:
             ? static_cast<const T*>(resources_[id].get()):nullptr;
     }
 
+    template<class T> void eraseResource() {
+        uint32_t id=detail::componentTypeId<T>();
+        if(id<resources_.size())resources_[id].reset();
+    }
     // Save states (Simulation::serialize): the entity allocator, restored exactly so ids and recycling match.
     struct EntityState { std::vector<uint32_t> gens; std::vector<uint8_t> alive; std::vector<uint32_t> free; std::vector<Entity> pendingDestroy; };
     EntityState entityState() const { return {gens_, alive_, free_, pendingDestroy_}; }

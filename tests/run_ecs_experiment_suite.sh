@@ -78,6 +78,9 @@ compile_run ecs-hitscan-resolution -Ilibraries/include \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+compile_run ecs-native-persistence tests/ecs_native_persistence_test.cpp \
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp \
+    engine/data/Json.cpp engine/data/JsonCompose.cpp
 compile_run ecs-cross-genre-timed-mechanics -Ilibraries/include \
     tests/ecs_cross_genre_timed_mechanics_test.cpp \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \

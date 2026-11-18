@@ -20,6 +20,7 @@
 #include "../core/Random.h"
 #include "../data/Json.h"
 #include "Command.h"
+#include "PersistentEcs.h"
 
 namespace aiverse {
 
@@ -95,6 +96,13 @@ public:
     Simulation(SimConfig cfg, std::unique_ptr<GameModule> module);
 
     void setup(const Json& rules, const Json& map);
+    template<class T> void registerPersistentComponent(std::string id,uint32_t version=1) {
+        persistentEcs_.registerComponent<T>(world_,std::move(id),version);
+    }
+    template<class T> void registerPersistentResource(std::string id,uint32_t version=1) {
+        persistentEcs_.registerResource<T>(std::move(id),version);
+    }
+    const PersistentEcsRegistry& persistentEcs()const{return persistentEcs_;}
 
     // Queue a command. If cmd.tick == 0 it is scheduled for currentTick + inputDelay.
     // Returns the tick it was scheduled for.
@@ -167,6 +175,7 @@ private:
     SimConfig cfg_;
     std::unique_ptr<GameModule> module_;
     World world_;
+    PersistentEcsRegistry persistentEcs_;
     Random rng_;
     uint32_t tick_ = 0;
     uint32_t tickRate_ = 20;

@@ -224,9 +224,11 @@ module. For fractional values use `Fixed::raw` / `Fixed::fromRaw`, for entity re
 replaces the World. Typed logic can be written as your own functions and structures that read and write this container.
 
 The engine automatically copies the state on rollback, saves it and hashes it together with the ID, VERSION, config and
-command number. Existing world components are saved by the standard mechanism. Adding your own ECS pools or separate
-mutable World resources is not supported by this API: they have no automatic serialization/hashing. A save with an
-unknown pool is rejected.
+command number. Existing world components are saved by the standard mechanism. Adding your own ECS pools and mutable World resources is supported by registering each type during setup
+with `sim.registerPersistentComponent<T>("module.component", version)` or
+`sim.registerPersistentResource<T>("module.resource", version)` and defining portable field-wise
+`io(Archive&, T&)`. Registered state is saved, hashed and included in World rollback;
+unregistered custom pools still fail RTS saves. See [Native ECS persistence](native-ecs-persistence.md).
 
 The simulation allows only Fixed and integer math, randomness through `sim.rng()`, and a stable iteration order. Do not
 change the ECS composition inside `world.each`: collect the operations and apply them after the loop. C++ runs as trusted
