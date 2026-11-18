@@ -180,6 +180,14 @@ inline std::optional<HorizonTerrainClipPlan> planHorizonNearGroundClipping(
                 }
                 for(const auto& polygon:polygons){
                     for(size_t i=1;i+1<polygon.size();++i){
+                        // A half-plane can leave collinear vertices exactly
+                        // on a near tile edge. Do not upload degenerate
+                        // triangles or count them against geometry budgets.
+                        const double ax=polygon[i].x-polygon[0].x;
+                        const double az=polygon[i].z-polygon[0].z;
+                        const double bx=polygon[i+1].x-polygon[0].x;
+                        const double bz=polygon[i+1].z-polygon[0].z;
+                        if(std::abs(ax*bz-az*bx)<1e-5)continue;
                         if(plan.triangles.size()>=bake.maxNearClipTriangles)
                             return std::nullopt;
                         plan.triangles.push_back({
