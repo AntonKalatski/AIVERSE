@@ -150,3 +150,7 @@ Press **F10** while playing the FPS sample to open Input Settings and release po
 ## Complete default mapping presets
 
 The shared engine header `engine/platform/EnhancedInputPresets.h` provides `enhanced_presets::fpsReference()` and `rtsReference()`, returning editable full assets with stable mapping IDs. Both reference clients use these presets, and **Logic → Input Actions → Use FPS defaults / Use RTS defaults** fills the editor buffer with the corresponding complete scheme. Save to write `<project>/input/actions.json`. Existing user rebinding profiles continue to apply by mapping ID. Avoid removing/reordering mapping IDs in a published project without planning a profile migration.
+
+## Mobile touch controls
+
+`EnhancedInputAdapter` supports up to 32 simultaneously tracked touches, each with a stable/recycled `deviceIndex` (0..31). For `Device::Touch`, numeric control code `0` is finger pressed (Boolean level); `1` is relative horizontal motion in logical points, `2` is relative vertical motion. The motion channels accumulate between events and clear after `InputSystem::update(dt)`, just like mouse deltas. Add `Modifier::scale` or `normalize` as appropriate for your touch gesture. Repeated TouchBegin and excess fingers are ignored. TouchEnd/TouchCancel release finger-down; FocusLost cancels all active touches. This is a low-level gesture foundation; pinch, two-finger swipes and gesture recognizers are not yet exposed as named high-level actions.
