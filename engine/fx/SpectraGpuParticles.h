@@ -67,6 +67,7 @@ public:
     bool step(float dt);                    // once per presentation frame
     void draw(const fx::FxFog& fog = {});    // inside render pass
     ComputeBackend backend() const { return backend_; }
+    bool ready() const { return initialized_; }
     bool gpuActive() const { return initialized_ && backend_ == ComputeBackend::Metal; }
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
