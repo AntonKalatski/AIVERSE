@@ -745,3 +745,72 @@ live render, screenshot or GPU benchmark run, by explicit user request.
 **Next agent:** implement opt-in chunked forest host and eventually
 transition crossfade/dither in the shader if visually necessary. Never
 claim per-tree fade or flicker-free camera orbit without GPU verification.
+
+## Stage 4a — opt-in editor forest scene overlay (SOURCE COMMITTED; UNVERIFIED)
+
+Branch: `feature/terraweave`, draft PR #24, base
+`feature/universal-entity-inspector-fps`. Other agents are actively
+editing this branch: fetch current HEAD and each file SHA before modifying.
+
+**Commits/files (2026-11-18):**
+- `f3f2bd007c88724af210f7730ede2d7f594b498b`:
+  `apps/editor/TerraWeaveForestPreview.h`. Editor-only owner of a
+  reusable `ArborForestAdapter`, cached 5x5 presentation tiles
+  around camera (32m tile); deterministic local placement from
+  `map.extra.terraweave` recipe. Two common tree prototypes
+  (broadleaf/conifer) shared across instances. Uses existing
+  `scatter`, `buildFloraBatches`, renderer, LOD atlas, and
+  `gfx::Device` lifecycle.
+- `157de8af70245766ac09153deec47a35470f4632`:
+  `apps/editor/Editor.h`: persistent preview instance and
+  window-accessible toggle/count.
+- `e1efeafc2b7113cf8182fc7bc22bc0f0875f8d94`:
+  `apps/editor/Editor.cpp`: submit forest after existing
+  `RtsView::draw` and before `Renderer3D::render` in Scene view,
+  sample *current* (possibly sculpted) editor heightfield, release
+  uploaded resources on editor/project/map lifecycle.
+- `a3f34307123d34c0e7b81153538dda2a8491f34b`:
+  correct global scatter coordinates vs map-local render coordinates,
+  including nonzero generation origins.
+- `75e31f36d852e5cf8ec4fb1497dfd21a3813b586`:
+  `apps/editor/windows/TerrainWindow.cpp`: explicitly opt-in
+  `Показывать процедурный лес в «Сцене»` checkbox and visible
+  placement count. Disabled when the map has no generator recipe.
+
+**API/data flow:** Existing `MapDoc` generator recipe is read only.
+Prototype models are generated once, uploaded via `gfx::Device`,
+and reused in `Renderer3D::drawModel`. Placement buffers are
+recomputed only when map revision, saved recipe or camera tile
+changes. Forest is for editor display only, not game save/ECS
+entities. World positions stay integer centimetres until the
+existing renderer bridge. Height is sampled from current visual
+map so trees follow manual sculpt changes. Gameplay, physics,
+navmesh, FPS and planet map remain untouched.
+
+**Limitations:** Preview is not yet an ECS forest runtime.
+No tree collision, road/building exclusion (beyond biome/height/
+slope filtering), seasons, growth, true texture-mapped tree
+materials or incremental streaming jobs. The 5x5 tiles are
+generated synchronously on the editor render thread; bounded
+cost but not suitable as production streaming. Runtime streaming
+should use existing `AsyncChunkStream` and revision-safe commits.
+No screenshot or FPS measurements. The renderer shader/alpha atlas
+behaviour is still unverified on Metal/GL/Vulkan.
+
+**Verification actually performed:** GitHub commits and inspection
+of real `Editor::renderScene`, `Renderer3D` and `MapDoc` APIs.
+No local compilation/CTest/editor launch/GPU screenshot has been
+run or observed. DO NOT mark as passing or ready to merge.
+
+**Next concrete tasks:**
+1. Compile the entire `aiverse_editor` target (Mac/Clang first),
+   fix any API or linkage errors and record exact logs.
+2. Add a CPU-only/editor compile smoke target for
+   `TerraWeaveForestPreview.h`, and tests for coordinate rebasing,
+   stable placement and map-revision refresh.
+3. Preview in editor: generate terrain, toggle forest, orbit camera,
+   verify branch LOD and impostor transitions via screenshots.
+4. Add road/building/water masks, prototype configuration and
+   configurable preview budget. Then integrate async chunk streaming
+   via existing `AsyncChunkStream`, not a duplicate scheduler.
+5. Append a fresh handoff stage with measured tests and next step.
