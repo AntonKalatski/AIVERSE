@@ -4831,3 +4831,43 @@ clear state, begin/end/capture ordering, async completion,
 unsupported backend and weak callback destruction. Register
 the test in CMake and focused Texture RHI verifier before
 integrating in a live renderer.
+
+## Stage 7AJ — standalone feedback render pass/mock-device test (2026-11-18)
+
+Code/test commit: dce980b82c3eb08a1e401261bcfdad60c289e253.
+Branch: feature/texture-rhi-unification, Draft PR #21.
+Files: tests/render/virtual_texture_feedback_pass.cpp,
+CMakeLists.txt, tools/verify-texture-rhi.sh.
+
+Test source: aiverse_virtual_texture_feedback_pass_test /
+CTest virtual_texture_feedback_pass uses a strict mock
+gfx::Device. It checks a bounded, single-sample, single-color
+linear RGBA8 texture is allocated with no extra attachments,
+color pass clears all channels to zero, viewport/scissor
+match the target, a nested begin is rejected, and a capture
+can only start after endPass. A deferred callback completes
+the packed RGBA8 page decoder and prevents another begin
+until the result is consumed. Device rejection, invalid pixel
+budget, incompatible feedback/prefetch configs and texture
+allocation failure must fail without leaks or active passes.
+A late callback after feedback pass shutdown holds only
+the runtime's weak state and is ignored safely.
+
+Registered the target in normal CMake and the separate
+focused Texture RHI verifier, including optional --vulkan
+filter. No actual native graphics driver is involved in
+these mock tests; they do not validate shader pipeline
+color formats, integer precision or GPU readback fidelity.
+
+Compatibility: Test source and registration only; runtime
+code remains Stage 7AI; no gameplay/ECS or save changes.
+
+Actual verification: GitHub test/tree/ref commit succeeded.
+CMake configure NOT RUN; C++ compile NOT RUN; CTest NOT RUN;
+Metal, GL/GLES and Vulkan feedback rendering NOT RUN.
+No passing tests claimed.
+
+Next: Document the public VirtualTextureFeedbackPass API
+and native renderer usage, then perform a real native build,
+focused CTest and backend shader render/readback checks.
+Do not merge PR #21 while those checks remain pending.
