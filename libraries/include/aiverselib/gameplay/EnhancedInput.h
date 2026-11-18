@@ -167,7 +167,7 @@ struct MappingContext {
     }
 };
 
-class InputSystem {
+class InputFlow {
 public:
     // Defining an action or context with an existing name replaces it and resets its runtime state.
     bool defineAction(Action action) {
@@ -546,5 +546,10 @@ private:
     std::map<std::string,ActionState> states_;
     std::vector<ActionEvent> events_;
 };
+
+// Compatibility alias: callers using the old Enhanced Input type keep working.
+// New native clients should include aiverselib/gameplay/InputFlow.h and use
+// aiverse::lib::gameplay::inputflow::InputFlow.
+using InputSystem = InputFlow;
 
 } // namespace aiverse::lib::gameplay::enhanced
