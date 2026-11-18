@@ -5126,3 +5126,30 @@ CI mostly queued/cancelled at recent heads.
 Next: inspect actions for this exact HEAD, download logs
 when a job completes, fix observed native compile/test failures,
 then evaluate real Metal/GLES3 GPU tests and reviewer gates.
+
+## Stage 8J — bounded cross-frame deferred GPU feedback visibility (2026-11-18)
+
+Code commit: a88ddd4bb5e74dade0cc90ebcfb3b50dd94e8fa9.
+File: engine/gfx/VirtualTextureFeedbackRuntime.h.
+After a successful asynchronous page-ID feedback capture,
+submit(fileStreamer) now retains the corresponding generic UV
+visibility regions across several graphics frames (default
+maxDeferredFrames=8, allowed 1..1024). Subsequent calls issue
+missing fine-detail pages once earlier coarse pages become
+resident or pending. Fresh feedback replaces old visibility
+rather than accumulating stale camera requests.
+The coordinator releases regions once no candidate or
+request-budget deferral remains, on retry-limit exhaustion,
+or shutdown. No new GPU capture is required for every
+deferred detail page. Device owner thread and existing
+streamer/prefetch bounds are unchanged.
+Compatibility: optional fourth initialize arg with a default;
+existing callers compile without changes. No ECS, serialization,
+network, shaders or RHI Device virtual API changes.
+Verification: GitHub source commit succeeded. Native C++ build
+NOT RUN; virtual_texture_file_streamer CTest NOT RUN; GPU NOT RUN.
+KNOWN FOLLOW-UP: existing runtime integration test still assumes
+submit() consumes all visibility in a single call. The next
+stage MUST update that fixture to expect second-frame fine
+mip submission and third-frame no-op, and consider retry cap.
+Do not claim passing tests at this intermediate HEAD.
