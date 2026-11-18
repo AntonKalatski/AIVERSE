@@ -26,7 +26,7 @@
 #include "engine/net/NetClient.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/ImGuiLayer.h"
-#include "engine/render/PostFx.h"
+#include "engine/render/Prisma.h"
 #include "engine/render/BakedLighting.h"
 #include "engine/render/QualityGovernor.h"
 #include "engine/render/Renderer3D.h"
@@ -323,7 +323,7 @@ private:
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
     int worldRadius_ = 2;
-    render::PostFx postFx_;               // post-processing: game.json / map "postfx" (engine/render/PostFx.h)
+    render::Prisma postFx_;               // post-processing: game.json / map "postfx" (engine/render/Prisma.h)
     render::PostFxQuality postFxBase_ = render::PostFxQuality::Medium;   // tier before the governor stepped down
     void configurePostFx(const Json& map);
     render::BakedLighting baked_;         // the map's baked lightmaps / probes, "<map>.bake" (ClientBaked.cpp, agent-lightbake)
