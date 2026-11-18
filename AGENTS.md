@@ -86,6 +86,27 @@ and CTest have not been verified**. Continue the fixed handoff protocol
 in `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` and
 keep existing CPU/native RTS/FPS behavior unchanged by default.
 
+**Stage 14 — SpectraFX opt-in GPU-authored indirect draw (source committed,
+NOT VERIFIED):** The general `gfx::Device` adds
+`supportsGpuAuthoredIndirectDraw()` (default false; Metal reports
+support via plain indexed indirect, not experimental ICB). Only when
+`ComputeEmitterDesc::gpuIndirect` or
+`GraphRuntimeOptions::gpuIndirect` is explicitly true and the RHI
+supports the method may the restricted additive-sprite path use
+GPU atomic alive compaction and GPU-authored indirect arguments.
+Shader compute storage slots 5/6 are 4-byte alive counter and
+20-byte draw args; MSL and future GLSL sources share the contract.
+Legacy CPU-published gather, full CPU effects and all genre clients
+remain defaults. CPU still owns physical particle lifetime/slot
+bookkeeping. If indirect submission fails, skip rather than emit
+an unsafe CPU draw with stale vertices.
+`tests/vfx_metal_compaction_smoke.mm` is a real Metal shader smoke
+on macOS (no device => CTest SKIP); it does not verify image parity.
+No real Metal run or passing CI result was available while writing
+this stage. Continue the required separate handoff file after every
+bounded implementation stage. Do not claim GPU-resident lifecycle,
+FPS/RTS production integration or GPU performance measurements.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
