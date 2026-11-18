@@ -31,3 +31,29 @@ Read `AGENTS.md`, `docs/view.md` and
 implementation stage commit an independent handoff describing
 exact code SHA, paths, architecture/API, tests actually run or
 NOT RUN, limitations, and next agent's specific action.
+
+## Visibility, layers and surfaces
+
+`AIVERSE::view_visibility` and
+`<engine/view/VisibilityField.h>` provide the reusable
+`aiverse::view::VisibilityField`, independent of RTS/FPS.
+Hosts generate their own visibility bytes; the View effect
+only blends/uploads/renders that presentation field.
+Call `init(gfx::Device&)`, `setLook(VisibilityLook)`,
+`build(device,width,height,heightSampler)`, then
+`update(span<const uint8_t>,width,height,time)` and
+`draw(renderer,time,lowTier)` on the renderer thread.
+Call `shutdown()` before destroying the graphics device.
+Game compatibility aliases remain in
+`modules/rts/view/RtsFog.h` and should not be imported
+by new general-purpose code.
+
+Use `SceneLayerProviders.h` to collect host-owned
+visibility, terrain, road/shore, lighting and other
+opaque render passes into `ViewLayerQueue` in strict
+draw order. `ScenePacketBatch` contains ordinary models,
+meshes, lines and triangles. `Surface.h` combines
+generic height samplers and optional normal estimation.
+Never put gameplay state/authoritative visibility into
+these presentation components.
+

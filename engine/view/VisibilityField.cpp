@@ -254,7 +254,7 @@ void VisibilityField::build(gfx::Device& dev, int w, int h, const std::function<
     }
 }
 
-bool VisibilityField::update(const std::vector<uint8_t>& vision, int w, int h, double time) {
+bool VisibilityField::update(std::span<const uint8_t> vision,int w,int h,double time) {
     if (w != w_ || h != h_ || vision.size() != target_.size()) return false;
     const float dt = lastTime_ < 0 ? 1e6f : float(std::max(0.0, time - lastTime_));
     lastTime_ = time;

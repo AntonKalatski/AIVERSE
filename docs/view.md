@@ -235,3 +235,27 @@ source-compatible. This is a **render submission migration**:
 the game host still owns projectile gameplay, planet tangent
 frames, and previews' simulation-specific data.
 
+### VisibilityField buffer API and ownership
+
+The visibility effect accepts any contiguous byte mask without
+allocating a temporary `std::vector`:
+
+```cpp
+#include <engine/view/VisibilityField.h>
+aiverse::view::VisibilityField visibleLayer;
+visibleLayer.init(device);
+visibleLayer.setLook(viewLook);
+visibleLayer.build(device,width,height,heightSampler);
+visibleLayer.update(std::span<const uint8_t>(mask.data(),mask.size()),
+                    width,height,viewSeconds);
+visibleLayer.draw(renderer,viewSeconds,isLowTier);
+// On shutdown, before device destruction:
+visibleLayer.shutdown();
+```
+
+Existing vector-based `update(vector,...)` calls remain supported
+and forward to the same zero-copy span update implementation.
+The host is responsible for mask semantics and lifetime during
+the synchronous update. This is visual fade/blur and GPU
+rendering only, never simulation-side visibility authority.
+

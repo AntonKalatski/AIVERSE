@@ -3,6 +3,8 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <span>
+#include <utility>
 #include <vector>
 #include "engine/data/Json.h"
 #include "engine/gfx/Gfx.h"
@@ -40,7 +42,13 @@ public:
     void build(gfx::Device& dev, int w, int h, const std::function<float(float, float)>& height);
     // Per frame: vision of the viewer (0/1/2 per cell) -> faded + blurred field, uploaded when it changed.
     // Returns true when the field changed this frame.
-    bool update(const std::vector<uint8_t>& vision, int w, int h, double time);
+    bool update(std::span<const uint8_t> vision,int w,int h,double time);
+    // Existing vector callers remain source-compatible; host buffers
+    // can now be passed as a non-owning span without a temporary vector.
+    bool update(const std::vector<uint8_t>& vision,int w,int h,double time) {
+        return update(std::span<const uint8_t>(vision.data(),vision.size()),
+                      w,h,time);
+    }
     const std::vector<uint8_t>& field() const { return field_; }
     // Optional blur replacing the box blur over the grid rectangle (planets: stacked face rows need a
     // seam-aware neighbourhood). Called with the faded field and the blur radius in cells; null = box blur.
