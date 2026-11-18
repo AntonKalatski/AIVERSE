@@ -190,8 +190,10 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                 const int64_t z=gz*cell+cell/2;
                 const int64_t dx=x-cameraXcm,dz=z-cameraZcm;
                 const int64_t dist2=dx*dx+dz*dz;
+                // Half-open distance bands prevent mid/far clusters
+                // from being present twice on an exact LOD boundary.
                 if (dist2<int64_t(minDistance)*minDistance ||
-                    dist2>int64_t(maxDistance)*maxDistance)continue;
+                    dist2>=int64_t(maxDistance)*maxDistance)continue;
                 if (x-cell/2<-kWorldLimitCm+100 ||
                     z-cell/2<-kWorldLimitCm+100 ||
                     x+cell/2>kWorldLimitCm-100 ||
