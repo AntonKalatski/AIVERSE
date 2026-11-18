@@ -1610,3 +1610,36 @@ add corresponding tests, then validate on Mac Metal,
 Windows GL33, mobile GLES3 and Vulkan. Avoid describing
 typed render targets as supported before per-format
 renderpass tests.
+
+## Stage 5F — conservative typed mip policy and Metal float32 filtering (2026-11-18)
+
+**Implementation commit:** `e17f109aeec3e1333d8b73f8f6779b9d5cfeae08`.
+**Branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Paths:** `engine/gfx/Gfx.h`, `engine/gfx/metal/GfxMetal.mm`,
+`tests/render/texture_contract.cpp`.
+
+**Fix:** `validateTextureDesc` now rejects automatic
+`mipmaps=true` for `RG8/R16F/RG16F/R32F/RG32F` until
+all three backends have verified mip generation for those
+formats. Explicit `mipLevels` with subresource uploads remain
+supported, preventing silent fallback to a single mip on
+one backend. Metal default sampler now requests nearest
+filtering for R32F/RG32F just like its older RGBA32F data
+path and the conservative GLES3 float32 policy. Added CPU
+contract tests for automatic-mip rejection and explicit
+mip-level acceptance.
+
+**Compatibility:** Existing RGBA8/R8/depth/HDR shader paths
+and `Texture2D` defaults are unchanged. New typed
+formats remain sampleable-only until color-target pipeline
+support is intentionally added. No save/network/ECS changes.
+
+**Validation:** GitHub source commit confirmed. Native
+Metal C++/Objective-C++ compilation, all CTests and GPU
+validation **NOT RUN**. No passing CI claim.
+
+**Next:** Run the typed format contract test and native
+2D/3D/array upload/sampling on Metal, GL33, GLES3 and
+Vulkan; verify row/slice pitch with actual GPU readback.
+Then extend typed color render targets and remaining
+integer/depth formats only after building and testing.
