@@ -38,3 +38,10 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 - `engine/physis/PhysisDebugPalette.h` supplies only read-only display colour helpers. The editor PHYSIS window is `apps/editor/windows/PhysisWindow.cpp`, using the existing window plugin registrar; **do not** put ImGui or editor includes into `engine/physis`.
 - Editor live PHYSIS is strictly read-only. Demo simulation is a fresh private `aiverse::World`, stepped only with explicit controls; never use it as a surrogate for actual game integration. The 2D heatmap outlines storm/wind/gravity volumes but is not a 3D Scene overlay or editable Inspector.
 - Stage 17 test `physis_editor_view` / CMake / CI: authored, **NOT RUN**. Full editor build and macOS visual QA still mandatory. Handoff: `docs/agent-handoffs/physis-editor-debug-view-2026-11-18.md`.
+
+## Stage 18 — Scene/Inspector and generic map config handoff
+
+- `PhysisSceneGeometry.h` outputs reusable Fixed-position diagnostics only. The graphical projection and controls live in `apps/editor/PhysisSceneOverlay.h`, `apps/editor/windows/PhysisWindow.cpp`, and the shared `InspectorWindow.cpp`. Keep all ImGui/RHI/Box3D/editor includes OUT of PHYSIS core.
+- `PhysisProjectConfig.h` may parse a map-level `physis` JSON block and call `installFromMap` explicitly from any native `GameModule::setup`. No per-genre automatic registration or direct renderer state. Inspector authoring uses `MapDoc` snapshots and validations and must not mutate live `Simulation::world()`.
+- `physis_scene_geometry`, `physis_project_config`, and (when `aiverse_editor_core` exists) `physis_authoring` CTests are authored and registered, **NOT RUN**. The Scene GUI still requires native compilation and macOS visual/click tests before calling it functional.
+- Merge prerequisite from main: `810feba70f01cdc35003ac80ea8486f39dc16049`, handoff `docs/agent-handoffs/physis-main-merge-2026-11-18.md`. Stage 18 handoff: `docs/agent-handoffs/physis-editor-scene-inspector-2026-11-18.md`. Continue to document every implementation stage in a separate commit with real test results.
