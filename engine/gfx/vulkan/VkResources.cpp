@@ -423,8 +423,10 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
         return {};
     }
     if (d.sampleCount != 1 || d.storage ||
-        (d.dimension != TextureDimension::Texture2D && (d.renderTarget || d.format == PixelFormat::Depth))) {
-        error_ = "Vulkan: multisample/storage and layered/3D render attachments not yet supported";
+        ((d.dimension == TextureDimension::Texture1D ||
+          d.dimension == TextureDimension::Texture3D) &&
+         (d.renderTarget || d.format == PixelFormat::Depth))) {
+        error_ = "Vulkan: multisample/storage and 1D/3D render attachments unsupported";
         return {};
     }
     VTexture t;

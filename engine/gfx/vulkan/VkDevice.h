@@ -149,6 +149,8 @@ public:
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
 
     void beginPass(const PassDesc& d) override;
+    bool supportsRenderTargetPasses() const override { return true; }
+    bool beginRenderTargets(const RenderTargetPassDesc& desc) override;
     void endPass() override;
     void setViewport(const Rect& r) override;
     void setScissor(const Rect& r) override;
@@ -267,6 +269,11 @@ private:
 
     // pass state
     bool inPass_ = false, passSkipped_ = false, hdrPass_ = false;
+    // Explicit mip/layer passes allocate temporary 2D views + framebuffer.
+    // Deferred destruction happens only after vkCmdEndRenderPass and GPU completion.
+    VkFramebuffer scopedPassFb_ = VK_NULL_HANDLE;
+    VkImageView scopedPassColor_ = VK_NULL_HANDLE;
+    VkImageView scopedPassDepth_ = VK_NULL_HANDLE;
     int passW_ = 0, passH_ = 0;
     VkFormat passColor_ = VK_FORMAT_UNDEFINED, passDepth_ = VK_FORMAT_UNDEFINED;
     uint32_t pipelineId_ = 0;

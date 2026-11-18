@@ -176,9 +176,138 @@ void VulkanDevice::beginPass(const PassDesc& d) {
     setScissor({});
 }
 
+bool VulkanDevice::beginRenderTargets(const RenderTargetPassDesc& desc) {
+    if (!validateRenderTargetPassDesc(desc) || !recording_ || inPass_) {
+        error_ = "Vulkan: invalid or nested render-target pass";
+        return false;
+    }
+    if (desc.colorCount > 1) {
+        error_ = "Vulkan: multi-color pipelines are not implemented";
+        return false;
+    }
+    auto check = [&](const RenderTargetAttachment& a, bool wantDepth, int& w, int& h) {
+        const VTexture* t = textures_.get(a.texture.id);
+        if (!t || !t->image || !t->renderTarget && !t->depth ||
+            a.mipLevel < 0 || a.arrayLayer < 0 ||
+            a.mipLevel >= t->levels || a.arrayLayer >= t->layers ||
+            t->depth != wantDepth ||
+            t->dimension == TextureDimension::Texture1D ||
+            t->dimension == TextureDimension::Texture3D) return false;
+        if (!wantDepth && t->format != PixelFormat::RGBA8 &&
+            t->format != PixelFormat::RGBA8_sRGB &&
+            t->format != PixelFormat::RGBA16F) return false;
+        w = std::max(1, t->width >> a.mipLevel);
+        h = std::max(1, t->height >> a.mipLevel);
+        return true;
+    };
+    VTexture* color = nullptr;
+    VTexture* depth = nullptr;
+    int w = 0, h = 0;
+    if (desc.colorCount == 1) {
+        if (!check(desc.colors[0], false, w, h)) {
+            error_ = "Vulkan: invalid color mip/layer or renderable format"; return false;
+        }
+        color = textures_.get(desc.colors[0].texture.id);
+    }
+    if (desc.depth.texture.valid()) {
+        int dw = 0, dh = 0;
+        if (!check(desc.depth, true, dw, dh) || (w && (w != dw || h != dh))) {
+            error_ = "Vulkan: invalid depth mip/layer or extent mismatch"; return false;
+        }
+        if (!w) { w = dw; h = dh; }
+        depth = textures_.get(desc.depth.texture.id);
+    }
+    if (w < 1 || h < 1) return false;
+    VkImageView views[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    auto makeView = [&](const VTexture* t, const RenderTargetAttachment& a, VkImageView& out) {
+        if (!t) return true;
+        auto ci = vkStruct<VkImageViewCreateInfo>(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+        ci.image = t->image;
+        ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        ci.format = t->vkFormat;
+        ci.subresourceRange = {t->depth ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT,
+                               uint32_t(a.mipLevel), 1, uint32_t(a.arrayLayer), 1};
+        return vkCreateImageView(device_, &ci, nullptr, &out) == VK_SUCCESS;
+    };
+    if (!makeView(color, desc.colors[0], views[0]) ||
+        !makeView(depth, desc.depth, views[1])) {
+        if (views[0]) vkDestroyImageView(device_, views[0], nullptr);
+        if (views[1]) vkDestroyImageView(device_, views[1], nullptr);
+        error_ = "Vulkan: attachment image view creation failed"; return false;
+    }
+    const VkFormat cf = color ? color->vkFormat : VK_FORMAT_UNDEFINED;
+    const VkFormat df = depth ? depth->vkFormat : VK_FORMAT_UNDEFINED;
+    const bool clearColor = color && desc.colors[0].clear;
+    const bool clearDepth = depth && desc.depth.clear;
+    const VkRenderPass rp = renderPassFor(cf, df, clearColor, clearDepth);
+    if (!rp) {
+        if (views[0]) vkDestroyImageView(device_, views[0], nullptr);
+        if (views[1]) vkDestroyImageView(device_, views[1], nullptr);
+        error_ = "Vulkan: render pass creation failed"; return false;
+    }
+    VkImageView attachments[2]{};
+    uint32_t attachmentCount = 0;
+    if (views[0]) attachments[attachmentCount++] = views[0];
+    if (views[1]) attachments[attachmentCount++] = views[1];
+    auto fi = vkStruct<VkFramebufferCreateInfo>(VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO);
+    fi.renderPass = rp;
+    fi.attachmentCount = attachmentCount;
+    fi.pAttachments = attachments;
+    fi.width = uint32_t(w); fi.height = uint32_t(h); fi.layers = 1;
+    VkFramebuffer fb = VK_NULL_HANDLE;
+    if (vkCreateFramebuffer(device_, &fi, nullptr, &fb) != VK_SUCCESS) {
+        if (views[0]) vkDestroyImageView(device_, views[0], nullptr);
+        if (views[1]) vkDestroyImageView(device_, views[1], nullptr);
+        error_ = "Vulkan: attachment framebuffer incomplete"; return false;
+    }
+    VkClearValue values[2]{};
+    uint32_t clears = 0;
+    if (color) {
+        for (int i = 0; i < 4; ++i)
+            values[clears].color.float32[i] = desc.colors[0].clearColor[i];
+        ++clears;
+    }
+    if (depth) { values[clears].depthStencil = {desc.clearDepth, 0}; ++clears; }
+    auto begin = vkStruct<VkRenderPassBeginInfo>(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
+    begin.renderPass = rp;
+    begin.framebuffer = fb;
+    begin.renderArea = {{0, 0}, {uint32_t(w), uint32_t(h)}};
+    begin.clearValueCount = clears;
+    begin.pClearValues = values;
+    VkCommandBuffer cb = slots_[size_t(slot_)].main;
+    vkCmdBeginRenderPass(cb, &begin, VK_SUBPASS_CONTENTS_INLINE);
+    scopedPassFb_ = fb;
+    scopedPassColor_ = views[0];
+    scopedPassDepth_ = views[1];
+    inPass_ = true;
+    passSkipped_ = false;
+    pipelineId_ = 0;
+    boundPipeline_ = VK_NULL_HANDLE;
+    descriptorsDirty_ = true;
+    passW_ = w; passH_ = h;
+    passColor_ = cf; passDepth_ = df;
+    hdrPass_ = color && color->format == PixelFormat::RGBA16F;
+    setViewport({0, 0, w, h});
+    setScissor({});
+    return true;
+}
+
 void VulkanDevice::endPass() {
     if (!inPass_) return;
     if (!passSkipped_) vkCmdEndRenderPass(slots_[size_t(slot_)].main);
+    if (scopedPassFb_) {
+        // A framebuffer must outlive command execution; destroy its views
+        // only after destroying the framebuffer, on frame completion.
+        const VkFramebuffer fb = scopedPassFb_;
+        const VkImageView color = scopedPassColor_, depth = scopedPassDepth_;
+        deferDestroy([this, fb, color, depth] {
+            vkDestroyFramebuffer(device_, fb, nullptr);
+            if (color) vkDestroyImageView(device_, color, nullptr);
+            if (depth) vkDestroyImageView(device_, depth, nullptr);
+        });
+        scopedPassFb_ = VK_NULL_HANDLE;
+        scopedPassColor_ = scopedPassDepth_ = VK_NULL_HANDLE;
+    }
     inPass_ = false;
     passSkipped_ = false;
     hdrPass_ = false;
