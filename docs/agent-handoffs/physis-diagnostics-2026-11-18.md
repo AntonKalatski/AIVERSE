@@ -9,6 +9,7 @@
 - `671da23fce97587cd559e5f6f85f036c428c801c`: focused GitHub Actions includes the diagnostic test target.
 - `b1b494ba787a7e27a58fbf9af799626fdc469c58`: public PHYSIS documentation.
 - `c2923f7a240d1666711ca0d624f5fff2ee04d4c1`, `4a2f29840ef556b036450bf8a707646e031c40ac`: root and subsystem AGENTS.md ownership notes.
+- `cd65c63ab1e5ef21b75a977612c478bf5918ba1f`: explicit `<utility>` include for `std::move`.
 
 ## Delivered / design
 
