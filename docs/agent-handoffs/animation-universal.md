@@ -571,3 +571,20 @@ before calling this stage validated.
 - NOT RUN (physics disabled in typical builds).
 - Next: explicit host integration parity, tests/CI, Editor build,
   real imported avatar and FPS CPU/GPU screenshots.
+
+
+## Stage 29 — FPS AnimationGraph file hot reload (2026-11-18)
+
+- Implementation commit `55e1106fde501998c67ebf7a5eab0f75a781874f`.
+- `apps/fps/client.cpp` supports optional `fps.visual.graphFile`
+  pointing to a project-local AnimationGraph JSON. The client loads and
+  recompiles through the shared `AnimationHotReloadRegistry`, polls
+  for changed timestamps every 30 render frames, keeps the last good
+  compiled graph on failure, and propagates a valid revision to existing
+  presentation entities using `AnimationGraphKeyComponent`.
+- The authoritative FPS sim, save state, network snapshot/checksum and
+  game mechanics are unchanged. Graph replacement restarts the visual
+  player, not the gameplay actor. `docs/fps.md` documents opt-in JSON.
+- **NOT RUN** by user instruction; test compilation/visual reload later.
+- Next: complete remaining host/asset links, review code statically and
+  keep this PR Draft until proper build/CTest/GPU validation.
