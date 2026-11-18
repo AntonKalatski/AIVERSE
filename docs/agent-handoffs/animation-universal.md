@@ -1538,3 +1538,41 @@ before calling this stage validated.
   Code commit then new Stage 55 handoff, no test execution
   unless the user explicitly authorizes it.
 
+## Stage 55 — generic Camera3D and canonical View::beginScene (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft
+  PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `05e76a8a9b32e08076a13676ea78f290aaf5b9a8`.
+- **Files:** `engine/render/Math3D.h`,
+  `engine/render/Renderer3D.h`, `engine/view/View.h`,
+  `tests/view/view.cpp` and `docs/view.md`.
+- **Architecture/API:** the render engine's generic target/orbit
+  camera is now `aiverse::render::Camera3D`; the historical
+  `RTSCamera` spelling is a type alias to the SAME struct,
+  preserving all fields and source compatibility. Renderer3D's
+  public `beginScene`, `camera()` and private camera members
+  use `Camera3D` without RTS terms. Universal
+  `aiverse::View::beginScene(Renderer3D&,Camera3D,int,int)`
+  forwards the same setup to the existing RHI/pipeline, with
+  no genre assumptions or extra GPU work.
+- **Compatibility:** `using RTSCamera=Camera3D` means no duplicated
+  camera math, no model/scene format changes and no new game
+  dependencies. Older renderer C++ definitions that use
+  the alias still match the underlying function signature.
+- **Tests:** deferred `view_genre_independent` fixture now has
+  static_assert verifying RTSCamera and Camera3D type identity.
+  **NOT RUN**: source written through GitHub connector only;
+  CMake/editor/RTS/FPS regression and TSAN pending user test stage.
+- **Risks:** changing a canonical struct's type name (with an alias)
+  may impact poorly isolated forward declarations by third-party
+  clients; repository code search found only the one original
+  `struct RTSCamera` definition. More specialized camera behavior
+  remains in host-side code and must be composed via generic
+  View without genre-dependent branches.
+- **Next actionable stage:** move the remaining common scene
+  render/frame/layer submission from legacy game-side RtsView
+  into engine View, retaining FPS/RTS host adapters for their own
+  mechanics; add generic scene line/triangle packets and
+  immutable draw collections if needed. Code commit, then
+  Stage 56 handoff separately before advancing.
+
