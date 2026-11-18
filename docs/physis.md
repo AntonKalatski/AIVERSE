@@ -61,3 +61,16 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 - Stage 5: [Simulation/persistence](agent-handoffs/physis-integration-2026-11-18.md)
 
 Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+
+## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
+
+PHYSIS owns **environmental climate and weather only**. NEREID (Water agent,
+draft PR #23) owns water-body geometry, flow, contacts and buoyancy; TerraWeave
+(Terra agent, draft PR #24) owns terrain, biomes, vegetation and land rendering.
+Use the opt-in host integration plan and precise metre/centimetre conversion in
+[`physis-nereid-terraweave-integration.md`](physis-nereid-terraweave-integration.md).
+The existing PHYSIS shallow-flood prototype is **not** an authoritative
+replacement for NEREID water. Do not run dual water simulation in a shared region.
+
+This is a **design contract only**. Terra/NEREID integration, rendering and
+cross-system tests remain NOT IMPLEMENTED / NOT RUN on this branch.
