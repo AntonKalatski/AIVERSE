@@ -1832,3 +1832,33 @@ introduce bounded tile paging with compatibility on
 WebGL/mobile; do NOT fork graphics backend. Another
 potential improvement is incremental tree rendering in
 the existing editor and static-world asset bake integration.
+
+## Stage 10 completion checkpoint — functions only, no verification
+
+**Branch:** `feature/terraweave`, Draft PR #24; last verified remote
+feature source head before this checkpoint: `00cda4672a3310c8dd289cf52438f4a92bbcf52f`.
+The PR remains separate from the base branch; no merge into main.
+
+**Features shipped in stage 10:** bulk offline native Horizon atlas
+encoder and host executable, stable fixed atlas slots and TWH2
+format revision, asynchronous region-source ownership, optional
+partial CPU atlas/terrain rebuild for world edits, WorldScene
+publication of changed authored tile bounds. The head includes
+all docs and `skills/world/aiverse-terraweave/SKILL.md`
+changes (latest skill commit `00cda4672a3310c8dd289cf52438f4a92bbcf52f`).
+
+**Tests actually executed:** NONE. Tests and screenshots were
+explicitly delegated to another AI agent; even a successful
+source push is not evidence that the implementation compiles.
+No CMake, ctest, CI, GPU render, asset roundtrip or perf
+measurement was performed in this feature-implementation turn.
+
+**Remaining limitations / next functional owner:** full GPU
+model/atlas upload after partial CPU edits; preview/authoring
+support for painted biomes and region-level road/water provider
+beyond the existing resident collision-box masks; static-world
+authored surface offline batch adapter; optional RHI texture
+subregion upload or page-oriented HLOD resource model after
+backend API parity review. A separate **test agent** must compile
+and execute the full Stage 10 matrix listed above and record
+actual failures/results without silently marking NOT RUN as PASS.
