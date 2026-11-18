@@ -1773,14 +1773,14 @@
       "package": "input",
       "path": "skills/ui/aiverse-input/SKILL.md",
       "domain": "gameplay",
-      "summary": "Context and priority input routing, axis deadzones, selection, control groups and drag gestures",
+      "summary": "AIVerse InputFlow: typed Input Actions, mapping contexts, modifiers, triggers, local multiplayer, user profiles and legacy Input.h compatibility",
       "side": "presentation",
       "runtime": "header",
       "target": "AIVERSE::lib_input",
       "dependencies": [],
       "backendDependencies": [],
       "requiresOwner": null,
-      "source": "libraries/include/aiverselib/gameplay/Input.h",
+      "source": "libraries/include/aiverselib/gameplay/InputFlow.h",
       "keywords": []
     },
     {
@@ -2252,30 +2252,6 @@
         "механик",
         "фича",
         "движок"
-      ]
-    },
-    {
-      "id": "aiverse-niagara-vfx",
-      "package": null,
-      "path": "skills/visuals/aiverse-niagara-vfx/SKILL.md",
-      "domain": "workflow",
-      "summary": "Legacy Niagara-style discovery alias; use the official SpectraFX workflow",
-      "side": "tools",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "source": "docs/spectrafx.md",
-      "keywords": [
-        "niagara",
-        "unreal",
-        "vfx",
-        "legacy",
-        "compatibility",
-        "ниягара",
-        "анриал",
-        "старая",
-        "совместимость"
       ]
     },
     {
@@ -3237,40 +3213,6 @@
         "трафик",
         "машин",
         "пешеход"
-      ]
-    },
-    {
-      "id": "aiverse-spectrafx",
-      "package": null,
-      "path": "skills/visuals/aiverse-spectrafx/SKILL.md",
-      "domain": "workflow",
-      "summary": "SpectraFX universal graphs, particle assets and ECS presentation for native games",
-      "side": "tools",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "source": "docs/spectrafx.md",
-      "keywords": [
-        "spectrafx",
-        "spectra",
-        "vfx",
-        "particles",
-        "particle",
-        "graph",
-        "effects",
-        "visual",
-        "ecs",
-        "game",
-        "genre",
-        "gpu",
-        "cpu",
-        "spectrum",
-        "спектрафх",
-        "эффекты",
-        "частицы",
-        "граф",
-        "универсальн"
       ]
     },
     {
@@ -5044,6 +4986,64 @@
       "keywords": []
     },
     {
+      "id": "aiverse-niagara-vfx",
+      "package": null,
+      "path": "skills/visuals/aiverse-niagara-vfx/SKILL.md",
+      "domain": "workflow",
+      "summary": "Legacy Niagara-style discovery alias; use the official SpectraFX workflow",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/spectrafx.md",
+      "keywords": [
+        "niagara",
+        "unreal",
+        "vfx",
+        "legacy",
+        "compatibility",
+        "ниягара",
+        "анриал",
+        "старая",
+        "совместимость"
+      ]
+    },
+    {
+      "id": "aiverse-spectrafx",
+      "package": null,
+      "path": "skills/visuals/aiverse-spectrafx/SKILL.md",
+      "domain": "workflow",
+      "summary": "SpectraFX universal graphs, particle assets and ECS presentation for native games",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/spectrafx.md",
+      "keywords": [
+        "spectrafx",
+        "spectra",
+        "vfx",
+        "particles",
+        "particle",
+        "graph",
+        "effects",
+        "visual",
+        "ecs",
+        "game",
+        "genre",
+        "gpu",
+        "cpu",
+        "spectrum",
+        "спектрафх",
+        "эффекты",
+        "частицы",
+        "граф",
+        "универсальн"
+      ]
+    },
+    {
       "id": "aiverse-nereid-water",
       "package": "nereid-water",
       "path": "skills/gameplay/aiverse-nereid-water/SKILL.md",
@@ -5056,7 +5056,17 @@
       "backendDependencies": [],
       "requiresOwner": null,
       "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
-      "keywords": ["water", "ocean", "lake", "river", "swim", "nereid", "вода", "река", "океан"]
+      "keywords": [
+        "water",
+        "ocean",
+        "lake",
+        "river",
+        "swim",
+        "nereid",
+        "вода",
+        "река",
+        "океан"
+      ]
     }
   ]
 }
