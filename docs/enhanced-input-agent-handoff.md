@@ -787,3 +787,31 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Known unverified risks:** C++ alias/header ordering across toolchains; ImGui symbols and editor event ordering; transient gesture lifetime; profile disk I/O; long conditional-chord graphs and feedback fallback performance; local multi-user hotplug; platform-specific focus/IME behavior. These require real test evidence, not assumptions.
 
 **Next agent task (Stage 56):** start with this Stage 55 handoff, read root AGENTS.md and `skills/ui/aiverse-input/SKILL.md`, capture current branch SHA and upstream relationship, run the dedicated validation phase when authorized, fix failures, commit code+stage documentation together, update PR #20 test evidence. Do not claim production-ready until native + cross-platform validation has passed.
+
+
+## Stage 56 — first real GitHub Actions evidence and Release test correction (2026-11-18)
+
+**Branch/entry SHA:** `feature/aiv990_enhanced_input` at `cf26d02d0343c6060632685d9f188d2088272786`. **Status:** targeted InputFlow tests on Ubuntu, macOS and Windows were **QUEUED / NOT RUN** at inspection; one broad Linux ARM64 CI job **FAILED** for proven Release-only warnings outside InputFlow. Source fixes applied, but the post-fix validation jobs are **QUEUED / NOT CONFIRMED PASS**. Do NOT mark PR #20 ready.
+
+### Evidence collected (actual remote CI, not a local build)
+- GitHub Actions run `44305537614`, workflow `AIVerse InputFlow targeted checks`, jobs: Ubuntu `134806003972`, macOS `134806004347`, Windows `134806004751`. All three reported **queued**, conclusion null when queried; there is no compiler/test evidence yet.
+- GitHub Actions full CI run `44305538135`, **Linux arm64 gcc** job `134806075873` reported **completed/failure**. Compiler invocation showed `g++ -O3 -DNDEBUG -std=c++20 ... -Werror`. Its complete downloaded job log identifies failures compiling **only** `tests/ecs_wave_executor_test.cpp` and `tests/ecs_experiments_test.cpp` at that point: unused variables `expected`, `failed`, `reused`, `caught`, `indexOf` and unused helper functions `execute`, `result`. No InputFlow compiler failure was reported in that job; the full build stopped before completion, so no InputFlow success can be concluded.
+- Latest inspector branch diverged from this feature branch (`compare_commits`: 116 commits ahead in inspector, 303 commits behind at the time of inspection). Upstream changed `CMakeLists.txt` and `AGENTS.md` plus SpectraFX editor/VFX files. Do not force-push/rebase without a controlled merge and conflict review.
+
+### Correction made
+- `tests/ecs_wave_executor_test.cpp`: replaced eight ordinary `assert(...)` statements with an always-on variadic `CHECK(...)` macro that aborts on failure and prints source location. This preserves test execution and side effects when Release defines `NDEBUG`.
+- `tests/ecs_experiments_test.cpp`: replaced 29 ordinary asserts with the same form of `CHECK(...)`; includes explicit `<thread>`. Both files no longer lose their test-only helpers/variables to `-DNDEBUG`, so the exact reported unused warnings should be resolved without disabling `-Werror`.
+- Commits: wave fix `af9e1ad20ad191f16f9359864cfaa16454a3b014`, experiments fix `4e8857b55dac076ee06b30abb2668201beca9d4b`, macro diagnostic cleanup `0922899b9dcf14f3fb677b0f68fe8a854bbc2b20` and `a01b3638a0350c690c34397320820c71f7c56b8c`, explicit `<thread>` include `357ad7e7b31cea978182e83f21775e8fdc1d1e73`.
+- `docs/enhanced-input.md` Stage 56 verification section added in `d8857b9f5ed8a13a870ab5633cee072763124f8b`; `skills/ui/aiverse-input/SKILL.md` appended status in `29155b67c3f0c97b1dfe1879da4ca72a869e7cbe`.
+
+### What is NOT verified
+1. The post-fix ARM64 Release CI has not reported success. Fixing `assert` diagnostics may reveal new runtime failures previously masked by `NDEBUG`; do not assume PASS.
+2. The focused four InputFlow test binaries remain queued in GitHub Actions. No successful CTest for Ubuntu/macOS/Windows is recorded.
+3. Editor, FPS/RTS runtime, touch/gamepad, per-user profiles, and entire ECS determinism suite still need actual build and execution results.
+4. The tool execution container cannot clone GitHub directly (network hostname resolution fails), so no local build was run from its sources. All evidence here comes from authentic GitHub Actions job metadata/log content.
+
+### Next agent — Stage 57
+- Recheck the **latest commit SHA**, GitHub Actions runs associated with it (not stale prior SHA), and their individual job logs. Fix any new failing assertions, C++ type errors or tests in the same branch and document exact PASS/FAIL outputs.
+- When targeted jobs report successful CTest, run/inspect full studio/editor + FPS/RTS native CI and test per-player rebinding/profile persistence, context switching, modal capture and gamepad/touch paths.
+- Merge the most recent inspector branch into InputFlow only after comparing `CMakeLists.txt`, `AGENTS.md` and other overlapping files; preserve both histories.
+- Update PR #20 as Draft with actual verification evidence; only mark ready after all required checks are successful. Do not use queue/pending as proof of passing.
