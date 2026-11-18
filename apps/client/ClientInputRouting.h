@@ -44,12 +44,13 @@ public:
     // A project-specific action asset can omit it; in that case legacy buttons
     // remain usable but semantic customization requires a matching Action.
     void setTopDownEnabled(bool enabled) {
-        const char* context="RTS.TopDown";
-        if(!input_.context(context))return;
-        if(enabled && !input_.isContextActive(context))
-            input_.activateContext(context,100);
-        else if(!enabled && input_.isContextActive(context))
-            input_.deactivateContext(context);
+        for(const char* context:{"RTS.TopDown","RTS.TopDownAbilities"}) {
+            if(!input_.context(context))continue;
+            if(enabled && !input_.isContextActive(context))
+                input_.activateContext(context,100);
+            else if(!enabled && input_.isContextActive(context))
+                input_.deactivateContext(context);
+        }
     }
     // The world may still need pointer coordinates/drag sequences, but the
     // initiating physical mouse button must respect project-owned Select and
