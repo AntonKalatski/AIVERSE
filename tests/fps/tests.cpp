@@ -307,6 +307,70 @@ void ecsActorAuthorityParity(Json rules,Json map) {
     ecs->step();
     CHECK(state(*ecs).actors[0].pos.x==ecs->world().tryGetConst<fps::ActorRuntime>(e)->value.pos.x);
 }
+
+void ecsReloadAuthorityParity(Json rules,Json map) {
+    // Real FPS tick uses the same stepWeaponReload policy as generic ECS hosts.
+    // Check no input/reload ordering, weapon switching or save v9 regression.
+    rules.member("fps").set("mode",Json::string("deathmatch"));
+    rules.member("fps").set("weapons",Json::parse(
+        R"([{"automatic":false,"damage":10,"magazine":3,"reserve":8,"reloadTicks":3,"intervalTicks":1,"switchTicks":1},
+            {"automatic":true,"damage":5,"magazine":4,"reserve":8,"reloadTicks":2,"intervalTicks":1,"switchTicks":1}])"));
+    map.member("players").itemsMut().resize(2);
+    map.member("players").at(1).set("team",Json::number(int64_t(2)));
+    map.set("spawns",Json::parse("[[10,0.01,-10],[10,0.01,10]]"));
+    auto ecsRules=rules;
+    ecsRules.member("fps").set("ecsAuthority",Json::fromBool(true));
+    auto legacy=simulation(rules,map),ecs=simulation(ecsRules,map);
+
+    std::vector<fps::Input> inputByTick(25);
+    for(uint32_t tick=0;tick<inputByTick.size();++tick) {
+        auto& input=inputByTick[tick];
+        input.sequence=tick+1;input.viewTick=tick;
+        if(tick==0 || tick==3 || tick==5 || tick==14)input.buttons=fps::Fire;
+        if(tick==2 || tick==12)input.buttons=fps::Reload;
+        if(tick==7)input.buttons=fps::selectWeapon(1);
+        if(tick==10)input.buttons=fps::selectWeapon(0);
+    }
+    SimSnapshot legacyBeforeFinish,ecsBeforeFinish;
+    auto runTick=[&](uint32_t tick) {
+        const auto cmd=fps::command(1,inputByTick[tick]);
+        auto old=cmd,newCmd=cmd;
+        old.tick=newCmd.tick=tick;
+        legacy->inject(old);ecs->inject(newCmd);
+        legacy->step();ecs->step();
+        CHECK(legacy->checksum()==ecs->checksum());
+        CHECK(state(*legacy).actors==state(*ecs).actors);
+        const auto& player=state(*ecs).actors[0];
+        const auto entity=static_cast<fps::Module&>(ecs->module()).actorEntity(*ecs,1);
+        const auto* canonical=ecs->world().tryGetConst<fps::ActorRuntime>(entity);
+        CHECK(canonical && canonical->value==player);
+        if(tick==2)CHECK(player.ammo==2 && player.reloadUntil==5 && player.reserve==8);
+        if(tick==3)CHECK(player.ammo==2 && player.reloadUntil==5);
+        if(tick==5)CHECK(player.ammo==2 && player.reloadUntil==0 && player.reserve==7);
+        if(tick==7)CHECK(player.weaponIndex==1);
+        if(tick==10)CHECK(player.weaponIndex==0);
+    };
+    for(uint32_t tick=0;tick<inputByTick.size();++tick) {
+        runTick(tick);
+        if(tick==4) {
+            legacy->saveState(legacyBeforeFinish);
+            ecs->saveState(ecsBeforeFinish);
+        }
+    }
+    const auto finalChecksum=ecs->checksum();
+    const auto oldSave=legacy->serialize(),ecsSave=ecs->serialize();
+    auto ecsFromLegacy=simulation(ecsRules,map);
+    auto legacyFromEcs=simulation(rules,map);
+    CHECK(ecsFromLegacy->deserialize(oldSave));
+    CHECK(legacyFromEcs->deserialize(ecsSave));
+    CHECK(ecsFromLegacy->checksum()==finalChecksum);
+    CHECK(legacyFromEcs->checksum()==finalChecksum);
+    legacy->loadState(legacyBeforeFinish);ecs->loadState(ecsBeforeFinish);
+    CHECK(legacy->checksum()==ecs->checksum());
+    for(uint32_t tick=5;tick<inputByTick.size();++tick)runTick(tick);
+    CHECK(ecs->checksum()==finalChecksum);
+}
+
 void ecsDamageAuthorityParity(Json rules,Json map) {
     // Direct ECS damage/attacker scoring must match legacy shot resolution
     // tick-by-tick, including death, hit counts, and kill events.
@@ -505,6 +569,6 @@ void network(Json rules,Json map) {
 #include "vehicles.inc"
 #include "buildings.inc"
 int main(int argc,char** argv) {
-    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
+    try {std::string root=argc>1?argv[1]:"examples/fps/arena";auto rules=Json::parseFile(root+"/rules.json"),map=Json::parseFile(root+"/map.json");audioBank(root+"/../../../engine/assets/fps_audio.json");spatial();cameraControls();latestChannel();chunks();parallelMotorParityFixture(rules,map);cowSnapshotsFps(rules,map);incrementalRollbackFps(rules,map);ecsActorAuthorityParity(rules,map);ecsReloadAuthorityParity(rules,map);ecsDamageAuthorityParity(rules,map);ecsDuplicateDynamicIdRejected(rules,map);ecsDynamicAuthorityParity(rules,map);deterministic(rules,map);combat(rules,map);weapons(rules,map);systems();projectilePrograms();melee();royale();gear();typedVehicles(root);buildings();rotatedColliders();houseBots();houseNavigation();upstairsBot();network(rules,map);auto br=root+"/../battle-royale";stress(Json::parseFile(br+"/rules.json"),Json::parseFile(br+"/map.json"));std::puts("FPS spatial, motor, combat, save/rollback and authority tests passed");}
     catch(const std::exception& e){std::fprintf(stderr,"%s\n",e.what());return 1;}
 }
