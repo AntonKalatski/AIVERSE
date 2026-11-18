@@ -2027,3 +2027,13 @@ before calling this stage validated.
   separate Stage 67 handoff before proceeding. Do not
   claim test success until execution.
 
+## Stage 67 — universal View for portraits and flat/planet projectile meshes (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `4931597db9ac7d9dc518f26c5fefd5ade7550106`. This is **independent of** the other agent's Stage 66 visibility/fog extraction (SHA `52a543ccd6eb225a9ea9f461ec15788589c89c6d`). Both sets of changes and Stage 66 documentation were preserved; this handoff deliberately uses the next free number, Stage 67, instead of overwriting that entry.
+- **Changed paths:** `engine/view/View.h`; `modules/rts/view/RtsPortrait.h`, `RtsPortrait.cpp`, `RtsPlanetView.cpp`, `RtsViewDraw.cpp`, `RtsView.cpp`; `tests/view/view.cpp` and `docs/view.md`.
+- **API/behavior:** `View::submitMesh` and `submitMeshes` are now stateless static functions, preserving normal object-style source calls. Material/pose portraits use a genre-neutral `View` instance to begin all three existing off-screen render frames and `View::submitModel` to submit their models. Flat-map and planetary projectiles use generic `view::MeshObject` packets (same model matrices, color and unlit flags) through `View::submitMesh`. All GPU upload/release, framebuffer pass order, planet coordinate selection and game mechanics remain in their historical hosts.
+- **Compatibility:** legacy `game::RtsView` is still a specialized compatibility wrapper. No gameplay/save/netcode/checksum changes, no duplicated animation eval or duplicate draw. Changing a method to static preserves ordinary calls but may affect hypothetical third-party pointer-to-member expressions.
+- **Deferred validation:** compile-time signature assertion added to `tests/view/view.cpp`. All builds, CTest, TSAN, macOS/GLES screenshots, off-screen portraits and planet visuals **NOT RUN** per user request. CI success not asserted.
+- **Risks:** lifetime of borrowed mesh/model data must extend through synchronous submit; graphics render-target behavior needs visual validation. Stage 66 visibility helper still needs shader/backend verification, as separately documented.
+- **Next action:** inspect `engine/view/VisibilityField.h/.cpp` and the current `docs/view.md` after both authors' edits, extend the new View skill with visibility setup/ownership contracts, and examine additional generic render resource extraction opportunities. Commit code changes then append the next free handoff stage (**68** unless another agent commits first), never rewrite existing entries.
