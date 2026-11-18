@@ -484,3 +484,39 @@ automatically re-evaluated on load.
 bounds rejection, versioned metadata and deterministic preview.
 The test does not construct a live `Workspace` or render screenshots;
 an end-to-end editor/GUI/MCP regression remains mandatory.
+
+
+## Stage 3b — multi-azimuth Arbor impostor atlas
+
+`engine/render/TerraWeaveImpostorAtlas.h` adds
+`ArborImpostorAtlasSettings`, `ArborImpostorAtlas`,
+`makeArborImpostorAtlas(profile, seed, settings)` and
+`selectArborImpostorAzimuth(instanceYawMilliDegrees, treeXcm, treeZcm,
+cameraXcm, cameraZcm, views)`.
+
+The CPU baker uses **one deterministic tree skeleton** to render 4, 8
+(default) or 16 azimuth silhouettes into **one** RGBA8 horizontal atlas
+(default 8 × 128 × 256). One `render::Model` and one atlas image are
+reused across all trees of a species. Each of the `views`
+`std::vector<render::Material>` overrides references the same
+`baseTex` but has a different `uvOffset`/`uvScale` with a half-texel
+inset. Renderer3D already handles those overrides via
+`render::ModelDraw::materials`; no new shader or GPU API is added.
+
+`ArborForestAdapter` now caches near BranchLOD geometry, a far atlas
+model and per-view material overrides per species.
+`billboardAzimuthCount(speciesId)` returns the atlas view count.
+`forEachDraw(..., ForestCameraCm)` selects the nearest tree-local
+azimuth (camera world heading minus each instance's own yaw), and
+`submit(renderer, ...)` uses the real renderer camera position.
+Storage for the material override vectors must outlive the frame
+until `Renderer3D::render()` returns. The billboard is camera-facing
+but depicts the corresponding view of the tree, avoiding a fixed
+flat silhouette during orbit.
+
+The older single-view `makeArborBillboardModel` API remains intact.
+The new atlas is silhouette/albedo **only**: no depth, normal or
+parallax impostor, no interpolation between adjacent views, and no
+whole-tree temporal alpha transition. The source assertions have been
+updated for later execution; **CMake/CTest and GPU verification have not
+been run by request**.
