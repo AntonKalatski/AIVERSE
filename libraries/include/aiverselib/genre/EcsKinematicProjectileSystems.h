@@ -2,7 +2,8 @@
 // Kinematic projectiles do not query collision or integrate rigid-body forces.
 // The host resolves target lifetime and applies damage in a later system.
 #pragma once
-#include "EcsProjectileSystems.h"
+#include "EcsMechanicSystems.h"
+#include "engine/core/Fixed.h"
 #include <cstdint>
 #include <string>
 #include <utility>
