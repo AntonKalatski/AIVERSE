@@ -1215,3 +1215,20 @@ should add this before compilation. No CI pass claimed.
 and run Vulkan/Metal/GL native sampling of cube and array
 assets. Add DDS multi-face import parity, BasisU transcode
 and compressed sRGB variants in separate documented stages.
+
+## Stage 6D — standalone TextureAsset include fix (2026-11-18)
+
+**Code commit:** `4893edd6a155f8e60e866cc79f730d67b7684bee`.
+**Path:** `engine/render/TextureAsset.h`.
+
+**Change:** Add direct `#include <algorithm>` for
+`std::copy`, rather than relying on transitive includes
+from RHI or standard containers.
+
+**Verification:** GitHub source commit confirmed.
+Standalone header/native target compilation and tests
+**NOT RUN**. No completed successful CI asserted.
+
+**Next:** Run the parser and upload CPU tests and
+cross-platform GPU tests, then continue DDS 3D/array
+support and remaining format/back-end completeness.
