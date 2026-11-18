@@ -64,6 +64,9 @@ World::World(const Json& scene,int workers):scene_(scene),workers_(workers){
             o.body=b3CreateBody(world_,&bd);check(b3Body_IsValid(o.body),"body creation failed");
             auto sd=b3DefaultShapeDef();sd.density=number(j,"density",1000,0.01f,100000);sd.baseMaterial.friction=number(j,"friction",0.5f,0,2);sd.baseMaterial.restitution=number(j,"restitution",0,0,1);
             sd.isSensor=j.getBool("sensor",false);sd.enableSensorEvents=true;sd.enableContactEvents=true;
+            const auto collisionGroup=j.getInt("collisionGroup",0);
+            check(collisionGroup>=-32767&&collisionGroup<=32767,"collisionGroup out of range");
+            sd.filter.groupIndex=int(collisionGroup);
             b3ShapeId shape{};
             if(o.shape=="box") {o.size=vec(j["size"],{1,1,1},1000);check(o.size.x>=0.02f&&o.size.y>=0.02f&&o.size.z>=0.02f,"box size must be positive");auto hull=b3MakeBoxHull(o.size.x/2,o.size.y/2,o.size.z/2);shape=b3CreateHullShape(o.body,&sd,&hull.base);}
             else if(o.shape=="sphere"){float r=number(j,"radius",0.5f,0.01f,100);o.size={r,0,0};b3Sphere sphere{{0,0,0},r};shape=b3CreateSphereShape(o.body,&sd,&sphere);}

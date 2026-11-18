@@ -102,6 +102,7 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
             opt.density=float(options["density"].toDouble(750));
             opt.friction=float(options["friction"].toDouble(.65));
             opt.jointLimit=float(options["jointLimit"].toDouble(.85));
+            opt.collisionGroup=int(options.getInt("collisionGroup",-1));
             opt.tickRate=uint32_t(options.getInt("tickRate",60));
             opt.substeps=uint32_t(options.getInt("substeps",4));
             auto rag=lib::animation::RagdollAsset::compile(avatar,{},opt);

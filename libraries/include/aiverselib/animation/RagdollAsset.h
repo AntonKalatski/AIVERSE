@@ -15,6 +15,7 @@ namespace aiverse::lib::animation {
 struct RagdollBuildOptions {
     float radiusRatio=.17f,density=750.f,friction=.65f;
     float jointLimit=.85f;
+    int collisionGroup=-1; // unique negative id per ragdoll disables self-collisions
     uint32_t tickRate=60;
     uint32_t substeps=4;
 };
@@ -47,7 +48,8 @@ public:
            opt.tickRate<10 || opt.tickRate>240 || opt.substeps<1 || opt.substeps>16 ||
            !std::isfinite(opt.density) || opt.density<=0 ||
            !std::isfinite(opt.friction) || opt.friction<0 || opt.friction>2 ||
-           !std::isfinite(opt.jointLimit) || opt.jointLimit<=0 || opt.jointLimit>3.1f)
+           !std::isfinite(opt.jointLimit) || opt.jointLimit<=0 || opt.jointLimit>3.1f ||
+           opt.collisionGroup < -32767 || opt.collisionGroup > 32767)
             throw std::invalid_argument("ragdoll: invalid authoring settings");
         RagdollAsset r;r.model_ = avatar.model;r.modelToWorld_=modelToWorld;
         render::Pose bind;render::bindPose(*avatar.model,bind);
@@ -105,6 +107,7 @@ public:
             body.set("axis",v3(axis));body.set("angle",Json::number(double(halfAngle*2.f),6));
             body.set("density",Json::number(double(opt.density),3));
             body.set("friction",Json::number(double(opt.friction),3));
+            body.set("collisionGroup",Json::number(int64_t(opt.collisionGroup)));
             bodies.push(body);
             built.push_back({d.role,d.parent,center,q});
             const auto bindBone=modelToWorld*boneWorld[size_t(node)];
