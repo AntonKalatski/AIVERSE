@@ -5,7 +5,7 @@ Implementation branch: `feature/texture-rhi-unification`.
 
 ## Status — staged source implementation (not GPU-validated)
 
-Stages 1–6I include committed source changes on this branch; stages 5A–5F
+Stages 1–6L include committed source changes on this branch; stages 5A–5F
 and 6F–6I extend the earlier baseline (stage numbers follow feature areas,
 not chronological order). **No native C++ build,
 GPU validation or CTest result has been confirmed passing for these changes.**
@@ -42,6 +42,13 @@ SHA, unverified platforms and the next exact task.
   GPU resources (or CPU RGBA8 fallback) with authored mipmaps, while
   `uploadKtx2Image`/`uploadDdsImage` remain convenience aliases. Existing
   model `sampler2D` imports intentionally keep their first 2D slice.
+  A declared Texture3D stays a 3D resource even when the source volume
+  contains only one depth slice (KTX2 pixelDepth>0 or DDS volume dimension).
+  When native BC allocation fails, the RGBA8 CPU fallback clears compressed
+  mip pointers/count and retains the authored mip chain; cube-array fallback
+  also has 12-face regression coverage. Malformed layer-count overflow and
+  contradictory 1D/3D metadata are rejected before resource creation.
+  These are source-level fixes, not GPU-certified behavior.
   DDS signed/exotic formats, non-tight pitch, BasisLZ/UASTC transcoding,
   HDR/EXR and complete compressed-sRGB native formats remain unavailable.
 - **Compressed formats:** source-level native mapping now includes BC4,
