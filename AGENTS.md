@@ -1338,3 +1338,28 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
 - Stage handoff docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
   C++ fixtures authored but native compile/CTest/macOS visual QA NOT RUN;
   keep PHYSIS PR #25 in draft.
+
+
+### PHYSIS Stage 23 — opt-in reconciler and command authority
+
+- The new engine/physis/PhysisFieldRuntime.h provides generic,
+  genre-neutral stable authored ID -> Entity mapping and an opt-in
+  Simulation command-boundary reconciler based on FieldChangePlan.
+  installEditableFromMap intentionally changes persistent schema
+  (physis.field_runtime v1, Wind/Storm/Gravity pools); keep old
+  installFromMap and existing save manifests untouched by default.
+- Apply complete typed field edits through a host-selected
+  GameModule::applyCommand type after server authorization and revision
+  checking; never write live ECS from Scene. Stable IDs and fingerprints
+  live in rollback-owned World resource; same-kind Update preserves Entity,
+  retype Remove+Add, stale batches reject and no-op batches consume revision.
+- Simulation Command wire supports <=4096 args, so PHYSIS caps snapshots
+  at 32760 bytes. It does not provide automatic network permissions,
+  atomic multi-packet chunking, Inspector-to-GameModule dispatch or
+  GUI edit acknowledgement. Live climate/grid/flood policy migration
+  remains unsupported.
+- A new physis_field_runtime CTest target is registered in CMake and
+  PHYSIS/Studio CI. Test SOURCE has been written but native C++/CTest/CI
+  PASS and actual network/editor integration have not been verified.
+- Stage handoff: docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
+  Keep PR #25 as DRAFT until genuine native validation.

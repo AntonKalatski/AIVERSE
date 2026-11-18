@@ -109,3 +109,35 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   authoritative ECS hot-reload implementation; keep concerns separate.
 - Stage handoff: docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
   Source tests authored, native C++/CTest/macOS GUI NOT RUN.
+
+
+## Stage 23 — opt-in live ECS field reconciliation
+
+- New engine/physis/PhysisFieldRuntime.h is the ONLY generic runtime
+  reconciler for stable authored source IDs; it composes the pure
+  PhysisFieldChangePlan.h and existing PhysisFieldAssets.h parser.
+- installEditableFromMap must be selected explicitly during GameModule
+  setup. It installs all Wind/Storm/Gravity component save schemas
+  and physis.field_runtime v1 resource. The normal installFromMap
+  retains its legacy save manifest. Do not enable new schemas by default
+  or claim automatic migration of existing saves.
+- FieldRuntimeState lives entirely inside World; IDs map to generation-
+  checked Entity handles, kind and canonical binary authored fingerprints.
+  World snapshot/save/restore must include this resource. Updating a field
+  of the SAME kind preserves the Entity, and unchanged storm sources retain
+  their runtime drift. Retypes are Remove+Add, not in-place type swaps.
+- A trusted GameModule must reserve a command type, authorize player=0
+  on its network ingress and call applyFieldEditCommand ONLY inside
+  Simulation::applyCommand at a committed tick boundary. Payload uses
+  existing Command.args and is limited to 4096 64-bit words (32760 bytes
+  of payload). A queued command is not an applied/acknowledged edit.
+- Stale expected revision rejects a batch. All full desired typed fields
+  must validate before any World mutation; stage an independent World copy,
+  apply plan, then commit. Never mutate World directly from Scene or
+  skip authoritative parser-range checks for network payloads.
+- Field-only map submission rejects changed climate grid parameters.
+  Flood/disaster policy and other PHYSIS settings are not live-migrated,
+  nor are NEREID water/TerraWeave terrain/Box3D physics authorities.
+- CTest physis_field_runtime is authored and registered, but native
+  compile/CTest/editor integration/network service QA NOT RUN.
+  Handoff docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.

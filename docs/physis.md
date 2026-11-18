@@ -535,3 +535,87 @@ Source fixtures cover pivot rules, reverse rectangle, ray/axis degeneracy
 and frozen-baseline Undo. Native CTest/editor QA NOT RUN; GitHub Actions
 jobs observed queued only. See the Stage 22 handoff under
 docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
+
+
+## Stage 23 — opt-in authoritative field reconciliation and command replay
+
+The new engine/physis/PhysisFieldRuntime.h connects the existing pure
+PhysisFieldChangePlan with an explicit, rollback-owned ECS field identity
+registry. Unlike static startup-only installFromMap, this optional path
+supports replacing a set of authored WindZone, StormEvent and GravityField
+sources at the Simulation command boundary. It is intentionally generic and
+has NO dependency on FPS, RTS, Box3D, NEREID, TerraWeave or the editor.
+
+Host integration example (choose a unique command ID in your own module):
+
+    constexpr uint16_t kPhysisEdit = 53123;
+
+    void MyGame::setup(Simulation& sim, const Json& rules, const Json& map) {
+        if (!physis::installEditableFromMap(sim, map))
+            return; // PHYSIS absent or disabled
+    }
+
+    void MyGame::applyCommand(Simulation& sim, const Command& cmd) {
+        if (cmd.type == kPhysisEdit) {
+            // The authoritative server MUST authorize system player=0.
+            std::string error;
+            (void)physis::applyFieldEditCommand(sim, cmd, kPhysisEdit, &error);
+            return;
+        }
+        // Other genre-independent gameplay commands ...
+    }
+
+    // Trusted editor/server-side action; NEVER apply World edits in Scene.
+    uint32_t scheduledTick = 0;
+    std::string error;
+    const bool queued = physis::submitEditableFieldsFromMap(
+        sim, editedMap, kPhysisEdit, scheduledTick, &error);
+
+This queued result only means the command was accepted for submission;
+the authorizing host can reject it later on expected-revision mismatch.
+Simulation::submit and CommandSink provide the existing command transport.
+The host must reserve a command ID, reject spoofed system commands at the
+network ingress, and implement the applyCommand dispatch above. A client
+cannot gain authority simply by using Command.player=0.
+
+The runtime registry is a new opt-in persistent World resource named
+physis.field_runtime (version 1). It contains monotonic edit revision,
+stable authored ID -> (Entity, kind, canonical serialized fingerprint).
+A snapshot and native file save therefore retain the same identity and
+revision; rollback restores both. Unchanged fields retain dynamic runtime
+state (including a drifting storm); edited fields of the same kind keep
+the same Entity handle; removed sources are destroyed; type changes cause
+Remove+Add with a fresh Entity generation. Changes are staged on a copy
+of World and committed together, so validation/plan failures leave it
+untouched. A no-op command still consumes one edit revision.
+
+The new optional install enables persistent component schemas for ALL three
+field kinds so they can be added/retyped while a session is running.
+This deliberately changes the strict save manifest; it must be enabled
+on both save and load. Existing installFromMap and saves remain unchanged.
+No implicit save migration has been implemented.
+
+The edit wire payload is a field-wise binary snapshot with a protocol ID,
+expected revision, sorted unique sources and a size bound. It packs into
+the standard Simulation Command.args, so the payload must fit within
+4096 total int64 words (up to 32760 bytes, one word reserved for length).
+Larger replacement sets are rejected; atomic multi-command chunking is
+NOT implemented. The actual maximum number of fields depends on encoded
+source properties, not the standalone 2048-field parser limit. Because
+the full source set is transmitted, edits with obsolete revisions reject
+rather than overwriting concurrent changes.
+
+Only authored field collections are editable at this stage. Changes to
+climate grid settings are rejected by submitEditableFieldsFromMap, and
+changes to the overall flood/disaster policy are NOT hot-reloaded.
+There is no automatic map Inspector -> active GameModule command registration,
+network authorization layer or GUI acknowledgement yet; a native host
+must opt in and use its existing command system explicitly.
+
+CTest target physis_field_runtime has source fixtures for encoding and
+network Command wire roundtrip, identity-preserving updates, add/remove,
+type replacement, replay, SimSnapshot rollback, persistent save/load,
+revision conflict, invalid network payloads, oversized command rejection
+and Simulation::submit tick scheduling. These tests were authored but have
+NOT been compiled or run. See the separate Stage 23 handoff under
+docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.

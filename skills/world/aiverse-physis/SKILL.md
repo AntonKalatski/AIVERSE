@@ -244,3 +244,32 @@ writeback or water/terrain/Box3D authority change.
 
 All C++ fixtures added are source-only, NOT RUN. Stage 22 handoff:
 docs/agent-handoffs/physis-editor-marquee-3d-gizmos-2026-11-18.md.
+
+
+### Stage 23 — stable-ID runtime reconciliation through Simulation commands
+
+For projects that need live changes to authored WindZone, StormEvent
+and GravityField assets, opt into installEditableFromMap in generic
+GameModule::setup. Reserve a module command type, authorize system
+commands on the server and dispatch them with applyFieldEditCommand
+inside GameModule::applyCommand. A trusted host may call
+submitEditableFieldsFromMap to parse/validate the full modified map
+and queue its binary command through Simulation::submit/CommandSink.
+Do NOT mutate the ECS World directly from an ImGui/Scene callback.
+
+FieldRuntimeState is persisted and included in rollback snapshots.
+Stable authored IDs map to Entity+kind+fingerprint; same-type updates
+preserve Entity, type changes recreate, unchanged evolving storms are
+not reset. Full desired field batch is sorted/validated and applied to
+a staged World; wrong revision or malformed payload rejects atomically.
+Existing static installFromMap remains default and save-compatible.
+The opt-in adds physis.field_runtime v1 and all three component schemas
+to the strict save manifest; no implicit migration.
+
+Command wire caps: <=4096 int64 args including the length header, <=32760
+payload bytes. Larger maps require an as-yet-unimplemented chunked atomic
+protocol. The native host must stop client-side player=0 forgery;
+there is no automatic editor registration, server ACL, GUI edit ACK or
+live climate-grid/flood-policy migration in Stage 23.
+See docs/agent-handoffs/physis-field-runtime-reconciliation-2026-11-18.md.
+CTest added but NOT RUN.
