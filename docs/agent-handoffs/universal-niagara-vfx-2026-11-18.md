@@ -1032,3 +1032,57 @@ No local AIVERSE checkout was made and no native compilation, GUI run, CTest, CI
 2. The compiler evaluates static math and age-sampled curves at compilation. It does not execute arbitrary user-defined particle attribute bytecode or per-particle GPU expression kernels; expressive full runtime graphs and user-defined functions remain open.
 3. The MCP draft path is intentionally outside published asset files. Production `GraphAssets` must never read from `fx/graphs/_drafts` by default.
 4. Explicit next Stage 18: add reusable typed function subgraphs with bounded call graphs, parameter binding, function-library authoring and native runtime integration, then add custom per-particle attributes/program stages as a separate bounded feature. After each code stage add **another handoff commit** to this file. Preserve all concurrent branch modifications.
+
+## Stage 18 — reusable typed function subgraphs and function assets (FUNCTIONAL CODE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** share one typed mathematical graph implementation across multiple VFX effects without copying nodes, and expose typed function libraries to native projects, editor and MCP. Continue keeping the compiler pure, no genre-specific simulation, and protect published graph assets. User requests **functional completion before tests**.
+
+### Exact implementation SHAs
+
+| SHA | Path | Implementation |
+|---|---|---|
+| `157528399ad65f7f3dcf4a8062df5bd6a2fb614b` | `engine/fx/SpectraValueGraph.h` | New `FunctionCall` value node, argument resolution, nested bounded function evaluation with shared recursion guard and output type checking |
+| `31e7aa70516ddf1c5d93d40ad5cadfcaa501872d` | `engine/fx/SpectraGraphV2.h` | Root `functions` support; validate dormant function definitions, signatures, call depth and cross-function cycles before compilation |
+| `c2223e69a25557057efab751220cc18bb3ec7d4c` | `engine/fx/SpectraFunctionAssets.h` | Pure library package validation/import and externally injected reader + last-known-good function-asset reload |
+| `a46a9ca4de67632b57b7a23a4b85b5400102236a` | `engine/fx/SpectraFX.h` | Export function-library facilities from the supported native entrypoint |
+| `f10b0a81b859e75606c377107bfdd420e9756f59` | `engine/fx/SpectraAuthoring.h` | FunctionCall authoring node and input-pinning metadata |
+| `a159afb9ed18eb95d9a2a1cef8f7e341f984866b` | `examples/spectrafx/common_math.vfxfn.json` | Version-1 reusable function package with speed scaling and age fade |
+| `15537ae4c692d18244e998fe482c5af25cefbbb1` | `examples/spectrafx/function_calls_v2.vfx.json` | Full v2 example with reusable function calls in static emitter values and age-dependent sampled curve |
+| `92d49954c70b10a1b7233228ce7b914ef5f83aac` | `apps/editor/core/SpectraFunctionOps.cpp` | MCP `fx_function_list/get/set/import/export`; safe name validation, strict library compile and explicit graph import |
+| `26bc07e434325278a62a61014865f43274a61c7e` | `apps/editor/core/SpectraGraphOps.cpp` | Register function-library operations with existing graph MCP entry |
+| `94c4c5c2394fe5b2699a08b2af3d63244f207d50` | `CMakeLists.txt` | Compile new functions operation translation unit into `aiverse_editor_core` |
+| `6aba20a9dca913984e62049cdb342cee95e85512` | `apps/editor/windows/SpectraGraphWindow.cpp` | Root function JSON editor, FunctionCall selector, library import/export controls |
+| `6b4080db8c0ad635eb01d3ad3c6de1bb714df3c3` | `docs/spectrafx.md` | User-facing function data format, import and native library API |
+| `e6da52b27fcc68683ea0313603c431337f2e8e66` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent recipe for reusable function graph creation |
+| `dfd76786247c959244ed5446a5a75867b2e327b8` | `AGENTS.md` | Functional constraints and next-agent role |
+
+### Architecture / API / serialization
+
+Graph v2 root may contain `functions: {name: FunctionDef}`. Each `FunctionDef` contains:
+- `parameters` object of strictly typed default input values,
+- `nodes` array of ONLY pure typed value nodes (not emitter/renderer stages),
+- `output` data node ID and optional `returns` type (number/bool/string/vec2/vec3/vec4).
+
+`FunctionCall` value nodes refer to `properties.function` and `properties.arguments` inputs, which may themselves contain literals, `$param` or `$node` references. A function executed from a `$curve` expression inherits the normalized-age sampling context, allowing reusable fade/force/math subgraphs to compile into the established CPU FxRange keys. Up to 32 function definitions per graph, up to 64 value nodes each, and maximum nested call depth eight. The V2 compiler rejects missing functions, recursive calls (including unused functions), bad signatures and wrong return types, preserving the original strict FxEffect compiler.
+
+Standalone reusable `fx/functions/<name>.vfxfn.json` assets have `version:1,functions:{...}`. `spectra::validateFunctionLibrary` validates them with the real graph compiler; `spectra::mergeFunctionLibrary` copies validated definitions into a graph-v2 authoring object, rejects conflicting function definitions unless explicitly replaced, and works with incomplete parent graph drafts. `spectra::FunctionLibraryAssets` injects its file reader and caches last-known-good versions by content hash; the core graph compiler retains NO filesystem/network access.
+
+Editor/MCP `fx_function_list/get/set/import/export` allow agents to create and share validated libraries; imports produce an in-memory edited graph that needs explicit publish/draft-save. The ImGui graph editor now offers root `functions` JSON editing, a FunctionCall dropdown of declared names, and named import/export. No changes to authoritative ECS, network state, gameplay or CPU particle draw pipeline.
+
+### Verification status — intentionally NOT RUN
+
+User explicitly requested implementing functionality first and tests later. No native CMake configure, compiler, CTest, Metal/Vulkan shaders, GUI smoke, CI success or production RTS/FPS parity check occurred in this stage. GitHub content commits were recorded; that proves source storage only. **No PASS claims.**
+
+Later regression matrix must cover:
+- nested function calls and valid output type, `$curve` with `AgeNormalized` inside functions, overridden parameter compatibility and graph v1 behavior;
+- missing/recursive/dormant mutually recursive function graphs, >8 call depth, unknown return types and malformed library assets;
+- last-good library hot reload on missing/invalid new source, conflicting import reject vs explicit replace, editor/MCP import/export and draft/publish safety;
+- native C++ include order and builds on macOS/Linux/Windows.
+
+### Known limitations and next functional stage
+
+1. Functions are **pure compile-time expressions or normalized-age sampled curves**; they are NOT a general executable particle bytecode, user-defined runtime shader stage or material function compiler. No arbitrary game scripts run here.
+2. Library assets import explicit definitions by copy. Production graphs do not auto-read external libraries at runtime; the caller may import before compilation. Function graph output is currently one typed value (use Vec3/Vec4 for multiple related components).
+3. Full Niagara feature parity still needs user attributes, true per-particle runtime Update/Spawn/Event programmable stages, GPU codegen, multi-material compute pools, and richer graphical function/node editors. Previous experimental Metal GPU mode remains strictly opt-in.
+4. **Next bounded Stage 19:** implement a typed, bounded **per-particle expression program IR** with CPU interpreter and spawn/update/event module hooks, then connect graph-v2 particle program declarations to the shared CPU particle runtime using optional per-emitter programs; ensure existing particle behavior is unchanged without a program. Continue handoff after each code stage with actual SHA and test status.
