@@ -664,3 +664,52 @@ No new default PHYSIS schemas or water/terrain/Box3D/genre dependencies.
 CTest physis_live_edit was authored and registered in CMake/PHYSIS/Studio
 workflows; native compilation and tests have NOT RUN. See
 docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.
+
+
+## Stage 25 — reliable remote PHYSIS editing
+
+PHYSIS has a separate, versioned admin protocol over existing net::Conn
+(reliable UDP, WebSocket or loopback). It is NOT the ordinary player
+InputFrame or a shortcut around AIVERSE networking authorization.
+
+Runtime protocol files: engine/physis/PhysisRemoteProtocol.h,
+PhysisRemoteServer.h and PhysisRemoteClient.h. The client uses unique
+instance/request IDs, bounded retries, Query-before-resend on reconnect,
+and explicit Unknown/Queued/Applied/Rejected/Conflict/Denied receipts.
+The server stores a bounded idempotent receipt cache by authenticated
+principal+client instance+request ID and rejects ID reuse with changed
+payload. Only one new PHYSIS edit can be queued at once. Applied is
+reported ONLY after scheduled Simulation tick and matching ECS
+FieldRuntimeState revision plus source fingerprints. Queued != Applied.
+
+The server host must run ServerGateway::poll on a separately
+AUTHENTICATED admin/editor net::Conn, supply a trusted connection
+principal and ACL callbacks, then call ServerGateway::observe after
+authoritative Simulation ticks. It must reserve a PHYSIS command type
+and dispatch Stage 23 applyFieldEditCommand in GameModule::applyCommand.
+No client-controlled player=0 command is trusted.
+
+apps/editor/PhysisRemoteEdit.h::EditorLink accepts only a host-attached
+already authenticated connection. The PHYSIS window shows remote
+status, confirmed revision, request ID, and refresh/send/retry controls.
+A host must provide actual transport authentication/credentials;
+the editor does not open an anonymous privileged socket.
+The Stage 24 local play-test route remains separate.
+
+Wire bounds: 40 KiB protocol frame and Stage 23 32760-byte typed
+Command.args payload. Large multi-part atomic uploads are NOT yet
+implemented. The server cache is IN-MEMORY, so after server restart
+an old receipt can become Unknown and client may see Conflict.
+Revision checks prevent duplicate effects but a crash-durable
+exactly-once ACK requires a persistent journal. Outstanding client
+requests can be exported/restored, including original IDs, but the
+host must persist request counters or rotate the client instance.
+
+The separate opt-in PhysisRuntimeFields.h/TrackedFromMap registry
+from another agent does not replace this Stage 23 FieldRuntimeState
+runtime. Do not install both. No change to legacy installFromMap,
+FPS/RTS authority, NEREID Water, TerraWeave or Box3D.
+CTest physis_remote_edit added to PHYSIS and Studio CI, including
+actual net::Conn loopback, reconnect, ACL, duplicate, jitter and
+rollback source tests. NATIVE BUILD AND TESTS NOT RUN. Handoff:
+docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.

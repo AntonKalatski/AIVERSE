@@ -1386,3 +1386,31 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
 - New physis_live_edit CTest + CI entries are authored but native
   compile/CTest/macOS UI/real network runs NOT VERIFIED.
   Handoff docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.
+
+
+### PHYSIS Stage 25 — remote editor protocol, dedupe and reconnect
+
+- Reuse net::Conn and versioned PHYSIS envelopes for remote editing;
+  do not inject editing into normal player InputFrame or allow
+  arbitrary client-issued player=0/system commands.
+- ServerGateway takes a verified principal from an authenticated
+  server connection and a host ACL; only server-owned commands
+  execute at Simulation boundaries. Deduplicate exact requests
+  by principal/instance/request ID, reject altered ID reuse,
+  serialize admissions and distinguish Queued from Applied.
+- Applied requires the right ECS revision and exact fingerprints,
+  not a sent packet. RemoteClient preserves ID and bytes on retry,
+  queries before resending after reconnect and rechecks old
+  Applied receipts for rollback. Server dedupe cache is volatile,
+  NOT an exactly-once journal across server process restarts.
+- apps/editor/PhysisRemoteEdit.h accepts only a trusted attached
+  net::Conn. No default anonymous PHYSIS admin listener or
+  FPS/RTS auto-authority. A host must wire real auth, transport
+  and durable journal separately.
+- Another agent's RuntimeFieldRegistry / installTrackedFromMap is
+  independent from the Stage 23 FieldRuntimeState pipeline.
+  Keep one authority, do not install both. No NEREID/Terra/Box3D
+  ownership changes.
+- CTest physis_remote_edit and PHYSIS/Studio workflow targets
+  added but native compile/CTest/real security QA NOT RUN.
+  Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.

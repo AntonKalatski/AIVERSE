@@ -166,3 +166,32 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   but real native compile, CTest, macOS GUI and remote network QA
   have NOT RUN. Stage handoff:
   docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.
+
+
+## Stage 25 — remote delivery and acknowledgement invariants
+
+- PHYSIS remote admin protocol belongs to PhysisRemoteProtocol.h,
+  PhysisRemoteClient.h and PhysisRemoteServer.h, over a dedicated
+  authenticated net::Conn, NEVER the normal player InputFrame.
+- ServerGateway accepts a PRINCIPAL from the host-authenticated
+  connection. Require ACL callbacks. Command.player and client instance
+  IDs are NOT authentication; trusted player=0 Commands are created
+  by the server after admission.
+- Cache receipt deduplication by (authenticated principal, client
+  instance, request ID) with byte-exact payload comparison. Reuse
+  with different payload rejects. Serialize new admissions until
+  the previous PHYSIS edit resolves; Queued does NOT mean Applied.
+- Applied requires scheduled Simulation tick completion and authoritative
+  FieldRuntimeState revision plus typed fingerprints. On reconnect
+  Query-before-resend, preserve request IDs and recheck Applied against
+  rollback. Server cache is volatile; expectedRevision prevents
+  duplicate effects but cannot guarantee old ACK after server restart.
+- EditorLink under apps/editor/PhysisRemoteEdit.h is opt-in; the host
+  attaches an ALREADY AUTHENTICATED net::Conn. No anonymous default
+  PHYSIS endpoint, no FPS/RTS automatic admin permissions.
+- Another agent's RuntimeFieldRegistry/TrackedFromMap is a separate
+  opt-in store, NOT interchangeable with Stage 23 FieldRuntimeState.
+  Do not enable both without explicit migration.
+- No changes to NEREID water, TerraWeave, Box3D or default PHYSIS
+  save schema. CTest physis_remote_edit authored but NOT RUN.
+  Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.

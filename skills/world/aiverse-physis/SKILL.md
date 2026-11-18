@@ -297,3 +297,33 @@ added. Do not write ECS directly from ImGui, duplicate NEREID or
 TerraWeave, or bypass the genre-independent World/Command contract.
 Tests authored but NOT RUN. Handoff:
 docs/agent-handoffs/physis-editor-live-edit-2026-11-18.md.
+
+
+### Stage 25 — reliable remote PHYSIS field editing
+
+For an authenticated editor/admin connection use the reusable
+engine/physis/PhysisRemoteProtocol.h, PhysisRemoteClient.h and
+PhysisRemoteServer.h on net::Conn (UDP, WebSocket or loopback).
+ServerGateway::poll requires a real host-authenticated connection
+principal and server ACL; call observe after Simulation steps.
+GameModule::applyCommand must dispatch the Stage 23 PHYSIS command.
+Never treat client player=0 or client instance IDs as permissions.
+
+RemoteClient requests the current revision, then uses a unique
+request ID with an exact original payload. After disconnect it
+queries the same ID before resending; server dedupe prevents double
+submission. Only Applied after actual ECS revision and fingerprint
+matches is success; stale/conflicting/dropped requests get NACK.
+The editor bridge apps/editor/PhysisRemoteEdit.h must receive a
+host-verified Conn; the PHYSIS window exposes remote status/ACK,
+refresh and safe retry.
+
+Server cache is bounded and in-memory only. A lost server journal
+after restart can leave an uncertain old ACK; do not claim
+crash-durable exactly-once. Large maps can exceed Stage 23
+32760-byte Command.args and need a later atomic batch protocol.
+Do not mix the other agent's TrackedFromMap/RuntimeFieldRegistry
+with editable FieldRuntimeState until reconciled.
+
+Tests physis_remote_edit authored and CI registered but NOT RUN.
+Handoff docs/agent-handoffs/physis-remote-edit-reliable-2026-11-19.md.
