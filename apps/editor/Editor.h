@@ -341,6 +341,9 @@ private:
     std::string fpsRuntimeProjectDir_;
 
     render::Prisma prisma_;
+    render::PrismaVolumeStack prismaVolumes_; // editor camera profiles, presentation-only
+    std::string prismaVolumesSignature_;
+    void refreshPrismaVolumes();
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
     std::vector<double> editorTypeLastUsed_;
