@@ -1672,3 +1672,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - `Simulation::deserialize` now backs up Simulation-owned World/tick/RNG/players/commands/events and restores them on invalid payload/checksum or exception; GameModule private caches still require restore hooks.
 - Expanded `ecs_native_persistence_test` with v1->v2 upgrade, re-save, unsupported version, corrupt-load unchanged state and simulated two-peer checksum/rollback parity. Standalone/CTest target already wired.
 - Validation: GitHub source edits prepared, **no native compiler, CTest, real RTS integration, sanitizer or network socket run in this session**. Do not merge until validation.
+
+
+### 2026-11-18 — Live FPS ordinary grenade motion uses common physical ECS policy
+- Implementation SHA: `70b98ff0c80aa27d403e2e9422c4235215bf00e1`.
+- `modules/fps/FpsSystems.cpp::stepOrdinaryProjectile` now calls public `lib::genre::stepBouncingProjectile` (default `BounceMotionConfig`) for non-programmed kind 1/2/3 grenades before fuse expiry. The shared policy matches the previous deterministic computation sequence: velocity.y -= 10*dt, cast swept box of half extent 0.1, position advance by max(0, hit.fraction-0.01), reflect normal and divide velocity by 2; otherwise full delta advance. Fuse conversions, smoke/flash/blast target effects, round systems and event order are unchanged. Works on direct `ProjectileRuntime` with ecsAuthority ON and legacy State baseline OFF via the same per-projectile caller.
+- This is **live physical gameplay** sharing a general engine policy, unlike the no-physics RTS projectile path. No new serialized fields or network messages. Native compilation, exact replay hash and collision/penetration tests still NOT run.
