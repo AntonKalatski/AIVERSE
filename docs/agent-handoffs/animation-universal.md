@@ -390,3 +390,24 @@ before calling this stage validated.
   compression, bulk exporter, auto-rebind to imported controllers.
 - Next: physics-world readback adapter & recovery, editor tooling and
   parallel evaluation integration; later full validation/CI.
+
+
+## Stage 17 — physics ragdoll readback and get-up recovery (2026-11-18)
+
+- Implementation commit `e9c42cbc080194707447bedd1dfc23369d777281`.
+- New optional `PhysicsRagdollBridge.h` reads Box3D ragdoll rigid
+  transforms after fixed physics ticks and reconstructs local bone
+  poses via `RagdollAsset::applyBodyPoses`. Requires the opt-in
+  `AIVERSE::animation_physics` target / `AIVERSE_ENABLE_PHYSICS=ON`.
+- `AnimationRecoveryComponent` extends the independent presentation
+  ECS. On get-up request, disable physical-pose blending, supply the
+  last pose in `from`, set `duration` and `requested=true`.
+  `stepAnimationPresentation` cross-fades to the current AnimationGraph
+  output through velocity-aware `PoseInertializer`, ignoring LOD
+  throttling during recovery. No authoritatively moved entity.
+- Added `tests/animation/recovery.cpp`, CTest `animation_recovery`.
+- **NOT RUN** per user preference. Requires visual get-up animation,
+  Box3D fixed step tests and collision checks before production.
+- No RtsView change or gameplay protocol/save format change.
+- Next: clip/retarget/ragdoll authoring UI, asset pipeline and
+  independent animation evaluation scheduling.
