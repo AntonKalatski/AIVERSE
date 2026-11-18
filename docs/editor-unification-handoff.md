@@ -1229,3 +1229,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `modules/fps/FpsSystems.cpp::traceShot` to call `lib::genre::resolveOrderedProjectileImpact` for an accepted direct Actor hit, after nearest historical target selection, vehicle occlusion, static-world/material penetration, hit event emission and FPS-specific head/limb multiplier. The direct callback still calls `Module::damage` exactly once with the original slot, head flag and amount; FPS armor/gear, knockdown, loot, kills, hit counters, projectile replay and opt-in `ActorRuntime` updates remain in the existing implementation. Instant hitscan has no splash or after-direct callbacks, so the generic policy only dispatches the direct callback; vehicles retain their existing separate branch.
 - Both live RTS weapon projectiles and live FPS hitscan now use the same ordered impact policy, with different *game-specific* damage policies and trajectory/selection logic. This is **not** yet a standalone scheduled generic `DamageSystem` or complete FPS ECS-authoritative migration. No extra ECS component pools, state serialization or network messages introduced.
 - Verification: GitHub source commit only; native compile, CTest and replay/network parity not performed. Critical scenarios: FPS shot with no source, same-team suppression, headshots and armor, multi-pellet, rewind pose, penetration and vehicle driver damage.
+
+
+### 2026-11-18 — Standalone ECS impact queue regression runner
+- **Implementation SHA:** `79eeca7b0d2668f67d2faf34cc13e0c4a46e5901`.
+- Updated `tests/run_ecs_experiment_suite.sh` to compile/run the new two-host ordered-impact queue test with only generic `Simulation`, Fixed and Json sources and public library includes. This prevents accidental dependencies on `modules/fps` or `modules/rts`.
+- **Verification:** source edit committed. `bash -n`, native build and actual execution **not run** in current environment (GitHub DNS unavailable for a full checkout).
+- **Next:** run CTest, standalone script and sanitizer in native checkout; fix failures before enabling built-in gameplay paths.
