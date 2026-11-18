@@ -1027,3 +1027,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `skills/gameplay/aiverse-ecs-timed-mechanics/SKILL.md`: names real FPS `stepWeaponReload` and RTS `stepFixedResourceRegeneration` adoption; forbids parallel authoritative component copies and preserves tick-order parity requirements. Specifies `ecsReloadAuthorityParity` and `ecs_fixed_regeneration_policy_test` as incremental gates.
 - Verification: docs-only commit; native execution remains unverified.
 - Next: fix any native CI failure, then isolate full FPS/RTS subsystem stages with explicit component ownership.
+
+
+### 2026-11-18 — Continuation static integration audit (no native execution)
+- Read exact current branch source for `FpsModule.cpp`, `RtsEconomy.cpp`, `EcsTimedMechanics.h`, `FixedRegeneration.h`, FPS/regren fixtures, CMake, experiment suite, catalog and skill (10 files).
+- Eight focused **static** assertions passed: both ECS+FPS call `stepWeaponReload`; both ECS+RTS use `stepFixedResourceRegeneration`; misplaced dynamic indexing fixture no longer appears in actor test; FPS reload parity fixture is invoked; fixed regeneration CTest and standalone script registration exist; catalog parses as 123 packages; agent skill includes live integration guidance.
+- GitHub Actions examined for `92a165d3`: CI was **cancelled**, other three workflow runs were **queued**. Neither status establishes native compilation or passing gameplay tests. Git clone of the repo from execution environment is DNS-blocked; avoid claiming compiler/CTests passed.
+- Next: on a native clone run `python3 tools/libraries/catalog.py check`, `bash tests/run_ecs_experiment_suite.sh`, build `aiverse_fps_tests` and run `ctest --output-on-failure -R 'fps|ecs_'` with RTS replay/save baseline; investigate any failures before merging or dropping legacy data.
