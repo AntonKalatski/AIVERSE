@@ -108,7 +108,8 @@ public:
             case PixelFormat::EAC_R11: case PixelFormat::ASTC_4x4:
             case PixelFormat::ASTC_6x6: return apple;
             case PixelFormat::BC1: case PixelFormat::BC3: case PixelFormat::BC4:
-            case PixelFormat::BC5: case PixelFormat::BC7: return bc;
+            case PixelFormat::BC5: case PixelFormat::BC7:
+                return bc && compressedFormat(f) != MTLPixelFormatInvalid;
             default: return true;
         }
     }
@@ -371,6 +372,11 @@ public:
         }
         const MTLPixelFormat cf = compressedFormat(d.format);
         const bool compressed = cf != MTLPixelFormatInvalid;
+        if (isCompressedTextureFormat(d.format) &&
+            (!compressed || !supports(d.format))) {
+            error_ = "Metal: requested compressed pixel format is unsupported on this platform";
+            return {};
+        }
         if (compressed && (d.dimension == TextureDimension::Texture1D ||
                            d.dimension == TextureDimension::Texture3D || d.storage ||
                            d.renderTarget || d.levelCount < 1 || !d.levelData || !d.levelSize)) {
@@ -415,10 +421,8 @@ public:
 
         const int faces = d.arrayLayers;
         if (compressed) {
-            const NSUInteger blockDim = d.format == PixelFormat::ASTC_6x6 ? 6 : 4;
-            const NSUInteger blockBytes = d.format == PixelFormat::ETC2_RGB8 ||
-                d.format == PixelFormat::BC1 || d.format == PixelFormat::BC4 ||
-                d.format == PixelFormat::EAC_R11 ? 8 : 16;
+            const NSUInteger blockDim = NSUInteger(compressedTextureBlockSize(d.format));
+            const NSUInteger blockBytes = NSUInteger(compressedTextureBlockBytes(d.format));
             for (int l = 0; l < d.levelCount; ++l) {
                 const NSUInteger w = NSUInteger(std::max(1, d.width >> l));
                 const NSUInteger h = NSUInteger(std::max(1, d.height >> l));

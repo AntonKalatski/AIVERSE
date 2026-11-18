@@ -213,6 +213,9 @@ public:
             error_ = "GL: texture dimension or usage unsupported"; return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "GL: HDR textures unsupported"; return {}; }
+        if (isCompressedTextureFormat(d.format) && !supports(d.format)) {
+            error_ = "GL: compressed texture not supported by this GPU"; return {};
+        }
         const GLenum target = d.dimension == TextureDimension::Texture3D ? GL_TEXTURE_3D :
                               d.dimension == TextureDimension::Texture2DArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_CUBE_MAP;
         const GLenum compressed = compressedEnum(d.format);
@@ -306,6 +309,11 @@ public:
             return {};
         }
         if (d.format == PixelFormat::RGBA16F && !hdr_) { error_ = "RGBA16F rendering unsupported"; return {}; }
+        if (isCompressedTextureFormat(d.format) &&
+            (!compressedEnum(d.format) || !supports(d.format))) {
+            error_ = "GL: requested compressed pixel format unsupported";
+            return {};
+        }
         GLTexture t; t.fmt = d.format; t.w = d.width; t.h = d.height;
         t.renderTarget = d.renderTarget || d.format == PixelFormat::Depth;
         t.mips = d.mipmaps && d.format != PixelFormat::Depth && !d.renderTarget;

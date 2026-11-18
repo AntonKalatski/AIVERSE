@@ -53,6 +53,29 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          RGBA8_sRGB, // sampling decodes sRGB; render targets encode on write and blend in linear; alpha stays linear
                          RGBA16F, // linear HDR radiance, 8 bytes/pixel; check supports()
                          BC4, BC5, EAC_R11 }; // one/two-channel compressed data maps; check supports()
+// Shared compression metadata used by all texture backends. A requested
+// compressed format must NEVER be allocated as RGBA8 when unsupported.
+constexpr bool isCompressedTextureFormat(PixelFormat f) {
+    switch (f) {
+    case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
+    case PixelFormat::EAC_R11: case PixelFormat::BC1:
+    case PixelFormat::BC3: case PixelFormat::BC4:
+    case PixelFormat::BC5: case PixelFormat::BC7:
+    case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6:
+        return true;
+    default:
+        return false;
+    }
+}
+constexpr int compressedTextureBlockBytes(PixelFormat f) {
+    if (!isCompressedTextureFormat(f)) return 0;
+    return f == PixelFormat::ETC2_RGB8 || f == PixelFormat::EAC_R11 ||
+           f == PixelFormat::BC1 || f == PixelFormat::BC4 ? 8 : 16;
+}
+constexpr int compressedTextureBlockSize(PixelFormat f) {
+    return !isCompressedTextureFormat(f) ? 0 :
+           f == PixelFormat::ASTC_6x6 ? 6 : 4;
+}
 enum class Filter { Nearest, Linear };
 // Resource dimension is separate from the sampled view dimension. Array layers are physical
 // slices: Cube requires six, CubeArray requires a multiple of six.
@@ -180,12 +203,7 @@ constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
     if (d.sampleCount != 1 && d.sampleCount != 2 && d.sampleCount != 4 &&
         d.sampleCount != 8 && d.sampleCount != 16)
         return TextureDescError::InvalidSampleCount;
-    const bool blockCompressed = d.format == PixelFormat::ETC2_RGB8 ||
-        d.format == PixelFormat::ETC2_RGBA8 || d.format == PixelFormat::BC1 ||
-        d.format == PixelFormat::BC3 || d.format == PixelFormat::BC7 ||
-        d.format == PixelFormat::ASTC_4x4 || d.format == PixelFormat::ASTC_6x6 ||
-        d.format == PixelFormat::BC4 || d.format == PixelFormat::BC5 ||
-        d.format == PixelFormat::EAC_R11;
+    const bool blockCompressed = isCompressedTextureFormat(d.format);
     if (d.sampleCount > 1 && (d.dimension != TextureDimension::Texture2D ||
         !d.renderTarget || d.data || d.mipmaps || d.mipLevels > 1 ||
         d.levelCount > 0 || d.storage || d.compare || blockCompressed))

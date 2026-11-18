@@ -292,11 +292,7 @@ size_t texelBytes(PixelFormat f) {
     }
 }
 bool isCompressed(PixelFormat f) {
-    return f == PixelFormat::ETC2_RGB8 || f == PixelFormat::ETC2_RGBA8 ||
-           f == PixelFormat::EAC_R11 || f == PixelFormat::BC1 ||
-           f == PixelFormat::BC3 || f == PixelFormat::BC4 ||
-           f == PixelFormat::BC5 || f == PixelFormat::BC7 ||
-           f == PixelFormat::ASTC_4x4 || f == PixelFormat::ASTC_6x6;
+    return isCompressedTextureFormat(f);
 }
 } // namespace
 
@@ -462,10 +458,8 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     for (int l = 0; l < d.levelCount; ++l) {
         const int w = std::max(1, d.width >> l), h = std::max(1, d.height >> l);
         const int z = d.dimension == TextureDimension::Texture3D ? std::max(1, d.depth >> l) : 1;
-        const size_t blocks = d.format == PixelFormat::ASTC_6x6 ? 6 : 4;
-        const size_t bytesPerBlock = d.format == PixelFormat::BC1 ||
-            d.format == PixelFormat::BC4 || d.format == PixelFormat::EAC_R11 ||
-            d.format == PixelFormat::ETC2_RGB8 ? 8 : 16;
+        const size_t blocks = size_t(compressedTextureBlockSize(d.format));
+        const size_t bytesPerBlock = size_t(compressedTextureBlockBytes(d.format));
         const size_t expected = t.compressed ?
             size_t((w + int(blocks) - 1) / int(blocks)) * size_t((h + int(blocks) - 1) / int(blocks)) *
             bytesPerBlock * size_t(z) * size_t(t.layers) :

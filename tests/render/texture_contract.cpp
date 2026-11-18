@@ -125,6 +125,18 @@ int main() {
     check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA compressed texture disallowed");
     d.format = PixelFormat::RGBA8; d.sampleCount = 3;
     check(validateTextureDesc(d) == TextureDescError::InvalidSampleCount, "reject nonstandard MSAA samples");
+    check(isCompressedTextureFormat(PixelFormat::BC4) &&
+          isCompressedTextureFormat(PixelFormat::BC5) &&
+          isCompressedTextureFormat(PixelFormat::EAC_R11),
+          "all new compressed formats are recognized");
+    check(!isCompressedTextureFormat(PixelFormat::RGBA8) &&
+          compressedTextureBlockBytes(PixelFormat::RGBA8) == 0,
+          "uncompressed texture is not misclassified");
+    check(compressedTextureBlockBytes(PixelFormat::BC4) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::EAC_R11) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::BC5) == 16 &&
+          compressedTextureBlockSize(PixelFormat::ASTC_6x6) == 6,
+          "shared compression dimensions and byte counts");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }
