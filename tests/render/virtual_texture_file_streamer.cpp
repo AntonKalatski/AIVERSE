@@ -401,9 +401,15 @@ void asynchronousGpuFeedbackRuntime() {
             stream.pendingPage(coarse) && stream.pendingPage(middle) &&
             !stream.pendingPage(fine),
             "feedback drives only budgeted coarse and middle disk requests");
-    require(!runtime.readyToSubmit() &&
-            runtime.submit(stream).submittedNewRequests==0,
-            "feedback output cannot be submitted a second time");
+    require(!runtime.readyToSubmit(),
+            "feedback readback consumed once, while missing pages can continue");
+    const auto nextFrame=runtime.submit(stream);
+    require(nextFrame.submittedNewRequests==1 &&
+            stream.pendingPage(fine),
+            "deferred GPU feedback requests fine mip on following frame");
+    const auto completed=runtime.submit(stream);
+    require(completed.submittedNewRequests==0,
+            "no duplicate disk requests after all visible mips are pending");
     require(runtime.capture(target),"capture next frame after consuming result");
     const auto pending=std::move(gpu.feedbackCompletion);
     require(bool(pending),"second GPU callback remains in flight");
