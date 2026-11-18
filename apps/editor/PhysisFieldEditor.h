@@ -393,6 +393,12 @@ inline void drawPhysisFieldProperties(Editor& ed) {
     if (!findField(read(ed.doc()), state.selectedId, collection, index, &selected))
         return;
     ui::section(ICON_PENCIL,"PHYSIS — параметры поля");
+    if (state.selectedIds.size()>1) {
+        ImGui::TextDisabled("Выделено: %zu. Радиус изменяет лишь активное поле.",
+                            state.selectedIds.size());
+        ImGui::TextDisabled("Для редактирования свойств выберите одно поле без Ctrl/Shift.");
+        return;
+    }
 
     if (state.draftId!=state.selectedId) {
         state.draftId=state.selectedId;
@@ -500,8 +506,9 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
             state.snapStepMeters = std::clamp(state.snapStepMeters, 0.25f, 1000.f);
         }
         ImGui::TextDisabled(state.gizmoMode == 0 ?
-            "Перетащите маркер (Shift — высота). Один drag = одно Undo." :
-            "Выберите поле и тяните маркер на окружности радиуса.");
+            "Тяните выбранную группу (Shift — высота). Один drag = одно Undo." :
+            "Радиус изменяет только активное поле.");
+        ImGui::TextDisabled("Ctrl/Shift + клик — добавить или убрать поле из группы.");
     }
 
     const double x = std::clamp(double(ed.sceneCam.target.x),-1000000.0,1000000.0);
@@ -520,6 +527,37 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
     if (ImGui::SmallButton("+ Смерч/ураган")) add(aiverse::physis::AuthoredFieldKind::Storm);
     ImGui::SameLine();
     if (ImGui::SmallButton("+ Гравитация")) add(aiverse::physis::AuthoredFieldKind::Gravity);
+
+    ImGui::TextDisabled("Выделено PHYSIS: %zu",state.selectedIds.size());
+    if (ImGui::SmallButton("Выделить всё##physis")) {
+        std::vector<std::string> all;
+        for (const char* key:{"windZones","storms","gravityFields"}) {
+            const auto& fields=read(ed.doc())[key];
+            if (!fields.isArray()) continue;
+            for (const auto& entry:fields.items()) all.push_back(entry.getStr("id"));
+        }
+        setPhysisFieldSelection(std::move(all));
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Снять выделение##physis"))
+        selectPhysisField("");
+
+    ImGui::BeginDisabled(state.selectedIds.empty());
+    if (ImGui::Button("Дублировать выбранные##physis")) {
+        std::vector<std::string> copies;
+        const double offset=state.snapEnabled ? double(state.snapStepMeters) : 5.0;
+        if (duplicateFields(ed.doc(),state.selectedIds,offset,0,offset,
+                            copies,&state.error)) {
+            setPhysisFieldSelection(std::move(copies));
+            state.error.clear();
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Удалить выбранные##physis")) {
+        if (removeFields(ed.doc(),state.selectedIds,&state.error))
+            setPhysisFieldSelection({});
+    }
+    ImGui::EndDisabled();
     if (!state.error.empty()) ui::toneText(ui::Tone::Error,"%s",state.error.c_str());
 
     if (ImGui::BeginChild("##physisFields",ImVec2(0,140),ImGuiChildFlags_Borders)) {
@@ -529,17 +567,26 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
             for (const auto& entry : fields.items()) {
                 const std::string id=entry.getStr("id");
                 if (ImGui::Selectable((id+"##physisField").c_str(),
-                                      id==state.selectedId))
-                    selectPhysisField(id);
+                                      physisFieldSelected(id))) {
+                    const auto& io=ImGui::GetIO();
+                    selectPhysisField(id,io.KeyCtrl || io.KeyShift);
+                    ed.select({Selection::MapProps,-1,{}});
+                }
             }
         }
     }
     ImGui::EndChild();
-    if (!state.selectedId.empty()) {
+    // Prune stale IDs after Undo/Redo, deletion or map switch.
+    std::vector<std::string> surviving;
+    for (const auto& id:state.selectedIds) {
         std::string collection;
         std::size_t index=0;
-        if (!findField(read(ed.doc()),state.selectedId,collection,index))
-            selectPhysisField("");
+        if (findField(read(ed.doc()),id,collection,index)) surviving.push_back(id);
+    }
+    if (surviving != state.selectedIds) {
+        const std::string active=state.selectedId;
+        setPhysisFieldSelection(std::move(surviving));
+        if (physisFieldSelected(active)) state.selectedId=active;
     }
     drawPhysisFieldProperties(ed);
 
