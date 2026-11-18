@@ -302,11 +302,9 @@ public:
                 // proxy disabled), retire the old forest rather than leaving
                 // stale distant silhouettes on-screen indefinitely.
                 if(!prepared->model){
-                    if(model_)render::releaseModel(device,*model_);
-                    model_.reset();
-                    activeBake_.reset();
-                    activeVertices_.clear();
-                    activeIndices_.clear();
+                    retireActive(device,cell);
+                    activeCell_=cell;
+                    activeRevision_=sourceRevision_;
                     clusters_=0;
                     terrainQuads_=0;
                     runtime_={};
@@ -339,6 +337,8 @@ public:
                                                      *prepared->model,*vertices)){
                             activeVertices_.swap(replacement);
                             activeBake_=prepared->bake;
+                            activeCell_=cell;
+                            activeRevision_=sourceRevision_;
                             originXcm_=prepared->bake->originXcm;
                             originZcm_=prepared->bake->originZcm;
                             clusters_=prepared->bake->clusters.size();
@@ -384,8 +384,10 @@ public:
                     render::releaseModel(device,*next);
                     return false;
                 }
-                if(model_)render::releaseModel(device,*model_);
+                retireActive(device,cell);
                 model_=std::move(next);
+                activeCell_=cell;
+                activeRevision_=sourceRevision_;
                 activeBake_=settings_.maxCachedRegions ?
                     prepared->bake : std::shared_ptr<const HorizonBake>{};
                 activeVertices_.swap(keptVertices);
@@ -429,6 +431,9 @@ public:
             stream_.reset();
         }
         if(model_){render::releaseModel(device,*model_);model_.reset();}
+        gpuCache_.clear(device);
+        activeCell_.reset();
+        activeRevision_=0;
         activeBake_.reset();
         activeVertices_.clear();
         activeIndices_.clear();
