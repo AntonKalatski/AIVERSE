@@ -99,6 +99,43 @@ inline Fixed diagnosticValue(const NatureFieldSample& sample,
     return {};
 }
 
+// Atmospheric/surface layers are direct ECS reads. They do not need to
+// evaluate every WindZone, GravityField and StormEvent at each pixel.
+inline bool diagnosticCellValue(const World& world, Entity cell,
+                                DiagnosticLayer layer, Fixed& result) {
+    const auto* air = world.tryGetConst<Atmosphere>(cell);
+    const auto* surface = world.tryGetConst<Surface>(cell);
+    if (!air || !surface) return false;
+    switch (layer) {
+        case DiagnosticLayer::TemperatureCelsius: result = air->temperature; break;
+        case DiagnosticLayer::RelativeHumidity: result = air->humidity; break;
+        case DiagnosticLayer::PressureHpa: result = air->pressure; break;
+        case DiagnosticLayer::Rain: result = air->rain; break;
+        case DiagnosticLayer::Snow: result = air->snow; break;
+        case DiagnosticLayer::SurfaceWetness: result = surface->wetness; break;
+        case DiagnosticLayer::SnowpackMeters: result = surface->snowpack; break;
+        case DiagnosticLayer::SurfaceIce: result = surface->ice; break;
+        case DiagnosticLayer::Fire:
+        case DiagnosticLayer::Quake:
+        case DiagnosticLayer::LocalFloodMeters: {
+            const auto* hazard = world.tryGetConst<HazardCell>(cell);
+            if (!hazard) return false;
+            result = layer == DiagnosticLayer::Fire ? hazard->fire :
+                     layer == DiagnosticLayer::Quake ? hazard->quake :
+                     hazard->waterDepth;
+            break;
+        }
+        default: return false; // vector field layers need the 3D sampler
+    }
+    return true;
+}
+
+inline bool diagnosticNeeds3DField(DiagnosticLayer layer) {
+    return layer == DiagnosticLayer::WindSpeedMetersPerSecond ||
+           layer == DiagnosticLayer::VerticalWindMetersPerSecond ||
+           layer == DiagnosticLayer::GravityMagnitude;
+}
+
 // Bounded, pure, row-major read. Optional layer has no outside-world fallback:
 // a valid result means the cell belongs to the climate grid.
 inline bool sampleDiagnosticRaster(const World& world,
@@ -130,9 +167,6 @@ inline bool sampleDiagnosticRaster(const World& world,
     next.tick = state->tick;
     next.rawValues.resize(static_cast<std::size_t>(w * h));
     next.valid.resize(static_cast<std::size_t>(w * h));
-    const bool needHazard = request.layer == DiagnosticLayer::Fire ||
-        request.layer == DiagnosticLayer::Quake ||
-        request.layer == DiagnosticLayer::LocalFloodMeters;
     for (std::int64_t row = 0; row < h; ++row) {
         for (std::int64_t col = 0; col < w; ++col) {
             const std::int32_t cellX = static_cast<std::int32_t>(
@@ -143,22 +177,29 @@ inline bool sampleDiagnosticRaster(const World& world,
             if (entity == kNullEntity) continue;
             const auto* coord = world.tryGetConst<Cell>(entity);
             if (!coord) continue;
-            if (needHazard && !world.tryGetConst<HazardCell>(entity)) continue;
-            const auto meters = std::int64_t(state->settings.cellSizeMeters);
-            const auto xMeters = std::int64_t(cellX) * meters + meters / 2;
-            const auto zMeters = std::int64_t(cellZ) * meters + meters / 2;
-            const auto maxMetres = std::numeric_limits<std::int64_t>::max() /
-                                   Fixed::kOne / 2;
-            if (xMeters < -maxMetres || xMeters > maxMetres ||
-                zMeters < -maxMetres || zMeters > maxMetres)
-                continue;
-            NatureFieldSample sampleValue;
-            const Vec3 query{Fixed::fromInt(xMeters),
-                             coord->elevation, Fixed::fromInt(zMeters)};
-            if (!sampleNatureField(world, query, sampleValue) ||
-                !sampleValue.hasAtmosphere) continue;
+            Fixed value{};
+            if (diagnosticNeeds3DField(request.layer)) {
+                const auto meters = std::int64_t(state->settings.cellSizeMeters);
+                const auto xMeters = std::int64_t(cellX) * meters + meters / 2;
+                const auto zMeters = std::int64_t(cellZ) * meters + meters / 2;
+                const auto maxMetres = std::numeric_limits<std::int64_t>::max() /
+                                       Fixed::kOne / 2;
+                if (xMeters < -maxMetres || xMeters > maxMetres ||
+                    zMeters < -maxMetres || zMeters > maxMetres)
+                    continue;
+                NatureFieldSample sampleValue;
+                const Vec3 query{Fixed::fromInt(xMeters),
+                                 coord->elevation, Fixed::fromInt(zMeters)};
+                if (!sampleNatureField(world, query, sampleValue) ||
+                    !sampleValue.hasAtmosphere)
+                    continue;
+                value = diagnosticValue(sampleValue, request.layer);
+            } else {
+                if (!diagnosticCellValue(world, entity, request.layer, value))
+                    continue;
+            }
             const std::size_t index = static_cast<std::size_t>(row * w + col);
-            const auto raw = diagnosticValue(sampleValue, request.layer).raw;
+            const auto raw = value.raw;
             next.rawValues[index] = raw;
             next.valid[index] = 1;
             if (!next.sampleCount) {
