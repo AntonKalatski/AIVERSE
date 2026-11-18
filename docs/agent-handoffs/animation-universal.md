@@ -1651,3 +1651,43 @@ before calling this stage validated.
   and add targeted deferred fixtures. Record a separate
   Stage 58 handoff after code.
 
+## Stage 58 — genre-neutral ordered scene layer queue (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  Draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `90ef13e6e59d6aeb918bf8486e2a668d331e9f53`.
+- **Changed files:** new `engine/view/SceneLayers.h`,
+  `tests/view/layers.cpp`, root `CMakeLists.txt`.
+- **Architecture:** `aiverse::view::ViewLayerQueue` composes an
+  arbitrary host-selected sequence of borrowed presentation
+  callbacks. Each entry has only an opaque label, generic
+  `LayerPhase` metadata and enable flag. `flush()` executes
+  strictly in insertion order, with no game/genre conditions,
+  GPU allocation, simulation authority or callback dispatch
+  to animation worker threads. Queue is cleared before
+  callbacks run; reentrant append/clear/flush is rejected.
+  A thrown host callback propagates and cannot replay other
+  frame-borrowed references on subsequent flush.
+- **API:** `append(label,phase,callback,enabled=true)`,
+  `flush()->LayerQueueStats {scheduled,executed,disabled}`,
+  `clear()`, `size()` and `empty()`.
+  The queue deliberately does not sort by phase: legacy
+  renderers rely on exact order even between logically related
+  terrain/road/transparent/overlay passes.
+- **Compatibility:** existing Renderer3D/legacy RtsView
+  code paths are still untouched in this stage.
+  No changes to shaders, ECS schema, save, netcode or game logic.
+  Host callback capture lifetimes are scoped to one frame.
+- **Validation:** new CTest `view_layer_order` fixture covers
+  ordering, disabled passes, once-only flush, exception
+  cleanup and reentrancy. **NOT RUN**, per user instruction.
+- **Risks:** this API is synchronous scene composition, not a
+  parallel renderer or render graph. Host callbacks may hold
+  borrowed state; they must be invoked before that state expires.
+- **Next:** replace only the early ordered pass sequence in
+  `modules/rts/view/RtsView.cpp` (geometry, terrain, water,
+  ground effects, road surfaces, shores, paint layers, map
+  ribbons) with queued callbacks while keeping the exact
+  conditional behavior/order. Code commit then Stage 59
+  handoff before advancing.
+
