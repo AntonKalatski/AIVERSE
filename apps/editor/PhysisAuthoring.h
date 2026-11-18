@@ -584,4 +584,79 @@ inline bool transformFields(MapDoc& doc, const std::vector<std::string>& ids,
     return apply(doc,config,error);
 }
 
+
+// Stage 22: deterministic editor-only pivot selection, shared by numeric
+// transforms and the camera gizmo. Does not add ECS/map schema fields.
+enum class FieldPivotMode : std::uint8_t {
+    Active, Median, BoundsCenter, WorldOrigin, Custom
+};
+struct FieldPivot {
+    double x = 0, y = 0, z = 0;
+};
+
+inline bool computeFieldPivot(const Json& config,
+                              const std::vector<std::string>& ids,
+                              const std::string& activeId, FieldPivotMode mode,
+                              const FieldPivot& custom, FieldPivot& result,
+                              std::string* error = nullptr) {
+    const auto fail=[&](const char* message) {
+        if (error) *error=message;
+        return false;
+    };
+    if (ids.empty()) return fail("PHYSIS pivot needs at least one selected field");
+    const std::set<std::string> wanted(ids.begin(),ids.end());
+    if (wanted.size()!=ids.size())
+        return fail("PHYSIS pivot has duplicate selected IDs");
+    if (!validate(config,error)) return false;
+
+    FieldPivot sum{},lo{1000001,1000001,1000001};
+    FieldPivot hi{-1000001,-1000001,-1000001}, active{};
+    bool hasActive=false;
+    std::size_t count=0;
+    for (const char* key:{"windZones","storms","gravityFields"}) {
+        const Json& fields=config[key];
+        if (!fields.isArray()) continue;
+        for (const Json& field:fields.items()) {
+            const std::string id=field.getStr("id");
+            if (!wanted.count(id)) continue;
+            const auto& coords=field["center"];
+            const FieldPivot p{coords[0].toDouble(),coords[1].toDouble(),
+                               coords[2].toDouble()};
+            sum.x+=p.x;sum.y+=p.y;sum.z+=p.z;
+            lo.x=std::min(lo.x,p.x);lo.y=std::min(lo.y,p.y);lo.z=std::min(lo.z,p.z);
+            hi.x=std::max(hi.x,p.x);hi.y=std::max(hi.y,p.y);hi.z=std::max(hi.z,p.z);
+            if (id==activeId) {active=p;hasActive=true;}
+            ++count;
+        }
+    }
+    if (count!=wanted.size()) return fail("PHYSIS pivot contains unknown field ID");
+    FieldPivot selected{};
+    switch (mode) {
+        case FieldPivotMode::Active:
+            if (!hasActive) return fail("PHYSIS active pivot is not selected");
+            selected=active;
+            break;
+        case FieldPivotMode::Median:
+            selected={sum.x/double(count),sum.y/double(count),sum.z/double(count)};
+            break;
+        case FieldPivotMode::BoundsCenter:
+            selected={(lo.x+hi.x)*0.5,(lo.y+hi.y)*0.5,(lo.z+hi.z)*0.5};
+            break;
+        case FieldPivotMode::WorldOrigin:
+            break;
+        case FieldPivotMode::Custom:
+            selected=custom;
+            break;
+        default:
+            return fail("PHYSIS unknown pivot mode");
+    }
+    if (!std::isfinite(selected.x)||!std::isfinite(selected.y)||
+        !std::isfinite(selected.z)||
+        std::abs(selected.x)>1000000||std::abs(selected.y)>1000000||
+        std::abs(selected.z)>1000000)
+        return fail("PHYSIS pivot outside world bounds");
+    result=selected; // caller result unchanged on failure
+    return true;
+}
+
 } // namespace aiverse::editor::physis_authoring

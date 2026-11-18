@@ -1,4 +1,5 @@
 #include "apps/editor/PhysisAuthoring.h"
+#include "apps/editor/PhysisGizmoGeometry.h"
 #include <cstdio>
 #include <cmath>
 #include <limits>
@@ -225,6 +226,49 @@ void testGroupRotationAndScale() {
     CHECK(!transformFields(doc,{wind,storm},0,0,0,0,0.001,&error));
     CHECK(doc.revision==stableRev && read(doc)==after);
 }
+
+void testPivotAndGizmoGeometry() {
+    MapDoc doc;doc.reset(8,8);
+    std::string error;
+    CHECK(apply(doc,defaultConfig(),&error));
+    std::string a,b,c;
+    CHECK(addField(doc,physis::AuthoredFieldKind::Wind,-4,2,8,a,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Gravity,6,4,14,b,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Storm,2,8,-2,c,&error));
+    FieldPivot pivot{999,999,999},custom{11,12,-13};
+    CHECK(computeFieldPivot(read(doc),{a,b,c},b,FieldPivotMode::Active,custom,pivot,&error));
+    CHECK(pivot.x==6 && pivot.y==4 && pivot.z==14);
+    CHECK(computeFieldPivot(read(doc),{c,b,a},b,FieldPivotMode::Median,custom,pivot,&error));
+    CHECK(std::abs(pivot.x-4.0/3.0)<1e-6 && pivot.y==14.0/3.0 &&
+          std::abs(pivot.z-20.0/3.0)<1e-6);
+    CHECK(computeFieldPivot(read(doc),{a,b,c},b,FieldPivotMode::BoundsCenter,custom,pivot,&error));
+    CHECK(pivot.x==1 && pivot.y==5 && pivot.z==6);
+    CHECK(computeFieldPivot(read(doc),{a},a,FieldPivotMode::WorldOrigin,custom,pivot,&error));
+    CHECK(pivot.x==0 && pivot.y==0 && pivot.z==0);
+    CHECK(computeFieldPivot(read(doc),{a,b},a,FieldPivotMode::Custom,custom,pivot,&error));
+    CHECK(pivot.x==11 && pivot.y==12 && pivot.z==-13);
+    const auto previous=pivot;
+    CHECK(!computeFieldPivot(read(doc),{a,"missing"},a,FieldPivotMode::Median,custom,pivot,&error));
+    CHECK(pivot.x==previous.x);
+    CHECK(!computeFieldPivot(read(doc),{a,a},a,FieldPivotMode::Active,custom,pivot,&error));
+    CHECK(!computeFieldPivot(read(doc),{a},a,FieldPivotMode::Custom,{2000000,0,0},pivot,&error));
+    const auto picked=physis_gizmo::idsInScreenRect({{"b",10,10},{"a",5,5},{"a",7,7},{"c",99,0}},
+                                                   11,11,0,0);
+    CHECK(picked.size()==2 && picked[0]=="a" && picked[1]=="b");
+    CHECK(physis_gizmo::idsInScreenRect({{"a",1,1}},5,5,6,6).empty());
+    double parameter=42;
+    CHECK(physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,-1},
+                                              {0,0,0},0,parameter));
+    CHECK(std::abs(parameter)<1e-5);
+    CHECK(physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,-1},
+                                              {5,0,0},0,parameter));
+    CHECK(std::abs(parameter+5)<1e-5);
+    CHECK(!physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,-1},
+                                               {0,0,0},2,parameter));
+    CHECK(physis_gizmo::segmentDistanceSq(5,1,0,0,10,0)<1.01);
+    CHECK(physis_gizmo::segmentDistanceSq(5,20,0,0,10,0)>300);
+}
+
 void testFpsAndDuplicateIds() {
     MapDoc fps;
     std::string error;
@@ -259,5 +303,5 @@ void testFpsAndDuplicateIds() {
     CHECK(fps.revision==revision);
 }
 }
-int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testGroupRotationAndScale();testFpsAndDuplicateIds();
+int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testGroupOperations();testGroupFpsMap();testGroupRotationAndScale();testPivotAndGizmoGeometry();testFpsAndDuplicateIds();
 std::printf("PHYSIS Field Authoring: %s\n",failures?"FAIL":"PASS");return failures?1:0;}
