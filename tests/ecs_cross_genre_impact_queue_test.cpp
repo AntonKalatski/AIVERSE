@@ -81,7 +81,7 @@ public:
                 visit(ally);     // team filter skips friend
                 visit(secondary);
             },
-            [this](Simulation& current,const lg::QueuedProjectileImpact& request,
+            [](Simulation& current,const lg::QueuedProjectileImpact& request,
                    Entity target) {
                 const World& world=current.world();
                 const auto* source=world.tryGetConst<TestTeam>(request.impact.source);
