@@ -1,17 +1,13 @@
-#include "engine/platform/EnhancedInputConfig.h"
-#include "engine/platform/EnhancedInputFileIO.h"
-#include "engine/platform/EnhancedInputPresets.h"
-#include "engine/platform/EnhancedInputProfileIO.h"
-#include "engine/platform/EnhancedInputUserProfiles.h"
+#include "engine/platform/InputFlow.h"
 #include <chrono>
 #include <filesystem>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
 namespace p=aiverse::platform;
-namespace ei=aiverse::lib::gameplay::enhanced;
-namespace conf=aiverse::platform::enhanced_config;
-#define CHECK(x) do { if(!(x)){ std::cerr<<"Enhanced Input JSON failed line "<<__LINE__<<": " #x "\n";std::abort();} } while(false)
+namespace ei=aiverse::lib::gameplay::inputflow;
+namespace conf=aiverse::platform::inputflow_config;
+#define CHECK(x) do { if(!(x)){ std::cerr<<"InputFlow JSON failed line "<<__LINE__<<": " #x "\n";std::abort();} } while(false)
 
 int main() {
     const auto data=aiverse::Json::parse(R"JSON({
@@ -44,7 +40,7 @@ int main() {
     conf::Asset duplicate;
     CHECK(conf::readAsset(aiverse::Json::parse(serialized.dump()),duplicate,&err));
     CHECK(duplicate.contexts[0].context.mappings[0].id==3);
-    ei::InputSystem input;
+    ei::InputFlow input;
     CHECK(conf::installAsset(input,duplicate,&err));
     input.setControl({ei::Device::Keyboard,int(p::Key::W)},1);
     input.update(0.016f);
@@ -99,7 +95,7 @@ int main() {
     })JSON");
     CHECK(!conf::readProfile(invalidCode,profile,&err));
     // Both built-in presets can be authored, serialized and installed with stable mapping IDs.
-    for(const auto preset:{p::enhanced_presets::fpsReference(),p::enhanced_presets::rtsReference()}){
+    for(const auto preset:{p::inputflow_presets::fpsReference(),p::inputflow_presets::rtsReference()}){
         CHECK(!preset.actions.empty()&&!preset.contexts.empty());
         conf::Asset decoded;
         CHECK(conf::readAsset(conf::writeAsset(preset),decoded,&err));
@@ -109,7 +105,7 @@ int main() {
             for(std::size_t i=0;i<decoded.contexts[j].context.mappings.size();++i)
                 CHECK(decoded.contexts[j].context.mappings[i].id==i+1);
         }
-        ei::InputSystem runtime;
+        ei::InputFlow runtime;
         CHECK(conf::installAsset(runtime,decoded,&err));
         CHECK(runtime.registeredContexts().size()==preset.contexts.size());
     }
@@ -145,8 +141,8 @@ int main() {
     conf::UserProfiles users;
     const auto userRoot=std::filesystem::path(file.string()+".users");
     users.setScope(userRoot,"demo-project");
-    ei::InputSystem p0,p1;
-    CHECK(conf::installAsset(p0,p::enhanced_presets::fpsReference(),&err));
+    ei::InputFlow p0,p1;
+    CHECK(conf::installAsset(p0,p::inputflow_presets::fpsReference(),&err));
     p1=p0;
     CHECK(users.load(0,p0,&err)&&users.load(1,p1,&err));
     CHECK(users.path(0)!=users.path(1));
@@ -156,8 +152,8 @@ int main() {
                        ei::RebindPolicy::Swap,&err));
     CHECK(p1.context("FPS")->mappings[0].control.code==alternateCode);
     CHECK(p1.context("FPS")->mappings[1].control.code==originalCode);
-    ei::InputSystem reloaded;
-    CHECK(conf::installAsset(reloaded,p::enhanced_presets::fpsReference(),&err));
+    ei::InputFlow reloaded;
+    CHECK(conf::installAsset(reloaded,p::inputflow_presets::fpsReference(),&err));
     conf::UserProfiles nextRun;
     nextRun.setScope(userRoot,"demo-project");
     CHECK(nextRun.load(1,reloaded,&err));
@@ -170,5 +166,5 @@ int main() {
     std::filesystem::remove_all(userRoot,cleanup);
     std::filesystem::remove(assetFile,cleanup);
     std::filesystem::remove(file,cleanup);
-    std::cout<<"Enhanced Input config/schema/profile roundtrip passed\n";
+    std::cout<<"InputFlow config/schema/profile roundtrip passed\n";
 }
