@@ -426,3 +426,25 @@ network/save formats and deterministic checksums are unchanged.
 **Verification pending:** the integrated RTS regression suite,
 animated-model visual comparisons and macOS Metal path have not been
 executed for this stage.
+
+## RTS animation owner fallback verification (Stage 79)
+
+When a pure graph object becomes ineligible for the generic View path,
+`RtsAnimate.cpp` validates the current frame's generic pose before
+recording the owner transition. If it cannot consume a valid pose, it
+reinitializes **both** legacy graph and imported clip Animator clocks
+(`setModel(nullptr)`, then `setModel(&model)`) and resets the clip
+selection. This prevents a reused RTS object from resuming a stale
+pre-MotionWeave imported-clip time after dynamic asset/controller changes.
+When View still provides a valid pose, neither legacy branch updates
+its own animation player. Graph evaluation and resulting pose are still
+presentation-only; authoritative simulation state is unaffected.
+
+`tests/view/view.cpp` adds a CPU regression scenario with an actual
+single-bone Model, a sampled Walk AnimClip, a pure graph using that clip
+and a dormant legacy Animator. The scenario checks per-frame View graph
+clock and local pose progression, that the dormant Animator clock does not
+advance, View-source removal, legacy clock reinitialization and a new
+View player after re-entry. This checks the reusable animation contract;
+**it does not directly invoke `RtsView::animate`**, so RTS in-game parity
+and rendering still need native/visual integration validation.
