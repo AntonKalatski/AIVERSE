@@ -495,6 +495,17 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME animation_graphs COMMAND aiverse_animation_tests)
 endif()
 
+# Genre-independent ECS animation presentation host for native C++ projects.
+add_library(aiverse_animation_ecs INTERFACE)
+add_library(AIVERSE::animation_ecs ALIAS aiverse_animation_ecs)
+target_compile_features(aiverse_animation_ecs INTERFACE cxx_std_20)
+target_include_directories(aiverse_animation_ecs INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/libraries/include")
+target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_models)
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_ecs_tests tests/animation/ecs_presentation.cpp)
+    target_link_libraries(aiverse_animation_ecs_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_ecs_presentation COMMAND aiverse_animation_ecs_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
