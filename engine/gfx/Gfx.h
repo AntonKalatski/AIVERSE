@@ -254,6 +254,10 @@ public:
     // command bytes are produced by an earlier compute pass and MUST NOT be
     // read back or validated on the CPU. Unsupported backends return false.
     // This is intentionally one draw per call, not multi-draw batching.
+    // Experimental opt-in compute-authored draw arguments. Feature queries
+    // are explicit: the mere presence of BufferType::Storage or compute does
+    // not guarantee safe GPU-authored indirect indexed rendering.
+    virtual bool supportsGpuAuthoredIndirectDraw() const { return false; }
     virtual bool drawIndexedGpuIndirect(BufferHandle arguments, size_t offset) {
         (void)arguments; (void)offset; return false;
     }
