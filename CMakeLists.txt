@@ -668,6 +668,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_motionweave_parallel_rig_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
     add_test(NAME motionweave_parallel_rig COMMAND aiverse_motionweave_parallel_rig_tests)
 endif()
+# Host-only, opt-in MotionWeave CPU performance suite (no benchmark in CTest).
+if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_motionweave_bench tools/animation/motionweave_bench.cpp)
+    target_link_libraries(aiverse_motionweave_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp

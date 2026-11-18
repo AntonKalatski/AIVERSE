@@ -118,3 +118,21 @@ skinning backend.
 committed but **NOT RUN** (user-requested deferral). Verify compilation,
 TSAN, macOS FPS screenshots, FPS save/network parity and real FPS/RTS
 benchmarks before declaring production readiness.
+
+### CPU performance fixture (deferred)
+
+Build the standalone (no GPU/model files) benchmark after configuring
+`AIVERSE_BUILD_TOOLS=ON`:
+
+```sh
+cmake --build build/ecs-test --target aiverse_motionweave_bench
+./build/ecs-test/aiverse_motionweave_bench --actors 1000 --frames 120
+./build/ecs-test/aiverse_motionweave_bench --actors 5000 --frames 120 --ik
+```
+
+It creates identical serial and persistent-worker Worlds, warms both,
+measures average CPU frame times and verifies one output pose for parity.
+The benchmark intentionally is **not registered in CTest** because timings
+are machine-dependent. It must be run together with ThreadSanitizer,
+real-model Metal screenshots and a representative RTS/FPS frame trace
+before changing production worker thresholds. **NOT RUN**.
