@@ -1739,3 +1739,42 @@ before calling this stage validated.
   preserving exact ordering and pointer lifetimes.
   Commit code, then Stage 60 separately.
 
+## Stage 60 — ordered heterogeneous generic View draw packets (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`,
+  draft PR #22 targeting `feature/universal-entity-inspector-fps`.
+- **Code SHA:** `55e0e5269de3b968480a5e17322d301bca56d09b`.
+- **Changed files:** `engine/view/View.h`, `CMakeLists.txt`,
+  `docs/view.md`, new `tests/view/packets.cpp`.
+- **Architecture:** `view::ScenePacket` is an ordered typed
+  variant over `view::Object`, `MeshObject`, `LineObject`,
+  `TriangleObject`. `view::ScenePacketBatch` reserves,
+  appends and clears an owned sequence of generic packets
+  while borrowing host-owned model/mesh/material resources.
+  `View::submitPacket`, `submitPackets(span)` and
+  `submitPackets(ScenePacketBatch&)` dispatch packets using
+  the existing View-specific draw helpers and forward to
+  Renderer3D in **insertion order**. No game entity/
+  network/RTS/FPS type is present in core View.
+- **Compatibility:** all existing direct View submit methods
+  remain valid and use the exact same renderer paths. No
+  new GPU pipelines, save/network changes or animation
+  graph work. This stage adds a generic draw submission
+  contract; host adoption may occur incrementally.
+- **Tests:** new deferred CTest `view_scene_packets`
+  checks heterogeneous packet ordering, tagged type
+  identity, contents and clearing. **NOT RUN** per user
+  instruction. CMake, TSAN, graphics tests also NOT RUN.
+- **Limits:** ModelDraw and Mesh pointers are borrowed; the
+  batch owns packet records but not GPU/model assets.
+  The wrapper does not guarantee a reduction in draw calls:
+  Renderer3D remains responsible for batching. No deferred
+  execution across frames is supported.
+- **Next:** convert one existing host code path to
+  `ScenePacketBatch` rather than a sequence of direct
+  model/mesh commands, maintaining order and object
+  identities. Then migrate related generic scene layers
+  by using a unified View frame-builder instead of
+  adding any genre conditionals to core View.
+  Commit code first, then Stage 61 handoff separately.
+
