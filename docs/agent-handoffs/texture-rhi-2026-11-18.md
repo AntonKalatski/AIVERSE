@@ -4252,3 +4252,26 @@ Next: Update native texture skill/docs for sRGB selection and
 test the staged source using real CMake/CTest. Verify shader
 sampling/color conversion on actual Metal/Vulkan/GL and mobile
 devices. Keep PR #21 Draft until backend and regression gates pass.
+
+## Stage 5R — sRGB compression format documentation (2026-11-18)
+
+Code/docs SHA: ef7b57d478377bedecf1c893b4e36965a160af81.
+Branch: feature/texture-rhi-unification (Draft PR #21).
+Files: docs/texture-rhi.md, skills/visuals/aiverse-texture-rhi/SKILL.md.
+
+Documentation now describes hardware-compressed sRGB BC1/BC3/BC7,
+ETC2 and ASTC variants with backend capability checks, native
+color decoding, CPU RGBA8_sRGB fallbacks, WebGL2 sRGB-S3TC
+extension requirement and BC1_RGB opaque index-3 semantics.
+Legacy trustShaderSrgbDecode remains an explicit shader opt-in
+rather than a requirement for actual sRGB-compressed GPU formats.
+The native agent skill instructs game coders to reuse these
+native RHI paths rather than re-encode or double-convert color.
+
+Actual verification: GitHub docs commit and ref update succeeded.
+C++ compile, CTest, skill catalog audit and GPU shader tests NOT RUN.
+No new engine code or save/network data changed in this stage.
+
+Next: Native compilation and CTest on current HEAD; GPU color
+accuracy captures for Metal/GL/GLES/Vulkan/WebGL2. Record exact
+outcomes and correct failures before approving Draft PR #21.
