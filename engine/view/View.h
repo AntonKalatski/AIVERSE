@@ -34,6 +34,14 @@ struct MeshObject {
     float specular=.25f,emissive=0.f;
     bool visible=true;
 };
+struct LineObject {
+    render::float3 start{},end{};
+    uint32_t rgba=0xffffffffu;
+};
+struct TriangleObject {
+    render::float3 a{},b{},c{};
+    uint32_t rgba=0xffffffffu;
+};
 struct Stats {
     lib::animation::AnimationBridgeStats source;
     lib::animation::MotionWeaveScheduleStats animation;
@@ -134,6 +142,15 @@ public:
     void submitMeshes(render::Renderer3D& renderer,
                       std::span<const MeshObject> objects) const {
         for(const auto& object:objects)submitMesh(renderer,object);
+    }
+    // Immediate geometry is genre-free: editors, diagnostics, debug
+    // guides and any game host pass the same line/triangle packets.
+    static void submitLine(render::Renderer3D& renderer,const LineObject& line) {
+        renderer.line(line.start,line.end,line.rgba);
+    }
+    static void submitTriangle(render::Renderer3D& renderer,
+                               const TriangleObject& triangle) {
+        renderer.triangle(triangle.a,triangle.b,triangle.c,triangle.rgba);
     }
 
     const Stats& stats() const noexcept{return stats_;}

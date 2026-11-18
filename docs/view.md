@@ -104,3 +104,17 @@ beginScene pipeline, so a client/editor no longer needs to
 refer to an RTS-named camera type. The render backend, viewport,
 shadows and original camera parameters are unchanged.
 
+### Generic immediate geometry
+
+`view::LineObject` and `view::TriangleObject` are unowned
+scene-space geometry packets. Static `View::submitLine(renderer,line)`
+and `View::submitTriangle(renderer,triangle)` forward their
+vertices/colors to the existing Renderer3D pass. They do not
+know what any diagnostic, selection, fog blip or game event
+means; the host decides which geometry to submit.
+
+The transitional game adapter already routes selected projectile
+tracers and fog-of-war blip triangles through these shared packet
+methods. All other legacy geometry remains valid on the old
+immediate-mode renderer until its own host extraction.
+

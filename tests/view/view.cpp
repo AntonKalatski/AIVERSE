@@ -45,6 +45,9 @@ int main() {
     // adding RTS/FPS-specific components or behavior.
     view::MeshObject mesh;
     mesh.visible=false;mesh.mesh=nullptr;
+    view::LineObject line{{0,0,0},{1,0,0},0xff0000ffu};
+    view::TriangleObject tri{{0,0,0},{1,0,0},{0,1,0},0xffffffffu};
+    assert(line.end.x==1.f && tri.c.y==1.f);
     assert(!mesh.visible && mesh.mesh==nullptr);
     view.clear();
     assert(view.presentation().countExisting<lib::animation::AnimationPlayerComponent>()==0);

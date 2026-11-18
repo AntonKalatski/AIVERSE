@@ -277,9 +277,11 @@ void RtsView::drawTracers(Renderer3D& r, float dt, const MapGrid* grid) {
         float3 side = cross(b - a, camPos_ - tip);
         if (length(side) < 1e-5f) side = {0, 1, 0};
         side = normalize(side) * .035f;
-        r.triangle(back - side, tip - side, tip + side, rgba(255, 180, 65, 180));
-        r.triangle(back - side, tip + side, back + side, rgba(255, 180, 65, 180));
-        r.line(back, tip, rgba(255, 249, 205, 255));
+        ::aiverse::View::submitTriangle(r,{
+            back-side,tip-side,tip+side,rgba(255,180,65,180)});
+        ::aiverse::View::submitTriangle(r,{
+            back-side,tip+side,back+side,rgba(255,180,65,180)});
+        ::aiverse::View::submitLine(r,{back,tip,rgba(255,249,205,255)});
         shot.age += dt;
         if (shot.age >= duration) shot.age = 1;
     }
