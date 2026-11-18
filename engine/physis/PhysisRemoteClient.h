@@ -28,6 +28,20 @@ public:
     const Receipt& receipt() const {return receipt_;}
     std::uint64_t requestId() const {return active_?active_->requestId:0;}
     std::uint64_t nextRequestId() const {return nextId_;}
+    bool hasRemoteRevision() const {return knownRemoteRevision_;}
+    std::uint64_t remoteRevision() const {return remoteRevision_;}
+    bool probingRevision() const {return probeId_!=0;}
+    // Query a fresh, never-used request ID. The server's Unknown response
+    // contains its authoritative CURRENT revision. This is discovery, not
+    // a command, and requires the authenticated host's read permission.
+    bool requestRevision() {
+        if(!instance_ || !nextId_ || probeId_ || waiting())return false;
+        probeId_=nextId_++;
+        probeAttempts_=0;
+        probeNextMs_=0;
+        knownRemoteRevision_=false;
+        return true;
+    }
     bool waiting() const {
         return active_.has_value() && !terminal(receipt_.result) &&
                status_!=ClientStatus::Uncertain;
@@ -52,6 +66,7 @@ public:
         packet.command=std::move(command);
         net::Bytes encoded;
         if(!encode(packet,encoded,error))return false;
+        probeId_=0;
         active_=std::move(packet);
         receipt_=Receipt{};
         status_=ClientStatus::Offline;
@@ -82,6 +97,7 @@ public:
         FieldEditBatch decoded;
         if(!decodeFieldEditCommand(restored.command,decoded,error))return false;
         active_=std::move(restored);
+        probeId_=0;
         nextId_=std::max(nextId_,active_->requestId+1);
         receipt_=Receipt{};
         status_=ClientStatus::Offline;
@@ -119,6 +135,8 @@ public:
             connected_=true;
             attempts_=0;
             nextSendMs_=0;
+            probeAttempts_=0;
+            probeNextMs_=0;
             query_=sent_; // on reconnect first ask what happened
         }
         net::Bytes wire;
@@ -126,9 +144,17 @@ public:
         while(maxReceive-- > 0 && conn.recv(wire)) {
             Packet message;
             if(!decode(wire,message) || message.kind!=Message::Receipt ||
-               !active_ || message.clientInstance!=instance_ ||
-               message.requestId!=active_->requestId)
+               message.clientInstance!=instance_)
                 continue;
+            if(probeId_ && message.requestId==probeId_) {
+                if(message.receipt.result==Result::Unknown) {
+                    knownRemoteRevision_=true;
+                    remoteRevision_=message.receipt.revision;
+                }
+                probeId_=0;
+                continue;
+            }
+            if(!active_ || message.requestId!=active_->requestId)continue;
             receipt_=message.receipt;
             if(receipt_.result==Result::Queued) {
                 status_=ClientStatus::Queued;
@@ -140,13 +166,29 @@ public:
                 query_=false; // server lost the request; resubmit same ID
                 attempts_=0;
                 nextSendMs_=nowMs;
-            } else if(receipt_.result==Result::Applied)
+            } else if(receipt_.result==Result::Applied) {
                 status_=ClientStatus::Applied;
-            else if(receipt_.result==Result::Conflict)
+                knownRemoteRevision_=true;
+                remoteRevision_=receipt_.revision;
+            } else if(receipt_.result==Result::Conflict) {
                 status_=ClientStatus::Conflict;
+                knownRemoteRevision_=true;
+                remoteRevision_=receipt_.revision;
+            }
             else if(receipt_.result==Result::Denied)
                 status_=ClientStatus::Denied;
             else status_=ClientStatus::Rejected;
+        }
+        if(probeId_ && nowMs>=probeNextMs_ && probeAttempts_<12) {
+            Packet probe;
+            probe.kind=Message::Query;
+            probe.clientInstance=instance_;
+            probe.requestId=probeId_;
+            net::Bytes encoded;
+            if(encode(probe,encoded))conn.send(encoded);
+            ++probeAttempts_;
+            probeNextMs_=nowMs+std::min<std::uint64_t>(
+                200u*probeAttempts_,2000u);
         }
         if(!active_ || terminal(receipt_.result) ||
            status_==ClientStatus::Uncertain || nowMs<nextSendMs_)
@@ -179,6 +221,10 @@ public:
 
 private:
     std::uint64_t instance_=0,nextId_=1;
+    std::uint64_t probeId_=0,probeNextMs_=0;
+    std::uint64_t remoteRevision_=0;
+    bool knownRemoteRevision_=false;
+    unsigned probeAttempts_=0;
     std::optional<Packet> active_;
     Receipt receipt_{};
     ClientStatus status_=ClientStatus::Idle;
