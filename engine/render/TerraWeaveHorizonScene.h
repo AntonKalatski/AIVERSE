@@ -18,6 +18,7 @@
 #include <map>
 #include <mutex>
 #include <stdexcept>
+#include <span>
 
 namespace aiverse::terraweave {
 
@@ -79,7 +80,12 @@ public:
                 if(!baked){
                     const auto surface=generation?generation->surface:nullptr;
                     const auto archive=archiveStore_;
-                    const bool diskAllowed=archive &&
+                    // A changing authored world may still advertise the
+                    // previous static archiveContentHash. Partial updates
+                    // always bypass disk archives for the modified region.
+                    const bool dirtySource=generation &&
+                        !generation->edited.empty();
+                    const bool diskAllowed=archive && !dirtySource &&
                         (!surface || archive->authoredContentHash!=0);
                     const uint64_t fingerprint=diskAllowed ?
                         horizonArchiveFingerprint(terrain_,biomes_,settings_,
@@ -105,7 +111,11 @@ public:
                     }
                     if(!baked){
                         baked=std::make_shared<const HorizonBake>(bakeHorizon(
-                            terrain_,biomes_,settings_,x,z,surface.get()));
+                            terrain_,biomes_,settings_,x,z,surface.get(),
+                            generation?generation->previous.get():nullptr,
+                            generation?std::span<const RectCm>(
+                                generation->edited.data(),generation->edited.size())
+                                :std::span<const RectCm>{}));
                         if(diskAllowed && archive->write){
                             try {
                                 auto bytes=encodeHorizonArchive(*baked,fingerprint);
@@ -148,18 +158,44 @@ public:
     // The owner thread publishes an immutable snapshot. Canceled workers
     // retain their captured shared_ptr until they finish; old GPU proxy
     // remains in place until a replacement is uploaded.
-    void setSurfaceSources(std::shared_ptr<const HorizonSurfaceSources> source) {
+    void setSurfaceSources(std::shared_ptr<const HorizonSurfaceSources> source,
+                           std::span<const RectCm> edited = {}) {
         auto generation=std::make_shared<SourceGeneration>();
         generation->revision=++sourceRevision_; // owner-thread only
         generation->surface=std::move(source);
-        sources_.store(std::move(generation),std::memory_order_release);
+        // Keep the previous immutable CPU bake only for small localized
+        // landscape edits. The actual GPU model remains available until
+        // the updated region is uploaded on the main render thread.
+        if(activeBake_ && !edited.empty() && edited.size()<=128) {
+            generation->previous=activeBake_;
+            generation->edited.assign(edited.begin(),edited.end());
+        }
+        sources_.store(generation,std::memory_order_release);
         {
             std::lock_guard lock(cacheMutex_);
-            cache_.clear(); // previous generation's ground/masks are invalid
+            cache_.clear(); // old source generation must never escape
         }
         if(stream_ && cataloged_) {
-            stream_->remove(cell_,[](world::Cell){});
-            cataloged_=false; // update() schedules a new revision for this cell
+            bool affectsCurrent=true;
+            if(!edited.empty() && activeBake_) {
+                affectsCurrent=false;
+                const int64_t x0=activeBake_->originXcm;
+                const int64_t z0=activeBake_->originZcm;
+                const int64_t x1=x0+activeBake_->sideCm;
+                const int64_t z1=z0+activeBake_->sideCm;
+                const int64_t pad=settings_.distantTileCm;
+                for(const RectCm& r:edited)
+                    if(r.maxX>x0-pad && r.minX<x1+pad &&
+                       r.maxZ>z0-pad && r.minZ<z1+pad) {
+                        affectsCurrent=true;break;
+                    }
+            }
+            if(affectsCurrent) {
+                stream_->remove(cell_,[](world::Cell){});
+                cataloged_=false; // next update schedules current dirty cell
+            }
+            // If none of the edited tiles touch this Horizon, keep
+            // its already-uploaded model and avoid unnecessary rebakes.
         }
     }
     // Configure optional packed/static game-asset lookup before streaming
@@ -215,6 +251,7 @@ public:
                 if(!prepared->model){
                     if(model_)render::releaseModel(device,*model_);
                     model_.reset();
+                    activeBake_.reset();
                     clusters_=0;
                     terrainQuads_=0;
                     runtime_={};
@@ -234,6 +271,8 @@ public:
                 }
                 if(model_)render::releaseModel(device,*model_);
                 model_=std::move(next);
+                activeBake_=settings_.maxCachedRegions ?
+                    prepared->bake : std::shared_ptr<const HorizonBake>{};
                 originXcm_=prepared->bake->originXcm;
                 originZcm_=prepared->bake->originZcm;
                 clusters_=prepared->bake->clusters.size();
@@ -270,6 +309,7 @@ public:
             stream_.reset();
         }
         if(model_){render::releaseModel(device,*model_);model_.reset();}
+        activeBake_.reset();
         { std::lock_guard lock(cacheMutex_); cache_.clear(); }
     }
     bool ready() const {return model_!=nullptr;}
@@ -300,6 +340,8 @@ private:
     struct SourceGeneration {
         uint64_t revision=0;
         std::shared_ptr<const HorizonSurfaceSources> surface;
+        std::shared_ptr<const HorizonBake> previous;
+        std::vector<RectCm> edited;
     };
     struct CacheEntry {
         std::shared_ptr<const HorizonBake> bake;
@@ -316,6 +358,7 @@ private:
     HorizonSettings settings_;
     std::unique_ptr<world::AsyncChunkStream> stream_;
     std::unique_ptr<render::Model> model_;
+    std::shared_ptr<const HorizonBake> activeBake_; // optional previous source
     world::Cell cell_{};
     bool cataloged_=false;
     int64_t originXcm_=0,originZcm_=0;
