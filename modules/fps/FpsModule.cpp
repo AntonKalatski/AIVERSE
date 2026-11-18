@@ -220,13 +220,17 @@ void Module::syncActorEntities(Simulation& sim) const {
             // ordered tick workspace; commit the complete result to ECS.
             *world.tryGet<ActorRuntime>(entity) = ActorRuntime{actor};
         }
+        // With ECS authority enabled, Editor projections are derived from
+        // the committed ActorRuntime, never from a second gameplay owner.
+        const Actor& projected = config_.ecsAuthority
+            ? world.tryGetConst<ActorRuntime>(entity)->value : actor;
         if (auto* identity = world.tryGet<ActorEntityIdentity>(entity))
-            *identity = {actor.slot, actor.team, actor.life};
+            *identity = {projected.slot, projected.team, projected.life};
         if (auto* transform = world.tryGet<ActorEntityTransform>(entity))
-            *transform = {actor.pos, actor.velocity, actor.yaw, actor.pitch};
+            *transform = {projected.pos, projected.velocity, projected.yaw, projected.pitch};
         if (auto* vitals = world.tryGet<ActorEntityVitals>(entity))
-            *vitals = {actor.health, actor.armor, actor.ammo, actor.reserve,
-                       actor.downed, actor.crouched, actor.prone};
+            *vitals = {projected.health, projected.armor, projected.ammo, projected.reserve,
+                       projected.downed, projected.crouched, projected.prone};
     }
 }
 
