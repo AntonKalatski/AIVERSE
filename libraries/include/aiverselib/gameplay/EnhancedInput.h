@@ -311,31 +311,34 @@ public:
         for (const auto& [name, action] : actions_) {
             const Aggregate aggregate = result[name];
             auto& runtime = actionRuntime_[name];
-            const bool press = (aggregate.active && !runtime.wasDown) || aggregate.began;
-            const bool release = !aggregate.active && runtime.wasDown;
-            bool triggered = aggregate.triggered;
+            // Action-level modifiers and axis dimension constraints run BEFORE
+            // checking whether the resulting action is active or triggered.
+            // An axis dead zone or scalar-zero must not emit a phantom Triggered.
+            Value value = constrain(applyModifiers(aggregate.value, action.modifiers), action.type);
+            const bool actionDown = value.actuated();
+            const bool press = (actionDown && !runtime.wasDown) ||
+                               (aggregate.began && (!aggregate.active || actionDown));
+            const bool release = !actionDown && runtime.wasDown;
+            bool triggered = aggregate.triggered && (!aggregate.active || actionDown);
             if (!action.triggers.empty()) {
                 const bool chordOK = chordSatisfied(action.triggers, rawLevels);
-                const bool actionGate = evaluateTriggers(action.triggers, runtime, aggregate.active,
+                const bool actionGate = evaluateTriggers(action.triggers, runtime, actionDown,
                                                          press, release, press && release, dt, rawLevels);
                 triggered = triggered && chordOK && actionGate;
             } else {
-                // Keep action lifetime tracking even without explicit action triggers.
-                runtime.wasDown = aggregate.active;
-                if (!aggregate.active) { runtime.seconds = 0; runtime.holdFired = false; }
+                runtime.wasDown = actionDown;
+                if (!actionDown) { runtime.seconds = 0; runtime.holdFired = false; }
             }
 
-            Value value = applyModifiers(aggregate.value, action.modifiers);
-            value = constrain(value, action.type);
             const auto previous = states_[name];
-            const bool quickPulse = !aggregate.active && aggregate.began && triggered;
-            if ((aggregate.active && !previous.active) || quickPulse)
+            const bool quickPulse = !actionDown && aggregate.began && triggered;
+            if ((actionDown && !previous.active) || quickPulse)
                 events_.push_back({name, Phase::Started, value});
             if (triggered) events_.push_back({name, Phase::Triggered, value});
-            else if (aggregate.active) events_.push_back({name, Phase::Ongoing, value});
-            if ((!aggregate.active && previous.active) || quickPulse)
+            else if (actionDown) events_.push_back({name, Phase::Ongoing, value});
+            if ((!actionDown && previous.active) || quickPulse)
                 events_.push_back({name, previous.triggered || triggered ? Phase::Completed : Phase::Canceled, {}});
-            states_[name] = {value, aggregate.active, triggered || (aggregate.active && previous.triggered)};
+            states_[name] = {value, actionDown, triggered || (actionDown && previous.triggered)};
         }
 
         for (auto& [key, raw] : controls_) {
