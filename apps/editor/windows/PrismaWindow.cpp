@@ -305,22 +305,6 @@ private:
             p[i] = obj[key].isArray() && obj[key].size() == 3 ?
                 float(obj[key][size_t(i)].toDouble(defaultValue)) : defaultValue;
     }
-    static Json makeVolume(const std::string& id, int shape, const float3& center) {
-        Json v = Json::object();
-        v.set("id", Json::string(id));
-        v.set("shape", Json::string(shape == 0 ? "global" : shape == 1 ? "sphere" : "box"));
-        if (shape != 0) v.set("center", vec3Json(center));
-        if (shape == 1) v.set("radius", Json::number(8.0));
-        if (shape == 2) {
-            const float e[3] = {8.f,8.f,8.f};
-            v.set("halfExtents", vec3Json(e));
-        }
-        v.set("blendDistance", Json::number(2.0));
-        Json profile = Json::object();
-        profile.set("effects", Json::array());
-        v.set("profile", std::move(profile));
-        return v;
-    }
     void drawVolumeEffects(Editor& ed, const std::string& scope, size_t vi, const Json& volume) {
         const Json& profile = volume["profile"];
         const Json& effects = profile["effects"];
@@ -544,7 +528,9 @@ private:
                         if(item.getStr("id")==id){found=true;break;}
                     if(!found)break;
                 }while(next<100000);
-                arr.push(makeVolume(id,volumeShape_,pos));
+                arr.push(makePrismaVolumeJson(id,
+                    volumeShape_ == 0 ? PrismaVolumeShape::Global :
+                    volumeShape_ == 1 ? PrismaVolumeShape::Sphere : PrismaVolumeShape::Box, pos));
             });
         }
     }
