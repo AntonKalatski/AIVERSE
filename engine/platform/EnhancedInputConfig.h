@@ -423,7 +423,7 @@ inline bool readAsset(const Json& json,Asset& out,std::string* error=nullptr) {
     for(const auto& action:result.actions)graphActions.emplace(action.name,action);
     for(const auto& context:result.contexts)
         graphContexts.emplace(context.context.name,context.context);
-    if(!ei::enhanced::detail::chordGraphAcyclic(graphActions,graphContexts))
+    if(!aiverse::lib::gameplay::enhanced::detail::chordGraphAcyclic(graphActions,graphContexts))
         return fail(error,"input","cyclic chord/notChord dependency");
     out=std::move(result);
     return true;
