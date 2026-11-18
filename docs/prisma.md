@@ -570,6 +570,64 @@ High-tier HDR only. Existing `postfx` schema is extended, not migrated.
 CMake, CTest and real Metal/GL validation are **NOT RUN** as requested.
 See `docs/handoffs/prisma-stage-24.md`.
 
+
+## Stage 25 — HDR camera motion vectors and Motion Blur (experimental)
+
+`postfx.effects` now accepts `motionBlur` through the shared,
+genre-independent PRISMA catalog. The new effect defaults to
+`minQuality: "high"` and is opt-in at runtime via
+`AIVERSE_PRISMA_MOTION_BLUR=1`; it additionally requires an HDR
+RGBA16F scene (signed RG motion vectors are not representable in the
+existing RGBA8 path without encoding).
+
+Parameters: `intensity` (0..1, default 0.65),
+`maxPixels` (0..64, default 20), `samples` (2..16, default 8),
+`shutterScale` (0..2, default 1). Example:
+```json
+{"type":"motionBlur","intensity":0.6,"maxPixels":20,
+ "samples":8,"shutterScale":1.0}
+```
+
+The motion-vector pass samples the current hardware scene depth
+and reconstructs the world position from the inverse current
+viewProjection. It projects that position with the previous
+viewProjection, writing a signed UV velocity
+`currentScreenUV - previousScreenUV` into an RGBA16F texture.
+The next raster pass gathers current-frame scene color along
+this velocity and blends it with the sharp color. Motion blur is
+executed **before** depth of field, FXAA, Bloom and final composite;
+HUD/UI remains unprocessed. Separate scratch depth attachments avoid
+sampling and writing the scene depth simultaneously.
+
+The previous camera matrix, validity flag and render dimensions are
+stored in `Prisma::motionViews_` per stable `setViewId()`, using the
+same camera identity contract as Auto Exposure. The first rendered
+frame, resize, changed quality, postprocess toggle or explicit
+`resetMotionHistory(viewId)`/no-argument reset invalidates
+motion history and results in an unblurred frame; it then seeds the
+matrix for the next frame. `setSettings` also resets history.
+
+**Optional object velocity bridge:** a native renderer may call
+`prisma.setObjectMotionVectors(viewId, velocityTexture)` each frame
+with a borrowed, full-resolution texture whose R/G values are signed
+current-minus-previous normalized screen UV and B is a valid-object
+pixel mask (B > 0.5). If present, that velocity overrides camera-only
+velocity for tagged pixels. The borrowed handle is cleared after each
+resolve. PRISMA does **not yet** generate per-object velocity buffers
+from mesh transforms/skinning; the adapter is an integration contract,
+not automatic object-motion rendering. These inputs are presentation
+state, not deterministic ECS.
+
+Limitations: this is a camera-reprojection motion blur, not TAA or
+temporal image accumulation; it does not store previous color, and
+therefore does not synthesize missing disoccluded samples. Camera cuts
+must be signaled explicitly to avoid blur across teleports; material
+transparency and sky (depth≈1) receive zero camera velocity in the
+basic shader. Neither Metal/GL depth sampling, signed velocity
+rendering, nor image correctness have been tested. All compilation,
+CTest and GPU checks remain **NOT RUN**, per user request.
+See `docs/handoffs/prisma-stage-25.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
