@@ -1,7 +1,7 @@
 // MotionWeave: cosmetic actions inferred from confirmed replicated counters.
 // No input commands, hit resolution or gameplay authority are modified.
 #pragma once
-#include "AnimationMontage.h"
+#include "EcsAnimationSystems.h"
 #include <cstdint>
 #include <memory>
 #include <vector>
