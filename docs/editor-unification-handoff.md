@@ -1634,3 +1634,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code/docs SHA:** `0819547185c1f4fb4ed042237c480b03d83a98fa`.
 - Updated `AGENTS.md` to require the real `fps.compat.projectilePrograms` stage to treat `ProjectileRuntime` as the authoritative owner in ECS mode, use the same `stepProgrammedProjectile` solver as legacy mode, preserve source `order` and immediate effects, and keep `State::projectiles` writable only for other yet-unmigrated FPS stages. Cites new deep/COW mixed projectile and v9 test fixtures.
 - **Verification:** docs-only commit; native C++ compilation still unverified.
+
+
+### 2026-11-18 — Native FPS parity fixture for direct ECS ordinary bullets, smoke and grenade
+- Implementation SHA: `b93cda9c81569d4d48f9147c178bf2b132b27f72`.
+- Added `ecsOrdinaryProjectileAuthorityParityCase(cow)` to `tests/fps/projectiles.inc`: real FPS bullet, persistent smoke and smoke-conversion grenade run in parallel legacy and canonical `ProjectileRuntime` modes. Tick-by-tick checksum and ECS projection/order/kind/position/velocity/expiry, body hit, deep/COW saveState rollback, v9 cross-mode save reload, direct native write to ECS smoke expiry against stale State projection.
+- Still needs `ecsOrdinaryProjectileAuthorityParity()` invocation in `tests/fps/tests.cpp`; assertions and native C++ compilation NOT executed.
