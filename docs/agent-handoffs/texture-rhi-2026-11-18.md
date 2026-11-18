@@ -131,3 +131,45 @@ proceeding. Then implement GL/GLES native dimensions with explicit feature
 queries (GL33/GLES3/WebGL2 have different array/cube capabilities); follow
 with Vulkan image/view types, layers and barriers. Keep these as individually
 handed-off stages, with exact code commits and actual test outcomes.
+
+## Stage 2B — GL/GLES native 3D, 2D arrays and cubemaps (2026-11-18)
+
+**Code commit:** `5fd11d2f638d77ae281c24a7e2bc91f50f8f19fa`.
+**Paths:** `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/gl/GLApi.h`.
+
+**Implemented in source:** Keep the original 2D allocation code; new
+`GLDevice::createDimensionalTexture` handles `Texture3D`,
+`Texture2DArray`, `Cube` using native `GL_TEXTURE_3D`,
+`GL_TEXTURE_2D_ARRAY`, `GL_TEXTURE_CUBE_MAP`. For arrays/volumes
+the API uploads contiguous RGBA/R8/HDR payloads, optionally generates
+mipmaps and accepts explicit allocation levels. Compressed 2D array/cube
+levels can be passed as complete contiguous per-level payloads when the
+driver supports the block compression format. `GLTexture` tracks
+target/dimension/layers, `setTexture` uses the correct target,
+and `updateTextureRegion` handles array face/mip/volume updates
+with row-by-row upload of non-tight row pitches.
+Windows GL loader adds `glTexImage3D`, `glTexSubImage3D`,
+`glCompressedTexImage3D` function pointers and required core constants.
+
+**Explicitly unsupported:** GL/GLES/WebGL universal `Texture1D` and
+`CubeArray` (these need platform-specific branching or extensions).
+Non-2D render targets, any GL storage image, MSAA and the new
+`TextureViewHandle`/`SamplerHandle` API. GL code paths do not yet
+provide independent sampler objects. Vulkan remains 2D-only. Some
+compressed-array driver combinations may reject allocation via
+`glGetError`; GPU support is runtime-dependent.
+
+**Compatibility:** 2D legacy texture path retained, except a new
+fail-closed check for previously ignored `storage` or unsupported
+MSAA/explicit allocation. Sampler dimension in GLSL must match the
+created GL texture target. The editor, game format and ECS are unchanged.
+
+**Validation:** Windows, Linux/GLES, Android and Emscripten compile:
+**NOT RUN**. OpenGL GPU validation: **NOT RUN**. No CI passing claim.
+
+**Next:** Ensure Windows GL loader links/initializes all new pointers and
+GLES3/WebGL2 headers expose the functions, then add dimension-sampling
+GPU tests in the GL context test runner. Implement Vulkan image types,
+array layer barriers, sampled image views and full subresource staging
+next; do **not** copy only `createImage` without checking all upload,
+clear, mip generation and render pass transitions.
