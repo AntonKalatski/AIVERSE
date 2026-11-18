@@ -162,3 +162,7 @@ Game window forwards keyboard input only while focused. Switching from Game to I
 ## User-profile file integrity
 
 `engine/platform/EnhancedInputProfileIO.h` implements validated `loadProfileFile` and `saveProfileFile`. A profile must pass the JSON schema before disk replacement; a temporary file is written first, with backup+restore handling where atomic rename-overwrite is unavailable. The FPS Settings UI applies a rebinding to a staged `InputSystem` copy and commits live input only **after** successful persistence. A write error leaves the old binding and profile active.
+
+## Two-finger gesture inputs
+
+The platform adapter also exposes gesture channels under `Device::Touch`, `deviceIndex: 0`: numeric `code: 3` is the change in distance between two fingers (pinch, logical pixels), `code: 4` is the horizontal change in their midpoint, and `code: 5` is the vertical change. They are relative deltas, accumulated per frame and cleared on `InputSystem::update(dt)`. No pulse is generated when contacts enter or leave the two-finger gesture. Bind these to semantic Actions such as `Zoom` and `CameraPan`, with project-specific scales; never process raw float controls inside ECS.
