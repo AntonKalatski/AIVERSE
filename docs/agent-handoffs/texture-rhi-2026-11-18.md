@@ -2638,3 +2638,61 @@ ctest --test-dir build/texture-rhi -R '^exr_texture$' --output-on-failure
 ```
 
 **Next stage:** Connect `TextureStreamQueue` and `TextureMipResidency` into a safe genre-agnostic native streaming facade; test callback mapping and stale-token rejection, then add backend readback and editor inspection. Continue append-only per-stage handoffs with exact commit IDs and accurate verification status.
+
+## Stage 7F — native staging + mip-residency coordination (2026-11-18)
+
+**Code commit:** `948df1c88ecad6aa5294173f21db32cd9824d963`.
+**Working branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**File:** new `engine/gfx/TextureResidentStreamer.h`.
+
+**Implementation:** Header-only genre-independent `gfx::TextureResidentStreamer`
+facade coordinates the prior `TextureStreamQueue` and
+`TextureMipResidency` without introducing a new backend or genre policy.
+`create(TextureDesc)` allocates empty authored-mip sampled storage and
+creates residency metadata; `stageNext(TextureStreamId, FillFn)` claims
+the next coarse-to-fine mip/face/volume, asks the caller for complete
+tightly packed CPU bytes, checks integer/pitch/frame budgets, and
+deep-copies through the existing queue. Failed producers or staging
+rejections immediately unclaim the mip so it can be retried.
+
+`drain(CompletionFn)` applies GPU completion outcomes to the correct
+ticket+resource+generation before notifying callers; on a failed update
+the underlying queue quarantines the resource and cancels later
+updates, while the coordinator invalidates remaining ticket mappings
+and refuses sampling. `cancel` makes a staged mip retryable;
+`destroy` cancels all pending jobs before the backend handle is
+released, and never recycles its logical resource identity.
+`sampledTexture` and `residentSampler` fail closed until *every*
+face/layer in the coarsest mip is complete; `finestResidentMip`
+and `fullyResident` expose progress without exposing undefined
+GPU mip data. `TextureStreamStats` exposes aggregate memory and
+upload budgets.
+
+**Native API:** Include `engine/gfx/TextureResidentStreamer.h`,
+construct with `gfx::Device&`, create with explicit `mipLevels`,
+stage packed data for the chosen mip/layer with `FillFn`, call
+`drain` on the graphics thread, then use `sampledTexture` and
+the `SamplerDesc` from `residentSampler` with the RHI's independent
+sampler binding interface. GPU uploads occur during `drain`; no
+separate file I/O worker, sparse page allocator, virtual texture
+feedback, or automatic GPU readback is claimed.
+
+**Files changed:** only the new header. Prior streaming and residency
+headers are reused unchanged to avoid colliding with another agent.
+
+**Tests actually performed:** GitHub file creation completed.
+**C++ compile NOT RUN, CTest NOT RUN, GPU backends NOT RUN.**
+A deterministic mock-device coordinator CTest and cross-backend LOD
+sampling are needed before considering this feature verified.
+
+**Limitations:** Current queue preallocates the full mip chain, so
+streaming defers upload bandwidth and residency, **not** physical
+VRAM allocations for missing mips. Eviction destroys whole
+resources. Production sparse/virtual texture physical-page
+budgeting and worker-driven I/O remain separate work.
+
+**Next step:** Add a CPU-only coordinator test for mixed 2D arrays,
+coarse-to-fine sampler clamp, failed producer retry, cancellation,
+stale resource destruction, GPU upload failure, and exact per-frame
+byte limits. Register it in CMake and append a new handoff with
+actual test status. Later integrate native texture inspection/editor.
