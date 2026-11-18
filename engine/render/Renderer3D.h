@@ -155,15 +155,15 @@ struct ModelDraw {
     float flash = 0;                               // additive highlight (hit feedback)
     float teamGlow = 0;                            // emission = team colour (linear) * teamGlow on team-coloured surfaces
     int variant = -1;                              // KHR_materials_variants index
-    // Optional draw-time selector for the source Primitive::material slot.
-    // -1: all primitives (default). Disables aggregate material/shadow
-    // batches for partial draws without duplicating GPU models or meshes.
-    int primitiveMaterialFilter = -1;
     uint32_t flags = 0;                            // DrawFlags (no cast / no receive shadow)
     const std::vector<NodePose>* pose = nullptr;   // morph weights (node weights when null)
     const BakedSample* baked = nullptr;            // skin from Model::baked instead of nodeWorld
     float dissolve = 0;                            // 0..1: burn away (spawn, death, construction)
     float4 outline{0, 0, 0, 0};                    // rgb (linear) + width in world units; a = 0: none
+    // Source Primitive::material slot selector for one drawModel call;
+    // -1 submits the complete model. Trailing field preserves existing
+    // positional ModelDraw aggregate initializers in native projects.
+    int primitiveMaterialFilter = -1;
 };
 
 enum DrawFlags : uint32_t {
