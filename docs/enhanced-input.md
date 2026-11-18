@@ -256,3 +256,38 @@ The default RTS preset now includes two additional optional contexts: `RTS.Plane
 ### Chord priority and deadzones
 
 Chord/NotChord presence checks use a preview of active mapping values in normal context-priority order. A control consumed by an earlier active context cannot also act as a lower-priority chord modifier; mapping/Action modifiers and typed dimensions are applied before determining whether the referenced Action is actuated. This preview does not independently evaluate recursive chained trigger dependencies.
+
+
+## Canonical InputFlow native API
+
+New game code uses the branded API; old EnhancedInput* includes remain available.
+
+```cpp
+#include "engine/platform/InputFlow.h"
+
+namespace flow = aiverse::lib::gameplay::inputflow;
+
+flow::InputFlow input;
+input.defineAction({"Jump", flow::ValueType::Boolean});
+flow::InputContext gameplay{"Gameplay"};
+gameplay.bind("Jump",
+    {flow::Device::Keyboard, int(aiverse::platform::Key::Space)},
+    {}, {flow::Trigger::pressed()});
+input.registerContext(gameplay);
+input.activateContext("Gameplay");
+aiverse::platform::InputFlowAdapter adapter{input};
+// Event callback: adapter.onEvent(e); frame: input.update(dt);
+// Route semantic ActionEvent into validated project Commands.
+```
+
+The public platform facade `engine/platform/InputFlow.h` exports
+`InputFlowAdapter`, `InputFlowUsers`, `InputFlowUserProfiles`,
+`InputFlowAsset`, `InputFlowProfile`, `inputflow_config` and
+`inputflow_presets`. FPS/RTS/editor now use the canonical namespace.
+The FPS UI is **InputFlow Settings (F10)**; the editor window is
+**InputFlow Actions**. The target `AIVERSE::lib_input`, file
+`input/actions.json`, legacy `enhanced::InputSystem` and existing
+profile filenames are preserved for compatibility.
+
+CI is displayed as **AIVerse InputFlow targeted checks**, but the
+existing test target names remain unchanged for test-runner compatibility.
