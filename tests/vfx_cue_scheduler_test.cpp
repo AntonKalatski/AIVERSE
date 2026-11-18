@@ -104,6 +104,7 @@ static void ecsScenario() {
     check(externalId>=0,"external effect registration");
     const fx::FxHandle external=batch.play(externalId,{0,0,0});
     check(external.valid(),"external effect did not play");
+    batch.update(0.02f); // bursts spawn in ParticleSystem::update()
     scheduler.resetForRollback();
     check(scheduler.stats().attached==0 && scheduler.stats().queued==0 &&
           !scheduler.haveTick(),"rollback retained scheduler state");
@@ -139,6 +140,7 @@ static void budgetsScenario() {
     world.update(0.02f);
     check(scheduler.flush()==1 && scheduler.stats().queued==0,
           "queued event not played in second frame");
+    world.update(0.02f);
 
     // Queue persists across render frames; a third cue forces the
     // rollback-tracked handle ring to evict (kill) its oldest cue.
@@ -147,6 +149,7 @@ static void budgetsScenario() {
     check(scheduler.flush()==1 && scheduler.stats().trackedOneShots==2 &&
           scheduler.stats().evictedOneShots==1,
           "one-shot handle cap failed to kill oldest effect");
+    world.update(0.02f);
     std::vector<fx::FxParticleInfo> parts;
     snapshot(world,parts);
     check(parts.size()==6,"tracked handle eviction left stale particles");
