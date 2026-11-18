@@ -1208,3 +1208,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - `modules/fps/CMakeLists.txt` links `aiverse_fps` to catalog-generated `AIVERSE::lib_ecs_hitscan`, retaining `aiverse_world` and `aiverse_engine`. Root `CMakeLists.txt` loads `libraries` before `modules/fps`, so the CMake target is registered before use.
 - Real FPS `traceShot` already uses shared deterministic target-selection API (`bbd22a2`). This declares its dependency explicitly; no gameplay state is added.
 - Verification: source inspection and GitHub commit only; no native CMake configure/compile executed. Another agent is concurrently editing the handoff, so preserve all intervening entries before updating.
+
+
+### 2026-11-18 — Native ECS impact queue package registered
+- **Implementation SHA:** `ac5d8a776f543d1aad0491915f53d2710df6cc67`.
+- Added `ecs-impact-queue` catalog package with public `AIVERSE::lib_ecs_impact_queue` INTERFACE target, depending on `ecs-ordered-impact`. This enables native project reuse without linking `RtsModule`/`fps::Module`. References header, skill and cross-genre test.
+- **Verification:** parsed catalog JSON and verified IDs unique and count 127 at edit time. Native catalog filesystem check and CMake configure **not run**; source/test are additive only.
+- **Next:** CMake CTest and standalone runner registration, executable compilation/rollback verification, then one real host adapter behind explicit parity gates.
