@@ -78,6 +78,20 @@ void ecsProjectileSpawnAuthorityParityCase(bool cow) {
     CHECK(state(*ecs).projectiles.size()==1);
     const uint32_t weaponShotId=state(*ecs).projectiles[0].id;
     CHECK(state(*ecs).projectiles[0].kind==0);
+    // The new one-way ECS mirror must NEVER copy a stale compatibility
+    // State value back over the runtime at the end-of-tick barrier.
+    const auto* index=ecs->world().resourceConst<fps::DynamicEntityIndex>();
+    const uint64_t key=(uint64_t(1)<<32)|weaponShotId;
+    CHECK(index && index->byKey.contains(key));
+    auto* canonical=ecs->world().tryGet<fps::ProjectileRuntime>(
+        index->byKey.at(key));
+    CHECK(canonical && canonical->value.kind==0);
+    canonical->value.damage=17;
+    state(*legacy).projectiles[0].damage=17;
+    state(*ecs).projectiles[0].damage=777; // intentionally stale
+    static_cast<fps::Module&>(ecs->module()).syncDynamicEntities(*ecs,true);
+    CHECK(state(*ecs).projectiles[0].damage==17);
+    compare();
     // All three throwable actions use the same production spawn adapter.
     tick(1,0,fps::Action::Frag);
     tick(2,0,fps::Action::Smoke);
