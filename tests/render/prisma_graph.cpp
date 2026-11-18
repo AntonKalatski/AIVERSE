@@ -120,6 +120,16 @@ void hazards() {
         g.addResource(resource("zero",true,PrismaGraphFormat::RGBA8,0,128));
         check(!g.compile().valid, "zero-sized resource rejected");
     }
+    {
+        PrismaRenderGraph g;
+        auto prev = resource("prev-frame", true);
+        prev.history = true; // resource lifetime belongs to the host
+        auto in = g.addResource(prev);
+        auto out = g.addResource(resource("current-frame", true));
+        g.addPass(pass("temporal resolve", {in}, {out}));
+        const auto p = g.compile();
+        check(p.valid && p.slots.empty(), "caller-managed external history is accepted");
+    }
 }
 void resources() {
     PrismaRenderGraph g;
