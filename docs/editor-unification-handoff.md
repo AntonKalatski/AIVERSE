@@ -1854,3 +1854,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `cc397b176f5a51a4dbe2cb0fdf49bf83c652d6e9`.
 - Updated `Module::syncDynamicEntities(Simulation&,bool projectProjectilesFromEcs=false)` public declaration in `modules/fps/FpsModule.h`, preserving single-argument call sites for legacy setup and v9 deserialization while allowing the end-of-tick mirror to derive `State::projectiles` from canonical ECS Runtime rather than overwriting ECS components with legacy vector data.
 - **Verification:** header commit only, implementation and mirror call migration pending. Native compilation not run at this intermediate commit.
+
+### 2026-11-18 — Run native ECS persistence regressions in ECS gameplay CI
+- **Code SHA:** `2f5163f0655b348ccaa0822f4c92949669b64405`; `tests/run_ecs_gameplay_compare.sh` now includes both native persistence CTest binaries in its `--full` OFF/ON builds and test selection. The ECS experimental workflow already invokes this mode.
+- CI and actual native test execution are unverified; source wiring checked. See `docs/agent-handoffs/native-ecs-persistence.md` for follow-up commands.
+- Next agent: obtain completed workflow logs and fix any failure, then record an exact handoff.
+

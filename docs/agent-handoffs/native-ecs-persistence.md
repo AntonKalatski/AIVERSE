@@ -124,3 +124,13 @@ over a newer version. No green CI logs means no passing-CI claim.
 - **Verification:** code committed and source reviewed through GitHub. Native Linux/macOS/Windows compile, CTest and runtime: **NOT RUN** (local container cannot resolve github.com); current GitHub Actions results not confirmed green. Do not assert validated production safety.
 - **Next action:** compile `aiverse_ecs_native_persistence_test` and `aiverse_ecs_native_rts_integration_test`, run `ctest --test-dir <build> -R 'ecs_native_(persistence|rts_integration)_test' --output-on-failure`; check prior legacy save fixtures and fuzz malformed RTS pool bytes. Fix failures, then commit the next handoff.
 
+
+## Completed stage 6 — Enforce native persistence in ECS full gameplay CI (2026-11-18)
+- **Code SHA:** `2f5163f0655b348ccaa0822f4c92949669b64405` on `feature/universal-entity-inspector-fps` (PR #7).
+- **Changed path:** `tests/run_ecs_gameplay_compare.sh`.
+- **Behavior:** `--full` now builds the two registered ECS persistence targets (`aiverse_ecs_native_persistence_test`, `aiverse_ecs_native_rts_integration_test`) in both OFF/ON experimental ECS configurations and requires CTest cases `ecs_native_persistence_test` and `ecs_native_rts_integration_test` to pass alongside real RTS/network cases.
+- **CI wiring:** `.github/workflows/ecs-experiments.yml` already calls `bash tests/run_ecs_gameplay_compare.sh --full` in its Ubuntu `ecs-gameplay` job, and its change filters include this script. No other workflow settings altered.
+- **Compatibility:** no game runtime, save or network behavior changed; this is a CI test-gate improvement.
+- **Verification:** inspected the existing workflow invocation, target names and CMake registrations via GitHub. `bash -n` on the updated script, actual CMake/CTest, RTS runtime and CI success: **NOT RUN** in the current container (GitHub checkout not mountable, DNS for github.com unavailable). Running CI remains the acceptance gate.
+- **Next:** obtain a completed `ecs-gameplay` CI run on PR #7; fix source/test failures with real logs; record the checked commit and PASS/FAIL result before declaring native ECS persistence production-ready.
+
