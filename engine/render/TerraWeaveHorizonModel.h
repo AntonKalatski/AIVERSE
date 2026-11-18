@@ -16,7 +16,14 @@
 
 namespace aiverse::terraweave {
 
-inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
+struct HorizonModelBuildStats {
+    size_t clippedQuads=0;
+    size_t clippedTriangles=0;
+    bool clipBudgetFallback=false;
+};
+
+inline std::unique_ptr<render::Model> makeHorizonModel(
+        const HorizonBake& b,HorizonModelBuildStats* stats=nullptr) {
     if (b.atlasWidth == 0 || b.atlasWidth != b.atlasHeight ||
         b.atlasRgba.size() != size_t(b.atlasWidth)*b.atlasHeight*4)
         throw std::invalid_argument("TerraWeave Horizon invalid RGBA atlas");
@@ -70,6 +77,14 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         // prevents a sky hole where nearby terrain has not loaded yet.
         std::vector<uint8_t> farQuad(size_t(n)*n,1u);
         const auto clipped=planHorizonNearGroundClipping(b);
+        if(stats) {
+            stats->clipBudgetFallback=!clipped &&
+                b.maxNearClipTriangles && !b.nearClipRects.empty();
+            stats->clippedTriangles=clipped ? clipped->triangles.size():0;
+            stats->clippedQuads=clipped ? static_cast<size_t>(std::count(
+                clipped->touchedQuads.begin(),clipped->touchedQuads.end(),
+                uint8_t(1))) : 0;
+        }
         // A rejected plan (too fragmented) preserves the preceding
         // conservative coarse-quad implementation. No partial application.
         const auto fineClipping=clipped && !clipped->touchedQuads.empty();
