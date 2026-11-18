@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <memory>
 #include <map>
+#include <tuple>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -23,6 +24,8 @@ struct HorizonModelBuildStats {
     bool clipBudgetFallback=false;
     size_t weldedVertices=0;
     int32_t maxWeldHeightDeltaCm=0;
+    size_t smoothedNearNormals=0;
+    bool nearWeldSlopeFallback=false;
 };
 
 inline std::unique_ptr<render::Model> makeHorizonModel(
@@ -81,6 +84,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
         std::vector<uint8_t> farQuad(size_t(n)*n,1u);
         const auto clipped=planHorizonNearGroundClipping(b);
         if(stats) {
+            stats->nearWeldSlopeFallback=b.nearWeldSlopeFallback;
             stats->clipBudgetFallback=!clipped &&
                 b.maxNearClipTriangles && !b.nearClipRects.empty();
             stats->clippedTriangles=clipped ? clipped->triangles.size():0;
@@ -141,6 +145,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                 });
             }
         if(fineClipping){
+            const size_t firstClippedVertex=model->vertices.size();
             // Lookup baked, versioned near-boundary heights without querying
             // live WorldScene or physics in model build/render stages.
             using SeamKey=std::pair<int64_t,int64_t>;
@@ -245,6 +250,73 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                 model->indices.insert(model->indices.end(),{
                     first,first+1,first+2
                 });
+            }
+            if(!nearEdgeHeights.empty() &&
+               b.nearSeamNormalBlendPercent>0 &&
+               model->vertices.size()>=firstClippedVertex+3){
+                // Area-weighted face normals are gathered by the *world*
+                // corner key. This keeps adjacent clipped triangles sharing
+                // the same normalized lighting response at the same XYZ,
+                // instead of picking a different face normal per triangle.
+                using Key=std::tuple<int64_t,int64_t,int64_t>;
+                struct NormalAccum {
+                    render::float3 sum{0,0,0};
+                };
+                std::map<Key,NormalAccum> accumulated;
+                const auto keyFor=[&](size_t t,size_t j){
+                    const auto& point=clipped->triangles[t].corners[j];
+                    const auto& v=model->vertices[
+                        firstClippedVertex+t*3+j];
+                    return Key{
+                        static_cast<int64_t>(std::llround(point.x*65536.0)),
+                        static_cast<int64_t>(std::llround(point.z*65536.0)),
+                        static_cast<int64_t>(
+                            std::llround(double(v.pos.y)*1000.0))
+                    };
+                };
+                for(size_t t=0;t<clipped->triangles.size();++t){
+                    const size_t i=firstClippedVertex+t*3;
+                    const auto& a=model->vertices[i].pos;
+                    const auto& b=model->vertices[i+1].pos;
+                    const auto& d=model->vertices[i+2].pos;
+                    const float ux=b.x-a.x,uy=b.y-a.y,uz=b.z-a.z;
+                    const float vx=d.x-a.x,vy=d.y-a.y,vz=d.z-a.z;
+                    render::float3 face{
+                        uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx
+                    };
+                    // The horizontal coarse terrain is upward facing.
+                    // Do not let a degenerate or inverted face corrupt
+                    // normals on the boundary of the immutable near mesh.
+                    if(face.y<=0.000001f)continue;
+                    for(size_t j=0;j<3;++j){
+                        auto& sum=accumulated[keyFor(t,j)].sum;
+                        sum.x+=face.x;sum.y+=face.y;sum.z+=face.z;
+                    }
+                }
+                const float strength=
+                    float(b.nearSeamNormalBlendPercent)*0.01f;
+                for(size_t t=0;t<clipped->triangles.size();++t)
+                    for(size_t j=0;j<3;++j){
+                        const auto key=keyFor(t,j);
+                        const auto it=accumulated.find(key);
+                        if(it==accumulated.end())continue;
+                        auto& v=model->vertices[
+                            firstClippedVertex+t*3+j];
+                        const auto face=render::normalize(it->second.sum);
+                        const auto [x,z,y]=key;
+                        (void)y;
+                        // The seam itself can use more of the repaired
+                        // geometric normal, while interior shared vertices
+                        // stay close to their original far-grid normals.
+                        const float mix=nearEdgeHeights.contains({x,z}) ?
+                            strength : strength*0.25f;
+                        v.nrm=render::normalize(render::float3{
+                            v.nrm.x*(1.0f-mix)+face.x*mix,
+                            v.nrm.y*(1.0f-mix)+face.y*mix,
+                            v.nrm.z*(1.0f-mix)+face.z*mix
+                        });
+                        if(stats)++stats->smoothedNearNormals;
+                    }
             }
         }
         // An optional lightweight ring extends the outer silhouette
