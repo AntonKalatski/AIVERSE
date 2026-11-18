@@ -1034,3 +1034,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Eight focused **static** assertions passed: both ECS+FPS call `stepWeaponReload`; both ECS+RTS use `stepFixedResourceRegeneration`; misplaced dynamic indexing fixture no longer appears in actor test; FPS reload parity fixture is invoked; fixed regeneration CTest and standalone script registration exist; catalog parses as 123 packages; agent skill includes live integration guidance.
 - GitHub Actions examined for `92a165d3`: CI was **cancelled**, other three workflow runs were **queued**. Neither status establishes native compilation or passing gameplay tests. Git clone of the repo from execution environment is DNS-blocked; avoid claiming compiler/CTests passed.
 - Next: on a native clone run `python3 tools/libraries/catalog.py check`, `bash tests/run_ecs_experiment_suite.sh`, build `aiverse_fps_tests` and run `ctest --output-on-failure -R 'fps|ecs_'` with RTS replay/save baseline; investigate any failures before merging or dropping legacy data.
+
+
+### 2026-11-18 — Kinematic ECS adds nonphysical pursuit mode
+- Implementation SHA: `58ca3b611a059b38146416a5d21f9a8bef211d55`.
+- `libraries/include/aiverselib/genre/EcsKinematicProjectileSystems.h` now supports two **nonphysical** movement policies: existing deterministic `TimedEndpoint` interpolation and `Pursuit` travel by a fixed distance per tick toward a resolvable destination. Added `advanceKinematicPursuit` with existing `moveTowards` fixed-point semantics; `addKinematicProjectileSystem` accepts an optional destination resolver for moving targets and distinguishes hit arrival from lifetime expiry (expiry emits no hit event).
+- Default TimedEndpoint call sites remain source-compatible. Target resolver receives `Simulation&` and `const KinematicProjectileComponent&` and returns `Vec3`; missed/dead targets can keep the last known destination by default.
+- **Unverified:** GitHub source commit only, no C++ build, no actual RTS module integration or snapshot execution yet. Next: replace nonphysical RTS movement calls with this same shared policy, then test moving-target and timeout behavior.
