@@ -1764,3 +1764,49 @@ and check integer overflow/budget caps before `TextureUploadDesc`
 pixel-size conversions; then prioritize real CTest/GPU builds and
 GL/Vulkan MSAA resolve support. Append the next agent handoff after
 its code commit; never overwrite earlier stage entries.
+
+## Stage 6K — cube-array CPU fallback parity and malformed metadata gates (2026-11-18)
+
+**Code commit:** `bcc9564e38cc1e59b29dccdfd491626da9115774`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Paths:** `engine/render/TextureAsset.h`, `tests/render/texture_asset.cpp`.
+
+**Implementation:** Before `arrayLayers * faces` in
+`uploadContainerTexture`, reject a caller-created image with
+`arrayLayers > INT_MAX / faces`, preventing signed integer overflow
+in the RHI dimension conversion and downstream `levelImageCount`.
+Reject a `oneDimensional` container with a non-unit height/depth,
+arrays or cube faces rather than silently choosing a conflicting 2D/3D
+dimension. This does not change valid DDS/KTX2 imports.
+
+**Regression test source:** Expanded the test mock to inspect ALL
+base-mip RGBA8 bytes for array/cubemap/volume allocations and retain
+explicit mip upload layer IDs and first texels. Added a 12-face BC5
+cube-array test with native compressed allocation rejected: the retry
+must preserve CubeArray/12 layers/2 mips, upload 12 distinct decoded
+base faces and independently upload all 12 layer mip-1 faces. Added
+invalid array-layer overflow and malformed one-dimensional container
+rejection tests. This builds upon Stage 6J's descriptor reset fix.
+
+**Validation:** Committed source and tests to GitHub. **Native build:
+NOT RUN. CTest: NOT RUN. GPU test: NOT RUN.** Execution environment
+still cannot clone from `github.com` for full project compilation.
+No claim that the new tests pass.
+
+**Verification instructions:**
+
+```sh
+git switch feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_texture_asset_test
+ctest --test-dir build/texture-rhi --output-on-failure -R '^texture_asset$'
+```
+
+Also run the grouped texture suite documented in `docs/texture-rhi.md`.
+Verify actual GPU BC5/cube-array sampling and Metal/GL/Vulkan
+handling of uncompressed mip chains. No ECS/gameplay changes.
+**Next:** Move to native compilation/CI and actual GPU tests first,
+then GL/Vulkan MSAA/resolve, mixed-format MRT and typed formats in
+separate bounded stages. Continue append-only per-stage handoffs,
+with exact source SHAs and actual test outcomes.
