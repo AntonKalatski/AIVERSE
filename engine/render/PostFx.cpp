@@ -588,7 +588,10 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         put(u.underwater0,underwater_.tintR,underwater_.tintG,
             underwater_.tintB,underwater_.blend);
         put(u.underwater1,underwater_.absorption,
-            underwater_.depthMetres,0,0);
+            underwater_.depthMetres,underwater_.distortion,
+            underwater_.scattering);
+        u.underwater0[3]=underwater_.blend;
+        u.graphFrame[1]=underwater_.crossing;
         ++stats_.effects;
     }
     const auto* graphEffect = find(PostFxType::ShaderGraph);
