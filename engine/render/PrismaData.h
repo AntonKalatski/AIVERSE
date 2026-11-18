@@ -38,7 +38,7 @@ enum class PrismaCostClass { Cheap, Medium, Heavy };
 enum class PrismaType {
     Fxaa, Pixelate, ChromaticAberration, Sharpen, TiltShift, Bloom, SunShafts,
     ColorGrade, Lut, Posterize, Vignette, Grain, Fade, Letterbox, ShaderGraph,
-    DepthOfField, Count
+    DepthOfField, AutoExposure, Count
 };
 
 enum class PrismaParamKind { Number, Color, Bool, Text };
