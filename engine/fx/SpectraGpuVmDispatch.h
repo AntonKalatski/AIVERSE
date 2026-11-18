@@ -4,7 +4,7 @@
 #pragma once
 #include "SpectraGpuProgram.h"
 #include "SpectraGpuProgramShaders.h"
-#include "engine/gfx/Device.h"
+#include "engine/gfx/Gfx.h"
 #include <array>
 #include <cstring>
 #include <string>
