@@ -197,6 +197,60 @@ int main() {
         CHECK(near(img2.at(4, H - 4), 0, 0, 255));
         d.destroyTexture(rt); d.destroyTexture(copy);
     }
+    {   // Explicit offscreen subresource pass: render mip 1 / array layer 1, then sample it.
+        TextureDesc rd; rd.width = 8; rd.height = 8;
+        rd.dimension = TextureDimension::Texture2DArray;
+        rd.arrayLayers = 2; rd.mipLevels = 3; rd.renderTarget = true;
+        const TextureHandle layeredColor = d.createTexture(rd);
+        CHECK(layeredColor.valid());
+        TextureDesc zd = rd; zd.format = PixelFormat::Depth;
+        const TextureHandle layeredDepth = d.createTexture(zd);
+        CHECK(layeredDepth.valid());
+        TextureViewDesc vd; vd.dimension = TextureDimension::Texture2D;
+        vd.baseMipLevel = 1; vd.baseArrayLayer = 1;
+        const TextureViewHandle slice = layeredColor.valid() ?
+            d.createTextureView(layeredColor, vd) : TextureViewHandle{};
+        CHECK(slice.valid());
+        SamplerDesc sampleDesc;
+        sampleDesc.minFilter = sampleDesc.magFilter = Filter::Nearest;
+        sampleDesc.mipFilter = SamplerMipFilter::None;
+        const SamplerHandle sampler = d.createSampler(sampleDesc);
+        CHECK(sampler.valid());
+        if (slice.valid() && sampler.valid() && layeredDepth.valid()) {
+            Image img = frame(d, [&] {
+                RenderTargetPassDesc pass;
+                pass.colorCount = 1;
+                pass.colors[0].texture = layeredColor;
+                pass.colors[0].mipLevel = 1;
+                pass.colors[0].arrayLayer = 1;
+                pass.colors[0].clearColor[0] = 0.0f;
+                pass.colors[0].clearColor[1] = 0.75f;
+                pass.colors[0].clearColor[2] = 1.0f;
+                pass.colors[0].clearColor[3] = 1.0f;
+                pass.depth.texture = layeredDepth;
+                pass.depth.mipLevel = 1;
+                pass.depth.arrayLayer = 1;
+                CHECK(d.supportsRenderTargetPasses());
+                CHECK(d.beginRenderTargets(pass));
+                d.endPass();
+                // A rejected mip must not start another pass or change the attachment state.
+                pass.colors[0].mipLevel = 20;
+                CHECK(!d.beginRenderTargets(pass));
+                d.beginPass(screen);
+                d.setPipeline(pTex); d.setVertexBuffer(vbFull);
+                CHECK(d.bindTextureView(0, slice, sampler));
+                d.draw(6);
+                d.endPass();
+            });
+            CHECK(img.w == W && img.h == H);
+            if (img.w == W && img.h == H)
+                CHECK(near(img.at(W / 2, H / 2), 0, 191, 255));
+        }
+        if (sampler.valid()) d.destroySampler(sampler);
+        if (slice.valid()) d.destroyTextureView(slice);
+        if (layeredColor.valid()) d.destroyTexture(layeredColor);
+        if (layeredDepth.valid()) d.destroyTexture(layeredDepth);
+    }
     {   // a dynamic buffer rewritten between draws of one frame: each draw keeps its data
         const BufferHandle dyn = d.createBuffer(bufferDesc(Usage::Dynamic, top.size() * sizeof(Vtx), nullptr));
         const auto bottom = quad(-1, -1, 1, 0, 0);
