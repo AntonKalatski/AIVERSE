@@ -27,8 +27,26 @@ public:
     // Call for every platform Event *after* UI capture is resolved; pass false for menus,
     // modal UI and text fields. A captured key is never left held when the UI takes focus.
     std::vector<std::string> onEvent(const platform::Event& e,bool gameplayAllowed) {
-        if(e.type==platform::EventType::FocusLost || !gameplayAllowed) {
+        if(e.type==platform::EventType::FocusLost) {
             adapter_.focusLost();
+            return {};
+        }
+        if(!gameplayAllowed) {
+            // A pointer over RmlUi must not clear an unrelated held keyboard
+            // camera Action. Full FocusLost/modal lifecycle is handled above
+            // and by GameClient::frame for text capture.
+            switch(e.type) {
+            case platform::EventType::KeyDown:case platform::EventType::KeyUp:
+                adapter_.cancelKeyboard();break;
+            case platform::EventType::MouseDown:case platform::EventType::MouseUp:
+            case platform::EventType::MouseMove:case platform::EventType::MouseWheel:
+                adapter_.cancelPointer();break;
+            case platform::EventType::TouchBegin:case platform::EventType::TouchMove:
+            case platform::EventType::TouchEnd:case platform::EventType::TouchCancel:
+                adapter_.cancelTouch();break;
+            default:break;
+            }
+            input_.update(0.0f); // settle canceled states without dispatching gameplay
             return {};
         }
         // Route all pointer/keyboard events after UI capture so authored semantic
