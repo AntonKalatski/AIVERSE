@@ -67,6 +67,8 @@ horizonSceneFromManifest(
         j,"crownDetail",settings.crownDetail,1,3));
     settings.orientationViews=static_cast<uint32_t>(worldInteger(
         j,"orientationViews",settings.orientationViews,1,2));
+    settings.maxCachedRegions=static_cast<uint32_t>(worldInteger(
+        j,"maxCachedRegions",settings.maxCachedRegions,0,4));
     settings.nearBlendCm=static_cast<int32_t>(worldInteger(
         j,"nearBlendCm",settings.nearBlendCm,0,10000000));
     settings.tierBlendCm=static_cast<int32_t>(worldInteger(
