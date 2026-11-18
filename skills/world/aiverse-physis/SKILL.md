@@ -27,10 +27,15 @@ description: Reuse AIVERSE PHYSIS for deterministic weather, wind, gusts, storms
 | Uniform/point gravity fields | `PhysisGravity.h` | `GravitySettings`, `GravityField`, `gravityAt` |
 | Hurricane/tornado vortex fields | `PhysisStorm.h` | `StormEvent`, `StormKind`, `windWithStormsAt`, `stormsAt` |
 | Shared drag/gravity force policy | `PhysisForces.h` | `ForceReceiver`, `ForceOutput`, `evaluateForces`, `advanceForces` |
+| Combined read-only 3D climate + hazard + force fields | `PhysisPresentation.h` | `NatureFieldSample`, `sampleNatureField` |
 | Generic native host | `PhysisIntegration.h` | `InstallOptions`, `install`, `forEachPresentationCell` |
 | Optional Box3D consumption | `engine/physics/PhysisBox3D.h` | `applyPhysisToBody`, `PhysisBodyMaterial` |
 
-Install PHYSIS once from `GameModule::setup` before the persistence registry seals. `InstallOptions.enableStorms` and `enableForces` default false, so existing games retain their behaviour. PHYSIS updates precisely once per authoritative `Simulation::step` (never once per render frame); the optional force pass **only publishes** ECS outputs and does not move bodies.
+Install PHYSIS once from `GameModule::setup` before the persistence registry seals. `InstallOptions.enableStorms`, `enableForces`, `enableWindZones`, and `enableGravityFields` default false, so existing games retain their behaviour. PHYSIS updates precisely once per authoritative `Simulation::step` (never once per render frame); the optional force pass **only publishes** ECS outputs and does not move bodies.
+
+## Persistence invariants
+
+Existing Stage 1–5 native save schemas must not change by default. `enableWindZones` registers WindZone/WindShelter, `enableGravityFields` registers GravityField/GravitySettings, `enableStorms` registers StormEvent, and `enableForces` registers ForceReceiver/ForceOutput. Set the flags consistently before saving/loading/replaying; the registry rejects mismatched schema manifests. The new `sampleNatureField` is a read-only adapter used by Terra, VFX, editor and physics consumers, not a second world state.
 
 ## Box3D usage
 
