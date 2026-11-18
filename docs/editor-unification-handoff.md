@@ -1898,3 +1898,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `4de40df4c9194624595d6526e2ed27cacd6122be`.
 - Updated `AGENTS.md` with a mandatory single-writer rule: all known live projectile lifecycle operations write canonical `ProjectileRuntime` with `fps.ecsAuthority=true`; end-of-tick `syncDynamicEntities(sim,true)` derives the State editor/save view only; only setup/legacy v9 deserialization retains the original `syncDynamicEntities(sim)` State→Runtime import. The stale-State 777 vs Runtime 17 mirror fixture is documented.
 - **Verification:** source documentation committed, native compiler/CTest/Editor/network still not run.
+
+
+### 2026-11-18 — Public projectile skill documents live FPS one-way ECS mirror
+- **Implementation SHA:** `82b39ed022ba4ffad4790e0a57061b006dcb78f5`.
+- Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` with the new live end-of-tick Runtime→State projection, unique source-ID validation, matching editor views, and the backward-compatible single-argument setup/v9 import overload. Requires agents not to write the legacy State vector as projectile authority, and cites stale-State override regression and native test gates.
+- **Verification:** documentation only; native gameplay checks still unexecuted.
