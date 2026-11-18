@@ -171,4 +171,10 @@ int main() {
     TerraWeaveHorizonScene scene(terrain,climate,settings);
     assert(!scene.ready());
     assert(scene.clusterCount()==0);
+    const auto uninitialized=scene.runtimeStats();
+    assert(uninitialized.clusters==0);
+    assert(uninitialized.atlasBytes==0);
+    assert(uninitialized.triangles==0);
+    assert(uninitialized.cpuPrepareMs==0.0);
+    assert(uninitialized.gpuUploadMs==0.0);
 }
