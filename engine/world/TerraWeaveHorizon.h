@@ -242,6 +242,40 @@ inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
             terrainTriangles+clusters*4,clusters};
 }
 
+// Public, genre-independent world-lattice coordinate contract. Other
+// terrain producers and offline asset bakers can sample precisely the same
+// far-grid coordinates without building a full HLOD forest atlas.
+struct HorizonTerrainLattice {
+    int64_t sideCm=0;
+    int64_t startIndexX=0, startIndexZ=0;
+    uint32_t resolution=0;
+    int64_t worldX(int64_t vertexIndex) const {
+        return detail::floorDiv(
+            (startIndexX+vertexIndex)*sideCm,int64_t(resolution));
+    }
+    int64_t worldZ(int64_t vertexIndex) const {
+        return detail::floorDiv(
+            (startIndexZ+vertexIndex)*sideCm,int64_t(resolution));
+    }
+    int64_t nominalStepCm() const {
+        return detail::floorDiv(sideCm,int64_t(resolution));
+    }
+};
+
+inline HorizonTerrainLattice makeHorizonTerrainLattice(
+        const HorizonSettings& s,int64_t cameraXcm,int64_t cameraZcm) {
+    validateHorizonSettings(s);
+    if(cameraXcm<-kWorldLimitCm || cameraXcm>kWorldLimitCm ||
+       cameraZcm<-kWorldLimitCm || cameraZcm>kWorldLimitCm)
+        throw std::out_of_range("TerraWeave Horizon lattice observer");
+    const int64_t side=int64_t(s.distantTileCm)*s.distantTilesPerSide;
+    const int64_t n=s.terrainResolution;
+    return {side,
+        detail::floorDiv(cameraXcm*n,side)-n/2,
+        detail::floorDiv(cameraZcm*n,side)-n/2,
+        s.terrainResolution};
+}
+
 // Each call is deterministic for a snapped camera region, with fixed memory
 // bounds. Bake on a worker in production; upload prepared models via the RHI.
 inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
@@ -274,22 +308,13 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.cameraXcm=cameraXcm;out.cameraZcm=cameraZcm;
     out.terrainResolution=s.terrainResolution;
     out.terrainBeginCm=s.terrainBeginCm;
-    // A fixed *global* terrain lattice prevents high-quality (e.g. 64x64)
-    // grids from changing their sample phase when the camera crosses a
-    // 512m forest-region key. We use rational lattice spacing, so custom
-    // resolutions that do not divide regionSide evenly also stay aligned.
-    // floorDiv is signed and handles negative world coordinates correctly.
-    const int64_t regionSide=int64_t(s.distantTileCm)*s.distantTilesPerSide;
-    const int64_t nGrid=s.terrainResolution;
-    const int64_t gridStartX=
-        detail::floorDiv(cameraXcm*nGrid,regionSide)-nGrid/2;
-    const int64_t gridStartZ=
-        detail::floorDiv(cameraZcm*nGrid,regionSide)-nGrid/2;
-    const auto gridWorld=[regionSide,nGrid](int64_t gridIndex) {
-        return detail::floorDiv(gridIndex*regionSide,nGrid);
-    };
-    out.originXcm=gridWorld(gridStartX);
-    out.originZcm=gridWorld(gridStartZ);
+    // Every Horizon consumer shares the same signed world-lattice API.
+    // Grid coordinates are absolute, independent of the chosen camera
+    // region. Ghost neighbors use indices -1 and N+1.
+    const auto lattice=makeHorizonTerrainLattice(s,cameraXcm,cameraZcm);
+    const int64_t regionSide=lattice.sideCm;
+    out.originXcm=lattice.worldX(0);
+    out.originZcm=lattice.worldZ(0);
     out.sideCm=static_cast<int32_t>(regionSide);
     out.terrainSkirtDepthCm=s.terrainSkirtDepthCm;
     if (out.originXcm < -kWorldLimitCm+100 ||
@@ -566,17 +591,16 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         else out.terrainVertices.resize(size_t(n+1)*(n+1));
         for(uint32_t z=0;z<=n;++z)
             for(uint32_t x=0;x<=n;++x) {
-                const int64_t gx=gridStartX+x, gz=gridStartZ+z;
-                const int64_t wx=gridWorld(gx), wz=gridWorld(gz);
-                // Every normal needs the height of one neighbor on either
-                // side, including OUTSIDE the current Horizon region.
-                const int64_t xL=std::clamp(gridWorld(gx-1),
+                const int64_t wx=lattice.worldX(x),wz=lattice.worldZ(z);
+                // Every normal needs ghost-neighbor heights, including
+                // outside this region. Clamp only at global world limits.
+                const int64_t xL=std::clamp(lattice.worldX(int64_t(x)-1),
                     -kWorldLimitCm,kWorldLimitCm);
-                const int64_t xR=std::clamp(gridWorld(gx+1),
+                const int64_t xR=std::clamp(lattice.worldX(int64_t(x)+1),
                     -kWorldLimitCm,kWorldLimitCm);
-                const int64_t zL=std::clamp(gridWorld(gz-1),
+                const int64_t zL=std::clamp(lattice.worldZ(int64_t(z)-1),
                     -kWorldLimitCm,kWorldLimitCm);
-                const int64_t zR=std::clamp(gridWorld(gz+1),
+                const int64_t zR=std::clamp(lattice.worldZ(int64_t(z)+1),
                     -kWorldLimitCm,kWorldLimitCm);
                 const int64_t pad=regionSide/n+1;
                 if(compatible && !dirtyAt(wx,wz,pad))continue;
