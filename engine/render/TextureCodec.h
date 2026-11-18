@@ -21,9 +21,15 @@ enum class BlockFormat : uint8_t { None, ETC2_RGB8, ETC2_RGBA8, EAC_R11, BC1, BC
 struct CompressedImage {
     BlockFormat format = BlockFormat::None;
     int width = 0, height = 0;          // of level 0, in pixels
+    int depth = 1;                      // 3D depth, mip-shrunk per level
+    int arrayLayers = 1;                // KTX2 array elements, excluding faces
+    int faces = 1;                      // 1 or 6 (cube/cube-array)
+    bool oneDimensional = false;        // KTX2 height=0, represented as 1
     bool srgb = false;                  // colour data is sRGB-encoded (use the *_SRGB GPU format)
     uint32_t vkFormat = 0;              // original VkFormat from the KTX2 header
-    std::vector<std::vector<uint8_t>> levels;   // mip 0..n (0 = largest), raw blocks, rows of blocks top to bottom
+    // Every mip retains all array layers, faces and volume slices in file
+    // image order. Legacy 2D material fallback uses slice 0.
+    std::vector<std::vector<uint8_t>> levels;
 };
 
 // Bytes per block (BC1/ETC2_RGB8/EAC_R11/BC4: 8; ETC2_RGBA8/BC3/BC7/ASTC: 16); 4 for None (per pixel).
@@ -35,15 +41,17 @@ bool isAstc(BlockFormat f);
 const char* blockFormatName(BlockFormat f);
 int levelWidth(const CompressedImage& img, int level);    // max(1, width >> level)
 int levelHeight(const CompressedImage& img, int level);
+int levelDepth(const CompressedImage& img, int level);
+int levelImageCount(const CompressedImage& img, int level);
 // Expected byte size of one level: ceil(w/dim) * ceil(h/dim) * blockBytes, or w*h*4 for None.
 size_t levelByteSize(BlockFormat f, int width, int height);
 
 // True when bytes start with the KTX 2.0 identifier.
 bool isKtx2(const std::string& bytes);
 
-// Parses a KTX 2.0 file (supercompression none or Zstandard). Arrays and cube maps keep only the
-// first layer / face; 3D textures, BasisLZ/UASTC and unsupported vkFormats fail with a readable err.
-// Never reads out of bounds on malformed input.
+// KTX2 parser (none or Zstandard supercompression): retain all array layers,
+// cube faces and 3D volume slices. BasisLZ/UASTC still need transcoding.
+// Malformed payloads fail without out-of-bounds reads.
 bool parseKtx2(const std::string& bytes, CompressedImage& out, std::string& err);
 
 // Decodes one level to tightly packed RGBA8 (levelWidth x levelHeight). Supported: None, ETC2_RGB8,
@@ -51,6 +59,9 @@ bool parseKtx2(const std::string& bytes, CompressedImage& out, std::string& err)
 // BC1 three-colour blocks decode index 3 as transparent black, or opaque black when vkFormat is
 // BC1_RGB_* (131/132). BC3 colour is always four-colour (S3TC spec).
 bool decodeBlocks(const CompressedImage& in, int level, std::vector<uint8_t>& rgba);
+// CPU-decode one 2D slice of a mip (array-layer, then face, then volume slice).
+bool decodeBlocksSlice(const CompressedImage& in, int level, int imageIndex,
+                       std::vector<uint8_t>& rgba);
 
 // Decodes one 4x4 block of format f (not None / ASTC) into 16 RGBA8 pixels, row-major (64 bytes).
 // Returns false for formats without a CPU decoder.

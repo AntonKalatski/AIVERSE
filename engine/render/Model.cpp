@@ -393,7 +393,14 @@ void uploadImage(gfx::Device& dev, Image& img) {
         if (pf != gfx::PixelFormat::RGBA8 && dev.supports(pf)) {
             std::vector<const void*> data;
             std::vector<size_t> sizes;
-            for (const auto& l : c.levels) { data.push_back(l.data()); sizes.push_back(l.size()); }
+            // Model shader resources are sampler2D. Preserve the previous
+            // first-face behavior for KTX2 array/cube/volume sources here;
+            // generalized texture consumers can use all preserved slices.
+            for (size_t l = 0; l < c.levels.size(); ++l) {
+                data.push_back(c.levels[l].data());
+                sizes.push_back(levelByteSize(c.format, levelWidth(c, int(l)),
+                                               levelHeight(c, int(l))));
+            }
             gfx::TextureDesc td;
             td.width = c.width; td.height = c.height;
             td.format = pf;

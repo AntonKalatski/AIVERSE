@@ -356,6 +356,10 @@ const char* blockFormatName(BlockFormat f) {
 
 int levelWidth(const CompressedImage& img, int level) { return std::max(1, img.width >> level); }
 int levelHeight(const CompressedImage& img, int level) { return std::max(1, img.height >> level); }
+int levelDepth(const CompressedImage& img, int level) { return std::max(1, img.depth >> level); }
+int levelImageCount(const CompressedImage& img, int level) {
+    return img.arrayLayers * img.faces * levelDepth(img, level);
+}
 
 size_t levelByteSize(BlockFormat f, int width, int height) {
     if (width <= 0 || height <= 0) return 0;
@@ -370,47 +374,88 @@ bool isKtx2(const std::string& bytes) {
 
 bool parseKtx2(const std::string& bytes, CompressedImage& out, std::string& err) {
     out = CompressedImage{};
-    const auto* d = reinterpret_cast<const uint8_t*>(bytes.data());
+    const auto* data = reinterpret_cast<const uint8_t*>(bytes.data());
     const uint64_t size = bytes.size();
     if (!isKtx2(bytes)) { err = "not a KTX 2.0 file"; return false; }
     if (size < 80) { err = "KTX2: truncated header"; return false; }
-    const uint32_t vkFormat = le32(d + 12), width = le32(d + 20), height = le32(d + 24), depth = le32(d + 28);
-    const uint32_t layers = le32(d + 32), faces = le32(d + 36), levelCount = le32(d + 40), scheme = le32(d + 44);
-    if (scheme == 1 || vkFormat == 0) { err = "KTX2 BasisLZ/UASTC needs a transcoder; encode as ETC2/BC7/ASTC"; return false; }
-    if (scheme != 0 && scheme != 2) { err = "KTX2: unsupported supercompression scheme " + std::to_string(scheme) + " (use none or zstd)"; return false; }
+    const uint32_t vk = le32(data + 12), w = le32(data + 20), sourceH = le32(data + 24);
+    const uint32_t sourceZ = le32(data + 28), sourceLayers = le32(data + 32);
+    const uint32_t faces = le32(data + 36), sourceLevels = le32(data + 40);
+    const uint32_t scheme = le32(data + 44);
+    if (scheme == 1 || vk == 0) {
+        err = "KTX2 BasisLZ/UASTC needs a transcoder; encode as ETC2/BC7/ASTC";
+        return false;
+    }
+    if (scheme != 0 && scheme != 2) {
+        err = "KTX2: unsupported supercompression scheme " + std::to_string(scheme);
+        return false;
+    }
     BlockFormat fmt;
     bool srgb;
-    if (!mapVkFormat(vkFormat, fmt, srgb)) { err = "KTX2: unsupported vkFormat " + std::to_string(vkFormat); return false; }
-    if (width == 0 || height == 0 || width > 16384 || height > 16384) { err = "KTX2: bad size " + std::to_string(width) + "x" + std::to_string(height); return false; }
-    if (depth > 1) { err = "KTX2: 3D textures are not supported"; return false; }
-    if (faces != 1 && faces != 6) { err = "KTX2: bad faceCount"; return false; }
-    if (layers > 2048) { err = "KTX2: bad layerCount"; return false; }
-    const uint32_t levels = std::max(1u, levelCount);
+    if (!mapVkFormat(vk, fmt, srgb)) {
+        err = "KTX2: unsupported vkFormat " + std::to_string(vk);
+        return false;
+    }
+    const bool oneD = sourceH == 0;
+    const uint32_t h = std::max(1u, sourceH);
+    const uint32_t depth = std::max(1u, sourceZ);
+    const uint32_t layers = std::max(1u, sourceLayers);
+    if (w < 1 || w > 16384 || h > 16384 || depth > 16384 ||
+        (faces != 1 && faces != 6) || layers > 2048) {
+        err = "KTX2: invalid dimensions, faceCount or layerCount";
+        return false;
+    }
+    if ((oneD && (sourceZ > 1 || faces != 1 || sourceLayers > 1)) ||
+        (depth > 1 && (faces != 1 || sourceLayers > 1)) ||
+        (faces == 6 && (w != h || oneD))) {
+        err = "KTX2: unsupported dimensional combination";
+        return false;
+    }
+    const uint32_t mipCount = std::max(1u, sourceLevels);
     uint32_t maxLevels = 1;
-    while ((std::max(width, height) >> maxLevels) > 0) ++maxLevels;
-    if (levels > maxLevels) { err = "KTX2: levelCount " + std::to_string(levelCount) + " exceeds the mip chain"; return false; }
-    if (80 + uint64_t(levels) * 24 > size) { err = "KTX2: truncated level index"; return false; }
-    const uint64_t images = uint64_t(std::max(1u, layers)) * faces;
-    out.format = fmt; out.width = int(width); out.height = int(height); out.srgb = srgb; out.vkFormat = vkFormat;
-    out.levels.resize(levels);
-    for (uint32_t l = 0; l < levels; ++l) {
-        const uint8_t* e = d + 80 + l * 24;
-        const uint64_t off = le64(e), len = le64(e + 8), raw = le64(e + 16);
-        const size_t imageBytes = levelByteSize(fmt, levelWidth(out, int(l)), levelHeight(out, int(l)));
-        const uint64_t expected = imageBytes * images;
-        const std::string where = "KTX2 level " + std::to_string(l) + ": ";
-        if (off > size || len > size - off) { err = where + "data out of file bounds"; out = {}; return false; }
-        std::vector<uint8_t>& dst = out.levels[l];
+    for (uint32_t dim = std::max(w, std::max(h, depth)); dim > 1; dim >>= 1)
+        ++maxLevels;
+    if (mipCount > maxLevels) {
+        err = "KTX2: levelCount exceeds mip chain";
+        return false;
+    }
+    if (80ull + uint64_t(mipCount) * 24ull > size) {
+        err = "KTX2: truncated level index";
+        return false;
+    }
+    out.format = fmt; out.srgb = srgb; out.vkFormat = vk;
+    out.width = int(w); out.height = int(h); out.depth = int(depth);
+    out.arrayLayers = int(layers); out.faces = int(faces); out.oneDimensional = oneD;
+    out.levels.resize(mipCount);
+    constexpr uint64_t kMaximumLevelBytes = 512ull * 1024ull * 1024ull;
+    for (uint32_t level = 0; level < mipCount; ++level) {
+        const uint8_t* index = data + 80 + level * 24;
+        const uint64_t offset = le64(index), length = le64(index + 8), raw = le64(index + 16);
+        const uint64_t single = levelByteSize(fmt, levelWidth(out, int(level)),
+                                              levelHeight(out, int(level)));
+        const uint64_t expected = single * uint64_t(levelImageCount(out, int(level)));
+        const std::string where = "KTX2 level " + std::to_string(level) + ": ";
+        if (!expected || expected > kMaximumLevelBytes) {
+            err = where + "payload too large"; out = {}; return false;
+        }
+        if (offset > size || length > size - offset) {
+            err = where + "data out of file bounds"; out = {}; return false;
+        }
+        std::vector<uint8_t>& dst = out.levels[level];
         if (scheme == 0) {
-            if (len < expected) { err = where + "data too short"; out = {}; return false; }
-            dst.assign(d + off, d + off + imageBytes);
+            if (length < expected) { err = where + "data too short"; out = {}; return false; }
+            dst.assign(data + offset, data + offset + size_t(expected));
         } else {
-            if (raw != expected) { err = where + "unexpected uncompressed size"; out = {}; return false; }
-            std::vector<uint8_t> tmp(static_cast<size_t>(raw));
-            const size_t r = ZSTD_decompress(tmp.data(), tmp.size(), d + off, size_t(len));
-            if (ZSTD_isError(r) || r != raw) { err = where + "zstd: " + (ZSTD_isError(r) ? ZSTD_getErrorName(r) : "size mismatch"); out = {}; return false; }
-            tmp.resize(imageBytes);   // keep the first layer / face only
-            dst = std::move(tmp);
+            if (raw != expected) {
+                err = where + "unexpected uncompressed size"; out = {}; return false;
+            }
+            dst.resize(size_t(expected));
+            const size_t actual = ZSTD_decompress(dst.data(), dst.size(), data + offset, size_t(length));
+            if (ZSTD_isError(actual) || actual != expected) {
+                err = where + "zstd: " +
+                      (ZSTD_isError(actual) ? ZSTD_getErrorName(actual) : "size mismatch");
+                out = {}; return false;
+            }
         }
     }
     return true;
@@ -433,31 +478,44 @@ bool decodeBlock(BlockFormat f, const uint8_t* block, uint8_t out[64]) {
     return false;
 }
 
-bool decodeBlocks(const CompressedImage& in, int level, std::vector<uint8_t>& rgba) {
-    if (level < 0 || size_t(level) >= in.levels.size() || in.width <= 0 || in.height <= 0) return false;
+bool decodeBlocksSlice(const CompressedImage& in, int level, int imageIndex,
+                       std::vector<uint8_t>& rgba) {
+    if (level < 0 || size_t(level) >= in.levels.size() ||
+        in.width <= 0 || in.height <= 0 || imageIndex < 0 ||
+        imageIndex >= levelImageCount(in, level)) return false;
     const int w = levelWidth(in, level), h = levelHeight(in, level);
-    const std::vector<uint8_t>& src = in.levels[size_t(level)];
-    if (src.size() < levelByteSize(in.format, w, h)) return false;
+    const std::vector<uint8_t>& bytes = in.levels[size_t(level)];
+    const size_t imageBytes = levelByteSize(in.format, w, h);
+    const size_t offset = size_t(imageIndex) * imageBytes;
+    if (offset > bytes.size() || imageBytes > bytes.size() - offset) return false;
+    const uint8_t* src = bytes.data() + offset;
     if (in.format == BlockFormat::None) {
-        rgba.assign(src.begin(), src.begin() + ptrdiff_t(size_t(w) * size_t(h) * 4));
+        rgba.assign(src, src + imageBytes);
         return true;
     }
     if (isAstc(in.format)) return false;
     rgba.assign(size_t(w) * size_t(h) * 4, 0);
     const int bw = (w + 3) / 4, bh = (h + 3) / 4, bb = blockBytes(in.format);
-    // BC1_RGB_* (vkFormat 131/132) has no alpha: the GPU samples index-3 black as opaque.
-    const bool bc1Opaque = in.format == BlockFormat::BC1 && (in.vkFormat == 131 || in.vkFormat == 132);
+    const bool bc1Opaque = in.format == BlockFormat::BC1 &&
+                           (in.vkFormat == 131 || in.vkFormat == 132);
     uint8_t px[64];
     for (int by = 0; by < bh; ++by)
         for (int bx = 0; bx < bw; ++bx) {
-            if (!decodeBlock(in.format, src.data() + size_t(by * bw + bx) * size_t(bb), px)) return false;
+            if (!decodeBlock(in.format,
+                             src + size_t(by * bw + bx) * size_t(bb), px)) return false;
             if (bc1Opaque) for (int i = 0; i < 16; ++i) px[i * 4 + 3] = 255;
             for (int y = 0; y < 4 && by * 4 + y < h; ++y) {
                 const int cols = std::min(4, w - bx * 4);
-                std::memcpy(rgba.data() + (size_t(by * 4 + y) * size_t(w) + size_t(bx * 4)) * 4, px + y * 16, size_t(cols) * 4);
+                std::memcpy(rgba.data() +
+                                (size_t(by * 4 + y) * size_t(w) + size_t(bx * 4)) * 4,
+                            px + y * 16, size_t(cols) * 4);
             }
         }
     return true;
+}
+
+bool decodeBlocks(const CompressedImage& in, int level, std::vector<uint8_t>& rgba) {
+    return decodeBlocksSlice(in, level, 0, rgba); // legacy 2D material behavior
 }
 
 } // namespace aiverse::render
