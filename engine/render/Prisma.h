@@ -75,10 +75,10 @@ private:
         std::unique_ptr<PrismaRhiExecutor> graphExecutor; // optional persistent per-view context
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
-    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kProgCount };
+    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kProgCount };
 
     Target& target(Sized& s, int role, int w, int h);
-    gfx::TextureHandle depthFor(Sized& s, int w, int h);
+    gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
     Sized& sized(int w, int h);
     gfx::PipelineHandle program(Prog p);
     gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
