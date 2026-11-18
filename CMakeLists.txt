@@ -510,14 +510,18 @@ set(AIVERSE_RUNTIME_SRC
     engine/render/Renderer3DReflect.cpp
     engine/render/Renderer3DTrace.cpp
     engine/render/ImGuiLayer.cpp)
-# post-processing (postfx agent): GPU part in the runtime, data / cost model GPU-free (editor core, aiversemcp, tests)
-list(APPEND AIVERSE_RUNTIME_SRC engine/render/PostFx.cpp engine/render/ScreenLighting.cpp)
+# PRISMA post-processing: runtime / independent GPU-free policy and catalog
+list(APPEND AIVERSE_RUNTIME_SRC engine/render/Prisma.cpp engine/render/ScreenLighting.cpp)
 # baked lighting on the GPU (agent-lightbake): lightmaps / probes in the model shaders
 list(APPEND AIVERSE_RUNTIME_SRC engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)
 add_library(aiverse_shader_graph STATIC engine/render/graph/ShaderGraph.cpp)
 target_link_libraries(aiverse_shader_graph PUBLIC aiverse_engine)
 
-add_library(aiverse_postfx_data STATIC engine/render/PostFxData.cpp)
+# Canonical post-processing implementation: PRISMA.
+# Keep existing aiverse_postfx_data target alive for older native targets.
+add_library(aiverse_postfx_data STATIC engine/render/PrismaData.cpp)
+add_library(aiverse_prisma_data ALIAS aiverse_postfx_data)
+add_library(AIVERSE::prisma_data ALIAS aiverse_postfx_data)
 target_link_libraries(aiverse_postfx_data PUBLIC aiverse_engine aiverse_shader_graph)
 
 if(AIVERSE_PLATFORM STREQUAL "macos")
@@ -1026,7 +1030,7 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_tests PRIVATE aiverse_game_view)   # fog of war look parsing (view, no GPU)
     # view.entity_fx draw tests: the 3D renderer against a recording gfx::Device (no GPU; platform stubs in tests.cpp)
     target_sources(aiverse_tests PRIVATE engine/render/Renderer3D.cpp engine/render/Renderer3DModels.cpp engine/render/Lights.cpp
-        engine/render/Renderer3DReflect.cpp engine/render/Renderer3DTrace.cpp engine/render/PostFx.cpp engine/render/GeometryScene.cpp)
+        engine/render/Renderer3DReflect.cpp engine/render/Renderer3DTrace.cpp engine/render/Prisma.cpp engine/render/GeometryScene.cpp)
     target_sources(aiverse_tests PRIVATE engine/render/BakedLighting.cpp engine/render/Renderer3DBaked.cpp)   # agent-lightbake
     target_sources(aiverse_tests PRIVATE engine/ui/UiLua.cpp)    # UI Lua sandbox (no RmlUi)
     target_link_libraries(aiverse_tests PRIVATE aiverse_lua)
