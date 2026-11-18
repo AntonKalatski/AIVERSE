@@ -102,6 +102,42 @@ bool GraphRuntime::initGraph(gfx::Device* dev,const Json& graph,
     return initEffect(dev,compiled,options);
 }
 
+bool GraphRuntime::initGraph(BatchWorld& shared, const Json& graph,
+                            const Json& overrides,
+                            const GraphRuntimeOptions& options) {
+    shutdown();
+    fx::EffectDef compiled;
+    if (!fx::compileSpectraGraph(graph, overrides, compiled, errors_)) {
+        reason_ = errors_.empty() ? "SpectraFX graph compile failed" : errors_.front();
+        return false;
+    }
+    return initEffect(shared, compiled, options);
+}
+
+bool GraphRuntime::initEffect(BatchWorld& shared, const fx::EffectDef& effect,
+                             const GraphRuntimeOptions& options) {
+    shutdown();
+    if (options.preference == ComputePreference::RequireGpu) {
+        reason_ = "shared cross-instance batching currently uses the CPU ParticleSystem; "
+                  "RequireGpu cannot silently fall back";
+        return false;
+    }
+    if (!shared.ready()) {
+        reason_ = "SpectraFX shared BatchWorld is not initialized";
+        return false;
+    }
+    const int id = shared.defineEffect(effect);
+    if (id < 0) {
+        reason_ = shared.error();
+        return false;
+    }
+    sharedWorld_ = &shared;
+    cpuEffect_ = id;
+    backend_ = ComputeBackend::Cpu;
+    initialized_ = true;
+    return true;
+}
+
 bool GraphRuntime::initEffect(gfx::Device* dev,const fx::EffectDef& effect,
                               const GraphRuntimeOptions& options) {
     shutdown();
@@ -157,6 +193,11 @@ bool GraphRuntime::initCpu(gfx::Device* device,const fx::EffectDef& effect,
 }
 
 void GraphRuntime::shutdown() {
+    if (sharedWorld_) {
+        for (const auto h : sharedHandles_) sharedWorld_->kill(h);
+    }
+    sharedHandles_.clear();
+    sharedWorld_ = nullptr;
     gpu_.shutdown();
     cpu_.shutdown();
     cpuEffect_=-1;
@@ -168,17 +209,30 @@ void GraphRuntime::shutdown() {
 }
 bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
     if(!initialized_)return false;
+    if(sharedWorld_) {
+        const fx::FxHandle handle=sharedWorld_->play(cpuEffect_,position,dir,1.f,tint);
+        if(!handle.valid())return false;
+        // Bound bookkeeping even for very high event rates; prevent old
+        // continuous emitters from escaping this source's reset ownership.
+        if(sharedHandles_.size()>=65536) {
+            sharedWorld_->kill(sharedHandles_.front());
+            sharedHandles_.pop_front();
+        }
+        sharedHandles_.push_back(handle);
+        return true;
+    }
     if(useComputeWrapper_)return gpu_.burstAt(position,dir,tint);
     return cpu_.play(cpuEffect_,position,dir,1.f,tint).valid();
 }
 void GraphRuntime::setView(const render::RTSCamera& camera,const render::mat4& viewProj,
                             int width,int height) {
-    if(!initialized_)return;
+    if(!initialized_||sharedWorld_)return; // host sets view ONCE on BatchWorld
     if(useComputeWrapper_)gpu_.setView(camera,viewProj,width,height);
     else cpu_.setView(camera,viewProj,width,height);
 }
 bool GraphRuntime::step(float dt) {
     if(!initialized_)return false;
+    if(sharedWorld_)return true; // host calls sharedWorld_->update(dt) exactly once
     if(!useComputeWrapper_) {cpu_.update(dt);return true;}
     const bool success=gpu_.step(dt);
     // This wrapper owns any subsequent CPU fallback. Report the real state,
@@ -189,12 +243,19 @@ bool GraphRuntime::step(float dt) {
     return success;
 }
 void GraphRuntime::draw(const fx::FxFog& fog) {
-    if(!initialized_)return;
+    if(!initialized_||sharedWorld_)return; // host makes ONE batched draw submission
     if(useComputeWrapper_)gpu_.draw(fog);
     else cpu_.render(fog);
 }
 void GraphRuntime::clear() {
     if(!initialized_)return;
+    if(sharedWorld_) {
+        // Only this graph's instances disappear; all other GraphRuntime
+        // handles and particles in the shared world remain untouched.
+        for(const auto h:sharedHandles_)sharedWorld_->kill(h);
+        sharedHandles_.clear();
+        return;
+    }
     if(useComputeWrapper_)gpu_.clear();
     else cpu_.clear();
 }
