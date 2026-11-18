@@ -373,3 +373,13 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Files:** EnhancedInput.h, EnhancedInputConfig.h, InputWindow.cpp, enhanced_input_tests.cpp, this handoff and docs. Tests authored for double-tap, hold release, pulse, inverted chord; execution intentionally deferred at user's request.
 
 **Limitations / next:** the new types are additive, preserving all existing enum ordinal values and JSON syntax. Advanced timing is per active mapping/context, not saved in the deterministic sim. Review repeated activations after context changes and cyclic complex chord definitions during later validation.
+
+## Stage 28 — multi-local-user input ownership (2026-11-18)
+
+**New reusable API:** `engine/platform/EnhancedInputUsers.h`, `platform::EnhancedInputUsers`, owns independent Enhanced Input core/adapter per local `UserId` (not an ECS entity). Add user with `addUser(id, InputSystem scheme)`; assign keyboard/pointer/touch individually with `setKeyboardOwner`, `setPointerOwner`, `setTouchOwner`, and physical gamepad with `assignGamepad(pad,id)`. `onEvent(event, gameplayAllowed)` forwards only to the rightful user after UI capture; `pollGamepads()` polls hardware **once**, samples each assigned physical pad into the user's logical `deviceIndex=0`, and `update(id,dt)` returns only that user's Action events. Ownership transfers, unassignment, UI capture and OS FocusLost cancel held Actions; one pad per user is enforced. A project may create multiple simultaneous local players (split-screen, couch co-op); no shared static keyboard state or genre restriction.
+
+**Compatibility:** Existing `EnhancedInputAdapter`/single-user FPS/RTS APIs are unchanged. New router is optional; avoid installing it in a single-user game if there is already a platform adapter polling the same hardware. For local-player gamepads, author logical gamepad index **0** per player; this is intentionally independent of physical pad IDs. `EnhancedInputUsers` lives in platform presentation code, not deterministic ECS.
+
+**Tests added (deferred):** `enhanced_input_adapter_tests.cpp` checks isolated keyboard vs pad events, assignment validation, canceled pad state on detach and focus cleanup. `libraries/catalog.json` and the input AI skill include the new reusable native module.
+
+**Next:** connect to optional split-screen sample/preset and expose player-specific profile storage; then continue top-down client migration. Runtime validation and CTest explicitly deferred by user.
