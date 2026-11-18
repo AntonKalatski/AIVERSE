@@ -137,6 +137,35 @@ int main() {
           compressedTextureBlockBytes(PixelFormat::BC5) == 16 &&
           compressedTextureBlockSize(PixelFormat::ASTC_6x6) == 6,
           "shared compression dimensions and byte counts");
+    TextureDesc bc;
+    bc.width = bc.height = 4;
+    bc.format = PixelFormat::BC5;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "compressed format without mip payload is rejected");
+    const uint8_t blockData[16] = {};
+    const void* levelPointers[1] = {blockData};
+    const size_t sizeValid[1] = {16}, sizeShort[1] = {8};
+    bc.levelCount = 1;
+    bc.levelData = levelPointers;
+    bc.levelSize = sizeValid;
+    check(validateTextureDesc(bc) == TextureDescError::None,
+          "BC5 one block payload is valid");
+    bc.levelSize = sizeShort;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "truncated compressed block rejected");
+    bc.levelSize = sizeValid; bc.mipmaps = true;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "compressed mip regeneration rejected");
+    bc.mipmaps = false;
+    bc.dimension = TextureDimension::Cube;
+    bc.arrayLayers = 6;
+    bc.levelSize = sizeValid;
+    check(validateTextureDesc(bc) == TextureDescError::InvalidUsage,
+          "cube payload needs six complete faces");
+    const size_t cubeSize[1] = {96};
+    bc.levelSize = cubeSize;
+    check(validateTextureDesc(bc) == TextureDescError::None,
+          "BC5 six-face compressed cube payload");
     std::printf("Texture descriptor contract: %d failures\n", failures);
     return failures ? 1 : 0;
 }

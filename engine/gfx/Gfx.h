@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <functional>
 #include <string>
@@ -210,6 +211,33 @@ constexpr TextureDescError validateTextureDesc(const TextureDesc& d) {
         return TextureDescError::InvalidUsage;
     if (d.compare && d.format != PixelFormat::Depth) return TextureDescError::InvalidUsage;
     if (d.storage && d.format == PixelFormat::Depth) return TextureDescError::InvalidUsage;
+    if (blockCompressed) {
+        // A block-compressed GPU image requires a complete mip chain of
+        // levelData/levelSize entries; random data and render/storage targets
+        // must not be misinterpreted as compressed texture payloads.
+        if (d.levelCount < 1 || !d.levelData || !d.levelSize || d.data ||
+            d.mipmaps || d.renderTarget || d.storage || d.sampleCount != 1)
+            return TextureDescError::InvalidUsage;
+        const size_t byteCount = size_t(compressedTextureBlockBytes(d.format));
+        const size_t block = size_t(compressedTextureBlockSize(d.format));
+        if (!byteCount || !block) return TextureDescError::InvalidUsage;
+        for (int mip = 0; mip < d.levelCount; ++mip) {
+            const size_t w = size_t((d.width >> mip) > 0 ? (d.width >> mip) : 1);
+            const size_t h = size_t((d.height >> mip) > 0 ? (d.height >> mip) : 1);
+            const size_t z = d.dimension == TextureDimension::Texture3D ?
+                size_t((d.depth >> mip) > 0 ? (d.depth >> mip) : 1) : 1;
+            const size_t nx = (w + block - 1) / block, ny = (h + block - 1) / block;
+            size_t need = byteCount;
+            const size_t factors[4] = {nx, ny, z, size_t(d.arrayLayers)};
+            for (size_t f : factors) {
+                if (need > std::numeric_limits<size_t>::max() / f)
+                    return TextureDescError::InvalidUsage;
+                need *= f;
+            }
+            if (!d.levelData[mip] || d.levelSize[mip] < need)
+                return TextureDescError::InvalidUsage;
+        }
+    }
     return TextureDescError::None;
 }
 constexpr const char* textureDescErrorString(TextureDescError e) {
