@@ -811,3 +811,116 @@ filter alone does not implement those gameplay systems.
 **Verification:** this stage was committed through the repository
 connector; source inspection only. Builds, CTest, live GPU launch and
 screenshots remain explicitly **not run**, per user request.
+
+## TerraWeave Horizon — kilometre-scale landscape and forest HLOD
+
+`engine/world/TerraWeaveHorizon.h` generates a **coarse forest landscape
+snapshot without expanding distant trees to individual objects**.
+`engine/render/TerraWeaveHorizonModel.h` packs the entire snapshot into
+one standard AIVERSE `render::Model` with two materials/primitives:
+(1) a very low resolution far-terrain heightfield, with biome vertex
+colours and slope normals, and (2) hundreds of **cluster-level crossed
+billboards** sharing one RGBA8 silhouette atlas. `Renderer3D` therefore
+does not submit one draw per tree, nor one draw per 128/512-metre
+forest cluster. Shadow casting is disabled on far impostors.
+
+Unlike near tree LODs, the cluster silhouettes are generated directly
+from low-frequency climate/heightfield samples; individual trees are
+never generated at this tier. This makes the cost bounded by the
+terrain grid and number of cluster tiles, not the number of simulated
+or visually implied trees.
+
+### Default range hierarchy
+
+| Approximate distance | Representation |
+| --- | --- |
+| 0–250 m | Existing detailed trees and per-tree impostors (ForestScene) |
+| 250–1,000 m | 128-metre cluster silhouettes |
+| 1–6 km (roughly 8 km at diagonal) | 512-metre cluster silhouettes |
+| Beyond 1,100 m terrain | One 48×48-quad geometry patch with a near cutout |
+
+The ranges are adjustable through `HorizonSettings`. The nearest
+range is coordinated with `ForestSceneSettings.view.cullRangeCm`
+(default 240 m) to avoid duplicate detailed trees. The single large
+proxy is **not** a substitute for collision, walkable ground, pathfinding,
+close-up rocks or detailed tree meshes.
+
+### Approximate *upper bounds*, not measured GPU performance
+
+Default `estimateHorizonBudget(HorizonSettings{})`:
+- 832 possible forest cluster slots in total (16×16 middle + 24×24 distant).
+- One 1392×1392 RGBA8 texture, **7,750,656 bytes** before mipmaps.
+- At most 9,057 vertices and 7,936 triangles (terrain and two crossed
+  quads per forest cluster; many clusters skipped in sparse biomes).
+- One `Model` with at most **two material primitives**. Actual main-pass
+  draw count varies by renderer/backends/visibility; shadows,
+  reflections, render passes and hardware have not been benchmarked.
+
+This is *much* cheaper geometrically than distant individual foliage
+but not literally free: alpha overdraw, one-time CPU bake, texture
+upload, memory and shadow/atmospheric composition still cost resources.
+
+### Optional WorldScene manifest
+
+```json
+{
+  "terraweaveHorizon": {
+    "terrainSeed": 1,
+    "biomeSeed": 2,
+    "middleTileCm": 12800,
+    "middleTilesPerSide": 16,
+    "distantTileCm": 51200,
+    "distantTilesPerSide": 24,
+    "closeForestEndCm": 25000,
+    "middleForestEndCm": 100000,
+    "terrainBeginCm": 110000,
+    "terrainResolution": 48,
+    "atlasTilePixels": 48,
+    "canopyHeightCm": 1800,
+    "distantTerrain": true
+  }
+}
+```
+
+No `terraweaveHorizon` block means **no additional memory, GPU work
+or change to the existing world**. If `terraweaveForest` is also in
+the manifest, Horizon inherits the near forest's terrain/biome seeds
+unless explicitly overridden. Use matching seeds and elevation
+conventions to avoid near/far colour and silhouette mismatches.
+`distantTerrain: false` draws only cluster forests, useful when an
+existing world terrain renderer already covers far ground.
+
+`engine/render/TerraWeaveHorizonScene.h` reuses
+`AsyncChunkStream`: one queued/cancelable CPU region bake, bounded
+staging memory, stale region rejection, render-thread RHI upload.
+The previous uploaded proxy remains visible until the new region is
+fully published. Region position snaps to a 128m camera grid so no
+atlas is regenerated every frame. `WorldScene::update/draw/shutdown`
+owns this automatically for an opted-in manifest.
+
+### Known limitations and next work
+
+- Cluster textures are **procedural silhouette/colour approximations**,
+  not full multiview photographic or normal/depth-accurate atlases.
+  Two crossed ribbons are a cheap all-azimuth fallback; a future
+  offline baker should capture real forest materials and directional
+  lighting, with atlas paging and mips/alpha coverage preservation.
+- Mid-to-far transitions use distance ranges but not yet full
+  alpha/dither crossfade. First GPU visual proof is required to
+  identify popping and vegetation/ground colour discrepancies.
+- Far terrain is a coarse mesh with a central hole (to avoid z-fight
+  with nearby authored geometry), not a depth-aware mountain panorama.
+  It must be disabled or coordinated with independently authored
+  far-terrain patches to prevent overlap/double rendering.
+- Rebuilding the atlas when the camera crosses a 128m cell runs on
+  the existing background worker but is still CPU work; pack/cache
+  prebaked assets for entirely static game worlds and profile the
+  upload latency. The renderer and WorldScene still need screenshots
+  and actual GPU measurements.
+
+Tests added: `tests/terraweave_horizon_test.cpp`
+(`aiverse_terraweave_horizon_test`, CTest `terraweave_horizon`).
+Tests cover deterministic baking, atlas contents, card/terrain mesh
+bounds, topology and budget, invalid settings, and constructing the
+async host without an initialized GPU. **Tests are authored but not
+confirmed passing**. See `docs/terrain/AGENT_HANDOFF.md`.
