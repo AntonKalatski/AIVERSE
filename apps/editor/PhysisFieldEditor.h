@@ -27,6 +27,7 @@ struct PhysisFieldEditorState {
     std::vector<std::string> selectedIds; // sorted authored IDs
     std::vector<physis_authoring::FieldPosition> dragOriginal;
     double dragAnchorX = 0, dragAnchorY = 0, dragAnchorZ = 0;
+    double dragAppliedX = 0, dragAppliedY = 0, dragAppliedZ = 0;
     std::string draftId;
     std::string error;
     std::string rawDraft;
@@ -243,9 +244,11 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
         } else if (!state.dragOriginal.empty()) {
             // Targets derive from the initial drag snapshot, never from
             // previously rounded values; relative offsets remain invariant.
-            double x=state.dragAnchorX;
-            double y=state.dragAnchorY;
-            double z=state.dragAnchorZ;
+            // Keep already modified axes when switching between X/Z and
+            // Shift+Y during one continuous drag.
+            double x=state.dragAppliedX;
+            double y=state.dragAppliedY;
+            double z=state.dragAppliedZ;
             if (io.KeyShift) {
                 state.dragRawY += double(state.lastMouseY-io.MousePos.y) *
                                   std::max(0.01,double(camera.distance)*0.002);
@@ -274,7 +277,12 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
                 const auto revision=ed.doc().revision;
                 if (physis_authoring::moveFields(ed.doc(),targets,
                           !state.dragEdited,&state.error)) {
-                    if (ed.doc().revision!=revision) state.dragEdited=true;
+                    if (ed.doc().revision!=revision) {
+                        state.dragEdited=true;
+                        state.dragAppliedX=x;
+                        state.dragAppliedY=y;
+                        state.dragAppliedZ=z;
+                    }
                     state.draftId.clear();
                     state.error.clear();
                 }
@@ -376,6 +384,9 @@ inline bool processPhysisFieldGizmo(Editor& ed, const Viewport& vp,
     state.dragAnchorX=chosen.x;
     state.dragAnchorY=chosen.y;
     state.dragAnchorZ=chosen.z;
+    state.dragAppliedX=chosen.x;
+    state.dragAppliedY=chosen.y;
+    state.dragAppliedZ=chosen.z;
     state.dragRawY=chosen.y;
     state.dragging=true;
     state.draggingRadius=false;
