@@ -304,6 +304,43 @@ This is implementation-only work; CMake, CTest and real GPU validation
 were intentionally deferred at the user's request. See
 `docs/handoffs/prisma-stage-17.md`.
 
+
+## Stage 18 — GPU completion-gated retirement and persistent view executor
+
+`engine/render/PrismaGpuRetirement.h` introduces
+`PrismaGpuRetirementQueue<Handle>`: `retire(handle,submissionFence)`
+transfers an allocation to a pending queue; `collect(completedGpuFence,
+release)` invokes the release callback **only when the GPU has reported
+completion** through a caller-managed fence/event. `drainAfterGpuIdle`
+is valid only after an explicit GPU idle synchronization. A CPU frame
+counter or `gfx::Device::frameSerial()` is not a completion fence.
+
+`PrismaGraphResourcePool::retireUnused/retireAll` now transfer
+allocations to the caller instead of destroying them immediately.
+`PrismaRhiExecutor::retireUnused/retireAll/collectCompleted`
+wires those operations to its queue and calls RHI `destroyTexture`
+after the supplied completed fence. `resetAfterGpuIdle()` also
+releases all pending and current allocations, but **only** if the
+host has ensured the GPU is idle.
+
+Every `Prisma::Sized` viewport now holds a lazy persistent
+`std::unique_ptr<PrismaRhiExecutor>`, shared by its opt-in FXAA,
+Bloom prefilter and full Bloom graph calls. It retains resource
+pool state across frames rather than creating a new executor on
+every pass. Lifetime is tied to the existing Sized cache. This
+does not yet make PRISMA use graph-owned Bloom targets; those remain
+external RHI textures in Sized, and graph execution stays opt-in.
+
+**Backend integration constraint:** Gfx does not yet provide a
+portable completed-GPU-fence API. Hosts must pass actual completion
+signals to `collectCompleted`. Existing viewport eviction and
+renderer shutdown still destroy their legacy textures at the
+current existing release points; they are not automatically made
+GPU-fence-safe by this opt-in queue. Actual backend fence wiring
+and transient Bloom pool migration remain future features.
+Testing/build/GPU verification deliberately deferred at user request.
+See `docs/handoffs/prisma-stage-18.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
