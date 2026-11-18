@@ -2240,3 +2240,51 @@ and GPU capability fallback coverage, and a native shader capture
 with HDR radiance values above 1.0. Then implement HDR/EXR
 uncompressed float import and runtime texture streaming. Continue
 append-only per-stage handoffs.
+
+## Stage 7A — bounded texture streaming queue API (2026-11-18)
+
+**Implementation commit:** `0aea8701e634c89031327576a46fc67b52ab2d47`.
+**Branch:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Changed file:** `engine/gfx/TextureStreaming.h` (new, header-only).
+
+**Implementation:** Public genre-independent `gfx::TextureStreamQueue`
+owns its created sampled, uncompressed GPU textures, creates monotonic
+logical `TextureStreamId` tokens independent of backend `TextureHandle.id`,
+and accepts `TextureUploadDesc` with caller data copied into queue-owned CPU
+staging before the call returns. It validates the texture dimension, format,
+mip/layer/3D bounds, row/slice pitches, payload byte size and safe arithmetic,
+and enforces configurable total GPU memory, CPU staged memory, per-frame
+transfer bytes, and per-frame upload counts. `drain()` runs FIFO on the GPU
+device thread **outside** render passes, copying queued subresources through
+`Device::updateTextureRegion`; if a GPU write fails it marks its logical
+resource failed and cancels remaining queued writes. `cancel(ticket)`,
+`destroy(id)`, `shutdown()`, `texture(id)` and `stats()` give ownership,
+cancelation, diagnostics, and cleanup. Logical IDs are never recycled even if
+the GPU backend reuses texture IDs, preventing pending data from landing on
+a replacement texture. No extra dependencies; this is presentation-only and
+usable in native game/project C++.
+
+**Contract/limits:** This is **deferred frame-budgeted streaming**, not
+background I/O or asynchronous GPU readback. Only uncompressed, sampleable,
+non-MSAA textures and explicit manual mip allocations; no compressed partial
+updates, storage write textures or virtual page tables. The `gfx::Device`
+must outlive the queue, and its `updateTextureRegion` must consume/copy
+the provided CPU bytes synchronously before returning. Queue calls must be
+made on the rendering thread; concurrent submissions are not supported.
+Destroy via this queue, not directly through the backend, to retain logical
+generation ownership.
+
+**Compatibility:** Standalone opt-in header; no existing `gfx::Device`
+signature, save/network/ECS or renderer path changes.
+
+**Verification:** GitHub source code/tree/ref update succeeded.
+No native build, CTest or GPU execution took place because this environment
+does not have a local AIVERSE clone and cannot resolve github.com.
+CI jobs for earlier branch HEADs were queued, not passing. **NOT RUN**.
+
+**Next:** Add `aiverse_texture_streaming_test` using a mock gfx::Device and
+assert CPU buffer ownership, strict per-frame byte/update budgets, cancellation,
+allocation rollback, row/slice validation, failed update quarantine and stale
+resource-ID rejection. Execute compiler/CTest on a native checkout and write
+actual outcomes. Afterwards consider optional readback and streaming residence
+policy, keeping code and handoff as separate commits.
