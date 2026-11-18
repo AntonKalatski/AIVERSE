@@ -887,3 +887,28 @@ ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_
 **Verification:** exact user-supplied local compiler diagnostics plus source-level correction; **post-fix local compilation/CTest not yet confirmed**. Four focused InputFlow suites previously passed (Stage 57). The editor's complete Debug build still needs a fresh user run; keep PR #20 Draft.
 
 **Next agent/test:** `git pull --ff-only origin feature/aiv990_enhanced_input` then `./run-tests.sh --jobs 4 --ctest-jobs 4` from the repository root. Capture the next first compiler error or PASS summary. If the build succeeds, conduct a native editor InputFlow Settings capture and planet/RTS/FPS smoke. Preserve exact branches and per-stage handoff updates; do not claim a successful full build from a source-only fix.
+
+
+## Stage 61 — fix skill catalog and input skill path audit (2026-11-18)
+
+**User-reported CTest failures (actual, from full macOS test run):**
+- `skill_catalog` (CTest #90) **FAILED**: `catalog.py: error: stale skill catalog; run generate`.
+- `skill_audit` (CTest #92) **FAILED** with nine `missing path` reports in `skills/ui/aiverse-input/SKILL.md`: `apps/fps/client.cpp`, `docs/enhanced-input-agent-handoff.md`, `docs/enhanced-input.md`, `docs/gameplay-settings.md`, `engine/platform/EnhancedInputAdapter.h`, `engine/platform/EnhancedInputConfig.h`, `libraries/catalog.json`, `libraries/include/aiverselib/gameplay/Input.h`, `libraries/spec/gameplay.json`. These were caused by literal escaped-backtick Markdown (`\\`path\\``) in the skill. The repository audit interpreted the leading backslash as part of a path.
+- Remaining tests in the user's CTest output were not provided, so do not claim that the full 106-test suite has passed.
+
+**Changes:**
+1. `skills/ui/aiverse-input/SKILL.md`: replaced 116 literal `\\`` sequences with standard Markdown backtick delimiters. This makes the nine existing references parse as real paths, without hiding any path errors or weakening the path validator. Commit `e6f2b370368fe991fb966e2f020d866b5e844c37`.
+2. `skills/catalog.json`: synchronized the `aiverse-input` entry with the canonical input package in `libraries/catalog.json`: `summary` now describes InputFlow actions/contexts/modifiers/triggers/profiles and the `source` points at `libraries/include/aiverselib/gameplay/InputFlow.h`. These are precisely the two fields the current deterministic catalog generator expects to change. No catalog IDs, dependencies or package contracts changed. Commit `77f29dd83e7d5cec280645d82662832feb0b29ec`.
+
+**Verification evidence:** GitHub file inspection confirmed that all nine paths exist on the feature branch, the skill contains zero remaining `\\`` escape sequences, and the generated catalog entry agrees with the library's package metadata. GitHub commit diff for `skills/catalog.json` shows only the two stated field changes. **The local Python scripts and CTest have NOT been rerun after these corrections; no PASS is asserted.**
+
+**Next check (macOS, current branch):**
+```bash
+git pull --ff-only origin feature/aiv990_enhanced_input
+python3 tools/skills/catalog.py check
+python3 tools/skills/audit.py --skills aiverse-input
+ctest --test-dir build/all-tests -C Debug --output-on-failure -R '^(skill_catalog|skill_audit)$'
+```
+The full `./run-tests.sh --jobs 4 --ctest-jobs 4` suite must be rerun/confirmed separately; follow any new failures using the first error and existing reports. Keep PR #20 Draft pending full editor/FPS/RTS, platform and input UI smoke checks.
+
+**Next agent:** continue from this stage, verify exact Git HEAD and real PASS/FAIL, and preserve `input/actions.json`, legacy input and ECS command invariants. Update this handoff after the next confirmed result.
