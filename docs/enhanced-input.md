@@ -174,3 +174,7 @@ Default RTS mapping includes `RTS.Camera` context with `CameraPan` (arrow keys) 
 ### Editor GameWindow camera bindings
 
 In the editor's direct RTS play-test, the Game window uses the same semantic `CameraPan` and `IdleCameraPan` mappings through its own presentation `InputSystem`. It samples bound keyboard keys only while the Game window owns focus and no text field is active. It reads optional project `input/actions.json` and refreshes the mapping shortly after it changes. Unlike the standalone RTS client, the editor retains historical always-available WASD camera navigation even while a unit is selected. In hosted-client mode, the embedded game uses its own action routing and the synthetic focus-loss bridge.
+
+### Project asset file safety
+
+`enhanced_config::loadAssetFile` / `saveAssetFile` in `engine/platform/EnhancedInputFileIO.h` validate the entire version-1 action/context schema before committing project-authored `input/actions.json`. Project files and per-user profiles now share the same temporary-file and backup/restore writer. The editor no longer deletes its existing project asset before an unverified rename. Invalid actions and controls leave existing project data unchanged.
