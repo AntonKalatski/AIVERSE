@@ -14,6 +14,8 @@
 #include "modules/rts/view/ScriptHud.h"
 #include "apps/client/RegionSettings.h"
 #include "engine/i18n/Localization.h"
+#include "engine/platform/EnhancedInputPresets.h"
+#include <filesystem>
 #include "modules/rts/RtsScript.h"
 
 namespace aiverse::editor {
@@ -125,6 +127,107 @@ public:
     }
 
 private:
+    using InputCore=lib::gameplay::enhanced::InputSystem;
+    using InputDevice=lib::gameplay::enhanced::Device;
+    InputCore cameraActions_;
+    std::string cameraProject_;
+    std::filesystem::file_time_type cameraAssetTime_{};
+    bool cameraAssetExists_=false;
+    double cameraReloadSeconds_=1;
+
+    static ImGuiKey inputKey(platform::Key key) {
+        using K=platform::Key;
+        if(key>=K::A && key<=K::Z)return ImGuiKey(int(ImGuiKey_A)+int(key)-int(K::A));
+        if(key>=K::Num0 && key<=K::Num9)return ImGuiKey(int(ImGuiKey_0)+int(key)-int(K::Num0));
+        if(key>=K::F1 && key<=K::F12)return ImGuiKey(int(ImGuiKey_F1)+int(key)-int(K::F1));
+        switch(key) {
+        case K::Space:return ImGuiKey_Space;
+        case K::Escape:return ImGuiKey_Escape;
+        case K::Enter:return ImGuiKey_Enter;
+        case K::Tab:return ImGuiKey_Tab;
+        case K::Backspace:return ImGuiKey_Backspace;
+        case K::Delete:return ImGuiKey_Delete;
+        case K::Insert:return ImGuiKey_Insert;
+        case K::Left:return ImGuiKey_LeftArrow;
+        case K::Right:return ImGuiKey_RightArrow;
+        case K::Up:return ImGuiKey_UpArrow;
+        case K::Down:return ImGuiKey_DownArrow;
+        case K::Home:return ImGuiKey_Home;
+        case K::End:return ImGuiKey_End;
+        case K::PageUp:return ImGuiKey_PageUp;
+        case K::PageDown:return ImGuiKey_PageDown;
+        case K::LeftShift:return ImGuiKey_LeftShift;
+        case K::RightShift:return ImGuiKey_RightShift;
+        case K::LeftCtrl:return ImGuiKey_LeftCtrl;
+        case K::RightCtrl:return ImGuiKey_RightCtrl;
+        case K::LeftAlt:return ImGuiKey_LeftAlt;
+        case K::RightAlt:return ImGuiKey_RightAlt;
+        case K::LeftSuper:return ImGuiKey_LeftSuper;
+        case K::RightSuper:return ImGuiKey_RightSuper;
+        case K::Minus:return ImGuiKey_Minus;
+        case K::Equal:return ImGuiKey_Equal;
+        case K::LeftBracket:return ImGuiKey_LeftBracket;
+        case K::RightBracket:return ImGuiKey_RightBracket;
+        case K::Semicolon:return ImGuiKey_Semicolon;
+        case K::Apostrophe:return ImGuiKey_Apostrophe;
+        case K::Comma:return ImGuiKey_Comma;
+        case K::Period:return ImGuiKey_Period;
+        case K::Slash:return ImGuiKey_Slash;
+        case K::Backslash:return ImGuiKey_Backslash;
+        case K::GraveAccent:return ImGuiKey_GraveAccent;
+        default:return ImGuiKey_None;
+        }
+    }
+
+    void refreshCameraActions(Editor& ed) {
+        const auto dir=ed.ws().project.dir;
+        cameraReloadSeconds_+=std::max(0.0,dt_);
+        if(cameraProject_==dir && cameraReloadSeconds_<0.5)return;
+        cameraReloadSeconds_=0;
+        const auto assetPath=std::filesystem::path(dir)/"input"/"actions.json";
+        std::error_code ec;
+        const auto lastWrite=std::filesystem::last_write_time(assetPath,ec);
+        const bool exists=!ec;
+        if(cameraProject_==dir && exists==cameraAssetExists_ &&
+           (!exists || lastWrite==cameraAssetTime_))return;
+        cameraProject_=dir;
+        cameraAssetExists_=exists;
+        cameraAssetTime_=exists?lastWrite:std::filesystem::file_time_type{};
+        auto asset=platform::enhanced_presets::rtsReference();
+        if(exists) {
+            try {
+                platform::enhanced_config::Asset authored;
+                std::string err;
+                if(platform::enhanced_config::readAsset(Json::parseFile(assetPath.string()),authored,&err))
+                    asset=std::move(authored);
+                else ed.ws().log("input","Game camera mapping: "+err,true);
+            } catch(const std::exception& e) {
+                ed.ws().log("input",std::string("Game camera mapping: ")+e.what(),true);
+            }
+        }
+        std::string error;
+        if(!platform::enhanced_config::installAsset(cameraActions_,asset,&error))
+            ed.ws().log("input","Game camera action install failed: "+error,true);
+    }
+
+    void updateCameraActions(bool focused,float dt) {
+        if(!focused){cameraActions_.cancelAll();return;}
+        // Only keyboard controls referenced by active contexts are sampled.
+        // Changes from the project's Input Actions window take effect on file reload.
+        for(const auto& name:cameraActions_.activeContexts()) {
+            const auto* context=cameraActions_.context(name);
+            if(!context)continue;
+            for(const auto& mapping:context->mappings) {
+                if(mapping.control.device!=InputDevice::Keyboard)continue;
+                if(mapping.control.code<=0 || mapping.control.code>=int(platform::Key::Count))continue;
+                const auto key=inputKey(platform::Key(mapping.control.code));
+                cameraActions_.setControl(mapping.control,
+                    key!=ImGuiKey_None && ImGui::IsKeyDown(key)?1.0f:0.0f);
+            }
+        }
+        cameraActions_.update(dt);
+    }
+
     std::string filter_;
     double dt_ = 0;
 
@@ -306,13 +409,18 @@ private:
             if (ed.groundAt(vp_, cam, io.MousePos.x - io.MouseDelta.x, io.MousePos.y - io.MouseDelta.y, x0, z0) && ed.groundAt(vp_, cam, io.MousePos.x, io.MousePos.y, x1, z1))
                 cam.target += float3{x0 - x1, 0, z0 - z1};
         }
-        if (ImGui::IsWindowFocused() && !io.WantTextInput) {
-            float speed = cam.distance * io.DeltaTime;
-            float3 fwd{-std::sin(cam.yaw), 0, -std::cos(cam.yaw)}, right{std::cos(cam.yaw), 0, -std::sin(cam.yaw)};
-            if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow)) cam.target += fwd * speed;
-            if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow)) cam.target += fwd * -speed;
-            if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) cam.target += right * speed;
-            if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow)) cam.target += right * -speed;
+        refreshCameraActions(ed);
+        const bool cameraFocused=ImGui::IsWindowFocused() && !io.WantTextInput;
+        updateCameraActions(cameraFocused,io.DeltaTime);
+        if(cameraFocused) {
+            const auto* arrow=cameraActions_.state("CameraPan");
+            const auto* idle=cameraActions_.state("IdleCameraPan");
+            const float x=std::clamp((arrow?arrow->value.x:0.0f)+(idle?idle->value.x:0.0f),-1.0f,1.0f);
+            const float y=std::clamp((arrow?arrow->value.y:0.0f)+(idle?idle->value.y:0.0f),-1.0f,1.0f);
+            const float speed=cam.distance*io.DeltaTime;
+            const float3 fwd{-std::sin(cam.yaw),0,-std::cos(cam.yaw)};
+            const float3 right{std::cos(cam.yaw),0,-std::sin(cam.yaw)};
+            cam.target+=fwd*(speed*y)+right*(speed*x);
         }
         if (ed.humanSlot() <= 0) return;
         World& w = ed.sim()->world();
