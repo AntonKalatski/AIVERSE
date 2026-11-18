@@ -32,10 +32,14 @@ using Polygon=std::vector<HorizonClipPoint>;
 
 inline double area2(const Polygon& p) {
     if(p.size()<3)return 0.0;
+    // Subtract the first point before cross-products. At large absolute
+    // world coordinates, direct x*z shoelaces lose small polygon precision.
     double area=0;
-    for(size_t i=0;i<p.size();++i) {
-        const auto& a=p[i],&b=p[(i+1)%p.size()];
-        area+=a.x*b.z-a.z*b.x;
+    const auto base=p.front();
+    for(size_t i=1;i+1<p.size();++i){
+        const auto& a=p[i],&b=p[i+1];
+        area+=(a.x-base.x)*(b.z-base.z)-
+              (a.z-base.z)*(b.x-base.x);
     }
     return area;
 }
@@ -159,9 +163,9 @@ inline std::optional<HorizonTerrainClipPlan> planHorizonNearGroundClipping(
                   {double(br.xCm),double(br.zCm)}}}
             }};
             for(uint8_t half=0;half<2;++half) {
-                std::vector<horizon_clip_detail::Polygon> polygons{{
-                    halves[half].begin(),halves[half].end()
-                }};
+                std::vector<horizon_clip_detail::Polygon> polygons;
+                polygons.emplace_back(halves[half].begin(),
+                                      halves[half].end());
                 for(const RectCm* rect:clips){
                     std::vector<horizon_clip_detail::Polygon> remaining;
                     for(const auto& poly:polygons){
