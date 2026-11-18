@@ -272,12 +272,6 @@ void ecsActorAuthorityParity(Json rules,Json map) {
             legacy->inject(cmd);ecs->inject(cmd);
         }
         legacy->step();ecs->step();
-        if(i==0) {
-            const auto* indexView=world.resourceConst<fps::DynamicEntityIndex>();
-            CHECK(indexView && indexView->byKey.at((uint64_t(1)<<32)|projectile.id)==p);
-            CHECK(indexView->byKey.at((uint64_t(2)<<32)|loot.id)==l);
-            CHECK(indexView->byKey.at((uint64_t(3)<<32)|vehicle.id)==v);
-        }
         CHECK(legacy->checksum()==ecs->checksum());
         for(size_t i=0;i<state(*ecs).actors.size();++i) {
             const auto entity=module.actorEntity(*ecs,uint8_t(i+1));
@@ -388,6 +382,16 @@ void ecsDynamicAuthorityParity(Json rules,Json map) {
     ecs->saveState(snapshot);
     for(int i=0;i<8;++i) {
         legacy->step();ecs->step();
+        if(i==0) {
+            const auto* indexView=world.resourceConst<fps::DynamicEntityIndex>();
+            CHECK(indexView);
+            CHECK(indexView->byKey.contains((uint64_t(1)<<32)|projectile.id));
+            CHECK(indexView->byKey.contains((uint64_t(2)<<32)|loot.id));
+            CHECK(indexView->byKey.contains((uint64_t(3)<<32)|vehicle.id));
+            CHECK(indexView->byKey.at((uint64_t(1)<<32)|projectile.id)==p);
+            CHECK(indexView->byKey.at((uint64_t(2)<<32)|loot.id)==l);
+            CHECK(indexView->byKey.at((uint64_t(3)<<32)|vehicle.id)==v);
+        }
         CHECK(legacy->checksum()==ecs->checksum());
         CHECK(state(*ecs).projectiles.size()==state(*legacy).projectiles.size());
         CHECK(state(*ecs).projectiles[0].id==state(*legacy).projectiles[0].id);
