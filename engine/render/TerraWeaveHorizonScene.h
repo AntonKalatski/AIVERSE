@@ -50,6 +50,9 @@ struct HorizonRuntimeStats {
     size_t vertexPatchRanges=0; // last successful vertex update run count
     size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
     size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
+    size_t transitionStarts=0;
+    bool transitioning=false;
+    uint32_t transitionProgressPermille=1000;
 };
 
 class TerraWeaveHorizonScene {
@@ -257,6 +260,11 @@ public:
         // Source revisions invalidate cached geometry. Cached entries
         // can only be retired on the owning gfx::Device thread.
         gpuCache_.prune(device,sourceRevision_);
+        finishTransition(device);
+        // A recently departed region may still be in the short-lived
+        // transition slot instead of the normal GPU LRU.
+        if(transitionCell_ && *transitionCell_==desired)
+            finishTransition(device,true);
 
         // Fast return for the already visible region, including a teleport
         // back from an in-flight request to the previous camera region.
@@ -303,7 +311,7 @@ public:
                 // proxy disabled), retire the old forest rather than leaving
                 // stale distant silhouettes on-screen indefinitely.
                 if(!prepared->model){
-                    retireActive(device,cell);
+                    retireActive(device,cell,false); // empty region has no incoming fade target
                     activeCell_=cell;
                     activeRevision_=sourceRevision_;
                     clusters_=0;
@@ -432,6 +440,7 @@ public:
             stream_.reset();
         }
         if(model_){render::releaseModel(device,*model_);model_.reset();}
+        finishTransition(device,true);
         gpuCache_.clear(device);
         activeCell_.reset();
         activeRevision_=0;
@@ -460,6 +469,12 @@ public:
         out.gpuCachedBytes=gpuCache_.bytes();
         out.gpuCacheHits=gpuCacheHits_;
         out.gpuCacheEvictions=gpuCache_.evictions();
+        out.transitionStarts=transitionStarts_;
+        out.transitioning=transition_.model!=nullptr &&
+                          transitionRevision_==sourceRevision_ &&
+                          transitionFraction()<1.0f && model_!=nullptr;
+        out.transitionProgressPermille=out.transitioning ?
+            static_cast<uint32_t>(transitionFraction()*1000.0f):1000;
         return out;
     }
     const world::AsyncChunkStream::Status& status() const {
@@ -469,10 +484,44 @@ public:
     }
 
 private:
+    // Smoothstep in real elapsed monotonic time; no tick/ECS state is touched.
+    float transitionFraction() const {
+        if(!transition_.model || settings_.regionTransitionMs==0)
+            return 1.0f;
+        const auto elapsed=std::chrono::duration<double,std::milli>(
+            Clock::now()-transitionStart_).count();
+        const float t=std::clamp(float(elapsed/
+            double(settings_.regionTransitionMs)),0.0f,1.0f);
+        return t*t*(3.0f-2.0f*t);
+    }
+
+    // Only the RHI owner thread may relinquish the outgoing GPU model.
+    // Completed transitions become ordinary LRU entries only when the
+    // world surface generation still matches their recorded revision.
+    void finishTransition(gfx::Device& device,bool force=false) {
+        if(!transition_.model)return;
+        if(!force && transitionRevision_==sourceRevision_ &&
+           transitionFraction()<1.0f)return;
+        if(transitionRevision_==sourceRevision_ && transitionCell_ &&
+           settings_.maxCachedGpuRegions)
+            gpuCache_.retain(device,*transitionCell_,transitionRevision_,
+                std::move(transition_),settings_.maxCachedGpuRegions,
+                size_t(settings_.gpuCacheBudgetMiB)*1024u*1024u);
+        else
+            render::releaseModel(device,*transition_.model);
+        transition_={};
+        transitionCell_.reset();
+        transitionRevision_=0;
+    }
+
     // Snapshot an already-uploaded GPU model before replacing the active
     // region. Retain only if its source revision is still current; otherwise
     // release using the same RHI Device that originally uploaded it.
-    void retireActive(gfx::Device& device,world::Cell incoming) {
+    void retireActive(gfx::Device& device,world::Cell incoming,
+                      bool allowFade=true) {
+        // At most one outgoing model is retained; a new swap completes
+        // the prior transition before taking ownership of another one.
+        finishTransition(device,true);
         if(!model_){
             activeBake_.reset();
             activeVertices_.clear();
@@ -495,11 +544,25 @@ private:
             previous.atlasBytes,previous.vertexCount,previous.triangleCount);
         if(activeCell_ && !(*activeCell_==incoming) &&
            activeRevision_==sourceRevision_ &&
-           settings_.maxCachedGpuRegions)
+           settings_.maxCachedGpuRegions) {
+            const int64_t dx=int64_t(activeCell_->x)-incoming.x;
+            const int64_t dz=int64_t(activeCell_->z)-incoming.z;
+            const bool adjacent=dx>=-1&&dx<=1&&dz>=-1&&dz<=1;
+            const size_t budget=size_t(settings_.gpuCacheBudgetMiB)*
+                                 1024u*1024u;
+            if(allowFade && adjacent && settings_.regionTransitionMs>0 &&
+               gpuCache_.reserveTransient(device,previous.estimatedGpuBytes,
+                   settings_.maxCachedGpuRegions,budget)) {
+                transition_=std::move(previous);
+                transitionCell_=*activeCell_;
+                transitionRevision_=activeRevision_;
+                transitionStart_=Clock::now();
+                ++transitionStarts_;
+                return;
+            }
             gpuCache_.retain(device,*activeCell_,activeRevision_,
-                std::move(previous),settings_.maxCachedGpuRegions,
-                size_t(settings_.gpuCacheBudgetMiB)*1024u*1024u);
-        else if(previous.model)
+                std::move(previous),settings_.maxCachedGpuRegions,budget);
+        } else if(previous.model)
             render::releaseModel(device,*previous.model);
     }
 
@@ -567,6 +630,12 @@ private:
     uint64_t activeRevision_=0; // authored source revision of GPU-resident region
     HorizonGpuRegionCache gpuCache_;
     size_t gpuCacheHits_=0;
+    using Clock=std::chrono::steady_clock;
+    HorizonGpuRegion transition_;
+    std::optional<world::Cell> transitionCell_;
+    uint64_t transitionRevision_=0;
+    Clock::time_point transitionStart_{};
+    size_t transitionStarts_=0;
     int64_t originXcm_=0,originZcm_=0;
     size_t clusters_=0,terrainQuads_=0;
     HorizonRuntimeStats runtime_{};
