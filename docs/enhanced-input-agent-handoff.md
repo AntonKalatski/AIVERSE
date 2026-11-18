@@ -285,3 +285,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Behavior:** Axis mapping is combined with original gamepad and edge scroll, clamped per direction to preserve normal speed (identical arrow+W no longer doubles speed, intentional). Pointer selection, project scripts and top-down possession still have their specialized input, preserving game rules and commands. Project `input/actions.json` is a complete replacement and must define camera bindings explicitly if desired.
 
 **Next agent:** migrate compatible editor GameWindow camera controls, verify old RTS movement/selection and keyboard focus, run CMake+CTest for library RTS input and native clients, then log results.
+
+## Stage 19 — editor GameWindow camera routing (2026-11-18)
+
+**Implementation:** `apps/editor/windows/GameWindow.cpp` now installs the shared RTS semantic camera mapping (or the project's `input/actions.json`) into a presentation-only `InputSystem`. It polls only the declared keyboard controls through ImGui when the GameWindow is focused and no text field owns input; unfocused/text capture calls `cancelAll()`. Camera movement uses the resulting `CameraPan` + `IdleCameraPan` values instead of direct WASD/arrow conditionals. The project asset is rechecked at most twice per second while the GameWindow is drawn, so edited bindings become active without restarting. Direct FPS projects and hosted GameClient continue their separate input paths.
+
+**Compatibility:** The editor's direct RTS play historically allows WASD camera pan regardless of selected units; unlike the standalone RTS client, both Axis2D actions are combined unconditionally. Pointer/selection gestures, regions and GameHud retain their specialized handling. No authoritative ECS state, gameplay Commands or serialized command layout changed.
+
+**Verification:** GitHub source changes only, no full editor compile/interactive test yet. A focused validation must check ImGui key enum mappings, window focus cancellation, readAsset load/reload and project input hot-rebind. Test selection + keyboard camera, script HUD popup, region camera and initial missing input file fallback.
+
+**Next agent:** check CI and compiler outputs; fix any editor/RTS input warnings and verify functional parity. Do not mark PR ready without green validation. Continue documenting new stages.
