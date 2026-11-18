@@ -393,3 +393,15 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Scope limits:** project-authored `input/actions.json` is a full replacement: rebind named TopDown Actions there to customize the hero. Dynamic game-specific ability button keys and commerce script keys still use their explicit game.json/script mapping rules; these are not interchangeable generic camera/weapon actions. Keyboard is captured after UI filtering. Run top-down regression after user-requested implementation phase.
 
 **Next:** expose conflicts and policies in editor FPS settings, improve per-player profiles, map RTS touch gesture deltas through Actions, then perform static review and defer actual CTest/CI until requested.
+
+## Stage 30 — conflict policies usable in editor and FPS settings (2026-11-18)
+
+**Editor:** `InputWindow` now has `On capture conflict` (Allow duplicate / Reject duplicate / Swap keys). Keyboard-capture uses that policy, preserving IDs and swapping exactly one previous binding when requested; ambiguous multi-way collisions give an explicit error. It also shows `InputSystem::conflicts()` across active Mapping Contexts with higher/lower contexts, Action names, stable mapping IDs, and shadowing information.
+
+**FPS:** F10 `Input Settings` has the same three conflict policies, default Swap, plus a cross-context conflict viewer. `rebindInput(...,RebindPolicy)` stages a copy of the whole input system. In Swap mode it records **both affected mapping IDs** into a staged validated user profile, verifies the profile by applying it to a copy of the current system, persists to disk, then commits the runtime state. A failed Reject/ambiguous Swap/validation/disk save leaves both live input and profile unchanged and reports an explicit error.
+
+**Files:** `apps/editor/windows/InputWindow.cpp`, `apps/fps/client.cpp`, this handoff and user guide.
+
+**Unverified:** code committed; actual compilation, F10 UI, and profile restart/Swap smoke tests intentionally deferred until user testing phase. Need verify ImGui combo labels, capture and syncUserData on real macOS/Windows.
+
+**Next:** per-user player profiles and optional Action-based RTS touch camera gestures, then source-level closure audit. No tests run yet.
