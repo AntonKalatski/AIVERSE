@@ -90,6 +90,11 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("centerRadius", 0.35f, 0.05f, 1.0f, "normalized center-metering radius", "Радиус замера"),
         num("minMeterLogL", -10.0f, -16.0f, 0.0f, "lower log2 luminance clamp for metering", "Нижняя граница замера"),
         num("maxMeterLogL", 10.0f, 0.0f, 16.0f, "upper log2 luminance clamp for metering", "Верхняя граница замера")}});
+    c.push_back({T::MotionBlur, "motionBlur", "Размытие движения", "Camera reprojection velocity and optional native object velocity texture; screen-space shutter blur.", C::Heavy, kHigh, {
+        num("intensity", 0.65f, 0, 1, "shutter blend strength", "Сила"),
+        num("maxPixels", 20.0f, 0, 64, "maximum motion displacement in screen pixels", "Максимальное смещение"),
+        num("samples", 8.0f, 2, 16, "blur sample count, rounded to integer", "Число проб"),
+        num("shutterScale", 1.0f, 0, 2, "velocity multiplier per frame, 1=one frame displacement", "Выдержка")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -368,7 +373,8 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::Sharpen: return {2.0f, 0};
     case T::Fxaa: return {6.0f, 1};
     case T::DepthOfField: return {10.0f, 1};
-    case T::AutoExposure: return {5.0f, 12}; // upper-bound pyramid: size-dependent passes
+    case T::AutoExposure: return {5.0f, 12};
+    case T::MotionBlur: return {17.0f, 2}; // upper-bound pyramid: size-dependent passes
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel
