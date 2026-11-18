@@ -561,3 +561,48 @@ and `worldX(i)/worldZ(i)` (including ghost indices)
 instead of duplicating grid arithmetic. The same helper
 is used internally by `bakeHorizon` and protects against
 invalid zero-resolution division.
+
+## Horizon near-ground ownership and TWH4 (Stage 17)
+
+Do not delete far Horizon quads just because
+they are within a hard-coded radius. Prefer
+`HorizonSurfaceSources::ownsNearTerrainRect`
+when resident near-ground geometry is
+available. `WorldScene` uses immutable
+`AuthoredWorldHeightSnapshot::coversRect`
+to assert **full** half-open rectangle
+coverage. Missing near terrain must retain
+far-ground geometry; a partial overlap must
+not be falsely classified as fully covered.
+
+`HorizonBake::nearOwnedQuads` carries
+one 0/1 flag per far cell. `makeHorizonModel`
+removes fully owned quads, and optionally
+adds a short `innerTerrainLipCm` (0–200cm,
+default 40cm), bounded to 512 seam
+segments and **no extra material or
+draw call**. Incomplete coarse cells can
+still overlap near meshes; don't claim
+exact polygon clipping.
+
+The far-terrain lattice uses
+`terrainGridSnapSteps` (1..16, default 4)
+and nearest signed global-grid alignment
+to reduce mountain silhouette movement
+during 128m forest-atlas updates.
+Minimal=1, Mobile=2, Balanced/High=4.
+The distant forest radius must remain
+inside the guaranteed terrain coverage
+for those snap offsets (roughly 5+ km).
+
+Current archive is **TWH4**. Near ownership
+maps, inner seam depth and snapped grid
+settings must be reflected in archive
+version and fingerprint; old TWH1–TWH3
+assets must be rebaked. Keep settings
+and bake extensions trailing so native
+C++ aggregate initializers stay usable.
+GPU index topology changes invalidate
+partial VB/atlas reuse and trigger
+full upload. All validation is owned
+by another test agent; mark NOT RUN.
