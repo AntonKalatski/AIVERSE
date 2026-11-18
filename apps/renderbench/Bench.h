@@ -5,7 +5,7 @@
 #include "engine/render/ProbeEnvironment.h"
 #include "engine/render/LightGridCache.h"
 #include "engine/platform/Platform.h"
-#include "engine/render/PostFx.h"
+#include "engine/render/Prisma.h"
 #include "engine/render/ScreenLighting.h"
 #include "SceneAssets.h"
 #include "engine/render/StaticPointBounce.h"
@@ -58,7 +58,7 @@ struct Bench {
     Json config,report=Json::object(),rows=Json::array();
     platform::HostedView content;
     Renderer3D renderer;
-    PostFx post;
+    Prisma post;
     ScreenLighting screen;
     SceneAssets additions;
     CameraTour tour; int tourShot=-1;
