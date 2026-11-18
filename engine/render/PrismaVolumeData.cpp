@@ -35,6 +35,8 @@ float3 vector3(const Json& src, const char* key) {
 PrismaVolume one(const Json& j, const std::string& fallback, std::vector<std::string>* issues) {
     if (!j.isObject()) throw std::runtime_error("volume entry must be an object");
     PrismaVolume v;
+    if (j.has("id") && !j["id"].isString())
+        throw std::runtime_error("volume id must be a string");
     v.id = j.getStr("id", fallback);
     if (v.id.empty() || v.id.size() > 96)
         throw std::runtime_error("volume id must be 1..96 characters");
@@ -54,7 +56,7 @@ PrismaVolume one(const Json& j, const std::string& fallback, std::vector<std::st
     }
     if (j.has("layerMask")) {
         const auto n = j["layerMask"].integer(-1);
-        if (!j["layerMask"].isNumber() || n < 0 || uint64_t(n) > UINT32_MAX)
+        if (!j["layerMask"].isNumber() || n < 0 || uint64_t(n) > std::numeric_limits<uint32_t>::max())
             throw std::runtime_error("layerMask must be unsigned 32-bit integer");
         v.layerMask = static_cast<uint32_t>(n);
     }
