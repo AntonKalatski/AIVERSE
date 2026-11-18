@@ -205,8 +205,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                         (70+static_cast<int>((var>>16)%61))/100);
                     const int32_t yStart=ground+canopy*32/100-bottom;
                     const int32_t yTop=ground+canopy-bottom;
-                    const int32_t first=std::clamp(int64_t(yStart)*p/heightRange,1LL,int64_t(p-2));
-                    const int32_t last=std::clamp(int64_t(yTop)*p/heightRange,1LL,int64_t(p-2));
+                    const int32_t first=std::clamp(int64_t(yStart)*p/heightRange,int64_t(1),int64_t(p-2));
+                    const int32_t last=std::clamp(int64_t(yTop)*p/heightRange,int64_t(1),int64_t(p-2));
                     const uint8_t g=static_cast<uint8_t>(80+((var>>32)%40));
                     for(int32_t iy=first;iy<=last;++iy) {
                         const uint32_t ry=p-1-static_cast<uint32_t>(iy);
