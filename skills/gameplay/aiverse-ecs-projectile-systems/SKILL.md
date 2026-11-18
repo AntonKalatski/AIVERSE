@@ -77,6 +77,36 @@ The `ecs_projectile_composition_test` fixture now also exercises
 the shared sweep selector with tie-breaking, expanded extents,
 endpoint hits and no-hit cases. Actual native result remains unverified.
 
+## Simple bouncing projectiles (physical, timed effects)
+
+For grenades, thrown objects, physical mines and other projectiles whose fuse
+and damage rules are managed elsewhere, reuse
+`BounceMotionConfig` + `stepBouncingProjectile(position,velocity,collision,dt,config)`
+in `EcsProjectileSystems.h`. The policy takes a read-only
+`world::SpatialWorld`, applies fixed-point gravity before sweeping a
+configurable box and handles reflection/contact inset/velocity divisor.
+It **does not** expire or damage the entity. Its default (gravity=10,
+half-extent=0.1, contact fraction inset=0.01, divisor=2) reproduces the
+pre-ECS FPS grenade bounce arithmetic exactly.
+
+The live FPS ordinary projectile stage is now registered as
+`fps.compat.ordinaryProjectiles`, after
+`fps.compat.projectilePrograms` and before `fps` (round/actor).
+In `fps.ecsAuthority` mode it advances actual `ProjectileRuntime` ECS
+components in saved `order,id` order, emits the original immediate hit
+effects and rebuilds `State::projectiles` only as a compatibility projection.
+With authority OFF, the *same* per-projectile solver advances the old State
+vector. The native FPS regressions
+`ecsOrdinaryProjectileAuthorityParity` and
+`ecsProjectileProgramStageParity` cover both storage modes, mixed projectiles,
+deep/COW snapshots and v9 cross-loading; their native results are not yet
+verified. The cross-genre `ecs_projectile_composition_test` also compares
+bouncing physics against the exact former FPS formula on multiple contacts.
+
+This policy is **physical collision**. RTS hitscan or kinematic missiles do not
+need `SpatialWorld`; use the matching nonphysical system. Do not combine
+the two into one unconditional genre-based simulation.
+
 When implementing another mechanic, repeat the same decomposition:
 **components + reusable systems + pure policies + thin project adapters**.
 
