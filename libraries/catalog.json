@@ -2637,6 +2637,21 @@
       "packageDependencies": [
         "ecs-ordered-impact"
       ]
+    },
+    {
+      "id": "nereid-water",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID deterministic fixed-point ECS water volume sampling across game genres",
+      "notes": "Stage 1 only: infinite, box and disc footprints; no waves, visual water shader, physics or legacy RTS waterNetwork adoption. Persistent v1 components; do not claim production-ready until native CTest passes.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_water",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": []
     }
   ]
 }

@@ -1611,6 +1611,11 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::libraries)
     add_test(NAME ecs_hitscan_resolution_test
         COMMAND aiverse_ecs_hitscan_resolution_test)
+    # NEREID Water stage 1: native shared ECS sampling in unrelated host modules.
+    add_executable(aiverse_ecs_nereid_water_test tests/ecs_nereid_water_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_water_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_water_test COMMAND aiverse_ecs_nereid_water_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
