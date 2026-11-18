@@ -131,6 +131,12 @@ public:
                     }
                 } else if(!canWrite(authenticatedPrincipal,request.command)) {
                     answer(Result::Denied,"PHYSIS server editor ACL denied");
+                } else if(hasPendingEdit()) {
+                    // There is no per-request correlation in the Stage 23
+                    // ECS field registry. Serializing admissions prevents
+                    // two equal desired sets from both receiving false ACKs
+                    // when only the first command actually committed.
+                    answer(Result::Conflict,"PHYSIS another field edit is pending");
                 } else if(!makeRoom(nowMs)) {
                     answer(Result::Rejected,"PHYSIS server dedupe cache is full");
                 } else {
@@ -176,6 +182,12 @@ public:
     }
 
 private:
+    bool hasPendingEdit() const {
+        return std::any_of(entries_.begin(),entries_.end(),
+            [](const auto& pair){
+                return pair.second.receipt.result==Result::Queued;
+            });
+    }
     static bool matches(
       const FieldRuntimeState& state,
       const std::map<std::string,std::pair<AuthoredFieldKind,std::string>>& desired) {
