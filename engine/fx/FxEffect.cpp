@@ -1,4 +1,5 @@
 #include "FxEffect.h"
+#include "SpectraParticleProgram.h"
 #include "engine/render/graph/ShaderGraph.h"
 #include <algorithm>
 #include <cmath>
@@ -965,11 +966,18 @@ bool parseEffect(const Json& j, const std::string& where, EffectDef& out, std::v
         EmitterDef d;
         if (!e.isObject()) { r.fail("", "expected an object"); continue; }
         for (auto& [k, v] : e.members())
-            if (k != "shaderGraph" && std::find_if(std::begin(kKnownKeys), std::end(kKnownKeys), [&](const char* n) { return k == n; }) == std::end(kKnownKeys))
+            if (k != "shaderGraph" && k != "particleProgram" && std::find_if(std::begin(kKnownKeys), std::end(kKnownKeys), [&](const char* n) { return k == n; }) == std::end(kKnownKeys))
                 r.fail(k, "unknown field");
         if (e.has("shaderGraph")) {
             try { render::graph::compile(e["shaderGraph"], "particle"); d.shaderGraph = e["shaderGraph"]; }
             catch (const std::exception& ex) { r.fail("shaderGraph", ex.what()); }
+        }
+        if (e.has("particleProgram")) {
+            spectra::program::Program compiled;
+            std::vector<std::string> vmErrors;
+            if (!spectra::program::compile(e["particleProgram"], compiled, vmErrors))
+                for (const auto& msg : vmErrors) r.fail("particleProgram", msg);
+            else d.particleProgram = e["particleProgram"];
         }
         if (e.has("texture")) {
             d.texture = e["texture"].str();
@@ -1029,6 +1037,7 @@ Json effectToJson(const EffectDef& def) {
     for (auto& d : def.emitters) {
         Json e = Json::object();
         if (!d.shaderGraph.isNull()) e.set("shaderGraph", d.shaderGraph);
+        if (!d.particleProgram.isNull()) e.set("particleProgram", d.particleProgram);
         if (d.texture != base.texture) e.set("texture", Json::string(d.texture));
         if (d.frameCols != 1 || d.frameRows != 1) { Json f = Json::array(); f.push(Json::number(int64_t(d.frameCols))); f.push(Json::number(int64_t(d.frameRows))); e.set("frames", f); }
         if (d.fps != base.fps) e.set("fps", numJ(d.fps));
