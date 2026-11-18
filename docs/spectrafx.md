@@ -942,6 +942,100 @@ function subgraphs, custom per-particle attribute debugging,
 profiler timelines and shader node codegen remain further
 work items.
 
+## Reusable typed function subgraphs (Stage 18)
+
+SpectraFX graph v2 now supports reusable **pure value functions**.
+Function bodies are nested typed value graphs, independent of
+rendering, gameplay genres and ECS state:
+
+```json
+{
+  "version": 2,
+  "functions": {
+    "scale_speed": {
+      "parameters": { "base": 1, "gain": 1 },
+      "returns": "number",
+      "nodes": [
+        { "id": "a", "type": "Parameter",
+          "properties": { "name": "base" } },
+        { "id": "b", "type": "Parameter",
+          "properties": { "name": "gain" } },
+        { "id": "out", "type": "Multiply",
+          "properties": {
+            "a": { "$node": "a" },
+            "b": { "$node": "b" }
+          } }
+      ],
+      "output": "out"
+    }
+  }
+}
+```
+
+A caller graph references the function with a `FunctionCall`
+value node:
+
+```json
+{"id":"scale","type":"FunctionCall","properties":{
+  "function":"scale_speed",
+  "arguments":{"base":{"$param":"speed"},"gain":1.5}
+}}
+```
+
+Function signatures declare typed default `parameters`, an output
+node ID and an optional strict `returns` type:
+`number`, `bool`, `string`, `vec2`, `vec3`, `vec4`.
+Calls inherit the caller's compile-time or normalized-age
+sampling context, allowing reusable fade/wind/response functions
+that compile into existing CPU FxRange curves. Function definitions
+contain only value DAG nodes, never Spawn/Update/Output stages.
+The graph compiler rejects unknown functions, wrong argument
+types, recursion (including disconnected definitions), more
+than 32 declared functions or more than eight nested calls.
+No native scripts, reflection or arbitrary executable code
+are evaluated.
+
+### Shared function asset libraries
+
+`engine/fx/SpectraFunctionAssets.h` provides
+`validateFunctionLibrary`, `mergeFunctionLibrary` and
+`FunctionLibraryAssets` with an injected file reader and
+last-known-good reload fallback. Library files use
+`fx/functions/<name>.vfxfn.json`:
+
+```json
+{"version":1,"functions":{"my_function":{
+  "parameters":{"x":1},
+  "returns":"number",
+  "nodes":[{"id":"result","type":"Parameter",
+            "properties":{"name":"x"}}],
+  "output":"result"
+}}}
+```
+
+Importing a library into a v2 graph explicitly copies its
+validated function definitions; existing function names with
+different bodies reject the import unless replace is explicitly
+requested. Import works with incomplete editor drafts, and
+the pure graph compiler still performs no filesystem IO.
+The native API is available from `engine/fx/SpectraFX.h`.
+
+MCP supports `fx_function_list`, `fx_function_get`,
+`fx_function_set`, `fx_function_import`, and
+`fx_function_export`. An import returns an edited graph in
+memory; the user explicitly publishes or saves a draft.
+The SpectraFX editor has a FunctionCall selector, embedded
+function JSON editor, plus import/export controls for reusable
+function-library names. Example assets:
+`examples/spectrafx/common_math.vfxfn.json` and
+`examples/spectrafx/function_calls_v2.vfx.json`.
+
+**Status:** full code committed, testing deliberately deferred.
+Functions compile pure values and age-sampled curves into the
+existing CPU emitter definitions; they do not yet define
+per-particle mutable attribute bytecode or programmable GPU
+simulation kernels.
+
 ## Validation checklist
 
 ```bash
