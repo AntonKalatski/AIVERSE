@@ -41,7 +41,7 @@ option(AIVERSE_BUILD_FPS_CLIENT "Build the FPS reference client" ${AIVERSE_BUILD
 if(AIVERSE_BUILD_FPS_CLIENT AND AIVERSE_DESKTOP)
     add_executable(aiverse_fps_client ../../apps/fps/client.cpp $<TARGET_OBJECTS:aiverse_runtime>)
     target_compile_definitions(aiverse_fps_client PRIVATE AIVERSE_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
-    target_link_libraries(aiverse_fps_client PRIVATE aiverse_runtime aiverse_authority aiverse_i18n aiverse_render2d aiverse_audio AIVERSE::animation_ecs)
+    target_link_libraries(aiverse_fps_client PRIVATE aiverse_runtime aiverse_authority aiverse_i18n aiverse_render2d aiverse_audio AIVERSE::MotionWeave)
 endif()
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_fps_transport_tests ../../tests/fps/transport.cpp)

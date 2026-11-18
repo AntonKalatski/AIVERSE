@@ -10,7 +10,7 @@
 #include "engine/world/WorldScene.h"
 #include "engine/platform/ContentReader.h"
 #include "engine/render/Renderer3D.h"
-#include "libraries/include/aiverselib/animation/EcsAnimationSystems.h"
+#include "libraries/include/aiverselib/motionweave/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
 #include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
@@ -52,7 +52,7 @@ struct App {
     std::map<uint8_t,uint32_t> characterLives;
     float characterScale=1.f,characterHeightOffset=0.f;
     bool characterBakedCrowd=false;
-    lib::animation::AnimationHotReloadRegistry animationReload;
+    motionweave::AnimationHotReloadRegistry animationReload;
     std::filesystem::path characterGraphFile;
     unsigned animationReloadFrame=0;
     i18n::Localization lang;
@@ -199,7 +199,7 @@ struct App {
                 e=characterPresentation.create();
                 characterEntities.emplace(remote.slot,e);
                 if(characterBakedCrowd) {
-                    auto& crowd=characterPresentation.add<lib::animation::AnimationCrowdComponent>(e);
+                    auto& crowd=characterPresentation.add<motionweave::AnimationCrowdComponent>(e);
                     crowd.model=characterModel.get();
                     crowd.idle=characterModel->findClip("Idle");
                     if(crowd.idle<0)crowd.idle=characterModel->findClip("Stand");
@@ -207,20 +207,20 @@ struct App {
                     crowd.run=characterModel->findClip("Run");
                     if(crowd.walk<0)crowd.walk=crowd.run;
                     crowd.death=characterModel->findClip("Death");
-                    characterPresentation.add<lib::animation::AnimationCrowdSampleComponent>(e);
+                    characterPresentation.add<motionweave::AnimationCrowdSampleComponent>(e);
                 } else {
-                    auto& asset=characterPresentation.add<lib::animation::AnimationAssetComponent>(e);
+                    auto& asset=characterPresentation.add<motionweave::AnimationAssetComponent>(e);
                     asset.model=characterModel.get();
                     asset.graph=characterGraph;
                     if(!characterGraphFile.empty())
-                        characterPresentation.add<lib::animation::AnimationGraphKeyComponent>(
-                            e,lib::animation::AnimationGraphKeyComponent{"fpsCharacter"});
-                    characterPresentation.add<lib::animation::AnimationPlayerComponent>(e);
-                    characterPresentation.add<lib::animation::AnimationPoseComponent>(e);
-                    characterPresentation.add<lib::animation::AnimationInputsComponent>(e);
-                    characterPresentation.add<lib::animation::AnimationGraphNotifiesComponent>(e);
-                    characterPresentation.add<lib::animation::AnimationBudgetComponent>(e);
-                    characterPresentation.add<lib::animation::AnimationSignificanceComponent>(e);
+                        characterPresentation.add<motionweave::AnimationGraphKeyComponent>(
+                            e,motionweave::AnimationGraphKeyComponent{"fpsCharacter"});
+                    characterPresentation.add<motionweave::AnimationPlayerComponent>(e);
+                    characterPresentation.add<motionweave::AnimationPoseComponent>(e);
+                    characterPresentation.add<motionweave::AnimationInputsComponent>(e);
+                    characterPresentation.add<motionweave::AnimationGraphNotifiesComponent>(e);
+                    characterPresentation.add<motionweave::AnimationBudgetComponent>(e);
+                    characterPresentation.add<motionweave::AnimationSignificanceComponent>(e);
                 }
             } else e=found->second;
             const auto knownLife=characterLives.find(remote.slot);
@@ -229,21 +229,21 @@ struct App {
             characterLives[remote.slot]=remote.life;
             const auto speed=render::length(visual(remote.velocity));
             if(characterBakedCrowd) {
-                auto& crowd=characterPresentation.get<lib::animation::AnimationCrowdComponent>(e);
+                auto& crowd=characterPresentation.get<motionweave::AnimationCrowdComponent>(e);
                 if(respawn){crowd.animator.setModel(nullptr);crowd.playing=-2;}
                 crowd.speed=speed;
                 crowd.dead=remote.health<=0;
             } else {
-                auto& player=characterPresentation.get<lib::animation::AnimationPlayerComponent>(e);
+                auto& player=characterPresentation.get<motionweave::AnimationPlayerComponent>(e);
                 if(respawn)player.restart=true;
-                auto& inputs=characterPresentation.get<lib::animation::AnimationInputsComponent>(e).overrides;
+                auto& inputs=characterPresentation.get<motionweave::AnimationInputsComponent>(e).overrides;
                 inputs.values.clear();
                 inputs.set("speed",speed);
                 inputs.set("moving",speed>.1f?1.f:0.f);
                 inputs.set("dead",remote.health<=0?1.f:0.f);
                 inputs.set("grounded",remote.grounded?1.f:0.f);
                 inputs.set("reloading",remote.reloadUntil?1.f:0.f);
-                auto& significance=characterPresentation.get<lib::animation::AnimationSignificanceComponent>(e);
+                auto& significance=characterPresentation.get<motionweave::AnimationSignificanceComponent>(e);
                 const float distance=render::length(visual(remote.pos-local.pos));
                 significance.pixels=720.f*1.8f/std::max(1.f,distance);
                 significance.importance=remote.team==local.team?1.25f:1.f;
@@ -251,16 +251,16 @@ struct App {
             }
         }
         if(characterBakedCrowd)
-            lib::animation::stepAnimationCrowd(characterPresentation,
+            motionweave::stepAnimationCrowd(characterPresentation,
                 float(std::clamp(dt,0.,.25)));
         else {
-            lib::animation::AnimationBudgetPolicy budget;
+            motionweave::AnimationBudgetPolicy budget;
             budget.fullRateSlots=32;budget.mediumRateSlots=96;
-            lib::animation::assignAnimationBudgets(characterPresentation,budget);
-            lib::animation::stepAnimationPresentation(characterPresentation,
+            motionweave::assignAnimationBudgets(characterPresentation,budget);
+            motionweave::MotionWeave::update(characterPresentation,
                 float(std::clamp(dt,0.,.25)));
-            lib::animation::dispatchAnimationCues(characterPresentation,
-                [&](const lib::animation::AnimationCue& cue) {
+            motionweave::dispatchAnimationCues(characterPresentation,
+                [&](const motionweave::AnimationCue& cue) {
                     if(cue.name!="step" && cue.name!="footstep" && cue.name!="land")
                         return; // weapon hits/reloads remain server-authoritative
                     for(const auto& [slot,entity]:characterEntities)
@@ -416,7 +416,7 @@ struct App {
                     draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
                     if(characterBakedCrowd) {
                         const auto* sample=characterPresentation.tryGetConst<
-                            lib::animation::AnimationCrowdSampleComponent>(found->second);
+                            motionweave::AnimationCrowdSampleComponent>(found->second);
                         if(sample && sample->valid) {
                             draw.baked=&sample->sample;
                             renderer.drawModel(draw);
@@ -424,7 +424,7 @@ struct App {
                         }
                     } else {
                         const auto* posed=characterPresentation.tryGetConst<
-                            lib::animation::AnimationPoseComponent>(found->second);
+                            motionweave::AnimationPoseComponent>(found->second);
                         if(posed && posed->valid) {
                             draw.nodeWorld=&posed->matrices;
                             draw.pose=&posed->local;

@@ -498,6 +498,12 @@ endif()
 # Genre-independent ECS animation presentation host for native C++ projects.
 add_library(aiverse_animation_ecs INTERFACE)
 add_library(AIVERSE::animation_ecs ALIAS aiverse_animation_ecs)
+# MotionWeave is the canonical public API name; the existing animation_ecs
+# target stays available to native projects and tests without a breaking change.
+add_library(aiverse_motionweave INTERFACE)
+add_library(AIVERSE::MotionWeave ALIAS aiverse_motionweave)
+add_library(AIVERSE::motionweave ALIAS aiverse_motionweave)
+target_link_libraries(aiverse_motionweave INTERFACE AIVERSE::animation_ecs)
 target_compile_features(aiverse_animation_ecs INTERFACE cxx_std_20)
 target_include_directories(aiverse_animation_ecs INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/libraries/include")
 if(NOT EMSCRIPTEN)
@@ -616,6 +622,13 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_asset_loader_tests tests/animation/asset_loader.cpp)
     target_link_libraries(aiverse_animation_asset_loader_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_montage_asset_loader COMMAND aiverse_animation_asset_loader_tests)
+endif()
+
+# Public MotionWeave API compatibility/standalone consumer check.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_api_tests tests/animation/motionweave_api.cpp)
+    target_link_libraries(aiverse_motionweave_api_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_api COMMAND aiverse_motionweave_api_tests)
 endif()
 
 set(AIVERSE_RUNTIME_SRC

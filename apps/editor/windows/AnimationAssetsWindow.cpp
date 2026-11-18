@@ -1,5 +1,6 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
+#include "libraries/include/aiverselib/motionweave/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/HumanoidProfile.h"
 #include <algorithm>
 #include <map>
@@ -10,7 +11,7 @@ namespace aiverse::editor {
 class AnimationAssetsWindow final : public EditorWindow {
 public:
     const char* id() const override{return "animation_assets";}
-    const char* title() const override{return "Анимация: аватары и монтаж";}
+    const char* title() const override{return "MotionWeave — Аватары и монтаж";}
     const char* group() const override{return "look";}
     const char* dockArea() const override{return "right";}
     bool openByDefault() const override{return false;}
@@ -120,7 +121,7 @@ private:
         avatar_.set("model",Json::string(model_));
         ImGui::TextWrapped("Автоматические имена проверяйте вручную; для Humanoid нужны Hips и Head.");
         ImGui::BeginChild("avatar-bones",ImVec2(0,320),ImGuiChildFlags_Borders);
-        for(const auto* role:lib::animation::kHumanoidRoleNames) {
+        for(const auto* role:motionweave::kHumanoidRoleNames) {
             ImGui::PushID(role);
             ImGui::TextUnformatted(role);
             std::string value=avatar_["bones"].getStr(role);

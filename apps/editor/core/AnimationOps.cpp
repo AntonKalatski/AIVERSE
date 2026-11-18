@@ -2,6 +2,7 @@
 #include "AnimationDocument.h"
 #include "engine/render/AnimationAsset.h"
 #include "engine/render/AnimationGraph.h"
+#include "libraries/include/aiverselib/motionweave/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/HumanoidProfile.h"
 #include "libraries/include/aiverselib/animation/RagdollAsset.h"
 #include "libraries/include/aiverselib/animation/RootMotionBaker.h"
@@ -41,20 +42,20 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
     };
     const auto makeMontage=[&ws](const Json& doc) {
         auto model=loadAnimationModel(ws,doc.getStr("model"));
-        lib::animation::MontageDefinition spec;
+        motionweave::MontageDefinition spec;
         spec.model=model.get();
         spec.slot=doc.getStr("slot","UpperBody");
         spec.blendIn=float(doc["blendIn"].toDouble(.1));
         spec.blendOut=float(doc["blendOut"].toDouble(.1));
         const auto mask=doc.getStr("maskRoot");
         if(!mask.empty()) {
-            spec.maskRoot=lib::animation::findNodePath(*model,mask);
+            spec.maskRoot=motionweave::findNodePath(*model,mask);
             if(spec.maskRoot<0)throw std::invalid_argument("unknown montage mask bone");
         }
         if(!doc["sections"].isArray())
             throw std::invalid_argument("montage sections must be an array");
         for(const auto& item:doc["sections"].items()){
-            lib::animation::MontageSection s;
+            motionweave::MontageSection s;
             s.name=item.getStr("name");
             s.clip=model->findClip(item.getStr("clip"));
             s.begin=float(item["begin"].toDouble());
@@ -64,7 +65,7 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
                 s.notifies.push_back({float(n["time"].toDouble()),n.getStr("name")});
             spec.sections.push_back(std::move(s));
         }
-        auto compiled=lib::animation::MontageDefinition::compile(std::move(spec));
+        auto compiled=motionweave::MontageDefinition::compile(std::move(spec));
         return doc; // asset validated; compiled pointers never outlive model
     };
     ws.registerOp({"animation_avatar_suggest",
@@ -72,8 +73,8 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
         Json::object(),[&ws](const Json& p){
             const auto file=p.getStr("model");
             auto model=loadAnimationModel(ws,file);
-            auto profile=lib::animation::humanoidProfileJson(
-                file,lib::animation::suggestHumanoidRoles(*model));
+            auto profile=motionweave::humanoidProfileJson(
+                file,motionweave::suggestHumanoidRoles(*model));
             Json r=Json::object();r.set("document",profile);return r;
         }});
     ws.registerOp({"animation_avatar_validate",
@@ -81,8 +82,8 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
         Json::object(),[&ws](const Json& p){
             auto doc=p["document"];
             auto model=loadAnimationModel(ws,doc.getStr("model"));
-            auto avatar=lib::animation::HumanoidAvatar::compile(
-                *model,lib::animation::readHumanoidProfile(doc));
+            auto avatar=motionweave::HumanoidAvatar::compile(
+                *model,motionweave::readHumanoidProfile(doc));
             Json r=Json::object();r.set("document",doc);
             r.set("mapped",Json::number(int64_t(
                 std::count_if(avatar.nodes.begin(),avatar.nodes.end(),
@@ -94,9 +95,9 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
         Json::object(),[&ws](const Json& p){
             const auto& profile=p["profile"];
             auto model=loadAnimationModel(ws,profile.getStr("model"));
-            auto avatar=lib::animation::HumanoidAvatar::compile(
-                *model,lib::animation::readHumanoidProfile(profile));
-            lib::animation::RagdollBuildOptions opt;
+            auto avatar=motionweave::HumanoidAvatar::compile(
+                *model,motionweave::readHumanoidProfile(profile));
+            motionweave::RagdollBuildOptions opt;
             const auto& options=p["options"];
             opt.radiusRatio=float(options["radiusRatio"].toDouble(.17));
             opt.density=float(options["density"].toDouble(750));
@@ -105,7 +106,7 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
             opt.collisionGroup=int(options.getInt("collisionGroup",-1));
             opt.tickRate=uint32_t(options.getInt("tickRate",60));
             opt.substeps=uint32_t(options.getInt("substeps",4));
-            auto rag=lib::animation::RagdollAsset::compile(avatar,{},opt);
+            auto rag=motionweave::RagdollAsset::compile(avatar,{},opt);
             Json r=Json::object();r.set("document",rag.scene());
             r.set("bodyCount",Json::number(int64_t(rag.bindings().size())));
             return r;
@@ -115,15 +116,15 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
         Json::object(),[&ws](const Json& p){
             auto model=loadAnimationModel(ws,p.getStr("model"));
             const int clip=model->findClip(p.getStr("clip"));
-            const int root=lib::animation::findNodePath(*model,p.getStr("root"));
+            const int root=motionweave::findNodePath(*model,p.getStr("root"));
             if(clip<0 || root<0)throw std::invalid_argument("clip or root bone not found");
-            lib::animation::RootMotionTracksResource library;
-            library.clips.push_back(lib::animation::bakeRootMotion(
+            motionweave::RootMotionTracksResource library;
+            library.clips.push_back(motionweave::bakeRootMotion(
                 *model,model->clips[size_t(clip)],root,
                 uint32_t(p.getInt("id",1)),uint32_t(p.getInt("rate",60)),
                 p.getBool("loop")));
             Json r=Json::object();
-            r.set("document",lib::animation::encodeRootMotionTracks(library));
+            r.set("document",motionweave::encodeRootMotionTracks(library));
             return r;
         }});
     ws.registerOp({"animation_montage_validate",
@@ -134,10 +135,10 @@ void registerAnimationOps(Workspace& ws){auto schema=Json::parse(R"({"type":"obj
     const auto validateAsset=[&ws,makeMontage](const std::string& kind,const Json& doc){
         if(kind=="avatar"){
             auto model=loadAnimationModel(ws,doc.getStr("model"));
-            lib::animation::HumanoidAvatar::compile(
-                *model,lib::animation::readHumanoidProfile(doc));
+            motionweave::HumanoidAvatar::compile(
+                *model,motionweave::readHumanoidProfile(doc));
         } else if(kind=="root_motion"){
-            (void)lib::animation::decodeRootMotionTracks(doc);
+            (void)motionweave::decodeRootMotionTracks(doc);
         } else if(kind=="montage"){
             (void)makeMontage(doc);
         } else if(kind=="ragdoll"){
