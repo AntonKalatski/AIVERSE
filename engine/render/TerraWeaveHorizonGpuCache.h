@@ -55,6 +55,7 @@ public:
     HorizonGpuRegionCache& operator=(const HorizonGpuRegionCache&)=delete;
     size_t size() const {return entries_.size();}
     size_t bytes() const {return occupiedBytes_;}
+    size_t evictions() const {return evictions_;}
 
     // Only matching authored-landscape generations may be restored. Stale
     // generations are explicitly evicted via prune() on render owner thread.
@@ -65,7 +66,7 @@ public:
         HorizonGpuRegion result=std::move(it->second.region);
         occupiedBytes_-=result.estimatedGpuBytes;
         entries_.erase(it);
-        return result;
+        return std::optional<HorizonGpuRegion>{std::move(result)};
     }
 
     void retain(gfx::Device& device,world::Cell cell,uint64_t revision,
@@ -125,10 +126,12 @@ private:
         if(it->second.region.model)
             render::releaseModel(device,*it->second.region.model);
         occupiedBytes_-=it->second.region.estimatedGpuBytes;
+        ++evictions_;
         entries_.erase(it);
     }
     std::map<world::Cell,Entry> entries_;
     size_t occupiedBytes_=0;
+    size_t evictions_=0; // LRU + invalidated terrain generations
     uint64_t stamp_=0;
 };
 
