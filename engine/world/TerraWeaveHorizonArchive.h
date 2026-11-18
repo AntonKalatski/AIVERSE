@@ -13,8 +13,8 @@
 namespace aiverse::terraweave {
 namespace horizon_archive_detail {
 
-inline constexpr uint32_t kMagic=0x32485754u; // "TWH2" in little endian
-inline constexpr uint32_t kVersion=2;
+inline constexpr uint32_t kMagic=0x33485754u; // "TWH3" in little endian
+inline constexpr uint32_t kVersion=3;
 inline constexpr size_t kHeaderBytes=24; // magic,version,fingerprint,checksum
 inline constexpr size_t kMaxBytes=20u*1024u*1024u;
 
@@ -65,6 +65,7 @@ inline void validate(const HorizonBake& b) {
        b.terrainResolution>96u||
        b.sideCm<=0||b.sideCm>kWorldLimitCm||
        b.terrainBeginCm<0||b.terrainBeginCm>kWorldLimitCm||
+       b.terrainSkirtDepthCm<0||b.terrainSkirtDepthCm>5000||
        b.originXcm<-kWorldLimitCm||b.originXcm>kWorldLimitCm||
        b.originZcm<-kWorldLimitCm||b.originZcm>kWorldLimitCm||
        b.cameraXcm<-kWorldLimitCm||b.cameraXcm>kWorldLimitCm||
@@ -79,7 +80,9 @@ inline void validate(const HorizonBake& b) {
     for(const auto& v:b.terrainVertices)
         if(v.xCm<-kWorldLimitCm||v.xCm>kWorldLimitCm||
            v.zCm<-kWorldLimitCm||v.zCm>kWorldLimitCm||
-           v.heightCm<-kWorldLimitCm||v.heightCm>kWorldLimitCm)
+           v.heightCm<-kWorldLimitCm||v.heightCm>kWorldLimitCm||
+           v.slopeXPermille < -1000000 || v.slopeXPermille > 1000000 ||
+           v.slopeZPermille < -1000000 || v.slopeZPermille > 1000000)
             throw std::invalid_argument("TerraWeave Horizon archive terrain vertex");
     for(const auto& c:b.clusters)
         if(c.centerXcm<-kWorldLimitCm||c.centerXcm>kWorldLimitCm||
@@ -123,6 +126,7 @@ inline uint64_t horizonArchiveFingerprint(
     add(static_cast<uint32_t>(settings.closeForestEndCm));
     add(static_cast<uint32_t>(settings.middleForestEndCm));
     add(static_cast<uint32_t>(settings.terrainBeginCm));
+    add(static_cast<uint32_t>(settings.terrainSkirtDepthCm));
     add(settings.terrainResolution);
     add(settings.atlasTilePixels);
     add(static_cast<uint32_t>(settings.canopyHeightCm));
@@ -143,7 +147,7 @@ inline std::vector<uint8_t> encodeHorizonArchive(
         throw std::invalid_argument("TerraWeave Horizon archive fingerprint");
     std::vector<uint8_t> out;
     out.reserve(kHeaderBytes+bake.atlasRgba.size()+
-                bake.clusters.size()*60+bake.terrainVertices.size()*24+100);
+                bake.clusters.size()*60+bake.terrainVertices.size()*32+104);
     put32(out,kMagic);
     put32(out,kVersion);
     put64(out,fingerprint);
@@ -151,6 +155,7 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     putI64(out,bake.originXcm);putI64(out,bake.originZcm);
     putI32(out,bake.sideCm);put32(out,bake.terrainResolution);
     putI32(out,bake.terrainBeginCm);
+    putI32(out,bake.terrainSkirtDepthCm);
     putI64(out,bake.cameraXcm);putI64(out,bake.cameraZcm);
     put32(out,bake.atlasWidth);put32(out,bake.atlasHeight);
     put32(out,static_cast<uint32_t>(bake.terrainVertices.size()));
@@ -159,6 +164,7 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     for(const auto& v:bake.terrainVertices) {
         putI64(out,v.xCm);putI64(out,v.zCm);
         putI32(out,v.heightCm);put32(out,v.colorRgba);
+        putI32(out,v.slopeXPermille);putI32(out,v.slopeZPermille);
     }
     for(const auto& c:bake.clusters) {
         putI64(out,c.centerXcm);putI64(out,c.centerZcm);
@@ -193,6 +199,7 @@ inline HorizonBake decodeHorizonArchive(
     b.originXcm=getI64(bytes,at);b.originZcm=getI64(bytes,at);
     b.sideCm=getI32(bytes,at);b.terrainResolution=get32(bytes,at);
     b.terrainBeginCm=getI32(bytes,at);
+    b.terrainSkirtDepthCm=getI32(bytes,at);
     b.cameraXcm=getI64(bytes,at);b.cameraZcm=getI64(bytes,at);
     b.atlasWidth=get32(bytes,at);b.atlasHeight=get32(bytes,at);
     const uint32_t terrainCount=get32(bytes,at);
@@ -212,6 +219,8 @@ inline HorizonBake decodeHorizonArchive(
         HorizonTerrainVertex v;
         v.xCm=getI64(bytes,at);v.zCm=getI64(bytes,at);
         v.heightCm=getI32(bytes,at);v.colorRgba=get32(bytes,at);
+        v.slopeXPermille=getI32(bytes,at);
+        v.slopeZPermille=getI32(bytes,at);
         b.terrainVertices.push_back(v);
     }
     b.clusters.reserve(clusterCount);
