@@ -231,6 +231,8 @@ private:
     // ClientTopDown.cpp: top-down heroes (rules / game.json "topDown"): sticks, buttons, keys / mouse, follow camera
     bool topDownActive() const;
     bool topDownTouchUi() const;
+    void applyRtsActions(const std::vector<std::string>& actions,bool allowOrders=true);
+    void topDownTimedActions(const std::vector<std::string>& actions);
     void topDownConfigure();
     bool topDownEvent(const platform::Event& e, bool uiWants,
                       const std::vector<std::string>& actions);   // true: consumed
