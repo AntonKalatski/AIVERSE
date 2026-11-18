@@ -98,9 +98,15 @@ public:
             auto it = bindings.find(event.type);
             if (it == bindings.end() || it->second.effect.empty()) continue;
             const Vec3& point = event.pos;
-            ps_.play(it->second.effect,
+            const fx::FxHandle handle = ps_.play(it->second.effect,
                 {float(point.x.toDouble()),float(point.y.toDouble()),float(point.z.toDouble())},
                 {0,1,0}, float(it->second.scale.toDouble()));
+            if (handle.valid()) {
+                // Keep recent one-shot handles so rollback can remove their
+                // remaining live particles, even after emission has ended.
+                if (oneShots_.size() >= kMaxTrackedCues) oneShots_.erase(oneShots_.begin());
+                oneShots_.push_back(handle);
+            }
         }
     }
 
@@ -112,6 +118,8 @@ public:
             ps_.kill(state.handle);
         }
         attached_.clear();
+        for (const auto handle : oneShots_) ps_.kill(handle);
+        oneShots_.clear();
         haveTick_ = false;
         lastTick_ = 0;
     }
@@ -130,8 +138,10 @@ private:
         if (state.killOnDetach) ps_.kill(state.handle);
         else ps_.stop(state.handle);
     }
+    static constexpr size_t kMaxTrackedCues = 65536;
     fx::ParticleSystem& ps_;
     std::unordered_map<uint64_t, Attached> attached_;
+    std::vector<fx::FxHandle> oneShots_;
     uint32_t lastTick_ = 0;
     bool haveTick_ = false;
 };
