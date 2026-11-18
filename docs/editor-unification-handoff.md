@@ -1815,3 +1815,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `7d741c1407822cf49b84a84639f4042fe7cce963`.
 - Updated `AGENTS.md` to reflect that weapon projectiles, throwable action projectiles and bomb-round cleanup are no longer legacy-only producers under `fps.ecsAuthority`. They now call a single `spawnProjectile` / `clearProjectiles` adapter to create/destroy canonical `ProjectileRuntime` ECS entities at their actual gameplay stage. The State vector remains for other legacy readers/writers until the complete migration, with exact game source ID, save v9, COW, network and event ordering gates.
 - **Verification:** documentation committed, native build and FPS test execution not performed.
+
+
+### 2026-11-18 — Fix actual macOS ECS hitscan resolution contact assertions
+- Implementation SHA: `9e5263a6e8b028c85c731e3da80c8033ab2d248f`.
+- User's `ecs_hitscan_resolution_test` aborted with "wrong closest hit fraction". `world::intersect` reports z=3 / dz=10 via truncating `Fixed::operator/`; the test expected nearest-rounded `Fixed::fromRatio(3,10)`. Also the emitted hit coordinate uses `origin + delta * fraction`, which is **not exactly** `3_fx` after quantization. The regression now checks `hit.fraction == 3_fx/10_fx` and `hit.point.z == 10_fx*(3_fx/10_fx)`, i.e. the actual deterministic engine arithmetic.
+- No production hitscan, damage ordering, or transport format changed. Native test rerun remains **pending**.
