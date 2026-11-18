@@ -180,5 +180,25 @@ int main() {
     CHECK(has(deadzoneActions.update(0.016f),"Throttle",Phase::Completed));
     CHECK(!deadzoneActions.state("Throttle")->active);
 
+    // Same-context collisions can be rejected, swapped or accepted explicitly.
+    InputSystem collisions;
+    CHECK(collisions.defineAction({"Walk",ValueType::Boolean}));
+    CHECK(collisions.defineAction({"Interact",ValueType::Boolean}));
+    MappingContext player{"Player"};
+    player.bind("Walk",{Device::Keyboard,11},{},{},true);
+    player.bind("Interact",{Device::Keyboard,12},{},{},false);
+    CHECK(collisions.registerContext(player));
+    CHECK(collisions.activateContext("Player",0));
+    CHECK(!collisions.rebind("Player",2,{Device::Keyboard,11},RebindPolicy::Reject));
+    CHECK(collisions.context("Player")->mappings[1].control.code==12);
+    CHECK(collisions.rebind("Player",2,{Device::Keyboard,11},RebindPolicy::Swap));
+    CHECK(collisions.context("Player")->mappings[0].control.code==12);
+    CHECK(collisions.context("Player")->mappings[1].control.code==11);
+    CHECK(collisions.rebind("Player",2,{Device::Keyboard,12},RebindPolicy::Allow));
+    const auto conflicts=collisions.conflicts();
+    CHECK(conflicts.size()==1);
+    CHECK(conflicts[0].higherContext=="Player");
+    CHECK(conflicts[0].shadowed);
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
