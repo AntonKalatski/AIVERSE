@@ -75,6 +75,17 @@ struct FieldEditSession {
             return;
         }
         source=sim;
+        // An already confirmed local edit may disappear after a rollback.
+        // Never keep presenting an obsolete "Applied" after a restore.
+        if(status==EditStatus::Applied) {
+            const auto* runtime=sim->world().resourceConst<physis::FieldRuntimeState>();
+            if(!runtime || sim->tick()<submittedTick ||
+               runtime->revision<=expectedRevision) {
+                status=EditStatus::Conflict;
+                message="PHYSIS состояние откатилось после предыдущего применения.";
+                return;
+            }
+        }
         std::string reason;
         if(status!=EditStatus::Queued) {
             if(!canSubmit(sim,&reason)) {

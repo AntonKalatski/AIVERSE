@@ -353,6 +353,49 @@ inline bool applyFieldEditCommand(Simulation& sim,const Command& command,
 // future add/type-swap edits remain persistable. Existing installFromMap stays
 // source-compatible and does NOT register this new resource. Save formats
 // differ by design; use the same opt-in policy when loading.
+
+// Stage 24 authenticated ingress adapter. It is intentionally NOT part of
+// the normal player InputFrame relay. The transport supplies a principal
+// derived from its *authenticated connection*, not from Command.player or
+// any untrusted packet field. The server callback implements its ACL.
+// Only then is a new system-slot Command constructed for deterministic replay.
+template<class Principal, class Authorizer>
+inline bool admitAuthorizedFieldEdit(Simulation& authoritative,
+                                     const Command& untrusted,
+                                     std::uint16_t hostType,
+                                     const Principal& connectionPrincipal,
+                                     Authorizer&& authorize,
+                                     std::uint32_t& scheduledTick,
+                                     std::string* error=nullptr) {
+    const auto fail=[&](const char* reason) {
+        if(error) *error=reason;
+        return false;
+    };
+    if(hostType==0 || untrusted.type!=hostType ||
+       untrusted.player==0 || untrusted.flags!=0 ||
+       !untrusted.units.empty() || untrusted.target!=kNullEntity)
+        return fail("PHYSIS untrusted field command has forbidden metadata");
+    // The callback must inspect a server-issued principal, not a client-
+    // asserted role. Caller must authenticate before using this function.
+    if(!authorize(connectionPrincipal,untrusted))
+        return fail("PHYSIS field editing denied by server permissions");
+    FieldEditBatch request;
+    if(!decodeFieldEditCommand(untrusted,request,error)) return false;
+    const auto* state=authoritative.world().resourceConst<FieldRuntimeState>();
+    if(!state || state->revision!=request.expectedRevision)
+        return fail("PHYSIS remote edit has stale revision");
+    Command trusted;
+    if(!encodeFieldEditCommand(request,hostType,trusted,error)) return false;
+    trusted.player=0;
+    trusted.tick=0;
+    trusted.seq=0;
+    scheduledTick=authoritative.submit(std::move(trusted));
+    if(scheduledTick==0)
+        return fail("PHYSIS authoritative command channel rejected request");
+    if(error) error->clear();
+    return true; // accepted for submission, NOT yet applied
+}
+
 inline bool installEditableFromMap(Simulation& sim,const Json& map) {
     auto options=optionsFromMap(map);
     if(!options) return false;
