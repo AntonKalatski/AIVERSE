@@ -2140,3 +2140,35 @@ shader sampling of resolved images. Run compiler + validation layers
 and fix any errors. Then complete remaining import formats, async
 readback/streaming and native editor inspection in separate stages,
 each followed by its own handoff.
+
+## Stage 4X — Vulkan 4x MSAA two-color resolve integration fixture (2026-11-18)
+
+**Code commit:** `a5009a998417f3e042044f7d8f484f8a07f65879`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**Files:** `tests/render/vulkan_tests.cpp`.
+
+**Source:** New Vulkan GPU fixture allocates two 4x multisample RGBA8
+render targets, one 4x depth attachment and two separate 1x resolve
+textures. It first renders independent red and green clears and samples
+both resolved textures into opposite screen halves for pixel assertions.
+It then tests a 4x `PipelineDesc.colorAttachmentCount=2` fragment shader
+writing blue/yellow into the two MRT slots, verifies the resolve outputs
+again and destroys every resource. The fixture prints an explicit skip if
+4x image creation is unsupported on the selected GPU; that skip is NOT a
+passing MSAA validation. It exercises the already-implemented 4V/4W
+Vulkan source stages without duplicating the other agent's code.
+
+**Compatibility:** Test-only source stage. No new public RHI API, ECS, save,
+network or runtime rendering changes.
+
+**Actual validation:** GitHub code commit succeeded. Native compiler,
+`aiverse_vulkan_tests`, Vulkan validation layers and GPU image
+assertions: **NOT RUN** (the execution container has no git checkout
+and cannot resolve github.com for clone). GitHub Actions latest results
+were queued, not passed. Do not claim Vulkan MSAA is validated.
+
+**Next:** Build `aiverse_vulkan_tests` and execute
+`ctest --test-dir build/texture-rhi --output-on-failure -R '^vulkan_backend$'`
+on real Vulkan SDK/Lavapipe, inspect validation errors and screen captures.
+Then complete GL/GLES MSAA and cross-platform regression tests.
+Commit the next code stage and a separate handoff as always.
