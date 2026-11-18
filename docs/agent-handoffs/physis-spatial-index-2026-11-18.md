@@ -9,6 +9,7 @@
 - `e06878166f98939f924ef8ca26f07236557cede0` — `engine/physis/PhysisWind.h`: shared exact Fixed wind/shelter evaluation through `localWindAtWith` / `windAtWith` ordered candidate visitors; original unindexed `localWindAt` / `windAt` wrappers preserved.
 - `36d411126712b7ef28b6d1dc065be9285989f63b` — `engine/physis/PhysisGravity.h`: shared gravity policy `gravityAtWith`, existing `gravityAt` unchanged externally; same additive Fixed accumulation and generation-safe Entity tie-break.
 - `44b4fe74de7ad0947dca6dc78c6f2f6c2a13b256` — `engine/physis/PhysisStorm.h`: shared `stormsAtWith`, existing `stormsAt` remains.
+- `d75f777d1d61727e6b9811108cde66b07ef1c255` — small warning-hygiene follow-up: explicitly mark the `World` argument of storm visitor helper unused.
 - `7c6e28f2bc37e1e2fb818f02ade9b58c7e886eb3`, `9156ae13eb429085712b11ca48dd7d411820b2f6` — new `engine/physis/PhysisSpatialIndex.h`, signed-bound overflow guard fix.
 - `aab95b15cf6b1f924612fb8ef20c86010a20ca8d` — `tests/physis_spatial_index_test.cpp`: ~400 spatial queries against old unindexed reference, all Fixed wind/gravity/storm components, negative positions, shelters, large-volume fallback, COW snapshot pinning and rebuild after mutation, invalid settings.
 - `0d9b9b621a30c8ce4a6902ca6d18a26610da5e93` — `engine/physis/PhysisDiagnostics.h`: `sampleDiagnosticRasterIndexed` shares same raster loop with old `sampleDiagnosticRaster`, using indexed 3D vector field lookups and Stage 15 direct ECS scalar layers.
