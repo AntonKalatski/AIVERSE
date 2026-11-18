@@ -1848,3 +1848,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - User's `fps` CTest failed at `tests/fps/tests.cpp:195` after a COW snapshot: `incremental->world().sharedResourceCount()==sharedResources` was false following `incremental->checksum()`. Root cause is `modules/fps/FpsModule.cpp::Module::hashState` calling mutable `state(sim)`, which calls `World::resource<State>()` and detaches a shared COW singleton during a read-only checksum. `authoritativeStateCopy` had the same read-side effect.
 - Both methods now load the State through `World::resourceConst<State>()` with a missing-state guard, so ordinary and ECS-authority checksums do not change resource ownership. `hashState` uses an explicit const-cast **only** to supply Archive's legacy non-const bidirectional IO API on its output-only writer path; `stateIo` and nested IO write fields only when `!archive.writing()`. No deep copy is required for the default non-authority checksum; ECS-authority mode already materializes a State copy from canonical components.
 - No gameplay step, save bytes, checksum algorithm or network format changed; fixes a snapshot-count side effect. Native FPS CTest rerun **not yet observed**.
+
+
+### 2026-11-18 — Explicit ECS-owned projectile mirror API declaration
+- **Implementation SHA:** `cc397b176f5a51a4dbe2cb0fdf49bf83c652d6e9`.
+- Updated `Module::syncDynamicEntities(Simulation&,bool projectProjectilesFromEcs=false)` public declaration in `modules/fps/FpsModule.h`, preserving single-argument call sites for legacy setup and v9 deserialization while allowing the end-of-tick mirror to derive `State::projectiles` from canonical ECS Runtime rather than overwriting ECS components with legacy vector data.
+- **Verification:** header commit only, implementation and mirror call migration pending. Native compilation not run at this intermediate commit.
