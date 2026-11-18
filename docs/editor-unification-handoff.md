@@ -1303,3 +1303,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `727d9ec271e258dac38787d300ca606f279c9eb0`.
 - `CMakeLists.txt` now adds `aiverse_ecs_hitscan_resolution_test`, links `aiverse_engine aiverse_world AIVERSE::libraries`, and registers CTest `ecs_hitscan_resolution_test`. The new GameModule fixture uses only public ECS APIs, no real RTS or FPS module linkage.
 - Verification: GitHub source commit only; no CMake configure/CTest or native runtime execution. Next: standalone runner registration and native library catalog package.
+
+
+### 2026-11-18 — Native agent skill documents queued impact save/hash APIs
+- **Implementation SHA:** `c5625676b797d516e55667470a295b12c1e61686`.
+- Updated `skills/gameplay/aiverse-ecs-impact-queue/SKILL.md`: use provided `saveOrderedImpactQueue`, `loadOrderedImpactQueue` and `hashOrderedImpactQueue` from `GameModule` for stable versioned bytes and full checksum, while World snapshots already clone the resource. Explicitly warns that snapshots do not serialize the byte save format automatically.
+- **Verification:** documentation only, native test remains unverified.
