@@ -395,7 +395,13 @@ public:
         struct PreviewBinding { const Mapping* mapping; Value value; };
         std::map<std::string,std::vector<PreviewBinding>> candidates;
         std::set<Control> previewConsumed;
-        bool hasMappingChords=false;
+        bool hasConditionalChords=false;
+        for(const auto& [actionName,definition]:actions_) {
+            (void)actionName;
+            for(const auto& trigger:definition.triggers)
+                if(trigger.kind==TriggerKind::Chord ||
+                   trigger.kind==TriggerKind::NotChord)hasConditionalChords=true;
+        }
         auto rebuildCandidates = [&](const std::map<std::string,bool>* levels) {
             candidates.clear();
             previewConsumed.clear();
@@ -407,11 +413,13 @@ public:
                     if (!levels) {
                         for (const auto& trigger : mapping.triggers)
                             if (trigger.kind==TriggerKind::Chord ||
-                                trigger.kind==TriggerKind::NotChord) hasMappingChords=true;
+                                trigger.kind==TriggerKind::NotChord) hasConditionalChords=true;
                     }
                     // A gated consuming binding should only reserve its control
                     // when the prerequisite Action levels actually satisfy it.
-                    if (levels && !chordSatisfied(mapping.triggers,*levels)) continue;
+                    if (levels && (!chordSatisfied(mapping.triggers,*levels) ||
+                                   !chordSatisfied(actions_.at(mapping.action).triggers,*levels)))
+                        continue;
                     const float raw = sample(mapping.control).value;
                     const Value v = applyModifiers({raw,0,0},mapping.modifiers);
                     if (!v.actuated()) continue;
@@ -471,10 +479,14 @@ public:
         // gates. Stop on convergence. In a priority/consumption feedback loop
         // with no fixed point, fall back deterministically to the conservative
         // initial snapshot rather than depend on iteration count or name order.
-        if (hasMappingChords) {
+        if (hasConditionalChords) {
             std::vector<std::map<std::string,bool>> seen{chordLevels};
             bool settled=false;
-            for (int pass=0; pass<8; ++pass) {
+            // A valid acyclic chain may need more than eight transitions.
+            // The action count bounds propagation depth; cap malformed
+            // native graphs to avoid unbounded presentation-frame work.
+            const int maxPasses=int(std::min<std::size_t>(actions_.size()+1,512));
+            for (int pass=0; pass<maxPasses; ++pass) {
                 const auto prior=chordLevels;
                 rebuildCandidates(&prior);
                 resolveLevels();
@@ -505,7 +517,8 @@ public:
                 const Value physicalValue = applyModifiers({raw.value,0,0}, mapping.modifiers);
                 const bool physicalDown = physicalValue.actuated();
                 const bool blocked = consumed[mapping.control];
-                const bool chordOK = chordSatisfied(mapping.triggers, chordLevels);
+                const bool chordOK = chordSatisfied(mapping.triggers, chordLevels) &&
+                    chordSatisfied(actionIt->second.triggers, chordLevels);
                 const bool eligible = !blocked && chordOK;
                 const Value converted = eligible ? physicalValue : Value{};
                 const bool down = converted.actuated();
