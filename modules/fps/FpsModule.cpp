@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <set>
 #include "engine/core/FixedMath.h"
+#include "libraries/include/aiverselib/genre/EcsTimedMechanics.h"
 #include "engine/world/OrientedBox.h"
 #include <stdexcept>
 
@@ -756,11 +757,19 @@ void Module::tick(Simulation& sim) {
         }
         a.input.buttons&=~uint32_t(WeaponMask);
         const auto& weapon=config_.weapons[a.weaponIndex];
-        int capacity=weapon.magazine+((a.attachments[a.weaponIndex]&4)?weapon.magazine/2:0);
-        if(a.reloadUntil&&sim.tick()>=a.reloadUntil) {
-            auto amount=std::min(capacity-a.ammo,a.reserve);a.ammo+=amount;a.reserve-=amount;a.reloadUntil=0;
-        }
-        if((input.buttons&Reload)&&!a.reloadUntil&&a.ammo<capacity&&a.reserve>0)a.reloadUntil=sim.tick()+weapon.reloadTicks;
+        const int capacity=weapon.magazine+((a.attachments[a.weaponIndex]&4)?weapon.magazine/2:0);
+        // Transitional native adapter: the ECS ActorRuntime is canonical between
+        // ticks when ecsAuthority is ON, and State::actors remains the legacy
+        // tick workspace. Do not create parallel authoritative ammo components.
+        // Both generic ECS hosts and FPS now share the SAME reload algorithm.
+        lib::genre::WeaponStateComponent reloadWeapon{a.ammo,a.nextFire};
+        lib::genre::WeaponReloadComponent reloadState{
+            a.reserve,capacity,weapon.reloadTicks,a.reloadUntil};
+        lib::genre::stepWeaponReload(reloadWeapon,reloadState,sim.tick(),
+                                      (input.buttons&Reload)!=0);
+        a.ammo=reloadWeapon.ammo;
+        a.reserve=reloadState.reserve;
+        a.reloadUntil=reloadState.finishesAt;
         bool trigger=(input.buttons&Fire)!=0;
         if(trigger&&!a.downed&&(!a.vehicle||canFireFromVehicle(s,a))&&a.activeAction==Action::None&&!a.blockHeld&&sim.tick()>=a.staggerUntil&&(a.owned&(1u<<a.weaponIndex))&&(weapon.automatic||!a.fireHeld)&&!a.reloadUntil&&a.ammo>0&&sim.tick()>=a.nextFire&&sim.tick()>=a.switchUntil)shoot(sim,a);
         a.fireHeld=trigger;
