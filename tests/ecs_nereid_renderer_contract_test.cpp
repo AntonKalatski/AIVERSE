@@ -616,5 +616,49 @@ int main() {
           compositeShader.find("TEX0(warped)")!=std::string::npos &&
           compositeShader.find("scatterWeight")!=std::string::npos,
           "shared GLSL/Metal compositor must contain ripple and scattering");
+    // Stage 20: explicit quality budgets and near-surface camera blend.
+    const auto offBudget=render::postFxUnderwaterBudget(render::PostFxQuality::Off);
+    const auto lowBudget=render::postFxUnderwaterBudget(render::PostFxQuality::Low);
+    const auto medBudget=render::postFxUnderwaterBudget(render::PostFxQuality::Medium);
+    const auto highBudget=render::postFxUnderwaterBudget(render::PostFxQuality::High);
+    check(offBudget.samples==0 && offBudget.distortion==0.f &&
+          lowBudget.samples==1 && medBudget.samples==2 &&
+          highBudget.samples==3 &&
+          lowBudget.scattering<medBudget.scattering &&
+          medBudget.scattering<highBudget.scattering,
+          "underwater mobile quality cost must increase monotonically");
+    const auto topCamera=world::sampleNereidUnderwater(
+        opticalVolumes,{0_fx,Fixed::fromRatio(101,10),0_fx});
+    const auto belowCamera=world::sampleNereidUnderwater(
+        opticalVolumes,{0_fx,Fixed::fromRatio(99,10),0_fx});
+    check(!topCamera.submerged && topCamera.surfaceBlend>0.f &&
+          topCamera.surfaceBlend<0.5f,
+          "above-water camera must receive a small transition weight");
+    check(belowCamera.submerged && belowCamera.surfaceBlend>0.5f &&
+          belowCamera.surfaceBlend<1.f,
+          "submerged near-surface camera must smoothly gain optical weight");
+    check(!world::sampleNereidUnderwater(
+        opticalVolumes,{0_fx,11_fx,0_fx}).submerged,
+        "camera well above water should remain unsubmerged");
+    render::PostFxUnderwater nearTarget{};
+    nearTarget.submerged=false;
+    nearTarget.surfaceBlend=topCamera.surfaceBlend;
+    nearTarget.absorption=0.4f;
+    const auto partialState=render::advancePostFxUnderwater({},nearTarget,0.1f);
+    check(partialState.blend>0.f && partialState.blend<0.5f &&
+          partialState.absorption>0.f,
+          "surface transition may begin before canonical submersion");
+    nearTarget.surfaceBlend=belowCamera.surfaceBlend;
+    nearTarget.submerged=true;
+    auto crossingState=render::advancePostFxUnderwater(
+        partialState,nearTarget,0.1f);
+    check(crossingState.blend>partialState.blend &&
+          crossingState.crossing>0.f,
+          "underwater boundary crossing must fade without a hard color jump");
+    const std::string mobileShader(render::postfx::kComposite);
+    check(mobileShader.find("underwater2.z > 1.5")!=std::string::npos &&
+          mobileShader.find("underwater2.z > 2.5")!=std::string::npos &&
+          mobileShader.find("TEX0(warped)")!=std::string::npos,
+          "shared shader must expose bounded tier-dependent distortion");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
