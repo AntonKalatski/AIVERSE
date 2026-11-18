@@ -205,6 +205,19 @@ inline const char* kComposite = R"(
         col += vec3((pfHash(g + px.w * vec2(17.0, 31.0)) - 0.5) * gain.w);
     }
 #endif
+#ifdef PF_UNDERWATER
+    {
+        // Prisma owns the full-screen pass; NEREID only supplies camera
+        // volume optics. Beer-Lambert extinction approximates view distance
+        // with a bounded camera-depth baseline; no new texture slots.
+        float opticalDistance = min(underwater1.y + 5.0, 120.0);
+        float extinction = 1.0 - exp(-underwater1.x * opticalDistance);
+        float weight = clamp(underwater0.w * max(0.12, extinction), 0.0, 1.0);
+        col = mix(col, underwater0.rgb, weight);
+        // Submerged ambient light falls with depth but never goes fully dark.
+        col *= 1.0 - underwater0.w * clamp(underwater1.y * 0.012, 0.0, 0.35);
+    }
+#endif
 #ifdef PF_FADE
     col = mix(col, fade.rgb, fade.w);
 #endif
