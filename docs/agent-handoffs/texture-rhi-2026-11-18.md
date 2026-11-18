@@ -3374,3 +3374,41 @@ API in the native AI skill. Add editor resource telemetry showing
 the public page cache stats and page-table entries. GPU texture
 readback tests, complete OpenEXR/Basis transcoding, rendering
 integration and platform builds are still outstanding.
+
+## Stage 8D — read-only selection and basic 2D GPU thumbnail preview (2026-11-18)
+
+**Code commit:** `b4af34c7f4d7c437d036c9b4ffd4202df7b7353e`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Path:** `apps/editor/windows/TextureResourcesWindow.cpp`.
+
+**Implementation:** Editor GPU texture resource window now supports
+click-to-select a live resource handle and a read-only ImGui preview
+for ordinary single-sampled, uncompressed, non-depth Texture2D
+resources. It reuses the same ImGui texture-handle binding and
+render-target vertical orientation convention as the existing
+`Viewport::image`, without allocating/destroying GPU textures
+or modifying their contents. Selection is invalidated when its
+resource is no longer present in the live inventory. Array,
+cubemap, multisample and depth resources show an explicit
+"readback required" message instead of incorrectly binding
+them as sampler2D.
+
+**Compatibility:** No changes to `gfx::Device`, ECS/gameplay,
+saves/network or material shaders. The optional GPU editor
+inspector remains closed by default.
+
+**Limitations:** The preview is a native ImGui texture binding,
+not a GPU readback or per-mip/layer color inspection. Filtered
+float/typed 2D formats can still differ by sampler support;
+actual GPU validation and backend-specific ImGui bindings
+remain outstanding.
+
+**Verification:** GitHub commit confirmed. Native C++/ImGui
+compilation, editor launch and per-backend rendering:
+**NOT RUN**. Latest CI not confirmed green.
+
+**Next:** Build the editor, validate the texture window under
+GL33, Metal and Vulkan. Add readback-based slice/face preview
+for arrays and depth only if the backend supports the required
+TextureReadbackDesc, and never block the render thread.
+Continue code and handoff commits separately.
