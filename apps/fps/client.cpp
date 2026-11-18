@@ -766,6 +766,11 @@ struct App {
             auto transform=render::mat4::translate(visual(world::relativeTo(base,origin,32)))*render::mat4::scale(visual(b.max-b.min));
             drawSceneMesh(transform,id==1?render::float4{0.18f,0.23f,0.22f,1}:render::float4{0.4f,0.46f,0.5f,1});
         }
+        // Stage remote character draws in one ordered View stream. Their
+        // poses are authored by characterPresentation above; the generic
+        // View must never evaluate those graphs a second time.
+        ::aiverse::view::ScenePacketBatch remotePackets;
+        remotePackets.reserve(client->snapshot().actors.size());
         for(const auto& remote:client->snapshot().actors)
             if(remote.slot!=actor.slot &&
                (remote.health>0 || showRemoteDeathMontage(remote))) {
@@ -790,9 +795,9 @@ struct App {
                         packet.id=remote.slot;
                         packet.generation=remote.life;
                         packet.draw=packetDraw;
-                        // This client already evaluates its own optional
-                        // MotionWeave pose. Do not duplicate evaluation.
-                        genericSceneView.submitOne(renderer,packet);
+                        // Precomputed pose/baked sample: no graph attached,
+                        // so View only forwards the already-evaluated result.
+                        remotePackets.add(std::move(packet));
                     };
                     if(characterBakedCrowd) {
                         const auto* sample=characterPresentation.tryGetConst<
@@ -816,9 +821,20 @@ struct App {
             }
             if(!animated) {
                 auto transform=render::mat4::translate(position)*render::mat4::scale({0.6f,float(fps::stanceHeight(remote,config.motor).toDouble()),0.6f});
-                drawSceneMesh(transform,remote.team==actor.team?render::float4{0.1f,0.5f,0.9f,1}:render::float4{0.9f,0.2f,0.1f,1});
+                ::aiverse::view::MeshObject fallback;
+                fallback.mesh=&cube;
+                fallback.world=transform;
+                fallback.color=remote.team==actor.team
+                    ?render::float4{0.1f,0.5f,0.9f,1}
+                    :render::float4{0.9f,0.2f,0.1f,1};
+                remotePackets.add(std::move(fallback));
             }
         }
+        // Precomputed model/mesh packets are intentionally NOT passed to
+        // View::update: the client has already advanced MotionWeave once
+        // and copying them into another presentation World would double
+        // animate or reset montage/phase state.
+        genericSceneView.submitPackets(renderer,remotePackets);
         // Generic ordered View packet stream: the host creates ordinary
         // geometry draws without exposing gameplay meaning to the renderer.
         ::aiverse::view::ScenePacketBatch worldPackets;
