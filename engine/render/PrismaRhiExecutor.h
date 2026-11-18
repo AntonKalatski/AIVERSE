@@ -79,17 +79,31 @@ public:
             }
         }
         for (const auto& pass : graph.passes()) {
-            if (pass.kind == PrismaGraphPassKind::Copy &&
-                (pass.reads.size() != 1 || pass.writes.size() != 1)) {
-                result.error = "PRISMA RHI: Copy requires exactly one read and write";
-                return result;
+            if (pass.kind == PrismaGraphPassKind::Copy) {
+                if (pass.reads.size() != 1 || pass.writes.size() != 1) {
+                    result.error = "PRISMA RHI: Copy requires exactly one read and write";
+                    return result;
+                }
+                const auto src = pass.reads.front(), dst = pass.writes.front();
+                if (src >= graph.resources().size() || dst >= graph.resources().size()) {
+                    result.error = "PRISMA RHI: invalid Copy resource";
+                    return result;
+                }
+                const auto& a = graph.resources()[src];
+                const auto& b = graph.resources()[dst];
+                if (a.format != PrismaGraphFormat::RGBA8 ||
+                    b.format != PrismaGraphFormat::RGBA8 ||
+                    a.width != b.width || a.height != b.height) {
+                    result.error = "PRISMA RHI: copyColor requires matching RGBA8 targets";
+                    return result;
+                }
             }
             if (pass.kind == PrismaGraphPassKind::Compute && !device_.supportsCompute()) {
                 result.error = "PRISMA RHI: compute unsupported on device";
                 return result;
             }
             if (pass.kind == PrismaGraphPassKind::Raster) {
-                if (pass.writes.size() != 1) {
+                if (pass.writes.size() != 1 || pass.writes.front() >= graph.resources().size()) {
                     result.error = "PRISMA RHI: raster currently requires one color output";
                     return result;
                 }
