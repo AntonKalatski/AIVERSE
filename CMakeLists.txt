@@ -612,6 +612,12 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_cues_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_cues COMMAND aiverse_animation_cues_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_asset_loader_tests tests/animation/asset_loader.cpp)
+    target_link_libraries(aiverse_animation_asset_loader_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_montage_asset_loader COMMAND aiverse_animation_asset_loader_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
