@@ -3,6 +3,7 @@
 #pragma once
 #include "PhysisDisasters.h"
 #include "PhysisWind.h"
+#include "PhysisGravity.h"
 #include "../sim/Simulation.h"
 
 namespace aiverse::physis {
@@ -42,6 +43,13 @@ inline void io(Archive& a, WindZone& v) {
 inline void io(Archive& a, WindShelter& v) {
     a(v.center, v.radiusMeters, v.attenuation);
 }
+inline void io(Archive& a, GravitySettings& v) {
+    a(v.baseline, v.maxAcceleration);
+}
+inline void io(Archive& a, GravityField& v) {
+    a(v.mode, v.center, v.radiusMeters, v.acceleration, v.radialMagnitude,
+      v.priority, v.overrideBaseline, v.enabled);
+}
 inline void io(Archive& a, HazardCell& v) {
     a(v.fuel, v.fire, v.waterDepth, v.quake);
 }
@@ -68,6 +76,8 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false) 
     simulation.registerPersistentComponent<SurfaceMaterial>("physis.material", 1);
     simulation.registerPersistentComponent<WindZone>("physis.wind_zone", 1);
     simulation.registerPersistentComponent<WindShelter>("physis.wind_shelter", 1);
+    simulation.registerPersistentComponent<GravityField>("physis.gravity_field", 1);
+    simulation.registerPersistentResource<GravitySettings>("physis.gravity_settings", 1);
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
