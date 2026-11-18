@@ -37,6 +37,25 @@ The MCP commands work in editor and headless `aiversemcp` via `Workspace::call`;
 - Node `position:[x,y]` is authoring metadata; compilation and runtime effects ignore it. Older graphs without positions remain compatible.
 - Check `view_screenshot {window:"scene"}` after a successful preview. All interactive GUI results still require macOS/Windows manual validation; unit-test source presence alone is not verification.
 
+## Typed graph module inspector (stage 9)
+
+The visual **SpectraFX** window now offers a **Типизированные модули**
+section per selected node. Use it for common Spawn/Initialize/Update/Output
+fields (number, integer, bool, string, choice and Vector3); the editor
+validates values against `engine/fx/SpectraModuleSchema.h` and preserves
+unrelated node properties. Choose `+` to add a field and `x` to remove
+an explicit override. Use **Расширенные свойства (JSON)** for curves,
+gradients, nested modules and unsupported fields; a complex value must
+**never** be flattened by a typed control.
+
+Native projects may use `spectra::fieldsForNode(type)`,
+`spectra::validateTypedField(field,value,error)`,
+`spectra::applyTypedField(node,key,value,error)`, and
+`spectra::removeTypedField(node,key,error)`, available from
+`engine/fx/SpectraFX.h`. The parser `fx::parseEffect` remains the final
+source of truth. CTest source was extended but real compilation/tests
+have **NOT RUN** in this session. See stage 9 handoff.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
