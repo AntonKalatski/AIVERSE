@@ -1158,6 +1158,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
+    prisma_.setViewId(3ULL);
         prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
