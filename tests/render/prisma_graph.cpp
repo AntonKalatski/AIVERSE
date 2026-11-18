@@ -393,10 +393,12 @@ void bloomChainGraphContract() {
             }
             graph.addPass(pass("prefilter", {src}, {down[0]}));
             for (int i = 1; i < levels; ++i)
-                graph.addPass(pass("downsample", {down[i-1]}, {down[i]}));
+                graph.addPass(pass((std::string("downsample-") + std::to_string(i)).c_str(),
+                                   {down[i-1]}, {down[i]}));
             PrismaGraphId low = down.back();
             for (int i = levels - 2; i >= 0; --i) {
-                graph.addPass(pass("upsample", {low, down[i]}, {up[i]}));
+                graph.addPass(pass((std::string("upsample-") + std::to_string(i)).c_str(),
+                                   {low, down[i]}, {up[i]}));
                 low = up[i];
             }
             const auto plan = graph.compile();
