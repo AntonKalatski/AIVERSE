@@ -101,3 +101,16 @@ Handoff documentation SHA:
 If several agents commit concurrently, refresh the latest document and append
 your entry preserving everyone else's notes. Never copy older documentation
 over a newer version. No green CI logs means no passing-CI claim.
+
+## Completed stage 4 — NativeModule + actual RTS persistence regression (2026-11-18)
+
+- **Implementation SHA:** `a10a9a87e468465eeacaed113f61b58cea46f007`, branch `feature/universal-entity-inspector-fps`, PR #7.
+- **Changed files:** `tests/ecs_native_rts_integration_test.cpp` (new), `CMakeLists.txt` (CTest registration).
+- **Behavior/ownership:** an actual `game::NativeModule` is injected through `game::RtsModule(std::vector<NativeDefinition>)`, not a synthetic GameModule. `NativeModule::setup` registers a custom `Counter` pool and `Ledger` resource and persists entity identity in `NativeStore`; its real tick updates both fields.
+- **Coverage added:** two real RTS simulation peers with matching checksum ticks; v10 byte save/load and checksum; COW snapshot restoration and post-reload replay; rejection of unregistered rogue pool; unchanged v9 save when no native registration; corrupt checksum must reject and preserve live simulation state.
+- **Compatibility:** no production runtime behavior or network protocol changed; only a test target registered for `AIVERSE_BUILD_TESTS`. The new test calls existing `RtsModule::serializeState` and built-in `NativeModules::serialize/hash`. `NativeStore` remains the module's explicit state and custom component/resource data are owned by registered ECS.
+- **Checks actually executed:** inspected GitHub source and recorded CMake target/linking; `git ls-remote https://github.com/chromealex/AIVERSE.git HEAD` attempted in available local container and failed with `Could not resolve host: github.com`. Native CMake compilation, CTest, AddressSanitizer, real network: **NOT RUN**.
+- **Latest CI at handoff:** CI: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451051); AIVERSE Studio validation: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451024); ECS 2.0 experimental checks: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451070); GPU batching focused regression: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451007).
+- **Risks/limits:** compilation/linkage on macOS/Windows/Linux is unproven. The new test uses repository `templates/mushrooms` files; assert those paths exist at test runtime. COW fixture covers in-process snapshots, not an actual UDP session or cross-CPU determinism.
+- **Next action:** in a full checkout run `cmake --build <build> --target aiverse_ecs_native_rts_integration_test` and `ctest --test-dir <build> -R '^ecs_native_(persistence|rts_integration)_test$' --output-on-failure`. Fix native diagnostics, append actual result and only then proceed with persisted schema corruption and network session tests.
+

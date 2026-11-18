@@ -1789,3 +1789,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `f5f61276826a3a5f5fa32388413e3a47b5013d8d`.
 - Updated `tests/fps/tests.cpp` main to execute `ecsProjectileRoundResetParity()` alongside weapon/grenade spawn parity. The new regression is called in the standard `aiverse_fps_tests` executable, not a standalone unused source fixture.
 - **Verification:** source edit committed; native compile, CTest execution and actual bomb-mode checks remain unverified. Review both default and COW runs before making ECS authority default.
+
+### 2026-11-18 — Real RTS NativeModule persistence integration fixture
+- **Code SHA:** `a10a9a87e468465eeacaed113f61b58cea46f007` on PR #7 `feature/universal-entity-inspector-fps`.
+- **Files:** `tests/ecs_native_rts_integration_test.cpp`, `CMakeLists.txt`.
+- New CTest uses the actual RTS and NativeModules paths with `Counter` and `Ledger` persistent ECS state. It tests per-tick peer hashes, v10 save, COW rollback, replay, unregistered pool rejection, legacy v9, corrupt-save rejection.
+- No gameplay defaults, v9-compatible games, or network packets were changed. Native compile and CTest were NOT RUN because the local container cannot resolve `github.com`. Workflow state: CI: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451051); AIVERSE Studio validation: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451024); ECS 2.0 experimental checks: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451070); GPU batching focused regression: queued (https://github.com/chromealex/AIVERSE/actions/runs/44263451007).
+- **Next:** build/test the two `ecs_native_*` targets on a full checkout, report actual failures and fix before enabling production use. Full handoff: `docs/agent-handoffs/native-ecs-persistence.md`.
+
