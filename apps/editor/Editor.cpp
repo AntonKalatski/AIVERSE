@@ -1115,6 +1115,8 @@ void Editor::handleShortcuts() {
     ImGuiIO& io = ImGui::GetIO();
     const bool mod = io.KeyCtrl || io.KeySuper;
     if (showPicker_ || io.WantTextInput) return;
+    for (const auto& window : windows_)
+        if (window->open && window->captureGlobalShortcuts()) return;
     if (mod && ImGui::IsKeyPressed(ImGuiKey_S, false) && !doc().path.empty()) saveMap(doc().path);
     if (mod && ImGui::IsKeyPressed(ImGuiKey_Z, false) && !playing()) { if (io.KeyShift) doc().redo(); else doc().undo(); selection = {}; }
     if (mod && ImGui::IsKeyPressed(ImGuiKey_Y, false) && !playing()) { doc().redo(); selection = {}; }
