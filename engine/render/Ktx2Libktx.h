@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #if defined(AIVERSE_TEXTURE_WITH_LIBKTX)
 #include <ktx.h>
@@ -198,6 +199,158 @@ inline gfx::TextureHandle uploadKtx2WithLibktx(
     Ktx2LibktxOptions options={}) {
     return uploadKtx2WithTranscoder(device,encoded,
              makeLibktxBasisTranscoder(device,options),upload,error);
+}
+
+
+// Khronos libktx supports the UASTC_HDR -> RGBA_HALF transcoder target.
+// This is intentionally separate from CompressedImage: its CPU fallback
+// contract is RGBA8, which would lose all HDR range and sign information.
+// Every mip and array/cube/volume slice is uploaded as linear RGBA16F.
+inline gfx::TextureHandle uploadKtx2UastcHdrWithLibktx(
+    gfx::Device& device,std::string_view encoded,std::string& error) {
+    error.clear();
+#if defined(AIVERSE_TEXTURE_WITH_LIBKTX)
+    ktx2_bridge_detail::Source src;
+    if (!ktx2_bridge_detail::inspect(encoded,src,error)) return {};
+    if (!src.basis || encoded.size()>size_t(512)<<20 ||
+        !device.supports(gfx::PixelFormat::RGBA16F)) {
+        error="KTX2 HDR: invalid Basis source or RGBA16F GPU support unavailable";
+        return {};
+    }
+    ktxTexture2* raw=nullptr;
+    const KTX_error_code status=ktxTexture2_CreateFromMemory(
+        reinterpret_cast<const ktx_uint8_t*>(encoded.data()),
+        ktx_size_t(encoded.size()),KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT,&raw);
+    if (status!=KTX_SUCCESS || !raw) {
+        if(raw)ktxTexture2_Destroy(raw);
+        error="KTX2 HDR: libktx could not load the UASTC HDR container";
+        return {};
+    }
+    std::unique_ptr<ktxTexture2,decltype(&ktxTexture2_Destroy)>
+        texture(raw,&ktxTexture2_Destroy);
+    if (!ktxTexture2_NeedsTranscoding(texture.get()) ||
+        !ktxTexture2_IsHDR(texture.get()) ||
+        ktxTexture2_GetOETF(texture.get())==KHR_DF_TRANSFER_SRGB) {
+        error="KTX2 HDR: only linear UASTC_HDR Basis textures are accepted";
+        return {};
+    }
+    if (ktxTexture2_TranscodeBasis(texture.get(),
+                                   KTX_TTF_RGBA_HALF,0)!=KTX_SUCCESS) {
+        error="KTX2 HDR: native UASTC_HDR to RGBA_HALF transcode failed";
+        return {};
+    }
+    if (int(texture->baseWidth)!=src.width ||
+        int(texture->baseHeight ? texture->baseHeight : 1)!=src.height ||
+        int(texture->baseDepth ? texture->baseDepth : 1)!=src.depth ||
+        int(texture->numLayers ? texture->numLayers : 1)!=src.layers ||
+        int(texture->numFaces)!=src.faces ||
+        int(texture->numLevels)!=src.mips ||
+        (texture->numDimensions==1)!=src.oneD ||
+        (texture->numDimensions==3)!=src.volume) {
+        error="KTX2 HDR: transcoding changed original texture topology";
+        return {};
+    }
+    const ktxTexture* base=reinterpret_cast<const ktxTexture*>(texture.get());
+    const uint8_t* bytes=ktxTexture_GetData(const_cast<ktxTexture*>(base));
+    const size_t size=size_t(ktxTexture_GetDataSize(
+        const_cast<ktxTexture*>(base)));
+    if (!bytes || !size || size>(size_t(512)<<20)) {
+        error="KTX2 HDR: missing or oversized transcoded half pixels";
+        return {};
+    }
+
+    gfx::TextureDesc desc;
+    desc.width=src.width;desc.height=src.height;desc.depth=src.depth;
+    desc.arrayLayers=src.layers*src.faces;
+    desc.format=gfx::PixelFormat::RGBA16F;
+    desc.mipLevels=src.mips;
+    desc.dimension=src.volume ? gfx::TextureDimension::Texture3D :
+        src.oneD ? gfx::TextureDimension::Texture1D :
+        src.faces==6 ? (src.layers==1 ? gfx::TextureDimension::Cube :
+                          gfx::TextureDimension::CubeArray) :
+        src.layers==1 ? gfx::TextureDimension::Texture2D :
+                        gfx::TextureDimension::Texture2DArray;
+    if (gfx::validateTextureDesc(desc)!=gfx::TextureDescError::None ||
+        !device.supportsTextureDimension(desc.dimension)) {
+        error="KTX2 HDR: unsupported GPU dimension for UASTC HDR resource";
+        return {};
+    }
+    size_t total=0;
+    for (int level=0;level<src.mips;++level) {
+        const size_t width=size_t(std::max(1,src.width>>level));
+        const size_t height=size_t(std::max(1,src.height>>level));
+        const size_t depth=size_t(std::max(1,src.depth>>level));
+        const size_t count=size_t(src.layers)*size_t(src.faces)*
+                           (src.volume ? depth : 1u);
+        if (width>(size_t(512)<<20)/8/height ||
+            width*height*8>(size_t(512)<<20)/count ||
+            total>(size_t(512)<<20)-width*height*8*count) {
+            error="KTX2 HDR: expanded mip chain exceeds 512MiB budget";
+            return {};
+        }
+        const size_t imageBytes=width*height*8;
+        for (int layer=0;layer<src.layers;++layer)
+            for (int face=0;face<src.faces;++face)
+                for (int slice=0;slice<(src.volume ? int(depth) : 1);++slice) {
+                    const uint32_t faceSlice=uint32_t(
+                        src.volume ? slice : face);
+                    ktx_size_t offset=0;
+                    if (ktxTexture2_GetImageOffset(texture.get(),
+                             ktx_uint32_t(level),ktx_uint32_t(layer),
+                             faceSlice,&offset)!=KTX_SUCCESS ||
+                        size_t(offset)>size || imageBytes>size-size_t(offset)) {
+                        error="KTX2 HDR: truncated half-float slice or invalid offset";
+                        return {};
+                    }
+                }
+        total+=imageBytes*count;
+    }
+    gfx::TextureHandle output=device.createTexture(desc);
+    if (!output.valid()) {
+        error=device.lastError();
+        if(error.empty())error="KTX2 HDR: GPU RGBA16F allocation failed";
+        return {};
+    }
+    for (int level=0;level<src.mips;++level) {
+        const int width=std::max(1,src.width>>level);
+        const int height=std::max(1,src.height>>level);
+        const int depth=std::max(1,src.depth>>level);
+        for (int layer=0;layer<src.layers;++layer)
+            for (int face=0;face<src.faces;++face)
+                for (int slice=0;slice<(src.volume ? depth : 1);++slice) {
+                    ktx_size_t offset=0;
+                    const uint32_t faceSlice=uint32_t(src.volume?slice:face);
+                    if (ktxTexture2_GetImageOffset(texture.get(),
+                           ktx_uint32_t(level),ktx_uint32_t(layer),
+                           faceSlice,&offset)!=KTX_SUCCESS) {
+                        device.destroyTexture(output);
+                        error="KTX2 HDR: mip offset changed between validation and upload";
+                        return {};
+                    }
+                    gfx::TextureUploadDesc update;
+                    update.mipLevel=level;
+                    update.arrayLayer=src.volume ? 0 : layer*src.faces+face;
+                    update.z=src.volume ? slice : 0;
+                    update.width=width;
+                    update.height=height;
+                    update.depth=1;
+                    update.rowPitchBytes=width*8;
+                    update.slicePitchBytes=width*height*8;
+                    update.data=bytes+size_t(offset);
+                    if (!device.updateTextureRegion(output,update)) {
+                        device.destroyTexture(output);
+                        error=device.lastError();
+                        if(error.empty())error="KTX2 HDR: GPU half-float subresource upload failed";
+                        return {};
+                    }
+                }
+    }
+    return output;
+#else
+    (void)device;(void)encoded;
+    error="KTX2 UASTC HDR requires AIVERSE_TEXTURE_WITH_LIBKTX=ON";
+    return {};
+#endif
 }
 
 } // namespace aiverse::render
