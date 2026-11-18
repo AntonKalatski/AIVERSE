@@ -49,3 +49,26 @@ Read `AGENTS.md`, `docs/ecs-mechanic-composition.md`,
 This is the standard pattern for **every** AIVERSE mechanic:
 data-only components + independently registered systems + public, pure
 policies + capability-based configuration + deterministic events.
+
+
+## Actual FPS integer HP adoption (2026-11-18)
+
+Both the generic `addDamageResolutionSystem` and the built-in
+`fps::Module::damage` now use the same immediate, deterministic
+`applyIntegerHitPointDamage(int32_t& current,int32_t incoming)` function.
+This helper applies positive already-mitigated damage, clamps at zero and
+returns the amount actually subtracted without overflowing on large values.
+**Do not** call it before applying the host's armor/gear/knockdown policies.
+
+In FPS, `ActorRuntime` is canonical when `fps.ecsAuthority` is enabled
+and the legacy actor tick workspace is still used for compatibility.
+The helper does **not** mean that separate `HitPointsComponent` owns
+live FPS health or that `DamageQueue` replaces synchronous FPS damage.
+Do not add a second writable health owner until an explicit save/version/
+checksum/network migration is proven.
+
+Validation: `ecs_integer_health_commit_test` covers old FPS arithmetic for
+all 0..100 HP and 0..1000 incoming damage plus overflow cases.
+Also run `aiverse_fps_tests`, including ECS ON/OFF actor/damage parity
+and v9 save/rollback, before accepting the cutover. Native execution
+is not yet verified.
