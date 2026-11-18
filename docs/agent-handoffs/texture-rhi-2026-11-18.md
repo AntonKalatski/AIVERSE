@@ -4588,3 +4588,40 @@ device refusal, second-pending capture, shutdown with a stale
 callback, and visibility submission to the file streamer.
 Update native texture skill/AGENTS.md, and keep PR #21 Draft
 until full native verification.
+
+## Stage 7AD — deferred feedback callback and disk prefetch integration fixture (2026-11-18)
+
+Source test commit: 1b64a42d7bb279ce9a8f900db9ffb67649118395.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+File: tests/render/virtual_texture_file_streamer.cpp.
+
+Expanded the existing virtual_texture_file_streamer CTest with
+VirtualTextureFeedbackRuntime in a mock-RHI environment.
+MockGpu::readTextureAsync stores a real deferred callback;
+a synthetic RGBA8 target emits the same visible detail page
+twice. Runtime capture refuses duplicates before completion,
+then decodes the next-frame callback and submits only the
+coarsest and intermediate physical disk pages within its
+per-frame request limit. Consuming a decoded result twice
+does not create duplicate disk requests. A second pending
+callback is invoked after runtime.shutdown and must find
+only an expired weak state, preventing use-after-free.
+Device rejection is recoverable; a returned sRGB feedback
+target fails closed; mismatched virtual layer configs are
+rejected before an async request is sent. GPU resources and
+the disk worker are released by the existing streamer.
+
+Compatibility: No RHI backend or production header changes in
+this test stage. The runtime facade remains Stage 7AC;
+this fixture uses the existing CMake/CTest target.
+
+Actual verification: GitHub test commit succeeded.
+C++ compile NOT RUN, CTest NOT RUN, Metal/GL/Vulkan feedback
+shader render and asynchronous readback NOT RUN.
+No passing native execution claimed.
+
+Next: Register the runtime usage/feedback format restrictions
+in the native texture skill and canonical docs. On a native
+checkout compile and execute the prefetch/feedback/file-streamer
+tests, then validate the GLSL/MSL encoding in a real graphics
+feedback pass and compare exact readback IDs.
