@@ -9,7 +9,7 @@ Scope: `engine/physis/`, `tests/physis_*.cpp`, `docs/agent-handoffs/physis-*.md`
 5. After **EVERY** implementation stage write an explicit handoff in `docs/agent-handoffs/` with branch, implementation SHA, changed paths, architecture/API, tests ACTUALLY RUN and their results, known gaps, and next concrete task; commit it separately from implementation. Never mark unexecuted tests as passed.
 6. Existing gameplay/genre modules must remain unaffected unless their integration is explicitly tested and reviewed. Respect concurrent branches; never force push.
 
-Latest Stage 7: `docs/agent-handoffs/physis-flood-authority-2026-11-18.md`. Stage 6 role/ownership contract: `docs/agent-handoffs/physis-ownership-terra-water-2026-11-18.md`. Stages 1–5 remain preserved; no stage claims passed native tests.
+Latest Stage 11: `docs/agent-handoffs/physis-forces-box3d-2026-11-18.md`. Stages 8–10: `docs/agent-handoffs/physis-{wind,gravity,storm}-2026-11-18.md`; Stage 7: `docs/agent-handoffs/physis-flood-authority-2026-11-18.md`. Stage 6 role/ownership contract: `docs/agent-handoffs/physis-ownership-terra-water-2026-11-18.md`. Stages 1–5 remain preserved; no stage claims passed native tests.
 
 ## PHYSIS / NEREID / TerraWeave coordination (2026-11-18)
 
