@@ -51,15 +51,21 @@ asset. Temporal trigger conditions (`Tap`, `Hold`, `Pressed`, etc.) still
 control phase/events; a held Action need not emit `Triggered` in the current
 frame to satisfy a chord's level predicate.
 
-The first snapshot uses consumption by active Mapping Contexts, so a key
-consumed by a higher-priority menu cannot act as a lower-priority gameplay
-chord. For deliberate sharing of a physical control across Actions, use
-`consume=false`. A remaining edge case is **priority consumption with
-conditionally gated mappings of the same control**: the snapshot reserves an
-actuated consuming control before recursively checking its gate. Avoid
-condition-dependent sharing of the same physical key across priorities until
-the preview/dispatch arbitration is unified. The Stage 47 tests are authored
-but compilation and runtime execution have **not** yet been confirmed.
+The first snapshot respects context priorities and consumption. Starting in
+Stage 48, InputFlow refines that snapshot against the effective chord gates:
+a higher-priority mapping whose `Chord` condition is false no longer hides a
+lower-priority binding of the same key. Chained prerequisites can then resolve
+from the lower Action in the same presentation frame. This is a bounded
+fixed-point refinement (maximum eight passes); when mutually dependent
+priority/consumption patterns have no consistent fixed point, it
+deterministically falls back to the conservative original priority snapshot.
+For intentional simultaneous sharing, prefer `consume=false`; do not rely on
+feedback cycles where a high-priority binding consumes the very control needed
+by its own prerequisite in a lower context. Action-level timing gates still
+control phases rather than the mapping's consumption policy.
+
+Stage 47–48 tests are authored, but compilation and runtime execution have
+**not** yet been confirmed.
 
 ## C++ basics
 
