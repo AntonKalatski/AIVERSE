@@ -1,13 +1,15 @@
-# Enhanced Input (Unreal-style, AIVERSE API)
+# AIVerse InputFlow — action-based input for all game genres
 
-AIVERSE has a genre-independent, action-based **presentation input** layer inspired by Unreal Engine's Enhanced Input. It is not a clone of Unreal's C++ classes or asset binary formats.
+**AIVerse InputFlow** (short: **InputFlow**) is AIVERSE's genre-independent, action-based **presentation input** system. It uses a device → mapping context → action → trigger pipeline, inspired by Unreal Engine's Enhanced Input without copying its C++ API or binary asset format.
+
+The canonical native C++ header is `#include <aiverselib/gameplay/InputFlow.h>`. Use `aiverse::lib::gameplay::inputflow::InputFlow` to create the runtime and `inputflow::InputAction`, `inputflow::InputContext` and `inputflow::InputValue` to describe input. The old `<aiverselib/gameplay/EnhancedInput.h>` and `aiverse::lib::gameplay::enhanced::InputSystem` remain source-compatible aliases. Existing `input/actions.json` paths, profile file names, command layouts and CMake target `AIVERSE::lib_input` remain unchanged.
 
 ## Runtime pipeline
 
 \`\`\`
 platform::Event / GamepadState
   -> platform::EnhancedInputAdapter (keyboard, pointer, wheel, touch, pads)
-  -> lib::gameplay::enhanced::InputSystem
+  -> lib::gameplay::inputflow::InputFlow
        active Mapping Contexts, sorted by priority
        physical Control -> mapping Modifiers -> mapping Triggers
        Action Value aggregation -> action Modifiers -> action Triggers
