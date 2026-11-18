@@ -182,6 +182,20 @@ struct TextureUploadDesc {
     const void* data = nullptr;
 };
 
+// Request a single 2D mip/face/layer from an existing sampled or render-target
+// texture. Readback is asynchronous only where implemented by the backend;
+// unsupported backends return false and never invoke the callback.
+struct TextureReadbackDesc {
+    int mipLevel = 0;
+    int arrayLayer = 0;
+};
+struct TextureReadbackResult {
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::RGBA8;
+    std::vector<uint8_t> pixels; // tightly packed top-left rows, output format
+    bool success() const { return width > 0 && height > 0 && !pixels.empty(); }
+};
+
 // CPU-only validation of dimension/layer/mip invariants. It does NOT imply GPU support.
 enum class TextureDescError : uint8_t {
     None, InvalidExtent, InvalidLayers, InvalidMipCount, InvalidSampleCount,
@@ -527,6 +541,15 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // The callback is invoked on the graphics-device owner thread at a later
+    // beginFrame, after GPU completion, never from a driver completion thread.
+    // An accepted request completes with data or an empty failure result.
+    // Destruction of the parent texture after submission must not invalidate
+    // the readback's own staging bytes. Implementations must reject MSAA and
+    // unsupported dimensions/formats instead of returning altered pixels.
+    using TextureReadFn = std::function<void(TextureReadbackResult)>;
+    virtual bool readTextureAsync(TextureHandle, TextureReadbackDesc,
+                                  TextureReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
