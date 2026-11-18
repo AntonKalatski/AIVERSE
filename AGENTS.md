@@ -39,6 +39,23 @@ execute a native Metal smoke/CI test before enabling any default GPU
 effects. Preserve deterministic gameplay/ECS state and the existing
 CPU effect format.
 
+**Stage 11 — SpectraFX graph/runtime compatibility routing (source committed,
+NOT TESTED):** `engine/fx/SpectraGraphRuntime.{h,cpp}` adds
+`spectra::GraphRuntime` and `inspectGraphGpuEligibility`. Native
+modules may opt in via `engine/fx/SpectraFX.h`; the compatibility
+gate checks the complete compiled emitter definition, **not** game
+genre or output node label. Unsupported graph features preserve
+the original CPU `EffectDef`; `RequireGpu` rejects unsupported
+graphs/devices rather than dropping features. Existing RTS/FPS
+clients are **not** switched to GPU automatically. The editor
+`fx_graph_validate/get/list` operations report schema eligibility
+but cannot certify a device's Metal capabilities. Required checks:
+`vfx_graph_runtime`, `vfx_gpu_backend`, full SpectraFX CTest,
+real Metal GPU shader smoke and lossless CPU visual parity.
+No local checkout/build was available for this stage. Continue
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` after
+each future implementation stage.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
