@@ -648,6 +648,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_motionweave_cost_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
     add_test(NAME motionweave_cost_balancing COMMAND aiverse_motionweave_cost_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_backend_tests tests/animation/motionweave_backend.cpp)
+    target_link_libraries(aiverse_motionweave_backend_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_backend_selection COMMAND aiverse_motionweave_backend_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp

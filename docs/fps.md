@@ -323,3 +323,26 @@ last good graph after an invalid edit, and swaps immutable graph pointers
 on existing presentation entities. Game/network simulation is unchanged.
 Changing a graph restarts its visual state machine. This file is resolved
 inside the current project; it must not contain parent-path traversal.
+
+## Automatic MotionWeave CPU/GPU backend
+
+Under `fps.visual`, optional `animationMode` is `"auto"` (default),
+`"cpu"`, or `"gpu"`. Existing `bakedCrowd: true` remains equivalent
+to forcing `"gpu"` when a suitable animation can be baked. Custom
+`animationGraph` or `graphFile`, native callbacks, IK and layered
+rigs remain on the CPU graph path.
+
+In auto mode, the client chooses GPU baked instanced skinning for simple
+imported clips at `gpuEnterActors` living remote characters (24 by default).
+It switches back to full CPU graph below or at `gpuExitActors` (12 by
+default), with hysteresis to reduce mode thrashing. Backend changes recreate
+**presentation-only** animation entities; simulation actor state, game
+networking and saves are not touched. A missing GPU bake retains CPU fallback.
+
+CPU graph animation automatically uses the host-owned persistent
+MotionWeave scheduler when 16 or more remote presentation actors exist.
+Its cost-aware worker jobs avoid custom callback/rig operations, which
+execute on the submitting thread after a barrier. Set
+`fps.visual.animationStats: true` to see CPU/GPU path, worker count,
+work estimates, jobs, and CPU timings in the FPS HUD. This is
+presentation profiling, not deterministic simulation state.

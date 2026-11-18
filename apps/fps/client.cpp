@@ -13,6 +13,7 @@
 #include "libraries/include/aiverselib/motionweave/MotionWeave.h"
 #include "libraries/include/aiverselib/animation/AnimationCrowdSystems.h"
 #include "libraries/include/aiverselib/animation/AnimationBudgetPolicy.h"
+#include "libraries/include/aiverselib/animation/AnimationBackendPolicy.h"
 #include "libraries/include/aiverselib/animation/AnimationEventDispatch.h"
 #include "libraries/include/aiverselib/animation/AnimationHotReload.h"
 #include "engine/render/GeometryScene.h"
@@ -51,7 +52,13 @@ struct App {
     std::map<uint8_t,Entity> characterEntities;
     std::map<uint8_t,uint32_t> characterLives;
     float characterScale=1.f,characterHeightOffset=0.f;
-    bool characterBakedCrowd=false;
+    bool characterBakedCrowd=false,characterBakeAvailable=false;
+    bool characterAnimationStatsEnabled=false;
+    motionweave::AnimationBackendPreference backendPreference=
+        motionweave::AnimationBackendPreference::Auto;
+    motionweave::AnimationBackendOptions backendOptions{};
+    std::unique_ptr<motionweave::MotionWeaveScheduler> characterScheduler;
+    motionweave::MotionWeaveScheduleStats lastAnimationStats{};
     motionweave::AnimationHotReloadRegistry animationReload;
     std::filesystem::path characterGraphFile;
     unsigned animationReloadFrame=0;
@@ -161,10 +168,30 @@ struct App {
             }
             // Complex imported controllers always use palette/graph evaluation.
             // Simple clip crowds can use the existing instanced GPU baked skinning.
-            const bool wantsBaked=view.getBool("bakedCrowd",false) &&
-                !view["animationGraph"].isObject() && characterGraphFile.empty();
-            characterBakedCrowd=wantsBaked && model->skinned() &&
+            // MotionWeave chooses CPU Graph for complex rig/IK/controllers and
+            // GPU-baked sampling for sufficiently populated simple crowds.
+            // "bakedCrowd":true remains a backwards-compatible forced GPU hint.
+            const auto preference=view.getStr("animationMode",
+                view.getBool("bakedCrowd",false)?"gpu":"auto");
+            backendPreference=motionweave::parseAnimationBackend(preference);
+            backendOptions.gpuEnterActors=size_t(std::clamp<int64_t>(
+                view.getInt("gpuEnterActors",24),1,1000));
+            backendOptions.gpuExitActors=size_t(std::clamp<int64_t>(
+                view.getInt("gpuExitActors",12),0,999));
+            characterAnimationStatsEnabled=view.getBool("animationStats",false);
+            const bool custom=view["animationGraph"].isObject() ||
+                !characterGraphFile.empty();
+            const bool hasSimpleClips=model->findClip("Idle")>=0 ||
+                model->findClip("Stand")>=0 || model->findClip("Walk")>=0 ||
+                model->findClip("Run")>=0;
+            backendOptions.requiresCustomGraph=custom;
+            characterBakeAvailable=
+                backendPreference!=motionweave::AnimationBackendPreference::CpuGraph &&
+                !custom && hasSimpleClips && model->skinned() &&
                 render::bakeAnimations(device,*model);
+            backendOptions.gpuAvailable=characterBakeAvailable;
+            characterBakedCrowd=characterBakeAvailable &&
+                backendPreference==motionweave::AnimationBackendPreference::GpuBaked;
             const double scale=view["scale"].toDouble(1.0);
             if (std::isfinite(scale) && scale>0.001 && scale<100)
                 characterScale=float(scale);
@@ -184,6 +211,26 @@ struct App {
     }
     void updateCharacterAnimations(double dt,const fps::Actor& local) {
         if (!characterModel || !characterGraph) return;
+        const auto& actors=client->snapshot().actors;
+        size_t remoteCount=0;
+        for(const auto& remote:actors)
+            if(remote.slot!=local.slot && remote.health>0)++remoteCount;
+        backendOptions.visibleActors=remoteCount;
+        const auto oldBackend=characterBakedCrowd?
+            motionweave::AnimationBackend::GpuBaked:
+            motionweave::AnimationBackend::CpuGraph;
+        const auto nextBackend=motionweave::selectAnimationBackend(
+            backendPreference,oldBackend,backendOptions);
+        if((nextBackend==motionweave::AnimationBackend::GpuBaked)!=
+            characterBakedCrowd) {
+            // These are view-only ECS entities. Recreate their visual players
+            // on mode changes; authoritative FPS actor identities are untouched.
+            characterBakedCrowd=
+                nextBackend==motionweave::AnimationBackend::GpuBaked;
+            characterPresentation=World{};
+            characterEntities.clear();
+            characterLives.clear();
+        }
         if(!characterGraphFile.empty() && ++animationReloadFrame%30u==0u) {
             if(animationReload.pollFile("fpsCharacter",*characterModel,
                                         characterGraphFile)) {
@@ -191,8 +238,10 @@ struct App {
                 animationReload.apply(characterPresentation);
             }
         }
-        for (const auto& remote:client->snapshot().actors) {
+        std::set<uint8_t> presentSlots;
+        for (const auto& remote:actors) {
             if (remote.slot==local.slot) continue;
+            presentSlots.insert(remote.slot);
             Entity e;
             const auto found=characterEntities.find(remote.slot);
             if (found==characterEntities.end()) {
@@ -250,6 +299,15 @@ struct App {
                 significance.visible=remote.health>0;
             }
         }
+        // Drop view entities no longer present in the replicated actor set.
+        // Reused actor slots then get a fresh visual player and montage clock.
+        for(auto it=characterEntities.begin();it!=characterEntities.end();) {
+            if(!presentSlots.contains(it->first)) {
+                characterPresentation.destroy(it->second);
+                characterLives.erase(it->first);
+                it=characterEntities.erase(it);
+            } else ++it;
+        }
         if(characterBakedCrowd)
             motionweave::stepAnimationCrowd(characterPresentation,
                 float(std::clamp(dt,0.,.25)));
@@ -257,8 +315,19 @@ struct App {
             motionweave::AnimationBudgetPolicy budget;
             budget.fullRateSlots=32;budget.mediumRateSlots=96;
             motionweave::assignAnimationBudgets(characterPresentation,budget);
-            motionweave::MotionWeave::update(characterPresentation,
-                float(std::clamp(dt,0.,.25)));
+            // Persistent workers are created lazily when a sufficiently
+            // populated palette/graph scene actually needs CPU animation.
+            if(characterEntities.size()>=16 && !characterScheduler)
+                characterScheduler=std::make_unique<motionweave::MotionWeaveScheduler>();
+            if(characterScheduler)
+                lastAnimationStats=motionweave::MotionWeave::update(
+                    characterPresentation,float(std::clamp(dt,0.,.25)),
+                    *characterScheduler);
+            else {
+                motionweave::MotionWeave::update(characterPresentation,
+                    float(std::clamp(dt,0.,.25)));
+                lastAnimationStats={};
+            }
             motionweave::dispatchAnimationCues(characterPresentation,
                 [&](const motionweave::AnimationCue& cue) {
                     if(cue.name!="step" && cue.name!="footstep" && cue.name!="land")
@@ -465,6 +534,19 @@ struct App {
         ImGui::PushTextWrapPos(580);ImGui::TextUnformatted(lang.tr(client->ready()?"fps.controls":"fps.connecting").c_str());ImGui::PopTextWrapPos();
         if(!client->connected())ImGui::TextUnformatted(lang.tr("fps.disconnected").c_str());
         if(client->snapshot().winner)ImGui::TextUnformatted(lang.tr("fps.finished").c_str());
+        if(characterModel && characterAnimationStatsEnabled) {
+            ImGui::Text("MotionWeave: %s (%zu visible)",
+                characterBakedCrowd?"GPU baked":"CPU graph",
+                backendOptions.visibleActors);
+            if(!characterBakedCrowd) {
+                ImGui::Text("Workers %zu | Safe %zu | Callback %zu | Jobs %zu",
+                    lastAnimationStats.workerThreads,lastAnimationStats.parallelEntities,
+                    lastAnimationStats.serialEntities,lastAnimationStats.batches);
+                ImGui::Text("Pose %.3fms | Callback %.3fms | Est. work %zu",
+                    lastAnimationStats.workerPhaseMs,lastAnimationStats.serialPhaseMs,
+                    lastAnimationStats.estimatedSafeCost);
+            }
+        }
         if(config.systems.enabled){
             auto stats=lang.tr("fps.systems.status",i18n::Args().num("armor",actor.armor).num("money",actor.money));ImGui::TextUnformatted(stats.c_str());
             if(actor.downed)ImGui::TextUnformatted(lang.tr("fps.downed").c_str());
@@ -498,7 +580,7 @@ struct App {
         fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
         gui.render();device.endPass();device.endFrame();
     }
-    void shutdown(gfx::Device& device){characterEntities.clear();characterLives.clear();characterGraph.reset();if(characterModel){render::releaseModel(device,*characterModel);characterModel.reset();}if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
+    void shutdown(gfx::Device& device){characterScheduler.reset();characterEntities.clear();characterLives.clear();characterGraph.reset();if(characterModel){render::releaseModel(device,*characterModel);characterModel.reset();}if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
 };
 }
 int aiverseMain(int argc,char** argv) {
