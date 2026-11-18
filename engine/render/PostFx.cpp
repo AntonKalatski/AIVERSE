@@ -17,7 +17,7 @@ enum : uint32_t {
     kPfPixelate = 1u << 0, kPfCa = 1u << 1, kPfSharpen = 1u << 2, kPfTilt = 1u << 3, kPfBloom = 1u << 4,
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
-    kPfUnderwater = 1u << 13,
+    kPfUnderwater = 1u << 13, kPfUnderwaterDepth = 1u << 14,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
                           "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_UNDERWATER"};
@@ -27,10 +27,10 @@ enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kT
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -200,8 +200,8 @@ PostFx::Target& PostFx::target(Sized& s, int role, int w, int h) {
     return t;
 }
 
-gfx::TextureHandle PostFx::depthFor(Sized& s, int w, int h) {
-    const uint64_t key = (uint64_t(uint32_t(w)) << 32) | uint32_t(h);
+gfx::TextureHandle PostFx::depthFor(Sized& s, int w, int h, int role) {
+    const auto key = std::make_pair((uint64_t(uint32_t(w)) << 32) | uint32_t(h),role);
     auto it = s.depths.find(key);
     if (it != s.depths.end()) return it->second;
     gfx::TextureDesc td;
@@ -258,6 +258,7 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
     std::string defines;
     for (int i = 0; i < 14; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
+    if (mask & kPfUnderwaterDepth) tex |= 1u << 5;
     if (mask & kPfBloom) tex |= 2;
     if (mask & kPfTilt) tex |= 4;
     if (mask & kPfShafts) tex |= 8;
@@ -277,14 +278,15 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
             body.replace(body.find(marker),marker.size(),macros+"vec2 sg_uv=s,sg_screen=s;vec4 sg_input=vec4(col,1.0);float sg_time=graphFrame.x;\n// SG_CODE\nRETURN("+graphProgram.outputs.at("color")+");\n");
         }catch(const std::exception& ex){error_=ex.what();compositeFailed_[key]=true;return {};}
     }
-    Built b=buildProgram(kCompositeFields,18,tex,defines,postfx::kCompositeHelpers,body.c_str());
+    Built b=buildProgram(kCompositeFields,23,tex,defines,postfx::kCompositeHelpers,body.c_str());
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
         at=b.msl.find("// SG_CODE");b.msl.replace(at,10,graphProgram.msl);
     }
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = 5+int(graphProgram.textures.size()); sd.uniformSlots = 1; sd.label = "postfx composite";
+    sd.textureSlots = (mask & kPfUnderwaterDepth) ? 6 : 5+int(graphProgram.textures.size());
+    sd.uniformSlots = 1; sd.label = "postfx composite";
     gfx::ShaderHandle sh = dev_->createShader(sd);
     if (!sh.valid()) {
         compositeFailed_[key] = true;
@@ -611,7 +613,7 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     Target aaTarget;
     if (aaAfter) {
         hdrFrame_ = false; aaTarget = target(set, kAa, w, h); hdrFrame_ = true;
-        const auto aaDepth = depthFor(set, w, h);
+        const auto aaDepth = depthFor(set, w, h, 1);
         aaAfter = aaTarget.tex.valid() && aaDepth.valid();
         if (aaAfter) { compositeOut.colorTarget = aaTarget.tex; compositeOut.depthTarget = aaDepth; }
     }
