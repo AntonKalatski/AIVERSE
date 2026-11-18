@@ -4752,3 +4752,39 @@ Next: Native build/test all texture RHI sources and relevant
 editor + real Metal/GL/Vulkan feedback shader readbacks.
 Record exact tested HEAD and fix compiler/behavior errors.
 Do not claim the source as production-ready until validation.
+
+## Stage 9A — merge current main into Texture RHI branch (2026-11-18)
+
+Merge commit: `2dc38b95d7525786c98b966113267047666a0290`.
+Merge parents: Texture RHI prior HEAD `986310c60cadd9e1a6a74897a813c70c99408f46`
+and main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`.
+Working branch: `feature/texture-rhi-unification`, Draft PR #21.
+
+Action: fetched GitHub's exact main and branch heads, compared the
+common ancestor `dd711f5e2a7f66ed25bd7330875e6e87b7109e55`
+to both branches and verified main introduces 48 changed paths,
+only AGENTS.md and CMakeLists.txt overlapping Texture RHI changes.
+Built a true, two-parent Git merge commit on GitHub with the latest
+main blob SHAs/modes for the other 46 paths, without force-push.
+AGENTS.md retains the Texture RHI agent contract and adds
+main's InputFlow continuation policy, ownership table row and
+Enhanced Input handoff section. CMakeLists.txt keeps all Texture
+RHI CTest additions and adds main's AIVERSE::InputFlow links
+for Android client, desktop client and editor.
+
+Source changes: most main InputFlow/client/editor changes are
+integrated without modifying them; no Texture RHI feature files
+were overwritten. Main and feature commit ancestry are now
+both represented as parents of the merge.
+
+Actual verification: GitHub merge tree/commit/ref write succeeded
+with expected head lease and without a force push. Full local
+Git merge command NOT RUN (local container cannot resolve github.com).
+Native CMake build NOT RUN; CTest NOT RUN; GPU tests NOT RUN;
+input/texture joint feature execution NOT RUN. This stage must
+not be mistaken for a successful build or resolved runtime conflict.
+
+Next: verify compare main...feature reports zero commits behind,
+then proceed with texture feature source work only after the merge.
+Run full native compilation/tests and check InputFlow/Texture RHI
+integration before marking the Draft PR ready for merge.
