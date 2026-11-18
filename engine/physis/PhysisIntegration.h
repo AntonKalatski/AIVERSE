@@ -4,6 +4,7 @@
 #include "PhysisDisasters.h"
 #include "PhysisWind.h"
 #include "PhysisGravity.h"
+#include "PhysisStorm.h"
 #include "../sim/Simulation.h"
 
 namespace aiverse::physis {
@@ -50,6 +51,12 @@ inline void io(Archive& a, GravityField& v) {
     a(v.mode, v.center, v.radiusMeters, v.acceleration, v.radialMagnitude,
       v.priority, v.overrideBaseline, v.enabled);
 }
+inline void io(Archive& a, StormEvent& v) {
+    a(v.kind, v.center, v.driftPerTick, v.eyeRadiusMeters,
+      v.outerRadiusMeters, v.heightMeters, v.tangentialWind, v.radialInflow,
+      v.updraft, v.precipitationBoost, v.pressureDrop, v.startTick,
+      v.durationTicks, v.clockwise, v.enabled);
+}
 inline void io(Archive& a, HazardCell& v) {
     a(v.fuel, v.fire, v.waterDepth, v.quake);
 }
@@ -78,6 +85,7 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false) 
     simulation.registerPersistentComponent<WindShelter>("physis.wind_shelter", 1);
     simulation.registerPersistentComponent<GravityField>("physis.gravity_field", 1);
     simulation.registerPersistentResource<GravitySettings>("physis.gravity_settings", 1);
+    simulation.registerPersistentComponent<StormEvent>("physis.storm_event", 1);
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
@@ -90,6 +98,7 @@ struct InstallOptions {
     Settings climate{};
     DisasterConfig disasters{};
     bool enableDisasters = false;
+    bool enableStorms = false;
     // Use ExternalAuthority when NEREID or another water simulation owns
     // water volumes; fire and quakes keep running without duplicate flooding.
     FloodMode floodMode = FloodMode::LocalShallow;
@@ -108,10 +117,13 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
         initializeDisasters(simulation.world(), options.disasters);
     registerPersistence(simulation, options.enableDisasters);
     simulation.addSystem("physis.environment",
-                         [hazards=options.enableDisasters, flood=options.floodMode](Simulation& sim) {
-        if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);
-        else advanceEnvironment(sim.world());
-    });
+        [hazards=options.enableDisasters, storms=options.enableStorms,
+         flood=options.floodMode](Simulation& sim) {
+            if (storms && hazards) advanceEnvironmentWithStormsAndDisasters(sim.world(), flood);
+            else if (storms) advanceEnvironmentWithStorms(sim.world());
+            else if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);
+            else advanceEnvironment(sim.world());
+        });
 }
 
 struct PresentationCell {
