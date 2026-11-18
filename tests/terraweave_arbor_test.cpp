@@ -1,6 +1,7 @@
 #include "engine/world/TerraWeaveArbor.h"
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <future>
 #include <stdexcept>
 #include <vector>
