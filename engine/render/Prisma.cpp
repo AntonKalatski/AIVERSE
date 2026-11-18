@@ -146,6 +146,8 @@ void Prisma::configure(const Json& game, const Json& map, std::vector<std::strin
 }
 
 void Prisma::setSettings(PrismaSettings s) {
+    // New map/project configuration invalidates adaptation across scenes.
+    resetAutoExposure();
     baseSettings_ = s;
     settings_ = std::move(s);
     error_.clear();
