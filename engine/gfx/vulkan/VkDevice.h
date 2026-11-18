@@ -113,7 +113,9 @@ public:
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
-    bool supportsTextureDimension(TextureDimension) const override { return true; }
+    bool supportsTextureDimension(TextureDimension d) const override {
+        return d != TextureDimension::CubeArray || cubeArray_;
+    }
 
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
@@ -190,6 +192,7 @@ private:
     DeviceInfo info_;
     std::string error_;
     bool multiDrawIndirect_ = false;
+    bool cubeArray_ = false;
     bool healthy_ = true;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;

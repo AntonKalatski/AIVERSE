@@ -132,6 +132,8 @@ bool VulkanDevice::pickDevice(std::string& error) {
     multiDrawIndirect_ = have.multiDrawIndirect && have.drawIndirectFirstInstance;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
+    enable.imageCubeArray = have.imageCubeArray;
+    cubeArray_ = have.imageCubeArray;
     const float priority = 1.0f;
     auto qi = vkStruct<VkDeviceQueueCreateInfo>(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO);
     qi.queueFamilyIndex = queueFamily_;

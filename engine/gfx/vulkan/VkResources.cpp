@@ -418,6 +418,10 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     if (const TextureDescError e = validateTextureDesc(d); e != TextureDescError::None) {
         error_ = textureDescErrorString(e); return {};
     }
+    if (!supportsTextureDimension(d.dimension)) {
+        error_ = "Vulkan: requested texture dimension unsupported by the physical device";
+        return {};
+    }
     if (d.sampleCount != 1 || d.storage ||
         (d.dimension != TextureDimension::Texture2D && (d.renderTarget || d.format == PixelFormat::Depth))) {
         error_ = "Vulkan: multisample/storage and layered/3D render attachments not yet supported";
@@ -437,8 +441,28 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     t.renderTarget = d.renderTarget;
     t.compressed = isCompressed(d.format);
     if (!supports(d.format) && !t.depth) { error_ = "texture format unsupported"; return {}; }
-    if (t.compressed && (!d.levelCount || !d.levelData || !d.levelSize)) {
-        error_ = "Vulkan: compressed texture requires complete mip payloads"; return {};
+    if (t.compressed && (d.dimension == TextureDimension::Texture1D ||
+                         d.dimension == TextureDimension::Texture3D)) {
+        error_ = "Vulkan: compressed 1D/3D textures are not supported by this upload path"; return {};
+    }
+    if (t.depth && (d.data || d.levelData)) {
+        error_ = "Vulkan: depth images cannot be initialized by the color upload path"; return {};
+    }
+    if (d.levelCount > 0 && (!d.levelData || !d.levelSize)) {
+        error_ = "Vulkan: levelCount requires data and byte sizes for every mip"; return {};
+    }
+    for (int l = 0; l < d.levelCount; ++l) {
+        const int w = std::max(1, d.width >> l), h = std::max(1, d.height >> l);
+        const int z = d.dimension == TextureDimension::Texture3D ? std::max(1, d.depth >> l) : 1;
+        const size_t blocks = d.format == PixelFormat::ASTC_6x6 ? 6 : 4;
+        const size_t bytesPerBlock = d.format == PixelFormat::BC1 || d.format == PixelFormat::ETC2_RGB8 ? 8 : 16;
+        const size_t expected = t.compressed ?
+            size_t((w + int(blocks) - 1) / int(blocks)) * size_t((h + int(blocks) - 1) / int(blocks)) *
+            bytesPerBlock * size_t(z) * size_t(t.layers) :
+            size_t(w) * size_t(h) * size_t(z) * size_t(t.layers) * texelBytes(d.format);
+        if (!d.levelData[l] || d.levelSize[l] < expected) {
+            error_ = "Vulkan: truncated texture mip/array payload"; return {};
+        }
     }
     if (t.compressed) t.levels = d.levelCount;
     else if (d.levelCount > 0 && d.levelData) t.levels = d.levelCount;
@@ -466,7 +490,6 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
         barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_UNDEFINED,
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
         for (int l = 0; l < t.levels; ++l) {
-            if (!d.levelData[l]) { error_ = "Vulkan: missing level payload"; break; }
             const int w = std::max(1, t.width >> l), h = std::max(1, t.height >> l);
             const int z = std::max(1, t.volumeDepth >> l);
             const size_t bytes = t.compressed ? d.levelSize[l] :
