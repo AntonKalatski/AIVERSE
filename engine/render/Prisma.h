@@ -46,10 +46,14 @@ public:
     // Camera cuts/teleports invalidate the temporal exposure history per viewport.
     void resetAutoExposure();
 
-    void setQuality(PrismaQuality q) { quality_ = q; }
+    void setQuality(PrismaQuality q) {
+        if (quality_ != q) { quality_ = q; resetAutoExposure(); }
+    }
     PrismaQuality quality() const { return quality_; }
     static PrismaQuality defaultQualityFor(const gfx::Device& dev, bool mobile);   // AIVERSE_POSTFX overrides
-    void setEnabled(bool on) { enabled_ = on; }          // editor: preview on / off
+    void setEnabled(bool on) {
+        if (enabled_ != on) { enabled_ = on; resetAutoExposure(); }
+    }          // editor: preview on / off
     bool enabled() const { return enabled_; }
 
     // Reads an image of the game (LUTs): path -> RGBA8 top row first. Client: content files; editor: project dir.
