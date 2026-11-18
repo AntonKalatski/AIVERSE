@@ -810,7 +810,7 @@ public:
         int width = 0, height = 0;
         const GLTexture* colors[kMaxRenderTargetColors]{};
         const GLTexture* depth = nullptr;
-        PixelFormat sharedColorFormat = PixelFormat::RGBA8;
+        bool allHdr = desc.colorCount > 0, anySrgb = false;
         for (int i = 0; i < desc.colorCount; ++i) {
             int w = 0, h = 0;
             const auto& attachment = desc.colors[size_t(i)];
@@ -820,13 +820,13 @@ public:
                 return false;
             }
             const GLTexture* t = textures_.get(attachment.texture.id);
-            // Current HDR shader variants and blend policies are shared among
-            // output slots; heterogeneous formats need explicit per-slot metadata.
-            if (i && t->fmt != sharedColorFormat) {
-                error_ = "GL: mixed color pixel formats require MRT pipeline variants";
-                return false;
-            }
-            sharedColorFormat = t->fmt;
+            // Desktop GL and GLES3 support heterogeneous color attachments.
+            // Each slot is checked against its corresponding PipelineDesc
+            // format at setPipeline(); do not force attachment 0's format on
+            // the other outputs.
+            explicitPassFormats_[size_t(i)] = t->fmt;
+            allHdr &= t->fmt == PixelFormat::RGBA16F;
+            anySrgb |= t->fmt == PixelFormat::RGBA8_sRGB;
             colors[i] = t;
             width = w; height = h;
         }
@@ -888,13 +888,14 @@ public:
         scopedFbo_ = framebuffer;
         inPass_ = true;
         explicitPassColors_ = desc.colorCount;
-        explicitPassFormat_ = sharedColorFormat;
         passW_ = width; passH_ = height;
-        hdrPass_ = desc.colorCount > 0 && sharedColorFormat == PixelFormat::RGBA16F;
+        // Auto-create the old uniform HDR shader variant only for all-HDR MRT.
+        // A mixed HDR/UNORM pass must use the caller's explicit per-slot
+        // PipelineDesc.colorFormat/additionalColorFormats instead.
+        hdrPass_ = allHdr;
         glBindVertexArray(vao_);
         glDisable(GL_SCISSOR_TEST);
-        if (desc.colorCount && sharedColorFormat == PixelFormat::RGBA8_sRGB &&
-            info_.backend == Backend::GL33 && !srgbWrite_) {
+        if (anySrgb && info_.backend == Backend::GL33 && !srgbWrite_) {
             glEnable(kGL_FRAMEBUFFER_SRGB);
             srgbWrite_ = true;
         }
@@ -1003,14 +1004,11 @@ public:
                 pipelineId_ = 0;
                 return;
             }
-            if (explicitPassColors_ > 0 && d.colorFormat != explicitPassFormat_) {
-                error_ = "GL: pipeline color format differs from MRT attachments";
-                pipelineId_ = 0;
-                return;
-            }
-            for (int i = 1; i < explicitPassColors_; ++i) {
-                if (d.additionalColorFormats[i - 1] != explicitPassFormat_) {
-                    error_ = "GL: additional pipeline color format differs from MRT attachments";
+            for (int i = 0; i < explicitPassColors_; ++i) {
+                const PixelFormat pipelineFormat = i == 0 ?
+                    d.colorFormat : d.additionalColorFormats[i - 1];
+                if (pipelineFormat != explicitPassFormats_[size_t(i)]) {
+                    error_ = "GL: pipeline color format differs from MRT attachment slot";
                     pipelineId_ = 0;
                     return;
                 }
@@ -1165,7 +1163,7 @@ private:
     GLuint scopedFbo_ = 0;
     bool inPass_ = false;
     int explicitPassColors_ = -1;
-    PixelFormat explicitPassFormat_ = PixelFormat::RGBA8;
+    std::array<PixelFormat, kMaxRenderTargetColors> explicitPassFormats_{};
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
     Pool<GLTextureView> views_;
