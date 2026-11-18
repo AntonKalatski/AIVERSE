@@ -210,3 +210,18 @@ camera-frustum culling and distance-field shadows remain future stages.
 Never feed visibility decisions back into authoritative ECS state or
 network simulation; gameplay placement continues to use `scatter`.
 Test source: `tests/terraweave_flora_test.cpp`; CTest `terraweave_flora`.
+
+## World extent validation (Stage 2c)
+
+Core generator explicitly supports world positions
+`[-1,000,000,000, +1,000,000,000]` **centimetres** on X/Z.
+`heightAtCm`, `generateChunk`, `slopePermilleAt` and `scatter`
+validate inputs before coordinate multiplication/offset sampling. Chunk
+keys that would leave this world box are rejected, as are scatter bounds
+that fall within the 100-cm boundary margin required by slope sampling.
+This is intended to fail cleanly on malformed/extreme world coordinates,
+not to impose a practical memory-residency or render-distance budget.
+
+Do not remove these guards when introducing a streamed world. Large-world
+support additionally needs camera-relative rendering, origin rebasing and
+bounded chunk residency, which are not yet implemented.
