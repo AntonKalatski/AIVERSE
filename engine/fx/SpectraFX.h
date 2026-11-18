@@ -7,6 +7,7 @@
 #pragma once
 #include "VfxGraphAssets.h"
 #include "SpectraModuleSchema.h"
+#include "SpectraAuthoring.h"
 #include "SpectraGpuParticles.h"
 #include "SpectraGraphRuntime.h"
 #include "SpectraBatchWorld.h"
