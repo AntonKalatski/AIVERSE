@@ -216,3 +216,47 @@ a validation limit, not proof of scalable streaming/rebasing.
 or runtime errors, and report checked platforms. Then implement
 the first `gfx::Device` mesh upload/render adapter to display a tree
 inside a real editor scene; add screenshot and FPS/RTS no-regression.
+
+## Stage 2d — convert Arbor meshes to standard render::Model (COMMITTED; UNVERIFIED)
+
+- `945e7e76a792f6269fbcd8d8ad0606b6f44c3cc6`:
+  new `engine/render/TerraWeaveModelAdapter.h` converts three procedural
+  geometry LODs into one `render::Model`, with 2 material primitives per
+  mesh, Node root, explicit projected-size LOD transitions and
+  `Model::finalize()`.
+- `90bfd028d90d4628561920b7c8106d2838a27107`:
+  `tests/terraweave_model_test.cpp` checks three meshes, bounds,
+  material/primitive structure, indices and repeatability.
+- `6745d9ea4ac8903fe25a09a0ea6384888f091e01`:
+  `CMakeLists.txt` registers `aiverse_terraweave_model_test` /
+  CTest `terraweave_model`, links `aiverse_models aiverse_zstd_dec`,
+  and enables active assertions in Release for all TerraWeave tests
+  on GCC/Clang.
+- `b8948a55820b1b1650f03f2fa5cfb791bba5bab8`:
+  `docs/terrain/TERRAWEAVE.md` records adapter API, units and limits.
+
+**Tests**: not run or observed successful. Must compile and run:
+```sh
+cmake -S . -B build/terraweave-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/terraweave-test --target aiverse_terraweave_test aiverse_terraweave_arbor_test aiverse_terraweave_flora_test aiverse_terraweave_model_test -j
+ctest --test-dir build/terraweave-test --output-on-failure -R '^terraweave(_arbor|_flora|_model)?$'
+```
+
+**Architectural choice:** reuse existing `render::Model` pipeline instead
+of writing new low-level GLSL/MSL or backend-specific rendering code.
+`makeArborModel` is CPU-only and converts cm to metres at render edge;
+upload via `render::prepareModelUpload` and
+`render::uploadModel(gfx::Device&, Model&)` on appropriate stage.
+
+**Unfinished**: runtime/editor spawning and material textures, real
+draw-call submission or instancing, impostor baking, wind, collision,
+node graph/authoring and visual proof. The procedural leaves currently
+render as **opaque green cards** unless a material/texture is supplied.
+Prototypes must be cached/reused; per-tree unique Model allocations
+are not acceptable for large forests. No GPU benchmarks taken.
+
+**Next agent acceptance test:** open a real scene in AIVERSE and draw
+an Arbor prototype via standard renderer with several instances,
+then wire the same to flora groups. Validate on Metal/GL/Vulkan,
+compare screenshots and existing RTS/FPS test checksums. Fix compile
+and tests before extending further. Append the next stage to this file.
