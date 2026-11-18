@@ -29,6 +29,29 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## RTS UI capture and legacy presentation key mirrors (Stage 52)
+
+`ClientInputRouting::onEvent(e, gameplayAllowed=false)` now cancels the
+keyboard, pointer or touch device **corresponding to the captured event**,
+rather than treating every RmlUi pointer interaction as an OS FocusLost.
+It also advances `InputFlow::update(0)` to settle cancellation phases
+without dispatching captured input to gameplay. Holding keyboard camera
+movement while clicking an unrelated HUD panel therefore retains the
+keyboard Action; text/modal capture still suppresses gameplay keys.
+
+The RTS `GameClient` keeps a historical `keys_` array solely for custom
+fallbacks such as project-owned top-down/possession controls. That array now
+ignores KeyDown captured by RmlUi, text fields and how-to modals, and clears
+all bits when gameplay keyboard input is disabled for a presentation frame.
+Semantic InputFlow Actions remain the preferred path; never feed
+`keys_` directly into deterministic ECS simulation.
+
+The focused `enhanced_rts_input_tests.cpp` scenario is authored but not
+executed. Validate real editor-hosted focus and text input in the later
+GUI smoke pass. The separate direct editor GameWindow still uses
+physical mouse-button lookup for Select/Command and does not execute all
+advanced mapping triggers; see the Stage 53 follow-up in the handoff.
+
 ## No phantom input edges on context activation (Stage 51)
 
 When a Mapping Context is enabled or its bindings are replaced **after** a
