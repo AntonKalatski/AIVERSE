@@ -76,6 +76,30 @@ rewrite prior stage entries, and read the latest head before appending. The user
 has explicitly deferred animation tests, so preserve test sources and mark runs
 **NOT RUN**, never green or passed, until they are actually executed.
 
+## AIVERSE View — canonical scene for EVERY genre (2026-11-18)
+
+The canonical engine View is `aiverse::View` from
+`engine/view/View.h` and CMake `AIVERSE::View`. Never include
+RTS/FPS/game/editor modules in `engine/view`. The dependency
+direction is always host adapter -> View -> Renderer/MotionWeave.
+
+`game::RtsView` is **legacy compatibility only** for historical
+terrain, fog, roads, unit state and specialized effects; don't
+add new general render/animation logic there. Move reusable
+algorithms and scene packets into View, keeping game rules
+and decision-making inside their owning adapters.
+
+Generic scene packets are `view::Object` (model/material/
+transform/optional Graph), `view::MeshObject` (mesh/transform/
+color/flags), and common presentation ECS records. Existing
+host adapters may migrate incrementally but must NOT evaluate
+or draw a source twice.
+
+Read `docs/view.md` and `skills/gameplay/aiverse-view/SKILL.md`.
+Every bounded implementation must be followed by its own
+committed agent handoff. User deferred actual tests: mark
+NOT RUN until executed.
+
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
 **Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`

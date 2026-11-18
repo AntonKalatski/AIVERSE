@@ -1,5 +1,8 @@
 #include "engine/render/ModelTextureCache.h"
-// Presentation for the generic RTS module, shared by the game client and the editor.
+// LEGACY compatibility adapter for historical RTS/editor scene presentation.
+// Generic game-agnostic View is now <engine/view/View.h> / aiverse::View.
+// Keep genre-specific authoring/overlays here temporarily; do NOT add new
+// common rendering, animation, culling or batching systems to this class.
 // Objects are drawn from their type's "view" block in rules.json, e.g.
 //   "view": { "shape": "soldier", "scale": 1.0, "color": [0.8, 0.7, 0.5] }
 //   "view": { "model": "models/knight.glb", "height": 1.1, "team": ["Cloth"],
