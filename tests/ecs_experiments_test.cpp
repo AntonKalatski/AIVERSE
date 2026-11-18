@@ -8,12 +8,12 @@
 #include <stdexcept>
 #include <atomic>
 #include <vector>
-// Assertions must remain active in Release/NDEBUG CI builds. Plain CHECK()
+// Assertions must remain active in Release/NDEBUG CI builds. Plain assert()
 // disappears under -DNDEBUG, silently skips test expressions and turns
 // variables/helpers used only by checks into -Werror unused warnings.
 #define CHECK(...) do { if (!(__VA_ARGS__)) { \
     std::cerr << "ECS regression failed at " << __FILE__ << ":" << __LINE__ \
-              << ": " << #__VA_ARGS__ << "\\n"; std::abort(); } } while(false)
+              << ": " << #__VA_ARGS__ << "\n"; std::abort(); } } while(false)
 using namespace aiverse;
 using namespace aiverse::ecs_experiment;
 struct Position { int64_t x=0; };
