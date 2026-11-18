@@ -48,8 +48,14 @@ silently alter same-tick damage ordering.
 
 - The queued request contains generation-safe Entity links and Fixed values.
 - The `OrderedImpactQueue` world resource holds authoritative
-  `nextSequence` and pending requests; snapshot, hash, serialize and
-  version the resource in the hosting game.
+  `nextSequence` and pending requests. The library supplies
+  `saveOrderedImpactQueue` (versioned Archive v1),
+  `loadOrderedImpactQueue` (transactional bounds-validated decode) and
+  `hashOrderedImpactQueue` (all fields, including Entity generations).
+  The hosting `GameModule::serializeState`/`hashState` must call these
+  helpers or an equivalent registered serializer; `SimSnapshot` already
+  copies the World resource. Do not treat World snapshot support as proof
+  that the byte-level save includes the queue.
 - HitPoints, armor, inventory, projectile motion and team/faction are
   owned by their respective ECS components or typed host policies.
   The queue **does not** clone or own these game-state fields.
