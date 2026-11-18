@@ -182,3 +182,7 @@ In the editor's direct RTS play-test, the Game window uses the same semantic `Ca
 ### RTS pointer Actions and camera zoom
 
 Default `RTS.Pointer` context provides `Select` (left click), `Command` (right click) and `CameraZoom` (mouse wheel Y). The generic RTS client now evaluates these through the normalized input adapter after RmlUi pointer ownership has been decided; its zoom uses the semantic Axis1D value. Drag selection, smart orders, touch ownership, garrison gestures and authored scripts remain their existing high-level handlers. The pointer context has non-consuming bindings so shared RTS mechanics can coexist with the new Actions.
+
+### Hidden Game tabs cannot capture input
+
+When the embedded Game tab is hidden behind another dock tab, `Editor::event` now stops forwarding ordinary input into its client and calls `ClientHost::suspendInput()`. This sends a hosted `FocusLost` and clears any captured keyboard/pointer/touch interaction, including during a rebind operation in Input Actions. Global OS focus loss is still forwarded. Restoring the Game tab re-establishes focus through the existing `ClientHost::place` lifecycle.
