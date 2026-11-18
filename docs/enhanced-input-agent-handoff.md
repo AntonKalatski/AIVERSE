@@ -221,3 +221,13 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Verification:** committed source/test changes; no running CTest or live iOS/Android verification. Need capture multi-touch motion on physical devices and hosted editor events, especially when UI owns touch.
 
 **Next agent:** finish host/view focus arbitration and cross-platform build; run all tests, review modifiers/triggers for repeat-state parity, and record CI and manual checks in handoff before ending.
+
+## Stage 14 — hosted editor Game window focus handoff (2026-11-18)
+
+**Problem:** switching Game window to Inspector/Input Actions/editor text was not an OS FocusLost. The host stopped forwarding new keys, but previously held WASD and semantic actions stayed held and could move the game unexpectedly.
+
+**Fix:** `apps/editor/ClientHost.h/.cpp::place` detects focus transitions and sends synthetic `FocusLost`/`FocusGained` to the hosted `GameClient` under its existing `Scope` (HostedView + ImGui state restored). Focus loss releases captured touch/pointer. Start/stop reset host focus. `apps/client/GameClient.cpp::event` also clears the old `keys_` array on FocusLost; semantic InputSystem::cancelAll is handled by `ClientInputRouting`.
+
+**Build/testing:** code updates only, not yet compiled or manually verified; CI pending. Test Game→Inspector→Input Actions→Game with held WASD, RmlUi modal, touch dragging, and scoped context restoration. Network Command schemas unchanged.
+
+**Next agent:** compile and run CI and manual hosted game tests, then document exact results.
