@@ -3887,3 +3887,43 @@ separate code/docs and handoff commit.
 After that implement an optional camera/CPU visibility-based
 prefetch planner and/or real GPU feedback; do not imply
 automatic sparse GPU feedback or complete BasisU transcoding.
+
+## Stage 7R — disk-backed VT skill, architecture and verification script integration (2026-11-18)
+
+**Implementation/documentation commit:** `c4a54cb627be31f1326530fc4c555a1bc44eebd7`.
+**Branch / PR:** `feature/texture-rhi-unification`, Draft #21.
+**Files:** `tools/verify-texture-rhi.sh`, `docs/texture-rhi.md`,
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Changes:** Register the disk-thread CTest `virtual_texture_disk_queue`
+and the real-file-to-mock-GPU integration CTest
+`virtual_texture_file_streamer` in the focused verification script's
+target list and both regular/Vulkan CTest filters. The architecture
+document now distinguishes the new *actual* filesystem worker and
+explicit page-request-to-atlas pipeline from unimplemented automatic
+GPU feedback and hardware sparse GPU resources. The native AI skill
+references both public headers and includes a concrete integration
+example with trusted `.rgba` page layout, matching disk/atlas configs,
+pinned coarse fallback request and render-thread `pump` callback.
+Gameplay agents must reuse these independent texture libraries rather
+than regenerate an RTS/FPS-specific loader.
+
+**Compatibility:** Developer tooling, docs and skill only. No game
+simulation, save/network state or gfx::Device API changed in this
+stage. Existing callers need not enable the disk worker.
+
+**Actual verification:** GitHub code/tree/commit/branch update
+succeeded. Native compiler, Bash script invocation, CTest
+and Metal/GL/Vulkan GPU tests: **NOT RUN**. The container still
+cannot resolve github.com for a full checkout; GitHub Actions
+were queued/cancelled, without passing results.
+
+**Next:** Run `bash tools/verify-texture-rhi.sh --editor` on an actual
+checkout and add `--vulkan` where Vulkan SDK/device exists.
+Inspect `build/texture-rhi/verify-logs/{configure,build,ctest,summary}`
+and fix real issues. For the two new targets use
+`ctest -R '^(virtual_texture_disk_queue|virtual_texture_file_streamer)$'`.
+Then implement a camera/CPU visibility prefetch policy and
+optional atlas feedback buffer after measured demand; real
+GPU page-table shader sampling remains required before merge.
+Each stage still needs separate code + handoff commits.
