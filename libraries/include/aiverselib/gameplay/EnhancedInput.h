@@ -404,12 +404,11 @@ private:
         case ValueType::Boolean:
             return {value.actuated() ? 1.0f : 0.0f, 0, 0};
         case ValueType::Axis1D:
-            return {std::clamp(value.x,-1.0f,1.0f), 0, 0};
+            return {value.x, 0, 0};
         case ValueType::Axis2D:
-            return {std::clamp(value.x,-1.0f,1.0f), std::clamp(value.y,-1.0f,1.0f),0};
+            return {value.x, value.y, 0};
         case ValueType::Axis3D:
-            return {std::clamp(value.x,-1.0f,1.0f), std::clamp(value.y,-1.0f,1.0f),
-                    std::clamp(value.z,-1.0f,1.0f)};
+            return value;
         }
         return {};
     }
