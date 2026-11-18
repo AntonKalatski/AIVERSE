@@ -1013,3 +1013,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `tests/run_ecs_experiment_suite.sh` to build and run the focused fixed-point regen parity fixture independently, using the public header and the engine Fixed implementation only.
 - Verification: script committed through GitHub; **no bash -n, native compilation or execution performed** because a repository checkout was unavailable.
 - Next: update native catalog's dependency list, skill and persistent issue; execute on an agent with repository checkout.
+
+
+### 2026-11-18 — ECS timed package dependency tracking, formatting retained
+- Implementation SHAs: `f2cde8e24c0a6f8d02307d78c39fff236e3509a0` (catalog policy/test dependency additions), `9bb95763a5af741a222ca18eb522251efc977ec4` (surgical reformat correction to avoid rewriting unrelated catalog entries).
+- Changed `libraries/catalog.json`: the existing `ecs-timed-mechanics` package now explicitly tracks `FixedRegeneration.h` and its policy test; still 123 catalog entries. Preserves existing package source paths and public target.
+- Verification: JSON parsed with 123 packages during the edit; **native catalog filesystem check/CTest not run**.
+- Next: keep source pins/skills synchronized and finish engine-wide test validation before production enablement.
