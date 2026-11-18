@@ -3,6 +3,7 @@
 // World and can be stepped explicitly, even when the current project has no PHYSIS.
 #include "../Editor.h"
 #include "../EditorUtil.h"
+#include "../PhysisSceneOverlay.h"
 #include "engine/physis/PhysisDebugPalette.h"
 #include <algorithm>
 #include <cstdint>
@@ -101,7 +102,37 @@ public:
         if (ImGui::InputInt("Центр X", &centerX_)) dirty_ = true;
         if (ImGui::InputInt("Центр Z", &centerZ_)) dirty_ = true;
         ImGui::Checkbox("Контуры ветра, штормов и гравитации", &showVolumes_);
-        if (ImGui::Button("Обновить данные")) dirty_ = true;
+        if (ImGui::Button("Обновить данные")) {
+            dirty_ = true;
+            physisSceneOverlayState().dirty = true;
+        }
+        ui::section(ICON_SCENE, "PHYSIS в окне «Сцена»");
+        auto& sceneOverlay = physisSceneOverlayState();
+        ImGui::BeginDisabled(!live);
+        if (ImGui::Checkbox("Показать 3D-оверлей в «Сцене»", &sceneOverlay.enabled))
+            sceneOverlay.dirty = true;
+        if (sceneOverlay.enabled) {
+            if (ImGui::SliderInt("Радиус в ячейках##physisScene", &sceneOverlay.radiusCells,
+                                 6, 24)) sceneOverlay.dirty = true;
+            if (ImGui::SliderInt("Шаг##physisScene", &sceneOverlay.stride, 1, 4))
+                sceneOverlay.dirty = true;
+            if (ImGui::SliderFloat("Прозрачность##physisScene", &sceneOverlay.alpha,
+                                   0.1f, 0.8f)) sceneOverlay.dirty = true;
+            ImGui::Checkbox("Поля / контуры##physisScene", &sceneOverlay.drawVolumes);
+        }
+        ImGui::EndDisabled();
+        if (!live)
+            ui::hint("3D-оверлей читает только игровую PHYSIS, не демонстрацию.");
+        if (sceneOverlay.layer != layer_ ||
+            sceneOverlay.palette != static_cast<DebugPalette>(palette_)) {
+            sceneOverlay.layer = layer_;
+            sceneOverlay.palette = static_cast<DebugPalette>(palette_);
+            sceneOverlay.dirty = true;
+        }
+        if (ImGui::Button("Настройки PHYSIS в Инспекторе")) {
+            ed.select({Selection::MapProps, -1, {}});
+            ed.focusWindow("inspector");
+        }
 
         // Refresh only when input, World identity or committed tick changed.
         // Mutations without a new tick (editor edits or rollback-to-same-tick)
