@@ -26,6 +26,8 @@ never equate source presence with a passing GPU test.**
 | Unified native streaming | `gfx::TextureResidentStreamer` | Owns queue+residency; gates sampling, tracks completions and retries |
 | Radiance `.hdr` / limited EXR | `render::loadRadianceHdr`, `render::loadOpenExr` | Linear RGBA16F; EXR is uncompressed scanline HALF/FLOAT RGB[A] only |
 | Virtual texture atlas | `gfx::VirtualTextureStreamer` | Fixed physical Texture2DArray pages, GPU page table, LRU and pinning |
+| Disk page I/O worker | `gfx::VirtualTextureDiskQueue` | Deduplicated, cancelable, bounded filesystem page results |
+| Disk-backed virtual atlas | `gfx::VirtualTextureFileStreamer` | Explicit page requests, render-thread pump and GPU page-table publication |
 | GPU subresource readback | `Device::readTextureAsync` | Metal/Vulkan/GL33/GLES3 source; unsupported on WebGL2 |
 | Live texture inventory | `Device::textureResources()` | Optional live GPU resource snapshot; byte size is estimated |
 
@@ -92,6 +94,45 @@ GL33/GLES3 use PBO+fence for RGBA8/sRGB; Vulkan uses fence-completed
 host staging for RGBA8/sRGB/RGBA16F. WebGL2 refuses native async
 readback. None of those paths has passing GPU verification yet.
 
+### File-backed virtual pages — native integration
+
+Create immutable RGBA8 files under the trusted game root, e.g.
+\`m2/l0/x0_y0.rgba\`, each exactly \`pageSize*pageSize*4\` bytes
+including image gutters. The two configs must have matching
+virtual tiles, layers, mips and physical page size:
+
+\`\`\`cpp
+#include "engine/gfx/VirtualTextureFileStreamer.h"
+gfx::VirtualTextureStreamConfig atlas;
+atlas.tilesX = atlas.tilesY = 256;
+atlas.mipLevels = 9; atlas.virtualLayers = 1;
+atlas.physicalPages = 64; atlas.physicalPageSize = 128;
+gfx::VirtualDiskPageConfig disk;
+disk.assetRoot = "assets/virtual_terrain";
+disk.tilesX = atlas.tilesX; disk.tilesY = atlas.tilesY;
+disk.mipLevels = atlas.mipLevels;
+disk.virtualLayers = atlas.virtualLayers;
+disk.pageSize = atlas.physicalPageSize;
+gfx::VirtualTextureFileStreamer streaming(device);
+if (streaming.initialize(atlas,disk)) {
+    auto ticket = streaming.requestPage({8,0,0,0},true);
+    // Call each frame on GPU owner thread, not on the file worker.
+    streaming.pump(4,[](gfx::VirtualDiskPageTicket,
+                        gfx::VirtualPageKey,bool ok,
+                        const std::string& error) {
+        // Respond to page success/failure in presentation state only.
+    });
+    streaming.shutdown();
+}
+\`\`\`
+
+The I/O worker never calls gfx::Device. Pin coarsest mip
+fallbacks, request missing detail pages explicitly and use
+the existing GLSL/MSL virtual texture lookup snippets.
+Automatic GPU-feedback-driven page requests, file packing
+and real-device shader validation are still separate work.
+No native GPU tests have been confirmed passing.
+
 ### Correctness and compatibility
 
 - Keep existing model material shaders' `sampler2D` resources on the
@@ -118,10 +159,11 @@ cmake --build build/texture-rhi --target \
   aiverse_texture_streaming_test aiverse_texture_mip_residency_test \
   aiverse_texture_resident_streamer_test aiverse_virtual_texture_pages_test \
   aiverse_virtual_texture_page_table_test aiverse_virtual_texture_streamer_test \
+  aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test \
   aiverse_ktx2_layers_test aiverse_dds_layers_test aiverse_texture_asset_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|hdr_texture|exr_texture|ktx2_layers|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture|ktx2_layers|dds_layers|texture_asset)$'
 ```
 
 Build the editor and native client to catch API/layout regressions.

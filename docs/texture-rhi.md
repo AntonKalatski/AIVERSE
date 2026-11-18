@@ -269,6 +269,29 @@ historical DDS pixel format. DDS layout is reordered from per-surface
 mip chains into complete mip levels for the RHI. No GPU tests have been
 run on this branch.
 
+## Disk-backed virtual pages — source implementation (unverified)
+
+\`engine/gfx/VirtualTextureDiskQueue.h\` provides an actual background
+filesystem worker reading immutable packed RGBA8 page files from
+\`m<MIP>/l<LAYER>/x<X>_y<Y>.rgba\` inside a trusted game asset root.
+It validates dimensions/file size, deduplicates requests, supports
+cancellation, and enforces outstanding request and RAM result budgets.
+Polling and GPU work remain on the render thread.
+
+\`engine/gfx/VirtualTextureFileStreamer.h\` combines this disk source
+with the existing physical \`VirtualTextureStreamer\` atlas and GPU
+page table. \`requestPage\` accepts explicit virtual tile requests;
+\`pump\` stages ready disk pages to the GPU, handles backpressure,
+and publishes shader mappings only after GPU upload completion.
+A missing/truncated file never becomes a resident GPU page.
+The game must still request pages via an application prefetch
+policy or future GPU-feedback pass. Native GPU/compiler tests have
+not yet been executed.
+
+New CPU CTests \`virtual_texture_disk_queue\` and
+\`virtual_texture_file_streamer\` exercise actual temporary files
+and a mock GPU, respectively.
+
 ## Live GPU texture inspector — source-only
 
 `Device::textureResources()` now enumerates user-created live textures from
@@ -297,9 +320,10 @@ cmake --build build/texture-rhi --target \
   aiverse_texture_mip_residency_test aiverse_texture_resident_streamer_test \
   aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test \
   aiverse_virtual_texture_streamer_test \
+  aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|hdr_texture|exr_texture)$'
+  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture)$'
 ```
 
 Build `aiverse_editor` and a native client to detect editor/renderer
@@ -315,6 +339,8 @@ need separate native builds and visual/readback validation.
 - `engine/gfx/RenderTargetSet.h` — MRT/MSAA render-target owner
 - `engine/gfx/TextureResidentStreamer.h` — bounded complete-mip streaming
 - `engine/gfx/VirtualTextureStreamer.h` — bounded physical atlas streaming
+- `engine/gfx/VirtualTextureDiskQueue.h` — asynchronous packed page file reads
+- `engine/gfx/VirtualTextureFileStreamer.h` — disk-to-GPU physical atlas coordinator
 - `engine/gfx/VirtualTextureSampling.h` — GLSL/MSL virtual page lookup
 - `engine/render/TextureAsset.h` — DDS/KTX2 GPU uploads
 - `apps/editor/windows/TextureResourcesWindow.cpp` — live GPU inspector
