@@ -2,6 +2,7 @@
 #include "engine/render/PrismaRenderGraph.h"
 #include "engine/render/PrismaGraphDispatch.h"
 #include "engine/render/PrismaGraphResourcePool.h"
+#include "engine/render/PrismaRhiExecutor.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -289,6 +290,19 @@ void poolContract() {
     pool.clear(release);
     check(pool.entries().empty(), "pool clear releases owned resources");
 }
+
+void rhiFormatContract() {
+    gfx::PixelFormat fmt = gfx::PixelFormat::RGBA8;
+    check(prismaRhiFormat(PrismaGraphFormat::RGBA8, fmt) &&
+          fmt == gfx::PixelFormat::RGBA8, "RHI RGBA8 format mapped");
+    check(prismaRhiFormat(PrismaGraphFormat::RGBA16F, fmt) &&
+          fmt == gfx::PixelFormat::RGBA16F, "RHI HDR format mapped");
+    check(prismaRhiFormat(PrismaGraphFormat::Depth32F, fmt) &&
+          fmt == gfx::PixelFormat::Depth, "RHI depth format mapped");
+    check(!prismaRhiFormat(PrismaGraphFormat::RG16F, fmt) &&
+          !prismaRhiFormat(PrismaGraphFormat::R32F, fmt),
+          "unavailable RHI formats rejected instead of emulated");
+}
 }
 int main() {
     positive();
@@ -296,6 +310,7 @@ int main() {
     resources();
     dispatchContract();
     poolContract();
+    rhiFormatContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
