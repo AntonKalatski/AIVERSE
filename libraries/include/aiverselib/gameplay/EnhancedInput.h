@@ -362,18 +362,30 @@ public:
         struct PreviewBinding { const Mapping* mapping; Value value; };
         std::map<std::string,std::vector<PreviewBinding>> candidates;
         std::set<Control> previewConsumed;
-        for (const auto& [name,priority] : ordered) {
-            (void)priority;
-            for (const auto& mapping : contexts_.at(name).mappings) {
-                if (!actions_.contains(mapping.action) ||
-                    previewConsumed.contains(mapping.control)) continue;
-                const float raw = sample(mapping.control).value;
-                const Value v = applyModifiers({raw,0,0},mapping.modifiers);
-                if (!v.actuated()) continue;
-                candidates[mapping.action].push_back({&mapping,v});
-                if (mapping.consume) previewConsumed.insert(mapping.control);
+        bool hasMappingChords=false;
+        auto rebuildCandidates = [&](const std::map<std::string,bool>* levels) {
+            candidates.clear();
+            previewConsumed.clear();
+            for (const auto& [name,priority] : ordered) {
+                (void)priority;
+                for (const auto& mapping : contexts_.at(name).mappings) {
+                    if (!actions_.contains(mapping.action) ||
+                        previewConsumed.contains(mapping.control)) continue;
+                    if (!levels) for (const auto& trigger : mapping.triggers)
+                        if (trigger.kind==TriggerKind::Chord ||
+                            trigger.kind==TriggerKind::NotChord) hasMappingChords=true;
+                    // A gated consuming binding should only reserve its control
+                    // when the prerequisite Action levels actually satisfy it.
+                    if (levels && !chordSatisfied(mapping.triggers,*levels)) continue;
+                    const float raw = sample(mapping.control).value;
+                    const Value v = applyModifiers({raw,0,0},mapping.modifiers);
+                    if (!v.actuated()) continue;
+                    candidates[mapping.action].push_back({&mapping,v});
+                    if (mapping.consume) previewConsumed.insert(mapping.control);
+                }
             }
-        }
+        };
+        rebuildCandidates(nullptr);
 
         // Pass 1b: recursively resolve same-frame Action levels through the
         // acyclic Chord/NotChord graph, including mapping and Action gates.
@@ -408,9 +420,37 @@ public:
             visiting[actionName]=2;
             return enabled;
         };
-        for (const auto& [name,action] : actions_) {
-            (void)action;
-            resolve(resolve,name);
+        auto resolveLevels = [&] {
+            chordLevels.clear();
+            visiting.clear();
+            for (const auto& [name,action] : actions_) {
+                (void)action;
+                resolve(resolve,name);
+            }
+        };
+        resolveLevels();
+
+        // Reconcile conditional consumption with transitive prerequisites. The
+        // initial pass is deliberately conservative (raw priority ordering);
+        // each subsequent pass only reserves controls for satisfied mapping
+        // gates. Stop on convergence. In a priority/consumption feedback loop
+        // with no fixed point, fall back deterministically to the conservative
+        // initial snapshot rather than depend on iteration count or name order.
+        if (hasMappingChords) {
+            std::vector<std::map<std::string,bool>> seen{chordLevels};
+            bool settled=false;
+            for (int pass=0; pass<8; ++pass) {
+                const auto prior=chordLevels;
+                rebuildCandidates(&prior);
+                resolveLevels();
+                if (chordLevels==prior) { settled=true; break; }
+                if (std::find(seen.begin(),seen.end(),chordLevels)!=seen.end()) break;
+                seen.push_back(chordLevels);
+            }
+            if (!settled) {
+                rebuildCandidates(nullptr);
+                resolveLevels();
+            }
         }
 
         std::map<Control,bool> consumed;
