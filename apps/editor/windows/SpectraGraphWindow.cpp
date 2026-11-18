@@ -161,6 +161,18 @@ private:
             doc_=defaultGraph();name_="new_spectra";selected_=-1;pendingFrom_.clear();
             undo_.clear();redo_.clear();dirty_=true;message_.clear();refreshDiagnostics();
         }
+        if(doc_.getInt("version")==1) {
+            ImGui::SameLine();
+            if(ImGui::Button("v1 → v2")) {
+                // The v2 frontend accepts all existing v1 stage nodes and
+                // execution links. This non-destructive upgrade preserves
+                // authored settings, node positions and effect identity.
+                remember();
+                doc_.set("version",Json::number(int64_t(2)));
+                refreshDiagnostics();
+                message_="Граф переведён в v2. Исходный файл не изменён до сохранения.";
+            }
+        }
         ImGui::SameLine();
         if(ImGui::Button("Сохранить"))save(ed);
         ImGui::SameLine();
