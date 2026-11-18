@@ -76,6 +76,17 @@ public:
     NereidSurfaceResident(NereidSurfaceResident&&)=delete;
     NereidSurfaceResident& operator=(NereidSurfaceResident&&)=delete;
 
+    bool needsUpdate(const lib::nereid::WaterBodyComponent& body,
+            const lib::nereid::WaterGeometryComponent* geometry,
+            uint64_t sourceRevision,
+            lib::nereid::WaterSurfaceMeshOptions opts={},
+            lib::nereid::WaterSurfaceStyle style={}) const {
+        if(!body.enabled)return false;
+        const bool infinite=(!geometry || !geometry->enabled) &&
+            body.footprint==lib::nereid::WaterFootprint::Infinite;
+        const auto key=makeNereidSurfaceKey(sourceRevision,infinite,opts,style);
+        return !resident_ || !sameNereidSurfaceKey(key,key_);
+    }
     // The device must remain valid until release(). Same device required for
     // successive updates; call release(oldDevice) before device recreation.
     NereidSurfaceUpdate update(gfx::Device& device,
