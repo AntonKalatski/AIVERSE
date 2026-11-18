@@ -1,6 +1,7 @@
 #include "engine/gfx/VirtualTextureFeedback.h"
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -45,6 +46,12 @@ void materialUvPageSelection() {
             virtualTextureFeedbackPageAtUV(0.5,0.5,31,0,8,8).mip<0 &&
             virtualTextureFeedbackPageAtUV(0.5,0.5,0,16,8,8).mip<0,
             "out-of-range material feedback never aliases a valid page");
+    const double nan=std::numeric_limits<double>::quiet_NaN();
+    const double inf=std::numeric_limits<double>::infinity();
+    require(virtualTextureFeedbackPageAtUV(nan,0.5,0,0,8,8).mip<0 &&
+            virtualTextureFeedbackPageAtUV(0.5,inf,0,0,8,8).mip<0 &&
+            virtualTextureFeedbackPageAtUV(-inf,0.5,0,0,8,8).mip<0,
+            "nonfinite UV is invalid before float-to-int page conversion");
     require(encodeVirtualTextureFeedback(
                 virtualTextureFeedbackPageAtUV(1.0,1.0,0,1,8,8))!=0,
             "material page selection produces a valid packed GPU ID");
