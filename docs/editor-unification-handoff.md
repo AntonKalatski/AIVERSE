@@ -1880,3 +1880,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `8e849661f4fc29b6b998e6bff135af2a7b5e93a0`.
 - Updated `modules/fps/FpsModule.h` to declare both the **original** `syncDynamicEntities(Simulation&) const` signature and a new two-argument `syncDynamicEntities(Simulation&,bool) const` mirror-projection overload. This preserves source/binary symbol expectations for existing native project callers while keeping the ECS→State projection mode explicit.
 - **Verification:** header committed; old-signature wrapper implementation still needed, native build not executed. Next commit defines the wrapper and logs it separately.
+
+
+### 2026-11-18 — Backward-compatible FPS dynamic sync overload implemented
+- **Implementation SHA:** `3d1d28401dd963be062197629e153b951149e07d`.
+- Added the original `Module::syncDynamicEntities(Simulation&) const` native method body as an overload wrapper in `modules/fps/FpsModule.cpp`, forwarding to the extended `syncDynamicEntities(sim,false)`. Legacy v9 save/load, setup, Editor/native project invocations keep the old source and C++ symbol, while the actual `fps.ecsMirror` uses `syncDynamicEntities(s,true)` under `fps.ecsAuthority` to enforce one-way Runtime→State projectile projection.
+- **Verification:** GitHub source committed; binary ABI/native compilation and gameplay fixtures remain unexecuted. Next: static wiring audit, documentation/epic update, native FPS and ECS tests.
