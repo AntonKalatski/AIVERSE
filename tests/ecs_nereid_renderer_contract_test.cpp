@@ -660,5 +660,26 @@ int main() {
           mobileShader.find("underwater2.z > 2.5")!=std::string::npos &&
           mobileShader.find("TEX0(warped)")!=std::string::npos,
           "shared shader must expose bounded tier-dependent distortion");
+    // Stage 21: shared compositor has an optional per-pixel depth path.
+    // Backend selects the PF_UNDERWATER_DEPTH shader variant only with a
+    // completed non-feedback scene depth texture. Low uses the old fallback.
+    const std::string depthComposite(render::postfx::kComposite);
+    check(depthComposite.find("#ifdef PF_UNDERWATER_DEPTH")!=std::string::npos &&
+          depthComposite.find("PF_DEPTH_SAMPLE(TUV(s))")!=std::string::npos &&
+          depthComposite.find("inverseViewProj0 * clip.x")!=std::string::npos &&
+          depthComposite.find("inverseViewProj3 * clip.w")!=std::string::npos,
+          "underwater shader must reconstruct per-pixel world position from depth");
+    check(depthComposite.find("underwaterCamera.w > 0.5")!=std::string::npos &&
+          depthComposite.find("rawDepth * 2.0 - 1.0")!=std::string::npos &&
+          depthComposite.find("rawDepth < 0.9999")!=std::string::npos,
+          "underwater shader must handle GL/Metal clip ranges and sky fallback");
+    check(depthComposite.find("length(hitPosition - underwaterCamera.xyz)")!=
+          std::string::npos &&
+          depthComposite.find("float opticalDistance = min(underwater1.y + 5.0, 120.0)")!=
+          std::string::npos,
+          "underwater view distance must preserve a depth-free fallback");
+    check(render::postFxUnderwaterBudget(render::PostFxQuality::Low).samples==1 &&
+          render::postFxUnderwaterBudget(render::PostFxQuality::High).samples==3,
+          "depth capability must not change established water quality budgets");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
