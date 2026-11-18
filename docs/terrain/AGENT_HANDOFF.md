@@ -291,3 +291,46 @@ TerraWeave-specific GCC/Clang errors and append exact results here.
 When ready, continue the visible forest scene integration and
 instanced prototype reuse. Keep this PR Draft until compilation,
 render screenshot and core engine compatibility checks are verified.
+
+## Stage 2f — existing legacy heightfield editor adapter (COMMITTED; UNVERIFIED)
+
+Commits:
+- `a3b46c2de44bb9c88c814679e839b1fb03989120`:
+  `engine/world/TerraWeaveHeightmap.h` maps integer-cm terrain
+  to existing signed int16 1/16-metre corners.
+- `2c1b36777ca2f026191cbb89682fdbbc5f279fd5`:
+  `apps/editor/core/TerraWeaveMapAdapter.h` provides optional
+  `bakeTerraWeaveTerrain(MapDoc&, ...)`. It refuses to replace authored
+  corners by default; uses `beginEdit()`/ `touched()` to preserve
+  undo and viewer rebuild. Flat maps only.
+- `187ef5573d4712087d79fa78576f01e813b3f7d9`:
+  validate map origin/span before signed world-coordinate addition.
+- `eb1b38f843451f64b482f10116cbf47926a26d36`:
+  `tests/terraweave_heightmap_test.cpp`: corner seams, integer
+  negative heights, out-of-range values and invalid dimensions.
+- `4ef95f969839fc6beec54f78646e4e823c066b5e`:
+  `CMakeLists.txt` registers new `terraweave_heightmap` CTest target.
+- `452950ef7c67177151eefe026efeb00e944dbfb3`:
+  isolated TerraWeave workflow extended to 5 test targets.
+- `341765f95bb9615b1c501b87381387a6fd041574`:
+  API and caveats added to `docs/terrain/TERRAWEAVE.md`.
+
+**Tests:** authored/committed, no observed successful execution.
+Run all five:
+```sh
+cmake -S . -B build/terraweave-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/terraweave-test --target aiverse_terraweave_test aiverse_terraweave_arbor_test aiverse_terraweave_flora_test aiverse_terraweave_model_test aiverse_terraweave_heightmap_test -j
+ctest --test-dir build/terraweave-test --output-on-failure -R '^terraweave(_arbor|_flora|_model|_heightmap)?$'
+```
+
+**Important integration limitations:** adapter is callable C++, not an
+editor UI panel/MCP tool, and the inline `MapDoc` wrapper does not yet
+have an editor integration test. It is a destructive *bake* only with
+explicit replacement, not a non-destructive generation graph with
+painted override layers. No terrain collision/navmesh regen event
+wiring yet beyond existing `MapDoc::touched()` rebuild semantics.
+
+**Next acceptance:** compile; test the MapDoc adapter in an editor
+test with `undo()`, `redo()`, save/load, `terrain.model` opt-in and
+screenshot view. Add UI/MCP to preview/commit and persistent
+generation settings; do not overwrite legacy maps automatically.
