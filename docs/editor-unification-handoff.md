@@ -1314,3 +1314,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `5588ca512d3866704363dc7ed006abb8a5612f7d`.
 - `tests/run_ecs_experiment_suite.sh` now compiles/runs `ecs-hitscan-resolution` with the same public library and world/simulation/fixed-point sources as `ecs-hitscan-selection`. The test covers source order, invalid/occluded requests, consumed intent and deterministic deep/COW replay.
 - Verification: GitHub code commit only. No native compiler or standalone suite executed here. Next: expose public package+skill and check outstanding CI.
+
+### 2026-11-18 — Native AI skill for ECS hitscan resolution
+- Implementation SHA: `22771304cc47862299f56c281bbd173c1986c33f`.
+- New `skills/gameplay/aiverse-ecs-hitscan-resolution/SKILL.md` documents the component intent and five custom callback adapters for `addHitscanResolutionSystem`, choice of physics/kinematic/hitscan policies, independent snapshot tests, and the critical difference from live FPS synchronous same-tick damage ordering.
+- Verification: skill file committed on the working branch. The described catalog target must still be published; no native compile/run.
