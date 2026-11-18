@@ -2,6 +2,7 @@
 // baked or posed skinning, dissolve, selection outline, attachments on sockets, effect anchors;
 // projectiles leaving muzzles; building ghosts and previews for portraits / editor.
 #include "RtsView.h"
+#include "RtsPreviewPresentation.h"
 #include "engine/view/View.h"
 
 #include <algorithm>
@@ -333,18 +334,20 @@ void RtsView::drawProjectile(Renderer3D& r, uint64_t key, const SceneObject& o, 
 void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const MapGrid& grid, double time) {
     if (type >= looks_.size()) return;
     loadType(type);
-    static EntityAnim ghost;
-    ghost.type = type;
-    ghost.choice = 0;
-    ghost.objXf = mat4{};
+    // The ghost description is authored by a host adapter, not by the
+    // renderer. The temporary state belongs to this RtsView instance.
+    const auto description=view_adapter::makeGhostPresentation(type,pos,ok,time);
+    auto& ghost=ghostAnim_;
+    ghost.type=description.type;
+    ghost.choice=0;
+    ghost.objXf=mat4{};
     ghost.world.clear();
-    ghost.yaw = 0;
+    ghost.yaw=0;
     SceneObject o;
-    o.type = type;
-    o.owner = 1;
-    o.pos = pos;
-    const float pulse = 0.4f + 0.08f * float(std::sin(time * 5.0));
-    const float4 tint = ok ? float4{0.45f, 1.0f, 0.55f, pulse} : float4{1.0f, 0.35f, 0.3f, pulse};
+    o.type=description.type;
+    o.owner=description.owner;
+    o.pos=description.position;
+    const float4 tint=description.tint;
     if (planets_.active()) { // planets: on the sphere, oriented to the local up
         mat4 place;
         if (planetPlacement(o, place)) drawObject(r, ghost, o, 0, 1, &tint, &place);
@@ -356,13 +359,13 @@ void RtsView::drawGhost(Renderer3D& r, uint16_t type, float3 pos, bool ok, const
 void RtsView::drawPreview(Renderer3D& r, uint16_t type, uint8_t owner, double time, float yaw) {
     if (type >= looks_.size()) return;
     loadType(type);
-    const uint64_t key = (1ull << 62) | (uint64_t(owner) << 16) | type;
+    const auto description=view_adapter::makeModelPreviewPresentation(type,owner,yaw);
     SceneObject o;
-    o.type = type;
-    o.owner = owner;
-    o.facing = {std::cos(yaw), 0, -std::sin(yaw)};
-    EntityAnim& st = stateFor(key, o);
-    const float dt = st.lastSeenTime < 0 ? 0.0f : float(std::clamp(time - st.lastSeenTime, 0.0, 0.1));
+    o.type=description.type;
+    o.owner=description.owner;
+    o.facing=description.facing;
+    EntityAnim& st=stateFor(description.sourceKey,o);
+    const float dt=view_adapter::previewFrameDt(time,st.lastSeenTime);
     st.lastSeenTime = time;
     const bool lodWas = animLod_;
     animLod_ = false;
