@@ -56,6 +56,20 @@ No local checkout/build was available for this stage. Continue
 `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` after
 each future implementation stage.
 
+**Stage 12 — SpectraFX GPU sparse range and failure-state corrections
+(source committed, tests NOT RUN):** `engine/fx/SpectraGpuParticles.*`
+limits compute and indexed drawing to the occupied slot prefix
+(`ComputeStats::submittedSlots`), skips empty-pool compute and records
+loss during GPU→CPU fallback. This is not compaction. `RequireGpu`
+never silently becomes CPU after a device-health failure.
+`GraphRuntime::step` propagates backend readiness and diagnostics.
+The recording RHI test now covers multiple-frame slot reuse and
+clear/health failures; real Metal validation is still required.
+The focused `.github/workflows/spectrafx-validation.yml` is a
+CI gate for headless regression and editor compilation, **not**
+proof of a real shader/GPU render. Mandatory continuation log:
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
