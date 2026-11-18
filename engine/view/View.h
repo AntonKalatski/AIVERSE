@@ -6,6 +6,7 @@
 #include <aiverselib/animation/AnimationBudgetPolicy.h>
 #include <aiverselib/motionweave/MotionWeave.h>
 #include "engine/render/Renderer3D.h"
+#include "SceneLayerProviders.h"
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -98,6 +99,21 @@ public:
     void beginScene(render::Renderer3D& renderer,
                     const render::Camera3D& camera,int fbWidth,int fbHeight) const {
         renderer.beginScene(camera,fbWidth,fbHeight);
+    }
+
+    // Canonical presentation frame-layer barrier. Providers remain host-
+    // owned and may capture terrain, renderer or editor state by reference;
+    // View consumes all callbacks synchronously on the calling thread.
+    // The queue owns the original insertion order and exception cleanup.
+    static view::LayerQueueStats submitLayers(view::ViewLayerQueue& queue) {
+        return queue.flush();
+    }
+    static view::LayerQueueStats submitLayers(
+            const view::ViewLayerProviders& providers,
+            const view::ViewFrameInfo& frame) {
+        view::ViewLayerQueue queue;
+        providers.collect(queue,frame);
+        return submitLayers(queue);
     }
 
     // Frame staging is a separate phase: material/geometry and GPU calls
