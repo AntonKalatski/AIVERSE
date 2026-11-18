@@ -42,6 +42,10 @@ constexpr GLenum kGL_ETC2_RGB8 = 0x9274, kGL_ETC2_RGBA8 = 0x9278, kGL_DXT1_RGBA 
                  kGL_BPTC_UNORM = 0x8E8C, kGL_ASTC_4x4 = 0x93B0, kGL_ASTC_6x6 = 0x93B4;
 constexpr GLenum kGL_BC4_RGTC1 = 0x8DBB, kGL_BC5_RGTC2 = 0x8DBD, kGL_EAC_R11 = 0x9270;
 constexpr GLenum kGL_BC6H_SIGNED = 0x8E8E, kGL_BC6H_UNSIGNED = 0x8E8F;
+constexpr GLenum kGL_BC1_SRGB = 0x8C4D, kGL_BC3_SRGB = 0x8C4F;
+constexpr GLenum kGL_BC7_SRGB = 0x8E8D;
+constexpr GLenum kGL_ETC2_RGB_SRGB = 0x9275, kGL_ETC2_RGBA_SRGB = 0x9279;
+constexpr GLenum kGL_ASTC_4x4_SRGB = 0x93D0, kGL_ASTC_6x6_SRGB = 0x93D4;
 GLenum uncompressedInternal(PixelFormat f) {
     switch (f) {
     case PixelFormat::Depth: return GL_DEPTH_COMPONENT24;
@@ -90,6 +94,13 @@ GLenum compressedEnum(PixelFormat f) {
         case PixelFormat::BC7: return kGL_BPTC_UNORM;
         case PixelFormat::BC6H_UFloat: return kGL_BC6H_UNSIGNED;
         case PixelFormat::BC6H_SFloat: return kGL_BC6H_SIGNED;
+        case PixelFormat::BC1_sRGB: return kGL_BC1_SRGB;
+        case PixelFormat::BC3_sRGB: return kGL_BC3_SRGB;
+        case PixelFormat::BC7_sRGB: return kGL_BC7_SRGB;
+        case PixelFormat::ETC2_RGB8_sRGB: return kGL_ETC2_RGB_SRGB;
+        case PixelFormat::ETC2_RGBA8_sRGB: return kGL_ETC2_RGBA_SRGB;
+        case PixelFormat::ASTC_4x4_sRGB: return kGL_ASTC_4x4_SRGB;
+        case PixelFormat::ASTC_6x6_sRGB: return kGL_ASTC_6x6_SRGB;
         case PixelFormat::ASTC_4x4: return kGL_ASTC_4x4;
         case PixelFormat::ASTC_6x6: return kGL_ASTC_6x6;
         default: return 0;
@@ -177,6 +188,9 @@ public:
         etc2_ = flavor != Backend::GL33 || has("ES3_compatibility");
 #endif
         s3tc_ = has("texture_compression_s3tc") || has("compressed_texture_s3tc");
+        // WebGL2 requires the distinct WEBGL_compressed_texture_s3tc_srgb
+        // extension. Base S3TC support alone is not enough on web/mobile.
+        s3tcSrgb_ = flavor == Backend::GL33 || has("s3tc_srgb");
         bptc_ = has("texture_compression_bptc");
         rgtc_ = flavor == Backend::GL33 || has("texture_compression_rgtc");
         if (ext.empty() && flavor == Backend::GL33) s3tc_ = true; // core profiles hide the list; every desktop GPU has DXT
@@ -202,12 +216,16 @@ public:
         switch (f) {
             case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
             case PixelFormat::EAC_R11: return etc2_;
+            case PixelFormat::ETC2_RGB8_sRGB:
+            case PixelFormat::ETC2_RGBA8_sRGB: return etc2_;
             case PixelFormat::BC1: case PixelFormat::BC3: return s3tc_;
+            case PixelFormat::BC1_sRGB: case PixelFormat::BC3_sRGB: return s3tc_ && s3tcSrgb_;
             case PixelFormat::BC4: case PixelFormat::BC5: return rgtc_;
             case PixelFormat::BC7:
             case PixelFormat::BC6H_UFloat:
-            case PixelFormat::BC6H_SFloat: return bptc_;
-            case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6: return astc_;
+            case PixelFormat::BC6H_SFloat: case PixelFormat::BC7_sRGB: return bptc_;
+            case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6:
+            case PixelFormat::ASTC_4x4_sRGB: case PixelFormat::ASTC_6x6_sRGB: return astc_;
             case PixelFormat::RGBA16F: return hdr_;
             default: return true;
         }
@@ -1462,7 +1480,8 @@ private:
     GLuint slotUbos_[kMaxUniformSlots] = {};
 #endif
     size_t uboAlign_ = 256, uboOffset_ = 0;
-    bool etc2_ = false, s3tc_ = false, bptc_ = false, astc_ = false, rgtc_ = false;
+    bool etc2_ = false, s3tc_ = false, s3tcSrgb_ = false, bptc_ = false,
+         astc_ = false, rgtc_ = false;
     bool anisotropy_ = false;
     float maxAnisotropy_ = 1.0f;
     bool srgbWrite_ = false;   // GL33: GL_FRAMEBUFFER_SRGB enabled for the current pass

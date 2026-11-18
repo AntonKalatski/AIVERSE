@@ -142,10 +142,14 @@ public:
         switch (f) {
             case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8:
             case PixelFormat::EAC_R11: case PixelFormat::ASTC_4x4:
-            case PixelFormat::ASTC_6x6: return apple;
+            case PixelFormat::ASTC_6x6:
+            case PixelFormat::ETC2_RGB8_sRGB: case PixelFormat::ETC2_RGBA8_sRGB:
+            case PixelFormat::ASTC_4x4_sRGB: case PixelFormat::ASTC_6x6_sRGB: return apple;
             case PixelFormat::BC1: case PixelFormat::BC3: case PixelFormat::BC4:
             case PixelFormat::BC5: case PixelFormat::BC7:
             case PixelFormat::BC6H_UFloat: case PixelFormat::BC6H_SFloat:
+            case PixelFormat::BC1_sRGB: case PixelFormat::BC3_sRGB:
+            case PixelFormat::BC7_sRGB:
                 return bc && compressedFormat(f) != MTLPixelFormatInvalid;
             default: return true;
         }
@@ -204,12 +208,19 @@ public:
             case PixelFormat::EAC_R11: return MTLPixelFormatEAC_R11Unorm;
             case PixelFormat::ASTC_4x4: return MTLPixelFormatASTC_4x4_LDR;
             case PixelFormat::ASTC_6x6: return MTLPixelFormatASTC_6x6_LDR;
+            case PixelFormat::ETC2_RGB8_sRGB: return MTLPixelFormatETC2_RGB8_sRGB;
+            case PixelFormat::ETC2_RGBA8_sRGB: return MTLPixelFormatEAC_RGBA8_sRGB;
+            case PixelFormat::ASTC_4x4_sRGB: return MTLPixelFormatASTC_4x4_sRGB;
+            case PixelFormat::ASTC_6x6_sRGB: return MTLPixelFormatASTC_6x6_sRGB;
 #if !TARGET_OS_IPHONE
             case PixelFormat::BC1: return MTLPixelFormatBC1_RGBA;
             case PixelFormat::BC3: return MTLPixelFormatBC3_RGBA;
             case PixelFormat::BC4: return MTLPixelFormatBC4_RUnorm;
             case PixelFormat::BC5: return MTLPixelFormatBC5_RGUnorm;
             case PixelFormat::BC7: return MTLPixelFormatBC7_RGBAUnorm;
+            case PixelFormat::BC1_sRGB: return MTLPixelFormatBC1_RGBA_sRGB;
+            case PixelFormat::BC3_sRGB: return MTLPixelFormatBC3_RGBA_sRGB;
+            case PixelFormat::BC7_sRGB: return MTLPixelFormatBC7_RGBAUnorm_sRGB;
             case PixelFormat::BC6H_UFloat: return MTLPixelFormatBC6H_RGBUfloat;
             case PixelFormat::BC6H_SFloat: return MTLPixelFormatBC6H_RGBFloat;
 #endif

@@ -52,6 +52,13 @@ const char* textureFormatName(gfx::PixelFormat f) {
     case gfx::PixelFormat::RG32F: return "RG32F";
     case gfx::PixelFormat::BC6H_UFloat: return "BC6H UF";
     case gfx::PixelFormat::BC6H_SFloat: return "BC6H SF";
+    case gfx::PixelFormat::BC1_sRGB: return "BC1 sRGB";
+    case gfx::PixelFormat::BC3_sRGB: return "BC3 sRGB";
+    case gfx::PixelFormat::BC7_sRGB: return "BC7 sRGB";
+    case gfx::PixelFormat::ETC2_RGB8_sRGB: return "ETC2 RGB sRGB";
+    case gfx::PixelFormat::ETC2_RGBA8_sRGB: return "ETC2 RGBA sRGB";
+    case gfx::PixelFormat::ASTC_4x4_sRGB: return "ASTC 4x4 sRGB";
+    case gfx::PixelFormat::ASTC_6x6_sRGB: return "ASTC 6x6 sRGB";
     }
     return "Unknown";
 }

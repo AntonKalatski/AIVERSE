@@ -25,7 +25,8 @@ public:
     const std::string& lastError() const override { return error_; }
     bool supports(gfx::PixelFormat f) const override {
         return f == gfx::PixelFormat::BC7 || f == gfx::PixelFormat::BC4 ||
-               f == gfx::PixelFormat::BC5 || f == gfx::PixelFormat::EAC_R11;
+               f == gfx::PixelFormat::BC5 || f == gfx::PixelFormat::EAC_R11 ||
+               f == gfx::PixelFormat::BC1_sRGB || f == gfx::PixelFormat::BC7_sRGB;
     }
     gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override { return {}; }
     void updateBuffer(gfx::BufferHandle,const void*,size_t,size_t) override {}
@@ -157,6 +158,28 @@ int main() {
         check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::BC5 &&
               dev.lastDesc.levelCount == 1,
               "BC5 native RGTC2 requires shader opt-in");
+        dev.destroyTexture(h);
+
+        // Native compressed sRGB paths must allocate an actual *_sRGB RHI
+        // format so RGB hardware sampling decodes automatically.
+        image = {};
+        image.width = image.height = 4;
+        image.format = render::BlockFormat::BC7;
+        image.vkFormat = 146;
+        image.srgb = true;
+        image.levels.resize(1);
+        image.levels[0].assign(16, 0);
+        h = render::uploadContainerTexture(dev, image, {}, err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::BC7_sRGB &&
+              dev.lastDesc.levelCount == 1,
+              "BC7 sRGB keeps compressed native GPU color conversion");
+        dev.destroyTexture(h);
+        image.format = render::BlockFormat::BC1;
+        image.vkFormat = 134;
+        image.levels[0].assign(8, 0);
+        h = render::uploadContainerTexture(dev, image, {}, err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::BC1_sRGB,
+              "BC1 RGBA sRGB native format selected");
         dev.destroyTexture(h);
 
         // A backend can report a compressed format yet reject this allocation.

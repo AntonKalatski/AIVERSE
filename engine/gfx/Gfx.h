@@ -56,7 +56,10 @@ enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
                          RGBA16F, // linear HDR radiance, 8 bytes/pixel; check supports()
                          BC4, BC5, EAC_R11, // one/two-channel compressed data maps; check supports()
                          RG8, R16F, RG16F, R32F, RG32F,
-                         BC6H_UFloat, BC6H_SFloat }; // HDR GPU block compression // single/dual-channel sampled data textures
+                         BC6H_UFloat, BC6H_SFloat,
+                         BC1_sRGB, BC3_sRGB, BC7_sRGB,
+                         ETC2_RGB8_sRGB, ETC2_RGBA8_sRGB,
+                         ASTC_4x4_sRGB, ASTC_6x6_sRGB }; // HDR GPU block compression // single/dual-channel sampled data textures
 // Shared compression metadata used by all texture backends. A requested
 // compressed format must NEVER be allocated as RGBA8 when unsupported.
 constexpr bool isCompressedTextureFormat(PixelFormat f) {
@@ -66,6 +69,9 @@ constexpr bool isCompressedTextureFormat(PixelFormat f) {
     case PixelFormat::BC3: case PixelFormat::BC4:
     case PixelFormat::BC5: case PixelFormat::BC7:
     case PixelFormat::BC6H_UFloat: case PixelFormat::BC6H_SFloat:
+    case PixelFormat::BC1_sRGB: case PixelFormat::BC3_sRGB: case PixelFormat::BC7_sRGB:
+    case PixelFormat::ETC2_RGB8_sRGB: case PixelFormat::ETC2_RGBA8_sRGB:
+    case PixelFormat::ASTC_4x4_sRGB: case PixelFormat::ASTC_6x6_sRGB:
     case PixelFormat::ASTC_4x4: case PixelFormat::ASTC_6x6:
         return true;
     default:
@@ -75,11 +81,13 @@ constexpr bool isCompressedTextureFormat(PixelFormat f) {
 constexpr int compressedTextureBlockBytes(PixelFormat f) {
     if (!isCompressedTextureFormat(f)) return 0;
     return f == PixelFormat::ETC2_RGB8 || f == PixelFormat::EAC_R11 ||
-           f == PixelFormat::BC1 || f == PixelFormat::BC4 ? 8 : 16;
+           f == PixelFormat::BC1 || f == PixelFormat::BC1_sRGB ||
+           f == PixelFormat::ETC2_RGB8_sRGB ||
+           f == PixelFormat::BC4 ? 8 : 16;
 }
 constexpr int compressedTextureBlockSize(PixelFormat f) {
     return !isCompressedTextureFormat(f) ? 0 :
-           f == PixelFormat::ASTC_6x6 ? 6 : 4;
+           f == PixelFormat::ASTC_6x6 || f == PixelFormat::ASTC_6x6_sRGB ? 6 : 4;
 }
 constexpr bool isExtendedDataTextureFormat(PixelFormat f) {
     return f == PixelFormat::RG8 || f == PixelFormat::R16F ||

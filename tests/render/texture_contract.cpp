@@ -140,6 +140,12 @@ int main() {
     check(validateTextureDesc(d) == TextureDescError::InvalidUsage, "MSAA compressed texture disallowed");
     d.format = PixelFormat::RGBA8; d.sampleCount = 3;
     check(validateTextureDesc(d) == TextureDescError::InvalidSampleCount, "reject nonstandard MSAA samples");
+    check(isCompressedTextureFormat(PixelFormat::BC1_sRGB) &&
+          compressedTextureBlockBytes(PixelFormat::BC1_sRGB) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::ETC2_RGB8_sRGB) == 8 &&
+          compressedTextureBlockBytes(PixelFormat::BC7_sRGB) == 16 &&
+          compressedTextureBlockSize(PixelFormat::ASTC_6x6_sRGB) == 6,
+          "native compressed sRGB variants retain correct block extents");
     check(isCompressedTextureFormat(PixelFormat::BC4) &&
           isCompressedTextureFormat(PixelFormat::BC5) &&
           isCompressedTextureFormat(PixelFormat::EAC_R11),

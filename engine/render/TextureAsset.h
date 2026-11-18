@@ -71,26 +71,34 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
     switch (in.format) {
     case BlockFormat::BC1:
         // BC1_RGB's transparent-index semantics differ on GPUs using BC1_RGBA.
-        if (in.vkFormat != 131 && in.vkFormat != 132) compressed = gfx::PixelFormat::BC1;
+        if (in.vkFormat != 131 && in.vkFormat != 132)
+            compressed = in.srgb ? gfx::PixelFormat::BC1_sRGB : gfx::PixelFormat::BC1;
         break;
-    case BlockFormat::BC3: compressed = gfx::PixelFormat::BC3; break;
+    case BlockFormat::BC3: compressed = in.srgb ? gfx::PixelFormat::BC3_sRGB : gfx::PixelFormat::BC3; break;
     case BlockFormat::BC4: compressed = gfx::PixelFormat::BC4; break;
     case BlockFormat::BC5: compressed = gfx::PixelFormat::BC5; break;
     case BlockFormat::EAC_R11: compressed = gfx::PixelFormat::EAC_R11; break;
-    case BlockFormat::BC7: compressed = gfx::PixelFormat::BC7; break;
+    case BlockFormat::BC7: compressed = in.srgb ? gfx::PixelFormat::BC7_sRGB : gfx::PixelFormat::BC7; break;
     case BlockFormat::BC6H_UFloat: compressed = gfx::PixelFormat::BC6H_UFloat; break;
     case BlockFormat::BC6H_SFloat: compressed = gfx::PixelFormat::BC6H_SFloat; break;
-    case BlockFormat::ETC2_RGB8: compressed = gfx::PixelFormat::ETC2_RGB8; break;
-    case BlockFormat::ETC2_RGBA8: compressed = gfx::PixelFormat::ETC2_RGBA8; break;
-    case BlockFormat::ASTC_4x4: compressed = gfx::PixelFormat::ASTC_4x4; break;
-    case BlockFormat::ASTC_6x6: compressed = gfx::PixelFormat::ASTC_6x6; break;
+    case BlockFormat::ETC2_RGB8: compressed = in.srgb ? gfx::PixelFormat::ETC2_RGB8_sRGB : gfx::PixelFormat::ETC2_RGB8; break;
+    case BlockFormat::ETC2_RGBA8: compressed = in.srgb ? gfx::PixelFormat::ETC2_RGBA8_sRGB : gfx::PixelFormat::ETC2_RGBA8; break;
+    case BlockFormat::ASTC_4x4: compressed = in.srgb ? gfx::PixelFormat::ASTC_4x4_sRGB : gfx::PixelFormat::ASTC_4x4; break;
+    case BlockFormat::ASTC_6x6: compressed = in.srgb ? gfx::PixelFormat::ASTC_6x6_sRGB : gfx::PixelFormat::ASTC_6x6; break;
     case BlockFormat::None:
         break; // rgba8 raw payload
     }
     const bool native = !opt.forceCpuDecode &&
         compressed != gfx::PixelFormat::RGBA8 &&
         (in.depth == 1 && !in.oneDimensional && !in.threeDimensional) &&
-        (!in.srgb || opt.trustShaderSrgbDecode) &&
+        (!in.srgb || compressed == gfx::PixelFormat::BC1_sRGB ||
+         compressed == gfx::PixelFormat::BC3_sRGB ||
+         compressed == gfx::PixelFormat::BC7_sRGB ||
+         compressed == gfx::PixelFormat::ETC2_RGB8_sRGB ||
+         compressed == gfx::PixelFormat::ETC2_RGBA8_sRGB ||
+         compressed == gfx::PixelFormat::ASTC_4x4_sRGB ||
+         compressed == gfx::PixelFormat::ASTC_6x6_sRGB ||
+         opt.trustShaderSrgbDecode) &&
         (in.format != BlockFormat::BC5 || opt.shaderReconstructsBc5NormalZ) &&
         dev.supports(compressed);
 

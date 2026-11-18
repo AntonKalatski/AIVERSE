@@ -137,6 +137,13 @@ VkFormat VulkanDevice::vkFormat(PixelFormat f) const {
         case PixelFormat::BC5: return VK_FORMAT_BC5_UNORM_BLOCK;
         case PixelFormat::EAC_R11: return VK_FORMAT_EAC_R11_UNORM_BLOCK;
         case PixelFormat::BC7: return VK_FORMAT_BC7_UNORM_BLOCK;
+        case PixelFormat::BC1_sRGB: return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+        case PixelFormat::BC3_sRGB: return VK_FORMAT_BC3_SRGB_BLOCK;
+        case PixelFormat::BC7_sRGB: return VK_FORMAT_BC7_SRGB_BLOCK;
+        case PixelFormat::ETC2_RGB8_sRGB: return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+        case PixelFormat::ETC2_RGBA8_sRGB: return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
+        case PixelFormat::ASTC_4x4_sRGB: return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+        case PixelFormat::ASTC_6x6_sRGB: return VK_FORMAT_ASTC_6x6_SRGB_BLOCK;
         case PixelFormat::BC6H_UFloat: return VK_FORMAT_BC6H_UFLOAT_BLOCK;
         case PixelFormat::BC6H_SFloat: return VK_FORMAT_BC6H_SFLOAT_BLOCK;
         case PixelFormat::ASTC_4x4: return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
