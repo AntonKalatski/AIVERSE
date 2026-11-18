@@ -142,3 +142,23 @@ sort, reorder, re-evaluate animations or change internal
 Renderer3D batching. The host owns all borrowed model,
 mesh and material resources for the duration of submit.
 
+## Surface sampling
+
+The generic header `<engine/view/Surface.h>` exposes
+`view::composeSurfaceHeight(x,z,base,layer)` and
+`view::sampleSurface(x,z,normalStep,heightSampler)`.
+These are allocation-free templated algorithms for combining an
+arbitrary host-authored base surface with a height modifier,
+and for computing a visual terrain normal from five height
+samples. No MapGrid, roads, physics, genre or entity type
+appears in this engine-level API.
+
+The historical game adapter's `groundAt` now composes
+its own map-height policy with its own road surface policy
+through that helper, retaining the previous values and
+placement semantics. Future hosts may supply their own
+heightfields, planets projected to local surfaces, mesh
+raycasts or procedural floors without modifying View core.
+This query is **presentation-only**, not a replacement
+for deterministic character or vehicle collision.
+
