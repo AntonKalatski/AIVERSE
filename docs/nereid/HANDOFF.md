@@ -1169,3 +1169,5 @@ issues before shipping. Then implement true prepared CPU mesh upload
 admission (exact buffer byte size), visibility-aware far-water LOD
 and large-world origin rebasing, followed by GLSL/MSL scene screenshots
 at multiple Y heights. Preserve a separate per-stage handoff.
+
+**Stage 12 follow-up:** `AGENTS.md` ownership/status refresh commit `f6a4f6fdd0eb16a98a9b7f7dfd3ba91bf5310e5c`; `engine/world/NereidWaterScene.h` follow-up commit `b1b2f0cd645260730e24199f4f0cb3dae8e4d8b2` reserves retired GPU storage before moving residency owners in `setSurfaces`, avoiding allocation failure mid-transfer. Source changes committed; C++/CTest/graphics validation remains NOT RUN.
