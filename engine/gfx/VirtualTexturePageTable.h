@@ -113,7 +113,14 @@ public:
             return 0;
         }
         size_t transferred = 0;
-        const size_t limitRows = maxBytes / bytesPerRow;
+        // TextureUploadDesc.slicePitchBytes is an int; keep every encoded
+        // GPU upload within both the caller's budget and the API pitch range.
+        const size_t limitRows = std::min(maxBytes / bytesPerRow,
+            size_t(std::numeric_limits<int>::max()) / bytesPerRow);
+        if (!limitRows) {
+            error_ = "page-table slice pitch exceeds the RHI integer range";
+            return 0;
+        }
         for (int layer = 0; layer < layers_; ++layer) {
             int row = 0;
             while (row < height_) {
