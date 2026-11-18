@@ -547,6 +547,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_root_motor_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_root_motor COMMAND aiverse_animation_root_motor_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_humanoid_retarget_tests tests/animation/humanoid_retarget.cpp)
+    target_link_libraries(aiverse_humanoid_retarget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_humanoid_retarget COMMAND aiverse_humanoid_retarget_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
