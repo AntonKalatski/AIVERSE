@@ -806,6 +806,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_rts_selection_presentation COMMAND aiverse_rts_selection_presentation_tests)
 endif()
 
+# RTS preview authoring is independent of the legacy RtsView renderer.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_rts_preview_presentation_tests tests/view/rts_preview_presentation.cpp)
+    target_link_libraries(aiverse_rts_preview_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_rts_preview_presentation COMMAND aiverse_rts_preview_presentation_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
