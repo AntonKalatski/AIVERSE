@@ -5,6 +5,7 @@
 #include "PhysisWind.h"
 #include "PhysisGravity.h"
 #include "PhysisStorm.h"
+#include "PhysisForces.h"
 #include "../sim/Simulation.h"
 
 namespace aiverse::physis {
@@ -57,6 +58,17 @@ inline void io(Archive& a, StormEvent& v) {
       v.updraft, v.precipitationBoost, v.pressureDrop, v.startTick,
       v.durationTicks, v.clockwise, v.enabled);
 }
+inline void io(Archive& a, ForceReceiver& v) {
+    a(v.position, v.velocity, v.massKg, v.dragCoefficient,
+      v.areaSqMeters, v.airDensity, v.gravityScale, v.enabled);
+}
+inline void io(Archive& a, ForceResult& v) {
+    a(v.windVelocity, v.gravityAcceleration, v.aerodynamicForce,
+      v.gravityForce, v.totalForce);
+}
+inline void io(Archive& a, ForceOutput& v) {
+    a(v.result, v.sampledTick, v.valid);
+}
 inline void io(Archive& a, HazardCell& v) {
     a(v.fuel, v.fire, v.waterDepth, v.quake);
 }
@@ -86,6 +98,8 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false) 
     simulation.registerPersistentComponent<GravityField>("physis.gravity_field", 1);
     simulation.registerPersistentResource<GravitySettings>("physis.gravity_settings", 1);
     simulation.registerPersistentComponent<StormEvent>("physis.storm_event", 1);
+    simulation.registerPersistentComponent<ForceReceiver>("physis.force_receiver", 1);
+    simulation.registerPersistentComponent<ForceOutput>("physis.force_output", 1);
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
@@ -99,6 +113,7 @@ struct InstallOptions {
     DisasterConfig disasters{};
     bool enableDisasters = false;
     bool enableStorms = false;
+    bool enableForces = false;
     // Use ExternalAuthority when NEREID or another water simulation owns
     // water volumes; fire and quakes keep running without duplicate flooding.
     FloodMode floodMode = FloodMode::LocalShallow;
@@ -123,6 +138,11 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
             else if (storms) advanceEnvironmentWithStorms(sim.world());
             else if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);
             else advanceEnvironment(sim.world());
+        });
+    // Optional published ECS force output; this does NOT integrate motion.
+    if (options.enableForces)
+        simulation.addSystem("physis.forces", [](Simulation& sim) {
+            advanceForces(sim.world());
         });
 }
 
