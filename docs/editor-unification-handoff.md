@@ -2019,3 +2019,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `447bc13c999faea5d778adec61f3446816b58c51` shared PR #7; `run-tests.sh` now strips trailing CR from registry arguments. Added two CRLF smoke cases in `tests/test_unified_runner.py`.
 - The owner's completed full run had **99/106 CTest pass, 7 fail**, plus 5 failing extra suites. Extra failures were all due to a terminal CR passed as a test argument from a CRLF checkout, not proven library failures. Real CTest seven failures are separate and must be fixed on their own.
 - Local isolated Bash test of CRLF parsing **PASS**; post-change repo CI and Mac-native CTest **NOT RUN**. Detailed handoff: `docs/agent-handoffs/unified-test-runner.md`.
+
+### 2026-11-18 — Release tools and ECS skill metadata regressions
+- **Code SHA:** `2fbedf096f1b01c5a70b7eb37ba27a7b49a1ef34` on shared PR #7. Fixed publisher legacy-archive detection so AIVERSE zip binaries and architecture are found, added 11 missing ECS skills to `skills/catalog.json` from `libraries/catalog.json`, and corrected two skill docs' invalid backticked path/function suffixes.
+- Addresses `release_tools`, `skill_catalog`, `skill_audit` from the owner's CTest 99/106 report. **Post-fix runtime tests NOT RUN**; local full checkout unavailable. See `docs/agent-handoffs/unified-test-runner.md`.
+- **Next:** run `ctest --test-dir build/all-tests -R '^(release_tools|skill_catalog|skill_audit)$' --output-on-failure` and continue remaining ECS failures.
+
