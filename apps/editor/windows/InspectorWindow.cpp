@@ -2,7 +2,6 @@
 // trigger, map, or a rules item (type / resource / tech / faction) with block templates.
 #include <algorithm>
 #include "../Editor.h"
-#include "LuaCustomInspector.h"
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 #include "../DetailsPanel.h"
@@ -60,11 +59,8 @@ public:
     const char* dockArea() const override { return "right"; }
 
     void draw(Editor& ed) override {
-        if(ed.ws().project.isFps()) {
-            ImGui::TextWrapped("%s",genreText(ed.ws(),"fps.editor.hint").c_str());
-            if(ImGui::Button(genreText(ed.ws(),"fps.editor.open").c_str()))ed.focusWindow("fps");
-            return;
-        }
+        // All genres share the same entity inspector. FPS tools are available separately;
+        // they must not hide the selected entity's Transform and ECS components.
         Selection& s = ed.selection;
         if (!(s == lastSel_)) { message_.clear(); lastSel_ = s; }
         // Studio Inspector header, with a direct jump to the scene and map properties.
@@ -81,7 +77,11 @@ public:
         ImGui::Separator();
         ImGui::Spacing();
         switch (s.kind) {
-            case Selection::Entity: case Selection::Live: details_.draw(ed); customLua_.draw(ed); break;   // «Детали»: one or many world objects
+            case Selection::FpsObject:
+            case Selection::FpsActor:
+            case Selection::FpsRuntimeObject:
+            case Selection::Entity:
+            case Selection::Live: details_.draw(ed); break;   // «Детали»: one or many world objects
             case Selection::MapBlock: mapJson(ed, s.key, ICON_BRACES, s.key, "Блок карты (JSON)"); break;
             case Selection::Road: road(ed); break;
             case Selection::Body: body(ed); break;
@@ -105,7 +105,6 @@ public:
     }
 
 private:
-    LuaCustomInspector customLua_;
     static std::string ownerName(Editor& ed, int owner) {
         auto& d = ed.doc().data;
         return owner == 0 ? "Нейтральный" : owner < 0 ? "Враждебные монстры" : owner <= int(d.players.size()) ? d.players[size_t(owner - 1)].name : "?";

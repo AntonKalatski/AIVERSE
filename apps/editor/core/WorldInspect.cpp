@@ -16,6 +16,26 @@ using namespace aiverse::game;
 
 namespace {
 
+struct InspectorExtensions {
+    std::mutex mutex;
+    std::map<std::string, WorldInspectorExtension> components;
+};
+
+InspectorExtensions& inspectorExtensions() {
+    static InspectorExtensions registry;
+    return registry;
+}
+
+std::vector<WorldInspectorExtension> inspectorExtensionsSnapshot() {
+    auto& registry = inspectorExtensions();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    std::vector<WorldInspectorExtension> snapshot;
+    snapshot.reserve(registry.components.size());
+    for (const auto& [id, extension] : registry.components)
+        snapshot.push_back(extension);
+    return snapshot;
+}
+
 // ---------------------------------------------------------------- JSON builder for component fields
 struct J {
     World& w;
@@ -99,6 +119,17 @@ Json orderJson(J& j, const Order& o) {
 const std::vector<Desc>& descs() {
     static const std::vector<Desc> d = {
         AIVERSE_C(Transform, "Положение", j.f("pos", x.pos).f("yaw", x.yaw)),
+        AIVERSE_C(Parent, "Родитель", j.f("parent", x.value)),
+        AIVERSE_C(LocalTransform, "Локальный трансформ", {
+            j.f("pos", x.position).f("scale", x.scale)
+             .f("qx", x.rotation.x).f("qy", x.rotation.y)
+             .f("qz", x.rotation.z).f("qw", x.rotation.w);
+        }),
+        AIVERSE_C(WorldTransform, "Мировой трансформ (кэш)", {
+            j.f("pos", x.position).f("scale", x.scale)
+             .f("qx", x.rotation.x).f("qy", x.rotation.y)
+             .f("qz", x.rotation.z).f("qw", x.rotation.w);
+        }),
         AIVERSE_C(Owner, "Владелец", j.f("player", x.player)),
         AIVERSE_C(Unit, "Объект", {
             j.type("type", x.type).f("hp", x.hp).f("energy", x.energy).f("facing", x.facing).f("lastAttacker", x.lastAttacker).f("lastHitBy", x.lastHitBy);
@@ -300,6 +331,66 @@ const std::vector<WorldComponent>& worldComponents() {
         return r;
     }();
     return v;
+}
+
+std::vector<WorldComponentField> worldComponentFields(const std::string& componentId) {
+    // These descriptions match fields emitted by the real World::has<T> /
+    // descs() serializers above. Native project components can extend the
+    // registry with their own type information in a later stage.
+    static const std::vector<WorldComponentField> transform = {
+        {"pos", "Position", WorldFieldKind::Vec3},
+        {"yaw", "Yaw (turns)", WorldFieldKind::Turn},
+    };
+    static const std::vector<WorldComponentField> owner = {
+        {"player", "Player", WorldFieldKind::Integer},
+    };
+    static const std::vector<WorldComponentField> unit = {
+        {"type", "Type", WorldFieldKind::Text},
+        {"hp", "Health", WorldFieldKind::Number},
+        {"energy", "Energy", WorldFieldKind::Number},
+        {"facing", "Facing", WorldFieldKind::Number},
+    };
+    static const std::vector<WorldComponentField> empty;
+    if (componentId == "Transform") return transform;
+    if (componentId == "Owner") return owner;
+    if (componentId == "Unit") return unit;
+    auto& registry = inspectorExtensions();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    if (auto it = registry.components.find(componentId); it != registry.components.end())
+        return it->second.fields;
+    return empty;
+}
+
+bool registerWorldInspectorExtension(WorldInspectorExtension extension) {
+    if (extension.id.empty() || !extension.has || !extension.read)
+        return false;
+    // Built-in World::has<T> serializers own their IDs.
+    for (const auto& desc : descs())
+        if (extension.id == desc.info.id) return false;
+    std::set<std::string> keys;
+    for (const auto& field : extension.fields)
+        if (field.id.empty() || !keys.insert(field.id).second) return false;
+    if (extension.title.empty()) extension.title = extension.id;
+    auto& registry = inspectorExtensions();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    const std::string id = extension.id;
+    return registry.components.emplace(id, std::move(extension)).second;
+}
+
+bool unregisterWorldInspectorExtension(const std::string& id) {
+    auto& registry = inspectorExtensions();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    return registry.components.erase(id) != 0;
+}
+
+std::string worldComponentDisplayName(const std::string& id) {
+    for (const auto& desc : descs())
+        if (id == desc.info.id) return desc.info.title;
+    auto& registry = inspectorExtensions();
+    std::lock_guard<std::mutex> lock(registry.mutex);
+    if (auto it = registry.components.find(id); it != registry.components.end())
+        return it->second.title;
+    return id;
 }
 
 int findWorldComponent(const std::string& s) {
@@ -505,7 +596,21 @@ Json inspectEntity(Simulation& sim, RtsModule& mod, Entity e, const Json& rulesJ
         d.dump(j, e);
         comps.set(d.info.id, std::move(j.o));
     }
+    // Registered native readers also query the actual ECS World. Never
+    // synthesize components from DocEntity or return a placeholder when a pool
+    // is absent. Use a registry snapshot so registration does not race reads.
+    for (const auto& extension : inspectorExtensionsSnapshot()) {
+        if (comps.has(extension.id) || !extension.has(w, e)) continue;
+        Json value = extension.read(w, e);
+        if (value.isObject()) comps.set(extension.id, std::move(value));
+    }
+    // The Simulation's loaded native modules are the authoritative owner of
+    // their additional ECS pools. This path is scoped to this module instance,
+    // avoiding callbacks from a previous project or stale preview.
+    Json moduleSchemas = Json::object();
+    mod.native().inspectComponents(sim, e, comps, moduleSchemas);
     r.set("components", comps);
+    if (moduleSchemas.size() > 0) r.set("componentSchemas", moduleSchemas);
     if (auto* u = w.tryGet<Unit>(e); u && size_t(u->type) < R.types.size()) {
         const UnitType& t = R.types[u->type];
         // effective values (techs, levels, buffs, statuses) next to the type's base
@@ -558,7 +663,14 @@ std::string worldGroupValue(const WorldModel& m, const Rules& R, const WorldRow&
 
 std::string worldRowName(const WorldModel& m, const Rules& R, const MapData* doc, const WorldRow& r) {
     (void)m;
+    // Author-provided display names are metadata, not fabricated ECS fields.
+    // Preserve explicit script labels when a WorldRow supplies one.
     if (!r.label.empty()) return r.label;
+    if (doc && r.doc >= 0 && size_t(r.doc) < doc->entities.size()) {
+        const std::string displayName =
+            doc->entities[size_t(r.doc)].extra.getStr("displayName", "");
+        if (!displayName.empty()) return displayName;
+    }
     std::string n = r.type >= 0 && size_t(r.type) < R.types.size() ? R.types[size_t(r.type)].name
                   : r.kind == WorldKind::Projectile ? "Снаряд" : r.kind == WorldKind::Effect ? "Эффект" : "Объект";
     if (doc && r.doc >= 0 && size_t(r.doc) < doc->entities.size() && !doc->entities[size_t(r.doc)].id.empty()) n += "  #" + doc->entities[size_t(r.doc)].id;

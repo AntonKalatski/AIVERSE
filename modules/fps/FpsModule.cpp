@@ -1,6 +1,10 @@
 #include "FpsModule.h"
+#include "libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h"
+#include "engine/experiments/EcsExperiments.h"
 #include <algorithm>
+#include <set>
 #include "engine/core/FixedMath.h"
+#include "libraries/include/aiverselib/genre/EcsTimedMechanics.h"
 #include "engine/world/OrientedBox.h"
 #include <stdexcept>
 
@@ -48,6 +52,7 @@ Config readConfig(const Json& root) {
     const auto& j=root["fps"];if(!j.isObject())throw JsonError("rules.fps: expected object");
     Config c;
     c.tickRate=uint32_t(integer(j,"tickRate",60,20,120));
+    c.ecsAuthority=j.getBool("ecsAuthority",false);
     c.snapshotRate=uint32_t(integer(j,"snapshotRate",20,1,c.tickRate));
     c.maxPlayers=uint32_t(integer(j,"maxPlayers",100,1,200));
     c.rewindTicks=uint32_t(integer(j,"rewindTicks",12,0,120));
@@ -174,8 +179,277 @@ void Module::equipInitial(Actor& a) const {
     a.ammo=a.storedAmmo[0];a.reserve=a.storedReserve[0];
     if(config_.systems.enabled)a.bag={{1,2},{3,2},{4,2},{5,2}};
 }
+Entity Module::actorEntity(Simulation& sim, uint8_t slot) const {
+    const auto* index = sim.world().resource<ActorEntityIndex>();
+    if (!index || slot == 0 || size_t(slot) > index->bySlot.size())
+        return kNullEntity;
+    const Entity entity = index->bySlot[size_t(slot - 1)];
+    return sim.world().alive(entity) ? entity : kNullEntity;
+}
+
+void Module::syncActorEntities(Simulation& sim) const {
+    World& world = sim.world();
+    auto* index = world.resource<ActorEntityIndex>();
+    auto* current = world.resource<State>();
+    if (!index || !current) return;
+    // Save v9 predates these ECS pools. Its entity allocator can legitimately
+    // contain no actor identities. Recreate derived identities deterministically
+    // after loading such a save, without modifying the saved Actor/command data.
+    if (index->bySlot.size() < current->actors.size())
+        index->bySlot.resize(current->actors.size(), kNullEntity);
+    for (const Actor& actor : current->actors) {
+        if (actor.slot == 0 || size_t(actor.slot) > index->bySlot.size()) continue;
+        Entity& entity = index->bySlot[size_t(actor.slot - 1)];
+        if (!world.alive(entity)) entity = world.create();
+        // A legacy save can restore an allocator that predates these pools.
+        // Do not retain stale dynamic ECS components at a recycled index.
+        if (world.has<ProjectileEntity>(entity)) world.remove<ProjectileEntity>(entity);
+        if (world.has<LootEntity>(entity)) world.remove<LootEntity>(entity);
+        if (world.has<VehicleEntity>(entity)) world.remove<VehicleEntity>(entity);
+        if (world.has<ProjectileRuntime>(entity)) world.remove<ProjectileRuntime>(entity);
+        if (world.has<LootRuntime>(entity)) world.remove<LootRuntime>(entity);
+        if (world.has<VehicleRuntime>(entity)) world.remove<VehicleRuntime>(entity);
+        if (!world.has<ActorEntityIdentity>(entity))
+            world.add<ActorEntityIdentity>(entity);
+        if (!world.has<ActorEntityTransform>(entity))
+            world.add<ActorEntityTransform>(entity);
+        if (!world.has<ActorEntityVitals>(entity))
+            world.add<ActorEntityVitals>(entity);
+        if (config_.ecsAuthority) {
+            if (!world.has<ActorRuntime>(entity))
+                world.add<ActorRuntime>(entity);
+            // The old FPS algorithms still use State::actors as a canonical
+            // ordered tick workspace; commit the complete result to ECS.
+            *world.tryGet<ActorRuntime>(entity) = ActorRuntime{actor};
+        }
+        // With ECS authority enabled, Editor projections are derived from
+        // the committed ActorRuntime, never from a second gameplay owner.
+        const Actor& projected = config_.ecsAuthority
+            ? world.tryGetConst<ActorRuntime>(entity)->value : actor;
+        if (auto* identity = world.tryGet<ActorEntityIdentity>(entity))
+            *identity = {projected.slot, projected.team, projected.life};
+        if (auto* transform = world.tryGet<ActorEntityTransform>(entity))
+            *transform = {projected.pos, projected.velocity, projected.yaw, projected.pitch};
+        if (auto* vitals = world.tryGet<ActorEntityVitals>(entity))
+            *vitals = {projected.health, projected.armor, projected.ammo, projected.reserve,
+                       projected.downed, projected.crouched, projected.prone};
+    }
+}
+
+void Module::hydrateActorsFromEcs(Simulation& sim) const {
+    if (!config_.ecsAuthority) return;
+    World& world=sim.world();
+    auto* current=world.resource<State>();
+    const auto* index=static_cast<const World&>(world).resourceConst<ActorEntityIndex>();
+    if (!current || !index || index->bySlot.size()!=current->actors.size())
+        throw std::logic_error("FPS ECS authority index is missing or incomplete");
+    for(size_t i=0;i<index->bySlot.size();++i) {
+        const Entity e=index->bySlot[i];
+        const ActorRuntime* actor=world.tryGetConst<ActorRuntime>(e);
+        if(!world.alive(e)||!actor||actor->value.slot!=i+1)
+            throw std::logic_error("FPS ECS authoritative ActorRuntime is missing");
+        current->actors[i]=actor->value;
+    }
+}
+
+// Preserve the old public native symbol for import from legacy v9 saves and
+// native tooling. The end-of-tick ECS mirror explicitly chooses the separate
+// canonical ProjectileRuntime -> State projection overload.
+void Module::syncDynamicEntities(Simulation& sim) const {
+    syncDynamicEntities(sim,false);
+}
+
+void Module::syncDynamicEntities(Simulation& sim,bool projectProjectilesFromEcs) const {
+    World& world = sim.world();
+    State* current = world.resource<State>();
+    auto* index = world.resource<DynamicEntityIndex>();
+    if (!current || !index) return;
+    std::set<uint64_t> observed;
+    auto ensure = [&](uint8_t kind, uint32_t id) {
+        const uint64_t key = (uint64_t(kind) << 32) | uint64_t(id);
+        observed.insert(key);
+        auto [it, inserted] = index->byKey.emplace(key, kNullEntity);
+        (void)inserted;
+        if (!world.alive(it->second)) it->second = world.create();
+        const Entity entity = it->second;
+        // World::restoreEntityState restores generations, not component pools.
+        // Strip stale components before reusing a source ID on legacy saves.
+        if (world.has<ActorEntityIdentity>(entity)) world.remove<ActorEntityIdentity>(entity);
+        if (world.has<ActorEntityTransform>(entity)) world.remove<ActorEntityTransform>(entity);
+        if (world.has<ActorEntityVitals>(entity)) world.remove<ActorEntityVitals>(entity);
+        if (world.has<ActorRuntime>(entity)) world.remove<ActorRuntime>(entity);
+        if (kind != 1 && world.has<ProjectileEntity>(entity))
+            world.remove<ProjectileEntity>(entity);
+        if (kind != 2 && world.has<LootEntity>(entity))
+            world.remove<LootEntity>(entity);
+        if (kind != 3 && world.has<VehicleEntity>(entity))
+            world.remove<VehicleEntity>(entity);
+        if (kind != 1 && world.has<ProjectileRuntime>(entity)) world.remove<ProjectileRuntime>(entity);
+        if (kind != 2 && world.has<LootRuntime>(entity)) world.remove<LootRuntime>(entity);
+        if (kind != 3 && world.has<VehicleRuntime>(entity)) world.remove<VehicleRuntime>(entity);
+        return entity;
+    };
+    if(config_.ecsAuthority && projectProjectilesFromEcs) {
+        // End-of-tick ECS mirror is a ONE-WAY projection for projectiles.
+        // The component is canonical: never overwrite ProjectileRuntime
+        // from State::projectiles just because a compatibility consumer
+        // retained a stale vector. Setup and v9 deserialize still use the
+        // legacy->ECS reconstruction branch below.
+        struct RuntimeRef {Entity entity;uint32_t order,id;};
+        std::vector<RuntimeRef> ordered;
+        std::set<uint32_t> uniqueIds;
+        const World& read=world;
+        read.eachExistingConst<ProjectileRuntime>(
+            [&](Entity entity,const ProjectileRuntime& runtime) {
+                if(!read.alive(entity))return;
+                if(!runtime.value.id || !uniqueIds.insert(runtime.value.id).second)
+                    throw std::logic_error("FPS ECS duplicate/zero projectile ID at mirror");
+                ordered.push_back({entity,runtime.order,runtime.value.id});
+            });
+        std::sort(ordered.begin(),ordered.end(),
+            [](const RuntimeRef& a,const RuntimeRef& b) {
+                return a.order!=b.order ? a.order<b.order : a.id<b.id;
+            });
+        std::vector<Projectile> projected;
+        projected.reserve(ordered.size());
+        for(const RuntimeRef& item:ordered) {
+            const auto* runtime=read.tryGetConst<ProjectileRuntime>(item.entity);
+            if(!runtime)throw std::logic_error("FPS ECS projectile missing at mirror");
+            const Projectile& projectile=runtime->value;
+            const uint64_t key=(uint64_t(1)<<32)|projectile.id;
+            observed.insert(key);
+            auto [it,inserted]=index->byKey.emplace(key,item.entity);
+            if(!inserted && world.alive(it->second) && !(it->second==item.entity))
+                throw std::logic_error("FPS ECS projectile index conflict at mirror");
+            it->second=item.entity;
+            if(!world.has<ProjectileEntity>(item.entity))
+                world.add<ProjectileEntity>(item.entity);
+            *world.tryGet<ProjectileEntity>(item.entity)={
+                projectile.id,projectile.owner,projectile.kind,
+                projectile.pos,projectile.velocity,projectile.damage
+            };
+            projected.push_back(projectile);
+        }
+        current->projectiles=std::move(projected);
+    } else {
+        // Legacy/default source-of-truth and v9 load migration.
+        uint32_t projectileOrder=0;
+        for (const Projectile& projectile : current->projectiles) {
+            const Entity entity=ensure(1,projectile.id);
+            if(config_.ecsAuthority) {
+                if(!world.has<ProjectileRuntime>(entity))
+                    world.add<ProjectileRuntime>(entity);
+                *world.tryGet<ProjectileRuntime>(entity)={projectile,projectileOrder};
+            }
+            ++projectileOrder;
+            if(!world.has<ProjectileEntity>(entity))
+                world.add<ProjectileEntity>(entity);
+            *world.tryGet<ProjectileEntity>(entity)={
+                projectile.id,projectile.owner,projectile.kind,
+                projectile.pos,projectile.velocity,projectile.damage
+            };
+        }
+    }
+    uint32_t lootOrder=0;
+    for (const Loot& loot : current->loot) {
+        const Entity entity = ensure(2, loot.id);
+        if(config_.ecsAuthority) {
+            if(!world.has<LootRuntime>(entity))world.add<LootRuntime>(entity);
+            *world.tryGet<LootRuntime>(entity)={loot,lootOrder};
+        }
+        ++lootOrder;
+        if (!world.has<LootEntity>(entity)) world.add<LootEntity>(entity);
+        *world.tryGet<LootEntity>(entity) = {
+            loot.id, loot.pos, loot.type, loot.count
+        };
+    }
+    uint32_t vehicleOrder=0;
+    for (const Vehicle& vehicle : current->vehicles) {
+        const Entity entity = ensure(3, vehicle.id);
+        if(config_.ecsAuthority) {
+            if(!world.has<VehicleRuntime>(entity))world.add<VehicleRuntime>(entity);
+            *world.tryGet<VehicleRuntime>(entity)={vehicle,vehicleOrder};
+        }
+        ++vehicleOrder;
+        if (!world.has<VehicleEntity>(entity)) world.add<VehicleEntity>(entity);
+        *world.tryGet<VehicleEntity>(entity) = {
+            vehicle.id, vehicle.pos, vehicle.velocity,
+            vehicle.yaw, vehicle.health, vehicle.driver
+        };
+    }
+    // Retire vanished objects in deterministic source-ID order. Never keep
+    // a dead entity in the editor hierarchy across a save/rollback.
+    for (auto it = index->byKey.begin(); it != index->byKey.end();) {
+        if (!observed.contains(it->first)) {
+            if (world.alive(it->second)) world.destroy(it->second);
+            it = index->byKey.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void Module::hydrateDynamicsFromEcs(Simulation& sim) const {
+    if(!config_.ecsAuthority)return;
+    World& world=sim.world();
+    auto* current=world.resource<State>();
+    if(!current)throw std::logic_error("FPS authoritative dynamic State unavailable");
+    // Native code may spawn a full ECS runtime component directly without
+    // touching State vectors. Reconcile stable kind/id keys before the tick,
+    // so the existing Inspector/Hierarchy projections reuse that Entity.
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)throw std::logic_error("FPS DynamicEntityIndex missing");
+    std::set<uint64_t> seen;
+    auto indexRuntime=[&](uint8_t kind,uint32_t id,Entity entity) {
+        if(!id)throw std::logic_error("FPS ECS dynamic runtime has zero source ID");
+        const uint64_t key=(uint64_t(kind)<<32)|id;
+        if(!seen.insert(key).second)
+            throw std::logic_error("Duplicate FPS ECS dynamic kind/id");
+        auto [it,inserted]=index->byKey.emplace(key,entity);
+        if(!inserted) {
+            if(!world.alive(it->second))it->second=entity;
+            else if(!(it->second==entity))
+                throw std::logic_error("Conflicting FPS ECS dynamic Entity for source ID");
+        }
+    };
+    world.eachExistingConst<ProjectileRuntime>([&](Entity e,const ProjectileRuntime& r) {
+        if(world.alive(e))indexRuntime(1,r.value.id,e);
+    });
+    world.eachExistingConst<LootRuntime>([&](Entity e,const LootRuntime& r) {
+        if(world.alive(e))indexRuntime(2,r.value.id,e);
+    });
+    world.eachExistingConst<VehicleRuntime>([&](Entity e,const VehicleRuntime& r) {
+        if(world.alive(e))indexRuntime(3,r.value.id,e);
+    });
+    auto projectiles=std::vector<std::pair<uint32_t,Projectile>>{};
+    auto loot=std::vector<std::pair<uint32_t,Loot>>{};
+    auto vehicles=std::vector<std::pair<uint32_t,Vehicle>>{};
+    world.eachExistingConst<ProjectileRuntime>([&](Entity e,const ProjectileRuntime& r) {
+        if(world.alive(e))projectiles.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<LootRuntime>([&](Entity e,const LootRuntime& r) {
+        if(world.alive(e))loot.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<VehicleRuntime>([&](Entity e,const VehicleRuntime& r) {
+        if(world.alive(e))vehicles.emplace_back(r.order,r.value);
+    });
+    auto ordered=[](auto& values,auto& target) {
+        std::sort(values.begin(),values.end(),[](const auto& a,const auto& b) {
+            if(a.first!=b.first)return a.first<b.first;
+            return a.second.id<b.second.id;
+        });
+        target.clear();
+        target.reserve(values.size());
+        for(auto& entry:values)target.push_back(std::move(entry.second));
+    };
+    ordered(projectiles,current->projectiles);
+    ordered(loot,current->loot);
+    ordered(vehicles,current->vehicles);
+}
+
 void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
     config_=readConfig(rules);
+    experimentalMotorBatches_=experimentalMotorCommits_=0;
     if(sim.tickRate()!=config_.tickRate)throw JsonError("fps.tickRate differs from simulation tickRate");
     if(sim.players().empty()||sim.players().size()>config_.maxPlayers)throw JsonError("fps: invalid player count");
     streamedCollision_.reset();streamManifest_=map["world"];
@@ -222,18 +496,166 @@ void Module::setup(Simulation& sim,const Json& rules,const Json& map) {
         meleeAttacks_[1]={1,m.windup,m.active,m.recovery,total,m.bufferTicks,{1}};
         if(!lib::genre::valid(meleeAttacks_))throw JsonError("fps.melee: invalid attack timing");
     }
-    Hasher hash;hash.str(rules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
+    // ecsAuthority changes storage ownership, not gameplay rules. Keep the
+    // legacy content hash/save v9 checksum stable across both implementations.
+    Json hashRules=rules;
+    hashRules.member("fps").erase("ecsAuthority");
+    Hasher hash;hash.str(hashRules.dump(-1));hash.str(map.dump(-1));if(streamManifest_.getBool("async"))hash.str("world-stream-v1");contentHash_=hash.value();
     sim.world().setResource<State>(std::move(s));
+    // Allocate one deterministic ECS identity per actor slot. No FPS save,
+    // command, rewind or network format changes: the existing State resource
+    // remains authoritative during this staged migration.
+    ActorEntityIndex actorIndex;
+    actorIndex.bySlot.reserve(sim.players().size());
+    for (size_t i = 0; i < sim.players().size(); ++i) {
+        const Entity entity = sim.world().create();
+        actorIndex.bySlot.push_back(entity);
+        sim.world().add<ActorEntityIdentity>(entity);
+        sim.world().add<ActorEntityTransform>(entity);
+        sim.world().add<ActorEntityVitals>(entity);
+    }
+    sim.world().setResource<ActorEntityIndex>(std::move(actorIndex));
+    sim.world().setResource<DynamicEntityIndex>();
+    syncActorEntities(sim);
+    syncDynamicEntities(sim);
+    if (config_.ecsAuthority)
+        sim.addSystem("fps.ecsHydrate",[this](Simulation& s){
+            hydrateActorsFromEcs(s);
+            hydrateDynamicsFromEcs(s);
+        });
+    // Transitional system boundary: preserve the exact original FPS tick order.
+    // With ecsAuthority enabled, ECS is hydrated before this stage and the
+    // dynamic projectile components are committed after the main actor tick.
+    // Do not batch weapon impact events later: immediate hits here must still
+    // precede tickSystems(), royale, rewind capture and player movement.
+    sim.addSystem("fps.compat.projectilePrograms",[this](Simulation& s) {
+        if(state(s).winner)return;
+        tickProjectilePrograms(s);
+    });
+    // Ordinary bullets, grenade fuses, bounce and smoke remain synchronous
+    // with the original tick, but are now a separate composable stage before
+    // round/royale and player systems. Both projectile stages preserve the
+    // previous per-tick ordering and damage callback barriers.
+    sim.addSystem("fps.compat.ordinaryProjectiles",[this](Simulation& s) {
+        if(state(s).winner || !config_.systems.enabled)return;
+        tickOrdinaryProjectiles(s);
+    });
     sim.addSystem("fps",[this](Simulation& s){tick(s);});
+    sim.addSystem("fps.ecsMirror",[this](Simulation& s){
+        syncActorEntities(s);
+        syncDynamicEntities(s,config_.ecsAuthority);
+        if (!config_.ecsAuthority) return;
+        // Migration invariant: after the commit barrier, the complete legacy
+        // workspace actor must match its authoritative ECS payload.
+        // Keep this check opt-in with ecsAuthority until all legacy systems
+        // have been replaced by direct component systems.
+        const auto& actors=state(s).actors;
+        for (const Actor& actor : actors) {
+            const Entity entity=actorEntity(s,actor.slot);
+            const auto* runtime=s.world().tryGetConst<ActorRuntime>(entity);
+            if (!runtime || !(runtime->value == actor))
+                throw std::logic_error("FPS ECS actor mirror diverged after tick");
+            const auto* identity=s.world().tryGetConst<ActorEntityIdentity>(entity);
+            const auto* transform=s.world().tryGetConst<ActorEntityTransform>(entity);
+            const auto* vitals=s.world().tryGetConst<ActorEntityVitals>(entity);
+            if (!identity || identity->slot!=actor.slot ||
+                identity->team!=actor.team || identity->life!=actor.life ||
+                !transform || transform->position!=actor.pos ||
+                transform->velocity!=actor.velocity ||
+                transform->yaw!=actor.yaw || transform->pitch!=actor.pitch ||
+                !vitals || vitals->health!=actor.health ||
+                vitals->armor!=actor.armor || vitals->ammo!=actor.ammo ||
+                vitals->reserve!=actor.reserve ||
+                vitals->downed!=actor.downed ||
+                vitals->crouched!=actor.crouched ||
+                vitals->prone!=actor.prone)
+                throw std::logic_error("FPS ECS editor projection diverged after tick");
+        }
+    });
 }
 void Module::applyCommand(Simulation& sim,const Command& c) {
     auto& s=state(sim);Input input;
     if(c.player==0||c.player>s.actors.size()||!decodeInput(c,input))return;
-    auto& p=s.actors[c.player-1];
+    Actor* canonical=&s.actors[c.player-1];
+    if(config_.ecsAuthority) {
+        const Entity e=actorEntity(sim,c.player);
+        auto* component=sim.world().tryGet<ActorRuntime>(e);
+        if(!component)return;
+        canonical=&component->value;
+    }
+    Actor& p=*canonical;
     if(input.sequence==0||input.sequence<=p.lastSequence||input.viewTick>sim.tick()||
        (p.lastSequence&&p.lastInputTick==sim.tick()))return;
     p.input=input;p.lastSequence=input.sequence;p.lastInputTick=sim.tick();
+    if(config_.ecsAuthority)
+        s.actors[c.player-1]=p; // maintain existing external view until the tick
 }
+// Canonical spawn entry for weapons, throwable actions and other native FPS
+// producers. The ECS runtime owns the new projectile at creation time when
+// ecsAuthority is enabled; the old vector is retained only as a same-tick
+// compatibility view until all other projectile consumers have migrated.
+void Module::spawnProjectile(Simulation& sim,Projectile projectile) {
+    State& s=state(sim);
+    if(s.projectiles.size()>=256)
+        throw std::logic_error("FPS projectile limit exceeded at spawn");
+    if(!config_.ecsAuthority) {
+        s.projectiles.push_back(std::move(projectile));
+        return;
+    }
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index || projectile.id==0)
+        throw std::logic_error("FPS ECS projectile spawn missing index/id");
+    const uint64_t key=(uint64_t(1)<<32)|projectile.id;
+    const auto existing=index->byKey.find(key);
+    if(existing!=index->byKey.end() && world.alive(existing->second))
+        throw std::logic_error("FPS ECS duplicate projectile source ID on spawn");
+    const Entity entity=world.create();
+    world.add<ProjectileRuntime>(
+        entity,ProjectileRuntime{projectile,uint32_t(s.projectiles.size())});
+    index->byKey[key]=entity;
+    world.add<ProjectileEntity>(entity,ProjectileEntity{
+        projectile.id,projectile.owner,projectile.kind,
+        projectile.pos,projectile.velocity,projectile.damage
+    });
+    s.projectiles.push_back(std::move(projectile));
+}
+
+// End-of-round objects are retired from the authoritative ECS World at the
+// same logical barrier as the round reset, not recreated from a stale State
+// projection at the end of the frame. Deterministic source-ID order matches
+// the former DynamicEntityIndex map walk in fps.ecsMirror.
+void Module::clearProjectiles(Simulation& sim) {
+    State& current=state(sim);
+    if(!config_.ecsAuthority) {
+        current.projectiles.clear();
+        return;
+    }
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)throw std::logic_error("FPS projectile reset missing dynamic ECS index");
+    std::vector<std::pair<uint32_t,Entity>> expired;
+    const World& read=world;
+    read.eachExistingConst<ProjectileRuntime>(
+        [&](Entity entity,const ProjectileRuntime& runtime) {
+            if(read.alive(entity))
+                expired.emplace_back(runtime.value.id,entity);
+        });
+    std::sort(expired.begin(),expired.end(),
+        [](const auto& a,const auto& b){return a.first<b.first;});
+    for(const auto& [id,entity]:expired) {
+        world.destroy(entity);
+        index->byKey.erase((uint64_t(1)<<32)|id);
+    }
+    // Drop stale projectile keys as well (e.g. an externally destroyed
+    // Runtime). Non-projectile loot/vehicle keys must remain untouched.
+    for(auto it=index->byKey.begin();it!=index->byKey.end();) {
+        if((it->first>>32)==1)it=index->byKey.erase(it);
+        else ++it;
+    }
+    current.projectiles.clear();
+}
+
 void Module::shoot(Simulation& sim,Actor& p) {
     auto& s=state(sim);
     uint32_t earliest=sim.tick()>config_.rewindTicks?sim.tick()-config_.rewindTicks:0;
@@ -242,7 +664,26 @@ void Module::shoot(Simulation& sim,Actor& p) {
     for(auto it=s.history.rbegin();it!=s.history.rend();++it)if(it->tick<=requested){targets=&it->actors;break;}
     auto eye=p.pos+Vec3{{},stanceHeight(p,config_.motor)-Fixed::fromRatio(1,10),{}};
     const auto& weapon=config_.weapons[p.weaponIndex];
-    --p.ammo;++p.shots;p.nextFire=sim.tick()+weapon.interval;
+    if(config_.ecsAuthority) {
+        // Fire accounting is committed to canonical ECS first. The legacy
+        // Actor is only a compatibility workspace for hitscan/rewind and
+        // existing save v9/network presentation until those stages migrate.
+        const Entity shooter=actorEntity(sim,p.slot);
+        auto* runtime=sim.world().tryGet<ActorRuntime>(shooter);
+        if(!runtime)throw std::logic_error("FPS ECS shooter missing during fire");
+        runtime->value.ammo=p.ammo;
+        runtime->value.shots=p.shots;
+        runtime->value.nextFire=p.nextFire;
+        lib::genre::commitAcceptedShot(runtime->value.ammo,
+            runtime->value.nextFire,sim.tick(),weapon.interval,
+            &runtime->value.shots);
+        p.ammo=runtime->value.ammo;
+        p.shots=runtime->value.shots;
+        p.nextFire=runtime->value.nextFire;
+    } else {
+        lib::genre::commitAcceptedShot(p.ammo,p.nextFire,sim.tick(),
+                                       weapon.interval,&p.shots);
+    }
     for(uint32_t pellet=0;pellet<weapon.pellets;++pellet) {
         auto yaw=p.yaw,pitch=p.pitch;
         if(config_.systems.enabled) {
@@ -262,21 +703,142 @@ void Module::shoot(Simulation& sim,Actor& p) {
                     shot.program.distanceLeft=fxMin(shot.program.distanceLeft,weapon.range);
                     shot.velocity=shot.program.direction*shot.programSpeed+Vec3{{},shot.program.verticalSpeed,{}};
                 }
-                s.projectiles.push_back(std::move(shot));
+                spawnProjectile(sim,std::move(shot));
             }
         }else traceShot(sim,p.slot,eye,direction(yaw,pitch)*weapon.range,weapon.damage,weapon,*targets);
     }
     if(config_.systems.enabled)p.recoil=fxMin(Fixed::fromRatio(1,20),p.recoil+weapon.recoil*((p.attachments[p.weaponIndex]&2)?Fixed::fromRatio(3,4):1_fx));
 }
 
+void Module::moveActorEcs(Simulation& sim,Actor& actor,const Input& input) {
+    // Runtime motor operates on a real ECS component. Only state fields
+    // consumed/produced by moveActor are copied across the compatibility
+    // boundary; bags, weapon state, melee history etc. are NOT duplicated.
+    const Entity entity=actorEntity(sim,actor.slot);
+    auto* component=sim.world().tryGet<ActorRuntime>(entity);
+    if(!component)
+        throw std::logic_error("FPS ActorRuntime missing during ECS motor");
+    Actor& motor=component->value;
+    motor.pos=actor.pos;
+    motor.velocity=actor.velocity;
+    motor.yaw=actor.yaw;
+    motor.pitch=actor.pitch;
+    motor.grounded=actor.grounded;
+    motor.crouched=actor.crouched;
+    motor.prone=actor.prone;
+    motor.downed=actor.downed;
+    motor.climbing=actor.climbing;
+    motor.frozen=actor.frozen;
+    motor.vehicle=actor.vehicle;
+    motor.health=actor.health;
+    moveActor(motor,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+    actor.pos=motor.pos;
+    actor.velocity=motor.velocity;
+    actor.yaw=motor.yaw;
+    actor.pitch=motor.pitch;
+    actor.grounded=motor.grounded;
+    actor.crouched=motor.crouched;
+    actor.prone=motor.prone;
+}
+
 void Module::tick(Simulation& sim) {
     auto& s=state(sim);if(s.winner)return;
-    tickProjectilePrograms(sim);
+    // Programmed projectiles have already advanced in the immediately
+    // preceding Simulation stage (after optional ECS hydration).
     if(config_.systems.enabled)tickSystems(sim);
     tickRoyale(sim);
     if(s.winner)return;
     s.history.push_back({sim.tick(),s.actors});
     while(s.history.size()>size_t(config_.rewindTicks)+1)s.history.pop_front();
+#if defined(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
+    // Two-phase fixed-point motor update for independent, movement-only actors.
+    // Never parallelize combat, shared State/RNG, bot target selection or events.
+    // Copying Actor is expensive, hence the threshold; benchmark real-world gains.
+    struct MotorResult {
+        Vec3 pos{},velocity{};
+        Fixed yaw{},pitch{};
+        bool grounded=false,crouched=false,prone=false;
+    };
+    // The parallel phase computes independent fixed-point movement only.
+    // The original Actor snapshot is compared at canonical commit time.
+    // Prior damage, bot decisions or other changes invalidate a precompute.
+    const bool motorWorldEligible=!config_.systems.enabled &&
+        !s.royale.enabled && !streamedCollision_ && s.vehicleRuns.empty();
+    // Retain only the fields read by moveActor(). Actor contains bags and
+    // melee hit lists; deep-copying whole Actors per tick would dominate the
+    // speculative motor cost for large multiplayer matches.
+    struct MotorSource {
+        Vec3 pos{},velocity{};
+        Fixed yaw{},pitch{};
+        Input input{};
+        uint32_t lastInputTick=0,vehicle=0;
+        int32_t health=0;
+        bool frozen=false,climbing=false,prone=false,crouched=false,
+             grounded=false,downed=false;
+        static MotorSource capture(const Actor& a) {
+            return {a.pos,a.velocity,a.yaw,a.pitch,a.input,a.lastInputTick,
+                    a.vehicle,a.health,a.frozen,a.climbing,a.prone,
+                    a.crouched,a.grounded,a.downed};
+        }
+        bool sameMotorInputs(const Actor& a) const {
+            return pos==a.pos && velocity==a.velocity &&
+                   yaw==a.yaw && pitch==a.pitch && input==a.input &&
+                   lastInputTick==a.lastInputTick && vehicle==a.vehicle &&
+                   health==a.health && frozen==a.frozen &&
+                   climbing==a.climbing && prone==a.prone &&
+                   crouched==a.crouched && grounded==a.grounded &&
+                   downed==a.downed;
+        }
+        Actor toActor() const {
+            Actor a;
+            a.pos=pos;a.velocity=velocity;a.yaw=yaw;a.pitch=pitch;
+            a.input=input;a.lastInputTick=lastInputTick;
+            a.vehicle=vehicle;a.health=health;
+            a.frozen=frozen;a.climbing=climbing;a.prone=prone;
+            a.crouched=crouched;a.grounded=grounded;a.downed=downed;
+            return a;
+        }
+    };
+    std::vector<MotorResult> motorResults;
+    std::vector<MotorSource> motorOriginals;
+    std::vector<uint8_t> motorEligible;
+    bool parallelMotor=false;
+    if(motorWorldEligible && s.actors.size()>=32) {
+        motorEligible.assign(s.actors.size(),uint8_t(0));
+        size_t count=0;
+        for(size_t i=0;i<s.actors.size();++i) {
+            const Actor& actor=s.actors[i];
+            if(!bots_[i] && actor.health>0 && !actor.vehicle &&
+               !actor.frozen && !actor.climbing) {
+                motorEligible[i]=1;
+                ++count;
+            }
+        }
+        parallelMotor=count>=32;
+    }
+    if(parallelMotor) {
+        ++experimentalMotorBatches_;
+        motorResults.resize(s.actors.size());
+        motorOriginals.resize(s.actors.size());
+        for(size_t i=0;i<s.actors.size();++i)
+            if(motorEligible[i])motorOriginals[i]=MotorSource::capture(s.actors[i]);
+        static thread_local ecs_experiment::PersistentWorkers motorWorkers{3};
+        motorWorkers.parallelFor(s.actors.size(),[&](size_t begin,size_t end) {
+            for(size_t i=begin;i<end;++i) {
+                if(!motorEligible[i])continue;
+                Actor copy=motorOriginals[i].toActor();
+                Input input=copy.input;
+                if(sim.tick()-copy.lastInputTick>config_.inputTimeout) {
+                    input.forward=input.right=0;
+                    input.buttons=0;input.action=Action::None;
+                }
+                moveActor(copy,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+                motorResults[i]={copy.pos,copy.velocity,copy.yaw,copy.pitch,
+                                 copy.grounded,copy.crouched,copy.prone};
+            }
+        });
+    }
+#endif
     for(auto& a:s.actors) {
         if(a.health<=0) {
             if(config_.mode=="deathmatch"&&sim.tick()>=a.respawnAt) {
@@ -310,7 +872,20 @@ void Module::tick(Simulation& sim) {
         auto input=a.input;
         if(sim.tick()-a.lastInputTick>config_.inputTimeout){input.forward=input.right=0;input.buttons=0;input.action=Action::None;}
         if(config_.systems.enabled)actorSystems(sim,a,input);
-        if(!a.vehicle)moveActor(a,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+#if defined(AIVERSE_FPS_EXPERIMENTAL_PARALLEL_MOTOR)
+        const size_t motorIndex=size_t(&a-s.actors.data());
+        if(parallelMotor && motorEligible[motorIndex] &&
+           motorOriginals[motorIndex].sameMotorInputs(a)) {
+            ++experimentalMotorCommits_;
+            const auto& m=motorResults[motorIndex];
+            a.pos=m.pos;a.velocity=m.velocity;a.yaw=m.yaw;a.pitch=m.pitch;
+            a.grounded=m.grounded;a.crouched=m.crouched;a.prone=m.prone;
+        } else
+#endif
+        if(!a.vehicle) {
+            if(config_.ecsAuthority)moveActorEcs(sim,a,input);
+            else moveActor(a,input,config_.motor,collision_,sim.dt(),config_.worldLimit);
+        }
         if(config_.melee.enabled)tickMelee(sim,a,input);
         // Jump is an edge, movement/fire are held; loss of input eventually releases them.
         a.input.buttons&=~uint32_t(Jump);
@@ -322,11 +897,19 @@ void Module::tick(Simulation& sim) {
         }
         a.input.buttons&=~uint32_t(WeaponMask);
         const auto& weapon=config_.weapons[a.weaponIndex];
-        int capacity=weapon.magazine+((a.attachments[a.weaponIndex]&4)?weapon.magazine/2:0);
-        if(a.reloadUntil&&sim.tick()>=a.reloadUntil) {
-            auto amount=std::min(capacity-a.ammo,a.reserve);a.ammo+=amount;a.reserve-=amount;a.reloadUntil=0;
-        }
-        if((input.buttons&Reload)&&!a.reloadUntil&&a.ammo<capacity&&a.reserve>0)a.reloadUntil=sim.tick()+weapon.reloadTicks;
+        const int capacity=weapon.magazine+((a.attachments[a.weaponIndex]&4)?weapon.magazine/2:0);
+        // Transitional native adapter: the ECS ActorRuntime is canonical between
+        // ticks when ecsAuthority is ON, and State::actors remains the legacy
+        // tick workspace. Do not create parallel authoritative ammo components.
+        // Both generic ECS hosts and FPS now share the SAME reload algorithm.
+        lib::genre::WeaponStateComponent reloadWeapon{a.ammo,a.nextFire};
+        lib::genre::WeaponReloadComponent reloadState{
+            a.reserve,capacity,weapon.reloadTicks,a.reloadUntil};
+        lib::genre::stepWeaponReload(reloadWeapon,reloadState,sim.tick(),
+                                      (input.buttons&Reload)!=0);
+        a.ammo=reloadWeapon.ammo;
+        a.reserve=reloadState.reserve;
+        a.reloadUntil=reloadState.finishesAt;
         bool trigger=(input.buttons&Fire)!=0;
         if(trigger&&!a.downed&&(!a.vehicle||canFireFromVehicle(s,a))&&a.activeAction==Action::None&&!a.blockHeld&&sim.tick()>=a.staggerUntil&&(a.owned&(1u<<a.weaponIndex))&&(weapon.automatic||!a.fireHeld)&&!a.reloadUntil&&a.ammo>0&&sim.tick()>=a.nextFire&&sim.tick()>=a.switchUntil)shoot(sim,a);
         a.fireHeld=trigger;
@@ -352,19 +935,82 @@ void Module::tick(Simulation& sim) {
         } else s.winner=-1;
     }
 }
+State Module::authoritativeStateCopy(Simulation& sim) const {
+    // Serialize/hash from canonical ECS payloads, never from a possibly stale
+    // State::actors/projectiles/loot/vehicles compatibility workspace.
+    // Saving/checksumming must not detach a shared COW State merely to
+    // read it. The mutable state(sim) accessor is reserved for gameplay writes.
+    const State* stored=sim.world().resourceConst<State>();
+    if(!stored)throw std::logic_error("FPS State missing during save/checksum");
+    State result=*stored;
+    if(!config_.ecsAuthority)return result;
+    const World& world=sim.world();
+    const auto* index=world.resourceConst<ActorEntityIndex>();
+    if(!index||index->bySlot.size()!=result.actors.size())
+        throw std::logic_error("FPS ECS authority index missing during save/checksum");
+    for(size_t i=0;i<result.actors.size();++i) {
+        const Entity e=index->bySlot[i];
+        const auto* runtime=world.tryGetConst<ActorRuntime>(e);
+        if(!runtime||!world.alive(e)||runtime->value.slot!=i+1)
+            throw std::logic_error("FPS ActorRuntime missing during save/checksum");
+        result.actors[i]=runtime->value;
+    }
+    std::vector<std::pair<uint32_t,Projectile>> projectiles;
+    std::vector<std::pair<uint32_t,Loot>> loot;
+    std::vector<std::pair<uint32_t,Vehicle>> vehicles;
+    world.eachExistingConst<ProjectileRuntime>([&](Entity e,const ProjectileRuntime& r) {
+        if(world.alive(e))projectiles.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<LootRuntime>([&](Entity e,const LootRuntime& r) {
+        if(world.alive(e))loot.emplace_back(r.order,r.value);
+    });
+    world.eachExistingConst<VehicleRuntime>([&](Entity e,const VehicleRuntime& r) {
+        if(world.alive(e))vehicles.emplace_back(r.order,r.value);
+    });
+    auto reconstruct=[](auto& entries,auto& out) {
+        std::sort(entries.begin(),entries.end(),[](const auto& a,const auto& b) {
+            if(a.first!=b.first)return a.first<b.first;
+            return a.second.id<b.second.id;
+        });
+        out.clear();
+        out.reserve(entries.size());
+        for(auto& entry:entries)out.push_back(std::move(entry.second));
+    };
+    reconstruct(projectiles,result.projectiles);
+    reconstruct(loot,result.loot);
+    reconstruct(vehicles,result.vehicles);
+    return result;
+}
 void Module::hashState(Simulation& sim,Hasher& hash) {
-    hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,state(sim));hash.str(bytes);
-    if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:state(sim).actors)meleeIo(m,actor);hash.str(extra);}
-    for(auto& p:state(sim).projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
-    if(state(sim).royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,state(sim).royale);hash.str(extra);}
-    for(const auto& g:state(sim).gear)hash.u64(lib::systems::gearHash(g));
-    if(!state(sim).vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,state(sim).vehicleRuns);hash.str(extra);}
-    for(const auto& b:state(sim).botStates)hash.str(b);
+    State materialized;
+    // Read through the const ECS resource API: resource<State>() performs
+    // copy-on-write detachment even for a read-only checksum. A hash must
+    // preserve the snapshot's resource sharing and have no World side effects.
+    const State* stored=sim.world().resourceConst<State>();
+    if(!stored)throw std::logic_error("FPS State missing during checksum");
+    if(config_.ecsAuthority) {
+        materialized=authoritativeStateCopy(sim);
+        stored=&materialized;
+    }
+    // Archive's output-only path takes non-const references for its
+    // bidirectional IO API, but never writes any State field while writing().
+    State& s=const_cast<State&>(*stored);
+    hash.u64(contentHash_);std::string bytes;Archive a(&bytes);stateIo(a,s);hash.str(bytes);
+    if(config_.melee.enabled){std::string extra;Archive m(&extra);for(auto& actor:s.actors)meleeIo(m,actor);hash.str(extra);}
+    for(auto& p:s.projectiles)if(p.program.enabled){std::string extra;Archive e(&extra);e(p.id,p.program,p.programSpeed,p.programTarget);hash.str(extra);}
+    if(s.royale.enabled){std::string extra;Archive r(&extra);royaleIo(r,s.royale);hash.str(extra);}
+    for(const auto& g:s.gear)hash.u64(lib::systems::gearHash(g));
+    if(!s.vehicleRuns.empty()){std::string extra;Archive v(&extra);ioVehicleRuns(v,s.vehicleRuns);hash.str(extra);}
+    for(const auto& b:s.botStates)hash.str(b);
 }
 bool Module::serializeState(Simulation& sim,Archive& archive) {
     uint32_t version=9;uint64_t content=contentHash_;archive(version,content);
     if((version!=3&&version<6)||version>9||content!=contentHash_)return false;
-    State copy=state(sim);stateIo(archive,copy,version>=6,version>=7);
+    // On load, Simulation has already restored the saved Entity allocator;
+    // old v9 saves may not have any ECS actor identities yet. Only writing
+    // materializes canonical ECS payloads; reading starts from the old state.
+    State copy=(archive.writing()&&config_.ecsAuthority)?authoritativeStateCopy(sim):state(sim);
+    stateIo(archive,copy,version>=6,version>=7);
     if(version>=8)royaleIo(archive,copy.royale);else copy.royale=RoyaleRun{};
     if(version>=9){uint32_t n=archive.count(copy.gear.size());if(n>256){archive.fail();return false;}if(!archive.writing())copy.gear.resize(n);for(auto& g:copy.gear)lib::systems::io(archive,g);}else copy.gear.clear();
     if(version>=9)ioVehicleRuns(archive,copy.vehicleRuns);else copy.vehicleRuns.clear();
@@ -404,7 +1050,12 @@ bool Module::serializeState(Simulation& sim,Archive& archive) {
     for(const auto& v:copy.vehicles)if(v.driver>spawns_.size()||v.health<0||v.health>500)return false;
     for(const auto& actor:copy.actors)if(!valid(actor))return false;
     for(const auto& frame:copy.history)for(const auto& actor:frame.actors)if(!valid(actor))return false;
-    if(!archive.writing())state(sim)=std::move(copy);
+    if(!archive.writing()) {
+        state(sim)=std::move(copy);
+        // Derived ECS components must track legacy v9 save contents.
+        syncActorEntities(sim);
+        syncDynamicEntities(sim);
+    }
     return true;
 }
 }

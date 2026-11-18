@@ -80,6 +80,7 @@ struct Args {
     std::string saveFile, loadFile;   // save states (Simulation::serialize)
     uint32_t saveAt = 0;              // seconds
     bool verifyRestore = false;
+    bool cowSnapshots = false; // opt-in COW storage during headless rollback validation
     uint32_t restoreAt = 0, restoreTicks = 100; // bounded forward interval, then both restoration paths
     int benchPaths = 0;   // >0: time that many path queries (HPA* vs plain A*) and exit
     int benchClear = 0;   // --bench-nav: clearance (cells) of the queries
@@ -478,6 +479,7 @@ static int play(const Args& a) {
         rulesJson.member("movement").set("flowField", ff);
     }
     sim.setup(rulesJson, mapJson);
+    if(a.cowSnapshots)sim.world().enableCowSnapshots(true);
     attachScriptLog(sim, a.quiet);
     if (!a.quiet && (a.benchPaths > 0 || mapJson["world"].isObject()))   // planets / benchmarks: setup cost incl. the HPA* graphs
         std::printf("Setup: %.0f ms\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - setupT0).count());
@@ -686,6 +688,7 @@ int main(int argc, char** argv) {
         else if (k == "--save") a.saveFile = next();
         else if (k == "--save-at") a.saveAt = uint32_t(std::stoul(next()));
         else if (k == "--load") a.loadFile = next();
+        else if (k == "--cow-snapshots") a.cowSnapshots = true;
         else if (k == "--verify-restore-at") { a.verifyRestore=true;a.restoreAt=uint32_t(std::stoul(next())); }
         else if (k == "--verify-restore-ticks") { a.verifyRestore=true;a.restoreTicks=uint32_t(std::stoul(next())); }
         else if (k == "--replay") a.replay = next();

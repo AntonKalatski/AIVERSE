@@ -514,6 +514,30 @@ See [geometry.md](geometry.md) for the schema, `geometry_*` agent tools, budgets
 выбор LOD по экранному размеру, инстансинг и отсечение узлов по frustum.
 Сборка, формат, ограничения и результаты Sponza: [autolod.md](autolod.md).
 
+## Автоматическое создание отсутствующих LOD при импорте
+
+Когда у загруженного файла модели нет авторских LOD-цепочек, общий
+`prepareModelUpload()` теперь может создать их **до GPU upload**.
+`AIVERSE_RUNTIME_AUTOLOD=ON` в CMake включён по умолчанию, а
+`AIVERSE_AUTOLOD=off` возвращает поведение только с импортированными LOD.
+Для отдельного ассета `models/car.glb.batching.json` поддерживает
+`{"autoLod": false}`.
+
+Генератор использует `meshoptimizer`, сохраняет LOD0, вершины, цвета,
+PBR материалы, узлы, клипы и их индексы без изменений, создавая только
+новые индексные потоки и уровни `MeshDef::lods` внутри того же Model.
+Таким образом анимированная жёсткая часть (колесо, дверь, капот) остаётся
+отдельным узлом; её упрощённая сетка переключается вместе с основным
+рендерером. Неупрощаемые, скиннинговые и морфные варианты требуют
+авторских LOD. Процедурные дороги/рельеф не участвуют.
+
+Это **разовая операция на CPU при подготовке экземпляра Model**, не
+ежекадровый simplifier и пока без дискового кэша. Для больших моделей,
+оптимизации импорта и публикации на мобильные платформы предпочтительна
+предварительная генерация офлайн. Подробные ограничения, пороги,
+CLI-тест и диагностика в `docs/autolod.md` и в редакторе:
+`Модели → LOD модели`, `Сцена → LOD`, `model_info.autoLod`.
+
 ## Static batching of parts (`mergeStaticPrimitives`)
 
 `engine/render/ModelMerge.h`: after loading and before `uploadModel`, parts (node × primitive)
@@ -568,6 +592,49 @@ counts and additional geometry storage; `--unit` runs only CPU checks.
 `tests/render/check_material_palette_shaders.py` links 72 desktop/GLES variants across
 quality tiers, instancing, baked lighting and LOD fade.
 
+### Experimental per-command PBR palette for CPU Multi-Draw
+
+`AIVERSE_MDI_INSTANCE_PALETTE=1` enables an **opt-in** colour-pass MDI
+variant that can batch *different rigid primitives and separately transformed
+nodes* without changing their meshes or their animation hierarchy.
+The shader reads a compact material slot from the existing per-instance
+`Inst.lod.z` field. One U3 palette supplies each slot's full-float base
+colour, metallic and roughness, while U2 still holds the common shader,
+texture and other render-state parameters. Wheels, damage doors and chassis
+keep independent transforms and original geometry. There is no CPU mesh merge
+and no automatic material rewriting.
+
+Eligibility is deliberately strict: the same vertex/index GPU buffers,
+shader graph, sampled textures and samplers, alpha mode, emissive,
+UV transforms, normal/occlusion parameters, culling, draw flags and GI
+state must match. Only base colour, metallic and roughness may vary.
+Skinned/morphed, baked/GI, built geometry clusters, existing per-mesh
+palette draws and translucent geometry keep their original paths.
+A single group uses at most 64 materials and the backend's MDI command
+threshold. The experiment is **off by default** until image and CPU/GPU A/B
+verification on Metal; unsupported backends use conventional instancing.
+`AIVERSE_MDI_INSTANCE_PALETTE` does not replace the existing Metal safety
+toggle or force MDI when the Scene setting disables it.
+
+A/B source fixture (16 independent meshes/nodes, 3 opaque PBR factors,
+unchanged shadows) is `AIVERSE_PALETTE_TEST_CASE=indirect_palette` in
+`aiverse_material_batches`. The fixture compares pixel-identical direct and
+indirect frames, not merely call counts. Build with `AIVERSE_BUILD_HDR_TESTS=ON`:
+
+```sh
+cmake --build build-metal --target aiverse_material_batches -j8
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_MDI_INSTANCE_PALETTE=1 \
+  AIVERSE_PALETTE_TEST_CASE=indirect_palette \
+  ./build-metal/aiverse_material_batches ignored /tmp/aiverse-palette
+# A/B in the editor: start one process with the palette flag and another
+# without it. Compare fixed-camera submissions, Scene CPU and full GPU timings.
+```
+
+`Scene → Batching → Instancing and indirect details` reports
+`Per-command PBR palette: submissions / commands` when enabled. If these
+remain zero, inspect the existing MDI eligibility and state-split counters
+instead of assuming the material palette was exercised.
+
 ### Automatic per-mesh shadow batches
 
 `uploadModel` calls `prepareShadowBatches` before creating GPU buffers. This also handles models
@@ -590,3 +657,220 @@ preparation; this is an asset audit, not a visible-frame or FPS measurement.
 
 For same-build editor/client A/B validation, `AIVERSE_AUTO_SHADOW_BATCHES=off` disables automatic
 preparation at upload. It does not remove batches already built by `mergeStaticPrimitives`.
+
+
+## Engine-wide batching policy for rigid meshes (experimental)
+
+AIVERSE now centralizes optional **rigid mesh compaction** in
+`render::prepareModelUpload()`, which both `uploadModel()` in game clients and
+the scene/model preview renderer call. It applies to the common `Model` representation
+regardless of input format or game genre; no car-specific naming is hard-coded.
+
+```cpp
+auto m = render::loadModel(path, reader);
+m->batching.mergeRigid = true;             // opt in for a known rigid asset
+m->batching.maxExtent = 20.0f;             // avoid large combined culling boxes
+m->batching.preserveNodes = {"door", "muzzle", "attachment"};
+m->nodes[controlledNode].runtimeMutable = true; // keeps this node + descendants
+render::uploadModel(device, *m);           // merge before material/shadow batching
+```
+
+Default `mergeRigid=false` is intentional: an imported asset does not describe
+which nodes a game, editor or native plugin will change at runtime. Auto-merging
+unknown nodes can freeze doors, destroy project-authored destructibility or alter
+selection/attachment semantics. Any transform/visibility/variant controlled from
+gameplay, an animation system or the editor must be protected by marking the node
+`runtimeMutable` or by listing its name in `preserveNodes`. Child nodes inherit
+protection from ancestors. This protection does **not** disable the existing
+within-mesh material batching, shadow batching, or renderer instancing.
+
+**Scope and restrictions:** cross-node rigid compaction supports only eligible
+non-animated meshes and material states; it retains incompatible or opaque-to-the-
+compiler structures unchanged. It declines skinned, morphed, variant and LOD models
+where the old `mergeStaticPrimitives()` cannot guarantee equivalent rendering.
+The same rules apply to cars, props, buildings, RTS units, FPS assets and editor
+model views. A game may move the *whole* model via its root world matrix; merged
+geometry then moves as one body. To move pieces separately, mark their nodes as
+mutable before upload.
+
+The test `model_batching_policy` checks that merging rigid geometry preserves
+the original node indices, parent chain, bind matrices and draw geometry for
+runtime-mutable subtrees:
+
+```sh
+cmake -S . -B build/test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/test --target aiverse_model_batching_policy_tests
+ctest --test-dir build/test -R model_batching_policy --output-on-failure
+```
+
+For performance comparisons use the Scene View draw-call visualization and GPU
+frame counters under identical rendering/lighting settings; reductions in
+`primitiveInstances` are estimates, not measured GPU draw calls. Enabling a policy
+changes CPU geometry and must happen **before upload**; changing it on an already
+uploaded model requires reloading its original geometry and re-uploading the GPU
+buffers rather than toggling a flag on the live model.
+
+
+### Asset-side policies and Scene inspection
+
+A project can enable rigid compaction for **any imported model format**, without
+writing game-specific C++ code. Place `<model file>.batching.json` next to the model
+(e.g. `models/building.glb.batching.json`):
+
+```json
+{
+  "mergeRigid": true,
+  "maxExtent": 20,
+  "preserveNodes": ["attachment_socket"],
+  "mutableNodes": ["door_hinge", "rotating_fan"]
+}
+```
+
+`preserveNodes` keeps meshes on named nodes and their descendants, and
+`mutableNodes` tags the same protected subtrees as runtime controlled.
+Use a declared protected node for **any** transformation or visibility changed
+by a native module, animation, script, tool or the editor. Do not guess
+immutability from names. Missing mutable node names produce a loader error
+rather than silently merging the wrong subtree.
+
+The editor Scene toolbar now has **Batching**, with GPU Instancing, culling,
+and instance-limit controls and a live draw-count panel. Its **Draw Calls**
+visualization colours model draw submissions with the existing GPU debug shader.
+For policy changes made on disk, click **Reload models from asset policies**;
+a GPU-uploaded mesh cannot be safely unmerged without reloading source geometry.
+
+The current controls do **not** constitute automatic cross-object static
+batching, nor do they implement indirect MultiDraw. Import compaction is
+opt-in and per-model; instance grouping and material/shadow batching remain
+the existing engine functionality. These distinctions are important when
+comparing GPU draws in the Scene profiler.
+
+
+### Automatic indirect batching: real-backend validation
+
+The `aiverse_material_batches` real-GPU test has an `indirect` scenario with
+16 independent rigid primitives and distinct node transforms. It compares
+before (ordinary draws) and after (automatic indirect) images pixel-by-pixel,
+reports backend capability and the number of submissions/indirect commands,
+and requires fewer opaque submissions on compatible Metal/Vulkan devices.
+Unsupported APIs must render the same pixels with ordinary indexed draws.
+
+```bash
+cmake -S . -B build/mdi -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/mdi --target aiverse_material_batches -j8
+AIVERSE_PALETTE_TEST_CASE=indirect build/mdi/aiverse_material_batches unused.obj /tmp/mdi-ab
+```
+
+The argument `unused.obj` is not loaded in this synthetic scenario. The
+resulting `/tmp/mdi-ab-before.ppm` and `/tmp/mdi-ab-after.ppm` must match;
+the process exits nonzero if they differ. Mac Xcode multi-config builds may
+place the executable under `build/mdi/Release/`.
+
+**Terminology:** one indirect submission contains several GPU indexed draw
+commands. The Scene view's "Renderer draws" count is CPU-side submission
+count, not the number of individual GPU draw commands; the separate
+"Indirect submissions (commands)" figures distinguish them.
+
+This implementation generates commands on the CPU and uploads them to a
+GPU indirect buffer. True GPU-driven command production, GPU Hi-Z/LOD/
+meshlet culling, bindless material tables and global geometry pooling across
+unrelated models still require separate verified implementations.
+
+
+### Automatic shared geometry pool (rigid model assets)
+
+AIVERSE now attempts to place eligible rigid imported meshes into shared
+8 MiB GPU pages during `uploadModel()`. Vertex bytes are packed from the
+front and uint32 indices from the back of each page. Each model retains its
+node hierarchy, independent node transforms and its original local indices.
+The renderer supplies a per-model vertex/index base for conventional indexed
+draws, while indirect command generation supplies those bases per GPU draw.
+This enables Multi-Draw across **different models** in one page when they
+also share equivalent shader, material parameters, textures and pipeline state.
+
+Automatic fallback to dedicated buffers applies to skinned/morph targets,
+clips, variants, authored LOD meshes, prepared geometry/cluster meshes,
+models larger than 16 MiB and uploads performed inside a Metal render or
+compute encoder. No gameplay code or per-model configuration is required.
+`AIVERSE_GEOMETRY_POOL=off` provides a process-level override for A/B tests.
+Scene View → **Batching → Shared Geometry Pool** reloads models to compare
+the paths with a fixed camera without restarting the editor.
+
+Current allocations are page-based and append-only; page buffers are freed
+when the last Model referencing them is explicitly released. Fine-grained
+hole reclamation, defragmentation, GPU-resident virtual-geometry streaming,
+and asynchronous eviction budgets are not implemented in this version.
+The scene profiler reports submissions, instances and indirect commands;
+GPU frame time must be checked separately on actual target hardware.
+
+Focused CI `GPU batching focused regression` includes a mock GPU device
+test verifying shared buffer IDs, original vertex/index bytes, offsets and
+last-owner release; the opt-in real-backend `AIVERSE_PALETTE_TEST_CASE=indirect`
+now renders two separate synthetic rigid models sharing one geometry page,
+and checks pixel-identical A/B output when indirect rendering is switched on.
+
+### Metal ICB safety (November 2026)
+
+A macOS 15.6 Apple G15 crash report showed a SIGSEGV inside
+`AGX::RenderContext::executeCommandsInBufferCommon`, called from
+`MetalDevice::drawIndexedIndirect`. The Metal ICB encoder has been reworked to use explicit pipeline,
+vertex and per-draw uniform buffer bindings, plus explicit resource residency.
+This avoids relying on inherited `setVertexBytes` bindings when executing an
+indirect command buffer. It is **still disabled by default until real-device
+pixel A/B and stability tests pass**, including the original Apple G15 machine.
+The automatic renderer falls back to ordinary/instanced draws; the shared
+geometry pool currently requires an indirect-capable backend and will also
+be inactive in this mode. For controlled engineering validation only, opt in
+with `AIVERSE_EXPERIMENTAL_METAL_ICB=1` (can still crash until verified).
+The Scene's Batching popup reports indirect support accordingly. Vulkan's
+indirect path remains independently capability-gated.
+
+
+A focused `metal-icb-gpu` macOS CI job builds the real-backend A/B fixture
+(`AIVERSE_PALETTE_TEST_CASE=indirect`) with experimental ICB enabled. The
+fixture compares pixel buffers and expects reduced CPU draw submissions when
+an indirect-capable GPU is available. This CI alone does not certify stability
+on Apple G15; a passing result on the original Mac is the final release gate.
+
+### Metal classic ICB shader compatibility
+
+Classic `MTLIndirectRenderCommand` can bind vertex/fragment **buffers**, but not
+direct fragment textures or samplers. AIVERSE PBR model fragment shaders use
+direct `[[texture(...)] ]` and `[[sampler(...)] ]` arguments, so Metal rejects
+`supportIndirectCommandBuffers=YES` with the diagnostic
+`Fragment shader cannot be used with indirect command buffers`.
+The backend now marks **depth-only, fragment-free** pipelines as ICB eligible,
+uses regular/instanced submissions for PBR colour pipelines, and checks
+`MTLRenderPipelineState.supportIndirectCommandBuffers` at each ICB submission.
+Both synchronous and asynchronous pipeline creation have a regular-pipeline
+fallback. The renderer must **not** count a rejected ICB as a submitted GPU draw.
+A future full colour ICB path requires shader conversion to texture/sampler
+argument buffers; shader compilation fallback is not a substitute for that.
+
+### Experimental PBR colour ICB and same-frame diagnostics
+
+The experimental Metal path now compiles a second fragment-shader variant
+(`AIVERSE_ICB_PBR`) using Metal argument buffers at fragment buffer slot 8,
+with texture/sampler descriptors for slots 0..6 and 9..12. The backend
+captures the current fragment textures, builds a per-submission argument buffer
+and explicitly declares its resources. It keeps conventional pipelines as
+fallback; the experimental variant is restricted to the built-in, rigid,
+non-GI, non-skinned/non-morphed model shader and requires argument-buffer tier 2.
+ShaderGraph and legacy shader variants are still excluded.
+
+**Validation gate:** do not enable the experimental PBR path by default until
+the real Metal GPU fixture passes with the original Mac Studio. Use
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_EXPECT_PBR_ICB=1
+AIVERSE_PALETTE_TEST_CASE=indirect` with
+`aiverse_material_batches unused.obj /tmp/aiverse-icb`; expect
+`changed_channels=0`, `PBR colour indirect active=1` and process exit 0.
+Set `AIVERSE_ICB_TRACE=1` to log any PBR shader/pipeline compilation failures.
+If the variant cannot compile, regular instanced draws remain the fallback.
+
+The Scene Batching menu has `Compare A/B same frame`: it draws one baseline
+pass without instancing/indirect, then the optimized pass with the same scene
+camera, displaying both sets of draw counts. GPU timing and geometry upload
+cost are intentionally excluded. Geometry pooling stays at upload-time
+configuration in both passes. The 382.9/384 MiB scene observation indicates
+high page occupancy, so simply shrinking page sizes will not materially reduce
+geometry storage for that workload.

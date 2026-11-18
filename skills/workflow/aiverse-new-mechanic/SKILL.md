@@ -1,22 +1,73 @@
 ---
 name: aiverse-new-mechanic
-description: Add a new engine mechanic to AIVERSE end to end - own branch, data block and loader errors, code in a new file, tests, scenario_run proof, AI support, UI and view, docs, prototype game and unchanged checksums.
+description: Implement any AIVERSE mechanic as composable genre-independent ECS components + feature systems, with optional adapters for existing RTS/FPS modules and cross-genre proof.
 ---
 
-# New engine mechanic
+# New engine mechanic — component + system composition
 
-Done criteria come from the project mechanics plan; all of them apply.
+**Mandatory:** read `AGENTS.md` (universal ECS mechanic contract) and
+`docs/ecs-mechanic-composition.md` before writing feature code. These rules
+supersede the old RTS-only instructions.
 
-1. Branch `agent-mech-<code>` in its own worktree; merge `main` before every stage (`skills/workflow/aiverse-agent-branch`). Read AGENTS.md areas: touch only your area, hooks in shared files stay minimal and additive.
-2. Check first that the mechanic does not exist: `rules_schema`, `docs/game-format.md` "Recipes (mechanics of known games)", library catalog (`python3 tools/skills/catalog.py search <words>`).
-3. Data: a new optional block parsed in `RtsData.cpp` with readable errors; old games load unchanged.
-4. Code in a new file (`modules/rts/Rts<Mechanic>.cpp`); shared files get only hook points so parallel branches do not conflict. Integer/Fixed math, engine RNG, every state field saved and hashed.
-5. Tests: a test in `tests/tests.cpp`; behaviour proven with `scenario_run` (pass/fail checks).
-6. AI: the bot uses the mechanic at least basically (`skills/ai/aiverse-bots-debug` part B).
-7. UI control (UI agent area) and view (models/particles) if the mechanic needs them; visual changes checked on a screenshot.
-8. Docs: section in `docs/game-format.md`, a "Recipes" line, `rules_schema` help.
-9. Proof: a prototype game built only through MCP, no code edits - a separate project outside the engine repo (AGENTS.md section 3: games stay out of the engine repo).
-10. Regression: build without warnings, `aiverse_tests`, CI `determinism`, headless matches of every `templates/` game with unchanged checksums.
-11. Commit to your branch; MAIN merges (`skills/workflow/aiverse-main-merge`).
+1. **Coordinate branches and handoff.** Find the current integration branch
+   and existing agent work. Never rewrite another agent's files without
+   reconciling the source. Update the active handoff immediately after each
+   implementation step, with commit SHA, changed paths, test result, and what
+   remains. Do not merge to `main` without explicit approval and green gates.
+2. **Reuse first.** Search `libraries/catalog.json`, public
+   `aiverselib` headers, `engine/sim`, `engine/nav`, skills, docs and
+   CTest. Refactor existing reusable behavior instead of cloning FPS/RTS
+   algorithms or making parallel incompatible configurations.
+3. **Define ECS components.** For each feature, define *data-only*
+   authoritative, saveable components for state, ownership, settings and
+   other necessary capabilities. Use Fixed/integer math, generation-safe
+   Entity references, one source of truth, explicit version handling and
+   settings validation. A mechanic does not live in a monolithic
+   `State::actors`, `RtsModule` field, global singleton or render object.
+4. **Implement reusable systems.** Each system provides one feature/stage
+   with explicit component/resource Read/Write access and a deterministic
+   execution order. Missing components mean the Entity does not participate.
+   Use a deterministic deferred command/event barrier for creation,
+   destruction, damage, shared RNG and other order-dependent side effects.
+   The core system must not branch on genre names or require
+   `game::RtsModule&` / `fps::Module&`.
+5. **Separate shared policy from adapters.** Put neutral calculations in
+   `libraries/include/aiverselib/` or shared `engine/`. Genre modules
+   register systems, map existing input/config, preserve external save/network
+   contracts and provide presentation only. Prefer configuration/policies
+   over RTS-specific vs FPS-specific implementations.
+6. **Projectile example (mandatory pattern elsewhere).** Shooting is
+   assembled from `WeaponLaunch`, `ProjectileFlight`,
+   `Collision/Impact`, `Damage`, `Effects/Despawn` components/systems.
+   A rifle bullet, artillery shell, homing rocket or spell uses one
+   calculation library plus settings, not duplicate RTS/FPS math. Start
+   with `engine/sim/ProjectileData.h` and `aiverselib/genre/Weapons.h`.
+   Apply the same decomposition to vehicles, crafting, loot, economy, AI,
+   inventory, interactions and other features.
+7. **Compose in native C++ games.** Expose through public
+   `AIVERSE::libraries`/`AIVERSE::gameplay_native` targets; a project's
+   native code registers whatever components and systems it needs, without
+   changing engine sources or requiring a specific genre module.
+8. **Prove reuse.** Test the *same* library/system in at least two different
+   GameModule hosts, plus a combined-mechanics example; register CTest and
+   a standalone native consumer. Add invalid configuration, lifecycle,
+   actor/entity generation, deterministic event ordering, snapshot/rollback,
+   serialisation/replay and cross-worker checksum tests. Existing
+   `tests/ecs_cross_genre_mechanics_test.cpp` is the pattern.
+9. **Expose in Editor and data.** Add generic component metadata,
+   inspector editing of authored state, hierarchy/selection and appropriate
+   UI or presentation hooks. No genre-hardcoded editor rendering if the
+   components already describe the feature. Keep old content loading with
+   stable defaults and errors that identify invalid fields.
+10. **Run actual verification.** Build/test on supported platforms, normal
+    and sanitized ECS suites, FPS/RTS replay parity, native project consumer,
+    affected templates and headless matches. For graphics, validate both
+    GLSL and Metal and check visual captures. Unrun checks must be labeled
+    unverified; never assert production readiness from code review alone.
+11. **Deliver and document.** Update this skill if needed, the public API
+    guide, `docs/ecs-mechanic-composition.md`, and handoff. State exactly
+    what is implemented vs still a legacy adapter, what passed, and which
+    branch/commit contains the change.
 
-Runtime library: none. Engine development workflow.
+The engine is an assembly of mechanic pieces. **The genre is a preset,
+not a code ownership or feature eligibility boundary.**

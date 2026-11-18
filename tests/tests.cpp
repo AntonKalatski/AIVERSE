@@ -12476,6 +12476,27 @@ private:
 };
 } // namespace entityfxtest
 
+TEST(selection_outline_mask_pipeline_preserves_scene_depth) {
+    using namespace entityfxtest;
+    RecordingDevice dev;
+    render::Renderer3D renderer;
+    CHECK(renderer.init(dev));
+    bool foundMask = false;
+    for (const auto& pipeline : dev.pipes) {
+        if (!pipeline.label ||
+            std::string(pipeline.label) != "selection primitive mask depth read-only")
+            continue;
+        foundMask = true;
+        CHECK(pipeline.depthTest);
+        CHECK(!pipeline.depthWrite);
+        CHECK(!pipeline.depthOnly);
+        CHECK(pipeline.colorWrite);
+        CHECK(pipeline.colorFormat == gfx::PixelFormat::RGBA8);
+    }
+    CHECK(foundMask);
+    renderer.shutdown();
+}
+
 TEST(view_entity_fx_renders_scaled_translucent) {
     // RtsView applies view.entity_fx: the model matrix is scaled about the object's ground point, opacity < 1 moves
     // the object to the blended pass (back to front, still writing depth: kDrawFadeDepth) with tint.w = opacity, the team glow lands in
@@ -12964,7 +12985,11 @@ TEST(world_tree_describes_every_component_pool) {
     World described;
     const size_t n = editor::touchWorldComponentPools(described);
     CHECK(described.poolCount() == n);
-    CHECK(pv.sim()->world().poolCount() == n);
+    // Three general-purpose hierarchy pools (Parent, LocalTransform,
+    // WorldTransform) are exposed by the editor but remain opt-in: ordinary
+    // RTS v9 saves intentionally touch only the 65 legacy kPools.
+    constexpr size_t kOptInHierarchyComponents = 3;
+    CHECK(pv.sim()->world().poolCount() + kOptInHierarchyComponents == n);
     CHECK(editor::worldComponents().size() == n && editor::findWorldComponent("unit") >= 0 && editor::findWorldComponent("Гарнизон") >= 0);
     fs::remove_all(root);
 }

@@ -42,6 +42,42 @@ Json modelInfo(const render::Model& m) {
         mats.push(mj);
     }
     r.set("materials", mats);
+    // The agent receives the exact imported GLB LOD chain, not an
+    // assumption based on a source asset's filename or generated LOD report.
+    Json lods = Json::array();
+    for (const auto& node : m.nodes) {
+        if (node.mesh < 0 || size_t(node.mesh) >= m.meshes.size()) continue;
+        const auto& mesh = m.meshes[size_t(node.mesh)];
+        if (mesh.lods.empty()) continue;
+        Json entry = Json::object();
+        entry.set("node", Json::string(node.name));
+        Json levels = Json::array();
+        auto addLevel = [&](const render::MeshDef& lodMesh, int level, float threshold) {
+            uint64_t tris = 0;
+            for (const auto& p : lodMesh.primitives) tris += p.indexCount / 3;
+            Json item = Json::object();
+            item.set("level", Json::number(int64_t(level)));
+            item.set("triangles", Json::number(int64_t(tris)));
+            if (level) item.set("maxPixels", Json::number(double(threshold)));
+            levels.push(item);
+        };
+        addLevel(mesh, 0, 0);
+        for (size_t i = 0; i < mesh.lods.size(); ++i) {
+            const auto& lod = mesh.lods[i];
+            if (lod.mesh < 0 || size_t(lod.mesh) >= m.meshes.size()) continue;
+            addLevel(m.meshes[size_t(lod.mesh)], int(i) + 1, lod.maxPixels);
+        }
+        entry.set("levels", levels);
+        lods.push(entry);
+    }
+    r.set("lods", lods);
+    Json autoLod = Json::object();
+    autoLod.set("attempted", Json::fromBool(m.autoLod.attempted));
+    autoLod.set("generatedBaseMeshes", Json::number(int64_t(m.autoLod.generatedMeshes)));
+    autoLod.set("generatedLevels", Json::number(int64_t(m.autoLod.generatedLevels)));
+    autoLod.set("addedIndices", Json::number(int64_t(m.autoLod.addedIndices)));
+    autoLod.set("reason", Json::string(m.autoLod.reason));
+    r.set("autoLod", autoLod);
     Json vars = Json::array();
     for (const auto& v : m.variants) vars.push(Json::string(v));
     r.set("variants", vars);
@@ -70,8 +106,17 @@ public:
     void draw(Editor& ed) override {
         const auto& types = ed.rules().types;
         if (types.empty()) { ImGui::TextDisabled("Нет типов"); return; }
-        if (ed.selection.kind == Selection::Type)
-            for (size_t i = 0; i < types.size(); ++i) if (types[i].id == ed.selection.key) type_ = int(i);
+        if (ed.selection.kind == Selection::Type) {
+            for (size_t i = 0; i < types.size(); ++i) {
+                if (types[i].id == ed.selection.key) type_ = int(i);
+            }
+        } else if (ed.selection.kind == Selection::Entity &&
+                 ed.selection.index >= 0 &&
+                 size_t(ed.selection.index) < ed.doc().data.entities.size()) {
+            const int chosen = ed.rules().findType(
+                ed.doc().data.entities[size_t(ed.selection.index)].type);
+            if (chosen >= 0) type_ = chosen;
+        }
         type_ = std::clamp(type_, 0, int(types.size()) - 1);
         if (ui::beginProps("##model")) {
             ui::prop("Тип");
@@ -84,6 +129,9 @@ public:
             ImGui::SliderInt("##owner", &owner_, 0, 8);
             ui::endProps();
         }
+        // A type chosen in this panel might not occur on the open map.
+        // Load it on demand and keep it resident while its preview is visible.
+        ed.retainEditorType(uint16_t(type_));
         if (!portraitInit_) { portraitInit_ = true; portrait_.init(ed.device(), 256); }
         time_ += ImGui::GetIO().DeltaTime;
         portrait_.render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
@@ -109,6 +157,38 @@ public:
             for (const auto& mt : m->materials)
                 ImGui::BulletText("%s%s%s", mt.name.c_str(), mt.team != render::TeamMode::None ? "  [цвет игрока]" : "",
                                   mt.alpha == render::AlphaMode::Blend ? "  [прозрачный]" : mt.alpha == render::AlphaMode::Mask ? "  [маска]" : "");
+        if (ui::collapsing("LOD модели", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (m->autoLod.generatedLevels) {
+                ImGui::Text("Авто-LOD: %zu уровней для %zu мешей",
+                            m->autoLod.generatedLevels, m->autoLod.generatedMeshes);
+            } else if (m->autoLod.attempted) {
+                ImGui::TextDisabled("Авто-LOD: %s", m->autoLod.reason.c_str());
+            }
+            size_t chains = 0;
+            for (const auto& node : m->nodes) {
+                if (node.mesh < 0 || size_t(node.mesh) >= m->meshes.size()) continue;
+                const auto& mesh = m->meshes[size_t(node.mesh)];
+                if (mesh.lods.empty()) continue;
+                ++chains;
+                uint64_t baseTris = 0;
+                for (const auto& p : mesh.primitives) baseTris += p.indexCount / 3;
+                ImGui::Text("%s: LOD0 %llu тр.", node.name.c_str(),
+                            (unsigned long long)baseTris);
+                for (size_t i = 0; i < mesh.lods.size(); ++i) {
+                    const auto& lod = mesh.lods[i];
+                    if (lod.mesh < 0 || size_t(lod.mesh) >= m->meshes.size()) continue;
+                    uint64_t tris = 0;
+                    for (const auto& p : m->meshes[size_t(lod.mesh)].primitives)
+                        tris += p.indexCount / 3;
+                    ImGui::BulletText("LOD%zu: %llu тр., порог %.1f px",
+                        i + 1, (unsigned long long)tris, double(lod.maxPixels));
+                }
+            }
+            if (!chains) ImGui::TextDisabled("Нет LOD: проверь параметры автоупрощения и исходный GLB.");
+            ImGui::TextDisabled("Авто-LOD создаются до GPU upload; LOD0/анимации сохранены.");
+            ImGui::TextDisabled("AIVERSE_AUTOLOD=off возвращает только импортированные уровни.");
+            ImGui::TextDisabled("Выбор камерой/тенями: Сцена → LOD.");
+        }
         if (!m->variants.empty() && ui::collapsing("Варианты"))
             for (const auto& v : m->variants) ImGui::BulletText("%s", v.c_str());
         if (ui::collapsing("Узлы (для procedural, attach, fx, muzzle)"))
@@ -126,6 +206,7 @@ public:
                                     const auto& types = ed.rules().types;
                                     for (size_t i = 0; i < types.size(); ++i) {
                                         if (types[i].id != id) continue;
+                                        ed.retainEditorType(uint16_t(i));
                                         if (const render::Model* m = ed.view().modelOf(uint16_t(i))) r = modelInfo(*m);
                                         Json w = Json::array();
                                         for (const auto& s : ed.view().warnings()) if (s.find("type '" + id + "'") == 0) w.push(Json::string(s));

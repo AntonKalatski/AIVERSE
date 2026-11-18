@@ -63,8 +63,8 @@ inline const char* temporal = R"(
             nearHistory=min(nearHistory,expected);farHistory=max(farHistory,expected);
         }
     }
-    // At depth edges retain the coverage of both nearby surfaces, including the sky.
-    // A center-depth-only test resets accumulation whenever a subpixel object disappears.
+    // Collect a wide color neighborhood for stable subpixel reconstruction, but keep
+    // history depth tied to the current receiver at silhouette boundaries.
     vec3 previousPoint=distance>0.0?p:p-eye.xyz+prevEye.xyz;
     vec4 oldClip=prevVP*vec4(previousPoint,1.0);
     vec2 oldUv=oldClip.xy/max(oldClip.w,0.00001)*0.5+0.5-jitter.zw;
@@ -75,13 +75,20 @@ inline const char* temporal = R"(
         // Validate taps independently. Cubic reconstruction avoids the progressive blur of bilinear history reads.
         vec2 pixel=oldUv/px.xy-vec2(0.5), base=floor(pixel), fraction=fract(pixel);
         vec3 sum=vec3(0.0);float accepted=0.0;
-        float tolerance=max(0.03,farHistory*0.003);
+        // Stored alpha is distance to the previous camera, not the current one.
+        float expectedCenter=distance>0.0 ? length(p-prevEye.xyz) : 0.0;
+        float tolerance=max(0.03,expectedCenter*0.003);
+        bool depthEdge=skyNeighbor!= (distance==0.0) || (farHistory-nearHistory)>max(0.06,distance*0.01);
         for(int y=-1;y<=2;++y) for(int x=-1;x<=2;++x) {
             vec2 q=(base+vec2(float(x),float(y))+vec2(0.5))*px.xy;
             if(min(q.x,q.y)<=0.0 || max(q.x,q.y)>=1.0)continue;
             vec4 prior=HISTORY(UV(q));
             float w=taaKernel(float(x)-fraction.x)*taaKernel(float(y)-fraction.y);
-            if((prior.a==0.0&&skyNeighbor)||(prior.a>0.0&&prior.a>=nearHistory-tolerance&&prior.a<=farHistory+tolerance)) {
+            bool sameReceiver=distance==0.0 ? prior.a==0.0 :
+                prior.a>0.0 && abs(prior.a-expectedCenter)<=tolerance;
+            bool compatible=!depthEdge && prior.a>0.0 &&
+                prior.a>=nearHistory-tolerance && prior.a<=farHistory+tolerance;
+            if(sameReceiver || compatible) {
                 sum+=taaCompress(prior.rgb)*w;accepted+=w;
             }
         }
@@ -89,7 +96,9 @@ inline const char* temporal = R"(
             old=clamp(sum/accepted,lo,hi);
             // High contrast is precisely where subpixel coverage needs temporal accumulation.
             // Depth validation and neighborhood clipping reject stale history instead.
-            weight=0.9;
+            // Preserve sharp contact edges and moving silhouettes while accumulating
+            // independent PCSS disk rotations on planar receivers.
+            weight=depthEdge ? 0.55 : 0.9;
         }
     }
     RETURN(vec4(taaExpand(mix(now,old,weight)),distance));

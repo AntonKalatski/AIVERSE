@@ -4,8 +4,13 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <optional>
 #include "EditorUtil.h"
 #include "EditorWorldEdit.h"
+#include "EditorComponentPanel.h"
+#include "EditorEcsWriteback.h"
+#include "EditorSelectionAdapter.h"
+#include "EditorRuntimeEntityProvider.h"
 
 namespace aiverse::editor {
 
@@ -148,15 +153,45 @@ void DetailsPanel::prepare() {
         for (auto& f : flat) v.push_back(&f);
         if (!v.empty()) sections_.push_back({"stats", "Характеристики (база → итог)", merge(v), v.size(), true});
     }
-    // components in the engine's order
+    // Render the components actually reported by the selected entities, not just
+    // the RTS registry. Native/FPS/project-specific components can have arbitrary IDs.
+    // The registry supplies friendly titles and ordering where known.
     static const char* const open[] = {"Transform", "Owner", "Unit", "Orders", "Production", "Construction", "Garrison", "Cargo", "ResourceStock", "ScriptData", "Boarded", "Transport"};
-    for (auto& c : worldComponents()) {
-        std::vector<const Json*> v;
-        for (auto* it : withData) if (it->data["components"].has(c.id)) v.push_back(&it->data["components"][c.id]);
-        if (v.empty()) continue;
-        bool def = false;
-        for (auto* o : open) def |= std::string(o) == c.id;
-        sections_.push_back({c.id, c.title, merge(v), v.size(), def});
+    std::vector<std::string> componentIds;
+    for (auto* it : withData) {
+        const Json& components = it->data["components"];
+        if (!components.isObject()) continue;
+        for (auto& [id, value] : components.members()) {
+            if (std::find(componentIds.begin(), componentIds.end(), id) == componentIds.end()) componentIds.push_back(id);
+        }
+    }
+    const auto& registry = worldComponents();
+    auto componentRank = [&](const std::string& id) {
+        if (id == "Transform") return -1;
+        for (size_t i = 0; i < registry.size(); ++i) if (id == registry[i].id) return int(i);
+        return int(registry.size());
+    };
+    std::stable_sort(componentIds.begin(), componentIds.end(), [&](const std::string& a, const std::string& b) {
+        return componentRank(a) < componentRank(b);
+    });
+    for (const auto& id : componentIds) {
+        std::vector<const Json*> values;
+        for (auto* it : withData) {
+            const Json& components = it->data["components"];
+            if (components.isObject() && components.has(id)) values.push_back(&components[id]);
+        }
+        if (values.empty()) continue;
+        std::string title = worldComponentDisplayName(id);
+        for (auto* it : withData) {
+            const Json& descriptor = it->data["componentSchemas"][id];
+            if (descriptor.isObject() && descriptor["title"].isString()) {
+                title = descriptor["title"].str();
+                break;
+            }
+        }
+        bool expanded = id == "Transform";
+        for (auto* o : open) if (id == o) { expanded = true; break; }
+        sections_.push_back({id, title, merge(values), values.size(), expanded});
     }
     // the rules block of the type
     std::vector<const Json*> rules;
@@ -165,6 +200,69 @@ void DetailsPanel::prepare() {
 }
 
 void DetailsPanel::draw(Editor& ed) {
+    if (ed.selection.kind == Selection::FpsActor ||
+        ed.selection.kind == Selection::FpsRuntimeObject) {
+        const auto runtime = enumerateEditorRuntimeEntities(ed);
+        const auto found = std::find_if(runtime.begin(), runtime.end(),
+            [&](const EditorRuntimeEntity& item) {
+                return item.selection == ed.selection;
+            });
+        if (found == runtime.end()) {
+            ui::hint("FPS ECS runtime entity is unavailable; rebuild the preview.");
+            return;
+        }
+        const Json& actor = found->fields;
+        ImGui::TextDisabled("FPS ECS ENTITY · READ ONLY");
+        ImGui::TextUnformatted(found->title.c_str());
+        const Json& components = actor["components"];
+        if (components.isObject()) {
+            for (const auto& [componentId, values] : components.members()) {
+                if (!filter_.empty() &&
+                    !matches(componentId, values)) continue;
+                const bool expanded = ImGui::CollapsingHeader(
+                    componentId.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                if (!expanded || !values.isObject()) continue;
+                ImGui::PushID(componentId.c_str());
+                if (ImGui::BeginTable("##fpsEcsFields", 2,
+                        ImGuiTableFlags_SizingStretchProp |
+                        ImGuiTableFlags_RowBg)) {
+                    for (const auto& [field, value] : values.members())
+                        property(ed, field, value, componentId + "." + field);
+                    ImGui::EndTable();
+                }
+                ImGui::PopID();
+            }
+        } else {
+            ui::hint("No ECS components are present for this FPS actor.");
+        }
+        ImGui::TextDisabled("Preview ECS components; gameplay state remains "
+                            "backward-compatible with FPS save v9.");
+        return;
+    }
+    // FPS authored objects are document sources; they do not have ECS snapshot
+    // rows yet. They nevertheless use the same Inspector panel and registered
+    // document-component card drawers as any other authored entity.
+    if (ed.selection.kind == Selection::FpsObject) {
+        DocumentEntityRef ref;
+        if (!documentEntityFromSelection(ed.selection, ref)) {
+            ui::hint("Invalid scene object reference");
+            return;
+        }
+        const Json* source = fpsDocumentEntity(ed.doc().data.fps, ref);
+        if (!source) {
+            ui::hint("Scene object no longer exists");
+            return;
+        }
+        const bool collider = ref.source == DocumentEntityRef::Source::FpsCollider;
+        ImGui::TextDisabled("SCENE OBJECT");
+        ImGui::Text("%s #%zu", collider ? "Box Collider" : "Spawn Point", ref.index + 1);
+        ImGui::Separator();
+        drawDocumentEditableComponents(ed.doc(), ref);
+        if (ImGui::CollapsingHeader("Raw data")) {
+            ImGui::TextWrapped("%s", source->dump().c_str());
+        }
+        return;
+    }
     auto prof = ed.prof.scope(EditorProfile::Details);   // all of it: reading + merging + drawing
     collect(ed);
     if (items_.empty()) { ui::emptyStateHere(ICON_INSPECTOR, "Объект исчез", "Его больше нет в мире игры."); return; }
@@ -183,8 +281,17 @@ void DetailsPanel::draw(Editor& ed) {
         ImGui::SetClipboardText((items_.size() == 1 ? all[0] : all).dump().c_str());
         ed.status = "Скопировано в буфер обмена";
     }
-    mapFields(ed);
+    // Runtime ECS component snapshots are authoritative for component cards.
+    // Authoring metadata is deliberately separate and follows those cards.
     sections(ed);
+    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
+        ImGui::PushID("MapEntityMetadata");
+        if (ImGui::CollapsingHeader("Map Entity Metadata"))
+            mapFields(ed);
+        ImGui::PopID();
+    } else {
+        mapFields(ed);
+    }
 }
 
 void DetailsPanel::header(Editor& ed) {
@@ -210,7 +317,10 @@ void DetailsPanel::header(Editor& ed) {
         std::string title = first.hasRow ? worldRowName(ed.world(), R, &d, first.row) : t >= 0 ? R.types[size_t(t)].name : "Объект";
         if (first.doc >= 0 && !ed.worldLive() && size_t(first.doc) < d.entities.size()) {
             title = t >= 0 ? R.types[size_t(t)].name : d.entities[size_t(first.doc)].type;
-            if (!d.entities[size_t(first.doc)].id.empty()) title += "  #" + d.entities[size_t(first.doc)].id;
+            const auto& authored = d.entities[size_t(first.doc)];
+            const std::string displayName = authored.extra.getStr("displayName", "");
+            if (!displayName.empty()) title = displayName;
+            if (!authored.id.empty()) title += "  #" + authored.id;
         }
         std::string sub = ownerName(ownerOf(first));
         if (first.hasRow) sub += "  ·  " + std::string(worldOriginTitle(first.row.origin)) + "  ·  #" + std::to_string(first.row.e.index);
@@ -271,7 +381,7 @@ void DetailsPanel::mapFields(Editor& ed) {
     cx /= float(idx.size()); cz /= float(idx.size());
     const int ti = R.findType(e0.type);
     if (!filter_.empty() && !ui::contains("тип владелец позиция гарнизон запас id карта", filter_)) return;
-    ui::section(ICON_PENCIL, idx.size() > 1 ? "Карта (правка всех выбранных)" : "Карта (правка)");
+    if (idx.size() > 1) ui::section(ICON_PENCIL, "Map Entity Metadata (все выбранные)");
     if (!ui::beginProps("##mapfields")) return;
     ui::prop("Тип", "Тип объекта из правил; меняется у всех выбранных (одна отмена)");
     if (ImGui::BeginCombo("##type", sameType ? (ti >= 0 ? R.types[size_t(ti)].name.c_str() : e0.type.c_str()) : "—", ImGuiComboFlags_HeightLarge)) {
@@ -287,12 +397,23 @@ void DetailsPanel::mapFields(Editor& ed) {
             if (ImGui::Selectable((d.players[p].name + "##p" + std::to_string(p)).c_str(), sameOwner && e0.owner == int(p + 1))) worldedit::setOwner(doc, idx, int(p + 1));
         ImGui::EndCombo();
     }
-    ui::prop(idx.size() > 1 ? "Центр" : "Позиция", idx.size() > 1 ? "Перетаскивание сдвигает все выбранные объекты" : "x и z в клетках; перетаскивание в «Сцене» тоже двигает");
-    if (!posActive_) { posEdit_[0] = cx; posEdit_[1] = cz; }
-    const bool ch = ImGui::DragFloat2("##pos", posEdit_, 0.1f, 0, 0, "%.1f");
-    if (ImGui::IsItemActivated()) doc.beginEdit();
-    posActive_ = ImGui::IsItemActive();
-    if (ch) worldedit::move(doc, idx, posEdit_[0] - cx, posEdit_[1] - cz);
+    // Single-object Position XZ is edited by the shared component drawer
+    // above. Preserve the centroid editor for multi-selection only.
+    if (idx.size() > 1) {
+        ui::prop("Центр", "Перетаскивание сдвигает все выбранные объекты");
+        if (!posActive_) { posEdit_[0] = cx; posEdit_[1] = cz; }
+        const bool ch = ImGui::DragFloat2("##pos", posEdit_, 0.1f, 0, 0, "%.1f");
+        if (ImGui::IsItemActivated()) doc.beginEdit();
+        posActive_ = ImGui::IsItemActive();
+        if (ch) {
+            std::vector<DocumentEntityRef> refs;
+            refs.reserve(idx.size());
+            for (int i : idx) refs.push_back(DocumentEntityRef::mapEntity(size_t(i)));
+            translateDocumentEntities(doc, refs, {posEdit_[0] - cx, 0.0, posEdit_[1] - cz});
+        }
+    } else {
+        posActive_ = false;
+    }
     bool allGarrison = true, allNodes = true;
     for (int i : idx) {
         const int t = R.findType(d.entities[size_t(i)].type);
@@ -317,6 +438,16 @@ void DetailsPanel::mapFields(Editor& ed) {
         const bool c3 = ImGui::DragFloat("##amount", &a, 10.0f, -1.0f, 1e7f, sameAmount ? "%.0f" : "—");
         if (ImGui::IsItemActivated()) doc.beginEdit();
         if (c3) { for (int i : idx) d.entities[size_t(i)].amount = a; doc.touched(); }
+    }
+    if (idx.size() == 1) {
+        ui::prop("Название", "Отображаемое имя объекта в редакторе; не меняет идентификатор для скриптов");
+        auto& authored = d.entities[size_t(idx[0])];
+        std::string displayName = authored.extra.getStr("displayName", "");
+        if (ui::inputString("##displayName", displayName)) {
+            doc.beginEdit();
+            authored.extra.set("displayName", Json::string(displayName));
+            doc.touched();
+        }
     }
     ui::prop("Имя (id)", "Необязательно. Имя объекта для дорог, триггеров и скриптов");
     if (idx.size() == 1) {
@@ -353,6 +484,38 @@ void DetailsPanel::rowMenu(const std::string& path, const Json& v) {
 
 void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, const std::string& path) {
     if (!matches(key, v)) return;
+    // Typed metadata is registered alongside the real ECS component dump.
+    // Unknown native/project fields remain visible through the generic JSON drawer.
+    std::optional<WorldComponentField> fieldSchema;
+    if (const auto dot = path.find('.'); dot != std::string::npos &&
+        path.find('.', dot + 1) == std::string::npos) {
+        for (const auto& field : worldComponentFields(path.substr(0, dot)))
+            if (path.substr(dot + 1) == field.id) {
+                fieldSchema = field;
+                break;
+            }
+    }
+    // Native module schemas travel with the real component snapshot. Never
+    // assume that a similarly named component in another project shares it.
+    std::string schemaTitle;
+    bool nativeEditable = false;
+    std::string nativeComponent, nativeField;
+    std::string nativeKind;
+    if (const auto dot = path.find('.'); dot != std::string::npos &&
+        path.find('.', dot + 1) == std::string::npos) {
+        for (const auto& item : items_) {
+            const Json& meta = item.data["componentSchemas"][path.substr(0, dot)]
+                                        ["fields"][path.substr(dot + 1)];
+            if (meta.isObject()) {
+                if (meta["title"].isString()) schemaTitle = meta["title"].str();
+                nativeEditable = meta.getBool("editable", false);
+                nativeKind = meta.getStr("kind");
+                nativeComponent = path.substr(0, dot);
+                nativeField = path.substr(dot + 1);
+                break;
+            }
+        }
+    }
     ImGui::PushID(key.c_str());
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
@@ -368,10 +531,24 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
             ImGui::TreePop();
         }
     } else {
-        ImGui::TreeNodeEx(key.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAllColumns);
+        ImGui::TreeNodeEx(!schemaTitle.empty() ? schemaTitle.c_str() :
+            fieldSchema ? fieldSchema->title.c_str() : key.c_str(),
+            ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+            ImGuiTreeNodeFlags_SpanAllColumns);
         rowMenu(path, v);
         ImGui::TableNextColumn();
-        if (isMixed(v)) {
+        bool customHandled = false;
+        if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0) {
+            auto& drawers = InspectorDrawerRegistry::instance();
+            const auto custom = drawers.fields.find(path);
+            if (custom != drawers.fields.end())
+                customHandled = custom->second(ed.doc(),
+                    DocumentEntityRef::mapEntity(size_t(items_[0].doc)),
+                    key.c_str(), v);
+        }
+        if (customHandled) {
+            // The registered field drawer rendered its own value controls.
+        } else if (isMixed(v)) {
             ImGui::TextDisabled("—");
             ImGui::SetItemTooltip("Значения различаются");
         } else if (isRef(v)) {   // another object: click selects it
@@ -380,6 +557,172 @@ void DetailsPanel::property(Editor& ed, const std::string& key, const Json& v, c
                 if (const WorldRow* r = ed.world().find(uint64_t(v["$entity"].integer()))) ed.select(ed.worldSelection(*r));
             }
             ImGui::PopStyleColor();
+        } else if (nativeEditable && !ed.worldLive() && items_.size() == 1 &&
+                   items_[0].doc >= 0 && ed.worldModule() &&
+                   (v.isNumber() || v.isString() ||
+                    v.type() == Json::Type::Bool ||
+                    (v.isArray() && v.size() == 3))) {
+            // The owning native module explicitly declared this field
+            // editable and will validate its authoring JSON writeback. No
+            // arbitrary mutation of transient World/Simulation snapshots.
+            Json updated;
+            bool changed = false;
+            if (v.type() == Json::Type::Bool) {
+                bool value = v.boolean();
+                changed = ImGui::Checkbox("##nativeBool", &value);
+                if (changed) updated = Json::fromBool(value);
+            } else if (v.isString()) {
+                std::string value = v.str();
+                changed = ui::inputString("##nativeString", value);
+                if (changed) updated = Json::string(value);
+            } else if (v.isArray() && v.size() == 3 &&
+                       v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
+                float xyz[3] = {float(v[0].toDouble()), float(v[1].toDouble()),
+                                float(v[2].toDouble())};
+                ImGui::SetNextItemWidth(-1);
+                changed = ImGui::DragFloat3("##nativeVec3", xyz, 0.05f);
+                if (changed) {
+                    updated = Json::array();
+                    for (float n : xyz) updated.push(Json::number(double(n), 3));
+                }
+            } else if (v.isNumber() && nativeKind == "integer") {
+                int n = int(v.integer());
+                ImGui::SetNextItemWidth(-1);
+                changed = ImGui::DragInt("##nativeInt", &n, 1.0f);
+                if (changed) updated = Json::number(int64_t(n));
+            } else if (v.isNumber()) {
+                float n = float(v.toDouble());
+                ImGui::SetNextItemWidth(-1);
+                changed = ImGui::DragFloat("##nativeNumber", &n, 0.05f);
+                if (changed) updated = Json::number(double(n), 3);
+            }
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            if (changed) {
+                const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
+                writeNativeAuthoredEcsField(ed.doc(), ed.worldModule()->native(),
+                                            ref, nativeComponent, nativeField,
+                                            updated);
+            }
+        } else if (path == "Owner.player" && v.isNumber()) {
+            const bool authored = !ed.worldLive() && items_.size() == 1 &&
+                                  items_[0].doc >= 0;
+            const auto ref = DocumentEntityRef::mapEntity(
+                authored ? size_t(items_[0].doc) : 0);
+            const bool editable = authored && canWriteAuthoredEcsField(
+                ed.doc(), ref, "Owner", "player");
+            // Show the ECS value, but edit the serialized map value so the
+            // preview can be rebuilt and undo/redo remains deterministic.
+            const DocEntity* source = editable ? documentMapEntity(ed.doc(), ref) : nullptr;
+            int player = source ? source->owner : int(v.integer());
+            const int maxPlayer = int(std::min<size_t>(
+                ed.doc().data.players.size(), 255));
+            ImGui::BeginDisabled(!editable || player < 0);
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::SliderInt("##ecsOwner", &player, 0, maxPlayer)) {
+                writeAuthoredEcsField(ed.doc(), ref, "Owner", "player",
+                                      Json::number(int64_t(player)));
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Persisted owner of a map-authored ECS entity; live entities are read-only.");
+        } else if (path == "Unit.facing" && v.isArray() && v.size() == 3 &&
+                   !ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0 &&
+                   size_t(items_[0].doc) < ed.doc().data.entities.size() &&
+                   ed.doc().data.entities[size_t(items_[0].doc)].extra["facing"].isNumber()) {
+            // Unit.facing is the real ECS direction vector, produced at
+            // Simulation::setup from the serialized authoring facing degrees.
+            // Edit that persisted input, not a transient World snapshot.
+            const auto ref = DocumentEntityRef::mapEntity(size_t(items_[0].doc));
+            float degrees = float(ed.doc().data.entities[size_t(items_[0].doc)]
+                                  .extra["facing"].toDouble());
+            ImGui::SetNextItemWidth(-1);
+            const bool changed = ImGui::DragFloat("##ecsFacing", &degrees,
+                                                   0.5f, 0, 0, "%.2f deg");
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            if (changed) {
+                Json edited = Json::object();
+                edited.set("rotationY", Json::number(double(degrees), 3));
+                writeDocumentComponent(ed.doc(), ref,
+                                       DocumentComponentKind::Transform, edited);
+            }
+        } else if (fieldSchema && fieldSchema->kind == WorldFieldKind::Turn && v.isNumber()) {
+            ImGui::Text("%.2f°", v.toDouble() * 360.0);
+            ImGui::SetItemTooltip("ECS rotation is stored in turns; no persistent map rotation field exists.");
+        } else if (v.type() == Json::Type::Bool) {
+            // Read-only ECS snapshots should look like typed properties rather than JSON.
+            bool checked = v.boolean();
+            ImGui::BeginDisabled();
+            ImGui::Checkbox("##value", &checked);
+            ImGui::EndDisabled();
+        } else if (path == "Transform.pos" && v.isArray() && v.size() == 3 &&
+                   v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
+            // This is the real ECS Transform snapshot. For map-authored RTS
+            // entities only X/Z have a persistent document representation;
+            // world-space Y is visible but intentionally not writable.
+            const bool authored = !ed.worldLive() && items_.size() == 1 &&
+                                  items_[0].doc >= 0;
+            const float values[3] = {float(v[0].toDouble()),
+                                     float(v[1].toDouble()),
+                                     float(v[2].toDouble())};
+            DocumentTransform docPosition;
+            const DocumentEntityRef ref = DocumentEntityRef::mapEntity(
+                authored ? size_t(items_[0].doc) : 0);
+            const bool editable = authored && readDocumentTransform(
+                ed.doc(), ref, docPosition);
+            float x = editable ? float(docPosition.x) : values[0];
+            float y = values[1];
+            float z = editable ? float(docPosition.z) : values[2];
+            const float width = std::max(55.0f,
+                (ImGui::GetContentRegionAvail().x - 8.0f) / 3.0f);
+            bool changed = false;
+            ImGui::BeginDisabled(!editable);
+            ImGui::SetNextItemWidth(width);
+            changed |= ImGui::DragFloat("X##ecsPos", &x, 0.05f, 0, 0, "%.3f");
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            ImGui::EndDisabled();
+            ImGui::SameLine(0, 4);
+            ImGui::BeginDisabled();
+            ImGui::SetNextItemWidth(width);
+            ImGui::DragFloat("Y##ecsPos", &y, 0, 0, 0, "%.3f");
+            ImGui::EndDisabled();
+            ImGui::SameLine(0, 4);
+            ImGui::BeginDisabled(!editable);
+            ImGui::SetNextItemWidth(width);
+            changed |= ImGui::DragFloat("Z##ecsPos", &z, 0.05f, 0, 0, "%.3f");
+            if (ImGui::IsItemActivated()) ed.doc().beginEdit();
+            ImGui::EndDisabled();
+            if (changed)
+                writeAuthoredEcsField(ed.doc(), ref, "Transform", "pos",
+                    [&] {
+                        Json values = Json::array();
+                        values.push(Json::number(double(x), 3));
+                        values.push(Json::number(double(y), 3));
+                        values.push(Json::number(double(z), 3));
+                        return values;
+                    }());
+            if (editable && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                ImGui::SetTooltip("Y comes from the ECS world and is not serialized by this map.");
+        } else if (v.isArray() && v.size() == 3 &&
+                   v[0].isNumber() && v[1].isNumber() && v[2].isNumber()) {
+            // A three-component vector gets the same compact XYZ layout for
+            // positions, velocities and arbitrary native ECS vector fields.
+            const char* axes[] = {"X", "Y", "Z"};
+            const ImVec4 colors[] = {ImVec4(.95f,.37f,.36f,1), ImVec4(.39f,.82f,.50f,1), ImVec4(.37f,.61f,.96f,1)};
+            const float width = ImGui::GetContentRegionAvail().x / 3.0f;
+            for (int i = 0; i < 3; ++i) {
+                if (i) ImGui::SameLine(0, 3);
+                ImGui::BeginGroup();
+                ImGui::PushStyleColor(ImGuiCol_Text, colors[i]);
+                ImGui::TextUnformatted(axes[i]);
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0, 3);
+                ImGui::SetNextItemWidth(std::max(25.0f, width - 22.0f));
+                ImGui::BeginDisabled();
+                float value = float(v[size_t(i)].toDouble());
+                ImGui::DragFloat((std::string("##axis") + axes[i]).c_str(), &value, 0.0f, 0.0f, 0.0f, "%.3f");
+                ImGui::EndDisabled();
+                ImGui::EndGroup();
+            }
         } else {
             const std::string t = v.isArray() ? inlineText(v) : scalar(v);
             ImGui::TextUnformatted(t.c_str());
@@ -403,11 +746,23 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
     const auto& studio = EditorTheme::current();
     ImGui::PushStyleColor(ImGuiCol_Header, studio.panelRaised);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, studio.frameHover);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, studio.frameHover);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 9));
     const bool expanded = ImGui::CollapsingHeader(label, sec.open ? ImGuiTreeNodeFlags_DefaultOpen : 0);
+    const ImVec2 headerMin = ImGui::GetItemRectMin();
+    const ImVec2 headerMax = ImGui::GetItemRectMax();
+    // A thin accent rail identifies the Transform card without filling the UI
+    // with saturated backgrounds. Other components use a muted divider.
+    const ImVec4 accent = sec.id == "Transform" ? ui::accentColor() : studio.frameHover;
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(headerMin.x, headerMin.y + 3.0f),
+        ImVec2(headerMin.x + 3.0f, headerMax.y - 3.0f),
+        ImGui::GetColorU32(accent), 1.5f);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
-    if (!expanded) { ImGui::Spacing(); return; }
+    ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+        ImGui::SetTooltip("%s  |  %zu/%zu entities", id, sec.have, withData_);
+    if (!expanded) { ImGui::Dummy(ImVec2(0, 5)); return; }
     if (ImGui::BeginPopupContextItem()) {
         if (ui::menuItem(ICON_BRACES, "Копировать раздел как JSON")) ImGui::SetClipboardText(merged.dump().c_str());
         ImGui::EndPopup();
@@ -416,6 +771,23 @@ void DetailsPanel::section(Editor& ed, const Section& sec) {
     if (!filter_.empty() && (ui::contains(title, filter_) || ui::contains(id, filter_))) filter_.clear();   // the section matched: all of it
     ImGui::PushID(id);
     ImGui::Indent(8.0f);
+    // C++ custom component drawers apply to actual ECS component snapshots
+    // as well as authored document components. The enclosing ECS card and
+    // component ID always come from WorldInspect, never DocEntity.
+    if (!ed.worldLive() && items_.size() == 1 && items_[0].doc >= 0 &&
+        sec.id != "stats" && sec.id != "rules") {
+        auto& drawers = InspectorDrawerRegistry::instance();
+        auto custom = drawers.components.find(sec.id);
+        if (custom != drawers.components.end()) {
+            custom->second(ed.doc(),
+                DocumentEntityRef::mapEntity(size_t(items_[0].doc)), merged);
+            ImGui::Unindent(8.0f);
+            ImGui::PopID();
+            ImGui::Spacing();
+            filter_ = sectionFilter;
+            return;
+        }
+    }
     if (ImGui::BeginTable("##props", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthStretch, 0.45f);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch, 0.55f);
@@ -433,9 +805,28 @@ void DetailsPanel::sections(Editor& ed) {
     if (sections_.empty()) {
         const auto& P = ed.worldPreview();
         ImGui::Spacing();
-        if (cursor_ < items_.size()) ui::hint(ICON_CLOCK "  Читаю данные объектов…");
-        else if (!ed.worldLive() && !P.error().empty()) ui::callout(ui::Tone::Warn, "Данные мира недоступны: " + P.error());
-        else if (!ed.worldLive() && (ed.worldPending() || !P.sim())) ui::hint(ICON_CLOCK "  Данные мира (компоненты, характеристики) появятся после обновления предпросмотра.");
+        if (cursor_ < items_.size()) {
+            ui::hint(ICON_CLOCK "  Читаю компоненты ECS…");
+        } else if (!ed.worldLive() && !P.error().empty()) {
+            ui::callout(ui::Tone::Warn,
+                "Компоненты ECS недоступны: " + P.error() +
+                ". Проверьте сборку редактора с native-модулями проекта.");
+        } else if (!ed.worldLive() && (ed.worldPending() || !ed.worldFresh() || !P.sim())) {
+            ui::hint(ICON_CLOCK "  Ожидание ECS World: компоненты появятся после обновления предпросмотра.");
+        } else if (withData_ == 0) {
+            // A map-authored object is NOT itself an ECS entity. If no runtime
+            // row exists, showing synthetic document components is misleading.
+            ui::callout(ui::Tone::Warn,
+                "Для выбранного объекта не найдена сущность в ECS World. "
+                "Компоненты не подменяются полями карты. Проверьте создание "
+                "объекта в модуле и соответствие map→ECS.");
+        } else {
+            ui::hint(ICON_CLOCK "  ECS не вернул компонентов для выбранной сущности.");
+        }
+        if (!ed.worldLive()) {
+            if (ImGui::SmallButton("Обновить ECS предпросмотр"))
+                ed.refreshWorld();
+        }
         return;
     }
     if (truncated_) ui::hint(("Данные показаны для первых " + std::to_string(withData_) + " объектов").c_str());

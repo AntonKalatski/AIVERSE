@@ -1,5 +1,6 @@
 #include "Renderer3D.h"
 #include "Shaders.h"
+#include "SelectionOutlineShaders.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -96,6 +97,7 @@ bool Renderer3D::init(gfx::Device& dev) {
     initModels();
     if (!lights.init(dev)) return false;
     if (!initTrace()) return false;
+    initSelectionOutline();  // optional editor effect: failure must not break the game renderer
     return litPipe_.valid() && shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid();
 }
 
@@ -117,17 +119,39 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
+    gpuModelCommands_.release(*dev_);
+    persistentCull_.release(*dev_);
+    if (persistentUpload_) {
+        persistentUpload_->release();
+        persistentUpload_.reset();
+    }
+    persistentIds_.clear();
+    persistentScene_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
     dev_->destroyTexture(shadowMap_);
     dev_->destroyBuffer(lineVB_); dev_->destroyBuffer(triVB_);
+    if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
+    if (sceneSelectionTriangle_.valid()) dev_->destroyBuffer(sceneSelectionTriangle_);
+    if (sceneSelectionPrimitiveMaskPipe_.valid())
+        dev_->destroyPipeline(sceneSelectionPrimitiveMaskPipe_);
+    for (auto p : {sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_})
+        if (p.valid()) dev_->destroyPipeline(p);
+    if (sceneSelectionEdgeShader_.valid())
+        dev_->destroyShader(sceneSelectionEdgeShader_);
     for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_}) dev_->destroyPipeline(p);
     for (auto s : {litShader_, shadowShader_, colorShader_}) dev_->destroyShader(s);
     dev_ = nullptr;
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+    static const bool enablePersistentScene = [] {
+        const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    persistentSceneEnabled_ = enablePersistentScene;
+    if (persistentSceneEnabled_) ++persistentSceneEpoch_;
     bakedLightmapped_ = bakedCountLm_; bakedProbed_ = bakedCountPr_; bakedCountLm_ = bakedCountPr_ = 0;   // agent-lightbake
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(graphEpoch_ < 0) graphEpoch_ = now;
@@ -142,6 +166,13 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     ssrThisFrame_ = false;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
+    lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
+    // ModelItem pointers are valid only within this scene; never reuse their
+    // material identity across frames, asset reloads or another viewport.
+    materialStateIds_.clear();
+    materialHashCandidates_.clear();
+    materialRepresentatives_.clear();
+    materialItemIds_.clear();
     geometryStats_ = {}; profile_ = {}; geometryMainView_ = true;
     RTSCamera shadowCamera = cam; shadowCamera.jitter = {};
     computeShadowMatrix(shadowCamera, aspect);
@@ -196,6 +227,13 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
 }
+
+void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
+                                   float4 tint, float4 selection) {
+    drawMesh(mesh, model, tint);
+    if (!items_.empty()) items_.back().selection = selection;
+}
+
 
 void Renderer3D::line(float3 a, float3 b, uint32_t c) { lines_.push_back({a, c}); lines_.push_back({b, c}); }
 void Renderer3D::triangle(float3 a, float3 b, float3 c, uint32_t col) { tris_.push_back({a, col}); tris_.push_back({b, col}); tris_.push_back({c, col}); }
@@ -259,6 +297,10 @@ void Renderer3D::uploadFrameUniforms(bool forShadow) {
         // Keep receiver displacement tied to resolution, not penumbra width: thin folds must not detach.
         f.quality[3] = shadowTexelWorld_ * 1.5f;
     }
+    // Fractional tap count encodes temporal PCSS sampling without changing U1 layout.
+    // This flag is active only for the HDR ScreenLighting TAA path; static PCF stays stable elsewhere.
+    if (!forShadow && quality_ >= ShadowQuality::Medium && post_ && post_->temporalShadowResolve())
+        f.quality[0] += 0.5f;
     f.quality[1] = quality_ == ShadowQuality::Off || forShadow ? 0.0f : lighting.shadowContactHardening ? 2.0f : 1.0f;
     dev_->setUniforms(1, &f, sizeof f);
 }
@@ -302,6 +344,12 @@ float4 Renderer3D::drawCallDebugColor(uint32_t drawId) {
 
 void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     drawCalls_ = 0;
+    // Synchronize persistent scene staging before any rendering passes.
+    // Model shader bindings and GPU culling remain on the legacy path.
+    syncPersistentModels();
+    // GPU command generation must complete encoding before render passes.
+    // Metal guarantees command order between compute and render encoders.
+    prepareGpuModelDraws();
     prepareOcclusion();
     // ---- shadow pass
     if (quality_ != ShadowQuality::Off && shadowMap_.valid()) {
@@ -378,10 +426,17 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setIndexBuffer(it.mesh->ib);
         dev_->drawIndexed(it.mesh->indexCount);
         ++drawCalls_;
+        // drawItem is only used by the current camera's colour pass.
+        profile_.cameraMeshTriangles += uint64_t(it.mesh->indexCount) / 3;
     };
     for (auto& it : items_) if (it.color.w >= 0.99f) drawItem(it);
+    // The per-phase profile also includes reflection/SSR replay. Snapshot
+    // only the *first* main-camera opaque pass so a triangle is not counted
+    // twice when the same visible surface is drawn for another target.
+    const uint32_t opaqueStart = profile_.triangles[1];
     renderModels(1);
-    renderModels(3);
+    profile_.cameraModelTriangles += uint32_t(profile_.triangles[1] - opaqueStart);
+    if (!sceneSelectionOutline_) renderModels(3); // legacy game outline; editor uses a depth-tested mask
     if (capture) {
         endSceneCapture(mainPass, sw, sh); dev_->setViewport({0, 0, sw, sh});
         // The blit binds scene color at slot 0; model shaders expect the sun depth map there.
@@ -396,7 +451,9 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         if (!any) { dev_->setPipeline(litBlendPipe_); uploadFrameUniforms(false); dev_->setTexture(0, shadowMap_); lights.bind(2, 1, 2); bindTraceTextures(); any = true; }
         drawItem(it);
     }
+    const uint32_t blendedStart = profile_.triangles[2];
     renderModels(2);
+    profile_.cameraModelTriangles += uint32_t(profile_.triangles[2] - blendedStart);
     renderModels(4);   // transparent objects (kDrawTransparent) write their depth now: later ground layers stay under them
     lights.drawHalos(viewProj_);   // additive glows, depth-tested against the scene
     // custom renderers (sprites) after translucent meshes: they don't write depth, so water drawn
@@ -409,6 +466,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setVertexBuffer(triVB_);
         dev_->draw(uint32_t(tris_.size()));
         ++drawCalls_;
+        profile_.cameraOverlayTriangles += uint64_t(tris_.size()) / 3;
     }
     if (!lines_.empty()) {
         dev_->updateBuffer(lineVB_, lines_.data(), lines_.size() * sizeof(ColorVertex));
@@ -418,6 +476,158 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->draw(uint32_t(lines_.size()));
         ++drawCalls_;
     }
+    if (sceneSelectionOutline_) renderSelectionOutline(mainPass, sw, sh);
+}
+
+
+bool Renderer3D::initSelectionOutline() {
+    if (!dev_) return false;
+    gfx::ShaderDesc shader;
+    shader.glslVertex = selection_outline::kVertex;
+    shader.glslFragment = selection_outline::kFragment;
+    shader.msl = selection_outline::kMetal;
+    shader.textureSlots = 1;
+    shader.uniformSlots = 1;
+    shader.label = "scene selection edge";
+    sceneSelectionEdgeShader_ = dev_->createShader(shader);
+    if (!sceneSelectionEdgeShader_.valid()) return false;
+    gfx::PipelineDesc pd;
+    pd.shader = sceneSelectionEdgeShader_;
+    pd.attrs[0] = {0, gfx::VertexFormat::Float2, 0};
+    pd.attrCount = 1;
+    pd.stride = 2 * sizeof(float);
+    pd.indexType = gfx::IndexType::None;
+    pd.cull = gfx::CullMode::None;
+    pd.blend = gfx::BlendMode::Alpha;
+    pd.depthTest = false;
+    pd.depthWrite = false;
+    pd.colorFormat = gfx::PixelFormat::RGBA8;
+    pd.label = "scene selection edge RGBA8";
+    sceneSelectionEdgePipe8_ = dev_->createPipeline(pd);
+    pd.colorFormat = gfx::PixelFormat::RGBA16F;
+    pd.label = "scene selection edge HDR";
+    sceneSelectionEdgePipeHdr_ = dev_->createPipeline(pd);
+    // Mask primitives with their REAL geometry, but never modify the scene
+    // depth. The same depth buffer is reused to hide occluded silhouettes.
+    gfx::PipelineDesc primitiveMask;
+    primitiveMask.shader = litShader_;
+    primitiveMask.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+    primitiveMask.attrs[1] = {1, gfx::VertexFormat::Float3, 12};
+    primitiveMask.attrs[2] = {2, gfx::VertexFormat::UByte4N, 24};
+    primitiveMask.attrCount = 3;
+    primitiveMask.stride = sizeof(MeshVertex);
+    primitiveMask.indexType = gfx::IndexType::UInt32;
+    primitiveMask.depthTest = true;
+    primitiveMask.depthWrite = false;
+    primitiveMask.colorFormat = gfx::PixelFormat::RGBA8;
+    primitiveMask.label = "selection primitive mask depth read-only";
+    sceneSelectionPrimitiveMaskPipe_ = dev_->createPipeline(primitiveMask);
+    const float triangle[6] = {-1, -1, 3, -1, -1, 3};
+    gfx::BufferDesc bd;
+    bd.data = triangle;
+    bd.size = sizeof triangle;
+    bd.label = "scene selection edge fullscreen triangle";
+    sceneSelectionTriangle_ = dev_->createBuffer(bd);
+    return sceneSelectionEdgePipe8_.valid() && sceneSelectionTriangle_.valid();
+}
+
+void Renderer3D::renderSelectionOutline(const gfx::PassDesc& mainPass,
+                                        int width, int height) {
+    if (!dev_ || !mainPass.colorTarget.valid() || !mainPass.depthTarget.valid() ||
+        !sceneSelectionTriangle_.valid() || width <= 0 || height <= 0)
+        return;
+    const gfx::PipelineHandle edgePipeline = hdrFrame_
+        ? sceneSelectionEdgePipeHdr_ : sceneSelectionEdgePipe8_;
+    if (!edgePipeline.valid()) return;
+    bool any = false;
+    for (const auto& item : modelItems_) if (item.outline.w > 0 && item.inView) {
+        any = true;
+        break;
+    }
+    if (!any) for (const auto& item : items_) if (item.selection.w > 0) {
+        any = true;
+        break;
+    }
+    if (!any) return;
+
+    if (!sceneSelectionMask_.valid() ||
+        sceneSelectionWidth_ != width || sceneSelectionHeight_ != height) {
+        if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
+        sceneSelectionMask_ = {};
+        sceneSelectionWidth_ = width;
+        sceneSelectionHeight_ = height;
+        gfx::TextureDesc td;
+        td.width = width; td.height = height;
+        td.format = gfx::PixelFormat::RGBA8;
+        td.renderTarget = true;
+        td.filter = gfx::Filter::Nearest;
+        td.label = "Scene selected-object depth-tested mask";
+        sceneSelectionMask_ = dev_->createTexture(td);
+    }
+    if (!sceneSelectionMask_.valid()) return;
+
+    // Renderer3D::render normally leaves the main pass open. Temporarily
+    // suspend it, draw visible selected geometry using the same scene depth,
+    // then resume the colour pass WITHOUT clearing its contents or depth.
+    dev_->endPass();
+    gfx::PassDesc mask;
+    mask.colorTarget = sceneSelectionMask_;
+    mask.depthTarget = mainPass.depthTarget;
+    mask.clearColor[0] = mask.clearColor[1] = mask.clearColor[2] =
+        mask.clearColor[3] = 0.0f;
+    mask.clearDepthEnabled = false;
+    dev_->beginPass(mask);
+    dev_->setViewport({0, 0, width, height});
+
+    // Existing model skin/morph/LOD pipelines draw a second pass with zero
+    // normal displacement. Cull backfaces and do not write the scene depth.
+    selectionMaskPass_ = true;
+    uploadFrameUniforms(false);
+    renderModels(3);
+    selectionMaskPass_ = false;
+
+    // Primitive previews use their original geometry, not bounding-box lines.
+    bool bound = false;
+    for (const auto& item : items_) {
+        if (item.selection.w <= 0 || !item.mesh || !item.mesh->vb.valid())
+            continue;
+        if (!bound) {
+            if (!sceneSelectionPrimitiveMaskPipe_.valid()) break;
+            dev_->setPipeline(sceneSelectionPrimitiveMaskPipe_);
+            uploadFrameUniforms(false);
+            bound = true;
+        }
+        DrawUniforms u{};
+        std::memcpy(u.model, item.model.m, sizeof u.model);
+        u.color[0] = item.selection.x;
+        u.color[1] = item.selection.y;
+        u.color[2] = item.selection.z;
+        u.color[3] = 1.0f;
+        u.params[0] = 2.0f;  // existing solid unlit/diagnostic branch
+        dev_->setUniforms(0, &u, sizeof u);
+        dev_->setVertexBuffer(item.mesh->vb);
+        dev_->setIndexBuffer(item.mesh->ib);
+        dev_->drawIndexed(item.mesh->indexCount);
+        ++drawCalls_;
+    }
+    dev_->endPass();
+
+    gfx::PassDesc resume = mainPass;
+    resume.clearColorEnabled = false;
+    resume.clearDepthEnabled = false;
+    dev_->beginPass(resume);
+    dev_->setViewport({0, 0, width, height});
+
+    dev_->setPipeline(edgePipeline);
+    dev_->setVertexBuffer(sceneSelectionTriangle_);
+    const float params[4] = {
+        1.0f / float(width), 1.0f / float(height),
+        dev_->info().renderTargetFlipY ? 1.0f : 0.0f, 0.0f
+    };
+    dev_->setUniforms(0, params, sizeof params);
+    dev_->setTexture(0, sceneSelectionMask_);
+    dev_->draw(3);
+    ++drawCalls_;
 }
 
 } // namespace aiverse::render

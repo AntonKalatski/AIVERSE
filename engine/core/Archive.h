@@ -4,6 +4,7 @@
 // Reading checks bounds; a truncated or corrupt buffer sets ok() = false and yields zeros, never crashes.
 #pragma once
 #include <cstdint>
+#include <cstring>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -11,6 +12,7 @@
 #include <vector>
 #include "ECS.h"
 #include "Fixed.h"
+#include "Hash.h"
 
 namespace aiverse {
 
@@ -18,26 +20,36 @@ class Archive {
 public:
     explicit Archive(std::string* out) : out_(out) {}
     explicit Archive(const std::string& in) : in_(&in) {}
+    explicit Archive(Hasher& hash) : hash_(&hash) {}
     // Optional enclosing format context. UINT32_MAX means the current unversioned layout.
     // This value is not serialized by Archive itself; the owner reads/writes its version header.
     uint32_t formatVersion = UINT32_MAX;
-    bool writing() const { return out_ != nullptr; }
+    bool writing() const { return out_ != nullptr || hash_ != nullptr; }
     bool ok() const { return ok_; }
     void fail() { ok_ = false; }
     size_t remaining() const { return in_ ? in_->size() - pos_ : 0; }
 
     void bytes(uint64_t& v, int n) {
         if (out_) { for (int i = 0; i < n; ++i) out_->push_back(char((v >> (8 * i)) & 0xFF)); return; }
-        if (!ok_ || pos_ + size_t(n) > in_->size()) { ok_ = false; v = 0; return; }
+        if (hash_) { for(int i=0;i<n;++i) {uint8_t b=uint8_t(v>>(8*i));hash_->bytes(&b,1);} return; }
+        if (!ok_ || size_t(n) > remaining()) { ok_ = false; v = 0; return; }
         v = 0;
         for (int i = 0; i < n; ++i) v |= uint64_t(uint8_t((*in_)[pos_ + size_t(i)])) << (8 * i);
         pos_ += size_t(n);
+    }
+    // Transfer a bounded versioned ECS payload without re-encoding each byte.
+    void block(void* data,size_t n) {
+        if(!ok_ || !n)return;
+        if(out_){out_->append(static_cast<const char*>(data),n);return;}
+        if(hash_){hash_->bytes(data,n);return;}
+        if(n>remaining()){ok_=false;return;}
+        std::memcpy(data,in_->data()+pos_,n);pos_+=n;
     }
     // Length prefix of a container; when reading, rejects lengths the rest of the buffer cannot hold.
     uint32_t count(size_t n, size_t minBytesEach = 1) {
         uint64_t v = n;
         bytes(v, 4);
-        if (!out_ && (v > remaining() / (minBytesEach ? minBytesEach : 1) + 1 || v > 0x7FFFFFFF)) { ok_ = false; return 0; }
+        if (!writing() && (v > remaining() / (minBytesEach ? minBytesEach : 1) + 1 || v > 0x7FFFFFFF)) { ok_ = false; return 0; }
         return uint32_t(v);
     }
 
@@ -45,6 +57,7 @@ public:
 
 private:
     std::string* out_ = nullptr;
+    Hasher* hash_ = nullptr;
     const std::string* in_ = nullptr;
     size_t pos_ = 0;
     bool ok_ = true;

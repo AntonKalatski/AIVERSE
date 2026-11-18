@@ -456,6 +456,38 @@ void VulkanDevice::drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t
     vkCmdDrawIndexed(cb, indexCount, instances, firstIndex, 0, 0);
 }
 
+bool VulkanDevice::drawIndexedIndirect(BufferHandle commands, size_t offset,
+                                         uint32_t drawCount, uint32_t stride) {
+    if (!multiDrawIndirect_ || !drawCount || stride < sizeof(DrawIndexedIndirectCommand) ||
+        (stride & 3u) || (offset & 3u)) return false;
+    VBuffer* cmd = buffers_.get(commands.id);
+    if (!cmd || cmd->type != BufferType::Indirect ||
+        offset > cmd->size || size_t(drawCount - 1) * stride + sizeof(DrawIndexedIndirectCommand) > cmd->size - offset)
+        return false;
+    if (!prepareDraw()) return false;
+    const VPipeline* p = pipelines_.get(pipelineId_);
+    VkCommandBuffer cb = slots_[size_t(slot_)].main;
+    VkBuffer ib = resolveBuffer(ibId_, serial_);
+    VkBuffer indirect = resolveBuffer(commands.id, serial_);
+    if (!ib || !indirect || !p) return false;
+    if (p->desc.attrCount > 0) {
+        VkBuffer vb = resolveBuffer(vbId_, serial_);
+        if (!vb) return false;
+        const VkDeviceSize base = vbOffset_;
+        vkCmdBindVertexBuffers(cb, 0, 1, &vb, &base);
+    }
+    vkCmdBindIndexBuffer(cb, ib, ibOffset_,
+                         p->desc.indexType == IndexType::UInt32 ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+    const uint32_t maxCount = std::max(1u, gpuProps_.limits.maxDrawIndirectCount);
+    for (uint32_t first = 0; first < drawCount;) {
+        const uint32_t batch = std::min(maxCount, drawCount - first);
+        vkCmdDrawIndexedIndirect(cb, indirect, VkDeviceSize(offset) + VkDeviceSize(first) * stride,
+                                 batch, stride);
+        first += batch;
+    }
+    return true;
+}
+
 bool VulkanDevice::copyColor(TextureHandle from, TextureHandle to) {
     if (!recording_ || inPass_) return false;
     VTexture* dst = textures_.get(to.id);

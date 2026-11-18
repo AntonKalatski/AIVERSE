@@ -1,5 +1,9 @@
 #include "FpsModule.h"
 #include "libraries/include/aiverselib/gameplay/Inventory.h"
+#include "libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h"
+#include "libraries/include/aiverselib/genre/EcsOrderedImpactSystems.h"
+#include "libraries/include/aiverselib/genre/EcsProjectileSystems.h"
+#include "libraries/include/aiverselib/genre/EcsDamageSystems.h"
 #include <algorithm>
 #include <optional>
 namespace aiverse::fps {
@@ -59,43 +63,112 @@ void Module::setupSystems(Simulation& sim,const Json& map,State& s) {
     }
     s.match.start=ticks(sim);initialLoot_=s.loot;initialVehicles_=s.vehicles;
 }
-void Module::damage(Simulation& sim,uint8_t source,Actor& target,int32_t amount,bool head) {
-    auto& s=state(sim);if(target.health<=0||amount<=0)return;
-    Actor* attacker=source&&source<=s.actors.size()?&s.actors[source-1]:nullptr;
-    if(attacker&&source!=target.slot&&!config_.friendlyFire&&attacker->team==target.team)return;
-    if(!config_.gear.empty()){   // gear-tiers: helmets cover zone 1 (head shots), everything else hits zone 2
-        if(auto hit=lib::systems::absorbHit(config_.gear,s.gear[target.slot-1],head?1u:2u,amount)){
-            amount=int32_t(hit->damage);for(auto slot:hit->broken)sim.emit({9,target.slot,{},{},int64_t(slot),target.pos});
+void Module::damage(Simulation& sim,uint8_t source,Actor& targetView,int32_t amount,bool head) {
+    auto& s=state(sim);
+    Actor* attackerView=source&&source<=s.actors.size()?&s.actors[source-1]:nullptr;
+    Actor* target=&targetView;
+    Actor* attacker=attackerView;
+    ActorRuntime* targetRuntime=nullptr;
+    ActorRuntime* attackerRuntime=nullptr;
+    if(config_.ecsAuthority) {
+        // Damage the actual ECS gameplay payload, not the legacy working
+        // vector. Copy in only to account for preceding actor-side tick work.
+        targetRuntime=sim.world().tryGet<ActorRuntime>(actorEntity(sim,targetView.slot));
+        if(!targetRuntime)throw std::logic_error("FPS target ActorRuntime missing");
+        targetRuntime->value=targetView;
+        target=&targetRuntime->value;
+        if(attackerView) {
+            if(source==targetView.slot)attacker=target;
+            else {
+                attackerRuntime=sim.world().tryGet<ActorRuntime>(actorEntity(sim,source));
+                if(!attackerRuntime)throw std::logic_error("FPS attacker ActorRuntime missing");
+                attackerRuntime->value=*attackerView;
+                attacker=&attackerRuntime->value;
+            }
         }
-    }else if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
-    target.lastDamage=sim.tick();target.activeAction=Action::None;target.actionUntil=0;
-    if(s.royale.enabled&&attacker&&source!=target.slot){s.royale.lastAttacker[target.slot-1]=source;s.royale.lastWeapon[target.slot-1]=uint8_t(attacker->weaponIndex+1);}
-    if(attacker)++attacker->hits;
-    if(config_.systems.enabled&&config_.systems.knockdown&&!target.downed&&amount>=target.health) {
-        bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;
-        if(teammate){for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
     }
-    target.health=std::max(0,target.health-amount);
-    if(target.health)return;
-    target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
-    if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
-    if(config_.systems.enabled){
-        if(s.match.carrier==target.slot){s.match.carrier=0;s.match.bombPos=target.pos;}
-        if(s.loot.size()<256&&(target.owned&(1u<<target.weaponIndex)))s.loot.push_back({s.nextObject++,target.pos,100+target.weaponIndex,1,target.ammo,target.reserve,target.attachments[target.weaponIndex]});
-        if(!s.gear.empty()){for(const auto& [slot,piece]:s.gear[target.slot-1].slots)if(s.loot.size()<256)s.loot.push_back({s.nextObject++,target.pos,int32_t(200+piece.def),1,int32_t(piece.durability)});s.gear[target.slot-1]={};}
-        for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;
-        target.vehicle=0;
+    // Keep historical side-effect ordering (gear -> hits -> knockdown ->
+    // kill/loot -> event). The lambda's early returns still commit ECS data
+    // to the compatibility vector before returning from this method.
+    const auto apply=[&](Actor& target,Actor* attacker) {
+        if(target.health<=0||amount<=0)return;
+        if(attacker&&source!=target.slot&&!config_.friendlyFire&&attacker->team==target.team)return;
+        if(!config_.gear.empty()){   // gear-tiers: helmets cover zone 1 (head shots), everything else hits zone 2
+            if(auto hit=lib::systems::absorbHit(config_.gear,s.gear[target.slot-1],head?1u:2u,amount)){
+                amount=int32_t(hit->damage);for(auto slot:hit->broken)sim.emit({9,target.slot,{},{},int64_t(slot),target.pos});
+            }
+        }else if(config_.systems.enabled&&!head){auto absorbed=std::min(target.armor,amount/2);target.armor-=absorbed;amount-=absorbed;}
+        target.lastDamage=sim.tick();target.activeAction=Action::None;target.actionUntil=0;
+        if(s.royale.enabled&&attacker&&source!=target.slot){s.royale.lastAttacker[target.slot-1]=source;s.royale.lastWeapon[target.slot-1]=uint8_t(attacker->weaponIndex+1);}
+        if(attacker)++attacker->hits;
+        if(config_.systems.enabled&&config_.systems.knockdown&&!target.downed&&amount>=target.health) {
+            bool teammate=false;for(const auto& a:s.actors)if(a.slot!=target.slot&&a.team==target.team&&a.health>0&&!a.downed)teammate=true;
+            if(teammate){for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;target.vehicle=0;target.downed=true;target.health=30;target.bleedUntil=sim.tick()+config_.systems.bleedTicks;return;}
+        }
+        // Use the identical immediate integer HP commit as the generic ECS
+        // DamageResolutionSystem. Armor/gear, knockdown, kill credit, loot
+        // and events remain in their original same-tick order.
+        lib::genre::applyIntegerHitPointDamage(target.health,amount);
+        if(target.health)return;
+        target.downed=false;target.respawnAt=sim.tick()+config_.respawnTicks;
+        if(attacker&&source!=target.slot&&attacker->team!=target.team){++attacker->kills;attacker->money=std::min(16000,attacker->money+config_.systems.killReward);}
+        if(config_.systems.enabled){
+            if(s.match.carrier==target.slot){s.match.carrier=0;s.match.bombPos=target.pos;}
+            if(s.loot.size()<256&&(target.owned&(1u<<target.weaponIndex)))s.loot.push_back({s.nextObject++,target.pos,100+target.weaponIndex,1,target.ammo,target.reserve,target.attachments[target.weaponIndex]});
+            if(!s.gear.empty()){for(const auto& [slot,piece]:s.gear[target.slot-1].slots)if(s.loot.size()<256)s.loot.push_back({s.nextObject++,target.pos,int32_t(200+piece.def),1,int32_t(piece.durability)});s.gear[target.slot-1]={};}
+            for(auto& v:s.vehicles)if(v.driver==target.slot)v.driver=0;
+            target.vehicle=0;
+        }
+        sim.emit({2,source,{}, {},target.slot,target.pos});
+    };
+    apply(*target,attacker);
+    if(targetRuntime) {
+        targetView=targetRuntime->value;
+        if(attackerRuntime)*attackerView=attackerRuntime->value;
     }
-    sim.emit({2,source,{}, {},target.slot,target.pos});
 }
 bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_t amount,const WeaponConfig& weapon,const std::vector<Actor>& targets,Projectile* projectile) {
     auto& s=state(sim);Fixed best=1_fx;uint8_t victim=0;const Actor* pose=nullptr;
-    for(const auto& target:targets) {
-        if(target.slot==source||target.health<=0||target.life!=s.actors[target.slot-1].life)continue;
-        Fixed fraction;Vec3 normal;
-        if(world::intersect(eye,delta,actorBounds(target,config_.motor),fraction,normal)&&fraction<best){best=fraction;victim=target.slot;pose=&target;}
+    // Rewind pose selection still comes from the original tick history.
+    // Share only the deterministic nearest-hit policy; keep vehicle and
+    // world occlusion queries below in their exact legacy order.
+    // The shared synchronous ECS intent policy is also used by the
+    // independently schedulable HitscanResolutionSystem. Resolve inline
+    // here to retain the old per-shooter damage/event order and FPS rewind.
+    lib::genre::HitscanIntentComponent shotIntent;
+    shotIntent.origin=eye;
+    shotIntent.delta=delta;
+    shotIntent.maximumFraction=best;
+    shotIntent.requested=true;
+    const auto actorHit=lib::genre::resolveHitscanIntent(
+        shotIntent,actorEntity(sim,source),targets,
+        [&](const Actor& target) {
+            return target.slot!=source && target.health>0 &&
+                target.life==s.actors[target.slot-1].life;
+        },
+        [&](const Actor& target) {return actorBounds(target,config_.motor);},
+        [&](const Actor& target) {return actorEntity(sim,target.slot);});
+    if(actorHit) {
+        best=actorHit.event.fraction;
+        victim=actorHit.pose->slot;
+        pose=actorHit.pose;
     }
-    uint32_t vehicleId=0;for(const auto& v:s.vehicles)if(v.health>0&&v.driver!=source){Fixed fraction;Vec3 normal;if(world::intersect(eye,delta,{v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}},fraction,normal)&&fraction<best){best=fraction;victim=0;vehicleId=v.id;}}
+    // Vehicles use the same deterministic ray-candidate policy as Actors.
+    // Check them after actors so an exact equal-distance hit retains the
+    // original actor winner; nearer vehicles still occlude a character.
+    uint32_t vehicleId=0;
+    const auto vehicleHit=lib::genre::selectClosestHitscanCandidate(
+        s.vehicles,eye,delta,best,
+        [&](const Vehicle& v) {return v.health>0 && v.driver!=source;},
+        [&](const Vehicle& v) {
+            return world::Bounds{
+                v.pos-Vec3{1_fx,{},2_fx},v.pos+Vec3{1_fx,2_fx,2_fx}};
+        });
+    if(vehicleHit) {
+        best=vehicleHit.fraction;
+        victim=0;
+        vehicleId=vehicleHit.target->id;
+    }
     auto penetration=projectile?projectile->penetration:weapon.penetration;bool blocked=false;
     Vec3 end=eye+delta*best;
     world::Bounds bounds{{fxMin(eye.x,end.x),fxMin(eye.y,end.y),fxMin(eye.z,end.z)},{fxMax(eye.x,end.x),fxMax(eye.y,end.y),fxMax(eye.z,end.z)}};
@@ -114,7 +187,20 @@ bool Module::traceShot(Simulation& sim,uint8_t source,Vec3 eye,Vec3 delta,int32_
     if(!victim)return blocked;
     bool head=false;
     if(config_.systems.enabled&&pose){auto height=stanceHeight(*pose,config_.motor);auto relative=point.y-pose->pos.y;head=relative>height*Fixed::fromRatio(4,5);if(head)amount=int32_t((Fixed::fromInt(amount)*weapon.headMultiplier).floorInt());else if(relative<height*Fixed::fromRatio(2,5))amount=int32_t((Fixed::fromInt(amount)*weapon.limbMultiplier).floorInt());}
-    damage(sim,source,s.actors[victim-1],amount,head);return true;
+    // Both RTS and FPS dispatch accepted direct hits through the same
+    // ordered ECS impact policy. FPS remains responsible for all head/limb
+    // modifiers, armor, knockdown, kill and replay side effects in damage().
+    // An instantaneous ray has no splash candidates or deferred on-hit stage.
+    const Entity victimEntity=actorEntity(sim,victim);
+    lib::genre::resolveOrderedProjectileImpact(
+        {kNullEntity,actorEntity(sim,source),victimEntity,point,
+         Fixed::fromInt(amount),Fixed{}},
+        [&](Entity) { damage(sim,source,s.actors[victim-1],amount,head); },
+        [](Entity) {},
+        [](Vec3,Fixed,auto&&) {},
+        [](Entity) {return false;},
+        [](Entity) {});
+    return true;
 }
 void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
     auto& s=state(sim);const auto& c=config_.systems;auto now=sim.tick();
@@ -130,7 +216,10 @@ void Module::action(Simulation& sim,Actor& a,Action kind,uint32_t argument) {
         if(s.projectiles.size()>=256||!bag(a,kind==Action::Frag?3:kind==Action::Smoke?4:5,-1))return;
         uint8_t grenade=kind==Action::Frag?1:kind==Action::Smoke?2:3;
         auto eye=a.pos+Vec3{{},stanceHeight(a,config_.motor)-Fixed::fromRatio(1,10),{}};
-        s.projectiles.push_back({s.nextObject++,now+c.grenadeFuse,a.slot,grenade,eye,direction(a.yaw,a.pitch)*15_fx+Vec3{{},3_fx,{}},100,{},0});return;
+        spawnProjectile(sim,Projectile{s.nextObject++,now+c.grenadeFuse,a.slot,
+            grenade,eye,direction(a.yaw,a.pitch)*15_fx+Vec3{{},3_fx,{}},
+            100,{},0});
+        return;
     }
     if(kind==Action::Drop) {
         if(s.loot.size()>=256||!(a.owned&(1u<<a.weaponIndex)))return;
@@ -223,38 +312,128 @@ void Module::finishRound(Simulation& sim,int32_t team) {
     for(auto& a:s.actors){a.money=std::min(16000,a.money+(a.team==team?config_.systems.winReward:config_.systems.lossReward));a.activeAction=Action::None;a.actionUntil=0;}
     if(s.match.scoreA>=int(config_.systems.roundsToWin)||s.match.scoreB>=int(config_.systems.roundsToWin))s.winner=team;
 }
+// The existing non-programmed flight/impact behavior is one deterministic
+// policy, regardless of whether the shot is owned by the legacy compatibility
+// array or by a canonical ProjectileRuntime ECS component.
+bool Module::stepOrdinaryProjectile(Simulation& sim,Projectile& p) {
+    auto& s=state(sim);
+    const auto now=sim.tick();
+    const auto& c=config_.systems;
+    bool remove=false;
+    if(p.kind==0) {
+        auto delta=p.velocity*sim.dt();
+        auto length=delta.length();
+        if(length>p.remaining&&length>Fixed{})
+            delta=delta*(p.remaining/length);
+        remove=traceShot(sim,p.owner,p.pos,delta,p.damage,
+                         config_.weapons[p.weapon],s.actors,&p);
+        p.pos+=delta;
+        p.remaining-=length;
+        p.velocity.y-=config_.weapons[p.weapon].bulletGravity*sim.dt();
+        remove|=p.remaining<=Fixed{}||now>=p.expires;
+    } else if(p.kind==4) {
+        remove=now>=p.expires;
+    } else if(now<p.expires) {
+        // Physical bounce is a shared policy; fuse, blast, smoke and flash
+        // still belong to the independent gameplay effect stages below.
+        // The default config reproduces the exact previous fixed-point
+        // gravity/cast/contact-inset/reflection/division sequence.
+        lib::genre::stepBouncingProjectile(p.pos,p.velocity,
+                                            collision_,sim.dt());
+    } else {
+        if(p.kind==2) {
+            p.kind=4;
+            p.expires=now+c.smokeTicks;
+            p.velocity={};
+        } else {
+            for(auto& target:s.actors)if(target.health>0) {
+                auto eye=target.pos+Vec3{{},stanceHeight(target,config_.motor)
+                                                  -Fixed::fromRatio(1,10),{}};
+                auto delta=eye-p.pos;
+                auto distance=delta.length();
+                auto radius=p.kind==1?c.blastRadius:c.flashRadius;
+                if(distance>radius||collision_.cast(p.pos,delta).hit)continue;
+                if(p.kind==1)
+                    damage(sim,p.owner,target,
+                           int32_t((100_fx*(1_fx-distance/radius)).floorInt()));
+                else {
+                    auto facing=direction(target.yaw,target.pitch).dot(Vec3{}-delta);
+                    auto duration=facing>Fixed{}?c.flashTicks:c.flashTicks/4;
+                    target.blindUntil=std::max(target.blindUntil,now+duration);
+                }
+            }
+            remove=true;
+        }
+    }
+    remove|=fxAbs(p.pos.x)>config_.worldLimit||
+            fxAbs(p.pos.y)>config_.worldLimit||
+            fxAbs(p.pos.z)>config_.worldLimit;
+    return remove;
+}
+
+void Module::tickOrdinaryProjectiles(Simulation& sim) {
+    auto& current=state(sim);
+    if(!config_.ecsAuthority) {
+        // Keep the default OFF path exactly in its old vector order.
+        for(auto it=current.projectiles.begin();it!=current.projectiles.end();) {
+            if(it->program.enabled) {++it;continue;}
+            if(stepOrdinaryProjectile(sim,*it))
+                it=current.projectiles.erase(it);
+            else ++it;
+        }
+        return;
+    }
+
+    // On the authority path every ordinary projectile is advanced directly
+    // in its writable ECS payload. The State vector is a read projection
+    // between this barrier and the main FPS round/actor stage.
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)
+        throw std::logic_error("FPS DynamicEntityIndex missing in ordinary projectile stage");
+    struct Ordered {Entity entity;uint32_t order,id;};
+    std::vector<Ordered> ordered;
+    world.eachExistingConst<ProjectileRuntime>(
+        [&](Entity entity,const ProjectileRuntime& runtime) {
+            if(world.alive(entity))
+                ordered.push_back({entity,runtime.order,runtime.value.id});
+        });
+    std::sort(ordered.begin(),ordered.end(),[](const Ordered& a,const Ordered& b) {
+        return a.order!=b.order?a.order<b.order:a.id<b.id;
+    });
+    std::vector<std::pair<Entity,uint32_t>> expired;
+    for(const auto& item:ordered) {
+        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
+        if(!runtime)
+            throw std::logic_error("FPS ordinary projectile runtime vanished");
+        if(runtime->value.program.enabled)continue;
+        if(stepOrdinaryProjectile(sim,runtime->value))
+            expired.emplace_back(item.entity,item.id);
+    }
+    // Defer structural changes until the entire source ordering is traversed.
+    for(const auto& [entity,id]:expired) {
+        world.destroy(entity);
+        index->byKey.erase((uint64_t(1)<<32)|id);
+    }
+    current.projectiles.clear();
+    current.projectiles.reserve(ordered.size()-expired.size());
+    uint32_t position=0;
+    for(const auto& item:ordered) {
+        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
+        if(!runtime)continue;
+        runtime->order=position++;
+        current.projectiles.push_back(runtime->value);
+    }
+}
+
 void Module::tickSystems(Simulation& sim) {
     auto& s=state(sim);auto now=sim.tick();const auto& c=config_.systems;
-    for(auto it=s.projectiles.begin();it!=s.projectiles.end();) {
-        if(it->program.enabled){++it;continue;}
-        bool remove=false;
-        if(it->kind==0) {
-            auto delta=it->velocity*sim.dt();auto length=delta.length();if(length>it->remaining&&length>Fixed{})delta=delta*(it->remaining/length);
-            remove=traceShot(sim,it->owner,it->pos,delta,it->damage,config_.weapons[it->weapon],s.actors,&*it);
-            it->pos+=delta;it->remaining-=length;it->velocity.y-=config_.weapons[it->weapon].bulletGravity*sim.dt();remove|=it->remaining<=Fixed{}||now>=it->expires;
-        } else if(it->kind==4)remove=now>=it->expires;
-        else if(now<it->expires) {
-            it->velocity.y-=10_fx*sim.dt();auto delta=it->velocity*sim.dt();auto hit=collision_.cast(it->pos,delta,{Fixed::fromRatio(1,10),Fixed::fromRatio(1,10),Fixed::fromRatio(1,10)});
-            if(hit.hit){it->pos+=delta*fxMax(Fixed{},hit.fraction-Fixed::fromRatio(1,100));it->velocity=(it->velocity-hit.normal*it->velocity.dot(hit.normal)*2_fx)/2_fx;}else it->pos+=delta;
-        } else {
-            if(it->kind==2){it->kind=4;it->expires=now+c.smokeTicks;it->velocity={};}
-            else {
-                for(auto& target:s.actors)if(target.health>0){auto eye=target.pos+Vec3{{},stanceHeight(target,config_.motor)-Fixed::fromRatio(1,10),{}};auto delta=eye-it->pos;auto distance=delta.length();auto radius=it->kind==1?c.blastRadius:c.flashRadius;if(distance>radius||collision_.cast(it->pos,delta).hit)continue;
-                    if(it->kind==1)damage(sim,it->owner,target,int32_t((100_fx*(1_fx-distance/radius)).floorInt()));
-                    else {auto facing=direction(target.yaw,target.pitch).dot(Vec3{}-delta);auto duration=facing>Fixed{}?c.flashTicks:c.flashTicks/4;target.blindUntil=std::max(target.blindUntil,now+duration);}
-                }
-                remove=true;
-            }
-        }
-        remove|=fxAbs(it->pos.x)>config_.worldLimit||fxAbs(it->pos.y)>config_.worldLimit||fxAbs(it->pos.z)>config_.worldLimit;
-        if(remove)it=s.projectiles.erase(it);else ++it;
-    }
     if(config_.mode!="bomb")return;
     if(s.match.end) {
         if(now<s.match.end)return;
         int scoreA=s.match.scoreA,scoreB=s.match.scoreB;s.match={};s.match.start=now;s.match.scoreA=scoreA;s.match.scoreB=scoreB;s.match.carrier=0;++s.round;
         for(auto& a:s.actors){auto slot=a.slot,team=a.team;auto money=a.money,kills=a.kills;auto life=a.life,sequence=a.lastSequence;a=Actor{};a.slot=slot;a.team=team;a.life=life+1;a.money=money;a.kills=kills;a.lastSequence=sequence;a.pos=spawns_[slot-1];equipInitial(a);a.armor=c.startArmor;if(team==1&&!s.match.carrier)s.match.carrier=slot;}
-        s.projectiles.clear();s.loot=initialLoot_;s.vehicles=initialVehicles_;s.history.clear();return;
+        clearProjectiles(sim);s.loot=initialLoot_;s.vehicles=initialVehicles_;s.history.clear();return;
     }
     if(now<s.match.start+c.freezeTicks)return;
     bool attack=false,defense=false;for(const auto& a:s.actors)if(a.health>0&&!a.downed){attack|=a.team==1;defense|=a.team==2;}

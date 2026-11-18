@@ -2,6 +2,7 @@
 // queues (units, research, sidebar structures, larva charges, in-place upgrades), construction,
 // squads reinforcement and Mushroom Wars style garrisons.
 #include "RtsInternal.h"
+#include "libraries/include/aiverselib/genre/FixedRegeneration.h"
 #include <algorithm>
 
 namespace aiverse::game {
@@ -46,8 +47,13 @@ void RtsModule::sysEconomy(Simulation& sim) {
         const UnitType& t = rules_.types[u.type];
         const bool building = u.flags & kUnitUnderConstruction;
         if (!building && u.hp.raw > 0) {
-            if (t.regen.raw > 0 && u.hp < t.maxHp) u.hp = fxMin(stat(sim, e, Stat::MaxHp), u.hp + t.regen * dt);
-            if (t.maxEnergy.raw > 0) u.energy = fxMin(t.maxEnergy, u.energy + t.energyRegen * (rules_.advancedEffects ? stat(sim, e, Stat::EnergyRegen) : kOne) * dt);
+            if (t.regen.raw > 0 && u.hp < t.maxHp)
+                u.hp = lib::genre::stepFixedResourceRegeneration(
+                    u.hp, stat(sim, e, Stat::MaxHp), t.regen, dt);
+            if (t.maxEnergy.raw > 0)
+                u.energy = lib::genre::stepFixedResourceRegeneration(
+                    u.energy, t.maxEnergy,
+                    t.energyRegen * (rules_.advancedEffects ? stat(sim, e, Stat::EnergyRegen) : kOne), dt);
         }
         if (o.player == 0 || o.player >= gs.players.size()) return;
         auto& p = gs.players[o.player];

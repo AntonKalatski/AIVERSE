@@ -13,7 +13,7 @@ import argparse, hashlib, json, os, re, shutil, struct, subprocess, sys, zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 WORK = os.path.join(ROOT, "build", ".temp", "builds")
-NAME = re.compile(r"^(?:AIVERSE|AIVERSE)-([0-9.]+)-([0-9a-f]+)-(\w+)\.zip$")
+NAME = re.compile(r"^(?:AIVERSE|RTS)-([0-9.]+)-([0-9a-f]+)-(\w+)\.zip$")
 INDEX_SCHEMA = 1
 # executables inside a package, by platform (package_engine.py: AIVERSE/bin/...)
 EXE = {"windows": {"rtsmcp": "aiversemcp.exe", "editor": "aiverse_editor.exe", "headless": "aiverse_headless.exe"},
@@ -44,8 +44,8 @@ def package_entry(work, rel, repo, branch):
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    legacy = os.path.basename(rel).startswith("AIVERSE-")
-    package_root = "AIVERSE" if legacy else "AIVERSE"
+    legacy = os.path.basename(rel).startswith("RTS-")
+    package_root = "RTS" if legacy else "AIVERSE"
     names = dict(EXE.get(plat, EXE["linux"]))
     if legacy:
         names = {k: v.replace("aiversemcp", "rtsmcp").replace("aiverse_", "rts_").replace("AiverseEditor", "RTSEditor") for k, v in names.items()}

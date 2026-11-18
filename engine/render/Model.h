@@ -23,6 +23,7 @@ namespace aiverse::render {
 class MeshBuilder;
 class ModelTextureCache;
 struct GeometryData;
+struct GeometryPoolPage;
 
 enum class AlphaMode : uint8_t { Opaque, Mask, Blend };
 enum class ShadingModel : uint8_t { Pbr, Unlit };
@@ -144,6 +145,7 @@ struct Node {
     float3 s{1, 1, 1};
     int mesh = -1, skin = -1;
     int light = -1; // KHR_lights_punctual definition, attached to this node
+    bool runtimeMutable = false; // transform/visibility can be changed by a game or editor; protect subtree from static merge
     float weights[kMaxMorphTargets] = {}; // morph weights (from the node or its mesh)
 };
 
@@ -184,6 +186,28 @@ struct ModelLight {
 };
 
 struct Model {
+    // Engine-wide model batching contract. All loaders / editors / games use the same
+    // upload path, regardless of genre or asset naming. Rigid static merging is opt-in:
+    // a model containing gameplay-controlled nodes cannot safely infer mutability
+    // from its GLB alone. The default still prepares compatible material/shadow batches.
+    struct Batching {
+        bool mergeRigid = false;
+        // Generate missing LOD meshes during CPU preparation. Explicit
+        // authored LOD chains always win; generated LODs never merge nodes.
+        bool autoLod = true;
+        float maxExtent = 20.0f;
+        std::vector<std::string> preserveNodes; // preserve node and its descendants by exact name
+        // CPU-side instance counts, not GPU draw calls (shadows and instancing differ).
+        size_t primitivesBefore = 0, primitivesAfter = 0;
+        bool compacted = false;
+        std::string reason;
+    } batching;
+    struct AutoLodInfo {
+        bool attempted = false;
+        size_t generatedMeshes = 0, generatedLevels = 0;
+        uint64_t addedIndices = 0;
+        std::string reason; // e.g. source already has LOD, unsupported model
+    } autoLod;
     bool uploadPrepared = false;
     std::shared_ptr<GeometryData> geometry;
     std::string path;
@@ -200,6 +224,11 @@ struct Model {
     std::vector<ModelVertex> vertices; // CPU copy, released after upload
     std::vector<uint32_t> indices;
     gfx::BufferHandle vb, ib;
+    // Shared rigid geometry arena. Index values are model-relative; the renderer
+    // adds gpuFirstIndex to each Primitive range and gpuBaseVertex on draw.
+    // An empty page means legacy dedicated per-model buffers.
+    std::shared_ptr<GeometryPoolPage> geometryPoolPage;
+    uint32_t gpuBaseVertex = 0, gpuFirstIndex = 0;
     float3 boundsMin, boundsMax;       // model space, bind pose (all meshes under their nodes)
     gfx::TextureHandle morphTex;       // RGBA32F deltas of every morphing primitive (2 texels per vertex and target)
     int morphTexWidth = 0;

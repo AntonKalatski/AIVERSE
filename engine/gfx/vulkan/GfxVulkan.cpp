@@ -124,6 +124,12 @@ bool VulkanDevice::pickDevice(std::string& error) {
     VkPhysicalDeviceFeatures have{}, enable{};
     vkGetPhysicalDeviceFeatures(gpu_, &have);
     enable.textureCompressionBC = have.textureCompressionBC;
+    // Nonzero firstInstance selects the per-draw transform in the shared
+    // instance buffer. Without drawIndirectFirstInstance the indirect shader
+    // would read only instance 0, so disable MDI on such devices.
+    enable.multiDrawIndirect = have.multiDrawIndirect;
+    enable.drawIndirectFirstInstance = have.drawIndirectFirstInstance;
+    multiDrawIndirect_ = have.multiDrawIndirect && have.drawIndirectFirstInstance;
     enable.textureCompressionETC2 = have.textureCompressionETC2;
     enable.textureCompressionASTC_LDR = have.textureCompressionASTC_LDR;
     const float priority = 1.0f;

@@ -198,6 +198,14 @@ template <class T> void ioPool(Archive& a, World& w) {
     for (uint32_t i = 0; i < n && a.ok(); ++i) {
         Entity e; T v{};
         io(a, e); io(a, v);
+        // The allocator is restored before built-in pools. Never admit
+        // duplicate rows, stale generations or destroyed entities from disk.
+        // Without this check a corrupt file can construct an inconsistent
+        // sparse set and break subsequent ECS queries, even before checksum.
+        if(!a.ok() || !w.alive(e) || p.has(e.index)) {
+            a.fail();
+            return;
+        }
         p.emplace(e, std::move(v));
     }
 }
@@ -232,7 +240,8 @@ bool RtsModule::serializeState(Simulation& sim, Archive& a) {
     }
     uint32_t pools = uint32_t(kPools::count);
     io(a, pools);
-    if (a.writing() && w.poolCount() != kPools::count) return false;   // an unlisted component type exists
+    // Native C++ extra pools are allowed only when registered for deterministic persistence.
+    if (a.writing() && w.poolCount() != kPools::count + sim.persistentEcs().componentCount()) return false;
     const size_t expect = a.writing() ? kPools::count : a.formatVersion < 7 ? kPoolsBefore7 : a.formatVersion < 8 ? kPoolsBefore8 : kPools::count;
     if (!a.writing() && pools != expect) { a.fail(); return false; }
     kPools::run(a, w, expect);

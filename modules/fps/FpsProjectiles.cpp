@@ -1,14 +1,24 @@
-// FPS collision/damage adapter for the shared deterministic projectile program.
+// FPS projectile collision/damage adapter with a single deterministic solver
+// invoked from either direct ProjectileRuntime ECS ownership or legacy vectors.
 #include "FpsModule.h"
+#include "libraries/include/aiverselib/genre/EcsSweepQuerySystems.h"
 #include <algorithm>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
 namespace aiverse::fps {
-void Module::tickProjectilePrograms(Simulation& sim) {
+
+// Shared per-projectile implementation. No gameplay state is mirrored into
+// another projectile owner while this function runs. All direct effects
+// (damage, shields, loot, hit events, scripted bullet branches) execute at
+// the original time, before the next projectile is advanced.
+bool Module::stepProgrammedProjectile(Simulation& sim,Projectile& p,
+                                     std::vector<Projectile>& children,
+                                     std::size_t liveCount) {
     auto& state_=state(sim);
-    std::vector<Projectile> children;
     const Vec3 up{Fixed{},1_fx,Fixed{}};
-    for(auto it=state_.projectiles.begin();it!=state_.projectiles.end();) {
-        if(!it->program.enabled){++it;continue;}
-        auto& p=*it;auto& s=p.program;
+    auto& s=p.program;
         const auto& weapon=config_.weapons[p.weapon];const auto& f=weapon.flight;
         bool alive=s.distanceLeft>Fixed{}&&s.lifetimeLeft>Fixed{};
         struct Candidate {Entity id;Vec3 centre;world::Bounds bounds;};
@@ -29,7 +39,7 @@ void Module::tickProjectilePrograms(Simulation& sim) {
             return out;
         };
         auto spawn=[&](projectile::Branch branch){
-            if(state_.projectiles.size()+children.size()>=256)return;
+            if(liveCount+children.size()>=256)return;
             Projectile child=p;child.id=state_.nextObject++;
             child.program=std::move(branch.state);child.programSpeed=branch.speed;child.programTarget=branch.target;
             child.velocity=child.program.direction*child.programSpeed+up*child.program.verticalSpeed;
@@ -53,10 +63,16 @@ void Module::tickProjectilePrograms(Simulation& sim) {
             if(length>s.distanceLeft){auto ratio=s.distanceLeft/length;delta=delta*ratio;dt*=ratio;length=s.distanceLeft;}
             Fixed fraction=1_fx;std::optional<Candidate> victim;
             const Vec3 extent{s.radius,s.radius,s.radius};
-            for(const auto& t:targets){Fixed enter;Vec3 normal;
-                if(world::intersect(p.pos,delta,{t.bounds.min-extent,t.bounds.max+extent},enter,normal)&&
-                   (!victim||enter<fraction||(enter==fraction&&t.id.index<victim->id.index))){fraction=enter;victim=t;}
-            }
+            // The same sweep query now serves FPS physical/projectile-program
+            // flight and any other native genre. Endpoint hits and stable
+            // target-ID ties preserve the original resolver semantics.
+            const auto swept=lib::genre::selectSweptProjectileContact(
+                targets,p.pos,delta,extent,
+                [](const Candidate& t) {return t.bounds;},
+                [](const Candidate& a,const Candidate& b) {
+                    return a.id.index<b.id.index;
+                });
+            if(swept) {fraction=swept.fraction;victim=*swept.target;}
             uint32_t wall=0;
             if(f.blockTerrain){
                 const auto end=p.pos+delta;
@@ -122,8 +138,86 @@ void Module::tickProjectilePrograms(Simulation& sim) {
             }
         }
         p.velocity=s.direction*p.programSpeed+up*s.verticalSpeed;p.remaining=s.distanceLeft;
-        if(!alive)it=state_.projectiles.erase(it);else ++it;
+    return alive;
+}
+
+void Module::tickProjectilePrograms(Simulation& sim) {
+    auto& state_=state(sim);
+    std::vector<Projectile> children;
+
+    if(!config_.ecsAuthority) {
+        // Legacy default keeps the original source vector and immediate
+        // erase/append ordering; no changes to save v9 or game mode.
+        for(auto it=state_.projectiles.begin();it!=state_.projectiles.end();) {
+            if(!it->program.enabled){++it;continue;}
+            const bool alive=stepProgrammedProjectile(
+                sim,*it,children,state_.projectiles.size());
+            if(!alive)it=state_.projectiles.erase(it);else ++it;
+        }
+        for(auto& child:children)state_.projectiles.push_back(std::move(child));
+        return;
     }
-    for(auto& child:children)state_.projectiles.push_back(std::move(child));
+
+    // ECS-authoritative path: iteration and writable projectile state are
+    // sourced from ProjectileRuntime components, never from State vectors.
+    // Source order is explicit and preserved across pool swap-remove/COW.
+    World& world=sim.world();
+    auto* index=world.resource<DynamicEntityIndex>();
+    if(!index)throw std::logic_error("FPS DynamicEntityIndex missing in ECS projectile stage");
+
+    struct OrderedProjectile {Entity entity;uint32_t order,id;};
+    std::vector<OrderedProjectile> ordered;
+    world.eachExistingConst<ProjectileRuntime>(
+        [&](Entity e,const ProjectileRuntime& runtime) {
+            if(world.alive(e))
+                ordered.push_back({e,runtime.order,runtime.value.id});
+        });
+    auto less=[](const OrderedProjectile& a,const OrderedProjectile& b) {
+        return a.order!=b.order ? a.order<b.order : a.id<b.id;
+    };
+    std::sort(ordered.begin(),ordered.end(),less);
+
+    std::size_t liveCount=ordered.size();
+    std::vector<std::pair<Entity,uint32_t>> expired;
+    for(const auto& item:ordered) {
+        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
+        if(!runtime)throw std::logic_error("FPS projectile runtime vanished during update");
+        if(!runtime->value.program.enabled)continue;
+        if(!stepProgrammedProjectile(sim,runtime->value,children,liveCount)) {
+            expired.emplace_back(item.entity,item.id);
+            --liveCount; // legacy erase happens before processing next shot
+        }
+    }
+
+    // Structural mutations take place only after the stable source traversal.
+    // Remove old IDs before creating children; free slots may be recycled.
+    for(const auto& [entity,id]:expired) {
+        world.destroy(entity);
+        index->byKey.erase((uint64_t(1)<<32)|id);
+    }
+
+    // State::projectiles is a read/compatibility projection after this point:
+    // grenade/round-mode logic is not yet migrated and can still add/remove
+    // objects during the main FPS tick. Its writes are reconciled at mirror.
+    state_.projectiles.clear();
+    state_.projectiles.reserve(liveCount+children.size());
+    uint32_t position=0;
+    for(const auto& item:ordered) {
+        auto* runtime=world.tryGet<ProjectileRuntime>(item.entity);
+        if(!runtime)continue; // removed by the preceding structural barrier
+        runtime->order=position++;
+        state_.projectiles.push_back(runtime->value);
+    }
+    for(auto& child:children) {
+        const uint32_t id=child.id;
+        const uint64_t key=(uint64_t(1)<<32)|id;
+        if(!id || (index->byKey.contains(key) &&
+                    world.alive(index->byKey.at(key))))
+            throw std::logic_error("FPS duplicate ECS spawned projectile ID");
+        const Entity e=world.create();
+        world.add<ProjectileRuntime>(e,ProjectileRuntime{std::move(child),position++});
+        index->byKey[key]=e;
+        state_.projectiles.push_back(world.get<ProjectileRuntime>(e).value);
+    }
 }
 }

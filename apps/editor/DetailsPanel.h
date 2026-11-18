@@ -13,6 +13,7 @@ namespace aiverse::editor {
 class DetailsPanel {
 public:
     void draw(Editor& ed);
+    // Shared entity Inspector entrypoint for both runtime ECS and document-backed sources.
 
 private:
     struct Item { Selection sel; int doc = -1; bool hasRow = false; WorldRow row; Json data; bool fresh = false; };

@@ -1,14 +1,21 @@
 #include "ModelTextureCache.h"
 #include <filesystem>
 #include "Model.h"
+#include "../data/Json.h"
 #include "ModelClips.h"
 #include "ModelMerge.h"
+#include "GlobalGeometryPool.h"
 #include "Renderer3D.h"
 #include "LightmapUv.h"
+#ifdef AIVERSE_RUNTIME_AUTOLOD
+#include "AutoLodRuntime.h"
+#endif
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include <cmath>
 #include <stdexcept>
 
@@ -161,6 +168,55 @@ Loader loaderFor(const std::string& ext) {
 } // namespace
 
 bool isNativeModelFormat(const std::string& path) { return loaderFor(extOf(path)) != nullptr; }
+namespace {
+void applyModelBatchingSidecar(Model& model, const std::string& path, const FileReader& read) {
+    std::string bytes;
+    if (!read(path + ".batching.json", bytes)) return;
+    // FileReader is an arbitrary content callback. Some existing importers
+    // return their source bytes for unrecognized paths instead of false.
+    // An opt-in sidecar must begin with an object, otherwise ignore it.
+    const auto first = bytes.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos || bytes[first] != '{') return;
+    const Json config = Json::parse(bytes);
+    if (!config.isObject()) throw std::runtime_error(path + ".batching.json: expected JSON object");
+    model.batching.mergeRigid = config.getBool("mergeRigid", false);
+    // Allows projects to opt out individual sensitive assets without
+    // disabling import-time LOD generation for other models.
+    if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
+        throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
+    model.batching.autoLod = config.getBool("autoLod", true);
+    if (config.has("maxExtent")) {
+        const float extent = float(config["maxExtent"].toDouble());
+        if (!std::isfinite(extent) || extent <= 0.0f || extent > 1000000.0f)
+            throw std::runtime_error(path + ".batching.json: maxExtent must be finite and > 0");
+        model.batching.maxExtent = extent;
+    }
+    if (config.has("preserveNodes")) {
+        if (!config["preserveNodes"].isArray())
+            throw std::runtime_error(path + ".batching.json: preserveNodes must be an array");
+        for (const Json& entry : config["preserveNodes"].items()) {
+            if (!entry.isString() || entry.str().empty())
+                throw std::runtime_error(path + ".batching.json: preserveNodes entries must be nonempty names");
+            model.batching.preserveNodes.push_back(entry.str());
+        }
+    }
+    if (config.has("mutableNodes")) {
+        if (!config["mutableNodes"].isArray())
+            throw std::runtime_error(path + ".batching.json: mutableNodes must be an array");
+        for (const Json& entry : config["mutableNodes"].items()) {
+            if (!entry.isString() || entry.str().empty())
+                throw std::runtime_error(path + ".batching.json: mutableNodes entries must be nonempty names");
+            bool found = false;
+            for (Node& node : model.nodes) if (node.name == entry.str()) {
+                node.runtimeMutable = true;
+                found = true;
+            }
+            if (!found) throw std::runtime_error(path + ".batching.json: unknown mutable node " + entry.str());
+        }
+    }
+}
+} // namespace
+
 
 namespace { thread_local std::shared_ptr<ModelTextureCache> loadingTextures; }
 std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read, std::vector<std::string>* warnings, std::shared_ptr<ModelTextureCache> textures) {
@@ -174,6 +230,7 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
         if (read(path + ".glb", bytes)) {
             auto m = loadGltf(path + ".glb", bytes, read, warnings);
             m->path = path;
+            applyModelBatchingSidecar(*m, path, read);
             return m;
         }
 #if defined(AIVERSE_NO_FBX)
@@ -192,6 +249,7 @@ std::unique_ptr<Model> loadModel(const std::string& path, const FileReader& read
         if (!applyLightmapUvs(*m, uv, &err) && warnings) warnings->push_back(path + ".lmuv: " + err);
     }
     applyClipSidecar(*m, path, read, warnings);   // "<model>.clips.json": splits, external clips (ModelClips.h)
+    applyModelBatchingSidecar(*m, path, read);
     return m;
 }
 
@@ -402,6 +460,13 @@ void ModelTextureCache::trim(gfx::Device& dev) {
             it=gpu_.erase(it);
         } else ++it;
     }
+    // Residency reclamation is infrequent, unlike normal image reads.
+    // Clear decoded source pixels too: sharedRgba leases held by a pending
+    // upload remain valid even after their map entry is removed. This can
+    // return up to the configured 64 MiB CPU LRU budget to the allocator.
+    std::lock_guard lock(mutex_);
+    decoded_.clear();
+    bytes_ = 0;
 }
 void ModelTextureCache::shutdown(gfx::Device& dev) {
     for (auto& [key, image] : gpu_) if (image.tex.valid()) dev.destroyTexture(image.tex);
@@ -412,9 +477,73 @@ void ModelTextureCache::shutdown(gfx::Device& dev) {
 void prepareModelUpload(Model& m) {
     if (m.uploadPrepared || m.vertices.empty()) return;
 
+    // One shared engine path for game clients, editor previews, tools and all model formats.
+    // Geometry compaction is opt-in because arbitrary client-side pose changes cannot
+    // be inferred from a static glTF/FBX hierarchy. An asset policy may declare
+    // preserveNodes, and individual nodes can be tagged runtimeMutable.
+    const auto countPrimitives = [&]() {
+        size_t total = 0;
+        for (const auto& node : m.nodes)
+            if (node.mesh >= 0 && size_t(node.mesh) < m.meshes.size())
+                total += m.meshes[size_t(node.mesh)].primitives.size();
+        return total;
+    };
+    m.batching.primitivesBefore = countPrimitives();
+    m.batching.compacted = false;
+    // Opt-in experiment for rigid multi-part assets (cars, props). The merge
+    // algorithm itself rejects skinned, animated, morph, variant, LOD and
+    // runtimeMutable nodes. Leave disabled by default: untagged client-side
+    // node animation cannot be inferred from imported model metadata.
+    const char* automaticRigid = std::getenv("AIVERSE_AUTO_RIGID_MERGE");
+    const bool rigidMerge = m.batching.mergeRigid ||
+        (automaticRigid && std::strcmp(automaticRigid, "1") == 0);
+    m.batching.reason = rigidMerge ? "" : "rigid compaction not enabled for asset";
+    if (rigidMerge) {
+        ModelMergeOptions options;
+        options.maxExtent = m.batching.maxExtent;
+        options.keepNodes = m.batching.preserveNodes;
+        const auto merged = mergeStaticPrimitives(m, options);
+        m.batching.compacted = merged.merged;
+        m.batching.reason = merged.reason;
+    }
+    m.batching.primitivesAfter = countPrimitives();
+    if (automaticRigid && std::strcmp(automaticRigid, "1") == 0 &&
+        m.batching.compacted && m.batching.primitivesAfter < m.batching.primitivesBefore) {
+        std::fprintf(stderr, "[rigid-merge] model=%s before=%zu after=%zu\n",
+            m.path.c_str(), m.batching.primitivesBefore, m.batching.primitivesAfter);
+    }
+
+    // Generate missing imported LODs after final source tangents are
+    // prepared, but before shadow/material batching and GPU upload. This
+    // preserves LOD0 tangent values: the coarse index streams reuse the
+    // original vertices and must not recompute their normals/tangents.
+    ensureTangents(m);
+    // Missing imported LODs are generated once per CPU model preparation,
+    // before shadow/material batches and before GPU geometry upload.
+    // Node hierarchy and LOD0 mesh data remain unchanged. An external
+    // asset policy or AIVERSE_AUTOLOD=off restores authored-only behavior.
+#ifdef AIVERSE_RUNTIME_AUTOLOD
+    const char* lodFlag = std::getenv("AIVERSE_AUTOLOD");
+    if (!lodFlag || (std::strcmp(lodFlag, "off") != 0 &&
+                     std::strcmp(lodFlag, "0") != 0))
+        generateMissingModelLods(m);
+    else {
+        m.autoLod.attempted = true;
+        m.autoLod.reason = "disabled by AIVERSE_AUTOLOD";
+    }
+#else
+    m.autoLod.attempted = true;
+    m.autoLod.reason = "runtime automatic LOD disabled at build time";
+#endif
+    if (const char* trace = std::getenv("AIVERSE_AUTOLOD_TRACE"); trace && std::strcmp(trace, "1") == 0 &&
+        isNativeModelFormat(m.path)) {
+        std::fprintf(stderr, "[auto-lod] model=%s meshes=%zu generated=%zu added-indices=%llu reason=%s\n",
+            m.path.c_str(), m.meshes.size(), m.autoLod.generatedLevels,
+            (unsigned long long)m.autoLod.addedIndices, m.autoLod.reason.c_str());
+    }
+
         const char* shadowBatches = std::getenv("AIVERSE_AUTO_SHADOW_BATCHES");
         if (!shadowBatches || std::string(shadowBatches) != "off") prepareShadowBatches(m);
-        ensureTangents(m);
         const char* materialBatches = std::getenv("AIVERSE_AUTO_MATERIAL_BATCHES");
         if (!materialBatches || std::string(materialBatches) != "off") prepareMaterialBatches(m);
     m.uploadPrepared = true;
@@ -423,10 +552,12 @@ void prepareModelUpload(Model& m) {
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
     if (!m.vertices.empty() && !m.vb.valid()) {
         prepareModelUpload(m);
-        gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
-        m.vb = dev.createBuffer(vb);
-        gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
-        m.ib = dev.createBuffer(ib);
+        if (!uploadModelToGeometryPool(dev, m)) {
+            gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
+            m.vb = dev.createBuffer(vb);
+            gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
+            m.ib = dev.createBuffer(ib);
+        }
     }
     for (auto& img : m.images) {
         if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
@@ -473,10 +604,21 @@ int addImage(gfx::Device& dev, Model& m, Image img) {
 }
 
 void releaseModel(gfx::Device& dev, Model& m) {
-    if (m.vb.valid()) dev.destroyBuffer(m.vb);
-    if (m.ib.valid()) dev.destroyBuffer(m.ib);
+    if (m.geometryPoolPage) releaseModelGeometryPool(dev, m);
+    else {
+        if (m.vb.valid()) dev.destroyBuffer(m.vb);
+        if (m.ib.valid()) dev.destroyBuffer(m.ib);
+    }
     m.vb = {}; m.ib = {};
-    for (auto& img : m.images) if (img.tex.valid()) { if(!img.borrowedTexture)dev.destroyTexture(img.tex); img.tex = {}; }
+    for (auto& img : m.images) {
+        if (img.tex.valid() && !img.borrowedTexture) dev.destroyTexture(img.tex);
+        img.tex = {};
+        // Drop the shared cache lease at explicit release, not only when the
+        // Model object itself happens to be destroyed. The texture cache's
+        // trim() can then free images no remaining model references.
+        img.textureLease.reset();
+        img.borrowedTexture = false;
+    }
     if (m.morphTex.valid()) dev.destroyTexture(m.morphTex);
     if (m.baked.tex.valid()) dev.destroyTexture(m.baked.tex);
     m.morphTex = {}; m.baked = Model::Baked{};

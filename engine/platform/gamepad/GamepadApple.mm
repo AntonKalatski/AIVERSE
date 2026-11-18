@@ -14,7 +14,10 @@ void pollGamepadBackend(GamepadState (&pads)[kMaxGamepads]) {
             GCExtendedGamepad* g = i < int(list.count) ? list[NSUInteger(i)].extendedGamepad : nil;
             p.connected = g != nil;
             if (!g) continue;
-            if (p.name.empty()) p.name = list[NSUInteger(i)].vendorName.UTF8String ?: "Gamepad";
+            if (p.name.empty()) {
+                const char* vendor = list[NSUInteger(i)].vendorName.UTF8String;
+                p.name = vendor ? vendor : "Gamepad";
+            }
             auto set = [&](PadButton b, GCControllerButtonInput* in) { p.buttons[int(b)] = in && in.isPressed; };
             set(PadButton::A, g.buttonA); set(PadButton::B, g.buttonB); set(PadButton::X, g.buttonX); set(PadButton::Y, g.buttonY);
             set(PadButton::LB, g.leftShoulder); set(PadButton::RB, g.rightShoulder);

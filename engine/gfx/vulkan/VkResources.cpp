@@ -150,7 +150,8 @@ VkBufferUsageFlags VulkanDevice::bufferUsage(BufferType t) const {
     VkBufferUsageFlags u = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     if (t == BufferType::Index) u |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     else u |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    if (t == BufferType::Storage) u |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    if (t == BufferType::Storage) u |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    if (t == BufferType::Indirect) u |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
     return u;
 }
 
