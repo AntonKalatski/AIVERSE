@@ -53,8 +53,9 @@ public:
             if(!surfaces_[i].body.enabled)resident_[i]->release(device);
         uint32_t attempts=0;
         const size_t count=surfaces_.size();
+        const size_t start=nextUpload_%count;
         for(size_t scanned=0;scanned<count && attempts<maxUploadsPerFrame_;++scanned) {
-            const size_t i=(nextUpload_+scanned)%count;
+            const size_t i=(start+scanned)%count;
             if(!surfaces_[i].body.enabled)continue;
             auto opts=surfaces_[i].mesh;
             if(observer) {
