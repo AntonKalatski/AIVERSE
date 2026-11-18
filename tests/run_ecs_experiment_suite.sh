@@ -61,6 +61,10 @@ compile_run ecs-kinematic-projectile -Ilibraries/include \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+compile_run ecs-impact-queue -Ilibraries/include \
+    tests/ecs_cross_genre_impact_queue_test.cpp \
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp \
+    engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
 compile_run ecs-hitscan-selection -Ilibraries/include \
     tests/ecs_hitscan_selection_test.cpp \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
