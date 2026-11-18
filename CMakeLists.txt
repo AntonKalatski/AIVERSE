@@ -658,6 +658,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_motionweave_cache_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
     add_test(NAME motionweave_graph_cost_cache COMMAND aiverse_motionweave_cache_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_worker_reuse_tests tests/animation/motionweave_worker_reuse.cpp)
+    target_link_libraries(aiverse_motionweave_worker_reuse_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_worker_reuse COMMAND aiverse_motionweave_worker_reuse_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp

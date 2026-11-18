@@ -57,13 +57,15 @@ public:
             for(size_t i=0;i<tasks;++i)action(i);
             return;
         }
+        // A reference to this stack-owned callable is valid for the entire
+        // blocking dispatch. Workers never allocate/copy std::function.
         std::function<void(size_t)> fn=[&action](size_t i){action(i);};
         {
             std::lock_guard lock(mutex_);
             firstError_=nullptr;
             next_.store(0,std::memory_order_relaxed);
             count_=tasks;
-            job_=fn;
+            job_=&fn;
             outstanding_=workers_.size();
             ++epoch_;
         }
@@ -74,7 +76,7 @@ public:
             std::unique_lock lock(mutex_);
             done_.wait(lock,[&]{return outstanding_==0;});
             failure=firstError_;
-            job_={};
+            job_=nullptr;
         }
         if(failure)std::rethrow_exception(failure);
     }
@@ -93,7 +95,7 @@ private:
     void runWorker() noexcept {
         uint64_t seen=0;
         for(;;) {
-            std::function<void(size_t)> fn;
+            const std::function<void(size_t)>* fn=nullptr;
             size_t count=0;
             {
                 std::unique_lock lock(mutex_);
@@ -103,7 +105,8 @@ private:
                 fn=job_;
                 count=count_;
             }
-            consume(fn,count);
+            // The caller cannot clear *fn until outstanding_ reaches zero.
+            consume(*fn,count);
             {
                 std::lock_guard lock(mutex_);
                 if(--outstanding_==0)done_.notify_one();
@@ -124,7 +127,7 @@ private:
     std::mutex mutex_;
     std::condition_variable wake_,done_;
     std::vector<std::thread> workers_;
-    std::function<void(size_t)> job_;
+    const std::function<void(size_t)>* job_=nullptr;
     std::atomic<size_t> next_{0};
     size_t count_=0,outstanding_=0;
     uint64_t epoch_=0;

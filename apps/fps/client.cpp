@@ -101,12 +101,16 @@ struct App {
         const auto& view=rules["fps"]["visual"];
         const std::string file=view.getStr("model");
         if (file.empty()) return;
+        // Own partially uploaded assets until the graph and optional bake
+        // have compiled successfully; otherwise release their GPU buffers.
+        std::unique_ptr<render::Model> pendingModel;
         try {
             std::vector<std::string> warnings;
             auto reader=[](const std::string& path,std::string& text) {
                 return platform::readContentFile(path,text);
             };
-            auto model=render::loadModel(projectRoot+"/"+file,reader,&warnings);
+            pendingModel=render::loadModel(projectRoot+"/"+file,reader,&warnings);
+            auto& model=pendingModel;
             if (!model || !render::uploadModel(device,*model))
                 throw std::runtime_error("model upload failed");
             Json def=view["animationGraph"];
@@ -204,9 +208,13 @@ struct App {
                 std::fprintf(stderr,"FPS animation import: %s\n",warning.c_str());
         } catch (const std::exception& e) {
             std::fprintf(stderr,"FPS animation disabled (box fallback): %s\n",e.what());
-            if (characterModel) render::releaseModel(device,*characterModel);
+            if(pendingModel)render::releaseModel(device,*pendingModel);
+            if(characterModel)render::releaseModel(device,*characterModel);
             characterGraph.reset();
             characterModel.reset();
+            characterBakeAvailable=false;
+            characterBakedCrowd=false;
+            characterGraphFile.clear();
         }
     }
     void updateCharacterAnimations(double dt,const fps::Actor& local) {
