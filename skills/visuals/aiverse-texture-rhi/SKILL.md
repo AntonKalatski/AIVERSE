@@ -152,6 +152,12 @@ actual target GPU capabilities before importing production assets.
   legacy first-face path. Only dimension-aware shaders sample arrays/cubes.
 - Check `Device::supports` and actual handle validity for format availability.
   `PixelFormat::BC4/BC5/EAC_R11/BC6H` is not universally supported.
+- Compressed sRGB BC1/BC3/BC7, ETC2 and ASTC have native RHI variants
+  for capable GPUs. Prefer hardware sRGB sampling (no shader gamma
+  conversion) when the source KTX2/DDS declares it; unsupported
+  combinations fall back to RGBA8_sRGB where CPU decoding exists.
+  BC1_RGB keeps opaque-index semantics instead of being forced into
+  BC1_RGBA. WebGL2 requires explicit compressed sRGB capability probing.
 - The BC5 native GPU path returns RG only; enable
   `TextureUploadOptions.shaderReconstructsBc5NormalZ` **only** if the shader
   reconstructs Z. Otherwise keep the safe CPU-decoded normal map.

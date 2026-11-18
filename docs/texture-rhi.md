@@ -308,6 +308,25 @@ window nor the backend enumeration has been compiled or tested on a native
 target in this environment.
 
 
+## Native compressed sRGB formats
+
+The shared RHI provides separate sRGB GPU variants for BC1/BC3/BC7,
+ETC2 RGB/RGBA, and ASTC 4x4/6x6. When DDS or KTX2 metadata declares
+sRGB and the device supports its compressed variant,
+`uploadContainerTexture` selects the hardware-decoded sRGB format
+without requiring shader-authored gamma conversion. Backend support
+varies; GL/GLES/WebGL2 must probe the dedicated sRGB S3TC extension.
+Unsupported compressed sRGB formats fall back to CPU RGBA8_sRGB if
+a decoder exists. ASTC without native support still fails rather
+than treating block bytes as RGBA pixels. BC1_RGB opaque blocks
+are not silently reinterpreted as BC1_RGBA blocks.
+
+`TextureUploadOptions.trustShaderSrgbDecode` remains a legacy
+opt-in for callers that have explicit shader decode semantics;
+it is not needed for the new true sRGB GPU block formats.
+See KTX2 and TextureAsset CPU tests for the format contract.
+**Native GPU and shader validation has not yet run.**
+
 ## Optional Basis Universal KTX2 bridge
 
 `engine/render/Ktx2Transcode.h` accepts an externally supplied
