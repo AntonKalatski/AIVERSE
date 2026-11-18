@@ -166,6 +166,27 @@ static void budgetsScenario() {
           "queue bound not applied");
     check(bounded.stats().droppedBudget==3,"queued event overflow not recorded");
     bounded.resetForRollback();
+
+    // Attachment budget: retire a vanished ECS source before admitting
+    // the next one, even when the pool previously sat at its hard cap.
+    sp::CueBudgets capped;
+    capped.maxAttachments=1;
+    sp::CueScheduler attachments(world,capped);
+    check(attachments.registerEffect("continuous",effect(true,0)),
+          "attachment budget registration");
+    sp::AttachedCue first;first.key=11;first.effect="continuous";
+    sp::AttachedCue second=first;second.key=22;
+    const std::vector<sp::AttachedCue> both{first,second};
+    attachments.syncAttachments(both);
+    check(attachments.stats().attached==1 &&
+          attachments.stats().droppedBudget==1,
+          "attachment cap must admit no more than one source");
+    const std::vector<sp::AttachedCue> replace{second};
+    attachments.syncAttachments(replace);
+    check(attachments.stats().attached==1 &&
+          attachments.stats().stoppedSources==1,
+          "retired source must free capacity for a replacement this frame");
+    attachments.resetForRollback();
     world.shutdown();
 }
 int main() {
