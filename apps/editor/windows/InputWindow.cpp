@@ -2,6 +2,7 @@
 // Do not apply these presentation mappings to the deterministic simulation.
 #include "../Editor.h"
 #include "engine/platform/EnhancedInputConfig.h"
+#include "engine/platform/EnhancedInputFileIO.h"
 #include "engine/platform/EnhancedInputPresets.h"
 #include <algorithm>
 #include <array>
@@ -184,11 +185,8 @@ private:
         std::error_code ec;
         if(!fs::exists(path,ec))return;
         exists_=true;
-        try {
-            ecfg::Asset value;
-            if(!ecfg::readAsset(Json::parseFile(path.string()),value,&error_))return;
-            asset_=std::move(value);
-        } catch(const std::exception& e){error_=e.what();}
+        ecfg::Asset value;
+        if(ecfg::loadAssetFile(path,value,&error_))asset_=std::move(value);
     }
     void save(const std::string& dir) {
         ecfg::Asset checked;
@@ -197,31 +195,7 @@ private:
             error_="Add at least one Action and one Mapping Context before saving";return;
         }
         const fs::path path=fs::path(dir)/"input"/"actions.json";
-        const fs::path temporary=path.string()+".tmp";
-        std::error_code ec;
-        fs::create_directories(path.parent_path(),ec);
-        if(ec){error_=ec.message();return;}
-        {
-            std::ofstream file(temporary,std::ios::binary|std::ios::trunc);
-            if(!file){error_="Cannot open temporary input asset";return;}
-            file<<ecfg::writeAsset(checked).dump(2)<<'\n';
-            file.flush();
-            if(!file){error_="Cannot write temporary input asset";return;}
-        }
-        // A backup protects existing authored mappings during replacement, including Windows.
-        const fs::path backup=path.string()+".bak";
-        if(fs::exists(path,ec)){
-            fs::copy_file(path,backup,fs::copy_options::overwrite_existing,ec);
-            if(ec){error_="Backup failed: "+ec.message();return;}
-            fs::remove(path,ec);
-            if(ec){error_="Replace failed: "+ec.message();return;}
-        }
-        fs::rename(temporary,path,ec);
-        if(ec){
-            std::error_code restore;
-            if(fs::exists(backup,restore))fs::copy_file(backup,path,fs::copy_options::overwrite_existing,restore);
-            error_="Save failed: "+ec.message();return;
-        }
+        if(!ecfg::saveAssetFile(path,checked,&error_))return;
         asset_=std::move(checked);dirty_=false;exists_=true;error_.clear();
     }
     void actions() {
