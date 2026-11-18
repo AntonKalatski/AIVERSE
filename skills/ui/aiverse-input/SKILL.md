@@ -34,6 +34,12 @@ For global window FocusLost use `cancelAll`, not selective cancellation.
 New `clearKeyboardOwner/clearPointerOwner/clearTouchOwner` unassign ownership.
 Check `docs/enhanced-input.md` and Stage 50 handoff. Tests not executed.
 
+**Stage 51 no phantom edges:** activating/replacing a Mapping Context
+over an already-held persistent control suppresses Mapping and Action
+Pressed/Released/Tap/DoubleTap/Hold/Pulse trigger edges until physical release,
+while continuous Down-level Actions remain visible. Avoid replaying stale OS
+KeyDown on focus regain. Tests authored but NOT RUN; see Stage 51 handoff.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
