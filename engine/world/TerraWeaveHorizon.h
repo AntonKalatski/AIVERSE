@@ -25,6 +25,7 @@ struct HorizonSettings {
     uint32_t atlasTilePixels = 48;     // ~8MB with default region sizes
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
     uint32_t crownDetail = 2;         // 1..3 CPU-only crown silhouette quality
+    uint32_t orientationViews = 1;    // 1 cheap shared, 2 orthogonal canopy projections
     int32_t nearBlendCm = 6000;       // masked silhouette fade-in before near trees end
     int32_t tierBlendCm = 16000;      // stochastic mid-to-far overlap around 1 km
     bool distantTerrain = true;       // opt-in manifest, disabled unless requested
@@ -34,7 +35,8 @@ struct HorizonCluster {
     int64_t centerXcm = 0, centerZcm = 0;
     int32_t tileSizeCm = 0;
     int32_t bottomCm = 0, topCm = 0;
-    uint32_t atlasX = 0, atlasY = 0; // top-left pixel of tile silhouette
+    uint32_t atlasX = 0, atlasY = 0; // first directional silhouette
+    uint32_t atlasSideX = 0, atlasSideY = 0; // 90-degree silhouette if enabled
     uint32_t atlasSize = 0;
     uint8_t coverage = 0;             // 0..255, rasterized forest mask
 };
@@ -116,13 +118,15 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.atlasTilePixels>64 || s.terrainResolution<8 ||
         s.terrainResolution>96 || s.canopyHeightCm<100 ||
         s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3 ||
+        (s.orientationViews!=1 && s.orientationViews!=2) ||
         s.nearBlendCm<0 || s.nearBlendCm>s.closeForestEndCm ||
         int64_t(s.nearBlendCm)>s.middleForestEndCm-s.closeForestEndCm ||
         s.tierBlendCm<0 ||
         int64_t(s.tierBlendCm)>s.middleForestEndCm-s.closeForestEndCm)
         throw std::invalid_argument("TerraWeave Horizon settings");
-    const uint64_t tiles=uint64_t(s.middleTilesPerSide)*s.middleTilesPerSide+
-                         uint64_t(s.distantTilesPerSide)*s.distantTilesPerSide;
+    const uint64_t tiles=(uint64_t(s.middleTilesPerSide)*s.middleTilesPerSide+
+                          uint64_t(s.distantTilesPerSide)*s.distantTilesPerSide)*
+                          s.orientationViews;
     const uint64_t side=uint64_t(horizon_detail::checkedSquareRootCeil(
         static_cast<uint32_t>(tiles)))*s.atlasTilePixels;
     if (side>2048 || side*side*4>16u*1024u*1024u)
@@ -149,7 +153,8 @@ inline HorizonBudget estimateHorizonBudget(const HorizonSettings& s) {
                           size_t(s.distantTilesPerSide)*s.distantTilesPerSide;
     const size_t atlasSide=
         size_t(horizon_detail::checkedSquareRootCeil(
-            static_cast<uint32_t>(clusters)))*s.atlasTilePixels;
+            static_cast<uint32_t>(clusters*s.orientationViews)))*
+            s.atlasTilePixels;
     const size_t terrainVertices=s.distantTerrain ?
         size_t(s.terrainResolution+1)*(s.terrainResolution+1):0;
     const size_t terrainTriangles=s.distantTerrain ?
@@ -188,8 +193,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
 
     const uint32_t possible=s.middleTilesPerSide*s.middleTilesPerSide+
                             s.distantTilesPerSide*s.distantTilesPerSide;
-    const uint32_t atlasSide=horizon_detail::checkedSquareRootCeil(possible)*
-                             s.atlasTilePixels;
+    const uint32_t atlasSide=horizon_detail::checkedSquareRootCeil(
+                                 possible*s.orientationViews)*s.atlasTilePixels;
     out.atlasWidth=atlasSide;out.atlasHeight=atlasSide;
     out.atlasRgba.assign(size_t(atlasSide)*atlasSide*4,0);
     out.clusters.reserve(possible);
