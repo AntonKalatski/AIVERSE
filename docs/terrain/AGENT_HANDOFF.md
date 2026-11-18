@@ -1340,3 +1340,104 @@ Keep PR Draft. Do not claim the Horizon renderer visually passed.
   `TerraWeaveHorizon.h` uses half-open mid/far distance bands,
   preventing duplicate card ownership on an exact LOD boundary.
 No new build/CTest/GPU verification was performed for these fixes.
+
+## Stage 8 — Horizon silhouette quality and staggered coverage (COMMITTED; UNVERIFIED)
+
+**Date:** 2026-11-18. Branch: `feature/terraweave`, Draft PR #24.
+Refresh the branch HEAD/individual file SHA before further edits;
+other agents have been committing into this same feature branch.
+
+**Commits/files:**
+- `fabcac7aaa63ca6b0cfafc1f2f4ee423324562bf`:
+  `engine/world/TerraWeaveHorizon.h` replaces uniform vertical
+  foliage bands with deterministic overlapping rounded/tapered
+  canopy silhouettes, colour/shading variation, alpha-cutout feather,
+  sparse trunks and `HorizonSettings::crownDetail` (1–3).
+- `7e64976e6294d069317a70de0fa7e3cbae76b884`:
+  `engine/world/TerraWeaveHorizon.h` adds `nearBlendCm`,
+  `tierBlendCm`, Q16 smoothstep coverage and world-hashed
+  pixel masking to stagger near/mid/far cluster visibility.
+- `1c0a928f850827a740181893c28bb7310a390e3b`:
+  `engine/world/TerraWeaveHorizonManifest.h` exposes quality
+  and blending parameters; when both Horizon and near Forest
+  blocks exist, closeForestEndCm defaults to near Forest
+  `cullRangeCm` rather than leaving an uncovered 240–250m band.
+- `44875e003c118a268f8098656bd9532f98c4f654`:
+  `tests/terraweave_horizon_test.cpp` covers deterministic
+  canopy colours, near band visibility, smoothstep, invalid settings.
+- `4cc15e342575ea77986b5e0ae74ea3772d3d7c04`:
+  `engine/world/TerraWeaveHorizon.h` adds
+  `HorizonSettings::orientationViews` (1 cheap / 2 quality)
+  and `HorizonCluster` second atlas-frame coordinates.
+- `fe3b644a595afebeb503cb99f931098ee5de74e3`:
+  CPU Horizon baker renders independent X/Z silhouettes per
+  cluster into a **single packed atlas** at 2-view quality.
+- `6610b3a233a3ddbcb2c50b1af22663714528e6cb`:
+  `engine/render/TerraWeaveHorizonModel.h` selects distinct
+  subrect UVs for each crossed card orientation.
+- `860ee5aaa3c66a2267eb915f6be51de1c257e9b2`:
+  `tests/terraweave_horizon_test.cpp` verifies 2-view atlas
+  bounds, distinct frames, unchanged indices/triangles and
+  invalid view count.
+- `30013eb337377379824f23e9e1933b55ebae7c0b`:
+  `TerraWeaveHorizonManifest.h` parses `orientationViews`.
+- `6b907d5553dd0591130606a577bb917a9ab91963`:
+  `engine/render/TerraWeaveHorizonScene.h` captures
+  `HorizonRuntimeStats`: actual live CPU preparation and GPU
+  upload ms, atlas bytes, vertices, triangles, clusters,
+  pending/discarded async jobs. These counters are *not*
+  measured GPU kernel timings.
+- `c28ebe28a2d9a77707afaac1932a9b970b059277`:
+  horizon test verifies zero-initialized runtime counters
+  before a GPU model is submitted.
+- `df8d06b28e0f3edebd66fbd4f5ac65f838b6f7b4`:
+  `docs/terrain/TERRAWEAVE.md` documents all settings,
+  limitations, theoretical memory and runtime counters.
+
+**Architecture**: Entire far forest remains one Model with two
+primitive/material ranges (coarse terrain + masked cluster cards),
+regardless of `orientationViews`. No individual foliage
+ECS entities, GPU shader fork or per-cluster submissions.
+Deterministic alpha-to-coverage is **baked per snapped
+region**, avoiding a synchronized hard 250m/1km switch. It
+does not continuously crossfade on every camera frame.
+A 2-view atlas uses two orthogonal captured silhouettes and
+one shared texture; default 1-view stays ~7.39 MiB vs
+2-view ~14.77 MiB before mipmaps, triangle budget unchanged.
+Higher crownDetail increases only CPU raster work.
+
+**What is tested vs NOT tested:** Changes were inspected at
+source level and successfully committed using GitHub connector.
+Tests were extended, but **no successful compilation, CTest
+execution, editor launch, Metal/GL/Vulkan screenshot or real
+frame-time measurement has been observed**. Do not mark
+this PR ready for merge yet. Previous GitHub DNS/clone
+limitations prevented authoring-container checkout.
+
+**Critical acceptance for next agent**:
+1. Build `aiverse_terraweave_horizon_test` plus
+   `aiverse_world` and `aiverse_editor` using real Clang
+   and GCC. Run `ctest -R 'terraweave|world_async'`;
+   record failures and compiler/linker diagnostics.
+2. Load opt-in `terraweaveHorizon` with
+   `orientationViews=1` and `2` on macOS Metal
+   and one GL/Vulkan device. Orbit camera and compare
+   near/mid/far forest; inspect alpha-mask edges,
+   texture page UV bleeding, double draw and pop.
+3. Exercise boundary conditions at 240m, 250m,
+   920m, 1000m, 1080m and camera-region snap
+   boundaries; compare one rendered atlas across
+   equivalent seeds/platforms and log memory/draw
+   metrics from `runtimeStats()`.
+4. Assess whether spatial stochastic fading is
+   sufficiently stable. If not, implement true
+   GPU-temporal dither/crossfade through shared
+   renderer shading (GLSL+MSL) with an appropriate
+   transient memory/overdraw budget; do not claim
+   true frame-by-frame fading at present.
+5. For static worlds, cache prebaked atlas models
+   with generator-version fingerprints; keep
+   distantTerrain off when a separate authored
+   landscape renderer covers the horizon.
+6. After each actual work phase, append new
+   commits/tests/limits to this handoff.
