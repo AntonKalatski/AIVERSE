@@ -226,3 +226,7 @@ Default `RTS.Gestures` context maps touch slot-zero relative drag to `CameraTouc
 ### RTS Select/Command mouse rebinding
 
 `RTS.Pointer` controls now affect the actual world gesture entrypoints, not merely Action event notifications. The native event is delivered unchanged to the UI first; after UI capture, `ClientInputRouting::logicalMouseButton` translates an authored mouse button to logical Select (0), Command (1) or camera pan (2) for the world handler. Unbound buttons do not select/order. The pointer's position, drag-box geometry, garrison logic and existing validated Commands remain unchanged.
+
+### Generated top-down ability mappings
+
+Top-down's game-specific button definitions in `game.json.topDown.buttons` are registered at runtime as `TopDownAbility0`, `TopDownAbility1`, etc., in the optional `RTS.TopDownAbilities` context. Their press/release is routed through semantic Actions; UI touch-stick buttons and the actual ability Commands remain the responsibility of the top-down module. A project can author a custom context with that name in `input/actions.json` to override generated keys without altering engine code.
