@@ -28,11 +28,15 @@ struct PostFxUnderwater {
     float tintR=0, tintG=0, tintB=0;
     float absorption=0;
     float depthMetres=0;
+    float distortion=0, scattering=0;
 };
 struct PostFxUnderwaterState {
     float blend=0;
     float tintR=0, tintG=0, tintB=0;
     float absorption=0, depthMetres=0;
+    float distortion=0, scattering=0;
+    float crossing=0;
+    bool wasSubmerged=false;
 };
 
 // Pure presentation transition policy, testable without a GPU device.
@@ -44,6 +48,10 @@ inline PostFxUnderwaterState advancePostFxUnderwater(
     auto finite=[](float v,float lo,float hi) {
         return std::isfinite(v)?std::clamp(v,lo,hi):lo;
     };
+    if(target.submerged!=state.wasSubmerged && dt>0.f)
+        state.crossing=1.f;
+    state.wasSubmerged=target.submerged;
+    state.crossing*=std::exp(-dt*8.f);
     smooth(state.blend,target.submerged?1.f:0.f);
     if(target.submerged) {
         smooth(state.tintR,finite(target.tintR,0.f,1.f));
@@ -51,8 +59,11 @@ inline PostFxUnderwaterState advancePostFxUnderwater(
         smooth(state.tintB,finite(target.tintB,0.f,1.f));
         smooth(state.absorption,finite(target.absorption,0.f,4.f));
         smooth(state.depthMetres,finite(target.depthMetres,0.f,10000.f));
+        smooth(state.distortion,finite(target.distortion,0.f,1.f));
+        smooth(state.scattering,finite(target.scattering,0.f,1.f));
     }
-    if(state.blend<0.0001f && !target.submerged)state={};
+    if(state.blend<0.0001f && state.crossing<0.0001f && !target.submerged)
+        state={};
     return state;
 }
 
