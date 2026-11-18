@@ -356,8 +356,10 @@ public:
         }
         // Stage 2A: sampleable dimensions with explicit per-face/slice writes. MSAA and
         // attachment slices require the later view/render-pass stage.
-        if (d.sampleCount != 1 || (d.renderTarget && d.dimension != TextureDimension::Texture2D)) {
-            error_ = "Metal: multisample and array/volume render targets require texture views";
+        if (d.sampleCount != 1 ||
+            (d.renderTarget && (d.dimension == TextureDimension::Texture1D ||
+                                d.dimension == TextureDimension::Texture3D))) {
+            error_ = "Metal: multisample/1D/3D render targets are not supported by this pass";
             return {};
         }
         const MTLPixelFormat cf = compressedFormat(d.format);
@@ -1057,6 +1059,91 @@ public:
     size_t boundVertexOffset_=0;
     void clearBindings(){for(auto& t:boundTextures_)t=nil;for(auto& s:boundSamplers_)s=nil;boundVertexBuffer_=nil;}
     void setBindingCacheEnabled(bool enabled) override {if(enabled!=bindingCacheEnabled_){bindingCacheEnabled_=enabled;clearBindings();}}
+    bool supportsRenderTargetPasses() const override { return true; }
+
+    bool beginRenderTargets(const RenderTargetPassDesc& desc) override {
+        if (!validateRenderTargetPassDesc(desc) || !cmd_ || enc_ || compute_ || gpuIcbEncoder_) {
+            error_ = "Metal: invalid render target pass or an encoder is already active";
+            return false;
+        }
+        if (desc.colorCount > 1) {
+            error_ = "Metal: MRT requires explicit multi-color pipeline variants (not yet implemented)";
+            return false;
+        }
+        auto sliceCount = [](const MTTexture& t) {
+            return t.dimension == TextureDimension::Cube ? 6 :
+                   t.dimension == TextureDimension::CubeArray ? int(t.tex.arrayLength) * 6 :
+                   t.dimension == TextureDimension::Texture2DArray ? int(t.tex.arrayLength) : 1;
+        };
+        auto validate = [&](const RenderTargetAttachment& a, bool depth, int& outW, int& outH) {
+            const MTTexture* t = textures_.get(a.texture.id);
+            if (!t || !t->tex || a.mipLevel < 0 || a.arrayLayer < 0 ||
+                a.mipLevel >= int(t->tex.mipmapLevelCount) ||
+                a.arrayLayer >= sliceCount(*t) || t->tex.sampleCount != 1 ||
+                !(t->tex.usage & MTLTextureUsageRenderTarget) ||
+                (t->fmt == PixelFormat::Depth) != depth ||
+                t->dimension == TextureDimension::Texture1D ||
+                t->dimension == TextureDimension::Texture3D) return false;
+            if (!depth && t->fmt != PixelFormat::RGBA8 &&
+                t->fmt != PixelFormat::RGBA8_sRGB && t->fmt != PixelFormat::RGBA16F)
+                return false; // current Metal pipeline supports BGRA8 and RGBA16F colors
+            outW = std::max(1, int(t->tex.width) >> a.mipLevel);
+            outH = std::max(1, int(t->tex.height) >> a.mipLevel);
+            return outW > 0 && outH > 0;
+        };
+        int width = 0, height = 0;
+        const MTTexture* color = nullptr;
+        const MTTexture* depth = nullptr;
+        if (desc.colorCount) {
+            const auto& a = desc.colors[0];
+            int w = 0, h = 0;
+            if (!validate(a, false, w, h)) {
+                error_ = "Metal: invalid color mip/layer or renderable pixel format"; return false;
+            }
+            width = w; height = h;
+            color = textures_.get(a.texture.id);
+        }
+        if (desc.depth.texture.valid()) {
+            int w = 0, h = 0;
+            if (!validate(desc.depth, true, w, h) ||
+                (width && (width != w || height != h))) {
+                error_ = "Metal: depth attachment unsupported or extent mismatch"; return false;
+            }
+            if (!width) { width = w; height = h; }
+            depth = textures_.get(desc.depth.texture.id);
+        }
+        if (!width || !height) return false;
+        finishGpuEncodedIcbPreparation();
+        MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
+        if (color) {
+            const auto& a = desc.colors[0];
+            rp.colorAttachments[0].texture = color->tex;
+            rp.colorAttachments[0].level = NSUInteger(a.mipLevel);
+            rp.colorAttachments[0].slice = NSUInteger(a.arrayLayer);
+            rp.colorAttachments[0].loadAction = a.clear ? MTLLoadActionClear : MTLLoadActionLoad;
+            rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+            rp.colorAttachments[0].clearColor = MTLClearColorMake(
+                a.clearColor[0], a.clearColor[1], a.clearColor[2], a.clearColor[3]);
+        }
+        if (depth) {
+            rp.depthAttachment.texture = depth->tex;
+            rp.depthAttachment.level = NSUInteger(desc.depth.mipLevel);
+            rp.depthAttachment.slice = NSUInteger(desc.depth.arrayLayer);
+            rp.depthAttachment.loadAction = desc.depth.clear ? MTLLoadActionClear : MTLLoadActionLoad;
+            rp.depthAttachment.storeAction = MTLStoreActionStore;
+            rp.depthAttachment.clearDepth = desc.clearDepth;
+        }
+        id<MTLRenderCommandEncoder> encoder = [cmd_ renderCommandEncoderWithDescriptor:rp];
+        if (!encoder) { error_ = "Metal: render target encoder creation failed"; return false; }
+        enc_ = encoder;
+        passW_ = width; passH_ = height;
+        hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
+        pipelineId_ = 0;
+        clearBindings();
+        [enc_ setFrontFacingWinding:MTLWindingCounterClockwise];
+        return true;
+    }
+
     void beginPass(const PassDesc& d) override {
         // Do not allow an unfinished GPU ICB compute pass to overlap a
         // render encoder, even if a future caller omits the explicit finish.
