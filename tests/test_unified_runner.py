@@ -106,6 +106,28 @@ class UnifiedRunnerTests(unittest.TestCase):
         self.assertIn("requires a Debug CMake cache", result.stdout)
         self.assertNotIn("FAKE_CTEST_ARGS", result.stdout)
 
+    def test_crlf_registry_passes_no_phantom_args(self):
+        (self.root / "tests" / "extra-test-suites.txt").write_bytes(
+            b"sample|bash|tests/sample.sh|\r\n"
+        )
+        result = self.invoke("--no-build")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("FAKE_EXTRA_PASSED", result.stdout)
+        self.assertNotIn("Unknown argument", result.stdout)
+
+    def test_crlf_registry_preserves_flags(self):
+        (self.root / "tests" / "extra-test-suites.txt").write_bytes(
+            b"sample|bash|tests/sample.sh|--full\r\n"
+        )
+        (self.root / "tests" / "sample.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            '[[ "$#" == 1 && "$1" == "--full" ]] || exit 7\n'
+            "echo FAKE_EXTRA_PASSED\n"
+        )
+        result = self.invoke("--no-build")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("PASS extra-sample", result.stdout)
+
     def test_rejects_unsafe_registry_paths(self):
         (self.root / "tests" / "extra-test-suites.txt").write_text(
             "unsafe|bash|../outside.sh|\n"
