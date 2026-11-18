@@ -1705,3 +1705,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Verification:** repository source and workflow metadata inspected using GitHub connector. Container `git ls-remote` failed with `Could not resolve host: github.com`. **Native compile/CTest/macOS runtime and real network playback: NOT RUN.** Latest examined GitHub Actions for PR #7 were queued, not passing.
 - **Unfinished:** real compiled/native RTT validation; check serializer migration of legacy modules, malformed payloads, exact checksum semantics, and full transaction boundary. Preserve old v9 format for projects without registered native ECS components.
 - **Next action:** run `ctest --test-dir <build> -R ecs_native_persistence_test --output-on-failure` and `bash tests/run_ecs_experiment_suite.sh` on a full checkout; fix real diagnostics before switching production gameplay. Add exact result and commit to both handoff locations.
+
+
+### 2026-11-18 — Agent coding contract updated for FPS ordinary projectile ECS authority
+- Documentation SHA: `45ab2d8ab1deb3b115e66e027354c7142057e5bf`.
+- Updated `AGENTS.md` with exact new stage order, both programmed and ordinary projectile direct `ProjectileRuntime` ownership under ECS Authority, temporary State projection/mirror limits, reuse of the physical `stepBouncingProjectile` and separate RTS kinematics. Requires new real-FPS direct-ECS ordinary projectile tests, existing programmed deep/COW tests, cross-genre physics parity, native FPS and transport tests before production.
+- Docs-only; no native compiler or runtime result.
