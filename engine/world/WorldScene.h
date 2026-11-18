@@ -19,6 +19,12 @@ private:
         std::vector<std::shared_ptr<render::Model>> models;
         std::vector<std::string> sharedKeys;                  // cache key per model, empty: owned by this chunk
         std::vector<Instance> instances;
+        // Optional render-only authored landscape snapshot, populated only
+        // when this WorldScene opts into TerraWeaveForest. Fixed metre data
+        // is converted to signed cm before workers publish it.
+        uint32_t terrainResolution = 0;
+        std::vector<int32_t> terrainHeightsCm;
+        std::vector<Bounds> placementBoxes; // local-space collision footprints
     };
     struct ModelCache;
     WorldAssets assets_;
