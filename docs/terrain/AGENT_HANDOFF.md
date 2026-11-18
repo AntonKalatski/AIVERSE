@@ -1903,3 +1903,61 @@ other agents commit concurrently; preserve `TWH2` archive
 semantics, keep `Horizon` renderer through standard
 `gfx::Device`, update this handoff after the next functional
 implementation stage.
+
+## Stage 11b — GPU atlas subregion patches via existing gfx::Device (SOURCE COMMITTED; TESTS DEFERRED)
+
+**Branch:** `feature/terraweave`, draft PR #24.
+**Commit IDs and changed files:**
+- `20fe5898a06ed0908f99a971bb313b8249e28a82`:
+  new `engine/render/TerraWeaveHorizonGpuPatch.h`.
+  Pure `horizonCanReuseModelGeometry(oldBake,newBake)`
+  checks all far terrain vertices (including colour), clip center,
+  atlas dimensions and all crossed-card geometry/UV metadata.
+  `planHorizonAtlasUpload` finds changed fixed atlas tiles,
+  coalesces adjacent runs, limits updates (default 6) and total
+  updated pixel bytes (default 25% of atlas). Returns a nullopt
+  for changes that require a full model swap.
+  `applyHorizonAtlasUpload` validates every rectangle, checks
+  resident RGBA8 image ownership and calls only existing
+  `gfx::Device::updateTexture` on render owner thread.
+- `6c34cbb513de0a62d63045bf2a912b226f3e7591`:
+  `engine/render/TerraWeaveHorizonScene.h` integrates
+  the opt-in patch fast path at publication. If the current
+  resident GPU model and baked CPU baseline have identical
+  geometry, only changed atlas subregions update; otherwise
+  the preexisting full model upload/release path remains.
+  New `HorizonRuntimeStats` fields:
+  `atlasPatchCount`, `atlasPatchBytes`,
+  `atlasPatchRegions` and `fullUploadCount`.
+
+**Important architecture:** Existing native `gfx::Device`
+already implements partial `updateTexture` and mipmap
+regeneration on GL/Metal/Vulkan, confirmed by inspecting
+their source. No new shader, backend specialization,
+per-cluster draw submission, or gameplay ECS changes.
+The old shared GPU geometry and one GPU atlas are reused
+only if all visible geometry fields are unchanged.
+Dirty road/biome edits that add/remove clusters or
+change terrain height/vertex colour fall back to full upload.
+CPU model preparation still executes on the worker; this
+stage optimizes GPU upload volume and resident model lifetime.
+
+**Actual verification:** GitHub merge ancestry/source reads
+and successful source commits only. **NO CMake build, CTest,
+native app run, GPU screenshot or benchmark performed**; user
+assigned all testing to another agent. PR remains Draft.
+The full-update fallback cannot be described as GPU-patched.
+
+**Next test agent:** validate `planHorizonAtlasUpload` on
+identical/changed/removed tiles, wrong geometry, density,
+two-view layouts and zero changed bytes. Verify actual
+`Device::updateTexture` row pitch/mipmap behaviour on
+Metal/GL/Vulkan (especially 6 partial updates per frame),
+GPU timing and correct appearance after landscape revisions.
+Check exception/partial texture mutation behaviour and
+fallback on changed terrain vertex/topology.
+
+**Next feature stage:** optional GPU vertex partial update for
+terrain height/colour changes, only if generic Model/GPU buffer
+semantics allow safe use without introducing a new renderer.
+This is NOT implemented; do not claim it is.
