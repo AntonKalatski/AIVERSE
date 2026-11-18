@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <limits>
 
 namespace aiverse::editor {
 namespace {
@@ -108,8 +109,15 @@ public:
             dirty_ = true;
         if (dirty_) {
             DiagnosticRequest request;
-            request.originX = centerX_ - viewSize_ / 2;
-            request.originZ = centerZ_ - viewSize_ / 2;
+            // Clamp user-entered centres before narrowing (INT_MIN/INT_MAX).
+            const auto safeStart = [&](int center) {
+                return static_cast<std::int32_t>(std::clamp<std::int64_t>(
+                    std::int64_t(center) - viewSize_ / 2,
+                    std::numeric_limits<std::int32_t>::min(),
+                    std::int64_t(std::numeric_limits<std::int32_t>::max()) - viewSize_));
+            };
+            request.originX = safeStart(centerX_);
+            request.originZ = safeStart(centerZ_);
             request.width = viewSize_;
             request.height = viewSize_;
             request.stride = stride_;
@@ -151,11 +159,16 @@ public:
             const auto entity = cellAt(*world, x, z);
             if (const auto* cell = world->tryGetConst<Cell>(entity)) {
                 const std::int64_t meters = state->settings.cellSizeMeters;
-                const Vec3 position{Fixed::fromInt(std::int64_t(x) * meters + meters / 2),
-                                    cell->elevation,
-                                    Fixed::fromInt(std::int64_t(z) * meters + meters / 2)};
-                NatureFieldSample detail;
-                if (sampleNatureField(*world, position, detail)) {
+                const std::int64_t mx = std::int64_t(x) * meters + meters / 2;
+                const std::int64_t mz = std::int64_t(z) * meters + meters / 2;
+                const auto maxMeters = std::numeric_limits<std::int64_t>::max() /
+                                       Fixed::kOne / 2;
+                if (mx >= -maxMeters && mx <= maxMeters &&
+                    mz >= -maxMeters && mz <= maxMeters) {
+                    const Vec3 position{Fixed::fromInt(mx), cell->elevation,
+                                        Fixed::fromInt(mz)};
+                    NatureFieldSample detail;
+                    if (sampleNatureField(*world, position, detail)) {
                     ImGui::TextDisabled("Ветер: %.2f, %.2f, %.2f м/с",
                         detail.windVelocity.x.toDouble(), detail.windVelocity.y.toDouble(),
                         detail.windVelocity.z.toDouble());
@@ -163,6 +176,7 @@ public:
                         detail.gravityAcceleration.x.toDouble(),
                         detail.gravityAcceleration.y.toDouble(),
                         detail.gravityAcceleration.z.toDouble());
+                    }
                 }
             }
         }
