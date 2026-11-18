@@ -1827,3 +1827,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `44feafc3837c00abc84b8008c1b68e08abb5c3a1`.
 - Updated `skills/gameplay/aiverse-ecs-projectile-systems/SKILL.md` with real FPS `Module::spawnProjectile`/`clearProjectiles` adoption, direct `ProjectileRuntime` Entity/ID/order ownership and original same-tick location, unchanged default mode, bomb reset allocator ordering precautions, and new `ecsProjectileSpawnAuthorityParity` and `ecsProjectileRoundResetParity` deep/COW/v9 test gates.
 - **Verification:** docs committed; no observed native compiler/test pass.
+
+
+### 2026-11-18 — Prevent related unrun hitscan-selection CTest failure
+- Implementation SHA: `940064fa6120bd3a0b8fec6e92cf75ce4ac38606`.
+- `tests/ecs_hitscan_selection_test.cpp` also used the nearest-rounded `Fixed::fromRatio(3,10)` as the expected fraction. Corrected it to `3_fx/10_fx` to match the shared engine's truncated slab-intersection division. This is the same failure mode as the reported `ecs_hitscan_resolution_test`, and would affect the standalone/CTest sweep after the originally failed subset is rerun.
+- Test expectation only; **not** a native test pass.
