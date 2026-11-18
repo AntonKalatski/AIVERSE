@@ -86,6 +86,20 @@ save/replay until actual parity tests pass.
 The ongoing universal FPS/RTS migration must gradually consume these generic
 mechanic libraries, not create new genre-specific gameplay engines.
 
+**Optional queued ECS impact barrier:** for games that deliberately separate
+motion from damage resolution, use `AIVERSE::lib_ecs_impact_queue`
+(`<aiverselib/genre/EcsImpactQueueSystems.h>`,
+`skills/gameplay/aiverse-ecs-impact-queue/SKILL.md`).
+`OrderedImpactQueue` and its monotonically increasing sequence are World
+resources that MUST be saved/hashed/rollbacked; callbacks retain independent
+armor/faction/shield rules, and queued impacts run in canonical submission
+order. The queue swaps pending requests at the barrier: callback-generated
+hits run on the next invocation. Existing RTS immediate projectile damage
+and same-tick shield/script side effects MUST NOT be moved into a single
+end-of-tick queue without a golden parity test. The native cross-genre
+fixture is `ecs_cross_genre_impact_queue_test`; compilation and real
+RTS/FPS integration remain pending.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
