@@ -29,6 +29,37 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## Direct editor GameWindow pointer Action parity (Stage 53)
+
+The editor's **direct RTS play-test** now samples keyboard, supported mouse
+buttons, mouse X/Y motion and horizontal/vertical wheel channels into its
+own InputFlow each frame **before** script-card and viewport interactions.
+It de-duplicates repeated controls across contexts and cancels its
+presentation Action state when Game loses focus or text input takes ownership.
+Hosted-client mode remains separate: its `ClientHost` continues forwarding
+platform events to the game's own InputFlow and must not double-sample
+editor pointer input.
+
+`GameWindow` uses `actionDefinition(name)` (a new read-only public
+`InputFlow` getter) and mapping trigger declarations to determine whether
+a mouse Action should take effect on the first physical click or on a
+semantic `Triggered` event. This supports remapped Select/Command with
+Pressed/Tap/Hold/DoubleTap/Pulse and Chord/NotChord gates, while drag
+completion continues to follow the physical button's release. It also
+reads the authored `CameraZoom` Action for wheel scaling/rebinding rather
+than bypassing it with raw `ImGuiIO::MouseWheel`.
+
+Bindings to *non-mouse* devices are intentionally not converted into fake
+cursor clicks; Action semantics require a meaningful pointer location for
+selection, placement and drag. GameWindow still relies on ImGui's pointer
+ownership and world picking and sends the same validated RTS Commands
+rather than writing raw input to ECS.
+
+The core `actionDefinition` unit assertion is authored. Direct GameWindow
+ImGui behavior (script card, box select, rebinding and wheel/pinch modes)
+has **not yet been compiled or manually exercised**; these remain explicit
+release validation tasks.
+
 ## RTS UI capture and legacy presentation key mirrors (Stage 52)
 
 `ClientInputRouting::onEvent(e, gameplayAllowed=false)` now cancels the
