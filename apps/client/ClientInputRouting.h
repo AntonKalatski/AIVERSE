@@ -3,6 +3,7 @@
 #pragma once
 #include <aiverselib/gameplay/EnhancedInput.h>
 #include "engine/platform/Platform.h"
+#include "engine/platform/EnhancedInputPresets.h"
 #include <string>
 #include <vector>
 
@@ -12,21 +13,12 @@ namespace ei = aiverse::lib::gameplay::enhanced;
 class ClientInputRouting {
 public:
     ClientInputRouting() {
-        for (const char* name : {"AttackMove","Patrol","Repair","Reclaim","Stop","Hold","FocusCamera"})
-            input_.defineAction({name,ei::ValueType::Boolean});
-        ei::MappingContext gameplay{"RTS.Gameplay"};
-        const auto bind=[&](const char* action,platform::Key key) {
-            gameplay.bind(action,{ei::Device::Keyboard,int(key)},{},{ei::Trigger::pressed()});
-        };
-        bind("AttackMove",platform::Key::A);
-        bind("Patrol",platform::Key::P);
-        bind("Repair",platform::Key::R);
-        bind("Reclaim",platform::Key::E);
-        bind("Stop",platform::Key::S);
-        bind("Hold",platform::Key::H);
-        bind("FocusCamera",platform::Key::Space);
-        input_.registerContext(std::move(gameplay));
-        input_.activateContext("RTS.Gameplay",0);
+        const auto preset=platform::enhanced_presets::rtsReference();
+        for(const auto& action:preset.actions) input_.defineAction(action);
+        for(const auto& item:preset.contexts){
+            input_.registerContext(item.context);
+            if(item.active) input_.activateContext(item.context.name,item.priority);
+        }
     }
 
     ei::InputSystem& system() { return input_; }
