@@ -680,3 +680,35 @@ rebaked. Tests, CPU clipping fixtures, CTest, MSVC/Clang,
 Metal/GL/Vulkan captures and benchmarks belong to the
 dedicated testing agent; do not mark them passed from
 source code review alone.
+
+## Horizon seam slope and normal policy (Stage 20 / TWH7)
+
+When building precise near/far terrain cuts, use
+`maxNearWeldSlopePermille` (0–8000, default 2500)
+and `nearSeamNormalBlendPercent` (0–100, default 65)
+from shared `HorizonSettings`. Both are configured
+in the opt-in `terraweaveHorizon` manifest.
+
+`populateHorizonNearSeamSamples` must preflight the actual
+3D triangle wedge BEFORE committing any near-height samples.
+If a weld newly exceeds the slope limit, **clear the entire
+near-height sample table** and set
+`HorizonBake::nearWeldSlopeFallback`. Preserve the accurate
+X/Z near rectangle clipping; do NOT silently clamp a seam
+vertex's Y and describe it as welded. A large near/far
+height difference may need a future wider transition mesh.
+
+`makeHorizonModel` groups clipped corner positions by
+world X/Z plus resulting Y and uses area-weighted repaired
+face normals. Only the existing clipped vertex normal
+attributes are blended; the near collision or authoritative
+terrain never changes. Avoid extra tree draws or new GPU
+geometry solely for normal shading.
+
+`HorizonRuntimeStats::smoothedNearNormals` and
+`nearWeldSlopeFallback` survive GPU model cache reuse.
+Current archive is **TWH7**; all previous TWH1–TWH6 assets
+must be rebaked after the new version/fingerprint. Keep
+the per-stage handoff and explicitly mark tests NOT RUN
+until the separate test agent supplies compiler, CTest,
+and real Metal/GL/Vulkan evidence.
