@@ -25,6 +25,7 @@ struct HorizonSettings {
     int32_t closeForestEndCm = 25000;  // individual tree renderer owns this
     int32_t middleForestEndCm = 100000;
     int32_t terrainBeginCm = 110000;   // no proxy terrain over near authored ground
+    int32_t terrainSkirtDepthCm = 1200; // 0=off, lower outer edge by 12m to conceal small gaps
     uint32_t terrainResolution = 48;   // 48x48 quads for all 12km
     uint32_t atlasTilePixels = 48;     // ~8MB with default region sizes
     int32_t canopyHeightCm = 1800;    // forest crown silhouette thickness
@@ -54,6 +55,9 @@ struct HorizonTerrainVertex {
     int64_t xCm = 0, zCm = 0;
     int32_t heightCm = 0;
     uint32_t colorRgba = 0xffffffffu;
+    // Slope sampled on the globally anchored vertex lattice. Identical
+    // world coordinates have identical normals even at region borders.
+    int32_t slopeXPermille = 0, slopeZPermille = 0;
 };
 
 // Optional immutable host-supplied landscape data. Passed as a borrowed pointer
@@ -70,6 +74,7 @@ struct HorizonBake {
     int32_t sideCm = 0;
     uint32_t terrainResolution = 0;
     int32_t terrainBeginCm = 0;
+    int32_t terrainSkirtDepthCm = 0;
     int64_t cameraXcm = 0, cameraZcm = 0;
     uint32_t atlasWidth = 0, atlasHeight = 0;
     std::vector<uint8_t> atlasRgba; // one atlas, shared by all forest cluster cards
@@ -132,7 +137,8 @@ inline void validateHorizonSettings(const HorizonSettings& s) {
         s.distantTilesPerSide<4 || s.distantTilesPerSide>32 ||
         (s.middleTilesPerSide&1u) || (s.distantTilesPerSide&1u) ||
         s.closeForestEndCm<0 || s.middleForestEndCm<=s.closeForestEndCm ||
-        s.terrainBeginCm<0 || s.atlasTilePixels<16 ||
+        s.terrainBeginCm<0 || s.terrainSkirtDepthCm<0 ||
+        s.terrainSkirtDepthCm>5000 || s.atlasTilePixels<16 ||
         s.atlasTilePixels>64 || s.terrainResolution<8 ||
         s.terrainResolution>96 || s.canopyHeightCm<100 ||
         s.canopyHeightCm>10000 || s.crownDetail<1 || s.crownDetail>3 ||
@@ -264,13 +270,24 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
     out.cameraXcm=cameraXcm;out.cameraZcm=cameraZcm;
     out.terrainResolution=s.terrainResolution;
     out.terrainBeginCm=s.terrainBeginCm;
-    const int64_t farCell=s.distantTileCm;
-    const int64_t farHalf=int64_t(s.distantTilesPerSide)/2;
-    const int64_t cx=detail::floorDiv(cameraXcm,farCell);
-    const int64_t cz=detail::floorDiv(cameraZcm,farCell);
-    out.originXcm=(cx-farHalf)*farCell;
-    out.originZcm=(cz-farHalf)*farCell;
-    out.sideCm=static_cast<int32_t>(farCell*s.distantTilesPerSide);
+    // A fixed *global* terrain lattice prevents high-quality (e.g. 64x64)
+    // grids from changing their sample phase when the camera crosses a
+    // 512m forest-region key. We use rational lattice spacing, so custom
+    // resolutions that do not divide regionSide evenly also stay aligned.
+    // floorDiv is signed and handles negative world coordinates correctly.
+    const int64_t regionSide=int64_t(s.distantTileCm)*s.distantTilesPerSide;
+    const int64_t nGrid=s.terrainResolution;
+    const int64_t gridStartX=
+        detail::floorDiv(cameraXcm*nGrid,regionSide)-nGrid/2;
+    const int64_t gridStartZ=
+        detail::floorDiv(cameraZcm*nGrid,regionSide)-nGrid/2;
+    const auto gridWorld=[regionSide,nGrid](int64_t gridIndex) {
+        return detail::floorDiv(gridIndex*regionSide,nGrid);
+    };
+    out.originXcm=gridWorld(gridStartX);
+    out.originZcm=gridWorld(gridStartZ);
+    out.sideCm=static_cast<int32_t>(regionSide);
+    out.terrainSkirtDepthCm=s.terrainSkirtDepthCm;
     if (out.originXcm < -kWorldLimitCm+100 ||
         out.originZcm < -kWorldLimitCm+100 ||
         out.originXcm+out.sideCm>kWorldLimitCm-100 ||
@@ -292,6 +309,7 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         previous->atlasRgba.size()==size_t(atlasSide)*atlasSide*4 &&
         previous->terrainResolution==s.terrainResolution &&
         previous->terrainBeginCm==s.terrainBeginCm &&
+        previous->terrainSkirtDepthCm==s.terrainSkirtDepthCm &&
         (!s.distantTerrain || previous->terrainVertices.size()==
           size_t(s.terrainResolution+1)*(s.terrainResolution+1));
     for (const RectCm& r : edited) {
@@ -544,14 +562,37 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
         else out.terrainVertices.resize(size_t(n+1)*(n+1));
         for(uint32_t z=0;z<=n;++z)
             for(uint32_t x=0;x<=n;++x) {
-                const int64_t wx=out.originXcm+int64_t(x)*out.sideCm/n;
-                const int64_t wz=out.originZcm+int64_t(z)*out.sideCm/n;
-                if(compatible && !dirtyAt(wx,wz,0))continue;
+                const int64_t gx=gridStartX+x, gz=gridStartZ+z;
+                const int64_t wx=gridWorld(gx), wz=gridWorld(gz);
+                // Every normal needs the height of one neighbor on either
+                // side, including OUTSIDE the current Horizon region.
+                const int64_t xL=std::clamp(gridWorld(gx-1),
+                    -kWorldLimitCm,kWorldLimitCm);
+                const int64_t xR=std::clamp(gridWorld(gx+1),
+                    -kWorldLimitCm,kWorldLimitCm);
+                const int64_t zL=std::clamp(gridWorld(gz-1),
+                    -kWorldLimitCm,kWorldLimitCm);
+                const int64_t zR=std::clamp(gridWorld(gz+1),
+                    -kWorldLimitCm,kWorldLimitCm);
+                const int64_t pad=regionSide/n+1;
+                if(compatible && !dirtyAt(wx,wz,pad))continue;
                 const int32_t h=heightSample(wx,wz);
                 const auto biome=biomeSample(wx,wz);
                 const uint32_t color=horizon_detail::biomeColor(
-                    biome,h,detail::hash2(wx/51200,wz/51200,terrain.seed));
-                out.terrainVertices[size_t(z)*(n+1)+x]={wx,wz,h,color};
+                    biome,h,detail::hash2(
+                        detail::floorDiv(wx,51200),
+                        detail::floorDiv(wz,51200),terrain.seed));
+                const auto slope=[&](int32_t l,int32_t r,int64_t distance) {
+                    if(distance<=0)return int32_t(0);
+                    return static_cast<int32_t>(std::clamp<int64_t>(
+                        (int64_t(l)-r)*1000/distance,-1000000,1000000));
+                };
+                const int32_t sx=slope(heightSample(xL,wz),
+                                        heightSample(xR,wz),xR-xL);
+                const int32_t sz=slope(heightSample(wx,zL),
+                                        heightSample(wx,zR),zR-zL);
+                out.terrainVertices[size_t(z)*(n+1)+x]={
+                    wx,wz,h,color,sx,sz};
             }
     }
     return out;
