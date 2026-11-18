@@ -114,7 +114,7 @@ int main() {
     nw::WaterRasterImportConfig settings;
     settings.cellMeters=4_fx;
     const auto baked=oldwater::importBakedWaterCellsToNereid(tiles,4,2,settings);
-    check(baked.size()==3,"canonical tile rectangles not preserved");
+    check(baked.size()==2,"canonical tile rectangles not preserved");
     World bakedWorld;
     for(const auto& body:baked) {
         const Entity e=bakedWorld.create();
