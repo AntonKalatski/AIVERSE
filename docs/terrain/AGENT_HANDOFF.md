@@ -2010,3 +2010,17 @@ This is NOT implemented; do not claim it is.
 - **Actual verification:** code commit and static review only.
   Separate testing agent must cover atlas-only scenes, mixed
   terrain/atlas patch, and no-change frames. No tests performed.
+
+## Stage 13a — bounded Horizon GPU cache configuration (COMMITTED; NOT TESTED)
+
+**Branch:** `feature/terraweave`, PR #24 Draft. Work is functions-first; the separate agent owns all builds/CTest/GPU benchmarking.
+
+**Commits and files:**
+- `1bc171e4b9790e553c01daa23bd2065315f7f1b2`: `engine/world/TerraWeaveHorizon.h` adds `maxCachedGpuRegions` (default 1, 0–3) and `gpuCacheBudgetMiB` (default 32, 8–96), including quality preset overrides. Minimal/Mobile disable additional GPU retention. High requests two cached regions but remains subject to a hard GPU-byte allowance.
+- `9516e84ce5aa0c12de2066bd6c6746e8d1bca68b`: `engine/world/TerraWeaveHorizonManifest.h` accepts the same per-project JSON overrides.
+
+**Budget contract:** the allowance applies only to **inactive cached GPU models** and not the single active GPU model or the already-bounded asynchronous upload/staging pipeline. Models are not copied; the cache will own their GPU resources by transferring the existing `std::unique_ptr<render::Model>`. These settings do not alter the deterministic bake fingerprint or physics/ECS behavior.
+
+**Verification:** GitHub source commits only; tests NOT RUN by explicit division of work.
+
+**Next:** implement the actual GPU-region LRU on the render owner thread, keep worker staging drained for cache hits, reject stale source revisions, release via `render::releaseModel(device,...)` on eviction/shutdown. Then append the next handoff stage.
