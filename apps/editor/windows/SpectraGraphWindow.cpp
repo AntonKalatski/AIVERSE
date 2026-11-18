@@ -261,6 +261,20 @@ private:
         ImGui::BeginDisabled(!valid_);
         if(ImGui::Button("Предпросмотр")) {
             Json p=Json::object();p.set("graph",doc_);p.set("name",Json::string(name_));
+            if(doc_.getInt("version")==2 && previewInstanceValues_.isObject()) {
+                spectra::InstanceParameterTable schema;
+                std::vector<std::string> diagnostics;
+                if(spectra::loadInstanceParameterTable(doc_["instanceParameters"],schema,diagnostics)) {
+                    Json values=Json::object();
+                    for(const auto& [name,definition]:schema) {
+                        const Json& candidate=previewInstanceValues_[name];
+                        if(candidate.isNumber() && spectra::checkInstanceParameterValue(
+                               definition,float(candidate.toDouble())))
+                            values.set(name,candidate);
+                    }
+                    p.set("instanceValues",std::move(values));
+                }
+            }
             auto r=ed.ws().call("fx_graph_preview",p);
             if(checkResult(r)){message_="Предпросмотр в окне Сцена.";ed.focusWindow("scene");}
         }
@@ -781,6 +795,59 @@ private:
             ImGui::EndPopup();
         }
         if(doc_.getInt("version")==2) {
+            ImGui::SeparatorText("Параметры экземпляра (runtime)");
+            if(ImGui::Button("Редактировать instanceParameters")) {
+                instanceSchemaText_=(doc_["instanceParameters"].isObject()?
+                    doc_["instanceParameters"]:Json::object()).dump(2);
+                ImGui::OpenPopup("##spectra_instance_schema");
+            }
+            if(ImGui::BeginPopupModal("##spectra_instance_schema",nullptr,
+                                     ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextWrapped("Имя -> {slot:0..7, default, min, max}. Значения меняются без перекомпиляции.");
+                ui::inputMultiline("##spectra_instance_json",instanceSchemaText_,ImVec2(520,250));
+                if(ImGui::Button("Применить instanceParameters")) {
+                    try {
+                        const Json schema=Json::parse(instanceSchemaText_);
+                        spectra::InstanceParameterTable parsed;
+                        std::vector<std::string> diagnostics;
+                        if(!spectra::loadInstanceParameterTable(schema,parsed,diagnostics))
+                            throw std::runtime_error(diagnostics.empty()?
+                                "Invalid instance parameter schema":diagnostics.front());
+                        remember();
+                        doc_.set("instanceParameters",schema);
+                        previewInstanceValues_=Json::object();
+                        refreshDiagnostics();
+                        message_="Схема параметров экземпляра обновлена.";
+                        ImGui::CloseCurrentPopup();
+                    } catch(const std::exception& e) {message_=e.what();}
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Отмена##instance"))ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+            spectra::InstanceParameterTable schema;
+            std::vector<std::string> diagnostics;
+            if(spectra::loadInstanceParameterTable(
+                   doc_["instanceParameters"],schema,diagnostics)) {
+                if(!schema.empty())ImGui::TextDisabled("Предпросмотр — значения данного экземпляра:");
+                for(const auto& [name,definition]:schema) {
+                    ImGui::PushID(name.c_str());
+                    const Json& stored=previewInstanceValues_[name];
+                    float value=stored.isNumber()?
+                        float(stored.toDouble()):definition.initial;
+                    if(ImGui::DragFloat(name.c_str(),&value,0.05f,
+                                        definition.minimum,definition.maximum,
+                                        "%.3f",ImGuiSliderFlags_AlwaysClamp)) {
+                        value=std::clamp(value,definition.minimum,definition.maximum);
+                        previewInstanceValues_.set(name,Json::number(double(value),4));
+                    }
+                    ImGui::PopID();
+                }
+                if(!schema.empty())ImGui::TextDisabled("Нажмите Предпросмотр, чтобы применить значения.");
+            } else if(!diagnostics.empty())
+                ImGui::TextWrapped("Ошибка instanceParameters: %s",diagnostics.front().c_str());
+        }
+        if(doc_.getInt("version")==2) {
             ImGui::SeparatorText("Переиспользуемые функции");
             if(ImGui::Button("Редактировать функции")) {
                 functionText_=(doc_["functions"].isObject()?
@@ -837,7 +904,8 @@ private:
                            "Metal GPU доступен только для совместимого billboard-подмножества.");
     }
 
-    std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,functionText_,functionLibraryName_="common_math",pendingFrom_,pendingDataFrom_,linkPort_;
+    std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,functionText_,instanceSchemaText_,functionLibraryName_="common_math",pendingFrom_,pendingDataFrom_,linkPort_;
+    Json previewInstanceValues_=Json::object();
     std::vector<std::string> names_,draftNames_,errors_;
     Json doc_=defaultGraph();
     std::vector<Json> undo_,redo_;
