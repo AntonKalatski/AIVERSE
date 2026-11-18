@@ -94,24 +94,54 @@ GraphGpuEligibility inspectGraphGpuEligibility(
 bool GraphRuntime::initGraph(gfx::Device* dev,const Json& graph,
                              const Json& overrides,const GraphRuntimeOptions& options) {
     shutdown();
+    InstanceParameterTable schema;
+    if(graph.getInt("version")==2 &&
+       !loadInstanceParameterTable(graph["instanceParameters"],schema,errors_)) {
+        reason_=errors_.empty()?"invalid instance parameters":errors_.front();
+        return false;
+    }
     fx::EffectDef compiled;
     if(!fx::compileSpectraGraph(graph,overrides,compiled,errors_)) {
         reason_="SpectraFX graph compilation failed";
         return false;
     }
-    return initEffect(dev,compiled,options);
+    if(!schema.empty() && options.preference==ComputePreference::RequireGpu) {
+        reason_="runtime instance parameter VM is CPU-only; RequireGpu rejected";
+        return false;
+    }
+    GraphRuntimeOptions actual=options;
+    if(!schema.empty())actual.preference=ComputePreference::CpuOnly;
+    if(!initEffect(dev,compiled,actual))return false;
+    namedParams_=std::move(schema);
+    for(const auto& [name,definition]:namedParams_) {
+        (void)name;
+        if(!setProgramParameter(definition.slot,definition.initial,false))return false;
+    }
+    return true;
 }
 
 bool GraphRuntime::initGraph(BatchWorld& shared, const Json& graph,
                             const Json& overrides,
                             const GraphRuntimeOptions& options) {
     shutdown();
+    InstanceParameterTable schema;
+    if(graph.getInt("version")==2 &&
+       !loadInstanceParameterTable(graph["instanceParameters"],schema,errors_)) {
+        reason_=errors_.empty()?"invalid instance parameters":errors_.front();
+        return false;
+    }
     fx::EffectDef compiled;
     if (!fx::compileSpectraGraph(graph, overrides, compiled, errors_)) {
         reason_ = errors_.empty() ? "SpectraFX graph compile failed" : errors_.front();
         return false;
     }
-    return initEffect(shared, compiled, options);
+    if(!initEffect(shared,compiled,options))return false;
+    namedParams_=std::move(schema);
+    for(const auto& [name,definition]:namedParams_) {
+        (void)name;
+        if(!setProgramParameter(definition.slot,definition.initial,false))return false;
+    }
+    return true;
 }
 
 bool GraphRuntime::initEffect(BatchWorld& shared, const fx::EffectDef& effect,
@@ -200,6 +230,7 @@ void GraphRuntime::shutdown() {
     cpuHandles_.clear();
     paramValues_={};
     paramSet_={};
+    namedParams_.clear();
     sharedWorld_ = nullptr;
     gpu_.shutdown();
     cpu_.shutdown();
@@ -230,6 +261,19 @@ bool GraphRuntime::setProgramParameter(uint32_t slot,float value,
     }
     reason_.clear();
     return true;
+}
+bool GraphRuntime::setNamedProgramParameter(const std::string& name,float value,
+                                            bool affectExisting) {
+    const auto it=namedParams_.find(name);
+    if(it==namedParams_.end()) {
+        reason_="unknown SpectraFX instance parameter '"+name+"'";
+        return false;
+    }
+    if(!checkInstanceParameterValue(it->second,value)) {
+        reason_="out-of-range SpectraFX instance parameter '"+name+"'";
+        return false;
+    }
+    return setProgramParameter(it->second.slot,value,affectExisting);
 }
 bool GraphRuntime::burstAt(fx::float3 position,fx::float3 dir,fx::float4 tint) {
     if(!initialized_)return false;
