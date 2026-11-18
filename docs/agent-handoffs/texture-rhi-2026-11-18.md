@@ -683,3 +683,53 @@ Then add a device-driven MSAA rendering/resolve test, verify
 samples 2/4/8 on supported GPU and document fallback.
 Do not silently enable sample count on GL/Vulkan before their
 pipeline/renderpass implementation is ready.
+
+## Stage 4G — Metal multisampled resources and color resolves (2026-11-18)
+
+**Code commit:** `b063ab889a91ccc99f1e35e6718f1800b8fc04ee`.
+**Paths:** `engine/gfx/metal/GfxMetal.mm`,
+`engine/gfx/gl/GfxGL.cpp`, `engine/gfx/vulkan/VkDraw.cpp`.
+
+**Implemented in source:** Metal checks
+`[device supportsTextureSampleCount:]` before allocation,
+creates 2D multisample resources with `MTLTextureType2DMultisample`,
+explicit `sampleCount`, private storage and render-target usage.
+Metal pipeline descriptors set `rasterSampleCount` from the newly
+appended `PipelineDesc.sampleCount`.
+`beginRenderTargets` now checks matching color/depth MSAA sample
+counts; with a valid single-sample destination matching format
+and extent it writes a native `resolveTexture/resolveLevel/
+resolveSlice` attachment and selects
+`MTLStoreActionMultisampleResolve`.
+The active pass enforces `PipelineDesc.sampleCount` when binding.
+Metal `TextureView` explicitly rejects multisampled sources until
+a compatible MS texture view contract exists.
+GL and Vulkan `createPipeline` now explicitly reject
+`sampleCount != 1` instead of silently using a 1x pipeline.
+
+**Compatibility:** All legacy pipelines still default to sample
+count 1, old 2D offscreen passes are unchanged. Only opt-in
+MSAA render target and resolve paths use the new descriptors.
+No save/network/ECS changes.
+
+**Limits / risks:** No GL/Vulkan MSAA allocation or resolve yet.
+Metal depth resolve is not portable and deliberately unsupported.
+MRT is still limited to one color attachment.
+The Metal sample-count pipeline and resolve path **MUST**
+be tested on actual macOS/iOS devices with Metal API Validation;
+no compile or GPU test was run in this session.
+Verify SDK availability of `rasterSampleCount`,
+`supportsTextureSampleCount:`, `MTLTextureType2DMultisample`,
+and `resolveLevel/resolveSlice` across deployment targets.
+Check command-buffer lifetime and exact clear/resolve semantics.
+
+**Verification:** GitHub source commit complete.
+Native compilation, Metal validation, 2x/4x/8x MSAA
+render-to-resolve tests: **NOT RUN**. CI still not confirmed green.
+
+**Next:** Add a device-level Metal test with 4x MSAA render target,
+pipeline `sampleCount=4`, an RGBA8 single-sample resolve target,
+and post-pass sampling. Then implement Vulkan MSAA images,
+compatible renderpass/pipeline and explicit resolve attachments
+as separate stages; GL GLES3/GL33 needs corresponding
+multisample textures and resolve blits. Document each separately.
