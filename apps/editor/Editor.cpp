@@ -101,7 +101,7 @@ void Editor::init(gfx::Device& dev) {
     resetLayout_ = !fs::exists(iniPath, fec);
     r3d_.init(dev);
     postFx_.init(dev);
-    postFx_.setQuality(render::PostFx::defaultQualityFor(dev, false));
+    postFx_.setQuality(render::Prisma::defaultQualityFor(dev, false));
     r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, false));
     r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, false));
     for (auto& f : WindowRegistry::factories()) {
