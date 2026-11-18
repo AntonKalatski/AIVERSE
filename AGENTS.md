@@ -1230,3 +1230,11 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+
+
+## PRISMA post-processing rules
+
+- PRISMA is a **genre-independent** image-processing system. Do not couple it to FPS, RTS or gameplay packages. Primary C++ type: `aiverse::render::Prisma` in `engine/render/Prisma.h`. The `PostFx` type alias, `postfx` JSON key and `postfx_*` MCP operations remain backward-compatible.
+- Keep renderer/RHI commands separate from GPU-free policies (settings, volumes, blending). Allow native projects to call the public C++ API; ECS integration must remain an optional adapter rather than a genre dependency.
+- After EVERY development stage commit `docs/handoffs/prisma-stage-XX.md`: changes and paths, architecture/API, actual tests and outcomes (say **not run** if so), limits, branch/commit and the next actionable step.
+- Roadmap: `docs/prisma.md`; compatibility format: `docs/postfx.md`.
