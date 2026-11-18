@@ -28,6 +28,7 @@ int main() {
     actions.defineAction({"Stick",in::ValueType::Axis1D});
     actions.defineAction({"PadJump",in::ValueType::Boolean});
     actions.defineAction({"Touch",in::ValueType::Boolean});
+    actions.defineAction({"SwipeX",in::ValueType::Axis1D});
     in::MappingContext controls{"Test"};
     controls.bind("Walk",{in::Device::Keyboard,int(p::Key::W)});
     controls.bind("Click",{in::Device::MouseButton,0});
@@ -36,6 +37,7 @@ int main() {
     controls.bind("Stick",{in::Device::GamepadAxis,int(p::PadAxis::LX)});
     controls.bind("PadJump",{in::Device::GamepadButton,int(p::PadButton::A)});
     controls.bind("Touch",{in::Device::Touch,0});
+    controls.bind("SwipeX",{in::Device::Touch,1});
     CHECK(actions.registerContext(controls));
     CHECK(actions.activateContext("Test"));
     p::EnhancedInputAdapter adapter(actions);
@@ -56,7 +58,18 @@ int main() {
     CHECK(actions.state("Wheel")->value.x==-2);
     e={};e.type=p::EventType::TouchBegin;e.touchId=42;adapter.onEvent(e);
     CHECK(has(actions.update(0.016f),"Touch",in::Phase::Triggered));
+    // A touch delta is independent of the held finger and resets after a frame.
+    e.type=p::EventType::TouchMove;e.x=9;e.y=3;adapter.onEvent(e);
+    e.x=14;e.y=3;adapter.onEvent(e);
+    CHECK(has(actions.update(0.016f),"SwipeX",in::Phase::Triggered));
+    CHECK(actions.state("SwipeX")->value.x==14);
+    CHECK(has(actions.update(0.016f),"SwipeX",in::Phase::Completed));
     e.type=p::EventType::TouchEnd;adapter.onEvent(e);
+    CHECK(has(actions.update(0.016f),"Touch",in::Phase::Completed));
+    // Reuse a freed touch slot; duplicate begin must not create another slot.
+    e={};e.type=p::EventType::TouchBegin;e.touchId=80;adapter.onEvent(e);adapter.onEvent(e);
+    CHECK(has(actions.update(0.016f),"Touch",in::Phase::Started));
+    e.type=p::EventType::TouchCancel;adapter.onEvent(e);
     CHECK(has(actions.update(0.016f),"Touch",in::Phase::Completed));
 
     p::detail::setGamepadBackend(&fakeGamepads);
