@@ -1168,3 +1168,11 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Implementation SHA: `d2907c04f157f98bba70c4ee251cfe4f245da673`.
 - `tests/run_ecs_experiment_suite.sh` now invokes `compile_run ecs-hitscan-selection` with public include path and the same Fixed/SpatialWorld source dependencies as other standalone projectile tests. No dependency on `modules/fps` or `modules/rts`.
 - Verification: source commit only; shell script not executed in native repo.
+
+
+### 2026-11-18 — Universal ECS ordered-impact queue system (new, opt-in)
+- **Code SHA:** `bf80c4f272564a78c33af8fcfe6fde801a18c4ef`.
+- Added `libraries/include/aiverselib/genre/EcsImpactQueueSystems.h`. New `OrderedImpactQueue` World resource (bounded pending list, monotonic sequence), `enqueueOrderedImpact` and `addOrderedImpactResolutionSystem` bridge the existing generic `resolveOrderedProjectileImpact` policy to a registered ECS Simulation stage. The queue is drained with a swap: requests submitted from damage callbacks execute at the **next barrier**, not recursively.
+- All gameplay rules (friendly fire, armor, shields, statuses, target liveness, spatial radius and splash) remain host-injected callbacks, with no FPS/RTS dependency and no second authoritative HP/projectile state. It respects caller-controlled order, not a false global same-tick sort. **Compatibility warning:** the existing RTS immediate per-projectile damage path must not be wholesale replaced with a single end-of-tick barrier without proving identical effects ordering.
+- **Verification:** GitHub file creation only, native C++ compile and tests **not executed**. This is a new public source header, not yet a catalog package or built-in FPS/RTS integration.
+- **Next:** add shooter+strategy regression for callback/queue ordering and COW snapshots, publish the native catalog package and agent skill, register CTest and standalone runner. Verify native build before any legacy adoption.
