@@ -1886,3 +1886,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `3d1d28401dd963be062197629e153b951149e07d`.
 - Added the original `Module::syncDynamicEntities(Simulation&) const` native method body as an overload wrapper in `modules/fps/FpsModule.cpp`, forwarding to the extended `syncDynamicEntities(sim,false)`. Legacy v9 save/load, setup, Editor/native project invocations keep the old source and C++ symbol, while the actual `fps.ecsMirror` uses `syncDynamicEntities(s,true)` under `fps.ecsAuthority` to enforce one-way Runtime→State projectile projection.
 - **Verification:** GitHub source committed; binary ABI/native compilation and gameplay fixtures remain unexecuted. Next: static wiring audit, documentation/epic update, native FPS and ECS tests.
+
+
+### 2026-11-18 — Whole-engine migration plan records one-way projectile ECS mirror
+- **Documentation SHA:** `96e09a7f304c56b6bbdbca2b6f83dec4e29618f4`.
+- Updated `docs/ecs-all-features-migration-plan.md` with the concrete single-writer projectile cutover: live FPS mirror reads `ProjectileRuntime` and derives State/editor projection; default mode plus original public one-argument API preserve State→ECS legacy save v9 import; all known built-in projectile mutation sources use ECS on the authority gate. Lists still-legacy Actor/loot/vehicle ownership and comprehensive native regression gates.
+- **Verification:** documentation committed. Static wiring audit 17/17 passed earlier, **not native gameplay pass**.
