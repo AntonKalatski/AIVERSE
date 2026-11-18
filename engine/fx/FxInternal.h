@@ -165,6 +165,10 @@ struct ParticleSystem::Impl {
         // optional modules (FxEffect.h); `modules` false keeps the original per-particle path
         bool modules = false;
         spectra::program::Program particleProgram;
+        // Four typed shader-graph vertex channels; defaults preserve
+        // legacy (age, lifetime, deterministic random, zero).
+        // Values: 0..3 builtins, 4..11 customAttributes, 12..19 instance params.
+        std::array<uint8_t,4> graphInputSources{0,1,2,3};
         ColorLut startLut, startMinLut, colorSpeed, trailColor, trailLife, colorMinLut;
         ScalarLut sizeSpeed, trailWidth, sizeMinLut, sizeYLut, sizeZLut, spinSpeed, lightRadius, lightIntensity, noiseRemap;
         FxTexture trailTex;
