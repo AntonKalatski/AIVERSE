@@ -2475,7 +2475,9 @@
       "cmakeTarget": "AIVERSE::lib_ecs_timed_mechanics",
       "dependencies": [
         "docs/ecs-all-features-migration-plan.md",
-        "tests/ecs_cross_genre_timed_mechanics_test.cpp"
+        "tests/ecs_cross_genre_timed_mechanics_test.cpp",
+        "libraries/include/aiverselib/genre/FixedRegeneration.h",
+        "tests/ecs_fixed_regeneration_policy_test.cpp"
       ],
       "runtime": "header",
       "linkDependencies": [],
