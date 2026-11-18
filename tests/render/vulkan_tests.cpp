@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <memory>
 #include <vector>
 
 using namespace aiverse::gfx;
@@ -184,25 +185,29 @@ void main() {
             const ComputeHandle program=d.createCompute(desc);
             CHECK(program.valid());
             if (program.valid() && output.valid()) {
-                bool callback=false;
-                TextureReadbackResult pixels;
+                struct ReadbackState {
+                    bool done=false;
+                    TextureReadbackResult result;
+                };
+                auto readState=std::make_shared<ReadbackState>();
                 d.beginFrame(W,H);
                 CHECK(d.beginCompute(program));
                 CHECK(d.bindComputeStorageTexture(0,output));
                 d.dispatch(4,4);
                 d.endCompute();
                 const bool queued=d.readTextureAsync(
-                    output,{},[&](TextureReadbackResult result) {
-                        callback=true;
-                        pixels=std::move(result);
+                    output,{},[readState](TextureReadbackResult result) {
+                        readState->done=true;
+                        readState->result=std::move(result);
                     });
                 CHECK(queued);
                 d.endFrame();
-                for(int wait=0;wait<12 && queued && !callback;++wait) {
+                for(int wait=0;wait<12 && queued && !readState->done;++wait) {
                     d.beginFrame(W,H);
                     d.endFrame();
                 }
-                CHECK(callback && pixels.success() &&
+                const auto& pixels=readState->result;
+                CHECK(readState->done && pixels.success() &&
                       pixels.width==4 && pixels.height==4 &&
                       pixels.format==PixelFormat::RGBA8 &&
                       pixels.pixels.size()==64);
