@@ -47,6 +47,16 @@ int main() {
     expect(std::abs(exposure(override.resolve(base,{0,0,0},2))-4.f)<0.001f,"map volume wins");
     expect(std::abs(exposure(override.resolve(base,{0,0,0},1)))<0.001f,"layer mask excludes camera");
 
+    // Full 32-bit mask must bypass Json::integer's fixed-point numeric path.
+    const Json allMask = Json::parse(R"({"volumes":[
+      {"id":"full","shape":"global","layerMask":4294967295,
+       "profile":{"effects":[{"type":"colorGrade","exposure":1}]}}]})");
+    issues.clear();
+    const auto parsedMask = parsePrismaVolumes(allMask,Json(),&issues);
+    expect(issues.empty() && parsedMask.volumes.size()==1 &&
+           parsedMask.volumes[0].layerMask==0xffffffffu,
+           "all camera bits survive serialization");
+
     const Json reset = Json::parse(R"({"replace":true,"volumes":[]})");
     expect(parsePrismaVolumes(game,reset).volumes.empty(),"map replace clears game volume list");
 
