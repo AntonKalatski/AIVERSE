@@ -211,6 +211,10 @@ inline bool addNode(Json& graph,const std::string& type,std::string& newId,
     if(!info || (info->v2Only && graph.getInt("version")!=2)) {
         error="node type requires graph v2";return false;
     }
+    if(!graph["nodes"].isArray()||!graph["links"].isArray()||
+       !graph["outputs"].isArray()) {
+        error="graph requires nodes, links and outputs arrays";return false;
+    }
     if(graph["nodes"].size()>=256){error="graph node budget 256 exceeded";return false;}
     int i=1;
     do {newId="node"+std::to_string(i++);}while(node(graph,newId) && i<=1000);
