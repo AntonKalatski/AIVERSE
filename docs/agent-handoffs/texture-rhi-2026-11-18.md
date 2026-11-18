@@ -1671,3 +1671,33 @@ CMake/CTest commands and write actual outcomes here.
 Fix any compiler/API/test failures before merging.
 Then implement remaining GL/Vulkan MSAA and typed/HDR
 formats, each with separate code/handoff commits.
+
+## Stage 5H — correct GLES3 float32 mip filter selection (2026-11-18)
+
+**Code commit:** `11aa645dded11c5912988f5af86803a09b3f718f`.
+**Branch:** `feature/texture-rhi-unification`, draft PR #21.
+**Changed:** `engine/gfx/gl/GfxGL.cpp`.
+
+**Bug fix:** In 2D texture allocation, explicit `mipLevels>1`
+previously selected `GL_LINEAR_MIPMAP_LINEAR` solely from the
+requested `Filter::Linear`, even when GLES3's float32-format
+policy had downgraded min/mag to nearest because linear float
+filtering is not portable. Minification now derives mip filter
+from the *effective* `f` (GL_NEAREST or GL_LINEAR), so
+R32F/RG32F/RGBA32F remain nearest sampled with authored mips.
+The dimensional texture allocation path already used this
+effective-filter policy.
+
+**Compatibility:** Only affects float32 formats with explicit
+mips and a linear requested filter; legacy RGBA8/R8 mip
+filtering remains the same. No public API, ECS, save,
+network or on-disk asset changes.
+
+**Verification:** GitHub code commit confirmed; native GL
+compiler/driver tests and CTest **NOT RUN**.
+No passing CI asserted.
+
+**Next:** Validate actual GL33/GLES3 sampler completeness
+for explicit float32 mip chains on Android, Windows and
+WebGL2, then continue other typed formats and production
+GPU validation.
