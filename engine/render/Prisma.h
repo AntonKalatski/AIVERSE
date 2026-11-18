@@ -15,6 +15,7 @@
 #include "PrismaData.h"
 #include "PostFxData.h" // legacy aliases used by existing clients and editor
 #include "PrismaVolumes.h"
+#include "PrismaRenderGraph.h" // GPU-free post-pass graph planner; executor follows later
 #include "Renderer3D.h"
 
 namespace aiverse::render {
