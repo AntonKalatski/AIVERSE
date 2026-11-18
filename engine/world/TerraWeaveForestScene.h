@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -38,6 +39,11 @@ struct ForestSceneStats {
 // run it on an owning thread, not concurrently with submit/releaseModels.
 class TerraWeaveForestScene {
 public:
+    // Optional host-provided *immutable* terrain snapshots. Decorative only.
+    // Keep callbacks alive and stable while streamAt() evaluates patches.
+    using HeightSource = std::function<int32_t(int64_t, int64_t)>;
+    using PlacementFilter = std::function<bool(const FoliageInstance&)>;
+
     explicit TerraWeaveForestScene(ForestSceneSettings settings = {})
         : settings_(std::move(settings)) {
         if (settings_.chunkSizeCm < 100 || settings_.chunkSizeCm > 100000 ||
@@ -85,6 +91,18 @@ public:
                 throw std::invalid_argument("TerraWeave forest exclusion");
         }
         exclusions_ = std::move(rectangles);
+        invalidate();
+    }
+
+    // Adapt procedural scatter to a real authored/physics terrain. Changing
+    // a provider invalidates cached chunks; provider functions are evaluated
+    // by streamAt(), not on GPU or from the authoritative ECS simulation.
+    void setHeightSource(HeightSource source) {
+        heightSource_ = std::move(source);
+        invalidate();
+    }
+    void setPlacementFilter(PlacementFilter filter) {
+        placementFilter_ = std::move(filter);
         invalidate();
     }
 
@@ -144,10 +162,24 @@ public:
             if (patches_.contains(key)) continue;
             const int64_t minX = key.first * side;
             const int64_t minZ = key.second * side;
-            patches_.emplace(key, scatter(
+            auto instances = scatter(
                 settings_.terrain, settings_.biomes, settings_.scatter,
                 {minX, minZ, minX + side, minZ + side},
-                species_, exclusions_));
+                species_, exclusions_);
+            if (heightSource_ || placementFilter_) {
+                size_t write = 0;
+                for (auto instance : instances) {
+                    if (heightSource_)
+                        instance.heightCm = heightSource_(instance.xCm, instance.zCm);
+                    if (int64_t(instance.heightCm) < -kWorldLimitCm ||
+                        int64_t(instance.heightCm) > kWorldLimitCm)
+                        throw std::out_of_range("TerraWeave forest sampled height extent");
+                    if (placementFilter_ && !placementFilter_(instance)) continue;
+                    instances[write++] = instance;
+                }
+                instances.resize(write);
+            }
+            patches_.emplace(key, std::move(instances));
         }
     }
 
@@ -215,6 +247,8 @@ private:
     ArborForestAdapter adapter_;
     std::vector<FoliageSpecies> species_;
     std::vector<RectCm> exclusions_;
+    HeightSource heightSource_;
+    PlacementFilter placementFilter_;
     std::map<std::pair<int64_t, int64_t>, std::vector<FoliageInstance>> patches_;
     ForestCameraCm observer_;
     uint64_t revision_ = 1;
