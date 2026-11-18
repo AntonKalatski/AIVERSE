@@ -10,6 +10,9 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <future>
+#include <chrono>
+#include <utility>
 #include <stdexcept>
 #include <vector>
 
@@ -72,6 +75,7 @@ struct NereidSceneStats {
     uint32_t uploadsAttempted=0;
     size_t estimatedBytesAdmitted=0; // legacy metric name: now exact VB+IB array bytes
     size_t preparedBytes=0, budgetDeferred=0;
+    size_t asyncPreparing=0, asyncDiscarded=0, stagingReservedBytes=0;
 };
 
 class NereidWaterScene final {
@@ -86,6 +90,16 @@ class NereidWaterScene final {
     };
 public:
     static constexpr size_t kMaxSurfaces=64;
+    // A single bounded worker avoids concurrent builds of large geometry.
+    // Explicit opt-in; synchronous behavior is the default.
+    void setAsyncPreparation(bool enabled) {asyncPrepare_=enabled;}
+    void setMaxWaterStagingBytes(size_t bytes) {
+        if(bytes<1024 || bytes>64u*1024u*1024u)
+            throw std::invalid_argument("nereid.scene: invalid CPU staging budget");
+        maxStagingBytes_=bytes;
+    }
+    bool asyncPreparation()const{return asyncPrepare_;}
+    size_t maxWaterStagingBytes()const{return maxStagingBytes_;}
     // No GPU operations inside snapshot submission. Removed resources wait
     // in retired_ until the next device-thread update/shutdown.
     void setSurfaces(std::vector<NereidSceneSurface> incoming) {
@@ -244,10 +258,50 @@ public:
         if(d>mid)return L::Medium;
         return L::Near;
     }
+    struct PendingCpuJob {
+        uint64_t id=0;
+        render::NereidSurfaceKey key{};
+        size_t reservation=0;
+        std::future<std::optional<render::NereidPreparedSurface>> future;
+    };
+    // Poll without waiting. A result is adopted only when identity + full
+    // presentation key still match; rollback/reorder/LOD changes discard it.
+    void pollPreparation() {
+        if(!pendingJob_)return;
+        if(pendingJob_->future.wait_for(std::chrono::seconds(0))!=
+           std::future_status::ready)return;
+        std::optional<render::NereidPreparedSurface> prepared;
+        try{prepared=pendingJob_->future.get();}
+        catch(...) {prepared.reset();}
+        if(prepared) {
+            bool accepted=false;
+            for(auto& slot:slots_)if(slot.source.id==pendingJob_->id) {
+                if(slot.revision==prepared->key.sourceRevision &&
+                   render::sameNereidSurfaceKey(prepared->key,pendingJob_->key)) {
+                    slot.prepared=std::move(prepared);
+                    accepted=true;
+                }
+                break;
+            }
+            if(!accepted)++asyncDiscarded_;
+        }else ++asyncDiscarded_;
+        pendingJob_.reset();
+    }
+    static size_t maxCpuReservation(const NereidSceneSurface& source) {
+        // Safe cap under NereidWaterSurfaceMesh maxVertices and its
+        // subdivided triangle topology, including retained CPU geometry.
+        const size_t n=source.mesh.maxVertices;
+        return n*(sizeof(lib::nereid::WaterSurfaceVertex)+
+                  6*sizeof(uint32_t));
+    }
     void update(gfx::Device& device,const Vec3* observer=nullptr) {
         for(auto& old:retired_)old->release(device);
         retired_.clear();
+        pollPreparation();
         stats_={};
+        stats_.asyncDiscarded=asyncDiscarded_;
+        stats_.asyncPreparing=pendingJob_?1:0;
+        stats_.stagingReservedBytes=pendingJob_?pendingJob_->reservation:0;
         if(slots_.empty()){nextUpload_=0;return;}
         for(auto& slot:slots_) {
             slot.visible=visibleFrom(slot.source,observer,visibilityRange_);
@@ -285,6 +339,34 @@ public:
                 slot.prepared.reset();
             if(stats_.uploadsAttempted>=maxUploadsPerFrame_)continue;
             if(!slot.prepared) {
+#ifndef __EMSCRIPTEN__
+                if(asyncPrepare_) {
+                    if(pendingJob_)continue;
+                    const size_t reservation=maxCpuReservation(slot.source);
+                    if(reservation>maxStagingBytes_) {
+                        ++stats_.budgetDeferred;continue;
+                    }
+                    // Capture immutable copies; worker must never touch
+                    // live ECS/WorldScene/GPU pointers.
+                    const auto bodyCopy=slot.source.body;
+                    const auto geometryCopy=slot.source.geometry;
+                    const bool useGeometry=slot.source.useGeometry;
+                    const auto styleCopy=slot.source.style;
+                    const auto revision=slot.revision;
+                    auto future=std::async(std::launch::async,
+                        [bodyCopy,geometryCopy,useGeometry,revision,opts,styleCopy] {
+                            return render::NereidSurfaceResident::prepare(
+                                bodyCopy,useGeometry?&geometryCopy:nullptr,
+                                revision,opts,styleCopy);
+                        });
+                    pendingJob_.emplace(PendingCpuJob{
+                        slot.source.id,expected,reservation,std::move(future)});
+                    stats_.asyncPreparing=1;
+                    stats_.stagingReservedBytes=reservation;
+                    nextUpload_=(i+1)%slots_.size();
+                    continue;
+                }
+#endif
                 slot.prepared=render::NereidSurfaceResident::prepare(
                     slot.source.body,geometry,slot.revision,opts,slot.source.style);
                 if(!slot.prepared) {
@@ -319,6 +401,12 @@ public:
             if(slot.visible)slot.gpu->draw(renderer,transform);
     }
     void shutdown(gfx::Device& device) {
+        // Shutdown is an explicit synchronization barrier; never abandon a
+        // worker that owns copied inputs before device/scene destruction.
+        if(pendingJob_) {
+            pendingJob_->future.wait();
+            pendingJob_.reset();
+        }
         for(auto& slot:slots_)slot.gpu->release(device);
         for(auto& slot:retired_)slot->release(device);
         retired_.clear();
@@ -340,5 +428,9 @@ private:
     float visibilityRange_=0;
     size_t nextUpload_=0;
     NereidSceneStats stats_{};
+    bool asyncPrepare_=false;
+    size_t maxStagingBytes_=16u*1024u*1024u;
+    std::optional<PendingCpuJob> pendingJob_;
+    size_t asyncDiscarded_=0;
 };
 } // namespace aiverse::world
