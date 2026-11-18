@@ -10,7 +10,7 @@ using namespace aiverse::editor;
 
 int main() {
     Workspace ws;
-    ws.project.dir = "."; // operations require an open game but perform no I/O
+    ws.project.dir = "."; // operations require an open game; source=editor avoids log I/O
     ws.map.reset(16, 12);
 
     Json config = Json::object();
@@ -21,7 +21,7 @@ int main() {
     config.set("octaves", Json::number(int64_t(4)));
     const auto beforeRevision = ws.map.revision;
 
-    const Json preview = ws.call("terraweave_preview", config, "test");
+    const Json preview = ws.call("terraweave_preview", config, "editor");
     assert(preview.getBool("ok", false));
     assert(!preview.has("error"));
     assert(preview["samplesCm"].size() == 9);
@@ -29,7 +29,7 @@ int main() {
     assert(ws.map.data.corners.empty());
     assert(!ws.map.data.extra.has("terraweave"));
 
-    const Json generated = ws.call("terraweave_generate", config, "test");
+    const Json generated = ws.call("terraweave_generate", config, "editor");
     assert(generated.getBool("ok", false));
     assert(!generated.has("error"));
     const std::vector<int16_t> heights = ws.map.data.corners;
@@ -37,7 +37,7 @@ int main() {
     assert(ws.map.data.extra["terraweave"].getInt("version", 0) == 1);
 
     const auto afterFirst = ws.map.revision;
-    const Json blocked = ws.call("terraweave_generate", config, "test");
+    const Json blocked = ws.call("terraweave_generate", config, "editor");
     assert(blocked.has("error"));
     assert(ws.map.revision == afterFirst);
     assert(ws.map.data.corners == heights);
@@ -60,11 +60,11 @@ int main() {
     const auto authoredDetail = ws.map.data.detail;
     const auto authoredSplat = ws.map.data.detailSplat;
     const auto detailRevision = ws.map.revision;
-    assert(ws.call("terraweave_generate", config, "test").has("error"));
+    assert(ws.call("terraweave_generate", config, "editor").has("error"));
     assert(ws.map.revision == detailRevision);
 
     config.set("overwrite", Json::fromBool(true));
-    const Json replaced = ws.call("terraweave_generate", config, "test");
+    const Json replaced = ws.call("terraweave_generate", config, "editor");
     assert(replaced.getBool("ok", false) && !replaced.has("error"));
     assert(ws.map.data.detail.empty());
     assert(ws.map.data.detailSplat.empty());
