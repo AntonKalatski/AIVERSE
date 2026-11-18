@@ -815,3 +815,24 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 - When targeted jobs report successful CTest, run/inspect full studio/editor + FPS/RTS native CI and test per-player rebinding/profile persistence, context switching, modal capture and gamepad/touch paths.
 - Merge the most recent inspector branch into InputFlow only after comparing `CMakeLists.txt`, `AGENTS.md` and other overlapping files; preserve both histories.
 - Update PR #20 as Draft with actual verification evidence; only mark ready after all required checks are successful. Do not use queue/pending as proof of passing.
+
+
+## Stage 57 — macOS Clang preset-loop compile fix (2026-11-18)
+
+**Status:** Fix committed on `feature/aiv990_enhanced_input`, **local rebuild/CTest NOT YET RUN**. User reported a real macOS C++20 Clang compile failure in `aiverse_enhanced_input_config_tests`: `tests/libraries/enhanced_input_config_tests.cpp:115:20: error: loop variable 'preset' creates a copy from type 'aiverse::platform::enhanced_config::Asset const' [-Werror,-Wrange-loop-construct]`.
+
+**Correction:** `tests/libraries/enhanced_input_config_tests.cpp` line 115 changed `for(const auto preset:{fpsReference(),rtsReference()})` to `for(const auto& preset:{fpsReference(),rtsReference()})`. This references the const temporary Asset within the initializer-list lifetime instead of copying each substantial Asset. No test assertions, preset contents or runtime input semantics changed. Commit `5ae42b96526b637d86cf1029451d3a9f553003dd`.
+
+**Source-level audit:** inspected the four focused `enhanced_*_tests.cpp` files for similar `for(const auto variable : ...)` copies and found no additional matches. No compiler re-run was performed by this agent. The earlier Stage 56 full-CI Release fixes remain separate.
+
+**User verification command (macOS):**
+```bash
+git fetch origin && git switch feature/aiv990_enhanced_input &&
+git pull --ff-only origin feature/aiv990_enhanced_input
+cmake --build build/enhanced-input --parallel 4 --target \
+  aiverse_enhanced_input_tests aiverse_enhanced_input_adapter_tests \
+  aiverse_enhanced_input_config_tests aiverse_enhanced_rts_input_tests
+ctest --test-dir build/enhanced-input --output-on-failure -R '^library_enhanced_(input|rts_input)'
+```
+
+**Next agent:** collect the user's full new compiler/CTest output and exact HEAD, fix the next concrete failure while preserving API/serialization. Record actual PASS/FAIL. Keep PR #20 Draft pending full platform and editor/FPS/RTS checks.
