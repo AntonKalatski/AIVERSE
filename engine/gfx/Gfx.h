@@ -141,7 +141,7 @@ enum class TextureDescError : uint8_t {
     None, InvalidExtent, InvalidLayers, InvalidMipCount, InvalidSampleCount,
     InvalidDimension, InvalidUsage
 };
-constexpr int maxTextureMipLevels(int w, int h, int d) {
+constexpr int maxTextureMipLevels(int w, int h, int d = 1) {
     int n = 0;
     for (int s = w > h ? (w > d ? w : d) : (h > d ? h : d); s > 0; s >>= 1) ++n;
     return n;
