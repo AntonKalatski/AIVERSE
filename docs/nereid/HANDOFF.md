@@ -1867,3 +1867,117 @@ After baseline validation, consider smooth surface-crossing ripple,
 per-pixel view depth integration and configurable mobile quality
 profiles using the Prisma-owned composite path, not a new
 full-screen water renderer.
+
+## Stage 19 — underwater screen distortion, boundary impulse and scattering
+
+**Branch:** `feature/nereid-water-core`, NEREID draft PR #23.
+**Starting head:** `94d8add0f3f5c0da968dcb7209e3d9c91c41d602`.
+**No `main` or unrelated feature-branch merges in this stage.**
+
+### Implementation commits
+
+- `36bee2ae0b743927ce87cb8c6a1feb662703273a`:
+  `engine/render/PostFx.h`; `PostFxUnderwater` and
+  `PostFxUnderwaterState` gain `distortion`, `scattering` and
+  a decaying `crossing` impulse. The existing pure
+  `advancePostFxUnderwater` performs frame-time smoothing and triggers
+  a crossing pulse only when the submerged flag changes.
+- `7df33c83d3ec9117380e05aa145b8a914caafeda`:
+  `engine/render/PostFx.cpp`; packs the two optical strengths into
+  unused `underwater1.zw` and crossing impulse into
+  `graphFrame.y`, without adding uniform bindings/passes.
+- `76ac50ff5598283813269c416d7e42f4d4bad9dd`:
+  `engine/render/PostFxShaders.h`; a shared GLSL/MSL
+  `PF_UNDERWATER` block applies bounded animated UV distortion,
+  a decaying boundary ripple, and an approximate extinction-aware
+  scattering contribution. The source sample comes from the already
+  resolved scene texture; UV is clamped away from the screen edge.
+- `57c90767ed159de5cc92e5db7941b3a95b29f471`:
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h`:
+  opt-in `underwaterDistortion` / `underwaterScattering` style fields.
+- `cd373ea4081af564a78ccc4fe8e6d95a68107b9d`:
+  `engine/render/NereidWaterRenderer.h`: validate the new strengths.
+- `107ea8f8ea260b47527da6894993461ff31ceb11`:
+  `engine/render/NereidSurfaceResident.h`: optical fields invalidate
+  the presentation material residency key.
+- `12602dba3ac432ac3cfc057876999984e8deab43`:
+  `engine/world/NereidWaterScene.h`: source change detection.
+- `658e0f206487473fa5b8dc72b4ccd6c54d83ae99`:
+  `engine/world/NereidWaterManifest.h`: JSON optical parameters.
+- `dcc00501b17775b9ca5c8b9c8c584a17ca34894c`:
+  `engine/world/NereidUnderwaterView.h`: read-only camera view output.
+- `b66dd00ccb068adbd5f812f30e08f52a9e921a8c`:
+  `engine/world/NereidPrismaBridge.h`: transmits optical parameters
+  via existing WorldScene → Prisma per-frame bridge.
+- `a837f694241d45141299197367929f8b1f4630a2`:
+  `tests/ecs_nereid_renderer_contract_test.cpp`: authored optical
+  style, cache/JSON, camera snapshot and crossing/shader source checks.
+
+### API and behavior
+
+Manifest example:
+```json
+{
+  "nereidWater": {
+    "surfaces": [{
+      "id": 22, "kind": "lake", "shape": "box",
+      "surfaceY": 4, "bottomY": -12,
+      "halfExtents": [40, 30],
+      "style": {
+        "absorption": 0.20,
+        "underwaterDistortion": 0.7,
+        "underwaterScattering": 0.45
+      }
+    }]
+  }
+}
+```
+
+Both new strengths default to 0, are clamped/validated to [0,1],
+and belong to the water **presentation style**, not authoritative ECS
+hydrodynamics. NEREID selects the containing body and supplies
+`NereidUnderwaterView::distortion/scattering` to Prisma.
+`PostFx::setUnderwater` smooths optical parameters using
+`1-exp(-6*dt)`; each transition of the submerged flag starts
+a transient crossing pulse decaying as `exp(-8*dt)`.
+Crossing adds a short-lived rippling distortion even for water with
+`underwaterDistortion=0`; no-effect scenes do not call the underwater
+bridge and stay unchanged.
+
+Prisma performs all full-screen work in its **existing composite pass**.
+`underwater1.zw` holds distortion/scattering; `graphFrame.y` holds
+the transient crossing pulse. GLSL/MSL use the existing
+`postfx::buildProgram` shared common subset. No new textures, RHI
+backend, render passes, ECS components, gameplay effects, or duplicated
+water-volume detection were introduced.
+
+### Verification / limits / next agent
+
+**Actually completed:** connected GitHub source inspection,
+implementation commits, authored source and CPU state test assertions.
+**NOT RUN / UNVERIFIED:** C++ compile, CTest, full `./run-tests.sh`,
+GLSL/MSL compilation, GPU scene rendering, visual transition QA,
+mobile performance, and FPS/RTS regression. Keep PR #23 Draft.
+
+```sh
+./run-tests.sh --filter '^ecs_nereid_'
+./run-tests.sh
+```
+
+Known limitations: fake screen-space waves, 2D scene-colour
+distortion, no refraction intersection ray marching or physically
+measured scattering, and no depth per object in the Prisma compositor.
+Optical distortion samples the original pre-composite scene, so combined
+shader graph/grade ordering should be visually reviewed. Boundary
+transitions are based on the water containment flag, not a physical
+wave height or camera collision geometry. The shader's crossing
+impulse is hard-coded and not yet configurable per water type.
+PostFx quality `Off` / disabled remains an opt-out.
+
+**Next agent:** obtain native compiler and real GL/Metal GPU evidence;
+fix any source or shader errors. Then tune the crossing impulse with
+separate mobile/desktop quality settings, guard shader graph behavior,
+and consider GPU depth-aware underwater distance using Prisma-owned
+resources without introducing a redundant water RHI. After any
+implementation, append a new handoff section with exact SHA/files,
+actual test results, limitations and next action.
