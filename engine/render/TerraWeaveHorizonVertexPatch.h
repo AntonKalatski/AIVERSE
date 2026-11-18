@@ -47,7 +47,6 @@ inline std::optional<HorizonVertexUploadPlan> planHorizonVertexUpload(
     if (!horizonCanReuseHorizonLayout(before, after) ||
         maxRanges == 0 || maxRanges > 256 ||
         maxPercent == 0 || maxPercent > 100 ||
-        before.terrainVertices.empty() ||
         resident.geometryPoolPage || resident.gpuBaseVertex != 0 ||
         resident.gpuFirstIndex != 0 || !resident.vb.valid() ||
         !resident.ib.valid() || resident.batching.allowGeometryPool ||
