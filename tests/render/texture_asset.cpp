@@ -2,6 +2,7 @@
 #include "engine/render/DdsTexture.h"
 #include <cstdio>
 #include <map>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 #include <cmath>
@@ -15,6 +16,8 @@ public:
     std::string error_;
     gfx::TextureDesc lastDesc;
     std::vector<uint8_t> firstPixels;
+    std::vector<int> uploadedMipLayers;
+    std::vector<uint8_t> uploadedMipFirstRed;
     int created=0, destroyed=0, mipUploads=0, failUpload=0;
     bool failNativeCompressed = false;
     int nativeAttempts = 0;
@@ -41,7 +44,9 @@ public:
         if (d.data && d.format == gfx::PixelFormat::RGBA8 &&
             d.width > 0 && d.height > 0) {
             const auto* p = static_cast<const uint8_t*>(d.data);
-            firstPixels.assign(p, p + size_t(d.width)*size_t(d.height)*4);
+            const size_t slices = d.dimension == gfx::TextureDimension::Texture3D ?
+                                  size_t(d.depth) : size_t(d.arrayLayers);
+            firstPixels.assign(p, p + size_t(d.width)*size_t(d.height)*4*slices);
         }
         return {uint32_t(++created)};
     }
@@ -49,6 +54,9 @@ public:
     void destroyTexture(gfx::TextureHandle) override { ++destroyed; }
     bool updateTextureRegion(gfx::TextureHandle, const gfx::TextureUploadDesc& u) override {
         ++mipUploads;
+        uploadedMipLayers.push_back(u.arrayLayer);
+        uploadedMipFirstRed.push_back(u.data ?
+            static_cast<const uint8_t*>(u.data)[0] : 0);
         check(u.mipLevel == 1, "only authored mip 1 uploaded explicitly");
         return !failUpload;
     }
@@ -168,6 +176,62 @@ int main() {
               "CPU fallback initializes base level and uploads authored next mip");
         dev.destroyTexture(h);
         dev.failNativeCompressed = false;
+
+        // Layered fallback must preserve ALL twelve cube-array faces in
+        // both the initial base upload and individually updated mip slices.
+        image = {};
+        image.width = image.height = 4;
+        image.arrayLayers = 2;
+        image.faces = 6;
+        image.format = render::BlockFormat::BC5;
+        image.vkFormat = 141;
+        image.levels.resize(2);
+        image.levels[0].assign(12*16, 0);
+        image.levels[1].assign(12*16, 0);
+        for (int face = 0; face < 12; ++face) {
+            image.levels[0][size_t(face)*16] = uint8_t(20 + face);
+            image.levels[0][size_t(face)*16 + 8] = uint8_t(60 + face);
+            image.levels[1][size_t(face)*16] = uint8_t(40 + face);
+            image.levels[1][size_t(face)*16 + 8] = uint8_t(80 + face);
+        }
+        dev.failNativeCompressed = true;
+        dev.uploadedMipLayers.clear();
+        dev.uploadedMipFirstRed.clear();
+        h = render::uploadContainerTexture(dev, image, rejectedNativeOptions, err);
+        check(h.valid() && err.empty() &&
+              dev.lastDesc.dimension == gfx::TextureDimension::CubeArray &&
+              dev.lastDesc.arrayLayers == 12 && dev.lastDesc.mipLevels == 2,
+              "failed native cube-array allocation falls back with correct topology");
+        check(dev.firstPixels.size() == 12u*4u*4u*4u,
+              "CPU fallback uploads all cube-array faces at base mip");
+        bool faceContentCorrect = true;
+        bool mipContentCorrect = dev.uploadedMipLayers.size() == 12 &&
+                                 dev.uploadedMipFirstRed.size() == 12;
+        for (int face = 0; face < 12; ++face) {
+            faceContentCorrect &= dev.firstPixels[size_t(face)*64] == uint8_t(20 + face);
+            if (mipContentCorrect) {
+                mipContentCorrect &=
+                    dev.uploadedMipLayers[size_t(face)] == face &&
+                    dev.uploadedMipFirstRed[size_t(face)] == uint8_t(40 + face);
+            }
+        }
+        check(faceContentCorrect && mipContentCorrect,
+              "cube-array fallback keeps independent face data at both mips");
+        dev.destroyTexture(h);
+        dev.failNativeCompressed = false;
+
+        // Reject caller-constructed invalid metadata before multiplying
+        // arrayLayers by faces or selecting a conflicting texture dimension.
+        image.arrayLayers = std::numeric_limits<int>::max();
+        check(!render::uploadContainerTexture(dev,image,{},err).valid() &&
+              !err.empty(), "cube-array layer multiplication overflow rejected");
+        image = {};
+        image.width = image.height = 4;
+        image.oneDimensional = true;
+        image.levels.resize(1);
+        image.levels[0].assign(64, 0);
+        check(!render::uploadContainerTexture(dev,image,{},err).valid() &&
+              !err.empty(), "malformed 1D container height rejected");
 
         // DDS DX10 2D array is stored surface-major, with the complete mip
         // chain of layer zero before layer one. The container reader must

@@ -6,6 +6,7 @@
 #include "engine/gfx/Gfx.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <string>
 #include <vector>
@@ -28,7 +29,12 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
         in.arrayLayers < 1 || (in.faces != 1 && in.faces != 6) ||
         in.levels.empty() || in.levels.size() > 31 ||
         (in.faces == 6 && (in.width != in.height || in.depth != 1)) ||
-        (in.depth > 1 && (in.faces != 1 || in.arrayLayers != 1))) {
+        (in.depth > 1 && (in.faces != 1 || in.arrayLayers != 1)) ||
+        // Multiplication below is in signed int: validate it before use.
+        in.arrayLayers > std::numeric_limits<int>::max() / in.faces ||
+        // A manually constructed malformed 1D resource must not turn into 3D.
+        (in.oneDimensional && (in.height != 1 || in.depth != 1 ||
+                               in.arrayLayers != 1 || in.faces != 1))) {
         error = "invalid texture container dimensions or mip metadata";
         return {};
     }
