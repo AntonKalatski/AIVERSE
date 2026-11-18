@@ -2460,3 +2460,43 @@ unverified source change, not a production-ready streaming system.
 that requests complete coarse-to-fine mips and maps completion success
 to safe sampler LOD clamps. Add deterministic tests, then connect it to
 streaming queues. Run the actual native tests and GPU sampling.
+
+## Stage 5N — bounded scanline OpenEXR HALF/FLOAT import (2026-11-18)
+
+**Source commit:** `29bb2e6887305b3ac15adc4e7ad57a9c710e7de0`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**New file:** `engine/render/ExrTexture.h`.
+
+**Implementation:** Header-only native C++ uncompressed OpenEXR
+reader `parseOpenExr(std::string_view, RadianceImage&, std::string&)`
+and one-call `loadOpenExr(Device&, bytes, error)`, reusing the
+Stage 5K RGBA16F GPU uploader. Supports OpenEXR version 2,
+single-part, untiled, **uncompressed** scanlines with arbitrary
+channel order and full-resolution planar R/G/B and optional A
+HALF (binary16) or FLOAT (binary32) data; unrelated channels are
+skipped according to declared byte stride. Honors dataWindow
+origin (including negative offsets), chunk scanline offsets and
+out-of-order physical scanlines. Missing alpha becomes 1.0;
+negative linear radiance is retained with its sign. Disallows
+duplicate RGB channels, nonfinite pixel values, integer RGB
+channels, subsampled channels, corrupt offsets/row sizes, huge
+attributes and 512 MiB+ decoded allocations. Source is
+presentation-only; neither ECS nor legacy material import changes.
+
+**Explicit limitations:** This does NOT implement general OpenEXR:
+ZIP/ZIPS/PIZ/RLE/DWAA/DWAB/B44/B44A or PXR24 compression,
+deep/tiled/multipart images, multi-resolution/mipmap level
+files, arbitrary channel naming (requires bare R/G/B), color
+management/chromaticities or half-float texture array imports.
+These inputs fail closed with errors instead of being silently
+converted. No third-party OpenEXR codec dependency introduced.
+
+**Verification:** GitHub source commit confirmed. **C++ compilation
+NOT RUN, CTest NOT RUN, GPU test NOT RUN** (requested deferred tests).
+Needs synthetic scanline fixtures, malformed payload tests and
+actual macOS/GL/Vulkan rendering before production approval.
+
+**Next:** Add EXR fixture source and CMake target without executing
+tests; then document EXR/HDR public APIs and plan compressed EXR
+integration using a vetted decoder, plus texture readback and
+resident streaming. Each stage must get an append-only handoff.
