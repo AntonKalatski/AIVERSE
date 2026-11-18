@@ -143,6 +143,44 @@ allocation rollback and clearing are in `tests/render/prisma_graph.cpp`.
 Native build/CTest/GPU screenshot verification is **NOT RUN** for Stage 12.
 See `docs/handoffs/prisma-stage-12.md`.
 
+
+## Stage 13 — Opt-in RHI graph adapter (not yet wired into Prisma::resolve)
+
+`engine/render/PrismaRhiExecutor.h` bridges the GPU-free Stage 11 graph and
+Stage 12 allocation pool to the existing `gfx::Device` API. It creates
+`TextureDesc{renderTarget=true}` targets, maps RGBA8/RGBA16F/Depth32F to
+the backend's supported formats, uses `copyColor` for one-input/one-output
+matching RGBA8 Copy passes, and executes Raster callbacks inside balanced
+`beginPass/endPass` scopes. Compute callbacks run outside render passes
+only if `Device::supportsCompute()` reports support.
+
+A native host explicitly creates a per-camera `PrismaRhiExecutor(device)`
+and calls `execute(graph,plan,external,raster,compute,optionalDepth)`
+**outside any existing pass**. Raster callback signature is
+`bool(gfx::Device&, PrismaGraphId, const PrismaGraphDispatchView<gfx::TextureHandle>&)`;
+it binds its own pipeline, uniforms and input textures. Compute has the
+same callback signature but is responsible for opening/closing any compute
+encoder it needs. `optionalDepth` must match raster target dimensions if
+the chosen Metal backend needs a depth attachment. The adapter never calls
+`endFrame`, presents, performs implicit shader conversions, or modifies ECS.
+
+**Compatibility constraints:** currently no RG16F/R32F target formats in
+`gfx::PixelFormat`; these graphs fail preflight. The portable
+`copyColor` interface only guarantees same-size RGBA8; HDR/other copy
+operations need explicit raster shader passes. `gfx::Device` does not expose
+a universal resource-barrier API. GPU target release and pool reset must
+happen at a caller-managed safe point after in-flight work finishes. Temporal
+history is valid only after the host has successfully produced its pixels
+and explicitly marked it written.
+
+**Not a complete render pipeline migration.** `Prisma::resolve()` still
+uses the legacy, shipped fixed pass chain by default, with no automatic
+RHI graph execution. The header is an opt-in integration point, and the
+test addition currently covers only RHI format mappings in
+`tests/render/prisma_graph.cpp`. Native build, driver smoke, screenshots
+and numerical parity remain **NOT RUN**. See
+`docs/handoffs/prisma-stage-13.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
