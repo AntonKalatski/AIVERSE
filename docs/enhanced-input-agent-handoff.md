@@ -576,3 +576,18 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Known risks:** C++ namespace/class alias usage in all platform targets and ImGui UI labels require compile/runtime verification. Some old filenames and docs deliberately retain EnhancedInput spelling. Version 1 authored assets and saved profiles must not be renamed by the branding change.
 
 **Next agent (Stage 45):** Read both InputFlow.h headers, then `apps/fps/client.cpp`, `apps/client/ClientInputRouting.h`, `apps/editor/windows/InputWindow.cpp`, `libraries/catalog.json` and this handoff. Continue any feature work with canonical InputFlow names; after each stage append a fresh numbered handoff. When the user authorizes the test phase, compile the four existing `aiverse_enhanced_*_tests` targets and full editor/FPS/RTS builds, then run `./run-tests.sh` and review cross-platform CI. Fix failures and record command, SHA, PASS/FAIL in Stage 45 before marking Draft PR ready.
+
+
+## Stage 45 — canonical InputFlowAdapter/InputFlowUsers implementation names (2026-11-18)
+
+**Status:** IMPLEMENTED at source level. No build, CTest, macOS GUI or other platform tests have been run; **NOT RUN** by user request.
+
+**Goal/change:** Complete the InputFlow naming migration in the implementation rather than relying solely on facade aliases. `engine/platform/EnhancedInputAdapter.h` now declares the concrete C++ `class InputFlowAdapter` and its constructor under that name; declares `using EnhancedInputAdapter = InputFlowAdapter` for existing code. `engine/platform/EnhancedInputUsers.h` similarly declares concrete `class InputFlowUsers`, uses `InputFlowAdapter` to host each user's independent context, and retains `using EnhancedInputUsers = InputFlowUsers`. `engine/platform/InputFlow.h` imports those concrete classes rather than introducing duplicate aliases. `tests/libraries/enhanced_input_adapter_tests.cpp` has compile-time `static_assert` checks for both old/new type identities.
+
+**Documentation updated:** `docs/enhanced-input.md` documents the concrete class names and keeps the example scoped within a compilable C++ function. `skills/ui/aiverse-input/SKILL.md` clarifies that InputFlow is canonical for new native project code.
+
+**Compatibility:** Old source includes, old adapter/user class names, project JSON v1, per-user profile files, `AIVERSE::lib_input`, FPS/RTS native Commands and ECS behavior remain unchanged. Old header filenames are intentionally retained as stable includes. Public canonical headers: `libraries/include/aiverselib/gameplay/InputFlow.h` and `engine/platform/InputFlow.h`.
+
+**Verification:** GitHub accepted changes. No compiler run and no passing CI/CTest result is claimed. Test phase should verify API aliases on GCC, Clang and MSVC, then validate editor, client and gamepad lifecycle behavior.
+
+**Next agent:** Check the actual HEAD commit before making changes, read this handoff and root `AGENTS.md`; continue feature work using canonical InputFlow names. Once the user authorizes tests, build the four existing Enhanced Input targets and use the unified `./run-tests.sh` runner, record exact test SHA, errors and corrections as Stage 46 before marking PR #20 ready.
