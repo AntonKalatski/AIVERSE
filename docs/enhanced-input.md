@@ -29,6 +29,28 @@ Files:
 - \`apps/fps/client.cpp\`: FPS reference use; maps action state to the unchanged \`fps::Input\` command.
 - \`docs/enhanced-input-agent-handoff.md\`: stage-by-stage implementation and continuation record; **read this before modifying**.
 
+## No phantom input edges on context activation (Stage 51)
+
+When a Mapping Context is enabled or its bindings are replaced **after** a
+physical key was already pressed, InputFlow marks the affected Mapping and
+Action runtimes as `suppressUntilRelease`. Until the actual key goes up,
+edge and timed triggers (`Pressed`, `Released`, `Tap`, `DoubleTap`,
+`Hold`, `HoldAndRelease`, `Pulse`) do not treat that old hold as a new
+interaction. Continuous input (`Down`, pure `Chord`/`NotChord`, or no
+mapping triggers) remains readable, allowing gameplay to resume movement
+with an already held key when the owning context returns.
+
+Once the physical source releases, the suppression flag clears and the next
+genuine KeyDown works normally. This applies to both Mapping triggers and
+Action triggers; it prevents a newly opened modal from accidentally
+accepting a button that originally opened the modal. Global FocusLost
+still clears all raw controls; the host must not replay stale KeyDown
+events on FocusGained.
+
+The additional same-frame activation cases in
+`enhanced_input_tests.cpp` are authored but not executed. Backend
+event ordering and GUI input capture require later native smoke tests.
+
 ## Multi-local-user device ownership and scoped cancellation (Stage 50)
 
 `InputFlow::cancelDevices({Device::Keyboard, ...}, deviceIndex = -1)`
