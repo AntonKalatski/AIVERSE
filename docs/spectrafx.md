@@ -400,6 +400,62 @@ graph, strict rejections and CPU fallback; `tests/vfx_graph_ops_test.cpp`
 checks MCP eligibility diagnostics. CTest name:
 `vfx_graph_runtime` (label `SpectraFX`).
 
+## Metal lifecycle and sparse draw-range hardening (Stage 12 — source committed, unverified)
+
+The opt-in `ComputeParticles` Metal backend now tracks its occupied
+**slot prefix** rather than always updating and drawing all allocated
+slots. The CPU-owned slot-age bookkeeping determines the greatest
+currently live slot index; compute integration and quad expansion
+run through that prefix and the indexed draw is limited to
+`submittedSlots * 6`. A pool containing no live particles and no
+pending births performs no compute dispatch or draw.
+
+**This is not GPU compaction:** gaps between active slots still produce
+degenerate quads. True GPU stream compaction, prefix sums, indirect
+draw counts, and thousands of materials are subsequent phases.
+The hard 4096-slot capacity and original RHI buffer format remain.
+
+`ComputeStats` now exposes:
+
+- `submittedSlots`: prefix length actually submitted in the latest
+  GPU draw (may exceed `alive` when holes exist).
+- `gpuFallbacks`: automatic runtime transitions to CPU.
+- `lostOnFallback`: number of GPU-resident particles discarded
+  when the GPU device became unhealthy. Existing stats remain.
+
+A **runtime device-loss event** is not a seamless animation step:
+`ComputeParticles::step` reports failure. For `RequireGpu`, the
+emitter becomes unavailable, retains its Metal backend identity
+until shutdown and **does not switch to CPU**. For `Automatic` and
+`PreferGpu`, the class attempts to initialize a CPU emitter, records
+the discarded GPU particles and reports `false` for the transition
+frame. CPU rendering on a device reported unhealthy is **not guaranteed**;
+a real graphics-device recreation may be required. RHI encoder timing
+errors continue to return failure without silently switching backend.
+
+`GraphRuntime::step` now forwards the actual readiness, backend and
+error message of its contained GPU/CPU runtime. `GraphRuntime::gpuActive`
+also checks the underlying compute emitter, preventing false-positive
+success reports after `RequireGpu` device loss. On clear, the sparse
+range and GPU slot counters reset; attempting `clear` inside an
+active GPU encoder leaves state intact and emits a diagnostic.
+
+The RHI recording test
+`tests/vfx_gpu_backend_test.cpp` has scenarios for active encoder
+clear protection, sparse draw range, empty-pool zero dispatch, GPU
+loss with `RequireGpu`, GPU→CPU transition with explicit lost-particle
+telemetry and staggered particle expiry over multiple frames.
+**These are mocked host-command tests, not actual MSL execution.**
+
+A focused workflow,
+`.github/workflows/spectrafx-validation.yml`, provides
+pull-request and manual gates: Linux/macOS build and headless CTest
+for SpectraFX; Linux additionally builds the editor and tests MCP
+graph operations. The focused workflow does **not** validate a real
+Metal compute shader or GPU image correctness. Actual compilation,
+CI results, Apple Silicon rendering, screenshots and performance
+measurements remain **NOT VERIFIED** until they run.
+
 ## Validation checklist
 
 ```bash
