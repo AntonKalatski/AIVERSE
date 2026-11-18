@@ -7,6 +7,15 @@ description: Build games with AIVerse InputFlow, the genre-independent C++ Actio
 
 Read \`docs/enhanced-input.md\` and \`docs/enhanced-input-agent-handoff.md\` **before changing the input system**. Read \`AGENTS.md\` and \`libraries/catalog.json\` in engine root. The handoff contains stage status, all changed files, test coverage, caveats and next-agent instructions. The documentation MUST be updated **after each stage** — no stage is finished without its handoff section.
 
+**InputFlow chord policy (Stage 47):** `Chord` and `NotChord` resolve through
+the *effective* same-frame Action graph, including transitive Action- and
+Mapping-level gates and Action modifiers. JSON and native definitions reject
+cyclic dependencies (also inverted cycles) transactionally. When sharing a
+physical control, use `consume=false`; consumption of conditionally gated
+bindings across priority contexts is a documented remaining edge case. See
+`docs/enhanced-input.md` and the Stage 47 handoff. Tests are written but not
+yet executed; do not mark InputFlow validated or production-ready.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
