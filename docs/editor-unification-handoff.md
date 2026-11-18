@@ -1841,3 +1841,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - No on-disk version or checksum update; no native compilation, sanitizers or live network test run here. See `docs/agent-handoffs/native-ecs-persistence.md` for exact proof limits and next command.
 - **Next:** build targeted CTest, inspect legacy save compatibility and run real RTS malformed-pool regression.
 
+
+
+### 2026-11-18 — Fix confirmed FPS COW snapshot detach during checksum
+- Implementation SHA: `383b9c9099602d4fc2dfa1a4df2a1d6f354f3f85`.
+- User's `fps` CTest failed at `tests/fps/tests.cpp:195` after a COW snapshot: `incremental->world().sharedResourceCount()==sharedResources` was false following `incremental->checksum()`. Root cause is `modules/fps/FpsModule.cpp::Module::hashState` calling mutable `state(sim)`, which calls `World::resource<State>()` and detaches a shared COW singleton during a read-only checksum. `authoritativeStateCopy` had the same read-side effect.
+- Both methods now load the State through `World::resourceConst<State>()` with a missing-state guard, so ordinary and ECS-authority checksums do not change resource ownership. `hashState` uses an explicit const-cast **only** to supply Archive's legacy non-const bidirectional IO API on its output-only writer path; `stateIo` and nested IO write fields only when `!archive.writing()`. No deep copy is required for the default non-authority checksum; ECS-authority mode already materializes a State copy from canonical components.
+- No gameplay step, save bytes, checksum algorithm or network format changed; fixes a snapshot-count side effect. Native FPS CTest rerun **not yet observed**.
