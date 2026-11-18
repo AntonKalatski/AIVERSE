@@ -655,3 +655,29 @@ lifecycle and special model placement.
 This is not the deletion of legacy `RtsView`; its API and host
 callers remain intact. **NOT RUN:** tests, compilation and visual
 parity checks were intentionally deferred by the user.
+
+## Shared RTS preview resource resolution (Stage 88)
+
+`modules/rts/view/RtsPreviewResourceProvider.h` supplies
+`view_adapter::resolveStaticPreviewModel(look,type,playerColor,out)`.
+The host passes already-loaded appearance and type descriptions; the
+provider applies the **same** eligibility test for ghost and portrait
+previews, then builds one `StaticPreviewModel` with borrowed model,
+materials, node-material bindings, geometry policy, variant, correction,
+type transform settings, tint, and squared linear team color.
+
+Both `RtsView::drawGhost` and `drawPreview` now call this single
+resolver before their respective `buildStaticGhostPacket` and
+`buildStaticPreviewPacket` submission. Ineligible models continue
+unchanged through `RtsPreviewRenderProvider` and the legacy
+animation/material/planet-specific draw path. No new model copies or
+animation players are introduced in the direct path.
+
+Resource residency/loading and lifetime are **still host-owned**;
+the resolver is a renderer-independent borrowed-data adapter, not a
+new asset cache. It has no dependency on `RtsView` or engine-side
+genre enums and cannot mutate gameplay ECS state. The old class
+and client/editor/portrait call sites are not yet retired.
+
+**NOT RUN**: native compiler, CMake/CTest, CI, graphics parity and
+sanitizer checks remain deferred.
