@@ -98,7 +98,7 @@ inline Value applyModifiers(Value v, std::span<const Modifier> modifiers) {
     return v;
 }
 
-enum class TriggerKind : std::uint8_t { Down, Pressed, Released, Hold, Tap, Chord };
+enum class TriggerKind : std::uint8_t { Down, Pressed, Released, Hold, Tap, Chord, DoubleTap, HoldAndRelease, Pulse, NotChord };
 struct Trigger {
     TriggerKind kind = TriggerKind::Down;
     float seconds = 0;
@@ -110,6 +110,10 @@ struct Trigger {
     static Trigger hold(float seconds) { return {TriggerKind::Hold, seconds}; }
     static Trigger tap(float seconds) { return {TriggerKind::Tap, seconds}; }
     static Trigger chord(std::string action) { return {TriggerKind::Chord, 0, std::move(action)}; }
+    static Trigger doubleTap(float window) { return {TriggerKind::DoubleTap, window}; }
+    static Trigger holdAndRelease(float seconds) { return {TriggerKind::HoldAndRelease, seconds}; }
+    static Trigger pulse(float interval) { return {TriggerKind::Pulse, interval}; }
+    static Trigger notChord(std::string action) { return {TriggerKind::NotChord,0,std::move(action)}; }
 };
 
 enum class Phase : std::uint8_t { Started, Ongoing, Triggered, Completed, Canceled };
@@ -426,7 +430,10 @@ public:
 private:
     static constexpr float kEpsilon = 0.00001f;
     struct Raw { float value = 0; bool pressed = false, released = false, transient = false; };
-    struct Runtime { bool wasDown = false, holdFired = false; float seconds = 0; };
+    struct Runtime {
+        bool wasDown=false, holdFired=false, releaseArmed=false;
+        float seconds=0, sinceRelease=1000000.0f, lastPulse=0;
+    };
 
     Raw sample(Control key) const {
         const auto it = controls_.find(key);
@@ -437,14 +444,20 @@ private:
             if (trigger.kind == TriggerKind::Chord &&
                 (!levels.contains(trigger.chordAction) || !levels.at(trigger.chordAction)))
                 return false;
+            if (trigger.kind == TriggerKind::NotChord &&
+                levels.contains(trigger.chordAction) && levels.at(trigger.chordAction))
+                return false;
         return true;
     }
     static bool evaluateTriggers(std::span<const Trigger> triggers, Runtime& runtime,
                                  bool down, bool pressed, bool released, bool quick,
                                  float dt, const std::map<std::string,bool>& levels) {
         const float elapsedBeforeRelease = runtime.seconds;
-        if (pressed && !runtime.wasDown) { runtime.seconds = 0; runtime.holdFired = false; }
-        if (down) runtime.seconds += dt;
+        if (pressed && !runtime.wasDown) {
+            runtime.seconds=0; runtime.holdFired=false; runtime.lastPulse=0;
+        }
+        if (down)runtime.seconds+=dt;
+        if (!down)runtime.sinceRelease=std::min(1000000.0f,runtime.sinceRelease+dt);
         const float held = quick ? dt : (down ? runtime.seconds : elapsedBeforeRelease);
 
         bool matched = triggers.empty() ? down : true;
@@ -464,11 +477,29 @@ private:
             case TriggerKind::Chord:
                 ok = levels.contains(trigger.chordAction) && levels.at(trigger.chordAction);
                 break;
+            case TriggerKind::NotChord:
+                ok = !levels.contains(trigger.chordAction) || !levels.at(trigger.chordAction);
+                break;
+            case TriggerKind::DoubleTap:
+                ok = pressed && runtime.releaseArmed &&
+                     runtime.sinceRelease<=std::max(0.0f,trigger.seconds);
+                break;
+            case TriggerKind::HoldAndRelease:
+                ok = released && (runtime.wasDown || quick) &&
+                     held>=std::max(0.0f,trigger.seconds);
+                break;
+            case TriggerKind::Pulse:
+                ok = down && (runtime.seconds-runtime.lastPulse)>=
+                     std::max(0.01f,trigger.seconds);
+                break;
             }
             matched = matched && ok;
         }
-        if (matched) for (const auto& trigger : triggers)
-            if (trigger.kind == TriggerKind::Hold) runtime.holdFired = true;
+        if (matched) for (const auto& trigger : triggers) {
+            if (trigger.kind == TriggerKind::Hold)runtime.holdFired=true;
+            if (trigger.kind == TriggerKind::Pulse)runtime.lastPulse=runtime.seconds;
+        }
+        if(released){runtime.releaseArmed=true;runtime.sinceRelease=0;}
         runtime.wasDown = down;
         if (!down) { runtime.seconds = 0; runtime.holdFired = false; }
         return matched;
