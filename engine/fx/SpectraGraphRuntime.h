@@ -7,6 +7,7 @@
 #include "VfxGraph.h"
 #include "SpectraGpuParticles.h"
 #include "SpectraBatchWorld.h"
+#include "SpectraInstanceParameters.h"
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -71,6 +72,10 @@ public:
     // updates all live particles this source still owns.
     // Restricted Metal GPU billboard path does not execute the VM.
     bool setProgramParameter(uint32_t slot,float value,bool affectExisting=false);
+    // v2 graph instanceParameters: strict name, slot, bounds and defaults.
+    bool setNamedProgramParameter(const std::string& name,float value,
+                                  bool affectExisting=false);
+    const InstanceParameterTable& instanceParameters() const {return namedParams_;}
     bool burstAt(fx::float3 worldPosition,
                  fx::float3 direction = {0,1,0},
                  fx::float4 tint = {1,1,1,1});
@@ -101,6 +106,7 @@ private:
     std::deque<fx::FxHandle> cpuHandles_;
     std::array<float,8> paramValues_{};
     std::array<bool,8> paramSet_{};
+    InstanceParameterTable namedParams_;
     ComputeBackend backend_ = ComputeBackend::Cpu;
     fx::ParticleSystem cpu_;
     ComputeParticles gpu_;
