@@ -1928,3 +1928,23 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **File:** `tests/ecs_native_persistence_test.cpp`. User's Mac Studio compiler reported two errors for mixed-type variables under one `auto` declaration (legacy/legacyBytes, before/originalHash). Split declarations and explicitly typed serialized data and checksum. No engine runtime changes.
 - **Verified:** compiler output from user confirms the two pre-fix errors; source correction committed. **Post-fix native compile/CTest NOT RUN.** Both prior native ECS tests were `Not Run` due to missing binaries, not failed assertions.
 - **Next:** build both native ECS test targets, then run the two CTest cases; write exact results to `docs/agent-handoffs/native-ecs-persistence.md`.
+
+### 2026-11-18 — Real RTS/FPS ECS replay integration CTest (source stage)
+
+- Shared branch `feature/universal-entity-inspector-fps`; code commits
+  `d5a719fddc3f71d1b61f0518bf1b62cdf7b9c9d9` and
+  `8c4fdf733a57d8b6413df4587abf6a367796ea31`.
+- Registered `ecs_real_genre_replay_test` that runs real `RtsModule` and
+  `fps::Module`: canonical commands with reversed peer arrival, v9 disk
+  save/load at tick 20, COW/deep snapshots, corrupted-load recovery, replay
+  comparison per tick, FPS default and `ecsAuthority` parity.
+- No engine or public API changes; neither the default FPS authority mode
+  nor save formats changed. The test complements but does NOT replace
+  shared-library composition tests or the native RTS v10 persistence test.
+- Native compile and CTest **NOT RUN** (container cannot resolve GitHub DNS;
+  no local checkout). The user's older 4/4 CTest success predates this test.
+- Full handoff and commands:
+  `docs/agent-handoffs/ecs-real-genre-replay-2026-11-18.md`.
+- Next: build `aiverse_ecs_real_genre_replay_test` on Mac Studio,
+  run `ctest -R ecs_real_genre_replay_test`, fix any real save/replay
+  regressions in this branch, record exact results in next handoff.
