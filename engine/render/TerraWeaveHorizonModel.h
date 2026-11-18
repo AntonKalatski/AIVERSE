@@ -129,11 +129,18 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         const float base=float(cluster.bottomCm)*0.01f;
         const float top=float(cluster.topCm)*0.01f;
         const float half=float(cluster.tileSizeCm)*0.005f;
-        const float u0=(float(cluster.atlasX)+0.5f)/float(b.atlasWidth);
-        const float u1=(float(cluster.atlasX+cluster.atlasSize)-0.5f)/float(b.atlasWidth);
-        const float v0=(float(cluster.atlasY)+0.5f)/float(b.atlasHeight);
-        const float v1=(float(cluster.atlasY+cluster.atlasSize)-0.5f)/float(b.atlasHeight);
         for(int orientation=0;orientation<2;++orientation) {
+            // One atlas tile per cluster in economy mode. Higher quality
+            // may bake an independent 90-degree silhouette, but the same
+            // two crossed cards and single material/texture are retained.
+            const uint32_t atlasX=orientation==0 ?
+                cluster.atlasX : cluster.atlasSideX;
+            const uint32_t atlasY=orientation==0 ?
+                cluster.atlasY : cluster.atlasSideY;
+            const float u0=(float(atlasX)+0.5f)/float(b.atlasWidth);
+            const float u1=(float(atlasX+cluster.atlasSize)-0.5f)/float(b.atlasWidth);
+            const float v0=(float(atlasY)+0.5f)/float(b.atlasHeight);
+            const float v1=(float(atlasY+cluster.atlasSize)-0.5f)/float(b.atlasHeight);
             const float dx=orientation==0?half:0.0f;
             const float dz=orientation==0?0.0f:half;
             const uint32_t first=static_cast<uint32_t>(model->vertices.size());
