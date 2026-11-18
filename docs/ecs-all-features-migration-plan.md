@@ -252,3 +252,46 @@ tests before switching source ownership or system barriers.
 - **Unverified:** all native compiler executions, sanitizer, FPS/RTS
   scenario replay, save migration and network rollback. Do not mark
   combat wave complete or delete synchronous legacy damage logic.
+
+
+## FPS programmed-projectile stage migration checkpoint (2026-11-18)
+
+The actual FPS runtime now registers three consecutive stages in order:
+
+```
+fps.ecsHydrate              [only when ecsAuthority=true]
+fps.compat.projectilePrograms
+fps                        [tickSystems -> royale -> rewind capture -> actors -> vehicles -> outcomes]
+fps.ecsMirror               [editor projection and ECS canonical commit]
+```
+
+The previously first statement of `Module::tick`, `tickProjectilePrograms`,
+was moved into `fps.compat.projectilePrograms`, with the same winner guard.
+This is an independently named `Simulation` stage and a **real extraction
+from the monolithic game loop**, but it still uses legacy `State::projectiles`
+and `State::actors` as compatibility workspaces. In ECS-authority mode
+these are hydrated from `ProjectileRuntime` and `ActorRuntime` before
+the stage, then committed at the established mirror barrier.
+
+No projectile solver, collision policy, RPG ability, save v9 wire field, or
+inter-tick ordering was changed in this step. It intentionally retains
+immediate damage/side effects before the rest of the FPS tick; moving
+impacts to `addOrderedImpactResolutionSystem` is **not** equivalent without
+proving same-tick order.
+
+**Acceptance fixture:** `ecsProjectileProgramStageParity` in
+`tests/fps/projectiles.inc`, called by `aiverse_fps_tests`, exercises a
+real programmed fly-through shot, compares default/ECS authority checksums
+and health after every tick, cross-loads v9 byte saves in both directions,
+restores a pre-flight `SimSnapshot` and replays, both with deep and COW
+World snapshots. This fixture has been committed but **not compiled or run**.
+
+**Next ownership cutover:** extract per-projectile state and the full
+spawn/branch/collision/damage ordering from the State workspace into
+independent components and explicit stages. The staged program executor
+should then read/write `ProjectileRuntime` (or a decomposed public
+`ProjectileFlight` + `ProjectileProgram` composition), and share the
+common `ProjectileProgram` math across FPS/RTS. Rebuild ordered legacy
+views only for save v9 and network compatibility, never as a second
+writable authority. No default switch until FPS/RTS replay/save/transport
+and editor integration tests pass natively.
