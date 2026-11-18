@@ -915,12 +915,22 @@ bool ParticleSystem::setProgramParameter(FxHandle h, uint32_t slot, float value,
     if(slot>=8 || !spectra::program::number(value))return false;
     auto& I=*impl_;
     auto* in=findInstance(I,h);
-    if(!in)return false; // stale generation or a completed instance
-    in->programParams[slot]=value;
+    // A one-shot may finish emitting while its particles continue living.
+    // In that case update surviving owned particles, but never reuse an
+    // obsolete handle as a future-birth instance.
+    if(!in && !affectExisting)return false;
+    bool changed=false;
+    if(in) {
+        in->programParams[slot]=value;
+        changed=true;
+    }
     if(affectExisting)
         for(auto& p:I.particles)
-            if(p.owner==h.id)p.programParams[slot]=value;
-    return true;
+            if(p.owner==h.id) {
+                p.programParams[slot]=value;
+                changed=true;
+            }
+    return changed;
 }
 void ParticleSystem::move(FxHandle h, float3 pos) { if (auto* in = findInstance(*impl_, h)) in->pos = pos; }
 void ParticleSystem::move(FxHandle h, float3 pos, float3 dir) {
