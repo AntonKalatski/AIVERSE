@@ -1138,3 +1138,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - `CMakeLists.txt` now explicitly links `aiverse_game` PRIVATE to catalog-generated `AIVERSE::lib_ecs_kinematic_projectiles` and `AIVERSE::lib_ecs_ordered_impact` after `add_subdirectory(libraries)`. This declares the runtime's native dependencies rather than relying only on the header paths inside the RTS source.
 - The underlying libraries remain header-only, with no physics world requirement for the kinematic path and no new runtime state or persistence layout. External native projects can use the same public packages via the catalog.
 - Verification: source commit only. Catalog syntax was validated when its packages were added; **CMake configure, native RTS compilation, linker and gameplay tests have not run**. A build is needed to confirm catalog-generated targets and ABI in the active toolchain.
+
+
+### 2026-11-18 — Shared deterministic hitscan candidate query policy
+- Implementation SHA: `ae9ee7b975139250674c952876a28994bddff5ca`.
+- New public `libraries/include/aiverselib/genre/EcsHitscanSystems.h` exports `HitscanCandidate<T>` and `selectClosestHitscanCandidate`. Inputs: candidate range (live ECS-derived view or immutable rewind snapshot), origin, delta, maximum allowed fraction, eligible predicate and hitbox provider. Uses existing `world::intersect` fixed-point slab query and strict `fraction < best`, retaining original source range order for equal-distance ties. No projectile motion integration or extra RNG; real source and target identities remain the caller's.
+- This is a **shared raycast selection policy**, not an independently registered `HitscanSystem` or a replacement for environment/vehicle obstruction. Next connect real FPS `traceShot` to this policy without touching rewind selection or damage order.
+- Verification: connector GitHub commit only; native compilation/CTest have not run.
