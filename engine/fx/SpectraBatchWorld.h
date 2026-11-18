@@ -8,6 +8,7 @@
 #include "VfxGraph.h"
 #include "ParticleSystem.h"
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -36,6 +37,10 @@ public:
                       fx::float3 direction = {0,1,0}, float scale = 1,
                       fx::float4 tint = {1,1,1,1});
 
+    // Presentation-only runtime parameters for a specific effect handle.
+    // No graph rebuild and no new ECS component type.
+    bool setProgramParameter(fx::FxHandle h, uint32_t slot, float value,
+                             bool affectExisting = false);
     void move(fx::FxHandle h, fx::float3 position);
     void move(fx::FxHandle h, fx::float3 position, fx::float3 direction);
     void stop(fx::FxHandle h);
