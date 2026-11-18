@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <utility>
 
 namespace aiverse::terraweave {
 
