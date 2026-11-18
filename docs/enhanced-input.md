@@ -222,9 +222,9 @@ Stage 47–48 tests are authored, but compilation and runtime execution have
 ## C++ basics
 
 \`\`\`cpp
-#include <aiverselib/gameplay/EnhancedInput.h>
-namespace ei = aiverse::lib::gameplay::enhanced;
-ei::InputSystem input;
+#include <aiverselib/gameplay/InputFlow.h>
+namespace ei = aiverse::lib::gameplay::inputflow;
+ei::InputFlow input;
 input.defineAction({"Move",ei::ValueType::Axis2D,{ei::Modifier::normalize()}});
 input.defineAction({"Fire",ei::ValueType::Boolean});
 ei::MappingContext game{"Gameplay"};
@@ -235,7 +235,7 @@ game.bind("Move",{ei::Device::Keyboard,int(aiverse::platform::Key::S)},
 game.bind("Fire",{ei::Device::MouseButton,0},{},{ei::Trigger::pressed()});
 input.registerContext(std::move(game));
 input.activateContext("Gameplay",0);
-aiverse::platform::EnhancedInputAdapter adapter(input);
+aiverse::platform::InputFlowAdapter adapter(input);
 // In the platform event callback:
 adapter.onEvent(platformEvent);
 // Once per presentation frame (if the app owns gamepad polling):
