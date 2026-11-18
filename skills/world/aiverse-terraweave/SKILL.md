@@ -363,3 +363,22 @@ The function-implementation agent updates
 `docs/terrain/AGENT_HANDOFF.md` after each stage and records
 `NOT RUN`; do not add/invoke tests or state a pass without
 external executed logs.
+
+## Horizon incremental GPU atlas updates (Stage 11b)
+
+When editing the Horizon GPU path, reuse
+`engine/render/TerraWeaveHorizonGpuPatch.h`, not
+new device APIs. The pure CPU
+`horizonCanReuseModelGeometry` must gate all atlas
+subregion updates; `planHorizonAtlasUpload` returns
+a bounded plan or nullopt; only `gfx::Device` on
+the render owner thread may apply the plan.
+Geometry or terrain height/colour changes must
+fall back to ordinary model upload; keep the old
+proxy until the replacement has uploaded.
+Do not claim partial **geometry** GPU updates:
+this implementation changes texture subregions
+only. The separate testing agent owns CTest,
+GPU row-pitch/mipmap validation, screenshots and
+performance benchmarks. Log all outcomes in
+`docs/terrain/AGENT_HANDOFF.md`.
