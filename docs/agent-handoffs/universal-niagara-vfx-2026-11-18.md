@@ -568,3 +568,62 @@ Then run actual Apple Silicon Metal shaders on a real GPU frame and capture imag
 3. **Opt-in only.** GraphRuntime is not wired to production FPS/RTS host loops or native ECS presenter yet. The host must decide tick-boundary event delivery, attached transform resolution, GPU update scheduling before render passes, resource lifecycle and rollback presentation reset. Preserve existing CPU VFX parity until migration tests.
 4. **Next bounded stage:** build and test stages 7–11 on macOS + real Metal, fix compiler and runtime defects with a **separate stage-12 implementation and handoff**, then opt-in one real native cross-genre presentation host using graph instances. Only after successful GPU stress/visual QA consider allocator compaction, indirect drawing and richer GPU graph execution.
 5. Append to **this same living handoff** after each next code stage in a separate commit. Never replace or lose other agents' progress in `feature/universal-entity-inspector-fps`.
+
+## Stage 12 — GPU sparse-range and device-failure hardening (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** correct two known high-risk behaviors in the Stage 10–11 Metal GPU subset — a misleading `RequireGpu` fallback after device loss and unnecessary full-capacity compute/draw work — while preserving all genre-neutral ECS/presentation and CPU paths. Add a dedicated CI compilation/regression lane. **No real Metal execution was conducted.**
+
+### Exact implementation and validation-source commits
+
+| Implementation SHA | Changed file | What changed |
+|---|---|---|
+| `ef7fa1fa969d1fb7c636105661e1ce4510b7857f` | `engine/fx/SpectraGpuParticles.h` | Stats for submitted GPU slot prefix, GPU fallback count and discarded particles; private draw-prefix state |
+| `174bc522f6835ab6606b39a4e76c46dcdf2808f2` | `engine/fx/SpectraGpuParticles.cpp` | Strict `RequireGpu` failure after unhealthy device, non-seamless automatic fallback, compute/draw occupied prefix rather than full capacity |
+| `edde3b227434f94616c24966675329cf0ae6fbf3` | `engine/fx/SpectraGpuParticles.h` | `ComputeParticles::ready()` exposing actual runtime-ready state |
+| `279c88a770c73838d56e55bf448040dd1284f888` | `engine/fx/SpectraGraphRuntime.h` | `GraphRuntime::gpuActive()` now checks underlying emitter health |
+| `e887d6b36a68b39d1495685abc096e5721bef00c` | `engine/fx/SpectraGraphRuntime.cpp` | Propagate real backend/readiness/reason after runtime failure |
+| `439f8528b53cb54821fd7598a10c5e46519e00f6` | `engine/fx/SpectraGpuParticles.cpp` | Skip all GPU compute when pool empty |
+| `d4c4ab4829921303daa9d1045fb5e969849184ea` | `tests/vfx_gpu_backend_test.cpp` | RHI mock: RequireGpu after device loss, explicit CPU fallback, encoder/clear safety, occupied-prefix draw count |
+| `79d9e227d9482486a25cac2e33ecb1c0b7a15f25` | `tests/vfx_gpu_backend_test.cpp` | Additional staggered births/expiry across multiple frames with holes in the GPU pool |
+| `cd24d96603d27807129975428bfc5443575b9760` | `.github/workflows/spectrafx-validation.yml` | PR/manual Linux+macOS focused CTest, Linux editor compile + MCP graph CTest |
+| `d14f2c496fc91cf07f44c4f6d54b2da6788d3362` | `docs/spectrafx.md` | Stage-12 public API/telemetry/lifecycle/CI documentation |
+| `87915882fc95bfde2f2683bdf6be1722bd736c29` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent protocol for sparse GPU draws, RequireGpu and failure reporting |
+| `af80404c23e056debe7a8b07853770b8eedcfd13` | `AGENTS.md` | Stage-12 genre-neutral GPU lifecycle and no-false-claims rules |
+
+### API, data flow, platform and compatibility
+
+- `ComputeStats` adds `submittedSlots` (last draw-prefix capacity, including dead holes), `gpuFallbacks` and `lostOnFallback` (discarded GPU-resident particles if the GPU fails and the wrapper attempts an automatic CPU migration). Previous stats remain source compatible. `ComputeParticles::ready()` exposes the readiness bit; `gpuActive()` still requires Metal.
+- Prior GPU integration/update/draw dispatches across the entire allocated `capacity`, even with one active particle. The new implementation computes the greatest occupied slot index from bounded CPU-side ages and uses that **prefix** for integrate/expand and indexed draw calls. New births are queued as before. Empty pool + no births skips all dispatches and draws.
+- **Not stream compaction**: inactive slots inside the prefix still produce degenerate zero-alpha billboards; when three live particles occupy slots 3–5, `alive == 3` while `submittedSlots == 6`. This bounded optimization does not change shader, storage-buffer layout, CMake symbol, graph JSON or native ECS identity.
+- `RequireGpu`: if `Device::gpuHealthy()` reports failure, `step` returns **false**, the emitter is marked not ready, its backend is not misreported as CPU, and `reason()` explains the forbidden fallback. The host must recreate/reinitialize the device as appropriate.
+- `Automatic` / `PreferGpu`: runtime GPU-health failure attempts to create a CPU emitter, increments `gpuFallbacks`, increments `lostOnFallback` by the affected live count, and returns **false** for the transition frame, rather than falsely declaring seamless rendering. **An unhealthy graphics device can also make a CPU renderer unusable**: CPU fallback initialization alone is *not* proof of recovered visuals.
+- `GraphRuntime::step` now copies the contained emitter's actual backend, readiness and error; `GraphRuntime::gpuActive()` also checks contained `ComputeParticles::gpuActive()`. There is no automatic FPS/RTS client replacement or mutation of authoritative ECS state.
+- `clear()` inside an active render/compute encoder remains refused without altering slot bookkeeping, and outside the encoder clears `submittedSlots`. `shutdown()` resets these fields.
+- Added `.github/workflows/spectrafx-validation.yml`, triggered on relevant PR changes and manual dispatch. Linux/macOS build the five standalone SpectraFX C++/RHI mock regression targets and run `ctest -L SpectraFX`; Linux also compiles the editor and runs `vfx_graph_ops`. This CI workflow **does not** execute Metal shaders on a GPU or validate Apple Silicon visuals.
+
+### Actual tests / CI record — NOT RUN
+
+No native AIVERSE checkout exists in this tool container (`/mnt/data/AIVERSE` absent), so there was **no actual CMake configure, build, CTest, Metal shader compilation, screenshot capture or performance benchmark**. GitHub API/connector writes succeeded and remote workflow metadata was queried.
+
+On latest Stage-12 AGENTS commit `af80404c23e056debe7a8b07853770b8eedcfd13`, the GitHub workflow query showed **five queued** jobs/workflows: `GPU batching focused regression`, `ECS 2.0 experimental checks`, `SpectraFX validation`, `CI` and `AIVERSE Studio validation`. The combined status endpoint returned **no successful statuses**. Therefore mark nothing as PASS.
+
+Commands for local AIVERSE agent:
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_editor aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests aiverse_vfx_ops_tests aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+**Real Metal QA must follow:** start device frame, initialize an eligible SpectraFX graph, spawn from many locations across multiple frames, simulate, begin render pass, draw, inspect output pixels/screenshot, verify shader compile logs and GPU command ordering, test draw range and sparse holes, `RequireGpu` failure without CPU transition, automatic fallback and full device recovery, and compare with CPU quality/visuals. Run on an actual Apple Silicon GPU and track upload bytes/draw calls/GPU timings.
+
+### Known limitations and exact next action
+
+1. **Build status still unknown.** The new CI lane exists and was queued, but this stage did not see a completion. Its source changes are not compile-verified; next agent should fetch actual CI logs and fix real compiler/test failures first.
+2. **GPU prototype remains narrow:** one additive soft-sprite emitter, no true GPU compaction, indirect count, scene depth collision, shader graph/dataflow nodes, multiple textures, ribbon/mesh effects or GPU emitter event channels. Vulkan/GL/GLES/WebGL remain CPU fallback. The prefix optimization is O(capacity) CPU age bookkeeping and can still draw holes.
+3. **Runtime recovery is not seamless.** GPU-resident particles are lost on an automatic transition and `step` reports `false`; if `gpuHealthy` is false, a separate graphics-device reinitialization may still be necessary. Do not treat fallback as proof that graphics recovered.
+4. **Next bounded stage (Stage 13):** observe/fix CMake+CTest and actual Metal diagnostics on Apple Silicon; implement a real offscreen Metal compute+draw smoke test and safe graphics-device recovery before considering default GPU effect routing. Once verified, design GPU compaction/indirect buffers and a genre-neutral ECS presentation scheduler that can route multiple graph emitters in native projects. Each implementation stage must end with another **separate** handoff commit here with actual SHAs/test results and explicit limits.
