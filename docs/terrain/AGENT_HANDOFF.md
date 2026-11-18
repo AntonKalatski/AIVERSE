@@ -2357,3 +2357,44 @@ This is **conservative quad-granularity ownership**, not exact polygon intersect
 **Tester acceptance:** exact subtracted 2D areas for one tile inside a quad, half/quarter coverage, multiple nonoverlapping near tiles, tile coincident with outer boundary, negative world coordinates and diagonal source-triangle intersections; original triangle winding and interpolated heights; near ownership mask vs exact rectangles; hard overflow fallback; TWH5 roundtrip/version errors/malformed rect size and old TWH4 rejection; GPU topology patch fallback; native WorldScene with tile unload/fast camera move; no new materials/draw passes; screenshot Z-fighting and vertical seams. Record results in this handoff.
 
 **Next feature-only work:** optionally add a bounded geometry skirt along the precise newly-clipped near-terrain tile edges (not only fully owned coarse cell boundaries), with height-aware seam correction if a stable near-surface sampling snapshot can be stored in the bake/archive. Do NOT add unbounded triangles or a second terrain renderer.
+
+## Stage 18c — partial clip diagnostic propagation and degenerate handling (COMMITTED; NOT TESTED)
+
+**Commits/files:**
+- `a9ef5106df0a13d74d8d128e3f82eeb791defaf5`:
+  `engine/render/TerraWeaveHorizonModel.h` adds optional,
+  source-compatible `HorizonModelBuildStats*` output to
+  `makeHorizonModel(bake,stats=nullptr)`. Reports count of
+  coarse cells whose original far triangles were replaced,
+  the number of emitted clipped triangles, and whether
+  geometry-budget overflow forced the previous conservative
+  full-quad fallback. This is CPU model-build telemetry only.
+- `855c8b4c34f4208243bf7b222f03ce6053ffd2c6`:
+  `engine/render/TerraWeaveHorizonGpuCache.h` stores the
+  same three diagnostic values with a move-only GPU-resident
+  cached region; a cache restore retains accurate measurements.
+- `d740c5cf94ff17a2d8b6d13650bcee9d1ab0e8e6`:
+  `engine/render/TerraWeaveHorizonScene.h` records clipping
+  diagnostics on worker model preparation and propagates
+  `HorizonRuntimeStats::nearClipQuads`,
+  `nearClipTriangles`, `nearClipFallback` through
+  full upload, incremental GPU patch, empty-model publication
+  and GPU cache restoration.
+- `6abbadd1d759abb66a5297101ad18e7dee356040`:
+  `engine/render/TerraWeaveHorizonClip.h` rejects
+  zero-area fan triangles formed when tile-boundary clipping
+  leaves collinear polygon corners; they consume no
+  GPU geometry/budget.
+
+**Actual validation:** GitHub API commits and manual source
+review only. **No tests/build/CTest/GPU runs**. Testing agent
+owns source-compilation and synthetic geometry test fixtures
+as documented in Stage 18b. Track clipping counters in
+real scenes to decide whether to increase the default
+`maxNearClipTriangles` cap; no measured FPS is claimed.
+
+**Remaining limitation:** these diagnostics count the
+precisely generated *remaining far-ground triangles*, not
+the number of near-geometry triangles. When source/cap
+fallback is used, `nearClipFallback=true` is explicit
+rather than silently presenting the geometry as exact.
