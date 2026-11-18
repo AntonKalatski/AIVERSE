@@ -20,7 +20,7 @@ void attr(std::string& s,const char* name,const char* type,const std::string& da
 }
 void half(std::string& s,uint16_t h){s+=char(h);s+=char(h>>8);}
 void real(std::string& s,float f){uint32_t v;std::memcpy(&v,&f,4);u32(s,v);}
-std::string fixture(bool compressed=false,bool alpha=false){
+std::string fixture(bool compressed=false,bool alpha=false,size_t* offsetTable=nullptr){
     std::string s;
     u32(s,20000630u);u32(s,2u); // magic, version 2 no extra flags
     std::string channels;
@@ -38,6 +38,7 @@ std::string fixture(bool compressed=false,bool alpha=false){
     attr(s,"dataWindow","box2i",window);
     s+='\0'; // attribute list terminator
     const size_t offsets=s.size();
+    if (offsetTable) *offsetTable=offsets;
     s.resize(s.size()+16,'\0');
     for(int row=1;row>=0;--row){ // physically reverse-ordered scanline chunks
         patch64(s,offsets+size_t(row)*8,uint64_t(s.size()));
@@ -78,21 +79,10 @@ void invalidFiles(){
     data=fixture();
     data[4]=char(3);
     expect(!parseOpenExr(data,img,err)&&!err.empty(),"unsupported version refuses");
-    data=fixture();
-    // Both scanline offsets now target row zero: duplicate row index rejects.
-    // Derive the offset table position by the first offset that references
-    // a valid scanline chunk rather than hardcoding header offsets.
     size_t offsetAt=0;
-    for(size_t p=8;p+16<data.size();++p){
-        uint64_t a=0,b=0;
-        if(!exr_detail::u64(data,p,a)||!exr_detail::u64(data,p+8,b))continue;
-        if(a>p+16 && a<data.size() && b>a && b<data.size()){
-            uint32_t yA=0,yB=0;
-            if(exr_detail::u32(data,size_t(a),yA) &&
-               exr_detail::u32(data,size_t(b),yB) &&
-               int32_t(yA)==-2 && int32_t(yB)==-1){offsetAt=p;break;}
-        }
-    }
+    data=fixture(false,false,&offsetAt);
+    // Simulate an offset table that points to the same physical row twice.
+    // Both entries now reference y=-2; the parser must reject duplicates.
     expect(offsetAt!=0,"synthetic offset table located");
     uint64_t first=0;exr_detail::u64(data,offsetAt,first);
     patch64(data,offsetAt+8,first);
