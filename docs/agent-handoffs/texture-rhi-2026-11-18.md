@@ -1072,3 +1072,32 @@ editor/client consumers, then add metal/GL/Vulkan MRT
 render/resolve device tests. After that continue GL/Vulkan
 MSAA and the texture format/importer waves in separate
 code and handoff commits.
+
+## Stage 4Q — update canonical MRT + RenderTargetSet documentation (2026-11-18)
+
+**Documentation commit:** `8c366e0a22b57636de26e1bae6285324a309f38e`.
+**Changed:** `docs/texture-rhi.md`.
+
+**Documentation:** Replace obsolete "only one color attachment" status
+with the actual source-only MRT implementation in GL/GLES3, Metal
+and Vulkan, including same-format-only and shader-output-location
+requirements. Document Metal-only per-color MSAA resolves,
+source-only Vulkan GPU regression fixtures, and the new
+genre-independent `gfx::RenderTargetSet` with example usage
+and explicit resource lifecycle. List remaining missing mixed
+formats, GL/Vulkan MSAA, native GPU execution, importers and
+streaming. Keep the unrelated Lua brush `RenderTexture`
+separate.
+
+**Validation:** Doc source commit confirmed. No C++ files
+changed during this stage; native builds/tests **NOT RUN**.
+No GitHub Actions green outcome can be asserted without
+a completed successful job.
+
+**Next:** First build the current branch and run
+`texture_contract`, `render_target_set`,
+`vulkan_backend` on a proper Vulkan/Metal/GL toolchain;
+fix compilation and GPU validation errors. Only then finish
+GL/Vulkan MSAA/resolve, mixed formats, DDS/KTX2 and
+async/streaming improvements. Append precise results and
+new stage handoffs.
