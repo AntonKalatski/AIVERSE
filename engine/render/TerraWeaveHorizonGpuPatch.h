@@ -37,6 +37,7 @@ inline bool horizonCanReuseHorizonLayout(const HorizonBake& oldBake,
         oldBake.cameraZcm != nextBake.cameraZcm ||
         oldBake.terrainResolution != nextBake.terrainResolution ||
         oldBake.terrainBeginCm != nextBake.terrainBeginCm ||
+        oldBake.terrainSkirtDepthCm != nextBake.terrainSkirtDepthCm ||
         oldBake.atlasWidth != nextBake.atlasWidth ||
         oldBake.atlasHeight != nextBake.atlasHeight ||
         oldBake.terrainVertices.size() != nextBake.terrainVertices.size() ||
@@ -70,7 +71,9 @@ inline bool horizonCanReuseModelGeometry(const HorizonBake& oldBake,
     for(size_t i=0;i<oldBake.terrainVertices.size();++i) {
         const auto& a=oldBake.terrainVertices[i];
         const auto& b=nextBake.terrainVertices[i];
-        if(a.heightCm!=b.heightCm||a.colorRgba!=b.colorRgba)return false;
+        if(a.heightCm!=b.heightCm||a.colorRgba!=b.colorRgba||
+           a.slopeXPermille!=b.slopeXPermille||
+           a.slopeZPermille!=b.slopeZPermille)return false;
     }
     return true;
 }
