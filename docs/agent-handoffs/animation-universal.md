@@ -847,3 +847,41 @@ before calling this stage validated.
   static code audit (WITHOUT running deferred tests), amend code
   in its own commit and follow with Stage 37 handoff.
 
+## Stage 37 — reusable graph-cost memoization and public scheduler documentation (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Implementation SHA:** `07c0097b750f95b6a6f9671c0d412a5fcd3e9363`.
+- **Files:** updated `libraries/include/aiverselib/animation/MotionWeaveScheduler.h`
+  to retain dense work-array capacity across frames and memoize per-graph
+  safety/cost classification once per update (no persistent raw-pointer
+  cache across hot-reload boundaries); updated root `CMakeLists.txt`,
+  `docs/motionweave.md` and
+  `skills/gameplay/aiverse-motionweave/SKILL.md`, added
+  `tests/animation/motionweave_cache.cpp`.
+- **Behavior/API:** every distinct immutable graph is assessed once per
+  frame rather than rewalking every node for each of potentially thousands
+  of identical characters. `MotionWeaveScheduleStats` now exposes
+  `uniqueGraphs` and `offscreenEntities`. Characters with valid hidden
+  poses have lower *estimated* scheduling cost, while real pose/clock
+  behavior is unchanged; the scheduler still runs graph updates.
+  The three-argument `MotionWeave::update(World&,dt,scheduler)` is the
+  recommended persistent multicore host entry point. The legacy
+  two-argument call deliberately remains sequential.
+- **Compatibility:** no changes to ECS gameplay, save/rollback,
+  network protocol or graphics backend. Cost hints only govern how
+  independent visual entities are assigned to CPU worker jobs.
+- **Tests:** added deferred `motionweave_graph_cost_cache` CTest for
+  repeated graphs, hidden entities and restart; **NOT RUN** (user
+  explicitly requested test deferral). No passing CI claim.
+- **Risks:** weighted cost model is a heuristic, not real-time
+  calibrated throughput prediction; one costly actor cannot be split
+  internally into several workers, but separate actors are stolen
+  dynamically. No GPU uploads/Renderer3D calls on workers. Host must
+  not concurrently mutate/snapshot the presentation ECS World.
+- **Next agent first action:** review all Stage 33–37 source files for
+  C++ portability and lockstep/ThreadSanitizer safety, focusing on
+  `MotionWeaveWorkers.h`, `MotionWeaveScheduler.h` and
+  `apps/fps/client.cpp`. Since user deferred tests, do not invoke
+  CMake/CTest yet; document any static fixes in a new code commit,
+  then append Stage 38 before advancing to a different feature.
+
