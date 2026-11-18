@@ -69,6 +69,54 @@ public:
     int result(Simulation&) override { return 0; }
     bool serializeState(Simulation&,Archive& archive) override { return archive.ok(); }
 };
+Json authoredFields() {
+    Json map = authored();
+    Json p = map["physis"];
+    p.set("windZones",Json::parse(R"([
+      {"id":"wind-z","center":[0,0,0],"radiusMeters":80,"velocity":[6,0,0]},
+      {"id":"wind-a","center":[20,0,-20],"radiusMeters":40,"velocity":[0,0,8]}
+    ])"));
+    p.set("storms",Json::parse(R"([
+      {"id":"storm-c","kind":"Tornado","center":[0,0,0],"eyeRadiusMeters":5,
+       "outerRadiusMeters":100,"heightMeters":200,"updraft":20}
+    ])"));
+    p.set("gravityFields",Json::parse(R"([
+      {"id":"gravity-b","mode":"Attract","center":[0,50,0],
+       "radiusMeters":150,"radialMagnitude":8}
+    ])"));
+    map.set("physis",p);
+    return map;
+}
+
+void nativeAuthoredFieldsAndRollback() {
+    const Json fixture=authoredFields();
+    const auto make=[&]() {
+        auto s=std::make_unique<Simulation>(SimConfig{},std::make_unique<GenericNativeHost>());
+        s->setup(Json::object(),fixture);
+        return s;
+    };
+    auto a=make(), b=make();
+    int aw=0,bw=0,st=0,gr=0;
+    a->world().eachExistingConst<WindZone>([&](Entity,const WindZone&){++aw;});
+    b->world().eachExistingConst<WindZone>([&](Entity,const WindZone&){++bw;});
+    a->world().eachExistingConst<StormEvent>([&](Entity,const StormEvent&){++st;});
+    a->world().eachExistingConst<GravityField>([&](Entity,const GravityField&){++gr;});
+    CHECK(aw==2 && bw==2 && st==1 && gr==1);
+    CHECK(a->checksum()==b->checksum());
+    const Vec3 position{0_fx,0_fx,0_fx};
+    CHECK(windWithStormsAt(a->world(),position)==
+          windWithStormsAt(b->world(),position));
+    for(int i=0;i<3;++i){a->step();b->step();}
+    CHECK(a->checksum()==b->checksum());
+    auto saved=a->serialize();
+    auto restored=make();
+    std::string error;
+    CHECK(restored->deserialize(saved,&error));
+    CHECK(restored->checksum()==a->checksum());
+    a->step();restored->step();
+    CHECK(restored->checksum()==a->checksum());
+}
+
 void nativeHostAndSave() {
     auto make = [&]() {
         auto s=std::make_unique<Simulation>(SimConfig{},std::make_unique<GenericNativeHost>());
@@ -90,7 +138,7 @@ void nativeHostAndSave() {
 }
 }
 int main() {
-    optionsAndRejections();nativeHostAndSave();
+    optionsAndRejections();nativeHostAndSave();nativeAuthoredFieldsAndRollback();
     std::printf("PHYSIS ProjectConfig: %s\n",failed?"FAIL":"PASS");
     return failed?1:0;
 }
