@@ -4,6 +4,7 @@
 
 #include "apps/editor/core/MapDoc.h"
 #include "apps/editor/core/TerraWeaveOps.h"
+#include "apps/editor/TerraWeavePlacementMask.h"
 #include "engine/render/TerraWeaveForestAdapter.h"
 #include <algorithm>
 #include <cmath>
@@ -131,6 +132,9 @@ public:
                         // the original seed. Sample the actual map for the overlay.
                         const int64_t localXcm = item.xCm - origin.worldOriginXcm;
                         const int64_t localZcm = item.zCm - origin.worldOriginZcm;
+                        if (!terraWeavePreviewAllowsPlacement(doc.data, localXcm,
+                                                               localZcm, origin.cellSizeCm))
+                            continue;
                         item.heightCm = sampleHeightCm(localXcm, localZcm);
                         item.xCm = localXcm;
                         item.zCm = localZcm;
