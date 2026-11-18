@@ -469,3 +469,19 @@ to View and can be reused by any genre or editor.
 Deferred test: `view_geometry_bounds` in
 `tests/view/geometry_bounds.cpp`. Native build and execution are
 **NOT RUN** for this integration step.
+
+## Genre-free ground ribbons (View Stage 81)
+
+`view::QuadXZObject { start, end, width, rgba, y }` is an ordered
+`ScenePacket` for drawing an XZ ground ribbon. Use
+`aiverse::View::submitQuadXZ(renderer, packet)` or add it to
+`view::ScenePacketBatch` and call `submitPackets`. The renderer's
+existing `quadXZ` implementation owns the tessellation and GPU path;
+View contains no road, RTS, terrain or gameplay rule. Invalid width
+or nonfinite width/height values skip submission.
+
+The legacy RTS road-link overlay now submits the same endpoints, width,
+colour and lift through View, with the same immediate overlay layer and
+draw order. This is an incremental extraction, **not** retirement of
+`game::RtsView`. The mixed packet regression test checks the new
+variant and parameter ordering but has **NOT RUN** as of this stage.
