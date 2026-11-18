@@ -491,6 +491,13 @@ int main() {
     const std::vector<world::NereidSceneSurface> opticalVolumes{underwaterLake};
     auto submerged=world::sampleNereidUnderwater(opticalVolumes,
                                                  {0_fx,8_fx,0_fx});
+    world::NereidWaterScene sceneOptics;
+    sceneOptics.setSurfaces(opticalVolumes);
+    const auto sceneSubmerged=world::sampleNereidUnderwater(
+        sceneOptics,{0_fx,8_fx,0_fx});
+    check(sceneSubmerged.submerged && sceneSubmerged.waterId==123 &&
+          sceneSubmerged.depthMetres==2.0,
+          "scene-view underwater query must match immutable list sampling");
     check(submerged.submerged && submerged.waterId==123 &&
           submerged.depthMetres==2.0 &&
           submerged.transmission<0.38f && submerged.transmission>0.36f,
