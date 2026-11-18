@@ -221,3 +221,30 @@ for 1D/2DArray/3D/Cube/CubeArray including upload and mip sampling.
 Then validate GL/Metal on supported devices and fix failures.
 Only afterwards advance to Stage 3 (views/independent samplers).
 Use a **new code commit and separate handoff commit** for each substage.
+
+## Stage 2D — Vulkan dimension-sampling integration test source (2026-11-18)
+
+**Code commit:** `5392904f281c2bfdcf282d1bb70e89ed32c77be4`.
+**Path:** `tests/render/vulkan_tests.cpp` only.
+
+**Added:** Integration checks for sampled `Texture1D`, `Texture3D`,
+`Texture2DArray`, `Cube`, and conditionally `CubeArray`. Each uses
+an actual Vulkan texture resource, a GLSL shader with the matching
+`sampler1D/3D/2DArray/Cube/CubeArray` type, a screen draw, capture and
+colour assertion. Cube arrays are skipped only if the native Vulkan
+feature query reports unsupported. The checks run inside existing
+`vulkan_backend` CTest when that target is built; no new executable.
+
+**Test status:** test source committed, but **NOT RUN** (native Vulkan
+build and driver unavailable in this session). It is NOT correct to
+claim the tests passed. Existing Vulkan test runner skips GPU work when
+no Vulkan driver can be created; inspect its output to distinguish
+a real GPU pass from skipped execution.
+
+**Immediate next step:** Run `cmake --build build/texture-rhi --target
+aiverse_vulkan_tests` then `ctest --test-dir build/texture-rhi
+--output-on-failure -R '^vulkan_backend$'` on Vulkan SDK+Lavapipe or
+native GPU. Fix compiler errors or colour mismatches as needed and
+record the actual results in the next handoff. Verify array-layer
+readback/update separately. Then continue stage 3 texture views
+and independent samplers.
