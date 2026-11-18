@@ -375,3 +375,13 @@ A newly visible actor doesn't invent a shot. The FPS game server,
 hit detection, ammo, damage and reloading remain authoritative.
 When any valid Montage is configured, the backend stays on the
 CPU Graph path so its upper-body mask/sections can be evaluated.
+
+
+When switching between simple CPU Graph and GPU Baked Animation,
+MotionWeave now captures each remote actor's normalized idle/walk
+clip phase and seeds the new presentation player. This avoids the
+previous forced restart at clip time zero. MotionWeave preserves
+confirmed replicated animation-action history across backend
+changes, so shot/reload/death cosmetics do not replay. The
+transition still cannot preserve arbitrary controller blends or
+motion-matching state and remains limited to simple clips.

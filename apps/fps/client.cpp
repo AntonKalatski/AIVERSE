@@ -18,6 +18,7 @@
 #include "libraries/include/aiverselib/animation/AnimationHotReload.h"
 #include "libraries/include/aiverselib/animation/AnimationAssetLoader.h"
 #include "libraries/include/aiverselib/animation/ReplicatedAnimationActions.h"
+#include "libraries/include/aiverselib/animation/AnimationPhaseTransfer.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
@@ -269,15 +270,38 @@ struct App {
             motionweave::AnimationBackend::CpuGraph;
         const auto nextBackend=motionweave::selectAnimationBackend(
             backendPreference,oldBackend,backendOptions);
+        std::map<uint8_t,float> phaseHandoff;
         if((nextBackend==motionweave::AnimationBackend::GpuBaked)!=
             characterBakedCrowd) {
-            // These are view-only ECS entities. Recreate their visual players
-            // on mode changes; authoritative FPS actor identities are untouched.
+            // Transfer clip phase before recreating presentation components.
+            // More complex controller/montage graphs never enter GPU mode.
+            for(const auto& remote:actors) {
+                const auto found=characterEntities.find(remote.slot);
+                if(found==characterEntities.end())continue;
+                std::optional<float> phase;
+                if(characterBakedCrowd) {
+                    const auto* crowd=characterPresentation.tryGetConst<
+                        motionweave::AnimationCrowdComponent>(found->second);
+                    if(crowd)
+                        phase=motionweave::captureBakedClipPhase(
+                            crowd->animator,*characterModel);
+                } else {
+                    const auto* player=characterPresentation.tryGetConst<
+                        motionweave::AnimationPlayerComponent>(found->second);
+                    if(player && player->instance)
+                        phase=motionweave::captureGraphClipPhase(
+                            *player->instance,*characterModel,
+                            render::length(visual(remote.velocity))>.1f);
+                }
+                if(phase)phaseHandoff.emplace(remote.slot,*phase);
+            }
             characterBakedCrowd=
                 nextBackend==motionweave::AnimationBackend::GpuBaked;
             characterPresentation=World{};
             characterEntities.clear();
             characterLives.clear();
+            // Keep characterActions: confirmed snapshot event history must
+            // not reset merely because a rendering backend changed.
         }
         if(!characterGraphFile.empty() && ++animationReloadFrame%30u==0u) {
             if(animationReload.pollFile("fpsCharacter",*characterModel,
@@ -298,6 +322,9 @@ struct App {
                 if(characterBakedCrowd) {
                     auto& crowd=characterPresentation.add<motionweave::AnimationCrowdComponent>(e);
                     crowd.model=characterModel.get();
+                    if(const auto phase=phaseHandoff.find(remote.slot);
+                       phase!=phaseHandoff.end())
+                        crowd.initialNormalizedPhase=phase->second;
                     crowd.idle=characterModel->findClip("Idle");
                     if(crowd.idle<0)crowd.idle=characterModel->findClip("Stand");
                     crowd.walk=characterModel->findClip("Walk");
@@ -314,6 +341,10 @@ struct App {
                             e,motionweave::AnimationGraphKeyComponent{"fpsCharacter"});
                     characterPresentation.add<motionweave::AnimationPlayerComponent>(e);
                     characterPresentation.add<motionweave::AnimationPoseComponent>(e);
+                    if(const auto phase=phaseHandoff.find(remote.slot);
+                       phase!=phaseHandoff.end())
+                        characterPresentation.add<motionweave::AnimationPhaseSeedComponent>(
+                            e,motionweave::AnimationPhaseSeedComponent{phase->second});
                     characterPresentation.add<motionweave::AnimationInputsComponent>(e);
                     characterPresentation.add<motionweave::AnimationGraphNotifiesComponent>(e);
                     if(!characterMontages.empty())

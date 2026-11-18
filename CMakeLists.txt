@@ -684,6 +684,12 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME motionweave_phase_seed COMMAND aiverse_motionweave_phase_tests)
 endif()
 
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_phase_transfer_tests tests/animation/backend_phase_transfer.cpp)
+    target_link_libraries(aiverse_motionweave_phase_transfer_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_backend_phase_transfer COMMAND aiverse_motionweave_phase_transfer_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
