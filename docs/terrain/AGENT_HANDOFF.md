@@ -2044,3 +2044,21 @@ This is NOT implemented; do not claim it is.
 **Testing agent acceptance tasks:** build all relevant AIVERSE targets; exercise A→B→A GPU cache hit and ensure no extra `uploadModel`, verify cached GPU IDs preserved, A→B→C over-budget LRU eviction, and high-quality two-view cache byte accounting; test async late results after return to A, removed catalog cells and staging capacity (including WebGL no-thread mode); test source-revision invalidation while B is pending, edits inside vs outside visible region, no-cache mobile mode, model teardown/shutdown/device swap, memory and GPU framing on Metal/GL/Vulkan. Record pass/fail logs, not assumptions.
 
 **Next implementation-only work:** Add optional GPU residency visualization/diagnostics in existing editor scene UI, if useful, and consider seamless camera-region proxy transitions or atlas paging only with real GPU measurements. No tests added/executed in this stage.
+
+
+### Stage 13b follow-up — cache diagnostics and move-only ownership (SOURCE COMMITTED, TESTS NOT RUN)
+
+- `bdd9edbe411d7c6ba2040177ce96efc729fa1c43`:
+  `TerraWeaveHorizonGpuCache.h` returns move-only
+  `HorizonGpuRegion` via explicit optional move and records
+  GPU cache evictions caused by LRU budgets or stale source
+  revisions. Cache hits transfer model ownership rather than
+  incrementing ref counts on RHI handles.
+- `daf20ef6059679b266c60a17d7975cbfd2bdbb3e`:
+  `TerraWeaveHorizonScene.h` exposes
+  `HorizonRuntimeStats::gpuCacheEvictions`.
+
+**Actual validation:** GitHub source review and committed changes
+only. **No CMake/CTest/platform GPU run**, by the user's
+explicit separate-test-agent policy. Add eviction/revision and
+GPU memory accounting tests to the acceptance list above.
