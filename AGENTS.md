@@ -1267,7 +1267,7 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   tests passed. Record all tests as NOT RUN until the testing agent
   provides actual build/report evidence.
 - New `HorizonSurfaceSources`, bounded memory cache, camera hysteresis,
-  Horizon quality presets and `TWH4` prebaked atlas archive interfaces
+  Horizon quality presets and `TWH5` prebaked atlas archive interfaces
   are documented in `docs/terrain/TERRAWEAVE.md`. Keep their generator
   versions/fingerprints consistent whenever the bake format changes.
   Don't introduce file-system writes or game-authority mutations
@@ -1310,3 +1310,29 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   forest radius must not extend beyond guaranteed far
   terrain coverage. Separate agent owns all build/CTest/
   Metal/GL/Vulkan screenshots and benchmarks.
+
+### TerraWeave exact near-ground clipping / archive TWH5 (Stage 18)
+
+- **Current archive:** `TerraWeaveHorizonArchive.h` is
+  **TWH5**. Any preceding TWH1–TWH4 reference is
+  historical; old binaries must be regenerated.
+- Distant terrain overlapping a partial authored
+  near-tile rectangle should be subtracted on the CPU
+  using `planHorizonNearGroundClipping`, preserving
+  original far-ground triangle plane and winding.
+  No new RHI backend, material or draw per near tile.
+- The immutable source snapshot supplies both
+  `ownsNearTerrainRect` and `collectNearTerrainRects`.
+  Input rectangles and output mesh triangles are
+  strictly bounded; on cap overflow fall back to
+  the conservative full coarse quad cutout rather
+  than unbounded memory.
+- `maxNearClipTriangles`: Minimal=0, Mobile=512,
+  Balanced=2048, High=4096, configurable up to 8192.
+  Accurate X/Z clipping is NOT proof of seamless
+  vertical near/distant terrain heights.
+- Update `docs/terrain/AGENT_HANDOFF.md` on each
+  source stage with files/commits/actual tests.
+  Testing is owned by a separate agent; do not
+  claim compilation, screenshots or passing CTest
+  without that agent's logs.
