@@ -1360,3 +1360,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `modules/fps/FpsSystems.cpp::Module::damage` to invoke the shared `lib::genre::applyIntegerHitPointDamage(target.health,amount)` from `EcsDamageSystems.h` after the existing gear/armor and knockdown checks. The same primitive now executes inside the generic `addDamageResolutionSystem` and the live FPS path. Existing immediate health updates, source/hits/kill credit, loot, death events and authoritative `ActorRuntime` writeback are left in their original call order and save v9 layout.
 - **Scope:** this is real cross-genre shared-algorithm use, **not** independent FPS `HitPointsComponent` authority or queued ECS damage adoption. Do not add a second mutable HP owner while `ActorRuntime` remains canonical. RTS fixed-point detailed `dealDamage` is intentionally unaffected by the integer primitive.
 - Verification: GitHub commit only; **native compilation, FPS tests, rollback/save and real gameplay parity remain unverified**. Next: add edge-case policy tests, run native FPS ECS-authority ON/OFF and network suites, then incrementally split semantic stages without reordering effects.
+
+
+### 2026-11-18 — Integer HP shared policy exhaustive regression fixture
+- Implementation SHA: `47e9f8123a67d2b26812c62a21d51cc4afa34b63`.
+- Added `tests/ecs_integer_health_commit_test.cpp` comparing the new common HP commit against the former FPS `std::max(0,hp-damage)` for valid 0..100 health and 0..1000 incoming damage; tests applied-damage amount, zero/dead/negative health behavior, nonpositive damage and INT32_MAX overflow safety. The header-only test intentionally links no built-in genre modules.
+- Verification: GitHub test source committed only. **Compiler and test execution not yet performed**; register it in CMake/standalone test suite next and run alongside existing FPS ECS-authority and transport regressions.
