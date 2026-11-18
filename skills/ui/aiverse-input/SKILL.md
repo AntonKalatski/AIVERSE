@@ -62,6 +62,15 @@ with deterministic conservative fallback for contradictory feedback.
 Cycles are rejected in native/JSON authoring; direct Action graph chains
 may exceed eight levels. Tests AUTHORED, NOT RUN.
 
+**Validation Stage 56 (not release-ready):** all targeted InputFlow CI
+jobs were still queued when last inspected. The full Linux ARM64 CI failed
+in unrelated ECS regression tests because standard `assert` vanished in
+Release `-DNDEBUG`; both test files have since been changed to always-on
+`CHECK`, but green retests have not been observed. Do not mark PR #20
+ready or merge it until native tests, editor/FPS/RTS integration and
+multi-device smoke are actually confirmed. Review Stage 56 in the handoff
+for job IDs and corrected commits.
+
 ## Canonical InputFlow API
 
 For native CMake projects link `AIVERSE::InputFlow` (or `AIVERSE::lib_inputflow`), both aliases of the original header-only `aiverse_lib_input` target. `AIVERSE::lib_input` is retained for older projects.
