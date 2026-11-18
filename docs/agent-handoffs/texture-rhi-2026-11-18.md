@@ -3685,3 +3685,60 @@ run `bash tools/verify-texture-rhi.sh --editor` and add
 summary and failing logs. Fix *actual* compile/test failures
 in the source branch, append separate code/handoff commits,
 and only then consider PR #21 production ready.
+
+## Stage 7N — asynchronous disk-backed virtual texture page source (2026-11-18)
+
+**Code commit:** `97b06fcd4b7888c789155858d83e8466cb547d3c`.
+**Branch / PR:** `feature/texture-rhi-unification`, Draft #21.
+**File:** new `engine/gfx/VirtualTextureDiskQueue.h`.
+
+**Implemented source:** Native C++20 `gfx::VirtualTextureDiskQueue` starts
+one owned `std::thread` dedicated to reading immutable, tightly packed
+RGBA8 virtual page files. Config declares the trusted asset root, mip-zero
+tile dimensions, virtual mip/layer counts, physical page size, maximum
+outstanding requests and maximum resident CPU result bytes. Files use a
+deterministic integer-only layout
+`m<MIP>/l<LAYER>/x<X>_y<Y>.rgba`; requested coordinates are validated
+against virtual mip extents and cannot inject arbitrary path segments.
+`request(VirtualPageKey)` deduplicates in-flight and ready requests;
+`cancel(ticket)` drops queued/completed work and invalidates active
+blocking-read results; `takeReady(out,maxBytes,maxCount)` transfers
+ownership of bounded result bytes to the render thread. The worker
+verifies exact on-disk byte size, reads into CPU-owned buffers, blocks
+when the result-memory budget is exhausted and notifies the caller
+through polling (no GPU/device calls from the worker). `stats()`,
+`lastError()`, `pageBytes()`, `shutdown()` expose lifecycle and
+memory accounting. Tickets are monotonic and never recycled on restart.
+A missing/truncated file is an explicit failed result, never a silent
+partial GPU page. Caller passes successful page bytes to existing
+`VirtualTextureStreamer::stage`/`drain` on the GPU owner thread.
+
+**Scope / missing:** This is a real filesystem I/O worker, *not*
+a GPU feedback pass, codec/transcoder, native sparse API, or
+automatic scene camera demand predictor. The root is a trusted
+game asset directory (symlink access is not sandboxed). A single
+cancellation of a deduplicated key cancels the shared ticket for
+all callers. Thread destruction waits for an active filesystem read;
+the worker must be destroyed before its host game shuts down.
+
+**Compatibility:** Opt-in header only; no change to Device ABI,
+texture formats, runtime render passes, deterministic ECS,
+save/network data or existing project assets. Use as a
+separate disk source for the physical page atlas, never as
+ECS-authoritative state.
+
+**Actual verification:** File created and code commit confirmed
+through GitHub connector. C++ compile, standalone test, GPU,
+editor and CI: **NOT RUN** yet. The local container cannot
+resolve github.com to clone the AIVERSE checkout. No green
+CI status was observed.
+
+**Next:** Write a focused mock disk fixture and CTest target
+using a temporary asset root, real binary files, duplicate
+request/cancellation, invalid coordinates, exact byte sizes,
+ready-byte backpressure, ticket lifetime, restart and missing
+file failures. Link with `Threads::Threads`. Run a standalone
+local compile where possible and the full native test later.
+Then add an integration helper that pumps disk results into
+`VirtualTextureStreamer::stage` on the render thread.
+Separate source and handoff commits per stage.
