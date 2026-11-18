@@ -722,21 +722,32 @@ public:
 
     bool beginRenderTargets(const RenderTargetPassDesc& desc) override {
         if (!validateRenderTargetPassDesc(desc) || inPass_) {
-            error_ = "GL: invalid or nested render target pass"; return false;
-        }
-        if (desc.colorCount > 1 ||
-            (desc.colorCount == 1 && desc.colors[0].resolveTexture.valid())) {
-            error_ = "GL: MRT and explicit MSAA resolves are not yet supported";
+            error_ = "GL: invalid or nested render target pass";
             return false;
         }
-        auto attachment = [&](const RenderTargetAttachment& a, bool isDepth, int& w, int& h) {
+        GLint maxColors = 0, maxDraws = 0;
+        glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &maxColors);
+        glGetIntegerv(GL_MAX_DRAW_BUFFERS, &maxDraws);
+        if (desc.colorCount > maxColors || desc.colorCount > maxDraws) {
+            error_ = "GL: MRT attachment count exceeds device limits";
+            return false;
+        }
+        // GL33/GLES3 don't expose a portable multisample texture resolve
+        // through this API. Do not accept the pass and lose the resolve silently.
+        for (int i = 0; i < desc.colorCount; ++i) {
+            if (desc.colors[size_t(i)].resolveTexture.valid()) {
+                error_ = "GL: explicit MSAA color resolve is not implemented";
+                return false;
+            }
+        }
+        auto validate = [&](const RenderTargetAttachment& a, bool wantDepth, int& w, int& h) {
             const GLTexture* t = textures_.get(a.texture.id);
-            if (!t || !t->id || !t->renderTarget ||
-                t->compressed || a.mipLevel >= t->levels || a.mipLevel < 0 ||
-                a.arrayLayer < 0 || t->dimension == TextureDimension::Texture1D ||
-                (isDepth ? t->fmt != PixelFormat::Depth :
-                           (t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB &&
-                            t->fmt != PixelFormat::RGBA16F))) return false;
+            if (!t || !t->id || !t->renderTarget || t->compressed ||
+                a.mipLevel < 0 || a.mipLevel >= t->levels || a.arrayLayer < 0 ||
+                t->dimension == TextureDimension::Texture1D ||
+                (wantDepth ? t->fmt != PixelFormat::Depth :
+                             (t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB &&
+                              t->fmt != PixelFormat::RGBA16F))) return false;
             const int slices = t->dimension == TextureDimension::Texture3D ?
                                std::max(1, t->depth >> a.mipLevel) :
                                t->dimension == TextureDimension::Cube ? 6 : t->layers;
@@ -745,36 +756,52 @@ public:
             h = std::max(1, t->h >> a.mipLevel);
             return true;
         };
-        int w = 0, h = 0;
-        const GLTexture* color = nullptr;
+        int width = 0, height = 0;
+        const GLTexture* colors[kMaxRenderTargetColors]{};
         const GLTexture* depth = nullptr;
-        if (desc.colorCount) {
-            int cw = 0, ch = 0;
-            if (!attachment(desc.colors[0], false, cw, ch)) {
-                error_ = "GL: unsupported color attachment or subresource"; return false;
+        PixelFormat sharedColorFormat = PixelFormat::RGBA8;
+        for (int i = 0; i < desc.colorCount; ++i) {
+            int w = 0, h = 0;
+            const auto& attachment = desc.colors[size_t(i)];
+            if (!validate(attachment, false, w, h) ||
+                (width && (width != w || height != h))) {
+                error_ = "GL: color mip/layer unsupported or attachment sizes differ";
+                return false;
             }
-            w = cw; h = ch;
-            color = textures_.get(desc.colors[0].texture.id);
+            const GLTexture* t = textures_.get(attachment.texture.id);
+            // Current HDR shader variants and blend policies are shared among
+            // output slots; heterogeneous formats need explicit per-slot metadata.
+            if (i && t->fmt != sharedColorFormat) {
+                error_ = "GL: mixed color pixel formats require MRT pipeline variants";
+                return false;
+            }
+            sharedColorFormat = t->fmt;
+            colors[i] = t;
+            width = w; height = h;
         }
         if (desc.depth.texture.valid()) {
-            int dw = 0, dh = 0;
-            if (!attachment(desc.depth, true, dw, dh) ||
-                (w && (w != dw || h != dh))) {
-                error_ = "GL: unsupported depth attachment or extent mismatch"; return false;
+            int w = 0, h = 0;
+            if (!validate(desc.depth, true, w, h) ||
+                (width && (width != w || height != h))) {
+                error_ = "GL: depth mip/layer unsupported or extent mismatch";
+                return false;
             }
-            if (!w) { w = dw; h = dh; }
             depth = textures_.get(desc.depth.texture.id);
+            if (!width) { width = w; height = h; }
         }
-        auto bindAttachment = [&](GLenum slot, const GLTexture* t, const RenderTargetAttachment& a) {
-            if (!t) return;
-            if (t->dimension == TextureDimension::Texture2D) {
-                glFramebufferTexture2D(GL_FRAMEBUFFER, slot, GL_TEXTURE_2D, t->id, a.mipLevel);
-            } else if (t->dimension == TextureDimension::Cube) {
-                glFramebufferTexture2D(GL_FRAMEBUFFER, slot,
-                    GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(a.arrayLayer), t->id, a.mipLevel);
+        if (!width || !height) return false;
+        auto attach = [&](GLenum attachment, const GLTexture* tex,
+                          const RenderTargetAttachment& a) {
+            if (!tex) return;
+            if (tex->dimension == TextureDimension::Texture2D) {
+                glFramebufferTexture2D(GL_FRAMEBUFFER, attachment,
+                                       GL_TEXTURE_2D, tex->id, a.mipLevel);
+            } else if (tex->dimension == TextureDimension::Cube) {
+                glFramebufferTexture2D(GL_FRAMEBUFFER, attachment,
+                    GL_TEXTURE_CUBE_MAP_POSITIVE_X + GLenum(a.arrayLayer),
+                    tex->id, a.mipLevel);
             } else {
-                // GLES3 / GL33 core layer attachment: works on 2D arrays and 3D volumes.
-                glFramebufferTextureLayer(GL_FRAMEBUFFER, slot, t->id,
+                glFramebufferTextureLayer(GL_FRAMEBUFFER, attachment, tex->id,
                                           a.mipLevel, a.arrayLayer);
             }
         };
@@ -782,48 +809,55 @@ public:
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFbo);
         GLuint framebuffer = 0;
         glGenFramebuffers(1, &framebuffer);
-        if (!framebuffer) { error_ = "GL: framebuffer allocation failed"; return false; }
+        if (!framebuffer) {
+            error_ = "GL: framebuffer creation failed";
+            return false;
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        if (color) bindAttachment(GL_COLOR_ATTACHMENT0, color, desc.colors[0]);
-        if (depth) bindAttachment(GL_DEPTH_ATTACHMENT, depth, desc.depth);
-        const GLenum draw = color ? GL_COLOR_ATTACHMENT0 : GL_NONE;
-        glDrawBuffers(1, &draw);
-        glReadBuffer(color ? GL_COLOR_ATTACHMENT0 : GL_NONE);
-        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
+        GLenum drawBuffers[kMaxRenderTargetColors]{};
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const GLenum slot = GL_COLOR_ATTACHMENT0 + GLenum(i);
+            attach(slot, colors[i], desc.colors[size_t(i)]);
+            drawBuffers[i] = slot;
+        }
+        if (depth) attach(GL_DEPTH_ATTACHMENT, depth, desc.depth);
+        const GLenum none = GL_NONE;
+        glDrawBuffers(desc.colorCount > 0 ? desc.colorCount : 1,
+                      desc.colorCount > 0 ? drawBuffers : &none);
+        glReadBuffer(desc.colorCount > 0 ? GL_COLOR_ATTACHMENT0 : GL_NONE);
+        const bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) ==
+                                  GL_FRAMEBUFFER_COMPLETE &&
                               glGetError() == GL_NO_ERROR;
         if (!complete) {
             glBindFramebuffer(GL_FRAMEBUFFER, GLuint(previousFbo));
             glDeleteFramebuffers(1, &framebuffer);
-            error_ = "GL: selected mip/layer framebuffer incomplete";
+            error_ = "GL: selected MRT mip/layer framebuffer incomplete";
             return false;
         }
         scopedFbo_ = framebuffer;
         inPass_ = true;
-        passW_ = w; passH_ = h;
-        hdrPass_ = color && color->fmt == PixelFormat::RGBA16F;
+        passW_ = width; passH_ = height;
+        hdrPass_ = desc.colorCount > 0 && sharedColorFormat == PixelFormat::RGBA16F;
         glBindVertexArray(vao_);
         glDisable(GL_SCISSOR_TEST);
-        if (color && color->fmt == PixelFormat::RGBA8_sRGB &&
+        if (desc.colorCount && sharedColorFormat == PixelFormat::RGBA8_sRGB &&
             info_.backend == Backend::GL33 && !srgbWrite_) {
             glEnable(kGL_FRAMEBUFFER_SRGB);
             srgbWrite_ = true;
         }
-        glViewport(0, 0, w, h);
+        glViewport(0, 0, width, height);
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-        if (color && desc.colors[0].clear)
-            glClearColor(desc.colors[0].clearColor[0], desc.colors[0].clearColor[1],
-                         desc.colors[0].clearColor[2], desc.colors[0].clearColor[3]);
-        GLbitfield mask = color && desc.colors[0].clear ? GL_COLOR_BUFFER_BIT : 0;
+        // glClear(GL_COLOR_BUFFER_BIT) would erase *all* attachments with the
+        // same value. Per-attachment clears preserve unrelated render outputs.
+        for (int i = 0; i < desc.colorCount; ++i) {
+            const auto& attachment = desc.colors[size_t(i)];
+            if (attachment.clear)
+                glClearBufferfv(GL_COLOR, i, attachment.clearColor);
+        }
         if (depth && desc.depth.clear) {
             glDepthMask(GL_TRUE);
-#if defined(AIVERSE_GL_LOADER)
-            glClearDepth(desc.clearDepth);
-#else
-            glClearDepthf(desc.clearDepth);
-#endif
-            mask |= GL_DEPTH_BUFFER_BIT;
+            glClearBufferfv(GL_DEPTH, 0, &desc.clearDepth);
         }
-        if (mask) glClear(mask);
         pipelineId_ = 0;
         return true;
     }

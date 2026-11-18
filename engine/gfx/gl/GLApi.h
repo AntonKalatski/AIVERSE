@@ -75,6 +75,10 @@
   #define GL_COMPARE_REF_TO_TEXTURE 0x884E
   #define GL_FRAMEBUFFER 0x8D40
   #define GL_COLOR_ATTACHMENT0 0x8CE0
+  #define GL_MAX_COLOR_ATTACHMENTS 0x8CDF
+  #define GL_MAX_DRAW_BUFFERS 0x8824
+  #define GL_COLOR 0x1800
+  #define GL_DEPTH 0x1801
   #define GL_DEPTH_ATTACHMENT 0x8D00
   #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
   #define GL_TIME_ELAPSED 0x88BF
@@ -141,6 +145,7 @@
     X(void, glFramebufferTextureLayer, (GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer)) \
     X(GLenum, glCheckFramebufferStatus, (GLenum t)) \
     X(void, glDrawBuffers, (GLsizei n, const GLenum* b)) \
+    X(void, glClearBufferfv, (GLenum buffer, GLint drawbuffer, const GLfloat* value)) \
     X(void, glBlitFramebuffer, (GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0, GLint dx1, GLint dy1, GLbitfield m, GLenum f))
   #define AIVERSE_GL_DECLARE(ret, name, args) typedef ret (APIENTRY* PFN_##name) args; extern PFN_##name name;
   AIVERSE_GL_FUNCS(AIVERSE_GL_DECLARE)
