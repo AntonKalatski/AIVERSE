@@ -2,6 +2,7 @@
 // engine build pipelines; no graphics device, gameplay ECS, or filesystem.
 #pragma once
 #include "engine/world/TerraWeaveHorizonArchive.h"
+#include "engine/render/TerraWeaveHorizonClip.h"
 #include <algorithm>
 #include <cstdint>
 #include <functional>
@@ -99,7 +100,8 @@ inline HorizonBatchProgress bakeHorizonBatch(
             if(exists) {
                 ++status.skipped;
             } else {
-                const auto baked=bakeHorizon(terrain,biomes,settings,wx,wz,authored);
+                auto baked=bakeHorizon(terrain,biomes,settings,wx,wz,authored);
+                populateHorizonNearSeamSamples(baked,authored);
                 const auto bytes=encodeHorizonArchive(baked,fingerprint);
                 storage.write(static_cast<int32_t>(x),
                               static_cast<int32_t>(z),bytes);
