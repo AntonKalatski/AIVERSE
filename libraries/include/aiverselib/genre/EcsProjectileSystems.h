@@ -30,6 +30,33 @@ struct ProjectileImpactEvent {
     ProjectileImpact contact{};
 };
 
+// Lightweight deterministic bounce policy for timed grenades, rolling
+// mines, dropped objects and other physical projectiles that have their
+// OWN expiration/fuse system. Does not apply impact damage or despawn.
+// The divisor form is deliberate: it preserves fixed-point /2_fx rounding
+// of the pre-ECS FPS grenade solver, unlike multiplying by a half constant.
+struct BounceMotionConfig {
+    Fixed gravity=10_fx;
+    Fixed bounceDivisor=2_fx;
+    Fixed impactFractionInset=Fixed::fromRatio(1,100);
+    Vec3 halfExtent{Fixed::fromRatio(1,10),
+                    Fixed::fromRatio(1,10),
+                    Fixed::fromRatio(1,10)};
+};
+
+inline void stepBouncingProjectile(Vec3& position,Vec3& velocity,
+                                   const world::SpatialWorld& collision,
+                                   Fixed dt,const BounceMotionConfig& config={}) {
+    velocity.y-=config.gravity*dt;
+    const Vec3 delta=velocity*dt;
+    const auto hit=collision.cast(position,delta,config.halfExtent);
+    if(hit.hit) {
+        position+=delta*fxMax(Fixed{},hit.fraction-config.impactFractionInset);
+        velocity=(velocity-hit.normal*velocity.dot(hit.normal)*2_fx)
+                 /config.bounceDivisor;
+    } else position+=delta;
+}
+
 // Shared ballistic policy: bullets, shells, launched grenades and any object
 // with the same gravity/radius/bounce parameters use the SAME flight solver.
 // Other policies may implement steering/homing and still use this ECS system.
