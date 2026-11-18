@@ -18,6 +18,7 @@ struct NereidSurfaceKey {
     uint32_t maxVertices=0;
     double patchX=0,patchZ=0; // relevant for infinite ocean only
     double originX=0,originZ=0; // local vertex basis, retained with GPU mesh
+    double originY=0;
     lib::nereid::WaterSurfaceStyle style{};
     bool infinite=false;
 };
@@ -48,6 +49,7 @@ inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
     key.sourceRevision=revision;
     key.originX=opts.originX;
     key.originZ=opts.originZ;
+    key.originY=opts.originY;
     key.infinite=infinite;
     key.lod=opts.lod;
     key.uvScale=opts.uvScale;
@@ -76,6 +78,7 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         a.oceanPatchRadius==b.oceanPatchRadius &&
         a.patchX==b.patchX && a.patchZ==b.patchZ &&
         a.originX==b.originX && a.originZ==b.originZ &&
+        a.originY==b.originY &&
         x.deepR==y.deepR && x.deepG==y.deepG && x.deepB==y.deepB &&
         x.foamR==y.foamR && x.foamG==y.foamG && x.foamB==y.foamB &&
         x.foamStrength==y.foamStrength && x.opacity==y.opacity &&
