@@ -42,6 +42,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsPlanetGroundFx.h"
 #include "RtsPlanetRender.h"
 #include "RtsOverlays.h"
+#include "RtsModelResourceProvider.h"
 #include "RtsTerrainRender.h"
 #include "EntityFx.h"
 
@@ -145,7 +146,7 @@ struct ViewEffect {
 class RtsRoadView;
 class RtsShoreView;
 
-class RtsView {
+class RtsView : public view_adapter::ModelResourceProvider {
     friend class ::kingston::TowHost;
     friend class ::kingston::BulletFxHost;
     friend struct ::kingston::CabinResidentDraw;
@@ -233,6 +234,9 @@ public:
     void drawGhost(render::Renderer3D& r, uint16_t type, render::float3 pos, bool ok, const MapGrid& grid, double time);
     // One object at the origin playing its idle clip (portraits, editor previews).
     void drawPreview(render::Renderer3D& r, uint16_t type, uint8_t owner, double time, float yaw = 0.6f);
+    // Borrowed model/resource interface for independent View consumers.
+    bool resolveStatic(uint16_t type,uint8_t owner,
+                       view_adapter::StaticPreviewModel& output) override;
     static render::float4 playerColor(int player);
     float selectionRadius(uint16_t type) const;
     float heightAt(const MapGrid& grid, float x, float z) const;
