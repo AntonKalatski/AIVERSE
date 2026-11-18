@@ -566,6 +566,17 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_root_motion_bake_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_root_motion_bake COMMAND aiverse_root_motion_bake_tests)
 endif()
+# Optional Box3D ragdoll readback adapter, no link dependency in the base animation API.
+if(TARGET aiverse_physics)
+    add_library(aiverse_animation_physics INTERFACE)
+    add_library(AIVERSE::animation_physics ALIAS aiverse_animation_physics)
+    target_link_libraries(aiverse_animation_physics INTERFACE AIVERSE::animation_ecs AIVERSE::physics)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_recovery_tests tests/animation/recovery.cpp)
+    target_link_libraries(aiverse_animation_recovery_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_recovery COMMAND aiverse_animation_recovery_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp

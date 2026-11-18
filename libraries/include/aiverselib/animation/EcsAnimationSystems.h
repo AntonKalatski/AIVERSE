@@ -4,6 +4,7 @@
 #include "engine/render/AnimationGraph.h"
 #include "AnimationMontage.h"
 #include "PhysicalPoseBlend.h"
+#include "PoseInertialization.h"
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -40,6 +41,14 @@ struct AnimationPhysicalPoseComponent {
     float weight = 1.f;
     bool enabled = false;
 };
+// When ragdoll/physical pose finishes, supply the last physical pose in
+// from, disable AnimationPhysicalPoseComponent and set requested=true.
+struct AnimationRecoveryComponent {
+    render::Pose from;
+    PoseInertializer inertializer;
+    float duration=0.3f;
+    bool requested=false;
+};
 struct AnimationBudgetComponent {
     float interval = 0.f, elapsed = 0.f;
     bool visible = true;
@@ -58,6 +67,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
     auto* budgets=world.prepareExistingWrite<AnimationBudgetComponent>();
     auto* statuses=world.prepareExistingWrite<AnimationDiagnosticsComponent>();
     auto* montages=world.prepareExistingWrite<AnimationMontageSlotsComponent>();
+    auto* recoveries=world.prepareExistingWrite<AnimationRecoveryComponent>();
     if (!players || !poses) return;
     const World& read=world;
     for (size_t i=0;i<players->size();++i) {
@@ -70,6 +80,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
         auto* status=statuses?statuses->tryGet(e.index):nullptr;
         auto* slots=montages?montages->tryGet(e.index):nullptr;
         const auto* physical=read.tryGetConst<AnimationPhysicalPoseComponent>(e);
+        auto* recovery=recoveries?recoveries->tryGet(e.index):nullptr;
         const auto* asset=read.tryGetConst<AnimationAssetComponent>(e);
         if (!asset || !asset->model || !asset->graph ||
             asset->graph->model()!=asset->model) {
@@ -88,6 +99,7 @@ inline void stepAnimationPresentation(World& world,float dt) {
             player.instance->reset(asset->graph);
             player.restart=false;
             pose->valid=false;
+            if(recovery)recovery->inertializer.reset();
             if (budget) budget->elapsed=0;
         }
         auto& inst=*player.instance;
@@ -111,7 +123,8 @@ inline void stepAnimationPresentation(World& world,float dt) {
         }
         if (status) ++status->updates;
         bool evaluate=!pose->valid || !budget ||
-            (physical && physical->enabled && physical->weight>0.f);
+            (physical && physical->enabled && physical->weight>0.f) ||
+            (recovery && (recovery->requested || recovery->inertializer.active()));
         if (!evaluate && budget->visible) {
             if (!std::isfinite(budget->interval) || budget->interval<=0.f)
                 evaluate=true;
@@ -121,6 +134,9 @@ inline void stepAnimationPresentation(World& world,float dt) {
             }
         }
         if (evaluate) {
+            // Save the previous evaluated pose only on a requested recovery.
+            render::Pose previous;
+            if(recovery && recovery->requested)previous=pose->local;
             inst.evaluate(pose->local);
             pose->valid=inst.healthy();
             if (pose->valid) {
@@ -130,6 +146,24 @@ inline void stepAnimationPresentation(World& world,float dt) {
                     !blendPhysicalPose(pose->local,physical->local,
                         physical->boneWeights,physical->weight)) {
                     validInputs=false;
+                }
+                if(recovery && (!physical || !physical->enabled)) {
+                    if(recovery->requested) {
+                        const auto& from=recovery->from.size()==pose->local.size()
+                            ?recovery->from:previous;
+                        if(from.size()==pose->local.size() &&
+                           std::isfinite(recovery->duration) &&
+                           recovery->duration>0.f) {
+                            recovery->inertializer.begin(from,pose->local,
+                                                         recovery->duration);
+                        } else validInputs=false;
+                        recovery->requested=false;
+                        recovery->from.clear();
+                    }
+                    if(recovery->inertializer.active()) {
+                        recovery->inertializer.advance(dt);
+                        recovery->inertializer.apply(pose->local);
+                    }
                 }
                 render::worldMatrices(*asset->model,pose->local,pose->matrices);
             }
