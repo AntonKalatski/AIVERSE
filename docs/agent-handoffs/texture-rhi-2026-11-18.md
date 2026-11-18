@@ -3783,3 +3783,60 @@ and discards results for destroyed virtual atlases. Write a
 separate code+handoff commit, then update the verification script,
 native skill and architecture docs. No background GPU work should
 be claimed without real driver validation.
+
+## Stage 7P — disk-to-GPU virtual texture streaming coordinator (2026-11-18)
+
+**Implementation commits:** `d7346d63c96b19b2316609a860d22f653ccb7f59`
+(new facade) and `332d9c325d86bb95e9272ebd7a11b8df052c10c3`
+(exact page-residency lookup).
+**Branch/PR:** `feature/texture-rhi-unification`, Draft #21.
+**Files:** new `engine/gfx/VirtualTextureFileStreamer.h`,
+`engine/gfx/VirtualTextureStreamer.h`.
+
+**Implemented source:** Native `gfx::VirtualTextureFileStreamer`
+composes a real disk I/O worker (`VirtualTextureDiskQueue`) with the
+physical GPU page atlas, GPU upload queue, LRU and page-table
+publication (`VirtualTextureStreamer`). `initialize` validates
+virtual dimensions, layers, page size and RGBA8 format across the
+two components and owns their lifetime. `requestPage(key,pin)`
+deduplicates in-flight keys, avoids reloading a page already
+*exactly* resident and optionally pins important coarse fallback
+pages. The added `VirtualTextureStreamer::resolveExact` is
+distinct from its existing coarser-fallback `resolve`: callers
+still request missing detail pages even when a coarser ancestor
+is available. Render-thread `pump(maxNewGpuPages,callback)`
+polls bounded disk results, buffers completed page bytes, stages
+them into the existing GPU queue (which copies source bytes),
+calls the atlas' GPU drain, and delivers events only after
+page-table publication or an explicit failed transfer. GPU
+staging backpressure retains the CPU bytes for retry. Missing/
+truncated disk results produce failure notifications without
+GPU data. Disk/GPU pending and buffered pages are cancelable
+via `cancel(ticket)` before submission. On a quarantined GPU
+atlas, the facade drops outstanding work, masks all success
+events and requires explicit reinitialization. Read-only
+atlas/table handles, page lookup, stats and error surfaces
+are provided. All GPU calls remain on the device thread;
+disk worker never calls Device.
+
+**Compatibility:** Opt-in header and one additional method on the
+new virtual texture facade, no existing gfx::Device ABI,
+ECS/saves/netcode, legacy texture asset or import behavior
+changes. Device must outlive the coordinator. The component
+implements filesystem-backed page demand **from explicit host
+requests**; it is NOT yet automatic GPU-feedback demand paging.
+A request already handed to an active GPU submission cannot be
+canceled behind the driver's back.
+
+**Verification:** Both commits exist on GitHub; native C++ build,
+CTest and real GPU execution are **NOT RUN**. Existing GitHub CI
+jobs observed queued/cancelled. The integration path is source-level
+and is NOT production-certified.
+
+**Next:** Add a combined real filesystem + mock GPU fixture verifying
+coarse pinned page becomes visible only after GPU upload, finer
+page replacement, callbacks, byte budgets, missing page failure,
+repeated request, cancellation, staging backpressure, and a
+quarantined atlas. Register a CTest and then compile on the native
+checkout. Add actual virtual-page GPU feedback/prefetch policy
+and disk asset packer only in separate documented stages.
