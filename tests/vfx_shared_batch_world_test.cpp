@@ -160,6 +160,14 @@ int main() {
         "links":[{"from":"spawn","to":"init"},{"from":"init","to":"out"}],
         "outputs":["out"]
     })JSON");
+    const int graphId=world.defineGraph(graph);
+    check(graphId>=0 && world.defineGraph(graph)==graphId,
+          "graph definitions were not cached across independent sources");
+    Json malformed=graph;
+    malformed.set("version",Json::number(int64_t(3)));
+    check(world.defineGraph(malformed)<0 && !world.errors().empty(),
+          "invalid graph must not be registered as a shared effect");
+
     sp::GraphRuntime fromGraph;
     check(fromGraph.initGraph(world,graph),"versioned graph could not join shared FX world");
     check(fromGraph.burstAt({0,0,0}),"shared graph emission failed");
