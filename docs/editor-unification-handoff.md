@@ -1215,3 +1215,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `ecs-impact-queue` catalog package with public `AIVERSE::lib_ecs_impact_queue` INTERFACE target, depending on `ecs-ordered-impact`. This enables native project reuse without linking `RtsModule`/`fps::Module`. References header, skill and cross-genre test.
 - **Verification:** parsed catalog JSON and verified IDs unique and count 127 at edit time. Native catalog filesystem check and CMake configure **not run**; source/test are additive only.
 - **Next:** CMake CTest and standalone runner registration, executable compilation/rollback verification, then one real host adapter behind explicit parity gates.
+
+
+### 2026-11-18 — Impact queue CTest native target
+- **Implementation SHA:** `24ccbc7db168a2fcbc2985b1a7e87b6db252b527`.
+- Added `aiverse_ecs_cross_genre_impact_queue_test` CMake executable and CTest case, linking only the generic engine and public `AIVERSE::lib_ecs_impact_queue` target. Built-in RTS/FPS modules are deliberately absent from this test's link dependencies.
+- **Verification:** GitHub CMake edit committed, **native configure/compile/CTest not executed**. CI and static checks are separate gates.
+- **Next:** register standalone experiment-runner command, then inspect native workflow output.
