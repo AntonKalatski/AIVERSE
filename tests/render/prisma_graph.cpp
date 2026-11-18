@@ -366,6 +366,73 @@ void bloomPrefilterGraphContract() {
               "missing bloom output prevents any GPU callback");
     }
 }
+
+void bloomChainGraphContract() {
+    // Multi-resolution chain has producer-before-consumer dependencies and
+    // never reads a target while simultaneously writing it.
+    for (int levels : {1, 2, 4}) {
+        for (auto fmt : {PrismaGraphFormat::RGBA8, PrismaGraphFormat::RGBA16F}) {
+            PrismaRenderGraph graph;
+            std::vector<PrismaGraphId> down;
+            std::vector<PrismaGraphId> up(static_cast<size_t>(levels), kInvalidPrismaGraphId);
+            std::vector<int> handles;
+            auto src = graph.addResource(resource("scene", true, fmt, 1024, 512));
+            handles.push_back(100);
+            for (int i = 0, w = 512, h = 256; i < levels; ++i, w /= 2, h /= 2) {
+                const auto name = std::string("down-") + std::to_string(i);
+                down.push_back(graph.addResource(resource(name.c_str(), true, fmt,
+                                                             uint32_t(w), uint32_t(h))));
+                handles.push_back(101 + i);
+            }
+            for (int i = levels - 2; i >= 0; --i) {
+                const auto name = std::string("up-") + std::to_string(i);
+                up[static_cast<size_t>(i)] = graph.addResource(
+                    resource(name.c_str(), true, fmt,
+                             uint32_t(512 >> i), uint32_t(256 >> i)));
+                handles.push_back(110 + i);
+            }
+            graph.addPass(pass("prefilter", {src}, {down[0]}));
+            for (int i = 1; i < levels; ++i)
+                graph.addPass(pass("downsample", {down[i-1]}, {down[i]}));
+            PrismaGraphId low = down.back();
+            for (int i = levels - 2; i >= 0; --i) {
+                graph.addPass(pass("upsample", {low, down[i]}, {up[i]}));
+                low = up[i];
+            }
+            const auto plan = graph.compile();
+            check(plan.valid && plan.slots.empty() &&
+                  plan.order.size() == size_t(2 * levels - 1),
+                  "Bloom chain graph has valid ordered external passes");
+            if (!plan.valid) continue;
+            PrismaGraphBindings<int> b;
+            b.external = handles;
+            std::vector<PrismaGraphId> executed;
+            const auto run = dispatchPrismaGraph(graph, plan, b,
+                [&](const PrismaGraphPass& p, PrismaGraphId id,
+                    const PrismaGraphDispatchView<int>& view) {
+                    executed.push_back(id);
+                    if (p.writes.size() != 1 ||
+                        view.resource(p.writes.front()) == 0) return false;
+                    for (auto input : p.reads)
+                        if (view.resource(input) == 0 || input == p.writes.front()) return false;
+                    return true;
+                });
+            check(run.success && run.executedPasses == size_t(2 * levels - 1),
+                  "Bloom chain dispatch resolves every mip stage");
+            check(executed == plan.order,
+                  "Bloom chain executes in topological order");
+            b.external[down.back()] = 0;
+            int callbackCount = 0;
+            const auto invalid = dispatchPrismaGraph(graph, plan, b,
+                [&](const PrismaGraphPass&, PrismaGraphId,
+                    const PrismaGraphDispatchView<int>&) {
+                    ++callbackCount; return true;
+                });
+            check(!invalid.success && callbackCount == 0,
+                  "Bloom chain missing mip target fails before GPU submission");
+        }
+    }
+}
 }
 int main() {
     positive();
@@ -376,6 +443,7 @@ int main() {
     rhiFormatContract();
     fxaaGraphContract();
     bloomPrefilterGraphContract();
+    bloomChainGraphContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
