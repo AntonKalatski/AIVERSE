@@ -6,9 +6,53 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 using namespace aiverse;
 namespace lg=aiverse::lib::genre;
+
+static void checkSweep(bool condition,const char* message) {
+    if(!condition)throw std::runtime_error(message);
+}
+static void exerciseSharedSweptContacts() {
+    struct Candidate {uint32_t id;world::Bounds hitbox;};
+    const Vec3 origin{0_fx,1_fx,0_fx}, delta{0_fx,0_fx,10_fx};
+    const Vec3 noExtent{};
+    const auto query=[&](const std::vector<Candidate>& targets,Vec3 extent) {
+        return lg::selectSweptProjectileContact(
+            targets,origin,delta,extent,
+            [](const Candidate& t){return t.hitbox;},
+            [](const Candidate& a,const Candidate& b){return a.id<b.id;});
+    };
+    // Dynamic candidates can arrive in an arbitrary order; exact-distance
+    // ties select the smallest semantic target ID, matching FPS projectile
+    // program contact arbitration.
+    const std::vector<Candidate> tied{
+        {9,{{-1_fx,0_fx,3_fx},{1_fx,2_fx,4_fx}}},
+        {4,{{-1_fx,0_fx,3_fx},{1_fx,2_fx,4_fx}}},
+        {12,{{-1_fx,0_fx,5_fx},{1_fx,2_fx,6_fx}}}
+    };
+    const auto nearest=query(tied,noExtent);
+    checkSweep(nearest && nearest.target->id==4 &&
+               nearest.fraction==Fixed::fromRatio(3,10),
+               "shared projectile sweep lost nearest-hit tie semantics");
+    const std::vector<Candidate> endpoint{
+        {18,{{-1_fx,0_fx,10_fx},{1_fx,2_fx,11_fx}}}
+    };
+    const auto atEnd=query(endpoint,noExtent);
+    checkSweep(atEnd && atEnd.target->id==18 &&
+               atEnd.fraction==1_fx,
+               "projectile endpoint contact must be accepted");
+    const auto expanded=query(tied,{Fixed{},Fixed{},1_fx});
+    checkSweep(expanded && expanded.target->id==4 &&
+               expanded.fraction==Fixed::fromRatio(2,10),
+               "swept radius did not expand the target hitbox");
+    const std::vector<Candidate> missed{
+        {21,{{3_fx,0_fx,3_fx},{5_fx,2_fx,4_fx}}}
+    };
+    checkSweep(!query(missed,noExtent),
+               "nonoverlapping target incorrectly hit by shared sweep");
+}
 
 struct ShooterWeaponSource {int32_t magazine=20;};
 struct StrategyTurretSource {int32_t range=200;};
@@ -95,6 +139,7 @@ uint64_t test(bool cow) {
     return expected;
 }
 int main(){
+    exerciseSharedSweptContacts();
     const uint64_t shooter=test<ShooterWeaponSource>(false);
     assert(test<StrategyTurretSource>(false)==shooter);
     assert(test<ShooterWeaponSource>(true)==shooter);
