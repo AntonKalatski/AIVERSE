@@ -22,6 +22,9 @@ int main() {
     InputFlow inputs;
     CHECK(inputs.defineAction({"Move",ValueType::Axis2D,{Modifier::normalize()}}));
     CHECK(inputs.defineAction({"Fire",ValueType::Boolean}));
+    CHECK(inputs.actionDefinition("Fire") &&
+          inputs.actionDefinition("Fire")->type==ValueType::Boolean);
+    CHECK(inputs.actionDefinition("Missing")==nullptr);
     MappingContext gameplay{"Gameplay"};
     gameplay.bind("Move",w,{Modifier::swapXY()});
     gameplay.bind("Move",s,{Modifier::swapXY(),Modifier::negate()});
