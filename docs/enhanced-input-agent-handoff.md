@@ -335,3 +335,13 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Validation snapshot:** all four targeted CTest executables are registered, and GitHub source was audited for link paths/brace balance; CI had not yet returned green results when inspected. Previous input branch workflow runs were often canceled by subsequent commits, and later runs remained queued. A full macOS/Windows/Linux/Web/Android/iOS build, editor runtime smoke test and complete engine determinism suite have NOT been completed in this environment. The GitHub-enabled connector can update code but cannot execute a compiler; the working container has no GitHub network route for a complete clone. Never claim tests passed or mark PR ready based on only source inspection.
 
 **Next agent:** before merging PR #20, run the exact commands in Stage 15, inspect CI job logs, verify project asset writes (invalid JSON, read-only paths), FPS F10 rebinding across restart, RTS camera/zoom, Game vs Input Actions dock focus isolation and two-finger gestures on actual devices. Append verified build/test evidence as Stage 24. Keep the PR draft until then.
+
+## Stage 24 — Action-level modifiers gate lifecycle (2026-11-18)
+
+**Bug:** `InputSystem::update` previously marked an Action active and `Triggered` based on pre-Action aggregate input. `Action::modifiers` (such as DeadZone or Scale(0)) and `ValueType` constraints could then produce a zero Action Value while still emitting Started/Ongoing/Triggered. This violates the typed-action pipeline.
+
+**Fix:** `EnhancedInput.h` computes the post-modifier constrained Action Value before updating action lifetime state. `ActionState.active`, Started/Ongoing/Completed and default trigger eligibility follow that final value. Release/one-frame Tap pulses still work even when the released value is zero. Mapping-level trigger timing and network command formats are unchanged.
+
+**Regression:** `enhanced_input_tests.cpp` now covers a sub-threshold Axis1D Action-level dead zone, a Scale(0) disabled Action, a threshold crossing that starts action, and crossing back below threshold that completes it.
+
+**Validation:** source and tests committed, no execution results from full project CI yet. Run `library_enhanced_input` and FPS input+gamepad integration before merging. Next agent should check composite chord and same-frame tap regressions, record actual compiler/test results in Stage 25.
