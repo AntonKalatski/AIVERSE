@@ -365,3 +365,11 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Why:** two Actions sharing the same physical button is often intentional (e.g., tap vs hold or gameplay versus modal UI). Automatically deleting duplicates would silently corrupt authored input schemes. Agents should query `conflicts()` and offer users a choice, never mutate mappings without an explicit policy.
 
 **Files:** `EnhancedInput.h`, unit test, `docs/enhanced-input.md`, this handoff. **Validation:** postponed at user request; no compiler or runtime evidence yet. Next stage: expose conflict resolution in Input Actions editor/FPS Settings and document.
+
+## Stage 27 — advanced Unreal-style triggers (2026-11-18)
+
+New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preceding release within a bounded interval); `HoldAndRelease(seconds)` (release after sufficient hold time); `Pulse(seconds)` (periodic trigger while held, min 10 ms); `NotChord(action)` (inverted chord blocker; required action must be inactive). Core maintains per-mapping runtime release window/pulse timing and continues to accumulate same-frame inputs. JSON V1 recognizes `doubleTap`, `holdAndRelease`, `pulse`, `notChord`; encoder writes matching values. Editor Input Actions trigger dropdown/seconds/chord selection supports all ten types. Chord validation also checks the inverted blocker.
+
+**Files:** EnhancedInput.h, EnhancedInputConfig.h, InputWindow.cpp, enhanced_input_tests.cpp, this handoff and docs. Tests authored for double-tap, hold release, pulse, inverted chord; execution intentionally deferred at user's request.
+
+**Limitations / next:** the new types are additive, preserving all existing enum ordinal values and JSON syntax. Advanced timing is per active mapping/context, not saved in the deterministic sim. Review repeated activations after context changes and cyclic complex chord definitions during later validation.
