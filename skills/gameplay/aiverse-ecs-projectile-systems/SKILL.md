@@ -143,3 +143,41 @@ branch allocation, passive nonprogrammed projectiles, stable ECS
 identities/orders, v9 cross-save and per-tick legacy parity. All remain
 **unverified by native execution**; do not claim passes until compiled
 and run.
+
+
+## Native FPS projectile producer and round-reset cutover
+
+The production FPS engine now uses one private `Module::spawnProjectile`
+adapter for accepted weapon bullets and `Action::Frag` / `Smoke` /
+`Flash` throwable projectiles. When `fps.ecsAuthority=true`, the helper
+creates a full canonical `ProjectileRuntime` ECS Entity *at the same tick
+and code location as the original spawn*, inserts the stable
+`DynamicEntityIndex` kind/ID key and publishes its editor
+`ProjectileEntity` projection. It also updates `State::projectiles`
+only as a same-tick compatibility view for consumers that have not yet
+migrated. Default FPS mode keeps the unchanged legacy vector path.
+
+At bomb-round reset, `Module::clearProjectiles` retires all existing
+`ProjectileRuntime` entities in source-ID order and clears projectile
+index keys at the actual reset barrier, instead of deferring all ECS
+cleanup until `fps.ecsMirror`. Loot/vehicle ECS indices are preserved.
+Gameplay Entity allocator order can be affected by this earlier
+retirement, so verify rollback and native multiplayer determinism.
+
+Tests: `tests/fps/projectile_spawn.inc` exposes
+`ecsProjectileSpawnAuthorityParity` (real accepted bullet and
+Frag/Smoke/Flash input Commands) and
+`ecsProjectileRoundResetParity` (real bomb-mode reset after grenade
+spawn). Both are run by `aiverse_fps_tests`, compare legacy and ECS
+authority simulation checksums, generation-safe Runtime/index
+presence/order, save v9 cross-load, deep and COW snapshot replay and
+post-reset projectile creation. These are **source-level fixtures not
+yet observed to pass natively**.
+
+Do not add new FPS projectile insertion directly to
+`State::projectiles` in the authoritative path. New weapon/missile/
+throwable producers should call the canonical spawn adapter or a
+future shared `ProjectileSpawnQueue` integration after order parity.
+Keep impact callbacks synchronous where the existing FPS/RTS game uses
+same-tick damage, and do not conflate nonphysical RTS kinematics with
+FPS physical grenade motion.
