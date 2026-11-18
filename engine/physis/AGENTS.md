@@ -25,3 +25,10 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 - `PhysisPresentation.h` and `PhysisDiagnostics.h` are **read-only**, renderer-independent consumer APIs. They return copies/arrays for external editor/VFX/physics/Terra host code. Do not add ImGui/RHI/Box3D/genre includes here, or treat a PHYSIS heatmap as a visual renderer integration.
 - `DiagnosticRaster::rawValues` are `Fixed::raw` and `valid[i]` marks active sampled cells. Do not infer real NEREID water levels from `LocalFloodMeters`. `diagnosticNormalized` is presentation-only; it must not influence authoritative simulation.
 - Add post-stage handoffs; Stage 14 `docs/agent-handoffs/physis-diagnostics-2026-11-18.md`. The tests and CI are authored but native status is **NOT RUN**.
+
+## Stage 16: transient spatial broadphase
+
+- `PhysisSpatialIndex.h` is presentation/consumer optimization only. It must not leak `SpatialFieldIndex` into `World` resource persistence or authoritative ECS hashes, and must not include Box3D, NEREID, TerraWeave, FPS/RTS, gfx or renderer headers.
+- This API COPIES field components into immutable per-query buckets. Always rebuild after any World field changes, structural edits, load, rollback or tick, including same-tick edits; do not share references into ECS pools. If the index is stale by tick, indexed queries use the unindexed reference implementation.
+- Preserve original ECS visitation order in queries, especially overlapping shelter multiplication and Fixed storm/gravity sums; global oversized fields must not be silently skipped.
+- Run `physis_spatial_index` and all existing `physis_*` and persistence tests before merging. Current stage test status: NOT RUN. Separate handoff: `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
