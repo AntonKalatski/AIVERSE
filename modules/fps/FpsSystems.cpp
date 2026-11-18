@@ -308,7 +308,7 @@ void Module::finishRound(Simulation& sim,int32_t team) {
     for(auto& a:s.actors){a.money=std::min(16000,a.money+(a.team==team?config_.systems.winReward:config_.systems.lossReward));a.activeAction=Action::None;a.actionUntil=0;}
     if(s.match.scoreA>=int(config_.systems.roundsToWin)||s.match.scoreB>=int(config_.systems.roundsToWin))s.winner=team;
 }
-void Module::tickSystems(Simulation& sim) {
+void Module::tickOrdinaryProjectiles(Simulation& sim) {
     auto& s=state(sim);auto now=sim.tick();const auto& c=config_.systems;
     for(auto it=s.projectiles.begin();it!=s.projectiles.end();) {
         if(it->program.enabled){++it;continue;}
@@ -334,6 +334,10 @@ void Module::tickSystems(Simulation& sim) {
         remove|=fxAbs(it->pos.x)>config_.worldLimit||fxAbs(it->pos.y)>config_.worldLimit||fxAbs(it->pos.z)>config_.worldLimit;
         if(remove)it=s.projectiles.erase(it);else ++it;
     }
+}
+
+void Module::tickSystems(Simulation& sim) {
+    auto& s=state(sim);auto now=sim.tick();const auto& c=config_.systems;
     if(config_.mode!="bomb")return;
     if(s.match.end) {
         if(now<s.match.end)return;
