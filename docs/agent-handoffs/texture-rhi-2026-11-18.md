@@ -733,3 +733,30 @@ and post-pass sampling. Then implement Vulkan MSAA images,
 compatible renderpass/pipeline and explicit resolve attachments
 as separate stages; GL GLES3/GL33 needs corresponding
 multisample textures and resolve blits. Document each separately.
+
+## Stage 4H — fail closed on unavailable GL/Vulkan resolves (2026-11-18)
+
+**Code commit:** `43709245696c5371cc11e5fbc6aee5e0ad5f7153`.
+**Paths:** `engine/gfx/gl/GfxGL.cpp`, `engine/gfx/vulkan/VkDraw.cpp`.
+
+**Reason/implementation:** After adding a portable optional
+`resolveTexture` field to the pass contract, the GL and
+Vulkan new render-target pass methods would otherwise have
+ignored a resolve request and returned success without resolving.
+They now explicitly return false and set a backend error when
+a resolve target is requested. MRT still returns false on
+these backends. Metal has the separate native MSAA+resolve path.
+
+**Compatibility:** Only erroneous/unimplemented new-API requests
+change behavior (fail instead of silent no-op).
+Legacy screen/2D passes and game formats are unchanged.
+
+**Validation:** Source commit succeeded. Native builds, tests,
+GPU validation **NOT RUN**; no CI pass claimed.
+
+**Next:** Before marking feature complete, implement MRT and
+GL/Vulkan MSAA+resolve with actual GPU tests. Verify the
+Metal path and all earlier texture stages through compiler
+and real-device tests first; do not stack untested features
+on broken backends. Continue append-only handoff with separate
+implementation and docs commits per stage.
