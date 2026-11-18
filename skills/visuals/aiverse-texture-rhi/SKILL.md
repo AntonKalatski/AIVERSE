@@ -25,6 +25,9 @@ never equate source presence with a passing GPU test.**
 | Safe coarse-to-fine sampling | `gfx::TextureMipResidency` | Only create/bind sampler when complete coarse-to-fine mips resident |
 | Unified native streaming | `gfx::TextureResidentStreamer` | Owns queue+residency; gates sampling, tracks completions and retries |
 | Radiance `.hdr` / limited EXR | `render::loadRadianceHdr`, `render::loadOpenExr` | Linear RGBA16F; EXR is uncompressed scanline HALF/FLOAT RGB[A] only |
+| Virtual texture atlas | `gfx::VirtualTextureStreamer` | Fixed physical Texture2DArray pages, GPU page table, LRU and pinning |
+| GPU subresource readback | `Device::readTextureAsync` | Metal/Vulkan/GL33/GLES3 source; unsupported on WebGL2 |
+| Live texture inventory | `Device::textureResources()` | Optional live GPU resource snapshot; byte size is estimated |
 
 ### Example: mip-streamed Texture2DArray (native C++)
 
@@ -69,6 +72,26 @@ a producer that fills exactly the requested packed byte count. Bind
 nothing until `sampledTexture` becomes valid. The facade owns its GPU
 texture handles and must be destroyed before `gfx::Device`.
 
+### Virtual texture page streaming
+
+Use `gfx::VirtualTextureStreamer` with `gfx::VirtualTextureStreamConfig`.
+Initialize physical atlas capacity and tile dimensions, then stage a
+complete guttered RGBA8/sRGB page using `stage(VirtualPageKey, bytes, size)`.
+`drain()` submits bounded GPU page copies, publishes the page table
+after successful completion, and only then exposes updated mappings.
+`physicalAtlas()` and `pageTableTexture()` are the shader inputs.
+`engine/gfx/VirtualTextureSampling.h` contains GLSL and Metal helpers.
+Stale mappings are invalidated before LRU reuses a physical slot;
+a failed table/upload quarantines the entire atlas. This is not hardware
+sparse residency, automatic GPU feedback, or disk streaming.
+
+`Device::readTextureAsync` returns false for unsupported source formats
+or backends, and otherwise delivers a packed subresource on the graphics
+owner thread in a later frame. Metal supports RGBA8/sRGB/RGBA16F;
+GL33/GLES3 use PBO+fence for RGBA8/sRGB; Vulkan uses fence-completed
+host staging for RGBA8/sRGB/RGBA16F. WebGL2 refuses native async
+readback. None of those paths has passing GPU verification yet.
+
 ### Correctness and compatibility
 
 - Keep existing model material shaders' `sampler2D` resources on the
@@ -93,12 +116,12 @@ cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
 cmake --build build/texture-rhi --target \
   aiverse_texture_contract_test aiverse_render_target_set_test \
   aiverse_texture_streaming_test aiverse_texture_mip_residency_test \
-  aiverse_texture_resident_streamer_test aiverse_hdr_texture_test \
-  aiverse_exr_texture_test \
-
+  aiverse_texture_resident_streamer_test aiverse_virtual_texture_pages_test \
+  aiverse_virtual_texture_page_table_test aiverse_virtual_texture_streamer_test \
+  aiverse_hdr_texture_test aiverse_exr_texture_test \
   aiverse_ktx2_layers_test aiverse_dds_layers_test aiverse_texture_asset_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|hdr_texture|exr_texture|ktx2_layers|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|hdr_texture|exr_texture|ktx2_layers|dds_layers|texture_asset)$'
 ```
 
 Build the editor and native client to catch API/layout regressions.
