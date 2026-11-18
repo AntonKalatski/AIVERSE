@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 namespace aiverse::view {
@@ -41,6 +43,23 @@ struct LineObject {
 struct TriangleObject {
     render::float3 a{},b{},c{};
     uint32_t rgba=0xffffffffu;
+};
+// A draw-command stream can interleave skinned models, ordinary meshes
+// and debug primitives without changing the host's original draw order.
+// All ModelDraw pointers are borrowed until a synchronous submit returns.
+using ScenePacket=std::variant<Object,MeshObject,LineObject,TriangleObject>;
+class ScenePacketBatch final {
+public:
+    void reserve(size_t n){packets_.reserve(n);}
+    template<class Packet>
+    void add(Packet&& packet){
+        packets_.emplace_back(std::forward<Packet>(packet));
+    }
+    const std::vector<ScenePacket>& packets() const noexcept{return packets_;}
+    size_t size() const noexcept{return packets_.size();}
+    void clear()noexcept{packets_.clear();}
+private:
+    std::vector<ScenePacket> packets_;
 };
 struct Stats {
     lib::animation::AnimationBridgeStats source;
@@ -151,6 +170,30 @@ public:
     static void submitTriangle(render::Renderer3D& renderer,
                                const TriangleObject& triangle) {
         renderer.triangle(triangle.a,triangle.b,triangle.c,triangle.rgba);
+    }
+    // Synchronous ordered dispatch for arbitrary mixed scene packets.
+    // The renderer retains its own internal batching and pass order.
+    void submitPacket(render::Renderer3D& renderer,
+                      const ScenePacket& packet) const {
+        std::visit([&](const auto& item) {
+            using Item=std::decay_t<decltype(item)>;
+            if constexpr(std::is_same_v<Item,Object>)
+                submitOne(renderer,item);
+            else if constexpr(std::is_same_v<Item,MeshObject>)
+                submitMesh(renderer,item);
+            else if constexpr(std::is_same_v<Item,LineObject>)
+                submitLine(renderer,item);
+            else if constexpr(std::is_same_v<Item,TriangleObject>)
+                submitTriangle(renderer,item);
+        },packet);
+    }
+    void submitPackets(render::Renderer3D& renderer,
+                       std::span<const ScenePacket> packets) const {
+        for(const auto& packet:packets)submitPacket(renderer,packet);
+    }
+    void submitPackets(render::Renderer3D& renderer,
+                       const ScenePacketBatch& batch) const {
+        submitPackets(renderer,batch.packets());
     }
 
     const Stats& stats() const noexcept{return stats_;}

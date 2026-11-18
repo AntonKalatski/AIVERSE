@@ -118,3 +118,27 @@ tracers and fog-of-war blip triangles through these shared packet
 methods. All other legacy geometry remains valid on the old
 immediate-mode renderer until its own host extraction.
 
+## Mixed scene packet stream
+
+Use `view::ScenePacket` and `view::ScenePacketBatch` when a host
+must submit a collection of heterogeneous model, mesh, line
+and triangle draw packets in the **exact original order**:
+
+```cpp
+aiverse::view::ScenePacketBatch packets;
+packets.reserve(expectedDraws);
+packets.add(modelObject);
+packets.add(meshObject);
+packets.add(lineObject);
+scene.submitPackets(renderer,packets);
+```
+
+A ScenePacket is a tagged variant over the existing public
+`Object`, `MeshObject`, `LineObject`, and `TriangleObject`.
+The engine View dispatches one item at a time through
+the same `submitOne` / `submitMesh` / `submitLine` /
+`submitTriangle` paths as direct callers. It does not
+sort, reorder, re-evaluate animations or change internal
+Renderer3D batching. The host owns all borrowed model,
+mesh and material resources for the duration of submit.
+

@@ -741,6 +741,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_layer_order COMMAND aiverse_view_layer_tests)
 endif()
 
+# A single mixed scene draw stream for any host genre.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_packet_tests tests/view/packets.cpp)
+    target_link_libraries(aiverse_view_packet_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_scene_packets COMMAND aiverse_view_packet_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
