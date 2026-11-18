@@ -20,6 +20,10 @@ PHYSIS is the **genre-independent** nature simulation for AIVERSE. Weather, loca
 | `engine/physis/PhysisDebugPalette.h` | Renderer-independent CPU diagnostic colours and invalid-cell masking |
 | `apps/editor/windows/PhysisWindow.cpp` | Optional dockable editor heatmap with separate demo World and read-only live ECS source |
 | `engine/physis/PhysisSpatialIndex.h` | Transient COW snapshot, 2D bins, ordered candidate selection for wind/gravity/storm fields |
+| `engine/physis/PhysisSceneGeometry.h` | Pure Fixed-metre tile quads for Scene projection (presentation only) |
+| `engine/physis/PhysisProjectConfig.h` | Optional JSON `physis` map block → `InstallOptions` / `installFromMap` for any native GameModule |
+| `apps/editor/PhysisAuthoring.h` | Validated RTS/FPS map authoring, one `MapDoc::beginEdit` per Apply, Undo/Redo |
+| `apps/editor/PhysisSceneOverlay.h` | Editor-only camera projection of read-only PHYSIS fields and zone rings |
 | `engine/physis/PhysisIntegration.h` | Generic Simulation::addSystem, persistent ECS schemas, read-only presentation feed |
 
 ## Quick integration for any C++ native game
@@ -88,7 +92,9 @@ This performs full Debug configure/build before filtered CTest. For investigatin
 
 - Stage 15: [Fast diagnostic ECS reads](agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md)
 - Stage 16: [Snapshot-backed spatial index](agent-handoffs/physis-spatial-index-2026-11-18.md)
-- Stage 17: [PHYSIS editor debug view](agent-handoffs/physis-editor-debug-view-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
+- Stage 17: [PHYSIS editor debug view](agent-handoffs/physis-editor-debug-view-2026-11-18.md)
+- Main merge: [merged InputFlow/main verification](agent-handoffs/physis-main-merge-2026-11-18.md)
+- Stage 18: [Scene overlay + Inspector authoring/Undo](agent-handoffs/physis-editor-scene-inspector-2026-11-18.md)Each next stage gets code commit(s) followed by a separate handoff commit with SHA, paths, real tests, gaps, and the next exact task. Agent-specific constraints: `engine/physis/AGENTS.md`.
 
 ## Cross-system ownership (PHYSIS / NEREID / TerraWeave)
 
@@ -286,3 +292,56 @@ The window is an actual editor GUI implementation, but **native editor
 compilation, UI screenshot and manual clicking have NOT been verified**.
 Use `./run-tests.sh --filter '^physis_'` and build/test the editor on macOS
 before claiming it works end-to-end.
+
+
+## Stage 18 — real Scene viewport overlay and Inspector map authoring
+
+After the main merge `810feba70f01cdc35003ac80ea8486f39dc16049`,
+the editor Scene adds an opt-in transparent heatmap drawn **in the actual 3D
+view**, projected through the existing `RTSCamera::worldToScreen`, plus
+world-space rings for WindZone, StormEvent and GravityField. The toolbar
+controls live under **Мир → PHYSIS · Природа**; toggle **Показать 3D-оверлей
+в «Сцене»**. This is an ImGui presentation overlay (not shaded 3D geometry or
+Box3D collision) and uses the same read-only `DiagnosticRaster` and bounded
+`FieldSpatialIndex`. It only reads a live simulation that already has PHYSIS;
+it does not install or tick the active world.
+
+The shared Inspector under **Свойства карты** now includes a PHYSIS section:
+**Создать PHYSIS**, **Настроить PHYSIS**, **Удалить PHYSIS**. The edit dialog
+has structured controls for grid origin/dimensions, seed, temperature,
+humidity, wind/gravity/storm/disaster/force opt-in and NEREID external-water
+authority, plus an extended JSON tab. **Применить** validates the complete
+draft and calls `MapDoc::beginEdit` only once; existing Ctrl+Z/Ctrl+Shift+Z
+Undo/Redo is shared with other map edits. Invalid JSON/settings are rejected
+without changing the map. Both regular and FPS map formats are supported via
+`apps/editor/PhysisAuthoring.h`; no genre-specific ECS logic is added.
+
+Authored data is stored under the map-level `"physis"` JSON key.
+It is a **declaration, not automatic live ECS writeback**. Any native project
+can opt in from its generic `GameModule::setup`:
+
+```cpp
+#include "engine/physis/PhysisProjectConfig.h"
+
+void MyGame::setup(aiverse::Simulation& sim,
+                   const aiverse::Json& rules,
+                   const aiverse::Json& map) {
+    aiverse::physis::installFromMap(sim, map);
+}
+```
+
+`installFromMap` returns false for absent/disabled configuration; otherwise
+it strictly reads grid/climate parameters and flags, registers persistence and
+one fixed-tick PHYSIS system, and returns true. It does not install itself
+into RTS, FPS or other genre modules automatically. The extensible authored
+arrays for individual WindZone/StormEvent/GravityField instances are preserved
+in map JSON but are **not automatically instantiated** by this loader: stable
+entity IDs and per-project spawning policy still need a separate adapter.
+
+**Validation:** stage 18 source tests `physis_scene_geometry`,
+`physis_project_config`, and `physis_authoring` were written and registered
+in CTest. The last one needs `aiverse_editor_core` and runs in the editor /
+unified build; the PHYSIS-focused headless CI compiles the other two.
+Studio validation was updated to build/run all three and compile the editor.
+As of this commit, **C++ build, CTest, CI PASS, editor interaction and
+screenshot are NOT RUN / UNVERIFIED**. See the separate Stage 18 handoff.
