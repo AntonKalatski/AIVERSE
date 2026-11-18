@@ -44,6 +44,7 @@
 #include "ClientSpine.h"
 #include "ClientServices.h"
 #include "ClientGamepad.h"
+#include "ClientInputRouting.h"
 #include "modules/rts/view/RtsViewScript.h"
 #include "modules/rts/view/RegionSwipe.h"
 
@@ -151,7 +152,8 @@ private:
     bool planet() const { return view_.planetMode(); }
     void planetCameraKeys(double dt);
     void fitPlanetCamera();
-    bool planetCameraEvent(const platform::Event& e, bool uiWants);
+    bool planetCameraEvent(const platform::Event& e, bool uiWants,
+                           const std::vector<std::string>& actions);
     bool objectScreen(const SceneObject& o, float lift, float2& sp) const;   // flat maps: worldToScreen({x, lift, z})
     static Vec3 simPoint(float3 g);   // planets: picked sim-space point -> command point (1/256 units)
     RtsModule& mod() { return *static_cast<RtsModule*>(&sim_->module()); }
@@ -230,8 +232,11 @@ private:
     // ClientTopDown.cpp: top-down heroes (rules / game.json "topDown"): sticks, buttons, keys / mouse, follow camera
     bool topDownActive() const;
     bool topDownTouchUi() const;
+    void applyRtsActions(const std::vector<std::string>& actions,bool allowOrders=true);
+    void topDownTimedActions(const std::vector<std::string>& actions);
     void topDownConfigure();
-    bool topDownEvent(const platform::Event& e, bool uiWants);   // true: consumed
+    bool topDownEvent(const platform::Event& e, bool uiWants,
+                      const std::vector<std::string>& actions);   // true: consumed
     void topDownFrame(double dt);    // input -> kCmdTopDown / kCmdTopDownAbility
     void topDownCamera(double dt);   // after the scene is built (interpolated hero position)
     void topDownDraw();              // screen canvas: sticks and buttons
@@ -244,6 +249,8 @@ private:
     topdown::Input tdInput_;         // the input composed this frame (prediction)
     net::RollbackSession* tdHooked_ = nullptr;
     bool tdMouseHeld_ = false, tdFireHeld_ = false;
+    std::vector<bool> tdAbilityKeysHeld_;
+    bool tdAutoAbilityContext_=false; // authored project context is never overwritten
     // ClientCommerce.cpp: the city economy (rules "commerce"): the deals at the door in front of the hero
     struct CommerceChoice { std::string label; game::CommerceOp op; int premise; int64_t value; int career = -1; };
     int commerceDoor();
@@ -388,6 +395,7 @@ private:
     std::vector<Notice> notices_;
 
     // input
+    ClientInputRouting inputShortcuts_;  // presentation-only semantic Actions -> validated Commands
     std::vector<Entity> selection_;
     std::array<std::vector<Entity>, 10> groups_;
     Mode mode_ = Mode::Normal;
