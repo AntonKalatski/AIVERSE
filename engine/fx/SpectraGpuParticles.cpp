@@ -307,13 +307,17 @@ bool ComputeParticles::step(float dt) {
     // slots into contiguous GPU vertices for a dense indexed draw. The CPU
     // knows lifetimes and slot ownership; it never reads GPU positions.
     uint32_t updatePrefix=0;
+    uint32_t compactCount=0; // only a CPU estimate in GPU indirect mode
     aliveSlots_.clear();
     for(uint32_t i=0;i<uint32_t(ages_.size());++i) {
         if(ages_[i]<=0.f)continue;
         updatePrefix=i+1; // integrate every physical slot alive before dt
-        if(ages_[i]>dt)aliveSlots_.push_back(i);
+        if(ages_[i]>dt) {
+            ++compactCount;
+            // Preserve the existing CPU-authored gather as the fallback.
+            if(!gpuIndirectActive_)aliveSlots_.push_back(i);
+        }
     }
-    const uint32_t compactCount=uint32_t(aliveSlots_.size());
     if(updatePrefix==0 && count==0) {
         drawCount_=0;
         stats_.submittedSlots=stats_.alive=0;
@@ -326,7 +330,7 @@ bool ComputeParticles::step(float dt) {
         device_->updateBuffer(slots_,pendingSlots_.data(),size_t(count)*sizeof(uint32_t));
         stats_.uploadedBytes+=size_t(count)*(sizeof(ParticleState)+sizeof(uint32_t));
     }
-    if(compactCount>0) {
+    if(compactCount>0 && !gpuIndirectActive_) {
         device_->updateBuffer(liveSlots_,aliveSlots_.data(),size_t(compactCount)*sizeof(uint32_t));
         stats_.uploadedBytes+=size_t(compactCount)*sizeof(uint32_t);
     }
@@ -339,19 +343,42 @@ bool ComputeParticles::step(float dt) {
     device_->setComputeBuffer(2,slots_);
     device_->setComputeBuffer(3,vertices_);
     device_->setComputeBuffer(4,liveSlots_);
+    device_->setComputeBuffer(5,aliveCounter_);
+    device_->setComputeBuffer(6,gpuDrawArgs_);
     Uniforms u{};
     u.gravityDt={desc_.gravityY,dt,desc_.drag,0};
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
     u.up={up_.x,up_.y,up_.z,0};
     u.meta={0,desc_.capacity,count,compactCount};
-    if(count){device_->setComputeUniforms(&u,sizeof(u));device_->dispatch(count);++stats_.gpuDispatches;}
+    if(gpuIndirectActive_) {
+        // Reset the atomic counter in a separate dispatch. The RHI inserts
+        // a Metal compute barrier between dispatches on this command encoder.
+        u.meta[0]=3;
+        device_->setComputeUniforms(&u,sizeof(u));
+        device_->dispatch(1);++stats_.gpuDispatches;
+    }
+    if(count){
+        u.meta[0]=0;
+        device_->setComputeUniforms(&u,sizeof(u));
+        device_->dispatch(count);++stats_.gpuDispatches;
+    }
     if(updatePrefix>0) {
         u.meta[0]=1;
         device_->setComputeUniforms(&u,sizeof(u));
         device_->dispatch(updatePrefix);++stats_.gpuDispatches;
     }
-    if(compactCount>0) {
-        u.meta[0]=2;
+    if(gpuIndirectActive_) {
+        if(updatePrefix>0) {
+            u.meta[0]=4; // per-physical-slot atomic dense vertex append
+            device_->setComputeUniforms(&u,sizeof(u));
+            device_->dispatch(updatePrefix);++stats_.gpuDispatches;
+            ++stats_.gpuCompactDispatches;
+        }
+        u.meta[0]=5; // write indexed args from GPU-owned atomic counter
+        device_->setComputeUniforms(&u,sizeof(u));
+        device_->dispatch(1);++stats_.gpuDispatches;
+    } else if(compactCount>0) {
+        u.meta[0]=2; // legacy CPU-published live gather
         device_->setComputeUniforms(&u,sizeof(u));
         device_->dispatch(compactCount);++stats_.gpuDispatches;
     }
@@ -386,7 +413,18 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     device_->setIndexBuffer(indices_);
     device_->setUniforms(0,&u,sizeof(u));
     device_->setTexture(0,texture_);
-    device_->drawIndexed(drawCount_*6);
+    if(gpuIndirectActive_) {
+        // No CPU readback, and no unsafe direct-draw fallback when GPU
+        // authored arguments cannot be submitted. CPU's count is only an
+        // estimate and may not match the actual atomic compacted count.
+        if(!device_->drawIndexedGpuIndirect(gpuDrawArgs_,0)) {
+            reason_="SpectraFX GPU-authored indirect draw was rejected by RHI";
+            return;
+        }
+        ++stats_.gpuIndirectDraws;
+    } else {
+        device_->drawIndexed(drawCount_*6);
+    }
     stats_.drawCalls=1;
 }
 void ComputeParticles::switchToCpu(const std::string& why) {
