@@ -850,6 +850,12 @@ FxHandle ParticleSystem::play(const std::string& name, float3 pos, float3 dir, f
 }
 
 FxHandle ParticleSystem::play(int effect, float3 pos, float3 dir, float scale, float4 tint) {
+    return playWithProgramParameters(effect,pos,dir,scale,tint,{});
+}
+FxHandle ParticleSystem::playWithProgramParameters(
+    int effect,float3 pos,float3 dir,float scale,float4 tint,
+    const std::array<float,8>& params) {
+    for(float value:params)if(!spectra::program::number(value))return {};
     auto& I = *impl_;
     if (quality_ == FxQuality::Off || effect < 0 || size_t(effect) >= I.effects.size() || !I.effects[size_t(effect)].valid) return {};
     auto& e = I.effects[size_t(effect)];
@@ -874,6 +880,7 @@ FxHandle ParticleSystem::play(int effect, float3 pos, float3 dir, float scale, f
     in.setDir(render::length(dir) > 1e-5f ? render::normalize(dir) : float3{0, 1, 0});
     in.scale = std::max(0.01f, scale);
     in.tint = tint;
+    in.programParams = params; // before prewarm emits any particles
     bool prewarm = false;
     float warm = 0;
     for (size_t k = 0; k < e.def.emitters.size(); ++k) {
