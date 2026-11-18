@@ -4,6 +4,7 @@
 #pragma once
 #include "SpectraGpuProgram.h"
 #include "SpectraGpuProgramShaders.h"
+#include "SpectraGpuSourceParameters.h"
 #include "engine/gfx/Gfx.h"
 #include <array>
 #include <cstring>
@@ -26,14 +27,16 @@ public:
     MetalVmPass(const MetalVmPass&)=delete;
     MetalVmPass& operator=(const MetalVmPass&)=delete;
 
-    bool init(gfx::Device* device, const Payload& program) {
+    bool init(gfx::Device* device, const Payload& program,
+              uint32_t maxParticleSlots=4096) {
         shutdown();
         if(!device || device->info().backend!=gfx::Backend::Metal ||
            !device->supportsCompute()) {
             reason_="SpectraFX VM needs Metal compute";
             return false;
         }
-        if(program.abiVersion!=kAbiVersion ||
+        if(maxParticleSlots==0 || maxParticleSlots>65536 ||
+           program.abiVersion!=kAbiVersion ||
            program.statementCount>kMaxStatements ||
            program.instructionCount>kMaxInstructions) {
             reason_="invalid SpectraFX GPU VM ABI or budgets";
@@ -65,7 +68,10 @@ public:
         params_=create(sizeof(zeros),zeros.data(),"SpectraFX VM params");
         uint32_t zero=0;
         errors_=create(sizeof(zero),&zero,"SpectraFX VM error count");
-        if(!code_.valid()||!params_.valid()||!errors_.valid()) {
+        snapshots_=create(size_t(maxParticleSlots)*sizeof(ParticleParams),
+                          nullptr,"SpectraFX per-particle VM parameters");
+        maxParticleSlots_=maxParticleSlots;
+        if(!code_.valid()||!params_.valid()||!errors_.valid()||!snapshots_.valid()) {
             reason_="Metal VM buffer creation: "+device_->lastError();
             shutdownResources();
             return false;
@@ -81,6 +87,35 @@ public:
     bool dispatch(gfx::BufferHandle particleStates, uint32_t particleCount,
                   program::Stage stage, float dt,
                   const std::array<float,8>& values) {
+        return dispatchImpl(particleStates,particleCount,stage,dt,values,nullptr);
+    }
+
+    // Per-particle snapshots from generation-safe presentation-only sources.
+    // The host must have spawned/killed each corresponding CPU mirror slot
+    // and must use the same physical slot indices in the GPU state buffer.
+    bool dispatchSources(gfx::BufferHandle particleStates,uint32_t particleCount,
+                         program::Stage stage,float dt,
+                         const SourceParameters& sources) {
+        if(particleCount>sources.particleCapacity() ||
+           particleCount>maxParticleSlots_) {
+            reason_="GPU VM source snapshots exceed allocated particle slots";
+            return false;
+        }
+        return dispatchImpl(particleStates,particleCount,stage,dt,{},&sources);
+    }
+
+    bool ready() const {return device_&&compute_.valid()&&code_.valid()
+                                &&params_.valid()&&errors_.valid()&&snapshots_.valid();}
+    const std::string& reason() const {return reason_;}
+    // GPU error counter is device-resident; dispatch success does not imply
+    // every VM expression succeeded. Host must read and handle errors.
+    gfx::BufferHandle errorCounter() const {return errors_;}
+    void shutdown() {shutdownResources();reason_.clear();}
+private:
+    bool dispatchImpl(gfx::BufferHandle particleStates, uint32_t particleCount,
+                      program::Stage stage, float dt,
+                      const std::array<float,8>& values,
+                      const SourceParameters* sources) {
         if(!ready()||!particleStates.valid()) {
             reason_="Metal VM not initialized or state buffer missing";
             return false;
@@ -104,6 +139,12 @@ public:
         if(particleCount==0)return true;
         const uint32_t zero=0;
         device_->updateBuffer(params_,values.data(),sizeof(values));
+        if(sources) {
+            // No stale source pointer is retained; snapshot data is uploaded
+            // before beginning the Metal encoder, in RHI submission order.
+            device_->updateBuffer(snapshots_,sources->particleBuffer().data(),
+                                  size_t(particleCount)*sizeof(ParticleParams));
+        }
         device_->updateBuffer(errors_,&zero,sizeof(zero));
         if(!device_->beginCompute(compute_)) {
             reason_="Metal VM compute encoder unavailable";
@@ -113,7 +154,8 @@ public:
         device_->setComputeBuffer(1,code_);
         device_->setComputeBuffer(2,params_);
         device_->setComputeBuffer(3,errors_);
-        DispatchUniforms u{particleCount,uint32_t(stage),dt,0};
+        device_->setComputeBuffer(4,snapshots_);
+        DispatchUniforms u{particleCount,uint32_t(stage),dt,sources?1u:0u};
         device_->setComputeUniforms(&u,sizeof(u));
         device_->dispatch(particleCount);
         device_->endCompute();
@@ -121,26 +163,21 @@ public:
         return true;
     }
 
-    bool ready() const {return device_&&compute_.valid()&&code_.valid()
-                                &&params_.valid()&&errors_.valid();}
-    const std::string& reason() const {return reason_;}
-    // GPU error counter is device-resident; without an explicit RHI async
-    // readback contract there is NO promise of successful VM instructions.
-    gfx::BufferHandle errorCounter() const {return errors_;}
-    void shutdown() {shutdownResources();reason_.clear();}
-private:
     void shutdownResources() {
         if(device_) {
             if(compute_.valid())device_->destroyCompute(compute_);
             if(code_.valid())device_->destroyBuffer(code_);
             if(params_.valid())device_->destroyBuffer(params_);
             if(errors_.valid())device_->destroyBuffer(errors_);
+            if(snapshots_.valid())device_->destroyBuffer(snapshots_);
         }
-        compute_={};code_={};params_={};errors_={};device_=nullptr;
+        compute_={};code_={};params_={};errors_={};snapshots_={};
+        maxParticleSlots_=0;device_=nullptr;
     }
     gfx::Device* device_=nullptr;
     gfx::ComputeHandle compute_{};
-    gfx::BufferHandle code_{},params_{},errors_{};
+    gfx::BufferHandle code_{},params_{},errors_{},snapshots_{};
+    uint32_t maxParticleSlots_=0;
     std::string reason_;
 };
 } // namespace aiverse::spectra::gpu_program
