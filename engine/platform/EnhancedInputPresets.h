@@ -173,6 +173,43 @@ inline ecfg::Asset rtsReference() {
     id=1;
     for(auto& mapping:gestures.mappings)mapping.id=id++;
     result.contexts.push_back({std::move(gestures),0,true});
+
+    // The orbital camera and direct-control RTS hero need distinct contexts,
+    // not genre-dependent branches in the Enhanced Input core.
+    result.actions.push_back({"PlanetRotate",ei::ValueType::Axis1D});
+    result.actions.push_back({"PlanetPitch",ei::ValueType::Axis1D});
+    result.actions.push_back({"PlanetNextBody",ei::ValueType::Boolean});
+    ei::MappingContext planet{"RTS.Planet"};
+    planet.bind("PlanetRotate",{ei::Device::Keyboard,int(Key::Q)},{},{},false);
+    planet.bind("PlanetRotate",{ei::Device::Keyboard,int(Key::E)},
+                {ei::Modifier::negate()},{},false);
+    planet.bind("PlanetPitch",{ei::Device::Keyboard,int(Key::PageUp)},{},{},false);
+    planet.bind("PlanetPitch",{ei::Device::Keyboard,int(Key::PageDown)},
+                {ei::Modifier::negate()},{},false);
+    planet.bind("PlanetNextBody",{ei::Device::Keyboard,int(Key::Tab)},{},
+                {ei::Trigger::pressed()},false);
+    id=1;
+    for(auto& mapping:planet.mappings)mapping.id=id++;
+    result.contexts.push_back({std::move(planet),80,false});
+
+    result.actions.push_back({"PossessedMove",ei::ValueType::Axis2D});
+    result.actions.push_back({"PossessedFire",ei::ValueType::Boolean});
+    result.actions.push_back({"PossessedWalk",ei::ValueType::Boolean});
+    ei::MappingContext possessed{"RTS.Possession"};
+    const auto steer=[&](Key key,std::vector<ei::Modifier> modifiers) {
+        possessed.bind("PossessedMove",{ei::Device::Keyboard,int(key)},
+                       std::move(modifiers),{},false);
+    };
+    for(const auto key:{Key::W,Key::Up})steer(key,{ei::Modifier::swapXY()});
+    for(const auto key:{Key::S,Key::Down})
+        steer(key,{ei::Modifier::swapXY(),ei::Modifier::negate()});
+    for(const auto key:{Key::A,Key::Left})steer(key,{ei::Modifier::negate()});
+    for(const auto key:{Key::D,Key::Right})steer(key,{});
+    possessed.bind("PossessedFire",{ei::Device::MouseButton,0},{},{},false);
+    possessed.bind("PossessedWalk",{ei::Device::MouseButton,1},{},{},false);
+    id=1;
+    for(auto& mapping:possessed.mappings)mapping.id=id++;
+    result.contexts.push_back({std::move(possessed),100,false});
     return result;
 }
 } // namespace aiverse::platform::enhanced_presets
