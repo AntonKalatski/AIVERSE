@@ -79,7 +79,9 @@ inline bool decode(const net::Bytes& bytes,Packet& output,std::string* error=nul
     if(bytes.size()<23 || bytes.size()>kMaxFrame)
         return protocolError(error,"PHYSIS packet length invalid");
     ByteReader r(bytes.data(),bytes.size());
-    const auto magic=r.u32(),version=r.u16(),kind=r.u8();
+    const std::uint32_t magic=r.u32();
+    const std::uint16_t version=r.u16();
+    const std::uint8_t kind=r.u8();
     Packet candidate;
     candidate.clientInstance=r.u64();candidate.requestId=r.u64();
     if(!r.ok()||magic!=kMagic||version!=kVersion||
