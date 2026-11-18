@@ -66,20 +66,23 @@ public:
         stream_->update({},std::span<const world::Cell>(&desired,1),
             1,1,[&](world::Cell cell,const world::AsyncChunkStream::Payload& payload) {
                 if(!(cell==cell_))return false;
-                const auto& prepared=static_cast<const Prepared&>(*payload);
+                auto prepared=std::static_pointer_cast<Prepared>(payload);
                 // May contain just atlas cards, just terrain or neither.
-                if(!prepared.model)return true;
+                if(!prepared->model)return true;
                 // CPU model is already prepared on worker. uploadModel only
                 // touches the renderer-owned Device on this update thread.
-                auto next=std::move(const_cast<Prepared&>(prepared).model);
-                if(!render::uploadModel(device,*next))return false;
+                auto next=std::move(prepared->model);
+                if(!render::uploadModel(device,*next)){
+                    render::releaseModel(device,*next);
+                    return false;
+                }
                 if(model_)render::releaseModel(device,*model_);
                 model_=std::move(next);
-                originXcm_=prepared.bake.originXcm;
-                originZcm_=prepared.bake.originZcm;
-                clusters_=prepared.bake.clusters.size();
-                terrainQuads_=prepared.bake.terrainResolution*
-                              prepared.bake.terrainResolution;
+                originXcm_=prepared->bake.originXcm;
+                originZcm_=prepared->bake.originZcm;
+                clusters_=prepared->bake.clusters.size();
+                terrainQuads_=prepared->bake.terrainResolution*
+                              prepared->bake.terrainResolution;
                 return true;
             },[](world::Cell){});
     }
