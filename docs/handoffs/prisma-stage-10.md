@@ -30,3 +30,7 @@
 4. Далее: data-driven MRT resources, GPU RenderGraph executor, GPU pass timings; потом DepthOfField, AutoExposure, MotionBlur/motion vectors по отдельным проверяемым этапам. Не интегрировать experimental RHI path по умолчанию без полноценного smoke.
 
 **Текущая ветка:** `feature/prisma-postfx`; **draft PR:** https://github.com/chromealex/AIVERSE/pull/26. Base `feature/universal-entity-inspector-fps` разошлась и развивается параллельно. Не делать force push и не заменять SpectraFX/AGENTS коммиты.
+
+## Post-handoff correction (same Stage 10)
+- `1b50fe857647699a7068ed8dee2bb72963ea5d38`: добавлены явные стандартные includes `<cstdint>`, `<stdexcept>`, `<string>`, `<utility>` в `PrismaWindow.cpp`, чтобы не зависеть от транзитивных заголовков editor.
+- Native compile/tests **по-прежнему NOT RUN**; эта правка не меняет status верификации.
