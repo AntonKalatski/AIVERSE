@@ -37,7 +37,18 @@ inline bool lowerRuntimeExpression(const Json& expression,
         const std::string type=source.getStr("type");
         const Json& p=source["properties"];
         bool ok=true;
-        if(type=="ParticleRead" || type=="AgeNormalized") {
+        if(type=="InstanceParameter") {
+            // The graph-v2 compiler already resolved the named declaration
+            // to a strict 0..7 slot. This is a dynamic per-instance read,
+            // never a constant-folded graph parameter.
+            const int64_t slot=p.getInt("slot",-1);
+            if(slot<0 || slot>=8)
+                ok=fail("InstanceParameter '"+id+"' needs a validated slot 0..7");
+            else {
+                lowered=Json::object();
+                lowered.set("var",Json::string("param"+std::to_string(slot)));
+            }
+        } else if(type=="ParticleRead" || type=="AgeNormalized") {
             const std::string field=type=="AgeNormalized"?
                                     "ageNormalized":p.getStr("field");
             if(spectra::program::fieldOf(field)==spectra::program::Field::Invalid)
