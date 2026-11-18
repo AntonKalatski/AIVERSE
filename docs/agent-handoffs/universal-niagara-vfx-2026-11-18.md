@@ -627,3 +627,55 @@ python3 tools/skills/catalog.py check
 2. **GPU prototype remains narrow:** one additive soft-sprite emitter, no true GPU compaction, indirect count, scene depth collision, shader graph/dataflow nodes, multiple textures, ribbon/mesh effects or GPU emitter event channels. Vulkan/GL/GLES/WebGL remain CPU fallback. The prefix optimization is O(capacity) CPU age bookkeeping and can still draw holes.
 3. **Runtime recovery is not seamless.** GPU-resident particles are lost on an automatic transition and `step` reports `false`; if `gpuHealthy` is false, a separate graphics-device reinitialization may still be necessary. Do not treat fallback as proof that graphics recovered.
 4. **Next bounded stage (Stage 13):** observe/fix CMake+CTest and actual Metal diagnostics on Apple Silicon; implement a real offscreen Metal compute+draw smoke test and safe graphics-device recovery before considering default GPU effect routing. Once verified, design GPU compaction/indirect buffers and a genre-neutral ECS presentation scheduler that can route multiple graph emitters in native projects. Each implementation stage must end with another **separate** handoff commit here with actual SHAs/test results and explicit limits.
+
+## Stage 13 — dense Metal particle gather with CPU-owned live index map (COMMITTED, TESTS NOT RUN)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** eliminate dead-slot billboards and sparse-index draw overhead in the existing opt-in SpectraFX Metal compute subset. Use a CPU-published live-index map and GPU-resident vertex gather; do not overstate this as fully GPU-autonomous compaction. No ECS/gameplay/save/rollback or RTS/FPS production client changes.
+
+### Implementation commits
+
+| Exact implementation SHA | File | Changes |
+|---|---|---|
+| `a1e8a6b2c9718c7360fc633b91a2143d1fd99a60` | `engine/fx/SpectraGpuShaders.h` | Both MSL and future GLSL compute sources gather only live physical slots into dense billboard vertices using storage buffer 4 and `meta.w` alive count |
+| `09cf4b2c4cdbe8603a476e49def8df2fac7ad44e` | `engine/fx/SpectraGpuParticles.h` | Persistent `liveSlots_` GPU buffer, CPU-side `aliveSlots_` list and dense `drawCount_`; update stats semantics |
+| `fb8d3a97a65cb700c21fab2a44e0aeecc979f687` | `engine/fx/SpectraGpuParticles.cpp` | Create/destroy new storage buffer, reserve live-slot list, include allocation in GPU-memory budget, reset on clear/shutdown |
+| `f1aed98bd0ab40655a62ee8605e7d143260cafce` | `engine/fx/SpectraGpuParticles.cpp` | Update particle ages after compute submission; use CPU predicted survivors to upload slot map, dense compute expand and exact-live indexed draw |
+| `e5816eeadc5e801cde330b2f4723b042eaae79cd` | `tests/vfx_gpu_backend_test.cpp` | Recording-RHI captures live-slot map and asserts dense draw of the 3 surviving physical slots [3,4,5] |
+| `b04c9c3436caa88b1c2e084334c51473f5a152d7` | `docs/spectrafx.md` | Stage-13 design, platform limitations, test scope and latency/bandwidth caveats |
+| `d30d1c217e6a5f475d945890fce77da501f9d546` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Canonical AI agent implementation/usage/validation guidance |
+| `6f53180d965f2388884ab842053c7891f66d480c` | `AGENTS.md` | Stage-13 no-false-claims and CPU-preservation engineering rule |
+
+### Architecture and source/ABI contracts
+
+- Existing stable physical GPU state slots remain `ParticleState` (64 bytes). GPU quad `Vertex` remains 40 bytes and retains its existing sprite shader/pipeline layout. Capacity still capped at **4096** slots (16-bit indices). One new `BufferType::Storage` holds `uint32_t liveSlots[capacity]`, bound at **compute slot 4**.
+- At each presentation frame, CPU scans its bounded lifespan/free-slot records, predicts the post-step survivors (`ages[i] > dt`), builds an ascending physical-slot map and uploads that map (4 bytes per live particle) along with any new birth data **before beginCompute**. Do not mutate CPU ages or free slots if the compute encoder cannot begin.
+- GPU pass 0 writes births into physical state slots; pass 1 integrates physical slots through the previously-live high-water index; pass 2 reads `liveSlots[id]`, gathers resident GPU position/velocity/tint and writes to **dense** `vertices[id*4..id*4+3]`. Uniform `meta.w` supplies the live count; both Metal and GLSL source agree. No GPU→CPU position readback is required.
+- The host then draws `drawCount * 6` indices from the preexisting 16-bit static index buffer; `drawCount == alive` after a successful GPU step. Dead holes in the physical pool are **never** submitted as vertex quads. The Stage-12 `submittedSlots` field now reports actual densely emitted quads (previously it was a high-water prefix, possibly including holes). Update consumers accordingly.
+- `ComputeStats::uploadedBytes` now additionally accounts for the 4-byte-per-survivor per-frame map. The GPU buffer memory budget includes the added 4-byte-per-capacity buffer. Idle pools still skip compute/draw. Normal graphic output remains one additive `builtin:soft` particle material with no alpha sort and no cross-emitter batching.
+- Legacy `fx::ParticleSystem` CPU backend remains the default for production RTS/FPS clients. `GraphRuntime` still only opts eligible graphs into this Metal subset. Other graphs, platforms and quality tiers preserve the full original CPU effect. ECS deterministic state and old graph assets are not touched.
+
+### Test and CI status — NOT RUN
+
+The recording-RHI test was **updated, not executed**: it asserts that after two groups of three births, when physical slots 0–2 expire and 3–5 live, the GPU slot map equals `{3,4,5}` and the renderer issues exactly **18 indices**, not 36. Other scenarios still cover empty-pool no-dispatch, clear safety, `RequireGpu` device health, auto fallback and detailed diagnostics. The `.github/workflows/spectrafx-validation.yml` CI workflow still exists but at the last query its jobs were **queued**; no successful build/CTest result was available for this stage. No MSL compiler or actual Metal device was used. Therefore **source committed ≠ tested** and no performance measurements are claimed.
+
+To validate in a full native checkout:
+
+```bash
+git switch feature/universal-entity-inspector-fps
+git pull --ff-only origin feature/universal-entity-inspector-fps
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=ON
+cmake --build build/vfx-test --target aiverse_editor aiverse_vfx_gpu_tests aiverse_vfx_graph_runtime_tests aiverse_vfx_graph_tests aiverse_vfx_assets_tests aiverse_vfx_ecs_tests aiverse_vfx_ops_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -L SpectraFX
+python3 tools/skills/catalog.py check
+```
+
+Then perform real Apple Silicon validation: use a Metal `gfx::Device` to compile `cs_main`; render after an initial burst, spawn a second group later, let the first expire, and verify exactly the expected visible second group (no holes/ghost quads). Inspect actual GPU buffer(4) values and `meta.w` in a GPU frame capture; measure uploads, dispatches, draw counts and frame time at 128/1024/4096 live particles. Compare visual FPS/RTS-agnostic example effects with CPU fallback. Test multiple in-flight frames and device reset before considering default enablement.
+
+### Known limitations and next bounded stage
+
+1. **No CI/real device proof** yet: fix any actual compiler, CTest and Metal shader issues in these source changes before extending the compute path. CI queued does not mean passing.
+2. **CPU-published gather is not autonomous GPU compaction.** The CPU still scans lifetime/slots O(capacity), uploads O(alive) 32-bit indices, computes draw count and submits `drawIndexed` with an alive CPU value. GPU owns particle motion and vertex expansion only. Real GPU scan/atomic compaction + GPU indirect arguments is a separate, higher-risk stage.
+3. The single Metal soft additive sprite emitter remains restricted; no GPU ribbons/meshes, depth collisions, sorting/alpha blending, multi-material/render-queue batching, sub-emitter events, scalable pooled effects or generic Niagara dataflow. Vulkan/GL/GLES/WebGL remain CPU fallback.
+4. **Next stage (Stage 14):** first obtain real Linux/macOS CI and Mac Metal render/test logs. If green, design an opt-in **GPU-authored alive counter + indirect indexed draw** behind an explicit RHI capability gate and preserve the CPU list path as fallback; then build a genre-neutral multi-emitter presentation scheduler with correct rollback reset, budgeting and visual parity. Do not silently alter existing clients.
+5. After every next code stage, append a separately committed handoff to **this same file** with exact SHA, tests actually executed and next work. Concurrent agents continue working in this branch; use blob-SHA-safe updates.
