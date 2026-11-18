@@ -6,11 +6,14 @@
 #include "engine/data/Json.h"
 #include <string>
 #include <vector>
+#include <algorithm>
 
 namespace aiverse::world {
 struct NereidManifest {
     std::vector<NereidSceneSurface> surfaces;
     uint32_t maxUploadsPerFrame=2;
+    size_t maxEstimatedUploadBytes=8u*1024u*1024u;
+    float visibilityRange=0;
 };
 
 namespace nereid_manifest_detail {
@@ -57,6 +60,7 @@ inline NereidSceneSurface surface(const Json& j) {
     using namespace lib::nereid;
     if(!j.isObject())throw JsonError("nereidWater.surface: expected object");
     NereidSceneSurface s;
+    if(j.has("id"))s.id=uint64_t(worldInteger(j,"id",0,1,2147483647));
     s.body.kind=kind(j.getStr("kind","lake"));
     const auto shape=j.getStr("shape","box");
     if(shape=="infinite")s.body.footprint=WaterFootprint::Infinite;
@@ -126,12 +130,23 @@ inline NereidManifest parseNereidWaterManifest(const Json& root) {
     const auto& config=root["nereidWater"];
     if(!config.isObject())throw JsonError("nereidWater: expected object");
     out.maxUploadsPerFrame=uint32_t(worldInteger(config,"maxUploadsPerFrame",2,1,16));
+    out.maxEstimatedUploadBytes=size_t(worldInteger(config,"maxEstimatedUploadBytes",8*1024*1024,1024,64*1024*1024));
+    if(config.has("visibilityRange"))out.visibilityRange=nereid_manifest_detail::scalar(config["visibilityRange"],"visibilityRange",0.f,1000000.f);
     const auto& surfaces=config["surfaces"];
     if(!surfaces.isArray()||surfaces.size()>NereidWaterScene::kMaxSurfaces)
         throw JsonError("nereidWater.surfaces: expected at most 64");
     out.surfaces.reserve(surfaces.size());
     for(const auto& j:surfaces.items())
         out.surfaces.push_back(nereid_manifest_detail::surface(j));
+    // Validate explicit and synthetic identifiers before constructing GPU state.
+    std::vector<uint64_t> seen;
+    for(size_t i=0;i<out.surfaces.size();++i) {
+        const auto id=out.surfaces[i].id?out.surfaces[i].id:
+            ((uint64_t(1)<<63)|(uint64_t(i)+1));
+        if(std::find(seen.begin(),seen.end(),id)!=seen.end())
+            throw JsonError("nereidWater: duplicate surface id");
+        seen.push_back(id);
+    }
     return out;
 }
 } // namespace aiverse::world
