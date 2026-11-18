@@ -195,6 +195,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
         case HorizonQualityPreset::Minimal:
             settings.atlasTilePixels=16;
             settings.terrainResolution=16;
+            settings.terrainGridSnapSteps=1;
             settings.terrainSkirtDepthCm=0; // mobile-minimum eliminates outer skirt geometry
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
@@ -205,6 +206,7 @@ inline HorizonSettings horizonSettingsForQuality(HorizonQualityPreset preset) {
         case HorizonQualityPreset::Mobile:
             settings.atlasTilePixels=24;
             settings.terrainResolution=24;
+            settings.terrainGridSnapSteps=2;
             settings.terrainSkirtDepthCm=600;
             settings.crownDetail=1;
             settings.maxCachedRegions=0;
@@ -300,9 +302,12 @@ inline HorizonTerrainLattice makeHorizonTerrainLattice(
     const int64_t stride=s.terrainGridSnapSteps;
     const int64_t xStep=detail::floorDiv(cameraXcm*n,side);
     const int64_t zStep=detail::floorDiv(cameraZcm*n,side);
+    // Round to the *nearest* world-grid anchor instead of always flooring.
+    // This limits maximum camera-to-terrain-center offset to roughly half
+    // the anchor interval, keeping adequate far-field coverage around view.
     return {side,
-        detail::floorDiv(xStep,stride)*stride-n/2,
-        detail::floorDiv(zStep,stride)*stride-n/2,
+        detail::floorDiv(xStep+stride/2,stride)*stride-n/2,
+        detail::floorDiv(zStep+stride/2,stride)*stride-n/2,
         s.terrainResolution};
 }
 
@@ -614,8 +619,21 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
              std::max(0,s.closeForestEndCm-s.nearBlendCm),
              s.middleForestEndCm+s.tierBlendCm/2,
              0x9c6f54574d49444dULL,true,0u);
+    const int64_t halfTerrainSide=regionSide/2;
+    // A snapped terrain heightfield may be offset from the camera by
+    // several grid steps. The far canopy ring must remain inside the
+    // guaranteed covered terrain footprint, including its one-grid-step
+    // rounding margin, or a bare sky/forest crack can appear at one edge.
+    const int64_t terrainStep=(regionSide+s.terrainResolution-1)/
+                              s.terrainResolution;
+    const int64_t maxCenterOffset=
+        (int64_t(s.terrainGridSnapSteps)+1)*terrainStep/2;
+    const int64_t safeTerrainRadius=std::max<int64_t>(
+        s.middleForestEndCm+1,halfTerrainSide-maxCenterOffset);
     const int32_t farRadius=static_cast<int32_t>(
-        int64_t(s.distantTilesPerSide)*s.distantTileCm/2);
+        s.distantTerrain
+        ? std::min<int64_t>(halfTerrainSide,safeTerrainRadius)
+        : halfTerrainSide);
     addLayer(s.distantTileCm,s.distantTilesPerSide,
              s.middleForestEndCm-s.tierBlendCm/2,
              farRadius,0x9c6f54574641524dULL,false,
