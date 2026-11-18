@@ -107,7 +107,10 @@ public:
     render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;
     bool terraWeaveForestPreviewEnabled() const { return terraWeaveForestPreview_.enabled(); }
-    void setTerraWeaveForestPreviewEnabled(bool enabled) { terraWeaveForestPreview_.setEnabled(enabled); }
+    void setTerraWeaveForestPreviewEnabled(bool enabled) {
+        if (!enabled && dev_) terraWeaveForestPreview_.release(*dev_);
+        terraWeaveForestPreview_.setEnabled(enabled);
+    }
     size_t terraWeaveForestPreviewCount() const { return terraWeaveForestPreview_.visibleInstances(); }                     // false: only the Game view is post-processed
     game::RtsView& view() { return view_; }
     bool lazyEditorAssetsEnabled() const { return lazyEditorAssets_; }
