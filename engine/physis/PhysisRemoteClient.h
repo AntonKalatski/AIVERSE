@@ -155,6 +155,11 @@ public:
                 if(message.receipt.result==Result::Unknown) {
                     knownRemoteRevision_=true;
                     remoteRevision_=message.receipt.revision;
+                    if(!active_ && status_==ClientStatus::Uncertain)
+                        status_=ClientStatus::Idle;
+                } else if(message.receipt.result==Result::Denied) {
+                    receipt_=message.receipt;
+                    status_=ClientStatus::Denied;
                 }
                 probeId_=0;
                 continue;
@@ -190,6 +195,10 @@ public:
             else if(receipt_.result==Result::Denied)
                 status_=ClientStatus::Denied;
             else status_=ClientStatus::Rejected;
+        }
+        if(probeId_ && probeAttempts_>=12 && nowMs>=probeNextMs_) {
+            probeId_=0;
+            if(!active_) status_=ClientStatus::Uncertain;
         }
         if(probeId_ && nowMs>=probeNextMs_ && probeAttempts_<12) {
             Packet probe;
