@@ -881,6 +881,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
     refreshPrismaVolumes();
+    prisma_.setViewId(1ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
     r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &prisma_ : nullptr));
     const auto afterRender = std::chrono::steady_clock::now();
@@ -948,6 +949,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     refreshPrismaVolumes();
+    prisma_.setViewId(2ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
     r3d_.render(pass, &prisma_);
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
