@@ -114,6 +114,38 @@ is available. Stage 11 is committed but tests and real Metal
 shaders have not been verified in this session. Preserve the
 per-stage handoff rule.
 
+## Sparse GPU pool and strict runtime failure reporting (Stage 12)
+
+For a Metal `spectra::ComputeParticles` emitter, `step` must run
+after `Device::beginFrame` and before any render pass; `draw` runs
+inside an open pass. The first prototype now skips compute when no
+particles are active and draws only the occupied slot prefix. This
+does **not** compact dead slots in the middle, and does not use
+GPU-indirect rendering.
+
+Use `stats().alive` and `stats().submittedSlots` separately:
+a sparse pool can have 3 live particles with 6 submitted slots.
+`stats().gpuFallbacks` and `stats().lostOnFallback` expose
+non-seamless transitions; never report a GPU→CPU transition as a
+seamless successful GPU simulation frame.
+
+`ComputePreference::RequireGpu` cannot silently use CPU after GPU
+device health failure. On such failure, `ready()` becomes false and
+`reason()` carries the error. `GraphRuntime::gpuActive()` and
+`GraphRuntime::step()` forward the underlying state accurately.
+For `Automatic`/`PreferGpu`, a CPU fallback may initialize,
+but GPU-resident particles are discarded; a globally unhealthy
+graphics device can still prevent CPU **rendering**, so the host
+must arrange device recovery where needed.
+
+A focused PR/manual workflow `.github/workflows/spectrafx-validation.yml`
+builds CPU + mocked GPU protocol tests on Linux/macOS and the
+editor/MCP graph operations on Linux. It is **not** an actual Metal
+shader/rasterization smoke test. A successful headless CTest does
+not prove Metal parity, timing or performance. The stage-12 source
+tests and workflows have not run to confirmed success in this
+execution context. Preserve per-stage handoffs.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
