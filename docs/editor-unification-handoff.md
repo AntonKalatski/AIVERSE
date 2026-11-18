@@ -1472,3 +1472,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `docs/ecs-all-features-migration-plan.md` to record actual FPS stage execution order (`ecsHydrate -> fps.compat.projectilePrograms -> fps -> ecsMirror`), where legacy tick-workspace state remains, the precise scope of the existing deep/COW v9 parity fixture and the remaining ownership cutover from State arrays to shared ECS projectile components.
 - **Verification:** documentation commit only. Native tests and FPS/RTS network/save parity remain outstanding.
 - **Next:** after CI and FPS fixture pass, move the programmed projectile solver toward direct ECS-owned execution without losing immediate hit effects; do not enable new queued damage barrier until side-effect parity.
+
+
+### 2026-11-18 — Live FPS vehicle raycast uses shared deterministic hitscan candidate selection
+- Implementation SHA: `e4677f50d0217b011f0406919d71a8a25b03e10a`.
+- Changed `modules/fps/FpsSystems.cpp::traceShot`: the vehicle AABB intersection loop now uses `lib::genre::selectClosestHitscanCandidate`, the same deterministic fixed-point nearest-hit policy used for actor current/rewound poses and by ECS `resolveHitscanIntent`. The host supplies the original eligibility (`v.health>0 && v.driver!=source`) and identical bounds (`pos-Vec3{1,0,2}` .. `pos+Vec3{1,2,2}`). Vehicle candidates still run AFTER actors, with strict `fraction < best`, so an equal-distance vehicle does not override an actor hit; a closer vehicle still overrides and takes the original vehicle damage/driver eject path.
+- No changes to vehicle authority, stored ids, gear, static material penetration, event ordering, save v9 or network protocol. This is another live FPS shooting path consuming the generic hitscan policy, not a separate ECS vehicle-hit resolution barrier.
+- Verification: code committed to GitHub only. Native C++ build/CTest and gameplay vehicle-firing parity not yet executed. Earlier attempt to query GitHub via shell failed to resolve github.com; connector source reads/writes remain available.
