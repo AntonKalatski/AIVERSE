@@ -447,3 +447,15 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Source audit fix:** corrected the `in::Device` typo in `enhanced_rts_input_tests.cpp` to the declared `ei::Device` namespace. Tests are authored but not executed per user request.
 
 **Next:** finish source-level review, ensure no legacy direct key leaks, and leave runtime/CI/CTest to the subsequent validation phase.
+
+## Stage 35 — frame-advancing RTS and top-down time triggers (2026-11-18)
+
+**Bug:** `ClientInputRouting::onEvent` advanced the generic InputSystem with `dt=0` only on OS messages. Timed `Hold`, `Pulse`, `HoldAndRelease`, and continuous analog state would not advance in RTS during a stationary held key, even though FPS sampled input every frame.
+
+**Fix:** `ClientInputRouting::advance(dt)` advances Action lifetimes once each presentation frame and returns semantic Triggered names. `GameClient::frame` invokes it after the existing gamepad injection step while playing and without a text field/modal how-to; otherwise it cancels held state. `GameClient::applyRtsActions` centralizes high-level RTS orders/FocusCamera for both physical event and timer-triggered events, producing the same existing Commands. Custom script-command hotkeys still win: `ClientInputRouting::suppressKey` releases the physical Action control on script override so delayed Hold/Pulse cannot later steal it. `topDownTimedActions` dispatches timed custom ability Actions into the existing module button state; `topDownFrame` releases held abilities when their Action becomes inactive, including canceled contexts.
+
+**Files:** `apps/client/ClientInputRouting.h`, `GameClient.cpp/.h`, `ClientTopDown.cpp`, docs and this handoff. No changes to deterministic sim / ECS command formats.
+
+**Validation deferred:** tests and gameplay smoke pass after implementation phase, per user. Verify script override, UI text capture, 0-dt event press, frame hold trigger, topdown button release and FPS parity later.
+
+**Next:** close outstanding low-level editor input and cross-file audit; avoid treating per-event Action update as a substitute for per-frame updates.
