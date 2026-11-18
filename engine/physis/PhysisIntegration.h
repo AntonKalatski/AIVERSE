@@ -70,6 +70,9 @@ struct InstallOptions {
     Settings climate{};
     DisasterConfig disasters{};
     bool enableDisasters = false;
+    // Use ExternalAuthority when NEREID or another water simulation owns
+    // water volumes; fire and quakes keep running without duplicate flooding.
+    FloodMode floodMode = FloodMode::LocalShallow;
 };
 
 inline void install(Simulation& simulation, const InstallOptions& options = {}) {
@@ -80,8 +83,9 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
     if (options.enableDisasters)
         initializeDisasters(simulation.world(), options.disasters);
     registerPersistence(simulation, options.enableDisasters);
-    simulation.addSystem("physis.environment", [hazards=options.enableDisasters](Simulation& sim) {
-        if (hazards) advanceEnvironmentWithDisasters(sim.world());
+    simulation.addSystem("physis.environment",
+                         [hazards=options.enableDisasters, flood=options.floodMode](Simulation& sim) {
+        if (hazards) advanceEnvironmentWithDisasters(sim.world(), flood);
         else advanceEnvironment(sim.world());
     });
 }
