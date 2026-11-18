@@ -2216,3 +2216,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_gravity COMMAND aiverse_physis_gravity_test)
     set_tests_properties(physis_gravity PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 10: ECS hurricane/tornado forcing, moving tracks and weather coupling.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_storm_test tests/physis_storm_test.cpp)
+    target_link_libraries(aiverse_physis_storm_test PRIVATE aiverse_engine)
+    add_test(NAME physis_storm COMMAND aiverse_physis_storm_test)
+    set_tests_properties(physis_storm PROPERTIES LABELS "PHYSIS")
+endif()
