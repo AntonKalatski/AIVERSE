@@ -61,6 +61,13 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
         if (b.terrainVertices.size()!=size_t(n+1)*(n+1))
             throw std::invalid_argument("TerraWeave Horizon terrain samples");
         const uint32_t start=static_cast<uint32_t>(model->vertices.size());
+        const bool authoredNear=!b.nearOwnedQuads.empty();
+        if(authoredNear && b.nearOwnedQuads.size()!=size_t(n)*n)
+            throw std::invalid_argument("TerraWeave Horizon near terrain ownership grid");
+        // Near-geometry ownership replaces the legacy circular cutout when
+        // the host supplies exact resident authored terrain coverage. This
+        // prevents a sky hole where nearby terrain has not loaded yet.
+        std::vector<uint8_t> farQuad(size_t(n)*n,1u);
         for (uint32_t z=0;z<=n;++z) {
             for (uint32_t x=0;x<=n;++x) {
                 const auto& v=b.terrainVertices[size_t(z)*(n+1)+x];
@@ -94,9 +101,13 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
                 const auto& d=b.terrainVertices[idx+(n+1)+1];
                 const int64_t cx=(a.xCm+d.xCm)/2-b.cameraXcm;
                 const int64_t cz=(a.zCm+d.zCm)/2-b.cameraZcm;
-                if (cx*cx+cz*cz<
-                    int64_t(b.terrainBeginCm)*b.terrainBeginCm)
-                    continue; // near authored terrain remains the owner
+                const size_t quad=size_t(z)*n+x;
+                if(authoredNear ? b.nearOwnedQuads[quad]!=0u :
+                    cx*cx+cz*cz<int64_t(b.terrainBeginCm)*
+                                      b.terrainBeginCm) {
+                    farQuad[quad]=0u; // near ground owns the full quad
+                    continue;
+                }
                 const uint32_t i=start+static_cast<uint32_t>(idx);
                 const uint32_t stride=n+1;
                 model->indices.insert(model->indices.end(),{
@@ -145,6 +156,66 @@ inline std::unique_ptr<render::Model> makeHorizonModel(const HorizonBake& b) {
                         topA,topB,lowA,lowA,topB,lowB
                     });
                 }
+            }
+        }
+        // Bounded INNER seam lip along the actual near/far ownership
+        // interface. A missing near tile leaves the far quad rendered,
+        // while a fully-owned near tile omits distant geometry. Two small
+        // downward vertices seal each interface edge without altering
+        // authoritative terrain or adding a renderer/material.
+        if(authoredNear && b.innerTerrainLipCm>0){
+            const auto visible=[&](int32_t x,int32_t z)->bool {
+                return x>=0 && z>=0 && x<int32_t(n) && z<int32_t(n) &&
+                    farQuad[size_t(z)*n+size_t(x)]!=0;
+            };
+            const auto owned=[&](int32_t x,int32_t z)->bool {
+                return x>=0 && z>=0 && x<int32_t(n) && z<int32_t(n) &&
+                    farQuad[size_t(z)*n+size_t(x)]==0;
+            };
+            size_t segmentCount=0;
+            for(int32_t z=0;z<int32_t(n);++z)
+                for(int32_t x=0;x<int32_t(n);++x)
+                    if(owned(x,z)){
+                        segmentCount+=visible(x,z-1)?1u:0u;
+                        segmentCount+=visible(x+1,z)?1u:0u;
+                        segmentCount+=visible(x,z+1)?1u:0u;
+                        segmentCount+=visible(x-1,z)?1u:0u;
+                    }
+            // Sparse checkerboard maps must not generate unbounded lip
+            // geometry. Fall back to the exact near ownership mask
+            // without an inner lip rather than exceeding the cap.
+            constexpr size_t kMaxInnerLipSegments=512;
+            if(segmentCount<=kMaxInnerLipSegments){
+                const auto edge=[&](uint32_t ax,uint32_t az,
+                                    uint32_t bx,uint32_t bz,
+                                    render::float3 normal) {
+                    const uint32_t topA=start+az*(n+1)+ax;
+                    const uint32_t topB=start+bz*(n+1)+bx;
+                    const uint32_t lowA=
+                        static_cast<uint32_t>(model->vertices.size());
+                    auto vA=model->vertices[topA];
+                    auto vB=model->vertices[topB];
+                    vA.pos.y-=float(b.innerTerrainLipCm)*0.01f;
+                    vB.pos.y-=float(b.innerTerrainLipCm)*0.01f;
+                    vA.nrm=normal;vB.nrm=normal;
+                    model->vertices.push_back(vA);
+                    model->vertices.push_back(vB);
+                    model->indices.insert(model->indices.end(),{
+                        topA,topB,lowA,lowA,topB,lowA+1
+                    });
+                };
+                for(uint32_t z=0;z<n;++z)
+                    for(uint32_t x=0;x<n;++x) {
+                        if(!owned(int32_t(x),int32_t(z)))continue;
+                        if(visible(int32_t(x),int32_t(z)-1))
+                            edge(x,z,x+1,z,{0,0,-1});
+                        if(visible(int32_t(x)+1,int32_t(z)))
+                            edge(x+1,z,x+1,z+1,{1,0,0});
+                        if(visible(int32_t(x),int32_t(z)+1))
+                            edge(x+1,z+1,x,z+1,{0,0,1});
+                        if(visible(int32_t(x)-1,int32_t(z)))
+                            edge(x,z+1,x,z,{-1,0,0});
+                    }
             }
         }
         if (model->indices.size()>begin) {
