@@ -6,7 +6,7 @@
 #include "engine/render/LightGridCache.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/Prisma.h"
-#include "engine/render/ScreenLighting.h"
+#include "engine/render/PrismaScreenLighting.h"
 #include "SceneAssets.h"
 #include "engine/render/StaticPointBounce.h"
 #include "CameraTour.h"
@@ -59,7 +59,7 @@ struct Bench {
     platform::HostedView content;
     Renderer3D renderer;
     Prisma post;
-    ScreenLighting screen;
+    PrismaScreenLighting screen;
     SceneAssets additions;
     CameraTour tour; int tourShot=-1;
     std::unique_ptr<Model> model;
@@ -333,7 +333,7 @@ struct Bench {
         ModelDraw md;md.model=model.get();renderer.drawModel(md);
         additions.draw(renderer,options.freezeTime>=0?options.freezeTime:options.previewSeconds>0?float(previewTime+options.tourStart):float(view<int(cameras.size())?frame:options.warmup+options.samples-1)/60.0f,options.profile!="low");
         auto pass=output;auto clear=SceneAssets::vector3(config["clearColor"],{.1f,.15f,.23f});pass.clearColor[0]=clear.x;pass.clearColor[1]=clear.y;pass.clearColor[2]=clear.z;
-        renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePostFx();
+        renderer.render(pass,options.profile=="full"?static_cast<PostProcess*>(&screen):static_cast<PostProcess*>(&post));renderer.resolvePrisma();
         if(!report.has("renderSettings")) {
             Json settings=Json::object();settings.set("linearHdr",Json::fromBool(post.linearScene()));
             settings.set("shadows",Json::string(options.profile=="low"?"low":"high"));
