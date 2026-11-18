@@ -1701,3 +1701,66 @@ No passing CI asserted.
 for explicit float32 mip chains on Android, Windows and
 WebGL2, then continue other typed formats and production
 GPU validation.
+
+## Stage 6J — compressed allocation failure safely falls back to RGBA8 (2026-11-18)
+
+**Code commit:** `1216ee213a6e12bd91007a0587ddaac21d290c3e`.
+**Branch:** `feature/texture-rhi-unification`; still Draft PR #21.
+**Changed paths:** `engine/render/TextureAsset.h`,
+`tests/render/texture_asset.cpp`.
+
+**Defect found by source review:** `uploadContainerTexture` attempts
+native compressed allocation first when the format is advertised.
+If `Device::createTexture` rejects that allocation, CPU decode to
+RGBA8 was attempted using the same `TextureDesc`, but stale
+`levelCount` / `levelData` / `levelSize` still pointed to the BC
+payload and `mipLevels` had been cleared to zero. Vulkan treats
+explicit level data as an upload for uncompressed formats too: the
+second allocation could therefore read compressed bytes as RGBA,
+fail bounds validation or produce undefined sampling. GL/Metal also
+would not reserve the explicitly authored fallback mip chain.
+
+**Implemented:** After successful CPU decoding and before the second
+allocation, reset `levelCount = 0`, `levelData = nullptr`,
+`levelSize = nullptr`, restore `mipLevels` from
+`CompressedImage::levels.size()`, then set `data` to decoded RGBA
+level zero. Existing per-layer/per-z explicit `updateTextureRegion`
+for the other mips remains unchanged. The native compressed success
+path, old sampler2D material import, save/network/ECS code and
+backends are otherwise untouched.
+
+**Added test source:** `texture_asset` mock advertises BC5 support
+but refuses a compressed `createTexture` call. The test checks the
+BC5 native attempt, RGBA8 retry with no stale compressed pointers,
+two allocated mip levels, base-level CPU image bytes and explicit
+mip-1 upload. The existing BC5 opt-in/safe decoding paths remain
+covered.
+
+**Verification performed:** Reviewed the actual Metal, GL and Vulkan
+`createTexture` sources and their mip precedence; both code/test
+blobs were committed to GitHub. **C++ compilation: NOT RUN. CTest:
+NOT RUN. GPU validation: NOT RUN.** This execution environment cannot
+resolve `github.com` for a native repository clone. The existence
+of test code does not mean it has passed.
+
+**How to verify on a native checkout:**
+
+```sh
+git switch feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_texture_asset_test
+ctest --test-dir build/texture-rhi --output-on-failure -R '^texture_asset$'
+```
+
+Also run `texture_contract`, `dds_layers`, `ktx2_layers`,
+`render_target_set` and actual Metal/GL/Vulkan allocation and
+sampling coverage; investigate any native compiler or driver failures.
+Keep PR #21 Draft until verified.
+
+**Next bounded step:** Add a source-reviewed regression for
+an *array/cubemap* compressed allocation rejection (not only BC5 2D),
+and check integer overflow/budget caps before `TextureUploadDesc`
+pixel-size conversions; then prioritize real CTest/GPU builds and
+GL/Vulkan MSAA resolve support. Append the next agent handoff after
+its code commit; never overwrite earlier stage entries.
