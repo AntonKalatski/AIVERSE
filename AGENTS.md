@@ -86,6 +86,19 @@ save/replay until actual parity tests pass.
 The ongoing universal FPS/RTS migration must gradually consume these generic
 mechanic libraries, not create new genre-specific gameplay engines.
 
+**Real integer damage migration checkpoint (2026-11-18):** `fps::Module::damage`
+and `addDamageResolutionSystem` both call
+`lib::genre::applyIntegerHitPointDamage` after host mitigation.
+The generic World `DamageQueue` exports v1
+`saveDamageQueue/loadDamageQueue/hashDamageQueue`, which native hosts must
+wire into their own GameModule byte save/checksum, not just COW snapshots.
+Use `ecs_integer_health_commit_test` plus actual FPS ECS ON/OFF,
+save v9 and rollback parity. This does **not** make `HitPointsComponent`
+canonical for live FPS: the canonical FPS owner remains `ActorRuntime`
+until a versioned migration. Do not create parallel mutable health copies.
+See `skills/gameplay/aiverse-ecs-impact-damage/SKILL.md`.
+
+
 **Optional queued ECS impact barrier:** for games that deliberately separate
 motion from damage resolution, use `AIVERSE::lib_ecs_impact_queue`
 (`<aiverselib/genre/EcsImpactQueueSystems.h>`,
