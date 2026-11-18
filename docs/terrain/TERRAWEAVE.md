@@ -924,3 +924,86 @@ Tests cover deterministic baking, atlas contents, card/terrain mesh
 bounds, topology and budget, invalid settings, and constructing the
 async host without an initialized GPU. **Tests are authored but not
 confirmed passing**. See `docs/terrain/AGENT_HANDOFF.md`.
+
+## Stage 8 — layered cluster crowns, stable transition bands and atlas quality tiers
+
+`TerraWeaveHorizon.h` now rasterizes a cluster as a deterministic
+**overlapping canopy** instead of a row of vertical green strips.
+Each texture tile contains hashed broadleaf ellipses, occasional
+tapered conifer crowns, variable heights/colours, gentle alpha-test
+edge coverage and sparse exposed trunks. This is intentionally a
+stylized **procedural approximation** of a forest silhouette, not a
+render of real 3D foliage assets. The GPU still sees the same
+two crossed cluster cards and one shared atlas.
+
+`HorizonSettings` has these optional quality and LOD properties:
+
+| C++ / JSON field | Default | Purpose |
+| --- | --- | --- |
+| `crownDetail` | 2 | 1–3: CPU-only canopy silhouette complexity; no extra GPU cards |
+| `orientationViews` | 1 | 1: use the same atlas frame for both crossed cards; 2: bake separate X/Z projections |
+| `nearBlendCm` | 6000 (60m) | Spread spatial HLOD entrance into the final 60m of detailed forest |
+| `tierBlendCm` | 16000 (160m) | Stagger 128m→512m cluster coverage around the 1km boundary |
+
+The band logic uses deterministic **spatial stochastic alpha masking**.
+A cluster's canopy coverage ramps in/out through hashed pixel
+thresholds based on distance to the *snapped bake camera*. The
+near-to-mid layer starts partially visible before individual trees
+stop, and mid/far clusters overlap at reduced coverage rather than
+switching all cards at once. This has no additional per-cluster draw
+calls or new GL/Metal shader. It is **not a continuous per-frame
+alpha crossfade**: the atlas is still recomputed only when the
+background Horizon region is updated. Camera movement across a
+region boundary may cause residual small pops; only actual orbit/zoom
+screenshot tests can establish perceived continuity.
+
+When both opt-in `terraweaveForest` and `terraweaveHorizon`
+blocks exist, the default `closeForestEndCm` is inherited from
+the detailed forest's `FloraView::cullRangeCm` unless explicitly
+overridden. This avoids the former 240m vs 250m gap in the default
+near/far ownership. If `Horizon` is used alone, it retains its
+250m close boundary. Existing scenes with no Horizon block do
+not change.
+
+`orientationViews=2` stores independent azimuth-orthogonal
+projections of each cluster and uses a different UV subrectangle
+for the corresponding crossed card. It still uses **one shared
+image and one model with two primitives**, exactly the same card
+geometry and draw submission topology. High-quality mode costs
+more atlas memory/CPU bake work, but not more triangles.
+`orientationViews=1` remains the mobile/low-memory default.
+
+Approximate maximum atlas bytes, before mipmaps and image staging:
+- 1 view: 1392×1392 RGBA8 = **7,750,656 bytes** (~7.39 MiB).
+- 2 views: 1968×1968 RGBA8 = **15,492,096 bytes** (~14.77 MiB).
+
+`estimateHorizonBudget` validates both options within the
+16 MiB packed-atlas cap. For real performance use
+`TerraWeaveHorizonScene::runtimeStats()` (cluster count,
+uploaded atlas bytes, vertices, triangles, CPU preparation
+milliseconds, render-thread upload milliseconds, pending/canceled
+async tasks). These are measurements captured by the running
+host **only once a scene is actually executed**, not benchmark
+results supplied by this document.
+
+Example opt-in quality settings within `terraweaveHorizon`:
+```json
+{
+  "crownDetail": 3,
+  "orientationViews": 2,
+  "nearBlendCm": 6000,
+  "tierBlendCm": 16000
+}
+```
+
+Tradeoffs / unverified:
+- The spatial mask can create gaps or partially doubled canopy
+  in its overlap bands; better complementary per-pixel fade and
+  material-driven frame transitions require GPU screenshots,
+  alpha coverage testing and perhaps a dedicated shader pass.
+- Differing near forest density, custom species, authored roads
+  and nonprocedural landscape still need production integration.
+- The CPU image baker runs on existing background work threads
+  and the atlas memory cap is an analytic bound. Neither GPU
+  timings nor frame stability nor image quality has been
+  verified on Metal, Vulkan or GLES in this stage.
