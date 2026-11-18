@@ -1869,3 +1869,39 @@ remaining target set from `docs/texture-rhi.md` and report genuine
 results. Continue with GL/Vulkan MSAA and resolve, mixed MRT and typed
 formats only after validating the current source stages. Any
 additional implementation must have its own append-only handoff.
+
+## Stage 4R — GL33/GLES3 mixed-format MRT color attachments (2026-11-18)
+
+**Code commit:** `fbbe97fbb030ee03bccbd81f13788b6c61c23903`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Changed file:** `engine/gfx/gl/GfxGL.cpp`.
+
+**Change:** Removed the unnecessary requirement that the 1–4 GL MRT
+color targets all use the same pixel format. The existing permitted
+RGBA8 / RGBA8_sRGB / RGBA16F attachment formats now each retain their
+own format in `explicitPassFormats_`. `setPipeline` compares each slot
+against `PipelineDesc.colorFormat` or
+`PipelineDesc.additionalColorFormats[i-1]`, rejecting mismatches
+before draw. The historical automatic HDR shader variant still applies
+only to all-RGBA16F passes; mixed HDR/UNORM passes require an explicitly
+compatible shader/pipeline. Desktop framebuffer sRGB conversion is
+enabled when any color attachment is sRGB; the framebuffer stores
+linear/encoded values per actual attachment format.
+
+**Unchanged:** GL attachment count, extent, mip/layer checks, FBO
+completeness, independent clear operations, legacy `beginPass`,
+same-format MRT and pipeline defaults. GL/Vulkan MSAA/resolve,
+per-attachment blend overrides and typed color targets are still
+outside this stage.
+
+**Verification:** Source edit and GitHub commit confirmed.
+**C++ build NOT RUN; GL33/GLES3/WebGL2 GPU run NOT RUN; tests NOT RUN**,
+per requested defer-testing workflow. FBO completeness and shader
+linkage must be checked on real drivers. The backend still rejects
+unsupported render passes instead of silently changing output count.
+
+**Next:** Add GL MSAA renderbuffer attachment allocation + per-color
+resolve with strict sample-count/format validation, and Vulkan MSAA
+render pass support; then revisit mixed-format MRT across Vulkan/Metal
+and independent blend policy. Keep every subsequent stage's source
+commit and append-only handoff commit separate.
