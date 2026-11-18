@@ -1062,3 +1062,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Extended existing CMake/standalone `tests/ecs_kinematic_projectile_test.cpp` with one moving `MovingTarget` ECS entity; a `Pursuit` shot with target position resolved every tick; and another pursuit shot that expires before reaching its destination. Expected stable arrival sequence is `100,101,200,102`, and moving-target arrival is x=11/4 fixed-point, with no arrival for shot 201. Checks non-mutating zero-speed rejection, despawn, deep snapshot and COW rollback checksum parity in two unrelated host modules.
 - Verification: source pushed only; **no C++ build, test execution or in-game RTS parity run**. This fixture is intended to validate the new generic pursuit logic. Note real RTS motion call site SHA `83336082` still delegates to exactly the previous fixed-point `moveTowards`, preserving original arithmetic.
 - Next: run native CTest and standalone suite, repair actual compilation/runtime failures, add real RTS integration checks for moving and lost targets, then separate motion/impact scheduling when proven.
+
+
+### 2026-11-18 — Kinematic library no longer depends on physics pipeline
+- Implementation SHA: `184b186977d7fb00944ecb7613015c43b89bdfec`.
+- Changed `EcsKinematicProjectileSystems.h` direct includes to `EcsMechanicSystems.h` + `engine/core/Fixed.h` instead of `EcsProjectileSystems.h`. RTS clients no longer pull the physical `Weapons.h` / `SpatialWorld.h` headers transitively just to run nonphysical kinematic pursuit; neither collision provider nor physics simulation is required. Generic `Simulation` and deterministic fixed-point movement remain required.
+- Verification: GitHub commit only, compilation and existing RTS/FPS project validation **not run**. Previous test SHA `281cf92` had CI #1265, ECS experimental #415, Studio #932 and GPU batching #536 queued at inspection.
