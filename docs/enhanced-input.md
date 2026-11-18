@@ -246,3 +246,7 @@ Touch gesture control code 6 (deviceIndex 0) is a signed relative rotation in ra
 ## Planet and possessed-unit Actions
 
 The default RTS preset now includes two additional optional contexts: `RTS.Planet` with `PlanetRotate`, `PlanetPitch`, `PlanetNextBody`, and `RTS.Possession` with `PossessedMove`, `PossessedFire`, `PossessedWalk`. The engine activates each only in its corresponding client mode. Planet view uses common camera pan/zoom/touch gesture Actions—including pinch, two-finger pan and twist—while keeping orbital projection/planet selection client-owned. Possession uses an Axis2D camera-relative direction and mouse-held fire/walk Actions, still issuing the original deterministic simulation Commands. Old custom full input assets lacking these actions retain their original control fallbacks.
+
+### Chord condition evaluation
+
+`Chord` and `NotChord` constraints are evaluated inside the same iteration over the mapping's trigger list. This preserves combined positive/inverted chord semantics and fixes a C++ variable-scope error found during the implementation audit. Automated compilation has not yet been run.

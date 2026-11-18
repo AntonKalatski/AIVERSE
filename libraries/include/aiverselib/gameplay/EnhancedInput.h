@@ -440,13 +440,14 @@ private:
         return it == controls_.end() ? Raw{} : it->second;
     }
     static bool chordSatisfied(std::span<const Trigger> triggers, const std::map<std::string,bool>& levels) {
-        for (const auto& trigger : triggers)
+        for (const auto& trigger : triggers) {
             if (trigger.kind == TriggerKind::Chord &&
                 (!levels.contains(trigger.chordAction) || !levels.at(trigger.chordAction)))
                 return false;
             if (trigger.kind == TriggerKind::NotChord &&
                 levels.contains(trigger.chordAction) && levels.at(trigger.chordAction))
                 return false;
+        }
         return true;
     }
     static bool evaluateTriggers(std::span<const Trigger> triggers, Runtime& runtime,

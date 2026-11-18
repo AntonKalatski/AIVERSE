@@ -517,3 +517,17 @@ New cross-genre Trigger types: `DoubleTap(seconds)` (second press after a preced
 **Commands for the next agent:** run from repository root `cmake -S tests/libraries -B build/enhanced-input -DCMAKE_BUILD_TYPE=Debug`, then `cmake --build build/enhanced-input --parallel 2 --target aiverse_enhanced_input_tests aiverse_enhanced_input_adapter_tests aiverse_enhanced_input_config_tests aiverse_enhanced_rts_input_tests`, then `ctest --test-dir build/enhanced-input --output-on-failure -R "^library_enhanced_(input|rts_input)"`. Run full `./run-tests.sh` per AGENTS.md and platform/editor client smoke checks. Use the existing focused GitHub workflow for Linux/macOS/Windows, then review full CI. Amend code/hand-off for each failure; only then mark PR ready.
 
 **Watch-outs for testing:** static C++ inspection cannot validate touch reset timing, cross-platform path rename, ImGui version, simulated gamepad behavior, button overlap with custom scripts or split-screen transitions. The new multi-user API is a reusable integration building block, not a claim that the sample FPS game has complete split-screen rendering/network identity.
+
+## Stage 41 — C++ NotChord source-scope fix (2026-11-18)
+
+**Goal/status:** IMPLEMENTED source-level correction; COMPILATION/TESTS NOT RUN at user's request (implementation first).
+
+**Defect:** `InputSystem::chordSatisfied` was missing braces around its `for (const auto& trigger : triggers)` loop. `NotChord` subsequently used `trigger` outside its C++ scope, causing a compile error. The previous source-level bracket-count audit did not catch this semantic scoping error.
+
+**Changed files:** `libraries/include/aiverselib/gameplay/EnhancedInput.h` (wrap both Chord and NotChord checks in the same loop); `docs/enhanced-input-agent-handoff.md` (this entry); `docs/enhanced-input.md` (correctness note). Public API and JSON format unchanged. Behavior intended: every Chord/NotChord constraint in the trigger span is evaluated against the same-frame action-level map; the first unsatisfied constraint rejects the mapping.
+
+**Verification:** static source inspection only. `library_enhanced_input` and the full CI have NOT RUN / no passing run evidence. The existing `tests/libraries/enhanced_input_tests.cpp` advanced trigger scenarios already include `Trigger::notChord`; rerun those when testing is authorized.
+
+**Known risks:** composite trigger edge cases and time advancement still warrant deeper audit. A separate thread is pushing commits to `feature/universal-entity-inspector-fps`; compare and merge upstream before final PR review.
+
+**Next agent task:** inspect `EnhancedInput.h::update/evaluateTriggers` for trigger lifetime correctness, especially same-frame press/release, DoubleTap and gated chords. Update regression cases, then append Stage 42 before advancing. Do not claim compilation success or merge PR #20 yet.
