@@ -118,8 +118,6 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
     if(!outputs.isArray()||outputs.size()==0||outputs.size()>16)
         return fail("outputs must have 1..16 entries");
 
-    vfx2::ValueGraph values(nodes,graph["parameters"],overrides,errors);
-    if(!values.initialize())return false;
     std::map<std::string,Json> copied;
     std::map<std::string,std::string> types;
     for(const Json& original:nodes.items()) {
@@ -147,7 +145,7 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
         if(!link.isObject()||!link["from"].isString()||!link["to"].isString())
             return fail("link must have string from/to");
         const std::string from=link.getStr("from"),to=link.getStr("to");
-        if(!values.hasNode(from)||!values.hasNode(to)||from==to)
+        if(!copied.count(from)||!copied.count(to)||from==to)
             return fail("invalid graph link '"+from+"' -> '"+to+"'");
         const bool port=link.has("toPort");
         for(const auto& [key,unused]:link.members()) {
@@ -157,7 +155,7 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
         }
         if(port) {
             const std::string target=link.getStr("toPort");
-            if(!values.isValue(from))
+            if(!vfx2::valueNodeType(types.at(from)))
                 return fail("data source must be a value node '"+from+"'");
             if(!destinationPorts.emplace(to,target).second)
                 return fail("duplicate writer to '"+to+"."+target+"'");
@@ -173,7 +171,7 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
         } else {
             if(link.has("fromPort"))
                 return fail("execution link cannot declare fromPort");
-            if(values.isValue(from)||values.isValue(to))
+            if(vfx2::valueNodeType(types.at(from))||vfx2::valueNodeType(types.at(to)))
                 return fail("data-node links need toPort");
             Json flat=Json::object();
             flat.set("from",Json::string(from));
@@ -181,6 +179,14 @@ inline bool compileSpectraGraphV2(const Json& graph,const Json& overrides,
             executionLinks.push(std::move(flat));
         }
     }
+
+    // Data links modify a COPY of the entire graph. The typed evaluator
+    // must read that augmented copy as well; otherwise edges between two
+    // math nodes would resolve against stale original properties.
+    Json augmented=Json::array();
+    for(const Json& n:nodes.items())augmented.push(copied.at(n.getStr("id")));
+    vfx2::ValueGraph values(augmented,graph["parameters"],overrides,errors);
+    if(!values.initialize())return false;
 
     // Stage nodes keep their original authored IDs and positions but become
     // existing v1 pipeline nodes. Property expressions resolve before overlay.
