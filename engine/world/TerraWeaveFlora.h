@@ -19,6 +19,10 @@ struct FloraView {
     int32_t lowRangeCm = 18000;       // Low mesh
     int32_t cullRangeCm = 50000;      // farther => omitted
     uint32_t farDensityPermille = 650; // stable thinning after lowRange (0..1000)
+    // Optional spread of the geometry -> billboard transition across a
+    // stable per-tree radius. 0 = legacy hard ring; units are centimetres.
+    // This is spatial stochastic switching, NOT a pixel-level crossfade.
+    int32_t impostorBlendWidthCm = 0;
 };
 
 struct FloraBatch {
@@ -34,7 +38,12 @@ inline std::vector<FloraBatch> buildFloraBatches(
         view.lowRangeCm < view.mediumRangeCm ||
         view.cullRangeCm < view.lowRangeCm ||
         view.cullRangeCm > 100000000 ||
-        view.farDensityPermille > 1000)
+        view.farDensityPermille > 1000 ||
+        view.impostorBlendWidthCm < 0 ||
+        int64_t(view.lowRangeCm) - view.impostorBlendWidthCm / 2 <
+            view.mediumRangeCm ||
+        int64_t(view.lowRangeCm) - view.impostorBlendWidthCm / 2 +
+            view.impostorBlendWidthCm > view.cullRangeCm)
         throw std::invalid_argument("TerraWeave Flora view");
 
     // std::map and explicit sort provide stable draw-list composition regardless
@@ -42,7 +51,10 @@ inline std::vector<FloraBatch> buildFloraBatches(
     std::map<std::pair<uint32_t, uint8_t>, std::vector<FoliageInstance>> groups;
     const int64_t highSq = int64_t(view.highRangeCm) * view.highRangeCm;
     const int64_t medSq = int64_t(view.mediumRangeCm) * view.mediumRangeCm;
-    const int64_t lowSq = int64_t(view.lowRangeCm) * view.lowRangeCm;
+    // One deterministic threshold per individual tree avoids a sudden
+    // synchronized circular switch across an entire forest.
+    const int64_t bandStart = int64_t(view.lowRangeCm) -
+                              view.impostorBlendWidthCm / 2;
     const int64_t cullSq = int64_t(view.cullRangeCm) * view.cullRangeCm;
     for (const FoliageInstance& instance : placements) {
         // Arbitrary caller data can be malicious: keep distance arithmetic
@@ -58,6 +70,15 @@ inline std::vector<FloraBatch> buildFloraBatches(
             dz > view.cullRangeCm || dz < -view.cullRangeCm) continue;
         const int64_t d2 = dx * dx + dz * dz;
         if (d2 > cullSq) continue;
+        int64_t lowThresholdCm = view.lowRangeCm;
+        if (view.impostorBlendWidthCm) {
+            const uint64_t offset = detail::mix64(
+                instance.key ^ (uint64_t(instance.speciesId) << 32) ^
+                0xd6ac447e1007bb31ULL);
+            lowThresholdCm = bandStart + static_cast<int64_t>(
+                offset % (uint64_t(view.impostorBlendWidthCm) + 1));
+        }
+        const int64_t lowSq = lowThresholdCm * lowThresholdCm;
         TreeLOD lod = TreeLOD::Impostor;
         if (d2 <= highSq) lod = TreeLOD::High;
         else if (d2 <= medSq) lod = TreeLOD::Medium;
