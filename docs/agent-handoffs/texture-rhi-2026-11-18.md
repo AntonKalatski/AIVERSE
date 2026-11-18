@@ -4145,3 +4145,41 @@ CTest, verifier script, GPU tests and skill audit were NOT RUN.
 Next: Implement a real licensable/available Basis codec instead of a stub,
 or continue independent storage textures, disk streamer integration and
 native verification. Do not merge PR #21 before build/driver gates.
+
+## Stage 4Y — explicit compute-writable texture API and Metal binding (2026-11-18)
+
+Code commit: 2c799f4e8f55a03be10aeceba5d8612604865223.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+Files: engine/gfx/Gfx.h, engine/gfx/metal/GfxMetal.mm,
+tests/render/texture_contract.cpp.
+
+API: Device::supportsStorageTexture(PixelFormat, TextureDimension) defaults
+to false and Device::bindComputeStorageTexture(slot, TextureHandle)
+defaults to false. Existing setComputeTexture continues to support
+read-only sampled compute inputs. Writable binding requires an active
+compute encoder, a storage=true texture, a supported format/dimension
+and a valid slot; unsupported requests fail visibly.
+
+Metal source now advertises a conservative writable subset:
+RGBA8 or RGBA16F Texture2D, Texture2DArray and Texture3D.
+createTexture checks the advertised capability before allocation;
+MTTexture retains the storage creation flag and the writable
+binding checks MTLTextureUsageShaderWrite. No hidden downgrade to
+sample-only storage is performed. GL33/GLES3 and Vulkan retain the
+safe default unsupported contract because compute/shader image
+binding is not yet implemented in those backends.
+
+Source test additions in texture_contract cover structurally valid
+2D, 2DArray and 3D writable descriptors and reject compressed
+storage formats. These are CPU descriptor tests, not a Metal GPU test.
+
+Actual verification: GitHub multi-file commit/ref update succeeded.
+C++ compile NOT RUN, CTest NOT RUN, Metal shader/compute test NOT RUN,
+GL/Vulkan unsupported-device test NOT RUN. No GPU capability
+has been claimed certified.
+
+Next: Add an actual Metal compute shader test that writes RGBA8
+and RGBA16F 2D/array/volume images and confirms readback.
+Build native editor, then add Vulkan compute descriptor/pipeline
+only if the backend supports the necessary synchronization/bindings.
+Do not present the capability as cross-backend storage support.
