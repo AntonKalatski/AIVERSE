@@ -872,7 +872,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
-    r3d_.resolvePostFx();
+    r3d_.resolvePrisma();
     dev_->endPass();
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
     if (traceSceneStages) {
@@ -934,7 +934,7 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     r3d_.render(pass, &postFx_);
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
-    r3d_.resolvePostFx();
+    r3d_.resolvePrisma();
     dev_->endPass();
     view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
