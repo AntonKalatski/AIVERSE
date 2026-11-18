@@ -1272,3 +1272,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Updated `AGENTS.md` to direct subsequent agents to `AIVERSE::lib_ecs_impact_queue`, its skill and CTest, explicitly defining World-backed sequencer/pending impact ownership and the callback-next-barrier semantics. It prohibits replacing live RTS immediate direct/on-hit/splash effects with an end-of-tick batch without golden save/replay parity.
 - **Verification:** docs-only commit, gameplay still not migrated to the queued barrier.
 - **Next:** check package/test wiring, issue tracker and native CI; keep phased rollout gates.
+
+### 2026-11-18 — New composable ECS hitscan request-resolution system
+- Implementation SHA: `268518ca82f9efafe66376d028aa53cc1d059aac`.
+- New `libraries/include/aiverselib/genre/EcsHitscanResolutionSystems.h` implements `HitscanIntentComponent` (origin/delta/maximumFraction/shotId/requested), `HitscanResolvedEvent` (source/target entity, shotId, point/fraction), and `addHitscanResolutionSystem`. Consumes one-shot ECS requests even when invalid, queries host-selected current or rewind candidates, checks eligibility/hitbox through shared nearest-ray policy, stages successful hits in stable source pool order and calls hit sink **after** traversal. No simulated projectile movement, new RNG, or internal damage application.
+- This is a true separate ECS **system**, but it is not yet wired into the live FPS authoritative fire path. Existing FPS rewind hitscan stays on `FpsSystems.cpp::traceShot` using the shared policy; this new system's post-traversal damage callback order would differ from that legacy path if enabled without parity tests. No compiled/tested production guarantee.
+- Next: add cross-host ECS fire-intent/snapshot tests; register catalog target and skill; then compare same-tick FPS and RTS hit ordering before changing live scheduling.
