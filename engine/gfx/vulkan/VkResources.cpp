@@ -7,6 +7,19 @@
 
 namespace aiverse::gfx::vk {
 
+bool VulkanDevice::supportsStorageTexture(PixelFormat f, TextureDimension dim) const {
+    if (!supportsCompute() || (f!=PixelFormat::RGBA8 && f!=PixelFormat::RGBA16F) ||
+        (dim!=TextureDimension::Texture2D && dim!=TextureDimension::Texture2DArray &&
+         dim!=TextureDimension::Texture3D)) return false;
+    VkFormatProperties properties{};
+    const VkFormat format=vkFormat(f);
+    if (format==VK_FORMAT_UNDEFINED) return false;
+    vkGetPhysicalDeviceFormatProperties(gpu_,format,&properties);
+    const VkFormatFeatureFlags required=VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+    return (properties.optimalTilingFeatures & required)==required;
+}
+
 std::vector<TextureResourceInfo> VulkanDevice::textureResources() const {
     std::vector<TextureResourceInfo> result;
     textures_.eachWithId([&](uint32_t id, const VTexture& tex) {
@@ -22,7 +35,7 @@ std::vector<TextureResourceInfo> VulkanDevice::textureResources() const {
         item.mipLevels = tex.levels;
         item.sampleCount = tex.samples;
         item.renderTarget = tex.renderTarget || tex.depth;
-        item.storage = false; // currently no writable sampled Vulkan images
+        item.storage = tex.storage;
         TextureDesc desc;
         desc.width = tex.width; desc.height = tex.height;
         desc.depth = tex.volumeDepth; desc.arrayLayers = tex.layers;
@@ -471,11 +484,16 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
         error_ = "Vulkan: R/RG render targets require matching pipeline color formats";
         return {};
     }
-    if (d.storage ||
-        ((d.dimension == TextureDimension::Texture1D ||
-          d.dimension == TextureDimension::Texture3D) &&
-         (d.renderTarget || d.format == PixelFormat::Depth))) {
-        error_ = "Vulkan: storage images and 1D/3D render attachments unsupported";
+    if (d.storage && (!supportsStorageTexture(d.format,d.dimension) ||
+                      d.sampleCount!=1 || d.renderTarget || d.mipmaps ||
+                      d.compare || d.mipLevels>1 || d.levelCount>1)) {
+        error_ = "Vulkan: unsupported storage image format, dimensions or usage";
+        return {};
+    }
+    if ((d.dimension == TextureDimension::Texture1D ||
+         d.dimension == TextureDimension::Texture3D) &&
+        (d.renderTarget || d.format == PixelFormat::Depth)) {
+        error_ = "Vulkan: 1D/3D render attachments unsupported";
         return {};
     }
     VTexture t;
@@ -491,6 +509,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
                d.arrayLayers : 1;
     t.depth = d.format == PixelFormat::Depth;
     t.renderTarget = d.renderTarget;
+    t.storage = d.storage;
     t.compressed = isCompressed(d.format);
     if (!supports(d.format) && !t.depth) { error_ = "texture format unsupported"; return {}; }
     if (t.compressed && (d.dimension == TextureDimension::Texture1D ||
@@ -543,6 +562,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     if (t.depth) usage = VK_IMAGE_USAGE_SAMPLED_BIT |
                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     else if (d.renderTarget) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (d.storage) usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     if (t.samples > 1) {
         // Multisampled images are transient render targets, not sampled RHI
         // textures. A matching single-sample resolve target is sampled later.

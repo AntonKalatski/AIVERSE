@@ -81,9 +81,15 @@ struct VTexture {
     int width = 0, height = 0, volumeDepth = 1, layers = 1, levels = 1;
     int samples = 1; // multisampled render-only images cannot be bound as sampled textures
     TextureDimension dimension = TextureDimension::Texture2D;
-    bool depth = false, renderTarget = false, generateMips = false, compressed = false;
+    bool depth = false, renderTarget = false, generateMips = false, compressed = false, storage = false;
 };
 
+struct VCompute {
+    VkShaderModule shader = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorLayout = VK_NULL_HANDLE;
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+};
 struct VTextureView { VkImageView native = VK_NULL_HANDLE; uint32_t parentId = 0; };
 struct VSampler { VkSampler native = VK_NULL_HANDLE; };
 
@@ -133,6 +139,17 @@ public:
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
     std::vector<TextureResourceInfo> textureResources() const override;
+    bool supportsCompute() const override { return device_ && healthy_ && computeQueue_; }
+    bool supportsStorageTexture(PixelFormat,TextureDimension) const override;
+    ComputeHandle createCompute(const ComputeDesc&) override;
+    void destroyCompute(ComputeHandle) override;
+    bool beginCompute(ComputeHandle) override;
+    void setComputeBuffer(int,BufferHandle) override;
+    void setComputeTexture(int,TextureHandle) override;
+    bool bindComputeStorageTexture(int,TextureHandle) override;
+    void setComputeUniforms(const void*,size_t) override;
+    void dispatch(uint32_t,uint32_t) override;
+    void endCompute() override;
     bool supportsTextureViews() const override { return true; }
     bool supportsTextureDimension(TextureDimension d) const override {
         return d != TextureDimension::CubeArray || cubeArray_;
@@ -230,6 +247,7 @@ private:
     std::string error_;
     bool multiDrawIndirect_ = false;
     bool cubeArray_ = false;
+    bool computeQueue_ = false;
     bool samplerAnisotropy_ = false;
     bool healthy_ = true;
     VkInstance instance_ = VK_NULL_HANDLE;
@@ -278,6 +296,7 @@ private:
     Pool<VSampler> customSamplers_;
     Pool<VShader> shaders_;
     Pool<VPipeline> pipelines_;
+    Pool<VCompute> computes_;
     VTexture dummy_;          // bound to unset texture slots
     VTexture dummyDepth_;     // ... of compare samplers
     struct SamplerKey { uint32_t key; VkSampler sampler; };
@@ -334,6 +353,11 @@ private:
     std::array<uint32_t, kUniformSlots> uniformOffsets_{};
     bool descriptorsDirty_ = true;
     VkDescriptorSet currentSet_ = VK_NULL_HANDLE;
+    uint32_t activeComputeId_ = 0;
+    std::array<TextureHandle,4> computeStorage_{};
+    std::array<TextureHandle,8> computeSampled_{};
+    std::array<BufferHandle,4> computeBuffers_{};
+    std::vector<uint8_t> computeUniforms_;
 };
 
 } // namespace aiverse::gfx::vk

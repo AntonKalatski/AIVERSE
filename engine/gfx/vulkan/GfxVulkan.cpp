@@ -115,7 +115,7 @@ bool VulkanDevice::pickDevice(std::string& error) {
             const bool digits = std::strspn(forced, "0123456789") == std::strlen(forced);
             if (digits ? uint32_t(std::atoi(forced)) == i : std::strstr(p.deviceName, forced) != nullptr) score += 100;
         }
-        if (score > bestScore) { bestScore = score; best = int(i); queueFamily_ = uint32_t(family); }
+        if (score > bestScore) { bestScore = score; best = int(i); queueFamily_ = uint32_t(family); computeQueue_ = (qs[size_t(family)].queueFlags & VK_QUEUE_COMPUTE_BIT)!=0; }
     }
     if (best < 0) { error = "Vulkan: no GPU with graphics and present support"; return false; }
     gpu_ = gpus[size_t(best)];
@@ -292,6 +292,12 @@ void VulkanDevice::destroyDeviceObjects() {
     killTex(dummy_); killTex(dummyDepth_); killTex(back_); killTex(backDepth_);
     shaders_.each([&](VShader& s) { for (VkShaderModule m : {s.vert, s.frag, s.hdrVert, s.hdrFrag}) if (m) vkDestroyShaderModule(device_, m, nullptr); });
     pipelines_.each([&](VPipeline& p) { for (auto& v : p.variants) vkDestroyPipeline(device_, v.pipeline, nullptr); });
+    computes_.each([&](VCompute& c) {
+        if (c.pipeline) vkDestroyPipeline(device_, c.pipeline, nullptr);
+        if (c.layout) vkDestroyPipelineLayout(device_, c.layout, nullptr);
+        if (c.descriptorLayout) vkDestroyDescriptorSetLayout(device_, c.descriptorLayout, nullptr);
+        if (c.shader) vkDestroyShaderModule(device_, c.shader, nullptr);
+    });
     for (auto& s : samplers_) vkDestroySampler(device_, s.sampler, nullptr);
     customSamplers_.each([&](VSampler& s) {
         if (s.native) vkDestroySampler(device_, s.native, nullptr);
