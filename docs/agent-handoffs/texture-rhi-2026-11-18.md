@@ -2945,3 +2945,47 @@ exercise mapped RGBA bytes, unchanged dirty rows, bounded
 successive uploads, GPU failure retry and wrong-layer fallback.
 Then create GLSL/MSL sampling helper and validate actual GPU
 2DArray texture lookup.
+
+## Stage 7I — Metal asynchronous texture mip/layer GPU readback (2026-11-18)
+
+**Code commit:** `128ecb508a5f06240f6c1b59dfc140035af15a8c`.
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**File:** `engine/gfx/metal/GfxMetal.mm`.
+
+**Implementation/API:** Implements the previously optional
+`Device::readTextureAsync(TextureHandle,TextureReadbackDesc,TextureReadFn)`
+on Metal for sampled/rendered, single-sample 2D, 2D-array and cube
+(subresource mip/face selected). Supports source RGBA8, sRGB RGBA8
+and RGBA16F. Refuses depth, MSAA, 1D/3D and unsupported formats.
+A dedicated `MTLBlitCommandEncoder` records a nonblocking
+texture-to-shared-`MTLBuffer` transfer with 256-byte-aligned GPU
+row pitch. A retained completion record copies rows to packed
+CPU bytes after GPU completion and swizzles Metal BGRA render-target
+storage to the portable RGBA result. The MTL completion handler
+signals `atomic ready` but does not call user code. The next
+`beginFrame` on the device owner thread invokes ready callbacks;
+failure produces an empty `TextureReadbackResult`.
+Returned source data outlives the parent texture handle because
+the command buffer captures its staging target. Requests are
+bounded to at most 32 in flight and 256 MiB staging each.
+Other backend implementations remain fail-closed.
+
+**Compatibility:** No scene rendering, capture, texture allocation,
+ECS, network/save or material-layout changes; app code must check
+the boolean return and `TextureReadbackResult::success()`.
+Device must outlive callbacks. The API does not promise
+automatic CPU orientation correction for custom shader UV
+conventions, only packed top-left texture rows.
+
+**Actual verification:** Connector committed source successfully.
+**macOS/iOS compiler NOT RUN; Metal GPU capture NOT RUN;
+CTest NOT RUN; UI integration NOT RUN.**
+No passing status asserted. Real Metal validation is required
+for aligned row copies, cubemap face indexing, BGRA swizzle,
+HDR byte count, after-texture-destroy lifetime and
+callback delivery order.
+
+**Next:** Implement portable GL/GLES3 readback (with clear
+sync/deferred semantics) and Vulkan staging/fence readback,
+then add runtime GPU tests and editor inspection hooks.
+Maintain separate code + handoff commits per stage.
