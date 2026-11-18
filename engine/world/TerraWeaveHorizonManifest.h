@@ -65,6 +65,8 @@ horizonSceneFromManifest(
         j,"canopyHeightCm",settings.canopyHeightCm,100,10000));
     settings.crownDetail=static_cast<uint32_t>(worldInteger(
         j,"crownDetail",settings.crownDetail,1,3));
+    settings.orientationViews=static_cast<uint32_t>(worldInteger(
+        j,"orientationViews",settings.orientationViews,1,2));
     settings.nearBlendCm=static_cast<int32_t>(worldInteger(
         j,"nearBlendCm",settings.nearBlendCm,0,10000000));
     settings.tierBlendCm=static_cast<int32_t>(worldInteger(
