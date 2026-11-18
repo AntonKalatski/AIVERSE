@@ -1480,3 +1480,47 @@ C++ build, compiler tests, and native GPU validation:
 on the current branch and fix errors, then continue GL/Vulkan
 MSAA, remaining typed formats and asset pipeline integration.
 Update this handoff after every code/documentation stage.
+
+## Stage 5C — shared compressed format metadata and fail-closed GPU allocations (2026-11-18)
+
+**Code commit:** `944b08351b67768aa939bda1c7b9089d6345bd3f`.
+**Branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Paths:** `engine/gfx/Gfx.h`, `engine/gfx/metal/GfxMetal.mm`,
+`engine/gfx/gl/GfxGL.cpp`, `engine/gfx/vulkan/VkResources.cpp`,
+`tests/render/texture_contract.cpp`.
+
+**Reason:** A platform backend must never reinterpret compressed
+BC4/BC5/BC7/EAC data as an RGBA8 upload when a native enum or GPU
+format is absent. Previously Metal could report BC compression on
+some Apple devices but its iOS compile-time pixel format mapping
+did not expose the BC enum, causing allocation to follow the
+uncompressed RGBA8 branch.
+
+**Implementation:** Central `isCompressedTextureFormat`,
+`compressedTextureBlockBytes`, `compressedTextureBlockSize`
+constexpr helpers define compressed capabilities and 8/16-byte
+4x4/6x6 storage requirements. Existing compressed format enum
+values remain unchanged. Metal `supports(BC*)` now requires an
+actual mapped Metal pixel format, and `createTexture` rejects
+unmappable compressed requests before any RGBA8 fallback.
+GL 2D and dimensional allocations validate format capability
+before issuing compressed GPU calls. Vulkan and Metal reuse
+the shared block-size helpers for upload validation.
+CPU `texture_contract` test now asserts the new BC4/BC5/EAC
+classification and block byte counts.
+
+**Compatibility:** Any previously silently accepted unsupported
+compressed format is now rejected explicitly. Existing supported
+compressed/uncompressed formats preserve their path. No
+save/network/ECS changes or new on-disk formats.
+
+**Verification:** Source committed and branch moved through GitHub.
+Native compiler, CTest and GPU checks: **NOT RUN**.
+CI last observed queued/cancelled, not green.
+
+**Next:** Test on iOS (particularly GPUs that claim BC support),
+macOS, Android GLES3, Windows GL33 and Vulkan with actual
+device format queries. Run CTest `texture_contract` and
+BC5 DDS/KTX2 tests; fix any compiler/SDK enum errors before
+expanding typed pixel formats. Continue separate implementation
+and handoff commits after every stage.
