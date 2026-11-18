@@ -56,3 +56,53 @@ The resulting `EffectDef` uses the CURRENT CPU simulation and rendering code; it
 5. **Stage 6:** convert existing RTS/FPS/native integrations to generic VFX contract, cross-genre performance, screenshot and platform CI regression gates. Retire the RTS-only event binding path only after parity.
 
 Every completed stage must follow `AGENTS.md`: implementation commit(s), then a **separate handoff commit in this document** with SHA, paths, actual tests/CI statuses, caveats and next step. Do not promise Unreal source compatibility or a fully working Niagara editor before those stages are implemented.
+
+## Stage 2 — cross-genre ECS presentation system (COMMITTED, TESTS NOT RUN)
+
+**Implementation SHA:** `60657dded40c58bd07b701df7c7ea1bd34b94120`  
+**Standalone test SHA:** `7c743f48a6c92112a9756392d1965bf964be1620`  
+**CTest registration SHA:** `e19a0ac9074bd3c4aa714396e748f68eedb95b63`
+
+### Files
+
+- `libraries/include/aiverselib/genre/EcsVfxPresentation.h`: data-only `VfxSourceComponent`, `VfxEventBinding` and read-only `VfxPresentationSystem`.
+- `tests/vfx_ecs_presentation_test.cpp`: two distinct ECS component types (space unit, racing vehicle), emitter attach/move, event playback, generation reuse, reset.
+- `CMakeLists.txt`: `aiverse_vfx_ecs_tests` and CTest `vfx_ecs_presentation`.
+
+### Public integration
+
+```cpp
+#include <aiverselib/genre/EcsVfxPresentation.h>
+using namespace aiverse::lib::genre;
+auto& source = world.add<VfxSourceComponent>(entity);
+source.effect = "engine_fire";  // existing fx asset or compiled graph output
+VfxPresentationSystem presenter(particles);
+presenter.sync(world, [](const World& w, Entity e,
+                         aiverse::fx::float3& pos, aiverse::fx::float3& dir) {
+    // Resolve render transform from an arbitrary native project component.
+    return resolveYourPresentationPose(w, e, pos, dir);
+});
+// After each committed tick, not after each render frame:
+presenter.consumeTickEvents(tick, sim.events(), {{hitEventId, {"impact_flash", 1_fx}}});
+// On new match, rollback/resimulation or preview reset:
+presenter.reset();
+```
+
+`VfxSourceComponent` has effect name, fixed-point scale, revision, enabled flag, and kill/fade on detach. Generation-packed Entity keys prevent handles leaking to recycled entities. If an attachment is out of view / budget rejected, the bridge retries when it becomes visible. Do not attach one-shot assets through this component (the bridge will restart non-looped effects); use `consumeTickEvents` for one-shots. The game-specific host provides pose resolution and the mapping from module-defined `SimEvent.type` IDs to effect assets; this package contains **no RTS/FPS includes** and writes **nothing** to authoritative ECS.
+
+### Verification
+
+**NOT RUN:** sources and standalone test target committed, but no C++ compilation, CTest, CI or screenshot tests have completed in this environment. Required commands:
+
+```bash
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs_presentation)$'
+```
+
+### Constraints / next step
+
+- Neither RTS nor FPS game loops have been migrated to call this adapter yet. The old `RtsFx` bindings must remain until event parity is verified; do not claim integration done.
+- The bridge consumes `SimEvent` and `World` **only** on the presentation side, not via an ECS gameplay `Simulation::addSystem`; timing remains under the host's render loop.
+- Duplicate-tick suppression is global per presenter. On rollback or replay, call `reset()` before replay; split-screen/multiple worlds need separate presenters. Future work should generalize stable presentation event IDs across snapshot/resimulation.
+- Next: Stage 3 — load and hot-reload versioned graph assets in a reusable registry; integrate graph asset edits with the existing FX editor/MCP and add graph-aware tests. Then GPU simulation and visual node editor are separate stages, not implicit in the current work.
