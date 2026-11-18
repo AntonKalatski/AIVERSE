@@ -35,6 +35,9 @@ struct ComputeEmitterDesc {
     float drag = 0.0f;
     fx::FxQuality quality = fx::FxQuality::High;
     ComputePreference backend = ComputePreference::Automatic;
+    // Experimental Metal-only option; no effect on existing CPU/host-gather
+    // paths. Requires RHI supportsGpuAuthoredIndirectDraw().
+    bool gpuIndirect = false;
 };
 
 bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullptr);
@@ -44,6 +47,9 @@ struct ComputeStats {
     uint32_t gpuDispatches = 0, drawCalls = 0;
     uint32_t submittedSlots = 0; // dense GPU quads published from live-slot map
     uint32_t gpuFallbacks = 0, lostOnFallback = 0;
+    uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
+    // In indirect mode submittedSlots/alive are CPU lifespan estimates;
+    // exact GPU alive count stays on GPU and is used as the draw argument.
     size_t gpuBytes = 0, uploadedBytes = 0;
 };
 
@@ -69,6 +75,7 @@ public:
     ComputeBackend backend() const { return backend_; }
     bool ready() const { return initialized_; }
     bool gpuActive() const { return initialized_ && backend_ == ComputeBackend::Metal; }
+    bool gpuIndirectActive() const { return gpuActive() && gpuIndirectActive_; }
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
@@ -107,6 +114,7 @@ private:
     gfx::ShaderHandle vertexShader_;
     gfx::PipelineHandle pipeline_;
     gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
+    gfx::BufferHandle aliveCounter_, gpuDrawArgs_;
     gfx::TextureHandle texture_;
     std::vector<float> ages_;
     uint32_t drawCount_ = 0; // dense vertices emitted this frame (<= alive)
@@ -115,6 +123,7 @@ private:
     render::mat4 viewProj_;
     fx::float3 eye_{}, right_{1,0,0}, up_{0,1,0};
     bool initialized_ = false, viewReady_ = false, verticesReady_ = false;
+    bool gpuIndirectActive_ = false;
     ComputeStats stats_;
     std::string reason_;
 };
