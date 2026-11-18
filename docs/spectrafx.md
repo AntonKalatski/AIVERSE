@@ -501,6 +501,99 @@ Apple Silicon remain **NOT VERIFIED** until native CI/device tests
 complete. Non-Metal RHI paths continue using the original CPU
 `ParticleSystem`.
 
+## Experimental GPU-authored particle draw (Stage 14)
+
+The Metal subset now has an **explicitly opt-in** GPU-side compact/draw
+mode, using the existing optional RHI methods. This does not change
+the default backend or any existing FPS/RTS runtime:
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+
+aiverse::spectra::GraphRuntimeOptions opts;
+opts.preference = aiverse::spectra::ComputePreference::Automatic;
+opts.gpuIndirect = true; // experimental; default is false
+// For the standalone billboard emitter:
+// aiverse::spectra::ComputeEmitterDesc cfg;
+// cfg.gpuIndirect = true;
+```
+
+### RHI contract and compute passes
+
+The portable `gfx::Device` adds the default-false capability query
+`supportsGpuAuthoredIndirectDraw()`. Metal reports support through
+its existing plain `drawIndexedGpuIndirect` path, independently of
+experimental ICB features. Vulkan/GL/GLES/WebGL continue to return
+false. A device advertising only `supportsCompute()` is not enough.
+
+Metal compute uses two additional persistent storage buffers:
+`aliveCounter` (4-byte atomic uint, compute slot **5**) and
+`gpuDrawArgs` (20-byte `gfx::DrawIndexedIndirectCommand`, slot **6**).
+The existing `ParticleState` and 40-byte expanded vertex formats
+are unchanged.
+
+```text
+Mode 3  reset GPU alive counter
+Mode 0  spawn into persistent physical GPU particle slots
+Mode 1  integrate physical state / kill expired particles
+Mode 4  atomic-fetch-add surviving particle -> dense vertex ordinal
+Mode 5  write GPU indexed draw args (indexCount = alive * 6)
+Render  gfx::Device::drawIndexedGpuIndirect(gpuDrawArgs, 0)
+```
+
+Metal's RHI inserts a buffer memory barrier after each compute
+dispatch, and graphics submission occurs in the following render
+encoder. Surviving particle order is nondeterministic (atomic allocation),
+which is acceptable only for the current **additive** billboard subset.
+The GPU counter and draw arguments are not read back to CPU during
+normal rendering.
+
+If `gpuIndirect=true` but the device lacks
+`supportsGpuAuthoredIndirectDraw()`, SpectraFX retains Stage 13's
+CPU-published dense slot gather with regular `drawIndexed`. If an
+already-enabled indirect command is rejected *during drawing*, it
+reports an error and skips the draw instead of drawing potentially
+uninitialized/stale vertices with an approximate CPU count.
+
+`ComputeParticles::gpuIndirectActive()` reports actual selection;
+`ComputeStats::gpuCompactDispatches` and
+`gpuIndirectDraws` track submitted GPU operations. When indirect is
+active, `stats().submittedSlots` and `stats().alive` are **host-side
+lifespan estimates**, not GPU-readback measurements. The actual
+indexed count comes from the GPU-authored 20-byte command.
+
+### What remains on CPU
+
+GPU indirect removes the **per-frame upload of the live slot map**,
+and GPU compaction/draw-count calculation no longer relies on that
+map. The CPU **still** owns slot allocation and lifetime/free-list
+bookkeeping, and scans a bounded maximum of 4096 age records.
+GPU motion and dense quad generation remain GPU-side.
+This is not a GPU-only allocator, multi-emitter scheduler,
+sorting system, or complete Niagara simulation.
+
+### Validation gates
+
+- `tests/vfx_gpu_backend_test.cpp`: the recording RHI verifies
+  reset/spawn/integrate/atomic compact/args ordering, absence of
+  host live-slot uploads in GPU-driven mode, capability fallback,
+  and rejection without unsafe direct draw.
+- `tests/vfx_metal_compaction_smoke.mm`: **real Metal compute test**
+  compiling the MSL `cs_main`, running GPU passes and reading
+  the counter, indirect arguments and compacted vertex results
+  between frames. On macOS without a Metal GPU it returns 77 and
+  CTest marks it **SKIPPED**, not PASS.
+- `.github/workflows/spectrafx-validation.yml` builds and attempts
+  the Metal smoke on macOS alongside the headless suite; Linux
+  still tests portable CPU/recording paths.
+
+All of these changes are **committed source, not verified execution**.
+At the latest workflow query, the new SpectraFX CI jobs were still
+queued. No passing MSL compilation, Metal dispatch, offscreen image,
+timing or GPU visual parity claim is made. A real image-level Metal
+and multiple-frames-in-flight test is still required before a
+shipping/default GPU selection.
+
 ## Validation checklist
 
 ```bash
