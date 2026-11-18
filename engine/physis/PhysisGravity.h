@@ -41,14 +41,18 @@ inline Vec3 gravityContribution(const GravityField& field,
         return field.acceleration * weight;
     if (field.mode != GravityMode::Attract && field.mode != GravityMode::Repel)
         return Vec3{};
-    // Point gravity is a bounded, authored field: not a Newtonian N-body solver.
-    const Vec3 inward = field.center - position;
+    // Point gravity is a bounded authored field, not a Newtonian N-body
+    // solver. Normalize by radius *before* squaring, avoiding overflow when
+    // field/world coordinates span many kilometres.
+    if (field.radiusMeters <= Fixed{}) return Vec3{};
+    const Vec3 inward = (field.center - position) / field.radiusMeters;
     const Fixed distance = inward.length();
     if (distance <= Fixed{}) return Vec3{};
     const Fixed strength = fxClamp(field.radialMagnitude,
-                                   Fixed{}, Fixed::fromInt(200)) * weight / distance;
-    const Vec3 direction = field.mode == GravityMode::Attract ? inward : inward * Fixed::fromInt(-1);
-    return direction * strength;
+                                   Fixed{}, Fixed::fromInt(200)) * weight;
+    const Vec3 direction = field.mode == GravityMode::Attract ?
+        inward : inward * Fixed::fromInt(-1);
+    return direction / distance * strength;
 }
 
 // Deterministic field selection: strongest override priority wins; ties are
