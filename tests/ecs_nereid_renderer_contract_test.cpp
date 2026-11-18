@@ -381,5 +381,63 @@ int main() {
     check(nextPatch.patchX==100000001.0 &&
           !render::sameNereidSurfaceKey(preciseKey,nextPatch),
           "crossing a one-metre distant-ocean cell must invalidate its GPU key");
+    // Stage 16: high-altitude water uses a Y-local mesh basis.
+    auto highBody=hugeBody;
+    highBody.surfaceY=Fixed::fromInt(100000000);
+    highBody.bottomY=Fixed::fromInt(99999990);
+    lib::nereid::WaterSurfaceMeshOptions highOpts;
+    highOpts.originX=highBody.center.x.toDouble();
+    highOpts.originZ=highBody.center.z.toDouble();
+    highOpts.originY=highBody.surfaceY.toDouble();
+    highOpts.lod=lib::nereid::WaterSurfaceLod::Far;
+    const auto highMesh=lib::nereid::buildWaterSurfaceMesh(
+        highBody,nullptr,highOpts);
+    check(highMesh.vertices.size()==4 && highMesh.vertices[0].y==0.f,
+          "high-altitude water must emit Y-local vertex coordinates");
+    auto otherY=highOpts;
+    otherY.originY-=256.0;
+    check(!render::sameNereidSurfaceKey(
+              render::makeNereidSurfaceKey(22,false,highOpts),
+              render::makeNereidSurfaceKey(22,false,otherY)),
+          "changing Y origin must invalidate the GPU water cache");
+    world::NereidSceneSurface highSource;
+    highSource.body=highBody;
+    world::NereidWaterScene::applyWaterMeshBasis(highOpts,highSource);
+    check(highOpts.originY==100000000.0,
+          "water scene must select the precise surface-Y basis");
+    auto refractive=style;
+    refractive.refractionStrength=0.65f;
+    check(render::validNereidWaterStyle(refractive),
+          "valid refractive water style must be accepted");
+    check(!render::sameNereidSurfaceKey(
+          render::makeNereidSurfaceKey(22,false,highOpts,style),
+          render::makeNereidSurfaceKey(22,false,highOpts,refractive)),
+          "changing refraction must invalidate water material residency");
+    refractive.refractionStrength=1.1f;
+    check(!render::validNereidWaterStyle(refractive),
+          "refraction strength must be clamped to the material contract");
+    const auto refractConfig=world::parseNereidWaterManifest(Json::parse(R"({
+      "nereidWater":{"surfaces":[{
+        "kind":"lake","shape":"box","surfaceY":2,"bottomY":-5,
+        "halfExtents":[10,10],"style":{"refractionStrength":0.5}
+      }]}
+    )"));
+    check(refractConfig.surfaces.size()==1 &&
+          refractConfig.surfaces[0].style.refractionStrength==0.5f,
+          "NEREID manifest must expose optional refraction");
+    check(rejectedManifest(R"({"nereidWater":{"surfaces":[{
+      "shape":"box","surfaceY":2,"bottomY":-5,"halfExtents":[10,10],
+      "style":{"refractionStrength":2}
+    }]}})"),"manifest must reject invalid refraction strength");
+    check(std::string(render::shaders::kLitFS).find(
+          "thickness = v_wpos.y - opaquePos.y")!=std::string::npos &&
+          std::string(render::shaders::kLitFS).find(
+          "u_params.w > 0.001 && u_trace2.w > 0.5")!=std::string::npos,
+          "GLSL depth-gated NEREID refraction missing");
+    check(std::string(render::shaders::kLitMSL).find(
+          "thickness = in.wpos.y - opaquePos.y")!=std::string::npos &&
+          std::string(render::shaders::kLitMSL).find(
+          "u.params.w > 0.001 && f.trace2.w > 0.5")!=std::string::npos,
+          "Metal depth-gated NEREID refraction missing");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
