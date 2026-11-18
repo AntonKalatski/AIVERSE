@@ -45,3 +45,11 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 - `PhysisProjectConfig.h` may parse a map-level `physis` JSON block and call `installFromMap` explicitly from any native `GameModule::setup`. No per-genre automatic registration or direct renderer state. Inspector authoring uses `MapDoc` snapshots and validations and must not mutate live `Simulation::world()`.
 - `physis_scene_geometry`, `physis_project_config`, and (when `aiverse_editor_core` exists) `physis_authoring` CTests are authored and registered, **NOT RUN**. The Scene GUI still requires native compilation and macOS visual/click tests before calling it functional.
 - Merge prerequisite from main: `810feba70f01cdc35003ac80ea8486f39dc16049`, handoff `docs/agent-handoffs/physis-main-merge-2026-11-18.md`. Stage 18 handoff: `docs/agent-handoffs/physis-editor-scene-inspector-2026-11-18.md`. Continue to document every implementation stage in a separate commit with real test results.
+
+## Stage 19 — field asset importer and editor owned gizmos
+
+`PhysisFieldAssets.h` is the canonical typed parser of authored `windZones`, `storms`, `gravityFields`. Validate stable IDs and fixed-point bounds before `installFromMap` modifies World; sort IDs across types before allocating entities. Keep it independent from all genres, editors, renderer, NEREID, TerraWeave, Box3D. Opt-in `enableWindZones`, `enableStorms`, `enableGravityFields` must match nonempty collections to preserve persistent component schemas.
+
+The editor `apps/editor/PhysisFieldEditor.h` owns map-authored markers, click/drag and selected properties in shared MapProps Inspector, using `PhysisAuthoring.h` (same native field parser for validation). One drag opens exactly one MapDoc Undo snapshot; never write directly into running `Simulation::world()` from Inspector/Gizmo. Authored IDs are document keys, not replicated/persisted ECS IDs.
+
+Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_project_config` have source + CTest + CI registration, **NOT RUN**. Stage handoff: `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`. Run real editor/Box3D/PHYSIS tests before PR #25 is ready.
