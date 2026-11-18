@@ -50,9 +50,10 @@ jobs:
             aiverse_terraweave_test \
             aiverse_terraweave_arbor_test \
             aiverse_terraweave_flora_test \
-            aiverse_terraweave_model_test
+            aiverse_terraweave_model_test \
+            aiverse_terraweave_heightmap_test
       - name: Run TerraWeave CTest suite
         run: |
           ctest --test-dir build/terraweave-ci \
             --output-on-failure \
-            -R '^terraweave(_arbor|_flora|_model)?$'
+            -R '^terraweave(_arbor|_flora|_model|_heightmap)?$'
