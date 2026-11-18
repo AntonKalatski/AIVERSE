@@ -1874,3 +1874,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Implementation SHA:** `7566853de76ca2096b52ee1614b653a186a90c12`.
 - Extended the real FPS `ecsProjectileSpawnAuthorityParityCase(bool cow)` fixture in `tests/fps/projectile_spawn.inc`. Immediately after a weapon fires, changes `ProjectileRuntime.value.damage` to 17 and deliberately corrupts the ECS host's legacy `State::projectiles[0].damage` to 777; the control legacy FPS host receives 17. Calls public `Module::syncDynamicEntities(*ecs,true)`, requires the State view to be rebuilt as 17 and checks full state/checksum parity. The fixture then continues through real Frag/Smoke/Flash action spawns, v9 saves and deep/COW rollback. This exercises the actual new **one-way** mirror contract independently of the next-tick hydration process.
 - **Verification:** source pushed but native C++ compilation/CTest/runtime checks are still **unverified**. Fix any source-of-truth violation rather than weakening this assertion.
+
+
+### 2026-11-18 — Original native dynamic sync method retained for ABI
+- **Implementation SHA:** `8e849661f4fc29b6b998e6bff135af2a7b5e93a0`.
+- Updated `modules/fps/FpsModule.h` to declare both the **original** `syncDynamicEntities(Simulation&) const` signature and a new two-argument `syncDynamicEntities(Simulation&,bool) const` mirror-projection overload. This preserves source/binary symbol expectations for existing native project callers while keeping the ECS→State projection mode explicit.
+- **Verification:** header committed; old-signature wrapper implementation still needed, native build not executed. Next commit defines the wrapper and logs it separately.
