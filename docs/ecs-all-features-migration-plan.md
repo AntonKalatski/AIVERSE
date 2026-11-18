@@ -342,3 +342,51 @@ regression. The code stays behind existing default-OFF
 `fps.ecsAuthority`. Next wave is to convert remaining nonprogrammed
 grenade/mode updates and direct in-tick spawns before making the entire
 frame ECS-only.
+
+
+## Live FPS projectile spawn and round-reset ECS ownership (2026-11-18)
+
+Following the direct `ProjectileRuntime` flight-stage migration, both
+**actual accepted FPS weapon projectiles** (`Module::shoot`) and
+**actual Frag, Smoke and Flash throwable actions** (`Module::action`)
+now call one `Module::spawnProjectile(Simulation&,Projectile)`. On the
+`fps.ecsAuthority` path, that helper creates a canonical live ECS
+`ProjectileRuntime` Entity immediately at the *source action*, with
+source ID, stable `order`, `DynamicEntityIndex` mapping and Editor
+`ProjectileEntity` projection, before synchronizing the same-tick
+`State::projectiles` compatibility view. With the gate OFF it appends
+the original State vector, preserving its default source behavior.
+
+The **bomb-round reset** `Module::tickSystems` now invokes
+`Module::clearProjectiles`. In ECS authority mode this destroys all
+`ProjectileRuntime` entities in source-ID order and clears projectile
+index keys at the reset barrier (while preserving loot/vehicle keys);
+the legacy/default mode retains the original vector clear. The ECS
+stage is no longer waiting for the final `fps.ecsMirror` to materialize
+new weapon/grenade projectiles or retire projectile entities on reset.
+
+**Remaining transitional constraint:** other FPS systems still read and
+may mutate `State::projectiles` before the final mirror, and the
+player/weapon systems still use `State::actors` workspaces. Do not claim
+exclusive native ECS authority for all FPS gameplay. The public reusable
+projectile flight, impact and collision policies are still integrated
+through existing FPS compatibility adapters. No save v9 or wire schema
+change was made. Reordering World Entity creation/deletion can alter
+allocator reuse; verify generation-safe lookups and rollback.
+
+**Added built-in FPS test fixtures:** `tests/fps/projectile_spawn.inc`,
+included in `aiverse_fps_tests`, drives actual shooting plus
+Frag/Smoke/Flash Commands in legacy and ECS modes and checks every
+source projectile's ECS Runtime/entity ID/order, save v9 cross-loading
+and replay. `ecsProjectileRoundResetParity` drives real bomb-round
+reset with grenade in flight and confirms direct ECS Runtime destruction,
+source-ID cleanup, deterministic respawn after reset, and deep/COW
+snapshot replay. Source tests have been written and registered, but
+**none of the native C++ assertions have yet been executed**.
+
+**Follow-up:** finish converting all secondary projectile State writers
+and readers, including smoke/cloud visibility and other round-mode
+consumers, to ECS components and structured read projections; then
+retire `fps.ecsMirror` as a writeback source for projectiles. Carry
+through native compiler/CTest, FPS networking, Editor lifecycle and RTS
+shared-mechanics integration before any default enablement.
