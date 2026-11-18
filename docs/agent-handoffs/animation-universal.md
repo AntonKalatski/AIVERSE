@@ -952,3 +952,36 @@ before calling this stage validated.
   Do not execute it yet; document benchmark command and limitations.
   Commit implementation first, then Stage 40 handoff separately.
 
+## Stage 40 — standalone CPU multithreaded crowd/IK benchmark (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+- **Code commits:** `d189ae73d80ae7d59265063cde3f6ff05c6a0159`,
+  syntax/include correction `9c15fe95694902baa99916316c3343c5c2236329`.
+- **Files:** new `tools/animation/motionweave_bench.cpp`,
+  changed root `CMakeLists.txt` and `docs/motionweave.md`.
+- **API/performance setup:** opt-in desktop/tool executable
+  `aiverse_motionweave_bench` creates paired presentation ECS Worlds
+  with identical compiled clip Graph or pure FullBodyIK Rig; warms both,
+  then measures mean serial vs persistent pool frame times over requested
+  entity/frame counts, checks representative pose parity, and reports
+  worker/job counts. Flags: `--actors N`, `--frames N`, optional `--ik`.
+  Does not need GPU, texture files or a game server.
+- **Build entry:** configure tools, then
+  `cmake --build build/ecs-test --target aiverse_motionweave_bench`.
+  Representative manual runs:
+  `./build/ecs-test/aiverse_motionweave_bench --actors 1000 --frames 120`,
+  `./build/ecs-test/aiverse_motionweave_bench --actors 5000 --frames 120 --ik`.
+- **Compatibility:** benchmark only, no changes to runtime simulation,
+  save/protocol, editor asset formats, or worker behavior. Not registered
+  in CTest because speed/worker scheduling depends on hardware.
+- **Validation:** **NOT RUN** (user deferred builds/measurements).
+  No claimed performance gain or TSAN/golden screenshot result.
+- **Risk:** synthetic graphs are not a substitute for large models,
+  mobile workloads, real contact IK, GPU bandwidth or actual FPS/RTS
+  animation frames. Pure FullBodyIK worker safety needs TSAN validation.
+- **Next:** compare planned work to user's checklist, update PR
+  scope/API documentation and inspect latest CMake/CI status *without*
+  claiming queued or cancelled jobs passed. Preserve draft status
+  until explicit test stage; any further implementation must be followed
+  by a separate Stage 41 handoff.
+
