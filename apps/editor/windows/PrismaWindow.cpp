@@ -10,6 +10,7 @@
 #include "../EditorUtil.h"
 #include "../core/PrismaOps.h"
 #include "engine/render/PrismaData.h"
+#include "engine/render/PrismaVolumeData.h"
 #include "engine/render/TextureCache.h"
 
 namespace aiverse::editor {
@@ -93,6 +94,7 @@ public:
         drawPresets(ed, scope);
         drawEffects(ed, scope);
         drawAdd(ed, scope);
+        drawVolumes(ed, scope);
         drawCost(ed);
         if (!pf.lastError().empty()) ui::toneText(ui::Tone::Error, "%s", pf.lastError().c_str());
     }
@@ -266,6 +268,281 @@ private:
         if (lastAnswer_.has("error")) ui::toneText(ui::Tone::Error, "%s", lastAnswer_.getStr("error").c_str());
     }
 
+    // PRISMA camera volumes share the game's/map's normal save and undo semantics.
+    Json& volumeBlockMut(Editor& ed, const std::string& scope) {
+        Json& owner = scope == "map" ? ed.doc().data.extra : ed.ws().project.manifest;
+        if (!owner["prismaVolumes"].isObject()) owner.set("prismaVolumes", Json::object());
+        Json& block = *owner.find("prismaVolumes");
+        if (!block["volumes"].isArray()) block.set("volumes", Json::array());
+        return block;
+    }
+    template <class F> void editVolumes(Editor& ed, const std::string& scope, F&& fn) {
+        if (scope == "map" && !dirty_) ed.doc().beginEdit();
+        fn(volumeBlockMut(ed, scope));
+        if (scope == "map") ed.doc().touched();
+        dirty_ = true;
+        dirtyScope_ = scope;
+    }
+    template <class F> void editVolumeEffect(Editor& ed, const std::string& scope,
+                                             size_t volume, size_t effect, F&& fn) {
+        editVolumes(ed, scope, [&](Json& block) {
+            Json& item = block.member("volumes").at(volume);
+            Json& profile = item.member("profile");
+            fn(profile.member("effects").at(effect));
+        });
+    }
+    static Json vec3Json(const float* p) {
+        Json a = Json::array();
+        for (int i = 0; i < 3; ++i) a.push(Json::number(double(p[i]), 3));
+        return a;
+    }
+    static void readVec3(const Json& obj, const char* key, float* p, float defaultValue) {
+        for (int i = 0; i < 3; ++i)
+            p[i] = obj[key].isArray() && obj[key].size() == 3 ?
+                float(obj[key][size_t(i)].toDouble(defaultValue)) : defaultValue;
+    }
+    static Json makeVolume(const std::string& id, int shape, const float3& center) {
+        Json v = Json::object();
+        v.set("id", Json::string(id));
+        v.set("shape", Json::string(shape == 0 ? "global" : shape == 1 ? "sphere" : "box"));
+        if (shape != 0) v.set("center", vec3Json(&center.x));
+        if (shape == 1) v.set("radius", Json::number(8.0));
+        if (shape == 2) {
+            const float e[3] = {8.f,8.f,8.f};
+            v.set("halfExtents", vec3Json(e));
+        }
+        v.set("blendDistance", Json::number(2.0));
+        Json profile = Json::object();
+        profile.set("effects", Json::array());
+        v.set("profile", std::move(profile));
+        return v;
+    }
+    void drawVolumeEffects(Editor& ed, const std::string& scope, size_t vi, const Json& volume) {
+        const Json& profile = volume["profile"];
+        const Json& effects = profile["effects"];
+        int removed = -1;
+        if (effects.isArray()) for (size_t ei = 0; ei < effects.size(); ++ei) {
+            const Json& raw = effects[ei];
+            const PrismaTypeDef* def = prismaType(raw.getStr("type"));
+            ImGui::PushID(int(ei));
+            if (!def) {
+                ImGui::TextDisabled("Неизвестный эффект: %s", raw.getStr("type").c_str());
+                ImGui::PopID();
+                continue;
+            }
+            if (ImGui::TreeNode("volume-effect", "%s", def->label)) {
+                bool enabled = raw.getBool("enabled", true);
+                if (ui::checkbox("Включен", &enabled))
+                    editVolumeEffect(ed, scope, vi, ei, [&](Json& item) {
+                        item.set("enabled", Json::fromBool(enabled));
+                    });
+                PrismaEffect value = parsePrismaEffect(raw, false);
+                size_t at = 0;
+                for (const auto& p : def->params) {
+                    ImGui::PushID(p.name);
+                    const bool authored = raw.has(p.name);
+                    bool use = authored;
+                    if (ui::checkbox("##override", &use)) {
+                        editVolumeEffect(ed, scope, vi, ei, [&](Json& item) {
+                            if (use) {
+                                if (p.kind == PrismaParamKind::Color) item.set(p.name, vec3Json(&value.values[at]));
+                                else if (p.kind == PrismaParamKind::Text) item.set(p.name, Json::string(value.text));
+                                else if (p.kind == PrismaParamKind::Bool)
+                                    item.set(p.name, Json::fromBool(value.values[at] > .5f));
+                                else item.set(p.name, Json::number(double(value.values[at]), 3));
+                            } else item.erase(p.name);
+                        });
+                    }
+                    ImGui::SameLine();
+                    if (!use) ImGui::BeginDisabled();
+                    if (p.kind == PrismaParamKind::Number) {
+                        float v = value.values[at];
+                        if (ImGui::SliderFloat(p.label, &v, p.lo, p.hi, "%.3f"))
+                            editVolumeEffect(ed,scope,vi,ei,[&](Json& item) {
+                                item.set(p.name,Json::number(double(v),3));
+                            });
+                        ++at;
+                    } else if (p.kind == PrismaParamKind::Color) {
+                        float rgb[3]={value.values[at],value.values[at+1],value.values[at+2]};
+                        if (ImGui::ColorEdit3(p.label,rgb))
+                            editVolumeEffect(ed,scope,vi,ei,[&](Json& item) {
+                                item.set(p.name,vec3Json(rgb));
+                            });
+                        at+=3;
+                    } else if (p.kind == PrismaParamKind::Bool) {
+                        bool v=value.values[at]>.5f;
+                        if (ui::checkbox(p.label,&v))
+                            editVolumeEffect(ed,scope,vi,ei,[&](Json& item) {
+                                item.set(p.name,Json::fromBool(v));
+                            });
+                        ++at;
+                    } else {
+                        std::string v = value.text;
+                        if (ui::inputString(p.label,v,ImGuiInputTextFlags_EnterReturnsTrue))
+                            editVolumeEffect(ed,scope,vi,ei,[&](Json& item) {
+                                item.set(p.name,Json::string(v));
+                            });
+                    }
+                    if (!use) ImGui::EndDisabled();
+                    ImGui::PopID();
+                }
+                if (ImGui::SmallButton("Удалить эффект")) removed = int(ei);
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+        if (removed >= 0) editVolumes(ed,scope,[&](Json& b) {
+            b.member("volumes").at(vi).member("profile").member("effects").eraseAt(size_t(removed));
+        });
+        if (ImGui::BeginCombo("Добавить эффект в объём##volAdd","Выбрать тип…")) {
+            for (const auto& def : prismaCatalog()) {
+                bool exists = false;
+                if (effects.isArray()) for (const Json& e : effects.items())
+                    if (e.getStr("type") == def.id) { exists = true; break; }
+                if (exists) continue;
+                if (ImGui::Selectable(def.label))
+                    editVolumes(ed,scope,[&](Json& b) {
+                        Json effect = Json::object();
+                        effect.set("type",Json::string(def.id));
+                        Json& p=b.member("volumes").at(vi).member("profile");
+                        if (!p["effects"].isArray()) p.set("effects",Json::array());
+                        p.member("effects").push(std::move(effect));
+                    });
+            }
+            ImGui::EndCombo();
+        }
+    }
+    void drawVolumes(Editor& ed, const std::string& scope) {
+        ui::section(nullptr, "PRISMA Volumes");
+        const Json& owner=scope=="map" ? ed.doc().data.extra : ed.ws().project.manifest;
+        const Json block = owner["prismaVolumes"];
+        const Json entries=block["volumes"];
+        if (scope=="map") {
+            bool replace=block.getBool("replace",false);
+            if (ui::checkbox("Заменить объёмы игры",&replace))
+                editVolumes(ed,scope,[&](Json& b){b.set("replace",Json::fromBool(replace));});
+        }
+        std::vector<std::string> warnings;
+        const auto stack=parsePrismaVolumes(ed.ws().project.manifest["prismaVolumes"],
+                                            ed.doc().data.extra["prismaVolumes"],&warnings);
+        const auto eye=ed.sceneCam.eye();
+        const auto s=stack.resolve(ed.prisma().baseSettings(),eye);
+        ImGui::TextDisabled("Активных в Scene: %zu эффектов | объёмов: %zu",
+                            s.activeAt(tier_).size(),stack.volumes.size());
+        for(const auto& issue:warnings) ui::toneText(ui::Tone::Warn,"%s",issue.c_str());
+        int remove=-1;
+        if (entries.isArray()) for(size_t i=0;i<entries.size();++i) {
+            const Json& v=entries[i];
+            ImGui::PushID(int(i));
+            const std::string label=v.getStr("id","volume "+std::to_string(i));
+            if (ui::collapsing((label+"###volume").c_str())) {
+                std::string id=label;
+                if(ui::inputString("ID",id,ImGuiInputTextFlags_EnterReturnsTrue))
+                    editVolumes(ed,scope,[&](Json& b){
+                        b.member("volumes").at(i).set("id",Json::string(id));
+                    });
+                bool enabled=v.getBool("enabled",true);
+                if(ui::checkbox("Активен",&enabled))
+                    editVolumes(ed,scope,[&](Json& b){
+                        b.member("volumes").at(i).set("enabled",Json::fromBool(enabled));
+                    });
+                static const char* shapes[]={"Глобальный","Сфера","Коробка"};
+                const std::string shape=v.getStr("shape","global");
+                int shapeIndex=shape=="sphere"?1:shape=="box"?2:0;
+                if(ImGui::Combo("Форма",&shapeIndex,shapes,3))
+                    editVolumes(ed,scope,[&](Json& b){
+                        Json& item=b.member("volumes").at(i);
+                        item.set("shape",Json::string(shapeIndex==0?"global":shapeIndex==1?"sphere":"box"));
+                        if (shapeIndex!=0 && !item["center"].isArray()) {
+                            auto p=ed.sceneCam.eye(); item.set("center",vec3Json(&p.x));
+                        }
+                        if(shapeIndex==1 && !item.has("radius"))
+                            item.set("radius",Json::number(8.0));
+                        if(shapeIndex==2 && !item["halfExtents"].isArray()) {
+                            const float e[3]={8,8,8};item.set("halfExtents",vec3Json(e));
+                        }
+                    });
+                if(shapeIndex!=0) {
+                    float center[3];readVec3(v,"center",center,0);
+                    if(ImGui::DragFloat3("Центр",center,.1f))
+                        editVolumes(ed,scope,[&](Json& b){
+                            b.member("volumes").at(i).set("center",vec3Json(center));
+                        });
+                    if(ImGui::SmallButton("В центр камеры Scene")) {
+                        const auto p=ed.sceneCam.eye();
+                        editVolumes(ed,scope,[&](Json& b){
+                            b.member("volumes").at(i).set("center",vec3Json(&p.x));
+                        });
+                    }
+                    if(shapeIndex==1) {
+                        float radius=float(v["radius"].toDouble(8));
+                        if(ImGui::DragFloat("Радиус",&radius,.1f,0.001f,100000.f))
+                            editVolumes(ed,scope,[&](Json& b){
+                                b.member("volumes").at(i).set("radius",Json::number(double(std::max(.001f,radius)),3));
+                            });
+                    } else {
+                        float extents[3];readVec3(v,"halfExtents",extents,8);
+                        if(ImGui::DragFloat3("Полуразмер",extents,.1f,.001f,100000.f))
+                            editVolumes(ed,scope,[&](Json& b){
+                                for(auto& x:extents)x=std::max(.001f,x);
+                                b.member("volumes").at(i).set("halfExtents",vec3Json(extents));
+                            });
+                    }
+                }
+                float weight=float(v["weight"].toDouble(1));
+                if(ImGui::SliderFloat("Вес",&weight,0,1))
+                    editVolumes(ed,scope,[&](Json& b){
+                        b.member("volumes").at(i).set("weight",Json::number(double(weight),3));
+                    });
+                float blend=float(v["blendDistance"].toDouble(0));
+                if(ImGui::DragFloat("Дистанция смешивания",&blend,.1f,0,100000))
+                    editVolumes(ed,scope,[&](Json& b){
+                        b.member("volumes").at(i).set("blendDistance",Json::number(double(std::max(0.f,blend)),3));
+                    });
+                int priority=int(v.getInt("priority"));
+                if(ImGui::DragInt("Приоритет",&priority,1,-100000,100000))
+                    editVolumes(ed,scope,[&](Json& b){
+                        b.member("volumes").at(i).set("priority",Json::number(int64_t(priority)));
+                    });
+                // Json::integer() is Fixed-based; use the authored literal for full 0xffffffff.
+                uint32_t mask=0xffffffffu;
+                if(v.has("layerMask")) {
+                    try {mask=uint32_t(std::stoull(v["layerMask"].numberLiteral()));}
+                    catch (...) { mask=0xffffffffu; }
+                }
+                if(ImGui::InputScalar("Маска камеры",ImGuiDataType_U32,&mask))
+                    editVolumes(ed,scope,[&](Json& b){
+                        b.member("volumes").at(i).set("layerMask",Json::numberText(std::to_string(mask)));
+                    });
+                drawVolumeEffects(ed,scope,i,v);
+                if(ImGui::SmallButton("Удалить объём"))remove=int(i);
+            }
+            ImGui::PopID();
+        }
+        if(remove>=0)editVolumes(ed,scope,[&](Json& b){
+            b.member("volumes").eraseAt(size_t(remove));
+        });
+        const char* types[]={"Глобальный","Сфера у камеры","Коробка у камеры"};
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::Combo("##new-volume-shape",&volumeShape_,types,3);
+        if(ImGui::Button("Добавить PRISMA Volume",ImVec2(-FLT_MIN,0))) {
+            const auto pos=ed.sceneCam.eye();
+            editVolumes(ed,scope,[&](Json& b){
+                Json& arr=b.member("volumes");
+                int next=1;
+                std::string id;
+                do {
+                    id="volume_"+std::to_string(next++);
+                    bool found=false;
+                    for(const auto& item:arr.items())
+                        if(item.getStr("id")==id){found=true;break;}
+                    if(!found)break;
+                }while(next<100000);
+                arr.push(makeVolume(id,volumeShape_,pos));
+            });
+        }
+    }
+
     void drawCost(Editor& ed) {
         ui::section(nullptr, "Стоимость кадра (игра + карта)");
         const PrismaSettings s = parsePrisma(ed.ws().project.manifest["postfx"], ed.doc().data.extra["postfx"]);
@@ -341,7 +618,7 @@ private:
     }
 
     bool registered_ = false, inScene_ = true, dirty_ = false;
-    int scope_ = 0, preset_ = 0;
+    int scope_ = 0, preset_ = 0, volumeShape_ = 1;
     PrismaQuality tier_ = PrismaQuality::High;
     std::string projectDir_, lastKey_, dirtyScope_;
     std::vector<std::string> issues_;
