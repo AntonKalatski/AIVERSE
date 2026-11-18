@@ -1298,3 +1298,8 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - `tests/ecs_cross_genre_impact_queue_test.cpp` now hashes every authoritative queue field using `hashOrderedImpactQueue` instead of a partial manual subset, and checks an in-flight pending queue's binary save/read exact round-trip, truncated input and invalid format rejection without replacing an already-good destination.
 - **Verification:** GitHub edit committed, **actual native CTest and binary-format tests not executed**. Both unrelated host fixtures and COW snapshot assertions remain in this test.
 - **Next:** update agent skill/schema documentation, then audit catalog/CTest/script registration and obtain native CI results.
+
+### 2026-11-18 — Registered schedulable hitscan regression in native CTest
+- Implementation SHA: `727d9ec271e258dac38787d300ca606f279c9eb0`.
+- `CMakeLists.txt` now adds `aiverse_ecs_hitscan_resolution_test`, links `aiverse_engine aiverse_world AIVERSE::libraries`, and registers CTest `ecs_hitscan_resolution_test`. The new GameModule fixture uses only public ECS APIs, no real RTS or FPS module linkage.
+- Verification: GitHub source commit only; no CMake configure/CTest or native runtime execution. Next: standalone runner registration and native library catalog package.
