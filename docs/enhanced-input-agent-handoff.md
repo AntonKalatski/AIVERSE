@@ -327,3 +327,11 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Verification:** GitHub source committed; no macOS GUI runtime test or CTest result. Verify two dock tabs (Game/Input Actions) while holding WASD, dragging from an embedded game screen, text entry, switching back/forth and global FocusLost while hidden. Input must not leak, duplicate clicks or remain stuck.
 
 **Next agent:** check all CI jobs, build editor, client and FPS; run interaction smoke tests, document exact verified evidence, and then consider merge approval.
+
+## Stage 23 — refresh inspector parent and release validation snapshot (2026-11-18)
+
+`feature/universal-entity-inspector-fps` advanced from `cf650a02d22890cbc3b27280762e8c0d96502bed` to `4a1173ce26a7f09c7fe0438755d28f55a7a1233b` (two docs-only commits). Its updated `docs/editor-unification-handoff.md` and new `docs/agent-handoffs/f90242ec4-integration.md` were carried forward in a two-parent merge with the current input feature branch. No overlapping C++ or test changes were present. Repeat the comparison just before PR merge because the inspector branch may still move.
+
+**Validation snapshot:** all four targeted CTest executables are registered, and GitHub source was audited for link paths/brace balance; CI had not yet returned green results when inspected. Previous input branch workflow runs were often canceled by subsequent commits, and later runs remained queued. A full macOS/Windows/Linux/Web/Android/iOS build, editor runtime smoke test and complete engine determinism suite have NOT been completed in this environment. The GitHub-enabled connector can update code but cannot execute a compiler; the working container has no GitHub network route for a complete clone. Never claim tests passed or mark PR ready based on only source inspection.
+
+**Next agent:** before merging PR #20, run the exact commands in Stage 15, inspect CI job logs, verify project asset writes (invalid JSON, read-only paths), FPS F10 rebinding across restart, RTS camera/zoom, Game vs Input Actions dock focus isolation and two-finger gestures on actual devices. Append verified build/test evidence as Stage 24. Keep the PR draft until then.
