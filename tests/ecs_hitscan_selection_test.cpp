@@ -53,6 +53,7 @@ static void exercise() {
     const Entity shooter=world.create();
     const Entity actor=world.create();
     int32_t applied=0;
+    uint32_t afterDirectCalls=0;
     const auto dispatch=[&](bool accepted) {
         if(!accepted)return;
         lg::resolveOrderedProjectileImpact(
@@ -61,13 +62,20 @@ static void exercise() {
                 check(target==actor,"wrong ECS target for hitscan");
                 applied+=25;
             },
-            [](Entity) {throw std::runtime_error("unexpected on-hit effect");},
+            [&](Entity target) {
+                // The shared impact contract always invokes AfterDirect.
+                // Hitscan has no configured on-hit effect: this hook is a no-op.
+                check(target==actor && applied==25,
+                      "hitscan after-direct hook ran before direct damage");
+                ++afterDirectCalls;
+            },
             [](Vec3,Fixed,auto&&) {throw std::runtime_error("unexpected hitscan splash");},
             [](Entity) {return false;},
             [](Entity) {throw std::runtime_error("unexpected splash damage");});
     };
     dispatch(bool(first));
-    check(applied==25,"accepted hitscan did not commit exactly one hit");
+    check(applied==25 && afterDirectCalls==1,
+          "accepted hitscan must resolve once in direct/after-direct order");
     // Live world has a different generation: the candidate snapshot remains
     // authoritative and the injected eligibility predicate decides validity.
     snapshots[0].life=2;
@@ -84,7 +92,8 @@ static void exercise() {
           "occlusion cutoff failed to reject targets behind the obstacle");
     applied=0;
     dispatch(bool(blocked));
-    check(applied==0,"obstructed hitscan committed damage");
+    check(applied==0 && afterDirectCalls==1,
+          "obstructed hitscan committed damage or dispatched effects");
     snapshots[2].health=0;
     check(!select(1_fx),"empty eligible set produced a false hit");
 }
