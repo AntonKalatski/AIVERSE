@@ -67,8 +67,16 @@ public:
             1,1,[&](world::Cell cell,const world::AsyncChunkStream::Payload& payload) {
                 if(!(cell==cell_))return false;
                 auto prepared=std::static_pointer_cast<Prepared>(payload);
-                // May contain just atlas cards, just terrain or neither.
-                if(!prepared->model)return true;
+                // If the next region is empty (e.g. ocean and terrain
+                // proxy disabled), retire the old forest rather than leaving
+                // stale distant silhouettes on-screen indefinitely.
+                if(!prepared->model){
+                    if(model_)render::releaseModel(device,*model_);
+                    model_.reset();
+                    clusters_=0;
+                    terrainQuads_=0;
+                    return true;
+                }
                 // CPU model is already prepared on worker. uploadModel only
                 // touches the renderer-owned Device on this update thread.
                 auto next=std::move(prepared->model);
