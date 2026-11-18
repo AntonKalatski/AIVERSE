@@ -36,7 +36,7 @@ int main() {
     route.onEvent(key(p::Key::H,false),true);
     CHECK(contains(route.onEvent(key(p::Key::Space),true),"FocusCamera"));
     route.onEvent(key(p::Key::Space,false),true);
-    CHECK(route.system().registeredContexts().size()==4);
+    CHECK(route.system().registeredContexts().size()==5);
     CHECK(!route.system().state("CameraPan")->active);
     route.onEvent(key(p::Key::Up),true);
     CHECK(route.system().state("CameraPan")->value.y==1.0f);
@@ -53,6 +53,14 @@ int main() {
     p::Event click;click.type=p::EventType::MouseDown;click.button=0;
     CHECK(contains(route.onEvent(click,true),"Select"));
     click.type=p::EventType::MouseUp;route.onEvent(click,true);
+    // Default top-down/gesture contexts are genre-neutral and do not
+    // accidentally enable hero combat while playing ordinary RTS.
+    CHECK(!route.system().isContextActive("RTS.TopDown"));
+    CHECK(route.system().isContextActive("RTS.Gestures"));
+    route.setTopDownEnabled(true);
+    CHECK(route.system().isContextActive("RTS.TopDown"));
+    route.setTopDownEnabled(false);
+    CHECK(!route.system().isContextActive("RTS.TopDown"));
     // An active UI/modal context must prevent keys from leaking into gameplay.
     CHECK(route.onEvent(key(p::Key::A),false).empty());
     CHECK(contains(route.onEvent(key(p::Key::A),true),"AttackMove"));
