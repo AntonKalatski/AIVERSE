@@ -3,6 +3,7 @@
 #pragma once
 #include "engine/fx/SpectraFX.h"
 #include "EcsVfxPresentation.h"
+#include "SpectraCueEcsAdapter.h"
 
 namespace aiverse::spectra {
 
