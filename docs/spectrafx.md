@@ -1280,3 +1280,33 @@ The current tests focus on graph compilation, asset caching/validation and read-
 4. Migration of existing RTS/FPS presentation adapters into a single SpectraFX path, native project sample games, performance and platform QA.
 
 **Mandatory for agents:** after each bounded stage, append a separate handoff commit containing code SHA, affected files, API/serialization contracts, tests actually run, limitations and exact next task. See `AGENTS.md`.
+
+
+## Stage 24 — generation-safe GPU VM particle parameter snapshots (experimental; tests deferred)
+
+The public `engine/fx/SpectraGpuSourceParameters.h` provides a renderer-only
+`gpu_program::SourceParameters` registry. `create(initial[8])` returns a
+`SourceId {slot,generation}`; `spawn(physicalParticleSlot,id)` snapshots
+all eight values at birth. `set(id,param,value,affectExisting)` changes
+future births only by default, or also modifies already-born particles carrying
+that exact source generation. `retire(id)` invalidates the source and preserves
+existing particle snapshot values until explicit `kill(physicalSlot)`.
+Generations never wrap to zero; exhausted slots cannot accidentally validate
+stale handles. The table is presentation-only, not serialized into gameplay ECS.
+
+`gpu_program::MetalVmPass::dispatchSources(states,count,stage,dt,registry)`
+now uploads a 48-byte per-slot `ParticleParams` array and reads its individual
+float8 values in the experimental Metal interpreter; legacy `dispatch(...,values)`
+continues supplying one uniform parameter set. GPU particles retain the existing
+64-byte state ABI. All physical slots must match the host's source registry,
+and per-dispatch GPU buffer sizes are bounded. A separate host is responsible
+for spawning/killing physical GPU slots in sync with the CPU mirror, and for
+correct Spawn/Update scheduling.
+
+**Not production integrated:** `GraphRuntime` and `ComputeParticles` remain
+unchanged; no user graph automatically executes through the Metal VM. This pass
+has no asynchronous GPU diagnostic readback or live-particle migration on device
+failure and currently uploads the active prefix of snapshots each dispatch.
+Do not claim GPU/CPU parity, performance or error-free execution. No native
+compile, Metal device test or CTest was performed, in accordance with the user's
+instruction to defer testing until feature work is complete.
