@@ -5,6 +5,7 @@
 #include "../EditorGenreUi.h"
 #include "../EditorUtil.h"
 #include "../PhysisAuthoring.h"
+#include "../PhysisFieldEditor.h"
 #include "../DetailsPanel.h"
 
 namespace aiverse::editor {
@@ -405,6 +406,9 @@ private:
             ui::endProps();
         }
         physisSettings(ed);
+        // Field picked in the Scene or PHYSIS tab uses the SAME MapProps
+        // Inspector with one validated MapDoc Undo transaction per Apply.
+        drawPhysisFieldProperties(ed);
         ui::section(ICON_STARTS, "Победа (поверх правил)");
         Json v;
         if (jsonEditor("map:victory", d.extra["victory"], v, 60)) {
