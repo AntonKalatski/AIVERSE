@@ -5194,3 +5194,31 @@ Verification: GitHub source commit succeeded. glslang compilation,
 CTest, Vulkan driver storage readback NOT RUN. No PASS claims.
 Next: run `ctest -R vulkan_backend` with Lavapipe and a real
 driver, inspect SKIPPED lines, fix any shader/pipeline errors.
+
+## Stage 8M — native agent integration for optional codecs, Vulkan compute and 3D previews (2026-11-18)
+
+Documentation source commit: 688bf554854770301c6d7be7d9ea07a348b72357.
+Files: docs/texture-rhi.md, skills/visuals/aiverse-texture-rhi/SKILL.md, AGENTS.md.
+Document system libktx and OpenEXR 3 opt-in build flags;
+point agents at Ktx2Libktx.h and ExrOpenExr.h rather than
+reimplementing decoders. Real LDR ETC1S/BasisLZ/UASTC
+transcoder supports capability-selected BC7/ASTC/ETC2/BC3
+or RGBA8 fallback. UASTC HDR remains separate/unimplemented.
+OpenEXR external package decodes ZIP/ZIPS/PIZ and more
+first-part RGBA scanline sources, not deep/multipart.
+Describe Vulkan GLSL450 compute shader binding ABI:
+set0 storage images 0..3, sampled images 4..11, storage
+buffers 12..15, UBO 16, guarded RGBA8/16F storage.
+Document limited GL/GLES/WebGL2 compute support, native
+Texture3D mip-depth slice inspector readback, and
+bounded cross-frame retry when GPU feedback exceeds quota.
+Register new path-filtered Texture RHI CI workflow and
+the difference between queued/skipped tests and GPU PASS.
+No engine/runtime source or serialization changed at
+this documentation-only stage.
+Verification: GitHub docs commit succeeded. Skill catalog
+audit NOT RUN; native build/CTest NOT RUN; Vulkan GPU/Metal/
+GLES and OpenEXR/libktx runtime not run.
+Next: review code for local/native compile failures,
+consume CI logs once results are actually available;
+fix issues with separate code and handoff commits.
