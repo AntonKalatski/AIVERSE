@@ -257,6 +257,7 @@
         "libraries/spec/gameplay.json",
         "libraries/include/aiverselib/gameplay/Configuration.h",
         "libraries/include/aiverselib/gameplay/EnhancedInput.h",
+        "engine/platform/EnhancedInputPresets.h",
         "engine/platform/EnhancedInputAdapter.h",
         "engine/platform/EnhancedInputConfig.h",
         "docs/enhanced-input.md"
