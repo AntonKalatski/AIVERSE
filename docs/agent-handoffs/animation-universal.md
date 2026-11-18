@@ -69,3 +69,30 @@ before calling this stage validated.
 4. Add montage, humanoid retargeting, motion warping, ragdoll and
    editor/performance work in separate bounded commits; append a dated handoff
    after each stage as required by AGENTS.md.
+
+
+## Stage 2: playback policies — 2026-11-18
+
+- **Code commit:** `f4fca50699eefeb9dc86971237b1c6db3f15ac1b`.
+- **Files:** `libraries/include/aiverselib/animation/AnimationPlayback.h`,
+  `tests/animation/notifies_root_motion.cpp`, CMake test registration.
+- **API:** `clipNotifies(keys, duration, from, to, loop, maxEvents)` returns
+  ordered notifies or `nullopt` on invalid/overflow. Clock values must be
+  absolute, unwrapped clip seconds; seek backwards intentionally emits none.
+- **API:** `extractClipRootDelta(model, clip, rootNode, from, to, loop)`
+  returns an optional rigid model-space delta. Loop extraction composes
+  root rigid transforms across cycles, including rotation. No authoritative
+  transforms are touched; the caller must decide visual vs motor request.
+- **Tests added:** multi-loop events, ordering, one-shots, seek suppression,
+  overflow/invalid keys, root translation and turning loops.
+- **Validation:** NOT RUN. GitHub-only checkout; no accessible worktree/build.
+  Commands: `cmake --build build/ecs-test --target aiverse_animation_playback_tests`
+  then `ctest --test-dir build/ecs-test --output-on-failure -R animation_playback`.
+- **Compatibility:** pure new public header, no model/save schema changes, no
+  existing RtsView hook altered. Events are presentation only, not gameplay
+  hit/damage authority. Unity events are not imported automatically.
+- **Limits:** no event track serialization/UI, montage routing, skeleton
+  retargeting, deterministic motor integration or runtime GPU benchmark.
+- **Next:** validate both tests; wire generic playback/parameters into an FPS
+  presentation adapter without disturbing current RTS behavior. Build
+  separate montage and retarget stages with explicit tests and handoffs.
