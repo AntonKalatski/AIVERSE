@@ -1,5 +1,7 @@
 #include "apps/editor/PhysisAuthoring.h"
 #include <cstdio>
+#include <cmath>
+#include <limits>
 using namespace aiverse;
 using namespace aiverse::editor;
 using namespace aiverse::editor::physis_authoring;
@@ -44,6 +46,48 @@ void testOneDragOneUndo() {
     doc.undo();
     CHECK(findField(read(doc),storm,key,index));
 }
+void testRadiusResizeAndSnapping() {
+    MapDoc doc; doc.reset(8,8);
+    std::string error;
+    CHECK(apply(doc,defaultConfig(),&error));
+    std::string wind,storm,gravity;
+    CHECK(addField(doc,physis::AuthoredFieldKind::Wind,0,0,0,wind,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Storm,1,2,3,storm,&error));
+    CHECK(addField(doc,physis::AuthoredFieldKind::Gravity,4,5,6,gravity,&error));
+    CHECK(snapMeters(-2.6,5.0) == -5.0);
+    CHECK(snapMeters(2.6,5.0) == 5.0);
+    CHECK(snapMeters(-2.5,5.0) == -5.0);
+    CHECK(snapMeters(1.2,0.25) == 1.25);
+    CHECK(snapMeters(1.2,0.0) == 1.2);
+    CHECK(snapMeters(1000001.0,5.0) == 1000000.0);
+    CHECK(moveField(doc,wind,snapMeters(-12.2,5),0,snapMeters(12.2,5),true,&error));
+    std::string key; std::size_t index=0; Json field;
+    CHECK(findField(read(doc),wind,key,index,&field));
+    CHECK(field["center"][0].fx() == Fixed::fromInt(-10));
+    const Json before=read(doc);
+    CHECK(resizeField(doc,storm,250.25,true,&error));
+    CHECK(resizeField(doc,storm,300.75,false,&error));
+    CHECK(findField(read(doc),storm,key,index,&field));
+    CHECK(field["outerRadiusMeters"].fx() == Fixed::fromRatio(1203,4));
+    CHECK(field["eyeRadiusMeters"].fx() == Fixed::fromInt(20));
+    doc.undo();
+    CHECK(read(doc)==before); // entire resize drag is one Undo entry
+    doc.redo();
+    CHECK(findField(read(doc),storm,key,index,&field));
+    CHECK(field["outerRadiusMeters"].fx() == Fixed::fromRatio(1203,4));
+    const auto rev=doc.revision;
+    CHECK(resizeField(doc,storm,300.75,true,&error)); // no-op
+    CHECK(doc.revision==rev);
+    CHECK(!resizeField(doc,storm,19.0,true,&error)); // eye radius violation
+    CHECK(doc.revision==rev);
+    CHECK(!resizeField(doc,gravity,100001.0,true,&error));
+    CHECK(doc.revision==rev);
+    CHECK(!resizeField(doc,wind,std::numeric_limits<double>::infinity(),true,&error));
+    CHECK(doc.revision==rev);
+    CHECK(resizeField(doc,gravity,10.0,true,&error));
+    CHECK(findField(read(doc),gravity,key,index,&field));
+    CHECK(field["radiusMeters"].fx() == Fixed::fromInt(10));
+}
 void testFpsAndDuplicateIds() {
     MapDoc fps;
     std::string error;
@@ -71,5 +115,5 @@ void testFpsAndDuplicateIds() {
     CHECK(fps.revision==revision);
 }
 }
-int main(){testOneDragOneUndo();testFpsAndDuplicateIds();
+int main(){testOneDragOneUndo();testRadiusResizeAndSnapping();testFpsAndDuplicateIds();
 std::printf("PHYSIS Field Authoring: %s\n",failures?"FAIL":"PASS");return failures?1:0;}

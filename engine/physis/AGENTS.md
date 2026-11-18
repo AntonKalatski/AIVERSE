@@ -53,3 +53,9 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 The editor `apps/editor/PhysisFieldEditor.h` owns map-authored markers, click/drag and selected properties in shared MapProps Inspector, using `PhysisAuthoring.h` (same native field parser for validation). One drag opens exactly one MapDoc Undo snapshot; never write directly into running `Simulation::world()` from Inspector/Gizmo. Authored IDs are document keys, not replicated/persisted ECS IDs.
 
 Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_project_config` have source + CTest + CI registration, **NOT RUN**. Stage handoff: `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`. Run real editor/Box3D/PHYSIS tests before PR #25 is ready.
+
+## Stage 20 — resize and snapping authoring invariants
+- The editor offers opt-in Move/Radius gizmos and metre-grid snap; only `apps/editor/PhysisFieldEditor.h` uses ImGui, camera projection and mouse input. Keep `engine/physis` renderer/editor independent.
+- `PhysisAuthoring.h::resizeField` edits outer storm radius or wind/gravity radius after the shared native parser validates the complete map. Move/resize drags call `MapDoc::beginEdit` only for the first effective edit, `MapDoc::touched` thereafter; preserve one Undo per drag. Never mutate the live World.
+- Snap is a transient editor-only preference. Do not serialize it into PHYSIS ECS components or map assets. Existing map/save schemas and authored IDs remain unchanged.
+- Handoff: `docs/agent-handoffs/physis-editor-gizmo-snapping-resize-2026-11-18.md`. New test fixtures were authored, **NOT RUN**; build/CTest/macOS Scene QA still required.

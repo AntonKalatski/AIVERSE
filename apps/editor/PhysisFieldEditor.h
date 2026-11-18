@@ -1,4 +1,4 @@
-// PHYSIS Stage 19 — editor-owned field markers, move gizmo and Inspector draft.
+// PHYSIS Stage 20 — editor-owned field markers, move/resize gizmos and snapping.
 // Authoring writes ONLY through MapDoc Undo/Redo, never live Simulation World.
 // No genre-specific identity or Box3D interaction; existing Scene selection
 // stays authoritative unless an explicitly enabled PHYSIS marker was clicked.
@@ -17,6 +17,11 @@ struct PhysisFieldEditorState {
     bool editMode = false;
     bool dragging = false;
     bool dragEdited = false;
+    bool draggingRadius = false;
+    bool snapEnabled = false;
+    float snapStepMeters = 5.f;
+    int gizmoMode = 0; // 0: translate, 1: radius
+    double dragRawY = 0;
     std::string selectedId;
     std::string draftId;
     std::string error;
@@ -50,7 +55,25 @@ inline void selectPhysisField(const std::string& id) {
     state.draftId.clear();
     state.error.clear();
     state.dragging = false;
+    state.draggingRadius = false;
     state.dragEdited = false;
+}
+
+inline bool physisFieldRadius(const Json& field, double& radius) {
+    const Json& value = field["outerRadiusMeters"].isNull() ?
+                        field["radiusMeters"] : field["outerRadiusMeters"];
+    if (!value.isNumber()) return false;
+    radius = value.toDouble();
+    return std::isfinite(radius) && radius >= 0.0 && radius <= 100000.0;
+}
+
+inline bool physisRadiusHandleScreen(const render::RTSCamera& camera,
+                                      const Viewport& vp, render::float3 center,
+                                      double radius, render::float2& projected) {
+    if (!camera.worldToScreen({center.x + float(std::max(1.0, radius)),
+                                center.y, center.z}, vp.pointsW, vp.pointsH, projected))
+        return false;
+    return std::isfinite(projected.x) && std::isfinite(projected.y);
 }
 
 inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
@@ -85,6 +108,35 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
             if (selected) {
                 draw->AddLine({p.x-14,p.y},{p.x+14,p.y},color,1);
                 draw->AddLine({p.x,p.y-14},{p.x,p.y+14},color,1);
+                double radius = 0;
+                if (physisFieldRadius(entry, radius)) {
+                    // World-space X/Z circle: unlike a screen-space ellipse, this
+                    // projects correctly through the existing Scene camera.
+                    ImVec2 previous{};
+                    bool previousValid = false;
+                    for (int pointIndex = 0; pointIndex <= 64; ++pointIndex) {
+                        const double angle = double(pointIndex) * 6.283185307179586 / 64.0;
+                        render::float2 screen{};
+                        const bool valid = camera.worldToScreen({
+                            position.x + float(radius * std::cos(angle)), position.y,
+                            position.z + float(radius * std::sin(angle))},
+                            vp.pointsW, vp.pointsH, screen) &&
+                            std::isfinite(screen.x) && std::isfinite(screen.y);
+                        if (valid && previousValid)
+                            draw->AddLine(previous, {vp.originX+screen.x, vp.originY+screen.y},
+                                          color, 1.5f);
+                        if (valid) previous = {vp.originX+screen.x, vp.originY+screen.y};
+                        previousValid = valid;
+                    }
+                    render::float2 handle{};
+                    if (state.gizmoMode == 1 &&
+                        physisRadiusHandleScreen(camera, vp, position, radius, handle)) {
+                        const ImVec2 hp{vp.originX+handle.x, vp.originY+handle.y};
+                        draw->AddLine(p, hp, color, 1.2f);
+                        draw->AddCircleFilled(hp, 6.5f, color, 16);
+                        draw->AddCircle(hp, 6.5f, IM_COL32(18,23,35,245), 16, 1.6f);
+                    }
+                }
             }
             const char* symbol = wind ? "W" : storm ? "S" : "G";
             draw->AddText({p.x+10,p.y-8},color,symbol);
@@ -99,14 +151,16 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
                                      const render::RTSCamera& camera) {
     auto& state = physisFieldEditorState();
     const ImGuiIO& io = ImGui::GetIO();
-    if (!state.editMode || ed.playing()) {
+    if (!state.editMode || !state.showMarkers || ed.playing()) {
         state.dragging = false;
+        state.draggingRadius = false;
         return false;
     }
     if (state.dragging) {
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) ||
             !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             state.dragging = false;
+            state.draggingRadius = false;
             state.dragEdited = false;
             return true;
         }
@@ -123,27 +177,56 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
             state.dragging = false;
             return true;
         }
-        double x = current.x,y=current.y,z=current.z;
-        if (io.KeyShift) {
-            y += double(state.lastMouseY - io.MousePos.y) *
-                 std::max(0.01,double(camera.distance)*0.002);
-        } else {
-            render::float3 hit;
+        render::float3 hit{};
+        if (state.draggingRadius) {
             if (camera.screenToGround(io.MousePos.x-vp.originX,
-                    io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
-                    hit,current.y)) {
-                x=double(hit.x)+state.grabOffsetX;
-                z=double(hit.z)+state.grabOffsetZ;
+                    io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,hit,current.y)) {
+                const double rawRadius = std::hypot(double(hit.x)-double(current.x),
+                                                     double(hit.z)-double(current.z));
+                double radius = state.snapEnabled ?
+                    physis_authoring::snapMeters(rawRadius, double(state.snapStepMeters)) :
+                    rawRadius;
+                // Reject a storm radius equal to or below its eye radius.
+                const double minRadius = collection == "storms" ?
+                    field["eyeRadiusMeters"].toDouble() + 0.001 : 1.0;
+                radius = std::clamp(radius, minRadius, 100000.0);
+                double previous = 0;
+                if (physisFieldRadius(field, previous) &&
+                    std::abs(radius-previous) >= 0.0005 &&
+                    physis_authoring::resizeField(ed.doc(),state.selectedId,
+                                         radius,!state.dragEdited,&state.error)) {
+                    state.dragEdited = true;
+                    state.draftId.clear();
+                    state.error.clear();
+                }
+            }
+        } else {
+            double x = current.x, y = current.y, z = current.z;
+            if (io.KeyShift) {
+                state.dragRawY += double(state.lastMouseY - io.MousePos.y) *
+                                  std::max(0.01,double(camera.distance)*0.002);
+                y = state.dragRawY;
+            } else if (camera.screenToGround(io.MousePos.x-vp.originX,
+                           io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,
+                           hit,current.y)) {
+                x = double(hit.x)+state.grabOffsetX;
+                z = double(hit.z)+state.grabOffsetZ;
+            }
+            if (state.snapEnabled) {
+                x = physis_authoring::snapMeters(x, double(state.snapStepMeters));
+                y = physis_authoring::snapMeters(y, double(state.snapStepMeters));
+                z = physis_authoring::snapMeters(z, double(state.snapStepMeters));
+            }
+            if ((std::abs(x-current.x)>0.001 || std::abs(y-current.y)>0.001 ||
+                 std::abs(z-current.z)>0.001) &&
+                physis_authoring::moveField(ed.doc(),state.selectedId,x,y,z,
+                                             !state.dragEdited,&state.error)) {
+                state.dragEdited = true;
+                state.draftId.clear();
+                state.error.clear();
             }
         }
         state.lastMouseY = io.MousePos.y;
-        if ((std::abs(x-current.x)>0.001 || std::abs(y-current.y)>0.001 ||
-             std::abs(z-current.z)>0.001) &&
-            physis_authoring::moveField(ed.doc(),state.selectedId,x,y,z,
-                                         !state.dragEdited,&state.error)) {
-            state.dragEdited = true;
-            state.draftId.clear(); // draft follows the document after drag
-        }
         return true;
     }
     if (!vp.hovered || !ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
@@ -151,6 +234,29 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
         return false;
 
     const Json config = physis_authoring::read(ed.doc());
+    // Radius handle has priority over centre markers when the resize tool is active.
+    if (state.gizmoMode == 1 && !state.selectedId.empty()) {
+        std::string collection;
+        std::size_t index = 0;
+        Json selected;
+        render::float3 center{};
+        double radius = 0;
+        render::float2 screen{};
+        if (physis_authoring::findField(config,state.selectedId,collection,index,&selected) &&
+            physisFieldPosition(selected,center) && physisFieldRadius(selected,radius) &&
+            physisRadiusHandleScreen(camera,vp,center,radius,screen)) {
+            const double dx = double(screen.x+vp.originX-io.MousePos.x);
+            const double dy = double(screen.y+vp.originY-io.MousePos.y);
+            if (dx*dx + dy*dy < 14.0*14.0) {
+                ed.select({Selection::MapProps,-1,{}});
+                state.dragging = true;
+                state.draggingRadius = true;
+                state.dragEdited = false;
+                state.error.clear();
+                return true;
+            }
+        }
+    }
     std::string picked;
     float bestDistanceSq = 15.f*15.f;
     render::float3 chosenPosition{};
@@ -178,6 +284,8 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
     // Open the common Inspector's MapProps panel for the selected PHYSIS field.
     // The PHYSIS field is authored JSON, not a fake runtime ECS Selection.
     ed.select({Selection::MapProps,-1,{}});
+    // Resize mode only begins a drag at the selected outer-radius handle.
+    if (state.gizmoMode == 1) return true;
     render::float3 ground;
     if (camera.screenToGround(io.MousePos.x-vp.originX,
         io.MousePos.y-vp.originY,vp.pointsW,vp.pointsH,ground,
@@ -188,7 +296,9 @@ inline bool processPhysisFieldGizmo(Editor& ed,const Viewport& vp,
         state.grabOffsetX = state.grabOffsetZ = 0;
     }
     state.dragging = true;
+    state.draggingRadius = false;
     state.dragEdited = false;
+    state.dragRawY = chosenPosition.y;
     state.lastMouseY = io.MousePos.y;
     return true;
 }
@@ -299,8 +409,19 @@ inline void drawPhysisFieldsPanel(Editor& ed) {
     }
     ImGui::Checkbox("Показать маркеры в Сцене", &state.showMarkers);
     ImGui::Checkbox("Редактировать маркеры мышью", &state.editMode);
-    if (state.editMode)
-        ImGui::TextDisabled("Перетащите маркер в Сцене (Shift — высота). Один drag = одно Undo.");
+    if (state.editMode) {
+        ImGui::Combo("Gizmo##physis", &state.gizmoMode,
+                     "Перемещение\\0Радиус\\0");
+        ImGui::Checkbox("Привязка к сетке##physis", &state.snapEnabled);
+        if (state.snapEnabled) {
+            ImGui::DragFloat("Шаг привязки, м##physis", &state.snapStepMeters,
+                             0.25f, 0.25f, 1000.f, "%.2f");
+            state.snapStepMeters = std::clamp(state.snapStepMeters, 0.25f, 1000.f);
+        }
+        ImGui::TextDisabled(state.gizmoMode == 0 ?
+            "Перетащите маркер (Shift — высота). Один drag = одно Undo." :
+            "Выберите поле и тяните маркер на окружности радиуса.");
+    }
 
     const double x = std::clamp(double(ed.sceneCam.target.x),-1000000.0,1000000.0);
     const double y = std::clamp(double(ed.sceneCam.target.y),-1000000.0,1000000.0);

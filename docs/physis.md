@@ -418,3 +418,26 @@ consumer of PHYSIS forces.
 `physis_field_authoring`, plus expanded `physis_project_config` persistence
 fixture. Registered in focused Linux/macOS PHYSIS and Studio CI.
 **Native compilation, CTest and graphical drag QA NOT RUN / NOT VERIFIED.**
+
+## Stage 20 — Scene field radius gizmos and metre-grid snapping
+
+The shared PHYSIS field panel now offers **Move** and **Radius** tools. When the
+radius tool is active, select a W/S/G map field and drag its world-projected
+radius handle (on the +X perimeter). The Scene draws the selected field's
+outer X/Z perimeter. Storm radius editing changes `outerRadiusMeters`, never
+the eye radius; the canonical native validator rejects invalid eye/outer pairs.
+The gizmo uses the editor camera's ground-plane ray at the field's current Y;
+it does not modify 3D height or perform full 3D volumetric rotation.
+
+**Snap to grid** is opt-in and has a configurable step of 0.25..1000 metres.
+Move snaps X/Y/Z to the world origin grid; radius snapping is applied before
+validated bounds. Negative coordinates use symmetric rounding. Height dragging
+keeps an unsnapped accumulator to avoid losing sub-grid mouse motion. The snap
+settings are editor-session preferences, not additional map/ECS schema fields.
+Each successful move/resize drag remains **one MapDoc Undo/Redo transaction**.
+No live PHYSIS World, Box3D body, NEREID water, or game genre state is edited.
+
+The existing `tests/physis_field_authoring_test.cpp` has new source fixtures
+for radius Undo/Redo, invalid radii, no-op edits and negative-coordinate snap.
+**Native build, CTest and graphical editor validation remain NOT RUN.** See
+`docs/agent-handoffs/physis-editor-gizmo-snapping-resize-2026-11-18.md`.

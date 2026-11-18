@@ -307,4 +307,42 @@ inline bool moveField(MapDoc& doc, const std::string& id,
     return true;
 }
 
+// Editor-only metre-grid snapping. Negative positions round symmetrically;
+// the result is stored in map JSON, never applied to live ECS values.
+inline double snapMeters(double value, double step) {
+    if (!std::isfinite(value) || !std::isfinite(step) || step <= 0.0) return value;
+    return std::clamp(std::round(value / step) * step, -1000000.0, 1000000.0);
+}
+
+// Radius drag uses the same single-snapshot MapDoc transaction as moveField.
+// Storms resize the OUTER radius; their eye radius remains independently authored.
+inline bool resizeField(MapDoc& doc, const std::string& id, double radiusMeters,
+                        bool firstEdit, std::string* error = nullptr) {
+    if (!std::isfinite(radiusMeters)) {
+        if (error) *error = "PHYSIS radius is not finite";
+        return false;
+    }
+    Json config = read(doc);
+    std::string collection;
+    std::size_t index = 0;
+    if (!findField(config, id, collection, index)) {
+        if (error) *error = "PHYSIS field ID not found";
+        return false;
+    }
+    const char* key = collection == "storms" ? "outerRadiusMeters" : "radiusMeters";
+    Json entries = config[collection];
+    Json entry = entries[index];
+    const Json next = Json::number(radiusMeters, 3);
+    if (std::abs(entry[key].toDouble() - next.toDouble()) < 0.0005) return true;
+    entry.set(key, next);
+    entries.at(index) = std::move(entry);
+    config.set(collection, std::move(entries));
+    if (!validate(config, error)) return false;
+    if (firstEdit) doc.beginEdit();
+    else doc.touched();
+    Json& container = doc.data.fps.isNull() ? doc.data.extra : doc.data.fps;
+    container.set("physis", std::move(config));
+    return true;
+}
+
 } // namespace aiverse::editor::physis_authoring
