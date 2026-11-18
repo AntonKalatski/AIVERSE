@@ -22,6 +22,16 @@ inline std::vector<int16_t> generateLegacyCorners(
     if (widthCells <= 0 || heightCells <= 0 ||
         widthCells > 2048 || heightCells > 2048 || options.cellSizeCm <= 0)
         throw std::invalid_argument("TerraWeave legacy heightfield size");
+    // Validate origins and map span before signed addition in the sample loop.
+    const int64_t spanX = int64_t(widthCells) * options.cellSizeCm;
+    const int64_t spanZ = int64_t(heightCells) * options.cellSizeCm;
+    if (options.worldOriginXcm < -kWorldLimitCm ||
+        options.worldOriginZcm < -kWorldLimitCm ||
+        options.worldOriginXcm > kWorldLimitCm ||
+        options.worldOriginZcm > kWorldLimitCm ||
+        options.worldOriginXcm + spanX > kWorldLimitCm ||
+        options.worldOriginZcm + spanZ > kWorldLimitCm)
+        throw std::out_of_range("TerraWeave legacy map world extent");
     const size_t side = static_cast<size_t>(widthCells) + 1;
     std::vector<int16_t> corners(side * (static_cast<size_t>(heightCells) + 1));
     for (int z = 0; z <= heightCells; ++z)
