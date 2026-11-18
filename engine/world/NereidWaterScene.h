@@ -58,7 +58,10 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        u.foamStrength!=v.foamStrength ||
        u.refractionStrength!=v.refractionStrength ||
        u.absorption!=v.absorption || u.shoreFoamDepth!=v.shoreFoamDepth ||
-       u.depthTint!=v.depthTint || u.opacity!=v.opacity ||
+       u.depthTint!=v.depthTint ||
+       u.underwaterDistortion!=v.underwaterDistortion ||
+       u.underwaterScattering!=v.underwaterScattering ||
+       u.opacity!=v.opacity ||
        u.specular!=v.specular)return false;
     // Camera coordinates are intentionally excluded: resident ocean patches
     // separately snap their camera anchor to a stable grid.
