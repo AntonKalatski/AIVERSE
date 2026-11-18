@@ -4275,3 +4275,19 @@ No new engine code or save/network data changed in this stage.
 Next: Native compilation and CTest on current HEAD; GPU color
 accuracy captures for Metal/GL/GLES/Vulkan/WebGL2. Record exact
 outcomes and correct failures before approving Draft PR #21.
+
+## Stage 5S — explicit pair include for KTX2 sRGB fixture (2026-11-18)
+
+Code commit: 1ddf652f9241e88d573a7ecb87bf7c0511f54a96.
+Branch: feature/texture-rhi-unification (Draft PR #21).
+Path: tests/render/ktx2_layers.cpp.
+
+Source review correction: explicitly include <utility> for the
+std::pair<uint32_t,BlockFormat> vector fixture introduced
+in Stage 5Q, rather than relying on transitive declarations
+from <vector>. No behavior/runtime implementation changed.
+
+GitHub source commit succeeded. Native compiler NOT RUN,
+CTest NOT RUN, actual GPU shader tests NOT RUN.
+Next: Build the grouped texture suite on a native checkout
+and fix genuine compiler/test errors; preserve stage handoffs.
