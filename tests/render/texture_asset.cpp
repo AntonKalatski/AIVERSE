@@ -1,4 +1,5 @@
 #include "engine/render/TextureAsset.h"
+#include "engine/render/DdsTexture.h"
 #include <cstdio>
 #include <map>
 #include <stdexcept>
@@ -81,9 +82,43 @@ int main() {
         dev.failUpload=1;
         h=render::uploadKtx2Image(dev,image,{},err);
         check(!h.valid() && dev.destroyed==3, "failed mip upload destroys texture");
+
         image = {};
         check(!render::uploadKtx2Image(dev,image,{},err).valid() && !err.empty(),
               "invalid texture rejected");
+
+        // DDS DX10 2D array is stored surface-major, with the complete mip
+        // chain of layer zero before layer one. The container reader must
+        // transpose it before the generic GPU upload.
+        auto put32 = [](std::string& bytes, size_t pos, uint32_t v) {
+            for (int i = 0; i < 4; ++i)
+                bytes[pos + size_t(i)] = char((v >> (8 * i)) & 255u);
+        };
+        std::string dds(148, '\0');
+        dds.replace(0, 4, "DDS ");
+        put32(dds, 4, 124); put32(dds, 8, 0x20000);
+        put32(dds, 12, 2); put32(dds, 16, 2);
+        put32(dds, 28, 2); put32(dds, 76, 32);
+        put32(dds, 80, 4); put32(dds, 84, 0x30315844u); // DX10
+        put32(dds, 128, 28); put32(dds, 132, 3);
+        put32(dds, 140, 2); // DXGI RGBA8, TEXTURE2D, 2 layers
+        dds.append(16, char(10)); dds.append(4, char(11));
+        dds.append(16, char(20)); dds.append(4, char(21));
+        check(render::parseDdsTexture(dds, image, err), "DDS array parsed");
+        check(image.arrayLayers == 2 && image.levels[0].size() == 32 &&
+              image.levels[1].size() == 8 &&
+              image.levels[0][0] == 10 && image.levels[0][16] == 20 &&
+              image.levels[1][0] == 11 && image.levels[1][4] == 21,
+              "DDS surface-major data transposed");
+        dev.failUpload = 0;
+        const int beforeDds = dev.mipUploads;
+        h = render::uploadDdsImage(dev, image, {}, err);
+        check(h.valid() && err.empty(), "generic DDS GPU allocation");
+        check(dev.lastDesc.dimension == gfx::TextureDimension::Texture2DArray &&
+              dev.lastDesc.arrayLayers == 2 && dev.lastDesc.mipLevels == 2 &&
+              dev.mipUploads == beforeDds + 2,
+              "DDS two layers and per-layer second mip uploaded");
+        dev.destroyTexture(h);
     } catch (const std::exception& e) {
         std::fprintf(stderr,"TextureAsset test FAILED: %s\n",e.what());
         return 1;
