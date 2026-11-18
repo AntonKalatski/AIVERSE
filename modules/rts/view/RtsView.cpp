@@ -1,4 +1,5 @@
 #include "RtsView.h"
+#include "RtsSelectionPresentation.h"
 #include "engine/view/View.h"
 #include "engine/view/GeometryBounds.h"
 #include "engine/view/SceneLayers.h"
@@ -145,9 +146,9 @@ bool RtsView::spriteHit(const RTSCamera& cam, const SceneObject& o, const MapGri
 }
 
 float RtsView::selectionRadius(uint16_t type) const {
-    const UnitType& t = rules_->types[type];
-    if (t.structure) return std::max(t.footprintW, t.footprintH) * 0.62f;
-    return float(t.radius.toDouble()) + 0.15f;
+    // Source compatibility only; clients/editor should call the RTS
+    // presentation adapter without constructing a legacy renderer.
+    return view_adapter::selectionRadius(*rules_,type);
 }
 
 // heightAt / buildTerrain: RtsTerrain.cpp
