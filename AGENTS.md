@@ -1239,3 +1239,18 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
 - `engine/physis/PhysisSpatialIndex.h` is an **opt-in transient COW-snapshot index**, not persistent ECS state: X/Z buckets prune WindZone, WindShelter, GravityField and StormEvent candidates while keeping exact old Fixed evaluation policies, ECS visit order and priority tie-breaks. `sampleDiagnosticRasterIndexed` is available to editor/host consumers.
 - Rebuild the derived index after committed simulation ticks, storm movement, mutations, load or rollback when current values are required. Never store it in `World` resources, serialize it, make rendering authoritative, or depend on Box3D/FPS/RTS/Water/Terra in PHYSIS core.
 - Stage tests `physis_diagnostics` (14-layer old-vs-fast and indexed parity) and `physis_spatial_index` (negative positions, field parity, snapshot mutation, bounded global fallback) are registered for the unified CTest and focused Linux/macOS workflow. **NOT RUN**; no benchmark throughput or native success claim. Handoffs: `docs/agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md`, `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`.
+
+
+## PHYSIS spatial bucket reference budget — Stage 17 (2026-11-18)
+
+- **Owner:** PHYSIS performance; improvement on top of existing canonical
+  `FieldSpatialIndex`. Avoid competing alternative index implementations.
+- `FieldIndexSettings::maxTotalBucketReferences` bounds bucket references
+  **per field type**. When full, keep all fields in stable global fallback,
+  preserving reference sampling parity. Never silently drop weather, gravity,
+  shelter or tornado influences due to performance budgets.
+- The index is a **derived COW snapshot**, not a persistent ECS schema; no
+  changes to NEREID or TerraWeave ownership, Box3D, or any game genre.
+- Regression `physis_spatial_index` includes 800-volume tight-budget
+  parity. Test status is **NOT RUN**, do not report PASS. Per-stage handoff:
+  `docs/agent-handoffs/physis-spatial-budget-2026-11-18.md`.
