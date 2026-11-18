@@ -384,6 +384,17 @@ private:
                 if(changed)updated=Json::fromBool(value);
                 break;
             }
+            case spectra::FieldKind::Color: {
+                fx::float4 color;
+                if(fx::parseColor(current,color)) {
+                    float rgba[4]={color.x,color.y,color.z,color.w};
+                    changed=ImGui::ColorEdit4(field.label,rgba);
+                    started=ImGui::IsItemActivated();
+                    if(changed)updated=Json::string(fx::colorToHex(
+                        {rgba[0],rgba[1],rgba[2],rgba[3]}));
+                }
+                break;
+            }
             case spectra::FieldKind::String: {
                 std::string value=current.str();
                 changed=ui::inputString(field.label,value);
