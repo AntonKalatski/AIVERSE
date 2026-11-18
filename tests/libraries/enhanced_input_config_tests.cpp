@@ -112,7 +112,7 @@ int main() {
     })JSON");
     CHECK(!conf::readProfile(invalidCode,profile,&err));
     // Both built-in presets can be authored, serialized and installed with stable mapping IDs.
-    for(const auto preset:{p::inputflow_presets::fpsReference(),p::inputflow_presets::rtsReference()}){
+    for(const auto& preset:{p::inputflow_presets::fpsReference(),p::inputflow_presets::rtsReference()}){
         CHECK(!preset.actions.empty()&&!preset.contexts.empty());
         conf::Asset decoded;
         CHECK(conf::readAsset(conf::writeAsset(preset),decoded,&err));
