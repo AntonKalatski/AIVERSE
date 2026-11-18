@@ -441,3 +441,41 @@ The existing `tests/physis_field_authoring_test.cpp` has new source fixtures
 for radius Undo/Redo, invalid radii, no-op edits and negative-coordinate snap.
 **Native build, CTest and graphical editor validation remain NOT RUN.** See
 `docs/agent-handoffs/physis-editor-gizmo-snapping-resize-2026-11-18.md`.
+
+
+## Stage 21 — multi-select, group transforms, duplication and deletion
+
+The shared PHYSIS field panel and Scene marker overlay support multiple
+selected authored fields at once:
+- Ctrl/Shift-click W/S/G markers or rows toggles selection membership.
+  A plain row click switches to one field. Select all / Clear selection are
+  also available.
+- In Move mode, drag an already selected marker to translate the entire set
+  by the SAME X/Z or Shift+Y delta. A clicked member becomes the active pivot
+  without dropping other members. Relative offsets are preserved across
+  WindZone, StormEvent and GravityField. Optional snap affects the pivot only,
+  not every field independently. Completed axes remain when Shift mode changes.
+- Duplicate selected copies complete JSON field objects, including custom
+  properties, and allocates deterministic collision-free ASCII IDs
+  (for example wind-1-copy, wind-1-copy-2). Default copy offset is +5 m
+  in both X and Z, or the selected snap step when enabled. The new copies
+  become selected. Delete selected is atomic across all field types.
+- Group duplicate, group deletion and entire group drag each contribute ONE
+  MapDoc Undo action. Invalid group selections or out-of-range positions are
+  rejected without partial updates. The Radius gizmo edits only the currently
+  active field; individual property editing needs a one-field selection.
+
+Authoring-only C++ functions in apps/editor/PhysisAuthoring.h:
+  moveFields(MapDoc&, vector<FieldPosition>, bool firstEdit, string* error)
+  duplicateFields(MapDoc&, vector<string> ids, dx, dy, dz, vector<string>& newIds, string* error)
+  removeFields(MapDoc&, vector<string> ids, string* error)
+
+Drag updates derive absolute targets from initial positions, and the entire
+authoring config is validated before committing through the same native
+parseFieldAssets parser used by installFromMap. There is no gameplay World,
+Box3D, NEREID or TerraWeave mutation and no ECS save-schema change.
+
+Source fixtures for group Undo/Redo, atomic rejection, new ID generation,
+custom-key preservation and regular/FPS map roundtrips are in
+tests/physis_field_authoring_test.cpp. Native build, CTest and GUI QA
+NOT RUN. See docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.

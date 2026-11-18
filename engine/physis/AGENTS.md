@@ -59,3 +59,21 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - `PhysisAuthoring.h::resizeField` edits outer storm radius or wind/gravity radius after the shared native parser validates the complete map. Move/resize drags call `MapDoc::beginEdit` only for the first effective edit, `MapDoc::touched` thereafter; preserve one Undo per drag. Never mutate the live World.
 - Snap is a transient editor-only preference. Do not serialize it into PHYSIS ECS components or map assets. Existing map/save schemas and authored IDs remain unchanged.
 - Handoff: `docs/agent-handoffs/physis-editor-gizmo-snapping-resize-2026-11-18.md`. New test fixtures were authored, **NOT RUN**; build/CTest/macOS Scene QA still required.
+
+
+## Stage 21 — multi-field authoring guardrails
+- apps/editor/PhysisAuthoring.h moveFields, duplicateFields and removeFields
+  are editor MapDoc operations, never a live ECS write. Batch validate all
+  field types before ONE Undo transaction. IDs belong to the authored map;
+  they are not persisted ECS entity IDs.
+- apps/editor/PhysisFieldEditor.h uses transient sorted multi-selection and
+  a frozen drag-origin snapshot; one delta is applied to all fields and
+  an anchor-grid snap must preserve relative offsets. Radius changes the
+  active field alone. Switching Shift during group drag must not reset
+  already moved axes.
+- Duplication preserves unknown JSON properties while generating unique
+  ASCII IDs under the 64-character limit. Enforce native parser shape,
+  coordinates, 2048-field cap and per-category persistence enable flags.
+- Preserve the genre-independent PHYSIS/NEREID/TerraWeave/Box3D boundaries.
+  Source tests are authored but NOT RUN. Stage handoff:
+  docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.

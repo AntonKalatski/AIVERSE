@@ -1296,3 +1296,18 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
 - **IDs/saves:** Stable ASCII `id` (1..64 chars) is a map authoring key, sorted at spawn; it is not itself a new persistent ECS schema. Nonempty field collections require matching `enableWindZones`, `enableStorms`, `enableGravityFields` flags. Use unchanged map + registered schema manifest for replay/load; no runtime field-ID lookup or multi-user edit merge claimed.
 - **Water/Terra:** NEREID Water agent retains authoritative water; `FloodMode::ExternalAuthority` prevents duplicate PHYSIS shallow-water authority. TerraWeave agent owns foliage/landscape. Box3D adapter remains optional physics consumer.
 - **Tests:** `physis_field_assets`, `physis_field_authoring` (when editor_core built), expanded `physis_project_config` native save fixture, CMake + Linux/macOS/Studio CI updates. **CMake, native C++, CTest and graphical drag testing NOT RUN**; don't claim success without logs. Next handoff `docs/agent-handoffs/physis-field-assets-gizmos-2026-11-18.md`.
+
+
+### PHYSIS Stage 21 — group editing without runtime writes
+- PHYSIS Scene W/S/G markers now support Ctrl/Shift multi-selection,
+  group move, safe duplicate and atomic group deletion. Continue building
+  genre-independent ECS components/systems; avoid genre-only variants.
+- The shared authoring helpers moveFields/duplicateFields/removeFields use
+  native field validation for one MapDoc Undo transaction per batch/drag,
+  for both regular and FPS-verbatim JSON maps. Move a whole group by the
+  same delta; never snap members individually or mutate live ECS World.
+- Keep Scene/ImGui in apps/editor/PhysisFieldEditor.h. NEREID owns water,
+  TerraWeave terrain/foliage, Box3D dynamics. No new saved ECS schema.
+- See docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
+  Source test cases added but C++ compilation/CTest/macOS GUI QA NOT RUN.
+  PR #25 must stay draft until verified.

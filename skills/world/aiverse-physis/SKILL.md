@@ -196,3 +196,21 @@ See `docs/physis.md` and Stage 19
 `physis_project_config` test are registered but have **NO actual CTest PASS**.
 Do not state validated in-game rendering, GUI interaction or load/replay
 until verified on an actual native checkout.
+
+
+### Stage 21 — atomic group field authoring
+
+Ctrl/Shift-click PHYSIS W/S/G map fields in Scene or the field list to
+toggle multi-selection. Drag a group member in Move mode to translate the
+whole group; Shift adjusts Y. Snap applies to the active pivot only.
+Select all, clear selection, duplicate and delete work across field types.
+Radius gizmo changes the active member alone.
+
+Use physis_authoring::moveFields, duplicateFields and removeFields for
+atomic map JSON batches. NEVER loop moveField per member; that would make
+multiple Undo entries and allow partial invalid state. Renderer and ImGui
+stay in apps/editor/PhysisFieldEditor.h, not engine/physis. No writes to
+live Simulation ECS; the generic native installFromMap remains the only
+explicit startup importer. Handoff:
+docs/agent-handoffs/physis-editor-group-authoring-2026-11-18.md.
+New test fixtures are NOT RUN in CTest.
