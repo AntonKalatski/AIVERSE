@@ -2114,3 +2114,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_vfx_graph_tests PRIVATE aiverse_fx)
     add_test(NAME vfx_graph_compiler COMMAND aiverse_vfx_graph_tests)
 endif()
+
+# Universal VFX ECS presenter is read-only and independent of genre GameModules.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_ecs_tests tests/vfx_ecs_presentation_test.cpp)
+    target_include_directories(aiverse_vfx_ecs_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+    target_link_libraries(aiverse_vfx_ecs_tests PRIVATE aiverse_fx aiverse_engine)
+    add_test(NAME vfx_ecs_presentation COMMAND aiverse_vfx_ecs_tests)
+endif()
