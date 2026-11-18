@@ -16,6 +16,16 @@ int main() {
     preview.setEnabled(false);
     assert(!preview.enabled());
 
+    // Generated metres/cell may differ from the editor's fixed 1m/cell.
+    assert(terraWeaveWorldFromEditorCm(200, 1000, 200) == 1400);
+    assert(terraWeaveEditorFromWorldCm(1400, 1000, 200) == 200);
+    assert(terraWeaveWorldFromEditorCm(-300, -1000, 150) == -1450);
+    assert(terraWeaveEditorFromWorldCm(-1450, -1000, 150) == -300);
+    bool badScale = false;
+    try { (void)terraWeaveEditorFromWorldCm(0, 0, 0); }
+    catch (const std::out_of_range&) { badScale = true; }
+    assert(badScale);
+
     MapData map;
     map.w = 20;
     map.h = 20;
