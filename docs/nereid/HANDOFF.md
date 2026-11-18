@@ -750,3 +750,18 @@ water-at-two-heights on OpenGL and Metal. Examine linked shader
 compilation logs, test both trace enabled/disabled and a single
 legacy water plane. Then implement isolated depth/refraction and
 explicit shader material controls only after that baseline is green.
+
+### Stage 8 follow-up — primary water plane selection
+
+**Implementation SHA:** `782088418fe450762b555ebabd27ba55015e1b4c`.
+
+`engine/render/Renderer3DReflect.cpp` now chooses an explicitly flagged
+`kDrawWaterSurface` translucent glossy mesh before falling back to the
+previous untagged glossy search. This prevents the first highly specular
+glass/other non-water mesh in the queue from claiming NEREID's sole
+planar reflection target. The old first-glossy behavior is unchanged
+when no tagged NEREID surface exists. The pass remains **single-plane**;
+stage-8 secondary water Y levels suppress invalid planar sampling.
+Verification: source reviewed and committed only; **full C++ compile,
+graphics runtime and CI remain NOT VERIFIED**. Next agent must include
+mixed glass/NEREID scene in OpenGL/Metal validation.
