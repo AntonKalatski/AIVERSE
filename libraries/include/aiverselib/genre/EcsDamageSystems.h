@@ -21,6 +21,16 @@ struct HitPointsComponent {
     int32_t maximum=100;
 };
 
+// Shared immediate integer HP commit for ECS damage resolution and legacy
+// genre adapters. Do NOT call before the host has resolved armor, factions,
+// shields and knockdown. No integer subtraction overflow on large damage.
+inline int32_t applyIntegerHitPointDamage(int32_t& current,int32_t incoming) {
+    if(current<=0 || incoming<=0)return 0;
+    const int32_t applied=std::min(current,incoming);
+    current-=applied;
+    return applied;
+}
+
 struct ProjectileDamageComponent {
     int32_t directDamage=0;
 };
@@ -98,8 +108,8 @@ void addDamageResolutionSystem(Simulation& sim,std::string systemName,
                 if(!health || health->maximum<=0 || health->current<=0)continue;
                 const int32_t candidate=policy(current,request,*health);
                 if(candidate<=0)continue;
-                const int32_t applied=std::min(candidate,health->current);
-                health->current-=applied;
+                const int32_t applied=applyIntegerHitPointDamage(
+                    health->current,candidate);
                 onApplied(current,DamageApplied{request.target,request.source,
                                                 request.shotId,applied,health->current});
             }
