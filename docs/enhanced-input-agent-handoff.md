@@ -912,3 +912,22 @@ ctest --test-dir build/all-tests -C Debug --output-on-failure -R '^(skill_catalo
 The full `./run-tests.sh --jobs 4 --ctest-jobs 4` suite must be rerun/confirmed separately; follow any new failures using the first error and existing reports. Keep PR #20 Draft pending full editor/FPS/RTS, platform and input UI smoke checks.
 
 **Next agent:** continue from this stage, verify exact Git HEAD and real PASS/FAIL, and preserve `input/actions.json`, legacy input and ECS command invariants. Update this handoff after the next confirmed result.
+
+
+## Stage 62 — full macOS Debug build and 106/106 CTest verified (2026-11-18)
+
+**User-provided primary evidence:** `build(4).log`, `configure(4).log`, `ctest(3).log`, `ctest(2).xml`, `summary(4).txt`; exact tested Git HEAD `2b15d49b` (`2b15d49bde632b39334ee9c83b54e1a5fa296282`). macOS; full Debug build `build/all-tests`.
+
+**Actual results:** CMake configure PASS; build PASS through `aiverse_editor` and `aiverse_tests`; CTest **106/106 Passed, 0 failed**, duration 865.89 seconds. Previously failing `skill_catalog` and `skill_audit` both PASS. FPS, FPS transport, ECS rollback and determinism, RTS/net/headless, native project linking, editor suite and game tooling also passed. The uploaded `summary(4).txt` confirms `PASS configure`, `PASS build`, `PASS ctest`. The report does not cover the extra suites after CTest (no PASS evidence for them in the provided summary). Some optional gRPC SecureTransport TLS subcases were skipped (not whole CTest failures).
+
+**Limitations:** This macOS result applies specifically to `2b15d49b`; later ECS test changes below are not covered by this run, and interactive GUI/pointer/gamepad/touch flows are still not manually verified. Avoid describing Windows/Linux CI as green without run conclusions.
+
+## Stage 63 — Linux ARM64 Release `-DNDEBUG -Werror` regression fixes and main integration request (2026-11-18)
+
+**Real CI evidence:** GitHub Actions run `44316023837` Linux ARM64 GCC job `134842276701` completed FAILURE while compiling tests with `-O3 -DNDEBUG -std=c++20 -Werror`. Failed sources and diagnostics: `tests/ecs_snapshot_delta_test.cpp` (unused `mismatch`); `tests/ecs_guarded_world_test.cpp` (unused `state`, `caught`, `run`); `tests/ecs_scene_hierarchy_test.cpp` (unused `a`, `c`, `root2`, `stale`, `reused`, `result`, `dot`, `parent`, `child`, helper `x`). Their assertions had vanished under `NDEBUG`.
+
+**Corrections committed:** Replace standard `assert` with always-on `CHECK` preserving test semantics and side effects without weakening `-Werror`: 7 assertions in snapshot delta (`11a21a35f02939c797019eb53b5d1fe53e7d3d08`), 14 in guarded world (`b7ae90443d15ed85bfed347407cb9e174dcdc92a`), 72 in scene hierarchy (`e32595d6efb16aaf408082d51ea8e7195d8f6775`). This is 93 checks across three regression files; prior Stage 56 fixes cover the other two ECS test sources.
+
+**Verification:** Static review of the changed test file headers and error-line causes. No successful post-fix ARM64 CI or current-HEAD macOS full CTest observed. **NOT RUN / PASS not established** on these new commits. Scope is ECS tests, not InputFlow runtime or serialized Commands.
+
+**Integration request:** User explicitly requested merge to `main`. Before doing so, verify current GitHub base/head; distinguish the macOS full green result at `2b15d49b` from subsequent test-only corrections, record PR/merge SHA and actual remote checks. Do not rewrite main history or silently discard other agents' changes. Maintain input-independent ECS test fixes, preserve stage handoff documentation, and leave new platform verification as follow-up when unconfirmed.
