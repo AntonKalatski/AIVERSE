@@ -280,5 +280,40 @@ int main() {
     gated.setControl({Device::Keyboard,84},1);
     CHECK(has(gated.update(0.016f),"AltFire",Phase::Triggered));
 
+    // A recursive chord dependency must follow the provider's own mapping and
+    // Action gates, not just the provider's raw physical key level.
+    InputFlow chained;
+    CHECK(chained.defineAction({"Shift",ValueType::Boolean}));
+    CHECK(chained.defineAction({"Stance",ValueType::Boolean,{}, {Trigger::chord("Shift")}}));
+    CHECK(chained.defineAction({"Finisher",ValueType::Boolean}));
+    MappingContext chainCtx{"Chain"};
+    chainCtx.bind("Shift",{Device::Keyboard,110});
+    chainCtx.bind("Stance",{Device::Keyboard,111});
+    chainCtx.bind("Finisher",{Device::Keyboard,112},{},
+                  {Trigger::pressed(),Trigger::chord("Stance")});
+    CHECK(chained.registerContext(chainCtx));
+    CHECK(chained.activateContext("Chain"));
+    chained.setControl({Device::Keyboard,111},1);
+    chained.setControl({Device::Keyboard,112},1);
+    CHECK(!has(chained.update(0.016f),"Finisher",Phase::Triggered));
+    chained.setControl({Device::Keyboard,112},0);
+    chained.update(0.016f);
+    chained.setControl({Device::Keyboard,110},1);
+    chained.setControl({Device::Keyboard,112},1);
+    CHECK(has(chained.update(0.016f),"Finisher",Phase::Triggered));
+
+    // Cycles involving positive or negative chords must be rejected before
+    // mutating live native Action or Context definitions.
+    InputFlow cyclic;
+    CHECK(cyclic.defineAction({"A",ValueType::Boolean,{}, {Trigger::chord("B")}}));
+    CHECK(!cyclic.defineAction({"B",ValueType::Boolean,{}, {Trigger::notChord("A")}}));
+    CHECK(cyclic.defineAction({"B",ValueType::Boolean}));
+    MappingContext cyclicCtx{"Cycle"};
+    cyclicCtx.bind("A",{Device::Keyboard,120});
+    cyclicCtx.bind("B",{Device::Keyboard,121},{},{Trigger::chord("A")});
+    CHECK(!cyclic.registerContext(cyclicCtx));
+    CHECK(cyclic.context("Cycle")==nullptr);
+    CHECK(cyclic.registeredContexts().empty());
+
     std::cout << "Enhanced Input action/context/trigger/modifier scenarios passed\n";
 }
