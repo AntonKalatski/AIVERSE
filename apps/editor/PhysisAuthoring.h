@@ -617,7 +617,9 @@ inline bool computeFieldPivot(const Json& config,
     const std::set<std::string> wanted(ids.begin(),ids.end());
     if (wanted.size()!=ids.size())
         return fail("PHYSIS pivot has duplicate selected IDs");
-    if (!validate(config,error)) return false;
+    // Pivot is sampled every Scene frame: validate only selected coordinates
+    // here. Mutating operations still run the complete native field parser.
+    if (!config.isObject()) return fail("PHYSIS pivot map config is not an object");
 
     FieldPivot sum{},lo{1000001,1000001,1000001};
     FieldPivot hi{-1000001,-1000001,-1000001}, active{};
@@ -630,6 +632,13 @@ inline bool computeFieldPivot(const Json& config,
             const std::string id=field.getStr("id");
             if (!wanted.count(id)) continue;
             const auto& coords=field["center"];
+            if (!coords.isArray()||coords.size()!=3)
+                return fail("PHYSIS selected field lacks a 3D position");
+            for (std::size_t i=0;i<3;++i)
+                if (!coords[i].isNumber()||
+                    !std::isfinite(coords[i].toDouble())||
+                    std::abs(coords[i].toDouble())>1000000)
+                    return fail("PHYSIS selected field position invalid");
             const FieldPivot p{coords[0].toDouble(),coords[1].toDouble(),
                                coords[2].toDouble()};
             sum.x+=p.x;sum.y+=p.y;sum.z+=p.z;

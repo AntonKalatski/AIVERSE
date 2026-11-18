@@ -1,4 +1,4 @@
-// PHYSIS Stage 21 — multi-selection, grouped transforms and duplication gizmos.
+// PHYSIS Stage 22 — marquee, configurable pivots and 3D world-space field gizmos.
 // Authoring writes ONLY through MapDoc Undo/Redo, never live Simulation World.
 // No genre-specific identity or Box3D interaction; existing Scene selection
 // stays authoritative unless an explicitly enabled PHYSIS marker was clicked.
@@ -25,7 +25,7 @@ struct PhysisFieldEditorState {
     float snapStepMeters = 5.f;
     float groupYawDegrees = 0.f;
     float groupUniformScale = 1.f;
-    int gizmoMode = 0; // 0: translate, 1: radius
+    int gizmoMode = 0; // 0: XYZ move, 1: radius, 2: Y rotation, 3: uniform scale
     int pivotMode = 0;
     float customPivot[3] = {};
     bool show3DAxes = true;
@@ -315,10 +315,15 @@ inline void drawPhysisFieldMarkers(Editor& ed, const Viewport& vp,
         }
     }
     if (state.boxSelecting) {
-        const ImVec2 a{std::clamp(state.boxStart.x,vp.originX,vp.originX+vp.pointsW),
-                       std::clamp(state.boxStart.y,vp.originY,vp.originY+vp.pointsH)};
-        const ImVec2 b{std::clamp(state.boxEnd.x,vp.originX,vp.originX+vp.pointsW),
-                       std::clamp(state.boxEnd.y,vp.originY,vp.originY+vp.pointsH)};
+        // Rect drawing must be normalized for backwards marquee drags.
+        const ImVec2 a{std::clamp(std::min(state.boxStart.x,state.boxEnd.x),
+                                 vp.originX,vp.originX+vp.pointsW),
+                       std::clamp(std::min(state.boxStart.y,state.boxEnd.y),
+                                 vp.originY,vp.originY+vp.pointsH)};
+        const ImVec2 b{std::clamp(std::max(state.boxStart.x,state.boxEnd.x),
+                                 vp.originX,vp.originX+vp.pointsW),
+                       std::clamp(std::max(state.boxStart.y,state.boxEnd.y),
+                                 vp.originY,vp.originY+vp.pointsH)};
         draw->AddRectFilled(a,b,IM_COL32(100,180,255,40));
         draw->AddRect(a,b,IM_COL32(130,190,255,230),0,0,1.5f);
     }

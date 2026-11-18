@@ -256,6 +256,11 @@ void testPivotAndGizmoGeometry() {
                                                    11,11,0,0);
     CHECK(picked.size()==2 && picked[0]=="a" && picked[1]=="b");
     CHECK(physis_gizmo::idsInScreenRect({{"a",1,1}},5,5,6,6).empty());
+    const auto backwards=physis_gizmo::idsInScreenRect(
+        {{"alpha",3,4},{"beta",18,19},{"gamma",19,30}},20,20,0,0);
+    CHECK(backwards.size()==2 && backwards[0]=="alpha" && backwards[1]=="beta");
+    CHECK(physis_gizmo::idsInScreenRect({{"x",0,0}},
+        std::numeric_limits<double>::quiet_NaN(),0,10,10).empty());
     double parameter=42;
     CHECK(physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,-1},
                                               {0,0,0},0,parameter));
@@ -265,6 +270,10 @@ void testPivotAndGizmoGeometry() {
     CHECK(std::abs(parameter+5)<1e-5);
     CHECK(!physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,-1},
                                                {0,0,0},2,parameter));
+    CHECK(!physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,-1},
+                                               {0,0,0},99,parameter));
+    CHECK(!physis_gizmo::closestRayAxisParameter({0,0,10},{0,0,1},
+                                               {0,0,0},0,parameter));
     CHECK(physis_gizmo::segmentDistanceSq(5,1,0,0,10,0)<1.01);
     CHECK(physis_gizmo::segmentDistanceSq(5,20,0,0,10,0)>300);
 }
