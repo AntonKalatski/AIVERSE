@@ -182,7 +182,7 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     model.batching.mergeRigid = config.getBool("mergeRigid", false);
     // Allows projects to opt out individual sensitive assets without
     // disabling import-time LOD generation for other models.
-    if (config.has("autoLod") && !config["autoLod"].isBool())
+    if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
         throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
     model.batching.autoLod = config.getBool("autoLod", true);
     if (config.has("maxExtent")) {
