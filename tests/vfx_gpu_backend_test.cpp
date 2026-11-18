@@ -19,7 +19,9 @@ public:
     gfx::DeviceInfo description{gfx::Backend::Metal,false,false,"Recording Metal"};
     std::string error;
     bool availableCompute=true,healthy=true,frame=false,pass=false,computing=false,badOrder=false;
+    bool indirectAvailable=false,indirectAccepted=true;
     uint32_t next=1,lastMode=99,lastDrawCount=0,liveSlotHandle=0;
+    uint32_t indirectArgsHandle=0,indirectCalls=0;
     size_t uploadBytes=0;
     std::vector<uint32_t> lastLiveSlots;
     std::vector<uint32_t> stages;
@@ -29,6 +31,8 @@ public:
         const uint32_t id=next++;
         if(desc.label && std::strcmp(desc.label,"SpectraFX GPU live-slot gather map")==0)
             liveSlotHandle=id;
+        if(desc.label && std::strcmp(desc.label,"SpectraFX GPU authored draw args")==0)
+            indirectArgsHandle=id;
         return {id};
     }
     void updateBuffer(gfx::BufferHandle handle,const void* data,size_t count,size_t=0)override{
@@ -50,6 +54,12 @@ public:
     void destroyPipeline(gfx::PipelineHandle)override{}
     const std::string& lastError() const override{return error;}
     bool supportsCompute()const override{return availableCompute;}
+    bool supportsGpuAuthoredIndirectDraw() const override {return indirectAvailable;}
+    bool drawIndexedGpuIndirect(gfx::BufferHandle handle,size_t offset)override{
+        if(!pass||handle.id!=indirectArgsHandle||offset!=0)badOrder=true;
+        ++indirectCalls;
+        return indirectAccepted;
+    }
     bool gpuHealthy() const override {return healthy;}
     bool canUpdateSharedBuffers() const override {return !pass && !computing;}
     gfx::ComputeHandle createCompute(const gfx::ComputeDesc&)override{return {next++};}
@@ -253,6 +263,76 @@ int main() {
           "expired sparse GPU pool still submitted geometry");
     check(!sparseDevice.badOrder,"sparse GPU mock encountered encoder/order violation");
     sparse.shutdown();
+
+    // Stage 14: GPU-resident atomic compaction and GPU-authored indirect
+    // commands. This mock validates host sequencing only, not real MSL.
+    RecordingMetalDevice indirectDevice;
+    indirectDevice.indirectAvailable=true;
+    spectra::ComputeParticles indirectParticles;
+    config.backend=ComputePreference::Automatic;
+    config.gpuIndirect=true;
+    config.capacity=24;config.burst=3;config.lifetime=0.75f;
+    check(indirectParticles.init(&indirectDevice,config),"indirect Metal mock init");
+    check(indirectParticles.gpuIndirectActive(),
+          "explicit indirect capability and config were not selected");
+    indirectParticles.setView(cam,cam.proj(800.f/600.f,false)*cam.view(),800,600);
+    indirectDevice.beginFrame(800,600);
+    check(indirectParticles.burstAt({0,2,0}),"indirect GPU spawn");
+    check(indirectParticles.step(1.f/60.f),"indirect GPU step");
+    check(indirectDevice.stages==std::vector<uint32_t>({3,0,1,4,5}),
+          "GPU indirect passes must reset,spawn,integrate,compact,write args");
+    check(indirectDevice.lastLiveSlots.empty(),
+          "GPU-resident compact mode must not upload CPU survivor list");
+    check(indirectParticles.stats().gpuCompactDispatches==1,
+          "GPU compact dispatch count missing");
+    indirectDevice.beginPass(gfx::PassDesc{});
+    indirectParticles.draw();
+    check(indirectDevice.indirectCalls==1 &&
+          indirectDevice.lastDrawCount==0 &&
+          indirectParticles.stats().gpuIndirectDraws==1,
+          "GPU indirect should be attempted without a CPU draw");
+    indirectDevice.endPass();
+    indirectDevice.endFrame();
+    check(!indirectDevice.badOrder,"indirect RHI calls used invalid encoder order");
+
+    // An actual RHI indirect-submit failure must NOT draw stale vertices
+    // using only the CPU's approximate alive count.
+    indirectDevice.indirectAccepted=false;
+    indirectDevice.lastDrawCount=0;
+    indirectDevice.beginFrame(800,600);
+    check(indirectParticles.step(1.f/60.f),"indirect update before forced draw failure");
+    indirectDevice.beginPass(gfx::PassDesc{});
+    indirectParticles.draw();
+    check(indirectDevice.indirectCalls==2 && indirectDevice.lastDrawCount==0,
+          "failed GPU indirect command must not submit a direct draw");
+    check(indirectParticles.stats().drawCalls==0 &&
+          !indirectParticles.reason().empty(),
+          "indirect draw failure must be reported");
+    indirectDevice.endPass();indirectDevice.endFrame();
+    indirectParticles.shutdown();
+
+    // A backend without the explicit indirect capability preserves the
+    // CPU-published dense gather even when the author requests GPU indirect.
+    RecordingMetalDevice noIndirect;
+    spectra::ComputeParticles fallbackGather;
+    check(fallbackGather.init(&noIndirect,config),"GPU fallback gather init");
+    check(fallbackGather.gpuActive() && !fallbackGather.gpuIndirectActive(),
+          "unsupported indirect should fall back to regular GPU gather");
+    fallbackGather.setView(cam,cam.proj(800.f/600.f,false)*cam.view(),800,600);
+    noIndirect.beginFrame(800,600);
+    check(fallbackGather.burstAt({0,2,0}),"fallback gather burst");
+    check(fallbackGather.step(1.f/60.f),"fallback gather step");
+    check(noIndirect.stages==std::vector<uint32_t>({0,1,2}) &&
+          noIndirect.lastLiveSlots.size()==config.burst,
+          "fallback must retain CPU-published live-slot map");
+    noIndirect.beginPass(gfx::PassDesc{});
+    fallbackGather.draw();
+    check(noIndirect.lastDrawCount==config.burst*6 &&
+          noIndirect.indirectCalls==0,
+          "fallback must use CPU-counted direct index draw");
+    noIndirect.endPass();noIndirect.endFrame();
+    check(!noIndirect.badOrder,"fallback gather RHI command order");
+    fallbackGather.shutdown();
 
     // Explicit hard GPU requirement never silently reports a CPU implementation.
     config.backend=ComputePreference::RequireGpu;
