@@ -1,6 +1,7 @@
 // NEREID stage 7C: CPU-only renderer bridge contract, no GPU device needed.
 #include "engine/render/NereidWaterRenderer.h"
 #include "engine/render/NereidSurfaceResident.h"
+#include "engine/world/NereidWaterScene.h"
 #include "engine/render/Shaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
 #include <iostream>
@@ -72,5 +73,18 @@ int main() {
           "negative camera coordinates must floor to correct patch");
     check(!std::isfinite(render::nereidPatchAnchor(0.f,0.f)),
           "invalid ocean radius must be rejected");
+    world::NereidWaterScene sceneWater;
+    std::vector<world::NereidSceneSurface> waterSources(2);
+    sceneWater.setSurfaces(waterSources);
+    check(sceneWater.visibleSurfaceCount()==0,
+          "unuploaded water must not be counted as resident");
+    bool rejected=false;
+    try {
+        sceneWater.setSurfaces(std::vector<world::NereidSceneSurface>(
+            world::NereidWaterScene::kMaxSurfaces+1));
+    }catch(const std::invalid_argument&) {rejected=true;}
+    check(rejected,"water scene must reject unbounded surface lists");
+    check(sceneWater.visibleSurfaceCount()==0,
+          "rejected configuration must leave scene state unchanged");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
