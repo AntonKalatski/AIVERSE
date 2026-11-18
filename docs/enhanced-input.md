@@ -218,3 +218,7 @@ The project Input Actions editor and FPS F10 Settings each expose Allow duplicat
 ## Project-specific per-user profiles
 
 `engine/platform/EnhancedInputUserProfiles.h` exposes `UserProfiles` for any local user ID. It saves validated, atomic profile overrides per project and player, including both mappings changed by Swap. `load` applies them transactionally, `rebind` persists and commits atomically, and `reset(userId,system,projectDefaults)` restores the project binding scheme without editing it. Player 0 uses the original FPS profile filename for compatibility; other local users receive separate `-user-<id>` files. FPS F10 Settings now uses this shared service and includes Restore project defaults.
+
+### RTS camera gesture Actions
+
+Default `RTS.Gestures` context maps touch slot-zero relative drag to `CameraTouchDrag` Axis2D, two-finger centroid motion to `CameraTouchPan` Axis2D and two-finger pinch to `CameraPinch` Axis1D. The RTS client now uses these semantic values for camera pan/zoom while preserving terrain-ground projection and existing touch-selection behavior. Scale the values through authored Action modifiers rather than rebuilding the device gesture algorithm. Projects with older complete custom input assets retain the previous raw-delta fallback.
