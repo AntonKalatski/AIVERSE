@@ -138,6 +138,7 @@ WORKFLOWS=[
  ('aiverse-autolod','Static model LOD generation with meshoptimizer and LOD transitions in the renderer','docs/autolod.md'),
 ]
 WORKFLOW_ALIASES={
+ 'aiverse-physis':'physis nature weather wind gust storms tornado hurricane gravity force physical fields ecs climate environment box3d diagnostics terra water природ природные явления ветер смерч ураган гравитац климат',
  'aiverse-driving':'drive driving car vehicle wheel steer autopilot deck tunnel bridge crash вожден машин руль колес автопилот туннел мост авари',
  'aiverse-city-server':'city server persistent world mmo seats tickets accounts mirror сервер город постоянн мир игроков билет счет',
  'aiverse-replica':'replica replication server authoritative snapshot delta interest budget prediction interpolation schema репликация сервер авторитетный снапшот предсказание',
