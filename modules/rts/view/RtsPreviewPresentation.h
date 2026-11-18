@@ -18,7 +18,7 @@ struct GhostPresentation {
 };
 inline GhostPresentation makeGhostPresentation(
         uint16_t type,render::float3 position,bool allowed,double seconds) {
-    const float pulse=.4f+.08f*std::sin(float(seconds*5.0));
+    const float pulse=.4f+.08f*float(std::sin(seconds*5.0));
     return {type,1,position,
         allowed?render::float4{.45f,1.f,.55f,pulse}
                :render::float4{1.f,.35f,.3f,pulse}};
