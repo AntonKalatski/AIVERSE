@@ -260,3 +260,34 @@ an Arbor prototype via standard renderer with several instances,
 then wire the same to flora groups. Validate on Metal/GL/Vulkan,
 compare screenshots and existing RTS/FPS test checksums. Fix compile
 and tests before extending further. Append the next stage to this file.
+
+## Stage 2e — isolated TerraWeave GCC/Clang CI (COMMITTED; RUNS PENDING)
+
+- `1fbbeb681201dd3d48dbabc4ba9c36641078f58c`:
+  added `.github/workflows/terraweave.yml` (push to feature/terraweave,
+  PR relevant changes, manual dispatch). Matrix GCC and Clang on Ubuntu,
+  Release builds. Builds only the four TerraWeave CTest targets and runs
+  the `^terraweave(_arbor|_flora|_model)?$` suite. Enables test checks without
+  requiring the entire 1258-target AIVERSE build to succeed.
+
+**Observed broader CI failure (PR #24 initial head
+`f6491d60360a5703ce67906a336569862ca446c1`):**
+- Workflow `CI` run `44296668203`, Linux ARM64 job
+  `134775374705`: **failed** during overall build.
+- Error in pre-existing ECS 2.0 experimental test compilation,
+  `tests/ecs_wave_executor_test.cpp` (unused variables/functions) and
+  `tests/ecs_experiments_test.cpp` (unused variables/functions), under
+  `-O3 -DNDEBUG -Werror`. Compilation was stopped before full suite.
+- These are *not* TerraWeave source files. Do not claim TerraWeave
+  unit tests failed or passed based on this broad-build error.
+- ECS team is working in parallel; avoid modifying those tests in this
+  branch without coordination. Track them as unrelated CI blockers.
+
+**Verification status as of this documentation commit:**
+isolated CI workflow created; no successful run/result observed yet.
+Review the new workflow runs on latest branch/PR head, fix any
+TerraWeave-specific GCC/Clang errors and append exact results here.
+
+When ready, continue the visible forest scene integration and
+instanced prototype reuse. Keep this PR Draft until compilation,
+render screenshot and core engine compatibility checks are verified.
