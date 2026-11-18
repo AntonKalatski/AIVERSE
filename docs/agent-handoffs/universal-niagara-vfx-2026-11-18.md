@@ -165,3 +165,16 @@ The presenter now retains up to 65,536 recent event-spawned `FxHandle` values an
 **Tests:** NOT RUN. The stage-2 test currently exercises event playback and reset cursor, but does not assert old one-shot particle removal; extend `tests/vfx_ecs_presentation_test.cpp` before declaring rollback fully verified. The `FxHandle` cleanup also needs a high-volume profiling pass.
 
 **Next:** finish stage-3 editor/MCP integration or introduce the graph GPU backend only after compiling all three new tests and verifying platform support.
+
+## Stage 4 — AI skill, AGENTS rule and discovery registration (COMMITTED, TESTS NOT RUN)
+
+**Skill SHA:** `040a283087f3d28a2939d260909dccdc480a6292`  
+**AGENTS.md SHA:** `14230d7c1e7dbbfb5c4f8f0e70bdcac252faad76`  
+**Skill generator SHA:** `b054038ef1bd1c51b02a1a74cc5245a204d9cdf8`  
+**Generated catalog SHA:** `d48037587ec193a2e46133a8e629caa641d0df50`
+
+Files: `skills/visuals/aiverse-niagara-vfx/SKILL.md` (new), `AGENTS.md`, `tools/skills/catalog.py`, `skills/catalog.json`. AI agents now have a durable skill with versioned graph JSON example, current CPU backend and ECS API, cross-genre integration rules, outstanding tasks and reproducible test commands. AGENTS.md links this handoff and forbids genre forks or false claims that the GPU/editor portion is done. The skill generator and catalog both list `aiverse-niagara-vfx` with explicit search aliases.
+
+**Tests NOT RUN.** Run `python3 tools/skills/catalog.py check` as well as the three new VFX CTest targets. The catalog JSON skill list is in lexical ID order, but this is not equivalent to a generator validation. As with all stages, code presence does not prove build correctness.
+
+**Next stage:** implement editor/MCP graph asset CRUD and a visual node canvas; validate tool bindings and cross-project native import. GPU backend needs a separate device capability/RHI design, shader compilation and performance testing before enabling in production. Do not modify authoritative ECS or replace legacy FX until equivalent presentation behavior is measured.
