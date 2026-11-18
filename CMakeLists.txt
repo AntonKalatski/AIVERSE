@@ -1546,6 +1546,17 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+# Real genre-adapter validation: both production GameModules, v9 disk states,
+# canonical command order, COW snapshots, replay and FPS ECS authority.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_real_genre_replay_test
+        tests/ecs_real_genre_replay_test.cpp)
+    target_link_libraries(aiverse_ecs_real_genre_replay_test PRIVATE
+        aiverse_game aiverse_fps)
+    target_compile_definitions(aiverse_ecs_real_genre_replay_test PRIVATE
+        AIVERSE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME ecs_real_genre_replay_test COMMAND aiverse_ecs_real_genre_replay_test)
+endif()
 # Demonstrate that one ECS projectile/impact mechanic can serve unrelated
 # shooter and strategy hosts. Public libraries + shared collision only;
 # neither aiverse_game nor aiverse_fps is linked to the test.
