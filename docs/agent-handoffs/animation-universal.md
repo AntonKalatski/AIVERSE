@@ -368,3 +368,25 @@ before calling this stage validated.
   Box3D world; animation runtime only consumes returned poses.
 - Next: add explicit physics body readback and recovery bridge; then
   animation authoring tools and parallel/LOD integration.
+
+
+## Stage 16 — offline fixed Root Motion track authoring (2026-11-18)
+
+- Code commits: `8eb063100eba103076165ddfad9158d30df48d8b`,
+  include fix `e47b7eea119f8497f19e4e03cc7f6b90f5c90c88`.
+- New `RootMotionBaker.h` samples an authored `AnimClip` at tick
+  boundaries, extracts rigid root deltas, quantizes each XY/Z and yaw to
+  fixed-point Q16 and validates maximum displacement/rate.
+- `encodeRootMotionTracks`/`decodeRootMotionTracks` use a versioned
+  `aiverse-root-motion-v1` JSON with raw integers, suitable to load once
+  during authoritative game setup. The simulation still uses fixed tracks
+  only; no floating point evaluation in game ticks.
+- Host tool `aiverse_root_motion_bake MODEL CLIP ROOT --id N --rate N
+  [--loop] [--out FILE]`. Test target
+  `aiverse_root_motion_bake_tests` CTest `animation_root_motion_bake`.
+- NOT RUN by user instruction. The project must explicitly import/validate
+  the exported JSON, register authoritative resource persistence, and
+  replace an existing motor during opt-in integration. Unsupported: curve
+  compression, bulk exporter, auto-rebind to imported controllers.
+- Next: physics-world readback adapter & recovery, editor tooling and
+  parallel evaluation integration; later full validation/CI.
