@@ -287,3 +287,16 @@ before calling this stage validated.
   execute `ctest --test-dir build/ecs-test -R animation_budget_policy --output-on-failure`.
 - Next: comprehensive CMake build, CTest and screenshot CI; integrate budget
   policy with real camera visibility and GPU performance counters.
+
+
+## Stage 12: AI skill API surface update — 2026-11-18
+
+- Documentation commit `b796b09b115f8167e51315b8a5c09a916ea5abc7`.
+- Updated `skills/gameplay/aiverse-animation-ecs/SKILL.md` to cover the
+  current component/policy API: notifies, root extraction, montage, generic
+  retarget, motion warping, inertialization, physical pose and budget.
+- Documented non-authoritative boundaries and 8 new CTest fixtures plus
+  necessary existing animation/FPS/RTS regression suites.
+- No runtime/source changes; validation NOT RUN.
+- Next action: CI green build & actual screenshot/profile tests before
+  merging. PR remains Draft.
