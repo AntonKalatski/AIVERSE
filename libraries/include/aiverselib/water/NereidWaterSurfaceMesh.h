@@ -52,6 +52,8 @@ struct WaterSurfaceStyle {
     float absorption=0.f; // optical attenuation per metre, 0..4
     float shoreFoamDepth=0.f; // depth-based shallow foam width in metres, 0..20
     float depthTint=0.f; // deep-water tint contribution, 0..1
+    float underwaterDistortion=0.f; // 0..1, compositor only
+    float underwaterScattering=0.f; // 0..1, compositor only
 };
 
 namespace water_mesh_detail {
