@@ -2088,3 +2088,15 @@ before calling this stage validated.
   type catalogs in host adapters. Commit code, then
   Stage 69 separately; tests remain deferred.
 
+## Stage 69 — generic circle scene packets and View visibility ownership rules (2026-11-18)
+
+- **Branch/PR:** `feature/universal-ecs-animation-pipeline`, draft PR #22, base `feature/universal-entity-inspector-fps`.
+- **Implementation SHA:** `4e1d0c2d3fffe85ded6fb8b6baf641e46a043b00`. This implementation was committed after concurrent agent's Stage 68 code `54c2993c058d3f280f9351f1a550e80dc3da33d0`, but while its Stage 68 handoff was still being appended; preserving that handoff takes priority over reusing a stage number.
+- **Changed files:** `engine/view/View.h`, `modules/rts/view/RtsView.cpp`, `tests/view/packets.cpp`, `docs/view.md` and `skills/gameplay/aiverse-view/SKILL.md`.
+- **Generic API:** `view::CircleXZObject` contains only center, radius, RGBA, segment count and height. `View::submitCircle(Renderer3D&, const CircleXZObject&)` reuses the existing renderer's circleXZ; `ScenePacket` and the existing ordered `ScenePacketBatch` gain this fifth genre-free packet type. No new graphics pass or genre state enters View. Bad radius/segment counts skip drawing.
+- **Host migration:** legacy radar contact ring and simple flyer circular shadow now send generic CircleXZ packets with the same radius/color/segments/Y; gameplay-derived meaning remains game-side.
+- **Visibility:** supplemental documentation and `aiverse-view` skill now explicitly describe engine-level `view::VisibilityField` initialization, borrowed mask/height values, update/draw and release, optional `AIVERSE::view_visibility` target, synchronous provider callbacks and same-frame queue flush. This works with the concurrent Stage 68 zero-copy span mask API.
+- **Compatibility:** existing model, mesh, line and triangle packets preserved. No change to game/physics authority, save/network/checksums or CMake targets.
+- **Tests:** `tests/view/packets.cpp` expanded for CircleXZ packet ordering/data; **NOT RUN** by user request (including CMake, CTest, TSAN and graphics); do not assert a CI pass.
+- **Risks:** CircleXZ is a helper for XZ-plane rings, not an oriented world-space decal. Renderer3D remains responsible for actual GPU draw/batching. External provider captures must not escape their frame.
+- **Next specific stage:** inspect `RtsTerrainRender.cpp`, `RtsRoadView.cpp` and `RtsPlanetRender.cpp`, extract a reusable scene geometry/frustum primitive independent of the game rules, and use it from a host without duplicated draws. Commit code then the next free numbered handoff; leave tests deferred.
