@@ -523,9 +523,11 @@ void GameClient::event(const Event& incoming) {
     if (e.type == EventType::MouseMove || e.type == EventType::TouchMove) uiWants = uiWants && !boxing_ && !sendDrag_ && !panning_;
     if (e.type == EventType::MouseUp || e.type == EventType::TouchEnd || e.type == EventType::TouchCancel) uiWants = uiOwnsPointer_;
     inputShortcuts_.setTopDownEnabled(screen_==Screen::Playing && topDownActive());
+    inputShortcuts_.setPlanetEnabled(screen_==Screen::Playing && planet());
+    inputShortcuts_.setPossessionEnabled(screen_==Screen::Playing && possessedUnit().valid());
     const auto inputActions=inputShortcuts_.onEvent(e,screen_==Screen::Playing && !uiWants && !howtoOpen_ && sim_);
     if(!uiWants && screen_==Screen::Playing && !topDownActive() &&
-       !regionSwipe_.enabled && !planet() &&
+       !regionSwipe_.enabled && !planet() && !possessedUnit().valid() &&
        (e.type==EventType::MouseDown||e.type==EventType::MouseUp)) {
         mapped.button=inputShortcuts_.logicalMouseButton(incoming.button);
         if(mapped.button<0)return; // unassigned physical button cannot select/order
@@ -957,6 +959,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     double worldMs = 0;
     time_ += dt;
     updateGamepad(float(dt));   // pad input as mouse / key events + camera pan (ClientGamepad.cpp)
+    inputShortcuts_.setTopDownEnabled(screen_==Screen::Playing && topDownActive());
+    inputShortcuts_.setPlanetEnabled(screen_==Screen::Playing && planet());
+    inputShortcuts_.setPossessionEnabled(screen_==Screen::Playing && possessedUnit().valid());
     const bool keyboardAllowed=sim_ && screen_==Screen::Playing &&
                                 !howtoOpen_ && !ui_.textInputFocused();
     if(!keyboardAllowed)inputShortcuts_.reset();
