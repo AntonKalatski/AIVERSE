@@ -942,3 +942,44 @@ Validate native ECS behavior for more than two genres, command-line/headless con
 3. The `acceptSimCueTick` helper materializes one presentation `CueEvent` per incoming `SimEvent` before `acceptTick` applies budget limits; a very large input event vector therefore has transient allocation proportional to the input. For extreme event volumes, add a bounded/lazy conversion path without breaking admission-order and drop telemetry.
 4. Handle source ordering and contention in large worlds; per-tick and attachment admission are bounded, but current input iteration still walks every provided event/source. No multithreaded presentation submission or distributed world support is implemented.
 5. **Next bounded Stage 16:** obtain actual CI logs, fix compile/CTest failures and add a real native-client ECS integration test that uses one shared `BatchWorld` for projectile impact and persistent vehicle/character effects, verifies rollback visual parity and counts draw submissions. Only after these gates, consider a cross-instance Metal GPU material pool and GPU memory/quality benchmarks. Continue appending separate handoff commits **to this same living file**.
+
+## Stage 16 — typed value dataflow and module graph v2 (FUNCTIONAL CODE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-18. **Branch:** `feature/universal-entity-inspector-fps`.  
+**User's current priority:** finish functional work before tests; preserve the rule that every stage finishes with a separate handoff. **Do not claim the graph-v2 implementation is production-tested.**
+
+### Exact implementation SHAs
+
+| SHA | Changed path | Purpose |
+|---|---|---|
+| `c7fdb86b436ae6470c0c9e7b18b6f3d704e07d6d` | `engine/fx/SpectraValueGraph.h` | New pure typed value DAG with literals, exposed parameters, scalar/vector expressions and normalized-age curve sampling |
+| `eca270796d32a2c2c511db23ac16c14e3183860d` | `engine/fx/SpectraGraphV2.h` | New graph v2 module/data-port frontend that lowers to existing strict v1 parser |
+| `7a14ee6686b11b625794aff574cf8157e6f55b55` | `engine/fx/SpectraGraphV2.h` | Fix value-to-value links to use augmented input properties (not stale original nodes) |
+| `3d8a3eb950b3ebb2f5602416c1160d576723cde6` | `engine/fx/VfxGraph.h` | Dispatch `compileSpectraGraph` to V2 for version 2, preserving all version 1 callers |
+| `98ef4b1459d281b87c0d0a852aeca4bcc1a91c54` | `engine/fx/SpectraValueGraph.h` | Catch cycles even in disconnected/dormant data nodes |
+| `7b25429700fdebfc1fae5d9205a33a7c0aa043a5` | `engine/fx/SpectraGraphV2.h` | Require full DAG check and lower SubEmitterModule `items` arrays correctly |
+| `068851e0ccfbfb2991ec1ad4c44fe3bd415db2ac` | `examples/spectrafx/typed_noise_trail_v2.vfx.json` | Native graph-v2 example with exposed parameters, typed pins, math, normalized-age fade, noise/trail |
+| `ea79f761bb33bb3db05e450a6df614e42b8d184c` | `engine/fx/SpectraFX.h` | Public latest `kGraphVersion=2`, `kLegacyGraphVersion=1` |
+| `8f65c4985a75b61b8253e213202c3be3e34b7fa4` | `docs/spectrafx.md` | V2 native authoring format, limitations and examples |
+| `71a059859655a5af8b45cb45410b0c2fb76e7b97` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent workflow for typed graph-v2 expressions and modules |
+| `fdb796d5c657233cb2bc60694280eb48eb0af557` | `AGENTS.md` | Stage 16 architecture and documentation rules for future agents |
+
+### Architecture/API and compatibility
+
+Existing callers of `fx::compileSpectraGraph(Json, Json overrides, EffectDef&, errors)` and `spectra::compileGraph` now transparently accept `version:2`; graphs `version:1` follow their previous compiler unchanged. The v2 frontend and typed evaluator are header-only, portable C++, with no RHI/renderer, Box3D, FPS, RTS, or gameplay ECS dependencies. The existing `GraphAssets`, `BatchWorld`, `GraphRuntime` and editor/MCP graph compilation calls therefore all receive a canonical `fx::EffectDef`.
+
+V2 has two link kinds: regular `{from,to}` execution module chain, and `{from,to,toPort:"path"}` typed data pins (with optional `fromPort:"value"`). `toPort` patches the copied target node's input properties before dependency evaluation. Inline `{"$node":"id"}` and `{"$param":"key"}` references work recursively in module properties. Value DAG supports bounded numeric and vector ops, comparisons, select, exposed parameter overrides with strict JSON-type matching, recursion/depth checks, finite-result bounds and rejection of disconnected data cycles. `{"$curve":"expr","samples":33}` compiles a normalized-age numerical expression to 2..64 existing CPU FxRange/size keys. It is not arbitrary runtime code or a GPU kernel.
+
+Execution module node names: NoiseModule, CollisionModule, TrailModule, LightModule, ForceModule, VelocityModule, SubEmitterModule, TriggerModule, InheritVelocityModule, SpeedLimitModule, ColorBySpeedModule, SizeBySpeedModule, SpinBySpeedModule, LifeBySpeedModule, ShapeModule, FlipbookModule, MaterialModule, SortModule and CustomModule. They become v1 `Update` node properties using FxEffect parser's already-supported nested schemas, preserving the mature CPU physics/shape/mesh/trails/noise/rendering behavior. SubEmitterModule takes `properties.items` containing a sub-emitter array. V2 can produce multiple SpriteOutput/MeshOutput/RibbonOutput effect emitters but still uses v1's strict path topology.
+
+**Important boundaries:** Graph v2 is a typed *authoring/compile frontend*. It does not execute a user-defined expression per particle on GPU, does not add custom particle attributes, dynamic function subgraphs, full arbitrary math shader VM, complex GPU collisions or production integration. Existing GPU eligibility stays restricted to the safe simple Metal additive-sprite subset; advanced modules retain full CPU compatibility. Old v1 assets/API and ECS deterministic hashes are not mutated.
+
+### Actual verification status (intentionally deferred)
+
+**NOT RUN.** Per user request, no CMake configure, native compiler, CTest, GUI launch, Vulkan/Metal shader compile or screenshot verification was performed. GitHub content API accepted source/commit updates and the example asset was written. GitHub commit existence is **not** evidence of a working build; do not mark this stage tested or finished overall.
+
+When the user authorizes testing, first compile `aiverse_vfx_graph_tests`, editor and all `ctest -L SpectraFX`; then add focused v2 math/port/curve/module tests and a real native source example. Preserve previous v1 test parity. On real Metal, check fallback eligibility of advanced graph v2 modules separately.
+
+### Next bounded FUNCTIONAL stage
+
+**Stage 17:** upgrade the ImGui SpectraFX editor to use graph v2 as its normal new-asset format, add value/data-node creation, typed data-pin linking and value inspector, curve/gradient tools and graphical module insertion/sequence reordering, plus MCP graph-v2 authoring helpers. Maintain original v1 view/edit support. Then continue richer runtime function graphs and GPU capabilities. Every finished stage must append a separately committed handoff entry to this file, with exact source SHAs, deferred-test status and concrete next step.
