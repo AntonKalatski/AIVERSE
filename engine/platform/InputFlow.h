@@ -14,8 +14,8 @@
 #include "EnhancedInputUsers.h"
 
 namespace aiverse::platform {
-using InputFlowAdapter = EnhancedInputAdapter;
-using InputFlowUsers = EnhancedInputUsers;
+// InputFlowAdapter and InputFlowUsers are the concrete implementations.
+// Their EnhancedInput* aliases are defined in the legacy headers.
 using InputFlowUserProfiles = enhanced_config::UserProfiles;
 using InputFlowAsset = enhanced_config::Asset;
 using InputFlowProfile = enhanced_config::Profile;
