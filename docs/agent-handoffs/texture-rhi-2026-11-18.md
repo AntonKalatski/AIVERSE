@@ -1339,3 +1339,35 @@ No completed successful GitHub Actions outcome observed.
 DDS fixture, then run the texture-related CTests on a real native
 clone and fix failures before extending backends. Continue separate
 source and handoff commits after every bounded stage.
+
+## Stage 6H — DDS DX10 array parser-to-RHI upload integration fixture (2026-11-18)
+
+**Code commit:** `8994da135bd8fcbd91e5fbbcb9de24048c4864ee`.
+**Branch:** `feature/texture-rhi-unification` (draft PR #21).
+**Changed:** `tests/render/texture_asset.cpp`.
+
+**Test source:** Extend existing mock-Device `texture_asset` CTest
+with a synthetic DDS DX10 RGBA8 2D-array fixture (two layers,
+two mips stored in DDS surface-major ordering). The test invokes
+`parseDdsTexture`, verifies it reorganizes mips into the
+shared mip-major `CompressedImage`, calls the new
+`uploadDdsImage` public alias, checks the requested
+`Texture2DArray` descriptor, layer count, explicit mip count,
+and per-layer second-mip subresource uploads. It verifies
+the returned GPU handle and cleanup through the mock device.
+
+**Compatibility:** No runtime behavior or native public API
+changes in this test-only stage. Model sampler2D path remains
+unchanged; the generic uploader stays opt-in.
+
+**Verification:** GitHub source commit confirmed.
+Build, CTest `texture_asset`, Vulkan/Metal/GLES GPU test:
+**NOT RUN**; no CI passing result claimed.
+
+**Next:** Actually compile and run `texture_asset`,
+`dds_layers`, `ktx2_layers`, `texture_contract`,
+`render_target_set` on a native clone; fix all failures.
+Then validate DDS cube array / 3D on real backends,
+complete GL/Vulkan MSAA/resolve, and extend remaining
+compressed and HDR pixel formats. After each bounded stage
+commit handoff separately with exact SHA and test status.
