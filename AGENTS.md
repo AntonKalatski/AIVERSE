@@ -208,6 +208,27 @@ parity; see `ecsProjectileProgramStageParity` and
 `ecsProjectileBranchAuthorityParity` in `tests/fps/projectiles.inc`.
 Native test execution is still pending.
 
+**Live FPS ordinary projectile ECS stage (2026-11-18):**
+When `fps.ecsAuthority=true`, both the programmed and ordinary
+projectile flight stages now advance **canonical ProjectileRuntime ECS
+components**. Ordering is `fps.ecsHydrate -> fps.compat.projectilePrograms
+-> fps.compat.ordinaryProjectiles -> fps -> fps.ecsMirror`.
+The ordinary-stage `stepOrdinaryProjectile` solver is reused by the
+legacy mode and ECS mode, preserves exact instantaneous hit/fuse/smoke
+order and uses shared `stepBouncingProjectile` from
+`AIVERSE::lib_ecs_projectile_systems` for physical grenade motion.
+RTS abstract missiles use separate kinematic motion without physics.
+
+Do not treat the compatibility `State::projectiles` array as canonical
+between ECS flight barriers. Other FPS round/actor systems can still
+write that array in the main tick; the mirror reconciles it until those
+systems migrate. Preserve FPS v9 save/net format and simultaneous-damage
+ordering. Run `ecsOrdinaryProjectileAuthorityParity` (real FPS bullets,
+grenades, timed smoke, ECS-only edits, deep/COW snapshots, cross-v9
+reload), `ecsProjectileProgramStageParity`, `ecs_projectile_composition_test`,
+`fps` and `fps_transport` before merging or enabling by default.
+All these native results are currently unverified.
+
 ## FPS ECS authority migration (PR #7, in progress)
 
 **Current working branch:** `feature/universal-entity-inspector-fps`. PR #8
