@@ -43,6 +43,8 @@ public:
     void applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye,
                             uint32_t cameraMask = 0xffffffffu);
     void clearCameraVolumes();
+    // Camera cuts/teleports invalidate the temporal exposure history per viewport.
+    void resetAutoExposure();
 
     void setQuality(PrismaQuality q) { quality_ = q; }
     PrismaQuality quality() const { return quality_; }
@@ -73,9 +75,12 @@ private:
         std::map<uint64_t, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
         PrismaBloomGraphCache bloomGraph; // invalidates on size, mip count or HDR format changes
         std::unique_ptr<PrismaRhiExecutor> graphExecutor; // optional persistent per-view context
+        int exposureCurrent = 0; // 1x1 RGBA16F ping-pong history index
+        bool exposureValid = false;
+        double exposureTime = 0;
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
-    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kProgCount };
+    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kProgCount };
 
     Target& target(Sized& s, int role, int w, int h);
     gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
