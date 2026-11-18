@@ -24,6 +24,21 @@ native-client integration are not complete.** Current test targets are committed
 verified as passing. Every new VFX stage MUST append a separate handoff commit after code and
 tests and record exact SHA, verification status and next work.
 
+**Stage 10 — opt-in Metal GPU particle subset (source committed, not verified):**
+`engine/fx/{SpectraGpuParticles.h,SpectraGpuParticles.cpp,SpectraGpuShaders.h}`
+and `tests/vfx_gpu_backend_test.cpp`. Public native API:
+`spectra::ComputeParticles`, `ComputeEmitterDesc`,
+`ComputePreference` and `chooseComputeBackend`, available through
+`engine/fx/SpectraFX.h`, linked by `AIVERSE::spectrafx`.
+Only a simple additive soft-billboard emitter uses Metal compute;
+Vulkan/GL/GLES/WebGL fall back to the existing CPU `fx::ParticleSystem`.
+`step()` must execute before a render pass and `draw()` inside it.
+**Do not claim real Metal validation, GPU compaction, GPU graph execution
+or shipping FPS/RTS integration.** Inspect the stage-10 handoff and
+execute a native Metal smoke/CI test before enabling any default GPU
+effects. Preserve deterministic gameplay/ECS state and the existing
+CPU effect format.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
