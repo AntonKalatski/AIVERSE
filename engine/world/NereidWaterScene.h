@@ -193,8 +193,27 @@ public:
         if(!s.autoLod || !observer)return s.mesh.lod;
         if(!s.useGeometry && s.body.footprint==lib::nereid::WaterFootprint::Infinite)
             return s.mesh.lod;
-        const double dx=s.body.center.x.toDouble()-observer->x.toDouble();
-        const double dz=s.body.center.z.toDouble()-observer->z.toDouble();
+        // For authored polygon/rivers the body center is not necessarily
+        // meaningful; use the geometry's X/Z bounding rectangle instead.
+        double cx=s.body.center.x.toDouble(),cz=s.body.center.z.toDouble();
+        if(s.useGeometry && s.geometry.enabled && !s.geometry.points.empty()) {
+            double loX=s.geometry.points.front().x.toDouble();
+            double hiX=loX;
+            double loZ=s.geometry.points.front().z.toDouble();
+            double hiZ=loZ;
+            for(const auto& p:s.geometry.points) {
+                const double width=s.geometry.kind==lib::nereid::WaterGeometryKind::RiverSpline
+                    ?p.halfWidth.toDouble():0.0;
+                loX=std::min(loX,p.x.toDouble()-width);
+                hiX=std::max(hiX,p.x.toDouble()+width);
+                loZ=std::min(loZ,p.z.toDouble()-width);
+                hiZ=std::max(hiZ,p.z.toDouble()+width);
+            }
+            cx=std::clamp(observer->x.toDouble(),loX,hiX);
+            cz=std::clamp(observer->z.toDouble(),loZ,hiZ);
+        }
+        const double dx=cx-observer->x.toDouble();
+        const double dz=cz-observer->z.toDouble();
         const double sq=dx*dx+dz*dz;
         if(sq>double(s.farDistance)*s.farDistance)return L::Far;
         if(sq>double(s.mediumDistance)*s.mediumDistance)return L::Medium;
