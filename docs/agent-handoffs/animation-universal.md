@@ -300,3 +300,28 @@ before calling this stage validated.
 - No runtime/source changes; validation NOT RUN.
 - Next action: CI green build & actual screenshot/profile tests before
   merging. PR remains Draft.
+
+
+## Stage 13 — deterministic ECS root-motion motor adapter (2026-11-18)
+
+- Code: `06f77b48940c4bbcccc0663bc98b025c3f3d5a41`.
+- Added `libraries/include/aiverselib/animation/EcsRootMotionSystems.h`:
+  fixed-point pre-quantized root-motion tracks, serializable intent, state,
+  result and resource types plus `consumeRootMotion()` and
+  `addRootMotionMotorSystem()`. Root translation is rotated through
+  deterministic `fxSinTurns/fxCosTurns`; the authoritative transform is
+  committed only after a host-supplied deterministic collision motor accepts
+  its displacement. No float pose sampling inside `Simulation`.
+- `RootMotionIntentComponent::sequence` must change to restart the same clip.
+  Tick rate must match the authored track. Rejected movement advances the
+  track clock but does not modify position/yaw. Downstream animation consumes
+  the resulting authoritative transform, never the other way around.
+- Public components must be explicitly registered for save/rollback by their
+  host module; `io(Archive&,...)` supplied. New system is opt-in and not yet
+  wired into FPS/RTS movers (which could otherwise move an actor twice).
+- Test source `tests/animation/root_motor.cpp` and CTest
+  `animation_root_motor` added. **NOT RUN (user deferred tests).**
+  Build target: `aiverse_animation_root_motor_tests`.
+- Next: create controlled offline clip->fixed-track exporter, then wire
+  into one chosen motor replacing, not adding to, its existing movement source.
+  Humanoid retargeting and ragdoll assets remain open.
