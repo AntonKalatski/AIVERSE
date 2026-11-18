@@ -25,7 +25,7 @@ inline bool valueNodeType(std::string_view type) {
         "Sin","Cos","Abs","Negate","Sqrt","Pow","Floor","Ceil",
         "Length","Normalize","Dot","Cross","ComposeVec2","ComposeVec3",
         "ComposeVec4","Select","Greater","Less","Equal","FunctionCall",
-        "ParticleRead","Saturate"
+        "ParticleRead","InstanceParameter","Saturate"
     }) if(type == n) return true;
     return false;
 }
@@ -183,8 +183,8 @@ public:
             activeFunctions_->erase(name);
             return done(ok);
         }
-        if(type=="ParticleRead")
-            return done(fail("ParticleRead is a runtime-only data node; use $runtime in ParticleProgramModule"));
+        if(type=="ParticleRead" || type=="InstanceParameter")
+            return done(fail("runtime-only data node '"+id+"' requires $runtime in ParticleProgramModule"));
         if(type=="AgeNormalized") {
             if(!haveAge)return done(fail("AgeNormalized needs a $curve sampling context"));
             out=Json::number(age,6);
