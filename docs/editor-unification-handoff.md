@@ -1055,3 +1055,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Code SHA: `58b3447e1a4ce439d52fda6a059e386d1af9016e`.
 - `stepKinematicProjectile` now rejects invalid/nonpositive pursuit distance-per-tick *before* incrementing elapsed ticks or changing the projectile. TimedEndpoint semantics remain unchanged.
 - Verification: source commit only, C++ build and execution not run. Follow up with moving-target/timeout/invalid-input snapshot tests.
+
+
+### 2026-11-18 — Kinematic moving-target, timeout and rollback coverage
+- Test SHA: `281cf92ac63c52a42ce1058c68780faf706d9f44`.
+- Extended existing CMake/standalone `tests/ecs_kinematic_projectile_test.cpp` with one moving `MovingTarget` ECS entity; a `Pursuit` shot with target position resolved every tick; and another pursuit shot that expires before reaching its destination. Expected stable arrival sequence is `100,101,200,102`, and moving-target arrival is x=11/4 fixed-point, with no arrival for shot 201. Checks non-mutating zero-speed rejection, despawn, deep snapshot and COW rollback checksum parity in two unrelated host modules.
+- Verification: source pushed only; **no C++ build, test execution or in-game RTS parity run**. This fixture is intended to validate the new generic pursuit logic. Note real RTS motion call site SHA `83336082` still delegates to exactly the previous fixed-point `moveTowards`, preserving original arithmetic.
+- Next: run native CTest and standalone suite, repair actual compilation/runtime failures, add real RTS integration checks for moving and lost targets, then separate motion/impact scheduling when proven.
