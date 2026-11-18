@@ -536,6 +536,11 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_animation_physical_pose_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_physical_pose COMMAND aiverse_animation_physical_pose_tests)
 endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_budget_tests tests/animation/budget.cpp)
+    target_link_libraries(aiverse_animation_budget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_budget_policy COMMAND aiverse_animation_budget_tests)
+endif()
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
