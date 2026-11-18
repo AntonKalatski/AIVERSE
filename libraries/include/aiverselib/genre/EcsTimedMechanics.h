@@ -3,6 +3,7 @@
 // entities. The host supplies inputs/config; no genre module dependencies.
 #pragma once
 #include "EcsWeaponLaunchSystems.h"
+#include "FixedRegeneration.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -134,8 +135,9 @@ inline void addEnergyRegenerationSystem(Simulation& sim,std::string systemName) 
             [&](Entity,EnergyRegenerationComponent& energy) {
                 if(!energy.enabled || energy.maximum<=Fixed{} ||
                    energy.perSecond<=Fixed{} || energy.perSecond>1000000_fx)return;
-                energy.current=fxMin(energy.maximum,
-                    fxMax(Fixed{},energy.current)+energy.perSecond*current.dt());
+                energy.current=stepFixedResourceRegeneration(
+                    fxMax(Fixed{},energy.current),energy.maximum,
+                    energy.perSecond,current.dt());
             });
     });
 }
