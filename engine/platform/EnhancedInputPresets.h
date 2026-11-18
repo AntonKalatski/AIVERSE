@@ -2,11 +2,12 @@
 // Use this as a starting project asset; gameplay rules remain in Commands/ECS systems.
 #pragma once
 #include "EnhancedInputConfig.h"
+#include <aiverselib/gameplay/InputFlow.h>
 #include <cstdint>
 #include <utility>
 
 namespace aiverse::platform::enhanced_presets {
-namespace ei = aiverse::lib::gameplay::enhanced;
+namespace ei = aiverse::lib::gameplay::inputflow;
 namespace ecfg = aiverse::platform::enhanced_config;
 
 inline ecfg::Asset fpsReference() {
