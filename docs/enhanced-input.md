@@ -194,3 +194,7 @@ Action-level modifiers run before the final action value determines lifecycle. F
 ## Input-specific CI
 
 `.github/workflows/enhanced-input.yml` checks standalone input core, platform adapter, JSON/profile persistence and RTS routing on Linux, macOS and Windows. It is a focused cross-platform gate, **not** a substitute for full `aiverse_editor`, `aiverse_client`, `aiverse_fps_client`, mobile/web builds or interactive editor validation. Review the workflow run itself before claiming these tests have passed.
+
+## Conflict-aware rebinding
+
+`InputSystem::rebind(context,id,control,policy)` accepts `RebindPolicy::Allow` (default), `Reject` (same-context duplicate forbidden) and `Swap` (exchange with exactly one colliding mapping). Existing mapping IDs stay stable. `InputSystem::conflicts(activeOnly=true)` returns ordered conflicts describing the shadowed Action when the earlier mapping consumes the key; duplicate controls may still be intentional (e.g., different triggers and modal contexts).
