@@ -25,3 +25,10 @@ Read `docs/physis-nereid-terraweave-integration.md` (root `AGENTS.md` ownership 
 - `PhysisPresentation.h` and `PhysisDiagnostics.h` are **read-only**, renderer-independent consumer APIs. They return copies/arrays for external editor/VFX/physics/Terra host code. Do not add ImGui/RHI/Box3D/genre includes here, or treat a PHYSIS heatmap as a visual renderer integration.
 - `DiagnosticRaster::rawValues` are `Fixed::raw` and `valid[i]` marks active sampled cells. Do not infer real NEREID water levels from `LocalFloodMeters`. `diagnosticNormalized` is presentation-only; it must not influence authoritative simulation.
 - Add post-stage handoffs; Stage 14 `docs/agent-handoffs/physis-diagnostics-2026-11-18.md`. The tests and CI are authored but native status is **NOT RUN**.
+
+## Stage 15–16 spatial field reuse (2026-11-18)
+
+- `PhysisDiagnostics.h` now samples basic scalar environment/hazard layers without full per-cell 3D field evaluation. New `PhysisSpatialIndex.h` builds a transient `World` COW snapshot, 2D candidate bins, and global fallback for huge volumes/uniform gravity; `sampleDiagnosticRasterIndexed` uses the same source snapshot.
+- Do not change fixed-point math, Earth/Box3D gravity authority, and wind/storm candidate order in the unindexed reference. Existing `windAt`, `gravityAt`, `stormsAt`, and `sampleNatureField` remain supported. The indexed API invokes their **shared policy** through ordered visitors to make parity testable.
+- The index is a derived read-only **snapshot**, not a mutable ECS mirror; rebuild for a new authoritative tick or after edits/rollback/load. It does not accelerate WeatherFront/Quake simulation, terrain/water, or external physics. Avoid retained historical snapshots.
+- Handoff Stage 15: `docs/agent-handoffs/physis-diagnostic-fastpath-2026-11-18.md`; Stage 16: `docs/agent-handoffs/physis-spatial-index-2026-11-18.md`. All tests added, native compile/CTest/CI **NOT RUN** in connector environment.
