@@ -179,6 +179,7 @@ enum DrawFlags : uint32_t {
     // the light baker captures (Renderer3D::setModelCapture). Dynamic objects get light probes instead.
     kDrawStatic = 32,
     kDrawKeepShadow = 64, // preserve opaque shadow casting while the camera image fades
+    kDrawWaterSurface = 256, // opt-in NEREID water shader at arbitrary world Y; not a genre flag
 };
 
 struct ModelRenderStats {

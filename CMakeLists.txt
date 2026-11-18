@@ -1658,6 +1658,13 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_ecs_nereid_surface_mesh_test PRIVATE
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_surface_mesh_test COMMAND aiverse_ecs_nereid_surface_mesh_test)
+    # NEREID stage 7C: Renderer3D source/GLSL/MSL bridge contract.
+    add_executable(aiverse_ecs_nereid_renderer_contract_test
+        tests/ecs_nereid_renderer_contract_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_renderer_contract_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_renderer_contract_test
+        COMMAND aiverse_ecs_nereid_renderer_contract_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)

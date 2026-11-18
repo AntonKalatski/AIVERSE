@@ -411,7 +411,7 @@ void main() {
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
-    bool openWater = u_params.y >= 0.85 && v_wpos.y < 0.04 && n.y > 0.9;
+    bool openWater = (u_params.x < -0.5 || (u_params.y >= 0.85 && v_wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
         vec2 p = v_wpos.xz;
         float wt = (l_cloud.x + l_cloud.y) * 20.0;
@@ -450,12 +450,12 @@ void main() {
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
-    col = mix(col, base, u_params.x) + base * (u_params.w * (1.0 + nightGlow()));
+    col = mix(col, base, clamp(u_params.x, 0.0, 1.0)) + base * (u_params.w * (1.0 + nightGlow()));
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
     vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V, u_params.y);   // planar reflection (water, High)
-    if (u_params.y >= 0.85 && v_wpos.y >= 0.04 && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
+    if (u_params.y >= 0.85 && (v_wpos.y >= 0.04 || u_params.x < -0.5) && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
         vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
         float hit;
         vec3 rc = ssrWater(v_wpos, nn, V, hit);
@@ -504,7 +504,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
-    bool openWater = u.params.y >= 0.85 && in.wpos.y < 0.04 && n.y > 0.9;
+    bool openWater = (u.params.x < -0.5 || (u.params.y >= 0.85 && in.wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
         float2 p = in.wpos.xz;
         float wt = (l.cloud.x + l.cloud.y) * 20.0;
@@ -542,12 +542,12 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
-    col = mix(col, base, u.params.x) + base * (u.params.w * (1.0 + l.info.w));
+    col = mix(col, base, clamp(u.params.x, 0.0, 1.0)) + base * (u.params.w * (1.0 + l.info.w));
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);
     float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col), in.wpos, n, V, u.params.y);
-    if (u.params.y >= 0.85 && in.wpos.y >= 0.04 && f.trace2.w > 0.5) {
+    if (u.params.y >= 0.85 && (in.wpos.y >= 0.04 || u.params.x < -0.5) && f.trace2.w > 0.5) {
         float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
         float hit;
         float3 rc = ssrWater(f, tex4, s4, tex5, s5, in.wpos, nn, V, hit);

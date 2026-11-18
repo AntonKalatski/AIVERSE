@@ -410,7 +410,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         DrawUniforms u{};
         std::memcpy(u.model, it.model.m, sizeof u.model);
         u.color[0] = it.color.x; u.color[1] = it.color.y; u.color[2] = it.color.z; u.color[3] = it.color.w;
-        u.params[0] = (it.flags & kDrawUnlit) ? 1.f : 0.f;
+        u.params[0] = (it.flags & kDrawWaterSurface) ? -1.f : ((it.flags & kDrawUnlit) ? 1.f : 0.f);
         u.params[1] = it.specular;
         u.params[2] = (it.flags & kDrawNoReceiveShadow) ? 0.f : 1.f;
         u.params[3] = it.emissive;
