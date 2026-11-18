@@ -43,6 +43,16 @@ forestSceneFromManifest(const Json& manifest) {
         j, "radiusChunks", 4, 0, 8));
     settings.maxResidentChunks = static_cast<uint32_t>(worldInteger(
         j, "maxResidentChunks", 64, 1, 289));
+    // WorldScene uses the existing asynchronous chunk scheduler by default;
+    // native consumers constructing ForestSceneSettings directly retain the
+    // previous synchronous behaviour unless they explicitly opt in.
+    settings.asynchronous = j.getBool("asynchronous", true);
+    settings.maxPendingJobs = static_cast<uint32_t>(worldInteger(
+        j, "maxPendingJobs", 3, 1, 8));
+    settings.requestsPerUpdate = static_cast<uint32_t>(worldInteger(
+        j, "requestsPerUpdate", 2, 1, 8));
+    settings.publicationsPerUpdate = static_cast<uint32_t>(worldInteger(
+        j, "publicationsPerUpdate", 2, 1, 8));
     settings.view.highRangeCm = static_cast<int32_t>(worldInteger(
         j, "highRangeCm", 3000, 0, 100000000));
     settings.view.mediumRangeCm = static_cast<int32_t>(worldInteger(
