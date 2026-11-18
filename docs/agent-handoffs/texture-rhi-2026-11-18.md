@@ -4227,3 +4227,28 @@ Next: Add synthetic KTX2 sRGB format upload tests for
 ETC2/ASTC and reject unsupported mobile sRGB compression
 without silently selecting UNORM; then run native build
 and GPU tests before merge. Maintain per-stage handoff.
+
+## Stage 5Q — compressed sRGB KTX2 and CPU fallback regression source (2026-11-18)
+
+Code SHA: ca71c7459ef0940acd38a538e32bc4a083fd2199.
+Branch: feature/texture-rhi-unification (Draft PR #21).
+Files: tests/render/ktx2_layers.cpp and tests/render/texture_asset.cpp.
+
+New synthetic KTX2 source fixtures cover all seven native sRGB
+block variants: BC1, BC3, BC7, ETC2 RGB, ETC2 RGBA, ASTC 4x4 and
+ASTC 6x6. The parser must preserve true srgb metadata, source
+BlockFormat and correct single-mip block payload byte length.
+Mock RHI uploads exercise native ETC2 RGB sRGB and ASTC 4x4 sRGB
+without a manual shader gamma opt-in. BC1_RGB sRGB (VkFormat132)
+is deliberately decoded to uncompressed RGBA8_sRGB rather than
+reinterpreted as BC1_RGBA_sRGB and losing opaque index-3 semantics.
+
+Testing status: GitHub code/test source commit succeeded.
+Native C++ build NOT RUN; ktx2_layers and texture_asset CTests
+NOT RUN; Metal/Vulkan/GL/GLES/WebGL GPU sampling NOT RUN.
+No PASS result claimed.
+
+Next: Update native texture skill/docs for sRGB selection and
+test the staged source using real CMake/CTest. Verify shader
+sampling/color conversion on actual Metal/Vulkan/GL and mobile
+devices. Keep PR #21 Draft until backend and regression gates pass.
