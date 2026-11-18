@@ -1743,3 +1743,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Added `tests/fps/projectile_spawn.inc` with `ecsProjectileSpawnAuthorityParity` run in both deep and COW snapshot modes. Uses production input commands to fire an ordinary bullet and throw Frag/Smoke/Flash actions, and compares legacy vs `ecsAuthority` state/checksums/actor fields and every `ProjectileRuntime` kind/ID/order/velocity/position/damage via `DynamicEntityIndex` after each tick. Verifies all three throwables existed, object ID counter advanced, v9 cross-mode save load, pre-fuse rollback, 10-tick continuation and replay checksum.
 - **Verification:** GitHub test source added, **not yet referenced from `tests/fps/tests.cpp` main**, native C++ compilation and execution not performed. Requires normal FPS test data and CTest. The helper's immediate creation is verified in source; after-tick fixture alone cannot distinguish whether an entity was created before `fps.ecsMirror`.
 - **Next:** include and invoke new fixture in `aiverse_fps_tests`, add a mid-tick spawn visibility invariant if needed, check native CI and test status. 
+
+
+### 2026-11-18 — FPS weapon/grenade ECS spawn parity fixture wired into built-in suite
+- **Implementation SHA:** `538e370629d0647766cb5cde57802ae122da524e`.
+- Updated `tests/fps/tests.cpp` to include `projectile_spawn.inc` and execute `ecsProjectileSpawnAuthorityParity()` alongside other actual FPS projectile source-ownership tests. This runs actual weapon shooting plus Frag/Smoke/Flash input actions in both legacy and ECS-authority hosts, with deep/COW, v9 cross-load and rollback coverage when the native FPS test binary executes.
+- **Verification:** source commit only; native compilation, assertions, FPS transport/server integration **not run**. Next: inspect CI and address any build/test failures before changing production defaults.
