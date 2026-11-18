@@ -409,6 +409,8 @@ target_link_libraries(aiverse_game_audio PUBLIC aiverse_game aiverse_audio)
 # Particles: CPU simulation + RHI rendering (presentation only), and the RTS event bridge.
 add_library(aiverse_fx STATIC engine/fx/FxEffect.cpp engine/fx/ParticleSystem.cpp engine/fx/FxEmit.cpp engine/fx/FxRender.cpp engine/fx/FxMeshes.cpp)
 target_link_libraries(aiverse_fx PUBLIC aiverse_engine aiverse_shader_graph)
+# SpectraFX is the official public name; retain aiverse_fx for existing clients.
+add_library(AIVERSE::spectrafx ALIAS aiverse_fx)
 add_library(aiverse_game_fx STATIC modules/rts/fx/RtsFx.cpp)
 target_link_libraries(aiverse_game_fx PUBLIC aiverse_game aiverse_fx)
 
@@ -2113,6 +2115,7 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_vfx_graph_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_vfx_graph_tests PRIVATE aiverse_fx)
     add_test(NAME vfx_graph_compiler COMMAND aiverse_vfx_graph_tests)
+    set_tests_properties(vfx_graph_compiler PROPERTIES LABELS "SpectraFX")
 endif()
 
 # Universal VFX ECS presenter is read-only and independent of genre GameModules.
@@ -2121,6 +2124,7 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_vfx_ecs_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
     target_link_libraries(aiverse_vfx_ecs_tests PRIVATE aiverse_fx aiverse_engine)
     add_test(NAME vfx_ecs_presentation COMMAND aiverse_vfx_ecs_tests)
+    set_tests_properties(vfx_ecs_presentation PROPERTIES LABELS "SpectraFX")
 endif()
 
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
@@ -2129,4 +2133,5 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_vfx_assets_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_vfx_assets_tests PRIVATE aiverse_fx)
     add_test(NAME vfx_graph_assets COMMAND aiverse_vfx_assets_tests)
+    set_tests_properties(vfx_graph_assets PROPERTIES LABELS "SpectraFX")
 endif()
