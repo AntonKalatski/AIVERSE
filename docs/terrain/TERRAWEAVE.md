@@ -1086,3 +1086,28 @@ for all temporary worker/upload staging allocations.
 No disk cache or runtime skip-GPU-upload was implemented by this
 stage. Benchmarks and cache-key/invalidation/camera-boundary tests
 are explicitly delegated to a separate test agent.
+
+### Horizon quality presets (stage 9d)
+
+Native C++ projects can call
+`horizonSettingsForQuality(HorizonQualityPreset::Minimal|Mobile|Balanced|High)`
+to receive validated, genre-independent Horizon settings. The
+opt-in WorldScene `terraweaveHorizon` block accepts
+`"quality": "minimal" | "mobile" | "balanced" | "high"`
+(default `balanced`); **individual JSON fields override the preset**
+without another rendering path or a shader fork.
+
+| Preset | Atlas tile | Terrain grid | Crown detail | Atlas views | CPU regions cached |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| minimal | 16 px | 16×16 | 1 | 1 | 0 |
+| mobile | 24 px | 24×24 | 1 | 1 | 0 |
+| balanced | 48 px | 48×48 | 2 | 1 | 2 |
+| high | 48 px | 64×64 | 3 | 2 | 2 |
+
+The same ~832 potential cluster slots apply; the atlas resolution
+changes rather than the number of forest cluster cards. Minimal
+and mobile deliberately avoid retaining additional CPU atlases.
+The two-view high preset increases the texture budget to about
+14.77 MiB **before mipmaps**, requiring real-device profiling
+before being a recommended default. These are intended presets,
+not measured FPS or validated platform quality settings.
