@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
+#include <stdexcept>
 #include <limits>
 #include <string>
 #include <string_view>

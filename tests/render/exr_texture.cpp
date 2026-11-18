@@ -1,9 +1,18 @@
 // Synthetic, dependency-free OpenEXR scanline HALF/FLOAT parser fixture.
 // These are authored tests; their presence does not imply they have been run.
 #include "engine/render/ExrTexture.h"
+#include "engine/render/ExrOpenExr.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#if defined(AIVERSE_TEXTURE_WITH_OPENEXR)
+#include <OpenEXR/ImfCompression.h>
+#include <OpenEXR/ImfHeader.h>
+#include <OpenEXR/ImfRgbaFile.h>
+#endif
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -65,6 +74,57 @@ void dimensionsAndColors(){
     expect(parseOpenExr(fixture(false,true),img,error) &&
            img.rgba16f[3]==0x3800u,"optional alpha is parsed");
 }
+
+#if defined(AIVERSE_TEXTURE_WITH_OPENEXR)
+void compressedExrLibrary() {
+    namespace Exr = OPENEXR_IMF_NAMESPACE;
+    for (Exr::Compression format:{Exr::ZIP_COMPRESSION,Exr::ZIPS_COMPRESSION,
+                                 Exr::PIZ_COMPRESSION}) {
+        const auto path=std::filesystem::temp_directory_path()/
+            ("aiverse_exr_codec_"+std::to_string(
+                std::chrono::steady_clock::now().time_since_epoch().count())+
+             "_"+std::to_string(int(format))+".exr");
+        try {
+            Exr::Header header(2,2);
+            header.compression()=format;
+            Exr::Rgba pixels[4];
+            for (int i=0;i<4;++i) {
+                pixels[i].r=1.0f;
+                pixels[i].g=2.0f;
+                pixels[i].b=-0.5f;
+                pixels[i].a=0.5f;
+            }
+            {
+                Exr::RgbaOutputFile file(path.string().c_str(),header,Exr::WRITE_RGBA);
+                file.setFrameBuffer(pixels,1,2);
+                file.writePixels(2);
+            }
+            std::ifstream input(path,std::ios::binary);
+            expect(bool(input),"open compressed OpenEXR fixture from native library");
+            const std::string bytes{std::istreambuf_iterator<char>(input),
+                                    std::istreambuf_iterator<char>()};
+            RadianceImage decoded;
+            std::string error;
+            expect(parseOpenExrWithLibrary(bytes,decoded,error)&&error.empty(),
+                   "system OpenEXR library decodes real ZIP/ZIPS/PIZ data");
+            expect(decoded.width==2 && decoded.height==2 &&
+                   decoded.rgba16f.size()==16 &&
+                   decoded.rgba16f[0]==0x3c00u &&
+                   decoded.rgba16f[1]==0x4000u &&
+                   decoded.rgba16f[2]==0xb800u &&
+                   decoded.rgba16f[3]==0x3800u,
+                   "system OpenEXR keeps signed RGB half values and alpha");
+        } catch (...) {
+            std::error_code ec;
+            std::filesystem::remove(path,ec);
+            throw;
+        }
+        std::error_code ec;
+        std::filesystem::remove(path,ec);
+    }
+}
+#endif
+
 void invalidFiles(){
     RadianceImage img;std::string err;
     auto data=fixture(true);
@@ -91,7 +151,11 @@ void invalidFiles(){
 }
 }
 int main(){
-    try{dimensionsAndColors();invalidFiles();}
+    try{dimensionsAndColors();invalidFiles();
+#if defined(AIVERSE_TEXTURE_WITH_OPENEXR)
+        compressedExrLibrary();
+#endif
+    }
     catch(const std::exception& e){
         std::fprintf(stderr,"EXR texture fixture FAILED: %s\n",e.what());return 1;
     }
