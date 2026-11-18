@@ -4021,3 +4021,49 @@ exit codes and failure diagnostics. Then add a safe game
 asset manifest loader/validator to match the disk queue
 configuration, and validate the whole file→GPU flow.
 Separate implementation and handoff commits for each stage.
+
+## Stage 7U — executed Python packer tests against exact committed blobs (2026-11-18)
+
+**Code:** stages 7S/7T, source commits
+`fdd23a2e25b51c6231f86308777452fc263f638c` and
+`e3618dd816b063ccf4af9ce74ef2180824ce444e`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft #21.
+**Verification-only stage:** no engine/source files changed here.
+
+**Actual executed test environment:** Isolated local sandbox on
+Python **3.13.5**, using copies of the two committed files.
+The copies were verified byte-for-byte via Git blob hashes:
+`tools/virtual_texture_pack.py` =
+`82e1a749b926fa4ae410710c78bac14dc2777d88`;
+`tests/render/virtual_texture_pack.py` =
+`b681fd09ce216606aeee6d2fd43bf4fa00505da1`,
+matching the exact GitHub file SHAs on this branch.
+
+**Command actually run:**
+`python3 /mnt/data/_vt_check/tests/render/virtual_texture_pack.py -v`
+**Result: PASS, 3 tests in 0.006 seconds**, process exit 0:
+`test_invalid_sources_are_transactional`,
+`test_multi_layer_mips_and_gutters`,
+`test_odd_dimensions_and_determinism` all `ok`.
+
+**CLI smoke test actually run:** Invoked the exact committed
+packer as a subprocess with an 8×8 raw RGBA8 layer, physical
+page size 6, gutter 1 and a temporary output root.
+**Result: exit 0**, manifest reported 2×2 mip-zero tiles
+and 2 virtual mip levels; generated 5 page files, each
+exactly 144 bytes, plus `manifest.json` (verified present).
+
+**Scope of PASS:** Only these Python packer and asset-layout
+checks were actually executed. No full AIVERSE repository
+checkout was present. CMake/CTest, C++ disk worker/facade
+compilation, Metal/GL/Vulkan GPU tests, editor and CI:
+**NOT RUN / NOT CONFIRMED PASSING**. The Python results are
+not evidence that the native graphics pipeline works.
+
+**Next:** Build and run native
+`virtual_texture_disk_queue` and
+`virtual_texture_file_streamer` CTests on a repo checkout.
+Validate the resulting `.rgba` files with the real C++
+filesystem loader and atlas/page-table shader on a GPU;
+then implement camera visibility prefetch or GPU feedback,
+with separate source/handoff commits.
