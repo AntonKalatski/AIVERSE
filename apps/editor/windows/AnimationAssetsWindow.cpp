@@ -190,9 +190,9 @@ private:
         }
         montage_.set("model",Json::string(model_));
         std::string slot=montage_.getStr("slot","UpperBody");
-        if(ui::inputString("Слот",&slot))montage_.set("slot",Json::string(slot));
+        if(ui::inputString("Слот",slot))montage_.set("slot",Json::string(slot));
         std::string mask=montage_.getStr("maskRoot");
-        if(ui::inputString("Маска кости",&mask))montage_.set("maskRoot",Json::string(mask));
+        if(ui::inputString("Маска кости",mask))montage_.set("maskRoot",Json::string(mask));
         float fadeIn=float(montage_["blendIn"].toDouble(.1));
         float fadeOut=float(montage_["blendOut"].toDouble(.1));
         if(ImGui::DragFloat("Blend In",&fadeIn,.01f,0.f,10.f))
@@ -216,10 +216,10 @@ private:
             auto& s=sections.at(i);
             ImGui::Separator();
             std::string sectionName=s.getStr("name");
-            if(ui::inputString("Секция",&sectionName))
+            if(ui::inputString("Секция",sectionName))
                 s.set("name",Json::string(sectionName));
             std::string clip=s.getStr("clip");
-            if(ui::inputString("Клип",&clip))s.set("clip",Json::string(clip));
+            if(ui::inputString("Клип",clip))s.set("clip",Json::string(clip));
             float start=float(s["begin"].toDouble());
             float end=float(s["end"].toDouble(1.));
             if(ImGui::DragFloat("Начало",&start,.01f,0.f,600.f))
@@ -240,7 +240,7 @@ private:
                 ImGui::PushID(int(n));
                 auto& item=notifies.at(n);
                 std::string label=item.getStr("name");
-                if(ui::inputString("Notify",&label))item.set("name",Json::string(label));
+                if(ui::inputString("Notify",label))item.set("name",Json::string(label));
                 float time=float(item["time"].toDouble());
                 if(ImGui::DragFloat("Время",&time,.01f,0.f,600.f))
                     item.set("time",Json::number(double(time),4));
