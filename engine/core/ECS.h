@@ -100,7 +100,7 @@ public:
     }
     size_t sharedPageCount() const override {
         size_t result=0;
-        if(paged_)for(const auto& page:pages_)if(!page.unique())++result;
+        if(paged_)for(const auto& page:pages_)if((page.use_count() != 1))++result;
         return result;
     }
 
@@ -233,7 +233,7 @@ public:
     }
 private:
     template<class V> static void ensureUnique(std::shared_ptr<V>& value) {
-        if(!value.unique())value=std::make_shared<V>(*value);
+        if((value.use_count() != 1))value=std::make_shared<V>(*value);
     }
     size_t indexOf(uint32_t index) const {
         return paged_?(*sparseCow_)[index]:sparse_[index];
@@ -281,7 +281,7 @@ public:
             detached.reserve(resources_.size());
             for(size_t i=0;i<resources_.size();++i) {
                 const auto& resource=resources_[i];
-                if(resource && !resource.unique())
+                if(resource && (resource.use_count() != 1))
                     detached.push_back(resourceOps_[i].make(resource.get()));
                 else detached.push_back(resource);
             }
@@ -301,7 +301,7 @@ public:
             pools_.resize(o.pools_.size());
             for (size_t i=0;i<o.pools_.size();++i) {
                 if(!o.pools_[i])pools_[i].reset();
-                else if(pools_[i] && pools_[i].unique())pools_[i]->copyFrom(*o.pools_[i]);
+                else if(pools_[i] && (pools_[i].use_count() == 1))pools_[i]->copyFrom(*o.pools_[i]);
                 else pools_[i]=std::shared_ptr<IPool>(o.pools_[i]->clone());
             }
             resources_.resize(o.resources_.size());
@@ -309,7 +309,7 @@ public:
             for (size_t i=0;i<o.resources_.size();++i) {
                 const ResourceOps& op=o.resourceOps_[i];
                 if(!o.resources_[i])resources_[i].reset();
-                else if(resources_[i] && resources_[i].unique() && resourceOps_[i].assign==op.assign)
+                else if(resources_[i] && (resources_[i].use_count() == 1) && resourceOps_[i].assign==op.assign)
                     op.assign(resources_[i].get(),o.resources_[i].get());
                 else resources_[i]=op.make(o.resources_[i].get());
                 resourceOps_[i]=op;
@@ -337,7 +337,7 @@ public:
         for (auto& p : pools_) if (p && p->has(e.index)) {
             // Unrelated pools remain shared; only pools containing this Entity
             // need a structural detach before swap-remove.
-            if (cowSnapshots_ && !p.unique()) p=std::shared_ptr<IPool>(p->clone());
+            if (cowSnapshots_ && (p.use_count() != 1)) p=std::shared_ptr<IPool>(p->clone());
             p->remove(e.index);
         }
         alive_[e.index] = 0;
@@ -433,7 +433,7 @@ public:
         for(uint32_t id:typeIds) {
             if(id>=pools_.size() || !pools_[id])continue;
             auto& pool=pools_[id];
-            if(cowSnapshots_ && !pool.unique())
+            if(cowSnapshots_ && (pool.use_count() != 1))
                 pool=std::shared_ptr<IPool>(pool->clone());
             pool->prepareParallelWrite();
         }
@@ -452,7 +452,7 @@ public:
     template <class T> [[gnu::always_inline]] inline Pool<T>& pool() {
         const uint32_t id = detail::componentTypeId<T>();
         if (id < pools_.size()) [[likely]] if (IPool* p = pools_[id].get()) [[likely]] {
-            if (cowSnapshots_ && !pools_[id].unique())
+            if (cowSnapshots_ && (pools_[id].use_count() != 1))
                 pools_[id]=std::shared_ptr<IPool>(p->clone());
             return *static_cast<Pool<T>*>(pools_[id].get());
         }
@@ -465,7 +465,7 @@ public:
             if(cowSnapshots_)fresh->setPaged(true);
             pools_[id]=std::move(fresh);
         }
-        else if(cowSnapshots_ && !pools_[id].unique())
+        else if(cowSnapshots_ && (pools_[id].use_count() != 1))
             pools_[id]=std::shared_ptr<IPool>(pools_[id]->clone());
         return *static_cast<Pool<T>*>(pools_[id].get());
     }
@@ -483,7 +483,7 @@ public:
     template <class T> T* resource() {
         uint32_t id = detail::componentTypeId<T>();
         if(id>=resources_.size() || !resources_[id])return nullptr;
-        if(cowSnapshots_ && !resources_[id].unique())
+        if(cowSnapshots_ && (resources_[id].use_count() != 1))
             resources_[id]=resourceOps_[id].make(resources_[id].get());
         return static_cast<T*>(resources_[id].get());
     }
@@ -504,7 +504,7 @@ public:
     // Diagnostic counters: pools/resources shared with snapshots rather than copied.
     size_t sharedPoolCount() const {
         size_t count=0;
-        for(const auto& p:pools_)if(p && !p.unique())++count;
+        for(const auto& p:pools_)if(p && (p.use_count() != 1))++count;
         return count;
     }
     size_t sharedCowPageCount() const {
@@ -514,7 +514,7 @@ public:
     }
     size_t sharedResourceCount() const {
         size_t count=0;
-        for(const auto& resource:resources_)if(resource && !resource.unique())++count;
+        for(const auto& resource:resources_)if(resource && (resource.use_count() != 1))++count;
         return count;
     }
 
@@ -532,7 +532,7 @@ private:
     template <class T> Pool<T>* poolIfExists() {
         uint32_t id=detail::componentTypeId<T>();
         if(id>=pools_.size() || !pools_[id])return nullptr;
-        if(cowSnapshots_ && !pools_[id].unique())
+        if(cowSnapshots_ && (pools_[id].use_count() != 1))
             pools_[id]=std::shared_ptr<IPool>(pools_[id]->clone());
         return static_cast<Pool<T>*>(pools_[id].get());
     }
