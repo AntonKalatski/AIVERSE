@@ -2,6 +2,7 @@
 #include "RtsPlanetRender.h"
 #include "engine/view/Frustum.h"
 #include "engine/view/Horizon.h"
+#include "engine/view/GridGeometry.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -252,12 +253,9 @@ void PlanetRenderer::buildChunk(gfx::Device& dev, const PlanetBody& pb, Body& b,
             v.push_back(pv);
         }
     auto vi = [&](int i, int j) { return uint32_t(j * nx + i); };
-    // outward winding: face basis u x v = -n (docs table), so (a, b, d) of the flat terrain becomes CCW from outside
-    for (int j = 0; j + 1 < ny; ++j)
-        for (int i = 0; i + 1 < nx; ++i) {
-            const uint32_t a = vi(i, j), bq = vi(i + 1, j), cq = vi(i, j + 1), d = vi(i + 1, j + 1);
-            idx.insert(idx.end(), {a, d, bq, a, cq, d});
-        }
+    // The same grid diagonal as the planar heightfield. The per-face
+    // outward-facing correction immediately below remains unchanged.
+    ::aiverse::view::appendQuadGridIndices(idx,nx,ny);
     // fix winding once from the first triangle against the outward direction
     if (idx.size() >= 3) {
         const float3 p0 = v[idx[0]].pos, p1 = v[idx[1]].pos, p2 = v[idx[2]].pos;

@@ -92,3 +92,9 @@ presentation culling only. Do not duplicate the
 planet's horizon formula or put game planet types
 in the View library.
 
+For regular rectangular surface meshes, reuse
+`engine/view/GridGeometry.h` / `appendQuadGridIndices`
+instead of duplicating its tessellation loop. The host
+owns all vertex heights/materials, normal mapping, any
+LOD skirts and optional winding flip.
+

@@ -328,3 +328,18 @@ Inside the occluder or with invalid occluder radius
 the helper returns "not hidden" conservatively.
 Test `view_spherical_horizon` is deferred (**NOT RUN**).
 
+## Generic rectangular quad-grid geometry
+
+`engine/view/GridGeometry.h` exports
+`view::appendQuadGridIndices(vector<uint32_t>&,columns,rows)`,
+a safe vertex-index tessellation primitive for regular 2D grids,
+heightfield patches and cube-sphere face patches. It appends
+triangles using the same a-d diagonal and winding as the
+existing flat and curved terrain builders. The terrain
+host retains its own LOD skirts, color sampling and morphing;
+planet rendering retains outward normal/winding correction,
+surface atlas mapping and horizon policy. The generic
+algorithm only receives column/row counts and a vector of
+indices, with no game-map, physics, height or render rule.
+Deferred CTest: `view_grid_geometry` (**NOT RUN**).
+

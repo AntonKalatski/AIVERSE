@@ -1,6 +1,7 @@
 // Chunked terrain renderer (see RtsTerrainRender.h).
 #include "RtsTerrainRender.h"
 #include "engine/view/Frustum.h"
+#include "engine/view/GridGeometry.h"
 #include "../../../engine/data/JsonCompose.h"
 #include <algorithm>
 #include <chrono>
@@ -492,13 +493,10 @@ void TerrainRenderer::buildHeightChunk(gfx::Device& dev, const MapGrid& g, Chunk
                 if (k == 0) { bmin = min3(bmin, p); bmax = max3(bmax, p); }
                 v.push_back({p, normalAt(X, Y), colorAt(X, Y), {morphAt(X, Y), 0}});
             }
+        // Shared quad diagonal/winding; terrain LOD skirts are still
+        // authored by this host immediately after these indices.
+        ::aiverse::view::appendQuadGridIndices(idx,nx,ny);
         auto vi = [&](int i, int j) { return uint32_t(j * nx + i); };
-        for (int j = 0; j + 1 < ny; ++j)
-            for (int i = 0; i + 1 < nx; ++i) {
-                // diagonal (0,0)-(1,1), counter-clockwise seen from above (+y): a, d, b and a, c, d
-                uint32_t a = vi(i, j), b = vi(i + 1, j), cc = vi(i, j + 1), d = vi(i + 1, j + 1);
-                idx.insert(idx.end(), {a, d, b, a, cc, d});
-            }
         // skirts: hide cracks between chunks on different LOD levels
         if (lodLevels_ > 1) {
             const float depth = 0.3f + 0.25f * float(s);

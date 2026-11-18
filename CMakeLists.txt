@@ -781,6 +781,12 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME view_spherical_horizon COMMAND aiverse_view_horizon_tests)
 endif()
 
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_grid_geometry_tests tests/view/grid_geometry.cpp)
+    target_link_libraries(aiverse_view_grid_geometry_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_grid_geometry COMMAND aiverse_view_grid_geometry_tests)
+endif()
+
 set(AIVERSE_RUNTIME_SRC
     engine/platform/PlatformCommon.cpp
     engine/render/Renderer3D.cpp
