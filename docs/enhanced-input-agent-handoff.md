@@ -175,3 +175,11 @@ Stage 4 must add validated action/context JSON schemas and per-user rebinding pr
 **Test cases added:** pressed-only RTS actions, KeyUp and hold/repeat, UI modal/focus cancel and higher-priority context overriding a shortcut. Full build/CTest still pending, and a real RTS example should verify script keys, ctrl groups and hosted-client input.
 
 **Next agent:** complete default camera/mouse action migration where it is safe, add user-facing rebinding profile UI (separate from authored assets), and verify compiler, CTest, macOS hosted FPS/RTS and other platforms. Never claim end-to-end validation from source-level review.
+
+## Stage 9 — refresh inspector branch after concurrent ECS/test changes (2026-11-18)
+
+`feature/universal-entity-inspector-fps` advanced by 8 commits after the Stage 5 merge, from `26eb4d9` to `dd711f5`. Compared all 13 changed paths: ECS scene hierarchy, projectile systems/tests, engine test runner, skills catalog, validation workflows and developer docs. None overlaps this input feature's files. Applied those 13 newer paths on top of the current Enhanced Input worktree as a second two-parent merge, retaining both parents and input changes.
+
+**Verification:** GitHub API changed-path comparison; zero overlapping paths, no local CMake/CTest result; CI remained queued during source review. This merges only the known 8 new upstream commits; repeat comparison before PR finalization if the inspector branch moves again.
+
+**Next agent:** compile editor/FPS/RTS input targets, run all library input tests and inspect CI. Continue parity work for camera/pointer/gamepad actions only after capturing results in this handoff.

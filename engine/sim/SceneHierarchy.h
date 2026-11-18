@@ -216,6 +216,12 @@ public:
         });
         // Repair invalid links outside the query iteration.
         for(Entity child:invalid)w.remove<Parent>(child);
+        // Sparse-set swap-removals change dense iteration order. Resolve
+        // conflicting/cyclic edges by canonical child index instead, so a
+        // rollback produces the same graph regardless of pool history.
+        std::sort(links.begin(),links.end(),[](const auto& lhs,const auto& rhs) {
+            return lhs.first.index<rhs.first.index;
+        });
         // Repair cyclic links as well; authoritative components and graph
         // must have identical parent relations after rebuild.
         for(auto [child,parent]:links) {

@@ -4,6 +4,7 @@
 #pragma once
 #include "EcsMechanicSystems.h"
 #include "engine/core/Fixed.h"
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -73,8 +74,9 @@ struct KeepKinematicDestination {
 };
 
 // ArrivalSink: void(Simulation&,const KinematicArrivalEvent&).
-// Events are emitted after stable ECS dense-order traversal; despawn is
-// deferred. The sink decides whether a stale/dead target should take damage.
+// Events are emitted in stable Entity-index order after the ECS traversal;
+// swap-removal of older shots must not reorder same-tick damage callbacks.
+// Despawn is deferred. The sink decides if a stale target takes damage.
 // Do not register this system and the physical flight system for the same
 // projectile entity.
 template<class ArrivalSink,class DestinationResolver=KeepKinematicDestination>
@@ -100,6 +102,13 @@ void addKinematicProjectileSystem(Simulation& sim,std::string name,
                                                 shot.shotId,shot.position});
                         expired.push_back(entity);
                     }
+                });
+            // Pool swap-removals can change dense iteration order as older
+            // projectiles expire. Preserve canonical shot/Entity ordering for
+            // simultaneous arrivals regardless of earlier lifecycle changes.
+            std::sort(arrivals.begin(),arrivals.end(),
+                [](const KinematicArrivalEvent& a,const KinematicArrivalEvent& b) {
+                    return a.projectile.index<b.projectile.index;
                 });
             for(const auto& event:arrivals)onArrival(current,event);
             for(Entity entity:expired)world.destroyLater(entity);

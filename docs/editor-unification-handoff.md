@@ -2019,3 +2019,22 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - **Code SHA:** `447bc13c999faea5d778adec61f3446816b58c51` shared PR #7; `run-tests.sh` now strips trailing CR from registry arguments. Added two CRLF smoke cases in `tests/test_unified_runner.py`.
 - The owner's completed full run had **99/106 CTest pass, 7 fail**, plus 5 failing extra suites. Extra failures were all due to a terminal CR passed as a test argument from a CRLF checkout, not proven library failures. Real CTest seven failures are separate and must be fixed on their own.
 - Local isolated Bash test of CRLF parsing **PASS**; post-change repo CI and Mac-native CTest **NOT RUN**. Detailed handoff: `docs/agent-handoffs/unified-test-runner.md`.
+
+### 2026-11-18 — Release tools and ECS skill metadata regressions
+- **Code SHA:** `2fbedf096f1b01c5a70b7eb37ba27a7b49a1ef34` on shared PR #7. Fixed publisher legacy-archive detection so AIVERSE zip binaries and architecture are found, added 11 missing ECS skills to `skills/catalog.json` from `libraries/catalog.json`, and corrected two skill docs' invalid backticked path/function suffixes.
+- Addresses `release_tools`, `skill_catalog`, `skill_audit` from the owner's CTest 99/106 report. **Post-fix runtime tests NOT RUN**; local full checkout unavailable. See `docs/agent-handoffs/unified-test-runner.md`.
+- **Next:** run `ctest --test-dir build/all-tests -R '^(release_tools|skill_catalog|skill_audit)$' --output-on-failure` and continue remaining ECS failures.
+
+
+### 2026-11-18 — ECS failure fixes after full 99/106 CTest run
+- **Code SHA:** `8a936fa116c1b3c984b4ada3fba6197ba1ea3562` on PR #7. Four remaining ECS/inspector regressions addressed: cycle rebuild now canonicalizes parent links by Entity index; generic kinematic projectile arrival callbacks stable-sort by Entity index; locomotion test uses Fixed-quantized dt rather than ideal floating fractions; inspector full-suite test accounts for 3 opt-in hierarchy pools excluded from legacy RTS v9.
+- **No new save/network schema or ECS authority changes.** Changes committed but **post-fix tests NOT RUN**. Pre-fix Mac Studio CTest was 99/106 PASS and 7 FAIL; release/skills and CRLF extras fixes are in earlier commits.
+- **Next:** run targeted CTest `ecs_scene_hierarchy_test|ecs_kinematic_projectile_test|ecs_cross_genre_locomotion_test`, then `aiverse_tests` and full `./run-tests.sh`. See `docs/agent-handoffs/unified-test-runner.md`.
+
+### 2026-11-18 — Correct CRLF script edit (source replacement quoting issue)
+- **Code SHA:** `1e98755c81db330781c5e619c5b760746cb3ba97` restored correct `run-tests.sh` after its earlier CRLF patch accidentally duplicated the file suffix because JS `String.replace` interpreted `$'` in the replacement string. This was discovered through source verification and corrected with callback replacement from last good version; no user test ran the malformed version.
+- Structural checks of the published candidate passed, actual native `bash -n` and full tests **NOT RUN**. Next verify `bash -n run-tests.sh` and `python3 tests/test_unified_runner.py` before rerunning targeted CTest.
+
+### 2026-11-18 — CI validates root test runner before ECS suites
+- **Code SHA:** `3aca181ca15dcce2b0c4412c3242eb4ce21bc4cf`. `.github/workflows/ecs-experiments.yml` now runs `bash -n run-tests.sh` and `python3 tests/test_unified_runner.py` on macOS/Linux, with pull-request triggers for root runner, extras manifest and smoke fixture.
+- **Actual CI results not yet known**; the change prevents repeating earlier source-edit corruption. Full handoff in `docs/agent-handoffs/unified-test-runner.md`.

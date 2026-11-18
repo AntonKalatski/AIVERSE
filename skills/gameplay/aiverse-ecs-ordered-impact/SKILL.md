@@ -34,7 +34,7 @@ unchanged until cross-genre/save/rollback parity tests confirm a split.
 
 ## Live integration
 
-`modules/rts/RtsCombat.cpp::sysProjectiles` uses this shared policy on
+`RtsModule::sysProjectiles` in `modules/rts/RtsCombat.cpp` uses this shared policy on
 ordinary non-programmed RTS weapon projectiles while keeping its existing
 `dealDamage` armor/status implementation, `gs.hash.query`, faction
 filter and queued Lua payloads. RTS ability/arc/projectile-program damage

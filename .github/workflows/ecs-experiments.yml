@@ -16,6 +16,9 @@ on:
       - 'CMakeLists.txt'
       - 'tests/ecs_*'
       - 'tests/run_ecs_experiment_suite.sh'
+      - 'run-tests.sh'
+      - 'tests/extra-test-suites.txt'
+      - 'tests/test_unified_runner.py'
       - '.github/workflows/ecs-experiments.yml'
   pull_request:
     paths:
@@ -31,6 +34,9 @@ on:
       - 'CMakeLists.txt'
       - 'tests/ecs_*'
       - 'tests/run_ecs_experiment_suite.sh'
+      - 'run-tests.sh'
+      - 'tests/extra-test-suites.txt'
+      - 'tests/test_unified_runner.py'
       - '.github/workflows/ecs-experiments.yml'
   workflow_dispatch:
 
@@ -49,6 +55,8 @@ jobs:
       - name: Validate shell syntax
         shell: bash
         run: |
+          bash -n run-tests.sh
+          python3 tests/test_unified_runner.py
           bash -n tests/run_ecs_experiment_suite.sh
           bash -n tests/run_ecs_gameplay_compare.sh
       - name: Compile and run ECS checks

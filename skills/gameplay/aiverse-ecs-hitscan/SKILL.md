@@ -44,7 +44,7 @@ selection policy for instantaneous collision resolution. These are
 
 ## Current implementation boundaries
 
-Real `modules/fps/FpsSystems.cpp::traceShot` already uses the shared
+Real `Module::traceShot` in `modules/fps/FpsSystems.cpp` already uses the shared
 selection policy over current/rewound Actor views. Vehicle/material
 collision and damage remain in the FPS adapter. This header is not yet a
 separately registered `HitscanSystem` with ECS fire-request components.
