@@ -10,6 +10,7 @@
 #include <map>
 #include <optional>
 #include <span>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -164,12 +165,20 @@ public:
     bool registerContext(MappingContext context) {
         if (context.name.empty()) return false;
         std::uint64_t next = 1;
-        for (auto& mapping : context.mappings) {
-            if (mapping.id >= next) next = mapping.id + 1;
+        std::set<std::uint64_t> ids;
+        for (const auto& mapping : context.mappings) {
+            if (mapping.action.empty() || !actions_.contains(mapping.action)) return false;
+            if (mapping.id && !ids.insert(mapping.id).second) return false;
+            if (mapping.id >= next) {
+                if (mapping.id == UINT64_MAX) return false;
+                next = mapping.id + 1;
+            }
         }
         for (auto& mapping : context.mappings) {
-            if (!mapping.id) mapping.id = next++;
-            if (mapping.action.empty()) return false;
+            if (!mapping.id) {
+                if (next == UINT64_MAX) return false;
+                mapping.id = next++;
+            }
         }
         const std::string name = context.name;
         contexts_[name] = std::move(context);
