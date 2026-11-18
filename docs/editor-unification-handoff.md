@@ -933,3 +933,10 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `libraries/include/aiverselib/genre/EcsWeaponLaunchSystems.h`: extracted pure `commitAcceptedShot(ammo,nextFireTick,now,interval,shots?)` policy, used by generic ECS weapon launch after its existing acceptance checks. No RNG or structural writes, and no new validation inside the helper. Existing generic accepted-shot semantics remain decrement ammo and set nextFireTick.
 - Verification: GitHub commit only; native C++ compilation and test execution **not run**.
 - Next: call the same policy from real FPS `Module::shoot` while preserving its prior validation/hitscan/rewind and save v9 ordering; then document that separate commit.
+
+
+### 2026-11-18 — Real FPS shot accounting now calls shared weapon policy
+- Implementation SHA: `25917da11cf6cb5a2ea32c436ae891f6b4c2ee0d`.
+- Changed `modules/fps/FpsModule.cpp`: includes the public shared weapon launch header and replaces duplicated post-acceptance ammo/cooldown/shots mutation in both `fps.ecsAuthority` ON and OFF paths of real `Module::shoot` with `lib::genre::commitAcceptedShot`. ON path still writes `ActorRuntime` first and copies three fields back to the legacy tick workspace. OFF path still mutates the legacy actor. The helper performs the same arithmetic as the removed inline statements; shot eligibility, RNG, pellets, hitscan, lag compensation, projectile creation, impact/damage, save v9 and network formats are unchanged.
+- Verification: GitHub source commits only; C++ compile and runtime tests **not executed**. Shared policy may expose include/link issues; check native FPS target and cross-genre weapon test before merge.
+- This is a **real shared gameplay algorithm**, but FPS/RTS are NOT yet fully consuming common ECS WeaponLaunch/Flight/Damage systems. Next: connect actual RTS fire accounting and/or extract shared collision/damage stages with parity fixtures; then migrate authoritative ECS state and test rollback.
