@@ -534,7 +534,16 @@ void GameClient::event(const Event& incoming) {
     }
     if (!uiWants) overlay_.handleEvent(e);
     mapDragEvent(e, uiWants);   // rules "mapClick": drag from a map-drag HUD element onto the map (ClientScriptCmd.cpp)
-    if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) keys_[int(e.key)] = e.type == EventType::KeyDown;
+    if (e.type == EventType::KeyDown || e.type == EventType::KeyUp) {
+        const int code=int(e.key);
+        if (code>=0 && code<int(platform::Key::Count)) {
+            const bool allowed=screen_==Screen::Playing && !uiWants &&
+                               !ui_.textInputFocused() && !howtoOpen_;
+            // Legacy camera/top-down fallbacks are presentation-only: a key
+            // captured by a text field or modal must never stay latched here.
+            keys_[code]=e.type==EventType::KeyDown && allowed;
+        }
+    }
     if (e.type == EventType::MouseMove || e.type == EventType::MouseDown) { mouseX_ = e.x; mouseY_ = e.y; }
     // A view script with ui.on("back", fn) owns Esc / Android Back (which arrives as Escape) during a match: the engine's
     // pause / resume / tool cancel are skipped; a true return cancels the pointer interaction in progress (docs/scripting.md)
@@ -964,8 +973,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     inputShortcuts_.setPossessionEnabled(screen_==Screen::Playing && possessedUnit().valid());
     const bool keyboardAllowed=sim_ && screen_==Screen::Playing &&
                                 !howtoOpen_ && !ui_.textInputFocused();
-    if(!keyboardAllowed)inputShortcuts_.reset();
-    else {
+    if(!keyboardAllowed) {
+        inputShortcuts_.reset();
+        // No key-up is guaranteed when a modal or text field takes focus.
+        // Keep the legacy fallback mirror in sync with InputFlow cancellation.
+        std::fill_n(keys_,int(platform::Key::Count),false);
+    } else {
         const auto timed=inputShortcuts_.advance(float(dt));
         if(topDownActive())topDownTimedActions(timed);
         else if(!regionSwipe_.enabled && !planet())applyRtsActions(timed);
