@@ -2361,3 +2361,29 @@ per user's request to finish feature source before testing.
 function, fix any code-review findings, then introduce optional
 OpenEXR scanline parsing and resource streaming/readback phases with
 separate source/handoff commits.
+
+## Stage 5L — Radiance HDR one-call upload and half boundary correction (2026-11-18)
+
+**Source commit:** `d0802baf79dd9e5177d8e9231dcab83abb8a4b9e`.
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**File:** `engine/render/HdrTexture.h`.
+
+**Change:** Fix the IEEE binary16 subnormal-to-normal rounding
+transition: values that round to 1024 units of 2^-24 produce the
+smallest normal half (`0x0400`), rather than being incorrectly
+clamped at `0x03FF`. Add
+`loadRadianceHdr(gfx::Device&, std::string_view, std::string&)`
+as a convenience native C++ API combining bounded
+`parseRadianceHdr` and `uploadRadianceHdr`. The CPU scratch
+lifetime is scoped to the call; GPU ownership remains with the
+caller. Existing two-step API remains intact.
+
+**Verification:** Source commit on GitHub verified.
+**C++ build NOT RUN; CTest NOT RUN; GPU test NOT RUN** per the
+user's defer-testing decision.
+
+**Next:** Add a standalone source fixture and CMake test registration
+for flat RGBE, RLE, orientation, HDR values, malformed input,
+binary16 boundary and device upload/failure; record exact new
+source commit and deferred test status in the next handoff. After
+that tackle EXR import and texture readback/streaming coverage.
