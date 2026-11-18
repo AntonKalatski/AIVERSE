@@ -210,6 +210,36 @@ single-pass binding/dispatch logic, not Metal/GL pixel correctness.
 For reproduction and outstanding validation, read
 `docs/handoffs/prisma-stage-14.md`.
 
+
+## Stage 15 — Bloom Prefilter opt-in and legacy clear parity
+
+`PrismaRhiExecutor::execute` now defaults raster passes to the same
+opaque-black color clear and depth clear as `Prisma::draw`. An additional
+`clearRasterTargets=false` argument is available for explicitly overwrite-only
+pipelines, but the FXAA and Bloom experimental call sites use the default
+legacy-compatible behavior. This fixes a known Stage 14 parity risk.
+
+`AIVERSE_PRISMA_GRAPH_BLOOM_PREFILTER=1` opts only the **first Bloom
+Prefilter** raster pass into `PrismaRhiExecutor`. It uses the existing
+`kPrefilter` shader pipeline, uniform block and one source texture; the
+input/output resources are externally managed `Sized` targets (full-resolution
+input, lower-resolution output), and the graph does not allocate transient
+textures. In HDR mode both resources are declared `RGBA16F`, otherwise
+`RGBA8`. Both are supported by the existing conditional RHI path.
+
+The rest of the Bloom downsample/upsample chain remains the original direct
+renderer; the FXAA experiment still uses its independent
+`AIVERSE_PRISMA_GRAPH_FXAA=1` flag. The default path is unchanged and any
+preflight/allocation failure falls back to `Prisma::draw`. The experimental
+raster callback returns true after a submitted draw; failure **after** GPU
+submission cannot be rolled back. No full-frame parity has been established.
+
+`tests/render/prisma_graph.cpp` now has CPU-only graph contracts for
+SDR and HDR prefilter sizes, bindings, single-dispatch and missing output
+preflight. These sources have **not** been compiled or run in this agent
+environment; Metal/GL screenshots and GPU timings are also **NOT RUN**.
+See `docs/handoffs/prisma-stage-15.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
