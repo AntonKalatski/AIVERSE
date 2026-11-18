@@ -7,6 +7,7 @@
 #include <cmath>
 #include <compare>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <optional>
 #include <span>
@@ -338,7 +339,29 @@ public:
         sample.transient = true;
     }
 
-    // Use on focus loss / modal transitions. Emits Canceled, drops held controls immediately.
+    // Release only a physical device category while preserving keyboard,
+    // pointer, touch and gamepad controls owned by the same local player.
+    // The next update() emits Canceled for affected Actions that no longer
+    // have another live mapping; unchanged devices remain active.
+    void cancelDevices(std::initializer_list<Device> devices, int deviceIndex = -1) {
+        const std::set<Device> removed(devices.begin(),devices.end());
+        auto matches = [&](Control key) {
+            return removed.contains(key.device) &&
+                   (deviceIndex < 0 || key.deviceIndex == deviceIndex);
+        };
+        for (auto it=controls_.begin(); it!=controls_.end();) {
+            if (matches(it->first)) it=controls_.erase(it);
+            else ++it;
+        }
+        for (const auto& [contextName, context] : contexts_)
+            for (const auto& mapping : context.mappings)
+                if (matches(mapping.control)) {
+                    interruptedActions_.insert(mapping.action);
+                    mappingRuntime_.erase({contextName,mapping.id});
+                }
+    }
+
+    // Use on global focus loss. Emits Canceled and drops all held devices.
     void cancelAll() {
         events_.clear();
         for (const auto& [name, state] : states_) {
@@ -348,6 +371,7 @@ public:
         mappingRuntime_.clear();
         actionRuntime_.clear();
         states_.clear();
+        interruptedActions_.clear();
     }
 
     std::span<const ActionEvent> update(float deltaSeconds) {
@@ -542,7 +566,7 @@ public:
             else if (actionDown) events_.push_back({name, Phase::Ongoing, value});
             if ((!actionDown && previous.active) || quickPulse) {
                 const bool interrupted = !chordOK || aggregate.interrupted ||
-                    !presentedActions.contains(name);
+                    interruptedActions_.contains(name) || !presentedActions.contains(name);
                 events_.push_back({name, interrupted ? Phase::Canceled :
                     (previous.triggered || triggered ? Phase::Completed : Phase::Canceled), {}});
             }
@@ -554,6 +578,7 @@ public:
             raw.pressed = raw.released = false;
             if (raw.transient) { raw.value = 0; raw.transient = false; }
         }
+        interruptedActions_.clear();
         return events_;
     }
 
@@ -702,6 +727,7 @@ private:
     std::map<std::pair<std::string,std::uint64_t>,Runtime> mappingRuntime_;
     std::map<std::string,Runtime> actionRuntime_;
     std::map<std::string,ActionState> states_;
+    std::set<std::string> interruptedActions_;
     std::vector<ActionEvent> events_;
 };
 
