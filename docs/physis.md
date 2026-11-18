@@ -70,7 +70,11 @@ draft PR #23) owns water-body geometry, flow, contacts and buoyancy; TerraWeave
 Use the opt-in host integration plan and precise metre/centimetre conversion in
 [`physis-nereid-terraweave-integration.md`](physis-nereid-terraweave-integration.md).
 The existing PHYSIS shallow-flood prototype is **not** an authoritative
-replacement for NEREID water. Do not run dual water simulation in a shared region.
+replacement for NEREID water. When a host uses NEREID as the water authority,
+set `InstallOptions::floodMode = FloodMode::ExternalAuthority`: PHYSIS continues
+to update fire and quake but clears/skips its local shallow-flood depth. This
+opt-in switch is authored and covered by tests; cross-module NEREID/Terra
+integration and real build/CTest verification remain pending.
 
 This is a **design contract only**. Terra/NEREID integration, rendering and
 cross-system tests remain NOT IMPLEMENTED / NOT RUN on this branch.
