@@ -2,6 +2,7 @@
 // Import/authoring ONLY. Simulation consumes the fixed values, never samples floats.
 #pragma once
 #include "AnimationPlayback.h"
+#include "GenericRetarget.h"
 #include "EcsRootMotionSystems.h"
 #include "engine/data/Json.h"
 #include <algorithm>
@@ -75,7 +76,7 @@ inline RootMotionTracksResource decodeRootMotionTracks(const Json& root) {
     std::set<uint32_t> used;
     for(const auto& c:root["tracks"].items()) {
         if(!c.isObject() || !c["frames"].isArray() ||
-           c.getInt("id")<=0 || c.getInt("id")>INT32_MAX ||
+           c.getInt("id")<=0 || c.getInt("id")>std::numeric_limits<int32_t>::max() ||
            c.getInt("rate")<10 || c.getInt("rate")>240 ||
            !used.insert(uint32_t(c.getInt("id"))).second)
             throw std::invalid_argument("root bake: corrupt clip header");
