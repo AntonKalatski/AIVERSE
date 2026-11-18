@@ -17,6 +17,9 @@ namespace aiverse::physis {
 struct FieldIndexSettings {
     std::int32_t tileSizeMeters = 256;
     std::uint32_t maxTilesPerVolume = 1024; // larger volumes use a global list
+    // Per field type: prevents unbounded total bucket memory when MANY small
+    // overlapping volumes are present (per-volume limits alone are insufficient).
+    std::uint32_t maxTotalBucketReferences = 65536;
 };
 
 struct FieldIndexStats {
@@ -46,13 +49,10 @@ class FieldBuckets {
     std::vector<Entry> entries_;
     std::map<Key, std::vector<std::size_t>> buckets_;
     std::vector<std::size_t> global_;
+    std::size_t bucketReferenceCount_ = 0;
 public:
     std::size_t size() const { return entries_.size(); }
-    std::size_t bucketReferences() const {
-        std::size_t count = 0;
-        for (const auto& entry : buckets_) count += entry.second.size();
-        return count;
-    }
+    std::size_t bucketReferences() const { return bucketReferenceCount_; }
     std::size_t globalReferences() const { return global_.size(); }
 
     void add(Entity entity, const T& data, Vec3 center, Fixed radius,
@@ -87,15 +87,25 @@ public:
         const auto maxZ = indexFloorDiv(center.z.raw + radius.raw, span);
         const auto nx = std::uint64_t(maxX - minX) + 1;
         const auto nz = std::uint64_t(maxZ - minZ) + 1;
+        // Short-circuit before multiplication; malformed large world ranges
+        // must not overflow uint64_t and evade the memory safety budget.
         if (nx > settings.maxTilesPerVolume ||
-            nz > settings.maxTilesPerVolume ||
-            nx * nz > settings.maxTilesPerVolume) {
+            nz > settings.maxTilesPerVolume) {
+            global_.push_back(ordinal);
+            return;
+        }
+        const auto count = nx * nz; // both already bounded <= 4096
+        if (count > settings.maxTilesPerVolume ||
+            count > settings.maxTotalBucketReferences - bucketReferenceCount_) {
+            // Reference semantics win over memory budget: always visit this
+            // field through the stable global list rather than dropping it.
             global_.push_back(ordinal);
             return;
         }
         for (auto z = minZ; z <= maxZ; ++z)
             for (auto x = minX; x <= maxX; ++x)
                 buckets_[{x, z}].push_back(ordinal);
+        bucketReferenceCount_ += static_cast<std::size_t>(count);
     }
 
     template<class Visitor>
@@ -138,7 +148,9 @@ public:
     explicit FieldSpatialIndex(const World& world, FieldIndexSettings config = {})
         : snapshot_(world), settings_(config) {
         if (config.tileSizeMeters <= 0 || config.tileSizeMeters > 1000000 ||
-            config.maxTilesPerVolume == 0 || config.maxTilesPerVolume > 4096)
+            config.maxTilesPerVolume == 0 || config.maxTilesPerVolume > 4096 ||
+            config.maxTotalBucketReferences == 0 ||
+            config.maxTotalBucketReferences > 1048576)
             throw std::invalid_argument("PHYSIS spatial index settings");
         tileSpanRaw_ = std::int64_t(config.tileSizeMeters) * Fixed::kOne;
         snapshot_.eachExistingConst<WindZone>([&](Entity e, const WindZone& v) {
