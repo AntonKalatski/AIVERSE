@@ -2184,3 +2184,11 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME physis_environment COMMAND aiverse_physis_environment_test)
     set_tests_properties(physis_environment PROPERTIES LABELS "PHYSIS")
 endif()
+
+# PHYSIS Stage 4: deterministic disaster overlays, no game genre dependencies.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_physis_disasters_test tests/physis_disasters_test.cpp)
+    target_link_libraries(aiverse_physis_disasters_test PRIVATE aiverse_engine)
+    add_test(NAME physis_disasters COMMAND aiverse_physis_disasters_test)
+    set_tests_properties(physis_disasters PROPERTIES LABELS "PHYSIS")
+endif()
