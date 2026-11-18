@@ -37,6 +37,12 @@ int main() {
     assert(defaults.atlasBytes<=8u*1024u*1024u);
     assert(defaults.maxTriangles<10000);
     assert(defaults.maxForestClusters==832);
+    HorizonSettings dualDefault;
+    dualDefault.orientationViews=2;
+    const auto dualBudget=estimateHorizonBudget(dualDefault);
+    assert(dualBudget.atlasBytes<=16u*1024u*1024u);
+    assert(dualBudget.atlasBytes>defaults.atlasBytes);
+    assert(dualBudget.maxTriangles==defaults.maxTriangles);
 
     const auto bake=bakeHorizon(terrain,climate,settings,0,0);
     assert(bake.atlasWidth==bake.atlasHeight);
@@ -103,6 +109,34 @@ int main() {
            bake.clusters.size()*12u); // two crossed cards per cluster
     assert(!model->batching.autoLod);
 
+    // Quality tier: two distinct 90-degree atlas captures, same mesh
+    // and triangle counts, still one model / one atlas / two materials.
+    HorizonSettings dualSettings=settings;
+    dualSettings.orientationViews=2;
+    const auto sideBake=bakeHorizon(terrain,climate,dualSettings,0,0);
+    assert(sideBake.clusters.size()==bake.clusters.size());
+    assert(sideBake.atlasWidth>bake.atlasWidth);
+    assert(sideBake.atlasRgba!=bake.atlasRgba);
+    for (const auto& cluster:sideBake.clusters) {
+        assert(cluster.atlasX!=cluster.atlasSideX ||
+               cluster.atlasY!=cluster.atlasSideY);
+        assert(cluster.atlasSideX+cluster.atlasSize<=sideBake.atlasWidth);
+        assert(cluster.atlasSideY+cluster.atlasSize<=sideBake.atlasHeight);
+    }
+    const auto sideModel=makeHorizonModel(sideBake);
+    assert(sideModel->meshes[0].primitives.size()==
+           model->meshes[0].primitives.size());
+    assert(sideModel->vertices.size()==model->vertices.size());
+    assert(sideModel->indices==model->indices);
+    assert(sideModel->images.size()==1);
+    assert(sideModel->materials.size()==2);
+    const auto& forestPart=sideModel->meshes[0].primitives.back();
+    assert(forestPart.vertexCount>=8);
+    const auto& nearUv=sideModel->vertices[forestPart.firstVertex].uv;
+    const auto& sideUv=sideModel->vertices[forestPart.firstVertex+4].uv;
+    assert(nearUv.x!=sideUv.x || nearUv.y!=sideUv.y);
+
+
     bool rejected=false;
     auto bad=settings;
     bad.atlasTilePixels=128;
@@ -118,6 +152,12 @@ int main() {
     rejected=false;
     bad=settings;
     bad.tierBlendCm=settings.middleForestEndCm;
+    try {validateHorizonSettings(bad);}
+    catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected);
+    rejected=false;
+    bad=settings;
+    bad.orientationViews=3;
     try {validateHorizonSettings(bad);}
     catch(const std::invalid_argument&){rejected=true;}
     assert(rejected);
