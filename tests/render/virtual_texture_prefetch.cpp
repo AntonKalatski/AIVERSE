@@ -89,6 +89,41 @@ void priorityLayersAndInvalid() {
             "invalid config resets a prior usable planner");
     require(p.plan(views).empty(),"uninitialized planner has no requests");
 }
+
+void residentCoarseDoesNotStarveFine() {
+    VirtualTexturePrefetchConfig cfg;
+    cfg.tilesX=cfg.tilesY=4;cfg.mipLevels=3;
+    cfg.maxCandidates=1; cfg.maxExaminedPages=8;
+    cfg.maxRequestsPerFrame=1;
+    VirtualTexturePrefetchPlanner p;
+    require(p.initialize(cfg),"bounded resident coarse fixture init");
+    const std::vector<VirtualTextureVisibleRegion> view{
+        {0.75,0.75,1.,1.,0,0,5}
+    };
+    size_t lookups=0;
+    const auto available=[&](VirtualPageKey k) {
+        ++lookups;
+        return k.mip>=1; // coarse and middle are already resident
+    };
+    const auto fine=p.plan(view,available);
+    require(fine.size()==1 && fine[0].key==VirtualPageKey{0,3,3,0} &&
+            p.stats().alreadyResident==2 &&
+            p.stats().uniqueCandidates==1 &&
+            p.stats().examinedPages==3 &&
+            lookups==3 && !p.stats().candidateLimitReached,
+            "two resident ancestors do not exhaust one missing-page budget");
+    cfg.maxExaminedPages=2;
+    require(p.initialize(cfg),"tight lookup budget initialization");
+    lookups=0;
+    const auto capped=p.plan(view,available);
+    require(capped.empty() && p.stats().alreadyResident==2 &&
+            p.stats().examinedPages==2 &&
+            p.stats().candidateLimitReached && lookups==2,
+            "large resident regions honor independent CPU lookup budget");
+    cfg.maxExaminedPages=0;
+    require(!p.initialize(cfg),"invalid zero lookup budget rejected");
+}
+
 void regionCapAndStableOrdering() {
     VirtualTexturePrefetchConfig cfg;
     cfg.tilesX=4;cfg.tilesY=4;cfg.mipLevels=3;
@@ -112,7 +147,8 @@ void regionCapAndStableOrdering() {
 }
 int main(){
     try { coarseAndBudgets();clippingAndDedup();
-          priorityLayersAndInvalid();regionCapAndStableOrdering(); }
+          priorityLayersAndInvalid();residentCoarseDoesNotStarveFine();
+          regionCapAndStableOrdering(); }
     catch(const std::exception& e){
         std::fprintf(stderr,"Virtual texture prefetch FAILED: %s\n",e.what());
         return 1;
