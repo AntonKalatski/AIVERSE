@@ -520,3 +520,23 @@ parallax impostor, no interpolation between adjacent views, and no
 whole-tree temporal alpha transition. The source assertions have been
 updated for later execution; **CMake/CTest and GPU verification have not
 been run by request**.
+
+
+## Stage 3c — stable spatial transition to impostor
+
+`FloraView::impostorBlendWidthCm` (default **0**, preserving legacy
+hard-ring selection) spreads the `TreeLOD::Low` →
+`TreeLOD::Impostor` threshold over a bounded interval around
+`FloraView::lowRangeCm`. Each `FoliageInstance` selects a stable
+threshold based on its persistent key and species ID. The same tree
+does not flicker when camera position changes within the band, and
+all trees no longer swap on one circular boundary. The interval is
+validated to stay between `mediumRangeCm` and `cullRangeCm`.
+
+Example: `view.lowRangeCm = 18000;`
+`view.impostorBlendWidthCm = 4000;` distributes transitions over
+160–200 metres. Because thresholds are stable, this is **population
+dithering, not a true per-object temporal or alpha crossfade**.
+No additional draw calls or extra transparent meshes are required.
+`tests/terraweave_flora_test.cpp` has deferred assertions; test
+execution is intentionally postponed.
