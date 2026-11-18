@@ -78,6 +78,19 @@ compile_run ecs-hitscan-resolution -Ilibraries/include \
     engine/world/SpatialWorld.cpp engine/world/TriangleCollision.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp \
     engine/core/FixedMath.cpp engine/data/Json.cpp engine/data/JsonCompose.cpp
+# CI exercises all NEREID tests, independently of genre/runtime/render targets.
+NEREID_CORE=(
+    engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp
+    engine/data/Json.cpp engine/data/JsonCompose.cpp
+)
+for nereid in water buoyancy geometry query_index native_pipeline; do
+    compile_run "ecs-nereid-$nereid" -Ilibraries/include \
+        "tests/ecs_nereid_${nereid}_test.cpp" "${NEREID_CORE[@]}"
+done
+# Legacy bridge imports only from the editor-time RtsWater geometry code.
+compile_run ecs-nereid-legacy-raster -Ilibraries/include \
+    tests/ecs_nereid_legacy_raster_test.cpp modules/rts/view/RtsWater.cpp \
+    "${NEREID_CORE[@]}"
 compile_run ecs-native-persistence tests/ecs_native_persistence_test.cpp \
     engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/core/FixedMath.cpp \
     engine/data/Json.cpp engine/data/JsonCompose.cpp
