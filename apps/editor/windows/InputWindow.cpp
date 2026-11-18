@@ -1,9 +1,7 @@
-// Editor-side authoring for project-owned Enhanced Input assets.
+// AIVerse InputFlow editor: author project-owned Input Actions and contexts.
 // Do not apply these presentation mappings to the deterministic simulation.
 #include "../Editor.h"
-#include "engine/platform/EnhancedInputConfig.h"
-#include "engine/platform/EnhancedInputFileIO.h"
-#include "engine/platform/EnhancedInputPresets.h"
+#include "engine/platform/InputFlow.h"
 #include <algorithm>
 #include <array>
 #include <filesystem>
@@ -15,8 +13,8 @@
 
 namespace aiverse::editor {
 namespace fs = std::filesystem;
-namespace ei = lib::gameplay::enhanced;
-namespace ecfg = platform::enhanced_config;
+namespace ei = lib::gameplay::inputflow;
+namespace ecfg = platform::inputflow_config;
 
 namespace {
 const char* kValueNames[]{"Boolean","Axis1D","Axis2D","Axis3D"};
@@ -131,7 +129,7 @@ bool drawTriggers(std::vector<ei::Trigger>& triggers,const std::vector<ei::Actio
 class InputWindow final : public EditorWindow {
 public:
     const char* id() const override {return "input";}
-    const char* title() const override {return "Input Actions";}
+    const char* title() const override {return "InputFlow Actions";}
     const char* group() const override {return "logic";}
     const char* dockArea() const override {return "right";}
     int order() const override {return 45;}
@@ -151,11 +149,11 @@ public:
             ImGui::TextWrapped("FPS: this asset REPLACES ALL built-in actions, not just edited keys. "
                                "Save only a complete FPS action scheme.");
         if(ImGui::Button("Use FPS defaults")) {
-            asset_=platform::enhanced_presets::fpsReference();dirty_=true;error_.clear();capture_.reset();
+            asset_=platform::inputflow_presets::fpsReference();dirty_=true;error_.clear();capture_.reset();
         }
         ImGui::SameLine();
         if(ImGui::Button("Use RTS defaults")) {
-            asset_=platform::enhanced_presets::rtsReference();dirty_=true;error_.clear();capture_.reset();
+            asset_=platform::inputflow_presets::rtsReference();dirty_=true;error_.clear();capture_.reset();
         }
         if(ImGui::IsItemHovered())ImGui::SetTooltip("Replaces the mappings in this editor buffer; Save to persist.");
         if(ImGui::Button("Reload"))load(dir);
@@ -174,7 +172,7 @@ public:
         contexts();
         // Report conflicts in the actual context ordering, including shadows
         // between multiple active contexts, not only adjacent bindings.
-        ei::InputSystem inspector;
+        ei::InputFlow inspector;
         std::string validation;
         if(ecfg::installAsset(inspector,asset_,&validation)){
             const auto warnings=inspector.conflicts();
@@ -238,7 +236,7 @@ private:
         asset_=std::move(checked);dirty_=false;exists_=true;error_.clear();
     }
     void actions() {
-        if(!ImGui::CollapsingHeader("Input Actions",ImGuiTreeNodeFlags_DefaultOpen))return;
+        if(!ImGui::CollapsingHeader("InputFlow Actions",ImGuiTreeNodeFlags_DefaultOpen))return;
         ImGui::InputText("New action",actionName_,sizeof actionName_);
         ImGui::SameLine();
         if(ImGui::Button("Add action")&&uniqueName(asset_.actions,actionName_)){
