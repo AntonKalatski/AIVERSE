@@ -62,6 +62,20 @@ int main() {
         check(img.depth == 3 && levelImageCount(img,0) == 3 &&
               img.levels[0].size() == 48, "volume payload");
         check(decodeBlocksSlice(img,0,2,rgba) && rgba[0] == 2, "3D z slice");
+        std::string bc5 = fixture(4,4,0,1,1,1);
+        bc5.resize(104 + 16);
+        write32(bc5, 12, 141); // VK_FORMAT_BC5_UNORM_BLOCK
+        write64(bc5, 88, 16);
+        write64(bc5, 96, 16);
+        std::fill(bc5.begin() + 104, bc5.end(), char(0));
+        bc5[104] = char(255);
+        bc5[112] = char(128);
+        check(parseKtx2(bc5,img,err) &&
+              img.format == BlockFormat::BC5 && img.levels[0].size() == 16,
+              "BC5 KTX2 format and complete mip payload");
+        check(decodeBlocksSlice(img,0,0,rgba) && rgba.size() == 64 &&
+              rgba[0] == 255 && rgba[1] == 128 && rgba[3] == 255,
+              "BC5 KTX2 CPU fallback");
         std::string oneD = fixture(2,0,0,0,1,1);
         check(parseKtx2(oneD,img,err) && img.oneDimensional && img.height == 1,
               "1D KTX2 preserved");

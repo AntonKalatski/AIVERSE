@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <map>
 #include <stdexcept>
+#include <vector>
+#include <cmath>
 
 using namespace aiverse;
 namespace {
@@ -12,16 +14,26 @@ public:
     gfx::DeviceInfo info_;
     std::string error_;
     gfx::TextureDesc lastDesc;
+    std::vector<uint8_t> firstPixels;
     int created=0, destroyed=0, mipUploads=0, failUpload=0;
     const gfx::DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
-    bool supports(gfx::PixelFormat f) const override { return f == gfx::PixelFormat::BC7; }
+    bool supports(gfx::PixelFormat f) const override {
+        return f == gfx::PixelFormat::BC7 || f == gfx::PixelFormat::BC4 ||
+               f == gfx::PixelFormat::BC5 || f == gfx::PixelFormat::EAC_R11;
+    }
     gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override { return {}; }
     void updateBuffer(gfx::BufferHandle,const void*,size_t,size_t) override {}
     void destroyBuffer(gfx::BufferHandle) override {}
     gfx::TextureHandle createTexture(const gfx::TextureDesc& d) override {
         if (gfx::validateTextureDesc(d) != gfx::TextureDescError::None) return {};
         lastDesc = d;
+        firstPixels.clear();
+        if (d.data && d.format == gfx::PixelFormat::RGBA8 &&
+            d.width > 0 && d.height > 0) {
+            const auto* p = static_cast<const uint8_t*>(d.data);
+            firstPixels.assign(p, p + size_t(d.width)*size_t(d.height)*4);
+        }
         return {uint32_t(++created)};
     }
     void updateTexture(gfx::TextureHandle,int,int,int,int,const void*,int) override {}
@@ -86,6 +98,38 @@ int main() {
         image = {};
         check(!render::uploadKtx2Image(dev,image,{},err).valid() && !err.empty(),
               "invalid texture rejected");
+
+        // BC5 RGB normal maps require positive Z reconstruction. Unless
+        // explicitly opted in, a capable GPU must still receive RGBA8 CPU
+        // pixels because native RGTC2 sampling does not supply blue Z.
+        image = {};
+        image.width = image.height = 4;
+        image.format = render::BlockFormat::BC5;
+        image.vkFormat = 141; // VK_FORMAT_BC5_UNORM_BLOCK
+        image.levels.resize(1);
+        image.levels[0].assign(16, 0);
+        image.levels[0][0] = uint8_t(255); // R endpoint
+        image.levels[0][8] = uint8_t(128); // G endpoint
+        std::vector<uint8_t> cpuNormal;
+        check(render::decodeBlocksSlice(image, 0, 0, cpuNormal) &&
+              cpuNormal.size() == 64 && cpuNormal[0] == 255 &&
+              cpuNormal[1] == 128 &&
+              std::abs(int(cpuNormal[2]) - 128) <= 1 &&
+              cpuNormal[3] == 255, "BC5 CPU normal Z reconstruction");
+        h = render::uploadContainerTexture(dev, image, {}, err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::RGBA8 &&
+              dev.firstPixels.size() == 64 &&
+              dev.firstPixels[0] == 255 && dev.firstPixels[1] == 128 &&
+              std::abs(int(dev.firstPixels[2]) - 128) <= 1,
+              "BC5 defaults to shader-compatible CPU RGBA");
+        dev.destroyTexture(h);
+        render::TextureUploadOptions bc5Options;
+        bc5Options.shaderReconstructsBc5NormalZ = true;
+        h = render::uploadContainerTexture(dev, image, bc5Options, err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::BC5 &&
+              dev.lastDesc.levelCount == 1,
+              "BC5 native RGTC2 requires shader opt-in");
+        dev.destroyTexture(h);
 
         // DDS DX10 2D array is stored surface-major, with the complete mip
         // chain of layer zero before layer one. The container reader must

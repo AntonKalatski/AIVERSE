@@ -84,6 +84,21 @@ void volume() {
     check(decodeBlocksSlice(img,1,0,rgba) && rgba[0]==33,
           "volume mip one");
 }
+void bc5() {
+    std::string s = makeDx10(83, 4, 4, 0, 1, 1, false, 3);
+    s.append(16, char(0));
+    s[148] = char(255); // R endpoint
+    s[156] = char(128); // G endpoint
+    CompressedImage image;
+    std::string error;
+    std::vector<uint8_t> rgba;
+    check(parseDdsTexture(s, image, error), "DX10 BC5 DDS parse");
+    check(image.format == BlockFormat::BC5 && image.vkFormat == 141 &&
+          image.levels[0].size() == 16, "BC5 DDS block preservation");
+    check(decodeBlocksSlice(image, 0, 0, rgba) && rgba.size() == 64 &&
+          rgba[0] == 255 && rgba[1] == 128 && rgba[3] == 255,
+          "BC5 DDS decoded normal channels");
+}
 void partialLegacyCube() {
     std::string s(128,'\0');
     s.replace(0,4,"DDS "); u32(s,4,124);u32(s,12,4);u32(s,16,4);
@@ -99,6 +114,7 @@ int main() {
         cubeArray();
         rgbaArray();
         volume();
+        bc5();
         partialLegacyCube();
     } catch(const std::exception& e) {
         std::fprintf(stderr,"DDS layered texture test FAILED: %s\n",e.what());
