@@ -3567,3 +3567,38 @@ remaining BasisLZ/UASTC transcode, broad OpenEXR codec coverage
 and compute storage-image support as separate bounded stages.
 Record every tested SHA and actual outcomes; leave PR Draft
 until validated.
+
+## Stage 8G — bound editor async texture previews and invalidate stale callbacks (2026-11-18)
+
+**Code commit:** `7329ee8e853f5fe5b58c303584ff4427f7e30973`.
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Path:** `apps/editor/windows/TextureResourcesWindow.cpp`.
+
+**Source fix:** The shared editor texture inspection window already gained
+an independent per-mip/layer async CPU readback preview from another
+agent; avoid reimplementing it. This stage sets a strict 16 MiB maximum
+for the selected GPU subresource readback before calling the Metal/GL/
+Vulkan backend, so a 32×32 downsampled inspector thumbnail does not
+cause a giant full-image PBO/blit allocation. Reject unsupported
+dimensions, depth and MSAA and defer to backend feature checks for
+accepted requests. Suppress repeated readback submissions while a
+previous request is still pending. When the selected live texture
+changes or disappears, reset the requested mip/layer and clear the
+cached preview, incrementing its revision generation. Asynchronous
+callbacks carrying old revisions cannot repaint a new resource's
+preview (the existing weak_ptr/lifetime guard remains intact).
+
+**Compatibility:** Editor diagnostics only. No GPU texture allocation
+paths, scene rendering, ECS, saves/network or asset file formats change.
+No new backend methods were added.
+
+**Verification:** GitHub source commit confirmed. Native editor
+compilation, ImGui preview and real GPU readback latency/memory tests:
+**NOT RUN**; CI green status not verified. The 16 MiB cap is a
+source-level budget, not a measured peak memory guarantee.
+
+**Next:** Run the editor on Metal/GL/Vulkan with textures of different
+mips/layers and test selection changes during pending readbacks,
+resource destruction before completion, unsupported WebGL2 paths
+and accepted failed transfers. Then validate all texture CTests,
+render passes and platform GPUs before merging.
