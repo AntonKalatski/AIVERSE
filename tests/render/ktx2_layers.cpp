@@ -82,6 +82,26 @@ int main() {
         check(decodeBlocksSlice(img,0,0,rgba) && rgba.size() == 64 &&
               rgba[0] == 255 && rgba[1] == 128 && rgba[3] == 255,
               "BC5 KTX2 CPU fallback");
+        // The KTX2 VkFormat dictates the native sRGB compressed format.
+        // These compressed source bytes stay in block form for the GPU.
+        for (const auto& format : std::vector<std::pair<uint32_t,BlockFormat>>{
+            {134u, BlockFormat::BC1}, {138u, BlockFormat::BC3},
+            {146u, BlockFormat::BC7}, {148u, BlockFormat::ETC2_RGB8},
+            {152u, BlockFormat::ETC2_RGBA8},
+            {158u, BlockFormat::ASTC_4x4},
+            {166u, BlockFormat::ASTC_6x6}}) {
+            const int blockBytes = format.first == 134u || format.first == 148u ? 8 : 16;
+            std::string srgbKtx = fixture(4,4,0,0,1,1);
+            srgbKtx.resize(size_t(104 + blockBytes));
+            write32(srgbKtx,12,format.first);
+            write64(srgbKtx,88,uint64_t(blockBytes));
+            write64(srgbKtx,96,uint64_t(blockBytes));
+            check(parseKtx2(srgbKtx,img,err) && img.srgb &&
+                  img.format == format.second &&
+                  img.levels.size() == 1 &&
+                  img.levels[0].size() == size_t(blockBytes),
+                  "KTX2 sRGB compressed variant and exact block stride");
+        }
         std::string oneD = fixture(2,0,0,0,1,1);
         check(parseKtx2(oneD,img,err) && img.oneDimensional && img.height == 1,
               "1D KTX2 preserved");

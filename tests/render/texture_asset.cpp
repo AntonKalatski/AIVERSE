@@ -26,7 +26,9 @@ public:
     bool supports(gfx::PixelFormat f) const override {
         return f == gfx::PixelFormat::BC7 || f == gfx::PixelFormat::BC4 ||
                f == gfx::PixelFormat::BC5 || f == gfx::PixelFormat::EAC_R11 ||
-               f == gfx::PixelFormat::BC1_sRGB || f == gfx::PixelFormat::BC7_sRGB;
+               f == gfx::PixelFormat::BC1_sRGB || f == gfx::PixelFormat::BC7_sRGB ||
+               f == gfx::PixelFormat::ETC2_RGB8_sRGB ||
+               f == gfx::PixelFormat::ASTC_4x4_sRGB;
     }
     gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override { return {}; }
     void updateBuffer(gfx::BufferHandle,const void*,size_t,size_t) override {}
@@ -182,6 +184,38 @@ int main() {
               "BC1 RGBA sRGB native format selected");
         dev.destroyTexture(h);
 
+        image = {};
+        image.width = image.height = 4;
+        image.format = render::BlockFormat::ETC2_RGB8;
+        image.vkFormat = 148;
+        image.srgb = true;
+        image.levels.resize(1); image.levels[0].assign(8,0);
+        h = render::uploadContainerTexture(dev,image,{},err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::ETC2_RGB8_sRGB,
+              "ETC2_RGB8 sRGB hardware sampling selected");
+        dev.destroyTexture(h);
+        image.format = render::BlockFormat::ASTC_4x4;
+        image.vkFormat = 158;
+        image.levels[0].assign(16,0);
+        h = render::uploadContainerTexture(dev,image,{},err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::ASTC_4x4_sRGB,
+              "ASTC_4x4 sRGB hardware sampling selected");
+        dev.destroyTexture(h);
+
+        // BC1_RGB is opaque even when the compressed block's index 3
+        // would be transparent under a BC1_RGBA texture. Never reinterpret
+        // it as BC1_RGBA_sRGB on the GPU.
+        image = {};
+        image.width = image.height = 4;
+        image.format = render::BlockFormat::BC1;
+        image.vkFormat = 132; // VK_FORMAT_BC1_RGB_SRGB_BLOCK
+        image.srgb = true;
+        image.levels.resize(1); image.levels[0].assign(8,0);
+        h = render::uploadContainerTexture(dev,image,{},err);
+        check(h.valid() && dev.lastDesc.format == gfx::PixelFormat::RGBA8_sRGB &&
+              dev.lastDesc.levelCount == 0,
+              "opaque BC1_RGB_sRGB is CPU-decoded not reinterpreted as BC1_RGBA");
+        dev.destroyTexture(h);
         // A backend can report a compressed format yet reject this allocation.
         // The RGBA fallback must NOT forward stale compressed levelData/size,
         // and it must allocate the authored mip chain for explicit uploads.
