@@ -106,3 +106,52 @@ ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs
 - The bridge consumes `SimEvent` and `World` **only** on the presentation side, not via an ECS gameplay `Simulation::addSystem`; timing remains under the host's render loop.
 - Duplicate-tick suppression is global per presenter. On rollback or replay, call `reset()` before replay; split-screen/multiple worlds need separate presenters. Future work should generalize stable presentation event IDs across snapshot/resimulation.
 - Next: Stage 3 — load and hot-reload versioned graph assets in a reusable registry; integrate graph asset edits with the existing FX editor/MCP and add graph-aware tests. Then GPU simulation and visual node editor are separate stages, not implicit in the current work.
+
+## Stage 3 — graph assets, exposed-parameter variants and hot reload (COMMITTED, TESTS NOT RUN)
+
+**Implementation SHA:** `582763839d818e04287723cba6143453648680d0`  
+**Standalone test SHA:** `26a3acb7f2d6511ef9a070539e56ed7528ca1214`  
+**CTest registration SHA:** `cd5f25b784a1beab1af2c5177376e239338fcf57`
+
+### Files
+
+- `engine/fx/VfxGraphAssets.h`: public header-only `VfxGraphAssets` and `VfxGraphLoadResult` (CPU graph compilation registry).
+- `tests/vfx_graph_assets_test.cpp`: graph load, unchanged-content cache, parameter variants, reload after source change, last-good fallback on malformed JSON, path traversal rejection and invalidate.
+- `CMakeLists.txt`: `aiverse_vfx_assets_tests`, CTest `vfx_graph_assets`.
+
+### Stable public C++ API
+
+```cpp
+#include "engine/fx/VfxGraphAssets.h"
+aiverse::fx::VfxGraphAssets assets(particles,
+    [](const std::string& path, std::string& text) {
+        return readGameContent(path, text); // provided by the native game
+    });
+auto result = assets.load("engine_fire"); // fx/graphs/engine_fire.vfx.json
+auto variant = assets.load("engine_fire", aiverse::Json::parse(R"({"size":2})"));
+if (result.effect >= 0) {
+    particles.play(result.effect, {0,0,0});
+    // A VfxSourceComponent may reference result.runtimeName once loaded.
+}
+// The next assets.load() checks the source content hash and recompiles on changes.
+// Invalid reloads return the previous good compiled effect plus errors.
+```
+
+The registry hashes source content using stable FNV-1a 64-bit and builds parameter variant names from stable serialized override objects. Graph output materializes into an existing `ParticleSystem::define` effect, with separate effect identities for each exposed-parameter variant. `fx/graphs/<name>.vfx.json` names are validated (A-Z/a-z/0-9/_/-). The renderer's CPU effect ID is retained for an in-place valid hot reload. Failed reloads do not overwrite a working effect. `invalidate()` forces recompilation on the next load. The registry intentionally does not perform filesystem IO itself; native games can use archives or platform readers.
+
+**Compatibility:** old `fx/<name>.json` and old `fx/fx.json` remain unchanged. Native games can opt in through public headers; no render-server or gameplay simulation dependency was added.
+
+**NOT RUN:** no local compiler, CTest, CI status, Metal device or screenshot verification was available in this execution context. Required compile/run commands:
+
+```bash
+cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/vfx-test --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests -j4
+ctest --test-dir build/vfx-test --output-on-failure -R '^vfx_(graph_compiler|ecs_presentation|graph_assets)$'
+```
+
+### Limitations and immediate next action
+
+- Graph loading is **not yet wired** into the existing FX editor or agent MCP commands; no visual node editor, shader/compute nodes or GPU simulation exists. The runtime registry is callable by native projects today once compiled, but the existing RTS and FPS production game loops do not consume it automatically.
+- A fallback on bad asset reload keeps the previous in-memory effect; an explicit `ParticleSystem::reloadAll()` invalidates stored effect IDs, so the host must also clear/invalidate its `VfxGraphAssets` registry before reloading. A future integrated hot-reload service should make this automatic.
+- Next bounded stage: editor/MCP integration of graph resources, graph node canvas, parameter editing and graph-to-effect preview; **then** introduce GPU compute backend with CPU fallback and platform-specific capability checks.
+- After every next implementation stage, append exact implementation SHA, branch, paths, actual tests and handoff commit here; do not mark stage validated until the test commands pass.
