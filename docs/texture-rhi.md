@@ -307,6 +307,22 @@ thumbnail (not array/cubemap/depth/MSAA preview). Neither the editor
 window nor the backend enumeration has been compiled or tested on a native
 target in this environment.
 
+
+## Optional Basis Universal KTX2 bridge
+
+`engine/render/Ktx2Transcode.h` accepts an externally supplied
+`Ktx2Transcoder` callback for ETC1S/BasisLZ and UASTC KTX2.
+The engine checks the original header/level index, rejects broken
+dimensions and supercompression, and requires the transcoder to
+return the same dimensions, layers, faces and number of mip levels.
+Unknown native block formats, incorrect mip sizes and excessive
+decoded memory fail closed. Regular KTX2 bypasses the callback.
+
+This is an **integration boundary only**, not the actual
+Basis Universal transcoding implementation. An approved external
+codec must be added and tested separately, with license notices.
+Test source: `tests/render/ktx2_transcode.cpp` (`ktx2_transcode`).
+
 ## Native build and targeted tests (pending execution)
 
 ```sh
@@ -315,7 +331,8 @@ git pull --ff-only origin feature/texture-rhi-unification
 cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
 cmake --build build/texture-rhi --target \
   aiverse_texture_contract_test aiverse_render_target_set_test \
-  aiverse_ktx2_layers_test aiverse_dds_layers_test \
+  aiverse_ktx2_layers_test aiverse_ktx2_transcode_test \
+  aiverse_dds_layers_test \
   aiverse_texture_asset_test aiverse_texture_streaming_test \
   aiverse_texture_mip_residency_test aiverse_texture_resident_streamer_test \
   aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test \
@@ -323,7 +340,7 @@ cmake --build build/texture-rhi --target \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture)$'
+  -R '^(texture_contract|render_target_set|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture)$'
 ```
 
 Build `aiverse_editor` and a native client to detect editor/renderer

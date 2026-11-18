@@ -21,6 +21,7 @@ never equate source presence with a passing GPU test.**
 | Offscreen 1–4 color targets | `gfx::RenderTargetSet` | `init`/`begin`/`end`/`shutdown`, optional depth |
 | Low-level mip/face render | `RenderTargetPassDesc`, `Device::beginRenderTargets` | Call `endPass()` only on successful begin |
 | DDS DX10, KTX2 arrays/cubes/volumes | `parseDdsTexture`, `parseKtx2`, `uploadContainerTexture` | `CompressedImage` keeps all faces/mips |
+| Optional BasisU KTX2 import | `render::parseKtx2WithTranscoder`, `render::uploadKtx2WithTranscoder` | Inject a real licensed codec; exact mip/face validation |
 | Budgeted deferred texture upload | `gfx::TextureStreamQueue` | Owns GPU texture and staged bytes; `drain()` on device thread |
 | Safe coarse-to-fine sampling | `gfx::TextureMipResidency` | Only create/bind sampler when complete coarse-to-fine mips resident |
 | Unified native streaming | `gfx::TextureResidentStreamer` | Owns queue+residency; gates sampling, tracks completions and retries |
@@ -133,6 +134,18 @@ Automatic GPU-feedback-driven page requests, file packing
 and real-device shader validation are still separate work.
 No native GPU tests have been confirmed passing.
 
+### Optional Basis Universal codec boundary
+
+Include `engine/render/Ktx2Transcode.h` and supply a callback of type
+`render::Ktx2Transcoder` when using ETC1S/BasisLZ or UASTC KTX2.
+The callback must return all mip-major slices/faces with the same
+source dimensions/layers/mip chain. It must select a format the
+GPU supports, or return RGBA8 for the existing CPU-upload path.
+Without a codec, Basis input fails explicitly. **No Basis encoder
+or transcoder is bundled with AIVERSE.** Never claim a callback
+is equivalent to implementing the codec. Check the license and
+actual target GPU capabilities before importing production assets.
+
 ### Correctness and compatibility
 
 - Keep existing model material shaders' `sampler2D` resources on the
@@ -161,9 +174,10 @@ cmake --build build/texture-rhi --target \
   aiverse_virtual_texture_page_table_test aiverse_virtual_texture_streamer_test \
   aiverse_virtual_texture_disk_queue_test aiverse_virtual_texture_file_streamer_test \
   aiverse_hdr_texture_test aiverse_exr_texture_test \
-  aiverse_ktx2_layers_test aiverse_dds_layers_test aiverse_texture_asset_test
+  aiverse_ktx2_layers_test aiverse_ktx2_transcode_test \
+  aiverse_dds_layers_test aiverse_texture_asset_test
 ctest --test-dir build/texture-rhi --output-on-failure \
-  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture|ktx2_layers|dds_layers|texture_asset)$'
+  -R '^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|hdr_texture|exr_texture|ktx2_layers|ktx2_transcode|dds_layers|texture_asset)$'
 ```
 
 Build the editor and native client to catch API/layout regressions.
