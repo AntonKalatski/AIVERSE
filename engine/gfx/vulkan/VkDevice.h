@@ -75,6 +75,7 @@ struct VTexture {
     PixelFormat format = PixelFormat::RGBA8;
     VkFormat vkFormat = VK_FORMAT_UNDEFINED;
     int width = 0, height = 0, volumeDepth = 1, layers = 1, levels = 1;
+    int samples = 1; // multisampled render-only images cannot be bound as sampled textures
     TextureDimension dimension = TextureDimension::Texture2D;
     bool depth = false, renderTarget = false, generateMips = false, compressed = false;
 };

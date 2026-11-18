@@ -313,7 +313,7 @@ bool VulkanDevice::createImage(VTexture& t, VkImageUsageFlags usage) {
     ci.extent = {uint32_t(std::max(1, t.width)), uint32_t(std::max(1, t.height)), uint32_t(std::max(1, t.volumeDepth))};
     ci.mipLevels = uint32_t(t.levels);
     ci.arrayLayers = uint32_t(t.layers);
-    ci.samples = VK_SAMPLE_COUNT_1_BIT;
+    ci.samples = VkSampleCountFlagBits(t.samples);
     ci.tiling = VK_IMAGE_TILING_OPTIMAL;
     ci.usage = usage;
     ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -435,15 +435,16 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
         error_ = "Vulkan: R/RG render targets require matching pipeline color formats";
         return {};
     }
-    if (d.sampleCount != 1 || d.storage ||
+    if (d.storage ||
         ((d.dimension == TextureDimension::Texture1D ||
           d.dimension == TextureDimension::Texture3D) &&
          (d.renderTarget || d.format == PixelFormat::Depth))) {
-        error_ = "Vulkan: multisample/storage and 1D/3D render attachments unsupported";
+        error_ = "Vulkan: storage images and 1D/3D render attachments unsupported";
         return {};
     }
     VTexture t;
     t.format = d.format;
+    t.samples = d.sampleCount;
     t.vkFormat = vkFormat(d.format);
     t.dimension = d.dimension;
     t.width = d.width;
@@ -462,6 +463,14 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     }
     if (t.depth && (d.data || d.levelData)) {
         error_ = "Vulkan: depth images cannot be initialized by the color upload path"; return {};
+    }
+    if (t.samples > 1 &&
+        (d.dimension != TextureDimension::Texture2D || !d.renderTarget ||
+         (d.format != PixelFormat::Depth && d.format != PixelFormat::RGBA8 &&
+          d.format != PixelFormat::RGBA8_sRGB &&
+          d.format != PixelFormat::RGBA16F))) {
+        error_ = "Vulkan: multisample images require supported 2D render-target formats";
+        return {};
     }
     if (d.levelCount > 0 && (!d.levelData || !d.levelSize)) {
         error_ = "Vulkan: levelCount requires data and byte sizes for every mip"; return {};
@@ -498,6 +507,29 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     if (t.depth) usage = VK_IMAGE_USAGE_SAMPLED_BIT |
                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     else if (d.renderTarget) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (t.samples > 1) {
+        // Multisampled images are transient render targets, not sampled RHI
+        // textures. A matching single-sample resolve target is sampled later.
+        usage = t.depth ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT :
+                          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        const VkSampleCountFlags sampleBit = VkSampleCountFlags(t.samples);
+        const VkSampleCountFlags limit = t.depth ?
+            gpuProps_.limits.framebufferDepthSampleCounts :
+            gpuProps_.limits.framebufferColorSampleCounts;
+        VkImageFormatProperties imageProps{};
+        if (!(limit & sampleBit) ||
+            vkGetPhysicalDeviceImageFormatProperties(gpu_, t.vkFormat,
+                VK_IMAGE_TYPE_2D, VK_IMAGE_TILING_OPTIMAL, usage, 0,
+                &imageProps) != VK_SUCCESS ||
+            !(imageProps.sampleCounts & sampleBit)) {
+            error_ = "Vulkan: multisample format/count unsupported by physical device";
+            return {};
+        }
+        if (!createImage(t, usage)) return {};
+        // Renderpass transitions from UNDEFINED on first clear; the image
+        // has no shader-readable descriptor or CPU upload contents.
+        return {textures_.add(t)};
+    }
     if (!createImage(t, usage)) return {};
     t.sampler = samplerFor(d, t);
     VkCommandBuffer cb = transferCmd();
@@ -530,7 +562,8 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
 
 void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) {
     VTexture* t = textures_.get(h.id);
-    if (!t || t->dimension != TextureDimension::Texture2D || t->compressed || t->depth || w <= 0 || hh <= 0) return;
+    if (!t || t->samples > 1 || t->dimension != TextureDimension::Texture2D ||
+        t->compressed || t->depth || w <= 0 || hh <= 0) return;
     const size_t bpp = texelBytes(t->format), row = size_t(w) * bpp;
     std::vector<uint8_t> packed;
     const void* src = pixels;
@@ -548,7 +581,7 @@ void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, c
 
 bool VulkanDevice::updateTextureRegion(TextureHandle handle, const TextureUploadDesc& u) {
     VTexture* t = textures_.get(handle.id);
-    if (!t || t->compressed || t->depth || !u.data || u.width <= 0 ||
+    if (!t || t->samples > 1 || t->compressed || t->depth || !u.data || u.width <= 0 ||
         u.height <= 0 || u.depth <= 0 || u.mipLevel < 0 || u.mipLevel >= t->levels ||
         u.x < 0 || u.y < 0 || u.z < 0 || u.arrayLayer < 0 || u.arrayLayer >= t->layers)
         return false;
@@ -623,7 +656,10 @@ VkCompareOp vkCompare(CompareFunction f) {
 
 TextureViewHandle VulkanDevice::createTextureView(TextureHandle handle, const TextureViewDesc& v) {
     VTexture* t = textures_.get(handle.id);
-    if (!t) { error_ = "Vulkan texture view: invalid parent"; return {}; }
+    if (!t || t->samples > 1) {
+        error_ = "Vulkan texture view: invalid or multisampled render-only parent";
+        return {};
+    }
     TextureDesc parent;
     parent.width = t->width; parent.height = t->height; parent.depth = t->volumeDepth;
     parent.arrayLayers = t->layers; parent.dimension = t->dimension;
