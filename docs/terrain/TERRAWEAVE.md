@@ -1186,3 +1186,88 @@ procedural world and archive lookup remains available.
 bytes, stale fingerprints, missing pack asset fallback, alpha
 atlas GPU upload and races with source invalidation. The authoring
 agent has NOT built or run tests for this code.
+
+
+## Stage 10 — bulk asset baking and selective Horizon regeneration
+
+### Host-only bulk bake
+
+The reusable `engine/world/TerraWeaveHorizonBatch.h` declares
+`HorizonBatchBounds`, `HorizonBatchOptions`,
+`HorizonBatchStorage` (game-supplied read/write/cancel callbacks),
+`HorizonBatchProgress` and `bakeHorizonBatch(...)`.
+It generates deterministic signed camera region keys in z-major,
+x-minor order, using the **same grid and fingerprints as runtime**
+HorizonScene. Up to 4,096 regions are allowed by default. Existing
+valid TWH2 archives are skipped; wrong settings/version/CRC/missing
+assets are regenerated. The tool never accesses the GPU or
+authoritative ECS.
+
+`aiverse_horizon_bake` is a host-only CMake target built with
+`AIVERSE_BUILD_TOOLS=ON`, disabled for Emscripten. Example:
+
+```sh
+aiverse_horizon_bake \
+  --manifest content/world.json \
+  --out content/world/horizon-cache \
+  --cells -4 -4 4 4
+```
+
+Each region produces `<x>_<z>.twh` in that output folder.
+Pack the files as normal content and configure the same
+`terraweaveHorizon.archivePrefix` in the runtime manifest.
+`--force` bypasses skip-existing; `--max-regions N`
+limits work. The executable builds *procedural* Horizon
+surfaces only. Projects with authored collisions/roads/water
+instead use `bakeHorizonBatch` directly with their immutable
+`HorizonSurfaceSources` snapshot and a nonzero
+`authoredContentHash`.
+
+### Stable atlas slots and partial CPU updates
+
+Before partial regeneration each cluster receives a **stable atlas
+slot independent of visible cluster count**:
+`(layerBase + row*rowCount + col) * orientationViews`.
+Changes to road/shore mask, terrain height or biome in one
+region do not move unrelated cluster UV subrectangles.
+This atlas-layout change advanced the archive format to
+**TWH2/version 2**; previous TWH1 blobs must be regenerated.
+
+`bakeHorizon(..., source, previous, editedRegions)` can reuse
+an immutable previous `HorizonBake` when its snapped camera,
+atlas dimensions, terrain grid and region origin match and
+`editedRegions` is nonempty. It copies the previous atlas,
+reuses unchanged cluster records and their pixels, clears
+only affected stable atlas tiles, redraws affected canopy
+pixels, and recalculates only edited terrain vertices.
+A conservative cluster-width margin captures affected
+neighbouring canopy/slope samples. Incompatible previous
+bakes or empty change bounds perform a full bake.
+
+`TerraWeaveHorizonScene::setSurfaceSources(source, editedRegions)`
+now captures old CPU bake and an immutable source generation
+snapshot for the background job. The GPU model remains visible
+during regeneration. Regions not intersecting the currently
+displayed Horizon footprint do not need an immediate rebake.
+On mobile/minimal configurations with `maxCachedRegions=0`,
+the full-regeneration path avoids retaining an extra CPU
+Horizon bake. Authored source changes bypass stale static
+archives rather than silently restoring old foliage.
+
+`WorldScene::update` records touched loaded/unloaded
+authored height/obstacle cells as world-centimetre
+`RectCm` bounds and passes them only to the Horizon
+snapshot adapter. The near forest maintains its separate
+revision-safe streaming model; no gameplay collision,
+navmesh or ECS entities are modified.
+
+**Scope limit:** partial updates reduce CPU atlas
+rasterization but still rebuild and upload the combined GPU
+model/atlas. There is no partial GPU texture update and no
+dynamic material-driven temporal crossfade in this stage.
+Both require actual backend quality/performance validation.
+
+**Verification:** These are implemented source APIs only.
+The separate testing agent is responsible for builds, CTest,
+archive round trips, moving-camera snapshots, memory and GPU
+captures. None were executed by the feature agent.
