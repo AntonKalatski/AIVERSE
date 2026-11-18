@@ -59,7 +59,11 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
     if(u.meta.x==5u) {
         if(id==0u) {
             uint alive=min(atomic_load_explicit(&aliveCounter[0],memory_order_relaxed),u.meta.y);
-            gpuDrawArgs[0]={alive*6u,1u,0u,0,0u};
+            gpuDrawArgs[0].indexCount=alive*6u;
+            gpuDrawArgs[0].instanceCount=1u;
+            gpuDrawArgs[0].firstIndex=0u;
+            gpuDrawArgs[0].baseVertex=0;
+            gpuDrawArgs[0].firstInstance=0u;
         }
         return;
     }
