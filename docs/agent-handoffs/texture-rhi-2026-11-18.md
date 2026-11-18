@@ -4125,3 +4125,23 @@ ktx2_transcode, then implement only a genuine licensed Basis codec
 when its dependency is available. Before approval, run a native
 build/CTest and a real GPU upload covering normal/sRGB, arrays,
 cubemaps and mip chains. Follow the per-stage separate handoff policy.
+
+## Stage 6P — Basis transcoder verifier and native-agent documentation (2026-11-18)
+
+Source/docs commit: 76fce9b3e74ee17e774fd11b59b212f7ae50d783.
+Branch: feature/texture-rhi-unification, PR #21 Draft.
+Paths: tools/verify-texture-rhi.sh, skills/visuals/aiverse-texture-rhi/SKILL.md, docs/texture-rhi.md.
+
+Changes: Add aiverse_ktx2_transcode_test to the focused build target list
+and ktx2_transcode to both normal and --vulkan CTest expressions.
+Update the AI texture skill with the injected Ktx2Transcoder API and
+requirements for complete mip/face arrays, codec licensing and GPU support.
+Document the bridge's exact topology/budget validation separately from
+the still-unimplemented concrete Basis Universal codec. No ECS or native
+graphics backend files are changed in this documentation stage.
+
+Actual validation: GitHub commit and ref update succeeded. Native C++ build,
+CTest, verifier script, GPU tests and skill audit were NOT RUN.
+Next: Implement a real licensable/available Basis codec instead of a stub,
+or continue independent storage textures, disk streamer integration and
+native verification. Do not merge PR #21 before build/driver gates.
