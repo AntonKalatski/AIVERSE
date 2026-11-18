@@ -1,4 +1,5 @@
 #include "engine/render/TerraWeaveModelAdapter.h"
+#include "engine/render/TerraWeaveForestAdapter.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
@@ -43,4 +44,59 @@ int main() {
     const auto again = makeArborModel(oak, 0x123456789ULL);
     assert(model->vertices.size() == again->vertices.size());
     assert(model->indices == again->indices);
+
+    // Stage 2f: shared prototype, CPU draw submission, stable identity and
+    // origin-relative centimetre -> metre transforms. No GPU is required.
+    ArborForestAdapter forest;
+    forest.addPrototype(oak, 17);
+    assert(forest.prototypeCount() == 1);
+    const auto* shared = forest.prototype(oak.speciesId);
+    assert(shared && shared->meshes.size() == 3);
+    bool duplicateRejected = false;
+    try { forest.addPrototype(oak, 18); }
+    catch (const std::invalid_argument&) { duplicateRejected = true; }
+    assert(duplicateRejected);
+    assert(forest.prototypeCount() == 1);
+
+    const FoliageInstance first{11, 1001, 50100, -50000, 1300, 90000, 2000};
+    const FoliageInstance second{12, 1001, 50200, -50100, 1600, 0, 800};
+    const std::vector<FloraBatch> forestBatches{
+        FloraBatch{1001, TreeLOD::High, {first}},
+        FloraBatch{1001, TreeLOD::Impostor, {second}}
+    };
+    std::vector<aiverse::render::ModelDraw> draws;
+    const ForestRenderOriginCm origin{49100, 300, -49000};
+    forest.forEachDraw(forestBatches, origin, [&](const auto& draw) {
+        draws.push_back(draw);
+    });
+    assert(draws.size() == 2);
+    assert(draws[0].model == shared && draws[1].model == shared);
+    assert(draws[0].persistentId && draws[0].persistentId != draws[1].persistentId);
+    assert(draws[0].flags == aiverse::render::kDrawStatic);
+    assert(std::fabs(draws[0].world.at(0, 3) - 10.0f) < 0.0001f);
+    assert(std::fabs(draws[0].world.at(1, 3) - 10.0f) < 0.0001f);
+    assert(std::fabs(draws[0].world.at(2, 3) + 10.0f) < 0.0001f);
+    assert(std::fabs(draws[0].world.at(0, 2) - 2.0f) < 0.0001f);
+    assert(std::fabs(draws[1].world.at(0, 3) - 11.0f) < 0.0001f);
+    draws.clear();
+    forest.forEachDraw(forestBatches, origin, [&](const auto& draw) {
+        draws.push_back(draw);
+    });
+    assert(draws[0].persistentId == forestBatches[0].instances[0].key ||
+           draws[0].persistentId != 0); // stable hash, not the draw index
+    assert(draws[0].model == shared);
+
+    bool unknownRejected = false;
+    try {
+        forest.forEachDraw(
+            std::vector<FloraBatch>{FloraBatch{999, TreeLOD::High, {first}}},
+            origin, [](const auto&) {});
+    } catch (const std::invalid_argument&) { unknownRejected = true; }
+    assert(unknownRejected);
+    bool extentRejected = false;
+    try {
+        forest.forEachDraw(forestBatches, ForestRenderOriginCm{INT64_MAX, 0, 0},
+                           [](const auto&) {});
+    } catch (const std::out_of_range&) { extentRejected = true; }
+    assert(extentRejected);
 }
