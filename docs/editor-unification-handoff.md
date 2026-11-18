@@ -994,3 +994,9 @@ After EVERY stage or substantial commit, update the sections above **and append*
 - Changed `tests/run_ecs_experiment_suite.sh`: added `ecs-kinematic-projectile` compile/run entry with public headers and the existing simulation, fixed-point, JSON and collision sources. Matches the standalone cross-genre projectile link pattern.
 - Verification: source commit only; shell syntax, compiler, executable and CTest **not run**.
 - Next: validate both runners, register the package/skill and migrate the real RTS adapter after behavioral parity analysis.
+
+
+### 2026-11-18 — Shared Fixed regen legacy parity fixture
+- Implementation SHA: `f67c3ebe5e2177bfef772b45135c167bb4d0f7c2`.
+- Added `tests/ecs_fixed_regeneration_policy_test.cpp`: compares the new generic policy to the exact original RTS Fixed expression across positive/negative rates, varying caps and fractional values; additionally checks saturation and negative energy regeneration behavior.
+- Verification: GitHub commit succeeded; **no native compilation or test execution**. Next: register in CMake, standalone ECS runner, catalog test dependency, then check actual RTS scenario checksums.
