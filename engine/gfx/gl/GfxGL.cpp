@@ -910,9 +910,12 @@ public:
             return false;
         if (t->dimension != TextureDimension::Texture2D &&
             t->dimension != TextureDimension::Texture2DArray &&
-            t->dimension != TextureDimension::Cube)
+            t->dimension != TextureDimension::Cube &&
+            t->dimension != TextureDimension::Texture3D)
             return false;
-        const int layers = t->dimension == TextureDimension::Cube ? 6 : t->layers;
+        const int layers = t->dimension == TextureDimension::Cube ? 6 :
+            t->dimension == TextureDimension::Texture3D ?
+                std::max(1,t->depth >> request.mipLevel) : t->layers;
         if (request.arrayLayer >= layers) return false;
         const int width = std::max(1, t->w >> request.mipLevel);
         const int height = std::max(1, t->h >> request.mipLevel);
@@ -932,7 +935,8 @@ public:
             return false;
         }
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-        if (t->dimension == TextureDimension::Texture2DArray)
+        if (t->dimension == TextureDimension::Texture2DArray ||
+            t->dimension == TextureDimension::Texture3D)
             glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                       t->id, request.mipLevel, request.arrayLayer);
         else

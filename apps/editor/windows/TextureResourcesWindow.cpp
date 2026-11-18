@@ -220,10 +220,14 @@ public:
             // later at beginFrame and owns its staging bytes. Never capture
             // EditorWindow 'this' in an asynchronous GPU callback.
             readMip_ = std::clamp(readMip_,0,std::max(0,chosen->mipLevels-1));
-            readLayer_ = std::clamp(readLayer_,0,std::max(0,chosen->arrayLayers-1));
+            const int selectedSlices = chosen->dimension == gfx::TextureDimension::Texture3D ?
+                std::max(1,chosen->depth >> readMip_) : chosen->arrayLayers;
+            readLayer_ = std::clamp(readLayer_,0,std::max(0,selectedSlices-1));
             ImGui::SliderInt("Read mip", &readMip_, 0, std::max(0,chosen->mipLevels-1));
-            if (chosen->arrayLayers > 1)
-                ImGui::SliderInt("Read face / layer", &readLayer_, 0, chosen->arrayLayers-1);
+            if (selectedSlices > 1)
+                ImGui::SliderInt(chosen->dimension==gfx::TextureDimension::Texture3D ?
+                    "Read depth slice" : "Read face / layer",
+                    &readLayer_, 0, selectedSlices-1);
             else readLayer_ = 0;
             // The backend stages the entire selected subresource even though
             // the preview keeps only a 32x32 diagnostic representation.
@@ -237,7 +241,8 @@ public:
                 (chosen->dimension == gfx::TextureDimension::Texture2D ||
                  chosen->dimension == gfx::TextureDimension::Texture2DArray ||
                  chosen->dimension == gfx::TextureDimension::Cube ||
-                 chosen->dimension == gfx::TextureDimension::CubeArray) &&
+                 chosen->dimension == gfx::TextureDimension::CubeArray ||
+                 chosen->dimension == gfx::TextureDimension::Texture3D) &&
                 (chosen->format == gfx::PixelFormat::RGBA8 ||
                  chosen->format == gfx::PixelFormat::RGBA8_sRGB ||
                  chosen->format == gfx::PixelFormat::RGBA16F) &&
@@ -277,7 +282,7 @@ public:
                 if (preview_->pending)
                     ImGui::TextDisabled("Pending GPU fence/completion...");
                 else if (!preview_->cells.empty()) {
-                    ImGui::Text("%dx%d mip %d face/layer %d",
+                    ImGui::Text("%dx%d mip %d slice/layer %d",
                                 preview_->width,preview_->height,
                                 preview_->mip,preview_->layer);
                     const float display = 160.f;

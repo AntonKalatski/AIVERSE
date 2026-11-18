@@ -425,12 +425,15 @@ public:
             return false;
         const bool cube = t->dimension == TextureDimension::Cube ||
                           t->dimension == TextureDimension::CubeArray;
+        const bool volume=t->dimension==TextureDimension::Texture3D;
         const int layers = cube ? int(t->tex.arrayLength)*6 :
+                           volume ? int(std::max<NSUInteger>(1,
+                                  t->tex.depth >> request.mipLevel)) :
                            t->dimension == TextureDimension::Texture2DArray ?
                            int(t->tex.arrayLength) : 1;
         if ((t->dimension != TextureDimension::Texture2D &&
-             t->dimension != TextureDimension::Texture2DArray && !cube) ||
-            request.arrayLayer >= layers) return false;
+             t->dimension != TextureDimension::Texture2DArray &&
+             !cube && !volume) || request.arrayLayer >= layers) return false;
         const MTLPixelFormat pixelFormat = t->tex.pixelFormat;
         const bool isBGRA = pixelFormat == MTLPixelFormatBGRA8Unorm ||
                             pixelFormat == MTLPixelFormatBGRA8Unorm_sRGB;
@@ -459,9 +462,9 @@ public:
         if (!target) { error_ = "Metal: texture readback staging buffer allocation failed"; return false; }
         id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
         if (!blit) { error_ = "Metal: cannot begin texture readback blit"; return false; }
-        [blit copyFromTexture:t->tex sourceSlice:NSUInteger(request.arrayLayer)
+        [blit copyFromTexture:t->tex sourceSlice:volume ? 0u : NSUInteger(request.arrayLayer)
                     sourceLevel:NSUInteger(request.mipLevel)
-                   sourceOrigin:MTLOriginMake(0,0,0)
+                   sourceOrigin:MTLOriginMake(0,0,volume ? NSUInteger(request.arrayLayer) : 0u)
                      sourceSize:MTLSizeMake(width,height,1)
                        toBuffer:target destinationOffset:0
          destinationBytesPerRow:gpuRow destinationBytesPerImage:gpuBytes];

@@ -622,13 +622,16 @@ bool VulkanDevice::readTextureAsync(TextureHandle h, TextureReadbackDesc request
     if (!recording_ || inPass_ || !callback || !texture || !texture->image ||
         texture->samples != 1 || texture->compressed || texture->depth ||
         request.mipLevel < 0 || request.mipLevel >= texture->levels ||
-        request.arrayLayer < 0 || request.arrayLayer >= texture->layers ||
+        request.arrayLayer < 0 ||
+        request.arrayLayer >= (texture->dimension == TextureDimension::Texture3D ?
+            std::max(1,texture->volumeDepth >> request.mipLevel) : texture->layers) ||
         textureReads_.size() >= 32)
         return false;
     if (texture->dimension != TextureDimension::Texture2D &&
         texture->dimension != TextureDimension::Texture2DArray &&
         texture->dimension != TextureDimension::Cube &&
-        texture->dimension != TextureDimension::CubeArray)
+        texture->dimension != TextureDimension::CubeArray &&
+        texture->dimension != TextureDimension::Texture3D)
         return false;
     if (texture->format != PixelFormat::RGBA8 &&
         texture->format != PixelFormat::RGBA8_sRGB &&
@@ -654,7 +657,11 @@ bool VulkanDevice::readTextureAsync(TextureHandle h, TextureReadbackDesc request
     VkBufferImageCopy region{};
     region.bufferOffset = 0; // tightly packed GPU row and image pitch
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT,
-        uint32_t(request.mipLevel), uint32_t(request.arrayLayer), 1};
+        uint32_t(request.mipLevel),
+        texture->dimension==TextureDimension::Texture3D ? 0u :
+            uint32_t(request.arrayLayer), 1};
+    region.imageOffset.z = texture->dimension==TextureDimension::Texture3D ?
+        request.arrayLayer : 0;
     region.imageExtent = {uint32_t(width), uint32_t(height), 1};
     vkCmdCopyImageToBuffer(cb, texture->image,
                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
