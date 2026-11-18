@@ -59,12 +59,12 @@ public:
     void setObjectMotionVectors(uint64_t view, gfx::TextureHandle velocity);
 
     void setQuality(PrismaQuality q) {
-        if (quality_ != q) { quality_ = q; resetAutoExposure(); }
+        if (quality_ != q) { quality_ = q; resetAutoExposure(); resetMotionHistory(); }
     }
     PrismaQuality quality() const { return quality_; }
     static PrismaQuality defaultQualityFor(const gfx::Device& dev, bool mobile);   // AIVERSE_POSTFX overrides
     void setEnabled(bool on) {
-        if (enabled_ != on) { enabled_ = on; resetAutoExposure(); }
+        if (enabled_ != on) { enabled_ = on; resetAutoExposure(); resetMotionHistory(); }
     }          // editor: preview on / off
     bool enabled() const { return enabled_; }
 
