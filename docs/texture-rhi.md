@@ -5,8 +5,9 @@ Implementation branch: `feature/texture-rhi-unification`.
 
 ## Status — staged source implementation (not GPU-validated)
 
-Stages 1–6H have source commits on this feature branch (numbered in implementation
-order, with some stages revisited). **No native C++ build,
+Stages 1–6I include committed source changes on this branch; stages 5A–5F
+and 6F–6I extend the earlier baseline (stage numbers follow feature areas,
+not chronological order). **No native C++ build,
 GPU validation or CTest result has been confirmed passing for these changes.**
 Do not call the entire texture stack production-ready merely because a C++ method exists.
 Read the append-only `docs/agent-handoffs/texture-rhi-2026-11-18.md` for per-stage
@@ -45,10 +46,19 @@ SHA, unverified platforms and the next exact task.
   HDR/EXR and complete compressed-sRGB native formats remain unavailable.
 - **Compressed formats:** source-level native mapping now includes BC4,
   BC5 (RGTC) and EAC_R11 across Metal/GL/Vulkan, subject to GPU capability.
+  Shared block-size helpers reject missing/truncated mip and face payloads
+  before GPU allocation, and unsupported compressed formats fail closed.
   For BC5 normal maps, native GPU sampling produces RG without reconstructed
   blue normal Z; the default generic importer therefore uses CPU RGBA
   reconstruction. Set `TextureUploadOptions.shaderReconstructsBc5NormalZ=true`
   only when the consuming shader reconstructs tangent-space Z.
+- **Typed data formats:** `RG8`, `R16F`, `RG16F`, `R32F`,
+  `RG32F` are additionally mapped in Metal/GL/Vulkan, with shared
+  CPU texel byte strides and subresource upload paths. These formats
+  are currently **sample-only**; render target requests and unverified
+  automatic mip generation are rejected. Explicit `mipLevels` and
+  subresource updates can be used to upload authored mips. Float32
+  sampled data conservatively uses nearest filtering on Metal/GLES3.
 
 
 | Stage | Deliverable | Acceptance |
@@ -77,8 +87,9 @@ SHA, unverified platforms and the next exact task.
 - New GPU texture handles are presentation state only, not ECS-authoritative.
   No changes to serialization, game saves or replication.
 - **Known missing pieces:** mixed-format MRT and independent blend policies,
-  GL/Vulkan MSAA creation/resolve, virtual/streamed textures, many typed/HDR
-  pixel formats, Basis transcoding, exotic DDS variants, real-device validation.
+  GL/Vulkan MSAA creation/resolve, virtual/streamed textures, integer/packed
+  formats, typed color targets, Basis transcoding, exotic DDS variants,
+  HDR/EXR and real-device validation.
 - The old `TextureCache` and `render::RenderTexture` still use 2D-only paths.
 
 ## Example: selected array layer and mip
@@ -197,6 +208,28 @@ dimension-aware container API; it intentionally does not support every
 historical DDS pixel format. DDS layout is reordered from per-surface
 mip chains into complete mip levels for the RHI. No GPU tests have been
 run on this branch.
+
+## Native build and targeted tests (pending execution)
+
+```sh
+git switch feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/texture-rhi --target \
+  aiverse_texture_contract_test aiverse_render_target_set_test \
+  aiverse_ktx2_layers_test aiverse_dds_layers_test \
+  aiverse_texture_asset_test
+ctest --test-dir build/texture-rhi --output-on-failure \
+  -R '^(texture_contract|render_target_set|ktx2_layers|dds_layers|texture_asset)$'
+```
+
+On Vulkan-enabled Linux/Windows hosts, also build
+`aiverse_vulkan_tests` and run `ctest -R '^vulkan_backend$'` with
+a working Vulkan driver (Mesa Lavapipe is acceptable). Distinguish
+real GPU execution from a driver's-unavailable skip. macOS Metal,
+Windows GL33, Android GLES3 and WebGL2 require separate builds
+and actual visual/capture tests. **None of these results is claimed
+as passed here.**
 
 ## References and handoff
 
