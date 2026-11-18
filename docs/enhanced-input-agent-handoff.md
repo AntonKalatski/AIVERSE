@@ -315,3 +315,15 @@ cmake --build build/macos --config Release --target aiverse_editor aiverse_clien
 **Tests:** `enhanced_rts_input_tests.cpp` verifies CameraZoom wheel value and UI blocking plus Select click; registered context count now 3. Real editor/gamepad/multitouch behavioral validation still pending.
 
 **Next agent:** assess code/CI diagnostics, compile and test the complete suite, and document any remaining native/Windows/Web issues. Do not replace RTS selection algorithms with simple button clicks: selection is a distinct high-level mechanic and stays presentation-side.
+
+## Stage 22 — hidden hosted Game tab input isolation (2026-11-18)
+
+**Problem:** `Editor::event` forwarded every native input event to `ClientHost`. A hidden Game dock tab might stop drawing before `ClientHost::place(...,focused=false)` ran, so stale `focused_` or `captured_` could continue forwarding keyboard and pointer input while the user edits an Input Action/Inspector field.
+
+**Fix:** `apps/editor/ClientHost.h/.cpp` adds `suspendInput()` to send hosted `FocusLost` and clear keyboard/pointer/touch capture without requiring a draw. `Editor::event` checks that the Game tab is open and in front; a hidden client is suspended and receives no further ordinary events. Real OS `FocusLost` remains forwarded to clean up the host. This is in addition to Stage 14's synthetic focus edges in `ClientHost::place` for ordinary focus changes while Game is drawn.
+
+**Files:** `apps/editor/ClientHost.h/.cpp`, `apps/editor/Editor.cpp`, `docs/enhanced-input.md`, this handoff.
+
+**Verification:** GitHub source committed; no macOS GUI runtime test or CTest result. Verify two dock tabs (Game/Input Actions) while holding WASD, dragging from an embedded game screen, text entry, switching back/forth and global FocusLost while hidden. Input must not leak, duplicate clicks or remain stuck.
+
+**Next agent:** check all CI jobs, build editor, client and FPS; run interaction smoke tests, document exact verified evidence, and then consider merge approval.
