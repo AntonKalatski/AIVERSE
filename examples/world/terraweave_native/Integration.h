@@ -20,7 +20,9 @@ inline void registerSystems(
         Simulation& sim,
         terraweave::TerraWeaveEcsAuthorityConfig cfg,
         std::function<void(
-            const terraweave::EcsBankTerrainCommit&)> onEroded={}) {
+            const terraweave::EcsBankTerrainCommit&)> onEroded={},
+        bool enableSlopeFailures=true,
+        terraweave::SlopeFailureSettings slopeSettings={}) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -54,7 +56,7 @@ inline void registerSystems(
             // callback or mutate ECS again. A missing sink is permitted:
             // the canonical ECS resource still contains the new fallen flags.
             if(after)after(change);
-        });
+        },enableSlopeFailures,slopeSettings);
 }
 
 inline Entity addWaterBody(
