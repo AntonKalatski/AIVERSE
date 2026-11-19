@@ -2076,3 +2076,47 @@ Require `AUTO path: direct/instancing (small eligible scene)`, `CPU MDI ... subm
 ### Next-stage work
 
 Run sufficiently long, randomized A/B/A tests on 1k/10k/100k model items; calibrate independent shadow/opaque break-even by measured per-stage CPU costs, persistent hysteresis and GPU timestamp data. Optimize backend pipeline/setup/submit only after repeated CPU profile sampling. Preserve render parity and safety fallback.
+
+
+---
+
+## Stage 67 — Mac Studio confirms AUTO Direct fallback and raster parity (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`, Draft PR #34. **Tested code:** Stage 66, including commits `8e4dd780b18c6ea324411066c3e34c3f3537138e` and `64d93922db9b3d7c0becc108613d5fa397b80096` plus Stage 66 handoff. **This stage is documentation-only**, recording the user's native Mac Studio execution; no new production code or tests modified.
+
+### Actual owner-provided native results
+
+The owner rebuilt `aiverse_material_batches` successfully, including compilation of `tests/render/material_batches.cpp.o` and linking, then ran `AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_AUTO=1` with GPU ICB experimental opt-in flags on the synthetic `indirect` fixture. Output:
+
+```text
+[100%] Built target aiverse_material_batches
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+CPU render benchmark direct: samples=6 median_ms=0.1397 p95_ms=0.1547 min_ms=0.1107 max_ms=0.1547
+CPU render benchmark batched: samples=6 median_ms=0.1456 p95_ms=0.1490 min_ms=0.1399 max_ms=0.1490
+CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS
+batch=1 shadow=32 opaque=32 total=66 error=
+GPU-encoded ICB: supported=1 required=0 submissions=0 commands=0
+GPU ICB diagnostics: candidates=0 prepared=0 rejected=0 executeFailed=0 preflightGroups=0
+AUTO path: direct/instancing (small eligible scene)
+PBR colour indirect active=0 (before 32, after 32)
+CPU MDI: supported=1 submissions=0 commands=0
+CPU MDI stages pass=0 samples=1 scans=0 attempts=0 submitted=0 total_ms=0.02587 selection_ms=0.00179 grouping_ms=0.00575 scan_ms=0.00000 packing_ms=0.00000 pipeline_ms=0.00000 upload_ms=0.00000 submit_ms=0.00000
+CPU MDI stages pass=1 samples=1 scans=0 attempts=0 submitted=0 total_ms=0.01846 selection_ms=0.00025 grouping_ms=0.00100 scan_ms=0.00000 packing_ms=0.00000 pipeline_ms=0.00000 upload_ms=0.00000 submit_ms=0.00000
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0
+AUTO direct exit=0
+```
+
+### Interpretation
+
+**Stage 66 AUTO Direct fallback PASSED on actual Mac Metal.** No GPU ICB or CPU MDI submissions; Direct/Instancing path chosen, 32 shadow + 32 opaque tracked model draws retained, raster captures byte-identical. Zero MDI scans, attempts or submit stages prove the CPU MDI path was skipped. 30 CPU checks passed, no reported Metal pipeline failures, exit 0.
+
+For this 6+6-sample sequential fixture, Direct median 0.1397 ms vs AUTO median 0.1456 ms: +0.0059 ms (~4.22%). The previous, separately executed AUTO-with-CPU-MDI fixture measured Direct 0.1548 vs batched 0.2290 ms (~47.93% CPU increase), so this current run no longer exhibits that large observed overhead; **these are different runs, not a controlled A/B/A causality proof**. Both timings are synchronous `renderer.render()` CPU wall time, not GPU execution time or whole-frame FPS. Stage 67 adds NO CPU/GPU performance optimization code.
+
+### Next steps and limitations
+
+1. Build a balanced, sufficiently long workload crossover benchmark (60+ samples per mode and randomized/interleaved A/B/A) with realistic 1k/10k/100k object counts and multiple material/LOD/shadow configurations.
+2. Add independent GPU timestamp reporting only on supported backends, and learn per-pass CPU MDI/ICB break-even thresholds from real wall-time distributions. AUTO currently uses conservative hardcoded workload gates; it is NOT a measured GPU utilization balancer.
+3. Target CPU MDI pipeline setup and Metal backend submit after instrumenting steady-state samples, not the comparatively tiny command packing step.
+4. Preserve Draft PR #34 and OFF-by-default experimental flags until tests and cross-platform acceptance; no full CTest, Vulkan parity, large-scene benchmark, or end-to-end FPS improvement verified at this stage.
