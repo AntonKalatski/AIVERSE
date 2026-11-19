@@ -50,6 +50,7 @@ struct StaticCrossModelPreflightKeyHash {
 struct StaticCrossModelPreflightGroup {
     const Model* firstModel = nullptr;
     bool mixedModels = false;
+    bool ready = false; // evaluated once after all visible candidates are known
     size_t items = 0;
     // Keep only the first threshold distinct primitives, not every instance
     // in a city. The backend still does exact adjacent primitive-run counting.
