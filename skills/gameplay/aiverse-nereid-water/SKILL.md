@@ -256,3 +256,35 @@ the core physics integrator.
 NOT RUN by design, as requested by the user. After every implementation
 stage update `docs/nereid/HANDOFF.md` with exact SHA, changed files,
 limits and next features.
+
+## Stage 23 — presentation ripples, expanding wakes and SpectraFX hook
+
+Include `<aiverselib/water/NereidInteractionPresentation.h>` in the native
+game's presentation code. `WorldScene` now also exposes an optional
+bounded `NereidRippleField` visual renderer. Do not put it inside
+Simulation, ECS checksums, rollback state, Box3D or the water physics
+library. Use once per completed simulation tick at the read barrier:
+
+```cpp
+auto events=lib::nereid::snapshotWaterInteractionEvents(sim.world(),sim.tick());
+scene.ingestNereidInteractions(events,sim.tick(),
+    [&](const lib::nereid::WaterPresentationEvent& event) {
+        // Dispatch to SpectraFX/audio based on Enter, Exit, Wake or SwitchBody.
+        // This callback is a host hook; it is not an automatic SpectraFX API.
+    });
+// Each rendered frame, on the scene/presentation thread:
+scene.advanceNereidRipples(frameDeltaSeconds);
+// Existing scene.draw(renderer,renderOrigin,originCellSize) draws the rings.
+```
+
+Event tick deduplication avoids repeated visual emissions from duplicate
+host calls. A rollback to an earlier tick clears old VFX history.
+`NereidRippleField` holds up to 256 pulses, oldest first eviction;
+individual lifetimes are short and their radius grows with age.
+Rendering uses the standard Renderer3D triangle queue and subtracts
+the current render-origin in double before converting to float.
+This is a zero-new-backend, GPU-allocation-free overlay, not yet
+a water-surface shader displacement or real SpectraFX implementation.
+
+**Verification:** tests deliberately deferred; do not claim green.
+See `docs/nereid/HANDOFF.md` for exact stage commits/limits/next task.
