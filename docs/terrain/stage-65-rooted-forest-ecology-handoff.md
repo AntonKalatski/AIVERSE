@@ -43,3 +43,7 @@ Source committed through connected GitHub; file readbacks and static API review 
 - This is a GitHub source fix; **no compiler, simulation tests, save/load roundtrip or GPU visual QA were run**.
 
 - `482e78168d03ee76819a75e6be9beaf1c3bcc0b3`: tightened the legacy maturity guard for ALL imported trees with `matureTicks==0`, including nonzero historical age: set age to at least the species maturity age before enabling explicit `matureTicks`. This retains the original already-mature visual scale; explicitly authored seedlings with nonzero maturity remain unaffected. No test run.
+
+- `d71ba720cba6225a3e03db344eeecc22ff68e823`: `TerraWeaveForestScene::setRecruitedPlants` now builds a secondary spatial index by existing forest chunk. `visibleBatches()` looks up only the current +/- `radiusChunks` forest chunk coordinates (at most 17x17) instead of scanning all 65,536 recruited trees on EVERY graphics frame. No duplicate new renderer; same shared Arbor prototypes and Flora LOD.
+- `33286760664c6b78f9a0ca4baba85b69c586258b`: `TerraWeaveForestScene::nearestTreeAt` and `treesInRect` include living native recruited saplings, allowing existing native selection/harvesting workflows to find them. These interactive selection functions may scan all native recruits, unlike the per-frame visual path; their use is event-driven, not per frame.
+- **Actual QA remains source review only.** No new native compile, integration test or renderer capture was run after these commits.
