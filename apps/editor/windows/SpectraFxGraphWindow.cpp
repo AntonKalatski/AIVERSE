@@ -358,7 +358,7 @@ private:
         const fs::path temp=dest.string()+".tmp";
         {
             std::ofstream out(temp,std::ios::binary|std::ios::trunc);
-            out<<root.dump(2)<<"\\n";
+            out<<root.dump(2)<<"\n";
             out.flush();
             if(!out) {message_="Unable to save SpectraFX canvas layout";return false;}
         }
