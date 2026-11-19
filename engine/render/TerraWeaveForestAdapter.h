@@ -7,6 +7,7 @@
 
 #include "engine/render/TerraWeaveModelAdapter.h"
 #include "engine/render/TerraWeaveImpostorAtlas.h"
+#include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
 #include "engine/world/TerraWeavePhenology.h"
@@ -79,7 +80,10 @@ public:
     // vector. Stable tick/key controls phase; no tree ECS or GPU buffers.
     void setWind(ForestWindState value) {
         validateForestWind(value);
+        const bool wasActive=gpuCrownWindActive();
         wind_=value;
+        if(wasActive!=gpuCrownWindActive())
+            rebuildPhenologyMaterials(); // shader variant once, not per tick
     }
     const ForestWindState& wind() const {return wind_;}
     void setPresentationTick(uint64_t tick) {presentationTick_=tick;}
@@ -191,7 +195,8 @@ public:
                 // bark, eliminating invisible leaf draws in winter.
                 if(canopyCover==0u)draw.primitiveMaterialFilter=0;
                 if (batch.lod == TreeLOD::Impostor) {
-                    const auto& variants = phenology_==CanopyPhenology{} ?
+                    const auto& variants =
+                        (phenology_==CanopyPhenology{} && !gpuCrownWindActive()) ?
                         billboardMaterials_.at(batch.speciesId) :
                         seasonalBillboardMaterials_.at(batch.speciesId);
                     const uint32_t azimuth = camera
@@ -201,7 +206,8 @@ public:
                             static_cast<uint32_t>(variants.size()))
                         : 0u;
                     draw.materials = &variants[azimuth]; // stable per-species override
-                } else if(phenology_!=CanopyPhenology{}) {
+                } else if(phenology_!=CanopyPhenology{} ||
+                          gpuCrownWindActive()) {
                     draw.materials=&seasonalNearMaterials_.at(batch.speciesId);
                 }
                 draw.world = render::mat4::translate(relative);
@@ -250,6 +256,15 @@ public:
                     0x54eaa75eedc0de11ULL);
                 if (draw.persistentId == 0) draw.persistentId = 1;
                 draw.flags = render::kDrawStatic;
+                if(gpuCrownWindActive() && canopyCover>0u) {
+                    const float tier=batch.lod==TreeLOD::High ? 1.0f :
+                                     batch.lod==TreeLOD::Medium ? 0.75f :
+                                     batch.lod==TreeLOD::Low ? 0.5f : 0.35f;
+                    draw.vertexParameters=canopyWindVertexParameters(
+                        wind_,presentationTick_,yaw,tier);
+                    draw.useVertexParameters=true;
+                    draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
+                }
                 emit(draw);
             }
         }
@@ -276,6 +291,11 @@ public:
     }
 
 private:
+    bool gpuCrownWindActive() const {
+        return wind_.branchFlexPermille>0 &&
+               wind_.maxLeanMilliDegrees>0 &&
+               (wind_.xCmPerSec!=0 || wind_.zCmPerSec!=0);
+    }
     // All Arbor branch geometry is authored in model-space centimetres
     // converted to metres, not re-centered around a local branch origin.
     // Therefore compose cumulative model-space transforms around each
@@ -322,7 +342,7 @@ private:
     void rebuildPhenologyMaterials() {
         seasonalNearMaterials_.clear();
         seasonalBillboardMaterials_.clear();
-        if(phenology_==CanopyPhenology{})return;
+        if(phenology_==CanopyPhenology{} && !gpuCrownWindActive())return;
         const auto tint=[this](render::Material& m,uint32_t coverage) {
             m.baseColor.x=std::clamp(m.baseColor.x*
                 (float(phenology_.tintRPermille)*0.001f),0.0f,1.0f);
@@ -339,9 +359,12 @@ private:
         };
         for(const auto& [id,model]:models_) {
             auto materials=model->materials;
-            if(materials.size()>1)
+            if(materials.size()>1) {
                 tint(materials[1],canopyCoverPermille(
                     phenology_,evergreen_.at(id)));
+                if(gpuCrownWindActive())
+                    materials[1].shaderGraph=canopyWindGraph();
+            }
             seasonalNearMaterials_.emplace(id,std::move(materials));
         }
         // The impostor atlas now has two disjoint pages in ONE GPU image:
@@ -356,6 +379,8 @@ private:
                 if(materials.size()!=2)
                     throw std::logic_error("TerraWeave impostor material slots");
                 tint(materials[1],coverage);
+                if(gpuCrownWindActive())
+                    materials[1].shaderGraph=canopyWindGraph();
             }
             seasonalBillboardMaterials_.emplace(id,std::move(seasonal));
         }
