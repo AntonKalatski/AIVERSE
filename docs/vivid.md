@@ -350,3 +350,17 @@ AIVERSE_VIVID_PREVIEW_PREFIX=/tmp/aiverse-vivid \
   ~/Projects/AIVERSE-vivid/build/vivid/aiverse_vivid_renderer_preview
 ```
 The executable may be an app bundle on some CMake generators; inspect the generated target for its actual path rather than assuming. Keep all model, VIVID GPU stream and MotionWeave resources alive until rendering finishes. **NOT RUN** on the current coding host.
+
+## Stage 5E — procedural vertex-range metadata and deferred Metal capture (2026-11-19)
+
+**Source fixes committed; new native GUI run NOT RUN after these changes.**
+
+The user's macOS `aiverse_vivid_renderer_preview` built and printed `ready: 925 vertices, 2 GPU shapes`. It delivered the initial baseline PPM but stopped with `missing shadow/colour model submissions: 0/0` and `model vertex override: rejected invalid/pooled 60B stream`. The `[metal-assets]` report had 11 source misses, 15 pipelines and zero compilation failures. This is not a passing visual preview.
+
+Inspection found that `render::modelFromParts` had populated `Primitive.firstIndex`, `Primitive.indexCount`, and appended CPU vertices, but left both `Primitive.firstVertex` and `Primitive.vertexCount` at **zero**. The strict `modelVertexOverrideStatus` correctly rejected the procedurally generated head because no usable primitive vertex range could be established. `engine/render/Model.cpp` now populates both fields for each procedural part using the model-relative vertex base and count. A separate regression checks two distinct parts, checks the override before and after CPU vertex eviction and retains rejection of genuinely invalid / pooled geometry. We deliberately **did not weaken** `Renderer3D`'s safety checks or permit an unknown vertex stream length.
+
+First-time Metal model shader compilation can also leave zero submitted draws for some frames without the shader itself being broken. The preview no longer fails immediately when the profile shows zero shadow and colour draws. Instead, it records successful draw submissions for four consecutive frames before requesting a screenshot. It proceeds in three stages (baseline, GPU facial morph, MotionWeave node animation), holding the current stage until the asynchronous screenshot callback reports a real saved 960×640 RGBA image. A later stage's capture is not requested until the previous capture completes. It emits progress diagnostics every 45 frames and fails clearly after 400 frames if warmup/capture cannot finish. It also checks procedural vertex ranges at initialization and uses explicit preview shadow bounds.
+
+**Test status:** these modifications have not yet been compiled or visually run on the user's Mac. The earlier CTest 3/3 GPU/vertex-policy passes were on an earlier commit. The test-only preview requires a macOS GUI / Metal drawable and is not a CTest. The ordinary renderer path and MotionWeave ECS skeletal-pose ownership are unchanged.
+
+Run `aiverse_vivid_vertex_override_tests` and the GUI preview after pulling the new branch. Inspect three PPM files and the printed pixel differences; until they exist and both model pass counters become nonzero, do not declare this stage complete.
