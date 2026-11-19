@@ -313,9 +313,15 @@ bool Editor::convertVisualModelSource(const std::string& src) {
     // modelconv runs via a legacy shell pipe for diagnostics; never allow
     // author-controlled model paths to break out of quoted arguments.
     const auto unsafeShellPath=[](const std::string& value) {
-        return value.find_first_of("\"\x24`\\\n\r")!=std::string::npos;
-    };
-    if(unsafeShellPath(src) || unsafeShellPath(tool.string())) {
+#if defined(_WIN32)
+        // Windows file separators are legal; cmd.exe expands %variables%
+        // and may expand !delayed! values even inside double quotes.
+        return value.find_first_of("\"%!^\r\n")!=std::string::npos;
+#else
+        return value.find_first_of("\"$\\\r\n")!=std::string::npos ||
+               value.find(char(96))!=std::string::npos; // backtick
+#endif
+    };    if(unsafeShellPath(src) || unsafeShellPath(tool.string())) {
         ws_.log("view","отклонён небезопасный путь модели: "+src,true);
         return false;
     }
