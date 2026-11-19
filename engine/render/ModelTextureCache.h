@@ -1,5 +1,6 @@
 #pragma once
 #include "Model.h"
+#include "GpuOwnedMemory.h"
 #include <map>
 #include <atomic>
 #include <mutex>
@@ -14,6 +15,15 @@ public:
     void trim(gfx::Device& dev);
     size_t decodedCount() const { return decodedCount_.load(); }
     size_t gpuCount() const { return gpu_.size(); } // render thread only
+    // Cache owns every non-borrowed GPU image. Model::Image instances
+    // referencing this cache are borrowers and must NOT add these handles.
+    // Use only from graphics thread (same contract as upload/trim).
+    void appendOwnedGpuMemory(GpuOwnedMemoryCounter& counter) const {
+        for (const auto& [key, image] : gpu_) {
+            (void)key;
+            if (image.tex.valid()) counter.texture(image.tex);
+        }
+    }
     // Actual decoded pixel cache allocation (not source file size / GPU textures).
     size_t decodedBytes() const { std::lock_guard lock(mutex_); return bytes_; }
 private:
