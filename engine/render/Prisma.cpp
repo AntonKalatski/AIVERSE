@@ -47,7 +47,7 @@ struct Built { std::string vs, fs, msl; };
 
 // Wraps a common-subset body (PrismaShaders.h) into GLSL ES 3.00 and MSL.
 Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMask, const std::string& defines,
-                   const char* helpers, const char* body) {
+                   const char* helpers, const char* body, uint32_t depthMask = 0) {
     Built b;
     b.vs = "layout(location = 0) in vec2 a_pos;\nout vec2 v_screen;\n"
            "void main() { v_screen = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
@@ -68,8 +68,11 @@ Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMas
         const std::string n = std::to_string(t);
         gTex += "uniform sampler2D tex" + n + ";\n";
         gMacros += "#define TEX" + n + "(p) texture(tex" + n + ", p)\n";
-        mArgs += ", texture2d<float> tex" + n + " [[texture(" + n + ")]], sampler tex" + n + "_s [[sampler(" + n + ")]]";
-        mMacros += "#define TEX" + n + "(p) tex" + n + ".sample(tex" + n + "_s, p)\n";
+        const bool isDepth = (depthMask & (1u << t)) != 0;
+        mArgs += std::string(", ") + (isDepth ? "depth2d<float>" : "texture2d<float>") +
+                 " tex" + n + " [[texture(" + n + ")]], sampler tex" + n + "_s [[sampler(" + n + ")]]";
+        mMacros += "#define TEX" + n + "(p) " + (isDepth ? "vec4(" : "") +
+                   "tex" + n + ".sample(tex" + n + "_s, p)" + (isDepth ? ")" : "") + "\n";
     }
     b.fs = defines + block + gTex + "in vec2 v_screen;\nout vec4 o_color;\n" + common + gMacros +
            "#define RETURN(c) { o_color = (c); return; }\n#define PF_FN\n" + (helpers ? helpers : "") +
@@ -307,15 +310,17 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kExposureReduce, nullptr, 1, "prisma exposure reduce"},
         {prisma::kExposureAdapt, nullptr, 3, "prisma exposure adapt"},
         {prisma::kMotionVectors, nullptr, 7, "prisma camera motion vectors"},
-        {prisma::kMotionBlur, nullptr, 3, "prisma shutter motion blur"},
+        {prisma::kMotionBlur, nullptr, 7, "prisma shutter motion blur"},
     };
     const Def& d = defs[p];
+    const uint32_t sampledDepth = p == kMotionVectors || p == kDepthOfField
+        ? (1u << 1) : (p == kMotionBlur ? (1u << 2) : 0u);
     Built b = (p == kMotionVectors)
-        ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body)
-        : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body);
+        ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
+        : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = p == kMotionVectors ? 3 : 2;
+    sd.textureSlots = p == kMotionVectors || p == kMotionBlur ? 3 : 2;
     sd.uniformSlots = 1; sd.label = d.label;
     shaders_[p] = dev_->createShader(sd);
     if (!shaders_[p].valid()) {
@@ -635,8 +640,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 dev.setUniforms(0, uniforms, bytes);
                 dev.setTexture(0, input0);
                 dev.setTexture(1, input1);
-                if (pipeline == pipes_[kMotionVectors])
-                    dev.setTexture(2, input2); // blur shader declares only 2 slots
+                if (pipeline == pipes_[kMotionVectors] || pipeline == pipes_[kMotionBlur])
+                    dev.setTexture(2, input2);
                 dev.draw(3);
                 dev.endPass();
                 ++stats_.passes;
@@ -650,7 +655,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 motionEffect->get("maxPixels"),
                 motionEffect->get("samples"), motionEffect->get("intensity"));
             raster(blurred, pipes_[kMotionBlur], &blur, sizeof blur,
-                   scene.tex, velocity.tex, black_);
+                   scene.tex, velocity.tex, sceneDepth);
             src = blurred;
         }
     }
