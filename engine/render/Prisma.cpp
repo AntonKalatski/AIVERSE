@@ -173,6 +173,7 @@ void Prisma::retireView(uint64_t id) {
         exposureViews_.erase(exposure);
     }
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
+    viewDimensions_.erase(id); // the shared size cache itself stays resident
     // If the current presentation view was closed, keep its stable ID for
     // compatibility with callers; the next render seeds fresh history.
 }
@@ -250,6 +251,125 @@ Prisma::RetirementStats Prisma::retirementStats() const {
     return stats; // known bytes exclude actual driver allocation overhead
 }
 
+Prisma::MemoryStats Prisma::memoryStats() const {
+    // A read-only, lower-bound estimate for editor diagnostics. No GPU
+    // readback/flush. Cached render targets are owned by SIZE, not view ID.
+    MemoryStats out;
+    struct SizeSample {
+        size_t textures = 0, unknown = 0;
+        size_t graphLiveTextures = 0, graphPendingTextures = 0;
+        uint64_t knownBytes = 0;
+        uint64_t graphLiveBytes = 0, graphPendingBytes = 0;
+    };
+    std::map<std::pair<int,int>, SizeSample> cacheBySize;
+    const auto addTexture = [this](gfx::TextureHandle h, uint64_t& bytes,
+                                    size_t& count, size_t& unknown) {
+        if (!h.valid()) return;
+        ++count;
+        gfx::TextureInfo info{};
+        if (!dev_ || !dev_->gpuHealthy() ||
+            !dev_->textureInfo(h,info) || info.width <= 0 || info.height <= 0) {
+            ++unknown;
+            return;
+        }
+        uint64_t bpp = 0;
+        switch (info.format) {
+            case gfx::PixelFormat::R8: bpp = 1; break;
+            case gfx::PixelFormat::RGBA8:
+            case gfx::PixelFormat::RGBA8_sRGB:
+            case gfx::PixelFormat::Depth: bpp = 4; break;
+            case gfx::PixelFormat::RGBA16F: bpp = 8; break;
+            case gfx::PixelFormat::RGBA32F: bpp = 16; break;
+            default: ++unknown; return; // compressed/mip formats not estimated
+        }
+        bytes += uint64_t(info.width) * uint64_t(info.height) * bpp;
+    };
+    for (const auto& size : sizes_) {
+        SizeSample sample;
+        for (const auto& [role, target] : size.targets)
+            addTexture(target.tex, sample.knownBytes, sample.textures, sample.unknown);
+        for (const auto& [key, depth] : size.depths)
+            addTexture(depth, sample.knownBytes, sample.textures, sample.unknown);
+        if (size.graphExecutor) {
+            const auto gpu = size.graphExecutor->gpuMemoryStats();
+            sample.graphLiveTextures = gpu.liveTextures;
+            sample.graphPendingTextures = gpu.pendingTextures;
+            sample.graphLiveBytes = gpu.liveKnownBytes;
+            sample.graphPendingBytes = gpu.pendingKnownBytes;
+            sample.knownBytes += gpu.liveKnownBytes;
+            sample.textures += gpu.liveTextures;
+            sample.unknown += gpu.unknownLiveTextures;
+            out.graphPendingKnownBytes += gpu.pendingKnownBytes;
+        }
+        cacheBySize[{size.w,size.h}] = sample;
+        ++out.activeSizeCaches;
+        out.liveTextures += sample.textures;
+        out.unknownTextures += sample.unknown;
+        out.sharedSizeKnownBytes += sample.knownBytes;
+        bool referenced = false;
+        for (const auto& [id, dimensions] : viewDimensions_)
+            if (dimensions.first == size.w && dimensions.second == size.h) {
+                referenced = true;
+                break;
+            }
+        if (!referenced) {
+            ++out.unreferencedSizeCaches;
+            out.unreferencedSizeKnownBytes += sample.knownBytes;
+        }
+    }
+    for (const auto& [id, dimensions] : viewDimensions_) {
+        ViewMemoryStats view;
+        view.viewId = id;
+        view.width = dimensions.first;
+        view.height = dimensions.second;
+        for (const auto& [otherId, otherDimensions] : viewDimensions_)
+            if (otherDimensions == dimensions) ++view.sharedSizeViews;
+        if (const auto cache = cacheBySize.find(dimensions);
+            cache != cacheBySize.end()) {
+            view.sharedTextures = cache->second.textures;
+            view.sharedKnownBytes = cache->second.knownBytes;
+            view.unknownTextures = cache->second.unknown;
+            view.graphLiveKnownBytes = cache->second.graphLiveBytes;
+            view.graphPendingKnownBytes = cache->second.graphPendingBytes;
+            view.graphLiveTextures = cache->second.graphLiveTextures;
+            view.graphPendingTextures = cache->second.graphPendingTextures;
+        }
+        if (const auto history = exposureViews_.find(id);
+            history != exposureViews_.end()) {
+            for (const auto& h : history->second.history) {
+                size_t unknown = 0;
+                addTexture(h, view.ownedHistoryKnownBytes,
+                           view.ownedHistoryTextures, unknown);
+                view.unknownTextures += unknown;
+                out.unknownTextures += unknown;
+            }
+            out.liveTextures += view.ownedHistoryTextures;
+            out.viewHistoryKnownBytes += view.ownedHistoryKnownBytes;
+        }
+        out.views.push_back(view);
+    }
+    // Exposure history can be allocated before a view's successful scene
+    // pass is recorded. Include it in totals exactly once, even if the view
+    // has no currently attributable size cache.
+    for (const auto& [id, history] : exposureViews_) {
+        if (viewDimensions_.count(id)) continue;
+        for (const auto& h : history.history)
+            addTexture(h, out.viewHistoryKnownBytes,
+                       out.liveTextures, out.unknownTextures);
+    }
+    addTexture(black_, out.otherLiveKnownBytes,
+               out.liveTextures, out.unknownTextures);
+    for (const auto& [path, lut] : luts_)
+        addTexture(lut.tex, out.otherLiveKnownBytes,
+                   out.liveTextures, out.unknownTextures);
+    for (const auto& [path, tex] : graphTextures_)
+        addTexture(tex, out.otherLiveKnownBytes,
+                   out.liveTextures, out.unknownTextures);
+    out.liveKnownBytes = out.sharedSizeKnownBytes +
+                         out.viewHistoryKnownBytes + out.otherLiveKnownBytes;
+    return out;
+}
+
 void Prisma::releaseRetiredSizesAfterGpuIdle() {
     if (!dev_) return;
     // Explicit host guarantee: GPU queue is idle (all render encoders and
@@ -274,6 +394,7 @@ void Prisma::shutdown() {
     }
     exposureViews_.clear();
     motionViews_.clear();
+    viewDimensions_.clear();
     for (auto& [p, l] : luts_) release(l.tex);
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
@@ -645,6 +766,9 @@ gfx::PassDesc Prisma::scenePass(const gfx::PassDesc& out, int w, int h) {
         return scenePass(out, w, h);
     }
     if (!sceneReady_) return out;
+    // Track the last successfully allocated post scene pass for this view.
+    // Several view IDs may point to the same size-owned render-target cache.
+    viewDimensions_[viewId_] = {w, h};
     if (hdrFrame_) for (int i = 0; i < 3; ++i) {
         const float c = std::max(p.clearColor[i], 0.0f);
         p.clearColor[i] = c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
