@@ -194,6 +194,19 @@ public:
         return stats_;
     }
 
+    // Native/FPS hosts with precomputed poses do not call update() here:
+    // their own presentation World already advanced the animation graph.
+    // Begin one host submission frame to prune stale LOD hysteresis IDs,
+    // without invoking any ECS animation system or GPU command.
+    void beginPreparedFrame() {
+        const uint64_t previous=frameStamp_;
+        if(++frameStamp_==0) {frameStamp_=1;lodState_.clear();return;}
+        for(auto it=lodState_.begin();it!=lodState_.end();) {
+            if(it->second.seen<previous)it=lodState_.erase(it);
+            else ++it;
+        }
+    }
+
     // A mixed packet stream can be the single source of animation inputs
     // and draw order. Extract only model packets; static meshes and debug
     // primitives do not enter the presentation ECS World. The scratch
