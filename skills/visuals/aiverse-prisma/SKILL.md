@@ -406,6 +406,68 @@ inspected, not natively compiled or GPU-tested. See
 `docs/handoffs/prisma-stage-48.md` for the complete owner boundary
 and subsequent feature scope.
 
+## Dedicated model assets and per-viewport admission (Stage 49)
+
+The current renderer/memory report is a **strictly owned, lower-bound GPU
+inventory**. Stage 49 extends the Stage 48 owner tree to model assets
+without counting shared geometry pages or borrowed material images twice:
+
+- `appendModelOwnedGpuMemory(Model, GpuOwnedMemoryCounter&)` counts
+  dedicated Model VBO/IBO **only when `geometryPoolPage` is empty**,
+  nonborrowed `Image.tex`, and owned morph/baked-animation textures.
+  Its ownership follows the real `releaseModel()` contract.
+- `ModelTextureCache::appendOwnedGpuMemory(counter)` enumerates cached
+  model/material PBR textures once from the cache owner. Models borrowing
+  this cache set `Image.borrowedTexture=true`; do not count them again.
+- `RtsView::ownedModelGpuMemoryStats(device)` aggregates those GPU-owned
+  models from its unique model cache and cached material textures, with
+  shared handle de-duplication across models.
+- `TextureCache::ownedGpuMemoryStats()` independently enumerates
+  sprite, generated and atlas-page textures, de-duplicating shared pages
+  referenced by atlas sprites. It excludes retired/borrowed resources.
+
+`Prisma::setExternalPresentationAssetsGpuMemory(knownBytes)` accepts
+the sum of *nonoverlapping* presentation asset owners. Editor Scene/Game
+add model resources and their independent FX sprite cache. GameClient
+currently adds its RtsView model/material owner (other FX render owners
+may publish additional disjoint inventories later). GeometryPool
+still uses `setExternalGeometryPoolGpuMemory` and each page counts once
+per device, NOT per model. No shader/driver/texture mip assumptions are
+made; unknown RHI metadata remains unknown.
+
+**Multiple cameras** can call
+`Prisma::setViewQualityPolicy(viewId,{priority,maxTemporalHistoryMiB})`.
+Priority 0..255 (0 yields first; 255 yields last) changes ONLY the
+memory-pressure hysteresis in adaptive mode, never the ordinary
+12-sample GPU-slowdown response. When the device is over the known
+memory budget without slow GPU timing, low priority yields after 6
+confirmed observations, default/medium after 12, high after 30; the
+existing cooldown remains 48 completed observations. An independent
+per-camera `maxTemporalHistoryMiB` limit (0 = no limit) considers
+**two output-size RGBA16F histories**, i.e. `width*height*16` bytes.
+If that amount is over the admission quota, `renderSizeForOutput`
+declines the temporal upscale and returns full size, retires old
+history through GPU fences, records admission rejection and
+`jitteredCamera` explicitly stays unjittered. `resolve` MUST not
+allocate that rejected history again. Original UI/picking remains
+unshifted. `Prisma::retireView` clears both view policy and history
+admission state.
+
+Editor Scene uses a lower-priority policy (64; two-history quota
+128 MiB); Editor Game and the native GameClient use 224 with
+256 MiB history quota. Custom hosts can supply their own values via
+the public genre-independent API. The existing
+`maxPrismaMemoryMiB` is the *known* total owner budget, not a hard
+VRAM cap or an allocator.
+
+**No tests yet** per project sequencing: code and source readback
+first, then standalone build/CTest/backend GPU validation only after
+all functions are finished. Every implementation stage requires its
+own `docs/handoffs/prisma-stage-XX.md`; Stage 49 details are in
+`docs/handoffs/prisma-stage-49.md`. Prior stage ownership, Metal/GL
+scoped timers, backend fallback and GPU-fenced resource lifetime are
+not changed.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
