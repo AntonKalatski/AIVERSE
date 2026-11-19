@@ -8511,3 +8511,20 @@ Keep Draft until evidence is green.
 **Actual tests:** See above. Do not infer CTest/native GPU pass from CI jobs belonging to an older SHA, static source checks, or the presence of a registered test. Current HEAD must be validated independently.
 
 **Next concrete step:** Verify VkApi instance pointer resolves on Vulkan 1.0+ loaders and confirm Linux arm64 GCC compile progresses past VkResources.cpp.
+
+
+## Stage 10AN — Metal graph tex16 fixed sampler parity gate (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / draft PR #21. **Source commits:** `a8b7f6451b00816d2afbbe2c03029eb0869dd249 engine/gfx/metal/GfxMetal.mm`.
+
+**Architecture/API and observed results:** The fourth independently authored Shader Graph fragment texture occupies tex16. Metal has only sixteen dynamic fragment sampler slots; the current ICB MSL source uses a hard-coded constexpr `s16` with normalized coordinates, repeat address, linear filtering and linear mip sampling. Binding a clamp/nearest source there would silently change rendered texels from the ordinary renderer.
+
+`MTTexture` now preserves the source `TextureDesc` sampler semantics (`samplerRepeat`, `samplerLinear`, `samplerCompare`) during `createTexture`. Experimental ICB resource staging validates source slot 16 against those original flags; it rejects nearest, clamp or compare sources rather than drawing with incorrect sampling. Graph sources 13..15 still use their dynamic native sampler states. Rejected ICB groups retain the normal CPU-render fallback.
+
+**Verification:** source-level inspection of `GfxMetal.mm::createTexture` and `Model.cpp` texture upload and native sampler allocation. No Apple MSL compiler, Metal GPU or image parity run.
+
+**Documentation commits:** `24f5377977d79ea99a8ae5e1e9bf111d61acce17` (`docs/texture-rhi.md`); `8b3ca0835c0e60940e3012f3fb461b1e351a8e8b` (`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Actual tests:** See above. Do not infer CTest/native GPU pass from CI jobs belonging to an older SHA, static source checks, or the presence of a registered test. Current HEAD must be validated independently.
+
+**Next concrete step:** On macOS, compile MSL with source counts N=0..4; compare clamp/nearest fourth texture CPU fallback and repeat/linear fourth texture ICB on the same camera.
