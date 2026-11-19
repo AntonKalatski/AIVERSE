@@ -221,6 +221,8 @@ struct ModelRenderStats {
     uint64_t staticCrossModelAdaptiveSkippedPasses = 0;
     uint64_t staticCrossModelAdaptiveProbePasses = 0;
     uint64_t staticCrossModelAdaptiveMeasuredAttempts = 0;
+    uint64_t staticCrossModelAdaptiveSkippedGroups = 0;
+    uint64_t staticCrossModelAdaptiveProbeGroups = 0;
     // A subset of CPU MDI submissions: different rigid meshes and materials
     // share shader/texture state, with per-command base/PBR factors in U3.
     uint64_t mdiPaletteSubmissions = 0, mdiPaletteCommands = 0;
@@ -436,6 +438,27 @@ public:
     }
     bool cpuMdiAdaptiveEnabled() const { return cpuMdiAdaptiveEnabled_; }
     double cpuMdiAdaptiveBudgetUs() const { return cpuMdiAdaptiveBudgetUs_; }
+    struct CpuMdiPageStats {
+        uint64_t reused = 0, created = 0, evicted = 0, untracked = 0;
+        size_t live = 0, slowShadow = 0, slowOpaque = 0;
+    };
+    CpuMdiPageStats cpuMdiPageStats() const {
+        auto stats = cpuMdiPageStats_;
+        stats.live = cpuMdiPages_.size();
+        for (const auto& [key, entry] : cpuMdiPages_) {
+            (void)key;
+            if (entry.lifetime.expired()) continue;
+            for (size_t phase = 0; phase < 2; ++phase) {
+                const auto& feedback = entry.byPass[phase];
+                if (feedback.samples >= 8 &&
+                    feedback.avgUsPerCommand > cpuMdiAdaptiveBudgetUs_) {
+                    if (phase == 0) ++stats.slowShadow;
+                    else ++stats.slowOpaque;
+                }
+            }
+        }
+        return stats;
+    }
     struct RenderProfile {
         double submitMs=0,occlusionMs=0;
         std::array<double,5> selectMs{},sortMs{},drawMs{};
@@ -633,9 +656,22 @@ private:
     bool staticCrossModelBatchesEnabled_ = false;
     bool cpuMdiAdaptiveEnabled_ = false;
     double cpuMdiAdaptiveBudgetUs_ = 25.0;
-    // Lifetime CPU submission feedback by pass, not GPU elapsed time.
-    // Only the opt-in pooled static MDI path reads or writes this state.
+    // Aggregate display-only diagnostics, not used to suppress any page.
     std::array<CpuMdiAdaptiveFeedback, 2> cpuMdiAdaptive_{};
+    struct CpuMdiPageEntry {
+        std::weak_ptr<GeometryPoolPage> lifetime;
+        std::array<CpuMdiAdaptiveFeedback, 2> byPass{};
+        uint64_t seen = 0;
+        // A page receives at most one adaptive decision per render-scene
+        // epoch and pass, regardless of how many material groups it contains.
+        std::array<uint64_t, 2> decisionEpoch{};
+        std::array<bool, 2> permitted{true, true};
+    };
+    std::unordered_map<CpuMdiPageKey, CpuMdiPageEntry, CpuMdiPageKeyHash>
+        cpuMdiPages_;
+    uint64_t cpuMdiPageEpoch_ = 0;
+    CpuMdiPageStats cpuMdiPageStats_{};
+    CpuMdiPageEntry* cpuMdiPageEntry(const Model& model);
     bool gpuAuthoredDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
