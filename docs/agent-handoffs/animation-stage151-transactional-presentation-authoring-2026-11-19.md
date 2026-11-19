@@ -79,3 +79,21 @@ if(source->compilePresentationBindings(levels,sockets,candidate,&error)) {
 3. Queue final regression tests (run once after feature freeze): valid compiled batch; invalid second LOD keeps prior bundle; duplicate socket index keeps prior bundle; invalid socket name/index; wrong Model generation; packet apply with mismatched attachment selector; clearing old socket caches; source/visual hot reload; no double writer, Model read lease and GPU fence lifecycle; high-crowd memory/performance.
 4. Coordinate with concurrent `main`/renderer/texture/model agents in a disposable integration worktree after feature closure. Do not automatically rebase, merge, force-push or modify their branches; Draft PR #22 stays Draft.
 5. On each subsequent stage, commit separate implementation and handoff. After ALL functions are complete, run one full native Mac validation via `bash tools/animation/validate-final.sh`, fix failures and only then assess readiness.
+
+
+## Readiness matrix at Stage 151 (source implementation vs verified product)
+
+| Subsystem | Code status | Outstanding work |
+| --- | --- | --- |
+| Genre-neutral MotionWeave ECS/Graph | Implemented incrementally | Native compile, runtime and concurrency validation |
+| Graph hot reload / portable named playback | Implemented incrementally | Reimport fault injection, restore parity tests |
+| Stable source ID / published Model epoch | Implemented incrementally | Cross-host integration validation |
+| Whole-model animation LOD | Implemented, including complete revision checks | End-to-end visual/retarget parity and performance |
+| Generic retarget / compiled plans | Core API exists | Importer presets and complex rigs/parity |
+| Compiled attachment sockets | Core API exists | Full authored attach/detach workflows and parity |
+| Atomic authored LOD + socket transaction | Stage 151 source complete | Native compile/regressions and caller adoption |
+| FPS/RTS/editor integration | Partial | Rich animation parity and removal of legacy paths |
+| Metal/Vulkan/GLES presentation | Not verified by this stage | Real GPU, screenshots and fence tests |
+| Complete native validation / integration | NOT RUN | One coordinated final Mac pass and repairs |
+
+“Implemented” means committed source, not confirmed runtime correctness. The user requested a **user-visible status table after every future stage**; the next agent must include one in the reply in addition to maintaining this separate handoff.
