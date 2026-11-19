@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -147,6 +149,136 @@ inline bool retargetModelPose(const render::Model& source,
                 if(!finite(weight))return false;
                 dst.w[k]=weight;
             }
+    }
+    std::vector<render::mat4> matrices;
+    render::worldMatrices(visual,next,matrices);
+    out=std::move(next);
+    world=std::move(matrices);
+    return true;
+}
+
+// A validated, immutable plan for a particular pair of ASSET generations.
+// Never infer generation from a Model pointer: allocators may reuse addresses
+// after hot reload. The host owns the nonzero generation of each Model and
+// publishes a NEW plan whenever source or visual assets are replaced.
+//
+// All source/target bind transforms and morph indices are copied at compile
+// time. Runtime pose evaluation never traverses/validates the mapping and
+// never allocates validation scratch, even for thousands of crowd instances.
+// The output Pose and world matrices are still per-draw transient buffers.
+struct CompiledModelPoseRetarget final {
+    struct NodeStep {
+        int source=-1;
+        render::float3 sourceBindT{},sourceBindS{1,1,1};
+        render::quat inverseSourceBind{};
+        render::float3 targetBindT{},targetBindS{1,1,1};
+        render::quat targetBindR{};
+        std::array<int,render::kMaxMorphTargets> morph{};
+    };
+    const render::Model* sourceModel=nullptr; // identity only, never dereference until generation check
+    const render::Model* visualModel=nullptr;
+    uint64_t sourceGeneration=0,visualGeneration=0;
+    float translationScale=1.f;
+    render::Pose visualBind;
+    std::vector<NodeStep> steps;
+    size_t mappedNodes=0;
+    bool matches(const render::Model& source,const render::Model& visual,
+                 uint64_t sourceGen,uint64_t visualGen) const noexcept {
+        // A zero generation is deliberately not trusted: old cached maps
+        // could otherwise survive pointer reuse after an asset reload.
+        return sourceGen!=0 && visualGen!=0 &&
+               sourceGeneration==sourceGen && visualGeneration==visualGen &&
+               sourceModel==&source && visualModel==&visual &&
+               steps.size()==visualBind.size() &&
+               steps.size()==visual.nodes.size();
+    }
+};
+
+// Compile only at an asset-publication boundary on the presentation owner
+// thread. The returned shared const plan can be safely reused by many
+// instances; it contains NO pointers into Model vectors. Null = rejected.
+inline std::shared_ptr<const CompiledModelPoseRetarget>
+compileModelPoseRetarget(const render::Model& source,
+                         const render::Model& visual,
+                         const ModelPoseRetarget& map,
+                         uint64_t sourceGeneration,
+                         uint64_t visualGeneration) {
+    if(sourceGeneration==0 || visualGeneration==0 ||
+       !validModelPoseRetarget(source,visual,map))return {};
+    auto compiled=std::make_shared<CompiledModelPoseRetarget>();
+    compiled->sourceModel=&source;
+    compiled->visualModel=&visual;
+    compiled->sourceGeneration=sourceGeneration;
+    compiled->visualGeneration=visualGeneration;
+    compiled->translationScale=map.translationScale;
+    render::bindPose(visual,compiled->visualBind);
+    compiled->steps.resize(visual.nodes.size());
+    for(size_t i=0;i<visual.nodes.size();++i) {
+        auto& step=compiled->steps[i];
+        step.morph.fill(-1);
+        step.source=map.sourceNodeForVisual[i];
+        const auto& target=visual.nodes[i];
+        step.targetBindT=target.t;
+        step.targetBindR=render::qnormalize(target.r);
+        step.targetBindS=target.s;
+        if(step.source<0)continue;
+        const auto& src=source.nodes[size_t(step.source)];
+        step.sourceBindT=src.t;
+        step.sourceBindS=src.s;
+        const render::quat rotation=render::qnormalize(src.r);
+        step.inverseSourceBind={-rotation.x,-rotation.y,-rotation.z,rotation.w};
+        if(!map.sourceMorphForVisual.empty())
+            step.morph=map.sourceMorphForVisual[i];
+        ++compiled->mappedNodes;
+    }
+    return compiled;
+}
+
+// O(visual nodes) transform only, with no per-instance map validation
+// or heap-allocated visited flags. A stale plan fails BEFORE accessing
+// any Model node. Host must keep each supplied Model alive through this
+// call and synchronous submission; this API cannot extend borrowed life.
+inline bool retargetCompiledModelPose(
+        const render::Model& source,const render::Model& visual,
+        uint64_t sourceGeneration,uint64_t visualGeneration,
+        std::span<const render::NodePose> sourcePose,
+        const CompiledModelPoseRetarget& plan,
+        render::Pose& out,std::vector<render::mat4>& world) {
+    if(!plan.matches(source,visual,sourceGeneration,visualGeneration) ||
+       sourcePose.size()!=source.nodes.size())return false;
+    render::Pose next=plan.visualBind;
+    for(size_t i=0;i<plan.steps.size();++i) {
+        const auto& step=plan.steps[i];
+        if(step.source<0)continue;
+        if(size_t(step.source)>=sourcePose.size())return false;
+        const auto& pose=sourcePose[size_t(step.source)];
+        for(float f:{pose.t.x,pose.t.y,pose.t.z,
+                     pose.r.x,pose.r.y,pose.r.z,pose.r.w,
+                     pose.s.x,pose.s.y,pose.s.z})
+            if(!std::isfinite(f))return false;
+        if(std::abs(step.sourceBindS.x)<1.e-6f ||
+           std::abs(step.sourceBindS.y)<1.e-6f ||
+           std::abs(step.sourceBindS.z)<1.e-6f)
+            return false;
+        auto& dst=next[i];
+        dst.t=step.targetBindT +
+              (pose.t-step.sourceBindT)*plan.translationScale;
+        dst.r=render::qnormalize(step.targetBindR*
+                                (step.inverseSourceBind*pose.r));
+        dst.s={
+            step.targetBindS.x*(pose.s.x/step.sourceBindS.x),
+            step.targetBindS.y*(pose.s.y/step.sourceBindS.y),
+            step.targetBindS.z*(pose.s.z/step.sourceBindS.z)};
+        for(float f:{dst.t.x,dst.t.y,dst.t.z,dst.s.x,dst.s.y,dst.s.z})
+            if(!std::isfinite(f))return false;
+        for(size_t k=0;k<step.morph.size();++k) {
+            const int from=step.morph[k];
+            if(from<0)continue;
+            if(from>=render::kMaxMorphTargets)return false;
+            const float value=pose.w[from];
+            if(!std::isfinite(value))return false;
+            dst.w[k]=value;
+        }
     }
     std::vector<render::mat4> matrices;
     render::worldMatrices(visual,next,matrices);
