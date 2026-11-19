@@ -63,6 +63,13 @@ struct CreatorApp {
     std::string importedManifest;
     HumanImportManifest importedPackage;
     std::array<char,129> scalpProxyName{};
+    // Immutable bind-pose vertices and a single rigid MotionWeave node.
+    // Updated positions are always supplied in the groom's local space.
+    std::vector<render::float3> scalpBindPositions;
+    std::vector<render::float3> scalpAnimatedPositions;
+    int scalpPoseNode=-1;
+    render::mat4 scalpBindNodeInverse{};
+    render::mat4 scalpBindHeadRigid{};
     bool externalMode=false;
     bool commandLineAsset=false;
     std::string status;
@@ -128,6 +135,9 @@ struct CreatorApp {
         world.reset();
         graph.reset();
         facePose.clear();
+        scalpBindPositions.clear();
+        scalpAnimatedPositions.clear();
+        scalpPoseNode=-1;
         cache->pruneExpired();
         return true;
     }
@@ -174,19 +184,45 @@ struct CreatorApp {
         pendingRebuild=true;
         status="Imported open human package: "+path;
     }
-    static void installImportedScalpCollider(
+    static render::mat4 rigidHeadMatrix(render::mat4 m) {
+        for(int col=0;col<3;++col) {
+            float lengthSq=0;
+            for(int row=0;row<3;++row)
+                lengthSq+=m.at(row,col)*m.at(row,col);
+            const float inv=1.0f/std::sqrt(std::max(lengthSq,0.00001f));
+            for(int row=0;row<3;++row)m.at(row,col)*=inv;
+        }
+        return m;
+    }
+    struct ScalpPoseBinding {
+        std::vector<render::float3> bindPositions;
+        int node=-1;
+        render::mat4 nodeBindInverse{};
+        render::mat4 headBindRigid{};
+    };
+    static ScalpPoseBinding installImportedScalpCollider(
         HumanGroomRuntime& groom,const render::Model& model,
-        const std::string& meshName) {
-        if(meshName.empty())return;
+        const std::string& meshName,const HumanRigBinding& rig) {
+        if(meshName.empty())return {};
         const auto it=std::find_if(model.meshes.begin(),model.meshes.end(),
             [&](const render::MeshDef& mesh){return mesh.name==meshName;});
         if(it==model.meshes.end())
             throw std::runtime_error("VIVID Creator: scalp collider mesh not found");
         const auto meshId=int(it-model.meshes.begin());
-        for(const auto& node:model.nodes) {
-            if(node.mesh==meshId && node.skin>=0)
-                throw std::runtime_error("VIVID Creator: skinned scalp proxy unsupported");
+        int poseNode=-1;
+        for(std::size_t i=0;i<model.nodes.size();++i) {
+            const auto& node=model.nodes[i];
+            if(node.mesh!=meshId)continue;
+            if(node.skin>=0)
+                throw std::runtime_error("VIVID Creator: skinned scalp proxy requires skinning adapter");
+            if(poseNode>=0)
+                throw std::runtime_error("VIVID Creator: proxy must belong to one rigid model node");
+            poseNode=int(i);
         }
+        if(poseNode<0 || !rig.valid() ||
+           std::size_t(poseNode)>=model.bindWorld.size() ||
+           std::size_t(rig.head)>=model.bindWorld.size())
+            throw std::runtime_error("VIVID Creator: missing scalp/head bind-pose node");
         // The authoring contract is a closed, bind-pose proxy whose vertices
         // are already expressed in the groom's local coordinate system.
         std::vector<render::float3> positions;
@@ -216,6 +252,12 @@ struct CreatorApp {
             throw std::runtime_error("VIVID Creator: scalp proxy must be a closed nondegenerate mesh within the 16K/32K budget");
         if(!groom.attachRootsToCollisionMesh())
             throw std::runtime_error("VIVID Creator: could not attach groom roots to scalp proxy");
+        ScalpPoseBinding binding;
+        binding.bindPositions=std::move(positions);
+        binding.node=poseNode;
+        binding.nodeBindInverse=model.bindWorld[std::size_t(poseNode)].inverse();
+        binding.headBindRigid=rigidHeadMatrix(model.bindWorld[std::size_t(rig.head)]);
+        return binding;
     }
     void regenerate() {
         if(!device)return;
@@ -223,6 +265,7 @@ struct CreatorApp {
             // Build/validate in CPU scratch first, keeping last-good visual
             // data if DNA or shader-graph authoring fails.
             HumanPreviewAsset proposed;
+            ScalpPoseBinding proposedScalp;
             if(externalMode) {
                 const auto& manifest=importedPackage;
                 auto imported=importHumanAsset(manifest,readerFor(importedManifest));
@@ -245,8 +288,9 @@ struct CreatorApp {
                     });
                 if(!hasAuthoredHair) {
                     proposed.groom.generate(session.dna(),groomQuality);
-                    installImportedScalpCollider(
-                        proposed.groom,*proposed.head,manifest.scalpColliderMesh);
+                    proposedScalp=installImportedScalpCollider(
+                        proposed.groom,*proposed.head,
+                        manifest.scalpColliderMesh,proposed.rig);
                     proposed.hair=proposed.groom.makeCardModel(session.dna());
                 }
                 // Artist-authored hair meshes are already in proposed.head,
@@ -272,6 +316,11 @@ struct CreatorApp {
                 R"({"nodes":[{"id":"idle","kind":"clip","clip":"vivid_idle"}],"output":"idle"})"));
             if(!releaseHuman())return;
             human=std::move(proposed);
+            scalpBindPositions=std::move(proposedScalp.bindPositions);
+            scalpAnimatedPositions.resize(scalpBindPositions.size());
+            scalpPoseNode=proposedScalp.node;
+            scalpBindNodeInverse=proposedScalp.nodeBindInverse;
+            scalpBindHeadRigid=proposedScalp.headBindRigid;
             if(!uploadModel(*device,*human.head,true))
                 throw std::runtime_error("VIVID Creator: head GPU upload failed");
             // Vertex cards are mutable (secondary motion), so use a ringed
@@ -603,6 +652,18 @@ struct CreatorApp {
         if(!actor->dispatch(controller.frame(),human.facialBinding))
             status=actor->lastError();
         if(inspectGroom && human.hair) {
+            if(scalpPoseNode>=0 && !scalpBindPositions.empty() &&
+               std::size_t(scalpPoseNode)<facePose.size()) {
+                const auto frameHead=rigidHeadMatrix(
+                    facePose[std::size_t(human.rig.head)]);
+                const auto delta=frameHead.inverse() *
+                    facePose[std::size_t(scalpPoseNode)] *
+                    scalpBindNodeInverse * scalpBindHeadRigid;
+                for(std::size_t i=0;i<scalpBindPositions.size();++i)
+                    scalpAnimatedPositions[i]=delta.transformPoint(scalpBindPositions[i]);
+                if(!human.groom.refitCollisionMesh(scalpAnimatedPositions))
+                    status="VIVID Creator: animated scalp BVH refit rejected";
+            }
             human.groom.step(step,{wind,0,wind*0.3f});
             human.groom.updateCardVertices(human.hair->vertices);
             dev.updateBuffer(human.hair->vb,human.hair->vertices.data(),
@@ -617,16 +678,9 @@ struct CreatorApp {
             renderer.drawModel(draw);
         const int headIndex=human.rig.head;
         const mat4& poseHead=facePose[std::size_t(headIndex)];
-        // Strip authored head ellipsoid scaling: the groom geometry is
-        // already generated in model coordinates using DNA head dimensions.
-        mat4 headRigid=poseHead;
-        for(int col=0;col<3;++col) {
-            float lengthSq=0;
-            for(int row=0;row<3;++row)
-                lengthSq+=headRigid.at(row,col)*headRigid.at(row,col);
-            const float inv=1.0f/std::sqrt(std::max(lengthSq,0.00001f));
-            for(int row=0;row<3;++row)headRigid.at(row,col)*=inv;
-        }
+        // Shared render/collision frame: head-local procedural groom,
+        // no extra head nonuniform scale applied to its card geometry.
+        const mat4 headRigid=rigidHeadMatrix(poseHead);
         if(human.hair) {
             ModelDraw hair;
             hair.model=human.hair.get();
